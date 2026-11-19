@@ -9,6 +9,8 @@ import { budgetLine, machineLine } from '../src/model/machine-load.js';
 import { workerVerificationPump } from '../src/daemon/worker-verification.js';
 import { directVerification, runningVerificationChildren } from '../src/merge-writer/worker-verification.js';
 import { encodeLoopHosts, loopHosts } from '../src/model/loop-presence.js';
+import { masterStatusReport } from '../src/cli/master-status.js';
+import { masterConfigSchema } from '../src/master.js';
 
 // GY-3528: a hard-coded two heavy jobs turned three machines into one queue. The budget is now each
 // ready machine's floor(cores / 6): jobs here take this machine's share, a trial's shard placed on a
@@ -171,4 +173,24 @@ test('integration:scale-limits-with-hosts — a worker verification slot is free
   } finally {
     if (previous === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = previous;
   }
+});
+
+test('integration:scale-limits-with-hosts — master status shows the budget and each machine\'s cores busy and temperature, one short line each, with no internal ids', { timeout: 60_000 }, async () => {
+  const root = await temporaryDirectory('scale-limits-status'), directory = join(await temporaryDirectory('scale-limits-status-data'), 'heavy-jobs');
+  execFileSync('git', ['init', '-q', root]);
+  mkdirSync(join(root, '.graphyard'));
+  const credentialFile = join(root, 'token');
+  writeFileSync(credentialFile, 'fixture-token', { mode: 0o600 });
+  const master = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', cliPath: process.execPath, repository: 'acme/app', baseBranch: 'main', hostId: 'loop-host',
+    masterAgentName: 'graphyard-master-app', workers: [], credentialFile, run: {} }) as never;
+  writeFileSync(join(root, '.graphyard/master.json'), JSON.stringify(master), { mode: 0o600 });
+  writeMachines(directory, machines(false));
+  const previous = process.env[slotsDirectoryVariable];
+  process.env[slotsDirectoryVariable] = directory;
+  try {
+    const shown = await masterStatusReport(root, master, async () => ({ work: [], now: new Date().toISOString() }), async () => { throw new Error('no git in the fixture'); });
+    assert.equal(shown.heavyJobs.budget, '13 heavy-job slots (this machine 4, vish-msi 4, omarchypc 5)');
+    assert.deepEqual(shown.heavyJobs.machines, ['this machine: 6 of 24 cores busy, 61°C', 'vish-msi: 3 of 24 cores busy, 58°C', 'omarchypc: 12 of 32 cores busy, 70°C']);
+    for (const line of [shown.heavyJobs.budget, ...shown.heavyJobs.machines]) { assert.doesNotMatch(line, /gy-compute|@|:\d{4}/); assert.ok(line.length <= 80, line); }
+  } finally { if (previous === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = previous; }
 });

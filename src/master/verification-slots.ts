@@ -16,7 +16,7 @@ import { cpuCelsius, trialHotCelsius } from '../merge-writer/trial-load.js';
  * verification timed out, because each project bounded only its own runs. Every Graphyard project
  * of one user on one host now shares one budget: a heavy job — a merge, gate or diagnostic trial, a
  * session's whole suite, a preview build, a deploy build — takes one slot first, and at most `limit`
- * (two unless the host says otherwise) ordinary jobs run at once, plus one reserved
+ * (this machine's share of the budget, GY-3528) ordinary jobs run at once, plus one reserved
  * gate/deploy job shared across all installs. GY-3447: a session's own build, type check and
  * selected tests, and the host-run verification and checks of its head, take no slot — they ran
  * behind trials holding both slots for most of an hour — and stay bounded by the session's share of
