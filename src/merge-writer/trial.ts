@@ -1451,7 +1451,11 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         let tests: Ended, recordText: string;
         try {
           if (remote) {
-            const ended = await session!.run(remote, index, group, (list, records) => [check.argv[0]!, ...argv(list, records)], breadth);
+            // GY-3528: a shard placed on a host takes a slot on that host's share, never this machine's; a spent share sends it elsewhere.
+            const slots = await import('../master/verification-slots.js');
+            const held = slotsDirectory ? await slots.takeHostSlot(slotsDirectory, remote, `${slots.testMergeLabel(input.key ?? input.mergeSha.slice(0, 12))} shard ${index + 1}`, process.env[slots.projectVariable]) : null;
+            if (slotsDirectory && !held) throw new HostDroppedError(remote, 'its heavy-job share is full');
+            const ended = await session!.run(remote, index, group, (list, records) => [check.argv[0]!, ...argv(list, records)], breadth).finally(() => held?.release());
             entries.push(`$ [${remote}] ${check.argv.join(' ')} (shard ${index + 1})\n${ended.out}`);
             tests = { ok: ended.ok, out: ended.out, status: ended.status, signal: null, cause: undefined };
             recordText = ended.records;

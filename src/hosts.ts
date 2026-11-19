@@ -19,7 +19,7 @@ import { cpuStatTotals, stealPercent } from './daemon/cpu-pressure.js';
 import { hostProbeScript, hostShimDigest, hostShimScript } from './host-shim.js';
 
 export interface HostRecord { target: string; addedAt: string }
-export interface HostReading { host: string; local?: boolean; away: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; stat?: { total: number; steal: number } | null }
+export interface HostReading { host: string; local?: boolean; away: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; /** GY-3528: cores busy (the 1-minute load). */ busy?: number | null; stat?: { total: number; steal: number } | null }
 
 /** Machine-wide, beside the machine-share link (team-access.ts): every install's loop on this machine reads the same hosts. */
 export const hostsFile = (home = configHome()) => join(home, 'machine', 'hosts.json');
@@ -223,8 +223,8 @@ export async function readHostReadings(previous: HostReading[], options: { file?
   return Promise.all(targets.map(async target => {
     const host = target ?? options.local ?? hostname();
     const probe = await probeHost(target, options.run);
-    if (!probe.ok) return { host, ...(target ? {} : { local: true }), away: true, reason: probe.reason, cores: null, celsius: null, steal: null, runs: null, stat: null };
+    if (!probe.ok) return { host, ...(target ? {} : { local: true }), away: true, reason: probe.reason, cores: null, celsius: null, steal: null, runs: null, busy: null, stat: null };
     const before = previous.find(reading => reading.host === host)?.stat ?? null;
-    return { host, ...(target ? {} : { local: true }), away: false, cores: probe.cores, celsius: probe.celsius, steal: stealPercent(before, probe.stat), runs: probe.runs, stat: probe.stat };
+    return { host, ...(target ? {} : { local: true }), away: false, cores: probe.cores, celsius: probe.celsius, steal: stealPercent(before, probe.stat), runs: probe.runs, busy: probe.load, stat: probe.stat };
   }));
 }

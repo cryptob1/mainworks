@@ -11,6 +11,7 @@ import { shortShas } from '../candidate';
 import { Agent } from '../fun';
 import { EmptyState, PageHeader } from '../components/page-layout';
 import { overloadAlarm, overloaded } from '../../src/model/session-usage';
+import { budgetLine, machineLine, machineName } from '../../src/model/machine-load';
 
 /**
  * The Workers tab (GY-116, one compact line per agent since GY-3314): every agent session across
@@ -181,7 +182,7 @@ function Accounts({ principals, setSelected }: { principals: PrincipalSummary[];
   </table>;
 }
 
-type HostRow = { host: string; local?: boolean; away: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null };
+type HostRow = { host: string; local?: boolean; away: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; busy?: number | null; slots?: number };
 /**
  * GY-3407: the hosts the loop watches — this machine first, then each one added with
  * `graphyard host add USER@HOST` — as the loop read them this cycle. A host that does not answer
@@ -190,7 +191,12 @@ type HostRow = { host: string; local?: boolean; away: boolean; reason?: string; 
 function Hosts({ hosts }: { hosts: HostRow[] }) {
   if (!hosts.length) return null;
   const figure = (value: number | null, unit = '') => value === null ? '—' : `${Math.round(value)}${unit}`;
-  return <section className="hosts-section"><h2>Hosts</h2><table className="sessions-table hosts" aria-label="Hosts" data-hosts>
+  // GY-3528: the heavy-job budget the ready machines share, then each machine's load, one short line each.
+  const slotted = hosts.filter(host => host.slots !== undefined).map(host => ({ name: host.host, local: host.local, slots: host.slots! }));
+  return <section className="hosts-section"><h2>Hosts</h2>
+    {slotted.length ? <p data-heavy-budget>{budgetLine(slotted)}</p> : null}
+    <ul className="machine-load" aria-label="Machine load" data-machine-load>{hosts.map(host => <li key={host.host} data-machine={machineName(host.host)}>{machineLine({ ...host, name: host.host })}</li>)}</ul>
+    <table className="sessions-table hosts" aria-label="Hosts" data-hosts>
     <thead><tr><th scope="col">Host</th><th scope="col">Cores</th><th scope="col">Temperature</th><th scope="col">Steal</th><th scope="col">Runs now</th></tr></thead>
     <tbody>{hosts.map(host => <tr key={host.host} data-host={host.host} data-away={host.away || undefined}>
       <th scope="row" data-label="Host">{host.host}{host.local ? <span className="muted"> (this machine)</span> : null}</th>

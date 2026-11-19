@@ -51,7 +51,8 @@ import { cpuCelsius } from './cpu-pressure.js';
 import { sweepCliReleases } from '../install/cli-release.js';
 import { collectUsage } from '../usage-capture.js';
 import { upstreamFiler } from './control-plane.js';
-import { runWorkerVerification } from '../merge-writer/worker-verification.js';
+import { directVerification, runWorkerVerification } from '../merge-writer/worker-verification.js';
+import { heavyJobsDirectory, writeMachines } from '../master/verification-slots.js';
 import { failedRequiredProofs } from '../cli/worker-verification.js';
 import { trialRunsDirectory } from '../merge-writer/trial-run.js';
 import { deployRecordPath, readDeployRecord } from '../deploy-watch.js';
@@ -114,7 +115,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
       return { submitted: false, detail: `${work.key}'s finished head ${head.slice(0, 12)} failed the verification complete runs on the change itself: ${reason}; the item goes to a worker`.slice(0, 2000) };
     };
     let verification: Awaited<ReturnType<typeof runWorkerVerification>>;
-    try { verification = await verifyHead(root, work, { head, epoch: record.epoch, mode: 'complete' }, config.baseBranch); }
+    try { verification = await directVerification(work.key, () => verifyHead(root, work, { head, epoch: record.epoch, mode: 'complete' }, config.baseBranch)); }
     catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       // A refusal complete itself would give names the change; a fault of the run does not.
@@ -143,7 +144,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     snapshot: async () => {
       const snapshot = await deps.snapshot();
       // Never holds up or fails the cycle; a missed take is retried on the next snapshot.
-      void verifyWorkers().catch(() => {});
+      void verifyWorkers(snapshot.work).catch(() => {});
       return snapshot;
     },
     // GY-3274: the lessons and product brief the master session wrote straight to the file, adopted each cycle.
@@ -235,7 +236,11 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     sessionName: unit => liveRuns().find(entry => entry.run.directory && `graphyard-run-${basename(entry.run.directory)}.scope` === unit)?.name,
     // GY-3407: the read runs beside the cycle, so a host taking its SSH timeout never slows the loop; the cycle takes the latest finished one.
     hostReadings: async previous => {
-      hostsReading ??= readHostReadings(previous, { run }).then(readings => { hostsLatest = readings; }, () => {}).finally(() => { hostsReading = null; });
+      hostsReading ??= readHostReadings(previous, { run }).then(readings => {
+        hostsLatest = readings;
+        // GY-3528: every install on this machine budgets heavy jobs from these readings.
+        writeMachines(heavyJobsDirectory(), readings.map(reading => ({ name: reading.host, local: reading.local, away: reading.away, cores: reading.cores, busy: reading.busy ?? null, celsius: reading.celsius })));
+      }, () => {}).finally(() => { hostsReading = null; });
       return hostsLatest ?? previous;
     },
     stopOrphanTrials: () => stopOrphanTrialContainers(run, trialContainerMaxAgeMs(current().run)),
