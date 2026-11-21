@@ -53,7 +53,7 @@ import { declarationSlot, heavyJobLimit, heavyJobsDirectory, heldSlots, readHeav
 import { collectUsage } from '../usage-capture.js';
 import { upstreamFiler } from './control-plane.js';
 import { directVerification, runWorkerVerification } from '../merge-writer/worker-verification.js';
-import { heavyJobsDirectory, writeMachines } from '../master/verification-slots.js';
+import { writeMachines } from '../master/verification-slots.js';
 import { failedRequiredProofs } from '../cli/worker-verification.js';
 import { trialRunsDirectory } from '../merge-writer/trial-run.js';
 import { deployRecordPath, readDeployRecord } from '../deploy-watch.js';
