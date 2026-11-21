@@ -212,7 +212,9 @@ export async function remoteSessionHost(kind: string, live: () => readonly strin
   if (!remoteRuntimes.includes(kind)) return null;
   for (const host of await readHosts(file).catch(() => [])) {
     if (!host.sessions || live().filter(target => target === host.target).length >= host.sessions) continue;
-    if ((await probeHost(host.target, run)).ok) return host.target;
+    // A shim older than sessions takes shards only, until prepare runs there again.
+    const probe = await probeHost(host.target, run);
+    if (probe.ok && probe.verbs?.includes('run-session:1')) return host.target;
   }
   return null;
 }
