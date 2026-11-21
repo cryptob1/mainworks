@@ -234,6 +234,11 @@ export interface Work extends Create {
    * by any fresh claim. While it stands on an unblocked item the item is not offered to a worker.
    */
   finishedBlockerHead?: { head: string; epoch: number; branch: string; owner: string; at: string; reason: string } | null;
+  /**
+   * GY-3543: the last passed host verification, keyed by head and policy revision. A repeat request
+   * for that head under that revision is answered from it instead of running the proof files again.
+   */
+  passedVerification?: { head: string; policyRevision: number; at: string; result: unknown } | null;
   // Durable state for a blocking lead ruling. History records the ruling; this
   // field is what the gate evaluator and the merge broker read independently.
   leadHold?: { action: BlockingRulingAction; rulingId: string; leadId: string; slice: SliceId; ruleId: string; reason: string; at: string } | null;
