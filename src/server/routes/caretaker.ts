@@ -27,13 +27,14 @@ export const caretakerScope = defineRoutes('caretaker-scope', [{
 
 /** The newest caretaker report's lines, or null before the first. */
 export async function newestCaretakerReport(db: { query: (text: string, values?: unknown[]) => Promise<{ rows: any[] }> }) {
-  const row = (await db.query(`SELECT payload, created_at FROM events WHERE kind='caretaker.report' ORDER BY seq DESC LIMIT 1`)).rows[0];
+  const row = (await db.query(`SELECT payload, created_at FROM events WHERE kind='caretaker.report' ORDER BY created_at DESC, seq DESC LIMIT 1`)).rows[0];
   if (!row) return null;
   const lines: string[] = row.payload.lines;
   return { at: new Date(row.created_at).toISOString(), lines, needsOwner: lines.filter(line => /^needs the owner:/i.test(line)).map(line => line.replace(/^needs the owner:\s*/i, '')) };
 }
 
-const report = z.object({ lines: z.array(z.string().trim().min(1).max(300)).min(1).max(12) }).strict();
+// Each line says what kind it is: checked, fixed, filed or needs the owner.
+const report = z.object({ lines: z.array(z.string().trim().max(300).regex(/^(checked|fixed|filed|needs the owner):\s*\S/i, 'Start each line with checked:, fixed:, filed: or needs the owner:')).min(1).max(12) }).strict();
 export const caretakerRoutes = defineRoutes('caretaker', [
   { method: 'POST', path: '/api/caretaker-identity', handle: async ({ services, actor }) => mintCaretakerIdentity(services, actor) },
   { method: 'POST', path: '/api/caretaker/reports', async handle(context) {
