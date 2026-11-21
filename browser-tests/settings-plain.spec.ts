@@ -49,9 +49,7 @@ async function open(page: Page, alerts: number | false) {
 }
 
 async function openTab(page: Page, tab: string, heading: string) {
-  const menu = page.getByRole('button', { name: 'Menu' });
-  if (page.viewportSize()!.width <= 650 && await menu.getAttribute('aria-expanded') !== 'true') await menu.click();
-  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings', exact: true }).click();
   const tabs = page.getByRole('navigation', { name: 'Pages in this section' });
   if (tab === 'Operator automation') await tabs.getByText('Advanced', { exact: true }).click();
   await tabs.getByRole('button', { name: tab, exact: true }).click();

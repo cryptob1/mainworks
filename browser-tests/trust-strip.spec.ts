@@ -50,7 +50,7 @@ async function serve(page: Page) {
 test('e2e:trust-strip — the Shipped page shows the week’s trust numbers, no agent counts, and each number links to its items', async ({ page }) => {
   test.setTimeout(60_000);
   await serve(page);
-  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Shipped', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: 'Delivered', exact: true }).click();
   const strip = page.locator('.trust-strip');
   // The three numbers, matching the seeded records: four deliveries this week, one whose proof ran
   // the real app, one sent back, one reverted by the batch gate. The delivery eight days old and

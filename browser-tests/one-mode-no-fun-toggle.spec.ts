@@ -38,8 +38,8 @@ test('e2e:one-mode-no-fun-toggle — no Fun control on any page, a stored Fun pr
     await expect(page.locator('[aria-pressed]').filter({ hasText: /^fun$/i })).toHaveCount(0);
   };
   await noFun();
-  const menu = page.getByRole('navigation', { name: 'Primary' }).getByRole('button');
-  await expect(menu).toHaveText(['Work', 'Master', 'Workers', 'Shipped', 'Tests', 'Settings']);
+  const menu = page.getByRole('navigation', { name: 'Main' }).getByRole('link');
+  await expect(menu).toHaveText(['Home', 'Work', /^Lead/, 'Settings']);
 
   await menu.nth(1).click();
   await expect(page.getByRole('heading', { name: 'Master', exact: true, level: 1 })).toBeVisible();

@@ -52,10 +52,9 @@ async function open(page: Page, errors: string[]) {
   await expect(page.getByRole('heading', { name: 'Work', level: 1 })).toBeVisible();
 }
 
-async function openSettings(page: Page, tab: string, phone: boolean, section = 'Settings') {
-  const menu = page.getByRole('button', { name: 'Menu' });
-  if (phone && await menu.getAttribute('aria-expanded') !== 'true') await menu.click();
-  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: section, exact: true }).click();
+async function openSettings(page: Page, tab: string, _phone: boolean, section = 'Settings') {
+  const place = section === 'Tests' ? 'Work' : section;
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: place, exact: true }).click();
   const tabs = page.getByRole('navigation', { name: 'Pages in this section' });
   // Operator automation sits behind the Settings tab row's Advanced fold (GY-3297).
   if (tab === 'Operator automation') await tabs.getByText('Advanced', { exact: true }).click();

@@ -21,8 +21,8 @@ test('e2e:master-worker-terminology — navigation, the Master heading and its a
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible();
 
-  const menu = page.getByRole('navigation', { name: 'Primary' }).getByRole('button');
-  await expect(menu).toHaveText(['Work', 'Master', 'Workers', 'Shipped', 'Tests', 'Settings']);
+  const menu = page.getByRole('navigation', { name: 'Main' }).getByRole('link');
+  await expect(menu).toHaveText(['Home', 'Work', /^Lead/, 'Settings']);
 
   // The Master page: its heading, its tab row and its terminal region all say Master.
   await menu.nth(1).click();
