@@ -315,10 +315,10 @@ test('unit:ui-workers-page — Workers is one compact table of agent sessions (a
   assert.doesNotMatch(first, /data-session="p16"/);
   assert.match(html, /data-session="p16"[\s\S]*?data-state="Ended"/);
   assert.match(html, /data-session="a15"[\s\S]*?data-state="Ended"/);
-  // No explanatory jargon on the first screen; the roles footnote reads as the page's help text.
+  // No explanatory jargon on the first screen, and no roles footnote (GY-3485): the table is the page.
   const words = visibleWords(first).join(' ');
   for (const term of ['principal', 'handle', 'liveness', 'sweep', 'epoch', 'lease', 'pane', 'reconcil']) assert.ok(!new RegExp(term, 'i').test(words), `"${term}" on the first screen: ${words}`);
-  assert.match(words, /An agent never reviews or approves its own work/);
+  assert.doesNotMatch(words, /An agent never reviews or approves its own work/);
   // No column is cut off: the table fills its width, the title truncates in its cell, and on a phone each agent is one card.
   const css = await read('web/style.css');
   assert.match(css, /\.sessions-table\{width:100%;/);
