@@ -31,21 +31,6 @@ test('integration:dispatch-keeps-fresh-lease, e2e:dispatch-keeps-fresh-lease —
     item = await engine.execute(operator, 'ready', item.id, {}, id());
     const session = (epoch: number, rest: Record<string, unknown>) => engine.execute(coordinator, 'session', item.id,
       { id: `${worker.id}:${epoch}`, kind: 'implementation', principal: worker.id, runtime: 'claude', host: 'fresh-host', subject: 'Fresh lease', ...rest }, id());
-    // Two dispatch cycles of one launch, before any supervisor heartbeat: each claims, starts a run
-    // that exits at once, and is recorded by its launcher as it starts and as it ends.
-    const running = 2;
-    for (let epoch = 1; epoch <= running; epoch++) {
-      item = await engine.execute(worker, 'claim', item.id, {}, id());
-      assert.equal(item.lease?.epoch, epoch);
-      await session(epoch, { state: 'running' });
-      if (epoch === running) break;
-      item = await engine.execute(worker, 'release', item.id, { epoch, cause: `Watch supervisor ended attempt ${epoch}: the agent process exited (code 1) while its lease was live` }, id());
-      await session(epoch, { state: 'finished', outcome: 'the pi worker exited at once: No API key found for zai.' });
-    }
-    item = (await store.list())[0];
-    item.workspaces = [1, 2].map(epoch => ({ host: 'fresh-host', path: `/worktrees/fresh-${epoch}`, epoch, owner: worker.id, branch: `graphyard/fresh-${epoch}` }));
-    await store.transaction((db, now) => save(db, item, operator.id, 'fixture', now));
-
     const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: '/unused/token', cliPath: '/unused/cli', repository: 'owner/project', baseBranch: 'main', hostId: 'fresh-host', masterAgentName: 'master', workers: [] });
     const state = emptyDaemonState(config), removed: string[] = [];
     let dispatched = 0;
@@ -57,6 +42,27 @@ test('integration:dispatch-keeps-fresh-lease, e2e:dispatch-keeps-fresh-lease —
       removeWorktree: async path => { removed.push(path); return true; },
       recordSession: async (work, handle) => { await engine.execute(coordinator, 'session', work.id, handle, id()); },
     };
+    // Two dispatch cycles of one launch, before any supervisor heartbeat: each claims, starts a run
+    // that exits at once, and is recorded by its launcher as it starts and as it ends.
+    const running = 2;
+    for (let epoch = 1; epoch <= running; epoch++) {
+      item = await engine.execute(worker, 'claim', item.id, {}, id());
+      assert.equal(item.lease?.epoch, epoch);
+      await session(epoch, { state: 'running' });
+      if (epoch === running) break;
+      // Just dispatched, no supervisor heartbeat yet: the worker runs on epoch 1 and the loop leaves it alone.
+      const fresh = await runCycle(config, state, effects, Date.now, undefined, () => {});
+      assert.deepEqual(fresh.actions.filter(action => action.kind === 'close' || action.kind === 'reclaim'), []);
+      const dispatchedOnce = (await store.list())[0];
+      assert.equal(dispatchedOnce.stage, 'build');
+      assert.equal(dispatchedOnce.lease?.epoch, 1);
+      assert.equal(dispatchedOnce.sessions!.find(handle => handle.id === `${worker.id}:1`)?.state, 'running');
+      item = await engine.execute(worker, 'release', item.id, { epoch, cause: `Watch supervisor ended attempt ${epoch}: the agent process exited (code 1) while its lease was live` }, id());
+      await session(epoch, { state: 'finished', outcome: 'the pi worker exited at once: No API key found for zai.' });
+    }
+    item = (await store.list())[0];
+    item.workspaces = [1, 2].map(epoch => ({ host: 'fresh-host', path: `/worktrees/fresh-${epoch}`, epoch, owner: worker.id, branch: `graphyard/fresh-${epoch}` }));
+    await store.transaction((db, now) => save(db, item, operator.id, 'fixture', now));
     const first = await runCycle(config, state, effects, Date.now, undefined, () => {});
     await new Promise(resolve => setTimeout(resolve, 200));
     const stored = (await store.list())[0];
