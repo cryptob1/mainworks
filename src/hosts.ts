@@ -20,7 +20,8 @@ import { hostProbeScript, hostShimDigest, hostShimScript } from './host-shim.js'
 import { trialAppArmorProfilePath, trialAppArmorProfileText } from './merge-writer/trial-apparmor.js';
 import { shellQuote } from './install/transport.js';
 
-export interface HostRecord { target: string; addedAt: string }
+/** `sessions` (GY-3405): how many agent sessions the host takes at once; absent or 0, it takes test shards only. */
+export interface HostRecord { target: string; addedAt: string; sessions?: number }
 export interface HostReading { host: string; local?: boolean; away: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; stat?: { total: number; steal: number } | null }
 
 /** Machine-wide, beside the machine-share link (team-access.ts): every install's loop on this machine reads the same hosts. */
@@ -221,6 +222,15 @@ export async function removeHost(target: string, options: { file?: string } = {}
   const next = hosts.filter(host => host.target !== target);
   await writeHosts(file, next);
   return { removed: true, hosts: next };
+}
+
+/** GY-3405: open an added host to `sessions` agent sessions at once (0 closes it to them). */
+export async function setHostSessions(target: string, sessions: number, options: { file?: string } = {}) {
+  const file = options.file ?? hostsFile();
+  if (!Number.isSafeInteger(sessions) || sessions < 0 || sessions > 64) throw new Error(`Name how many sessions ${target} takes at once, 0 to 64: got ${sessions}`);
+  const hosts = await readHosts(file);
+  if (!hosts.some(host => host.target === target)) throw new Error(`${target} is not added: run graphyard host add ${target} first`);
+  await writeHosts(file, hosts.map(host => host.target === target ? { ...host, sessions } : host));
 }
 
 /** One cycle's readings: this machine first, then every recorded host; steal is measured from the previous cycle's counters. */

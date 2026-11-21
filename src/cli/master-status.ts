@@ -42,6 +42,7 @@ import { formatAge } from '../model/duration.js';
 import { loadProjectDelivery, parseProjectDelivery } from '../model-boundary/project-applications.js';
 import { backedOffProfiles, readDispatchCursor, type DispatchCursor } from '../dispatch/cursor.js';
 import { liveReviewRequest } from '../model/dispatch.js';
+import { remoteWorkerRuns } from '../headless-session.js';
 
 /** GY-3105: an item's whole non-routine ledger, oldest first, paged by cursor to the end; null when any page cannot be read. */
 export async function itemLedger(masterApi: (path: string) => Promise<any>, id: string): Promise<SpeedEvent[] | null> {
@@ -281,6 +282,8 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     // GY-3285: worker sessions running of the number the registry worker role allows (master workers N sets it).
     workers: `${sessions.filter(session => session.kind === 'implementation').length}/${workersAllowed(master, fleet?.roles ? { roles: fleet.roles.map(role => ({ ...role, name: role.role })) } : null)}`,
     sessions,
+    // GY-3405: the latest sessions that ran on an added host, running or ended: which item, where, and how it stands.
+    remoteSessions: remoteWorkerRuns(root).slice(0, 10),
     freeWorkers: health.filter(entry => entry.healthy).map(entry => entry.profile.name),
   };
 }

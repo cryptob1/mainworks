@@ -330,7 +330,8 @@ export function adoptHeadlessSessions(root: string, adopters: Record<HeadlessRou
 export const workerRunsDirectory = (root: string) => resolve(root, '.graphyard', 'worker-runs');
 const runLogName = 'log.jsonl';
 const workerRecordSchema = z.object({ id: z.string().uuid(), name: z.string().min(1).max(200), work: z.string().min(1).max(200), epoch: z.number().int().positive(),
-  principal: z.string().min(1).max(200), account: z.string().max(200).nullable(), kind: z.string().min(1).max(40), subject: z.string().min(1).max(300), startedAt: z.string().max(40) });
+  principal: z.string().min(1).max(200), account: z.string().max(200).nullable(), kind: z.string().min(1).max(40), subject: z.string().min(1).max(300), startedAt: z.string().max(40),
+  /** GY-3405: the added host the run's session runs on; absent on this machine. */ host: z.string().max(300).optional() });
 export type HeadlessWorkerRecord = z.infer<typeof workerRecordSchema>;
 
 export interface HeadlessWorker extends HeadlessAccountLaunch {
@@ -343,6 +344,8 @@ export interface HeadlessWorker extends HeadlessAccountLaunch {
   timeoutMs: number;
   /** How long the start is watched; `workerStartupMs` by default. */
   startupMs?: number;
+  /** GY-3405: the added host the session runs on, and the `graphyard host session …` words that run it there in place of this machine's confinement. */
+  remote?: { host: string; words: string[] };
   /** Hears a run that outlived its startup observation end, with what it printed, once its process has ended. */
   settle?: (ended: { output: string; ok: boolean }) => Promise<unknown>;
 }
@@ -359,10 +362,10 @@ export async function startHeadlessWorker(input: HeadlessWorker): Promise<{ id: 
   const launch = await prepareHeadlessRun(input, input.prompt, input.directory, input.coordinatorRoot, false, input.cores);
   const id = randomUUID(), directory = resolve(workerRunsDirectory(input.root), id);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
-  const record: HeadlessWorkerRecord = { id, name: input.name, work: input.work, epoch: input.epoch, principal: input.principal, account: input.account, kind: launch.kind, subject: input.subject.slice(0, 300), startedAt: new Date().toISOString() };
+  const record: HeadlessWorkerRecord = { id, name: input.name, work: input.work, epoch: input.epoch, principal: input.principal, account: input.account, kind: launch.kind, subject: input.subject.slice(0, 300), startedAt: new Date().toISOString(), ...(input.remote ? { host: input.remote.host } : {}) };
   writeFileSync(join(directory, sessionFile), JSON.stringify(record), { mode: 0o600 });
   const env = runEnvironment(process.env, { ...launch.environment, GRAPHYARD_RUN_LOG: join(directory, runLogName) });
-  const argv = [...input.supervisor, ...launch.wrapper, ...await headlessArgv(launch, launch.request, env)];
+  const argv = [...input.supervisor, ...input.remote?.words ?? launch.wrapper, ...await headlessArgv(launch, launch.request, env)];
   const stop = new AbortController(), detached = new AbortController();
   const running = input.exec(argv[0]!, argv.slice(1), { cwd: input.directory, env, timeoutMs: input.timeoutMs, signal: stop.signal, run: directory, detached: detached.signal });
   const ended = await Promise.race([running.then(() => ({ ok: true }), () => ({ ok: false })), new Promise<null>(done => setTimeout(() => done(null), input.startupMs ?? workerStartupMs).unref())]);
@@ -397,6 +400,17 @@ export function adoptHeadlessWorkers(root: string): AdoptedRun[] {
     return [{ name: record.name, role: 'worker' as const, work: record.work, subject: record.subject, directory, live: true, settled }];
   });
 }
+/** GY-3405: every worker run that ran on an added host, newest first: its item, the host, when it started and whether it still runs. */
+export function remoteWorkerRuns(root: string): { work: string; host: string; startedAt: string; running: boolean }[] {
+  let names: string[];
+  try { names = readdirSync(workerRunsDirectory(root)); } catch { return []; }
+  return names.flatMap(name => {
+    const directory = join(workerRunsDirectory(root), name), record = readWorkerRecord(directory), meta = readRunMeta(directory);
+    return record?.host ? [{ work: record.work, host: record.host, startedAt: record.startedAt, running: !!meta && readText(runFiles(directory).exit) === null && runAlive(meta) }] : [];
+  }).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+}
+/** The added host of each worker run still running, one entry per run. */
+export const liveWorkerHosts = (root: string) => remoteWorkerRuns(root).filter(run => run.running).map(run => run.host);
 export const readWorkerRecord = (directory: string) => { try { return workerRecordSchema.parse(JSON.parse(readFileSync(join(directory, sessionFile), 'utf8'))); } catch { return null; } };
 
 /** The last of what a worker run printed, as text: what its limit notice, login refusal or crash is read from. Null for a run this installation does not hold. */

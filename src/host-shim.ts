@@ -10,6 +10,9 @@
 //                                  in IMAGE with --network=none, CPU, memory and process limits, only RUN mounted
 //   fetch-records RUN INDEX        the shard's per-file records
 //   clean RUN                      remove a run directory
+//   run-session RUN                GY-3405: one agent session in IMAGE with RUN's checkout mounted at the session's own
+//                                  working directory; the first stdin line is JSON {argv, env, cwd, homes}, nothing else,
+//                                  each home an in-memory tmpfs; the rest of stdin (the login) goes straight into the container
 // Anything else is refused. As in a local trial, containers may start nested sandboxes (seccomp and system
 // paths unconfined, the graphyard-trial AppArmor profile where Docker uses AppArmor; GY-3549), and never
 // get the Docker socket or the network, so a shard reaches no private address, the tailnet or the host.
@@ -44,7 +47,7 @@ case "$SSH_ORIGINAL_COMMAND" in
     echo "user $(id -u) $(id -Gn)"
 ${hostProbeScript.split('\n').map(line => `    ${line}`).join('\n')}
     ;;
-  receive-pack\\ *|receive-image\\ *|prepare-run\\ *|run-shard\\ *|fetch-records\\ *|clean\\ *)
+  receive-pack\\ *|receive-image\\ *|prepare-run\\ *|run-shard\\ *|fetch-records\\ *|clean\\ *|run-session\\ *)
     # The verbs that take arguments, validated and run in Python.
     exec python3 -I -c "$(cat <<'GRAPHYARD_VERBS'
 import json, os, re, shutil, subprocess, sys, tempfile, time
@@ -62,7 +65,7 @@ RUN = r'trial-[A-Za-z0-9_]{6,40}'
 IMAGE = ${JSON.stringify(warmImagePattern.source.slice(1, -1))}
 INDEX = r'[1-9][0-9]{0,3}'
 SHAPES = {'receive-pack': [NAME, SHA], 'receive-image': [IMAGE], 'prepare-run': [NAME, SHA, IMAGE],
-          'run-shard': [RUN, INDEX], 'fetch-records': [RUN, INDEX], 'clean': [RUN]}
+          'run-shard': [RUN, INDEX], 'fetch-records': [RUN, INDEX], 'clean': [RUN], 'run-session': [RUN]}
 if verb not in SHAPES or len(args) != len(SHAPES[verb]) or not all(re.fullmatch(shape, arg) for shape, arg in zip(SHAPES[verb], args)):
     refuse()
 mirrors, runs = os.path.join(home, '.graphyard', 'mirrors'), os.path.join(home, '.graphyard', 'runs')
@@ -122,6 +125,47 @@ elif verb == 'prepare-run':
             if not os.path.islink(path):
                 os.chmod(path, os.stat(path).st_mode | 0o060)
     print('run ' + os.path.basename(run))
+elif verb == 'run-session':
+    # Only the first line is the shim's: read unbuffered, so the login after it reaches the container's stdin and never a file here.
+    line = b''
+    while not line.endswith(b'\\n'):
+        byte = os.read(0, 1)
+        if not byte:
+            break
+        line += byte
+    try:
+        session = json.loads(line)
+    except ValueError:
+        refuse()
+    if not isinstance(session, dict) or set(session) != {'argv', 'env', 'cwd', 'homes'}:
+        refuse()
+    argv, env, cwd, homes = session['argv'], session['env'], session['cwd'], session['homes']
+    path = lambda value: isinstance(value, str) and re.fullmatch(r'/[A-Za-z0-9._/@+-]{1,400}', value) and '..' not in value.split('/')
+    if not (isinstance(argv, list) and 0 < len(argv) <= 5000 and all(isinstance(word, str) and '\\0' not in word for word in argv)) or not path(cwd) \\
+            or not (isinstance(homes, list) and len(homes) <= 20 and all(path(home) for home in homes)) \\
+            or not (isinstance(env, dict) and len(env) <= 200 and all(re.fullmatch(r'[A-Z_][A-Z0-9_]{0,99}', key) and isinstance(value, str) and not set('\\0\\n') & set(value) for key, value in env.items())):
+        refuse()
+    run = os.path.join(runs, args[0])
+    if not os.path.isdir(run):
+        sys.exit('graphyard-host-shim: no run ' + args[0])
+    name = 'graphyard-session-' + args[0][len('trial-'):]
+    # The network is the default one: the session reaches its model provider and the control plane. Only the checkout is mounted; every home is memory.
+    create = ['docker', 'create', '-i', '--name', name, '--user', '1000:0', '--workdir', cwd, '--pids-limit', '4096', '--security-opt', 'seccomp=unconfined',
+              '--mount', 'type=bind,src=' + os.path.join(run, 'repo') + ',dst=' + cwd, '--tmpfs', '/tmp:mode=1777']
+    if 'apparmor' in subprocess.run(['docker', 'info', '--format', '{{json .SecurityOptions}}'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True).stdout:
+        create += ['--security-opt', 'apparmor=${trialAppArmorProfile}']
+    for home in homes:
+        create += ['--tmpfs', home + ':uid=1000,gid=0,mode=0700']
+    for key, value in sorted(env.items()):
+        create += ['--env', key + '=' + value]
+    create += ['--entrypoint', argv[0], open(os.path.join(run, 'image')).read().strip()] + argv[1:]
+    if not quiet(*create):
+        sys.exit('graphyard-host-shim: the session container could not be created')
+    try:
+        code = subprocess.call(['docker', 'start', '-a', '-i', name])
+    finally:
+        quiet('docker', 'rm', '-f', name)
+    sys.exit(code)
 else:
     run = os.path.join(runs, args[0])
     # A shard request names its files, command, CPUs and deadline only: one asking for anything else (a mount, an image, a network) is refused.

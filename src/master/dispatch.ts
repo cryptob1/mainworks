@@ -23,7 +23,8 @@ import type { FleetProbe } from '../fleet.js';
 import { repinPath, type CanaryOffer } from '../model/registry.js';
 import { criteriaListing, featureCaseRule, reviewStandards } from '../review-prompt.js';
 import { launcherCoordinatorRoot, preservePartialWork, prepareConfinedGitPaths, sessionConfinement } from './launch.js';
-import { defaultHeadlessExec, HeadlessConfigurationError, startHeadlessWorker, type HeadlessExec } from '../headless-session.js';
+import { defaultHeadlessExec, HeadlessConfigurationError, liveWorkerHosts, startHeadlessWorker, type HeadlessExec } from '../headless-session.js';
+import { remoteSessionHost } from '../remote-session.js';
 import { liveRun } from '../runner/registry.js';
 import { releaseOfPath, resolvedLauncher } from '../install/cli-release.js';
 import { runTranscript } from '../model/sessions.js';
@@ -390,9 +391,14 @@ async function launchWorker(root: string, config: MasterConfig, work: Work, prof
       // watch`, which heartbeats this claim under the worker's own credential and stops the runtime
       // on lease loss. The instruction is its own first request on the command line, never pasted;
       // a worker never reaches the operator's keyring, and no Herdr pane is opened for it.
-      const started = await startHeadlessWorker({ name: profile.agentName, work: work.key, subject: `${work.key}: ${work.title}`, epoch: prepared.epoch, principal: profile.principal, account: launch.account ?? null,
+      // GY-3405: an added host open to sessions takes the run when it has room; its login is handed over for this session only.
+      const environment = { GRAPHYARD_URL: config.url, GRAPHYARD_TOKEN_FILE: profile.credentialFile!, GRAPHYARD_HOST_ID: config.hostId, GRAPHYARD_HERDR_AGENT_KIND: launch.kind!, ...(process.env.XDG_RUNTIME_DIR ? { XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR } : {}), ...(process.env.DBUS_SESSION_BUS_ADDRESS ? { DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS } : {}), ...withVerificationPath(sessionHarness.environment, launch.environment) };
+      const host = await remoteSessionHost(launch.kind!, liveWorkerHosts(root)).catch(() => null);
+      const forwarded = [...Object.keys(environment), 'VITEST_MAX_WORKERS', 'PLAYWRIGHT_WORKERS'].filter(name => !['GRAPHYARD_TOKEN_FILE', 'GRAPHYARD_TOKEN', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'PATH'].includes(name));
+      const remote = host ? { host, words: [process.execPath, config.cliPath, 'host', 'session', host, ...runtimeLoginHomes(launch.environment, launch.contract?.homeVariable, launch.kind).flatMap(home => ['--home', home]), ...forwarded.flatMap(name => ['--env', name]), '--cli', config.cliPath, '--'] } : undefined;
+      const started = await startHeadlessWorker({ remote, name: profile.agentName, work: work.key, subject: `${work.key}: ${work.title}`, epoch: prepared.epoch, principal: profile.principal, account: launch.account ?? null,
         kind: launch.kind!, args: [...args, ...sessionHarness.args], contract: launch.contract, credentialMask, role: sessionHarness.role, directory: prepared.path, prompt, root, exec: headless, coordinatorRoot,
-        environment: { GRAPHYARD_URL: config.url, GRAPHYARD_TOKEN_FILE: profile.credentialFile!, GRAPHYARD_HOST_ID: config.hostId, GRAPHYARD_HERDR_AGENT_KIND: launch.kind!, ...(process.env.XDG_RUNTIME_DIR ? { XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR } : {}), ...(process.env.DBUS_SESSION_BUS_ADDRESS ? { DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS } : {}), ...withVerificationPath(sessionHarness.environment, launch.environment) },
+        environment,
         supervisor: [process.execPath, config.cliPath, 'watch', work.key, String(prepared.epoch), '--'], timeoutMs: attemptCeilingMs(config.run), startupMs,
         settle: async ({ output, ok }) => { await stoppedOnLimit(output, ok).catch(() => null); await settleReservation?.(`the ${launch.kind} worker run ended`); } });
       const run: WorkerRun = { epoch: prepared.epoch, run: started.id, runtime: launch.kind!, account: launch.account ?? null, outcome: null };
