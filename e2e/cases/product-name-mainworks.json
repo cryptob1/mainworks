@@ -1,0 +1,12 @@
+{
+  "id": "product-name-mainworks",
+  "title": "The product is called Mainworks wherever a person reads its name",
+  "description": "A real browser opens the sign-in page, the home page and an invite link: the visible text and the tab title say Mainworks and never Graphyard. Both command names, mainworks and graphyard, run the same CLI: --help and guide exit 0 with Mainworks help text and mainworks usage lines.",
+  "tags": ["dashboard", "cli"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "both command names print Mainworks help", "run": "node --import tsx tests/helpers/run-tests.ts tests/product-name-mainworks.test.ts", "timeoutSeconds": 300 },
+    { "kind": "command", "name": "sign-in, home and invite link say Mainworks", "run": "npm run test:browser -- browser-tests/product-name-mainworks.spec.ts", "timeoutSeconds": 300 }
+  ]
+}
