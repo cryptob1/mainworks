@@ -111,6 +111,17 @@ function providerWords(output: string) {
   const words = failureEvents(output).flatMap(event => [event.result, event.error?.message, event.error, event.message].filter(text => typeof text === 'string' && text.trim()).slice(0, 1));
   return (words.length ? words.join(' ') : output).trim().slice(-500);
 }
+/** OpenCode's run banner, naming the agent and the model that answers: `build · big-pickle`. */
+const wrongModelBanner = /\b(?:build|plan) · (\S+)/;
+/**
+ * GY-3592: OpenCode did not run the account's plan model: its free-tier refusal, or a run banner naming
+ * another model, for a model with its own provider. The plan's allowance was never asked, so it is no limit.
+ */
+export function planModelUnused(output: string, modelId: string | null | undefined) {
+  if (!modelId || !/^(?!opencode\/)[^/]+\//.test(modelId)) return false;
+  const ran = wrongModelBanner.exec(output)?.[1];
+  return /\bfree usage limit reached\b|\bFreeUsageLimitError\b/i.test(output) || !!ran && ran !== modelId && ran !== modelId.split('/').pop();
+}
 /**
  * The one-prompt smoke test of a registry account (GY-446): its runtime, login home, key and model,
  * none of a role's policy. A key file that cannot be read fails the test with that reason.
@@ -131,6 +142,7 @@ export async function smokeRegistryAccount(account: FleetLaunchAccount, options:
       // Print-mode runtimes can report provider errors with exit zero (OpenCode).
       const failure = failureEvents(output).length > 0;
       const answered = /\bOK\b/i.test(output);
+      if (answered && !failure && planModelUnused(output, account.fleet.modelId)) return { ok: false, error: wrongModelBanner.exec(output)![0] };
       return { ok: answered && !failure, error: failure ? Object.values(key).reduce((text, secret) => text.replaceAll(secret, '[redacted]'), providerWords(output)) : answered ? null : 'The smoke request returned no answer' };
     } catch (error) {
       const message = error instanceof ChildProcessError ? error.stderr || error.stdout || error.message : String(error);

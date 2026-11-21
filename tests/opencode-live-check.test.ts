@@ -51,7 +51,7 @@ test('unit:opencode-free-tier-refusal-is-not-exhaustion — the free-tier refusa
   const refused = await check({ smoke: async () => ({ ok: false, error: freeTierRefusal }) });
   assert.equal(refused.state, 'broken');
   assert.equal(refused.resetsAt, null);
-  assert.match(refused.reason ?? '', /plan model zai-coding-plan\/glm-5\.3 could not be used/);
+  assert.match(refused.reason ?? '', /plan model zai-coding-plan\/glm-5\.3 was not used/);
   const unavailable = await check({ smoke: async () => ({ ok: false, error: `Model unavailable: ${modelId}` }) });
   assert.equal(unavailable.state, 'broken');
   assert.equal(unavailable.reason, `Model unavailable: ${modelId}`);
@@ -66,6 +66,19 @@ test('unit:opencode-free-tier-refusal-is-not-exhaustion — OpenCode printing Mo
   assert.equal(quota.reason, `Model unavailable: ${modelId}`);
 });
 
+test('unit:opencode-free-tier-refusal-is-not-exhaustion — a run whose banner names another model than the account\'s is broken, though it answered', async () => {
+  const { home, check } = await fixture();
+  const launcher = join(home, 'launcher.cjs');
+  const banner = (model: string) => writeFile(launcher, `#!/usr/bin/env node\nconsole.log('> build · ${model}');\nconsole.log('OK');\n`, { mode: 0o700 });
+  const smoke = { smoke: (target: Parameters<typeof smokeRegistryAccount>[0]) => smokeRegistryAccount(target, { command: launcher, timeoutMs: 5000 }) };
+  await banner('big-pickle');
+  const wrong = await check(smoke);
+  assert.equal(wrong.state, 'broken');
+  assert.match(wrong.reason ?? '', /plan model zai-coding-plan\/glm-5\.3 was not used/);
+  await banner('glm-5.3');
+  assert.equal((await check(smoke)).state, 'available', 'the account\'s own model in the banner passes');
+});
+
 test('e2e:opencode-free-tier-is-not-a-limit — the Accounts page never shows a Z.AI account as out of allowance for OpenCode\'s free-tier refusal', async () => {
   const { registry, account, check } = await fixture();
   foldObservation(account, await check({ smoke: async () => ({ ok: false, error: freeTierRefusal }) }), { actor: 'host', at: new Date(now).toISOString() });
@@ -77,6 +90,6 @@ test('e2e:opencode-free-tier-is-not-a-limit — the Accounts page never shows a 
   const { availabilityLine } = await import('../web/pages/workers.js');
   const page = renderToStaticMarkup(createElement(AccountCard, { account: shown, now })) + availabilityLine(shown, now).text;
   assert.match(page, /Quota: broken/);
-  assert.match(page, /opencode-b · broken · .*plan model zai-coding-plan\/glm-5\.3 could not be used/);
+  assert.match(page, /opencode-b · broken · .*plan model zai-coding-plan\/glm-5\.3 was not used/);
   assert.doesNotMatch(page, /exhausted|held until|limit reached|Resets: unknown/i);
 });

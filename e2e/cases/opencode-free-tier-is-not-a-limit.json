@@ -1,7 +1,7 @@
 {
   "id": "opencode-free-tier-is-not-a-limit",
   "title": "OpenCode's free-tier refusal never shows a paid Z.AI account as out of allowance",
-  "description": "An OpenCode account whose model is zai-coding-plan/glm-5.3 has its live check answered with OpenCode's own free-model refusal ('Free usage limit reached. Connect a provider…'). The account is recorded broken, saying its plan model could not be used, and the Accounts page shows it as broken, never as spent, held or exhausted. The check itself launches OpenCode with the account's model id.",
+  "description": "An OpenCode account whose model is zai-coding-plan/glm-5.3 has its live check answered with OpenCode's own free-model refusal ('Free usage limit reached. Connect a provider…'). The account is recorded broken, saying its plan model was not used, and the Accounts page shows it as broken, never as spent, held or exhausted. The check itself launches OpenCode with the account's model id.",
   "tags": ["accounts", "quota"],
   "target": "any",
   "required": true,

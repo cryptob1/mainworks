@@ -13,10 +13,10 @@ import { NoHealthyAccountError, defaultQuotaCeilingPercent, agentEnvironmentRoot
 import { environmentKinds, type AgentEnvironment, type EnvironmentKind, type MasterConfig } from './master/profiles.js';
 import { readCredentialFile } from './private-file.js';
 import { masterConfinementVariable } from './master/confinement.js';
-import { smokeRegistryAccount } from './runner/roles.js';
+import { planModelUnused, smokeRegistryAccount } from './runner/roles.js';
 import { fleetOrder, roleUnsupported } from './model/worker-preference.js';
 import type { SmokeResult } from './runner/pi.js';
-import { accountIneligibility, lastGoodUsage, deriveAccountPlan, fleetRoles, liveSessions, roleLimit, proposedConcurrency, proposedRuntimeRoles, proposedRuntimes, rolePolicy, roleRuntimeKinds, roleRuntimeRefusal, smokeFailureDue, smokeTestedKinds, type AccountKey, type AgentRegistry, type RolePolicy, type FleetAccount, type FleetAccountInput, type FleetModel, type FleetRole, type FleetRoleName, type FleetRuntime, type FleetSession, type LaunchContract, type QuotaObservation, type RunOutcome, type SessionSkip, type SmokeObservation } from './model/registry.js';
+import { accountIneligibility, lastGoodUsage, deriveAccountPlan, pinnedInstall, fleetRoles, liveSessions, roleLimit, proposedConcurrency, proposedRuntimeRoles, proposedRuntimes, rolePolicy, roleRuntimeKinds, roleRuntimeRefusal, smokeFailureDue, smokeTestedKinds, type AccountKey, type AgentRegistry, type RolePolicy, type FleetAccount, type FleetAccountInput, type FleetModel, type FleetRole, type FleetRoleName, type FleetRuntime, type FleetSession, type LaunchContract, type QuotaObservation, type RunOutcome, type SessionSkip, type SmokeObservation } from './model/registry.js';
 import { hostAccountCheck, recordHostAccountCheck, clearEndedHostAccountSessions, clearHostAccountSession, hostAccountSessions, registerHostAccountSession } from './host-accounts.js';
 export { exhaustionTail, outOfCreditsScreen } from './exhaustion-screen.js';
 
@@ -208,9 +208,8 @@ export async function checkAccountLive(account: FleetAccount, runtime: FleetRunt
     try { result = await (probe.smoke ?? (target => smokeRegistryAccount(target, { timeoutMs: probe.smokeTimeoutMs })))(target); }
     catch (error) { result = { ok: false, error: String(error) }; }
     const said = result.ok ? null : (result.error || 'The live request failed').replace(/[\u0000-\u001f\u007f\s]+/g, ' ').trim().slice(0, 500);
-    // GY-3592: OpenCode's free-model refusal on an account whose model has its own provider says the plan's model never ran, not that the plan is spent.
-    const reason = said && model && /^(?!opencode\/)[^/]+\//.test(model) && /\bfree usage limit reached\b|\bFreeUsageLimitError\b/i.test(said)
-      ? `${account.name}'s plan model ${model} could not be used: OpenCode answered on its free model instead` : said;
+    // GY-3592: OpenCode answering on another model says the plan's model never ran, not that the plan is spent.
+    const reason = said && planModelUnused(said, model) ? `${account.name}'s plan model ${model} was not used: OpenCode answered on another model` : said;
     // The answer to a one-word prompt is the provider's alone, never an agent's prose, so any runtime's limit notice reads as one.
     const limited = !!reason && liveLimitNotices().some(notice => notice.test(reason));
     const stated = limited ? runtimeResetTime(reason, runtime.launch.kind, now) : null;
@@ -360,10 +359,14 @@ export function installDirectory(program: string): string | null {
 
 /** A proposed runtime launched from its resolved install directory, with mise kept off every config. */
 export function pinRuntime(runtime: FleetRuntime, install: (program: string) => string | null = installDirectory): FleetRuntime {
-  const directory = install(launchRecipe(runtime.launch.kind)?.program ?? runtime.launch.kind);
+  const program = launchRecipe(runtime.launch.kind)?.program ?? runtime.launch.kind, directory = install(program);
   if (!directory) return runtime;
   const path = [directory, ...(process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin').split(':').filter(entry => entry && entry !== directory)].join(':');
-  return { ...runtime, launch: { ...runtime.launch, environment: { ...runtime.launch.environment, PATH: path, MISE_NO_CONFIG: '1' } } };
+  const environment: Record<string, string> = { ...runtime.launch.environment, PATH: path, MISE_NO_CONFIG: '1' }, pinned = { ...runtime, launch: { ...runtime.launch, environment } };
+  // GY-3592: the version mise is told to run is the one the PATH entry names, so the two never disagree.
+  const version = pinnedInstall(pinned)?.version;
+  if (version) environment[`MISE_${program.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_VERSION`] = version;
+  return pinned;
 }
 
 /**
