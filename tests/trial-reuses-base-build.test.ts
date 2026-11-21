@@ -113,8 +113,10 @@ test(`${own} — two trials on one base commit build the tip once, the second ba
   // AC-1: both verdicts match the run without reuse, and the base tip's build ran once.
   assert.equal(first.outcome.outcome, 'merged', JSON.stringify(first.outcome));
   assert.equal(second.outcome.outcome, 'merged', JSON.stringify(second.outcome));
-  assert.deepEqual(first.trial?.proofs?.[proof], plainA.trial?.proofs?.[proof]);
-  assert.deepEqual(second.trial?.proofs?.[proof], plainB.trial?.proofs?.[proof]);
+  for (const [reuse, plain] of [[first, plainA], [second, plainB]] as const) {
+    const verdict = ({ build, tests, proofs }: TrialEvent) => ({ build, tests, proofs });
+    assert.deepEqual(verdict(reuse.trial!), verdict(plain.trial!), 'the verdict matches the run without reuse');
+  }
   assert.ok(existsSync(kept1) && existsSync(keptBaseBuildMarker(kept1)), 'the tip\'s built tree stays kept');
   assert.equal(builds.filter(cwd => cwd === kept1).length, 1, `the base tip's build ran once: ${JSON.stringify(builds)}`);
   assert.ok(!first.steps.includes('build: reused'), 'the first trial built the base tip itself');
