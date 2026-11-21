@@ -393,7 +393,7 @@ async function launchWorker(root: string, config: MasterConfig, work: Work, prof
       // a worker never reaches the operator's keyring, and no Herdr pane is opened for it.
       // GY-3405: an added host open to sessions takes the run when it has room; its login is handed over for this session only.
       const environment = { GRAPHYARD_URL: config.url, GRAPHYARD_TOKEN_FILE: profile.credentialFile!, GRAPHYARD_HOST_ID: config.hostId, GRAPHYARD_HERDR_AGENT_KIND: launch.kind!, ...(process.env.XDG_RUNTIME_DIR ? { XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR } : {}), ...(process.env.DBUS_SESSION_BUS_ADDRESS ? { DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS } : {}), ...withVerificationPath(sessionHarness.environment, launch.environment) };
-      const host = await remoteSessionHost(launch.kind!, liveWorkerHosts(root)).catch(() => null);
+      const host = await remoteSessionHost(launch.kind!, () => liveWorkerHosts(root)).catch(() => null);
       const forwarded = [...Object.keys(environment), 'VITEST_MAX_WORKERS', 'PLAYWRIGHT_WORKERS'].filter(name => !['GRAPHYARD_TOKEN_FILE', 'GRAPHYARD_TOKEN', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'PATH'].includes(name));
       const remote = host ? { host, words: [process.execPath, config.cliPath, 'host', 'session', host, ...runtimeLoginHomes(launch.environment, launch.contract?.homeVariable, launch.kind).flatMap(home => ['--home', home]), ...forwarded.flatMap(name => ['--env', name]), '--cli', config.cliPath, '--'] } : undefined;
       const started = await startHeadlessWorker({ remote, name: profile.agentName, work: work.key, subject: `${work.key}: ${work.title}`, epoch: prepared.epoch, principal: profile.principal, account: launch.account ?? null,

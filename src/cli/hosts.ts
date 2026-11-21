@@ -33,13 +33,14 @@ export const hostCommands = defineCommands([{
       await setHostSessions(target, Number(context.args[1]));
       console.log(Number(context.args[1]) ? `${target} takes up to ${Number(context.args[1])} agent sessions at once from the loop's next dispatch.` : `${target} takes test shards only.`);
     } else if (context.id === 'session' && target) {
-      // The worker launcher's own form under watch: host session TARGET [--home DIR]… [--env NAME]… --cli PATH -- RUNTIME ARGS…
+      // The worker launcher's own form under watch: host session TARGET [--home DIR]… [--env NAME]… [--confine JSON] --cli PATH -- RUNTIME ARGS…
       const separator = context.args.indexOf('--'), flags = context.args.slice(1, separator);
       const values = (flag: string) => flags.flatMap((word, index) => word === flag && flags[index + 1] ? [flags[index + 1]!] : []);
       const cli = values('--cli')[0];
       if (separator < 0 || !cli || !context.args[separator + 1]) throw new Error('Usage: graphyard host session USER@HOST [--home DIR]... [--env NAME]... --cli PATH -- COMMAND ARGS');
       const env = Object.fromEntries(values('--env').flatMap(name => process.env[name] === undefined ? [] : [[name, process.env[name]!]]));
-      process.exitCode = await runRemoteSession({ target, worktree: process.cwd(), homes: values('--home'), cli, argv: context.args.slice(separator + 1), env });
+      const confine = values('--confine')[0];
+      process.exitCode = await runRemoteSession({ target, worktree: process.cwd(), homes: values('--home'), cli, argv: context.args.slice(separator + 1), env, confine: confine ? JSON.parse(confine) as string[] : [] });
     } else if (context.id === 'remove' && target) {
       console.log((await removeHost(target)).removed ? `Removed ${target}.` : `${target} was not added.`);
     } else if (context.id === 'list' || !context.id) {

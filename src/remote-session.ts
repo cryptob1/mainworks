@@ -121,6 +121,8 @@ export interface RemoteSession {
   /** This machine's CLI, which the relayed calls run; the session's `graphyard` at the same path is the relay. */
   cli: string;
   argv: string[]; env: Record<string, string>;
+  /** This machine's confinement words for the session, which every relayed call runs under, as a local worker's calls do. */
+  confine?: string[];
   run?: ChildRun; image?: string; output?: NodeJS.WritableStream; errors?: NodeJS.WritableStream;
 }
 
@@ -168,7 +170,8 @@ export async function runRemoteSession(input: RemoteSession): Promise<number> {
         try {
           await take(commits);
           const before = await git('rev-parse', 'HEAD');
-          const ran = await new Promise<{ status: number; stdout: string; stderr: string }>(done => execFile(process.execPath, [input.cli, ...argv], { cwd: input.worktree, maxBuffer: 64 * 1024 * 1024 },
+          const [program, ...words] = [...input.confine ?? [], process.execPath, input.cli, ...argv];
+          const ran = await new Promise<{ status: number; stdout: string; stderr: string }>(done => execFile(program!, words, { cwd: input.worktree, maxBuffer: 64 * 1024 * 1024 },
             (error, stdout, stderr) => done({ status: error ? (typeof error.code === 'number' ? error.code : 1) : 0, stdout: String(stdout), stderr: String(stderr) })));
           const after = await git('rev-parse', 'HEAD');
           let back: string | null = null;
@@ -202,10 +205,10 @@ export async function runRemoteSession(input: RemoteSession): Promise<number> {
 }
 
 /** An added host open to sessions with room for one more of `kind`, answering its probe now; null keeps the session on this machine. */
-export async function remoteSessionHost(kind: string, live: readonly string[], run: ChildRun = defaultChildRun, file?: string): Promise<string | null> {
+export async function remoteSessionHost(kind: string, live: () => readonly string[], run: ChildRun = defaultChildRun, file?: string): Promise<string | null> {
   if (!remoteRuntimes.includes(kind)) return null;
   for (const host of await readHosts(file).catch(() => [])) {
-    if (!host.sessions || live.filter(target => target === host.target).length >= host.sessions) continue;
+    if (!host.sessions || live().filter(target => target === host.target).length >= host.sessions) continue;
     if ((await probeHost(host.target, run)).ok) return host.target;
   }
   return null;

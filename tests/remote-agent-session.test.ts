@@ -71,11 +71,11 @@ const exec = (command: string, args: string[], options: { cwd: string; env: Reco
 });
 
 test(`${proof} — a host opened to sessions takes a worker of a runtime its image holds, and only up to its count`, async () => {
-  assert.equal(await remoteSessionHost('codex', [], undefined, hostsFile), null, 'a host added for shards takes no session');
+  assert.equal(await remoteSessionHost('codex', () => [], undefined, hostsFile), null, 'a host added for shards takes no session');
   await setHostSessions(target, 1, { file: hostsFile });
-  assert.equal(await remoteSessionHost('codex', [], undefined, hostsFile), target);
-  assert.equal(await remoteSessionHost('codex', [target], undefined, hostsFile), null, 'a host with its one session running takes no second');
-  assert.equal(await remoteSessionHost('claude', [], undefined, hostsFile), null, 'a runtime the image lacks stays on this machine');
+  assert.equal(await remoteSessionHost('codex', () => [], undefined, hostsFile), target);
+  assert.equal(await remoteSessionHost('codex', () => [target], undefined, hostsFile), null, 'a host with its one session running takes no second');
+  assert.equal(await remoteSessionHost('claude', () => [], undefined, hostsFile), null, 'a runtime the image lacks stays on this machine');
 });
 
 test(`${proof} — the worker session runs on the added host and completes its item; its run names where it ran`, { timeout: 300_000 }, async () => {

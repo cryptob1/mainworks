@@ -344,7 +344,7 @@ export interface HeadlessWorker extends HeadlessAccountLaunch {
   timeoutMs: number;
   /** How long the start is watched; `workerStartupMs` by default. */
   startupMs?: number;
-  /** GY-3405: the added host the session runs on, and the `graphyard host session …` words that run it there in place of this machine's confinement. */
+  /** GY-3405: the added host the session runs on, and the `graphyard host session … --` words that run it there in place of this machine's confinement. */
   remote?: { host: string; words: string[] };
   /** Hears a run that outlived its startup observation end, with what it printed, once its process has ended. */
   settle?: (ended: { output: string; ok: boolean }) => Promise<unknown>;
@@ -365,7 +365,9 @@ export async function startHeadlessWorker(input: HeadlessWorker): Promise<{ id: 
   const record: HeadlessWorkerRecord = { id, name: input.name, work: input.work, epoch: input.epoch, principal: input.principal, account: input.account, kind: launch.kind, subject: input.subject.slice(0, 300), startedAt: new Date().toISOString(), ...(input.remote ? { host: input.remote.host } : {}) };
   writeFileSync(join(directory, sessionFile), JSON.stringify(record), { mode: 0o600 });
   const env = runEnvironment(process.env, { ...launch.environment, GRAPHYARD_RUN_LOG: join(directory, runLogName) });
-  const argv = [...input.supervisor, ...input.remote?.words ?? launch.wrapper, ...await headlessArgv(launch, launch.request, env)];
+  // GY-3405: on a host the container confines the runtime; its relayed `graphyard` calls run here under this machine's confinement, as a local worker's do.
+  const remote = input.remote && (launch.wrapper.length ? [...input.remote.words.slice(0, -1), '--confine', JSON.stringify(launch.wrapper), '--'] : input.remote.words);
+  const argv = [...input.supervisor, ...remote ?? launch.wrapper, ...await headlessArgv(launch, launch.request, env)];
   const stop = new AbortController(), detached = new AbortController();
   const running = input.exec(argv[0]!, argv.slice(1), { cwd: input.directory, env, timeoutMs: input.timeoutMs, signal: stop.signal, run: directory, detached: detached.signal });
   const ended = await Promise.race([running.then(() => ({ ok: true }), () => ({ ok: false })), new Promise<null>(done => setTimeout(() => done(null), input.startupMs ?? workerStartupMs).unref())]);
