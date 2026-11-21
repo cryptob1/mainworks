@@ -57,7 +57,9 @@ const visibleText = (page: Page) => page.evaluate(() => {
   const walker = document.createTreeWalker(document.querySelector('main')!, NodeFilter.SHOW_TEXT);
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     const parent = node.parentElement!;
-    if (!parent.getClientRects().length || getComputedStyle(parent).visibility === 'hidden') continue;
+    const fold = parent.closest('details:not([open])');
+    if (fold && !fold.querySelector(':scope > summary')!.contains(parent)) continue;
+    if (!parent.checkVisibility({ visibilityProperty: true })) continue;
     out.push(node.textContent!);
   }
   return out.join(' ');
@@ -121,7 +123,8 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
     // Test cases: an empty library is one line and one button for an admin.
     await go(page, 'Tests', 'Test cases');
     await expect(main).toContainText('No test cases yet.');
-    await expect(main.getByRole('button')).toHaveCount(1);
+    await expect(main.locator('button:not(.top-bar button)')).toHaveCount(1);
+    await expect(main.getByRole('button', { name: '＋ New test case' })).toBeVisible();
     await expect(main).not.toContainText('Versioned scenarios');
     await expect(main).not.toContainText('Definitions live here');
     await plain(page);

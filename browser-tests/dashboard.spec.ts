@@ -285,8 +285,9 @@ test('reader has no creation controls; graph filters and search still work', asy
   await expect(page.getByRole('heading', { name: 'Browser fixture' })).toHaveCount(0);
   await page.getByLabel('Search work').fill('GY-1');
   await expect(page.getByRole('heading', { name: 'Browser fixture' })).toBeVisible();
-  await openPage(page, 'Tests', 'Test cases');
-  await expect(page.getByRole('heading', { name: 'Test-case library' })).toBeVisible();
+  // GY-3485: an empty test-case library is no tab for a reader, so there is nothing to create from.
+  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Tests', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Test cases', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '＋ New test case' })).toHaveCount(0);
 });
 
@@ -448,11 +449,11 @@ test('scenario loading, failure, retry and real empty library are distinct', asy
   });
   await login(page); await openPage(page, 'Tests', 'Test cases');
   await expect(page.getByRole('status')).toHaveText('Loading test cases…');
-  await expect(page.getByText('Describe the behavior you need to prove.')).toHaveCount(0);
+  await expect(page.getByText('No test cases yet.')).toHaveCount(0);
   release(); await expect(page.getByRole('alert')).toContainText('unavailable');
-  await expect(page.getByText('Describe the behavior you need to prove.')).toHaveCount(0);
+  await expect(page.getByText('No test cases yet.')).toHaveCount(0);
   failing = false; await page.getByRole('button', { name: 'Retry loading test cases' }).click();
-  await expect(page.getByText('Describe the behavior you need to prove.')).toBeVisible();
+  await expect(page.getByText('No test cases yet.')).toBeVisible();
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
@@ -478,7 +479,7 @@ test('a failed re-read keeps already-observed test cases visible and marks them 
   await expect(page.getByRole('alert')).toContainText('unavailable');
   await expect(page.getByRole('heading', { name: 'Saved case' })).toBeVisible();
   await expect(page.getByText('Previously loaded definitions are shown; they may be stale.')).toBeVisible();
-  await expect(page.getByText('Describe the behavior you need to prove.')).toHaveCount(0);
+  await expect(page.getByText('No test cases yet.')).toHaveCount(0);
 });
 
 test('a failed re-read reports unknown contents instead of claiming an empty or shown library', async ({ page }) => {
@@ -486,10 +487,10 @@ test('a failed re-read reports unknown contents instead of claiming an empty or 
   await page.route('**/api/scenarios', route => route.request().method() === 'POST' ? (reads = true, route.fulfill({ json: savedScenario }))
     : reads ? route.fulfill({ status: 503, json: { error: 'Runner catalog unavailable' } }) : route.fulfill({ json: [] }));
   await login(page); await openPage(page, 'Tests', 'Test cases');
-  await expect(page.getByText('Describe the behavior you need to prove.')).toBeVisible();
+  await expect(page.getByText('No test cases yet.')).toBeVisible();
   await publishCase(page, 'published-case');
   await expect(page.getByRole('alert')).toContainText('unavailable');
-  await expect(page.getByText('Describe the behavior you need to prove.')).toHaveCount(0);
+  await expect(page.getByText('No test cases yet.')).toHaveCount(0);
   await expect(page.getByText('Previously loaded definitions are shown; they may be stale.')).toHaveCount(0);
   await expect(page.getByText('The library could not be re-read; its current contents are unknown.')).toBeVisible();
   await expect(page.getByText('Test cases could not be re-read. Retry to observe the library.')).toBeVisible();
@@ -515,11 +516,11 @@ test('a rejected publish leaves a confirmed empty library reported as empty', as
   await page.route('**/api/scenarios', route => route.request().method() === 'POST'
     ? route.fulfill({ status: 400, json: { error: 'Stable ID exceeds 100 characters' } }) : route.fulfill({ json: [] }));
   await login(page); await openPage(page, 'Tests', 'Test cases');
-  await expect(page.getByText('Describe the behavior you need to prove.')).toBeVisible();
+  await expect(page.getByText('No test cases yet.')).toBeVisible();
   await publishCase(page, 'rejected-case');
   await expect(page.getByRole('alert')).toContainText('Stable ID exceeds 100 characters');
   await page.getByRole('button', { name: 'Close form' }).click();
-  await expect(page.getByText('Describe the behavior you need to prove.')).toBeVisible();
+  await expect(page.getByText('No test cases yet.')).toBeVisible();
   await expect(page.getByRole('alert')).toHaveCount(0);
   await expect(page.getByText('The library could not be re-read; its current contents are unknown.')).toHaveCount(0);
   await expect(page.getByText('Test cases could not be re-read. Retry to observe the library.')).toHaveCount(0);
@@ -531,7 +532,7 @@ test('a publish error is not carried into the next form', async ({ page }) => {
     ? (reject ? route.fulfill({ status: 400, json: { error: 'Stable ID exceeds 100 characters' } }) : route.fulfill({ json: savedScenario }))
     : route.fulfill({ json: [] }));
   await login(page); await openPage(page, 'Tests', 'Test cases');
-  await expect(page.getByText('Describe the behavior you need to prove.')).toBeVisible();
+  await expect(page.getByText('No test cases yet.')).toBeVisible();
   await publishCase(page, 'rejected-case');
   await expect(page.getByRole('alert')).toContainText('Stable ID exceeds 100 characters');
   await page.getByRole('button', { name: 'Close form' }).click();

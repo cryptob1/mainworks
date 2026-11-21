@@ -172,19 +172,21 @@ test('integration:dashboard-navigation — one sidebar (Work, Master, Workers, S
   assert.match(sidebar, />Help</, 'the guide is linked from the sidebar');
 
   // Admin-only pages are hidden from reader and worker sessions, even when configured.
-  const configured = { validation: true, releases: true, automation: true };
+  const configured = { validation: true, releases: true, automation: true, scenarios: true };
   assert.deepEqual(tabs(dashboard({}, 'reader', configured), 'agents'), ['Agents', 'Delivery'], 'a reader sees Agents and Delivery, not Setup');
   assert.deepEqual(tabs(dashboard({}, 'reader', configured), 'tests'), ['Tests', 'Test cases']);
   assert.ok(!labels(dashboard({}, 'worker', configured)).includes('Settings'), 'a worker has nothing to configure');
   for (const role of ['reader', 'worker']) assert.ok(!visibleViews(dashboard({}, role, configured)).some(view => view.adminOnly), role);
   // A feature with nothing configured is hidden, not rendered as an empty explainer; an unknown one stays.
   const probed = await probeFeatures(async path => path === 'operator-agents' ? [] : { environments: [], releases: [], requests: [], candidates: [] }, true, false);
-  assert.deepEqual(probed.features, { releases: false, validation: false, automation: false });
+  assert.deepEqual(probed.features, { releases: false, validation: false, automation: false, scenarios: false });
+  assert.deepEqual(tabs(dashboard({}, 'reader', probed.features), 'tests'), [], 'an empty test-case library is no tab for a reader');
+  assert.deepEqual(tabs(dashboard({}, 'admin', probed.features), 'tests'), ['Tests', 'Test cases'], 'the admin who fills it keeps the tab');
   const none = dashboard({}, 'admin', probed.features);
   assert.deepEqual(tabs(none, 'shipped'), [], 'Delivered alone draws no tab row');
   assert.deepEqual(tabs(none, 'agents'), ['Agents', 'Setup', 'Delivery'], 'no Advanced fold while automation is unconfigured');
   const failing = await probeFeatures(async () => { throw new Error('unavailable'); }, true, false);
-  assert.deepEqual(failing.features, { releases: null, validation: false, automation: null }, 'an outage never hides a page');
+  assert.deepEqual(failing.features, { releases: null, validation: false, automation: null, scenarios: null }, 'an outage never hides a page');
   // An outage and an empty registry mean opposite things, so the page never reports one as the other.
   assert.equal(probed.operatorAgentsError, null);
   assert.equal(failing.operatorAgentsError, 'unavailable');

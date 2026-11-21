@@ -71,8 +71,8 @@ export const views: readonly View[] = [
   // Every test case with its latest trusted result and history (GY-162). It is shown even before the
   // first run, as never run, rather than hidden; operator agents' scoped API refuses its read.
   { id: 'tests', icon: '⚗', label: 'Tests', section: 'tests', visible: dashboard => role(dashboard) !== 'operator-agent', render: dashboard => <TestsPage api={dashboard.api} canEdit={role(dashboard) === 'admin'} setView={dashboard.setView} openItem={dashboard.setSelected}/> },
-  // The library of test cases sits beside their results, under Tests (GY-3297).
-  { id: 'scenarios', icon: '✓', label: 'Test cases', section: 'tests', render: dashboard => <ScenarioLibrary api={dashboard.api} canEdit={role(dashboard) === 'admin'}/> },
+  // The library of test cases sits beside their results, under Tests (GY-3297); an empty library only for the admin who fills it (GY-3485).
+  { id: 'scenarios', icon: '✓', label: 'Test cases', section: 'tests', visible: dashboard => role(dashboard) === 'admin' || configured(dashboard.features.scenarios), render: dashboard => <ScenarioLibrary api={dashboard.api} canEdit={role(dashboard) === 'admin'}/> },
   // The product brief, kept by the master in project memory and mirrored here read-only (GY-3274): what the product is for, beside the master that keeps it.
   { id: 'product', icon: '◎', label: 'Product', section: 'master', render: dashboard => <ProductPage api={dashboard.api}/> },
   // What the agents spent (GY-3289): tokens and cost from the price sheet, beside the sessions that spent them.

@@ -51,6 +51,8 @@ test('e2e:app-test-environments — the Tests view\'s Where tests run block show
     const primary = page.getByRole('navigation', { name: 'Primary' });
     await primary.getByRole('button', { name: 'Tests', exact: true }).click();
 
+    // GY-3485: the block sits in the Tests page's Details fold.
+    await page.getByRole('main').getByText('Details', { exact: true }).click();
     const block = page.getByRole('region', { name: 'Where tests run' });
     await expect(block).toBeVisible({ timeout: 15_000 });
     await expect(block).toContainText('Where the app under test runs. The test runner itself always runs on this host.');
@@ -82,6 +84,7 @@ test('e2e:app-test-environments — the Tests view\'s Where tests run block show
     const menu = page.getByRole('button', { name: 'Menu' });
     if (await menu.getAttribute('aria-expanded') !== 'true') await menu.click();
     await primary.getByRole('button', { name: 'Tests', exact: true }).click();
+    await page.getByRole('main').getByText('Details', { exact: true }).click();
     await expect(block).toBeVisible({ timeout: 15_000 });
     await expect(local).toContainText('Every merge trial and batch gate');
     await expect(staging).toContainText('environment fault, retried 5 min ago in 42 s');
