@@ -51,7 +51,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
     await page.getByRole('button', { name: 'Every request and answer →' }).click();
     await expect(page.getByText('Signed in as')).toContainText('operator · human operator');
     const card = page.locator('.human-request');
-    await expect(card.getByRole('button', { name: 'Decline' })).toBeVisible();
+    await expect(card.getByRole('button', { name: 'Decline this request' })).toBeVisible();
     await expect(card.getByText('graphyard answer', { exact: false })).toBeHidden();
     // One click is the whole answer.
     await card.getByRole('button', { name: 'Approve up to €50/month' }).click();

@@ -63,6 +63,6 @@ export default function WorkCard({ item, all, repository, now, onOpen, group: gi
       ? <><Agent id={item.lease.owner}/> is running {item.key}</>
       : actor.who}</span>
     <span className="row-time">{timed ? <StatusAge held={held}/> : group === 'needs-you' && waited !== null ? <span className="waited">Waiting {formatDuration(waited / 60000)}</span> : null}</span>
-    {group === 'needs-you' && <button type="button" className="decide" onClick={e => { e.stopPropagation(); onOpen(item.id); }}>{!item.humanRequest && item.blocker ? 'Unblock' : 'Decide'}</button>}
+    {group === 'needs-you' && <button type="button" className="decide" onClick={e => { e.stopPropagation(); onOpen(item.id); }}>{!item.humanRequest && item.blocker ? 'Unblock item' : 'Review request'}</button>}
   </div>;
 }
