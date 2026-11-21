@@ -111,7 +111,7 @@ export interface LoginViewProps {
 export function LoginView({ state, error, draftToken, setDraftToken, submit, retry, useAnotherToken }: LoginViewProps) {
   const escape = <button type="button" className="text-button login-escape" onClick={useAnotherToken}>Use another token</button>;
   return <main className="login">
-    <div className="brand"><img className="mark" src="/graphyard-symbol.svg" alt="" width="32" height="32"/> graphyard</div>
+    <div className="brand"><img className="mark" src="/favicon.svg" alt="" width="32" height="32"/> graphyard</div>
     <h1>Keep the work<br/>moving forward.</h1>
     <p className="login-tagline">One place for ownership, evidence, and delivery.</p>
     {state.kind === 'form' && <form className="login-form" method="post" onSubmit={e => { e.preventDefault(); submit(); }}>

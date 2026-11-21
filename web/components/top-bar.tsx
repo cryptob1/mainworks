@@ -143,7 +143,7 @@ const meaning = (label: string): GlossaryTerm | null => {
  * at all. An open item keeps the repository and release line, with its own Back control.
  *
  * The project's emblem (GY-3273) rides beside the repository name through an `<img>` of
- * `/favicon.svg`: the master's drawing once one is stored, the default Graphyard mark until then.
+ * `/favicon.svg`: the master's drawing once one is stored, the default Mainworks mark until then.
  * An image never runs script, and the same route serves the page's favicon, so one address is the
  * whole feature.
  */
