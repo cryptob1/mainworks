@@ -123,7 +123,9 @@ export async function smokeRegistryAccount(account: FleetLaunchAccount, options:
   if (account.kind !== 'pi') {
     const env = runEnvironment(process.env, { ...launch.environment, ...key });
     try {
-      const args = [...launch.args, ...(account.fleet.contract.modelFlag && account.fleet.modelId ? [account.fleet.contract.modelFlag, account.fleet.modelId] : [])];
+      // GY-3592: `opencode run` takes --model though its contract names no flag (the TUI refuses it); unnamed, OpenCode answers on its free model.
+      const modelFlag = account.fleet.contract.modelFlag ?? (account.kind === 'opencode' ? '--model' : null);
+      const args = [...launch.args, ...(modelFlag && account.fleet.modelId ? [modelFlag, account.fleet.modelId] : [])];
       const [command, ...argv] = await headlessArgv({ kind: account.kind, args, contract: account.fleet.contract }, 'Reply with the single word OK.', env);
       const output = await runChild(options.command ?? command, [...(options.commandArgs ?? []), ...argv], { env, cwd: options.cwd ?? account.home ?? undefined, timeoutMs: options.timeoutMs ?? 120_000 });
       // Print-mode runtimes can report provider errors with exit zero (OpenCode).

@@ -207,7 +207,10 @@ export async function checkAccountLive(account: FleetAccount, runtime: FleetRunt
     let result: SmokeResult;
     try { result = await (probe.smoke ?? (target => smokeRegistryAccount(target, { timeoutMs: probe.smokeTimeoutMs })))(target); }
     catch (error) { result = { ok: false, error: String(error) }; }
-    const reason = result.ok ? null : (result.error || 'The live request failed').replace(/[\u0000-\u001f\u007f\s]+/g, ' ').trim().slice(0, 500);
+    const said = result.ok ? null : (result.error || 'The live request failed').replace(/[\u0000-\u001f\u007f\s]+/g, ' ').trim().slice(0, 500);
+    // GY-3592: OpenCode's free-model refusal on an account whose model has its own provider says the plan's model never ran, not that the plan is spent.
+    const reason = said && model && /^(?!opencode\/)[^/]+\//.test(model) && /\bfree usage limit reached\b|\bFreeUsageLimitError\b/i.test(said)
+      ? `${account.name}'s plan model ${model} could not be used: OpenCode answered on its free model instead` : said;
     // The answer to a one-word prompt is the provider's alone, never an agent's prose, so any runtime's limit notice reads as one.
     const limited = !!reason && liveLimitNotices().some(notice => notice.test(reason));
     const stated = limited ? runtimeResetTime(reason, runtime.launch.kind, now) : null;
