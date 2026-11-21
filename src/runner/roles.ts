@@ -16,6 +16,7 @@ import { claimRunWatch, liveRun, runsDirectory, superviseRun, writeRunOwner, typ
 import { evidencePayloadSchema, graphyardTools, piRuntimeSchema, type EvidencePayload } from './payloads.js';
 import { runRecord, type RunOptions, type RunRecord, type RunResult, type Runner } from './types.js';
 import { projectMemoryDigest, type ProjectMemory } from '../model/project-memory.js';
+import { parseProbeFailure } from '../model/account-quota.js';
 
 /**
  * A child-process spawner that puts the coordinator confinement (GY-888) before a spawned command:
@@ -104,13 +105,8 @@ export function registryRunner(account: FleetLaunchAccount, extraArgs: string[] 
 }
 /** The JSON events in a print-mode run's output that report a failure. */
 const failureEvents = (output: string) => output.split('\n').flatMap(line => {
-  try { const event = JSON.parse(line); return event && (event.type === 'error' || event.type === 'turn.failed' || event.is_error === true) ? [event] : []; } catch { return []; }
+  try { const event = JSON.parse(line); return event && (event.type === 'error' || event.type === 'turn.failed' || event.is_error === true || !!event.api_error) ? [event] : []; } catch { return []; }
 });
-/** The provider's own words in a failed run's output (GY-3555): each failure event's message, never the tail of a JSON line. */
-function providerWords(output: string) {
-  const words = failureEvents(output).flatMap(event => [event.result, event.error?.message, event.error, event.message].filter(text => typeof text === 'string' && text.trim()).slice(0, 1));
-  return (words.length ? words.join(' ') : output).trim().slice(-500);
-}
 /**
  * The one-prompt smoke test of a registry account (GY-446): its runtime, login home, key and model,
  * none of a role's policy. A key file that cannot be read fails the test with that reason.
@@ -129,10 +125,10 @@ export async function smokeRegistryAccount(account: FleetLaunchAccount, options:
       // Print-mode runtimes can report provider errors with exit zero (OpenCode).
       const failure = failureEvents(output).length > 0;
       const answered = /\bOK\b/i.test(output);
-      return { ok: answered && !failure, error: failure ? Object.values(key).reduce((text, secret) => text.replaceAll(secret, '[redacted]'), providerWords(output)) : answered ? null : 'The smoke request returned no answer' };
+      return { ok: answered && !failure, error: failure ? Object.values(key).reduce((text, secret) => text.replaceAll(secret, '[redacted]'), parseProbeFailure(output).reason) : answered ? null : 'The smoke request returned no answer' };
     } catch (error) {
-      const message = error instanceof ChildProcessError ? error.stderr || error.stdout || error.message : String(error);
-      return { ok: false, error: Object.values(key).reduce((text, secret) => text.replaceAll(secret, '[redacted]'), providerWords(message)) };
+      const message = error instanceof ChildProcessError ? [error.stdout, error.stderr].filter(Boolean).join('\n') || error.message : String(error);
+      return { ok: false, error: Object.values(key).reduce((text, secret) => text.replaceAll(secret, '[redacted]'), parseProbeFailure(message).reason) };
     }
   }
   return piSmoke({ command: options.command ?? launch.command, commandArgs: options.commandArgs, model: launch.model, args: launch.args, environment: { ...launch.environment, ...key } },

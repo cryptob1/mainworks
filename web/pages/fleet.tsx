@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { capabilityTiers, fleetRoles, groupAccountsByPlan, looksLikeSecret, quotaStates, unspecifiedModel, type FleetAccountView, type FleetView, type RolePolicy } from '../../src/model/registry';
+import { parseProbeFailure } from '../../src/model/account-quota';
 import { formatAge } from '../../src/model/duration';
 import { sealForHost } from '../seal';
 import type { Dashboard } from './dashboard';
-import { accountStatus, chipTones, countdown, launchFailure, localTime, monthDay, plainReason, roleLabels, roleLaunch, unconfiguredRoles, type AccountStatus, type RoleLaunch } from '../agent-status';
+import { accountStatus, backAt, chipTones, countdown, launchFailure, localTime, monthDay, plainReason, roleLabels, roleLaunch, unconfiguredRoles, type AccountStatus, type RoleLaunch } from '../agent-status';
 import { MoreDetails, PageHeader, PageSection } from '../components/page-layout';
 
 const when = (iso: string | null) => iso ? new Date(iso).toLocaleString() : '—';
@@ -143,7 +144,12 @@ export function UsageBars({ plan }: { plan: FleetPlan | null }) {
  * ineligible reason as one short phrase (GY-3482) — `raw` keeps the full text for the cell's title.
  */
 export function whyText(account: FleetAccountView, status: AccountStatus, fleet: Pick<FleetView, 'sessions'>, now: number): { text: string; raw: string } {
-  if (status.chip === 'idle' || (status.chip === 'spent' && status.until && account.quota === 'exhausted')) return { text: '', raw: '' };
+  if (status.chip === 'idle') return { text: '', raw: '' };
+  if (status.chip === 'spent' && account.quota === 'exhausted') {
+    const sentence = account.reason ? parseProbeFailure(account.reason, now).reason.replace(/[{}"]/g, '').trim() : '';
+    const back = status.until ? backAt(status.until) : '';
+    return { text: [sentence, back].filter(Boolean).join(' · ') || 'Limit reached', raw: '' };
+  }
   if (status.chip === 'working') {
     const full = account.maxSessions !== null && account.liveSessions.length >= account.maxSessions;
     const text = `${account.liveSessions.map(session => `${session.role}${session.work ? ` on ${session.work}` : ''}`).join(', ')}${full ? ` (at its limit of ${account.maxSessions})` : ''}`;
@@ -151,7 +157,7 @@ export function whyText(account: FleetAccountView, status: AccountStatus, fleet:
   }
   const raw = status.chip === 'launch-failing' || status.chip === 'spent' ? launchFailure(account, fleet, now)?.reason ?? status.reason : status.reason;
   const text = plainReason(raw, status.chip === 'launch-failing' ? 'Launch failed' : 'Unavailable');
-  return { text: text === 'Limit reached' && status.until ? `Limit reached · back ${monthDay(status.until)}` : text, raw: text === raw ? '' : raw };
+  return { text: text === 'Limit reached' && status.until ? `Limit reached · ${backAt(status.until)}` : text, raw: text === raw ? '' : raw };
 }
 
 /** Accounts read working, then idle, then out of work: failing, unavailable, spent, role-less, disabled. */

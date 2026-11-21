@@ -478,14 +478,14 @@ export interface SmokeResult { ok: boolean; error: string | null }
  * message, else its stderr, else its exit), with every `redact` value removed.
  */
 export function piSmoke(configured: { command: string; model: string; args?: string[]; environment?: Record<string, string>; commandArgs?: string[]; spawn?: typeof spawn }, options: { cwd?: string; timeoutMs?: number; redact?: string[] } = {}): Promise<SmokeResult> {
-  const clean = (value: string) => bounded((options.redact ?? []).filter(Boolean).reduce((text, secret) => text.split(secret).join('[redacted]'), value).trim(), 480);
+  const clean = (value: string) => bounded((options.redact ?? []).filter(Boolean).reduce((text, secret) => text.split(secret).join('[redacted]'), value).replace(/\s+/g, ' ').trim(), 480);
   return new Promise(resolveResult => {
     let answered = false, lastError: string | null = null, stderr = '', plain = '', buffer = '', done = false;
     const finish = (result: SmokeResult) => { if (done) return; done = true; clearTimeout(bound); resolveResult(result.error ? { ...result, error: clean(result.error) } : result); };
     const handle = (line: string) => {
       let record: any; try { record = JSON.parse(line); } catch { plain = `${plain}\n${line}`.slice(-2000); return; }
-      if (record?.type === 'message_end' && record.message?.role === 'assistant') { if (record.message.errorMessage) lastError = String(record.message.errorMessage); else answered = true; }
-      if (record?.type === 'auto_retry_end' && record.success === false && record.finalError) lastError = String(record.finalError);
+      if (record?.type === 'message_end' && record.message?.role === 'assistant') { if (record.message.errorMessage) lastError = String(record.message.errorMessage).replace(/\s+/g, ' ').trim(); else answered = true; }
+      if (record?.type === 'auto_retry_end' && record.success === false && record.finalError) lastError = String(record.finalError).replace(/\s+/g, ' ').trim();
     };
     let child: ChildProcess;
     try {
