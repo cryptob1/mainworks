@@ -131,14 +131,14 @@ for (const width of [1280, 390]) {
       // With a worker role, Pause team really sets its concurrency to 0, and Resume team brings back its 2.
       const apply = await fetch(`${url}/api/agent-registry/apply`, {
         method: 'POST',
-        headers: { Authorization: 'Bearer test-human-operator', 'Content-Type': 'application/json' },
+        headers: { Authorization: 'Bearer test-human-operator', 'Content-Type': 'application/json', 'Idempotency-Key': `four-places-${width}-${Date.now()}` },
         body: JSON.stringify({
           runtimes: [proposedRuntimes.find(entry => entry.name === 'claude')!], models: [{ name: 'opus', id: 'claude-opus-5' }],
           accounts: [{ name: 'claude-a', runtime: 'claude', model: 'opus', credential: { host: 'build-host', home: '/home/operator/.coding_agents/claude-a' } }],
           roles: [{ name: 'worker', accounts: ['claude-a'], concurrency: 2 }], reason: 'four-places pause',
         }),
       });
-      expect(apply.status).toBe(200);
+      expect(apply.status, await apply.clone().text()).toBe(200);
       const workerConcurrency = async () => {
         const status = await (await fetch(`${url}/api/status`, { headers: { Authorization: 'Bearer test-human-operator' } })).json() as { fleet: { roles: { role: string; concurrency: number }[] } };
         return status.fleet.roles.find(role => role.role === 'worker')?.concurrency;
