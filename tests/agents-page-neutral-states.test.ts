@@ -47,7 +47,7 @@ test('unit:tests/agents-page-neutral-states.test.ts — a running master, an unc
   assert.deepEqual(statuses.filter(entry => chipTones[entry.status.chip] === 'bad').map(entry => entry.name), [], 'no account reads as an error');
   assert.equal(statuses.find(entry => entry.name === 'pi-a')!.status.label, 'Not configured');
 
-  assert.deepEqual(unconfiguredRoles(fleet), [{ role: 'producer', error: false }]);
+  assert.deepEqual(unconfiguredRoles(fleet), [{ role: 'producer', error: false }, { role: 'caretaker', error: false }]);
   const page = renderToStaticMarkup(createElement(FleetOverview, { fleet, now }));
   assert.ok(!page.includes('tone-bad') && !page.includes('notice danger') && !page.includes('role="alert"'), 'the page draws nothing in red');
   assert.ok(page.includes('Running since') && page.includes('Not configured: producer'));
