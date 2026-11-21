@@ -28,20 +28,6 @@ export function planSpreadOrder(registry: AgentRegistry, order: readonly string[
   return [...order.filter(name => !busy.has(planOf(name))), ...order.filter(name => busy.has(planOf(name)))];
 }
 /**
- * The highest usage share any of an account's unreset windows shows (GY-3498), or null with no
- * reading. At or above `nearAllowance` the account trails the role's others (`headroomOrder`).
- */
-export function highestWindow(registry: AgentRegistry, name: string, now: number): number | null {
-  const usage = registry.accounts.find(entry => entry.name === name)?.quota.usage.filter(window => !window.resetsAt || Date.parse(window.resetsAt) > now) ?? [];
-  return usage.length ? Math.max(...usage.map(window => window.percent)) : null;
-}
-export const nearAllowance = 80;
-/** Accounts with room left (or no reading) lead those near their allowance, each group in the order given (GY-3498). */
-export function headroomOrder(registry: AgentRegistry, order: readonly string[], now: number): string[] {
-  const near = (name: string) => (highestWindow(registry, name, now) ?? 0) >= nearAllowance;
-  return [...order.filter(name => !near(name)), ...order.filter(near)];
-}
-/**
  * Why a role cannot run on an account's runtime, or null (GY-3092): a role that limits its sessions
  * to a tool allowlist needs a runtime that names a tools flag, or the session would run every tool.
  */
