@@ -37,7 +37,7 @@ export async function runCaretaker(root: string, config: MasterConfig, deps: { h
     const done = new Promise<{ output: string; ok: boolean }>(resolve => { settle = resolve; });
     const started = await startHeadlessWorker({ name: 'caretaker', work: 'caretaker', subject: 'Caretaker checklist', epoch: 1, principal: 'caretaker', account: launch.account,
       kind: launch.kind!, args: launch.args, contract: launch.contract, credentialMask, directory: root, supervisor: [], coordinatorRoot: deps.coordinatorRoot,
-      environment: { ...launch.environment, GRAPHYARD_URL: config.url, GRAPHYARD_TOKEN_FILE: tokenFile, GRAPHYARD_CARETAKER: '1' },
+      environment: { ...launch.environment, GRAPHYARD_URL: config.url, GRAPHYARD_TOKEN_FILE: tokenFile, GRAPHYARD_HOST_ID: config.hostId },
       prompt: caretakerPrompt(`node ${config.cliPath}`), root, exec: deps.headless ?? defaultHeadlessExec(), timeoutMs: headlessRunMs, settle: async ended => settle(ended) });
     return started.ended ?? await done;
   });
