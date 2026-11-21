@@ -39,7 +39,6 @@ import { pinnedInstall, repinRuntime, type AgentRegistry, type CanaryOffer } fro
 import { type DaemonEffects, record } from './effects.js';
 import { mergeWriterStep } from './cycle-merge-writer.js';
 import { batchGateStep } from './cycle-batch-gate.js';
-import { gateRecordPath, readGateRecord } from '../batch-gate.js';
 import { lessonsToCode } from './lessons-to-code.js';
 import { workerLaunchHealth, earlyExitKey } from './worker-launch-health.js';
 import { actionStallDelay, actionStallThreshold } from '../model/action-progress.js';
@@ -48,7 +47,6 @@ import { reconcileMasterMemory } from '../model/project-memory.js';
 import { diskHeadroomStep } from './disk-headroom.js';
 import { cpuPressureStep, cpuWaiting, implementationWaiting, sessionUsageStep } from './cpu-pressure.js';
 import { causeCleared, environmentCause } from './environment-blockers.js';
-import { batchGateRunning } from './trial-slots.js';
 import { leftoversStep, tallyLeftovers } from './leftovers.js';
 import { yardAlertStep } from './yard-alerts.js';
 import { recordStallAlarm, stallAlarm } from './stall-alarm.js';
@@ -692,15 +690,11 @@ async function dispatchStep(cycle: Cycle) {
   // workers wait, so the reviews and trials that finish work drain the heat.
   const cpuWaitingLine = cpuWaiting(state) ?? undefined;
   // GY-3122: below the disk floor no new worker starts; master status names the shortage.
-  // GY-3444: while a batch gate runs no implementation session starts, so the gate's checks finish
-  // inside their bound and deploys go on; reviews and producers still launch.
   // GY-3473: each hold named once, so the stall alarm reports the reason dispatch itself has this cycle.
-  const gateRun = batchGateRunning(state) ? (effects.mergeWriter?.gate ? readGateRecord(gateRecordPath(effects.mergeWriter.gate.root))?.inFlight ?? null : null) : undefined;
   const holds = [
     state.diskHeadroom && `implementation launches waiting: disk below its floor: ${state.diskHeadroom.shortage}`,
     implementationWaiting(state),
     refusedRoles.has('worker') && 'worker launches held: the checkout is not trusted for the worker accounts (see master status)',
-    gateRun !== undefined && `implementation launches paused while the batch gate runs${gateRun ? ` on ${gateRun.tip.slice(0, 12)} since ${gateRun.startedAt}` : ''}`,
   ].filter((hold): hold is string => !!hold);
   if (!holds.length) for (const item of claimable) {
     // Two claimable items sharing an exclusive resource: the first goes, the other waits for it to land.

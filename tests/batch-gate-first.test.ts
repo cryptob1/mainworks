@@ -11,15 +11,16 @@ import { mergeWriterIdle, type MergeWriterReads } from '../src/daemon/cycle-merg
 import { type DaemonEffects } from '../src/daemon/effects.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { batchGateFlights } from '../src/daemon/trial-slots.js';
-import type { MergePorts, MergeTrialRun } from '../src/merge-writer/executor.js';
+import { implementationHotCelsius } from '../src/daemon/cpu-pressure.js';
+import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import { trialStartOrder, trialStartOwner } from '../src/merge-writer/trial-load.js';
-import { masterConfigSchema, type WorkerProfile } from '../src/master.js';
+import { masterConfigSchema, type WorkerProfile } from '../src/master/profiles.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3444: two batch gates in a row ran into their 45-minute bound on a loaded host, so nothing
 // deployed — the fixes that relieve the load included. The gate now has first claim on trial slots,
-// no implementation session launches while it runs (reviews still do), and a timed-out run starts
+// implementation can continue within resource limits, and a timed-out run starts
 // again at once on main's newest tip.
 
 const repository = 'owner/project';
@@ -30,8 +31,9 @@ const sha = (seed: string) => createHash('sha1').update(seed).digest('hex');
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
 
-test('integration:batch-gate-first — while a gate run is in flight no implementation session launches and no merge trial takes its slot, while reviews still launch; once it settles the worker launches', async () => {
-  const tip = sha('main-tip');
+async function workerDuringGate(hold: 'heat' | 'pressure' | 'capacity' | null = null) {
+  const world = await fixture(`worker-during-gate-${hold ?? 'free'}`);
+  const tip = world.tip;
   const worker = { name: 'w1', principal: 'w1-principal', agentName: 'agent-w1', mode: 'launch', kind: 'claude', credentialFile: '/outside/w1.token', agentArgs: [], environment: {} } as unknown as WorkerProfile;
   const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',
     repository, baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [worker], run: { mergeWriter: { deployKeyFile: '/keys/deploy' } } });
@@ -44,44 +46,73 @@ test('integration:batch-gate-first — while a gate run is in flight no implemen
   }) as unknown as Work;
   const candidate = { sha: sha('head2'), baseSha: tip, pr: 2, branch: 'graphyard/gy-2-1', author: 'worker' };
   const work = [
-    item({ id: 'w1', key: 'GY-1', title: 'Claimable' }),
+    item({ id: 'w1', key: 'GY-1', title: 'Repair known red on main', type: 'bug', priority: 0, releasedBy: 'master' }),
     item({ id: 'w2', key: 'GY-2', title: 'Queued merge', stage: 'build', epoch: 1, submission: { epoch: 1, pr: 2 }, candidate, gates: gates(['ready', 'build', 'review', 'test']),
       observation: { source: 'control-plane', candidate, files: ['src/app.ts'], checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false, baseTip: tip, baseTipContained: true, at: iso(start) } }),
   ];
+  if (hold === 'capacity') work.push(item({ id: 'busy', key: 'GY-3', title: 'Running worker', stage: 'build', epoch: 1, lease: { owner: worker.principal, epoch: 1, expiresAt: iso(start + 10 * minute) } }));
+  let started!: () => void;
+  const gateStarted = new Promise<void>(resolve => { started = resolve; });
+  let settle!: () => void;
+  const gateHold = new Promise<void>(resolve => { settle = resolve; });
   const seen = { dispatched: [] as string[], trials: 0, ticks: 0 };
-  const ports: MergePorts = {
-    baseBranch: 'main', now: () => start, fetch: async () => tip,
+  const ports: MergeWriterReads = {
+    baseBranch: 'main', now: () => start, fetch: async () => tip, cores: 2, parallel: 1,
+    git: async (args, extra) => execFileSync('git', ['-C', world.coordinator, ...args], { encoding: 'utf8', env: { ...env, ...extra } }),
+    gate: { root: world.coordinator, repository },
     merge: async head => ({ mergeSha: sha(`merge:${head}`), files: ['src/app.ts'] }),
-    trial: async () => { seen.trials += 1; return { build: 'pass', tests: { passed: 1, failed: [], files: 1 }, durationMs: 10, logTail: '', files: ['tests/item.test.ts'], proofs: { 'unit:item-works': { executed: 1, failed: 0 } } }; },
+    trial: async commit => { if (commit === tip) { started(); await gateHold; } else seen.trials += 1; return { build: 'pass', tests: { passed: 1, failed: [], files: 1 }, durationMs: 10, logTail: '', files: ['tests/item.test.ts'], proofs: { 'unit:item-works': { executed: 1, failed: 0 } } }; },
     push: async () => 'pushed', holds: async () => false, record: async () => {},
   };
   const effects: DaemonEffects = {
     snapshot: async () => ({ work, now: iso(start) }),
-    agents: () => [], herdr: () => ({ agents: [], available: true }),
+    cpuPressure: async () => ({ pressure: hold === 'pressure' ? 'some avg60=90.00' : 'some avg60=0.00', stat: null, celsius: hold === 'heat' ? implementationHotCelsius : 60 }),
+    agents: () => [], herdr: () => ({ agents: hold === 'capacity' ? [{ name: worker.agentName, agent_status: 'working' }] : [], available: true }),
     credentials: async () => ({ w1: { available: true, reason: null } }),
     closeSession: () => {},
     dispatch: async target => { seen.dispatched.push(target.key); return { pane: 'p1', epoch: 1 }; },
     // The dispatcher's tick launches the reviewer and producer sessions; a held launch would name its line.
-    dispatchTick: async (_snapshot, held) => { assert.equal(held, undefined, 'reviews are not held by the gate'); seen.ticks += 1; },
-    mergeWriter: ports as MergeWriterReads,
+    dispatchTick: async (_snapshot, held) => {
+      if (hold === 'pressure') assert.match(held ?? '', /CPU pressure/, 'saturation holds reviews too');
+      else assert.equal(held, undefined, 'reviews are not held by the gate');
+      seen.ticks += 1;
+    },
+    mergeWriter: ports,
     persist: async () => {},
   };
   const state = emptyDaemonState(config);
-  // A gate run in flight beside the loop, as batchGateStep leaves it.
-  let settle!: () => void;
-  batchGateFlights.set(state, { gate: new Promise<void>(resolve => { settle = resolve; }), diagnostics: null });
-  await runCycle(config, state, effects, () => start);
-  await mergeWriterIdle(state);
-  assert.deepEqual(seen.dispatched, [], 'no implementation session launches while the gate runs');
-  assert.equal(seen.trials, 0, 'the queued merge trial leaves the slot to the gate');
-  assert.equal(seen.ticks, 1, 'reviews and producers still launch');
+  const flights = await batchGateStep({ state, effects, snapshot: { work, now: iso(start) }, now: () => start, log: () => {} });
+  try {
+    await Promise.race([gateStarted, flights!.gate!.then(() => { throw new Error('Gate ended before starting its checks'); })]);
+    await runCycle(config, state, effects, () => start);
+    await mergeWriterIdle(state);
+    assert.ok(flights?.gate, 'the batch gate remains in flight');
+    assert.equal(batchGateFlights.get(state)?.gate, flights.gate);
+    assert.deepEqual(seen.dispatched, hold ? [] : ['GY-1'], hold ? `${hold} still holds implementation` : 'the released repair is invited to claim while the gate runs');
+    assert.equal(seen.trials, 0, 'the queued merge trial leaves the slot to the gate');
+    assert.equal(seen.ticks, 1, 'reviews and producers still launch');
+    const record = readGateRecord(gateRecordPath(world.coordinator))!;
+    assert.equal(record.verified, world.verified, 'the in-flight tip is not yet verified');
+    assert.match(gateSummary(record)!.inFlight!.holds, /implementation continues/);
+    assert.equal(work[0]!.policy.review, true);
+    assert.deepEqual(work[0]!.criteria[0]!.proofs, ['unit:item-works']);
+    assert.ok(work[0]!.gates.filter(gate => ['build', 'review', 'test', 'merge'].includes(gate.name)).every(gate => !gate.passed), 'dispatch bypasses no delivery gate');
+  } finally {
+    settle();
+    await flights?.gate;
+  }
+  assert.equal(readGateRecord(gateRecordPath(world.coordinator))!.verified, tip, 'the batch checks finish normally');
+}
 
-  settle();
-  batchGateFlights.set(state, { gate: null, diagnostics: null });
-  await runCycle(config, state, effects, () => start + 60_000);
-  await mergeWriterIdle(state);
-  assert.deepEqual(seen.dispatched, ['GY-1'], 'the worker launches once the gate settles');
-  assert.equal(seen.trials, 1, 'the queued merge trial runs once the gate settles');
+test('integration:worker-dispatch-during-batch-gate — a released repair launches beside the gate, while heat, saturation and worker capacity still hold launches', async () => {
+  await workerDuringGate();
+  await workerDuringGate('heat');
+  await workerDuringGate('pressure');
+  await workerDuringGate('capacity');
+});
+
+test('e2e:worker-dispatch-during-batch-gate — a ready repair reaches a worker while real batch checks remain in flight and every delivery gate remains required', async () => {
+  await workerDuringGate();
 });
 
 /** An origin whose main holds a verified base and one merge past it, the coordinator checkout, and a way to land another merge. */
@@ -162,7 +193,7 @@ test('integration:batch-gate-first — the gate starts though every merge slot i
   assert.equal(record.held, null);
 });
 
-test('e2e:batch-gate-first — with a gate in flight and merge trials queued, master status shows the gate holding first claim and implementation launches paused; a forced timeout restarts the gate on the newest tip', async () => {
+test('e2e:batch-gate-first — with a gate in flight and merge trials queued, master status shows the gate holding first claim and implementation continuing; a forced timeout restarts the gate on the newest tip', async () => {
   const world = await gateFirstWorld('batch-gate-first-status');
   const flights = await batchGateStep(world.cycle);
   assert.ok(flights?.gate, 'the gate runs beside the queued merge trial');
@@ -171,7 +202,7 @@ test('e2e:batch-gate-first — with a gate in flight and merge trials queued, ma
   const inFlight = gateSummary(readGateRecord(gateRecordPath(world.coordinator)))!.inFlight!;
   assert.equal(inFlight.tip, world.tip.slice(0, 12));
   assert.match(inFlight.holds, /first claim on trial slots/, 'master status shows the gate holding first claim');
-  assert.match(inFlight.holds, /implementation launches paused/, 'and implementation launches paused');
+  assert.match(inFlight.holds, /implementation continues/, 'and implementation can continue');
   world.release();
   await flights!.gate;
   const record = readGateRecord(gateRecordPath(world.coordinator))!;
