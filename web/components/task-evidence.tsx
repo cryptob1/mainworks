@@ -32,9 +32,9 @@ const stageLabels: [Stage['id'], string][] = [['built', 'Built'], ['reviewed', '
  */
 export function taskStages(item: Work, timings: TaskTimings | null, now: number): { stages: Stage[]; totalMs: number | null; merged: boolean } {
   const time = (value: string | null | undefined) => { const at = Date.parse(value ?? ''); return Number.isFinite(at) ? at : null; };
-  const head = item.candidate?.sha, ledger = item.mergeLedger?.head === head ? item.mergeLedger : null, trial = timings?.trial?.head === head ? timings!.trial : null;
+  const head = item.candidate?.sha, ledger = head && item.mergeLedger?.head === head ? item.mergeLedger : null, trial = head && timings?.trial?.head === head ? timings.trial : null;
   const submitted = item.submission ? time(item.pipeline?.resubmittedAt ?? item.pipeline?.submittedAt) : null;
-  const approved = !item.policy.review ? submitted : time(item.observation?.reviews.findLast(review => review.sha === head && review.state === 'APPROVED')?.submittedAt);
+  const approved = !item.policy.review ? submitted : time(item.observation?.reviews?.findLast(review => review.sha === head && review.state === 'APPROVED')?.submittedAt);
   const failed = ledger?.state === 'refused' || !!trial?.steps.some(step => step.result === 'failed');
   const marks = [time(timings?.releasedAt) ?? time(item.pipeline?.attempts[0]?.claimedAt), submitted, approved, time(trial?.startedAt ?? ledger?.intentAt),
     failed ? null : time(trial?.finishedAt ?? ledger?.pushedAt), time(item.delivery?.mergedAt ?? item.observation?.mergedAt)];
@@ -82,7 +82,7 @@ export function ChangedFiles({ item, files, api }: { item: Pick<Work, 'id'>; fil
       .then(diff => setOpen(shown => path in shown ? { ...shown, [path]: diff || 'No text diff: a binary file, or only its mode changed.' } : shown));
   };
   return <section className="task-diff" aria-label="Changed files">
-    {!files?.length ? <p className="muted">{files ? 'No change submitted yet.' : 'The changed files are not readable right now.'}</p>
+    {!files?.length ? files && <p className="muted">No change submitted yet.</p>
       : files.map(file => <div key={file.path} data-file={file.path}>
         <button type="button" className="diff-file" aria-expanded={file.path in open} onClick={() => toggle(file.path)}><span className="diff-path">{file.path}</span><span className="diff-add">+{file.additions}</span><span className="diff-del">−{file.deletions}</span></button>
         {file.path in open && <pre className="run-log diff-text">{open[file.path] === null ? 'Reading the diff…' : open[file.path]!.split('\n').map((line, index) => <span key={index} className={line.startsWith('+') ? 'diff-add' : line.startsWith('-') ? 'diff-del' : line.startsWith('@@') ? 'muted' : undefined}>{line}{'\n'}</span>)}</pre>}

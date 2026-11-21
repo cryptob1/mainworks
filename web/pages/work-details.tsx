@@ -269,8 +269,8 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
   const files = useEvidence<{ files: ChangedFile[] }>(api, item.candidate ? `work/${encodeURIComponent(item.id)}/diff` : null, item.candidate?.sha)?.files ?? (item.candidate ? null : []);
   const costs = useEvidence<CostSummary & { builder?: { model: string; accountModel: string | null; differs: boolean } | null }>(api, `costs?work=${encodeURIComponent(item.key)}`, item.revision);
   const [tab, setTab] = useState<typeof tabs[number]>(tabs[0]);
-  const trial = timings?.trial?.head === item.candidate?.sha ? timings!.trial : null;
-  const refusal = item.mergeLedger?.head === item.candidate?.sha && item.mergeLedger?.state === 'refused' ? item.mergeLedger.refusal?.reason ?? null : null;
+  const trial = timings?.trial && timings.trial.head === item.candidate?.sha ? timings.trial : null;
+  const refusal = item.candidate && item.mergeLedger?.head === item.candidate.sha && item.mergeLedger.state === 'refused' ? item.mergeLedger.refusal?.reason ?? null : null;
   const trialFailed = !!refusal || !!trial?.steps.some(step => step.result === 'failed');
   // The Builder: who holds or last held the task, and the newest run of theirs the host keeps.
   const builderRun = (item.sessions ?? []).filter(handle => handle.kind === 'implementation' && transcriptRun(handle.transcript)).sort((a, b) => a.startedAt.localeCompare(b.startedAt)).at(-1);
@@ -281,7 +281,7 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
     : !item.ready || item.hold ? { label: 'Release task', run: () => action(item.id, 'ready') }
       : item.blocker ? { label: 'Unblock task', run: () => action(item.id, 'unblock', { expectedRevision: item.revision }) }
         : { label: 'Hold task', run: () => action(item.id, 'hold', { reason: 'Held from the Task page', expectedRevision: item.revision }) };
-  // Stuck or waiting: one sentence why, one on what happens next. Moving work says it in the pipeline row.
+  // Stuck or waiting: one sentence why, one on what happens next. Moving work reads the same two lines as where it is now.
   const stuck = !closed && group !== 'shipped' && (group !== 'moving' || held.overdue || trialFailed || plain.tone === 'stuck');
   const why = trialFailed ? (refusal?.split('\n')[0] ?? 'Its merge trial failed.') : stateSentence;
   const add = files?.reduce((sum, file) => sum + file.additions, 0), del = files?.reduce((sum, file) => sum + file.deletions, 0);
@@ -297,7 +297,7 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
         </div>
       </div>
       <div className="item-meta">
-        <span data-task-state>{group && group !== 'moving' && <StatusBadge group={group}/>} <strong>{trialFailed ? 'Merge trial failed' : stageLabel(item, now, release, serve)}</strong>{timedGroups.has(group ?? 'shipped') && <> · <StatusAge held={held}/></>}</span>
+        <span data-task-state>{group && <StatusBadge group={group}/>} <strong>{trialFailed ? 'Merge trial failed' : stageLabel(item, now, release, serve)}</strong>{timedGroups.has(group ?? 'shipped') && <> · <StatusAge held={held}/></>}</span>
         {builderName && <span data-builder title={builder!}>Builder {builderName}</span>}
         {model && <span data-model={model.differs ? 'differs' : 'same'} className={model.differs ? 'amber' : undefined}>Model <span className="mono">{model.model}</span>{model.differs ? ` ▲ not the account's ${model.accountModel}` : ''}</span>}
         {files && files.length > 0 && <span className="mono" data-diff-stats>+{add} −{del} · {files.length} {files.length === 1 ? 'file' : 'files'}</span>}
@@ -305,15 +305,15 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
       </div>
       {lead !== item.title && <p className="item-title-full" data-lead-sentence data-why={whySentence ? 'true' : 'false'} data-plain-summary={!whySentence && plainSentence ? 'true' : 'false'}>{lead}</p>}
     </div>
-    {(stuck || waitingOnYou.length > 0 || item.violations.length > 0) && <section className={`panel where-now group-${group ?? 'shipped'}`} aria-label="Where it is now">
+    <section className={`panel where-now group-${group ?? 'shipped'}`} aria-label="Where it is now">
       {item.reworkRequested && item.lastRework?.reason && <p className="notice" data-rework-reason>Sent back because: {item.lastRework.reason}</p>}
-      {stuck && <p className="page-fact" data-stuck-why><span className="next-label">Why:</span> <span className={`status-sentence tone-${plain.tone}`}><Explained sentence={why}/></span></p>}
-      {stuck && <p className="next-line" data-stuck-next><span className="next-label">Next:</span> {trialFailed ? 'It goes back to a Builder with this output, or is tried again if the main branch was at fault.'
-        : <><strong>{actor.who}</strong>{actor.does && actor.does !== steps.label && !waitingOnYou.length ? <> — {actor.does}</> : null}</>}</p>}
+      <p className="page-fact" {...(stuck ? { 'data-stuck-why': true } : {})}><span className="next-label">{stuck ? 'Why:' : 'Now:'}</span> <span className={`status-sentence tone-${plain.tone}`}><Explained sentence={why}/></span></p>
+      <p className="next-line" {...(stuck ? { 'data-stuck-next': true } : {})}><span className="next-label">Next:</span> {trialFailed ? 'It goes back to a Builder with this output, or is tried again if the main branch was at fault.'
+        : <><strong>{actor.who}</strong>{actor.does && actor.does !== steps.label && !waitingOnYou.length ? <> — {actor.does}</> : null}</>}</p>
       {waitingOnYou.map(row => <RequestCard key={row.request.id} row={row} refusal={humanOnlyRefusal(row.rule, status?.actor ?? {})} busy={busy} open={() => {}} signIn={signOut}
         answer={(text, post) => action(row.id, row.answer.post.command, { ...post, [row.answer.post.field]: text })} send={body => action(row.id, row.answer.post.command, body)}/>)}
       {item.violations.map(v => <div className="notice danger" key={v}>{shortShas(v)}</div>)}
-    </section>}
+    </section>
     {!closed && <PipelineRow item={item} timings={timings} median={status?.pipelineTime?.median ?? null} now={now}/>}
     <div role="tablist" aria-label="Task evidence" className="task-tabs">{tabs.map(name => <button key={name} type="button" role="tab" aria-selected={tab === name} onClick={() => setTab(name)}>{name}</button>)}</div>
     {panel('Checks and diff', <>

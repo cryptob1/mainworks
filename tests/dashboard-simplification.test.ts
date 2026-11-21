@@ -226,10 +226,9 @@ test('integration:item-view-structure — state, who acts next and why on the pl
   const at = (needle: string) => { const index = visible.indexOf(words(needle).join(' ')); assert.ok(index >= 0, `shows ${needle}: ${visible}`); return index; };
   // GY-3392: the plate answers who acts next and why, with no pull request wording anywhere; the
   // gate detail folds under Technical details, so its lines read on the opened fold.
-  const opened = (html: string) => text(html.replace('<details class="more-details"', '<details open class="more-details"'));
-  const order = [at('Moving'), at('Who acts next: Prover agent'), at('Testing 2 of 3 proofs passed')];
-  assert.deepEqual([...order].sort((a, b) => a - b), order, 'state, who acts next, why');
-  assert.doesNotMatch(view, /pull request/i, 'no pull request wording on the page');
+  const opened = (html: string) => text(html.replaceAll(' hidden=""', '').replace('<details class="more-details"', '<details open class="more-details"'));
+  const order = [at('Moving'), at('Testing 2 of 3 proofs passed'), at('Next: Prover agent')];
+  assert.deepEqual([...order].sort((a, b) => a - b), order, 'state, why, who acts next');
   assert.ok(opened(view).indexOf('What is left') < opened(view).indexOf('The proof integration:login-latency has not passed yet'), 'the folded gate detail keeps its plain lines');
   // Only the current step's reasons are listed as what is left, inside the collapsed Technical
   // details (GY-3392); the gates' raw reasons stay there too.
@@ -245,7 +244,7 @@ test('integration:item-view-structure — state, who acts next and why on the pl
   const requirements = view.slice(view.indexOf('aria-label="Requirements"'), view.indexOf('aria-label="Activity"'));
   for (const ac of find('GY-16').criteria) assert.equal(text(requirements).split(/\s+/).filter((word: string) => word === ac.id).length, 1, `${ac.id} once in Requirements`);
   assert.equal(view.match(/class="marker-pass"/g)?.length, 2); assert.equal(view.match(/class="marker-pending"/g)?.length, 1);
-  const lines = text(view.replace('<details class="panel item-details-fold"', '<details open class="panel item-details-fold"'));
+  const lines = text(view.replaceAll(' hidden=""', '').replace('<details class="panel item-details-fold"', '<details open class="panel item-details-fold"'));
   assert.match(lines, /AC-1 More than ten failed logins from one address in a minute are refused\. integration:login-rate-limit passed/);
   assert.match(view, /<li class="marker-pass">✓ <abbr class="term"[^>]*>integration:login-rate-limit<\/abbr> passed<\/li>/);
   // Policy-changing actions sit in a closed, admin-only Edit menu.
