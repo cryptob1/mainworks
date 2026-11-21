@@ -10,7 +10,7 @@ import { basename, dirname, join } from 'node:path';
 import { homedir, hostname, tmpdir } from 'node:os';
 import type { ChildRun } from '../child-runner.js';
 import { shellQuote } from '../shell-quote.js';
-import { outdatedShimReason, probeHost, readHosts, sshTarget } from '../hosts.js';
+import { probeHost, readHosts, sshTarget, type HostReading as HostProbe } from '../hosts.js';
 import { trialContainerFault, trialHotCelsius } from './trial-load.js';
 
 /** One host's reading: cores, cores busy (1-minute load), the share of CPU stolen, and its hottest CPU sensor against the heat limit. */
@@ -25,15 +25,12 @@ export const realFreeCores = (reading: HostReading) => Math.max(0, reading.cores
 export const underHeatLimit = (reading: HostReading) => !reading.away && (reading.celsius === null || reading.celsius < reading.limit);
 
 /**
- * GY-3419: the words a test file names when it needs what a remote shard lacks — the Docker
- * socket or the network: servers and sockets, requests, databases, SSH, browsers, e2e machinery.
- * A shard on an added host runs with no network and no Docker socket, so such a file there would
- * fail as a red verdict that measures neither the merge nor the host. Naming any word keeps the
- * file on this machine; over-marking only costs a host shards, under-marking reads as a false failure.
- * GY-3549: a shard may start nested sandboxes (bwrap, the trial runner), as a local trial can;
- * the sandboxed benchmarks still stay here for their pinned interpreter.
+ * GY-3419, GY-3522: the words a test file names when it needs what a remote shard lacks — the
+ * database, the Docker socket, nested confinement (bwrap, unshare, landlock; the hard-math
+ * benchmarks run under it with a pinned interpreter) or a browser. Naming one keeps the file on
+ * this machine. Servers, sockets and requests on loopback work on a host, so their words do not.
  */
-export const localOnlyTestPattern = /docker|compose|network|socket|ssh|scp|postgres|mysql|redis|database|withDatabase|server|listen|connect|fetch|http|url|browser|playwright|chromium|firefox|webkit|selenium|puppeteer|e2e|benchmarks|hard-math/i;
+export const localOnlyTestPattern = /postgres|withDatabase|docker|bwrap|unshare|landlock|hard-math|playwright|chromium/i;
 /** Whether a test file's text may run on a remote shard: it names none of the local-only words. */
 export const remoteableTestFile = (text: string) => !localOnlyTestPattern.test(text);
 
@@ -259,8 +256,8 @@ export function remoteShardSession(input: { root: string; sha: string; image: st
   };
 }
 
-/** One trial's shard record, for master status: wall time, shards run and run remotely, waits while a host idled, and each host's reading. */
-export interface RemoteShardRun { at: string; wallMs: number; shards: number; remote: number; queuedWhileIdle: number; host: string; celsius: number | null; hosts: { name: string; away: boolean; reason?: string; celsius: number | null; freeCores: number }[] }
+/** One trial's shard record, for master status: what ran them, wall time, shards run and run remotely, waits while a host idled, and each host's reading. */
+export interface RemoteShardRun { /** GY-3526: the worker verification that ran them; absent for a merge trial. */ label?: string; at: string; wallMs: number; shards: number; remote: number; queuedWhileIdle: number; host: string; celsius: number | null; hosts: { name: string; away: boolean; reason?: string; celsius: number | null; freeCores: number }[] }
 export const remoteShardRecordPath = (root: string) => join(root, '.graphyard', 'remote-shards.json');
 const keptRuns = 20;
 
@@ -275,8 +272,12 @@ export function readRemoteShardRuns(root: string): RemoteShardRun[] {
   try { const runs = JSON.parse(readFileSync(remoteShardRecordPath(root), 'utf8')); return Array.isArray(runs) ? runs : []; } catch { return []; }
 }
 
-/** Master status's remote shard line over the last 20 trials, or null before any trial ran with hosts. */
-export function remoteShardSummary(runs: readonly RemoteShardRun[]) {
+/**
+ * Master status's remote shard line over the last 20 trials, or null before any trial ran with hosts.
+ * GY-3517: given the loop's latest probes, each host's state is that probe's, with when it was read,
+ * never the last trial's — a host updated or re-added since reads its fresh result.
+ */
+export function remoteShardSummary(runs: readonly RemoteShardRun[], probes?: readonly HostProbe[]) {
   if (!runs.length) return null;
   const shards = runs.reduce((sum, run) => sum + run.shards, 0), remote = runs.reduce((sum, run) => sum + run.remote, 0);
   const walls = runs.map(run => run.wallMs).sort((a, b) => a - b), latest = runs.at(-1)!;
@@ -287,14 +288,15 @@ export function remoteShardSummary(runs: readonly RemoteShardRun[]) {
     trialWallSeconds: { median: Math.round(walls[Math.floor((walls.length - 1) / 2)]! / 1000), latest: Math.round(latest.wallMs / 1000) },
     queuedWhileHostIdle: runs.reduce((sum, run) => sum + run.queuedWhileIdle, 0),
     peakCelsius: { host: latest.host, celsius: peaks.length ? Math.max(...peaks) : null },
-    hosts: latest.hosts.map(host => ({ ...host, state: host.away ? 'away' : 'ready' })),
+    hosts: probes ? probes.filter(probe => !probe.local).map(probe => ({ name: probe.host, away: probe.away, ...(probe.reason ? { reason: probe.reason } : {}), celsius: probe.celsius, readAt: probe.at ?? null, state: probe.away ? 'away' : 'ready' }))
+      : latest.hosts.map(host => ({ ...host, state: host.away ? 'away' : 'ready' })),
+    latest: { run: latest.label ?? 'merge trial', shards: latest.shards, remote: latest.remote },
   };
 }
 
-
-/** GY-3476: one attention line for each host the latest trial left away because its shim is older than this release. */
-export const outdatedShimAttention = (runs: readonly RemoteShardRun[]) => (runs.at(-1)?.hosts ?? []).filter(host => host.away && host.reason === outdatedShimReason(host.name)).map(host =>
-  ({ subject: `host ${host.name}`, text: `${host.name} takes no trial shards: its graphyard-host-shim is older than this release`, next: `Run graphyard host prepare and, with sudo on ${host.name}, the script it prints` }));
+/** GY-3476, GY-3517: one attention line for each host the latest probe reads away because its shim lacks a verb trials use; it clears on the first probe that reads it ready. */
+export const outdatedShimAttention = (probes: readonly Pick<HostProbe, 'host' | 'away' | 'update'>[]) => probes.filter(probe => probe.away && probe.update).map(probe =>
+  ({ subject: `host ${probe.host}`, text: `${probe.host} takes no trial shards: its graphyard-host-shim is older than this release`, next: `Run graphyard host prepare and, with sudo on ${probe.host}, the script it prints` }));
 
 /** GY-3534: one attention line for each host the latest trial left away because its SSH server reset the connection. */
 export const connectionResetAttention = (runs: readonly RemoteShardRun[]) => (runs.at(-1)?.hosts ?? []).filter(host => host.away && /connection reset|kex_exchange_identification/i.test(host.reason ?? '')).map(host =>

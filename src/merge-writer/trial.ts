@@ -753,10 +753,14 @@ export interface RunTrialInput {
   hidden?: readonly string[];
   /** GY-3209: starts a check's declared Compose services; `startCheckServices` unless a test injects a fake. */
   services?: typeof startCheckServices;
+  /** GY-3577: the merge trial's proof count: every test shard, on this machine or a host, runs with `args` before its file list, and its output goes to `output`. */
+  reporter?: { args: readonly string[]; output: (out: string) => void };
   /** GY-3283: run only the declared check of this name, whatever paths it is limited to (a worker's `graphyard check NAME`). */
   only?: string;
   /** GY-3412: the hosts a selection's shards fan out to — those `graphyard host add` recorded unless a test names others — and how they are read. */
   remote?: { hosts: readonly string[]; read?: (hosts: readonly string[], transport: ShardSshSession) => Promise<HostReading[]> };
+  /** GY-3526: a worker verification's label: it holds a host heavy-job slot under it only while a test shard or check runs on this machine, never while its shards run on other hosts. */
+  localSlot?: string;
 }
 const tailLength = 4000;
 /**
@@ -1319,6 +1323,8 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       await started.close();
     }
   };
+  // GY-3526: a worker verification's tests on this machine run on one shared host slot; a merge trial already holds its own.
+  const onThisMachine = input.localSlot ? (await import('../master/verification-slots.js')).sharedHeavyJob(input.localSlot, { strictOnly: true }) : <T>(part: () => Promise<T>) => part();
   const runChecks = async (checks: RepositoryTrialCheck[]): Promise<TrialRun> => {
     // GY-2965: the item's bound E2E cases run against the head served here in the trial checkout, whatever test checks follow; a missing or failing case refuses the head (trialFailureReason).
     if (input.e2eProofs?.length) {
@@ -1369,7 +1375,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       }
       files++;
       enterStep(`tests: ${check.check}`);
-      const ran = await withServices(check, () => child('tests', check.argv[0]!, check.argv.slice(1)));
+      const ran = await withServices(check, () => onThisMachine(() => child('tests', check.argv[0]!, check.argv.slice(1))));
       if ('services' in ran) { failed.push(check.check); detail = { failingCase: ran.services }; runnerExit = null; break; }
       if (hostEnded(ran)) throw runnerFailure('tests', ran);
       if (!ran.ok) {
@@ -1432,9 +1438,8 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const transport = hosts.length ? shardSshSession(run) : undefined;
     const readings = hosts.length ? await (input.remote?.read ?? ((named, shared) => readShardHosts(named, run, cores, shared)))(hosts, transport!) : [];
     const remoteLanes = readings.slice(1).filter(underHeatLimit).reduce((sum, reading) => sum + Math.floor(realFreeCores(reading)), 0);
-    // GY-3419: test files naming Docker or the network are local-only — a remote shard runs
-    // with no network or Docker socket, so they would fail there as red verdicts that
-    // measure nothing. Each pool is cut into its own shards, so a local-only file never pins a whole
+    // GY-3419: test files naming the database, Docker, nested confinement or a browser are local-only —
+    // a remote shard has none, so they would fail there as red verdicts that measure nothing. Each pool is cut into its own shards, so a local-only file never pins a whole
     // shared shard to this machine, and placement keeps the local-only shards here (runShardsOnHosts
     // `pinned`) while the others may go to any host.
     const split = await splitLocalOnlyTests(files, file => readFile(join(worktree, file), 'utf8'));
@@ -1455,7 +1460,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       const group = shards[index]!, entries: string[] = [];
       try {
         const list = join(checkout.directory, `tests-${index + 1}.txt`), records = join(checkout.directory, `tests-${index + 1}.jsonl`);
-        const argv = (list: string, records: string) => [...check.argv.slice(1), '--files-from', list, '--durations', records, `--test-concurrency=${breadth}`, '--file-timeout=300000'];
+        const argv = (list: string, records: string) => [...check.argv.slice(1), ...input.reporter?.args ?? [], '--files-from', list, '--durations', records, `--test-concurrency=${breadth}`, '--file-timeout=300000'];
         const shardAt = now();
         let tests: Ended, recordText: string;
         try {
@@ -1466,10 +1471,11 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
             recordText = ended.records;
           } else {
             await writeFile(list, `${group.join('\n')}\n`);
-            tests = await child('tests', check.argv[0]!, argv(list, records), { entries });
+            tests = await onThisMachine(() => child('tests', check.argv[0]!, argv(list, records), { entries }));
             recordText = await readFile(records, 'utf8').catch(() => '');
           }
         } finally { input.onTiming?.(`tests: shard ${index + 1}${remote ? ` on ${remote}` : ''}`, Math.max(0, now() - shardAt)); }
+        input.reporter?.output(tests.out);
         const recorded = runnerRecords(recordText);
         // Only the shard's own files count: the records and the log may name a file a test ran or printed itself (GY-1645).
         const namedByRecords = recorded.filter(record => !record.passed && group.includes(record.file)).map(record => record.file);
@@ -1493,7 +1499,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       const placed = [local, ...hosts.map((host, index) => ({ name: host, remote: host, reading: readings[index + 1]!, room: Math.floor(realFreeCores(readings[index + 1]!) / breadth) }))];
       const placement = await runShardsOnHosts({ count: shards.length, hosts: placed, breadth, pinned, stopped: () => stopped !== null,
         run: (host, index) => shard(index, host.remote) });
-      if (hosts.length) await recordRemoteShardRun(input.root, { at: new Date().toISOString(), wallMs: Math.max(0, now() - startedAt), shards: placement.ran.length, remote: placement.ran.filter(name => name !== local.name).length,
+      if (hosts.length) await recordRemoteShardRun(input.root, { ...(input.localSlot ? { label: input.localSlot } : {}), at: new Date().toISOString(), wallMs: Math.max(0, now() - startedAt), shards: placement.ran.length, remote: placement.ran.filter(name => name !== local.name).length,
         queuedWhileIdle: placement.queuedWhileIdle, host: local.name, celsius: local.reading.celsius,
         hosts: readings.map(reading => ({ name: reading.name, away: reading.away || placement.dropped.includes(reading.name), reason: dropped.get(reading.name)?.reason ?? reading.reason, celsius: reading.celsius, freeCores: Math.round(realFreeCores(reading) * 10) / 10 })) }).catch(() => {});
     } finally { await release(); await session?.close(); }
