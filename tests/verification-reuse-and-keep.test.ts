@@ -123,14 +123,15 @@ test('integration:verification-reuse-and-keep — verify then complete on the sa
 test('integration:verification-reuse-and-keep — a result that outlives its lease is kept for its head unless a newer request replaced it', async t => {
   const f = await fixture(t);
   const lapse = () => f.store.pool.query(`UPDATE work_items SET document=jsonb_set(document, '{lease,expiresAt}', to_jsonb($2::text)) WHERE id=$1`, [f.work.id, new Date(Date.now() - 1000).toISOString()]);
-  const start = () => f.api(`work/${f.work.id}/worker-verification`, { head: f.head, epoch: 1, mode: 'verify' }, f.worker.token).then(value => ({ value, error: null }), error => ({ value: null, error }));
+  const start = (input: Record<string, unknown> = {}) => f.api(`work/${f.work.id}/worker-verification`, { head: f.head, epoch: 1, mode: 'verify', ...input }, f.worker.token).then(value => ({ value, error: null }), error => ({ value: null, error }));
   const result = { record: { key: f.work.key, head: f.head, clean: true, at: new Date().toISOString(),
     ran: [{ proof: 'integration:reuse-required', criteria: ['AC-1'], result: 'pass', executed: 1, failed: 0, skipped: 0, files: ['tests/required.test.ts'] }], outstanding: [] },
   rerun: { flaked: [], baseFailures: [] } };
   const older = start();
   await until(async () => (await f.pending()).length === 1, 'first request queued');
   const [first] = await f.api('worker-verifications/take', { host: 'test' });
-  const newer = start();
+  // An identical repeat would join the first request; a newer request differs in its inputs.
+  const newer = start({ preserves: ['kept'] });
   await until(async () => (await f.pending()).length === 2, 'newer request queued');
   const [second] = await f.api('worker-verifications/take', { host: 'test' });
   await lapse();
