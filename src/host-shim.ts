@@ -150,12 +150,12 @@ elif verb == 'run-session':
         sys.exit('graphyard-host-shim: no run ' + args[0])
     name = 'graphyard-session-' + args[0][len('trial-'):]
     # The network is the default one: the session reaches its model provider and the control plane. Only the checkout is mounted; every home is memory.
-    create = ['docker', 'create', '-i', '--name', name, '--user', '1000:0', '--workdir', cwd, '--pids-limit', '4096', '--security-opt', 'seccomp=unconfined',
-              '--mount', 'type=bind,src=' + os.path.join(run, 'repo') + ',dst=' + cwd, '--tmpfs', '/tmp:mode=1777']
+    create = ['docker', 'create', '-i', '--name', name, '--user', '1000:0', '--workdir', cwd, '--pids-limit', '4096', '--security-opt', 'seccomp=unconfined', '--tmpfs', '/tmp:mode=1777']
     if 'apparmor' in subprocess.run(['docker', 'info', '--format', '{{json .SecurityOptions}}'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True).stdout:
         create += ['--security-opt', 'apparmor=${trialAppArmorProfile}']
     for home in homes:
         create += ['--tmpfs', home + ':uid=1000,gid=0,mode=0700']
+    create += ['--mount', 'type=bind,src=' + os.path.join(run, 'repo') + ',dst=' + cwd]
     for key, value in sorted(env.items()):
         create += ['--env', key + '=' + value]
     create += ['--entrypoint', argv[0], open(os.path.join(run, 'image')).read().strip()] + argv[1:]

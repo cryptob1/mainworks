@@ -57,6 +57,8 @@ os.makedirs(session, mode=0o700, exist_ok=True)
 git = lambda *words: subprocess.run(['git'] + list(words), capture_output=True)
 start = git('rev-parse', 'HEAD').stdout.decode().strip()
 open(os.path.join(session, 'start'), 'w').write(start)
+if os.path.exists(os.path.join(session, 'calls')):
+    os.remove(os.path.join(session, 'calls'))
 os.mkfifo(os.path.join(session, 'calls'), 0o600)
 lock = threading.Lock()
 def say(kind, text):
@@ -158,7 +160,7 @@ export async function runRemoteSession(input: RemoteSession): Promise<number> {
       const child = spawn('ssh', [...words, `run-session ${runName}`], { stdio: ['pipe', 'pipe', 'pipe'] });
       child.stdin.on('error', () => {});
       child.stdin.write(`${JSON.stringify(request)}\n${JSON.stringify({ files, back: login })}\n`);
-      child.stdout.pipe(output, { end: false });
+      child.stdout.on('data', chunk => output.write(chunk));
       let queue = Promise.resolve();
       const call = async (text: string) => {
         const { id, argv, commits } = JSON.parse(text) as { id: string; argv: string[]; commits: string | null };
