@@ -11,7 +11,6 @@ import { mergeWriterIdle, type MergeWriterReads } from '../src/daemon/cycle-merg
 import { type DaemonEffects } from '../src/daemon/effects.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { batchGateFlights } from '../src/daemon/trial-slots.js';
-import { implementationHotCelsius } from '../src/daemon/cpu-pressure.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import { trialStartOrder, trialStartOwner } from '../src/merge-writer/trial-load.js';
 import { masterConfigSchema, type WorkerProfile } from '../src/master/profiles.js';
@@ -66,7 +65,7 @@ async function workerDuringGate(hold: 'heat' | 'pressure' | 'capacity' | null = 
   };
   const effects: DaemonEffects = {
     snapshot: async () => ({ work, now: iso(start) }),
-    cpuPressure: async () => ({ pressure: hold === 'pressure' ? 'some avg60=90.00' : 'some avg60=0.00', stat: null, celsius: hold === 'heat' ? implementationHotCelsius : 60 }),
+    cpuPressure: async () => ({ pressure: hold === 'pressure' ? 'some avg60=90.00' : 'some avg60=0.00', stat: null, celsius: hold === 'heat' ? 96 : 60 }),
     agents: () => [], herdr: () => ({ agents: hold === 'capacity' ? [{ name: worker.agentName, agent_status: 'working' }] : [], available: true }),
     credentials: async () => ({ w1: { available: true, reason: null } }),
     closeSession: () => {},
@@ -88,7 +87,9 @@ async function workerDuringGate(hold: 'heat' | 'pressure' | 'capacity' | null = 
     await mergeWriterIdle(state);
     assert.ok(flights?.gate, 'the batch gate remains in flight');
     assert.equal(batchGateFlights.get(state)?.gate, flights.gate);
-    assert.deepEqual(seen.dispatched, hold ? [] : ['GY-1'], hold ? `${hold} still holds implementation` : 'the released repair is invited to claim while the gate runs');
+    const held = hold === 'pressure' || hold === 'capacity';
+    assert.deepEqual(seen.dispatched, held ? [] : ['GY-1'],
+      held ? `${hold} still holds implementation` : hold === 'heat' ? 'a hot sensor alone holds no launch (GY-3501), so the repair launches beside the gate' : 'the released repair is invited to claim while the gate runs');
     assert.equal(seen.trials, 0, 'the queued merge trial leaves the slot to the gate');
     assert.equal(seen.ticks, 1, 'reviews and producers still launch');
     const record = readGateRecord(gateRecordPath(world.coordinator))!;
@@ -104,7 +105,7 @@ async function workerDuringGate(hold: 'heat' | 'pressure' | 'capacity' | null = 
   assert.equal(readGateRecord(gateRecordPath(world.coordinator))!.verified, tip, 'the batch checks finish normally');
 }
 
-test('integration:worker-dispatch-during-batch-gate — a released repair launches beside the gate, while heat, saturation and worker capacity still hold launches', async () => {
+test('integration:worker-dispatch-during-batch-gate — a released repair launches beside the gate; a hot sensor holds no launch, while measured saturation and worker capacity still hold', async () => {
   await workerDuringGate();
   await workerDuringGate('heat');
   await workerDuringGate('pressure');
