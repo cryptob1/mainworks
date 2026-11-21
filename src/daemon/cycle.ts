@@ -14,7 +14,7 @@ import type { ExhaustionSignal } from '../model/capacity.js';
 import { endedRuntimeStates } from '../model/sessions.js';
 import { checkoutTrustLine, type CheckoutTrustFleet } from '../harness.js';
 import { detectRuntimeExhaustion } from '../master/runtime-prompt.js';
-import { dispatchSort, inFlight, resourceConflicts, sharedResources } from '../coordination.js';
+import { dispatchSort, inPipeline, resourceConflicts, sharedResources } from '../coordination.js';
 import { capacityRefusal } from '../fleet.js';
 import type { CoordinationRounds } from '../server/work-view.js';
 import { masterCauses, masterCausePrompt, messageCauses } from './master-stalled-delivery.js';
@@ -653,14 +653,22 @@ async function dispatchStep(cycle: Cycle) {
   // A refusal standing from the last cycle is not logged again.
   const before = refusalsLogged.get(state) ?? new Set<string>(), standing = new Set<string>();
   refusalsLogged.set(state, standing);
+  // GY-3502: the gate that refuses each ready item this cycle, in plain words, which the stall alarm names.
+  const gates = new Map<string, string>();
+  const wait = (item: Work, why: string) => { if (!gates.has(item.key)) gates.set(item.key, `${item.key} waits: ${why}`); };
   const refused = (item: Work, resource: string, holder: string) => {
     const line = `${item.key} waits: exclusive resource ${resource} is held by ${holder}`;
     if (!before.has(line) && !standing.has(line)) cycle.log(`[graphyard-master] cycle ${state.cycle}: ${line}`);
     standing.add(line);
+    wait(item, `exclusive resource ${resource} is held by ${holder}`);
   };
   const claimable = dispatchSort(open.filter(item => {
     try { assertDispatchable(item, snapshot.work, snapshot.now); return true; }
-    catch (error) { if (message(error).startsWith('Dispatch blocked by exclusive resources')) for (const held of resourceConflicts(item, snapshot.work, clock)) refused(item, held.resource, held.key); return false; }
+    catch (error) {
+      if (message(error).startsWith('Dispatch blocked by exclusive resources')) for (const held of resourceConflicts(item, snapshot.work, clock)) refused(item, held.resource, held.key);
+      else wait(item, message(error));
+      return false;
+    }
   }), hot, clock);
   const launched: Work[] = [];
   let offers = registry && !state.diskHeadroom ? await runtimeCanaries(cycle, registry.runtimes) : [];
@@ -706,17 +714,17 @@ async function dispatchStep(cycle: Cycle) {
     const holder = launched.find(other => sharedResources(item, other).length);
     if (holder) { refused(item, sharedResources(item, holder)[0]!, holder.key); continue; }
     // GY-3104: a third equal failure holds the item for the master's decision.
-    if (failureHeld(state.failureRuns[item.id])) continue;
+    if (failureHeld(state.failureRuns[item.id])) { wait(item, 'held for the master after the same failure three times'); continue; }
     const incident = state.actions[earlyExitKey(item)];
-    if (incident?.state === 'failed' && incident.attempts >= actionStallThreshold && clock - Date.parse(incident.at) < actionStallDelay(incident.attempts)) continue;
+    if (incident?.state === 'failed' && incident.attempts >= actionStallThreshold && clock - Date.parse(incident.at) < actionStallDelay(incident.attempts)) { wait(item, 'held after its workers exited early again and again'); continue; }
     const key = dispatchKey(item);
     if (launcher.busy(key) || state.actions[key]?.state === 'done') continue;
-    if (item.priority > slotHeldAbove) continue;
+    if (item.priority > slotHeldAbove) { wait(item, 'a higher-priority item waits for a worker slot first'); continue; }
     const free = health.filter(entry => entry.busy || taken.has(entry.profile.name)).length < allowed ? health.find(entry => entry.healthy && !taken.has(entry.profile.name)) : undefined;
-    if (!free) break;
+    if (!free) { wait(item, 'no free worker account'); continue; }
     // GY-3103: a runtime whose launches of this item failed backs off for this item only; its accounts are excluded from the selection.
     const held = backedOffAccounts(state, registry, free.profile, item, clock);
-    if (held.all) continue;
+    if (held.all) { wait(item, 'every worker runtime backs off after its failed launch'); continue; }
     taken.add(free.profile.name);
     // Each newer runtime version is offered to one launch at a time, the canary; the rest stay pinned.
     const canaries = offers;
@@ -748,12 +756,20 @@ async function dispatchStep(cycle: Cycle) {
     try { await effects.askHumanProof(item, proof); await note(cycle, key, 'judgement', item.key, 'done', `Asked a person for ${proof} on ${item.candidate!.sha.slice(0, 12)}`); }
     catch (error) { await note(cycle, key, 'judgement', item.key, 'failed', `Could not ask a person for ${proof} on ${item.key}: ${message(error)}`); }
   }
+  // GY-3502: a launch failure whose back-off expired, or whose item is done, is history: deleted
+  // here so it never reads as a cause. An item launching now keeps its entry, whose count doubles the next back-off.
+  const live = new Set(snapshot.work.filter(item => item.stage !== 'done').map(item => item.id));
+  const launching = new Set(open.filter(item => launched.includes(item) || launcher.busy(dispatchKey(item))).map(item => item.id));
+  for (const [key, entry] of Object.entries(state.launchBackoff)) {
+    const id = key.slice(key.indexOf(':') + 1);
+    if (!live.has(id) || Date.parse(entry.until) <= clock && !launching.has(id)) delete state.launchBackoff[key];
+  }
   // GY-3432: the stall alarm, before the master is woken, so a raised alarm wakes it this cycle.
   if (!config.forPerson) {
     const running = snapshot.work.flatMap(item => item.sessions ?? []).filter(session => session.kind === 'implementation' && session.state === 'running').length;
     // An item in a run of equal failures already wakes the master by that run (GY-3104), held or not.
     const repeating = repeatingItems(state.failureRuns), unheld = (item: Work) => !repeating.has(item.key);
-    const alarm = stallAlarm({ now: clock, open: open.filter(unheld), ready: claimable.filter(unheld), freeSlots: allowed - running, holds,
+    const alarm = stallAlarm({ now: clock, open: open.filter(unheld), ready: claimable.filter(unheld), freeSlots: allowed - running, holds, gates,
       state, registry, serving: await Promise.resolve(effects.servingCommit?.()).catch(() => null) ?? null });
     if (recordStallAlarm(state, alarm, clock)) { cycle.log(`[graphyard-master] cycle ${state.cycle}: ${alarm ?? 'the stall alarm cleared'}`); await effects.persist(state); }
   }
@@ -776,7 +792,7 @@ async function dispatchStep(cycle: Cycle) {
  */
 async function releaseBacklog(cycle: Cycle, allowed: number) {
   const { config, effects, snapshot, clock } = cycle;
-  let slots = allowed - snapshot.work.filter(item => item.stage !== 'done' && (item.ready || inFlight(item, clock))).length;
+  let slots = allowed - snapshot.work.filter(item => inPipeline(item, snapshot.work, clock)).length;
   const identity = config.operatorAgent ? { id: config.operatorAgent.id, role: 'operator-agent' as const } : undefined;
   const candidates = snapshot.work
     .filter(item => item.criteria.length > 0 && item.stage !== 'done' && !item.ready && !item.hold && !item.blocker && !loopOwnedRefusal(item) && !ownerHoldRefusal(item, identity)
@@ -787,19 +803,19 @@ async function releaseBacklog(cycle: Cycle, allowed: number) {
     if (slots <= 0 && !item.yardRepair) continue;
     // An item sharing an exclusive resource with one in flight or released waits until that one lands.
     if (resourceConflicts(item, snapshot.work, clock).length || snapshot.work.some(other => other.id !== item.id && other.stage !== 'done' && other.ready && sharedResources(item, other).length)) continue;
-    const key = `release:${item.id}:${item.revision}`, inPipeline = snapshot.work.filter(entry => entry.stage !== 'done' && (entry.ready || inFlight(entry, clock))).length;
+    const key = `release:${item.id}:${item.revision}`, filled = snapshot.work.filter(entry => inPipeline(entry, snapshot.work, clock)).length;
     try {
       const overCap = !!item.yardRepair && slots <= 0;
       const reason = overCap
-        ? `${item.key} is a yard repair, so the loop releases it past the pipeline cap: ${inPipeline} item(s) in flight of concurrency ${allowed} and every dependency of ${item.key} is done`
-        : `The loop keeps the pipeline full: ${inPipeline} item(s) in flight of concurrency ${allowed}, every dependency of ${item.key} is done, and backlog means work this next`;
+        ? `${item.key} is a yard repair, so the loop releases it past the pipeline cap: ${filled} item(s) in flight of concurrency ${allowed} and every dependency of ${item.key} is done`
+        : `The loop keeps the pipeline full: ${filled} item(s) in flight of concurrency ${allowed}, every dependency of ${item.key} is done, and backlog means work this next`;
       const released = await effects.release!(item, reason) as Work | undefined;
       const index = snapshot.work.findIndex(entry => entry.id === item.id);
       if (index >= 0 && released && typeof released === 'object' && 'ready' in released) snapshot.work[index] = released;
       if (!item.yardRepair) slots -= 1;
       await note(cycle, key, 'judgement', item.key, 'done', overCap
-        ? `Released yard repair ${item.key} past the pipeline cap: ${inPipeline} item(s) in flight of concurrency ${allowed} and every dependency is done`
-        : `Released ${item.key} to keep the pipeline full: ${inPipeline} item(s) in flight of concurrency ${allowed} and every dependency is done`, config.operatorAgent?.id ?? null);
+        ? `Released yard repair ${item.key} past the pipeline cap: ${filled} item(s) in flight of concurrency ${allowed} and every dependency is done`
+        : `Released ${item.key} to keep the pipeline full: ${filled} item(s) in flight of concurrency ${allowed} and every dependency is done`, config.operatorAgent?.id ?? null);
     }
     catch (error) { await note(cycle, key, 'judgement', item.key, 'failed', `Could not release ${item.key} from backlog: ${message(error)}`, config.operatorAgent?.id ?? null); }
   }
