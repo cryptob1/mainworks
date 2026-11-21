@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '../../src/product';
 import type { ReactNode } from 'react';
 import type { Dashboard } from './dashboard';
 import { WorkPage } from './overview';
@@ -85,7 +86,7 @@ export const views: readonly View[] = [
   // The project's effective delivery defaults and declared applications (GY-1901), a Settings tab (GY-3483).
   { id: 'delivery', icon: '⇉', label: 'Delivery', section: 'settings', visible: dashboard => ['admin', 'coordinator', 'reader', 'slice-lead'].includes(role(dashboard)), render: dashboard => <DeliveryDefaults status={dashboard.status}/> },
   { id: 'automation', icon: '◇', label: 'Operator automation', section: 'settings', advanced: true, adminOnly: true, visible: dashboard => configured(dashboard.features.automation), render: dashboard => <AutomationPage operatorAgents={dashboard.operatorAgents} operatorAgentsError={dashboard.operatorAgentsError}/> },
-  { id: 'guide', icon: '?', label: 'How Graphyard works', render: () => <GuidePage/> },
+  { id: 'guide', icon: '?', label: `How ${PRODUCT_NAME} works`, render: () => <GuidePage/> },
 ];
 
 /** The pages this session may open, in registry order. */

@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '../../src/product';
 import { useState } from 'react';
 import { sections, viewFor, type primaryEntry } from '../pages';
 import type { Dashboard } from '../pages/dashboard';
@@ -56,5 +57,5 @@ function VersionLabel({ status }: { status: any }) {
   const version: string | undefined = status.release?.version && !status.release.version.startsWith('unreleased') ? status.release.version : undefined;
   const parts = [version && `v${version}`, commit && commit.slice(0, 7)].filter(Boolean);
   if (!parts.length) return null;
-  return <span className="version-label" title={commit}>Graphyard {parts.join(' · ')}</span>;
+  return <span className="version-label" title={commit}>{PRODUCT_NAME} {parts.join(' · ')}</span>;
 }

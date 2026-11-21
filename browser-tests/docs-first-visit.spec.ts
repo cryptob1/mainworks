@@ -85,7 +85,7 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: '
     if (await menu.isVisible()) await menu.click();
     await page.getByRole('button', { name: 'Help', exact: true }).click();
     const docs = page.locator('article.guide');
-    await expect(docs.getByRole('heading', { name: 'How Graphyard works', level: 1 })).toBeVisible();
+    await expect(docs.getByRole('heading', { name: 'How Mainworks works', level: 1 })).toBeVisible();
     await expect(docs).toContainText('coding factory');
 
     // Every link on the page that stays on the page lands on something that exists.

@@ -3,6 +3,7 @@
 // role needs; the full procedure a rule once carried there is moved into these topics verbatim, so
 // no rule changed meaning and none was dropped: what left the standing text is exactly what a
 // topic prints.
+import { COMMAND_NAME, PRODUCT_NAME } from './product.js';
 
 /**
  * One topic per procedure, in the order the AGENTS.md block lists them: the agent
@@ -125,7 +126,7 @@ export type GuideTopic = keyof typeof guideTopics;
 export const guideTopicList = Object.keys(guideTopics) as readonly GuideTopic[];
 
 /** What `guide` prints with no topic: the list, and how to read one. */
-export const guideList = () => `Graphyard guide topics: ${guideTopicList.join(', ')}.\nRun \`node $GRAPHYARD_CLI guide TOPIC\` to print one topic's procedure.`;
+export const guideList = () => `${PRODUCT_NAME} guide topics: ${guideTopicList.join(', ')}.\nRun \`${COMMAND_NAME} guide TOPIC\` (or \`node $GRAPHYARD_CLI guide TOPIC\`) to print one topic's procedure.`;
 
 /** One topic's procedure; an unknown topic is refused with the list, so a typo is never a silence. */
 export function guideText(topic: string): string {

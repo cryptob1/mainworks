@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { readFile, rm, symlink } from 'node:fs/promises';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
@@ -14,7 +14,8 @@ test('e2e:product-name-mainworks — mainworks and graphyard are the same CLI an
   assert.equal(bin.mainworks, bin.graphyard, 'both names point at the same file');
   const dir = await temporaryDirectory('product-name');
   try {
-    for (const name of ['mainworks', 'graphyard']) await symlink(resolve(bin[name]), join(dir, name));
+    // Each command name on PATH, as npm links a package's bin entries.
+    for (const name of ['mainworks', 'graphyard']) await writeFile(join(dir, name), `#!/bin/sh\nexec "${process.execPath}" "${resolve(bin[name])}" "$@"\n`, { mode: 0o755 });
     const env = { ...process.env, PATH: `${dir}:${process.env.PATH}` };
     for (const name of ['mainworks', 'graphyard']) {
       const help = await exec(name, ['--help'], { env, cwd: dir });

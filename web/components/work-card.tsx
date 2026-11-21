@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '../../src/product';
 import type { Work } from '../../src/model';
 import { CandidatePr } from '../candidate';
 import { formatDuration } from '../../src/model/duration';
@@ -31,7 +32,7 @@ export default function WorkCard({ item, all, repository, now, onOpen, group: gi
   const step = stepHeld(item, now, null, release), held = queue ? { ...step, overdue: false } : step;
   const timed = timedGroups.has(group);
   const steps = group === 'moving' || group === 'blocked' ? prSteps(item, now, release) : null;
-  const actor = queue ? { who: 'Graphyard (automatic)', does: queuedSentence(queue) } : nextActor(item, group, now, release, all);
+  const actor = queue ? { who: `${PRODUCT_NAME} (automatic)`, does: queuedSentence(queue) } : nextActor(item, group, now, release, all);
   // The merge writer opens no pull request, so a candidate the control plane observed itself names no PR (GY-2963).
   const pr = item.candidate && item.observation?.source !== 'control-plane' && <CandidatePr repository={repository} candidate={item.candidate} workKey={item.key}/>;
   // GY-2963: a merge whose trial is advancing names where it is, never a stall.

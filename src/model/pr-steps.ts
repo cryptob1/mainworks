@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '../product.js';
 import { isClosed } from './closure.js';
 import type { Gate, Work } from './work.js';
 import { noRelease, servedFor, type ReleaseView } from './release.js';
@@ -93,20 +94,20 @@ export function waitsOn(step: StepId, gate: Gate | undefined, work: Work, now: n
       if (ready !== undefined) {
         // A dependency waits for the other item to ship; a blocker is named, never restated: the row's
         // own line carries its one-sentence summary (GY-1739), the item page's details its text.
-        if (/^Dependency /.test(ready)) return { detail: plainReason(ready, 'ready', now).text.replace(/^./, c => c.toLowerCase()), who: 'Graphyard (automatic)' };
+        if (/^Dependency /.test(ready)) return { detail: plainReason(ready, 'ready', now).text.replace(/^./, c => c.toLowerCase()), who: `${PRODUCT_NAME} (automatic)` };
         return { detail: 'held by a recorded blocker', who: 'Master agent' };
       }
-      if (work.reworkRequested || changesRequested(work)) return assignment(work, now).active ? { detail: 'the builder is making the requested changes', who: 'Builder agent' } : { detail: 'sent back for changes, waiting for a builder', who: 'Graphyard (assigns a builder)' };
+      if (work.reworkRequested || changesRequested(work)) return assignment(work, now).active ? { detail: 'the builder is making the requested changes', who: 'Builder agent' } : { detail: 'sent back for changes, waiting for a builder', who: `${PRODUCT_NAME} (assigns a builder)` };
       if (assignment(work, now).active) return { detail: 'the builder is writing the code', who: 'Builder agent' };
       // At build with nobody on it (GY-3095): the row names why it waits when that is known.
       const reason = work.stage === 'build' ? waitingLabel(work) : null;
-      return { detail: reason ? `waiting for a builder: ${reason}` : 'waiting for a builder', who: 'Graphyard (assigns a builder)' };
+      return { detail: reason ? `waiting for a builder: ${reason}` : 'waiting for a builder', who: `${PRODUCT_NAME} (assigns a builder)` };
     }
     case 'validate': {
       const first = reasons[0] ?? '';
       if (/^No workspace registered$/.test(first)) return { detail: 'waiting for the builder to say where the code lives', who: 'Builder agent' };
-      if (/^Pull request has not been independently observed$/.test(first)) return { detail: 'waiting for the control plane to read the candidate', who: 'Graphyard (automatic)' };
-      return { detail: 'checking which files it changes', who: 'Graphyard (automatic)' };
+      if (/^Pull request has not been independently observed$/.test(first)) return { detail: 'waiting for the control plane to read the candidate', who: `${PRODUCT_NAME} (automatic)` };
+      return { detail: 'checking which files it changes', who: `${PRODUCT_NAME} (automatic)` };
     }
     case 'test': {
       const checks = checkStates(work);
@@ -123,7 +124,7 @@ export function waitsOn(step: StepId, gate: Gate | undefined, work: Work, now: n
       // from that standstill names who actually moves it.
       switch (work.nextAction?.gate === 'review' ? work.nextAction.kind : null) {
         case 'dispatch': return { detail: 'the proofs run before the review', who: 'Prover agent' };
-        case 'resync': return { detail: 'waiting for a fresh reading of the pull request before the review', who: 'Graphyard (automatic)' };
+        case 'resync': return { detail: 'waiting for a fresh reading of the pull request before the review', who: `${PRODUCT_NAME} (automatic)` };
         case 'attention': return { detail: 'no reviewer can be asked about this head', who: 'Master agent' };
         case 'request-rework': return { detail: 'this head needs a new commit before the review', who: 'Builder agent' };
       }
@@ -151,7 +152,7 @@ export function waitsOn(step: StepId, gate: Gate | undefined, work: Work, now: n
       const builder = reasons.find(reason => mergeBuilderClears.test(reason));
       if (builder) return { detail: plainReason(builder, 'merge', now).text.replace(/^./, c => c.toLowerCase()), who: 'Builder agent' };
       const stuck = reasons.map(reason => plainReason(reason, 'merge', now)).find(plain => plain.stuck);
-      return stuck ? { detail: stuck.text.replace(/^./, c => c.toLowerCase()), who: 'Builder agent' } : { detail: 'Graphyard is merging it', who: 'Graphyard (automatic)' };
+      return stuck ? { detail: stuck.text.replace(/^./, c => c.toLowerCase()), who: 'Builder agent' } : { detail: `${PRODUCT_NAME} is merging it`, who: `${PRODUCT_NAME} (automatic)` };
     }
   }
 }

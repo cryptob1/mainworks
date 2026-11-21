@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '../product.js';
 import { loopObservation, observationWindowHold, type Work } from './work.js';
 import { isClosed } from './closure.js';
 import { answerCommand, parkedOnHuman, type HumanRequestRow } from './human-request.js';
@@ -145,7 +146,7 @@ export function nextActor(work: Work, group: Group | null, now: number, release:
   if (group === 'blocked') return { who: 'Master agent', does: 'Clear what blocks it, or decide it with its own identity' };
   if (group === 'up-next') {
     const held = upNextHold(work, all, now);
-    return held ? { who: 'Nobody yet', does: held.text } : { who: 'Graphyard (assigns a builder)', does: 'Hands it to the next free builder agent' };
+    return held ? { who: 'Nobody yet', does: held.text } : { who: `${PRODUCT_NAME} (assigns a builder)`, does: 'Hands it to the next free builder agent' };
   }
   const steps = prSteps(work, now, release);
   return { who: steps.who, does: steps.label };
@@ -185,7 +186,7 @@ export type ActorRole = typeof actorRoles[number];
 export const roleOf: Readonly<Record<string, ActorRole>> = {
   You: 'human-only', 'Master agent': 'master', 'Builder agent': 'worker', 'Reviewer agent': 'reviewer', 'Prover agent': 'producer',
   // Control-plane steps (executor) and inactive states (held).
-  'Graphyard (automatic)': 'executor', 'Graphyard (assigns a builder)': 'executor', 'Automated checks': 'executor',
+  [`${PRODUCT_NAME} (automatic)`]: 'executor', [`${PRODUCT_NAME} (assigns a builder)`]: 'executor', 'Automated checks': 'executor',
   'Nobody yet': 'held', 'Nobody — it was closed': 'held', 'Nobody — it is live': 'held', 'Nobody — it has merged': 'held',
 };
 
@@ -244,7 +245,7 @@ export function buildBoard(work: Work[], now: number, humanRows?: HumanRequestRo
   const queued = mergeQueuePositions(work, now);
   const item = (entry: Work, group: OpenGroup): BoardItem => {
     const queue = group === 'moving' ? queued.get(entry.id) : undefined;
-    const { who, does } = queue ? { who: 'Graphyard (automatic)', does: queuedSentence(queue) } : nextActor(entry, group, now, release, work);
+    const { who, does } = queue ? { who: `${PRODUCT_NAME} (automatic)`, does: queuedSentence(queue) } : nextActor(entry, group, now, release, work);
     const actor = actorRole(entry, group, who);
     const timed = timedGroups.has(group);
     const since = group === 'needs-you' ? entry.humanRequest?.at ?? rows.get(entry.id)?.request.at ?? statusSince(entry, now)

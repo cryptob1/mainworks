@@ -2,8 +2,8 @@ import { test, expect, type Page } from '@playwright/test';
 import { boardApi, boardStatus } from './ui-board';
 
 // GY-3306: the browser tab names the project the dashboard serves, so an operator's tabs tell
-// installs apart. Two distinct configured identities each keep gh · OWNER/REPO as the document
-// title through navigation and reload; Graphyard stands until the identity loads — and returns
+// installs apart. Two distinct configured identities each keep Mainworks · OWNER/REPO as the document
+// title through navigation and reload; Mainworks stands until the identity loads — and returns
 // after sign-out — never undefined and never a stale other project's name.
 async function install(page: Page, repository: () => string) {
   await page.route('**/api/**', route => {
@@ -19,14 +19,14 @@ const settled = { timeout: 15_000 };
 const open = async (page: Page) => {
   // The sign-in page is the pre-identity state: the plain fallback every install shares.
   await page.goto('/?sign-in');
-  await expect(page).toHaveTitle('Graphyard');
+  await expect(page).toHaveTitle('Mainworks');
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
 };
 
 /** What one install's tab owes everywhere: its own project's title, on every page and after a reload. */
 async function tabNamesTheProject(page: Page, repository: string) {
-  const title = `gh · ${repository}`;
+  const title = `Mainworks · ${repository}`;
   await expect(page.locator('.top-bar .project-name')).toHaveText(repository, settled);
   await expect(page).toHaveTitle(title);
   for (const entry of ['Workers', 'Work']) {
@@ -57,13 +57,13 @@ test('the title follows the served identity, never a stale project, and sign-out
   let repository = 'cryptob1/graphyard';
   await install(page, () => repository);
   await open(page);
-  await expect(page).toHaveTitle('gh · cryptob1/graphyard', settled);
+  await expect(page).toHaveTitle('Mainworks · cryptob1/graphyard', settled);
   // The same tab, served the other install's identity: the title replaces the old project.
   repository = 'cryptob1/hello-huck';
   await page.reload();
   await expect(page.locator('.top-bar .project-name')).toHaveText(repository, settled);
-  await expect(page).toHaveTitle('gh · cryptob1/hello-huck');
+  await expect(page).toHaveTitle('Mainworks · cryptob1/hello-huck');
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByLabel('Access token')).toBeVisible();
-  await expect(page).toHaveTitle('Graphyard');
+  await expect(page).toHaveTitle('Mainworks');
 });
