@@ -14,6 +14,8 @@ import type { AccountUsage, EnvironmentProbe } from './environments.js';
 export interface ProbedHome { name: string; kind: string; home: string; plan?: string | null; declaredPlan?: string | null; keyFile?: string; keyVariable?: string; model?: string }
 /** What a usage reader reports of one account home: its login, the provider's usage windows, and a shared plan reading when it took one. */
 export interface AccountReading { loggedIn: boolean; usage: AccountUsage[]; note: string | null; reached?: boolean; shared?: boolean; plan?: PlanReading;
+  /** GY-3497: the extra-usage line the provider's answer gave when spend is enabled; shown, never changed. */
+  spend?: string;
   /** Why a logged-out reading is logged out, when the probe can say more than that. */
   loggedOutReason?: string;
   /** GY-3414: why a logged-in account still cannot run (its configured model is unavailable). */

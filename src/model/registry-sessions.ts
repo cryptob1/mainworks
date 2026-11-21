@@ -1,6 +1,6 @@
 import type { Work } from './work.js';
 import { fleetRoles, rolePolicy, roleRuntimeRefusal } from './registry.js';
-import { exhaustionEvidence, foldObservation, utcClock } from './account-quota.js';
+import { allowanceHold, exhaustionEvidence, foldObservation, utcClock } from './account-quota.js';
 import type { AccountSmoke, AgentRegistry, FleetAccount, FleetModel, FleetRefusal, FleetRoleName, FleetRuntime, FleetSession, ObservedQuota, RolePolicy, RunOutcome, SelectionRequest, SessionSkip } from './registry.js';
 import { accountProvider, busyDifferentProvider, sameProviderFallback, sharedProviderSkip, type ReviewDiversity } from './review-diversity.js';
 import { workerOrder, planSpreadOrder, fleetOrder, roleUnsupported } from './worker-preference.js';
@@ -124,7 +124,11 @@ export function accountIneligibility(registry: AgentRegistry, account: FleetAcco
   const pi = registry.runtimes.some(runtime => runtime.name === account.runtime && smokeTestedKinds.includes(runtime.launch.kind));
   if (account.smoke?.result === 'fail' && !(options.expiredSmokeRetestable && pi && smokeFailureDue(account, now))) return `${account.name} failed its smoke test${account.smoke.reason ? `: ${account.smoke.reason}` : ''}; it is tested again after ${smokeRetestMs / 60_000} minutes, or at once when the account is changed (master registry account set)`;
   if (account.quota.state === 'broken') return `${account.name} is broken: its live request failed${account.quota.reason ? ` (${account.quota.reason})` : ''}; checked again within 30 minutes`;
-  if (exhaustionEvidence(account.quota, now)) return `${account.name} quota is exhausted${until(account.quota.resetsAt)}${account.quota.reason ? ` (${account.quota.reason})` : ''}`;
+  if (exhaustionEvidence(account.quota, now)) {
+    // A limit-list window's sentence already names its window and reset: one plain sentence, nothing twice (GY-3497).
+    if (allowanceHold.test(account.quota.reason ?? '')) return `${account.name} quota is exhausted: ${account.quota.reason}`;
+    return `${account.name} quota is exhausted${until(account.quota.resetsAt)}${account.quota.reason ? ` (${account.quota.reason})` : ''}`;
+  }
   const running = liveSessions(registry).filter(session => session.account === account.name).length;
   // GY-3333: sessions other installs on this host hold on the same login home count toward the
   // account's own limit — one home serves at most its maxSessions sessions across every install.
@@ -288,6 +292,8 @@ export interface FleetAccountView {
   reason?: string | null;
   /** Why an unknown account shows no usage, in the probe's words: `this key reports no allowance` (GY-3495). */
   usageNote?: string | null;
+  /** GY-3497: the extra-usage line the provider's answer gave when spend is enabled (`extra usage on: $3.21 of $10.00 used`); shown, never changed. */
+  spend?: string | null;
   /** The hold's `resetsAt` is the bounded unknown-reset window, not a reset the provider named (GY-3302). */
   resetUnknown?: boolean;
   eligible: boolean;
@@ -334,6 +340,7 @@ export function fleetView(registry: AgentRegistry, now: number, host: string | n
       liveSessions: live.filter(session => session.account === account.name).map(session => ({ id: session.id, role: session.role, work: session.work, host: session.host, since: session.selectedAt })),
       quota: evidence ? 'exhausted' : account.quota.state === 'exhausted' ? 'unknown' : account.quota.state, evidence, loggedIn: account.quota.loggedIn, usage: account.quota.usage.map(({ readAt, ...usage }) => readAt ? { ...usage, lastRead: `last read ${utcClock(readAt)}` } : usage), resetsAt: account.quota.resetsAt, observedAt: account.quota.observedAt, checkedLive: account.quota.since ?? null, reason: account.quota.state === 'available' ? null : account.quota.reason, quotaSource: account.quota.source, resetUnknown: account.quota.session === 'guessed',
       usageNote: !evidence && account.quota.state !== 'available' && !account.quota.usage.length ? account.quota.reason : null,
+      spend: account.quota.spend ?? null,
       eligible: !ineligible, ineligible, smoke: account.smoke ?? null,
       held: fleetRoles.flatMap(role => { const reason = roleIneligibility(account, role, now); return reason ? [{ role, reason }] : []; }) };
   });

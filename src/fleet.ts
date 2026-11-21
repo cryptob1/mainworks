@@ -16,7 +16,7 @@ import { masterConfinementVariable } from './master/confinement.js';
 import { smokeRegistryAccount } from './runner/roles.js';
 import { fleetOrder, roleUnsupported } from './model/worker-preference.js';
 import type { SmokeResult } from './runner/pi.js';
-import { accountIneligibility, lastGoodUsage, deriveAccountPlan, fleetRoles, liveSessions, roleLimit, proposedConcurrency, proposedRuntimeRoles, proposedRuntimes, rolePolicy, roleRuntimeKinds, roleRuntimeRefusal, smokeFailureDue, smokeTestedKinds, type AccountKey, type AgentRegistry, type RolePolicy, type FleetAccount, type FleetAccountInput, type FleetModel, type FleetRole, type FleetRoleName, type FleetRuntime, type FleetSession, type LaunchContract, type QuotaObservation, type RunOutcome, type SessionSkip, type SmokeObservation } from './model/registry.js';
+import { accountIneligibility, lastGoodUsage, windowHold, deriveAccountPlan, fleetRoles, liveSessions, roleLimit, proposedConcurrency, proposedRuntimeRoles, proposedRuntimes, rolePolicy, roleRuntimeKinds, roleRuntimeRefusal, smokeFailureDue, smokeTestedKinds, type AccountKey, type AgentRegistry, type RolePolicy, type FleetAccount, type FleetAccountInput, type FleetModel, type FleetRole, type FleetRoleName, type FleetRuntime, type FleetSession, type LaunchContract, type QuotaObservation, type RunOutcome, type SessionSkip, type SmokeObservation } from './model/registry.js';
 import { hostAccountCheck, recordHostAccountCheck, clearEndedHostAccountSessions, clearHostAccountSession, hostAccountSessions, registerHostAccountSession } from './host-accounts.js';
 export { exhaustionTail, outOfCreditsScreen } from './exhaustion-screen.js';
 
@@ -172,8 +172,8 @@ async function readAccount(account: FleetAccount, runtime: FleetRuntime, probe: 
     // so the smoke test it gets before first selection decides, with Pi's own error (GY-515, GY-1158).
     if (runtime.launch.kind === 'pi' && !health.loggedIn) return { health, quota: { loggedIn: null, state: 'unknown', usage: [], resetsAt: null, reason: null } };
     // A logged-in account that is not ready (its model is unavailable) is held like a logged-out one, with its reason (GY-3414).
-    return { health, quota: { loggedIn: health.loggedIn && health.quota !== 'exhausted' ? health.healthy : health.loggedIn, state: health.loggedIn ? health.quota : 'unknown', usage: health.usage.map(entry => ({ window: entry.window, percent: entry.percent, resetsAt: entry.resetsAt })),
-      resetsAt: health.quota === 'exhausted' ? resets.at(-1) ?? null : null, reason: (health.reason ?? (health.quota === 'unknown' && health.loggedIn ? health.note : null))?.slice(0, 500) ?? null, identity: health.identity, ...health.key ? { key: health.key } : {} } };
+    return { health, quota: { loggedIn: health.loggedIn && health.quota !== 'exhausted' ? health.healthy : health.loggedIn, state: health.loggedIn ? health.quota : 'unknown', usage: health.usage.map(entry => ({ window: entry.window, percent: entry.percent, resetsAt: entry.resetsAt, ...entry.limitList ? { limitList: true } : {} })),
+      resetsAt: health.quota === 'exhausted' ? resets.at(-1) ?? null : null, reason: (health.reason ?? (health.quota === 'unknown' && health.loggedIn ? health.note : null))?.slice(0, 500) ?? null, identity: health.identity, ...health.key ? { key: health.key } : {}, ...health.spend ? { spend: health.spend } : {} } };
   }
   if (!runtime.launch.loginFile) return unknown;
   const file = resolve(home, runtime.launch.loginFile), loggedIn = await access(file).then(() => true, () => false);
@@ -243,15 +243,17 @@ export async function observeAccount(account: FleetAccount, runtime: FleetRuntim
   if (cached && !signalled && Date.parse(cached.nextCheck) > now) {
     if (cached.quota.state !== 'available') return { quota: cached.quota, health: null };
     const reading = await readAccount(account, runtime, probe, allAccounts, model);
-    return { ...reading, quota: { ...cached.quota, usage: lastGoodUsage(account, reading.quota, now), identity: reading.quota.identity } };
+    return { ...reading, quota: windowHold({ ...cached.quota, usage: lastGoodUsage(account, reading.quota, now), identity: reading.quota.identity, ...reading.quota.spend ? { spend: reading.quota.spend } : {} }, ceiling, now) };
   }
   const reading = await readAccount(account, runtime, { ...probe, ...(account.quota.loggedIn === false ? { cacheMs: 0 } : {}) }, allAccounts, model);
   const usage = lastGoodUsage(account, reading.quota, now);
-  // A usage window at its ceiling, or a reading of exhausted, only asks for the live request; it never holds by itself.
+  // A usage window at its ceiling, or a reading of exhausted, only asks for the live request; a
+  // metering window never holds by itself. A window of the provider's own limit list does hold,
+  // past even a passing request (windowHold, GY-3497): the provider stops sessions on that list.
   const spent = reading.quota.state === 'exhausted' || usage.some(window => window.percent >= ceiling && !!window.resetsAt && Date.parse(window.resetsAt) > now);
   if (cached || signalled || spent || needsSmoke(account, runtime, now))
-    return { ...reading, quota: await checkAccountLive(account, runtime, probe, model, usage, reading.quota.key) };
-  return { ...reading, quota: { ...reading.quota, usage } };
+    return { ...reading, quota: windowHold({ ...await checkAccountLive(account, runtime, probe, model, usage, reading.quota.key), ...reading.quota.spend ? { spend: reading.quota.spend } : {} }, ceiling, now) };
+  return { ...reading, quota: windowHold({ ...reading.quota, usage }, ceiling, now) };
 }
 
 /**
