@@ -43,6 +43,7 @@ import { formatAge } from '../model/duration.js';
 import { loadProjectDelivery, parseProjectDelivery } from '../model-boundary/project-applications.js';
 import { backedOffProfiles, readDispatchCursor, type DispatchCursor } from '../dispatch/cursor.js';
 import { liveReviewRequest } from '../model/dispatch.js';
+import { allowanceSentence, allowanceWarning } from '../model/allowance.js';
 
 /** GY-3105: an item's whole non-routine ledger, oldest first, paged by cursor to the end; null when any page cannot be read. */
 export async function itemLedger(masterApi: (path: string) => Promise<any>, id: string): Promise<SpeedEvent[] | null> {
@@ -224,7 +225,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     stallAlarm: state?.actions[stallAlarmKey]?.detail ?? null,
     // GY-3095: the pipeline has stopped where a role cannot launch; each line names the role, the refusal, how long it has lasted and the next command.
     // GY-3204: and each application whose versionUrl lags main or fails to answer.
-    attention: [...humanAttention, ...leaseLosses, ...blockerAttention, ...drained, ...growth, ...trialImageFault, ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now) : []), ...backedOff, ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(readRemoteShardRuns(root)), ...gateStalled, ...overloadAttention, ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
+    attention: [...humanAttention, ...leaseLosses, ...blockerAttention, ...drained, ...growth, ...trialImageFault, ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now) : []), ...backedOff, ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...allowanceAttention(fleet, now), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(readRemoteShardRuns(root)), ...gateStalled, ...overloadAttention, ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
     // GY-3199: the control plane's own update record — the Graphyard commit this install runs, its
     // last check and last update, the step of a failed upgrade, and the staleness the daily
     // diagnostics reports (a check over a day old, or a verified commit first seen over a day ago
@@ -283,6 +284,8 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     // GY-3146: what the latest verified batch changed and how to try it.
     releaseNote: latestReleaseNote(releaseNotesPath(root)),
     // GY-3285: worker sessions running of the number the registry worker role allows (master workers N sets it).
+    // GY-3499: what each account has left, one plain sentence each.
+    accounts: accountAllowances(fleet, now),
     workers: `${sessions.filter(session => session.kind === 'implementation').length}/${workersAllowed(master, fleet?.roles ? { roles: fleet.roles.map(role => ({ ...role, name: role.role })) } : null)}`,
     sessions,
     freeWorkers: health.filter(entry => entry.healthy).map(entry => entry.profile.name),
@@ -305,6 +308,10 @@ export function reviewLaunchAttention(open: readonly Work[], cursor: Pick<Dispat
 /** GY-3441: each enabled account serving a role that is held as not logged in, with why, so a skipped reviewer is named. */
 export const loggedOutAttention = (fleet: Pick<FleetView, 'accounts'> | null) => (fleet?.accounts ?? []).filter(account => account.enabled && account.roles.length && account.loggedIn === false && account.ineligible).map(account =>
   ({ subject: `account ${account.name}`, text: `${account.ineligible} — skipped for ${account.roles.map(entry => entry.role).join(', ')}`, next: `Log ${account.name} in again; the hold lifts when its probe reads the new login, or clear it with graphyard master registry account quota ${account.name} available --reason R` }));
+/** GY-3499: `NAME: about 24% of this week left, back Sun 22 Nov 05:00`, one line per account. */
+export const accountAllowances = (fleet: Pick<FleetView, 'accounts'> | null, now: number) => (fleet?.accounts ?? []).map(account => `${account.name}: ${allowanceSentence(account.usage, now)}`);
+/** GY-3499: each account with live sessions past 80% of a window; the row goes once the window resets or a reading drops under 80%. */
+export const allowanceAttention = (fleet: Pick<FleetView, 'accounts'> | null, now: number) => (fleet?.accounts ?? []).flatMap(account => { const row = allowanceWarning(account, now); return row ? [row] : []; });
 /** GY-3302: each enabled account serving a role whose model names no concrete id runs its runtime's default, perhaps a free model. */
 export const unspecifiedModelAttention = (fleet: Pick<FleetView, 'accounts'> | null) => (fleet?.accounts ?? []).filter(account => account.enabled && account.roles.length).flatMap(account => {
   const text = unspecifiedModel(account);
