@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
@@ -232,4 +232,37 @@ test(`${own} — bare unbuilt kept directory is reclaimed when main moves, concu
   });
   assert.equal(pnpmSecond.build, 'pass');
   assert.equal(pnpmBuildCalls.length, 1, 'second base pass for another workspace package reused the full kept build');
+});
+
+test(`${own} — a kept tree that took the warm dependency image keeps its node_modules after that image is evicted`, { timeout: 300_000 }, async () => {
+  const root = await temporaryDirectory('base-build-warm', tmpdir());
+  const write = (path: string, content: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); };
+  gitIn(root, 'init', '-q', '-b', 'main');
+  write('package.json', JSON.stringify({ name: 'fixture', scripts: { build: 'true', test: 'node test.js' } }));
+  write('package-lock.json', JSON.stringify({ name: 'fixture', lockfileVersion: 3 }));
+  write('.gitignore', 'node_modules\n');
+  write('graphyard.json', JSON.stringify({ delivery: policy }));
+  write('test.js', `const ok = require('node:fs').existsSync('node_modules/dep.js');\nconsole.log((ok ? 'ok' : 'not ok') + ' 1 - dependencies installed');\nprocess.exit(ok ? 0 : 1);\n`);
+  gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'base');
+  const tip = () => gitIn(root, 'rev-parse', 'HEAD');
+  const installRun: ChildRun = async (command, args, options) => {
+    if (command === 'npm' && args[0] === 'ci') { mkdirSync(join(options!.cwd!, 'node_modules'), { recursive: true }); writeFileSync(join(options!.cwd!, 'node_modules', 'dep.js'), ''); return ''; }
+    return run(command, args, options);
+  };
+  const baseRoot = await temporaryDirectory('base-build-warm-trials', tmpdir());
+  const passed = { passed: 1, failed: [], files: 1 };
+  const pass = (sha: string) => runTrialAttempt({ root, base: baseRoot, mergeSha: sha, baseTip: sha, changedFiles: ['src/x'],
+    timeoutMs: 60_000, caches: true, run: installRun, environment: { PATH: process.env.PATH! } });
+
+  // The first tip installs and commits the dependency image; the next tip (same lockfile) takes that image.
+  assert.deepEqual((await pass(tip())).tests, passed);
+  write('src/moved', ''); gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'moved');
+  const second = tip();
+  assert.deepEqual((await pass(second)).tests, passed);
+  assert.ok(existsSync(keptBaseBuildMarker(keptBaseBuild(baseRoot, second))));
+
+  // A lockfile change elsewhere evicts that image; the kept tree's reuse must still find its dependencies.
+  rmSync(join(root, '.git', 'graphyard-dependency-images'), { recursive: true, force: true });
+  const reused = await pass(second);
+  assert.deepEqual(reused.tests, passed, 'the reused kept tree still holds its node_modules');
 });

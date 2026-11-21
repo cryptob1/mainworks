@@ -2,7 +2,7 @@ import { trialCpuMonitor, trialOverloadFault, type TrialCpuReading } from './tri
 // Concern: the merge writer's trial merge — the exact merge commit of a head onto main, and its build and affected tests in a credential-free checkout.
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync, statfsSync } from 'node:fs';
-import { chmod, mkdir, mkdtemp, readdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, cp, mkdir, mkdtemp, readdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { availableParallelism, constants, homedir, tmpdir } from 'node:os';
 import { basename, delimiter, dirname, join, relative, isAbsolute, resolve } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../child-runner.js';
@@ -1360,7 +1360,9 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         // dependency image, or a real install, instead.
         if (manager.name === 'npm' && !kept && existsSync(join(input.root, 'node_modules')) && own !== null && own === merged) await symlink(join(input.root, 'node_modules'), join(worktree, 'node_modules'));
         else if (manager.name === 'npm' && warm) {
-          await symlink(warm, join(worktree, 'node_modules'));
+          // A kept tree outlives this pass while the image may be evicted, so it takes its own copy.
+          if (kept) await cp(warm, join(worktree, 'node_modules'), { recursive: true, verbatimSymlinks: true });
+          else await symlink(warm, join(worktree, 'node_modules'));
           log.push(`dependency image ${dependencies!.slice(0, 12)} reused: the same trial image and lockfile installed before, so nothing is installed`);
         } else if (manager.name === 'pnpm' || await holds('package-lock.json')) {
           const [command, ...args] = installArgv(manager);
