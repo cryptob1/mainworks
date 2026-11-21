@@ -16,7 +16,8 @@ import { dockerCreates, git, killTrees, shardHosts, shardRepository, type ShardH
 // container's --tmpfs is a real in-memory mount (bubblewrap) and nothing else it writes outside the
 // mounted checkout reaches a disk. The runtime is a stand-in `codex` committed in the repository: it
 // reads its account's login at the login home's own path, commits work derived from it, refreshes
-// the login, and calls `graphyard complete`, which the relay runs here.
+// the login, and calls `graphyard complete` with a line of its own stderr left unfinished, which the
+// relay still runs here.
 
 const proof = 'integration:remote-session-login';
 const image = 'graphyard-trial:remote-session';
@@ -29,6 +30,7 @@ printf '%s' "$token" | sha256sum | cut -d' ' -f1 > work.txt
 while [ ! -e .go ]; do sleep 0.1; done
 git add work.txt && git commit -qm "work done on the host"
 printf '{"token":"refreshed-by-the-provider"}' > "$CODEX_HOME/auth.json"
+printf 'half a line, no newline yet' >&2
 node "$GRAPHYARD_CLI" complete GY-1 1 --head
 echo "the runtime finished"
 `;
@@ -91,6 +93,7 @@ test(`${proof} — a session on an added host uses its account, no login file is
   const code = await session;
   assert.equal(code, 0, output.join(''));
   assert.match(output.join(''), /the runtime finished/);
+  assert.match(output.join(''), /half a line, no newline yet\n/, 'what the runtime wrote before its call, unfinished line and all, is shown whole');
   assert.deepEqual(filesHolding(token), [], 'after it, no file on the host holds the login');
   assert.deepEqual(filesHolding('refreshed-by-the-provider'), [], 'nor the login the provider refreshed there');
   assert.equal(JSON.parse(await readFile(join(account, 'auth.json'), 'utf8')).token, 'refreshed-by-the-provider', 'the refreshed login came back here');

@@ -31,7 +31,7 @@ const marker = '\u001egraphyard-';
 /**
  * Runs inside the container as its first process: writes the handed-over files (the login, the
  * relay) into their tmpfs homes, relays the session's `graphyard` calls out on stderr and their
- * answers in from stdin, runs the runtime, then sends back the commits it made and any login file
+ * answers in from stdin, runs the runtime with its stderr passed through here so each frame is a line of its own, then sends back the commits it made and any login file
  * it changed. Nothing it writes outlives the container.
  */
 export const sessionBoot = String.raw`import base64, json, os, subprocess, sys, threading
@@ -61,9 +61,26 @@ if os.path.exists(os.path.join(session, 'calls')):
     os.remove(os.path.join(session, 'calls'))
 os.mkfifo(os.path.join(session, 'calls'), 0o600)
 lock = threading.Lock()
+unfinished = False
+def write(data):
+    while data:
+        data = data[os.write(2, data):]
+# The runtime's stderr comes through here, never straight to fd 2, so a frame always starts its own line.
 def say(kind, text):
+    global unfinished
     with lock:
-        os.write(2, ('\x1egraphyard-' + kind + ' ' + text + '\n').encode())
+        write((b'\n' if unfinished else b'') + ('\x1egraphyard-' + kind + ' ' + text + '\n').encode())
+        unfinished = False
+def said():
+    global unfinished
+    while True:
+        data = os.read(runtime.stderr.fileno(), 65536)
+        if not data:
+            return
+        with lock:
+            # A runtime line that looks like a frame is shown, never obeyed.
+            write(data.replace(b'\x1e', b'^'))
+            unfinished = not data.endswith(b'\n')
 def calls():
     while True:
         with open(os.path.join(session, 'calls')) as fifo:
@@ -79,10 +96,13 @@ def answers():
         target = os.path.join(session, 'answer-' + json.loads(text)['id'] + '.json')
         open(target + '.part', 'wb').write(text)
         os.rename(target + '.part', target)
-runtime = subprocess.Popen(sys.argv[1:], stdin=subprocess.DEVNULL)
+runtime = subprocess.Popen(sys.argv[1:], stdin=subprocess.DEVNULL, stderr=subprocess.PIPE)
+errors = threading.Thread(target=said, daemon=True)
+errors.start()
 threading.Thread(target=calls, daemon=True).start()
 threading.Thread(target=answers, daemon=True).start()
 code = runtime.wait()
+errors.join(5)
 bundle = os.path.join(session, 'session.bundle')
 if start and git('bundle', 'create', bundle, 'HEAD', '^' + start).returncode == 0:
     say('commits', base64.b64encode(open(bundle, 'rb').read()).decode())
