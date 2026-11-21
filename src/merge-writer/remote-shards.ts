@@ -10,7 +10,7 @@ import { basename, dirname, join } from 'node:path';
 import { homedir, hostname, tmpdir } from 'node:os';
 import type { ChildRun } from '../child-runner.js';
 import { shellQuote } from '../shell-quote.js';
-import { outdatedShimReason, probeHost, readHosts, sshTarget } from '../hosts.js';
+import { probeHost, readHosts, sshTarget, type HostReading as HostProbe } from '../hosts.js';
 import { trialContainerFault, trialHotCelsius } from './trial-load.js';
 
 /** One host's reading: cores, cores busy (1-minute load), the share of CPU stolen, and its hottest CPU sensor against the heat limit. */
@@ -70,9 +70,9 @@ export interface ShardPlacement { ran: string[]; queuedWhileIdle: number; droppe
 /**
  * Run `count` shards across `hosts` (this machine first). Each shard goes to the host with room under
  * its heat limit that has the most real free CPU left once its running shards (`breadth` cores each)
- * are counted, so one trial's shards spread across hosts and none waits while a host has room. With
- * no host able to take one and none running, it goes to this machine, whose launcher waits on heat as
- * before. `pinned` (GY-3419) names shards that may run only on this machine: a shard holding a
+ * are counted, so one trial's shards spread across hosts and none waits while a host has room. This
+ * machine's reading never takes it out (GY-3588): it keeps its room, and its launcher waits on heat.
+ * `pinned` (GY-3419) names shards that may run only on this machine: a shard holding a
  * local-only test file never reaches a host, which could not run it. A host that throws
  * `HostDroppedError` takes no more shards this trial and its shard is
  * re-queued first. `stopped` ends placement once a shard ended the trial; running shards are awaited.
@@ -82,10 +82,10 @@ export async function runShardsOnHosts<R>(input: { count: number; hosts: readonl
   const running = new Map(input.hosts.map(host => [host.name, 0]));
   const inFlight = new Set<Promise<void>>();
   let queuedWhileIdle = 0, failure: { error: unknown } | null = null;
-  const usable = (host: PlacedHost<R>) => !dropped.has(host.name) && underHeatLimit(host.reading);
+  // GY-3588: this machine is always usable up to its room; its launcher holds each container start while a sensor is hot.
+  const usable = (host: PlacedHost<R>) => host === input.hosts[0] || !dropped.has(host.name) && underHeatLimit(host.reading);
   const left = (host: PlacedHost<R>) => realFreeCores(host.reading) - running.get(host.name)! * input.breadth;
-  const pick = (index: number) => input.hosts.filter(host => usable(host) && (!input.pinned?.[index] || host === input.hosts[0]) && running.get(host.name)! < host.room).reduce<PlacedHost<R> | undefined>((best, host) => !best || left(host) > left(best) ? host : best, undefined)
-    ?? (inFlight.size ? undefined : input.hosts[0]);
+  const pick = (index: number) => input.hosts.filter(host => usable(host) && (!input.pinned?.[index] || host === input.hosts[0]) && running.get(host.name)! < host.room).reduce<PlacedHost<R> | undefined>((best, host) => !best || left(host) > left(best) ? host : best, undefined);
   const start = (host: PlacedHost<R>, index: number) => {
     running.set(host.name, running.get(host.name)! + 1);
     const flight: Promise<void> = input.run(host, index).then(() => { ran[index] = host.name; }, error => {
@@ -272,8 +272,12 @@ export function readRemoteShardRuns(root: string): RemoteShardRun[] {
   try { const runs = JSON.parse(readFileSync(remoteShardRecordPath(root), 'utf8')); return Array.isArray(runs) ? runs : []; } catch { return []; }
 }
 
-/** Master status's remote shard line over the last 20 trials, or null before any trial ran with hosts. */
-export function remoteShardSummary(runs: readonly RemoteShardRun[]) {
+/**
+ * Master status's remote shard line over the last 20 trials, or null before any trial ran with hosts.
+ * GY-3517: given the loop's latest probes, each host's state is that probe's, with when it was read,
+ * never the last trial's — a host updated or re-added since reads its fresh result.
+ */
+export function remoteShardSummary(runs: readonly RemoteShardRun[], probes?: readonly HostProbe[]) {
   if (!runs.length) return null;
   const shards = runs.reduce((sum, run) => sum + run.shards, 0), remote = runs.reduce((sum, run) => sum + run.remote, 0);
   const walls = runs.map(run => run.wallMs).sort((a, b) => a - b), latest = runs.at(-1)!;
@@ -284,15 +288,15 @@ export function remoteShardSummary(runs: readonly RemoteShardRun[]) {
     trialWallSeconds: { median: Math.round(walls[Math.floor((walls.length - 1) / 2)]! / 1000), latest: Math.round(latest.wallMs / 1000) },
     queuedWhileHostIdle: runs.reduce((sum, run) => sum + run.queuedWhileIdle, 0),
     peakCelsius: { host: latest.host, celsius: peaks.length ? Math.max(...peaks) : null },
-    hosts: latest.hosts.map(host => ({ ...host, state: host.away ? 'away' : 'ready' })),
+    hosts: probes ? probes.filter(probe => !probe.local).map(probe => ({ name: probe.host, away: probe.away, ...(probe.reason ? { reason: probe.reason } : {}), celsius: probe.celsius, readAt: probe.at ?? null, state: probe.away ? 'away' : 'ready' }))
+      : latest.hosts.map(host => ({ ...host, state: host.away ? 'away' : 'ready' })),
     latest: { run: latest.label ?? 'merge trial', shards: latest.shards, remote: latest.remote },
   };
 }
 
-
-/** GY-3476: one attention line for each host the latest trial left away because its shim is older than this release. */
-export const outdatedShimAttention = (runs: readonly RemoteShardRun[]) => (runs.at(-1)?.hosts ?? []).filter(host => host.away && host.reason === outdatedShimReason(host.name)).map(host =>
-  ({ subject: `host ${host.name}`, text: `${host.name} takes no trial shards: its graphyard-host-shim is older than this release`, next: `Run graphyard host prepare and, with sudo on ${host.name}, the script it prints` }));
+/** GY-3476, GY-3517: one attention line for each host the latest probe reads away because its shim lacks a verb trials use; it clears on the first probe that reads it ready. */
+export const outdatedShimAttention = (probes: readonly Pick<HostProbe, 'host' | 'away' | 'update'>[]) => probes.filter(probe => probe.away && probe.update).map(probe =>
+  ({ subject: `host ${probe.host}`, text: `${probe.host} takes no trial shards: its graphyard-host-shim is older than this release`, next: `Run graphyard host prepare and, with sudo on ${probe.host}, the script it prints` }));
 
 /** GY-3534: one attention line for each host the latest trial left away because its SSH server reset the connection. */
 export const connectionResetAttention = (runs: readonly RemoteShardRun[]) => (runs.at(-1)?.hosts ?? []).filter(host => host.away && /connection reset|kex_exchange_identification/i.test(host.reason ?? '')).map(host =>
