@@ -1,3 +1,4 @@
+import { caretakerStep } from './caretaker.js';
 import { WorkerSandboxError } from '../worker-sandbox.js';
 import type { RuntimeSession } from '../model/sessions.js';
 import { sessionAgents } from '../session-inventory.js';
@@ -223,6 +224,7 @@ export async function runCycle(config: MasterConfig, state: DaemonState, effects
     reviewsAndTrials: new Promise<void>(resolve => { reviewedAndTrialled = resolve; }) };
 
   if (!config.forPerson) await step('close', () => closeStep(cycle));
+  caretakerStep(cycle);
   await step('dispatch', async () => {
     await dispatchStep(cycle);
     if (!config.forPerson) for (const person of config.people ?? []) {

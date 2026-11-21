@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { wholeDocument } from '../model/work-summary.js';
 import { inheritedObligations, proofAuthority, type Principal, type ProofAuthority } from '../model.js';
@@ -66,6 +67,16 @@ export const workCommands = defineCommands([
       const text = [id, ...args].filter(Boolean).join(' ').trim();
       if (!text) throw new Error('Use message TEXT');
       return print(await api('master/messages', { text }));
+    },
+  },
+  {
+    // GY-3593: the caretaker's report, at most 12 lines, saved by the control plane.
+    name: 'caretaker',
+    help: ['  caretaker report FILE|-       Save the caretaker run\'s report (at most 12 lines: checked:, fixed:, filed:, needs the owner:)'],
+    run: async ({ id, args, api, print }) => {
+      if (id !== 'report' || !args[0]) throw new Error('Use caretaker report FILE (or - for standard input)');
+      const text = args[0] === '-' ? readFileSync(0, 'utf8') : readFileSync(args[0], 'utf8');
+      return print(await api('caretaker/reports', { lines: text.split('\n').map(line => line.trim()).filter(Boolean) }));
     },
   },
   {

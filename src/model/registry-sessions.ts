@@ -347,8 +347,8 @@ export function fleetView(registry: AgentRegistry, now: number, host: string | n
     return { role: role.name, accounts: role.accounts, concurrency: role.concurrency, limit: roleLimit(role), live: running, next: blocked ? null : first, blocked, policy: rolePolicy(role) };
   });
   const unassigned = accounts.filter(account => !account.roles.length).map(account => `${account.name} serves no role; name it in a role or remove it`);
-  const missing = registry.accounts.length ? fleetRoles.filter(name => !registry.roles.some(role => role.name === name)).map(name => name === 'master'
-    ? 'role master is not configured; the durable loop launches no master session until graphyard master registry role set master ACCOUNT[,ACCOUNT…] --reason REASON names its accounts'
+  const missing = registry.accounts.length ? fleetRoles.filter(name => !registry.roles.some(role => role.name === name)).map(name => name === 'master' || name === 'caretaker'
+    ? `role ${name} is not configured; the durable loop launches no ${name} session until graphyard master registry role set ${name} ACCOUNT[,ACCOUNT…] --reason REASON names its accounts`
     : `role ${name} is not configured; its sessions launch from local profiles until it is`) : [];
   const plans = groupAccountsByPlan({ accounts: registry.accounts }, now);
   return { revision: registry.revision, updatedAt: registry.updatedAt, configured: registry.roles.length > 0, host, runtimes: registry.runtimes, models: registry.models, accounts, roles, plans,

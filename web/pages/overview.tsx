@@ -68,9 +68,12 @@ export default function OverviewPage({ work, board, status, query, setQuery, set
   const latest = [...shipped, ...waiting].reduce<Work | null>((newest, w) => !newest || mergedAt(w) > mergedAt(newest) ? w : newest, null);
   const row = (w: Work, group: OpenGroup) => <WorkCard key={w.id} item={w} all={work} group={group} stall={group === 'blocked' ? stalls.get(w.id) : undefined} queue={queues.get(w.id)} repository={status?.repository} now={now} onOpen={setSelected} release={release} busy={busy} onPriority={mayChangePriority(status?.actor) ? priority => { void action(w.id, 'priority', { priority, source: 'dashboard' }); } : undefined}/>;
   const shown = (group: OpenGroup) => !only || only === group;
-  const section = (group: OpenGroup, note?: string) => shown(group) && (byGroup[group].length > 0 || (group === 'needs-you' && only === group)) && <section key={group} className={`panel work-group group-${group}`} aria-label={groupLabel[group]} data-group-section={group}>
+  // GY-3593: the caretaker's newest "needs the owner" lines join Needs you.
+  const caretaker: string[] = status?.caretaker?.needsOwner ?? [];
+  const section = (group: OpenGroup, note?: string) => shown(group) && (byGroup[group].length > 0 || (group === 'needs-you' && (only === group || caretaker.length > 0))) && <section key={group} className={`panel work-group group-${group}`} aria-label={groupLabel[group]} data-group-section={group}>
     <h2><GroupDot group={group}/>{groupLabel[group]} <span className="count">{byGroup[group].length}</span>{note && <small>{note}</small>}{group === 'needs-you' && <button type="button" className="text-button push" onClick={() => setView('needs-you')}>Every request and answer →</button>}</h2>
     {group === 'moving' && <div className="row-head" aria-hidden="true"><span/><span/><span className="row-steps"><StepNames/></span><span>Who acts next</span><span>In step</span></div>}
+    {group === 'needs-you' && caretaker.length > 0 && <ul className="caretaker-lines" data-caretaker>{caretaker.map(line => <li key={line}>{line}</li>)}</ul>}
     <div className="rows">{byGroup[group].map(w => row(w, group))}</div>
   </section>;
   const admin = status?.actor?.role === 'admin';
