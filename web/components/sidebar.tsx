@@ -1,4 +1,4 @@
-import { PRODUCT_NAME } from '../../src/model/product';
+import { COMMAND_NAME, PRODUCT_NAME } from '../../src/model/product';
 import { useState } from 'react';
 import { sections, viewFor, type primaryEntry } from '../pages';
 import type { Dashboard } from '../pages/dashboard';
@@ -32,7 +32,7 @@ export default function Sidebar({ entries, dashboard }: { entries: (Entry | null
   const theme = useTheme();
   return <aside className={open ? 'sidebar open' : 'sidebar'}><div className="sidebar-inner">
     <div className="sidebar-head">
-      <div className="brand"><img className="mark" src="/graphyard-symbol.svg" alt="" width="26" height="26"/> graphyard</div>
+      <div className="brand"><img className="mark" src="/graphyard-symbol.svg" alt="" width="26" height="26"/> {COMMAND_NAME}</div>
       <button type="button" className="menu-button" aria-label="Menu" aria-expanded={open} onClick={() => setOpen(value => !value)}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
     </div>
     <nav className="primary-nav" aria-label="Primary">{sections.map(section => {
