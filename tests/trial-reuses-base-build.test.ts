@@ -75,7 +75,7 @@ const run: ChildRun = async (command, args, options) => {
   return '';
 };
 
-type TrialEvent = MergeRecordEvent & { kind: 'trial'; proofs?: Record<string, { executed: number; failed: number }> };
+type TrialEvent = Extract<MergeRecordEvent, { kind: 'trial'; outcome: 'verdict' }> & { proofs?: Record<string, { executed: number; failed: number }> };
 interface Merged { outcome: Awaited<ReturnType<typeof mergeOne>>; trial: TrialEvent | undefined; steps: string[]; timings: [string, number][] }
 
 /** One item merged through the trial runner: a caching trial (the merge writer's own) when `reuse`, else one that caches nothing. */
