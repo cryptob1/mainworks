@@ -73,13 +73,16 @@ def answers():
     while True:
         text = line()
         if text is None:
+            # The channel closed: this machine is gone, so no relayed call can be answered. End the runtime.
+            runtime.terminate()
             return
         target = os.path.join(session, 'answer-' + json.loads(text)['id'] + '.json')
         open(target + '.part', 'wb').write(text)
         os.rename(target + '.part', target)
+runtime = subprocess.Popen(sys.argv[1:], stdin=subprocess.DEVNULL)
 threading.Thread(target=calls, daemon=True).start()
 threading.Thread(target=answers, daemon=True).start()
-code = subprocess.call(sys.argv[1:], stdin=subprocess.DEVNULL)
+code = runtime.wait()
 bundle = os.path.join(session, 'session.bundle')
 if start and git('bundle', 'create', bundle, 'HEAD', '^' + start).returncode == 0:
     say('commits', base64.b64encode(open(bundle, 'rb').read()).decode())

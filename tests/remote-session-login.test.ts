@@ -9,7 +9,7 @@ import { createRequire } from 'node:module';
 import { runRemoteSession } from '../src/remote-session.js';
 import { supervise } from '../src/session-watch.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git, killTrees, shardHosts, shardRepository, type ShardHostsFixture } from './helpers/shard-hosts.js';
+import { dockerCreates, git, killTrees, shardHosts, shardRepository, type ShardHostsFixture } from './helpers/shard-hosts.js';
 
 // GY-3405 AC-1: an agent session on an added host. The host runs the real graphyard-host-shim in its
 // own home; only Docker is the fixture's stand-in, here in its read-only-root form, where a
@@ -99,6 +99,10 @@ test(`${proof} — a session on an added host uses its account, no login file is
   const [call] = (await readFile(calls, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
   assert.deepEqual(call.argv, ['complete', 'GY-1', '1', '--head']);
   assert.equal(call.head, head, 'complete ran here on the session\'s own head');
+  const create = (await dockerCreates(hosts.state('sessionhost'))).find(words => words.some(word => word.startsWith('graphyard-session-')))!;
+  assert.equal(create[create.indexOf('--log-driver') + 1], 'none', 'Docker keeps no log of what the session says, the login handed back among it');
+  assert.ok(create.includes('--memory'), 'the session runs under a memory limit');
+  assert.equal(create[create.indexOf('--entrypoint') + 1], '/usr/bin/timeout', 'the session stops at its deadline on its own');
 });
 
 test(`${proof} — a host that drops ends the session, and its supervisor releases the lease so the item returns to the queue`, { timeout: 300_000 }, async () => {
@@ -120,5 +124,8 @@ test(`${proof} — a host that drops ends the session, and its supervisor releas
     assert.notEqual(code, 0);
     assert.equal(released.length, 1, 'the supervisor released the lease once');
     assert.deepEqual(filesHolding(token), [], 'the dropped host holds no login');
+    const containers = () => Object.keys(JSON.parse(readFileSync(join(hosts.state('sessionhost'), 'state.json'), 'utf8')).containers).filter(name => name.startsWith('graphyard-session-'));
+    for (let tries = 0; tries < 100 && containers().length; tries++) await new Promise(resolve => setTimeout(resolve, 100));
+    assert.deepEqual(containers(), [], 'the session container is removed though its launch was killed');
   } finally { process.chdir(cwd); }
 });

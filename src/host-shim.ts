@@ -12,7 +12,8 @@
 //   clean RUN                      remove a run directory
 //   run-session RUN                GY-3405: one agent session in IMAGE with RUN's checkout mounted at the session's own
 //                                  working directory; the first stdin line is JSON {argv, env, cwd, homes}, nothing else,
-//                                  each home an in-memory tmpfs; the rest of stdin (the login) goes straight into the container
+//                                  each home an in-memory tmpfs; the rest of stdin (the login) goes straight into the container;
+//                                  no Docker log, a memory limit, a deadline, and a guardian that removes the container
 // Anything else is refused. As in a local trial, containers may start nested sandboxes (seccomp and system
 // paths unconfined, the graphyard-trial AppArmor profile where Docker uses AppArmor; GY-3549), and never
 // get the Docker socket or the network, so a shard reaches no private address, the tailnet or the host.
@@ -34,6 +35,8 @@ export const hostProbeScript = [
 /** The warm image a host runs shards in: the trial image's digest and the lockfile's hash (`none` without one). */
 export const warmImagePattern = /^graphyard-warm:[0-9a-f]{12}-(?:[0-9a-f]{12}|none)$/;
 
+/** GY-3405: no agent session runs longer on a host; Graphyard ends every session well before. */
+const sessionHours = 8;
 const shimDigestSlot = '@GRAPHYARD_SHIM_DIGEST@';
 const shimTemplate = `#!/bin/sh
 # graphyard-host-shim: the only command Graphyard's SSH key may run here (graphyard host prepare).
@@ -150,7 +153,10 @@ elif verb == 'run-session':
         sys.exit('graphyard-host-shim: no run ' + args[0])
     name = 'graphyard-session-' + args[0][len('trial-'):]
     # The network is the default one: the session reaches its model provider and the control plane. Only the checkout is mounted; every home is memory.
-    create = ['docker', 'create', '-i', '--name', name, '--user', '1000:0', '--workdir', cwd, '--pids-limit', '4096', '--security-opt', 'seccomp=unconfined', '--tmpfs', '/tmp:mode=1777']
+    # No log driver: the login handed back on stderr never reaches the host's disk. Half the host's memory at most.
+    memory = next((int(line.split()[1]) for line in open('/proc/meminfo') if line.startswith('MemTotal:')), 4 << 20) // 1024 // 2
+    create = ['docker', 'create', '-i', '--init', '--name', name, '--user', '1000:0', '--workdir', cwd, '--log-driver', 'none', '--memory', '%dm' % max(1024, memory),
+              '--pids-limit', '4096', '--security-opt', 'seccomp=unconfined', '--tmpfs', '/tmp:mode=1777']
     if 'apparmor' in subprocess.run(['docker', 'info', '--format', '{{json .SecurityOptions}}'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True).stdout:
         create += ['--security-opt', 'apparmor=${trialAppArmorProfile}']
     for home in homes:
@@ -158,7 +164,23 @@ elif verb == 'run-session':
     create += ['--mount', 'type=bind,src=' + os.path.join(run, 'repo') + ',dst=' + cwd]
     for key, value in sorted(env.items()):
         create += ['--env', key + '=' + value]
-    create += ['--entrypoint', argv[0], open(os.path.join(run, 'image')).read().strip()] + argv[1:]
+    # The session stops at its deadline on its own, even when no shim or guardian is left to remove it.
+    create += ['--entrypoint', '/usr/bin/timeout', open(os.path.join(run, 'image')).read().strip(), '--kill-after=10', '${sessionHours}h'] + argv
+    # A guardian outside this process tree removes the container once the shim is gone, however it ended (a dropped SSH session, a kill).
+    reader, writer = os.pipe()
+    if os.fork() == 0:
+        os.close(writer)
+        os.setsid()
+        if os.fork() == 0:
+            os.chdir('/')
+            devnull = os.open(os.devnull, os.O_RDWR)
+            for fd in (0, 1, 2):
+                os.dup2(devnull, fd)
+            os.read(reader, 1)
+            quiet('docker', 'rm', '-f', name)
+        os._exit(0)
+    os.close(reader)
+    os.wait()
     if not quiet(*create):
         sys.exit('graphyard-host-shim: the session container could not be created')
     try:
