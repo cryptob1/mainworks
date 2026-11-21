@@ -218,11 +218,13 @@ export function MainTopBar(dashboard: Dashboard) {
   const { faults, minutesAgo } = caretakerSummary(status, work, now);
   const owesCount = masterOwes(work, now).length;
   const [pausing, setPausing] = useState(false);
-  const [localPaused, setLocalPaused] = useState(false);
 
   const roles: { role: string; accounts: string[]; concurrency: number }[] = Array.isArray(status?.fleet?.roles) ? status.fleet.roles : [];
   const managedRoles = roles.filter(r => r.role === 'worker' || r.role === 'reviewer');
-  const allPaused = managedRoles.length > 0 ? managedRoles.every(r => r.concurrency === 0) : localPaused;
+  const allPaused = managedRoles.length > 0 && managedRoles.every(r => r.concurrency === 0);
+  // Only the owner can change the fleet, and only once it has worker or reviewer roles to pause.
+  const cannotPause = status?.actor?.role !== 'admin' ? 'Only the owner can pause the team'
+    : managedRoles.length === 0 ? 'No workers or reviewers to pause yet' : null;
 
   const go = (section: Section) => {
     const target = firstViewOfSection(dashboard, section);
@@ -243,11 +245,7 @@ export function MainTopBar(dashboard: Dashboard) {
   };
 
   const togglePause = async () => {
-    if (pausing) return;
-    if (status?.actor?.role !== 'admin' || managedRoles.length === 0) {
-      setLocalPaused(prev => !prev);
-      return;
-    }
+    if (pausing || cannotPause) return;
     setPausing(true);
     try {
       const nextConcurrency = allPaused ? 1 : 0;
@@ -284,7 +282,7 @@ export function MainTopBar(dashboard: Dashboard) {
       {faults.length > 0 && <span className="caretaker-dot" aria-hidden="true"/>}
       {pillText}
     </a>
-    <button type="button" className={allPaused ? 'pause-team-btn paused' : 'pause-team-btn'} disabled={pausing} onClick={() => void togglePause()}>
+    <button type="button" className={allPaused ? 'pause-team-btn paused' : 'pause-team-btn'} disabled={pausing || !!cannotPause} title={cannotPause ?? undefined} onClick={() => void togglePause()}>
       {allPaused ? 'Resume team' : 'Pause team'}
     </button>
   </header>;

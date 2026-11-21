@@ -41,14 +41,15 @@ test('e2e:one-mode-no-fun-toggle — no Fun control on any page, a stored Fun pr
   const menu = page.getByRole('navigation', { name: 'Main' }).getByRole('link');
   await expect(menu).toHaveText(['Home', 'Work', /^Lead/, 'Settings']);
 
-  await menu.nth(1).click();
-  await expect(page.getByRole('heading', { name: 'Master', exact: true, level: 1 })).toBeVisible();
-  await noFun();
+  // GY-3598: the master lives under Lead, and Workers is a tab under Settings.
   await menu.nth(2).click();
+  await expect(page.getByRole('region', { name: 'Master terminal' })).toBeVisible();
+  await noFun();
+  await menu.nth(3).click();
+  const tabs = page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button');
+  await tabs.filter({ hasText: /^Workers$/ }).click();
   await expect(page.getByRole('heading', { name: 'Workers', exact: true, level: 1 })).toBeVisible();
   await noFun();
-  await menu.nth(5).click();
-  const tabs = page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button');
   await expect(tabs.first()).toBeVisible(); // allInnerTexts does not wait: read the tab names once the bar has rendered.
   for (const name of await tabs.allInnerTexts()) {
     await tabs.filter({ hasText: name }).first().click();

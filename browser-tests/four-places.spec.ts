@@ -5,6 +5,7 @@ import { server } from '../src/server';
 import { encodeLoopCheckoutTrust, loopPresenceHeader, loopStallAlarmHeader, loopSupervisionHeader } from '../src/model/loop-presence';
 import { coordinationViewHeader } from '../src/server/work-view';
 import { serveXterm } from './xterm';
+import { proposedRuntimes } from '../src/model/registry';
 
 async function plane(context: BrowserContext, label: string) {
   const store = await withDatabase(label);
@@ -121,6 +122,35 @@ for (const width of [1280, 390]) {
       await assertTopBar(page, 'Lead', width);
       await expect(page.locator('.stall-alarm')).toBeVisible({ timeout: 15_000 });
       await expect(page.locator('.stall-alarm')).toContainText('CPU pressure 96 percent');
+
+      // Pause team does nothing it cannot do: with no workers to pause it is disabled and says why.
+      const pause = page.locator('header.main-top-bar .pause-team-btn');
+      await expect(pause).toBeDisabled();
+      await expect(pause).toHaveAttribute('title', 'No workers or reviewers to pause yet');
+
+      // With a worker role, Pause team really sets its concurrency to 0, and Resume team brings it back.
+      const apply = await fetch(`${url}/api/agent-registry/apply`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-human-operator', 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          runtimes: [proposedRuntimes.find(entry => entry.name === 'claude')!], models: [{ name: 'opus', id: 'claude-opus-5' }],
+          accounts: [{ name: 'claude-a', runtime: 'claude', model: 'opus', credential: { host: 'build-host', home: '/home/operator/.coding_agents/claude-a' } }],
+          roles: [{ name: 'worker', accounts: ['claude-a'], concurrency: 2 }], reason: 'four-places pause',
+        }),
+      });
+      expect(apply.status).toBe(200);
+      const workerConcurrency = async () => {
+        const status = await (await fetch(`${url}/api/status`, { headers: { Authorization: 'Bearer test-human-operator' } })).json() as { fleet: { roles: { role: string; concurrency: number }[] } };
+        return status.fleet.roles.find(role => role.role === 'worker')?.concurrency;
+      };
+      await expect(pause).toHaveText('Pause team', { timeout: 20_000 });
+      await expect(pause).toBeEnabled();
+      await pause.click();
+      await expect.poll(workerConcurrency).toBe(0);
+      await expect(pause).toHaveText('Resume team');
+      await pause.click();
+      await expect.poll(workerConcurrency).toBe(1);
+      await expect(pause).toHaveText('Pause team');
     } finally {
       await page.close();
       await close();
