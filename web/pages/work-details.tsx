@@ -278,8 +278,8 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
   const model = costs?.builder ?? null;
   // One state-changing action, named with verb and object.
   const act = !admin || item.stage === 'done' ? null
-    : !item.ready || item.hold ? { label: 'Release task', run: () => action(item.id, 'ready') }
-      : item.blocker ? { label: 'Unblock task', run: () => action(item.id, 'unblock', { expectedRevision: item.revision }) }
+    : !item.ready || item.hold ? { label: 'Release task', run: () => action(item.id, 'ready', { expectedRevision: item.revision }) }
+      : item.blocker ? { label: 'Unblock task', run: () => action(item.id, 'unblock', { reason: 'Unblocked from the Task page', expectedRevision: item.revision }) }
         : { label: 'Hold task', run: () => action(item.id, 'hold', { reason: 'Held from the Task page', expectedRevision: item.revision }) };
   // Stuck or waiting: one sentence why, one on what happens next. Moving work reads the same two lines as where it is now.
   const stuck = !closed && group !== 'shipped' && (group !== 'moving' || held.overdue || trialFailed || plain.tone === 'stuck');
