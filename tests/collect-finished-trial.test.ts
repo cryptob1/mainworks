@@ -75,7 +75,7 @@ class World {
     };
     return {
       ...ports,
-      parallel: 2,
+      parallel: 2, cores: 8,
       // Each run's directory is real, but its completion is lost: the watcher's promise never settles.
       launchTrialRun: (spec): TrialRunHandle => {
         const directory = join(world.root, spec.key);
