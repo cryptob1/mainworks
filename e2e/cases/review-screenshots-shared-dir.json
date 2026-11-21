@@ -1,0 +1,16 @@
+{
+  "id": "review-screenshots-shared-dir",
+  "title": "A headless product review's screenshots post with its verdict and show on the item page",
+  "description": "A headless product reviewer runs in a sandbox with its own /tmp and home (GY-3590). The launch names one screenshot directory the session and the launcher both see; a reviewer that saves its screenshot there and lists it as 'Screenshot: NAME' ends with a posted verdict whose image the item page serves. A real control plane and Postgres carry the review; a deterministic runtime double saves the screenshot and answers.",
+  "tags": ["review", "product-review", "screenshots"],
+  "target": "any",
+  "required": true,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "a product review of a UI change posts its verdict with screenshots shown on the item page",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/review-screenshots-shared-dir.test.ts",
+      "timeoutSeconds": 600
+    }
+  ]
+}
