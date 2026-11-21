@@ -128,7 +128,7 @@ for (const width of [1280, 390]) {
       await expect(pause).toBeDisabled();
       await expect(pause).toHaveAttribute('title', 'No workers or reviewers to pause yet');
 
-      // With a worker role, Pause team really sets its concurrency to 0, and Resume team brings it back.
+      // With a worker role, Pause team really sets its concurrency to 0, and Resume team brings back its 2.
       const apply = await fetch(`${url}/api/agent-registry/apply`, {
         method: 'POST',
         headers: { Authorization: 'Bearer test-human-operator', 'Content-Type': 'application/json' },
@@ -149,7 +149,7 @@ for (const width of [1280, 390]) {
       await expect.poll(workerConcurrency).toBe(0);
       await expect(pause).toHaveText('Resume team');
       await pause.click();
-      await expect.poll(workerConcurrency).toBe(1);
+      await expect.poll(workerConcurrency).toBe(2);
       await expect(pause).toHaveText('Pause team');
     } finally {
       await page.close();

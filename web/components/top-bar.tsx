@@ -195,6 +195,9 @@ export function caretakerSummary(status: Dashboard['status'], work: Work[], now:
   return { faults, minutesAgo };
 }
 
+/** Where Pause team keeps each role's concurrency so Resume team brings it back. */
+const pausedConcurrencyKey = 'graphyard.pausedConcurrency';
+
 /** GY-3598: the Mainworks product mark from the approved prototype, reading the active theme tokens. */
 function MainworksMark() {
   return <svg className="brand-mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="30" height="30" fill="none" aria-hidden="true">
@@ -248,9 +251,11 @@ export function MainTopBar(dashboard: Dashboard) {
     if (pausing || cannotPause) return;
     setPausing(true);
     try {
-      const nextConcurrency = allPaused ? 1 : 0;
+      // Resume restores each role's concurrency from before the pause, remembered in this browser.
+      const remembered: Record<string, number> = JSON.parse(localStorage.getItem(pausedConcurrencyKey) ?? '{}');
+      if (!allPaused) localStorage.setItem(pausedConcurrencyKey, JSON.stringify(Object.fromEntries(managedRoles.map(r => [r.role, r.concurrency]))));
       await api('agent-registry/apply', {
-        roles: managedRoles.map(r => ({ name: r.role, accounts: r.accounts, concurrency: nextConcurrency })),
+        roles: managedRoles.map(r => ({ name: r.role, accounts: r.accounts, concurrency: allPaused ? remembered[r.role] || 1 : 0 })),
         reason: allPaused ? 'Resumed team from top bar' : 'Paused team from top bar',
       });
       await refresh(sessionEpoch.current);
