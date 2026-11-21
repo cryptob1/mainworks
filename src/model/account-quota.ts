@@ -31,6 +31,8 @@ export function foldObservation(account: FleetAccount, observed: QuotaObservatio
   const held = account.quota, now = Date.parse(context.at);
   const decided = account.quotaDecision ? Date.parse(account.quotaDecision.at) : null;
   if (observed.since ? decided !== null && Date.parse(observed.since) <= decided : held.source === 'operator') return false;
+  // An older live result never replaces a newer one: a session's wrong model stands until the next live check (GY-3596).
+  if (observed.since && held.since && Date.parse(observed.since) < Date.parse(held.since)) return false;
   if (!observed.since) {
     const loginHold = held.session === 'login' && held.loggedIn === false && (!observed.identity || observed.identity === held.identity);
     if (loginHold || held.since && held.state !== 'available') return false;
@@ -57,4 +59,23 @@ export function requestLimitNoticeCheck(registry: AgentRegistry, notice: { role:
   const observed: QuotaObservation = { loggedIn: account.quota.loggedIn, state: 'unknown', usage: account.quota.usage, resetsAt: null, session: 'guessed',
     reason: `Check ${account.name}: ${notice.reason}`.slice(0, 500) };
   return foldObservation(account, observed, context) ? account.name : null;
+}
+
+/** A model id as a runtime names it: lower case, no provider prefix, no context suffix (`opus[1m]`). */
+const bareModel = (id: string) => id.toLowerCase().replace(/\[[^\]]*\]$/, '').split('/').pop()!.trim();
+/**
+ * GY-3596: why a run that reported `ran` did not run the account's registered model `id` — `ran on X, not Y` —
+ * or null when it did, reported none, or the account names no id. A runtime reports the full name of an alias
+ * (`claude-opus-4-1-20250805` for `opus`) and drops a provider prefix (`glm-5.3` for `zai-coding-plan/glm-5.3`).
+ */
+export function wrongModel(ran: string | null | undefined, id: string | null | undefined): string | null {
+  return ran && id && !bareModel(ran).includes(bareModel(id)) ? `ran on ${ran}, not ${id}` : null;
+}
+/** A finished session on `accountName` reported it ran on `ran`: a model other than the account's own marks it broken, as a failed live request does. */
+export function recordSessionModel(registry: AgentRegistry, accountName: string | null, ran: string | null | undefined, context: { actor: string; at: string }) {
+  const account = registry.accounts.find(entry => entry.name === accountName);
+  const reason = account && wrongModel(ran, registry.models.find(model => model.name === account.model)?.id);
+  if (!account || !reason || account.quota.state === 'broken' && account.quota.reason === reason) return false;
+  account.quota = { ...account.quota, state: 'broken', reason, resetsAt: null, session: undefined, since: context.at, observedAt: context.at, observedBy: context.actor, source: 'probe' };
+  return true;
 }

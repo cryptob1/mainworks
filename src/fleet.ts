@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { access, readdir, realpath, stat } from 'node:fs/promises';
 import { launchRecipe } from './harness.js';
 import { isMiseShim, onSearchPath, realRuntimeBinary } from './runtime-binary.js';
-import { runtimeAdapter, runtimeAdapters, providerUsageErrors, cursorLoginFile, accountHomeEnvironment } from './master/runtimes.js';
+import { runtimeAdapter, runtimeAdapters, reportedModel, providerUsageErrors, cursorLoginFile, accountHomeEnvironment } from './master/runtimes.js';
 import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { homedir } from 'node:os';
@@ -14,6 +14,7 @@ import { environmentKinds, type AgentEnvironment, type EnvironmentKind, type Mas
 import { readCredentialFile } from './private-file.js';
 import { masterConfinementVariable } from './master/confinement.js';
 import { smokeRegistryAccount } from './runner/roles.js';
+import { wrongModel } from './model/account-quota.js';
 import { fleetOrder, roleUnsupported } from './model/worker-preference.js';
 import type { SmokeResult } from './runner/pi.js';
 import { accountIneligibility, lastGoodUsage, deriveAccountPlan, fleetRoles, liveSessions, roleLimit, proposedConcurrency, proposedRuntimeRoles, proposedRuntimes, rolePolicy, roleRuntimeKinds, roleRuntimeRefusal, smokeFailureDue, smokeTestedKinds, type AccountKey, type AgentRegistry, type RolePolicy, type FleetAccount, type FleetAccountInput, type FleetModel, type FleetRole, type FleetRoleName, type FleetRuntime, type FleetSession, type LaunchContract, type QuotaObservation, type RunOutcome, type SessionSkip, type SmokeObservation } from './model/registry.js';
@@ -207,6 +208,9 @@ export async function checkAccountLive(account: FleetAccount, runtime: FleetRunt
     let result: SmokeResult;
     try { result = await (probe.smoke ?? (target => smokeRegistryAccount(target, { timeoutMs: probe.smokeTimeoutMs })))(target); }
     catch (error) { result = { ok: false, error: String(error) }; }
+    // A passing request on a model other than the account's own is broken, naming both (GY-3596).
+    const wrong = result.ok ? wrongModel(reportedModel(runtime.launch.kind, result.output ?? ''), model) : null;
+    if (wrong) result = { ok: false, error: wrong };
     const reason = result.ok ? null : (result.error || 'The live request failed').replace(/[\u0000-\u001f\u007f\s]+/g, ' ').trim().slice(0, 500);
     // The answer to a one-word prompt is the provider's alone, never an agent's prose, so any runtime's limit notice reads as one.
     const limited = !!reason && liveLimitNotices().some(notice => notice.test(reason));

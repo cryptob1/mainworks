@@ -129,7 +129,7 @@ export async function smokeRegistryAccount(account: FleetLaunchAccount, options:
       // Print-mode runtimes can report provider errors with exit zero (OpenCode).
       const failure = failureEvents(output).length > 0;
       const answered = /\bOK\b/i.test(output);
-      return { ok: answered && !failure, error: failure ? Object.values(key).reduce((text, secret) => text.replaceAll(secret, '[redacted]'), providerWords(output)) : answered ? null : 'The smoke request returned no answer' };
+      return { output, ok: answered && !failure, error: failure ? Object.values(key).reduce((text, secret) => text.replaceAll(secret, '[redacted]'), providerWords(output)) : answered ? null : 'The smoke request returned no answer' };
     } catch (error) {
       const message = error instanceof ChildProcessError ? error.stderr || error.stdout || error.message : String(error);
       return { ok: false, error: Object.values(key).reduce((text, secret) => text.replaceAll(secret, '[redacted]'), providerWords(message)) };
