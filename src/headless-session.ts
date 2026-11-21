@@ -26,6 +26,7 @@ import { sessionLaunch, processIdentity, readRunMeta, runAlive, runContainment, 
 import { runRecord } from './runner/types.js';
 import { underTestRunner } from './runtime-environment.js';
 import { confinedRuntimeArgs } from './worker-sandbox.js';
+import { freePort } from './serve-app.js';
 import { runtimeReport } from './model/token-costs.js';
 import { noteRunUsage } from './usage-capture.js';
 
@@ -361,7 +362,8 @@ export async function startHeadlessWorker(input: HeadlessWorker): Promise<{ id: 
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const record: HeadlessWorkerRecord = { id, name: input.name, work: input.work, epoch: input.epoch, principal: input.principal, account: input.account, kind: launch.kind, subject: input.subject.slice(0, 300), startedAt: new Date().toISOString() };
   writeFileSync(join(directory, sessionFile), JSON.stringify(record), { mode: 0o600 });
-  const env = runEnvironment(process.env, { ...launch.environment, GRAPHYARD_RUN_LOG: join(directory, runLogName) });
+  // GY-3584: the session's e2e serve (scripts/e2e-serve.mjs) takes a free port of its own, so reviews and trials keep the declared 4391.
+  const env = runEnvironment(process.env, { ...launch.environment, GRAPHYARD_RUN_LOG: join(directory, runLogName), GRAPHYARD_E2E_SERVE_PORT: String(await freePort()) });
   const argv = [...input.supervisor, ...launch.wrapper, ...await headlessArgv(launch, launch.request, env)];
   const stop = new AbortController(), detached = new AbortController();
   const running = input.exec(argv[0]!, argv.slice(1), { cwd: input.directory, env, timeoutMs: input.timeoutMs, signal: stop.signal, run: directory, detached: detached.signal });
