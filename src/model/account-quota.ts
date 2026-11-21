@@ -31,8 +31,8 @@ export function foldObservation(account: FleetAccount, observed: QuotaObservatio
   const held = account.quota, now = Date.parse(context.at);
   const decided = account.quotaDecision ? Date.parse(account.quotaDecision.at) : null;
   if (observed.since ? decided !== null && Date.parse(observed.since) <= decided : held.source === 'operator') return false;
-  // An older live result never replaces a newer one: a session's wrong model stands until the next live check (GY-3596).
-  if (observed.since && held.since && Date.parse(observed.since) < Date.parse(held.since)) return false;
+  // A session caught on the wrong model stands until a newer live check (GY-3596).
+  if (held.state === 'broken' && held.reason?.startsWith('ran on ') && held.since && (!observed.since || Date.parse(observed.since) < Date.parse(held.since))) return false;
   if (!observed.since) {
     const loginHold = held.session === 'login' && held.loggedIn === false && (!observed.identity || observed.identity === held.identity);
     if (loginHold || held.since && held.state !== 'available') return false;

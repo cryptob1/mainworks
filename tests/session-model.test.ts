@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { reportedModel } from '../src/master/runtimes.js';
 import { applyRegistryMutation } from '../src/model-boundary/registry.js';
-import { emptyRegistry, fleetView, proposedRuntimes, recordSessionModel, wrongModel, type AgentRegistry } from '../src/model/registry.js';
+import { emptyRegistry, fleetView, foldObservation, proposedRuntimes, recordSessionModel, wrongModel, type AgentRegistry } from '../src/model/registry.js';
 import { wrongModelAttention } from '../src/cli/master-status.js';
 import { usageRows } from '../src/usage-capture.js';
 
@@ -54,6 +54,8 @@ test('unit:wrong-model-marks-the-account-broken — a session on another model m
   assert.equal(recordSessionModel(wrong, 'opencode-a', 'big-pickle', context), true);
   assert.equal(wrong.accounts[0]!.quota.state, 'broken');
   assert.equal(wrong.accounts[0]!.quota.reason, 'ran on big-pickle, not zai-coding-plan/glm-5.3');
+  const older = new Date(Date.parse(at) - 60_000).toISOString();
+  assert.equal(foldObservation(wrong.accounts[0]!, { loggedIn: true, state: 'available', usage: [], resetsAt: null, reason: null, since: older }, context), false, 'the host’s older live result does not clear it');
   const view = fleetView(wrong, Date.now(), 'host');
   assert.equal(view.accounts[0]!.eligible, false);
   assert.match(view.accounts[0]!.ineligible ?? '', /opencode-a is broken: it ran on big-pickle, not zai-coding-plan\/glm-5\.3/);
