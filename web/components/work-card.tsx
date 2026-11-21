@@ -1,4 +1,4 @@
-import { PRODUCT_NAME } from '../../src/product';
+import { PRODUCT_NAME } from '../../src/model/product';
 import type { Work } from '../../src/model';
 import { CandidatePr } from '../candidate';
 import { formatDuration } from '../../src/model/duration';

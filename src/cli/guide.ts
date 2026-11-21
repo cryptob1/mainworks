@@ -1,6 +1,6 @@
 import { defineCommands } from './registry.js';
 import { guideList, guideText } from '../guide.js';
-import { PRODUCT_NAME } from '../product.js';
+import { PRODUCT_NAME } from '../model/product.js';
 
 /**
  * `guide TOPIC` prints one procedure topic; with no topic it lists them (GY-2972). The

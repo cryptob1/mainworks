@@ -1,4 +1,4 @@
-import { PRODUCT_NAME } from '../src/product';
+import { PRODUCT_NAME } from '../src/model/product';
 import { useEffect, useState, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { type Work } from '../src/model';

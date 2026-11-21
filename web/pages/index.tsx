@@ -1,4 +1,4 @@
-import { PRODUCT_NAME } from '../../src/product';
+import { PRODUCT_NAME } from '../../src/model/product';
 import type { ReactNode } from 'react';
 import type { Dashboard } from './dashboard';
 import { WorkPage } from './overview';

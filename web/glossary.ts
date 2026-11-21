@@ -1,4 +1,4 @@
-import { PRODUCT_NAME } from '../src/product';
+import { PRODUCT_NAME } from '../src/model/product';
 
 /**
  * The one glossary behind every hover definition in the dashboard. A technical word that stays

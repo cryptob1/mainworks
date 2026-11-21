@@ -3,7 +3,7 @@
 // role needs; the full procedure a rule once carried there is moved into these topics verbatim, so
 // no rule changed meaning and none was dropped: what left the standing text is exactly what a
 // topic prints.
-import { COMMAND_NAME, PRODUCT_NAME } from './product.js';
+import { COMMAND_NAME, PRODUCT_NAME } from './model/product.js';
 
 /**
  * One topic per procedure, in the order the AGENTS.md block lists them: the agent

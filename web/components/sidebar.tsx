@@ -1,4 +1,4 @@
-import { PRODUCT_NAME } from '../../src/product';
+import { PRODUCT_NAME } from '../../src/model/product';
 import { useState } from 'react';
 import { sections, viewFor, type primaryEntry } from '../pages';
 import type { Dashboard } from '../pages/dashboard';

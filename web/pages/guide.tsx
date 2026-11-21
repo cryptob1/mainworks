@@ -1,4 +1,4 @@
-import { COMMAND_NAME, PRODUCT_NAME } from '../../src/product';
+import { COMMAND_NAME, PRODUCT_NAME } from '../../src/model/product';
 import { useEffect, useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';

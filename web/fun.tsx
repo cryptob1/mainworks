@@ -1,4 +1,4 @@
-import { PRODUCT_NAME } from '../src/product';
+import { PRODUCT_NAME } from '../src/model/product';
 import { useState, type CSSProperties } from 'react';
 import type { Work } from '../src/model';
 

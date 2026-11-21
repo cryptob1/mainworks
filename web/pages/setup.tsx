@@ -1,4 +1,4 @@
-import { PRODUCT_NAME } from '../../src/product';
+import { PRODUCT_NAME } from '../../src/model/product';
 import { useEffect, useState } from 'react';
 import { checklistGreen, paneServer, requestedView, setupChecklist, statusSupervised, type SetupItem } from '../../src/model/setup-checklist';
 import { whereLogs, type WhereThingsRun } from '../../src/model/where-things-run';

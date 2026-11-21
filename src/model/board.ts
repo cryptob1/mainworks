@@ -1,4 +1,4 @@
-import { PRODUCT_NAME } from '../product.js';
+import { PRODUCT_NAME } from './product.js';
 import { loopObservation, observationWindowHold, type Work } from './work.js';
 import { isClosed } from './closure.js';
 import { answerCommand, parkedOnHuman, type HumanRequestRow } from './human-request.js';

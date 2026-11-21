@@ -16,7 +16,7 @@ import { guideCommands } from './guide.js';
 import { versionCommands } from './version.js';
 import { upgradeCommands } from './upgrade.js';
 import { hostCommands } from './hosts.js';
-import { COMMAND_NAME, PRODUCT_NAME } from '../product.js';
+import { COMMAND_NAME, PRODUCT_NAME } from '../model/product.js';
 
 /**
  * Every command the launcher answers to, in help order. A feature adds its commands to

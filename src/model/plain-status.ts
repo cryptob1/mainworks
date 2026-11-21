@@ -1,4 +1,4 @@
-import { PRODUCT_NAME } from '../product.js';
+import { PRODUCT_NAME } from './product.js';
 import { observationWindowHold, type Gate, type Work } from './work.js';
 import type { PipelineTimeline } from '../pipeline-speed.js';
 import { assignment } from './assignment.js';

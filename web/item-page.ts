@@ -1,4 +1,4 @@
-import { PRODUCT_NAME } from '../src/product';
+import { PRODUCT_NAME } from '../src/model/product';
 import { isClosed, type Gate, type Work } from '../src/model';
 import { humanRequestBlocker, parkedOnHuman } from '../src/model/human-request';
 import { fileConflicts } from '../src/coordination';

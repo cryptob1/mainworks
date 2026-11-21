@@ -1,4 +1,4 @@
-import { PRODUCT_NAME } from '../product.js';
+import { PRODUCT_NAME } from './product.js';
 import { isClosed } from './closure.js';
 import type { Gate, Work } from './work.js';
 import { noRelease, servedFor, type ReleaseView } from './release.js';
