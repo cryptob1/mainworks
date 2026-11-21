@@ -8,7 +8,7 @@ import { friendlyName } from '../web/fun';
 const at = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
 const head = 'a'.repeat(40), base = 'b'.repeat(40), merge = 'c'.repeat(40), run = '11111111-2222-4333-8444-555555555555';
 const builder = 'claude-builder-7', slow = 'tests/remote-shards.test.ts';
-const output = `Merge trial failed: ${slow}\n  ✓ a hot local host keeps its room (412 ms)\n  × a remote host with a hot reading gets no shard\n    a CPU sensor reads 96C, at or over 85C`;
+const output = `trial failed: ${slow}\n  ✓ a hot local host keeps its room (412 ms)\n  × a remote host with a hot reading gets no shard\n    a CPU sensor reads 96C, at or over 85C`;
 const candidate = { sha: head, baseSha: base, pr: 412, branch: 'graphyard/gy-3588-3', author: builder };
 const item = {
   dependencies: [], scenarioRequirements: [], id: 'w-3588', key: 'GY-3588', title: 'Trials stop running one test group at a time when hot',
@@ -21,7 +21,7 @@ const item = {
     files: ['src/merge-writer/remote-shards.ts', slow, 'e2e/cases/verification-uses-remote-hosts.json'], at: at(30), baseTip: base, mergeBase: base },
   criteria: [{ id: 'AC-1', text: 'A hot local host keeps its room', proofs: ['unit:remote-shards'] }], evidence: [],
   gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: true, reasons: [] },
-    { name: 'test', passed: false, reasons: [`Merge trial failed: ${slow}`] }, { name: 'merge', passed: false, reasons: ['The merge writer refused this head'] }],
+    { name: 'test', passed: false, reasons: [`trial failed: ${slow}`] }, { name: 'merge', passed: false, reasons: ['The merge writer refused this head'] }],
   pipeline: { attempts: [{ epoch: 3, owner: builder, claimedAt: at(41), endedAt: at(30), end: 'submitted' }], submittedAt: at(30), resubmittedAt: at(30), reworkRounds: 0, interventions: { blocked: 0, requirements: 0 } },
   mergeLedger: { key: 'GY-3588', state: 'refused', head, baseTip: base, mergeSha: merge, risk: 'normal', intentAt: at(19), pushedAt: null, observedTip: null, refusal: { kind: 'merge', reason: output }, events: 3 },
   sessions: [{ id: `${builder}:3`, kind: 'implementation', principal: builder, epoch: 3, runtime: 'claude', host: 'vish-msi', transcript: `run:${run}`, subject: 'GY-3588', state: 'running', observed: 'working', observedAt: at(0), startedAt: at(41), updatedAt: at(0), seenAt: at(0) }],
@@ -38,7 +38,7 @@ const events = [
   { seq: 1, kind: 'ready', actor: 'graphyard-master-project', created_at: at(41), payload: { details: { reason: 'Hotfix for the trial bottleneck' } } },
 ];
 
-async function open(page: Page, width: number) {
+async function open(page: Page, width: number, task: typeof item = item, trialTimings: typeof timings = timings) {
   const writes: string[] = [];
   let log = { run: { account: 'claude-a', kind: 'claude' }, lines: [{ at: at(1), stream: 'stdout', text: '$ npm run test:affected -- tests/remote-shards.test.ts' }], cursor: 1, ended: false };
   page.on('websocket', socket => writes.push(`websocket ${socket.url()}`));
@@ -47,11 +47,11 @@ async function open(page: Page, width: number) {
     if (request.method() !== 'GET') { writes.push(`${request.method()} ${path}`); return route.fulfill({ json: {} }); }
     const now = new Date().toISOString();
     if (path.endsWith('/status')) return route.fulfill({ json: { actor: { id: 'operator', role: 'admin', sessionKind: 'human' }, repository: 'fixture/repository', jobs: [], pipelineTime: { merged24h: 31, median: 29, p90: 95, samples: 10, lastMergeAt: at(12), oldest: null } } });
-    if (path.endsWith('/work-snapshot')) return route.fulfill({ json: { work: [item], now } });
-    if (path.endsWith('/board')) return route.fulfill({ json: boardFromStatus([item] as never, Date.parse(now), null) });
+    if (path.endsWith('/work-snapshot')) return route.fulfill({ json: { work: [task], now } });
+    if (path.endsWith('/board')) return route.fulfill({ json: boardFromStatus([task] as never, Date.parse(now), null) });
     if (path.endsWith('/events')) return route.fulfill({ json: events });
     if (path.endsWith('/costs')) return route.fulfill({ json: { builder: { account: 'claude-a', model: 'claude-opus-5-5', accountModel: 'claude-sonnet-5-5', differs: true } } });
-    if (path.endsWith('/w-3588/timings')) return route.fulfill({ json: timings });
+    if (path.endsWith('/w-3588/timings')) return route.fulfill({ json: trialTimings });
     if (path.endsWith('/w-3588/diff')) return route.fulfill({ json: url.searchParams.get('path') ? { diff: patch } : { files } });
     if (path.endsWith(`/runs/${run}/log`)) return route.fulfill({ json: Number(url.searchParams.get('cursor')) ? { ...log, lines: [] } : log });
     return route.fulfill({ json: [] });
@@ -156,3 +156,14 @@ for (const width of [1280, 390]) {
     expect(writes).toEqual([]);
   });
 }
+
+// A refusal that is not a failed trial, such as the hold of a trial that passed ahead of review, never reads as a failed trial.
+test('e2e:task-shows-evidence — a trial that passed ahead of review is not shown as failed', async ({ page }) => {
+  const held = { ...item, mergeLedger: { ...item.mergeLedger, refusal: { kind: 'merge', reason: 'trial passed ahead of review: the trial that passed is kept and the head lands once the same head is approved' } } };
+  await open(page, 1280, held, { ...timings, trial: { ...timings.trial, steps: timings.trial.steps.map(step => ({ ...step, result: 'passed' })) } });
+  const task = page.locator('article.item-page');
+  await expect(task.locator('[data-task-state]')).not.toContainText('Merge trial failed');
+  await expect(task.locator('[data-stage="trial"]')).not.toHaveAttribute('data-state', 'failed');
+  await expect(task.getByText(/It goes back to a Builder/)).toHaveCount(0);
+  await expect(task.getByLabel('Test output')).toHaveCount(0);
+});

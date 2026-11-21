@@ -14,6 +14,7 @@ import Priority, { mayChangePriority } from '../components/priority';
 import History from '../history';
 import RequirementsEditor from '../requirements';
 import { assignment } from '../../src/model/assignment';
+import { trialFailedGround } from '../../src/model/rework-ground';
 import { CandidatePr, CandidateSha, shortShas } from '../candidate';
 import EvidenceArtifacts from '../components/evidence-artifacts';
 import PostDeployment from '../components/post-deployment';
@@ -270,7 +271,8 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
   const costs = useEvidence<CostSummary & { builder?: { model: string; accountModel: string | null; differs: boolean } | null }>(api, `costs?work=${encodeURIComponent(item.key)}`, item.revision);
   const [tab, setTab] = useState<typeof tabs[number]>(tabs[0]);
   const trial = timings?.trial && timings.trial.head === item.candidate?.sha ? timings.trial : null;
-  const refusal = item.candidate && item.mergeLedger?.head === item.candidate.sha && item.mergeLedger.state === 'refused' ? item.mergeLedger.refusal?.reason ?? null : null;
+  // Only a refusal that says the trial of this head failed is a failed trial; a hold such as 'trial passed ahead of review' is not (GY-1524).
+  const refusal = trialFailedGround(item) ? item.mergeLedger!.refusal!.reason : null;
   const trialFailed = !!refusal || !!trial?.steps.some(step => step.result === 'failed');
   // The Builder: who holds or last held the task, and the newest run of theirs the host keeps.
   const builderRun = (item.sessions ?? []).filter(handle => handle.kind === 'implementation' && transcriptRun(handle.transcript)).sort((a, b) => a.startedAt.localeCompare(b.startedAt)).at(-1);

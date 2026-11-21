@@ -3,6 +3,7 @@ import type { Work } from '../../src/model';
 import type { TrialTimings } from '../../src/model/task-evidence';
 import { plainDuration } from '../../src/pipeline-speed';
 import { formatAge } from '../../src/model/duration';
+import { trialFailedGround } from '../../src/model/rework-ground';
 import { activityLabel } from '../item-page';
 
 /**
@@ -35,7 +36,7 @@ export function taskStages(item: Work, timings: TaskTimings | null, now: number)
   const head = item.candidate?.sha, ledger = head && item.mergeLedger?.head === head ? item.mergeLedger : null, trial = head && timings?.trial?.head === head ? timings.trial : null;
   const submitted = item.submission ? time(item.pipeline?.resubmittedAt ?? item.pipeline?.submittedAt) : null;
   const approved = !item.policy.review ? submitted : time(item.observation?.reviews?.findLast(review => review.sha === head && review.state === 'APPROVED')?.submittedAt);
-  const failed = ledger?.state === 'refused' || !!trial?.steps.some(step => step.result === 'failed');
+  const failed = !!trialFailedGround(item) || !!trial?.steps.some(step => step.result === 'failed');
   const marks = [time(timings?.releasedAt) ?? time(item.pipeline?.attempts[0]?.claimedAt), submitted, approved, time(trial?.startedAt ?? ledger?.intentAt),
     failed ? null : time(trial?.finishedAt ?? ledger?.pushedAt), time(item.delivery?.mergedAt ?? item.observation?.mergedAt)];
   const current = marks.findLastIndex(mark => mark !== null);
