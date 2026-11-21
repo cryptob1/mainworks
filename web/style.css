@@ -181,10 +181,6 @@ img.mark{width:26px;height:26px}
 .group-blocked .step-seg.current{background:var(--blocked)}
 .steps-label{font-size:var(--type-small);color:color-mix(in srgb,var(--moving) 75%,var(--text))}.group-blocked .steps-label{color:color-mix(in srgb,var(--blocked) 75%,var(--text))}
 @keyframes gy-pulse{0%,100%{opacity:1}50%{opacity:.35}}
-.steps-detail{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
-.step-seg-detail{display:flex;flex-direction:column;gap:var(--space-2);color:var(--text-2)}.step-seg-detail strong{display:flex;align-items:center;gap:6px;font-size:var(--type-body);font-weight:600;color:var(--text)}
-.step-seg-detail.current strong{color:color-mix(in srgb,var(--moving) 75%,var(--text))}.step-seg-detail.pending strong{color:var(--text-3)}.step-mark{font-size:12px}
-.step-seg-detail.done .step-mark{color:var(--shipped)}.step-note{font-size:var(--type-tiny)}
 /* The item page. */
 .item-page{display:flex;flex-direction:column;gap:var(--space-5)}
 .back{align-self:flex-start;color:var(--accent);font-size:var(--type-body)}
@@ -267,7 +263,7 @@ img.mark{width:26px;height:26px}
   .group-needs-you .work-row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"key key" "main main" "who who" "time decide";border-color:color-mix(in srgb,var(--needs-you) 45%,var(--bg));background:color-mix(in srgb,var(--needs-you) 6%,var(--bg))}
   .row-key{grid-area:key;color:var(--group);font-size:var(--type-tiny)}.row-time{grid-area:time;text-align:right;font-size:var(--type-tiny)}.row-main{grid-area:main}.row-steps{grid-area:steps}.row-steps:empty{display:none}.row-who{grid-area:who;font-size:var(--type-tiny)}.row-who::before{content:'Next: '}.decide{grid-area:decide}
   .steps-track .step-seg{height:4px}
-  .steps-detail{grid-template-columns:repeat(4,minmax(0,1fr))}.time-legend{grid-template-columns:1fr}
+  .time-legend{grid-template-columns:1fr}
   .shipped-line{flex-wrap:wrap}
 }
 .panel>h2 .push{margin-left:auto;font-size:var(--type-small);font-weight:500;color:var(--accent)}
