@@ -485,7 +485,7 @@ export function piSmoke(configured: { command: string; model: string; args?: str
     const finish = (result: SmokeResult) => { if (done) return; done = true; clearTimeout(bound); resolveResult(result.error ? { ...result, error: clean(result.error) } : result); };
     const handle = (line: string) => {
       let record: any; try { record = JSON.parse(line); } catch { plain = `${plain}\n${line}`.slice(-2000); return; }
-      if (record?.type === 'message_end') reported = line;
+      if (record?.type === 'message_end' && record.message?.role === 'assistant') reported = line;
       if (record?.type === 'message_end' && record.message?.role === 'assistant') { if (record.message.errorMessage) lastError = String(record.message.errorMessage); else answered = true; }
       if (record?.type === 'auto_retry_end' && record.success === false && record.finalError) lastError = String(record.finalError);
     };
