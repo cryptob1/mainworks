@@ -10,7 +10,7 @@
 - **Every change is proven.** Workers build, agents review, main trials each head.
 - **Production stays safe.** Main deploys itself; failures revert automatically.
 
-Prerequisites: Linux 7.0+ with Landlock ABI 9+ (`uname -r`); Node 24+/npm (`node --version`, `npm --version`; Ubuntu/Debian: `curl -fsSL https://deb.nodesource.com/setup_24.x | sudo bash - && sudo apt install nodejs`, Arch: `sudo pacman -S nodejs npm`, macOS: `brew install node@24`); Git (`git --version`, `git remote -v`); Docker with Compose (`docker version`, `docker compose version`); GitHub CLI (`gh auth status`); bubblewrap (`bwrap --version`); Python (`python3 --version`); Herdr (`herdr --version`; install: `curl -fsSL https://herdr.dev/install.sh | sh`); systemd (`systemctl --user status`). [Setup guide](docs/setup.md).
+Prerequisites: Linux 7.0+ with Landlock ABI 9+ (`uname -r`; Ubuntu 26.04: `sudo apt install linux-image-oem-7.3`); Node 24+/npm (`node --version`, `npm --version`; Ubuntu/Debian: `curl -fsSL https://deb.nodesource.com/setup_24.x | sudo bash - && sudo apt install nodejs`, Arch: `sudo pacman -S nodejs npm`, macOS: `brew install node@24`); Git (`git --version`, `git remote -v`); Docker with Compose (`docker version`, `docker compose version`); GitHub CLI (`gh auth status`); bubblewrap (`bwrap --version`); Python (`python3 --version`); Herdr (`herdr --version`; install: `curl -fsSL https://herdr.dev/install.sh | sh`); systemd (`systemctl --user status`). [Setup guide](docs/setup.md).
 
 ## Quick start
 
@@ -29,11 +29,11 @@ Once published to npm:
 npx @cryptob1/graphyard up --repo OWNER/NAME
 ```
 
-The Setup link connects worker and reviewer accounts, file goals under **New work item**: title and optional description; the master writes the criteria; **Advanced** takes full detail. `mainworks master status`; `mainworks upgrade --plan` then `mainworks upgrade`; `mainworks doctor` verifies. Sharing: **Invite** gives one link that signs a person in once, from any device.
+The Setup link connects worker and reviewer accounts, file goals under **New work item**: title and optional description; the master writes the criteria; **Advanced** takes full detail. `mainworks master status`; `mainworks upgrade --plan` then `mainworks upgrade`; `mainworks doctor` verifies. **Invite** gives a one-time sign-in link for any device.
 
 ## Where things run
 
-![Where every Mainworks part runs, on the host and outside it](docs/diagrams/where-things-run.svg)
+![Where every Mainworks part runs](docs/diagrams/where-things-run.svg)
 
 `mainworks guide infra` lists every part.
 
