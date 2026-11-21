@@ -247,8 +247,9 @@ export function FleetOverview({ fleet, connects = [], now = Date.now(), onChange
   return <>
     {!fleet.configured && <div className="notice">No role is configured yet, so sessions still launch from each host's local profiles. Connect an account below — or run <code>graphyard master registry propose --apply</code> on a host whose agent CLIs are logged in.</div>}
     {/* A blocked role reads in its launch line and a role-less account in its chip; only a role missing from the registry has no other place. */}
-    {(() => { const missing = unconfiguredRoles(fleet), master = missing.some(entry => entry.error), optional = missing.filter(entry => !entry.error).map(entry => entry.role);
+    {(() => { const missing = unconfiguredRoles(fleet), master = missing.some(entry => entry.error), caretaker = missing.some(entry => entry.role === 'caretaker'), optional = missing.filter(entry => !entry.error && entry.role !== 'caretaker').map(entry => entry.role);
       return <>{master && <div role="alert" className="notice danger">Not configured: master — the loop launches no master session until the role names an account.</div>}
+        {caretaker && <div className="notice">Not configured: caretaker — the loop skips its health check until the role names an account: <code>graphyard master registry role set caretaker ACCOUNT --reason REASON</code>.</div>}
         {optional.length > 0 && <div className="notice">Not configured: {optional.join(', ')} — {optional.length > 1 ? 'their' : 'its'} sessions launch from local profiles until {optional.length > 1 ? 'they are' : 'it is'}.</div>}</>; })()}
     {fleet.roles.length > 0 && <PageSection title="Role summary"><RoleLaunches fleet={fleet} now={now}/></PageSection>}
     <PageSection title="Accounts" count={fleet.accounts.length}>

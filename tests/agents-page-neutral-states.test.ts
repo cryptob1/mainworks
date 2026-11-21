@@ -51,4 +51,8 @@ test('unit:tests/agents-page-neutral-states.test.ts — a running master, an unc
   const page = renderToStaticMarkup(createElement(FleetOverview, { fleet, now }));
   assert.ok(!page.includes('tone-bad') && !page.includes('notice danger') && !page.includes('role="alert"'), 'the page draws nothing in red');
   assert.ok(page.includes('Running since') && page.includes('Not configured: producer'));
+  // GY-3593: the caretaker never launches from local profiles; its line says the loop skips it.
+  assert.ok(page.includes('Not configured: producer — its sessions launch from local profiles'));
+  assert.ok(page.includes('Not configured: caretaker — the loop skips its health check until the role names an account'));
+  assert.ok(!/caretaker[^<]*local profiles/.test(page), 'the caretaker is never said to launch from local profiles');
 });
