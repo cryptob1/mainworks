@@ -17,8 +17,7 @@ export async function openMasterSession(context: CliContext, root: string) {
   const stored = await loadMasterConfig(root);
   const person = process.env.GRAPHYARD_FOR_PERSON;
   const master = person ? { ...stored, forPerson: person, masterAgentName: sessionName(stored.masterAgentName, person) } : stored;
-  // GY-3593: a caretaker run reads and acts under its own identity, never the master's.
-  const masterToken = await readCredentialFile(process.env.GRAPHYARD_CARETAKER === '1' && process.env.GRAPHYARD_TOKEN_FILE ? process.env.GRAPHYARD_TOKEN_FILE : master.credentialFile);
+  const masterToken = await readCredentialFile(master.credentialFile);
   const masterApi = async (path: string, credential = masterToken, timeoutMs = 30_000, headers: Record<string, string> = {}) => {
     const response = await fetch(`${master.url}/api/${path}`, { headers: { ...headers, Authorization: `Bearer ${credential}` }, signal: AbortSignal.timeout(timeoutMs) });
     // The status rides on the error so a caller can tell a missing route (404) from a failing one.

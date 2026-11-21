@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { caretakerRequestsFile, type CaretakerRequest } from '../master/caretaker-prompt.js';
+import { registryCommand } from './master-registry.js';
 import { readFile } from 'node:fs/promises';
 import { wholeDocument } from '../model/work-summary.js';
 import { inheritedObligations, proofAuthority, type Principal, type ProofAuthority } from '../model.js';
@@ -70,13 +72,27 @@ export const workCommands = defineCommands([
     },
   },
   {
-    // GY-3593: the caretaker's report, at most 12 lines, saved by the control plane.
+    // GY-3593: the caretaker's own commands, on its own token (GRAPHYARD_TOKEN_FILE). A restart or a
+    // dispatch is a request beside that token; the loop serves it, with its own identity, when the run ends.
     name: 'caretaker',
-    help: ['  caretaker report FILE|-       Save the caretaker run\'s report (at most 12 lines: checked:, fixed:, filed:, needs the owner:)'],
+    help: ['  caretaker report FILE|-       Save the caretaker run\'s report (at most 12 lines: checked:, fixed:, filed:, needs the owner:)',
+      '  caretaker registry [account quota NAME STATE --reason TEXT]  Read the fleet, or correct an account\'s quota mark',
+      '  caretaker restart REASON | dispatch GY-N PROFILE  Ask the loop to restart, or to dispatch an item, when this run ends'],
     run: async ({ id, args, api, print }) => {
-      if (id !== 'report' || !args[0]) throw new Error('Use caretaker report FILE (or - for standard input)');
-      const text = args[0] === '-' ? readFileSync(0, 'utf8') : readFileSync(args[0], 'utf8');
-      return print(await api('caretaker/reports', { lines: text.split('\n').map(line => line.trim()).filter(Boolean) }));
+      if (id === 'report' && args[0]) {
+        const text = args[0] === '-' ? readFileSync(0, 'utf8') : readFileSync(args[0], 'utf8');
+        return print(await api('caretaker/reports', { lines: text.split('\n').map(line => line.trim()).filter(Boolean) }));
+      }
+      if (id === 'registry') return print(await registryCommand({ hostId: process.env.GRAPHYARD_HOST_ID ?? '' }, args, { read: path => api(path), write: (path, data) => api(path, data) }));
+      const reason = args.join(' ').trim(), [key, profile] = args;
+      if ((id === 'restart' && reason || id === 'dispatch' && key && profile) && process.env.GRAPHYARD_TOKEN_FILE) {
+        const file = caretakerRequestsFile(process.env.GRAPHYARD_TOKEN_FILE);
+        const requests: CaretakerRequest[] = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : [];
+        requests.push(id === 'restart' ? { command: 'restart', reason } : { command: 'dispatch', key: key!, profile: profile! });
+        writeFileSync(file, JSON.stringify(requests), { mode: 0o600 });
+        return print({ requested: requests.at(-1), detail: 'the loop serves it when this caretaker run ends' });
+      }
+      throw new Error('Use caretaker report FILE|-, caretaker registry …, caretaker restart REASON or caretaker dispatch GY-N PROFILE (a run with GRAPHYARD_TOKEN_FILE)');
     },
   },
   {

@@ -59,7 +59,9 @@ export default function OverviewPage({ work, board, status, query, setQuery, set
   const byId = new Map(work.map(w => [w.id, w]));
   const rowsOf = (entries: BoardItem[]) => entries.filter(match).flatMap(entry => byId.has(entry.id) ? [byId.get(entry.id)!] : []);
   const byGroup = Object.fromEntries(groups.map(group => [group, board ? rowsOf(board.groups[group]) : []])) as Record<OpenGroup, Work[]>;
-  const counts = Object.fromEntries(groups.map(group => [group, byGroup[group].length])) as Record<OpenGroup, number>;
+  // GY-3593: the caretaker's newest "needs the owner" lines join Needs you, and its count.
+  const caretaker: string[] = status?.caretaker?.needsOwner ?? [];
+  const counts = Object.fromEntries(groups.map(group => [group, byGroup[group].length + (group === 'needs-you' ? caretaker.length : 0)])) as Record<OpenGroup, number>;
   const queues = new Map(board ? board.groups.moving.flatMap(entry => entry.queue ? [[entry.id, entry.queue] as const] : []) : []);
   const stalls = new Map(stalledCards(work.filter(w => w.stage !== 'done' && !isClosed(w)), now).map(card => [card.item.id, card]));
   // GY-3452: shipped means live — the week's merges the live commit contains; the rest wait to go live. The top bar reads the same count.
@@ -68,10 +70,8 @@ export default function OverviewPage({ work, board, status, query, setQuery, set
   const latest = [...shipped, ...waiting].reduce<Work | null>((newest, w) => !newest || mergedAt(w) > mergedAt(newest) ? w : newest, null);
   const row = (w: Work, group: OpenGroup) => <WorkCard key={w.id} item={w} all={work} group={group} stall={group === 'blocked' ? stalls.get(w.id) : undefined} queue={queues.get(w.id)} repository={status?.repository} now={now} onOpen={setSelected} release={release} busy={busy} onPriority={mayChangePriority(status?.actor) ? priority => { void action(w.id, 'priority', { priority, source: 'dashboard' }); } : undefined}/>;
   const shown = (group: OpenGroup) => !only || only === group;
-  // GY-3593: the caretaker's newest "needs the owner" lines join Needs you.
-  const caretaker: string[] = status?.caretaker?.needsOwner ?? [];
   const section = (group: OpenGroup, note?: string) => shown(group) && (byGroup[group].length > 0 || (group === 'needs-you' && (only === group || caretaker.length > 0))) && <section key={group} className={`panel work-group group-${group}`} aria-label={groupLabel[group]} data-group-section={group}>
-    <h2><GroupDot group={group}/>{groupLabel[group]} <span className="count">{byGroup[group].length}</span>{note && <small>{note}</small>}{group === 'needs-you' && <button type="button" className="text-button push" onClick={() => setView('needs-you')}>Every request and answer →</button>}</h2>
+    <h2><GroupDot group={group}/>{groupLabel[group]} <span className="count">{counts[group]}</span>{note && <small>{note}</small>}{group === 'needs-you' && <button type="button" className="text-button push" onClick={() => setView('needs-you')}>Every request and answer →</button>}</h2>
     {group === 'moving' && <div className="row-head" aria-hidden="true"><span/><span/><span className="row-steps"><StepNames/></span><span>Who acts next</span><span>In step</span></div>}
     {group === 'needs-you' && caretaker.length > 0 && <ul className="caretaker-lines" data-caretaker>{caretaker.map(line => <li key={line}>{line}</li>)}</ul>}
     <div className="rows">{byGroup[group].map(w => row(w, group))}</div>

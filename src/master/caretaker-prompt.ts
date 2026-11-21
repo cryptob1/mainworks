@@ -1,22 +1,30 @@
+import { dirname, join } from 'node:path';
+
 /**
  * GY-3593: the caretaker's whole instruction, one checklist in one file. The loop starts one
  * headless caretaker run every 30 minutes per install (daemon/caretaker.ts); it keeps the factory
- * healthy, separate from the master that builds. Its identity may run only the commands named in
- * `caretakerCommands`; the control plane refuses the rest (server/routes/caretaker.ts).
+ * healthy, separate from the master that builds. Every command it names runs on the caretaker's own
+ * token (GRAPHYARD_TOKEN_FILE), never a `master` command, which needs the coordinator identity; the
+ * control plane refuses the caretaker every other write (server/routes/caretaker.ts).
  */
 
-/** The only commands the caretaker runs, besides reads (status, list, diagnose, master status, master registry). */
+/** The only commands the caretaker runs, besides reads. */
 export const caretakerCommands = [
-  'master registry account quota',
-  'master unblock',
-  'master dispatch',
-  'master restart',
+  'caretaker registry account quota',
+  'unblock',
+  'caretaker dispatch',
+  'caretaker restart',
   'create',
   'caretaker report',
 ] as const;
 
 /** What the caretaker reads; none of these changes anything. */
-export const caretakerReads = ['master status', 'master registry', 'status', 'list', 'diagnose'] as const;
+export const caretakerReads = ['status', 'list', 'diagnose', 'caretaker registry'] as const;
+
+/** A dispatch or loop restart the caretaker asks for; the loop serves it, with its own identity, when the run ends. */
+export type CaretakerRequest = { command: 'restart'; reason: string } | { command: 'dispatch'; key: string; profile: string };
+/** Where the run's requests wait: beside its token, in the one directory its sandbox may write. */
+export const caretakerRequestsFile = (tokenFile: string) => join(dirname(tokenFile), 'requests.json');
 
 /** The six checks, in order. */
 export const caretakerChecks = [
@@ -39,7 +47,7 @@ export function caretakerPrompt(cli: string) {
     ...caretakerChecks.map((check, index) => `(${index + 1}) ${check}`),
     '',
     'For each failing check do exactly one of these:',
-    `- run one permitted command: ${run('master registry account quota NAME available|exhausted --reason "PROVIDER SENTENCE"')}; ${run('master unblock GY-N REASON')} for an environment blocker; ${run('master dispatch GY-N PROFILE')}; ${run('master restart REASON')} to request a loop restart;`,
+    `- run one permitted command: ${run('caretaker registry account quota NAME available|exhausted --reason "PROVIDER SENTENCE"')}; ${run('unblock GY-N REASON')} for an environment blocker; ${run('caretaker dispatch GY-N PROFILE')}; ${run('caretaker restart REASON')} to request a loop restart;`,
     `- or file one hotfix item carrying the evidence with ${run('create FILE')}, after checking with ${run('list')} that no open item already names the fault.`,
     'Anything only a person can do (money, accounts, credentials for people) goes in your report under "needs the owner".',
     '',

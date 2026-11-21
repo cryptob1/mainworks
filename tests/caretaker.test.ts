@@ -1,7 +1,10 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdir } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -14,7 +17,9 @@ import { emptyDaemonState } from '../src/daemon/state.js';
 import { Launcher, runCycle } from '../src/daemon/cycle.js';
 import { caretakerIntervalMs, caretakerStep, type CaretakerOutcome } from '../src/daemon/caretaker.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
-import { caretakerChecks, caretakerCommands, caretakerPrompt, caretakerReads } from '../src/master/caretaker-prompt.js';
+import { caretakerChecks, caretakerCommands, caretakerPrompt, caretakerReads, caretakerRequestsFile } from '../src/master/caretaker-prompt.js';
+import { serveCaretakerRequests } from '../src/master/caretaker.js';
+import { loopRestartRequestPath } from '../src/daemon/run.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master.js';
 import { encodeLoopHosts, loopHostsHeader, loopPresenceHeader } from '../src/model/loop-presence.js';
 import { proposedRuntimes } from '../src/model/registry.js';
@@ -22,6 +27,9 @@ import { boardFromStatus } from '../src/model/board.js';
 import OverviewPage from '../web/pages/overview.js';
 import type { Dashboard } from '../web/pages/dashboard.js';
 import type { Principal, Work } from '../src/model.js';
+
+const exec = promisify(execFile);
+const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 
 // GY-3593: a caretaker keeps each install healthy on a schedule, separate from the master that builds.
 
@@ -76,7 +84,9 @@ test('unit:caretaker-checklist-is-complete — the one prompt file holds all six
   assert.ok(named.length >= 8);
   const allowed = [...caretakerCommands, ...caretakerReads];
   for (const command of named) assert.ok(allowed.some(entry => command === entry || command.startsWith(`${entry} `)), `${command} is a permitted command`);
-  for (const command of ['master registry account quota', 'master unblock', 'master dispatch', 'master restart', 'create', 'caretaker report'])
+  // A master command needs the coordinator identity: the caretaker's token runs none of them.
+  assert.ok(!named.some(entry => entry.startsWith('master')), 'the prompt names no master command');
+  for (const command of ['caretaker registry account quota', 'unblock', 'caretaker dispatch', 'caretaker restart', 'create', 'caretaker report'])
     assert.ok(named.some(entry => entry.startsWith(command)), `the prompt names ${command}`);
   for (const forbidden of ['release', 'close', 'rework', 'requirements', 'answer', 'role set', 'priority', 'attest'])
     assert.ok(!named.some(entry => entry.split(' ').includes(forbidden.split(' ')[0]!) && !entry.startsWith('caretaker')), `the prompt never names ${forbidden}`);
@@ -114,33 +124,42 @@ test('e2e:caretaker-report-on-home — a caretaker pass makes a held account tha
   const item = await ok(token(operator), 'work', { title: 'Something to build', why: 'w', simplest: 's', type: 'chore', priority: 2,
     criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:caretaker-runs-once-per-interval', 'e2e:caretaker-report-on-home'] }], policy: { checks: ['test'], review: true } }) as Work;
 
-  // A stub agent that follows the checklist with the caretaker's own token.
+  // A stub agent that follows the checklist through the CLI commands the prompt names, with the caretaker's own token file.
   let caretakerToken = '';
-  const stubAgent = async (bearer: string) => {
+  const directory = await temporaryDirectory('caretaker-run'), tokenFile = join(directory, 'caretaker.token');
+  const cli = async (...args: string[]) => JSON.parse((await exec(process.execPath, [launcher, ...args], { cwd: directory,
+    env: { ...process.env, GRAPHYARD_URL: url, GRAPHYARD_TOKEN_FILE: tokenFile, GRAPHYARD_TOKEN: undefined, GRAPHYARD_REQUEST_ID: undefined } })).stdout);
+  const stubAgent = async () => {
     const lines: string[] = [];
-    for (const account of (await ok(bearer, 'agent-registry')).accounts.filter((entry: any) => entry.quota !== 'available')) {
+    for (const account of (await cli('caretaker', 'registry')).accounts.filter((entry: any) => entry.quota !== 'available')) {
       const answer = 'The live request answered: OK';
-      await ok(bearer, `agent-registry/accounts/${account.name}/quota`, { quota: { state: 'available', resetsAt: null }, reason: answer });
+      await cli('caretaker', 'registry', 'account', 'quota', account.name, 'available', '--reason', answer);
       lines.push(`fixed: ${account.name} answered a live request; marked available ("${answer}")`);
     }
-    for (const host of (await ok(bearer, 'status')).hosts) lines.push(host.away ? `needs the owner: ${host.host} is away: ${host.reason}` : `checked: ${host.host} is ready`);
+    for (const host of (await cli('status')).hosts) lines.push(host.away ? `needs the owner: ${host.host} is away: ${host.reason}` : `checked: ${host.host} is ready`);
     lines.push('checked: merges per hour 0.0 over 6h, 0.0 over 24h');
-    await ok(bearer, 'caretaker/reports', { lines });
+    await cli('caretaker', 'restart', 'the loop stopped dispatching');
+    await writeFile(join(directory, 'report.txt'), lines.join('\n'));
+    await cli('caretaker', 'report', join(directory, 'report.txt'));
   };
+  const loopConfig = config(url, join(await temporaryDirectory('caretaker-credentials'), 'coordinator.token'));
   const effects = {
     snapshot: async () => ok(token(coordinator), 'work-snapshot'), agents: () => [], herdr: () => ({ agents: [], available: true }), credentials: async () => ({}), closeSession: () => {},
     persist: async () => {},
     caretaker: async () => {
       caretakerToken = (await ok(token(coordinator), 'caretaker-identity', {})).token;
-      await stubAgent(caretakerToken);
+      await writeFile(tokenFile, `${caretakerToken}\n`, { mode: 0o600 });
+      await stubAgent();
+      const served = await serveCaretakerRequests(directory, loopConfig, caretakerRequestsFile(tokenFile));
       const report = (await ok(token(coordinator), 'caretaker/reports')).report;
-      return { result: `Reported ${report.lines.length} lines: ${report.lines[0]}` };
+      return { result: `${served}Reported ${report.lines.length} lines: ${report.lines[0]}` };
     },
   } as unknown as DaemonEffects;
-  const loopConfig = config(url, join(await temporaryDirectory('caretaker-credentials'), 'coordinator.token')), state = emptyDaemonState(loopConfig);
+  const state = emptyDaemonState(loopConfig);
   await runCycle(loopConfig, state, effects, Date.now, undefined, () => {});
 
-  assert.match(state.caretaker?.result ?? '', /^Reported 3 lines: fixed: claude-a answered a live request/, 'the loop recorded the pass and its result line');
+  assert.match(state.caretaker?.result ?? '', /^Loop restart requested\. Reported 3 lines: fixed: claude-a answered a live request/, 'the loop recorded the pass, the restart it served and its result line');
+  assert.equal(JSON.parse(await readFile(loopRestartRequestPath(loopConfig), 'utf8')).requestedBy, 'caretaker', 'the caretaker\'s restart is the loop\'s own request');
   const account = (await ok(token(operator), 'agent-registry')).accounts.find((entry: any) => entry.name === 'claude-a');
   assert.equal(account.quota, 'available', 'the held account that answered is available');
   const caretaker = (await ok(caretakerToken, 'status')).actor;
