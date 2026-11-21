@@ -42,7 +42,8 @@ import { foldServeReverts, mergeServeRevertKind, mergeServeRevertSchema } from '
  */
 const sha = z.string().regex(/^[0-9a-f]{40}$/i).transform(value => value.toLowerCase());
 const instant = z.string().max(64).refine(value => Number.isFinite(Date.parse(value)), 'an ISO 8601 instant');
-const tests = z.object({ passed: z.number().int().min(0), failed: z.array(z.string().max(300)).max(100), files: z.number().int().min(0) }).strict();
+const tests = z.object({ passed: z.number().int().min(0), failed: z.array(z.string().max(300)).max(100), files: z.number().int().min(0),
+  /** GY-3599: the file that ran longest, for the Task page. */ slowest: z.object({ file: z.string().max(300), durationMs: z.number().int().min(0) }).strict().optional() }).strict();
 const trialPhase = z.enum(trialPhases), trialNoVerdictOutcome = z.enum(['timeout', 'cancelled', 'host-failure']);
 const trialPhaseDurations = z.object(Object.fromEntries(trialPhases.map(phase => [phase, z.number().min(0)])) as Record<TrialPhase, z.ZodNumber>).strict();
 const trialAttempts = z.array(z.object({ outcome: trialNoVerdictOutcome, phase: trialPhase, reason: z.string().max(1000), phases: trialPhaseDurations }).strict()).max(10);
@@ -84,7 +85,7 @@ export const unintendedShaRefusal = (key: string, mergeSha: string, intended: st
 export const otherHeadRefusal = (key: string, head: string, candidate: string | null) => `${key}'s submitted head is ${candidate ? candidate.slice(0, 12) : 'none'}, not ${head.slice(0, 12)}; the merge writer records only the candidate it merges`;
 
 /** The engine's git runner over the coordinator checkout, made on first use as the head observation makes it (engine.ts). */
-function gitRunner(engine: Engine): GitRunner {
+export function gitRunner(engine: Engine): GitRunner {
   if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd());
   demand(engine.gitRunner, 'The control plane has no checkout to read the base branch from; a merge record needs the merge writer checkout', 503);
   return engine.gitRunner!;

@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
-import { ItemCosts } from './costs';
+import { ItemCostsView } from './costs';
+import type { CostSummary } from '../../src/model/token-costs';
+import LiveRun from '../components/live-run';
+import { ChangedFiles, Checks, LeadDecisions, PipelineRow, useEvidence, type ChangedFile, type TaskTimings } from '../components/task-evidence';
+import { friendlyName } from '../fun';
 import { deploySmokeRequired, isClosed, needsProductReview, type Work } from '../../src/model';
 import { sessionSummary, transcriptRun, type SessionHandle } from '../../src/model/sessions';
 import { handleEpoch } from '../../src/model/session-launch-window';
@@ -10,7 +14,7 @@ import Priority, { mayChangePriority } from '../components/priority';
 import History from '../history';
 import RequirementsEditor from '../requirements';
 import { assignment } from '../../src/model/assignment';
-import { CandidateSha, shortShas } from '../candidate';
+import { CandidatePr, CandidateSha, shortShas } from '../candidate';
 import EvidenceArtifacts from '../components/evidence-artifacts';
 import PostDeployment from '../components/post-deployment';
 import TestCases from '../components/test-cases';
@@ -18,7 +22,6 @@ import StatusAge from '../components/status-age';
 import Term, { Explained } from '../components/term';
 import { age } from '../../src/model/format';
 import { formatAge } from '../../src/model/duration';
-import { candidatePrUrl } from '../links';
 import { activityLabel, historyLabel, overlapLine, whatIsLeft, type LeftGroup } from '../item-page';
 import { plainStatus } from '../../src/model/plain-status';
 import { stageLabel, serveView } from '../../src/model/plain-stage';
@@ -27,7 +30,6 @@ import { checkStates, prSteps, stepHeld } from '../../src/model/pr-steps';
 import { releaseView } from '../../src/model/release';
 import { shownRisk } from '../../src/model-boundary/risk-class.js';
 import StatusBadge from '../components/status-badge';
-import { StepsDetail } from '../components/steps-bar';
 import { RequestCard } from './human-requests';
 import type { Dashboard } from './dashboard';
 import type { ItemPreview, ItemPreviewState } from '../../src/project-previews';
@@ -79,11 +81,11 @@ function HumanChecksPanel({ item, token }: { item: Work; token: string }) {
  * now — each opening its log: what the worker printed, stdout and stderr, read from the host that
  * ran it through the item's run-log endpoint.
  */
-function WorkerRunsPanel({ item, token }: { item: Work; token: string }) {
-  const runs = (item.sessions ?? []).filter(handle => handle.kind === 'implementation' && transcriptRun(handle.transcript))
+function WorkerRunsPanel({ item, token, except }: { item: Work; token: string; except?: string }) {
+  const runs = (item.sessions ?? []).filter(handle => handle.kind === 'implementation' && transcriptRun(handle.transcript) && handle.id !== except)
     .sort((a, b) => (handleEpoch(a) || 0) - (handleEpoch(b) || 0) || a.startedAt.localeCompare(b.startedAt));
   if (!runs.length) return null;
-  return <section className="panel" aria-label="Worker runs"><h2>Worker runs</h2>{runs.map(handle => <WorkerRunLog key={handle.id} item={item} handle={handle} token={token}/>)}</section>;
+  return <section className="panel" aria-label="Worker runs"><h2>Earlier attempts</h2>{runs.map(handle => <WorkerRunLog key={handle.id} item={item} handle={handle} token={token}/>)}</section>;
 }
 type RunLogChunk = { run: { account: string | null; kind: string }; lines: { at: string; stream: string; text: string }[]; cursor: number; ended: boolean };
 function WorkerRunLog({ item, handle, token }: { item: Work; handle: SessionHandle; token: string }) {
@@ -211,9 +213,6 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
   const worker = assignment(item, now);
   const admin = status?.actor?.role === 'admin';
   const proofs = proofPreview(item, work, new Date(now));
-  // GY-3173: the merge writer opens no pull request, so an item the control plane observed itself never links one.
-  const controlPlane = item.observation?.source === 'control-plane';
-  const prUrl = item.candidate && !controlPlane ? candidatePrUrl(status?.repository, item.candidate.pr) : undefined;
   const postDeployment = <PostDeployment item={item} repository={status?.repository}/>;
   // The inverted loop, as this item sees it: what the control plane says to do next, which
   // executor has it, who is waiting on a decision, and every session that can be watched or read.
@@ -238,7 +237,6 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
   const actor = nextActor(item, group, now, release, work);
   // Work closed without merging has no state: no bar, nothing left, nobody acting (`prSteps`).
   const closed = isClosed(item);
-  const showSteps = !closed && (group === 'moving' || group === 'blocked' || group === 'shipped' || (!!item.submission && group !== 'backlog'));
   // The state sentence, in plain words and without the pull request: the plate names none (GY-3392).
   // A parked request says what it is about once; its card below carries the ask (GY-1408), so neither line restates it.
   const stateSentence = group === 'needs-you' && item.humanRequest ? `Waiting on your decision about ${humanDecisionLabel[item.humanRequest.kind]}.`
@@ -266,33 +264,74 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
   const whySentence = typeof item.why === 'string' ? item.why.trim() : '';
   const lead = whySentence || plainSentence || item.title;
   const whatChanged = plainSentence && plainSentence !== lead ? plainSentence : '';
+  // GY-3599: the evidence beside the item — where the time went, the change's files, and the model the Builder's session reported.
+  const timings = useEvidence<TaskTimings>(api, `work/${encodeURIComponent(item.id)}/timings`, item.revision);
+  const files = useEvidence<{ files: ChangedFile[] }>(api, item.candidate ? `work/${encodeURIComponent(item.id)}/diff` : null, item.candidate?.sha)?.files ?? (item.candidate ? null : []);
+  const costs = useEvidence<CostSummary & { builder?: { model: string; accountModel: string | null; differs: boolean } | null }>(api, `costs?work=${encodeURIComponent(item.key)}`, item.revision);
+  const [tab, setTab] = useState<typeof tabs[number]>(tabs[0]);
+  const trial = timings?.trial?.head === item.candidate?.sha ? timings!.trial : null;
+  const refusal = item.mergeLedger?.head === item.candidate?.sha && item.mergeLedger?.state === 'refused' ? item.mergeLedger.refusal?.reason ?? null : null;
+  const trialFailed = !!refusal || !!trial?.steps.some(step => step.result === 'failed');
+  // The Builder: who holds or last held the task, and the newest run of theirs the host keeps.
+  const builderRun = (item.sessions ?? []).filter(handle => handle.kind === 'implementation' && transcriptRun(handle.transcript)).sort((a, b) => a.startedAt.localeCompare(b.startedAt)).at(-1);
+  const builder = worker.owner ?? builderRun?.principal ?? null, builderName = builder ? friendlyName(builder) ?? builder : null;
+  const model = costs?.builder ?? null;
+  // One state-changing action, named with verb and object.
+  const act = !admin || item.stage === 'done' ? null
+    : !item.ready || item.hold ? { label: 'Release task', run: () => action(item.id, 'ready') }
+      : item.blocker ? { label: 'Unblock task', run: () => action(item.id, 'unblock', { expectedRevision: item.revision }) }
+        : { label: 'Hold task', run: () => action(item.id, 'hold', { reason: 'Held from the Task page', expectedRevision: item.revision }) };
+  // Stuck or waiting: one sentence why, one on what happens next. Moving work says it in the pipeline row.
+  const stuck = !closed && group !== 'shipped' && (group !== 'moving' || held.overdue || trialFailed || plain.tone === 'stuck');
+  const why = trialFailed ? (refusal?.split('\n')[0] ?? 'Its merge trial failed.') : stateSentence;
+  const add = files?.reduce((sum, file) => sum + file.additions, 0), del = files?.reduce((sum, file) => sum + file.deletions, 0);
+  const panel = (name: typeof tabs[number], content: React.ReactNode) => <div role="tabpanel" aria-label={name} className="task-panel" hidden={tab !== name}>{content}</div>;
   return <article className="item-page" aria-label={item.title}>
     <button type="button" className="text-button back" autoFocus onClick={() => setSelected(null)}>← Back</button>
-    <div className="page-heading">
-      <div>
-        <div className="item-meta"><span className="mono">{item.key}</span>{group && <StatusBadge group={group}/>}{item.owner && <span>Owner · {item.owner}</span>}<span>{item.type.replace(/^./, c => c.toUpperCase())}</span><Priority item={item} disabled={busy} onChange={mayChangePriority(status?.actor) ? priority => { void action(item.id, 'priority', { priority, source: 'dashboard' }); } : undefined}/>{timedGroups.has(group ?? 'shipped') && <StatusAge held={held}/>}</div>
-        <h1 data-title data-why={whySentence ? 'true' : 'false'} data-plain-summary={!whySentence && plainSentence ? 'true' : 'false'}>{lead}</h1>
-        {item.title !== lead && <p className="item-title-full muted">{item.title}</p>}
-        {item.simplest && <p className="item-title-full muted" data-simplest><strong>Simplest:</strong> {item.simplest}</p>}
+    <div className="task-header">
+      <div className="page-heading">
+        <h1 data-title>{item.title}</h1>
+        <div className="page-actions">
+          {item.candidate && <CandidatePr repository={status?.repository} candidate={item.candidate} workKey={item.key} observation={item.observation}/>}
+          {act && <button type="button" disabled={busy} onClick={act.run}>{act.label}</button>}
+        </div>
       </div>
-      {!item.ready && admin && <div className="page-actions">
-        <button type="button" disabled={busy} onClick={() => action(item.id, 'ready')}>Release to ready</button>
-      </div>}
+      <div className="item-meta">
+        <span data-task-state>{group && group !== 'moving' && <StatusBadge group={group}/>} <strong>{trialFailed ? 'Merge trial failed' : stageLabel(item, now, release, serve)}</strong>{timedGroups.has(group ?? 'shipped') && <> · <StatusAge held={held}/></>}</span>
+        {builderName && <span data-builder title={builder!}>Builder {builderName}</span>}
+        {model && <span data-model={model.differs ? 'differs' : 'same'} className={model.differs ? 'amber' : undefined}>Model <span className="mono">{model.model}</span>{model.differs ? ` ▲ not the account's ${model.accountModel}` : ''}</span>}
+        {files && files.length > 0 && <span className="mono" data-diff-stats>+{add} −{del} · {files.length} {files.length === 1 ? 'file' : 'files'}</span>}
+        <small className="mono muted" data-task-ids>{item.key}{item.candidate ? ` · ${item.candidate.sha.slice(0, 8)}` : ''}</small>
+      </div>
+      {lead !== item.title && <p className="item-title-full" data-lead-sentence data-why={whySentence ? 'true' : 'false'} data-plain-summary={!whySentence && plainSentence ? 'true' : 'false'}>{lead}</p>}
     </div>
-    <TrialScreenshotsPanel item={item} token={token}/>
-    <ProductReviewPanel item={item} token={token}/>
-    <HumanChecksPanel item={item} token={token}/>
-    <WorkerRunsPanel item={item} token={token}/>
-    {whatChanged && <p className="what-changed" data-what-changed><strong>What changed:</strong> {whatChanged}</p>}
-    <section className={`panel where-now group-${group ?? 'shipped'}`} aria-label="Where it is now">
+    {(stuck || waitingOnYou.length > 0 || item.violations.length > 0) && <section className={`panel where-now group-${group ?? 'shipped'}`} aria-label="Where it is now">
       {item.reworkRequested && item.lastRework?.reason && <p className="notice" data-rework-reason>Sent back because: {item.lastRework.reason}</p>}
-      <p className="next-line"><span className="next-label">Who acts next:</span> <strong>{actor.who}</strong>{actor.does && actor.does !== steps.label && !waitingOnYou.length ? <> — {actor.does}</> : null}</p>
-      {showSteps && <StepsDetail steps={steps}/>}
-      <p className={`status-sentence tone-${plain.tone} page-fact`}><Explained sentence={stateSentence}/></p>
+      {stuck && <p className="page-fact" data-stuck-why><span className="next-label">Why:</span> <span className={`status-sentence tone-${plain.tone}`}><Explained sentence={why}/></span></p>}
+      {stuck && <p className="next-line" data-stuck-next><span className="next-label">Next:</span> {trialFailed ? 'It goes back to a Builder with this output, or is tried again if the main branch was at fault.'
+        : <><strong>{actor.who}</strong>{actor.does && actor.does !== steps.label && !waitingOnYou.length ? <> — {actor.does}</> : null}</>}</p>}
       {waitingOnYou.map(row => <RequestCard key={row.request.id} row={row} refusal={humanOnlyRefusal(row.rule, status?.actor ?? {})} busy={busy} open={() => {}} signIn={signOut}
         answer={(text, post) => action(row.id, row.answer.post.command, { ...post, [row.answer.post.field]: text })} send={body => action(row.id, row.answer.post.command, body)}/>)}
       {item.violations.map(v => <div className="notice danger" key={v}>{shortShas(v)}</div>)}
-    </section>
+    </section>}
+    {!closed && <PipelineRow item={item} timings={timings} median={status?.pipelineTime?.median ?? null} now={now}/>}
+    <div role="tablist" aria-label="Task evidence" className="task-tabs">{tabs.map(name => <button key={name} type="button" role="tab" aria-selected={tab === name} onClick={() => setTab(name)}>{name}</button>)}</div>
+    {panel('Checks and diff', <>
+      <div className="task-evidence"><Checks trial={trial} output={refusal}/><ChangedFiles item={item} files={files} api={api}/></div>
+      <TrialScreenshotsPanel item={item} token={token}/>
+      <ProductReviewPanel item={item} token={token}/>
+      <HumanChecksPanel item={item} token={token}/>
+    </>)}
+    {panel('Live session', tab !== 'Live session' ? null : builderRun ? <>
+      <p className="muted">{builderName}'s session on {builderRun.host}, read-only.</p>
+      <LiveRun workId={item.id} run={transcriptRun(builderRun.transcript)!} token={token}/>
+      <WorkerRunsPanel item={item} token={token} except={builderRun.id}/>
+    </> : <p className="muted">No Builder has started a session on this task yet.</p>)}
+    {panel('Lead', <LeadDecisions events={events} now={now}/>)}
+    {panel('Details', <>
+      {whatChanged && <p className="what-changed" data-what-changed><strong>What changed:</strong> {whatChanged}</p>}
+      {item.simplest && <p className="item-title-full muted" data-simplest><strong>Simplest:</strong> {item.simplest}</p>}
+      <div className="item-meta">{item.owner && <span>Owner · {item.owner}</span>}<span>{item.type.replace(/^./, c => c.toUpperCase())}</span><Priority item={item} disabled={busy} onChange={mayChangePriority(status?.actor) ? priority => { void action(item.id, 'priority', { priority, source: 'dashboard' }); } : undefined}/><span className="mono">{item.id}</span></div>
     <details className="panel item-details-fold" aria-label="Details"><summary>Details</summary>
       {item.description ? <p className="item-description">{item.description}</p> : <p className="muted">No description.</p>}
       <section className="requirements" aria-label="Requirements"><h2>Requirements <small>{item.criteria.length} · {proofs.filter(p => p.status === 'passed').length} of {proofs.length} proofs passed</small></h2>
@@ -303,7 +342,7 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
             <ul className="proof-markers">{own.map(p => <li key={p.proof} className={`marker-${marker[p.status]?.tone ?? 'pending'}`}>{marker[p.status]?.symbol ?? '○'} <Term term="proof">{p.proof}</Term> {marker[p.status]?.word ?? p.status}</li>)}</ul></div>; })}</section>
     </details>
     {item.preview && <PreviewPanel preview={item.preview}/>}
-    <ItemCosts item={item} api={api}/>
+      <ItemCostsView costs={costs?.windows ? costs : null}/>
     <section className="panel activity" aria-label="Activity"><h2>Activity</h2>
       {events.length ? <ul className="activity-list">{events.slice(0, 3).map(event => <li key={event.seq}>{activityLabel(event.kind)} <small>· {formatAge(event.created_at, now)} ago</small></li>)}</ul> : <p className="muted">Nothing recorded yet.</p>}
       <details className="full-history"><summary>{historyLabel(events.length)}</summary><History key={item.id} events={events}/></details>
@@ -313,6 +352,7 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
       <button disabled={busy} onClick={() => setEditingRequirements(v => !v)}>Revise requirements</button>
     </details>}
     {editingRequirements && <RequirementsEditor key={`${item.id}:${item.policyRevision}`} item={item} all={work} api={api} onSaved={async () => { const epoch = sessionEpoch.current; setEditingRequirements(false); await refresh(epoch); }}/>}
+    {editingRequirements && <RequirementsEditor key={`${item.id}:${item.policyRevision}`} item={item} all={work} api={api} onSaved={async () => { const epoch = sessionEpoch.current; setEditingRequirements(false); await refresh(epoch); }}/>}
     {/* Everything technical, one click down, in the control plane's own vocabulary. */}
     <details className="more-details" aria-label="Technical details"><summary>Technical details</summary>
       {/* GY-3392: the plate says who acts next; the gate detail it replaced lives here, still one plain
@@ -320,7 +360,6 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
       {left.length > 0 && <section aria-label="What is left"><h3>What is left</h3>{left.map(leftGroup)}</section>}
       <section aria-label="Change"><h3>Change</h3>
         {item.candidate ? <dl className="facts">
-          {prUrl && <div><dt>Link</dt><dd><a className="pr-open candidate-link" href={prUrl} target="_blank" rel="noopener noreferrer" aria-label={`The change on GitHub for ${item.key}`}>Open on GitHub ↗</a></dd></div>}
           <div><dt><Term term="commit" focusable={false}>Commit</Term></dt><dd className="candidate-details"><CandidateSha repository={status?.repository} sha={item.candidate.sha} workKey={item.key}/></dd></div>
           {item.observation?.files && <div><dt>Changes</dt><dd>{item.observation.files.length} {item.observation.files.length === 1 ? 'file' : 'files'}</dd></div>}
           <div><dt>Risk</dt><dd className="risk-details">{risk.risk}{risk.reasons.length ? <small> · {risk.reasons.join(' · ')}</small> : <small> · no sensitive path in the merge delta</small>}</dd>{risk.estimated && <dd className="risk-estimate"><small>Read here by the generic default rules; the gates use this repository's <code>graphyard.json</code> policy (<code>graphyard work {item.key}</code>).</small></dd>}</div>
@@ -374,7 +413,13 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
       {!!item.releaseDeliveries?.length && <><h3>Observed delivery</h3>{item.releaseDeliveries.map(d => <p key={d.environment}>Verified in {d.environment} · release {d.releaseId} r{d.releaseRevision} · generation {d.generation} · {new Date(d.verifiedAt).toLocaleString()}</p>)}<p className="muted">Independently observed runtime identity over a common interval, recorded once per environment. The merge above is a separate fact.</p></>}
       <h3>Evidence ({item.evidence.length})</h3>{item.evidence.map(e => <div className="criterion evidence-row" key={e.id}><strong>{e.revocation ? '⦸' : e.result === 'pass' ? '✓' : '×'} {e.proof}</strong><p>{e.trusted ? 'Trusted producer' : 'Worker assertion'} · {e.producer} · {e.sha.slice(0, 8)} · {e.executed} executed / {e.skipped} skipped</p>{e.reason && <p>Attested: {e.reason}</p>}{e.revocation && <p className="amber">Revoked by {e.revocation.actor}: {shortShas(e.revocation.reason)}</p>}{e.reuse && <p className="muted">Reused from the pass observed {new Date(e.reuse.observedAt).toLocaleString()} on {e.reuse.sourceSha.slice(0, 8)} (attempt sequence {e.reuse.sequence}, policy {e.reuse.policy.id} r{e.reuse.policy.revision}); a newer live attempt supersedes it.</p>}<EvidenceArtifacts evidence={e} token={token} observedAt={observedAt}/></div>)}
     </details>
+    </>)}
+    {(builderRun || item.candidate) && <div className="task-commands muted"><span>From your terminal:</span>
+      {builderRun && <code>tail -f .graphyard/worker-runs/{transcriptRun(builderRun.transcript)}/log.jsonl</code>}
+      {item.candidate && <code>git fetch origin {item.candidate.branch} && git checkout FETCH_HEAD</code>}
+    </div>}
   </article>;
 }
+const tabs = ['Checks and diff', 'Live session', 'Lead', 'Details'] as const;
 // The document this page renders: a settled delivery's is read when it is opened (GY-422).
 export { useOpenedWork } from '../opened-work';

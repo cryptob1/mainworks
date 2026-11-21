@@ -362,7 +362,7 @@ export const trialTemporaryVariables = (directory: string) => ({ TMPDIR: directo
  * selection, or an empty one.
  */
 export interface TrialRun {
-  build: 'pass' | 'fail'; tests: { passed: number; failed: string[]; files: number }; durationMs: number; logTail: string; runnerExit?: number | null; groups?: TrialGroup[];
+  build: 'pass' | 'fail'; tests: { passed: number; failed: string[]; files: number; /** GY-3599: the file that ran longest, from the runner's records, for the Task page. */ slowest?: { file: string; durationMs: number } }; durationMs: number; logTail: string; runnerExit?: number | null; groups?: TrialGroup[];
   /** How long each phase took (GY-1832), so the slow one is named; absent only from a trial stub. */
   phases?: TrialPhaseDurations;
   /** The attempts before this one that reached no verdict (GY-1832): a verdict on the retry carries the first attempt's outcome. */
@@ -497,6 +497,14 @@ async function refreshDurations(root: string, path: string, records: string, ran
   const temporary = `${file}.${randomUUID().slice(0, 8)}`;
   await writeFile(temporary, `${JSON.stringify({ files }, null, 2)}\n`);
   await rename(temporary, file);
+}
+/** The file that ran longest among the runner's per-file records (GY-3599); null when they name none. */
+export function slowestFile(records: string): { file: string; durationMs: number } | null {
+  let slowest: { file: string; durationMs: number } | null = null;
+  for (const line of records.split('\n')) {
+    try { const record = JSON.parse(line) as { file?: unknown; durationMs?: unknown }; if (typeof record.file === 'string' && typeof record.durationMs === 'number' && record.durationMs > (slowest?.durationMs ?? -1)) slowest = { file: record.file.slice(0, 300), durationMs: Math.round(record.durationMs) }; } catch { /* not a record */ }
+  }
+  return slowest;
 }
 /** How much of a failing runner child's output its diagnostic record keeps: enough to read the exit, little enough for one daemon action. */
 export const runnerDiagnosticTailLength = 1200;
@@ -1534,7 +1542,8 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     // GY-3542: a passing trial's own timings balance the next trial's shards.
     if (!failed.length && strategy.durations) await refreshDurations(input.root, strategy.durations, ran.map(shard => shard.records).join('\n'), files).catch(() => {});
     const worst = groups.find(group => group.status !== 0);
-    return result({ passed: Math.max(0, counted - failed.length), failed, files: counted }, worst ? exitCode({ status: worst.status, signal: worst.signal, cause: undefined }) : 0, groups,
+    const slowest = slowestFile(ran.map(shard => shard.records).join('\n'));
+    return result({ passed: Math.max(0, counted - failed.length), failed, files: counted, ...(slowest ? { slowest } : {}) }, worst ? exitCode({ status: worst.status, signal: worst.signal, cause: undefined }) : 0, groups,
       failingOutput.length && log.join('\n').length > tailLength ? failureTail(failingOutput) : tail());
   };
   const trial = async (): Promise<TrialRun> => {
