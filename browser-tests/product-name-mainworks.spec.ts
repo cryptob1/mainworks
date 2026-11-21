@@ -50,6 +50,14 @@ test('e2e:product-name-mainworks — sign-in, home and an invite link say Mainwo
   await expect(page.locator('[data-setup-item="onboarding"]')).toContainText("adds Mainworks's delivery workflows", settled);
   await namesMainworks(page);
 
+  // The Help page embeds the setup and infra guide topics in its Reference folds.
+  await page.goto('/#guide');
+  await page.getByText('Setup prerequisites and options').click();
+  await page.getByText('Every part, with its log command').click();
+  await expect(page.locator('#docs-reference')).toContainText('runs on a Linux host', settled);
+  await expect(page.locator('#docs-reference')).toContainText("Mainworks's files", settled);
+  await namesMainworks(page);
+
   // An invite link opens once and lands on the home page.
   const invite = await page.context().newPage();
   await serve(invite);

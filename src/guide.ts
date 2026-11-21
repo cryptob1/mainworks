@@ -50,7 +50,7 @@ A dedicated master coordinator keeps cycling: run master status and act on what 
 Operators and maintainers change an item's priority (P0–P3) on a work row or item page, or with \`graphyard priority GY-N 0|1|2|3 REASON\` from the checkout and \`graphyard master priority GY-N 0|1|2|3 REASON\` on the control plane host; both require an audit reason. Changes record who changed it and why in History; the next dispatch uses the new priority. Existing P4 items retain P4 until changed.
 
 To set Graphyard up or find what its setup is missing, follow the setup steps in Graphyard's README: \`doctor\` prints one PASS or FAIL line per prerequisite under \`setupFromZero\`, and each FAIL line names the checklist step that fixes it.`,
-  setup: `Graphyard runs on a Linux host. Check each prerequisite; \`npx @cryptob1/graphyard doctor\` in the repository's checkout checks credentials, agent logins, confinement, the kernel and services in one pass, and each failed check prints its fix.
+  setup: `${PRODUCT_NAME} runs on a Linux host. Check each prerequisite; \`npx @cryptob1/graphyard doctor\` in the repository's checkout checks credentials, agent logins, confinement, the kernel and services in one pass, and each failed check prints its fix.
 
 - Linux 7.0+ with Landlock ABI 9+ enabled: \`uname -r\` (doctor checks the ABI).
 - Node.js 24+ and npm: \`node --version && npm --version\`.
@@ -88,7 +88,7 @@ ENV PATH=/usr/local/go/bin:$PATH
 | Merge trials | one short-lived \`graphyard-trial-…\` container per trial, beside any compose services a check declares | the host's Docker; a trial's test shards also on added hosts | — | the item page carries each trial's output |
 | Item previews | one \`graphyard-preview-KEY-…\` Compose project per previewed item | the host's Docker | — | the item page's Preview panel |
 | The master and agent sessions | Herdr panes and headless runs confined by bubblewrap/Landlock | the host, in worktrees under the checkout | — | the item pages |
-| Graphyard's files | — | the checkout's \`.graphyard/\` and \`~/.config/graphyard/<install>/\` (credentials 0600, CLI releases) | — | — |
+| ${PRODUCT_NAME}'s files | — | the checkout's \`.graphyard/\` and \`~/.config/graphyard/<install>/\` (credentials 0600, CLI releases) | — | — |
 | The heavy-job budget | lock directory shared by every install of this user | \`~/.local/share/graphyard/heavy-jobs/\`; its \`limit\` file sets how many heavy jobs run at once (default 2) | — | projects holding none go first; waiters name holders |
 | Added hosts | \`graphyard host prepare\` makes the unprivileged gy-compute user with rootless Docker, its key limited to graphyard-host-shim, fetching the rootless extras itself when the host lacks them; \`graphyard host add gy-compute@HOST\` records it; merge trials send it test shards, and a host could forge its own shard results, so add only your own machines | listed on Workers with cores, temperature, steal and runs now, Away while unreachable | — | \`graphyard host list\`; \`graphyard host remove USER@HOST\` |
 | The app under test | \`local\`: served inside the merge trial; a named environment: one instance per batch gate | the host, or wherever the environment's \`up\` command provisions it | — | the Tests page's Where tests run block |

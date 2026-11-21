@@ -25,6 +25,12 @@ test('e2e:product-name-mainworks — mainworks and graphyard are the same CLI an
       const guide = await exec(name, ['guide'], { env, cwd: dir });
       assert.match(guide.stdout, /^Mainworks guide topics/, `${name} guide names Mainworks`);
       assert.match(guide.stdout, /mainworks guide TOPIC/, `${name} guide shows mainworks usage`);
+      const setup = await exec(name, ['guide', 'setup'], { env, cwd: dir });
+      assert.match(setup.stdout, /^Mainworks runs on a Linux host\./, `${name} guide setup names Mainworks`);
+      assert.doesNotMatch(setup.stdout, /Graphyard/, `${name} guide setup never names Graphyard as the product`);
+      const infra = await exec(name, ['guide', 'infra'], { env, cwd: dir });
+      assert.match(infra.stdout, /Mainworks's files/, `${name} guide infra names Mainworks`);
+      assert.doesNotMatch(infra.stdout, /Graphyard/, `${name} guide infra never names Graphyard as the product`);
     }
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
