@@ -352,7 +352,6 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
       <button disabled={busy} onClick={() => setEditingRequirements(v => !v)}>Revise requirements</button>
     </details>}
     {editingRequirements && <RequirementsEditor key={`${item.id}:${item.policyRevision}`} item={item} all={work} api={api} onSaved={async () => { const epoch = sessionEpoch.current; setEditingRequirements(false); await refresh(epoch); }}/>}
-    {editingRequirements && <RequirementsEditor key={`${item.id}:${item.policyRevision}`} item={item} all={work} api={api} onSaved={async () => { const epoch = sessionEpoch.current; setEditingRequirements(false); await refresh(epoch); }}/>}
     {/* Everything technical, one click down, in the control plane's own vocabulary. */}
     <details className="more-details" aria-label="Technical details"><summary>Technical details</summary>
       {/* GY-3392: the plate says who acts next; the gate detail it replaced lives here, still one plain

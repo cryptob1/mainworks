@@ -28,6 +28,7 @@ test('e2e:change-priority — row and item controls persist and show attributed 
     expect(await nextPriorityDispatch(f)).toEqual([item.key]);
     await row.getByRole('button', { name: /open/ }).click();
     const details = page.locator('article.item-page');
+    await details.getByRole('tab', { name: 'Details' }).click();
     const detailSelector = details.getByRole('combobox', { name: `Priority for ${item.key}` });
     await expect(detailSelector).toHaveValue('0', settled);
     await details.locator('.full-history > summary').click();
@@ -45,6 +46,7 @@ test('e2e:change-priority — row and item controls persist and show attributed 
     await expect(legacyRow.getByRole('combobox')).toHaveValue('4', settled);
     await expect(legacyRow.locator('option:checked')).toHaveText('P4 (existing)');
     await legacyRow.getByRole('button', { name: /open/ }).click();
+    await page.locator('article.item-page').getByRole('tab', { name: 'Details' }).click();
     await expect(page.getByRole('combobox', { name: `Priority for ${legacy.key}` })).toHaveValue('4', settled);
     expect((await f.store.workDocument(legacy.id))!.priority).toBe(4);
     expect((await f.ok(`events?work=${legacy.id}`)).filter((event: any) => event.kind === 'priority')).toHaveLength(0);
