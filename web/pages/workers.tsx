@@ -133,18 +133,18 @@ function Attach({ row }: { row: WorkerRow }) {
  * the row truncates, then the live read-only output of a headless run — following its tail — or
  * the attach commands of a pane session. Nothing here can type into anything.
  */
-export function SessionPanel({ row, item, now, release, token, setSelected }: { row: WorkerRow; item?: Work; now: number; release: ReleaseView; token: string; setSelected(id: string | null): void }) {
+export function SessionPanel({ row, item, now, release, token, setSelected, onEnded }: { row: WorkerRow; item?: Work; now: number; release: ReleaseView; token: string; setSelected(id: string | null): void; onEnded?: () => void }) {
   const run = transcriptRun(row.transcript);
   return <tr className="session-view" data-view-of={row.id}><td colSpan={4}>
     <div className="session-head">
       <button type="button" className="text-button session-item" title={item?.title ?? shortShas(row.subject)} onClick={() => setSelected(row.workId)}><span className="mono">{row.key}</span>{item ? <> {item.title}</> : null}</button>
       <span className="muted">{doing(row, item, now, release)} · {row.runtime} on {row.host}</span>
     </div>
-    {run ? <LiveRun workId={row.workId} run={run} token={token}/> : <Attach row={row}/>}
+    {run ? <LiveRun workId={row.workId} run={run} token={token} onEnded={row.state === 'running' ? onEnded : undefined}/> : <Attach row={row}/>}
   </td></tr>;
 }
 
-function Row({ row, item, now, release, open, setOpen, token, setSelected, setView }: { row: WorkerRow; item?: Work; now: number; release: ReleaseView; open: string | null; setOpen(id: string | null): void; token: string; setSelected(id: string | null): void; setView(view: string): void }) {
+function Row({ row, item, now, release, open, setOpen, token, setSelected, setView, onEnded }: { row: WorkerRow; item?: Work; now: number; release: ReleaseView; open: string | null; setOpen(id: string | null): void; token: string; setSelected(id: string | null): void; setView(view: string): void; onEnded?: () => void }) {
   const state = sessionState(row, item, now);
   // The master's row is the one exception: it opens the Master page, where its terminal lives.
   const master = row.roleKind === 'master';
@@ -156,17 +156,17 @@ function Row({ row, item, now, release, open, setOpen, token, setSelected, setVi
       <td data-label="State" data-state={state.words}>{state.words}</td>
       <td data-label="Age"><span className="spent">{spent(now - Date.parse(state.since))}</span></td>
     </tr>
-    {open === row.id && <SessionPanel key={`${row.id}:view`} row={row} item={item} now={now} release={release} token={token} setSelected={setSelected}/>}
+    {open === row.id && <SessionPanel key={`${row.id}:view`} row={row} item={item} now={now} release={release} token={token} setSelected={setSelected} onEnded={onEnded}/>}
   </>;
 }
 
 const columns = ['Agent', 'Working on', 'State', 'Age'];
-function Table({ rows, label, work, now, release, open, setOpen, token, setSelected, setView }: { rows: WorkerRow[]; label: string; work: Work[]; now: number; release: ReleaseView; open: string | null; setOpen(id: string | null): void; token: string; setSelected(id: string | null): void; setView(view: string): void }) {
+function Table({ rows, label, work, now, release, open, setOpen, token, setSelected, setView, onEnded }: { rows: WorkerRow[]; label: string; work: Work[]; now: number; release: ReleaseView; open: string | null; setOpen(id: string | null): void; token: string; setSelected(id: string | null): void; setView(view: string): void; onEnded?: () => void }) {
   const byId = new Map(work.map(item => [item.id, item]));
   return <table className="sessions-table workers" aria-label={label}>
     <colgroup><col className="col-agent"/><col/><col className="col-state"/><col className="col-age"/></colgroup>
     <thead><tr>{columns.map(column => <th key={column} scope="col">{column}</th>)}</tr></thead>
-    <tbody>{rows.map(row => <Row key={`${row.workId}:${row.id}`} row={row} item={byId.get(row.workId)} now={now} release={release} open={open} setOpen={setOpen} token={token} setSelected={setSelected} setView={setView}/>)}</tbody>
+    <tbody>{rows.map(row => <Row key={`${row.workId}:${row.id}`} row={row} item={byId.get(row.workId)} now={now} release={release} open={open} setOpen={setOpen} token={token} setSelected={setSelected} setView={setView} onEnded={onEnded}/>)}</tbody>
   </table>;
 }
 
@@ -294,7 +294,7 @@ function ProjectMemorySection({ memory }: { memory?: any }) {
  * two figures that explain why nothing new is launching when the host is saturated. Below the
  * sessions, the hosts table (GY-3407) lists this machine and every added host it watches.
  */
-export default function WorkersPage({ work, observedAt, setSelected, setView, token, status }: Pick<Dashboard, 'work' | 'observedAt' | 'setSelected' | 'setView' | 'token'> & { status?: Dashboard['status'] }) {
+export default function WorkersPage({ work, observedAt, setSelected, setView, token, status, refresh, sessionEpoch }: Pick<Dashboard, 'work' | 'observedAt' | 'setSelected' | 'setView' | 'token'> & Partial<Pick<Dashboard, 'status' | 'refresh' | 'sessionEpoch'>>) {
   const now = useLiveNow(observedAt);
   const release = releaseView(status);
   const view = workersView(work, new Date(now), undefined, release);
@@ -302,7 +302,8 @@ export default function WorkersPage({ work, observedAt, setSelected, setView, to
   // A session the runtime no longer reports is not open: it is listed, marked, but never counted as working.
   const stale = view.running.filter(row => row.stale).length;
   const openCount = view.running.length - stale;
-  const table = (rows: WorkerRow[], label: string) => <Table rows={rows} label={label} work={work} now={now} release={release} open={open} setOpen={setOpen} token={token} setSelected={setSelected} setView={setView}/>;
+  const onEnded = refresh && sessionEpoch ? () => { void refresh(sessionEpoch.current).catch(() => {}); } : undefined;
+  const table = (rows: WorkerRow[], label: string) => <Table rows={rows} label={label} work={work} now={now} release={release} open={open} setOpen={setOpen} token={token} setSelected={setSelected} setView={setView} onEnded={onEnded}/>;
   const cpu = status?.cpu as { avg60: number | null; steal: number | null; celsius?: number | null; testBudget?: number | null; trialCap?: { now: number; full: number } | null; waiting?: boolean | null } | null | undefined;
   // GY-3401: each new session's share of test parallelism, and the trial cap — halved while the CPU is hot.
   // GY-3416: and the guard's own word while it holds every new launch.
