@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { mergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { mergeOne, runMergeTrial, type MergePorts, type MergeRecordEvent } from '../src/merge-writer/executor.js';
-import { keptBaseBuild, keptBaseBuildMarker } from '../src/merge-writer/trial.js';
+import { keptBaseBuild, keptBaseBuildMarker, keptBaseBuildSha, runTrialAttempt } from '../src/merge-writer/trial.js';
 import { masterConfigSchema } from '../src/master.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
@@ -134,4 +134,102 @@ test(`${own} — two trials on one base commit build the tip once, the second ba
   assert.ok(existsSync(kept2) && existsSync(keptBaseBuildMarker(kept2)), 'the new tip\'s built tree is kept');
   assert.equal(builds.filter(cwd => cwd === kept2).length, 1, 'the new tip\'s build ran once');
   assert.equal(builds.filter(cwd => cwd === kept1).length, 1, 'and the old tip still exactly once');
+});
+
+test(`${own} — bare unbuilt kept directory is reclaimed when main moves, concurrent base pass does not mark locked kept tree built, and pnpm workspace populates kept tree with a full build`, { timeout: 300_000 }, async () => {
+  const sha = 'a'.repeat(40);
+  assert.equal(keptBaseBuildSha(`graphyard-base-build-${sha}`), sha);
+  assert.equal(keptBaseBuildSha(`graphyard-base-build-${sha}.built`), sha);
+  assert.equal(keptBaseBuildSha(`graphyard-base-build-${sha}.lock`), sha);
+  assert.equal(keptBaseBuildSha(`graphyard-base-build-${sha}.lock.owner`), sha);
+  assert.equal(keptBaseBuildSha(`graphyard-base-build-${sha}.other`), null);
+
+  // 1. Bare unbuilt directory left after a failed/aborted build is reclaimed when main moves.
+  const repo = await repository();
+  const baseRoot = await temporaryDirectory('base-build-edge', tmpdir());
+  const staleTree = keptBaseBuild(baseRoot, repo.base);
+  mkdirSync(staleTree, { recursive: true });
+  assert.ok(existsSync(staleTree) && !existsSync(keptBaseBuildMarker(staleTree)));
+
+  repo.advance('next');
+  const currentKept = keptBaseBuild(baseRoot, repo.base);
+  const moved = await runTrialAttempt({
+    root: repo.root, base: baseRoot, mergeSha: repo.base, baseTip: repo.base, changedFiles: ['src/fixed'],
+    timeoutMs: 60_000, caches: true, run, environment: { PATH: process.env.PATH! },
+  });
+  assert.equal(moved.build, 'pass');
+  assert.ok(!existsSync(staleTree), 'bare unbuilt directory of the old tip was removed');
+  assert.ok(existsSync(currentKept) && existsSync(keptBaseBuildMarker(currentKept)));
+
+  // 2. Concurrent base pass when another live pass holds the lock builds in its own ephemeral worktree and never writes .built on the locked kept tree.
+  const concRoot = await temporaryDirectory('base-build-conc', tmpdir());
+  const concKept = keptBaseBuild(concRoot, repo.base);
+  let releaseFirst!: () => void;
+  let firstPromise!: Promise<Awaited<ReturnType<typeof runTrialAttempt>>>;
+  const firstEnteredBuild = new Promise<void>(resolve => {
+    let firstBuild = true;
+    const concRun: ChildRun = async (command, args, options) => {
+      options = { ...options, wrapper: undefined };
+      if (command === 'git') return defaultChildRun(command, args, { ...options, env: { ...process.env, ...identity, ...options?.env } });
+      if (command === 'npm' && args[0] === 'run' && args[1] === 'build' && firstBuild && options?.cwd === concKept) {
+        firstBuild = false;
+        resolve();
+        await new Promise<void>(done => { releaseFirst = done; });
+        return '';
+      }
+      return run(command, args, options);
+    };
+    firstPromise = runTrialAttempt({
+      root: repo.root, base: concRoot, mergeSha: repo.base, baseTip: repo.base, changedFiles: ['src/fixed'],
+      timeoutMs: 60_000, caches: true, run: concRun, environment: { PATH: process.env.PATH! },
+    });
+  });
+  await firstEnteredBuild;
+  const second = await runTrialAttempt({
+    root: repo.root, base: concRoot, mergeSha: repo.base, baseTip: repo.base, changedFiles: ['src/fixed'],
+    timeoutMs: 60_000, caches: true, run, environment: { PATH: process.env.PATH! },
+  });
+  assert.equal(second.build, 'pass');
+  assert.ok(!existsSync(keptBaseBuildMarker(concKept)), 'concurrent non-owning pass did not mark the live owner\'s kept tree .built');
+  releaseFirst();
+  const first = await firstPromise;
+  assert.equal(first.build, 'pass');
+  assert.ok(existsSync(keptBaseBuildMarker(concKept)), 'owning pass marked the kept tree .built once its own build finished');
+
+  // 3. pnpm workspace: populating the kept base tree builds the full workspace, not only packages affected by changedFiles.
+  const pnpmRepo = await temporaryDirectory('base-build-pnpm', tmpdir());
+  const writePnpm = (path: string, content: string) => { mkdirSync(dirname(join(pnpmRepo, path)), { recursive: true }); writeFileSync(join(pnpmRepo, path), content); };
+  gitIn(pnpmRepo, 'init', '-q', '-b', 'main');
+  writePnpm('package.json', JSON.stringify({ name: 'ws', private: true, packageManager: 'pnpm@10.0.0', scripts: { test: 'node test.js' } }));
+  writePnpm('pnpm-lock.yaml', 'lockfileVersion: 9.0\n');
+  writePnpm('pnpm-workspace.yaml', 'packages:\n  - packages/*\n');
+  writePnpm('packages/a/package.json', JSON.stringify({ name: 'pkg-a', scripts: { build: 'true' } }));
+  writePnpm('packages/b/package.json', JSON.stringify({ name: 'pkg-b', scripts: { build: 'true' } }));
+  writePnpm('graphyard.json', JSON.stringify({ delivery: policy }));
+  writePnpm('test.js', `console.log('ok 1 - pass');\n`);
+  gitIn(pnpmRepo, 'add', '-A'); gitIn(pnpmRepo, 'commit', '-q', '-m', 'base');
+  const pnpmBase = gitIn(pnpmRepo, 'rev-parse', 'HEAD');
+  gitIn(pnpmRepo, 'checkout', '-q', '--detach');
+  const pnpmBuildCalls: string[][] = [];
+  const pnpmRun: ChildRun = async (command, args, options) => {
+    options = { ...options, wrapper: undefined };
+    if (command === 'git') return defaultChildRun(command, args, { ...options, env: { ...process.env, ...identity, ...options?.env } });
+    if (command === 'npm' && args.includes('build')) { pnpmBuildCalls.push(args); return ''; }
+    if (command === 'npm' && args.includes('test')) return 'ok 1 - pass\n';
+    return '';
+  };
+  const pnpmBaseRoot = await temporaryDirectory('base-build-pnpm-trials', tmpdir());
+  const pnpmFirst = await runTrialAttempt({
+    root: pnpmRepo, base: pnpmBaseRoot, mergeSha: pnpmBase, baseTip: pnpmBase, changedFiles: ['packages/a/index.ts'],
+    timeoutMs: 60_000, caches: true, run: pnpmRun, environment: { PATH: process.env.PATH! },
+  });
+  assert.equal(pnpmFirst.build, 'pass');
+  assert.equal(pnpmBuildCalls.length, 1, `expected one full workspace build: ${JSON.stringify(pnpmBuildCalls)}`);
+  assert.ok(!pnpmBuildCalls[0]!.some(arg => arg.startsWith('--filter=')), `kept pnpm workspace build must not filter to one package: ${JSON.stringify(pnpmBuildCalls[0])}`);
+  const pnpmSecond = await runTrialAttempt({
+    root: pnpmRepo, base: pnpmBaseRoot, mergeSha: pnpmBase, baseTip: pnpmBase, changedFiles: ['packages/b/index.ts'],
+    timeoutMs: 60_000, caches: true, run: pnpmRun, environment: { PATH: process.env.PATH! },
+  });
+  assert.equal(pnpmSecond.build, 'pass');
+  assert.equal(pnpmBuildCalls.length, 1, 'second base pass for another workspace package reused the full kept build');
 });

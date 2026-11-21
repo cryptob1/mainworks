@@ -357,7 +357,7 @@ export const keptBaseBuild = (base: string, sha: string) => join(base, `${keptBa
 export const keptBaseBuildMarker = (directory: string) => `${directory}.built`;
 /** The base commit a kept-tree entry under the trial worktree root names: its directory, built marker, lock or lock owner marker. */
 export const keptBaseBuildSha = (name: string): string | null =>
-  new RegExp(`^${keptBaseBuildPrefix}([0-9a-f]{40})(?:\\.built|\\.lock(?:\\.owner)?)$`).exec(name)?.[1] ?? null;
+  new RegExp(`^${keptBaseBuildPrefix}([0-9a-f]{40})(?:\\.built|\\.lock(?:\\.owner)?)?$`).exec(name)?.[1] ?? null;
 /**
  * The mode of a trial's own temporary directory (GY-1639): sticky, as CI's /tmp is, so a suite that
  * holds `tmpdir()` to the sticky-shared-parent rule (the runner executor’s attested cases)
@@ -1046,12 +1046,12 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
   // tip's kept built tree (keptBaseBuild): one built tree per base commit under the trial's
   // worktree root, built by the first base pass on the tip and reused by every later one.
   const keptSha = input.caches && input.baseTip && input.baseTip.toLowerCase() === input.mergeSha.toLowerCase() ? input.mergeSha.toLowerCase() : null;
-  const kept = keptSha ? keptBaseBuild(input.base, keptSha) : null;
-  let keptLock: string | null = null, reused = false;
+  const keptPath = keptSha ? keptBaseBuild(input.base, keptSha) : null;
+  let kept: string | null = null, keptLock: string | null = null, reused = false;
   /** Takes the kept tree's lock for this pass: one pass owns the tree at a time, and a pass that cannot take it (a live pass holds it) builds its own checkout as trials did before. */
   const takeKeptTree = async (): Promise<boolean> => {
-    if (!kept) return false;
-    const lock = `${kept}.lock`;
+    if (!keptPath) return false;
+    const lock = `${keptPath}.lock`;
     try { await mkdir(lock); }
     catch (error) {
       // A lock a live pass holds is respected; one whose owner is gone (a killed pass) is taken back.
@@ -1107,8 +1107,6 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     temporary = await mkdtemp(join(root, trialTemporaryPrefix)); await chmod(temporary, trialTemporaryMode); await writeTempOwner(temporary);
     // HOME stays beside the short tempdir: nested tests derive socket paths from it.
     home = await mkdtemp(join(root, 'gy-h')); await writeTempOwner(home);
-    const near = await trialCheckoutRoot(input.checkoutRoots ?? trialCheckoutRoots(), input.minFreeBytes ?? defaultWorktreeRootMinFreeGb * 1e9, input.probe, input.checkoutRoots ? [] : undefined);
-    if (near) { place = await mkdtemp(join(near, trialCheckoutPrefix)); await writeTempOwner(place); worktree = join(place, 'checkout'); }
     const { XDG_RUNTIME_DIR: _runtime, DBUS_SESSION_BUS_ADDRESS: _bus, ...hostEnv } = trialEnvironment(input.environment);
     env = { ...hostEnv, ...trialTemporaryVariables(temporary!), ...trialHomeVariables(home, input.environment, true) };
     assertIsolatableHostControlEndpoints({ ...process.env, ...input.environment });
@@ -1116,6 +1114,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     // when an earlier pass left one ready (nothing to install or build), else a fresh checkout of
     // the tip it builds and leaves ready — and takes every other tip's kept tree back first.
     if (await takeKeptTree()) {
+      kept = keptPath;
       await reclaimKeptTrees();
       if (await keptTreeReady()) { worktree = kept!; reused = true; }
       else {
@@ -1123,7 +1122,11 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         worktree = kept!;
         await run('git', ['-C', input.root, 'worktree', 'add', '--detach', worktree, input.mergeSha], { timeoutMs: remaining() });
       }
-    } else await run('git', ['-C', input.root, 'worktree', 'add', '--detach', worktree, input.mergeSha], { timeoutMs: remaining() });
+    } else {
+      const near = await trialCheckoutRoot(input.checkoutRoots ?? trialCheckoutRoots(), input.minFreeBytes ?? defaultWorktreeRootMinFreeGb * 1e9, input.probe, input.checkoutRoots ? [] : undefined);
+      if (near) { place = await mkdtemp(join(near, trialCheckoutPrefix)); await writeTempOwner(place); worktree = join(place, 'checkout'); }
+      await run('git', ['-C', input.root, 'worktree', 'add', '--detach', worktree, input.mergeSha], { timeoutMs: remaining() });
+    }
   };
   // GY-3275: a repository that commits graphyard.trial.Dockerfile runs its trials in its own image,
   // built from the base tip over the image the trials would otherwise run in; a candidate's edits to
@@ -1376,7 +1379,10 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       // An unreadable package.json builds as before; one the merge broke is its failed build, never the host's (PRRT_kwDOUZby-s6tZsNG); only one that declares no build script skips it.
       try { packageScripts = manifest === undefined ? undefined : JSON.parse(manifest)?.scripts; } catch { enter('build'); return finish('fail', { passed: 0, failed: [], files: 0 }); }
       if (!reused) {
-        const argv = buildArgv(manager, affected);
+        // GY-3589: populating a kept base tree in a pnpm workspace must build the whole workspace,
+        // not only the packages affected by this first pass's changedFiles, so later base passes
+        // for other packages reuse a fully built tree.
+        const argv = buildArgv(manager, kept ? null : affected);
         if (argv && (packageScripts === undefined || packageScripts?.build || (manager.name === 'pnpm' && manager.workspace))) {
           enter('build');
           enterStep('build');
