@@ -6,15 +6,16 @@ import { fleetRequest } from '../fleet.js';
 import { applyTeamChange, machineDirectory, readMachine, readTailnet, servedUrl, writeMachine, type MachineTeam, type TeamChange } from '../team-access.js';
 import type { MasterConfig } from './profiles.js';
 
-interface HostWork { repository?: string; team?: TeamChange[]; applied: { team?: string | null } }
+interface HostWork { repository?: string; team?: TeamChange[]; applied: { team?: string | null }; publicLink?: boolean }
 export interface TeamAccessOptions { machineDir?: string; fetch?: typeof fetch; now?: number }
 
 export async function syncTeamAccess(config: Pick<MasterConfig, 'url' | 'credentialFile'>, options: TeamAccessOptions = {}) {
   if (!config.url) return;
   const dir = options.machineDir ?? machineDirectory(), fetcher = options.fetch ?? fetch, request = { url: config.url, credentialFile: config.credentialFile };
   const work = await fleetRequest(request, 'team-access/host', { fetch: fetcher }) as HostWork;
+  // GY-3690: Funnel only while the owner turned the public link on.
   // GY-3480: the node and the address serving this install come from the tailscale CLI on every pass, not from what up once recorded.
-  const served = await servedUrl(new URL(config.url).port || '80', options.now), url = served.url;
+  const served = await servedUrl(new URL(config.url).port || '80', options.now, work.publicLink === true), url = served.url;
   // GY-3486: the owner's teammate changes go into the machine's roster, and this install is listed on it by its address.
   const saved = await readMachine(dir), before: MachineTeam = saved.team ?? { installs: {}, members: {} };
   let team = (work.team ?? []).reduce(applyTeamChange, before);

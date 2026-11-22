@@ -90,15 +90,15 @@ function mapped(status: ServeStatus, port: string): { url: string | null; public
 export const funnelRetryMs = 10 * 60_000;
 const funnelTried = new Map<string, { at: number; error: string | null }>();
 /**
- * The address that opens this install, checked every pass. GY-3690: while Funnel does not serve it, the
- * loop turns Funnel on for it (`funnelCommand`) at most once per `funnelRetryMs`, and `doing` says what it does.
+ * The address that opens this install, checked every pass. GY-3690: only while the owner turned the public
+ * link on (ALLOWFUNNEL) and Funnel does not serve it, the loop turns Funnel on for it (`funnelCommand`) at most once per `funnelRetryMs`, and `doing` says what it does.
  */
-export async function servedUrl(port: string, now = Date.now()): Promise<{ url: string | null; public: boolean; doing: string | null }> {
+export async function servedUrl(port: string, now = Date.now(), allowFunnel = true): Promise<{ url: string | null; public: boolean; doing: string | null }> {
   const read = () => tailscaleJson(['serve', 'status', '--json']).then((status: ServeStatus | null) => status ?? {}, () => null);
   const status = await read();
   if (!status) return { url: null, public: false, doing: null };
   const found = mapped(status, port), command = funnelCommand(port, status);
-  if (found.public) { funnelTried.delete(port); return { ...found, doing: null }; }
+  if (found.public || !allowFunnel) { funnelTried.delete(port); return { ...found, doing: null }; }
   if (!command) return { ...found, doing: `Every public port (${funnelPorts.join(', ')}) serves something else, so the loop cannot turn Funnel on. Free one with tailscale funnel.` };
   const last = funnelTried.get(port);
   let result = found;

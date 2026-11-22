@@ -37,25 +37,40 @@ async function fold(context: RouteContext) {
   return { report, pendingTeam, team: pendingTeam.reduce(applyTeamChange, report?.team ?? { installs: {}, members: {} }) };
 }
 
+/** GY-3690: whether the owner turned the install's public link on, who did and when; off until they do. */
+export interface PublicLinkSetting { on: boolean; by: string | null; at: string | null }
+type Pool = RouteContext['services']['engine']['store']['pool'];
+export async function publicLinkSetting(pool: Pool): Promise<PublicLinkSetting> {
+  const row = (await pool.query(`SELECT actor, created_at, payload FROM events WHERE ${unownedFamilySql(prefix)} AND kind = $1 ORDER BY seq DESC LIMIT 1`, [`${prefix}public-link`])).rows[0];
+  return row ? { on: !!row.payload.on, by: row.actor, at: new Date(row.created_at).toISOString() } : { on: false, by: null, at: null };
+}
 /**
- * GY-3690: while someone is invited (an unexpired invite or a teammate) and the host reports this
- * install's link is not public, what the loop is doing about it; null otherwise. Home shows it as an
- * incident and `master status` as one attention line.
+ * GY-3690: while the owner turned the public link on, someone is invited (an unexpired invite or a
+ * teammate) and the host reports the link is not public: what the loop is doing and when the link was
+ * last public. Home shows it as an incident and `master status` as one attention line; null otherwise.
  */
-export async function publicLinkOff(pool: RouteContext['services']['engine']['store']['pool'], now: Date): Promise<{ doing: string } | null> {
+export async function publicLinkOff(pool: Pool, now: Date): Promise<{ doing: string; lastPublic: string | null } | null> {
+  if (!(await publicLinkSetting(pool)).on) return null;
   const report = (await pool.query(`SELECT payload FROM events WHERE ${unownedFamilySql(prefix)} AND kind = $1 ORDER BY seq DESC LIMIT 1`, [`${prefix}host`])).rows[0]?.payload as HostReport | undefined;
   if (!report || report.public) return null;
   const invited = (await pool.query('SELECT EXISTS (SELECT 1 FROM team_members) OR EXISTS (SELECT 1 FROM team_invites WHERE expires_at > $1) AS invited', [now])).rows[0]?.invited;
-  return invited ? { doing: report.doing ?? 'The loop cannot read Tailscale on this machine. Start Tailscale there.' } : null;
+  if (!invited) return null;
+  const last = (await pool.query(`SELECT created_at FROM events WHERE ${unownedFamilySql(prefix)} AND kind = $1 AND payload->>'public' = 'true' ORDER BY seq DESC LIMIT 1`, [`${prefix}host`])).rows[0]?.created_at as Date | undefined;
+  return { doing: report.doing ?? 'The loop cannot read Tailscale on this machine. Start Tailscale there.', lastPublic: last ? new Date(last).toISOString() : null };
 }
+
 /** GY-3514: the one line Invite shows when its link opens only on the tailnet. */
 export const funnelOffGuidance = 'This link opens only on your tailnet: turn on Funnel for this machine in the Tailscale admin console.';
+/** GY-3690: the line Invite shows while the owner keeps the public link off. */
+export const tailnetOnlyGuidance = 'This link opens only on your tailnet: the public link is off. Turn it on in Settings to let people without Tailscale open it.';
+const linkGuidance = (report: HostReport | undefined, setting: PublicLinkSetting, port: string) =>
+  !report?.url ? missingTailnetGuidance(port) : !setting.on ? tailnetOnlyGuidance : !report.public ? funnelOffGuidance : null;
 async function view(context: RouteContext) {
   operator(context);
-  const state = await fold(context), url = state.report?.url ?? null;
+  const state = await fold(context), url = state.report?.url ?? null, publicLink = await publicLinkSetting(context.services.engine.store.pool);
   return {
-    installUrl: url, public: !!state.report?.public, hostSynced: !!state.report,
-    guidance: !url ? missingTailnetGuidance(port(context)) : !state.report?.public ? funnelOffGuidance : null,
+    installUrl: url, public: !!state.report?.public, hostSynced: !!state.report, publicLink,
+    guidance: linkGuidance(state.report, publicLink, port(context)),
     teammates: await teammates(context, state.team, url),
   };
 }
@@ -83,13 +98,22 @@ export const inviteDays = [1, 7, 30] as const;
 
 export const teamAccessRoutes = defineRoutes('team-access', [
   { method: 'GET', path: '/api/team-access', handle: view },
+  // GY-3690: the public link setting: anyone signed in reads it (`team-access status`); only the owner's human session changes it.
+  { method: 'GET', path: '/api/team-access/public-link', handle: context => publicLinkSetting(context.services.engine.store.pool) },
+  { method: 'POST', path: '/api/team-access/public-link', handle: async context => {
+    const { actor } = context;
+    demand(actor.role === 'admin' && actor.sessionKind === 'human' && configuredIds(context).includes(actor.id), 'Only the owner, signed in to the dashboard, turns the public link on or off', 403);
+    const { on } = z.object({ on: z.boolean() }).strict().parse(await parseJson(context));
+    await record(context, 'public-link', { on });
+    return publicLinkSetting(context.services.engine.store.pool);
+  } },
   // The host's master loop: the teammate changes it should apply to the machine, and what the machine holds.
   { method: 'GET', path: '/api/team-access/host', handle: async context => {
     host(context);
     const state = await fold(context);
     return { repository: context.services.repository, team: state.pendingTeam, applied: state.report?.applied ?? { team: null },
-      // GY-3690: for master status's attention line.
-      publicLinkOff: await publicLinkOff(context.services.engine.store.pool, new Date()) };
+      // GY-3690: whether the loop may turn Funnel on, and master status's attention line.
+      publicLink: (await publicLinkSetting(context.services.engine.store.pool)).on, publicLinkOff: await publicLinkOff(context.services.engine.store.pool, new Date()) };
   } },
   { method: 'POST', path: '/api/team-access/host', handle: async context => {
     host(context);
@@ -114,7 +138,7 @@ export const teamAccessRoutes = defineRoutes('team-access', [
     const invite = await humanSignIn(context.services).invite(context.actor, configuredIds(context), name, role, days * 86_400_000);
     const report = (await fold(context)).report, base = report?.url ?? `http://${context.req.headers.host}`;
     return { link: `${base.replace(/\/$/, '')}/#sign-in=${invite.code}`, name: invite.principal, role, expiresAt: invite.expiresAt,
-      note: !report?.url ? missingTailnetGuidance(port(context)) : !report.public ? funnelOffGuidance : null };
+      note: linkGuidance(report, await publicLinkSetting(context.services.engine.store.pool), port(context)) };
   } },
   // Revoke removes the teammate from every install on the machine and ends their sessions here at once.
   { method: 'POST', path: /^\/api\/invites\/([^/]+)\/revoke$/, handle: async (context, [encoded]) => {

@@ -37,7 +37,7 @@ import { unspecifiedModel, type FleetView } from '../model/registry.js';
 import { observeApplications } from '../production-watch.js';
 import { appRelease } from '../app-url.js';
 import { applicationAttention, reworkAttention } from '../master/attention.js';
-import { publicLinkOffLine } from '../model/incidents.js';
+import { lastPublic, publicLinkOffLine } from '../model/incidents.js';
 import { trialFloorAttention } from '../merge-writer/trial-load.js';
 import { openHumanRequests, parkedOnHuman } from '../model/human-request.js';
 import { humanAsk } from '../model/human-ask.js';
@@ -229,9 +229,9 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   // GY-3624: the flow numbers for 6 hours, 24 hours and 7 days, and one attention line when a station's slowest tenth waits over an hour.
   const flow: Flow | null = unreachable ? null : await Promise.resolve().then(() => masterApi('flow')).catch(() => null);
   const flowAttention = flow?.attention ? [flow.attention] : [];
-  // GY-3690: one line while someone is invited and the install's public link is off.
-  const linkOff: { doing: string } | null = unreachable ? null : await Promise.resolve().then(() => masterApi('team-access/host')).then(body => body?.publicLinkOff ?? null, () => null);
-  const linkAttention = linkOff ? [{ subject: 'team access', text: `${publicLinkOffLine}. ${linkOff.doing}`, next: 'Turn on Funnel for this machine in the Tailscale admin console if the loop cannot; the line clears once the link is public' }] : [];
+  // GY-3690: one line while the owner turned the public link on and someone is invited, but the link is not public.
+  const linkOff: { doing: string; lastPublic: string | null } | null = unreachable ? null : await Promise.resolve().then(() => masterApi('team-access/host')).then(body => body?.publicLinkOff ?? null, () => null);
+  const linkAttention = linkOff ? [{ subject: 'team access', text: `${publicLinkOffLine}. ${lastPublic(linkOff.lastPublic, now)} ${linkOff.doing}`, next: 'Do what the line names if the loop cannot; it clears once the link is public' }] : [];
   const overloadAttention = overloaded(state?.sessions ?? [], now).map(session => ({ subject: session.name ?? session.unit, text: `Overload: ${overloadAlarm(session, now)}`, next: 'The session is only held to its share, not stopped; see what it runs on the Workers page' }));
   // GY-3634: the latest trial benchmark beside the median of the previous ten on the same file list, with one attention line on >25% wall regression.
   const bench = benchStatus(readBenchResults(benchResultsPath(root)));
