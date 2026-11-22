@@ -162,14 +162,14 @@ const post = async (url: string, token: string, path: string, body: unknown, key
 };
 
 /** The production merge-writer reads (effects-production.ts) over this world: trials in the checkout, records and filings through the plane. */
-export function loopReads(where: Where, options: { gate: boolean }): MergeWriterReads {
+export function loopReads(where: Where, options: { gate: boolean; /** Replaces the default trial run (its verdict at once): a world whose revert trial must fail a check the base fails too, GY-3629. */ trial?: typeof runMergeTrial }): MergeWriterReads {
   const reads = mergeWriterReads(where.config, where.checkout, fixtureRun, {
     base: where.trials,
     // GY-3164: the build gate alone opens a flight (the trial runs beside review); both gates land it.
     hold: async work => mergeCandidateHold((await where.snapshot()).find(item => item.id === work.id), work),
     holdOpening: async work => mergeOpeningHold((await where.snapshot()).find(item => item.id === work.id), work),
     // The trial reports a verdict at once: a failure is not re-run or attributed on the base.
-    trial: input => runMergeTrial({ ...input, retries: 0, attribute: false }),
+    trial: options.trial ?? (input => runMergeTrial({ ...input, retries: 0, attribute: false })),
     record: (work, event) => post(where.url, coordinatorToken, `work/${work.id}/merge-record`, event, randomUUID()),
   });
   const trial: MergeWriterReads['trial'] = async (mergeSha, ...rest) => {
@@ -189,14 +189,14 @@ export function loopReads(where: Where, options: { gate: boolean }): MergeWriter
 }
 
 /** One loop process: its own daemon state and effects over the world; `cycle()` runs one coordination cycle. */
-export function pipelineLoop(where: Where, options: { gate: boolean }) {
+export function pipelineLoop(where: Where, options: { gate: boolean; trial?: typeof runMergeTrial }) {
   const state: DaemonState = emptyDaemonState(where.config);
   const lines: string[] = [];
   let gate = options.gate, lastSnapshot: Work[] = [];
   const effects = () => ({ agents: () => [], herdr: () => ({ agents: [], available: true }), credentials: async () => ({}),
     snapshot: async () => ({ work: lastSnapshot = await where.snapshot(), now: new Date().toISOString() }), closeSession: () => {}, dispatch: async () => {},
     decisions: async () => ({ decisions: [] }), persist: async () => {}, github: githubDouble, merge: githubDouble,
-    mergeWriter: loopReads(where, { gate }), rework: async () => {} }) as unknown as DaemonEffects;
+    mergeWriter: loopReads(where, { gate, trial: options.trial }), rework: async () => {} }) as unknown as DaemonEffects;
   return {
     state, lines,
     get lastSnapshot() { return lastSnapshot; },
@@ -248,7 +248,7 @@ export const rollout = (world: Pick<World, 'checkout' | 'base'>) =>
   writeGateRecord(gateRecordPath(world.checkout), { ...bootstrapGate(repository, world.base), diagnosticsAt: new Date().toISOString() });
 
 /** A loop in this process over `world`. */
-export const worldLoop = (world: World, options: { gate: boolean }) => pipelineLoop({ ...world, snapshot: world.work }, options);
+export const worldLoop = (world: World, options: { gate: boolean; trial?: typeof runMergeTrial }) => pipelineLoop({ ...world, snapshot: world.work }, options);
 
 /** The snapshot a loop in another process reads: the same plane's database. */
 export function storeSnapshot(database: string) {

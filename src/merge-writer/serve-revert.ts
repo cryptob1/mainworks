@@ -197,10 +197,17 @@ export type ServeRevertResult =
 
 /** Why the revert's trial fails it: the base's own failure retries, anything else holds. */
 const revertTrialVerdict = (run: MergeTrialRun): { retry: string } | { held: string } | null => {
-  if (failureIsBase(run)) return { retry: 'the base tip fails the same checks, so the revert proves nothing yet' };
+  if (failureIsBase(run)) return { retry: baseStillFails };
   const failed = trialFailureReason({ run });
   return failed ? { held: failed } : null;
 };
+
+/**
+ * GY-3629: the retry a revert earns when its trial failed only checks the base tip fails too — the
+ * tip without the culprit still fails them, so the revert proves nothing about it. The batch gate
+ * reads this reason to file the check flaky and settle the run instead of retrying the same tip.
+ */
+export const baseStillFails = 'the base tip fails the same checks, so the revert proves nothing yet';
 
 /**
  * What the revert is trialled as: a proofless pseudo-item under the culprit's key, with no bug

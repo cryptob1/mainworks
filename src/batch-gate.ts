@@ -13,7 +13,10 @@
 // fails on the last verified commit is a filed known red, and a confirmed failure is bisected over the batch's prefixes in
 // merge order (from the landing that added a failing case, GY-3409): the last item of the smallest
 // failing prefix is reverted through the serve-revert path — the case's own landing when that revert
-// does not apply — and the batch recut. A recut that fails again holds the last verified commit
+// does not apply — and the batch recut. A revert that proves nothing — the base tip without the
+// culprit still fails the check — blames no landing: the check is filed flaky once, exempted like a
+// known red, and the run settles on the remaining checks, so main deploys again (GY-3629). A recut
+// that fails again holds the last verified commit
 // served and wakes the master until main moves, and any held gate is one master status attention
 // line. A timeout is the host's, not the change's: it never holds, and the loop retries at once on
 // main's newest tip (GY-3444); the bound counts the gate's own work, not its own checks' waits for a slot (GY-3474). The
@@ -34,7 +37,7 @@ import { basename, dirname, join } from 'node:path';
 import { EnvironmentFault } from './app-environments.js';
 import { formatAge } from './model/duration.js';
 import type { Work } from './model.js';
-import type { ServeLanding } from './merge-writer/serve-revert.js';
+import { baseStillFails, type ServeLanding } from './merge-writer/serve-revert.js';
 import type { PreviewCaseRun } from './merge-writer/served-previews.js';
 import { trialFileTimeoutMs } from './merge-writer/trial-load.js';
 
@@ -449,7 +452,9 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
         confirmed.push(check);
       }
     }
-    if (!confirmed.length) {
+    // The run settles verified when every check that was not exempted passed: the merges are
+    // judged, the tip is recorded verified and published where every install's deploy watch reads it.
+    const verify = async (): Promise<GateOutcome> => {
       const reverted = new Set(record.merges.filter(merge => merge.reverted).map(merge => merge.sha));
       record.merges = [...record.merges, ...landings.filter(landing => landing.item && !reverted.has(landing.sha) && !record.merges.some(merge => merge.sha === landing.sha))
         .map(landing => ({ sha: landing.sha, item: landing.item!.key, reverted: false }))].slice(-revertRateWindow);
@@ -463,38 +468,58 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
         record.notes = [...record.notes ?? [], `verified-ref: ${error instanceof Error ? error.message : String(error)}`.slice(0, 200)].slice(-filingNotesWindow);
       }
       return { outcome: 'verified', tip, checks, flakes, knownRed, ...(knownFlaky.length ? { knownFlaky } : {}) };
+    };
+    if (!confirmed.length) return verify();
+    const pending = [...confirmed];
+    while (pending.length) {
+      const check = pending.shift()!;
+      if (record.attempt.recuts >= 1) return hold(`the recut batch ${tip.slice(0, 12)} still fails ${check}; ${verified.slice(0, 12)} stays served`);
+      // The smallest failing prefix in merge order names the culprit: its last item. Only the whole batch failing names the batch's last item.
+      const owned = landings.filter((landing): landing is ServeLanding & { item: Work } => !!landing.item && !record.merges.some(merge => merge.sha === landing.sha && merge.reverted));
+      if (!owned.length) return hold(`${tip.slice(0, 12)} fails ${check} and no merged item in the batch is left to revert`);
+      // GY-3409: a case a batch landing added fails, as missing, on every prefix before it, so the
+      // search starts at the landing that added it — and that landing is the fallback when the
+      // culprit's revert does not apply.
+      const id = check.startsWith('e2e:') ? check.slice(4) : null;
+      let introduced: (typeof owned)[number] | undefined;
+      if (id && !(await ports.catalog(verified)).includes(id))
+        for (const landing of owned) if ((await ports.catalog(landing.sha)).includes(id)) { introduced = landing; break; }
+      const searched = introduced ? owned.slice(owned.indexOf(introduced)) : owned;
+      let culprit = searched[searched.length - 1]!;
+      await step(`bisecting ${check} over the batch's prefixes`);
+      for (const landing of searched.slice(0, -1)) if ((await run(landing.sha, [check], files)).includes(check)) { culprit = landing; break; }
+      await step(`reverting ${culprit.item.key} for ${check}`);
+      let reverted = await ports.revert(culprit, tip, check), fallback: string | undefined;
+      if ('held' in reverted && introduced && introduced !== culprit) {
+        fallback = `${reverted.held}; reverted ${introduced.item.key}, which added ${check}, instead`;
+        culprit = introduced;
+        await step(`reverting ${culprit.item.key}, which added ${check}`);
+        reverted = await ports.revert(culprit, tip, check);
+      }
+      if ('held' in reverted) return hold(reverted.held);
+      // GY-3629: a revert that proves nothing — the base tip without the culprit still fails the same
+      // check — blames no landing. The check is filed flaky once (a filing this record holds reused),
+      // the failure is recorded on that flaky item like GY-3431's, and the run settles on the
+      // remaining checks instead of retrying a tip that keeps failing.
+      if ('retry' in reverted && reverted.retry === baseStillFails) {
+        await fileFailure(ports, record, at(), { key: `flake:${check}`, title: `Flaky check on main: ${check}`,
+          description: `The batch gate's check ${check} failed on ${tip.slice(0, 12)} and still failed with its culprit reverted: the base tip fails it too, so the revert proved nothing. The batch gate exempts it; make it deterministic.` });
+        const flakyItem = record.filed?.[`flake:${check}`]?.item;
+        if (flakyItem) {
+          knownFlaky.push({ check, item: flakyItem });
+          const { [flakyItem]: earlier = [], ...others } = record.flaky ?? {};
+          record.flaky = Object.fromEntries([...Object.entries(others), [flakyItem, [...earlier, { check, tip, at: at() }].slice(-filingNotesWindow)]].slice(-10));
+        }
+        continue; // the run settles on the remaining checks; none left, it verifies
+      }
+      // A push the moving main rejected blames nothing new: the next cycle gates again.
+      if ('retry' in reverted) return { outcome: 'retry', tip, reason: reverted.retry };
+      record.merges = [...record.merges.filter(merge => merge.sha !== culprit.sha), { sha: culprit.sha, item: culprit.item.key, reverted: true }].slice(-revertRateWindow);
+      record.reverts = [...record.reverts ?? [], { item: culprit.item.key, at: at() }].slice(-50);
+      record.attempt = { ...record.attempt, recuts: record.attempt.recuts + 1 };
+      return { outcome: 'reverted', tip, check, culprit: culprit.item.key, revertSha: reverted.revertSha, ...(fallback ? { fallback } : {}) };
     }
-    const check = confirmed[0]!;
-    if (record.attempt.recuts >= 1) return hold(`the recut batch ${tip.slice(0, 12)} still fails ${check}; ${verified.slice(0, 12)} stays served`);
-    // The smallest failing prefix in merge order names the culprit: its last item. Only the whole batch failing names the batch's last item.
-    const owned = landings.filter((landing): landing is ServeLanding & { item: Work } => !!landing.item && !record.merges.some(merge => merge.sha === landing.sha && merge.reverted));
-    if (!owned.length) return hold(`${tip.slice(0, 12)} fails ${check} and no merged item in the batch is left to revert`);
-    // GY-3409: a case a batch landing added fails, as missing, on every prefix before it, so the
-    // search starts at the landing that added it — and that landing is the fallback when the
-    // culprit's revert does not apply.
-    const id = check.startsWith('e2e:') ? check.slice(4) : null;
-    let introduced: (typeof owned)[number] | undefined;
-    if (id && !(await ports.catalog(verified)).includes(id))
-      for (const landing of owned) if ((await ports.catalog(landing.sha)).includes(id)) { introduced = landing; break; }
-    const searched = introduced ? owned.slice(owned.indexOf(introduced)) : owned;
-    let culprit = searched[searched.length - 1]!;
-    await step(`bisecting ${check} over the batch's prefixes`);
-    for (const landing of searched.slice(0, -1)) if ((await run(landing.sha, [check], files)).includes(check)) { culprit = landing; break; }
-    await step(`reverting ${culprit.item.key} for ${check}`);
-    let reverted = await ports.revert(culprit, tip, check), fallback: string | undefined;
-    if ('held' in reverted && introduced && introduced !== culprit) {
-      fallback = `${reverted.held}; reverted ${introduced.item.key}, which added ${check}, instead`;
-      culprit = introduced;
-      await step(`reverting ${culprit.item.key}, which added ${check}`);
-      reverted = await ports.revert(culprit, tip, check);
-    }
-    if ('held' in reverted) return hold(reverted.held);
-    // A push the moving main rejected blames nothing new: the next cycle gates again.
-    if ('retry' in reverted) return { outcome: 'retry', tip, reason: reverted.retry };
-    record.merges = [...record.merges.filter(merge => merge.sha !== culprit.sha), { sha: culprit.sha, item: culprit.item.key, reverted: true }].slice(-revertRateWindow);
-    record.reverts = [...record.reverts ?? [], { item: culprit.item.key, at: at() }].slice(-50);
-    record.attempt = { ...record.attempt, recuts: record.attempt.recuts + 1 };
-    return { outcome: 'reverted', tip, check, culprit: culprit.item.key, revertSha: reverted.revertSha, ...(fallback ? { fallback } : {}) };
+    return verify();
   } catch (error) {
     // GY-3296: a wait for environment capacity or an environment fault blames, fails and reverts nothing: the next cycle gates again.
     if (error instanceof EnvironmentFault) return { outcome: 'retry', tip, reason: error.message };
