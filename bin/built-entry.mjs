@@ -2,7 +2,7 @@
 // instead of compiling ~550 TypeScript files through tsx on every start. `npm run build` writes them
 // (`node bin/built-entry.mjs`); bin/graphyard.mjs and the test helpers run one only while it is at
 // least as new as every file under src/, so a checkout never built, or edited since, runs from source.
-import { readdirSync, statSync } from 'node:fs';
+import { lstatSync, readdirSync, statSync } from 'node:fs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -13,7 +13,10 @@ export const builtEntries = ['cli', 'server'];
 export function builtEntry(root, name) {
   const file = join(root, 'dist', `${name}.mjs`);
   let built;
-  try { built = statSync(file).mtimeMs; } catch { return null; }
+  try {
+    const link = lstatSync(file);
+    built = link.isSymbolicLink() ? Math.max(link.mtimeMs, statSync(file).mtimeMs) : link.mtimeMs;
+  } catch { return null; }
   for (const entry of readdirSync(join(root, 'src'), { recursive: true, withFileTypes: true })) {
     if (entry.isFile() && statSync(join(entry.parentPath, entry.name)).mtimeMs > built) return null;
   }
@@ -34,7 +37,7 @@ export async function buildEntries(root) {
     const { outputFiles } = await build({
       entryPoints: [entry], outfile, write: false, bundle: true, platform: 'node', format: 'esm',
       target: 'node24', packages: 'external', logLevel: 'warning', absWorkingDir: root,
-      banner: { js: 'const __bundleUrl = import.meta.url;' }, define: { 'import.meta.url': '__moduleUrl' },
+      banner: { js: `import { pathToFileURL as __bundleUrlOf } from 'node:url'; const __bundleUrl = process.argv[1] && process.argv[1].endsWith('/dist/${name}.mjs') ? __bundleUrlOf(process.argv[1]).href : import.meta.url;` }, define: { 'import.meta.url': '__moduleUrl' },
       plugins: [{
         name: 'source-import-meta-url',
         setup(context) {

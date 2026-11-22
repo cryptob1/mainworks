@@ -58,6 +58,7 @@ import { deployRecordPath, readDeployRecord } from '../deploy-watch.js';
 import { graphyardVolumes, reclaimGraphyardLeftovers, reclaimJobLeftovers, stopOrphanTrialContainers, trialContainerMaxAgeMs } from './disk-headroom.js';
 import { dataDirectory } from '../install/worktree-root.js';
 import { durableTemporaryRoot, trialCheckoutRoots } from '../merge-writer/trial.js';
+import { warmCommitOnHosts } from '../merge-writer/remote-shards.js';
 import { installDirectory, readInstallRecord } from '../install/secrets.js';
 import { installIdFor } from '../install/types.js';
 
@@ -296,7 +297,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
         serveRecord: async () => { const record = readServeRecord(serveRecordPath(root)); return record?.commit ? { commit: record.commit, check: record.check ?? null } : null; },
         ...(current().operatorAgent ? { createWork: (input: RelandInput, idempotencyKey: string) => asOperatorAgent('work', input, idempotencyKey),
           attest: (work: Work, proof: string, reason: string, idempotencyKey: string) => asOperatorAgent(`work/${work.id}/evidence`, intentInput('attest', work, { proof, reason }), idempotencyKey) } : {}),
-        gate: { root, repository: config.repository, previews: (commit: string) => runServedPreviewCases({ root, commit }) },
+        gate: { root, repository: config.repository, previews: (commit: string) => runServedPreviewCases({ root, commit }), warmImage: (commit: string) => warmCommitOnHosts({ root, commit, run }) },
       };
     },
     adoptRuns: loopRunAdoption(root, current, deps.fetcher),

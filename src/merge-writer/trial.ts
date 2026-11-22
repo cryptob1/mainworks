@@ -1555,7 +1555,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const hosts = input.remote?.hosts ?? await shardHosts();
     if (!hosts.length) return here('no compute host is added');
     const transport = shardSshSession(run);
-    const session = remoteShardSession({ root: input.root, sha: input.mergeSha, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport });
+    const session = remoteShardSession({ root: input.root, sha: input.mergeSha, baseTip: input.baseTip, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport });
     try {
       const readings = (await (input.remote?.read ?? ((named, shared) => readShardHosts(named, run, cpu.cores(), shared)))(hosts, transport)).slice(1);
       const host = readings.filter(reading => underHeatLimit(reading) && reading.compose).sort((a, b) => realFreeCores(b) - realFreeCores(a))[0];
@@ -1738,7 +1738,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     let outputShown = false;
     // A shard a host turned away is noted after every shard's output, so the note stays in the log tail kept on the item.
     const dropped = new Map<string, HostDroppedError>();
-    const session = hosts.length ? remoteShardSession({ root: input.root, sha: input.mergeSha, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport }) : null;
+    const session = hosts.length ? remoteShardSession({ root: input.root, sha: input.mergeSha, baseTip: input.baseTip, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport }) : null;
     // One shard on this machine, or on `remote`; a remote host that turned it away rethrows, so it runs elsewhere.
     const shard = async (index: number, remote?: string) => {
       const group = shards[index]!, entries: string[] = [];

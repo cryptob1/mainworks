@@ -32,8 +32,8 @@ export const hostProbeScript = [
   'echo "runs $(docker ps -q --filter name=^graphyard-trial- | wc -l)"',
 ].join('\n');
 
-/** The warm image a host runs shards in: the trial image's digest and the lockfile's hash (`none` without one). */
-export const warmImagePattern = /^graphyard-warm:[0-9a-f]{12}-(?:[0-9a-f]{12}|none)$/;
+/** The warm image a host runs shards in: the trial image's digest, the lockfile's hash (`none` without one), and the commit it was built from (optional for older tags). */
+export const warmImagePattern = /^graphyard-warm:[0-9a-f]{12}-(?:[0-9a-f]{12}|none)(?:-[0-9a-f]{12})?$/;
 
 /**
  * GY-3517: the verbs this shim speaks, each with a revision. Bump a verb's revision when a release
@@ -132,7 +132,8 @@ elif verb == 'prepare-run':
     # Keep history, but copy objects: per-run permissions must never change the mirror.
     subprocess.check_call(['git', 'clone', '-q', '--local', '--no-hardlinks', '--no-checkout', mirror, checkout])
     subprocess.check_call(['git', '-C', checkout, '-c', 'advice.detachedHead=false', 'checkout', '-q', '--detach', args[1]])
-    if not args[2].endswith('-none') and not os.path.lexists(os.path.join(checkout, 'node_modules')):
+    parts = args[2].split(':', 1)[1].split('-')
+    if parts[1] != 'none' and not os.path.lexists(os.path.join(checkout, 'node_modules')):
         os.symlink('/deps/node_modules', os.path.join(checkout, 'node_modules'))
     with open(os.path.join(run, 'image'), 'w') as file:
         file.write(args[2])
@@ -172,8 +173,23 @@ else:
                 'apparmor': '${trialAppArmorProfile}' if 'apparmor' in subprocess.run(['docker', 'info', '--format', '{{json .SecurityOptions}}'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True).stdout else None,
                 'load': {'slots': os.path.join(home, '.gy', 'trial-slots'), 'cap': cap, 'order': ${trialStartOrder.merge}, 'hotCelsius': ${trialHotCelsius},
                          'floorBytes': float(os.environ.get('GRAPHYARD_HOST_FLOOR_GB', ${defaultDiskFloorGb})) * 1e9, 'hwmon': '/sys/class/hwmon', 'pressureBoundSeconds': ${trialPressureBoundSeconds}}}
-        # Keep new files removable by the host's mapped group too.
-        command = ['/bin/sh', '-c', 'umask 0002; exec "$@"', 'sh'] + command
+        # Keep new files removable by the host's mapped group too, point Node at the warm image's compile cache,
+        # and overlay its built CLI/server entries when src/ matches its commit (or rebuild them when the head changed src/).
+        prelude = (
+            'umask 0002; '
+            'warm="\${GRAPHYARD_WARM_DIR:-/warm}"; '
+            'if [ -d "$warm/compile-cache" ] && [ -z "\${NODE_COMPILE_CACHE:-}" ]; then export NODE_COMPILE_CACHE="$warm/compile-cache"; fi; '
+            'if [ -f "$warm/commit" ] && [ -f "$warm/dist/cli.mjs" ] && [ ! -f dist/cli.mjs ]; then '
+            '  if git diff --quiet "$(cat "$warm/commit")" HEAD -- src bin/built-entry.mjs package.json 2>/dev/null; then '
+            '    mkdir -p dist; '
+            '    for f in "$warm"/dist/*.mjs; do [ -f "$f" ] || continue; b=$(basename "$f"); ln -sf "$f" "dist/$b.$$.tmp" && mv -f "dist/$b.$$.tmp" "dist/$b"; done; '
+            '  elif [ -f bin/built-entry.mjs ]; then '
+            '    node bin/built-entry.mjs; '
+            '  fi; '
+            'fi; '
+            'exec "$@"'
+        )
+        command = ['/bin/sh', '-c', prelude, 'sh'] + command
         os.chdir(os.path.join(run, 'repo'))
         sys.stdout.flush()
         return subprocess.call([sys.executable, '-I', '-S', '-c', LAUNCHER, json.dumps(spec)] + command, **options,

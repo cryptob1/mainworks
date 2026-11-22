@@ -40,7 +40,7 @@ test('integration:remote-shard-transport — the commit reaches the host\'s per-
   assert.deepEqual([dockerCount(hosts.localState, 'install'), dockerCount(hosts.localState, 'commit'), dockerCount(hosts.state('box'), 'load')], [1, 1, 1], dockerCalls(hosts.state('box')).join(' '));
   assert.deepEqual(dockerCalls(hosts.state('box')).filter(call => call === 'install'), [], 'the host installs nothing: it has no network to install with');
   const [create] = await dockerCreates(hosts.state('box'));
-  assert.match(create![create!.indexOf('--entrypoint') + 2]!, /^graphyard-warm:ab12ab12ab12-[0-9a-f]{12}$/, 'the shard ran in the warm image');
+  assert.match(create![create!.indexOf('--entrypoint') + 2]!, /^graphyard-warm:ab12ab12ab12-[0-9a-f]{12}-[0-9a-f]{12}$/, 'the shard ran in the warm image');
   assert.ok(create!.includes('--network=none') && create!.includes('--cpus=2'), create!.join(' '));
 
   // A second shard of the same trial reuses the prepared host; a failing file is the shard's verdict.
