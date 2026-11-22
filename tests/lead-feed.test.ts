@@ -57,14 +57,14 @@ test('unit:lead-feed — Undo only on a priority change, a hold or a pause, each
 
 test('unit:lead-feed — a registry pause reads its previous concurrency and its undo restores it', () => {
   const rows: RegistryRow[] = [
-    { seq: '3', at: iso(start + 2 * minute), actor: 'graphyard-master', kind: 'role.set', change: { role: { name: 'worker', concurrency: 0 }, reason: 'spend approval first' } },
+    { seq: '3', at: iso(start + 2 * minute), actor: 'graphyard-master', kind: 'role.set', change: { role: { name: 'worker', accounts: ['claude-a'], concurrency: 0 }, reason: 'spend approval first' } },
     { seq: '2', at: iso(start + minute), actor: 'graphyard-master', kind: 'role.set', change: { role: { name: 'worker', concurrency: 2 }, reason: 'the fleet at the start' } },
     { seq: '1', at: iso(start), actor: 'graphyard-master', kind: 'apply', change: { roles: [{ name: 'worker', concurrency: 4 }], reason: 'initial' } },
   ];
   const pauses = pausesFrom(rows);
   assert.equal(pauses.length, 1);
   assert.equal(pauses[0]!.what, 'The worker role paused');
-  assert.deepEqual(pauses[0]!.undo, { target: 'registry', body: { role: { name: 'worker', concurrency: 2 }, reason: 'Owner unpaused the worker role from the Lead page' } });
+  assert.deepEqual(pauses[0]!.undo, { target: 'registry', body: { role: { name: 'worker', accounts: ['claude-a'], concurrency: 2 }, reason: 'Owner unpaused the worker role from the Lead page' } });
   // A pause with no earlier concurrency in the read cannot name its reverse, so it offers none.
   assert.equal(pausesFrom([rows[0]!])[0]!.undo, null);
   assert.equal(pausesFrom([{ seq: '4', at: iso(start + 3 * minute), actor: 'a', kind: 'role.set', change: { role: { name: 'reviewer', concurrency: 3 }, reason: 'r' } }]).length, 0);

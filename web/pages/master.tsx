@@ -175,7 +175,7 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
   const undo = async (entry: FeedDecision) => {
     if (!entry.undo || busy) return;
     if (entry.undo.target === 'work') await action(entry.undo.workId, entry.undo.command, entry.undo.data);
-    else await api('agent-registry/roles', entry.undo.body);
+    else await api('agent-registry/roles', entry.undo.body).then(() => setBoxNote(''), (error: unknown) => setBoxNote(`Not undone: ${error instanceof Error ? error.message : error}`));
     void load();
   };
   const line = leadStatus(pane, now);
@@ -269,7 +269,7 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
           <aside className="lead-rail" aria-label="Lead context">
             <div>
               <h3>Goal order</h3>
-              <ol>{goalOrder(work).map(goal => <li key={goal.id}><button className="text-button" onClick={() => setSelected(goal.id)}>{goal.key} <span data-title>{goal.title}</span></button></li>)}</ol>
+              {goalOrder(work).length ? <ol>{goalOrder(work).map(goal => <li key={goal.id}><button className="text-button" onClick={() => setSelected(goal.id)}>{goal.key} <span data-title>{goal.title}</span></button></li>)}</ol> : <p className="muted">No open goals.</p>}
             </div>
             <div>
               <h3>Waiting on you</h3>

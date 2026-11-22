@@ -15,7 +15,7 @@ export interface TypedLine { who: string; at: string; text: string }
 /** One ledger row the decisions and filings are read from (`GET /api/events`, `payload=details`). */
 export interface LedgerRow { seq: string; work_id: string | null; actor: string; kind: string; created_at: string; details?: Record<string, unknown> | null }
 /** One agent-registry change row (`GET /api/agent-registry/history`). */
-export interface RegistryRow { seq: string; at: string; actor: string; kind: string; change?: { role?: { name?: string; concurrency?: number }; roles?: { name?: string; concurrency?: number }[]; reason?: string } | null }
+export interface RegistryRow { seq: string; at: string; actor: string; kind: string; change?: { role?: { name?: string; concurrency?: number; accounts?: string[]; policy?: unknown }; roles?: { name?: string; concurrency?: number }[]; reason?: string } | null }
 /** An open deployment incident as the production watch reports it (src/production-watch.ts). */
 export interface FeedIncident { id: string; workId: string; key: string; status: 'failed' | 'missing'; reason: string; since: string }
 
@@ -88,7 +88,7 @@ export function pausesFrom(rows: readonly RegistryRow[], limit = leadFeedLimit):
     if (row.kind !== 'role.set' || !role?.name || number(role.concurrency) !== 0 || at === null) continue;
     const previous = previousConcurrency(rows, role.name, row.at);
     entries.push({ kind: 'decision', at, what: `The ${role.name} role paused`, why: text(row.change?.reason),
-      undo: previous === null ? null : { target: 'registry', body: { role: { name: role.name, concurrency: previous }, reason: `Owner unpaused the ${role.name} role from the Lead page` } } });
+      undo: previous === null ? null : { target: 'registry', body: { role: { ...role, concurrency: previous }, reason: `Owner unpaused the ${role.name} role from the Lead page` } } });
   }
   return entries.sort((a, b) => a.at - b.at).slice(-limit);
 }

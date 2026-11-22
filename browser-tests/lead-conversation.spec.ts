@@ -140,7 +140,11 @@ test('e2e:lead-conversation — the Lead is a conversation of messages and cards
     await priorityCard.getByRole('button', { name: 'Undo' }).click();
     await expect.poll(() => goalTitles(page), { timeout: 20_000 }).toEqual(['Watch a worker', 'Fix the flaky release check']);
     expect((await call('test-human-operator', `work/${items.fix}`)).priority).toBe(2);
-    await expect(conversation.locator('.lead-card.decision').filter({ hasText: 'The worker role paused' }).getByRole('button', { name: 'Undo' })).toBeEnabled(settled);
+    // A pause's Undo restores the role's previous concurrency through the registry.
+    await conversation.locator('.lead-card.decision').filter({ hasText: 'The worker role paused' }).getByRole('button', { name: 'Undo' }).click();
+    await expect.poll(async () => (await call('test-human-operator', 'agent-registry/history?limit=5') as { kind: string; change?: { role?: { name: string; concurrency: number } } }[])
+      .find(row => row.kind === 'role.set')?.change?.role, { timeout: 20_000 }).toMatchObject({ name: 'worker', concurrency: 2 });
+    await expect(page.locator('.lead-box-note[role="alert"]')).toHaveCount(0);
     // AC-2: a decision that is not a priority change, a hold or a pause shows no Undo.
     const messageCard = conversation.locator('.lead-card.decision').filter({ hasText: "'s builder" });
     await expect(messageCard.getByRole('button', { name: 'Undo' })).toHaveCount(0);
