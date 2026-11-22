@@ -1,6 +1,7 @@
 // Concern: local isolated worktree reservation and creation, and the leased attempt's one branch replacement.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { runChild } from '../child-runner.js';
@@ -55,7 +56,9 @@ export async function createWorktree(context: CliContext, work: any) {
   const branch = work.submission ? work.workspaces.find((w: any) => w.epoch === work.submission.epoch)?.branch ?? work.candidate?.branch
     ?? [...work.workspaces].sort((a: any, b: any) => b.epoch - a.epoch)[0]?.branch : `graphyard/${work.key.toLowerCase()}-${epoch}`;
   if (!branch) throw new Error('Submitted workspace branch is missing');
-  const path = reworkWorktreePath(work, branch, context.individualHostId()) ?? resolve(root, '.graphyard/worktrees', `${work.key}-${epoch}`);
+  // A reused path that stands but no longer holds the branch cannot take it again: that rework starts at its own path.
+  const reuse = reworkWorktreePath(work, branch, context.individualHostId());
+  const path = reuse && (!existsSync(reuse) || spawnSync('git', ['-C', reuse, 'symbolic-ref', '--short', 'HEAD'], { encoding: 'utf8' }).stdout.trim() === branch) ? reuse : resolve(root, '.graphyard/worktrees', `${work.key}-${epoch}`);
   let startPoint = args[1] ?? 'HEAD';
   if (work.submission) {
     // GY-2017: a control-plane rework starts from the head Graphyard registered at the last
