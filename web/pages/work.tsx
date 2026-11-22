@@ -183,7 +183,7 @@ export default function WorkPage({ work, board, status, query, setQuery, setSele
     <div role="group" aria-label="Filter work" className="work-filters">{workFilters.map(name => <button type="button" key={name} className={filter === name ? 'chip active' : 'chip'} aria-pressed={filter === name} data-filter={name} onClick={() => setFilter(filter === name ? null : name)}>
       {filterLabel[name]} <span className="count">{counts[name]}</span>
     </button>)}</div>
-    <Paged total={ordered.length}>{limit => { const page = ordered.slice(0, limit), goals = goalsOf(page), noGoal = page.filter(({ item }) => !item.goal); return <>
+    <Paged key={`${filter}:${needle}`} total={ordered.length}>{limit => { const page = ordered.slice(0, limit), goals = goalsOf(page), noGoal = page.filter(({ item }) => !item.goal); return <>
       {goals.map(goal => { const { shipped, total } = progress(goal); return <section key={goal} className="panel goal-group" data-goal={goal}>
         <h2>{goal}</h2>
         <p className="goal-progress"><progress value={shipped} max={Math.max(total, 1)}/><span data-goal-progress>{shipped}/{total} shipped</span></p>
