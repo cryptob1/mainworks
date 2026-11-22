@@ -20,18 +20,8 @@ import { endRegistrySessionById, orphanedRegistrySessions, registryDocument } fr
 import { daemonEffects } from '../src/daemon/effects.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
-import { fleet as launchFleet, requested } from './helpers/review-fleet.js';
-
-// Keep managed checkouts in the fixture too when verify runs this file directly, without the
-// suite runner's temporary GRAPHYARD_DATA_HOME.
-async function fleet(...args: Parameters<typeof launchFleet>) {
-  const host = await launchFleet(...args);
-  const file = join(host.root, '.graphyard/master.json');
-  const config = JSON.parse(await readFile(file, 'utf8'));
-  config.run.worktreeRoot = await temporaryDirectory('post-merge-managed-checkouts', '/var/tmp');
-  await writeFile(file, JSON.stringify(config), { mode: 0o600 });
-  return host;
-}
+import { fleet, requested } from './helpers/review-fleet.js';
+import { remoteableTestFile } from '../src/merge-writer/remote-shards.js';
 
 // GY-2945: a loop restart leaves the agent-registry sessions of its reviewer and producer launches
 // without an owner — the successor loop never marks them ended, because nothing it tracks names
@@ -483,4 +473,14 @@ test('unit:review-session-released-after-merge — a closed review record with n
   assert.match(ended['36ec50d6'], /review record is completed/);
   assert.match(ended['be198685'], /review record is failed/);
   assert.equal(ended.running, undefined, 'a running review keeps its slot');
+});
+
+// GY-3621: this file's shard once landed on a remote trial host whose container mounts part of the
+// host read-only, and the managed-checkout root the fixture pinned there failed the whole check
+// with EROFS while the same file passed its rerun on this machine. A file that names no local-only
+// path (src/merge-writer/remote-shards.ts, localOnlyTestPattern) runs — and passes — wherever a
+// trial places it, so this pin holds: the file never names one again.
+test('unit:orphaned-registry-sessions-pinned — the file names no path only this machine has, so any trial shard can run it', async () => {
+  const own = await readFile(new URL(import.meta.url), 'utf8');
+  assert.equal(remoteableTestFile(own), true, 'this test file names a path or tool only this machine has; move its fixtures under the suite\'s own directories so every trial shard can run it');
 });

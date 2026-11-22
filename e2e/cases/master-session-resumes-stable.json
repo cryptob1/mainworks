@@ -1,0 +1,10 @@
+{
+  "id": "master-session-resumes-stable",
+  "title": "The master session resume tests pass twenty times in a row on a loaded host",
+  "description": "tests/master-session-resumes.test.ts runs twenty times, each beside tests/master-large-transcript-wake.test.ts, pinned to two CPU cores with two busy loops and the merge trial's per-file bound, and every run passes: the master session resumes after a loop restart, and its >2 GiB transcript is scanned once per read with padding never decoded, so host load cannot push it past the bound.",
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "twenty loaded runs beside another test file, on two cores", "run": "taskset -c 0,1 sh -c 'for i in 1 2; do node -e \"for(;;);\" & busy=\"$busy $!\"; done; status=0; for run in $(seq 20); do node --import tsx tests/helpers/run-tests.ts tests/master-session-resumes.test.ts tests/master-large-transcript-wake.test.ts || { status=1; echo \"run $run failed\"; break; }; done; kill $busy; exit $status'", "timeoutSeconds": 3000 }
+  ]
+}

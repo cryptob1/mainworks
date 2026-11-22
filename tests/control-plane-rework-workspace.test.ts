@@ -119,7 +119,7 @@ test('integration:control-plane-rework-workspace — the rework workspace starts
       assert.equal(state.failure, undefined, `the workspace was created: ${state.failure}`);
       const printed = state.printed[0] as { path: string; branch: string; epoch: number };
       assert.deepEqual({ branch: printed.branch, epoch: printed.epoch }, { branch, epoch: 2 }, 'the new leased workspace is registered on the submitting branch');
-      assert.equal(printed.path, join(root, '.graphyard/worktrees/GY-1-2'), 'the workspace is this assignment\u2019s own epoch path, never another\u2019s');
+      assert.equal(printed.path, join(root, '.graphyard/worktrees/GY-1-1'), 'GY-3632: the rework works in its Builder\u2019s worktree, so that session can continue there');
       assert.equal(git(printed.path, 'rev-parse', 'HEAD'), head, 'the workspace starts from the registered submission head');
       assert.equal(git(printed.path, 'rev-parse', '--abbrev-ref', 'HEAD'), branch, 'the workspace holds the registered branch');
       const reservation = reserved(state)!.body;
@@ -131,7 +131,7 @@ test('integration:control-plane-rework-workspace — the rework workspace starts
       assert.equal(fetchedWorkerRef(root), false, 'no worker ref was fetched into the checkout');
       assert.deepEqual(git(origin, 'branch', '--list', 'graphyard/*'), stale ? branch : '', stale ? 'the stale remote branch is left exactly as it stood' : 'the remote holds no worker branch');
       assert.deepEqual(released(state), [], 'no workspace failure: the claim was never released');
-      assert.equal(git(root, '-C', join(root, '.graphyard/worktrees/GY-1-1'), 'rev-parse', '--abbrev-ref', 'HEAD'), 'HEAD', 'the earlier attempt\u2019s worktree was detached, never deleted');
+      assert.equal(existsSync(join(root, '.graphyard/worktrees/GY-1-2')), false, 'no second worktree is made for the rework');
     } finally { await rm(root, { recursive: true, force: true }); }
   }
 });
@@ -177,7 +177,7 @@ test('integration:control-plane-rework-ownership — the rework path preserves t
     assert.match(preserved.diff, /wip\.txt/, 'the uncommitted partial work is kept on the record');
     const printed = state.printed[0] as { path: string };
     assert.equal(git(printed.path, 'rev-parse', 'HEAD'), head, 'the new workspace starts from the registered head, never from the partial work');
-    assert.equal(existsSync(join(root, '.graphyard/worktrees/GY-1-1', 'wip.txt')), true, 'the historical worktree is preserved, never removed');
+    assert.equal(printed.path, join(root, '.graphyard/worktrees/GY-1-1'), 'GY-3632: the rework reuses its Builder\u2019s worktree; the partial work lives on in the preserved record');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
