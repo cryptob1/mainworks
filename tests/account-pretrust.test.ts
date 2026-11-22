@@ -230,3 +230,92 @@ test('e2e:account-pretrust — with the first account unable to launch, the mast
   assert.equal(state.actions['master:launch']?.state, 'done');
   assert.deepEqual(registry.live(), ['claude-b']);
 });
+
+test('integration:account-pretrust — never holds the last eligible account for an hour when no next account can run', async () => {
+  // 1. Single-account install: two identical failures fall back to launch backoff instead of a 1-hour lockout.
+  let clock = Date.parse('2026-11-22T14:00:00Z');
+  const singleConfig = await masterConfig('pretrust-single');
+  const singleRegistry = registryFixture(() => clock, [{ name: 'claude-a', runtime: 'claude' }]);
+  const singleState = emptyDaemonState(singleConfig);
+  let broken = true;
+  const singleEffects: DaemonEffects = {
+    snapshot: async () => ({ work: [], now: iso(clock) }),
+    agents: () => [],
+    herdr: () => ({ agents: [], available: true }),
+    credentials: async () => ({}),
+    closeSession: () => {},
+    dispatch: async () => { throw new Error('no worker dispatch'); },
+    persist: async () => {},
+    masterSession: {
+      launch: async (_handover, _previous, options) => {
+        const selected = (await selectFleetSession(singleConfig, 'master', { name: masterProfile }, {
+          registry: singleRegistry.client, now: () => clock, runtime: { agents: [], available: true }, exclude: options?.exclude,
+        }))!;
+        if (broken) {
+          await selected.release('master session launch failed: timed out');
+          throw Object.assign(new Error('master session did not start in pane w1V:p1'), { account: selected.account.name });
+        }
+        return { agentName: MASTER, pane: 'w1V:p2', runtime: selected.account.kind, account: selected.account.name, session: selected.account.fleet.session };
+      },
+      end: async (id, reason) => { await singleRegistry.client.end(id, reason); },
+    },
+  };
+
+  await runCycle(singleConfig, singleState, singleEffects, () => clock);
+  clock += 15_000;
+  await runCycle(singleConfig, singleState, singleEffects, () => clock);
+  assert.deepEqual(singleState.master.unusableAccounts, {}, 'single account is not held for an hour');
+  assert.equal(singleState.actions['master:failover'], undefined, 'no misleading failover recorded when no next account exists');
+  assert.equal(singleState.actions['master:launch']?.state, 'failed');
+  assert.equal(singleState.actions['master:launch']?.attempts, 2);
+
+  // 3rd identical failure engages existing backoff; once fixed after 1 minute it launches immediately.
+  clock += 15_000;
+  await runCycle(singleConfig, singleState, singleEffects, () => clock);
+  assert.equal(singleState.actions['master:launch']?.attempts, 3);
+  assert.match(singleState.actions['master:launch']!.detail, /backs off/);
+  broken = false;
+  clock += 61_000;
+  await runCycle(singleConfig, singleState, singleEffects, () => clock);
+  assert.equal(singleState.master.account, 'claude-a', 'single account launches once the transient failure clears');
+
+  // 2. Multi-account install with a host-level failure: once every account would be held, holds lift for backoff.
+  let hostClock = Date.parse('2026-11-22T15:00:00Z');
+  const hostConfig = await masterConfig('pretrust-host-fault');
+  const hostRegistry = registryFixture(() => hostClock);
+  const hostState = emptyDaemonState(hostConfig);
+  let hostBroken = true;
+  const hostEffects: DaemonEffects = {
+    snapshot: async () => ({ work: [], now: iso(hostClock) }),
+    agents: () => [],
+    herdr: () => ({ agents: [], available: true }),
+    credentials: async () => ({}),
+    closeSession: () => {},
+    dispatch: async () => { throw new Error('no worker dispatch'); },
+    persist: async () => {},
+    masterSession: {
+      launch: async (_handover, _previous, options) => {
+        const selected = (await selectFleetSession(hostConfig, 'master', { name: masterProfile }, {
+          registry: hostRegistry.client, now: () => hostClock, runtime: { agents: [], available: true }, exclude: options?.exclude,
+        }))!;
+        if (hostBroken) {
+          await selected.release('master session launch failed: host confinement error');
+          throw Object.assign(new Error('confinement refused launch in pane w1V:p1'), { account: selected.account.name });
+        }
+        return { agentName: MASTER, pane: 'w1V:p9', runtime: selected.account.kind, account: selected.account.name, session: selected.account.fleet.session };
+      },
+      end: async (id, reason) => { await hostRegistry.client.end(id, reason); },
+    },
+  };
+
+  for (let i = 0; i < 3; i++) {
+    await runCycle(hostConfig, hostState, hostEffects, () => hostClock);
+    hostClock += 15_000;
+  }
+  assert.deepEqual(hostState.master.unusableAccounts, {}, 'holds lift once every account fails the host fault');
+  assert.equal(hostState.actions['master:launch']?.attempts, 3, 'existing backoff takes over on the 3rd failure');
+  hostBroken = false;
+  hostClock += 61_000;
+  await runCycle(hostConfig, hostState, hostEffects, () => hostClock);
+  assert.equal(hostState.master.account, 'claude-a', 'master recovers as soon as the host fault clears');
+});
