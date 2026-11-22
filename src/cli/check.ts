@@ -13,7 +13,7 @@ export async function requestWorkerCheck(context: Pick<CliContext, 'api' | 'repo
 /** The item of an assigned `graphyard/<key>-<epoch>` branch. */
 const branchItem = (root: string) => {
   const branch = execFileSync('git', ['branch', '--show-current'], { cwd: root, encoding: 'utf8' }).trim();
-  const key = /^mainworks\/([a-z]+-\d+)-\d+$/i.exec(branch)?.[1];
+  const key = /^graphyard\/([a-z]+-\d+)-\d+$/i.exec(branch)?.[1];
   if (!key) throw new Error(`Name the item: mainworks check NAME GY-N (branch ${branch || '(detached)'} names none)`);
   return key.toUpperCase();
 };

@@ -24,7 +24,7 @@ import { defaultDiskFloorGb, minimumTrialContainers, trialHotCelsius, trialPress
 
 /** Read-only: Docker's answer, cores, load, the /proc/stat cpu line, CPU sensors and the trial containers running now. */
 export const hostProbeScript = [
-  'docker info --format "{{.ID}}" >/dev/null 2>&1 || { echo mainworks-no-docker; exit 0; }',
+  'docker info --format "{{.ID}}" >/dev/null 2>&1 || { echo graphyard-no-docker; exit 0; }',
   'echo "cores $(nproc)"',
   'echo "load $(cut -d " " -f 1 /proc/loadavg)"',
   'head -n 1 /proc/stat',

@@ -248,7 +248,7 @@ const readableUnitDirectory = (directory: string) => {
 /** The launcher a loop unit's ExecStart names, worded by systemd's own quoting rules, null when it names none. */
 const unitLauncher = (text: string, home: string): string | null => {
   const start = unitCheckout(text, home).execStart;
-  return start ? systemdCommandLineWords(start).find(part => /(?:bin\/mainworks\.mjs|dist\/cli\.js)$/.test(part)) ?? null : null;
+  return start ? systemdCommandLineWords(start).find(part => /(?:bin\/(?:graphyard|mainworks)\.mjs|dist\/cli\.js)$/.test(part)) ?? null : null;
 };
 
 /**

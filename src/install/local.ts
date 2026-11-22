@@ -225,7 +225,7 @@ export const localAdapter: ProviderAdapter = {
       ...trialAppArmorPlan(),
       { id: 'provider.provision.database', target: 'provider', state: observation.database ? 'satisfied' : 'create',
         title: `Create the embedded Postgres cluster under ${local.paths.postgres} (directory 0700, password file 0600) on 127.0.0.1:${local.postgresPort}; no Docker`,
-        command: `initdb --pgdata=${local.paths.data} --auth=scram-sha-256 --username=mainworks --pwfile=${local.paths.passwordFile}` },
+        command: `initdb --pgdata=${local.paths.data} --auth=scram-sha-256 --username=graphyard --pwfile=${local.paths.passwordFile}` },
       local.supervisor.systemd
         ? { id: 'provider.provision.app', target: 'provider', state: observation.app ? 'satisfied' : 'create',
           title: `Run the Mainworks server on 127.0.0.1:${ctx.port} from ${ctx.sourceRoot} under the systemd user unit ${local.unit}, which starts the cluster, migrates and restarts it`,

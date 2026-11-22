@@ -338,7 +338,7 @@ function launchedCheckout(text: string, root: string, home: string): string | nu
   const { workingDirectory, execStart } = unitCheckout(text, home);
   if (workingDirectory) return null;
   const real = (path: string) => { const absolute = resolve(path); try { return realpathSync(absolute); } catch { return absolute; } };
-  const cli = execStart?.split(/\s+/).map(part => part.replace(/^"|"$/g, '')).find(part => /\/bin\/mainworks\.mjs$/.test(part));
+  const cli = execStart?.split(/\s+/).map(part => part.replace(/^"|"$/g, '')).find(part => /\/bin\/(?:graphyard|mainworks)\.mjs$/.test(part));
   if (!cli) return `a command with no WorkingDirectory and no ${root}/bin/graphyard.mjs in its ExecStart (${execStart ?? 'none'})`;
   const checkout = dirname(dirname(cli));
   return real(checkout) === real(root) ? null : checkout;

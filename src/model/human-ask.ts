@@ -15,7 +15,7 @@ export const askLimits = { ask: 140, steps: 5, step: 160, why: 200 } as const;
 const url = /\bhttps?:\/\/\S+|\b[\w-]+(?:\.[\w-]+)*\.(?:com|org|net|io|dev|app|ai)\/\S*/gi;
 const jargon: [string, RegExp][] = [
   ['a commit sha', /\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b/i],
-  ['a branch name', /\b(?:origin|refs\/heads|mainworks|feature|fix|hotfix|release)\/[\w./-]+|\bgy-\d+-\d+\b/i],
+  ['a branch name', /\b(?:origin|refs\/heads|graphyard|feature|fix|hotfix|release)\/[\w./-]+|\bgy-\d+-\d+\b/i],
   ['a mainworks or gh command', /\bmainworks(?:\.mjs)? (?:[a-z]+-)*[a-z]+ (?:GY-\d+|--?[a-z])|\bmainworks (?:park|answer|unseal|status|complete|blocked|master|login|setup|install|verify|watch|doctor|claim|sync|handoff|human-requests)\b|\bgh (?:auth|pr|api|repo|run|workflow|secret|release|issue|extension|config)\b/],
   ['a file path', /(?:^|[\s`'"(])(?:~|\.{1,2})?\/[\w.-]+(?:\/[\w.-]*)*|\b[\w.-]+\/[\w.-]+\/[\w./-]*|\b[\w-]+\/[\w-]+\.\w{1,5}\b|\b[\w-]+\.(?:ts|tsx|js|mjs|cjs|json|md|ya?ml|sh|pem|env|toml|txt|css|html)\b/],
 ];

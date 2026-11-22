@@ -50,12 +50,12 @@ export { systemdCommandLineWords };
 /** The checkout whose Mainworks launcher a unit's ExecStart starts, null when it names none: the executable alone, never the rest of the unit (GY-1859). The line is worded by systemd's own quoting rules (GY-1880), so a launcher `loopUnitText` spelled quoted for a path holding whitespace reads back as exactly that checkout. */
 export function unitLauncherCheckout(text: string, home: string): string | null {
   const start = unitCheckout(text, home).execStart;
-  const launcher = start ? systemdCommandLineWords(start).find(part => /(?:bin\/mainworks\.mjs|dist\/cli\.js)$/.test(part)) : undefined;
+  const launcher = start ? systemdCommandLineWords(start).find(part => /(?:bin\/(?:graphyard|mainworks)\.mjs|dist\/cli\.js)$/.test(part)) : undefined;
   if (!launcher) return null;
   // GY-3337: the install's launcher is itself a symlink to the release's own; the checkout whose
   // code the loop starts is the release tree that symlink resolves into.
   const resolved = canonicalPath(launcher);
-  return dirname(dirname(/(?:bin\/mainworks\.mjs|dist\/cli\.js)$/.test(resolved) ? resolved : launcher));
+  return dirname(dirname(/(?:bin\/(?:graphyard|mainworks)\.mjs|dist\/cli\.js)$/.test(resolved) ? resolved : launcher));
 }
 /** Under the test runner only a unit directory under the system temporary directory is read, as legacyUnitFiles guards: the operator's real units belong to no checkout a test made. */
 const readableUnitsDirectory = (unitDirectory: string) => {

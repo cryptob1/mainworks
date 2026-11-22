@@ -82,8 +82,8 @@ test('unit:tests/where-things-run-docs.test.ts — the loop reports its install\
     server: composeContainer('fixture-shop', 'server'), database: composeContainer('fixture-shop', 'db'),
     port: 4310, url: master.url, checkout, installDirectory: install,
   } satisfies WhereThingsRun);
-  assert.equal(where!.server, 'mainworks-fixture-shop-server-1');
-  assert.equal(where!.database, 'mainworks-fixture-shop-db-1');
+  assert.equal(where!.server, 'graphyard-fixture-shop-server-1');
+  assert.equal(where!.database, 'graphyard-fixture-shop-db-1');
 
   // The header round-trips exactly what the loop gathered, and refuses anything that is not one report.
   assert.deepEqual(loopWhere(encodeLoopWhere(where!)), where);
@@ -104,22 +104,22 @@ test('unit:tests/where-things-run-docs.test.ts — the loop reports its install\
   assert.equal(await loopWhereReport(checkout, master, configHome), null);
 
   assert.equal(whereLogs('graphyard-master-fixture-shop.service'), 'journalctl --user -u graphyard-master-fixture-shop.service');
-  assert.equal(whereLogs('mainworks-fixture-shop-server-1'), 'docker logs mainworks-fixture-shop-server-1');
+  assert.equal(whereLogs('graphyard-fixture-shop-server-1'), 'docker logs graphyard-fixture-shop-server-1');
   assert.equal(whereLogs(local!.database), null, 'the embedded cluster answers no docker logs command');
 });
 
 test('unit:tests/where-things-run-docs.test.ts — the Setup panel names this install\'s units, containers, port, URL, directories and master pane, and says so while the loop has not reported', () => {
   const where: WhereThingsRun = {
     loopUnit: 'graphyard-master-fixture-shop.service', deployUnit: 'graphyard-deploy-fixture-shop.service',
-    server: 'mainworks-fixture-shop-server-1', database: 'mainworks-fixture-shop-db-1',
+    server: 'graphyard-fixture-shop-server-1', database: 'graphyard-fixture-shop-db-1',
     port: 4310, url: 'http://127.0.0.1:4310', checkout: '/home/op/fixture-shop', installDirectory: '/home/op/.config/graphyard/fixture-shop',
   };
   const status = { setup: { where, panes: { configHome: '/home/op/.config/herdr', session: 'graphyard-master-fixture-shop', host: 'host-a', running: true, master: '3' } } };
   const html = renderToStaticMarkup(createElement(WhereThingsRunPanel, { where: status.setup.where, panes: status.setup.panes }));
   for (const shown of [
     'graphyard-master-fixture-shop.service', 'graphyard-deploy-fixture-shop.service',
-    'mainworks-fixture-shop-server-1', 'docker logs mainworks-fixture-shop-server-1',
-    'mainworks-fixture-shop-db-1', 'docker logs mainworks-fixture-shop-db-1',
+    'graphyard-fixture-shop-server-1', 'docker logs graphyard-fixture-shop-server-1',
+    'graphyard-fixture-shop-db-1', 'docker logs graphyard-fixture-shop-db-1',
     'http://127.0.0.1:4310', '4310', '/home/op/fixture-shop', '/home/op/.config/graphyard/fixture-shop',
     'graphyard-master-fixture-shop', 'master pane 3', 'journalctl --user -u graphyard-master-fixture-shop.service',
   ]) assert.ok(html.includes(shown), `the panel shows ${shown}`);

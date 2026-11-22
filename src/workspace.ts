@@ -8,5 +8,5 @@ export function pathsOverlap(a: string, b: string) {
   return a === b || a === '/' || b === '/' || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
 }
 export function validBranch(branch: string) {
-  return /^mainworks\/[a-zA-Z0-9/_-]+$/.test(branch) && !branch.endsWith('/') && !branch.includes('//');
+  return /^graphyard\/[a-zA-Z0-9/_-]+$/.test(branch) && !branch.endsWith('/') && !branch.includes('//');
 }

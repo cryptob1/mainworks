@@ -131,7 +131,7 @@ export function composeBundle(ctx: AdapterContext, values: EnvValue[]): BundleFi
     `"./serve:/run/graphyard"`,
   ];
   const files: BundleFile[] = [
-    { path: `${ctx.workdir}/db.env`, mode: 0o600, content: `POSTGRES_USER=mainworks\nPOSTGRES_DB=mainworks\nPOSTGRES_PASSWORD=${ctx.databasePassword}\n` },
+    { path: `${ctx.workdir}/db.env`, mode: 0o600, content: `POSTGRES_USER=graphyard\nPOSTGRES_DB=graphyard\nPOSTGRES_PASSWORD=${ctx.databasePassword}\n` },
     { path: `${ctx.workdir}/server.env`, mode: 0o600, content: `${environment.join('\n')}\n` },
     // Made by the installer before Docker would make it root's, so the server (uid 1000) can create its serve socket there.
     { path: `${ctx.workdir}/serve/.keep`, mode: 0o600, content: '' },

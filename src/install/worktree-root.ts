@@ -99,7 +99,7 @@ export async function verifyWorktreeRoot(path: string, options: { minFreeBytes: 
 // `trial` is the merge writer's detached checkout of a trial merge commit (GY-1524).
 export const checkoutKinds = ['proof', 'review', 'approval', 'trial'] as const;
 export type CheckoutKind = typeof checkoutKinds[number];
-const managedName = /^mainworks-(proof|review|approval|trial)-[a-z0-9][a-z0-9-]{0,39}-[0-9a-f]{7}-[0-9a-f]{8}$/;
+const managedName = /^graphyard-(proof|review|approval|trial)-[a-z0-9][a-z0-9-]{0,39}-[0-9a-f]{7}-[0-9a-f]{8}$/;
 export interface SessionCheckout { directory: string; worktree: string }
 export const sessionCheckoutName = (kind: CheckoutKind, key: string, sha: string, id: string) => `graphyard-${kind}-${key.toLowerCase().replace(/[^a-z0-9-]/g, '-')}-${sha.slice(0, 7).toLowerCase()}-${id.replace(/-/g, '').slice(0, 8).toLowerCase()}`;
 export function sessionCheckout(base: string, kind: CheckoutKind, key: string, sha: string, id: string): SessionCheckout {

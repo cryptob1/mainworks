@@ -66,4 +66,12 @@ Graphyard / merge
 # Published images on GHCR
 \}/graphyard(-trial)?:
 # Code that finds both the old and the new name
-\(graphyard\|mainworks\)
+graphyard\|mainworks
+legacyTrialContainerImage = 'graphyard-trial:local'
+# Regular expressions that match the old names above
+\^graphyard(\\/|-|\\\.json)
+\|graphyard\|
+graphyard-no-docker
+POSTGRES_(USER|DB)=graphyard
+--username=graphyard
+\bgraphyard-[\w-]+-(server|db)-1\b

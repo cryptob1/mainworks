@@ -92,7 +92,7 @@ const scanInteresting: RegExp[] = [
   /^(?:.+\/)?package\.json$/, /^pnpm-workspace\.yaml$/, /^pyproject\.toml$/, /^requirements(?:-dev)?\.txt$/, /^setup\.(?:py|cfg)$/, /^Pipfile$/, /^tox\.ini$/,
   /^Dockerfile(?:\.[^/]*)?$/, /^(?:docker-)?compose\.ya?ml$/, /^railway\.(?:json|toml)$/, /^vercel\.json$/, /^fly\.toml$/, /^netlify\.toml$/,
   /^\.nojekyll$/, /^CNAME$/, /^index\.html$/, /^\.env\.example$/, /^pytest\.ini$/, /^conftest\.py$/,
-  /^\.github\/workflows\/[^/]+\.ya?ml$/, /^mainworks\.json$/, /^e2e\/cases\/[^/]+\.json$/,
+  /^\.github\/workflows\/[^/]+\.ya?ml$/, /^graphyard\.json$/, /^e2e\/cases\/[^/]+\.json$/,
 ];
 export const scanLimits = { files: 5000, depth: 6, bytes: 262_144 };
 
