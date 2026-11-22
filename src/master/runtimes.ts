@@ -56,6 +56,8 @@ export interface RuntimeAdapter {
   state?: { variables: Record<string, string>; directory: string };
   /** GY-3596: the model a run reported on its own output, or null when it names none. */
   model?: (output: string) => string | null;
+  /** GY-3687: the flag that names the model, when the stored runtime contract names none. */
+  modelFlag?: string;
 }
 
 /** The usage-limit messages the provider APIs themselves return, in a runtime's error output. */
@@ -166,6 +168,7 @@ export const reportedModel = (kind: string | null | undefined, output: string) =
 // that never asks can still only act inside its own assigned worktree and its own credentials.
 const builtInAdapters = {
   claude: {
+    modelFlag: '--model',
     // `--output-format json`: the run ends with one `result` object carrying its reply and the tokens it used by model (GY-3289).
     headless: { before: [], flags: ['-p', '--output-format', 'json'] },
     continue: session => ['--resume', session],
@@ -183,6 +186,7 @@ const builtInAdapters = {
     model: claudeModel,
   },
   codex: {
+    modelFlag: '--model',
     // `--json`: events on standard output, the last a `turn.completed` with the tokens the turn used (GY-3289).
     headless: { before: ['exec'], flags: ['--skip-git-repo-check', '--json'], drop: ['--ask-for-approval', '-a'] },
     continue: session => ['resume', session],
@@ -199,6 +203,7 @@ const builtInAdapters = {
     model: codexModel,
   },
   cursor: {
+    modelFlag: '--model',
     headless: { program: 'cursor-agent', before: [], flags: ['-p', '--output-format', 'json'] },
     recipe: { program: 'agent', args: ['--force', '--trust'], environment: {}, prompts: "the 'Run Everything' approval and the fresh-worktree workspace-trust prompt",
       tradeoff: 'Cursor Agent (`agent`) runs every command it proposes in the assigned worktree and trusts that worktree without asking.' },
@@ -212,6 +217,7 @@ const builtInAdapters = {
     identity: { file: 'cli-config.json', ids: login => [login?.authInfo?.userId] },
   },
   opencode: {
+    modelFlag: '--model',
     // GY-3414: OpenCode 2.x hands every command to a background service on the host's loopback
     // unless `--standalone`, and that service answers with its own login — none — whatever the
     // account's XDG_DATA_HOME, so the run fell back to the free model and stopped at once. An
@@ -234,6 +240,7 @@ const builtInAdapters = {
     sharedPlan: true,
   },
   pi: {
+    modelFlag: '--model',
     headless: { before: [], flags: ['-p'] },
     // Pi has no approval or trust prompt to suppress: every tool it has runs without asking.
     recipe: { args: [], environment: {}, prompts: 'none: pi has no approval or workspace-trust prompts',
@@ -289,6 +296,18 @@ export const runtimeKinds = Object.keys(builtInAdapters) as [RuntimeKind, ...Run
 export const environmentKinds = runtimeKinds.filter(kind => 'home' in builtInAdapters[kind]) as [EnvironmentKind, ...EnvironmentKind[]];
 
 const adapters = new Map<string, RuntimeAdapter>(Object.entries(builtInAdapters).map(([kind, adapter]) => [kind, { kind, ...adapter } as RuntimeAdapter]));
+/**
+ * GY-3687: the one place a launch names its model. Every launch of a registry account — worker
+ * start and continue, code and product review, producer, master and smoke — carries the account's
+ * registered model id on the runtime's model flag, and any model a contract or role policy named
+ * (an alias such as 'opus') is dropped, so a login's own default never decides what runs.
+ */
+export function withModel(kind: string, args: readonly string[], contract: { modelFlag?: string | null } | null | undefined, modelId: string | null | undefined): string[] {
+  const flag = contract?.modelFlag ?? runtimeAdapter(kind)?.modelFlag;
+  if (!flag) return [...args];
+  const kept = args.filter((arg, index) => arg !== flag && !arg.startsWith(`${flag}=`) && args[index - 1] !== flag);
+  return modelId ? [...kept, flag, modelId] : kept;
+}
 /** The adapter for `kind`, or undefined for a kind Graphyard knows nothing of. */
 /** The remedy for a session stuck on its runtime's first-run screen, or null when the screen is not one. */
 export const runtimeAdapter = (kind: string | null | undefined): RuntimeAdapter | undefined => kind ? adapters.get(kind) : undefined;
