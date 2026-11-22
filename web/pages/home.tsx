@@ -5,12 +5,13 @@ import { humanAsk } from '../../src/model/human-ask';
 import { formatDuration } from '../../src/model/duration';
 import { classify, mergedAt, summarySentence } from '../groups';
 import { masterOwes } from './master';
+import HomeBrief from '../components/home-brief';
 
 /**
  * The Home place (GY-3598): what needs you now, what is moving, and one-click paths to Work, Lead
- * and Settings. Hook-free so unit tests render it directly.
+ * and Settings; GY-3671 adds what changed since this person last looked, active goals and a box to the Lead.
  */
-export default function HomePage({ work, board, status, observedAt, setView, setSelected, setCreating }: Dashboard) {
+export default function HomePage({ work, board, status, observedAt, api, setView, setSelected, setCreating }: Dashboard) {
   const now = Number.isNaN(observedAt) ? Date.now() : observedAt;
   const requests = [...(status?.humanOnly ?? openHumanOnly(work.map(item => ({ work: item })), now))]
     .sort((a, b) => b.waitedMs - a.waitedMs);
@@ -50,6 +51,7 @@ export default function HomePage({ work, board, status, observedAt, setView, set
     {stall && <PageSection title="Stall alarm" className="work-group group-blocked" actions={<button type="button" className="text-button" onClick={() => setView('lead')}>Open Lead →</button>}>
       <p className="stall-alarm" role="alert">{stall}</p>
     </PageSection>}
+    <HomeBrief work={work} status={status} now={now} api={api}/>
     <PageSection title="Summary">
       <div className="home-summary-grid">
         <div className="home-summary-card">
