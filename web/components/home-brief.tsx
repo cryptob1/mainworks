@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Work } from '../../src/model';
+import { isClosed, type Work } from '../../src/model';
 import { formatDuration } from '../../src/model/duration';
 import { mergedAt } from '../groups';
 
@@ -28,7 +28,9 @@ export default function HomeBrief({ work, status, now, api }: Props) {
   const led = since ? decisions(work, since) : [];
   const spend = since ? work.flatMap(w => (w.humanRequests ?? []).filter(r => r.kind === 'money-or-accounts' && r.answer && Date.parse(r.answer.at) > since)).length : 0;
   const bullets = [...(live.length ? [{ text: `Live: ${live.map(w => w.title).join(', ')}.` }] : []), ...led.map(d => ({ text: d.text, decision: d }))].slice(0, 3);
-  const goals = work.filter(w => w.stage !== 'done' && w.dependencies?.length);
+  // Active goals as Work groups them (a task's own `goal`): any goal with a task still open, and how many of its tasks shipped.
+  const goals = [...new Set(work.flatMap(w => w.goal && w.stage !== 'done' && !isClosed(w) ? [w.goal] : []))].sort((a, b) => a.localeCompare(b))
+    .map(goal => { const all = work.filter(w => w.goal === goal && !isClosed(w)); return { goal, shipped: all.filter(w => w.stage === 'done').length, total: all.length }; });
   const building = work.filter(w => w.stage !== 'done' && w.lease && Date.parse(w.lease.expiresAt) > now);
   async function send() {
     try { await api('master/messages', { text: draft }); setSent('Sent to the Lead.'); setDraft(''); } catch (e) { setSent((e as Error).message); }
@@ -42,10 +44,7 @@ export default function HomeBrief({ work, status, now, api }: Props) {
       </>}
     </section>}
     {goals.length > 0 && <section className="panel goals" aria-label="Active goals"><h2>Active goals</h2>
-      <ol>{goals.map(goal => {
-        const tasks = goal.dependencies.map(id => work.find(w => w.id === id)).filter((t): t is Work => !!t);
-        return <li key={goal.id} data-goal={goal.key}><strong>{goal.title}</strong> <span className="muted">{tasks.filter(t => t.stage === 'done').length} of {plural(tasks.length, 'task')} done</span></li>;
-      })}</ol>
+      <ul>{goals.map(({ goal, shipped, total }) => <li key={goal} data-goal={goal}><strong>{goal}</strong> <span className="muted">{shipped} of {plural(total, 'task')} shipped</span></li>)}</ul>
     </section>}
     {building.length > 0 && <p className="building-now" data-building-now>Now: {building.slice(0, 3).map(t => t.title).join(', ')}{building.length > 3 && ` and ${building.length - 3} more`}</p>}
     <form className="panel tell-lead" aria-label="Tell the Lead" onSubmit={event => { event.preventDefault(); if (draft.trim()) void send(); }}>

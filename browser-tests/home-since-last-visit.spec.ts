@@ -53,8 +53,8 @@ const noSideScroll = (page: Page) => page.evaluate(() => document.documentElemen
 
 test('e2e:home-since-last-visit — the second visit counts exactly the merge in between, and the box tells the Lead', async ({ page }) => {
   test.setTimeout(120_000);
-  const goal = item('GY-4', 'Six merges an hour', { stage: 'backlog', dependencies: ['fixture-GY-1', 'fixture-GY-2'] });
-  const state = { work: [merged('GY-1', 'Earlier change', at(hour)), item('GY-2', 'Rows are one line', { lease: { owner: 'graphyard-claude-1', epoch: 1, expiresAt: at(-hour) } }), goal] as unknown[] };
+  const goal = 'Six merges an hour', other = item('GY-4', 'Batch trials', { stage: 'backlog', goal });
+  const state = { work: [{ ...merged('GY-1', 'Earlier change', at(hour)), goal }, item('GY-2', 'Rows are one line', { goal, lease: { owner: 'graphyard-claude-1', epoch: 1, expiresAt: at(-hour) } }), other] as unknown[] };
   const { messages, close } = await plane(page, state);
   try {
     await page.setViewportSize({ width: 1280, height: 900 });
@@ -63,7 +63,7 @@ test('e2e:home-since-last-visit — the second visit counts exactly the merge in
 
     // One merge and one Lead decision land between the two visits.
     const [earlier, building] = state.work as Record<string, unknown>[];
-    state.work = [earlier, { ...building, lastRework: { reason: 'its trial failed on main', binding: null, at: new Date().toISOString() } }, goal, merged('GY-3', 'Needs you leads with the question', new Date().toISOString())];
+    state.work = [earlier, { ...building, lastRework: { reason: 'its trial failed on main', binding: null, at: new Date().toISOString() } }, other, merged('GY-3', 'Needs you leads with the question', new Date().toISOString())];
     await visit(page);
     const brief = page.getByRole('region', { name: 'Since you last looked' });
     await expect(brief.locator('[data-since-counts]')).toHaveText('1 went live · 0 in release · 1 Lead decision · 0 spend approvals');
@@ -76,7 +76,7 @@ test('e2e:home-since-last-visit — the second visit counts exactly the merge in
     await expect(box).toHaveValue('Why did you send “Rows are one line” back?');
 
     // Active goals with progress, what is being built now, and the box that sends its text to the Lead.
-    await expect(page.getByRole('region', { name: 'Active goals' }).locator('[data-goal="GY-4"]')).toHaveText('Six merges an hour 1 of 2 tasks done');
+    await expect(page.getByRole('region', { name: 'Active goals' }).locator('[data-goal="Six merges an hour"]')).toHaveText('Six merges an hour 1 of 3 tasks shipped');
     await expect(page.locator('[data-building-now]')).toHaveText('Now: Rows are one line');
     for (const width of [390, 1280]) { await page.setViewportSize({ width, height: 900 }); expect(await noSideScroll(page)).toBe(true); }
     await box.fill('Prioritise the release check.');

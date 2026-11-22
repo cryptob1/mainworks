@@ -591,7 +591,7 @@ header.main-top-bar{height:auto;min-height:60px;display:flex;flex-wrap:wrap;alig
 .scenario-list{grid-template-columns:minmax(0,1fr)}.scenario-card,.scenario-columns>div{min-width:0;overflow-wrap:anywhere}.scenario-card code{white-space:normal;word-break:break-all}
 .caretaker-lines{list-style:none;padding:0;margin:0 0 var(--space-3);display:grid;gap:var(--space-2);font-size:var(--type-small)}
 /* GY-3671: Home's since you last looked, active goals and the box to the Lead. */
-.since-looked ul{margin:var(--space-2) 0 0;padding-left:18px}.since-looked li{overflow-wrap:anywhere}.goals ol{margin:0;padding-left:20px}.goals li{overflow-wrap:anywhere}
+.since-looked ul{margin:var(--space-2) 0 0;padding-left:18px}.since-looked li{overflow-wrap:anywhere}.goals ul{margin:0;padding-left:20px}.goals li{overflow-wrap:anywhere}
 .tell-lead label{display:block;font-weight:600;margin-bottom:6px}.tell-lead-row{display:flex;gap:var(--space-2);align-items:flex-end}.tell-lead textarea{flex:1;min-width:0}
 /* GY-3600: Work is one list of tasks grouped by goal, with Needs you pinned on top. */
 .work-filters{display:flex;flex-wrap:wrap;gap:var(--space-2);margin:0 0 var(--space-4)}
