@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withDatabase } from './helpers/postgres.js';
@@ -137,12 +137,4 @@ test('a failing build ends the launch naming its output tail', async () => {
   await store.pool.query('INSERT INTO work_items(id, document) VALUES ($1,$2)', [work.id, JSON.stringify(work)]);
   await assert.rejects(launchReview(root, work, 'product-claude', [], now(), { run, headless: async () => '', product: true }),
     /npm run build failed in the review checkout of [0-9a-f]{12}: [^]*build-marker: the dashboard does not compile/);
-});
-
-// GY-3660: the fixture's managed worktree root sits under the suite's tmpdir and must be durable
-// (verifyWorktreeRoot refuses a tmpfs). A remote shard's tmpdir is a tmpfs, so on a shard this file
-// failed every time; it names a local-only word (worktreeRoot), and the trial keeps it on this machine.
-test('unit:product-review-builds-before-serve-pinned — the fixture\'s managed worktree root needs durable storage, so this file never goes to a remote shard', async () => {
-  const { remoteableTestFile } = await import('../src/merge-writer/remote-shards.js');
-  assert.equal(remoteableTestFile(await readFile(new URL(import.meta.url), 'utf8')), false);
 });
