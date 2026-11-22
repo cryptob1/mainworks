@@ -27,7 +27,7 @@ applyTheme();
 boot();
 
 /**
- * The dashboard shell: session state, polling, the sidebar generated from the view
+ * The dashboard shell: session state, polling, the four-place top bar generated from the view
  * registry, and the page it selects — or the open work item's page. Pages live under web/pages/.
  */
 function App() {
