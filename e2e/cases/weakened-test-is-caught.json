@@ -1,0 +1,16 @@
+{
+  "id": "weakened-test-is-caught",
+  "title": "A head that weakens an existing test or selector is caught before merge",
+  "description": "Submits a head that loosens an existing assertion to make itself pass and asserts it is classed sensitive, is not merged ahead of review, the reviewer's request names the changed line, approval requires ruling on each changed assertion, and the merge trial selects tests using the base commit's scripts/ci-tests.mjs and timing baseline unless approved in review.",
+  "tags": ["review", "merge-writer"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "Weakened test classification, review ruling, and base-commit selector",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/weakened-test-is-caught.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}

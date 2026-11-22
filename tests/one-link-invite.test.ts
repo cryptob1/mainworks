@@ -114,7 +114,7 @@ test('integration:one-link-invite — one-use links valid for the owner\'s days,
     assert.equal((await install.as(viewer, '/api/typed-input')).status, 200, 'everyone signed in reads the list');
     const master = await readFile(new URL('../web/pages/master.tsx', import.meta.url), 'utf8');
     assert.match(master, /api\('typed-input'\)/);
-    assert.match(master, /<h2>Typed into the master<\/h2>/);
+    assert.match(master, /<h2>Typed into the Lead<\/h2>/);
 
     // AC-3: revoking the maintainer closes their Master page at once; they can neither read nor type.
     const revoked = await install.as(install.operator, '/api/invites/mo/revoke', { body: {} });

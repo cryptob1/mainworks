@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { isClosed, type Work } from '../../src/model';
 import { mergedAt, releasedAt, timedGroups, type BoardItem, type Group } from '../groups';
 import { releaseView } from '../../src/model/release';
@@ -14,6 +15,9 @@ import { stepHeld } from '../../src/model/pr-steps';
 import { Agent, BuildLine, failedTrial } from '../fun';
 import { EmptyState } from '../components/page-layout';
 import type { Dashboard } from './dashboard';
+import { plainDuration } from '../../src/pipeline-speed';
+import { flowStations, percent, reworkCauses } from '../../src/flow-numbers';
+import type { Flow as FlowReport } from '../../src/server/flow';
 
 /** GY-3600: the Work list's filters, each a query parameter (`?filter=stuck`). */
 export const workFilters = ['in-flight', 'stuck', 'up-next', 'shipped-today'] as const;
@@ -49,10 +53,50 @@ function median(values: number[]): number | null {
 }
 
 /**
+ * GY-3624: one line under the header with attempts an hour and first-pass yield over the last 24
+ * hours, whose fold opens each station's wait and the rework causes; a station whose slowest tenth
+ * passes an hour is one warning line naming it and its oldest item.
+ */
+/** GY-3677: the flow numbers from GET /api/flow, read once a minute; /api/status no longer carries them. */
+function Flow({ api }: { api: Dashboard['api'] }) {
+  const [flow, setFlow] = useState<FlowReport | null>(null);
+  useEffect(() => {
+    let active = true;
+    const read = () => api('flow').then(value => { if (active) setFlow(value); }, () => {});
+    read(); const timer = setInterval(read, 60_000);
+    return () => { active = false; clearInterval(timer); };
+  }, []);
+  return <FlowLine flow={flow}/>;
+}
+
+function FlowLine({ flow }: { flow?: FlowReport | null }) {
+  const day = flow?.['24h'];
+  if (!day) return null;
+  const cap = (text: string) => text[0].toUpperCase() + text.slice(1);
+  return <>
+    <div className="flow-line">Last 24 hours: <span data-flow-attempts>{day.attemptsPerHour.toFixed(1)} attempts an hour</span> · <span data-flow-yield>{percent(day.firstPassYield)} first pass</span>{' '}
+      <details className="flow-details"><summary>Flow details →</summary><div className="flow-fold">
+        <table className="sessions-table compact-table flow-table" aria-label="Wait at each station, last 24 hours">
+          <thead><tr><th scope="col">Station</th><th scope="col">Median</th><th scope="col">Slowest tenth</th><th scope="col">Oldest</th></tr></thead>
+          <tbody>{flowStations.map(station => { const at = day.stations[station]; return <tr key={station} data-station={station}>
+            <th scope="row">{cap(station)}</th><td data-label="Median">{at ? plainDuration(at.median) : '—'}</td><td data-label="Slowest tenth">{at ? plainDuration(at.p90) : '—'}</td><td data-label="Oldest">{at ? `${at.oldest.key} · ${plainDuration(at.oldest.minutes)}` : '—'}</td></tr>; })}</tbody>
+        </table>
+        <table className="sessions-table compact-table flow-table" aria-label="Sent back, last 24 hours">
+          <thead><tr><th scope="col">Sent back by</th><th scope="col">Times</th></tr></thead>
+          <tbody>{reworkCauses.map(cause => <tr key={cause} data-cause={cause}><th scope="row">{cap(cause)}</th><td data-label="Times">{day.rework[cause]}</td></tr>)}</tbody>
+        </table>
+        <p className="muted">Flaky trials {percent(day.flakyRate)} of {day.trials}. Merges reverted {percent(day.revertRate)}.</p>
+      </div></details>
+    </div>
+    {flow?.attention && <p className="flow-line flow-attention" data-flow-attention>{flow.attention.text}</p>}
+  </>;
+}
+
+/**
  * Work (GY-3600): one list of real tasks, grouped by goal, with Needs you pinned on top. The groups
  * are the board's (`GET /api/board`), never derived here; a task's goal is its own `goal` field. Hook-free, so unit tests render it.
  */
-export default function WorkPage({ work, board, status, query, setQuery, setSelected, setCreating, setView, observedAt, filter, setFilter }: Dashboard) {
+export default function WorkPage({ work, board, status, query, setQuery, setSelected, setCreating, setView, observedAt, filter, setFilter, api }: Dashboard) {
   const now = Number.isNaN(observedAt) ? Date.now() : observedAt;
   const release = releaseView(status), serve = serveView(status);
   const byId = new Map(work.map(item => [item.id, item]));
@@ -117,7 +161,7 @@ export default function WorkPage({ work, board, status, query, setQuery, setSele
   const noGoal = shown.filter(({ item }) => !item.goal);
 
   return <>
-    <div className="page-heading"><div><h1>Work</h1><p className="page-fact" data-work-header>{board ? header : 'Reading the board…'}</p><BuildLine/></div>
+    <div className="page-heading"><div><h1>Work</h1><p className="page-fact" data-work-header>{board ? header : 'Reading the board…'}</p><Flow api={api}/><BuildLine/></div>
       <div className="page-actions"><div className="search"><input type="search" aria-label="Search work" placeholder="Search by title, key or PR" value={query} onChange={event => setQuery(event.target.value)}/></div>
         {status?.actor?.role === 'admin' && <button type="button" onClick={() => setCreating(true)}>＋ New work item</button>}</div></div>
     {needs.length > 0 && <section className="panel needs-you-strip" aria-label="Needs you">

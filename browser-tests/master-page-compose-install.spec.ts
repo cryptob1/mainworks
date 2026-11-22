@@ -22,6 +22,8 @@ async function containerServer(site: string) {
     const { code } = await (await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string };
     const page = await browser.newPage(); await serveXterm(page);
     await page.goto(`${url}/#sign-in=${code}&master`);
+    await expect(page.getByRole('heading', { name: 'Lead', exact: true })).toBeVisible({ timeout: 15_000 });
+    await page.evaluate(() => { location.hash = '#master/live'; });
     return page;
   };
   const stop = async () => { const ended = once(child, 'exit'); child.send('stop'); await ended; await database.close(); await rm(site, { recursive: true, force: true }); };

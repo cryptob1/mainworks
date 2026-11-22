@@ -39,8 +39,8 @@ export const localOnlyTestPattern = /docker|bwrap|unshare|landlock|hard-math|npm
 /** Whether a test file's text may run on a remote shard: it names none of the local-only words. */
 export const remoteableTestFile = (text: string) => !localOnlyTestPattern.test(text);
 
-/** GY-3612: a test file that drives a browser — a Playwright spec under browser-tests/, or a file naming playwright or chromium. */
-export const browserTestPattern = /playwright|chromium/i;
+/** GY-3612, GY-3656: a test file that drives a browser — a Playwright spec under browser-tests/, or a file naming playwright, chromium or projectCaseSuite. */
+export const browserTestPattern = /playwright|chromium|projectCaseSuite/i;
 export const isBrowserTestFile = (file: string, text: string) =>
   /^browser-tests\/.*\.spec\.[cm]?[jt]sx?$/i.test(file) || browserTestPattern.test(text);
 

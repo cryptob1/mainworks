@@ -1,8 +1,11 @@
 {
   "id": "stall-alarm",
-  "title": "The loop raises a stall alarm when ready work and free slots see no launch, first in master status and on the Master page",
+  "title": "The loop raises a stall alarm when ready work and free slots see no launch, first in master status and on the Lead page",
   "description": "A fixture install with a ready item and a free worker slot whose launches are held for 10 minutes: the loop's own cycle raises one stall alarm naming its cause (the last dispatch error, heat, every worker account out of quota, a loop older than the served commit, or the ready item with no actor), it stands first in master status and wakes the master, and an item with no change and no lease for an hour raises it too. The served Master page shows the alarm with its cause, and both clear once a launch starts.",
-  "tags": ["master", "dashboard"],
+  "tags": [
+    "master",
+    "dashboard"
+  ],
   "target": "any",
   "required": false,
   "steps": [

@@ -11,7 +11,7 @@ import { trialHeatFault, trialSlotCount } from '../merge-writer/trial-load.js';
 import { trialAffordableFiles } from '../merge-writer/trial.js';
 import type { ChildRun } from '../child-runner.js';
 import type { MasterConfig } from '../master/profiles.js';
-import type { Work } from '../model.js';
+import { exactApproval, carriedApproval, type Work } from '../model.js';
 import type { MergeLedgerState } from '../model/merge-ledger.js';
 import { mergeWriterTrialGround, trialFailurePrefix } from '../model/rework-ground.js';
 import { installIdFor } from '../install/types.js';
@@ -152,7 +152,8 @@ export function mergeWriterReads(config: Pick<MasterConfig, 'baseBranch' | 'run'
       const proofs = criterionProofs(item);
       // Discovered inside each retried attempt (GY-1832), so a git grep that fails or times out is timed and retried like the trial's other reads.
       const discoverProofFiles = (runOptions: { timeoutMs?: number }) => proofTestFiles(run, root, mergeSha, proofs, runOptions);
-      return heavyTrial(item.key, onStep, signal, () => (options.trial ?? runMergeTrial)({ root, base: options.base, caches: true, mergeSha, changedFiles: files, proofs, e2eProofs: e2eProofsOf(item), proofFiles: [], discoverProofFiles, ...(item.environments ? { e2eOrigins: item.environments } : {}), key: item.key, reproduce: item.type !== 'chore', run, environment: options.environment, hidden, ...(baseTip ? { baseTip } : {}), ...(onStep ? { onStep } : {}), ...(onTiming ? { onTiming } : {}), ...(signal ? { signal } : {}),
+      const selectorApproved = 'observation' in item && (!!exactApproval(item as Work) || !!carriedApproval(item as Work));
+      return heavyTrial(item.key, onStep, signal, () => (options.trial ?? runMergeTrial)({ root, base: options.base, caches: true, mergeSha, changedFiles: files, proofs, e2eProofs: e2eProofsOf(item), proofFiles: [], discoverProofFiles, ...(item.environments ? { e2eOrigins: item.environments } : {}), key: item.key, reproduce: item.type !== 'chore', run, environment: options.environment, hidden, ...(baseTip ? { baseTip } : {}), ...(selectorApproved ? { selectorApproved: true } : {}), ...(onStep ? { onStep } : {}), ...(onTiming ? { onTiming } : {}), ...(signal ? { signal } : {}),
         ...trialShareAllowance(share, timeoutMs) }));
     },
     // GY-1902: an item citing a case bound to a declared static application is previewed from the coordinator checkout, its record written through the merge-record route.
@@ -721,9 +722,10 @@ function mergeFlightTrials(reads: MergeWriterReads, state: DaemonState, persist:
     }
     if (!launch) return reads.trial(mergeSha, files, item, baseTip, onStep, onTiming, heads, share, signal, timeoutMs);
     await reads.ensureTrialImage?.();
+    const selectorApproved = 'observation' in item && (!!exactApproval(item as Work) || !!carriedApproval(item as Work));
     const launched = launch({ key: item.key, head: heads?.[0]?.head ?? mergeSha, mergeSha,
       baseTip: baseTip?.toLowerCase() ?? null, changedFiles: [...files], proofs: criterionProofs(item), e2eProofs: e2eProofsOf(item),
-      reproduce: item.type !== 'chore', cores: null, ...trialShareAllowance(share, timeoutMs, reads.cores), ...(share === 1 && reads.cores ? { cores: reads.cores } : {}) });
+      reproduce: item.type !== 'chore', cores: null, ...(selectorApproved ? { selectorApproved: true } : {}), ...trialShareAllowance(share, timeoutMs, reads.cores), ...(share === 1 && reads.cores ? { cores: reads.cores } : {}) });
     // The run's directory is persisted on the in-flight entry before its verdict can land, so a restart after it adopts the run.
     const entry = state.mergeWriter.inFlights?.find(candidate => candidate.key === item.key);
     if (entry) { entry.run = { directory: launched.directory, mergeSha }; await persist().catch(() => {}); }

@@ -322,7 +322,7 @@ export default function TopBar(dashboard: Dashboard & { onPalette?: () => void }
     <div className="top-bar-row">
       {status?.repository && <p className="project-name" data-title><img className="project-emblem" src="/favicon.svg" alt=""/>{status.repository}</p>}
       <div className="top-bar-live">
-        <ActivityStrip work={work} observedAt={observedAt} status={status}/>
+        {(view !== 'home' || selected) && <ActivityStrip work={work} observedAt={observedAt} status={status}/>}
         <ShippedStrip work={work} observedAt={observedAt} live={status?.live}/>
         <OpenApp status={status}/>
         <Invite api={dashboard.api} status={status}/>

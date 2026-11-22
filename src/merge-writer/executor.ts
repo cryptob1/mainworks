@@ -1,6 +1,7 @@
 // Concern: the control-plane merge executor (GY-1524) — the queue, one merge's steps against the ledger, the leased deploy-key push and the reconcile of intents a crash left open.
 import { dirname, join } from 'node:path';
 import type { Work } from '../model.js';
+import { batchLimit } from '../master/merge-writer-settings.js';
 import { evaluate } from '../model-boundary/gates.js';
 import { riskOf } from '../model-boundary/risk-class.js';
 import { mergeLedgerKinds, type MergeLedgerState } from '../model/merge-ledger.js';
@@ -978,8 +979,6 @@ export async function pushPassedTrial(ports: MergePorts, item: Work): Promise<bo
 /** What one queued head came to: its merge outcome, or the error that left it queued. */
 export type HeadResult = { work: Work; outcome: MergeOutcome } | { work: Work; error: unknown };
 
-/** GY-3625: the most heads one merge trial validates together. */
-export const batchLimit = 4;
 const batchable = (item: Work) => riskOf(item).risk === 'normal' && !keptTrialAheadOfReview(item.candidate, item.mergeLedger) && !!item.observation?.files.length;
 /**
  * GY-3625: the queued heads cut into merge batches, in queue order: a normal-risk head joins the batch before it

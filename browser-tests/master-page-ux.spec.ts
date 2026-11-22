@@ -1,4 +1,4 @@
-import { test, expect, type Browser } from '@playwright/test';
+import { test, expect, type Browser, type Page } from '@playwright/test';
 import { fork } from 'node:child_process';
 import { once } from 'node:events';
 import { readFile, symlink, writeFile } from 'node:fs/promises';
@@ -47,6 +47,7 @@ async function fixture(browser: Browser, phone = false) {
   });
   const { code } = await (await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string };
   await page.goto(`${url}/#sign-in=${code}&master`);
+  await openLiveSession(page);
   const calls = async () => (await readFile(join(site, 'herdr.log'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
   const inputs = async () => (await calls()).filter(entry => entry.command?.type === 'terminal.input').map(entry => entry.command.text);
   await expect(page.locator('.xterm-rows')).toContainText('screen of w1:master', settled);
@@ -57,6 +58,13 @@ async function fixture(browser: Browser, phone = false) {
     process.env = original;
   } };
 }
+
+
+/** The sign-in link opens the Lead page on its conversation; its live session is its own address. */
+const openLiveSession = async (page: Page) => {
+  await expect(page.getByRole('heading', { name: 'Lead', exact: true })).toBeVisible({ timeout: 15_000 });
+  await page.evaluate(() => { location.hash = '#master/live'; });
+};
 
 test('e2e:master-page-ux — history, fitting, native input, clipboard, reconnect and pane changes', async ({ browser }) => {
   // Includes server startup, two reconnects and two pane changes under the parallel browser suite.
@@ -123,10 +131,10 @@ test('e2e:master-page-ux — history, fitting, native input, clipboard, reconnec
     await expect(page.getByRole('status')).toContainText('Working · second-account');
     await expect(page.locator('.terminal-session')).toHaveAttribute('title', 'codex · w1:replacement');
     f.current.master.pane = null; f.current.master.agentName = ''; await f.save();
-    await expect(page.getByRole('status')).toContainText('Master is restarting…');
+    await expect(page.getByRole('status')).toContainText('Lead is restarting…');
     f.child.send('drop-terminals');
     await expect(page.locator('.live-terminal')).toHaveAttribute('data-terminal', 'control');
-    await expect(page.getByRole('status')).toContainText('Master is restarting…');
+    await expect(page.getByRole('status')).toContainText('Lead is restarting…');
     await expect(page.locator('.terminal-session')).toHaveAttribute('title', 'codex · No pane');
     f.current.master.pane = 'w1:returned'; f.current.master.agentName = 'master'; await f.save();
     await expect(page.locator('.xterm-rows')).toContainText('screen of w1:returned');
