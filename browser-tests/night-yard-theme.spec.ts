@@ -102,7 +102,7 @@ test('e2e:night-yard-theme — Night Yard serves by default with rain over grain
   await expect(page.locator('.activity-strip')).toContainText('agents working');
   await expect(page.locator('[data-row="GY-14"] .row-who')).toContainText('Theo is running GY-14');
   await page.keyboard.press('Control+k');
-  await page.getByLabel('Search commands').fill('Master');
+  await page.getByLabel('Search commands').fill('Lead');
   await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { name: 'Master', exact: true, level: 1 })).toBeVisible();
   // Back by the top bar, not g w: a loaded runner can land the w past the chord's two-second window (GY-3442).

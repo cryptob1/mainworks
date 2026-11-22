@@ -280,7 +280,7 @@ export function MainTopBar(dashboard: Dashboard) {
       {sections.map(place => {
         const active = currentSection === place.id;
         return <a key={place.id} href={`#${place.id}`} data-nav={place.id} className={active ? 'nav-link active' : 'nav-link'} aria-current={active ? 'page' : undefined} onClick={event => { event.preventDefault(); go(place.id); }}>
-          {place.label}{place.id === 'lead' && owesCount > 0 && <span className="nav-badge">{owesCount}</span>}
+          {place.label}{place.id === 'lead' && owesCount > 0 && <> <span className="nav-badge">{owesCount}</span></>}
         </a>;
       })}
     </nav>

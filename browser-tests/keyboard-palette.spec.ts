@@ -53,9 +53,9 @@ test('e2e:keyboard-palette — Cmd/Ctrl+K opens the palette; an item key and Ent
   await expect(page.locator('article.item-page')).toContainText('Add dark mode to settings');
   await page.keyboard.press('Escape');
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible();
-  // A command by name: the Master page — its title is Master — then the theme, both without the mouse.
+  // A command by name: the Lead place — the Master page it opens is titled Master (GY-3307) — then the theme, both without the mouse.
   await page.keyboard.press('Control+k');
-  await search(page).fill('Master');
+  await search(page).fill('Lead');
   await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { name: 'Master', exact: true, level: 1 })).toBeVisible();
   await page.keyboard.press('Control+k');
