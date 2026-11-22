@@ -67,7 +67,7 @@ test('integration:deploy-and-uat-alerts — newly served items are announced onc
   await step(root, config, b, work, webhook);
   assert.equal(posts.length, 2, 'one UAT-failed message');
   assert.equal(posts[1], `Graphyard owner/project: UAT failed on candidate ${candidate.slice(0, 12)}; ${b.slice(0, 12)} stays served. Failed: e2e:login, e2e:checkout`);
-  assert.equal(posts[1].split('\n').length, 1, 'one short line');
+  assert.doesNotMatch(posts.at(-1)!, /\n/, 'one short line');
   await step(root, config, b, work, webhook);
   assert.equal(posts.length, 2, 'not repeated for the same candidate, across a restart');
 });

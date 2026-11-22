@@ -58,7 +58,7 @@ export async function deliveryAlertStep(cycle: Cycle) {
   }
   const gate = reads.gate ? readGateRecord(gateRecordPath(reads.gate.root)) : null;
   const outcome = gate?.lastOutcome;
-  if (!outcome?.tip || (outcome.outcome !== 'reverted' && outcome.outcome !== 'held') || outcome.tip === sent.uatFailed) return;
+  if (!gate || !outcome?.tip || (outcome.outcome !== 'reverted' && outcome.outcome !== 'held') || outcome.tip === sent.uatFailed) return;
   const failed = Object.entries(outcome.cases ?? {}).filter(([, result]) => result === 'fail').map(([id]) => id);
   sent.uatFailed = outcome.tip;
   await effects.persist(state);
