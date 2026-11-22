@@ -1,12 +1,12 @@
 {
   "id": "gate-retry-files-flaky",
-  "title": "The batch gate files a check flaky when its culprit's revert proves nothing, and verifies the batch",
-  "description": "Run the real loop cycle against a real temporary Postgres control plane and a scratch bare Git remote: a landing that fails a core case, whose revert's trial fails a check the base tip fails too, is not reverted; the check is filed as flaky, the tip verifies and the deploy watch serves it, and master status names the flaky item.",
+  "title": "The batch gate bisects a reverted tip to revert a second culprit and reach verified",
+  "description": "Run the real loop cycle against a real temporary Postgres control plane and a scratch bare Git remote: a batch with two culprits for the smoke check and an innocent change between them reverts both culprits, keeps the innocent change, reaches verified, and the deploy watch serves the verified tip.",
   "target": "any",
   "required": false,
   "steps": [{
     "kind": "command",
-    "name": "Gate a batch whose culprit's revert proves nothing through the real loop",
+    "name": "Gate a batch with two culprits for one check through the real loop",
     "run": "node --import tsx tests/helpers/run-tests.ts tests/gate-retry-files-flaky.test.ts",
     "timeoutSeconds": 300
   }]
