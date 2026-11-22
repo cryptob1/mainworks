@@ -9,7 +9,7 @@ import { scratchTrial } from './e2e-delivery-fixture.mjs';
 
 const token = process.argv[2], url = process.env.TARGET_URL;
 assert.ok(token && url, 'Run this case through the E2E runner against scripts/e2e-serve.mjs');
-const { delivery } = JSON.parse(await readFile('.graphyard/e2e-serve.json', 'utf8'));
+const { delivery } = JSON.parse(await readFile(`.graphyard/e2e-serve-${new URL(process.env.TARGET_URL).port}.json`, 'utf8'));
 const { root, origin, workerToken, coordinatorToken } = delivery;
 const git = async (...args) => (await defaultChildRun('git', ['-C', root, ...args])).trim();
 const call = async (path, credential, body) => {
@@ -67,7 +67,7 @@ await call(`${work}/review-launch`, coordinatorToken, {
   reviewer: 'e2e-independent-reviewer', head, baseTip,
   tokenHash: createHash('sha256').update(reviewToken).digest('hex'), expiresAt: new Date(Date.now() + 120_000).toISOString(),
 });
-await call(`${work}/review-verdict`, reviewToken, { event: 'APPROVE', body: 'The scratch change and its test agree.', sha: head, token: reviewToken });
+await call(`${work}/review-verdict`, reviewToken, { event: 'APPROVE', body: 'AC-1 met — the scratch change and its test agree.', sha: head, token: reviewToken });
 item = await call(work, token);
 assert.equal(item.observation.reviews[0].sha, head);
 assert.equal(item.observation.reviews[0].reviewer, 'e2e-independent-reviewer');
