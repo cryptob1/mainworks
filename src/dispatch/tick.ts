@@ -454,19 +454,14 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
   // which serve their heads one at a time (GY-3580).
   const launches: Promise<{ error: unknown } | null>[] = [];
   const sideBySide = (launch: () => Promise<void>) => { const started = launch(); launches.push(started.then(() => null, (error: unknown) => ({ error }))); return started; };
-  let productTurn: Promise<unknown> = Promise.resolve();
-  let outcomes: ({ error: unknown } | null)[] = [];
+  let productTurn: Promise<unknown> = Promise.resolve(), outcomes: ({ error: unknown } | null)[] = [];
   await (async () => {
     try {
+      const productLaunches: { item: Work; product: DispatchRequest; code: Promise<void> | null }[] = [];
       for (const item of snapshot.work.filter(work => work.stage !== 'done' && work.autoDispatch)) {
-        const review = item.autoDispatch!.review;
+        const review = item.autoDispatch!.review, product = item.autoDispatch!.product;
         const code = review?.state === 'requested' && review.provider === 'github' ? sideBySide(() => dispatchReview(item, review)) : null;
-        const product = item.autoDispatch!.product;
-        if (product?.state === 'requested' && product.kind === 'product') {
-          const turn = Promise.allSettled([productTurn, code]).then(() => dispatchReview(item, product));
-          productTurn = turn.catch(() => { /* the launch reports its own failure */ });
-          sideBySide(() => turn);
-        }
+        if (product?.state === 'requested' && product.kind === 'product') productLaunches.push({ item, product, code });
         for (const request of item.autoDispatch!.producers.filter(entry => entry.state === 'requested')) {
           // Evidence recorded as not exercising its criterion goes back to the worker as a rework the
           // loop requests (master-daemon.ts); no producer is launched for the head again (GY-193 AC-3).
@@ -511,6 +506,13 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
             await persist();
           });
         }
+      }
+      // GY-3684: launch owed product reviews oldest request first so long-waiting heads are never starved.
+      const requestedAt = (r: DispatchRequest) => { const t = Date.parse(r.requestedAt); return Number.isNaN(t) ? -Infinity : t; };
+      for (const { item, product, code } of productLaunches.sort((a, b) => requestedAt(a.product) - requestedAt(b.product) || (a.product.id < b.product.id ? -1 : a.product.id > b.product.id ? 1 : 0))) {
+        const turn = Promise.allSettled([productTurn, code]).then(() => dispatchReview(item, product));
+        productTurn = turn.catch(() => { /* the launch reports its own failure */ });
+        sideBySide(() => turn);
       }
     } finally { outcomes = await Promise.all(launches); }
   })();
