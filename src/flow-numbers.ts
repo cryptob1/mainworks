@@ -11,10 +11,11 @@ export type ReworkCause = typeof reworkCauses[number];
 
 /**
  * One ledger row as the flow reads it: a row carrying the item's whole document names its `stage`;
- * a `rework` its reason and ground; a `merge.trial` whether it flaked (its failing tests passed on
- * the rerun, or failed the same way on the base); a `merge.serve-revert` whether it reverted.
+ * a `rework` its reason and ground; a `merge.trial` its head, how long it ran (it is recorded when it
+ * ends) and whether it flaked (its failing tests passed on the rerun, or failed the same way on the
+ * base); a `merge.serve-revert` whether it reverted.
  */
-export interface FlowEvent { kind: string; at: string; stage?: string | null; reason?: string | null; binding?: string | null; flaky?: boolean; reverted?: boolean }
+export interface FlowEvent { kind: string; at: string; stage?: string | null; reason?: string | null; binding?: string | null; head?: string | null; durationMs?: number | null; flaky?: boolean; reverted?: boolean }
 export interface FlowItem {
   key: string; title: string; stage: string; stageEnteredAt: string; mergedAt: string | null;
   attempts: { claimedAt: string; endedAt: string | null; end: string | null }[];
@@ -46,22 +47,26 @@ const ms = (iso: string | null | undefined) => iso ? Date.parse(iso) : Number.Na
 const stationOf: Record<string, FlowStation> = { ready: 'ready', build: 'build', review: 'review', acceptance: 'acceptance', merge: 'merge' };
 interface Visit { station: FlowStation; start: number; end: number; open: boolean }
 
-/** The item's stays at each station, from the stage each whole-document row records; the test stage splits at its merge intent into queue and trial. */
+/**
+ * The item's stays at each station, from the stage each whole-document row records. A merge trial is
+ * timed by its own run: the intent it records moves the item out of test in the instant it passes,
+ * so the test stage is the queue until the item's first trial in it starts.
+ */
 function visits(item: FlowItem, now: number): Visit[] {
   // The item's current stage holds from its stageEnteredAt on, whatever the rows after it record.
   const entered = ms(item.stageEnteredAt);
   const marks = [...item.events.filter(event => event.stage && ms(event.at) < entered).map(event => ({ at: ms(event.at), stage: event.stage! })), { at: entered, stage: item.stage }]
     .filter(mark => Number.isFinite(mark.at)).sort((a, b) => a.at - b.at);
-  const intents = item.events.filter(event => event.kind === 'merge.intent').map(event => ms(event.at));
-  const out: Visit[] = [];
+  const trials: Visit[] = item.events.filter(event => event.kind === 'merge.trial' && Number.isFinite(ms(event.at)))
+    .map(event => ({ station: 'merge trial', start: ms(event.at) - (event.durationMs ?? 0), end: ms(event.at), open: false }));
+  const out: Visit[] = [...trials];
   marks.forEach((mark, index) => {
     if (index > 0 && marks[index - 1].stage === mark.stage) return;
     const next = marks.slice(index + 1).find(later => later.stage !== mark.stage);
     const end = next ? next.at : now, open = !next;
     if (mark.stage === 'test') {
-      const intent = intents.find(at => at >= mark.at && at < end);
-      if (intent === undefined) out.push({ station: 'test queue', start: mark.at, end, open });
-      else out.push({ station: 'test queue', start: mark.at, end: intent, open: false }, { station: 'merge trial', start: intent, end, open });
+      const started = trials.filter(trial => trial.end >= mark.at && trial.start < end).map(trial => Math.max(trial.start, mark.at));
+      out.push(started.length ? { station: 'test queue', start: mark.at, end: Math.min(...started), open: false } : { station: 'test queue', start: mark.at, end, open });
     } else if (stationOf[mark.stage]) out.push({ station: stationOf[mark.stage], start: mark.at, end, open });
   });
   return out;

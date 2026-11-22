@@ -48,9 +48,11 @@ test('e2e:flow-numbers-shown — /api/status and master status read 75% first pa
   }
   const set = (id: string, fields: Record<string, unknown>) => store.pool.query('UPDATE work_items SET document = document || $2::jsonb WHERE id=$1', [id, JSON.stringify(fields)]);
   const timeline = (attempts: unknown[]) => ({ pipeline: { attempts, submittedAt: null, resubmittedAt: null, reworkRounds: 0, interventions: { blocked: 0, requirements: 0 } } });
-  // Three merged on their first attempt.
+  // Three merged on their first attempt, settled as a delivery is: the fleet serves them from the work index, without their timeline.
   for (const [index, merged] of [30, 60, 90].entries())
-    await set(items[index].id, { stage: 'done', stageEnteredAt: ago(merged), delivery: { mergedAt: ago(merged), mergeSha: 'a'.repeat(40), authorizationRevision: 1 }, ...timeline([attempt(merged + 60, merged + 30, 'submitted')]) });
+    await set(items[index].id, { stage: 'done', stageEnteredAt: ago(merged), delivery: { mergedAt: ago(merged), mergeSha: 'a'.repeat(40), authorizationRevision: 1 },
+      nextAction: null, queue: null, lease: null, actionQueue: { actions: [] }, sessions: [], ...timeline([attempt(merged + 60, merged + 30, 'submitted')]) });
+  assert.equal((await store.pool.query('SELECT count(*)::int AS n FROM work_index WHERE settled')).rows[0].n, 3);
   // One sent back by the merge trial, waiting for its next worker.
   await set(items[3].id, { stage: 'ready', stageEnteredAt: ago(100), ...timeline([attempt(200, 150, 'submitted')]) });
   await store.pool.query('INSERT INTO events(work_id,actor,kind,payload,created_at) VALUES($1,$2,$3,$4,$5)', [items[3].id, 'operator', 'rework',
