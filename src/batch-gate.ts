@@ -372,19 +372,29 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
   // GY-3620: the rerun and the verified-commit probe bound their test files as a merge trial bounds a
   // file (trialFileTimeoutMs per `test:` check, from the trial's own `tests` step, which runs test files
   // only): a file still running then stops, and the step's checks count as failed, so a hanging file
-  // settles the step under the rules below instead of running out the whole gate. e2e cases keep their
-  // own per-step timeouts and only the gate's bound.
+  // settles the step under the rules below instead of running out the whole gate. GY-3659: a
+  // verified-commit probe's setup (checkout, install, build) shares that same per-step bound before
+  // reaching its test runner, so a hung setup stops, frees its slot and counts as a failed probe.
+  // e2e cases keep their own per-step timeouts and only the gate's bound once their runner starts.
   const run = (commit: string, runChecks: readonly string[], runFiles: readonly string[], perFile = false) => {
     const key = stepKey(commit, runChecks);
     if (key in finished) return Promise.resolve(finished[key]!); // a step the last loop finished
     const left = deadline() - ports.now();
     if (left <= 0) return Promise.reject(new GateTimeout());
     let last = ports.now(), saved = last, timer: NodeJS.Timeout | undefined, testsAt: number | null = null;
+    let setupMs = 0, reachedRunner = false, waitingSlot = false;
+    const probe = perFile && commit === verified;
     const testFiles = runChecks.filter(check => check.startsWith('test:')).length, fileBound = trialFileTimeoutMs * testFiles;
-    const onStep = perFile && testFiles ? (line: string) => { if (testsAt === null && line === 'tests') testsAt = ports.now(); } : undefined;
+    const onStep = probe || (perFile && testFiles) ? (line: string) => {
+      waitingSlot = line.startsWith('waiting ');
+      if (line === 'tests' || line.startsWith('tests:')) reachedRunner = true;
+      if (testsAt === null && testFiles && line === 'tests') testsAt = ports.now();
+    } : undefined;
     const tick = () => {
-      const now = ports.now();
-      record.inFlight = { ...record.inFlight!, seenAt: new Date(now).toISOString(), ...(ports.waiting?.() ? { waitedMs: (record.inFlight!.waitedMs ?? 0) + now - last } : {}) };
+      const now = ports.now(), delta = Math.max(0, now - last);
+      const waiting = !!ports.waiting?.();
+      record.inFlight = { ...record.inFlight!, seenAt: new Date(now).toISOString(), ...(waiting ? { waitedMs: (record.inFlight!.waitedMs ?? 0) + delta } : {}) };
+      if (probe && !reachedRunner && !waiting && !waitingSlot) setupMs += delta;
       last = now;
       if (now - saved >= 30_000) { saved = now; void ports.checkpoint?.(); }
     };
@@ -395,6 +405,7 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
     return Promise.race([ports.run(commit, runChecks, runFiles, left, stop.signal, onStep), new Promise<string[]>((resolve, reject) => { timer = setInterval(() => {
       tick();
       if (ports.now() > deadline()) { reject(new GateTimeout()); stop.abort(new GateTimeout()); }
+      else if (probe && !reachedRunner && setupMs > trialFileTimeoutMs) { resolve([...runChecks]); stop.abort(new Error(`the verified-commit probe setup ran past the ${minutes(trialFileTimeoutMs)}-minute per-step timeout`)); }
       else if (testsAt !== null && ports.now() - testsAt > fileBound) { resolve([...runChecks]); stop.abort(new Error(`a test file ran past the ${minutes(trialFileTimeoutMs)}-minute per-file timeout`)); }
     }, 1000); })])
       .then(async failed => {

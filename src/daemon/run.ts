@@ -15,7 +15,7 @@ import { awaitSupervisorRestart, detectLoopSupervisorUnit, restartEndedBySupervi
 import { mergeWriterInFlight, mergeWriterSummary } from './cycle-merge-writer.js';
 import { noteBatchGateStopping } from './cycle-batch-gate.js';
 import { detachRuns } from '../runner/registry.js';
-import { besideCursor } from './state.js';
+import { loopRestartRequestPath } from './state.js';
 import { deployRecordPath, readDeployRecord } from '../deploy-watch.js';
 import { cliCommit } from '../protocol-version.js';
 import { deployUnitOf } from '../install/units.js';
@@ -68,7 +68,6 @@ export async function adoptHeadlessRuns(effects: DaemonEffects, log: (line: stri
 }
 
 /** The request a confined master files with `master restart`: the loop restarts through its unit once it reads it. */
-export const loopRestartRequestPath = (config: Pick<MasterConfig, 'credentialFile'>) => besideCursor(config, 'loop-restart');
 
 /** The restart cause a confined master's `master restart` request gives; it never waits for the handover window. */
 export const restartRequestedCause = 'a master restart was requested';

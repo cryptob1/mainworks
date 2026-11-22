@@ -3,7 +3,7 @@ import { trialCpuMonitor, trialOverloadFault, type TrialCpuReading } from './tri
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync, statfsSync } from 'node:fs';
 import { chmod, cp, mkdir, mkdtemp, readdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
-import { availableParallelism, constants, homedir, tmpdir } from 'node:os';
+import { availableParallelism, constants, homedir, hostname, tmpdir } from 'node:os';
 import { basename, delimiter, dirname, join, relative, isAbsolute, resolve } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../child-runner.js';
 import { allocateSessionCheckout, defaultWorktreeRootMinFreeGb, removeSessionCheckout, removeTree, verifyWorktreeRoot, volatileFilesystem, type FilesystemProbe } from '../install/worktree-root.js';
@@ -24,6 +24,7 @@ import { mergeGateSchema } from '../model-boundary/delivery-policy.js';
 import type { GateCheck } from '../model/delivery-policy.js';
 import { containerTrialE2e, trialContainerBoundary, trialContainerDependencies, trialImage } from './trial-container.js';
 import { cachedPasses, commitDependencies, dependencyKey, recordPasses, testResultKeys, warmDependencies } from './trial-caches.js';
+import { shellQuote } from '../shell-quote.js';
 import { HostDroppedError, readShardHosts, shardSshSession, type ShardSshSession, runShardsOnHosts, realFreeCores, recordRemoteShardRun, remoteShardSession, shardHosts, splitLocalOnlyTests, trialImageHasBrowser, underHeatLimit, type HostReading, type PlacedHost } from './remote-shards.js';
 import { repositoryTrialImage, trialDockerfile, TrialRepositoryImageError } from './repository-trial-image.js';
 import { addressPoolsSpent, checkServiceVariables, dockerEnvironment, previewNetworkCount, startCheckServices, tcpAcceptProbe, type CheckServices } from '../compose-preview.js';
@@ -719,6 +720,11 @@ export function trialTestGateStatus(root: string):
   if (checks.length) return { configured: true, via: 'checks', checks: checks.map(entry => entry.check) };
   return { configured: false, detail: noTestCheckConfigured };
 }
+export interface TrialRunMetrics {
+  shardsPerHost: Record<string, number>;
+  hostTemperatures: Record<string, number | null>;
+  fileDurations: { file: string; durationMs: number }[];
+}
 export interface RunTrialInput {
   /** The coordinator checkout whose object store holds the merge commit. */
   root: string;
@@ -794,6 +800,8 @@ export interface RunTrialInput {
   remote?: { hosts: readonly string[]; read?: (hosts: readonly string[], transport: ShardSshSession) => Promise<HostReading[]> };
   /** GY-3526: a worker verification's label: it holds a host heavy-job slot under it only while a test shard or check runs on this machine, never while its shards run on other hosts. */
   localSlot?: string;
+  /** GY-3634: optional benchmark metrics callback receiving shards per host, host temperatures at start, and per-file durations. */
+  onMetrics?: (metrics: TrialRunMetrics) => void;
 }
 const tailLength = 4000;
 /**
@@ -1122,12 +1130,12 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       else {
         await discardKeptTree();
         worktree = kept!;
-        await run('git', ['-C', input.root, 'worktree', 'add', '--detach', worktree, input.mergeSha], { timeoutMs: remaining() });
+        await run('git', ['-C', input.root, 'worktree', 'add', '--detach', worktree, input.mergeSha], { timeoutMs: remaining(), ...(input.signal ? { signal: input.signal } : {}) });
       }
     } else {
       const near = await trialCheckoutRoot(input.checkoutRoots ?? trialCheckoutRoots(), input.minFreeBytes ?? defaultWorktreeRootMinFreeGb * 1e9, input.probe, input.checkoutRoots ? [] : undefined);
       if (near) { place = await mkdtemp(join(near, trialCheckoutPrefix)); await writeTempOwner(place); worktree = join(place, 'checkout'); }
-      await run('git', ['-C', input.root, 'worktree', 'add', '--detach', worktree, input.mergeSha], { timeoutMs: remaining() });
+      await run('git', ['-C', input.root, 'worktree', 'add', '--detach', worktree, input.mergeSha], { timeoutMs: remaining(), ...(input.signal ? { signal: input.signal } : {}) });
     }
   };
   // GY-3275: a repository that commits graphyard.trial.Dockerfile runs its trials in its own image,
@@ -1444,6 +1452,32 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       await started.close();
     }
   };
+  // GY-3645: a check with Compose services and no selection runs whole on the ready compute host with the most free CPU:
+  // the commit sent as a shard's is, the services started there, the command run on their network. With no host
+  // ready, or one that drops the check, null: the check runs on this machine as before, the reason in the log.
+  const onHost = async (check: RepositoryTrialCheck): Promise<Ended | null> => {
+    const here = (reason: string) => { log.push(`[remote] check ${check.check} runs on this machine: ${reason}`); return null; };
+    const hosts = input.remote?.hosts ?? await shardHosts();
+    if (!hosts.length) return here('no compute host is added');
+    const transport = shardSshSession(run);
+    const session = remoteShardSession({ root: input.root, sha: input.mergeSha, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport });
+    try {
+      const readings = (await (input.remote?.read ?? ((named, shared) => readShardHosts(named, run, cpu.cores(), shared)))(hosts, transport)).slice(1);
+      const host = readings.filter(reading => underHeatLimit(reading) && reading.compose).sort((a, b) => realFreeCores(b) - realFreeCores(a))[0];
+      if (!host) return here(`no host is ready (${readings.map(reading => `${reading.name}: ${reading.away ? reading.reason ?? 'away' : reading.compose ? 'too hot' : 'no Docker Compose plugin, see graphyard host prepare'}`).join('; ')})`);
+      enterStep(`tests: ${check.check} on ${host.name}`);
+      const probe = tcpAcceptProbe(check.services!.map(({ service, port }) => ({ host: service, port })), 120_000);
+      const ended = await session.check(host.name, { file: check.services![0]!.file, services: check.services!.map(({ service, port }) => ({ service, port })), cpus: Math.max(1, host.cores),
+        argv: ['/bin/sh', '-c', `${probe.map(shellQuote).join(' ')} && exec ${check.argv.map(shellQuote).join(' ')}`] });
+      for (const { step, ms } of ended.steps) input.onTiming?.(`${step}: ${check.check} on ${host.name}`, ms);
+      log.push(`[remote] check ${check.check} ran on ${host.name}: ${ended.steps.map(({ step, ms }) => `${step} ${stepSeconds(ms)}`).join(', ')}`, `$ [${host.name}] ${check.argv.join(' ')}\n${ended.out}`);
+      return { ok: ended.status === 0, out: ended.out, status: ended.status, signal: null, cause: undefined };
+    } catch (error) {
+      if (error instanceof HostDroppedError) return here(error.message);
+      if ((error as { timedOut?: boolean }).timedOut) throw new TrialTimeoutError('tests', Math.max(0, now() - startedAt), tail());
+      throw error;
+    } finally { await session.close(); }
+  };
   // GY-3526: a worker verification's tests on this machine run on one shared host slot; a merge trial already holds its own.
   const onThisMachine = input.localSlot ? (await import('../master/verification-slots.js')).sharedHeavyJob(input.localSlot, { strictOnly: true }) : <T>(part: () => Promise<T>) => part();
   const runChecks = async (checks: RepositoryTrialCheck[]): Promise<TrialRun> => {
@@ -1496,7 +1530,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       }
       files++;
       enterStep(`tests: ${check.check}`);
-      const ran = await withServices(check, () => onThisMachine(() => child('tests', check.argv[0]!, check.argv.slice(1))));
+      const ran = (check.services?.length ? await onHost(check) : null) ?? await withServices(check, () => onThisMachine(() => child('tests', check.argv[0]!, check.argv.slice(1))));
       if ('services' in ran) { failed.push(check.check); detail = { failingCase: ran.services }; runnerExit = null; break; }
       if (hostEnded(ran)) throw runnerFailure('tests', ran);
       if (!ran.ok) {
@@ -1623,6 +1657,29 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       const placed = [local, ...hosts.map((host, index) => ({ name: host, remote: host, reading: readings[index + 1]!, room: Math.floor(realFreeCores(readings[index + 1]!) / breadth) }))];
       const placement = await runShardsOnHosts({ count: shards.length, hosts: placed, breadth, pinned, stopped: () => stopped !== null,
         run: (host, index) => shard(index, host.remote) });
+      if (input.onMetrics) {
+        const shardsPerHost: Record<string, number> = {};
+        for (const host of placement.ran) {
+          const name = host === 'local' ? hostname() : host;
+          shardsPerHost[name] = (shardsPerHost[name] ?? 0) + 1;
+        }
+        const hostTemperatures: Record<string, number | null> = readings.length
+          ? Object.fromEntries(readings.map(reading => [reading.name, reading.celsius]))
+          : {};
+        const fileDurations: { file: string; durationMs: number }[] = [];
+        for (const settled of settledShards) {
+          if (!settled) continue;
+          for (const line of settled.records.split('\n')) {
+            try {
+              const record = JSON.parse(line) as { file?: unknown; durationMs?: unknown };
+              if (typeof record.file === 'string' && typeof record.durationMs === 'number' && Number.isFinite(record.durationMs)) {
+                fileDurations.push({ file: record.file, durationMs: record.durationMs });
+              }
+            } catch { /* ignore non-JSON lines */ }
+          }
+        }
+        input.onMetrics({ shardsPerHost, hostTemperatures, fileDurations });
+      }
       if (hosts.length) await recordRemoteShardRun(input.root, { ...(input.localSlot ? { label: input.localSlot } : {}), at: new Date().toISOString(), wallMs: Math.max(0, now() - startedAt), shards: placement.ran.length, remote: placement.ran.filter(name => name !== local.name).length,
         queuedWhileIdle: placement.queuedWhileIdle, host: local.name, celsius: local.reading.celsius,
         hosts: readings.map(reading => ({ name: reading.name, away: reading.away || placement.dropped.includes(reading.name), reason: dropped.get(reading.name)?.reason ?? reading.reason, celsius: reading.celsius, freeCores: Math.round(realFreeCores(reading) * 10) / 10 })) }).catch(() => {});

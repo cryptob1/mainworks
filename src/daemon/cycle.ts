@@ -40,6 +40,7 @@ import { pinnedInstall, repinRuntime, type AgentRegistry, type CanaryOffer } fro
 import { type DaemonEffects, record } from './effects.js';
 import { mergeWriterStep } from './cycle-merge-writer.js';
 import { batchGateStep } from './cycle-batch-gate.js';
+import { benchStep } from '../bench.js';
 import { lessonsToCode } from './lessons-to-code.js';
 import { workerLaunchHealth, earlyExitKey } from './worker-launch-health.js';
 import { actionStallDelay, actionStallThreshold } from '../model/action-progress.js';
@@ -236,7 +237,8 @@ export async function runCycle(config: MasterConfig, state: DaemonState, effects
     }
   });
   // GY-3119: the batch gate on main starts beside the cycle once the merge writer's step ran.
-  if (!config.forPerson) await step('merge writer', () => mergeWriterStep(cycle).then(() => batchGateStep(cycle)));
+  // GY-3634: the trial benchmark runs beside the cycle after new builds and every 6h when no trial is queued.
+  if (!config.forPerson) await step('merge writer', () => mergeWriterStep(cycle).then(() => batchGateStep(cycle)).then(() => { benchStep(cycle); }));
   reviewedAndTrialled();
   if (own) { await launches.idle(); performed.push(...launches.drain()); }
   await step('persist', async () => {
