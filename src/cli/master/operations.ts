@@ -3,7 +3,7 @@ import { parseArgs } from 'node:util';
 import { resourceConflicts } from '../../coordination.js';
 import { dispatchWork, readWorkerCredential } from '../../master.js';
 import { atomicPrivateWrite } from '../../private-file.js';
-import { loopRestartRequestPath } from '../../daemon/run.js';
+import { loopRestartRequestPath } from '../../daemon/state.js';
 import { masterStatusReport } from '../master-status.js';
 import { unhandled, type MasterSession } from './session.js';
 import { readSecretFromStdin } from '../context.js';
