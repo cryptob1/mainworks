@@ -114,7 +114,7 @@ export function testResultKeys(worktree: string, files: readonly string[], depen
         const found = resolveImport(path, match[1]!);
         if (found && !seen.has(found) && !relative(worktree, found).startsWith('..')) { seen.add(found); queue.push(found); }
       }
-      if (tops.length && relative(worktree, path).startsWith(own)) for (const [name, content] of data(path, text)) reads.set(name, content);
+      if (tops.length && (path === start || relative(worktree, path).startsWith(own))) for (const [name, content] of data(path, text)) reads.set(name, content);
     }
     for (const name of [...reads.keys()].sort()) hash.update(`\0data\0${name}\0${reads.get(name)}`);
     keys.set(file, hash.digest('hex').slice(0, 40));
