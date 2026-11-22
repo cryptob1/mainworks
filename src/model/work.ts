@@ -180,6 +180,8 @@ export interface Work extends Create {
   reworkRequested: boolean;
   /** The last rework applied: its reason, the binding the loop sent it back on, and when (GY-1569's brief). */
   lastRework?: { reason: string; binding: string | null; at: string } | null;
+  /** Every rework applied to this item in order, oldest first (GY-3636). */
+  reworkHistory?: { attempt: number; reason: string; binding: string | null; at: string }[];
   /** GY-3393: the owner's taste of this delivered item, recorded after delivery; see Taste. */
   taste?: Taste | null;
   /** GY-3393: the plain `summary` sentence as a settled delivery's snapshot carries it beside its `summary: true` marker (model/work-summary.ts). */

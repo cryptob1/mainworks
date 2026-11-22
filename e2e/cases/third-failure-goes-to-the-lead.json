@@ -1,0 +1,16 @@
+{
+  "id": "third-failure-goes-to-the-lead",
+  "title": "After three refusals of any cause, no fourth attempt launches and the Lead gets one decision",
+  "description": "GY-3636: drives a work item with a stub Builder through three counted refusals (review, merge trial, acceptance) plus a base-moved conflict that does not count toward the three, and asserts no further automatic launch, one master decision naming all three refusals and the three Lead choices (revise, split, park), and master status showing 'needs the Lead: failed 3 times'.",
+  "tags": ["dispatch", "rework", "master"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "stub Builder through three refusals, Lead decision and master status",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/third-failure-goes-to-the-lead.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}
