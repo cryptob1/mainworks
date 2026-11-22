@@ -211,8 +211,8 @@ export function nestedFirst(environment: NodeJS.ProcessEnv = process.env): { fir
 }
 
 /** Whether a selected test file drives a browser or runs E2E cases against the served dashboard. */
-const opensDashboard = (cwd: string, args: string[]) => args.filter(arg => /\.test\.[cm]?[jt]sx?$/.test(arg)).some(file => {
-  try { return /chromium|playwright|projectCaseSuite/.test(readFileSync(resolve(cwd, file), 'utf8')); } catch { return false; }
+export const opensDashboard = (cwd: string, args: string[]) => args.filter(arg => /\.test\.[cm]?[jt]sx?$/.test(arg)).some(file => {
+  try { return /chromium|playwright|projectCaseSuite|runCases/.test(readFileSync(resolve(cwd, file), 'utf8')); } catch { return false; }
 });
 const defaultBuildDashboard = (cwd: string) => async (outDir: string) => {
   const { build } = await import('vite');
