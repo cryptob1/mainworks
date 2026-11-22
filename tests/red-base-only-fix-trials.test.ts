@@ -71,9 +71,12 @@ function harness(work: Work[]) {
     record: async (target, event) => { recorded.push({ key: target.key, event }); return {}; },
     trial: async (input): Promise<MergeTrialRun> => { trialled.push(input.key!); return { build: 'pass', tests: { passed: 1, failed: [], files: 1 }, durationMs: 1, logTail: '', files: [failingTest], proofs: { 'unit:item-works': { executed: 1, failed: 0 } } }; },
   });
+  // GY-3609: two heads are trialled in one cycle here, so the harness states the slots itself instead
+  // of reading the live host — a loaded trial machine's memory once computed parallel 1 and broke it.
+  const placed = { ...reads, cores: 4, parallel: 2, memory: async () => ({ totalBytes: 16 * 2 ** 30, availableBytes: 16 * 2 ** 30 }) };
   const state = emptyDaemonState(config);
   let clock = start;
-  const step = async () => { clock += 1000; await mergeWriterStep({ state, effects: { mergeWriter: reads, persist: async () => {}, rework: async () => {} }, now: () => clock, snapshot: { work }, performed } as unknown as Cycle); await mergeWriterIdle(state); };
+  const step = async () => { clock += 1000; await mergeWriterStep({ state, effects: { mergeWriter: placed, persist: async () => {}, rework: async () => {} }, now: () => clock, snapshot: { work }, performed } as unknown as Cycle); await mergeWriterIdle(state); };
   /** The writer's ledger as the control plane folds it: each recorded refusal or push replaces the item's state. */
   const settle = () => {
     for (const { key, event } of recorded.splice(0)) {
