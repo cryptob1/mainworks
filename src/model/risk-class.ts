@@ -47,7 +47,7 @@ export const unknownChangeReason = 'unknown change';
 
 /** GY-3635: paths whose edits can weaken the repository's own checks. */
 export const isTestSelectorPath = (path: string) => path === 'scripts/ci-tests.mjs';
-export const isTestHelperPath = (path: string) => path.startsWith('tests/helpers/');
+export const isTestHelperPath = (path: string) => path.startsWith('tests/helpers/') && !path.includes('*');
 export const isE2eCasePath = (path: string) => path.startsWith('e2e/cases/') && path.endsWith('.json');
 export const isTestFilePath = (path: string) =>
   !isTestHelperPath(path) && (
