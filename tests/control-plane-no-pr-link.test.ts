@@ -4,14 +4,14 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { plainStatus } from '../src/model/plain-status.js';
 import { CandidatePr } from '../web/candidate.js';
-import ShippedPage from '../web/pages/shipped.js';
+import WorkPage from '../web/pages/work.js';
 import type { Observation, Work } from '../src/model/work.js';
 import type { Dashboard } from '../web/pages/dashboard.js';
 
 // GY-3173: the control plane is the merge writer and opens no pull request. The number a
 // control-plane candidate carries is its own change number, which on GitHub is somebody else's
 // pull request, so every surface that names the item — its plain status sentences, the candidate
-// link, the Shipped page — names its commit instead: the merge commit once merged, the head
+// link, the Work list's shipped row — names its commit instead: the merge commit once merged, the head
 // before it. Pull-request-mode items keep naming and linking their pull request.
 
 const NOW = Date.parse('2030-06-01T12:00:00Z');
@@ -79,8 +79,9 @@ test('unit:tests/control-plane-no-pr-link.test.ts — the candidate component li
   assert.match(pr, /PR #12/);
 });
 
-test('unit:tests/control-plane-no-pr-link.test.ts — the Shipped page links a control-plane item\'s merge commit, never a pull request', () => {
-  const page = (work: Work) => renderToStaticMarkup(createElement(ShippedPage, { work: [work], status: { repository }, observedAt: NOW, setSelected: () => {} } as unknown as Dashboard));
+test('unit:tests/control-plane-no-pr-link.test.ts — a shipped Work row links a control-plane item\'s merge commit, never a pull request', () => {
+  const page = (shipped: Work) => { const work = { ...shipped, delivery: { mergedAt: iso(-30 * minute), mergeSha, authorizationRevision: 1 } } as Work; return renderToStaticMarkup(createElement(WorkPage, { work: [work], board: null, status: { repository }, observedAt: NOW, query: work.key, filter: null,
+    setFilter: () => {}, setQuery: () => {}, setSelected: () => {}, setCreating: () => {}, setView: () => {} } as unknown as Dashboard)); };
   const shipped = page(item());
   assert.match(shipped, new RegExp(`href="${commit(mergeSha)}"`));
   assert.doesNotMatch(shipped, /\/pull\/|PR #\d/);

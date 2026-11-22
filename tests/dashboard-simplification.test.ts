@@ -10,16 +10,16 @@ import { apiRoutes } from '../src/server/index.js';
 import { fixtureApi, fixtureStatus, fixtureWork as auditWork, NOW, unexplainedWords, visibleWords } from '../scripts/dashboard-fixture.mjs';
 import { live } from '../browser-tests/ui-board.js';
 import { jargon, phaseOf, plainReason, plainStatus } from '../src/model/plain-status.js';
-import { classify, groupLabel, groups, summarySentence } from '../web/groups.js';
+import { classify } from '../web/groups.js';
 import WorkersPage from '../web/pages/workers.js';
 import { glossary } from '../web/glossary.js';
 import { probeFeatures, unknownFeatures, type Features } from '../web/features.js';
 import { primaryEntries, primaryEntry, sections, views, visibleViews } from '../web/pages/index.js';
 import type { Dashboard } from '../web/pages/dashboard.js';
-import OverviewPage from '../web/pages/overview.js';
+import WorkPage from '../web/pages/work.js';
 import { boardFromStatus } from '../src/model/board.js';
 import WorkDetails from '../web/pages/work-details.js';
-import ShippedPage from '../web/pages/shipped.js';
+
 import GuidePage from '../web/pages/guide.js';
 import AutomationPage from '../web/pages/automation.js';
 import CreateWork from '../web/pages/create-work.js';
@@ -42,7 +42,7 @@ const noop = () => {};
 function dashboard(overrides: Partial<Dashboard> = {}, role = 'admin', features: Features = unknownFeatures): Dashboard {
   const d: Dashboard = {
     token: 'fixture', work, status: fixtureStatus(role), error: '', connected: true, lastUpdated: '12:00:00', view: 'work', setView: noop, filter: null, setFilter: noop,
-    shippedFilter: null, setShippedFilter: noop,
+   
     selected: null, setSelected: noop, creating: false, setCreating: noop, busy: false, setBusy: noop, observedAt: NOW, jobs: [], query: '', setQuery: noop,
     operatorAgents: [], operatorAgentsError: null, features, events: fixtureApi('events') as any[], editingRequirements: false, setEditingRequirements: noop,
     sessionEpoch: { current: 0 }, api: async (path: string) => fixtureApi(path, role), refresh: async () => {}, action: async () => {},
@@ -54,7 +54,7 @@ function dashboard(overrides: Partial<Dashboard> = {}, role = 'admin', features:
 const markup = (element: any) => renderToStaticMarkup(element);
 const words = (html: string): string[] => visibleWords(html);
 const text = (html: string) => words(html).join(' ');
-const home = (d = dashboard()) => markup(createElement('div', null, createElement(Sidebar, { entries: views.map(view => primaryEntry(d, view)), dashboard: d }), createElement(TopBar, d), createElement(OverviewPage, d)));
+const home = (d = dashboard()) => markup(createElement('div', null, createElement(Sidebar, { entries: views.map(view => primaryEntry(d, view)), dashboard: d }), createElement(TopBar, d), createElement(WorkPage, d)));
 const itemView = (key: string, role = 'admin') => markup(createElement(WorkDetails, { ...dashboard({}, role), item: find(key) }));
 const jargonIn = (sentence: string) => jargon.filter(term => new RegExp(`\\b${term}`, 'i').test(sentence));
 
@@ -142,33 +142,30 @@ test('unit:plain-status-copy — every stage and every gate reason reads as one 
   assert.equal(plainReason('Internal epoch lease candidate mismatch', 'merge', Date.now()).text, 'Waiting to merge');
 });
 
-test('integration:dashboard-navigation — one sidebar (Work, Master, Workers, Shipped, Tests, Settings); every other page sits under one entry; admin-only and unconfigured pages hidden', async () => {
+test('integration:dashboard-navigation — one sidebar (Work, Master, Workers, Tests, Settings); every other page sits under one entry; admin-only and unconfigured pages hidden', async () => {
   const labels = (d: Dashboard) => primaryEntries(d).map(entry => entry!.label);
   // Tests opens the test-case results (GY-162); the Insights analytics page left with flow analytics (GY-2876).
-  assert.deepEqual(sections.map(section => section.label), ['Work', 'Master', 'Workers', 'Shipped', 'Tests', 'Settings']);
+  // GY-3600: Shipped is a filter of Work, not an entry of its own.
+  assert.deepEqual(sections.map(section => section.label), ['Work', 'Master', 'Workers', 'Tests', 'Settings']);
   for (const role of ['admin', 'reader', 'worker', 'coordinator', 'operator-agent']) assert.ok(labels(dashboard({}, role)).length <= 6, role);
-  assert.deepEqual(labels(dashboard()), ['Work', 'Master', 'Workers', 'Shipped', 'Tests', 'Settings']);
+  assert.deepEqual(labels(dashboard()), ['Work', 'Master', 'Workers', 'Tests', 'Settings']);
   const sectionOf = Object.fromEntries(views.map(view => [view.label, view.section]));
-  for (const page of ['Delivered', 'Releases']) assert.equal(sectionOf[page], 'shipped', page);
+  assert.equal(sectionOf['Releases'], 'work');
   // Settings is configuration only (GY-3297): everyday pages sit beside the work they describe.
   for (const page of ['Agents', 'Setup', 'Delivery', 'Operator automation']) assert.equal(sectionOf[page], 'settings', page);
   assert.deepEqual([sectionOf['Product'], sectionOf['Costs'], sectionOf['Test cases']], ['master', 'workers', 'tests']);
 
   // The sidebar renders exactly the primary entries; the pages of a section are sub-page links above the content.
   const sidebar = markup(createElement(Sidebar, { entries: views.map(view => primaryEntry(dashboard(), view)), dashboard: dashboard() }));
-  assert.equal(sidebar.match(/class="nav( active)?"/g)?.length, 6);
+  assert.equal(sidebar.match(/class="nav( active)?"/g)?.length, 5);
   assert.equal(sidebar.match(/class="nav planned"/g), null, 'Tests has shipped (GY-162): no entry is a placeholder');
   const tabs = (d: Dashboard, view: string) => [...markup(createElement(TopBar, { ...d, view })).matchAll(/class="tab(?: active)?"[^>]*>(?:<abbr[^>]*>)?([^<]+)</g)].map(match => match[1]);
-  assert.deepEqual(tabs(dashboard(), 'shipped'), ['Delivered', 'Releases']);
   assert.deepEqual(tabs(dashboard(), 'agents'), ['Agents', 'Setup', 'Delivery', 'Advanced', 'Operator automation'], 'Operator automation sits inside the Advanced fold');
   assert.match(markup(createElement(TopBar, { ...dashboard(), view: 'agents' })), /<details class="tabs-advanced"><summary class="tab">Advanced<\/summary><button[^>]*>(<abbr[^>]*>)?Operator automation</);
   assert.deepEqual(tabs(dashboard(), 'tests'), ['Tests', 'Test cases']);
   assert.deepEqual(tabs(dashboard(), 'workers'), ['Workers', 'Costs']);
   assert.deepEqual(tabs(dashboard(), 'master'), ['Master', 'Product'], "the Master's own tab reads as its sidebar entry does");
-  assert.deepEqual(tabs(dashboard(), 'work'), ['Work', 'Now'], 'a signed-in person has a Now page beside Work');
-  const agent = fixtureStatus('admin');
-  agent.actor = { ...agent.actor, sessionKind: 'ai' };
-  assert.deepEqual(tabs(dashboard({ status: agent }), 'work'), [], 'a section with one page draws no tab row');
+  assert.deepEqual(tabs(dashboard(), 'work'), ['Work', 'Releases']);
   assert.match(sidebar, />Help</, 'the guide is linked from the sidebar');
 
   // Admin-only pages are hidden from reader and worker sessions, even when configured.
@@ -181,7 +178,7 @@ test('integration:dashboard-navigation — one sidebar (Work, Master, Workers, S
   const probed = await probeFeatures(async path => path === 'operator-agents' ? [] : { environments: [], releases: [], requests: [], candidates: [] }, true, false);
   assert.deepEqual(probed.features, { releases: false, validation: false, automation: false });
   const none = dashboard({}, 'admin', probed.features);
-  assert.deepEqual(tabs(none, 'shipped'), [], 'Delivered alone draws no tab row');
+  assert.deepEqual(tabs(none, 'work'), [], 'Work alone draws no tab row');
   assert.deepEqual(tabs(none, 'agents'), ['Agents', 'Setup', 'Delivery'], 'no Advanced fold while automation is unconfigured');
   const failing = await probeFeatures(async () => { throw new Error('unavailable'); }, true, false);
   assert.deepEqual(failing.features, { releases: null, validation: false, automation: null }, 'an outage never hides a page');
@@ -211,10 +208,10 @@ test('integration:dashboard-word-budget — the home page answers what needs you
   for (const gone of ['Delivery slices', 'NO LEAD ASSIGNED', 'ENGINEERING, IN VIEW', 'Every change has an owner', 'Explicit reasons, actionable next steps', 'No delivery requires', 'sessions retain goals', 'leads coordinate only', 'Ownership is explicit', 'Agent fleet'])
     assert.ok(!text(page).includes(gone), `no ${gone}`);
   assert.doesNotMatch(text(page), /\bp50\b|\bp95\b/, 'no percentile microtext by default');
-  // The groups, in order: blocked first (nothing needs the human in this fixture), then moving, up next, backlog, shipped.
-  const order = ['aria-label="Blocked"', 'aria-label="Moving"', 'aria-label="Up next"', 'aria-label="Backlog"', 'aria-label="Shipped this week"'].map(label => page.indexOf(label));
-  assert.ok(order.every(index => index > 0) && order.every((index, i) => i === 0 || index > order[i - 1]), `sections in order: ${order}`);
-  assert.ok(page.indexOf('Move sessions to Postgres') < page.indexOf('Add dark mode to settings'), 'the blocked item is listed first');
+  // GY-3600: rows in order within their goal: stuck first, then moving, up next, backlog.
+  const order = ['group-blocked', 'group-moving', 'group-up-next', 'group-backlog'].map(group => page.indexOf(`class="task-row ${group}"`));
+  assert.ok(order.every(index => index > 0) && order.every((index, i) => i === 0 || index > order[i - 1]), `rows in order: ${order}`);
+  assert.ok(page.indexOf('Move sessions to Postgres') < page.indexOf('Add dark mode to settings'), 'the stuck item is listed first');
   assert.match(text(page), /A fault blocks it; the master agent clears it/);
 });
 
@@ -295,12 +292,10 @@ test('integration:dashboard-capability-parity — nothing removed from a default
     assert.ok(view.includes(needle), needle);
   for (const gate of item.gates) for (const reason of gate.reasons) assert.ok(view.includes(reason.replace(/&/g, '&amp;').replace(/>/g, '&gt;')), `raw reason kept: ${reason}`);
   for (const ac of item.criteria) assert.ok(view.includes(ac.text), `full criterion kept: ${ac.id}`);
-  // The home page keeps search and a way to every shipped item; the board view and the timings toggle
-  // were removed by GY-161 (every moving row carries its time, and the groups replace the columns).
+  // The Work page keeps search and a way to every shipped item (GY-3600): Shipped today is a filter, and search finds any shipped task.
   const page = home();
-  for (const control of ['aria-label="Search work"', 'Shipped →']) assert.ok(page.includes(control), control);
-  const shipped = markup(createElement(ShippedPage, dashboard()));
-  for (const key of ['GY-18', 'GY-19', 'GY-9']) assert.ok(shipped.includes(key), key);
+  for (const control of ['aria-label="Search work"', 'data-filter="shipped-today"']) assert.ok(page.includes(control), control);
+  for (const key of ['GY-18', 'GY-19', 'GY-9']) assert.ok(home(dashboard({ query: key })).includes(`data-row="${key}"`), key);
   // Every page in the registry stays reachable for an admin while its feature is unknown or configured.
   const admin = dashboard();
   for (const view of views) assert.ok(visibleViews(admin).includes(view), `${view.label} reachable`);
@@ -326,48 +321,43 @@ test('integration:dashboard-capability-parity — nothing removed from a default
   assert.match(css, /\.main\{margin-left:0\}/);
 });
 
-test('unit:dashboard-simplification — the home page renders its numbers without web/home-numbers.ts: every tile is a group count drawn from web/groups.ts', () => {
+// GY-3600: Work shows one row of filter counts, In flight, Stuck, Up next and Shipped today, each drawn from the board's groups.
+const filterCounts = (page: string) => [...page.matchAll(/data-filter="([\w-]+)">[^<]*<span class="count">(\d+)<\/span>/g)].map(match => [match[1], Number(match[2])] as const);
+
+test('unit:dashboard-simplification — the home page renders its numbers without web/home-numbers.ts: every count is drawn from the board\'s groups', () => {
   const page = home();
   const { byGroup } = classify(work, NOW);
-  for (const group of groups) assert.match(page, new RegExp(`data-tile="${group}"[^>]*>.*?<strong>${byGroup[group].length}</strong>`), group);
-  assert.match(text(page), /\d+ shipped \d+ going live Latest/);
+  const counts = Object.fromEntries(filterCounts(page));
+  assert.equal(counts['in-flight'], byGroup['needs-you'].length + byGroup.blocked.length + byGroup.moving.length);
+  assert.equal(counts.stuck, byGroup.blocked.length);
+  assert.equal(counts['up-next'], byGroup['up-next'].length);
 });
 
-test('unit:work-page-single-count-row — the page shows one row of counts, the groups; no count appears twice and no two labels differ only by grammatical form', () => {
+test('unit:work-page-single-count-row — the page shows one row of counts, the filters; no count appears twice and no two labels differ only by grammatical form', () => {
   const page = home();
-  const row = [...page.matchAll(/data-tile="([\w-]+)"[^>]*>[\s\S]*?<strong>(\d+)<\/strong>/g)].map(match => match[1]);
-  assert.deepEqual(row, [...groups], 'one tile per group, in order');
-  assert.equal((page.match(/role="group" aria-label="Filter by group"/g) ?? []).length, 1, 'one count row');
-  assert.ok(!page.includes('aria-label="Stages"'), 'the old stage strip is gone');
+  assert.deepEqual(filterCounts(page).map(([filter]) => filter), ['in-flight', 'stuck', 'up-next', 'shipped-today'], 'one count per filter, in order');
+  assert.equal((page.match(/role="group" aria-label="Filter work"/g) ?? []).length, 1, 'one count row');
+  assert.ok(!page.includes('data-tile='), 'the old tiles are gone');
   assert.ok(!/<nav [\s\S]*?<small>\d+<\/small>[\s\S]*?<\/nav>/.test(page), 'no sidebar entry carries a count');
-  // Each section heading counts its own group, and it is the tile's number.
-  for (const [, label, n] of page.matchAll(/<h2><span class="group-dot[^"]*"[^>]*><\/span>([^<]+) <span class="count">(\d+)<\/span>/g)) {
-    const group = groups.find(g => groupLabel[g] === label)!;
-    assert.match(page, new RegExp(`data-tile="${group}"[^>]*>[\\s\\S]*?<strong>${n}</strong>`), label);
-  }
-  const labels = groups.map(group => groupLabel[group]);
+  const labels = ['In flight', 'Stuck', 'Up next', 'Shipped today'];
   const stem = (label: string) => label.toLowerCase().split(/\s+/).map(word => word.replace(/ies$/, 'y').replace(/s$/, '')).join(' ');
   assert.equal(new Set(labels.map(stem)).size, labels.length, `no grammatical-twin labels: ${labels.join(' | ')}`);
-  for (const old of ['Need a worker', 'Needs a worker', 'In progress', 'Stuck ']) assert.ok(!text(page).includes(old), `the old label ${old} is gone`);
 });
 
-test('unit:work-page-no-derived-totals — a total that is a sum or subset of the group row is never a tile; the open count is said once, in the summary sentence', () => {
+test('unit:work-page-no-derived-totals — the heading carries no count; the in-flight total is said once in the header line and matches its filter', () => {
   const page = home();
-  assert.ok(!page.includes('aria-label="Open items"'), 'no Open tile');
-  assert.ok(!/<span>Open<\/span>/.test(page), 'Open is not a tile label');
+  assert.ok(!page.includes('aria-label="Open items"'), 'no Open count');
   assert.match(page, /<h1>Work<\/h1>/, 'the heading carries no derived count');
-  const sentence = /<p class="page-fact">([^<]*)<\/p>/.exec(page)![1];
-  const { byGroup } = classify(work, NOW);
-  assert.equal(sentence, summarySentence(Object.fromEntries(groups.map(group => [group, byGroup[group].length])) as any));
+  const line = /data-work-header="true">([^<]*)<\/p>/.exec(page)![1];
+  assert.match(line, new RegExp(`^${Object.fromEntries(filterCounts(page))['in-flight']} in flight · `));
 });
 
-test('integration:work-page-density — every group has one tile, an empty group draws no list, and the page answers what needs you, what is blocked and why, what is moving and what shipped within the 165-word budget', () => {
+test('integration:work-page-density — an empty Needs you draws no strip, and the page answers what is stuck and why, what is moving and what shipped within the 165-word budget', () => {
   const page = home();
   const { byGroup } = classify(work, NOW);
   assert.equal(byGroup['needs-you'].length, 0);
-  assert.ok(page.includes('data-tile="needs-you"'), 'the empty group keeps its tile, reading 0');
-  assert.ok(!page.includes('data-group-section="needs-you"'), 'but draws no empty list');
-  assert.match(text(page), /A fault blocks it; the master agent clears it/, 'the blocked row says why');
+  assert.ok(!page.includes('aria-label="Needs you"'), 'no empty Needs you strip');
+  assert.match(text(page), /A fault blocks it; the master agent clears it/, 'the stuck row says why');
   for (const item of byGroup.moving) assert.ok(page.includes(`data-row="${item.key}"`), item.key);
   assert.ok(words(page).length <= 165, `home renders ${words(page).length} words excluding item titles: ${text(page)}`);
 });

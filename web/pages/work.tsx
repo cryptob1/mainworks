@@ -1,10 +1,16 @@
 import { isClosed, type Work } from '../../src/model';
-import { boardFromStatus, mergedAt, releasedAt, type BoardItem, type Group } from '../groups';
+import { mergedAt, releasedAt, timedGroups, type BoardItem, type Group } from '../groups';
 import { releaseView } from '../../src/model/release';
 import { plainStage, serveView } from '../../src/model/plain-stage';
 import { assignment } from '../../src/model/assignment';
+import { blockerSummary, plainStatus } from '../../src/model/plain-status';
+import { stalledCards } from '../../src/model/actionless';
+import { currentMergeStep } from '../../src/model/merge-ledger';
 import { formatDuration } from '../../src/model/duration';
 import { CandidatePr } from '../candidate';
+import StatusAge from '../components/status-age';
+import Term from '../components/term';
+import { stepHeld } from '../../src/model/pr-steps';
 import { friendlyName } from '../fun';
 import type { Dashboard } from './dashboard';
 
@@ -42,17 +48,17 @@ function median(values: number[]): number | null {
 
 /**
  * Work (GY-3600): one list of real tasks, grouped by goal, with Needs you pinned on top. The groups
- * are the board's (`GET /api/board`); a task's goal is its own `goal` field. Hook-free, so unit tests render it.
+ * are the board's (`GET /api/board`), never derived here; a task's goal is its own `goal` field. Hook-free, so unit tests render it.
  */
 export default function WorkPage({ work, board, status, query, setQuery, setSelected, setCreating, setView, observedAt, filter, setFilter }: Dashboard) {
   const now = Number.isNaN(observedAt) ? Date.now() : observedAt;
   const release = releaseView(status), serve = serveView(status);
-  const served = board ?? boardFromStatus(work, now, status);
   const byId = new Map(work.map(item => [item.id, item]));
+  const stalls = new Map(stalledCards(work.filter(item => item.stage !== 'done' && !isClosed(item)), now).map(card => [card.item.id, card.missing]));
   const today = new Date(now).setHours(0, 0, 0, 0);
   const delivered = work.filter(item => item.stage === 'done' && !isClosed(item) && !!(item.delivery?.mergedAt ?? item.observation?.mergedAt));
   const rows: Row[] = [
-    ...Object.values(served.groups).flat().flatMap(entry => byId.has(entry.id) ? [{ item: byId.get(entry.id)!, group: entry.group as Group, entry, today: false }] : []),
+    ...(board ? Object.values(board.groups).flat() : []).flatMap(entry => byId.has(entry.id) ? [{ item: byId.get(entry.id)!, group: entry.group as Group, entry, today: false }] : []),
     ...delivered.sort((a, b) => mergedAt(b) - mergedAt(a)).map(item => ({ item, group: 'shipped' as Group, today: mergedAt(item) >= today })),
   ];
   const counts = Object.fromEntries(workFilters.map(name => [name, rows.filter(row => inFilter[name](row.group, row.today)).length])) as Record<WorkFilter, number>;
@@ -68,17 +74,32 @@ export default function WorkPage({ work, board, status, query, setQuery, setSele
     const live = releasedAt(item, release), started = Date.parse(item.pipeline?.submittedAt ?? item.candidate?.createdAt ?? '');
     return live !== null && now - live <= 24 * 3_600_000 && Number.isFinite(started) && live >= started ? [live - started] : [];
   }));
-  const header = `${counts['in-flight']} in flight · ${merges.toFixed(1)} merges an hour over 6 hours · ${reviewToLive === null ? 'nothing went live in the last day' : `median ${formatDuration(reviewToLive / 60000)} from review to live`}`;
+  const header = `${counts['in-flight']} in flight · ${merges.toFixed(1)} merges an hour over 6 hours · ${reviewToLive === null ? 'nothing live in 24 hours' : `median ${formatDuration(reviewToLive / 60000)} from review to live`}`;
 
-  const needs = served.groups['needs-you'];
+  const needs = board?.groups['needs-you'] ?? [];
+  // GY-3593: the caretaker's newest lines that need the owner sit in the same strip.
+  const caretaker: string[] = status?.caretaker?.needsOwner ?? [];
   const goals = [...new Set(shown.flatMap(({ item }) => item.goal ? [item.goal] : []))].sort((a, b) => a.localeCompare(b));
   const progress = (goal: string) => { const all = work.filter(item => item.goal === goal && !isClosed(item)); return { shipped: all.filter(item => item.stage === 'done').length, total: all.length }; };
+  // GY-3452: shipped means live: the live commit contains it (status `live`), else the release was observed serving it.
+  const liveWaiting = typeof status?.live?.commit === 'string' && Array.isArray(status.live.waiting) ? new Set<string>(status.live.waiting) : null;
+  /** What a row's task is doing now, in plain words; a held task says what holds it. */
+  const doingNow = ({ item, group, entry }: Row): string => {
+    if (group === 'shipped') return plainStage(item, now, release, serve);
+    // GY-2963: a merge whose trial is advancing names its step and how long it has run.
+    const merging = group === 'moving' ? currentMergeStep(item, now) : null;
+    if (merging?.fresh) return `Merging: ${merging.step}, ${minutes(merging.atMs, now)}`;
+    if (group === 'blocked') return (item.blocker ? blockerSummary(item.blocker, now, item).sentence : null) ?? (stalls.has(item.id) ? `Nothing is happening: ${stalls.get(item.id)}` : plainStatus(item, now).blocking) ?? plainWords(entry?.does ?? '');
+    if (entry?.who === 'Nobody yet') return entry.does;
+    return group === 'up-next' ? 'Waiting for a builder' : group === 'backlog' ? 'Not released yet' : plainWords(entry?.does ?? '');
+  };
   const table = (list: Row[]) => <table className="work-table">
-    <thead><tr><th scope="col">State</th><th scope="col">Task</th><th scope="col">Now</th><th scope="col">Builder</th><th scope="col">PR</th><th scope="col">In state</th></tr></thead>
-    <tbody>{[...list].sort((a, b) => order[a.group] - order[b.group]).map(({ item, group, entry }) => {
-      const live = group === 'shipped' && releasedAt(item, release) !== null;
+    <thead><tr><th scope="col">State</th><th scope="col">Task</th><th scope="col">Now</th><th scope="col">Builder</th><th scope="col"><Term term="pull request" focusable={false}>PR</Term></th><th scope="col">In state</th></tr></thead>
+    <tbody>{[...list].sort((a, b) => order[a.group] - order[b.group]).map(row => {
+      const { item, group, entry } = row;
+      const live = group === 'shipped' && (liveWaiting ? !liveWaiting.has(item.key) : releasedAt(item, release) !== null);
       const state = group === 'blocked' ? 'Stuck' : group === 'needs-you' ? 'Needs you' : group === 'moving' ? stageWord[item.stage] ?? 'Moving' : group === 'up-next' ? 'Up next' : group === 'backlog' ? 'Backlog' : live ? 'Shipped' : 'Merged';
-      const doing = group === 'shipped' ? plainStage(item, now, release, serve) : group === 'blocked' && entry?.blocker ? entry.blocker.summary : plainWords(entry?.does ?? '');
+      const doing = doingNow(row);
       const since = group === 'shipped' ? mergedAt(item) : Date.parse(entry?.since ?? item.stageEnteredAt);
       return <tr key={item.id} data-row={item.key} data-stuck={group === 'blocked'} className={`task-row group-${group}`}>
         <td data-col="state">{state}</td>
@@ -86,23 +107,25 @@ export default function WorkPage({ work, board, status, query, setQuery, setSele
         <td data-col="now">{doing}</td>
         <td data-col="builder">{builder(item, now)}</td>
         <td data-col="pr">{item.candidate ? <CandidatePr repository={status?.repository} candidate={item.candidate} workKey={item.key} observation={item.observation as never}/> : '—'}</td>
-        <td data-col="time">{minutes(since, now)}</td>
+        {/* Moving and stuck rows carry the step's clock, marked overdue past the one threshold (GY-108); a head queued for its merge is never overdue for that wait. */}
+        <td data-col="time">{timedGroups.has(group) ? <StatusAge held={{ ...stepHeld(item, now, null, release), ...(entry?.queue ? { overdue: false } : {}) }}/> : minutes(since, now)}</td>
       </tr>;
     })}</tbody>
   </table>;
   const noGoal = shown.filter(({ item }) => !item.goal);
 
   return <>
-    <div className="page-heading"><div><h1>Work</h1><p className="page-fact" data-work-header>{header}</p></div>
+    <div className="page-heading"><div><h1>Work</h1><p className="page-fact" data-work-header>{board ? header : 'Reading the board…'}</p></div>
       <div className="page-actions"><input type="search" aria-label="Search work" placeholder="Search every task by title, key or PR" value={query} onChange={event => setQuery(event.target.value)}/>
         {status?.actor?.role === 'admin' && <button type="button" onClick={() => setCreating(true)}>New task</button>}</div></div>
-    {needs.length > 0 && <section className="panel needs-you-strip" aria-label="Needs you">
+    {(needs.length > 0 || caretaker.length > 0) && <section className="panel needs-you-strip" aria-label="Needs you">
       <h2>Needs you <span className="count">{needs.length}</span>{needs.length > 3 && <button type="button" className="text-button push" onClick={() => setView('needs-you')}>Open all requests →</button>}</h2>
       {needs.slice(0, 3).map(entry => <div key={entry.id} className="need" data-need={entry.key}>
         <span className="need-question" title={entry.does}>{entry.does}</span>
         <span className="muted">waiting {minutes(Date.parse(entry.since), now)}</span>
         <button type="button" onClick={() => setSelected(entry.id)}>Review request</button>
       </div>)}
+      {caretaker.length > 0 && <ul className="caretaker-lines" data-caretaker>{caretaker.map(line => <li key={line}>{line}</li>)}</ul>}
     </section>}
     <div role="group" aria-label="Filter work" className="work-filters">{workFilters.map(name => <button type="button" key={name} className={filter === name ? 'chip active' : 'chip'} aria-pressed={filter === name} data-filter={name} onClick={() => setFilter(filter === name ? null : name)}>
       {filterLabel[name]} <span className="count">{counts[name]}</span>
