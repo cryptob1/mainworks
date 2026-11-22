@@ -23,6 +23,7 @@ test(`${proof} — three refusals of any cause (excluding base-moved conflicts) 
   setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
   const store = await withDatabase('third-failure-goes-to-the-lead');
   await store.init();
+  try {
   const engine = new Engine(store, 7200, 'owner/project');
   engine.operatorAuthorizer = async (_db, _now, actor) => actor;
 
@@ -148,4 +149,7 @@ test(`${proof} — three refusals of any cause (excluding base-moved conflicts) 
   }, randomUUID());
   await cycle();
   assert.equal(launches.length, 5, 'revising requirements resumes automatic dispatch');
+  } finally {
+    await store.close();
+  }
 });
