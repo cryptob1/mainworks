@@ -7,7 +7,7 @@ import { Next, Sent, matchRoute, requestFailure, type RouteContext, type RouteMo
 import { assembleServices, authenticate, configuredActor, tailscaleTeammate, confinedLaneProducer, laneProducerScope, localRead, operatorAgentRouteGuard, operatorVisible, type ServerOptions } from './auth.js';
 import { type Credential } from './principals.js';
 import { loopStateRoutes } from './routes/loop-state.js';
-import { productBriefRoutes } from './routes/product-brief.js';
+import { homeVisitRoutes, productBriefRoutes } from './routes/product-brief.js';
 import { healthRoutes } from './routes/health.js';
 import { signinRoutes } from './routes/signin.js';
 import { operatorAgentRoutes } from './routes/operator-agents.js';
@@ -39,7 +39,7 @@ export const publicRoutes: readonly RouteModule[] = [healthRoutes, signinRoutes]
 export const apiRoutes: readonly RouteModule[] = [
   operatorAgentRoutes, teamAccessRoutes,
   { name: 'operator-agent-scope', routes: [operatorAgentRouteGuard] },
-  loopStateRoutes, agentRegistryRoutes, delegationRoutes, validationRoutes, deliveryRoutes, emblemRoutes, usageRoutes, scenarioRoutes, actionRoutes, statusRoutes, workRoutes, productBriefRoutes, masterMessageRoutes, caretakerRoutes,
+  loopStateRoutes, agentRegistryRoutes, delegationRoutes, validationRoutes, deliveryRoutes, emblemRoutes, usageRoutes, scenarioRoutes, actionRoutes, statusRoutes, workRoutes, productBriefRoutes, homeVisitRoutes, masterMessageRoutes, caretakerRoutes,
 ];
 
 async function body(req: IncomingMessage, limit = 1_000_000) {
