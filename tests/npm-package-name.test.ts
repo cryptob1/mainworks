@@ -23,7 +23,7 @@ function repositoryTexts(): string[] {
   return tracked.filter(path => textFile.test(path) && path !== self).map(path => join(root, path));
 }
 
-test('unit:tests/npm-package-name.test.ts — package.json names mainworks with the mainworks bin and the old command's shim, and publishes as @cryptob1/graphyard', () => {
+test('unit:tests/npm-package-name.test.ts — package.json names mainworks with the mainworks bin and the old command shim, and publishes as @cryptob1/graphyard', () => {
   const manifest = JSON.parse(read('package.json'));
   assert.equal(manifest.name, 'mainworks');
   assert.deepEqual(manifest.bin, { mainworks: './bin/mainworks.mjs', graphyard: './bin/graphyard.mjs' });
