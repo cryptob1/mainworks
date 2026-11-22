@@ -14,7 +14,7 @@ const stub = resolve('fixtures/herdr-terminal-stub');
 const settled = { timeout: 15_000 };
 const operator = { Authorization: 'Bearer test-human-operator', 'Content-Type': 'application/json' };
 
-/** The real control plane serving the built dashboard, with the stub herdr for the Master terminal (tests/helpers/terminal-server.ts). */
+/** The real control plane serving the built dashboard, with the stub herdr for the Lead terminal (tests/helpers/terminal-server.ts). */
 async function plane(database: string, site: string) {
   const child = fork(resolve('tests/helpers/terminal-server.ts'), [database, site], { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
     env: { ...process.env, GRAPHYARD_BUILD_SHA: '1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b', PATH: `${stub}${delimiter}${process.env.PATH}`, HERDR_STUB_LOG: join(site, 'herdr.log'), GRAPHYARD_HERDR_CONFIG_HOME: '', GRAPHYARD_HERDR_SESSION: '' } });
@@ -95,11 +95,11 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 800, height: 700 }
         expect.soft(cut, 'every row keeps its Builder and In state cells inside it').toEqual([]);
       }
 
-      await page.evaluate(() => { location.hash = 'master'; });
+      await page.evaluate(() => { location.hash = 'master/live'; });
       await expect(page.locator('.xterm-rows')).toContainText('screen of w1:master', settled);
       await page.locator('.xterm-screen').click();
       await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
-      await checkWithMenu(page, 'Master');
+      await checkWithMenu(page, 'Lead');
 
       await page.evaluate(() => { location.hash = 'workers'; });
       await expect(page.getByRole('heading', { name: 'Workers', exact: true, level: 1 })).toBeVisible(settled);

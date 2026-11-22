@@ -180,7 +180,8 @@ test('integration:producer-session-retry — a failed or expired producer sessio
     const registry = registryFixture(config.hostId, ['claude'], ['reviewer', 'producer'], 1), sessionOf = new Map<string, string>();
     const take = async (role: 'reviewer' | 'producer', work: Work, request: { id: string; group?: string }, profile: { name: string }) => {
       await selectAccount(config, role, profile, { ...registry.probe, work: work.key, group: request.group });
-      sessionOf.set(request.id, registry.sessions().at(-1)!.id);
+      // GY-3642: review and producer launches take their slots side by side, so each finds its own role's newest session.
+      sessionOf.set(request.id, registry.sessions().filter(session => session.role === role).at(-1)!.id);
     };
     const settle = async (record: any, change: object) => { Object.assign(record, change); await registry.client.end(sessionOf.get(record.requestId)!, 'settled'); };
     const effects = stubDispatch(() => [item], log, {
@@ -190,7 +191,7 @@ test('integration:producer-session-retry — a failed or expired producer sessio
     const cursor = emptyDispatchCursor(config);
     const t0 = Date.now();
     const first = await runDispatchTick(config, cursor, effects, () => t0);
-    assert.deepEqual(log, ['review:GY-69:claude-reviewer', 'producer:unit:producer-a'], 'the one producer slot takes the first group; the second waits for it');
+    assert.deepEqual([...log].sort(), ['producer:unit:producer-a', 'review:GY-69:claude-reviewer'], 'the one producer slot takes the first group; the second waits for it');
     assert.match(first.waiting.find(entry => entry.requestId === 'producer-integration')!.reason, /waits for a producer slot.*role producer is at its concurrency limit/);
     const unit = effects.producers[0];
     await settle(unit, { state: 'failed', closedAt: new Date(t0).toISOString(), resolution: 'the session finished (done) without trusted evidence for unit:autonomous-session-prompts (missing)' });

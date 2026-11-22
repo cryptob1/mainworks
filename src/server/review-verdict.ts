@@ -8,6 +8,7 @@ import { dispatchHistoryLimit, liveReviewRequest } from '../model/dispatch.js';
 import type { ControlPlaneReviewLaunch, ControlPlaneVerdict } from '../model/post-merge-review.js';
 import { reviewEvents, verdictStateOf } from '../review-post.js';
 import { blockingFindings, verdictRefusal } from '../review-cap.js';
+import { validateAssertionRulings } from '../model/changed-assertions.js';
 import { productVerdicts, type ProductReview } from '../model/product-review.js';
 import { save } from '../store.js';
 import { decisionWork } from '../store/decision-read.js';
@@ -41,7 +42,8 @@ const hex64 = z.string().regex(/^[0-9a-f]{64}$/);
 // Reviewer principal names, which may carry a bot suffix.
 const identifier = z.string().trim().min(1).max(120).regex(/^[A-Za-z0-9][A-Za-z0-9._:@/-]*(?:\[bot\])?$/);
 const instant = z.string().max(64).refine(value => Number.isFinite(Date.parse(value)), 'an ISO 8601 instant');
-export const reviewLaunchBodySchema = z.object({ reviewer: identifier, head: sha, baseTip: sha, tokenHash: hex64, expiresAt: instant, postMerge: z.boolean().default(false), product: z.boolean().default(false) }).strict();
+const changedAssertionSchema = z.object({ path: z.string().min(1).max(1000), line: z.number().int().positive(), before: z.string().max(1000), after: z.string().max(1000).optional() }).strict();
+export const reviewLaunchBodySchema = z.object({ reviewer: identifier, head: sha, baseTip: sha, tokenHash: hex64, expiresAt: instant, postMerge: z.boolean().default(false), product: z.boolean().default(false), changedAssertions: z.array(changedAssertionSchema).max(200).optional() }).strict();
 /**
  * A screenshot a product reviewer captured (GY-2989), uploaded with the verdict: the name its body's
  * `Screenshot:` line gives it and the image itself, kept by the control plane and served on the item
@@ -149,7 +151,7 @@ export async function recordReviewLaunch(services: Services, actor: Principal, i
     }
     // One launch stands per item: a relaunch replaces the earlier registration and withdraws its token.
     const expiresAt = new Date(Math.min(Date.parse(data.expiresAt), now.getTime() + launchTokenBoundMs)).toISOString();
-    const launch: ControlPlaneReviewLaunch = { id: randomUUID(), reviewer: data.reviewer, requester: actor.id, head: data.head, baseTip: data.baseTip, policyRevision: work!.policyRevision, tokenHash: data.tokenHash, at: now.toISOString(), expiresAt, postMerge: data.postMerge, ...(data.product ? { product: true } : {}), verdict: null };
+    const launch: ControlPlaneReviewLaunch = { id: randomUUID(), reviewer: data.reviewer, requester: actor.id, head: data.head, baseTip: data.baseTip, policyRevision: work!.policyRevision, tokenHash: data.tokenHash, at: now.toISOString(), expiresAt, postMerge: data.postMerge, ...(data.product ? { product: true } : {}), ...(data.changedAssertions?.length ? { changedAssertions: data.changedAssertions } : {}), verdict: null };
     work!.reviewLaunch = launch;
     await db.query('INSERT INTO events(work_id,actor,kind,payload) VALUES($1,$2,$3,$4)', [work!.id, actor.id, reviewLaunchEvent, JSON.stringify({ key: work!.key, ...launch })]);
     await save(db, work!, actor.id, `${reviewLaunchEvent}.recorded`, now, { launch: launch.id, reviewer: launch.reviewer, head: launch.head, postMerge: launch.postMerge });
@@ -226,6 +228,10 @@ export async function recordReviewVerdict(services: Services, actor: Principal, 
     // GY-3641: a code review rules on every criterion and names where a change request blocks.
     const unruled = product ? null : verdictRefusal(data.event, data.body, (work!.criteria ?? []).map(criterion => criterion.id));
     demand(!unruled, `Verdict not recorded: ${unruled}`, 422);
+    if (!product && data.event === 'APPROVE' && launch!.changedAssertions?.length) {
+      const assertionRefusal = validateAssertionRulings(data.body, launch!.changedAssertions);
+      demand(!assertionRefusal, assertionRefusal ?? '', 422);
+    }
     const productVerdict: ProductReview['verdict'] | null = product ? data.event === 'APPROVE' ? 'approved' : data.event === 'REQUEST_CHANGES' ? 'changes-requested' : data.event === 'COULD_NOT_RUN' ? 'could-not-run' : 'rejected' : null;
     // Every verdict carries the base its session judged (GY-2948 AC-2): the launch's baseTip, the
     // head's merge base with the base branch, so the verdict itself — in the ledger event, the

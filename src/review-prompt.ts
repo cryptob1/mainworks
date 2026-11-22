@@ -1,6 +1,7 @@
 import { repeatingPaths as loopRepeatingPaths, touchesRepeatingPath } from './model/repeating-paths.js';
 import { verificationMapDigest, type VerificationMap } from './verification-maps.js';
 import { declaredPostDeploy, pinnedCases, type Work } from './model.js';
+import type { ChangedAssertion } from './model/changed-assertions.js';
 export type ReviewCriterion = { id: string; text: string; proofs?: readonly string[] };
 /**
  * The shared simplicity paragraph (GY-1999): defined once here and interpolated verbatim into every
@@ -128,12 +129,26 @@ export function reviewStandards(work: Pick<Work, 'key'> & { criteria?: ReviewCri
  * request stays byte-identical whatever a session's history and memory hold; a self-review passes
  * none, and judges the diff by the shared standard alone.
  */
-export function reviewStandard(binding: { key: string; head: string; base: string }, criteria?: ReviewCriterion[], files?: readonly string[] | null, verification?: { maps: readonly VerificationMap[]; paths: readonly string[] } | null, context?: { memory?: string; round?: string; scenarioRequirements?: Work['scenarioRequirements'] } | null) {
+/**
+ * GY-3635: lists every removed or modified assertion line in existing tests and E2E cases, so
+ * the reviewer rules on each (kept meaning, or weakened) before approving. Empty when none.
+ */
+export function changedAssertionsReviewSection(assertions?: readonly ChangedAssertion[] | null): string {
+  if (!assertions?.length) return '';
+  const items = assertions
+    .map(item => `${item.path}:${item.line}: ${item.before}${item.after ? ` -> ${item.after}` : ' (removed)'}`)
+    .join('\n');
+  return `This change removes or modifies ${assertions.length} assertion line${assertions.length === 1 ? '' : 's'} in existing tests or cases:\n${items}\n`
+    + 'Before you can APPROVE, rule on each changed assertion line above on its own line as "PATH:LINE — kept meaning" or "PATH:LINE — weakened". If any assertion was weakened, post REQUEST_CHANGES with a BLOCKING finding naming it. ';
+}
+
+export function reviewStandard(binding: { key: string; head: string; base: string }, criteria?: ReviewCriterion[], files?: readonly string[] | null, verification?: { maps: readonly VerificationMap[]; paths: readonly string[] } | null, context?: { memory?: string; round?: string; scenarioRequirements?: Work['scenarioRequirements']; changedAssertions?: readonly ChangedAssertion[] } | null) {
   const standards = reviewStandards({ key: binding.key, criteria, scenarioRequirements: context?.scenarioRequirements }, binding.head, files);
   return `Read the change with: git diff ${binding.base} ${binding.head} (both commits are in this session's object store; git show --stat ${binding.head} lists its files). `
     + (context?.memory ?? '')
     + verificationMapDigest(verification?.maps, verification?.paths, 'reviewer')
     + (context?.round ?? '')
+    + changedAssertionsReviewSection(context?.changedAssertions)
     + standards.criteria + criteriaVerdictRule
     + postDeployReviewSection(criteria)
     + singleCaseReviewSection(criteria)

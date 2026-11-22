@@ -9,10 +9,10 @@ import { serveXterm } from './xterm';
 
 const settled = { timeout: 15_000 };
 
-// GY-3345: the receiving install's Master page shows a thread with another install's Master: the
+// GY-3345: the receiving install's Lead page shows a thread with another install's Lead: the
 // sender install's name, its message and this Master's reply, in order, at 1280 px and 390 px with
 // no horizontal page scroll. The real control plane serves the built dashboard.
-test('e2e:cross-install-master-messaging — the receiving install\'s Master page shows the thread with the sender\'s name, the message and the reply in order at 1280 px and 390 px', async ({ browser }) => {
+test('e2e:cross-install-master-messaging — the receiving install\'s Lead page shows the thread with the sender\'s name, the message and the reply in order at 1280 px and 390 px', async ({ browser }) => {
   test.setTimeout(120_000);
   const site = await temporaryDirectory('cross-install-messages');
   await symlink(resolve('.graphyard/browser-dist'), join(site, 'dist'));
@@ -45,7 +45,7 @@ test('e2e:cross-install-master-messaging — the receiving install\'s Master pag
       const entries = thread.getByRole('listitem');
       await expect(entries).toHaveCount(2);
       await expect(entries.nth(0)).toContainText('install-a'); await expect(entries.nth(0)).toContainText(message);
-      await expect(entries.nth(1)).toContainText('Master'); await expect(entries.nth(1)).toContainText(reply);
+      await expect(entries.nth(1)).toContainText('Lead'); await expect(entries.nth(1)).toContainText(reply);
       expect(await page.evaluate(() => document.scrollingElement!.scrollWidth <= innerWidth), `no horizontal page scroll at ${width} px`).toBe(true);
       await context.close();
     }

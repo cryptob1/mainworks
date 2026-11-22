@@ -198,10 +198,17 @@ export async function terminalUpgrade(services: Services, req: IncomingMessage, 
     if (input.type === 'upload') return void upload(String(input.name ?? 'file'), Buffer.from(String(input.data ?? ''), 'base64'));
     if (input.type !== 'input' || typeof input.data !== 'string') return;
     command({ type: 'terminal.input', text: input.data });
-    for (const char of input.data) {
-      if (char === '\r' || char === '\n') { if (typed.trim()) void record(typed); typed = ''; }
-      else if (char === '\x7f') typed = typed.slice(0, -1);
-      else if (char >= ' ') typed += char;
+    // The line a person typed, for history: bracketed-paste markers and other escape sequences
+    // frame the text, they are not it, so the accumulation keeps the words alone (GY-3602).
+    for (const part of input.data.split(/(\x1b\[[0-9;?]*[A-Za-z~])/)) {
+      if (!part) continue;
+      if (part === '\x1b[200~' || part === '\x1b[201~') continue;
+      if (part.startsWith('\x1b')) continue;
+      for (const char of part) {
+        if (char === '\r' || char === '\n') { if (typed.trim()) void record(typed); typed = ''; }
+        else if (char === '\x7f') typed = typed.slice(0, -1);
+        else if (char >= ' ') typed += char;
+      }
     }
   };
   readFrames(socket, (opcode, payload) => {
