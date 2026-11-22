@@ -84,6 +84,8 @@ export interface MergeTrialRun extends TrialRun {
     /** GY-2954: the first failing case's assertion text in the base run's TAP, bounded. */ assertion?: string };
   /** GY-2984, GY-3167: a feature or bug item's proofs that every one passed on the base tip too, with that tip: the head's proofs show nothing it changed. */
   notReproduced?: { proofs: string[]; tip: string; files: string[] };
+  /** GY-3625: the proofs that already pass on the base tip, so a batch's trial judges each head's reproduction on its own. */
+  passingOnBase?: string[];
   /**
    * GY-3267: the browser cases' kept screenshots — `after` from the candidate's run, `before` from
    * the base tip's — posted with the trial record and shown side by side on the item page.
@@ -606,14 +608,16 @@ async function reproduceOnBase(run: MergeTrialRun, input: MergeTrialInput, proof
   const onBase = await retest(tip, files, e2eProofs, 'count', input.mergeSha).catch(() => null);
   if (!onBase || onBase.run.build !== 'pass') return run;
   const passes = ({ executed, failed }: { executed: number; failed: number }) => executed > 0 && failed === 0;
-  const passing = input.proofs.every(proof => passes(onBase.proofs[proof]!))
-    && e2eProofs.every(proof => { const ran = onBase.run.e2e?.find(entry => entry.proof === proof); return baseCases.includes(`e2e/cases/${proof.slice(4)}.json`) && !!ran && passes(ran); });
   const proofs = [...input.proofs, ...e2eProofs];
+  const passingOnBase = proofs.filter(proof => proof.startsWith('e2e:')
+    ? (() => { const ran = onBase.run.e2e?.find(entry => entry.proof === proof); return baseCases.includes(`e2e/cases/${proof.slice(4)}.json`) && !!ran && passes(ran); })()
+    : passes(onBase.proofs[proof]!));
+  const passing = passingOnBase.length === proofs.length;
   // GY-3267: the base run's kept screenshots are the before side of whatever the trial already kept.
   const shots = mergeTrialShots(run.screenshots ?? [], onBase.run.e2e ?? [], 'before');
   const withBefore = shots.length ? { ...run, screenshots: shots } : run;
   const caseFiles = [...(files.length ? files : named), ...e2eProofs.map(proof => `e2e/cases/${proof.slice(4)}.json`)];
-  return passing ? { ...withBefore, notReproduced: { proofs, tip, files: caseFiles } } : withBefore;
+  return passing ? { ...withBefore, notReproduced: { proofs, tip, files: caseFiles } } : { ...withBefore, passingOnBase };
 }
 
 /**
@@ -1038,7 +1042,9 @@ async function trialBatch(ports: MergePorts, items: readonly Work[], onStep?: (i
   const together = { key: items[0]!.key, criteria: items.flatMap(item => item.criteria), type: items.some(item => item.type !== 'chore') ? items.find(item => item.type !== 'chore')!.type : items[0]!.type };
   const step = onStep ? (name: string, report?: TrialStepReport) => items.forEach((_, index) => onStep(index, name, report)) : undefined;
   const run = await ports.trial(tip, files, together, baseTip, step, undefined, items.map((item, index) => ({ key: item.key, head: merges[index]!.head })));
-  if (trialFailureReason({ run }) ?? requiredProofFailure(together, run) ?? items.map((item, index) => featureCaseFailure(item, merges[index]!.addedOrModified)).find(Boolean)) return null;
+  // A feature or bug head whose every proof already passes on the base proves nothing: the batch splits, so its own trial refuses it.
+  const notReproduced = items.some(item => { const own = [...criterionProofs(item), ...e2eProofsOf(item)]; return item.type !== 'chore' && own.length && own.every(proof => run.passingOnBase?.includes(proof)); });
+  if (notReproduced || trialFailureReason({ run }) || requiredProofFailure(together, run) || items.some((item, index) => featureCaseFailure(item, merges[index]!.addedOrModified))) return null;
   const results: HeadResult[] = [];
   for (const [index, item] of items.entries()) {
     const { head, baseTip: base, mergeSha } = merges[index]!, own = new Set([...criterionProofs(item), ...e2eProofsOf(item)]);
