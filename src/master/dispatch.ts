@@ -23,7 +23,8 @@ import type { FleetProbe } from '../fleet.js';
 import { repinPath, type CanaryOffer } from '../model/registry.js';
 import { criteriaListing, featureCaseRule, reviewStandards } from '../review-prompt.js';
 import { launcherCoordinatorRoot, preservePartialWork, prepareConfinedGitPaths, sessionConfinement } from './launch.js';
-import { defaultHeadlessExec, HeadlessConfigurationError, startHeadlessWorker, type HeadlessExec } from '../headless-session.js';
+import { continuable, defaultHeadlessExec, HeadlessConfigurationError, runSessionId, startHeadlessWorker, type HeadlessExec } from '../headless-session.js';
+import { readAttemptLaunch } from './session-resume.js';
 import { liveRun } from '../runner/registry.js';
 import { releaseOfPath, resolvedLauncher } from '../install/cli-release.js';
 import { runTranscript } from '../model/sessions.js';
@@ -183,6 +184,9 @@ export async function dispatchWork(root: string, work: Work, profile: WorkerProf
   assertNoApprovalOptOut(profile.kind ?? 'unnamed', profile.approvals);
   // A rework round's grounds are read before anything is claimed, too (GY-1569).
   const rework = appliedReworkBrief(work);
+  // GY-3632: a rework goes back to the Builder that wrote the change: the last launch's account, runtime session and worktree.
+  const builder = rework ? await lastBuilder(root, work.key) : null;
+  let continuing = builder && 'session' in builder ? builder : null, fresh = builder && 'fresh' in builder ? builder.fresh : null;
   // The account is chosen before anything is claimed: a profile whose accounts are all logged out
   // or out of quota claims nothing, and the refusal names every account it skipped and why. An
   // account whose run already failed under this dispatch is passed over, so the fallback lands on
@@ -203,8 +207,9 @@ export async function dispatchWork(root: string, work: Work, profile: WorkerProf
       throw new Error(`${describeStartFailures(startFailures, null)}; no further account of profile ${profile.name} to fall back to`, { cause: startError });
     try {
       prefer = workerPreference(work, startFailures.length);
-      selected = await selectAccount(config, 'worker', accounts && accounts.length < (profile.accounts?.length ?? 0) ? { ...profile, accounts } : profile, { ...clock, ...options.probe, work: work.key, prefer, exclude: [...options.exclude ?? [], ...startFailures.map(failure => failure.account)] });
+      selected = await selectAccount(config, 'worker', accounts && accounts.length < (profile.accounts?.length ?? 0) ? { ...profile, accounts } : profile, { ...clock, ...options.probe, work: work.key, prefer, exclude: [...options.exclude ?? [], ...startFailures.map(failure => failure.account)], ...(continuing ? { only: continuing.account } : {}) });
     } catch (error) {
+      if (continuing && error instanceof NoHealthyAccountError) { fresh = `${continuing.account} is not available: ${failureText(error).slice(0, 300)}`; continuing = null; continue; }
       if (!startFailures.length || !(error instanceof NoHealthyAccountError)) throw error;
       throw new Error(`${describeStartFailures(startFailures, null)}; no further account of profile ${profile.name} could be launched: ${failureText(error).slice(0, 300)}`, { cause: error });
     }
@@ -231,7 +236,8 @@ export async function dispatchWork(root: string, work: Work, profile: WorkerProf
       assertClaimDeadline(work.key, options.claimBy);
       result = await launchWorker(root, config, work, profile, launch, prepare, release, { probe: options.probe, settleReservation: async reason => chosen.release?.(reason), onRun: options.onRun, sandboxProbe: options.sandbox ?? (prepare === prepareWorkerLaunch ? 'host' : null), claimBy: options.claimBy, coordinatorRoot,
         renew: options.renew ?? (prepare === prepareWorkerLaunch ? renewWorkerLaunch : null), renewIntervalMs: options.renewIntervalMs, verificationMaps: options.verificationMaps ?? readVerificationMaps, rework, cycle: observedAt,
-        diagnosis: options.diagnosis ?? '', maskProbe: options.maskProbe, headless: options.headless ?? defaultHeadlessExec(), startupMs: options.startupMs, capacity: options.capacity });
+        diagnosis: options.diagnosis ?? '', maskProbe: options.maskProbe, headless: options.headless ?? defaultHeadlessExec(), startupMs: options.startupMs, capacity: options.capacity, continuing: chosen.account?.name === continuing?.account ? continuing : null });
+      fresh = result.fresh ?? (continuing && !result.resumedFrom ? `${chosen.account?.name ?? 'the chosen account'} is not ${continuing.account}` : fresh);
     } catch (error) {
       // The registry session chosen for this launch never ran on; its account is free again at once.
       await chosen.release?.(`worker launch for ${work.key} failed: ${failureText(error).slice(0, 300)}`);
@@ -244,16 +250,18 @@ export async function dispatchWork(root: string, work: Work, profile: WorkerProf
       if (offer && canary) canary.failed = failure.reason;
       await recordAccountStartFailure(config, failure.account, failure.kind, failure.reason).catch(() => {});
       startFailures.push(failure);
+      if (continuing) { fresh = `${continuing.account} failed to start: ${failure.reason}`; continuing = null; }
       continue;
     }
     // History supports status; it never grants or reserves a slot.
     const at = new Date().toISOString();
     await mkdir(resolve(root, '.graphyard/dispatch'), { recursive: true }).catch(() => {});
-    await writeFile(dispatchedFile(root, work.key), JSON.stringify({ epoch: result.epoch, at, runtime: launch.kind ?? null, account: chosen.account?.name ?? null, run: result.run }), { mode: 0o600 }).catch(() => {});
+    await writeFile(dispatchedFile(root, work.key), JSON.stringify({ epoch: result.epoch, at, runtime: launch.kind ?? null, account: chosen.account?.name ?? null, run: result.run, path: result.path,
+      ...(result.resumedFrom ? { resumedFrom: result.resumedFrom } : {}), ...(fresh ? { fresh } : {}) }), { mode: 0o600 }).catch(() => {});
     // The dispatch record names the runtime and account the session runs on, the preference
     // that ordered the accounts (GY-1772), and every account whose run failed first (GY-417).
     await writeFile(profileLaunchedFile(root, profile.name), JSON.stringify({ key: work.key, epoch: result.epoch, agentName: profile.agentName, at,
-      runtime: launch.kind ?? null, account: chosen.account?.name ?? null, prefer, ...(startFailures.length ? { failedAccounts: startFailures } : {}) }), { mode: 0o600 }).catch(() => {});
+      runtime: launch.kind ?? null, account: chosen.account?.name ?? null, prefer, ...(result.resumedFrom ? { resumedFrom: result.resumedFrom } : {}), ...(startFailures.length ? { failedAccounts: startFailures } : {}) }), { mode: 0o600 }).catch(() => {});
     // A start on the account clears its own run of consecutive start failures.
     if (chosen.account) await clearAccountStartFailures(config, chosen.account.name).catch(() => {});
     break;
@@ -261,7 +269,9 @@ export async function dispatchWork(root: string, work: Work, profile: WorkerProf
   const concurrent = concurrentOverlap(work, allWork, Date.parse(observedAt));
   // The epoch the launch claimed rides the result (GY-1791): the record the loop and every watcher
   // key by `principal:epoch` must carry the one that was claimed.
-  return { work: work.key, epoch: result.epoch, run: result.run, runtime: launched?.kind ?? null, initialHead: result.initialHead, runtimeStartedAt: result.runtimeStartedAt, canary, profile: profile.name, principal: profile.principal, agentName: profile.agentName, approvals: profile.approvals,
+  return { work: work.key, epoch: result.epoch, run: result.run, runtime: launched?.kind ?? null,
+    // GY-3632: a rework that continued its Builder's session, or why it started fresh.
+    continued: result.resumedFrom && continuing ? { from: result.resumedFrom, session: continuing.session, account: continuing.account, path: result.path } : null, fresh, initialHead: result.initialHead, runtimeStartedAt: result.runtimeStartedAt, canary, profile: profile.name, principal: profile.principal, agentName: profile.agentName, approvals: profile.approvals,
     launch: launched?.plan ?? agentLaunchPlan(profile.kind, profile.approvals, profile.agentArgs, profile.environment), ownership: 'worker launcher claimed and is supervising the agent process', harness: result.harness, dependencies: result.dependencies, sandbox: result.sandbox, mergeWriter: result.mergeWriter, pushCredential: result.pushCredential, ...(result.reclaimed.length ? { reclaimed: result.reclaimed } : {}),
     // The selection names the preference that ordered the accounts it chose from (GY-1772).
     account: selected?.account ? { environment: selected.account.name, kind: selected.account.kind, quota: selected.health?.quota ?? null, skipped: selected.skipped, prefer } : null,
@@ -329,8 +339,8 @@ export async function readProfileLaunchRecords(root: string, profiles: { name: s
 }
 
 
-interface WorkerLaunchOptions { probe?: FleetProbe; settleReservation?: (reason: string) => Promise<unknown>; onRun?: DispatchOptions['onRun']; sandboxProbe: SandboxExec | 'host' | null; claimBy?: number; coordinatorRoot?: string; renew: LeaseRenewer | null; renewIntervalMs?: number; verificationMaps: NonNullable<DispatchOptions['verificationMaps']>; rework: AppliedRework | null; cycle?: string; diagnosis: string; maskProbe?: MaskProbe; headless: HeadlessExec; startupMs?: number; capacity?: DispatchOptions['capacity'] }
-async function launchWorker(root: string, config: MasterConfig, work: Work, profile: WorkerProfile, launch: ReturnType<typeof accountLaunch>, prepare: WorkerPreparer, release: (root: string, key: string, epoch: number, profileName: string, blocker?: string) => Promise<void>, { probe, settleReservation, onRun, sandboxProbe, claimBy, coordinatorRoot, renew, renewIntervalMs, verificationMaps, rework, cycle, diagnosis, maskProbe, headless, startupMs, capacity }: WorkerLaunchOptions) {
+interface WorkerLaunchOptions { probe?: FleetProbe; settleReservation?: (reason: string) => Promise<unknown>; onRun?: DispatchOptions['onRun']; sandboxProbe: SandboxExec | 'host' | null; claimBy?: number; coordinatorRoot?: string; renew: LeaseRenewer | null; renewIntervalMs?: number; verificationMaps: NonNullable<DispatchOptions['verificationMaps']>; rework: AppliedRework | null; cycle?: string; diagnosis: string; maskProbe?: MaskProbe; headless: HeadlessExec; startupMs?: number; capacity?: DispatchOptions['capacity']; continuing?: Builder | null }
+async function launchWorker(root: string, config: MasterConfig, work: Work, profile: WorkerProfile, launch: ReturnType<typeof accountLaunch>, prepare: WorkerPreparer, release: (root: string, key: string, epoch: number, profileName: string, blocker?: string) => Promise<void>, { probe, settleReservation, onRun, sandboxProbe, claimBy, coordinatorRoot, renew, renewIntervalMs, verificationMaps, rework, cycle, diagnosis, maskProbe, headless, startupMs, capacity, continuing }: WorkerLaunchOptions) {
   const mergeWriter = 'control-plane' as const;
   // The lease is the launch's to keep alive until the supervisor's first heartbeat (GY-1287), from
   // the claim itself (GY-1373): building the worktree of a large repository on a loaded host took
@@ -390,18 +400,28 @@ async function launchWorker(root: string, config: MasterConfig, work: Work, prof
       // watch`, which heartbeats this claim under the worker's own credential and stops the runtime
       // on lease loss. The instruction is its own first request on the command line, never pasted;
       // a worker never reaches the operator's keyring, and no Herdr pane is opened for it.
-      const started = await startHeadlessWorker({ name: profile.agentName, work: work.key, subject: `${work.key}: ${work.title}`, epoch: prepared.epoch, principal: profile.principal, account: launch.account ?? null,
-        kind: launch.kind!, args: [...args, ...sessionHarness.args], contract: launch.contract, credentialMask, role: sessionHarness.role, directory: prepared.path, prompt, root, exec: headless, coordinatorRoot,
+      // GY-3632: a rework in its Builder's own worktree continues that runtime session with the reason as its next message.
+      let resume = continuing && rework && resolve(continuing.path) === resolve(prepared.path) ? continuing : null;
+      let fresh = continuing && !resume ? `the worktree moved from ${continuing.path} to ${prepared.path}` : null;
+      const start = (session: string | null) => startHeadlessWorker({ name: profile.agentName, work: work.key, subject: `${work.key}: ${work.title}`, epoch: prepared.epoch, principal: profile.principal, account: launch.account ?? null,
+        kind: launch.kind!, args: [...args, ...sessionHarness.args], contract: launch.contract, credentialMask, role: sessionHarness.role, directory: prepared.path, prompt: session ? continuedPrompt(config, work, prepared.epoch, rework!) : prompt, session, root, exec: headless, coordinatorRoot,
         environment: { GRAPHYARD_URL: config.url, GRAPHYARD_TOKEN_FILE: profile.credentialFile!, GRAPHYARD_HOST_ID: config.hostId, GRAPHYARD_HERDR_AGENT_KIND: launch.kind!, ...(process.env.XDG_RUNTIME_DIR ? { XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR } : {}), ...(process.env.DBUS_SESSION_BUS_ADDRESS ? { DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS } : {}), ...withVerificationPath(sessionHarness.environment, launch.environment) },
         supervisor: [process.execPath, config.cliPath, 'watch', work.key, String(prepared.epoch), '--'], timeoutMs: attemptCeilingMs(config.run), startupMs,
         settle: async ({ output, ok }) => { await stoppedOnLimit(output, ok).catch(() => null); await settleReservation?.(`the ${launch.kind} worker run ended`); } });
+      let started = await start(resume?.session ?? null);
+      // A continue launch that fails at once, not on its limit or login, starts fresh in the same worktree.
+      if (resume && started.ended && !started.ended.ok && !detectHeadlessExhaustion(started.ended.output, launch.kind!, Date.now(), false) && !detectLoggedOut(started.ended.output)) {
+        fresh = `the continue launch failed: ${started.ended.output.trim().slice(-300) || 'no output'}`;
+        resume = null;
+        started = await start(null);
+      }
       const run: WorkerRun = { epoch: prepared.epoch, run: started.id, runtime: launch.kind!, account: launch.account ?? null, outcome: null };
       await onRun?.(run).catch(() => {});
       if (started.ended) {
         await settleEarlyExit(started.ended).catch(async (error: unknown) => { await onRun?.({ ...run, outcome: failureText(error) }).catch(() => {}); throw error; });
         await settleReservation?.(`the ${launch.kind} worker run ${started.id} finished within its startup observation`);
       }
-      return { harness, dependencies: prepared.dependencies ?? null, sandbox, run: started.id, initialHead, runtimeStartedAt: new Date().toISOString(), epoch: prepared.epoch, reclaimed: prepared.reclaimed ?? [], mergeWriter, pushCredential: 'none' as const };
+      return { resumedFrom: resume?.epoch ?? null, fresh, path: prepared.path, harness, dependencies: prepared.dependencies ?? null, sandbox, run: started.id, initialHead, runtimeStartedAt: new Date().toISOString(), epoch: prepared.epoch, reclaimed: prepared.reclaimed ?? [], mergeWriter, pushCredential: 'none' as const };
     } catch (error) {
       await keepAlive?.stop();
       try { await release(root, work.key, prepared.epoch, profile.name, error instanceof CredentialMaskError ? error.message : error instanceof WorkerSandboxError ? environmentBlocker('sandbox write probe', error.runtime, error) : undefined); }
@@ -446,6 +466,21 @@ async function launchWorker(root: string, config: MasterConfig, work: Work, prof
     if (loggedOut) throw new HeadlessWorkerExit(`the ${launch.kind} worker exited at once: ${loggedOut}`, true, prepared.epoch);
     throw new HeadlessWorkerExit(`the ${launch.kind} worker exited at once${output.trim() ? `: ${output.trim().slice(-300)}` : ' without output'}`, false, prepared.epoch);
   }
+}
+/** GY-3632: the Builder of an item's last attempt: its account, runtime session and worktree. */
+export interface Builder { epoch: number; account: string; session: string; path: string }
+/** The last launch of `key` as a Builder to continue, or why a rework of it starts fresh. */
+export async function lastBuilder(root: string, key: string): Promise<Builder | { fresh: string }> {
+  const last = await readAttemptLaunch(root, key);
+  if (!last?.account || !last.run || !last.path) return { fresh: 'no earlier launch of this item is recorded' };
+  if (!continuable(last.runtime)) return { fresh: `the ${last.runtime ?? 'unknown'} runtime has no continue form` };
+  const session = runSessionId(root, last.run);
+  return session ? { epoch: last.epoch, account: last.account, session, path: last.path } : { fresh: 'the last session printed no session id' };
+}
+/** The continued session's next message: the rework reason first, then the new attempt to submit under. */
+export function continuedPrompt(config: Pick<MasterConfig, 'cliPath'>, work: Pick<Work, 'key'>, epoch: number, rework: AppliedRework) {
+  return `${rework.reason}\n\nYour change was sent back for rework for the reason above. Fix it in this worktree: run node ${config.cliPath} sync ${work.key}, `
+    + `then submit with node ${config.cliPath} complete ${work.key} ${epoch} --head as your last action; this is attempt ${epoch}, and the earlier attempt's number no longer holds the lease.`;
 }
 /** One headless worker run a dispatch started (GY-3259): its attempt, its durable run id, runtime and account, and how it ended when it ended at once. */
 export interface WorkerRun { epoch: number; run: string; runtime: string; account: string | null; outcome: string | null }

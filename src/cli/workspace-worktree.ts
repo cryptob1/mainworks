@@ -38,6 +38,10 @@ export async function restoreBranchWork(context: CliContext, work: any) {
     next: `The branch holds ${head.slice(0, 12)}. Submit it with complete ${work.key} ${epoch} --head.` });
 }
 
+/** GY-3632: a rework works where its branch's last attempt on this host did, so its Builder's session continues in the same worktree. */
+export const reworkWorktreePath = (work: { submission?: unknown; workspaces: { host: string; path: string; branch: string; epoch: number }[] }, branch: string, host: string) =>
+  work.submission ? [...work.workspaces].sort((a, b) => b.epoch - a.epoch).find(space => space.branch === branch && space.host === host)?.path ?? null : null;
+
 /** `worktree GY-N EPOCH [BASE]`: reserve and create a local isolated worktree. */
 export async function createWorktree(context: CliContext, work: any) {
   const { args, api, print } = context;
@@ -51,7 +55,7 @@ export async function createWorktree(context: CliContext, work: any) {
   const branch = work.submission ? work.workspaces.find((w: any) => w.epoch === work.submission.epoch)?.branch ?? work.candidate?.branch
     ?? [...work.workspaces].sort((a: any, b: any) => b.epoch - a.epoch)[0]?.branch : `graphyard/${work.key.toLowerCase()}-${epoch}`;
   if (!branch) throw new Error('Submitted workspace branch is missing');
-  const path = resolve(root, '.graphyard/worktrees', `${work.key}-${epoch}`);
+  const path = reworkWorktreePath(work, branch, context.individualHostId()) ?? resolve(root, '.graphyard/worktrees', `${work.key}-${epoch}`);
   let startPoint = args[1] ?? 'HEAD';
   if (work.submission) {
     // GY-2017: a control-plane rework starts from the head Graphyard registered at the last

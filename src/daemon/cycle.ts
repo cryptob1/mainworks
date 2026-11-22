@@ -298,6 +298,8 @@ const finishedWorktreeKeepMs = 24 * 60 * 60 * 1000;
 /** The ended attempts' worktrees on this host: no live lease and no running session holds their epoch. */
 export function endedAttemptWorktrees(work: Work[], hostId: string, now: number) {
   return work.flatMap(item => (item.workspaces ?? []).filter(space => space.host === hostId
+    // GY-3632: a rework that reused the path owns it now.
+    && !(item.workspaces ?? []).some(later => later.epoch > space.epoch && later.host === hostId && later.path === space.path)
     && !(item.lease && item.lease.epoch === space.epoch && Date.parse(item.lease.expiresAt) > now)
     && !(item.sessions ?? []).some(handle => handle.kind === 'implementation' && handle.state === 'running' && (handle.epoch ?? Number(/:(\d+)$/.exec(handle.id)?.[1])) === space.epoch))
     .map(space => ({ item, space })));

@@ -8,7 +8,8 @@ export async function run(c: Ctx) {
   activeLease(work, actor, data.epoch, now);
   demand(validBranch(data.branch), 'Only a Graphyard branch can be reserved');
   demand(!work.workspaces.some(w => w.epoch === data.epoch), 'This assignment already has a workspace');
-  demand(!all.some(w => w.workspaces.some(s => (s.branch === data.branch && (w.id !== work!.id || !work!.reworkRequested)) || s.host === data.host && pathsOverlap(s.path, data.path))), 'Branch or host/path is already reserved or overlaps a reservation; use a fresh workspace');
+  // A rework reuses its own item's branch and, since GY-3632, its worktree path.
+  demand(!all.some(w => (w.id !== work!.id || !work!.reworkRequested) && w.workspaces.some(s => s.branch === data.branch || s.host === data.host && pathsOverlap(s.path, data.path))), 'Branch or host/path is already reserved or overlaps a reservation; use a fresh workspace');
   // The linked branch is the submitted candidate's (GY-3582: the loop's resubmission records its
   // submission at an epoch no workspace stands at, keeping the blocked attempt's branch on the
   // candidate), falling back to the submission epoch's workspace.
