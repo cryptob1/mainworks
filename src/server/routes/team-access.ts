@@ -46,7 +46,7 @@ export async function publicLinkOff(pool: RouteContext['services']['engine']['st
   const report = (await pool.query(`SELECT payload FROM events WHERE ${unownedFamilySql(prefix)} AND kind = $1 ORDER BY seq DESC LIMIT 1`, [`${prefix}host`])).rows[0]?.payload as HostReport | undefined;
   if (!report || report.public) return null;
   const invited = (await pool.query('SELECT EXISTS (SELECT 1 FROM team_members) OR EXISTS (SELECT 1 FROM team_invites WHERE expires_at > $1) AS invited', [now])).rows[0]?.invited;
-  return invited ? { doing: report.doing ?? 'The loop turns Funnel on every 10 minutes.' } : null;
+  return invited ? { doing: report.doing ?? 'The loop cannot read Tailscale on this machine. Start Tailscale there.' } : null;
 }
 /** GY-3514: the one line Invite shows when its link opens only on the tailnet. */
 export const funnelOffGuidance = 'This link opens only on your tailnet: turn on Funnel for this machine in the Tailscale admin console.';
