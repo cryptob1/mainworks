@@ -7,10 +7,10 @@
 // affected selection picks for the changed files — the whole E2E catalog in place of the subset
 // only when its measured gate-run time fits half the 45-minute limit (GY-3144). A passing gate records the tip as
 // verified in .graphyard/main-gate.json; the deploy watch serves only that commit. A failing check
-// is re-run once (a pass is a filed flake; a failure of a check with an open flaky-check item is
-// recorded on that item and the batch kept, GY-3431), an affected test — or, when the whole catalog ran, a
+// is re-run once (a pass is a filed flake), except that a failure of a check with an open flaky-check item is
+// recorded on that item without a rerun and the batch kept (GY-3431, GY-3667); an affected test — or, when the whole catalog ran, a
 // catalog case no batch item binds, gate.core does not name and smoke is not (GY-3147) — that also
-// fails on the last verified commit is a filed known red, and a confirmed failure is bisected over the batch's prefixes in
+// fails on the last verified commit (all such checks probed there in one run) is a filed known red, and a confirmed failure is bisected by halving the batch's prefixes in
 // merge order (from the landing that added a failing case, GY-3409): the last item of the smallest
 // failing prefix is reverted through the serve-revert path — the case's own landing when that revert
 // does not apply — and the batch recut. When the tip without the first culprit still fails a check
@@ -372,19 +372,29 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
   // GY-3620: the rerun and the verified-commit probe bound their test files as a merge trial bounds a
   // file (trialFileTimeoutMs per `test:` check, from the trial's own `tests` step, which runs test files
   // only): a file still running then stops, and the step's checks count as failed, so a hanging file
-  // settles the step under the rules below instead of running out the whole gate. e2e cases keep their
-  // own per-step timeouts and only the gate's bound.
+  // settles the step under the rules below instead of running out the whole gate. GY-3659: a
+  // verified-commit probe's setup (checkout, install, build) shares that same per-step bound before
+  // reaching its test runner, so a hung setup stops, frees its slot and counts as a failed probe.
+  // e2e cases keep their own per-step timeouts and only the gate's bound once their runner starts.
   const run = (commit: string, runChecks: readonly string[], runFiles: readonly string[], perFile = false) => {
     const key = stepKey(commit, runChecks);
     if (key in finished) return Promise.resolve(finished[key]!); // a step the last loop finished
     const left = deadline() - ports.now();
     if (left <= 0) return Promise.reject(new GateTimeout());
     let last = ports.now(), saved = last, timer: NodeJS.Timeout | undefined, testsAt: number | null = null;
+    let setupMs = 0, reachedRunner = false, waitingSlot = false;
+    const probe = perFile && commit === verified;
     const testFiles = runChecks.filter(check => check.startsWith('test:')).length, fileBound = trialFileTimeoutMs * testFiles;
-    const onStep = perFile && testFiles ? (line: string) => { if (testsAt === null && line === 'tests') testsAt = ports.now(); } : undefined;
+    const onStep = probe || (perFile && testFiles) ? (line: string) => {
+      waitingSlot = line.startsWith('waiting ');
+      if (line === 'tests' || line.startsWith('tests:')) reachedRunner = true;
+      if (testsAt === null && testFiles && line === 'tests') testsAt = ports.now();
+    } : undefined;
     const tick = () => {
-      const now = ports.now();
-      record.inFlight = { ...record.inFlight!, seenAt: new Date(now).toISOString(), ...(ports.waiting?.() ? { waitedMs: (record.inFlight!.waitedMs ?? 0) + now - last } : {}) };
+      const now = ports.now(), delta = Math.max(0, now - last);
+      const waiting = !!ports.waiting?.();
+      record.inFlight = { ...record.inFlight!, seenAt: new Date(now).toISOString(), ...(waiting ? { waitedMs: (record.inFlight!.waitedMs ?? 0) + delta } : {}) };
+      if (probe && !reachedRunner && !waiting && !waitingSlot) setupMs += delta;
       last = now;
       if (now - saved >= 30_000) { saved = now; void ports.checkpoint?.(); }
     };
@@ -395,6 +405,7 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
     return Promise.race([ports.run(commit, runChecks, runFiles, left, stop.signal, onStep), new Promise<string[]>((resolve, reject) => { timer = setInterval(() => {
       tick();
       if (ports.now() > deadline()) { reject(new GateTimeout()); stop.abort(new GateTimeout()); }
+      else if (probe && !reachedRunner && setupMs > trialFileTimeoutMs) { resolve([...runChecks]); stop.abort(new Error(`the verified-commit probe setup ran past the ${minutes(trialFileTimeoutMs)}-minute per-step timeout`)); }
       else if (testsAt !== null && ports.now() - testsAt > fileBound) { resolve([...runChecks]); stop.abort(new Error(`a test file ran past the ${minutes(trialFileTimeoutMs)}-minute per-file timeout`)); }
     }, 1000); })])
       .then(async failed => {
@@ -413,38 +424,50 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
     if (!mainCached) measure(ports.now() - mainStarted);
     let confirmed: string[] = [], flakes: string[] = [];
     const knownRed: string[] = [], knownFlaky: { check: string; item: string }[] = [];
+    // GY-3431: a failure of a check with an open flaky-check item is recorded on that item and the batch is kept.
+    const noteFlaky = (check: string, flakyItem: string) => {
+      knownFlaky.push({ check, item: flakyItem });
+      const { [flakyItem]: earlier = [], ...others } = record.flaky ?? {};
+      record.flaky = Object.fromEntries([...Object.entries(others), [flakyItem, [...earlier, { check, tip, at: at() }].slice(-filingNotesWindow)]].slice(-10));
+    };
+    // GY-3667: every failing check that needs the verified commit's verdict runs there in one run, and each verdict is recorded.
+    const probe = async (probed: readonly string[]) => {
+      const needed = probed.filter(check => record.results[verified]?.[check] === undefined);
+      if (!needed.length) return;
+      await step(`probing ${needed.join(', ')} on the verified commit`);
+      const failsThere = await run(verified, needed, files, true);
+      for (const check of needed) (record.results[verified] ??= {})[check] = failsThere.includes(check);
+      await ports.checkpoint?.(); // the probe's verdicts are saved to the record before anything is filed (GY-3147)
+    };
     if (failed.length) {
-      // A failing check runs once more before anything is blamed: a pass is a flake, filed for an owner.
-      await step(`re-running ${failed.join(', ')}`);
+      // GY-3667: a check with an open flaky-check item is exempted at once, without a rerun.
+      const rerun: string[] = [];
+      for (const check of failed) {
+        const flakyItem = ports.flaky?.(check);
+        if (flakyItem) noteFlaky(check, flakyItem); else rerun.push(check);
+      }
+      // Any other failing check runs once more before anything is blamed: a pass is a flake, filed for an owner.
+      if (rerun.length) await step(`re-running ${rerun.join(', ')}`);
       // GY-3620: test files rerun in a step of their own, so a hanging one never takes other checks' results with it.
-      const testChecks = failed.filter(check => check.startsWith('test:')), others = failed.filter(check => !check.startsWith('test:'));
+      const testChecks = rerun.filter(check => check.startsWith('test:')), others = rerun.filter(check => !check.startsWith('test:'));
       const again = [...others.length ? await run(tip, others, files) : [], ...testChecks.length ? await run(tip, testChecks, files, true) : []];
-      flakes = failed.filter(check => !again.includes(check));
+      flakes = rerun.filter(check => !again.includes(check));
       for (const check of flakes) await fileFailure(ports, record, at(), { key: `flake:${check}`, title: `Flaky check on main: ${check}`, description: `The batch gate's check ${check} failed on ${tip.slice(0, 12)} and passed on its re-run. Make it deterministic.` });
       // The e2e cases that must pass outright (GY-3147): smoke, whatever gate.core names, and every
       // case a batch item binds. A whole-catalog case outside them was red before the batch whenever
       // it is red on the verified commit too, so it is a filed known red, never a revert.
       let outright: Set<string> | null = null;
       const mustPass = async () => outright ??= new Set(['e2e:smoke', ...(await ports.core(tip)).map(id => `e2e:${id}`), ...boundCaseIds(record, landings).map(id => `e2e:${id}`)]);
+      // A known red is a check that also fails on the last verified commit: an affected test, or a
+      // catalog-only e2e case — one no batch item binds, gate.core does not name and smoke is not.
+      const probed: string[] = [];
+      for (const check of again)
+        if (check === 'e2e:graphyard-feature-map' || check.startsWith('test:') || (check.startsWith('e2e:') && !(await mustPass()).has(check))) probed.push(check);
+      await probe(probed);
       for (const check of again) {
-        // GY-3431: a check with an open flaky-check item is that item's to fix: the failure is recorded on it and the batch is kept.
-        const flakyItem = ports.flaky?.(check);
-        if (flakyItem) {
-          knownFlaky.push({ check, item: flakyItem });
-          const { [flakyItem]: earlier = [], ...others } = record.flaky ?? {};
-          record.flaky = Object.fromEntries([...Object.entries(others), [flakyItem, [...earlier, { check, tip, at: at() }].slice(-filingNotesWindow)]].slice(-10));
-          continue;
-        }
-        // A known red is a check that also fails on the last verified commit: an affected test, or a
-        // catalog-only e2e case — one no batch item binds, gate.core does not name and smoke is not.
-        const catalogOnly = check.startsWith('e2e:') && !(await mustPass()).has(check);
         const featureMap = check === 'e2e:graphyard-feature-map';
-        if (featureMap || check.startsWith('test:') || catalogOnly) {
-          let failsThere = record.results[verified]?.[check];
-          if (failsThere === undefined) { await step(`probing ${check} on the verified commit`); failsThere = (await run(verified, [check], files, true)).includes(check); }
-          (record.results[verified] ??= {})[check] = failsThere;
-          await ports.checkpoint?.(); // the probe's verdict is saved to the record before anything is filed (GY-3147)
-          if (failsThere) {
+        if (probed.includes(check)) {
+          if (record.results[verified]![check]) {
             if (featureMap) return hold(`Master fault: ${record.repository}'s real application feature check already fails on the verified commit; repair its serve and feature map before verifying this batch.`);
             knownRed.push(check);
             await fileFailure(ports, record, at(), { key: `known-red:${check}`, title: `Known red on main: ${check}`, description: `${check.startsWith('test:') ? `The test ${check.slice(5)}` : `The E2E case ${check.slice(4)}`} fails on the verified commit ${verified.slice(0, 12)} and on ${tip.slice(0, 12)}. The batch gate exempts it until it is fixed.` });
@@ -471,26 +494,15 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
       }
       return { outcome: 'verified', tip, checks, flakes, knownRed, ...(knownFlaky.length ? { knownFlaky } : {}) };
     };
-    const verifiedPasses = async (check: string): Promise<boolean> => {
-      let failsThere = record.results[verified]?.[check];
-      if (failsThere === undefined) {
-        await step(`probing ${check} on the verified commit`);
-        failsThere = (await run(verified, [check], files, true)).includes(check);
-        (record.results[verified] ??= {})[check] = failsThere;
-        await ports.checkpoint?.();
-      }
-      return !failsThere;
-    };
+    const verifiedPasses = async (check: string): Promise<boolean> => { await probe([check]); return !record.results[verified]![check]; };
     const exemptFlaky = async (check: string, description: string) => {
       await fileFailure(ports, record, at(), { key: `flake:${check}`, title: `Flaky check on main: ${check}`, description });
       const flakyItem = record.filed?.[`flake:${check}`]?.item;
-      if (flakyItem) {
-        knownFlaky.push({ check, item: flakyItem });
-        const { [flakyItem]: earlier = [], ...others } = record.flaky ?? {};
-        record.flaky = Object.fromEntries([...Object.entries(others), [flakyItem, [...earlier, { check, tip, at: at() }].slice(-filingNotesWindow)]].slice(-10));
-      }
+      if (flakyItem) noteFlaky(check, flakyItem);
     };
     if (!confirmed.length) return verify();
+    // A recut that still fails asks the verified commit about every confirmed check at once.
+    if (record.attempt.recuts >= 1) await probe(confirmed);
     const pending = [...confirmed];
     while (pending.length) {
       const check = pending.shift()!;
@@ -521,16 +533,17 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
       const bisect = async (candidates: readonly (ServeLanding & { item: Work })[], priorReverts: readonly (ServeLanding & { item: Work })[], tipCommit: string, testLast: boolean) => {
         if (!candidates.length) return null;
         await step(`bisecting ${check} over the batch's prefixes`);
-        const limit = testLast ? candidates.length : candidates.length - 1;
-        for (let i = 0; i < limit; i++) {
-          const landing = candidates[i]!;
-          const isLast = i === candidates.length - 1;
-          const commit = isLast ? tipCommit
+        // GY-3667: the prefixes are halved, so the smallest failing one is found in at most ceil(log2 N)+1
+        // runs. `hi` is the smallest prefix known to fail: the whole batch, unless `testLast` asks to run it too.
+        let lo = 0, hi = testLast ? candidates.length : candidates.length - 1;
+        while (lo < hi) {
+          const middle = (lo + hi - 1) >> 1, landing = candidates[middle]!;
+          const commit = middle === candidates.length - 1 ? tipCommit
             : priorReverts.length && ports.without ? (await ports.without(landing.sha, priorReverts)) ?? landing.sha
             : landing.sha;
-          if ((await run(commit, [check], files)).includes(check)) return landing;
+          if ((await run(commit, [check], files)).includes(check)) hi = middle; else lo = middle + 1;
         }
-        return testLast ? null : candidates[candidates.length - 1]!;
+        return candidates[lo] ?? null;
       };
       const pendingReverts: (ServeLanding & { item: Work })[] = [];
       let remaining = searched;

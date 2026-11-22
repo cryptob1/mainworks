@@ -2,12 +2,15 @@
 import { execFile } from 'node:child_process';
 import { demand, type Observation } from '../model.js';
 import type {} from '../model/gates.js'; // Observation.source
+import { graphyardChecksChanged } from '../model/risk-class.js';
 import { parseLocalScopeDiff } from '../sync.js';
 
 /** What one git invocation returned; a non-zero exit is an answer here, never a throw. */
 export interface GitResult { status: number | null; stdout: string; stderr: string }
 /** Runs `git` with `args` in the checkout whose object store holds the submitted heads; `timeoutMs` kills a run that outlasts it. */
 export type GitRunner = (args: readonly string[], options?: { timeoutMs?: number }) => Promise<GitResult>;
+/** The install's checkout: the directory the control plane reads submitted heads from, where nothing is pushed and a head is reached by its commit (GY-3599). */
+export const checkoutRoot = () => process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd();
 
 /** The default runner: `git -C root`, the coordinator checkout the control plane serves from. */
 export function gitRunnerFor(root: string): GitRunner {
@@ -88,6 +91,16 @@ export async function observeHead(git: GitRunner, input: HeadObservationInput): 
       file.baseSha = blobs.get(file.path) ?? null;
       if (file.previousPath) file.previousBaseSha = blobs.get(file.previousPath) ?? null;
     }
+  }
+  const configFile = scopeFiles.find(file => file.path === 'graphyard.json' || file.previousPath === 'graphyard.json');
+  if (configFile) {
+    const show = async (rev: string, path: string) => {
+      const res = await git(['show', `${rev}:${path}`]);
+      return res.status === 0 ? res.stdout : null;
+    };
+    const before = configFile.status === 'added' ? null : await show(mergeBase, configFile.previousPath ?? configFile.path);
+    const after = configFile.status === 'removed' ? null : await show(head, configFile.path);
+    configFile.checksChanged = graphyardChecksChanged(before, after);
   }
   return {
     source: 'control-plane',

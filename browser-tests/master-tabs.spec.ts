@@ -28,7 +28,7 @@ async function assertNoDocumentScroll(page: Page, context: string) {
   expect(metrics.scrollX, `${context}: scrollX === 0`).toBe(0);
 }
 
-test('e2e:master-tabs — Master page has Terminal, History and Messages tabs in a keyboard-navigable URL-backed tablist and never scrolls the document at 1280x800 and 390x844', async ({ browser }) => {
+test('e2e:master-tabs — the Lead page has Conversation, Live session, History and Messages tabs in a keyboard-navigable URL-backed tablist and never scrolls the document at 1280x800 and 390x844', async ({ browser }) => {
   test.setTimeout(180_000);
   const site = await temporaryDirectory('master-tabs');
   await symlink(resolve('.graphyard/browser-dist'), join(site, 'dist'));
@@ -96,7 +96,7 @@ test('e2e:master-tabs — Master page has Terminal, History and Messages tabs in
     });
     const { code } = await post('test-human-operator', 'sign-in-links', {});
     await page.goto(`${url}/#sign-in=${code}&master`);
-    await expect(page.getByRole('heading', { name: 'Master', exact: true, level: 1 })).toBeVisible(settled);
+    await expect(page.getByRole('heading', { name: 'Lead', exact: true, level: 1 })).toBeVisible(settled);
     if (hash !== '#master') {
       await page.goto(`${url}/${hash}`);
     }
@@ -104,39 +104,48 @@ test('e2e:master-tabs — Master page has Terminal, History and Messages tabs in
   };
 
   try {
-    // 1. With no messages, Messages tab is hidden; Terminal is selected by default.
+    // 1. With no messages, Messages tab is hidden; Conversation is selected by default.
     {
       const { context, page } = await openPage({ width: 1280, height: 800 });
       try {
         const tablist = page.getByRole('tablist');
-        await expect(tablist).toBeVisible(settled);
-        const terminalTab = tablist.getByRole('tab', { name: 'Terminal' });
+        const conversationTab = tablist.getByRole('tab', { name: 'Conversation' });
+        const liveTab = tablist.getByRole('tab', { name: 'Live session' });
         const historyTab = tablist.getByRole('tab', { name: 'History' });
         const messagesTab = tablist.getByRole('tab', { name: 'Messages' });
-        await expect(terminalTab).toHaveAttribute('aria-selected', 'true');
+        await expect(conversationTab).toHaveAttribute('aria-selected', 'true');
+        await expect(liveTab).toHaveAttribute('aria-selected', 'false');
         await expect(historyTab).toHaveAttribute('aria-selected', 'false');
         await expect(messagesTab).toHaveCount(0);
 
-        // Terminal tab shows status line and terminal; history list is not shown.
-        await expect(page.getByRole('status')).toContainText('You can type here', settled);
-        await expect(page.locator('.xterm-rows')).toContainText('screen of w1:master', settled);
-        await expect(page.locator('.typed-input')).toHaveCount(0);
+        // Conversation tab shows the status line, the message box and no terminal screen:
+        // the terminal stays mounted behind the tabs (its stream feeds the status line) but is hidden.
+        await expect(page.locator('.lead-status')).toBeVisible(settled);
+        await expect(page.locator('#lead-message')).toBeVisible(settled);
+        await expect(page.locator('.terminal-host')).toBeHidden();
 
         // Keyboard navigation moves through the tablist.
-        await terminalTab.focus();
+        await conversationTab.focus();
+        await page.keyboard.press('ArrowRight');
+        await expect(liveTab).toHaveAttribute('aria-selected', 'true');
+        await expect(liveTab).toBeFocused();
+        await expect(page.locator('.xterm-rows')).toContainText('screen of w1:master', settled);
+        await expect(page.locator('.lead-conversation')).toHaveCount(0);
+        // The pane takes focus on the Live session tab; the tablist is focused again to walk on.
+        await liveTab.focus();
         await page.keyboard.press('ArrowRight');
         await expect(historyTab).toHaveAttribute('aria-selected', 'true');
         await expect(historyTab).toBeFocused();
         await expect(page.locator('.typed-input')).toBeVisible(settled);
         await expect(page.locator('.typed-input')).toContainText('seeded command 300');
-        await expect(page.locator('.terminal-host')).toHaveCount(0);
+        await expect(page.locator('.terminal-host')).toBeHidden();
 
         // URL keeps the selected tab across reload.
         expect(page.url()).toContain('#master/history');
         await page.reload();
         await expect(page.getByRole('tab', { name: 'History' })).toHaveAttribute('aria-selected', 'true', settled);
         await expect(page.locator('.typed-input')).toContainText('seeded command 300', settled);
-        await expect(page.locator('.terminal-host')).toHaveCount(0);
+        await expect(page.locator('.terminal-host')).toBeHidden();
 
         // Shared link opens the same tab directly.
         const shared = await context.newPage();
@@ -146,17 +155,17 @@ test('e2e:master-tabs — Master page has Terminal, History and Messages tabs in
         await expect(shared.locator('.typed-input')).toContainText('seeded command 300', settled);
         await shared.close();
 
-        // Keyboard ArrowLeft returns to Terminal.
+        // Keyboard ArrowLeft returns to Live session.
         await page.getByRole('tab', { name: 'History' }).focus();
         await page.keyboard.press('ArrowLeft');
-        await expect(page.getByRole('tab', { name: 'Terminal' })).toHaveAttribute('aria-selected', 'true');
+        await expect(page.getByRole('tab', { name: 'Live session' })).toHaveAttribute('aria-selected', 'true');
         await expect(page.locator('.terminal-host')).toBeVisible(settled);
       } finally {
         await context.close();
       }
     }
 
-    // 2. Seed messages so Messages tab appears, then verify all three tabs at 1280x800 and 390x844.
+    // 2. Seed messages so Messages tab appears, then verify all four tabs at 1280x800 and 390x844.
     const msgText = 'Cross-install message for tabs verification.';
     await post('test-install-a', 'master/messages', { text: msgText, thread: 'thread-tabs-1' });
 
@@ -165,16 +174,35 @@ test('e2e:master-tabs — Master page has Terminal, History and Messages tabs in
       const { context, page } = await openPage(viewport);
       try {
         const tablist = page.getByRole('tablist');
-        const terminalTab = tablist.getByRole('tab', { name: 'Terminal' });
+        const conversationTab = tablist.getByRole('tab', { name: 'Conversation' });
+        const liveTab = tablist.getByRole('tab', { name: 'Live session' });
         const historyTab = tablist.getByRole('tab', { name: 'History' });
         const messagesTab = tablist.getByRole('tab', { name: 'Messages' });
 
-        await expect(terminalTab).toHaveAttribute('aria-selected', 'true', settled);
+        await expect(conversationTab).toHaveAttribute('aria-selected', 'true', settled);
         await expect(messagesTab).toBeVisible(settled);
-        await expect(page.locator('.xterm-rows')).toContainText('screen of w1:master', settled);
+        await expect(page.locator('.lead-feed')).toBeVisible(settled);
 
-        // Terminal tab: no document scroll, >=500 lines of scrollback, wheel scrolls only terminal.
-        await assertNoDocumentScroll(page, `${label} Terminal`);
+        // Conversation tab: no document scroll; the feed scrolls inside its panel.
+        await assertNoDocumentScroll(page, `${label} Conversation`);
+        const feedMetrics = await page.locator('.lead-feed').evaluate(el => ({
+          scrollHeight: el.scrollHeight,
+          clientHeight: el.clientHeight,
+          scrollTop: el.scrollTop,
+        }));
+        expect(feedMetrics.scrollHeight, `${label} Conversation panel overflows internally`).toBeGreaterThanOrEqual(feedMetrics.clientHeight);
+        const feedBox = (await page.locator('.lead-feed').boundingBox())!;
+        await page.mouse.move(feedBox.x + feedBox.width / 2, feedBox.y + feedBox.height / 2);
+        await page.mouse.wheel(0, 600);
+        expect(await page.evaluate(() => window.scrollY), `${label} Conversation wheel leaves window.scrollY at 0`).toBe(0);
+        await assertNoDocumentScroll(page, `${label} Conversation after wheel`);
+
+        // Live session tab: the terminal, no document scroll, >=500 lines of scrollback, wheel scrolls only terminal.
+        await liveTab.click();
+        await expect(liveTab).toHaveAttribute('aria-selected', 'true');
+        await expect(page.locator('.xterm-rows')).toContainText('screen of w1:master', settled);
+        await expect(page.locator('.lead-feed')).toHaveCount(0);
+        await assertNoDocumentScroll(page, `${label} Live session`);
         const scrollbackLen = await page.evaluate(() => (window as any).testTerminal.buffer.active.length);
         expect(scrollbackLen).toBeGreaterThanOrEqual(500);
         const beforeViewportY = await page.evaluate(() => (window as any).testTerminal.buffer.active.viewportY);
@@ -182,15 +210,15 @@ test('e2e:master-tabs — Master page has Terminal, History and Messages tabs in
         await page.mouse.move(termBox.x + termBox.width / 2, termBox.y + termBox.height / 2);
         await page.mouse.wheel(0, -600);
         await expect.poll(() => page.evaluate(() => (window as any).testTerminal.buffer.active.viewportY)).toBeLessThan(beforeViewportY);
-        expect(await page.evaluate(() => window.scrollY), `${label} Terminal wheel leaves window.scrollY at 0`).toBe(0);
-        await assertNoDocumentScroll(page, `${label} Terminal after wheel`);
+        expect(await page.evaluate(() => window.scrollY), `${label} Live session wheel leaves window.scrollY at 0`).toBe(0);
+        await assertNoDocumentScroll(page, `${label} Live session after wheel`);
 
         // History tab: no document scroll, 300 seeded lines scroll inside its panel while window.scrollY stays 0.
         await historyTab.click();
         await expect(historyTab).toHaveAttribute('aria-selected', 'true');
         await expect(page.locator('.typed-input')).toContainText('seeded command 300', settled);
         await expect(page.locator('.typed-input')).toContainText('seeded command 001', settled);
-        await expect(page.locator('.terminal-host')).toHaveCount(0);
+        await expect(page.locator('.terminal-host')).toBeHidden();
         await assertNoDocumentScroll(page, `${label} History`);
 
         const panelMetrics = await page.locator('.typed-input').evaluate(el => ({
@@ -210,7 +238,7 @@ test('e2e:master-tabs — Master page has Terminal, History and Messages tabs in
         await messagesTab.click();
         await expect(messagesTab).toHaveAttribute('aria-selected', 'true');
         await expect(page.getByRole('article', { name: 'Thread with install-a' })).toContainText(msgText, settled);
-        await expect(page.locator('.terminal-host')).toHaveCount(0);
+        await expect(page.locator('.terminal-host')).toBeHidden();
         await expect(page.locator('.typed-input')).toHaveCount(0);
         await assertNoDocumentScroll(page, `${label} Messages`);
       } finally {

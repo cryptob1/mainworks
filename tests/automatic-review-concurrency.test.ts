@@ -55,11 +55,12 @@ test('unit:automatic-reviews-run-in-parallel — with run.reviewerProfile set an
     const tick = await runDispatchTick(config, emptyDispatchCursor(config), host.effects(() => items, () => config), Date.now);
     assert.deepEqual(tick.refused, [], 'no launch is refused');
     assert.deepEqual(tick.waiting.filter(entry => entry.kind === 'review'), [], 'no request waits on the namespace or the limit');
-    assert.deepEqual(tick.launched.filter(entry => entry.kind === 'review').map(entry => [entry.work, entry.profile]), [['GY-501', 'claude-reviewer'], ['GY-502', 'claude-reviewer'], ['GY-503', 'claude-reviewer']]);
+    // GY-3642: the launches run side by side, so they may finish in any order.
+    assert.deepEqual(tick.launched.filter(entry => entry.kind === 'review').map(entry => [entry.work, entry.profile]).sort(), [['GY-501', 'claude-reviewer'], ['GY-502', 'claude-reviewer'], ['GY-503', 'claude-reviewer']]);
     const pending = (await readReviewLedger(host.root)).reviews.filter(record => record.state === 'pending');
     assert.equal(pending.length, 3);
-    assert.deepEqual(pending.map(record => record.agentName), items.map(item => `claude-reviewer-${item.autoDispatch!.review!.id.slice(0, 8)}`), 'each session is named for its request');
-    assert.deepEqual(host.agents.map(agent => agent.name), pending.map(record => record.agentName), 'all three run at once');
+    assert.deepEqual(pending.map(record => record.agentName).sort(), items.map(item => `claude-reviewer-${item.autoDispatch!.review!.id.slice(0, 8)}`).sort(), 'each session is named for its request');
+    assert.deepEqual(host.agents.map(agent => agent.name).sort(), pending.map(record => record.agentName).sort(), 'all three run at once');
 
     // Three launches answering three requests at the same moment, outside the dispatcher's turns.
     const parallel = await fleet({ name: 'claude-reviewer', agentName: 'claude-reviewer', kind: 'claude' }, 'claude-reviewer');

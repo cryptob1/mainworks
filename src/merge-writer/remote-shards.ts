@@ -28,17 +28,19 @@ export const underHeatLimit = (reading: HostReading) => !reading.away && (readin
  * GY-3419, GY-3522, GY-3612: the words a test file names when it needs what a remote shard lacks —
  * the Docker socket, nested confinement/pinned benchmarks (bwrap, unshare, landlock, hard-math), the
  * package registry (npm exec, or the npm cache a trial fixture installs through, npm_config_cache,
- * GY-3604; a shard has no network) or /var/tmp (read-only there, GY-3609).
+ * GY-3604; a shard has no network), /var/tmp (read-only there, GY-3609) or durable storage for a
+ * managed worktree root (worktreeRoot, GY-3648: a shard container's writable temporary storage is
+ * its tmpfs /tmp, HOME included, and Graphyard refuses a managed root on memory-backed storage).
  * Database tests start the shared warm Postgres cluster inside each remote shard container, and
  * browser tests use the Chromium shipped in the trial image. Servers, sockets and requests on
  * loopback work on a host, so their words do not keep a file local.
  */
-export const localOnlyTestPattern = /docker|bwrap|unshare|landlock|hard-math|npm exec|\/var\/tmp|npm_config_cache/i;
+export const localOnlyTestPattern = /docker|bwrap|unshare|landlock|hard-math|npm exec|\/var\/tmp|npm_config_cache|worktreeRoot/i;
 /** Whether a test file's text may run on a remote shard: it names none of the local-only words. */
 export const remoteableTestFile = (text: string) => !localOnlyTestPattern.test(text);
 
-/** GY-3612: a test file that drives a browser — a Playwright spec under browser-tests/, or a file naming playwright or chromium. */
-export const browserTestPattern = /playwright|chromium/i;
+/** GY-3612, GY-3656: a test file that drives a browser — a Playwright spec under browser-tests/, or a file naming playwright, chromium or projectCaseSuite. */
+export const browserTestPattern = /playwright|chromium|projectCaseSuite/i;
 export const isBrowserTestFile = (file: string, text: string) =>
   /^browser-tests\/.*\.spec\.[cm]?[jt]sx?$/i.test(file) || browserTestPattern.test(text);
 

@@ -5,6 +5,7 @@ import type { ReviewCriterion } from './review-prompt.js';
 export type { ReviewCriterion } from './review-prompt.js';
 import { reviewStandard, reviewStandards } from './review-prompt.js';
 import { postDeployReviewSection, singleCaseReviewSection, criteriaVerdictRule } from './review-prompt.js';
+import { extractChangedAssertions, type ChangedAssertion } from './model/changed-assertions.js';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -54,7 +55,7 @@ import { LauncherUnavailableError } from './master/config.js';
 import { resolveRepositoryPolicy } from './model-boundary/repository-policy.js';
 import { type E2eServe, policySections } from './model/repository-policy.js';
 import { servingReport } from './deploy-watch.js';
-import { commandApplication, serveHead } from './merge-writer/serve-head.js';
+import { startReviewServe, stopReviewServe } from './review-serve.js';
 import { freePort } from './serve-app.js';
 import { runEnvironment } from './runner/pi.js';
 import { browserInstallCommand, browserToolName, provisionBrowserTool } from './browser-tool.js';
@@ -114,6 +115,8 @@ export const reviewRecordSchema = z.object({
   resolution: z.string().min(1).max(900).optional(),
   /** The session directory under the managed worktree root; removed when the session resolves. */
   checkout: z.string().min(1).max(1200).optional(),
+  /** GY-3662: the detached review-serve directory, stopped when the review session ends. */
+  serve: z.string().min(1).max(1200).optional(),
   /** Why the checkout could not be removed at settlement. */
   checkoutFailure: z.string().min(1).max(500).optional(),
   /**
@@ -607,7 +610,9 @@ export interface ControlPlanePrompt { head: string; baseTip: string; postMerge?:
   /** GY-3331: this install serves no app and declares no serve command, so no walkthrough is required or owed. */
   noApp?: boolean;
   /** A headless session's answer (headlessReviewAnswer), in place of the `review post` instructions: the launcher posts it. */
-  answer?: string }
+  answer?: string;
+  /** GY-3635: removed or modified assertion lines in existing tests/cases for the reviewer to rule on. */
+  changedAssertions?: readonly ChangedAssertion[] }
 function reviewReadSection(cliPath: string, head: string) {
   return `Read snapshot paths: git show ${head}:PATH; surrounding code: rg, cat. node ${cliPath} --help lists commands; node ${cliPath} guide review is supported and needs no worker or coordinator credential. No graphyard show command. `;
 }
@@ -725,7 +730,9 @@ export function headlessVerdictPost(answer: z.infer<typeof headlessVerdictSchema
 /** What posting and settling a headless review's answer needs (GY-3113): read back by a restarted loop, so paths and names only, never a credential. */
 export type HeadlessReviewContext = { id: string; sha: string; reviewer: string; kind: string; cliPath: string; GH_CONFIG_DIR: string; GRAPHYARD_REVIEW: string; GRAPHYARD_URL: string;
   /** GY-3590: a product review's screenshot directory, in its checkout, which its sandbox and this launcher both see. */
-  screenshots?: string };
+  screenshots?: string;
+  /** GY-3662: the detached review-serve directory, stopped when the review session ends. */
+  serve?: string };
 /** Posts a headless answer through review post's own route, under the launch binding its session directory holds. */
 export function postHeadlessReview(root: string, context: HeadlessReviewContext, output: string, run: ChildRun = defaultChildRun) {
   const environment = { GH_CONFIG_DIR: context.GH_CONFIG_DIR, GRAPHYARD_REVIEW: context.GRAPHYARD_REVIEW, GRAPHYARD_URL: context.GRAPHYARD_URL };
@@ -735,15 +742,19 @@ export function postHeadlessReview(root: string, context: HeadlessReviewContext,
  * The posted answer is the record's verdict, which the next reconcile settles; a run with no
  * accepted answer (`failure`) settles as a session that finished without one, and the request relaunches.
  */
-export function settleHeadlessReview(root: string, context: HeadlessReviewContext, outcome: Awaited<ReturnType<typeof postReview>> | string, dependencies: { run?: ChildRun; now?: () => Date } = {}) {
+export async function settleHeadlessReview(root: string, context: HeadlessReviewContext, outcome: Awaited<ReturnType<typeof postReview>> | string, dependencies: { run?: ChildRun; now?: () => Date } = {}) {
   const now = dependencies.now ?? (() => new Date());
-  return updateReviewLedger(root, async ledger => {
-    const entry = ledger.reviews.find(candidate => candidate.id === context.id);
-    if (entry?.state !== 'pending' || entry.verdict) return;
-    if (typeof outcome !== 'string') { if (outcome.reviewId !== null) entry.verdict = { state: verdictStateOf(outcome.event), reviewer: context.reviewer, reviewId: outcome.reviewId, submittedAt: now().toISOString() }; return; }
-    await closeReviewSession(root, entry, { run: dependencies.run, now }, { state: 'failed', force: true,
-      resolution: `the reviewer session finished (headless ${context.kind}: ${outcome}) without posting a verdict on ${context.sha.slice(0, 12)}`.slice(0, 900) });
-  });
+  try {
+    return await updateReviewLedger(root, async ledger => {
+      const entry = ledger.reviews.find(candidate => candidate.id === context.id);
+      if (entry?.state !== 'pending' || entry.verdict) return;
+      if (typeof outcome !== 'string') { if (outcome.reviewId !== null) entry.verdict = { state: verdictStateOf(outcome.event), reviewer: context.reviewer, reviewId: outcome.reviewId, submittedAt: now().toISOString() }; return; }
+      await closeReviewSession(root, entry, { run: dependencies.run, now }, { state: 'failed', force: true,
+        resolution: `the reviewer session finished (headless ${context.kind}: ${outcome}) without posting a verdict on ${context.sha.slice(0, 12)}`.slice(0, 900) });
+    });
+  } finally {
+    if (context.serve) await stopReviewServe(context.serve);
+  }
 }
 /** A restarted loop's adoption of a headless review run (GY-3113): the same post and settlement as its launch. */
 export const headlessReviewAdopter = (root: string): HeadlessAdopter => session => {
@@ -776,7 +787,7 @@ function controlPlaneReviewPrompt(config: Pick<MasterConfig, 'repository'> & Par
     : '';
   return `You are the independent Graphyard reviewer for ${config.repository}. ${subject}`
     + scope
-    + reviewStandard({ key: binding.key, head: plane.head, base: plane.baseTip }, criteria, files, verification, { memory: memorySection || '', round: reviewRoundSection(plane.head, history), scenarioRequirements })
+    + reviewStandard({ key: binding.key, head: plane.head, base: plane.baseTip }, criteria, files, verification, { memory: memorySection || '', round: reviewRoundSection(plane.head, history), scenarioRequirements, changedAssertions: plane.changedAssertions })
     + reviewReadSection(config.cliPath ?? launcherPath, plane.head)
     + `Classify findings by node ${config.cliPath ?? launcherPath} guide review. `
     + outcome
@@ -1070,6 +1081,11 @@ export async function launchReview(root: string, work: Work, profileName: string
       const discard = () => removeSessionCheckout(root, dirname(checkout.directory), checkout.directory).catch(() => {});
       const minted = { expiresAt: new Date(now().getTime() + 3_600_000).toISOString() };
       try { await mkdir(sessionDirectory, { recursive: true, mode: 0o700 }); } catch (error) { await discard(); throw error; }
+      // GY-3635: extract removed/modified assertion lines in existing tests and E2E cases from the diff
+      // so both the reviewer's request and the verdict guard enforce a per-line ruling before APPROVE.
+      const changedAssertions = product ? [] : await Promise.resolve()
+        .then(() => (dependencies.run ?? defaultChildRun)('git', ['-C', root, 'diff', '--no-color', '--no-ext-diff', binding.baseSha, binding.sha]))
+        .then(raw => extractChangedAssertions(String(raw)).slice(0, 200), () => [] as ChangedAssertion[]);
       // The launch's own binding, from that same read, beside the credential (GY-1492): review post
       // checks the verdict against it. A launch that cannot write it starts nothing and keeps no credential.
       try {
@@ -1077,13 +1093,14 @@ export async function launchReview(root: string, work: Work, profileName: string
           mode: 'control-plane' as const, head: binding.sha, baseTip: binding.baseSha, verdictToken: verdictToken!,
             // A control-plane re-review (GY-1988): the head it deltas from, and the paths its earlier findings named, so review post can judge a BLOCKING: line against the hunks changed since that head.
             ...(!postMerge && reservation.record.reviewRound?.previousHead ? { previousHead: reservation.record.reviewRound.previousHead,
-              ...(earlierBindingPaths(reservation.record.reviewRound.earlierFindings).length ? { earlierPaths: earlierBindingPaths(reservation.record.reviewRound.earlierFindings) } : {}) } : {}) });
+              ...(earlierBindingPaths(reservation.record.reviewRound.earlierFindings).length ? { earlierPaths: earlierBindingPaths(reservation.record.reviewRound.earlierFindings) } : {}) } : {}),
+            ...(changedAssertions.length ? { changedAssertions } : {}) });
       } catch (error) { await rm(sessionDirectory, { recursive: true, force: true }); await discard(); throw error; }
       // The control plane registers the launch before the session starts (GY-1525): the reviewer
       // principal, head, base tip and token hash. A launch it refuses starts nothing.
       let registered: { launch: string } | null = null;
       {
-        try { registered = await (dependencies.registerLaunch ?? registerControlPlaneLaunch(config))(work, { reviewer: reviewerIdentity, head: binding.sha, baseTip: binding.baseSha, tokenHash: verdictTokenHash!, expiresAt: minted.expiresAt, postMerge: !!postMerge, ...(product ? { product: true } : {}) }); }
+        try { registered = await (dependencies.registerLaunch ?? registerControlPlaneLaunch(config))(work, { reviewer: reviewerIdentity, head: binding.sha, baseTip: binding.baseSha, tokenHash: verdictTokenHash!, expiresAt: minted.expiresAt, postMerge: !!postMerge, ...(product ? { product: true } : {}), ...(changedAssertions.length ? { changedAssertions } : {}) }); }
         catch (error) { await rm(sessionDirectory, { recursive: true, force: true }); await discard(); throw error; }
       }
       const writable = await sessionWritable(root, config, checkout.directory);
@@ -1096,8 +1113,8 @@ export async function launchReview(root: string, work: Work, profileName: string
       const credentialMask = credentialMaskFor(config, { credentialFile: null, runtimeHomes: runtimeLoginHomes(launch.environment, launch.contract?.homeVariable, launch.kind) });
       const delivery: RequestDelivery = 'request';
       let answered: Promise<Awaited<ReturnType<typeof postReview>>> | null = null, headlessContext: HeadlessReviewContext | null = null;
-      /** GY-3331: the head itself, served for a product review on an install that serves nothing else, until its session ends. */
-      let serving: { url: string; close: () => Promise<void> } | null = null, noApp = false;
+      /** GY-3331 / GY-3662: the head itself, served detached for a product review until its session ends. */
+      let serving: { url: string; directory: string; close: () => Promise<void> } | null = null, noApp = false;
       /** The session the run is on: a headless run moves off a logged-out account (GY-3218). */
       const on = { current: selected };
       try {
@@ -1152,19 +1169,19 @@ export async function launchReview(root: string, work: Work, profileName: string
                   catch (error: any) { throw new Error(`${build.join(' ')} failed in the review checkout of ${binding.sha.slice(0, 12)}: ${`${error.stdout ?? ''}${error.stderr ?? ''}`.trim().slice(-1500) || error.message}`); }
                 }
                 if (await serveHonoursPort(checkout.worktree, declared.command)) {
-                  // GY-3608: a serve command that honours GRAPHYARD_E2E_SERVE_PORT serves each product review on its own free port so reviews run in parallel.
+                  // GY-3608 / GY-3662: a serve command that honours GRAPHYARD_E2E_SERVE_PORT serves each product review on its own free port in its own detached unit.
                   const port = await freePort();
                   const target = new URL(declared.url);
                   target.port = String(port);
-                  const served = serveHead(checkout.worktree, commandApplication({ ...declared, url: target.href }), { sha: binding.sha, env: runEnvironment(process.env, { [servePortVariable]: String(port) }), budgetMs: (declared.readySeconds + 60) * 1000, scratch: join(checkout.directory, '.graphyard', 'scratch'), log: () => {} });
-                  try { serving = { url: await served.ready, close: () => served.close().catch(() => {}) }; }
-                  catch (error) { await served.close().catch(() => {}); throw error; }
+                  const served = await startReviewServe({ root, id, worktree: checkout.worktree, serve: { ...declared, url: target.href }, env: runEnvironment(process.env, { [servePortVariable]: String(port) }) });
+                  serving = { url: served.url, directory: served.directory, close: () => stopReviewServe(served.directory) };
                 } else {
-                  // GY-3580: a review whose head serves on the address another review's head is serving waits its turn; the address frees when that session ends.
+                  // GY-3580 / GY-3662: a review whose head serves on the address another review's head is serving waits its turn; the address frees when that session ends.
                   const release = await serveTurn(declared.url);
-                  const served = serveHead(checkout.worktree, commandApplication(declared), { sha: binding.sha, env: runEnvironment(process.env), budgetMs: (declared.readySeconds + 60) * 1000, scratch: join(checkout.directory, '.graphyard', 'scratch'), log: () => {} });
-                  try { serving = { url: await served.ready, close: () => served.close().catch(() => {}).finally(release) }; }
-                  catch (error) { await served.close().catch(() => {}); release(); throw error; }
+                  try {
+                    const served = await startReviewServe({ root, id, worktree: checkout.worktree, serve: declared, env: runEnvironment(process.env) });
+                    serving = { url: served.url, directory: served.directory, close: () => stopReviewServe(served.directory).finally(release) };
+                  } catch (error) { release(); throw error; }
                 }
               } else noApp = true;
             }
@@ -1172,12 +1189,13 @@ export async function launchReview(root: string, work: Work, profileName: string
         }
         // What posting and settling a headless answer needs, which a restarted loop reads back from the run directory (GY-3113).
         headlessContext = { id, sha: binding.sha, reviewer: reviewerIdentity, kind: launch.kind!, cliPath: config.cliPath ?? launcherPath,
-          GH_CONFIG_DIR: sessionDirectory, GRAPHYARD_REVIEW: `${binding.key}@${binding.sha}`, GRAPHYARD_URL: config.url };
+          GH_CONFIG_DIR: sessionDirectory, GRAPHYARD_REVIEW: `${binding.key}@${binding.sha}`, GRAPHYARD_URL: config.url,
+          ...(serving ? { serve: serving.directory } : {}) };
         // GY-3590: a sandboxed runtime keeps its own /tmp and home; its screenshots go in the checkout directory it may write, which this launcher reads.
         if (product) await mkdir(headlessContext.screenshots = join(checkout.directory, 'screenshots'), { recursive: true });
         const memory = await readProjectMemory(root).catch(() => null);
         const maps = await (dependencies.verificationMaps ?? readVerificationMaps)(root, config.baseBranch).catch(() => []);
-        const request = (answer?: string) => reviewPrompt(config, binding, checkout, undefined, reservation.record.reviewInputs!.criteria, reservation.record.reviewRound, work.observation?.candidate.sha === binding.sha ? work.observation.files : null, null, memory, { maps, paths: [...new Set([work.description, ...work.criteria.map(criterion => criterion.text)].flatMap(namedPaths))] }, { head: binding.sha, baseTip: binding.baseSha, ...(postMerge ? { postMerge: { mergeSha: postMerge.mergeSha } } : {}), ...(product ? { product: true, trialEvidence: productTrialEvidence(work, binding.sha), ...(work.preview?.state === 'running' ? { previewUrl: `${config.url}${work.preview.path}/` } : {}), ...(serving ? { servedUrl: serving.url } : {}), ...(noApp ? { noApp: true } : {}) } : {}), ...(answer ? { answer } : {}) }, reservation.record.reviewInputs?.scenarioRequirements);
+        const request = (answer?: string) => reviewPrompt(config, binding, checkout, undefined, reservation.record.reviewInputs!.criteria, reservation.record.reviewRound, work.observation?.candidate.sha === binding.sha ? work.observation.files : null, null, memory, { maps, paths: [...new Set([work.description, ...work.criteria.map(criterion => criterion.text)].flatMap(namedPaths))] }, { head: binding.sha, baseTip: binding.baseSha, ...(postMerge ? { postMerge: { mergeSha: postMerge.mergeSha } } : {}), ...(changedAssertions.length ? { changedAssertions } : {}), ...(product ? { product: true, trialEvidence: productTrialEvidence(work, binding.sha), ...(work.preview?.state === 'running' ? { previewUrl: `${config.url}${work.preview.path}/` } : {}), ...(serving ? { servedUrl: serving.url } : {}), ...(noApp ? { noApp: true } : {}) } : {}), ...(answer ? { answer } : {}) }, reservation.record.reviewInputs?.scenarioRequirements);
         {
           // GY-3218: a run whose agent says its account is not logged in holds it and runs on the role's next account, under this same launch.
           const moveAccount = moveOffLoggedOutAccount(config, profile, work.key, on, dependencies.probe, async next => {
@@ -1215,12 +1233,13 @@ export async function launchReview(root: string, work: Work, profileName: string
           const index = ledger.reviews.findIndex(entry => entry.id === id);
           const { launching: _launching, ...reserved } = index >= 0 ? ledger.reviews[index] : reservation.record;
           // A headless run holds its request from its first instant: there is nothing to acknowledge or re-prompt.
-          const settled: ReviewRecord = reviewRecordSchema.parse({ ...reserved, pane: null, tokenExpiresAt: minted.expiresAt, delivery, ...(registrySessionOf(on.current) ? { session: registrySessionOf(on.current) } : {}), checkout: checkout.directory, criteriaOnly: true, ...(registered ? { launch: registered.launch } : {}), acknowledgedAt: reserved.acknowledgedAt ?? now().toISOString() });
+          const settled: ReviewRecord = reviewRecordSchema.parse({ ...reserved, pane: null, tokenExpiresAt: minted.expiresAt, delivery, ...(registrySessionOf(on.current) ? { session: registrySessionOf(on.current) } : {}), checkout: checkout.directory, ...(serving ? { serve: serving.directory } : {}), criteriaOnly: true, ...(registered ? { launch: registered.launch } : {}), acknowledgedAt: reserved.acknowledgedAt ?? now().toISOString() });
           if (index >= 0) ledger.reviews[index] = settled; else ledger.reviews.push(settled);
           return settled;
         });
       } catch (error) {
         liveRun(agentName)?.run.cancel('its ledger record could not be written');
+        await serving?.close();
         await on.current.release?.('the review ledger could not be written');
         await rm(sessionDirectory, { recursive: true, force: true }); await discard(); throw error;
       }
@@ -1239,7 +1258,7 @@ export async function launchReview(root: string, work: Work, profileName: string
 }
 
 /** What a control-plane launch registers with the control plane (server/review-verdict.ts `reviewLaunchBodySchema`). */
-export interface ControlPlaneLaunchInput { reviewer: string; head: string; baseTip: string; tokenHash: string; expiresAt: string; postMerge: boolean; product?: boolean }
+export interface ControlPlaneLaunchInput { reviewer: string; head: string; baseTip: string; tokenHash: string; expiresAt: string; postMerge: boolean; product?: boolean; changedAssertions?: ChangedAssertion[] }
 /** The paths the earlier round's findings named (GY-1988), de-duplicated and bounded, for the session's binding. */
 function earlierBindingPaths(findings: readonly string[] | undefined): string[] {
   return [...new Set((findings ?? []).map(finding => findingLocation(finding)?.path).filter((path): path is string => !!path))].slice(0, 10);
@@ -1410,6 +1429,7 @@ async function closeReviewSession(root: string, record: ReviewRecord, dependenci
   let closeFailure: string | undefined, paneGone = false;
   // A headless run still going decides nothing further either: it is stopped, as a pane is closed.
   if (!record.pane) liveRun(record.agentName)?.run.cancel(options.resolution ?? `the review session settled ${options.state}`);
+  if (record.serve) await stopReviewServe(record.serve);
   // A pane that is already gone is the state the close wanted (GY-137): it settles the record,
   // named on its resolution, rather than holding the request pending as a failure for good.
   try { if (record.pane) await closeHerdrPane(record.pane, dependencies.run); }

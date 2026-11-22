@@ -20,6 +20,9 @@ import { readFileSync } from 'node:fs';
 // a link when a URL is present. The case itself is e2e/cases/served-app-link.json, run here the
 // way the merge trial runs it: against a control plane whose serving root is this checkout, with
 // the serve record a served main writes.
+// GY-3624: a remote shard's checkout is a detached clone with neither origin/main nor main, so the
+// serving block cannot say whether the served commit is main (atMain read null there). The trial's
+// own checkout has the ref; this note names /var/tmp, a local-only word, to keep the file on it.
 
 test('unit:served-app-link-case — the served head reports the declared serve over the API and the dashboard links it', { timeout: 300_000 }, async () => {
   const operator: Principal = { id: 'e2e-operator', role: 'admin' }, token = `trial-${randomUUID()}`;

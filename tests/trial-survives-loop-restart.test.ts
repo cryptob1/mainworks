@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 import { defaultChildRun } from '../src/child-runner.js';
-import { trialMerge } from '../src/merge-writer/trial.js';
+import { trialAffordableFiles, trialMerge } from '../src/merge-writer/trial.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3159: a merge trial in progress when the loop restarts onto a new release reaches its own
@@ -99,7 +99,7 @@ class World {
       trial: () => run.watch(), detach: () => {}, cancel: () => { run.stopped = true; world.runs.delete(run.spec.key); } });
     return {
       ...ports,
-      parallel: 2, cores: 8,
+      parallel: 2, cores: 8, memory: async () => null,
       launchTrialRun: spec => { const run = new Run(spec, `/runs/${spec.key}-${spec.head.slice(0, 8)}`); world.runs.set(spec.key, run); return handle(run); },
       ...(options.adopt ? { adoptTrialRun: async (ref: { key: string; head: string; mergeSha: string; directory: string }) => {
         const run = world.runs.get(ref.key);
@@ -122,6 +122,13 @@ function loop(world: World, state: DaemonState, adopt: boolean, clock: number) {
 
 /** Waits until `what` holds, for the flight's own microtasks to reach it. */
 const waitFor = async (what: () => boolean, ms = 5_000) => { for (let waited = 0; !what() && waited < ms; waited += 5) await new Promise(resolve => setTimeout(resolve, 5)); };
+
+// GY-3614: the merge writer caps its trials by the host's free memory unless its reads name the host,
+// so on a loaded gate host the cap fell to one trial and the wait for both heads' runs timed out.
+test('unit:trial-survives-loop-restart-pinned — the restart scenario names its own host memory, so a host short of memory never caps it to one trial', async () => {
+  const reads = new World(2).ports();
+  assert.equal(await trialAffordableFiles(reads.memory), null, 'the reads take no memory reading of the host running the test, so only parallel and cores cap the trials');
+});
 
 test('unit:trial-survives-loop-restart — a trial in progress when the loop restarts onto a new release is adopted by the next loop and reaches its own verdict: the passing head merges on its one trial, and the failing head is refused for its own failure — neither is settled as refused merely because the loop restarted', { timeout: 60_000 }, async () => {
   const world = new World(2);

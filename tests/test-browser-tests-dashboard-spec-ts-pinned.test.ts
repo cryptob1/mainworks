@@ -16,5 +16,5 @@ test('unit:test-browser-tests-dashboard-spec-ts-pinned — the connection-loss t
     assert.ok(body.includes(`${change}; await nextPoll(page);\n  await expect(`), `${change} is followed by the next poll`);
   }
   const waits = body.match(/\{ timeout: \d+ \}|settled\)/g) ?? [];
-  assert.deepEqual(waits, ['settled)', 'settled)', 'settled)', 'settled)'], 'every connection wait allows the settled time');
+  assert.ok(waits.length >= 4 && waits.every(wait => wait === 'settled)'), 'every connection wait allows the settled time');
 });

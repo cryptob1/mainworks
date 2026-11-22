@@ -1,0 +1,15 @@
+{
+  "id": "gate-settles-fast",
+  "title": "A batch gate with several failing checks settles fast",
+  "description": "Runs the loop's own gate ports on real git over eight landings with three failing checks: two with open flaky items are exempted without a rerun, the third is bisected by halving the prefixes, its culprit is reverted, and the recut verifies, well inside the 45-minute limit (GY-3667).",
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "a gate with two known-flaky checks and one broken check reverts the culprit and settles",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:gate-settles-fast tests/gate-settles-fast.test.ts",
+      "timeoutSeconds": 180
+    }
+  ]
+}
