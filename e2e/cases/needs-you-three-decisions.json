@@ -1,7 +1,7 @@
 {
   "id": "needs-you-three-decisions",
   "title": "Needs you shows only the owner's three decisions; the blocker and the review escalation stay with the Master",
-  "description": "Owner direction 2026-11-15 (GY-3394): Needs you lists only goals and priorities, money and accounts, and credentials for people. With an ordinary blocker, a review escalation, an account login request and a goal question open at once, Needs you carries exactly the account and goal entries — the human-only list names only the two parks, and the board groups the blocker and the review escalation under Blocked, never Needs you — and the Master page shows the other two. On the base tip the two 40-minute-old blockers reach Needs you instead and the Master page names neither, so the case fails there.",
+  "description": "Owner direction 2026-11-15 (GY-3394): Needs you lists only goals and priorities, money and accounts, and credentials for people. With an ordinary blocker, a review escalation, an account login request and a goal question open at once, Needs you carries exactly the account and goal entries — the human-only list names only the two parks, and the board groups the blocker and the review escalation under Blocked, never Needs you — and the Lead page shows the other two. On the base tip the two 40-minute-old blockers reach Needs you instead and the Lead page names neither, so the case fails there.",
   "tags": [
     "api",
     "dashboard",
@@ -131,7 +131,7 @@
     },
     {
       "kind": "browser",
-      "name": "open the Master page",
+      "name": "open the Lead page",
       "action": "click",
       "role": "button",
       "text": "Master",
@@ -139,14 +139,14 @@
     },
     {
       "kind": "browser",
-      "name": "the Master page shows the ordinary blocker",
+      "name": "the Lead page shows the ordinary blocker",
       "action": "expectText",
       "text": "GY-EOBLOCK Export fails on the staging database",
       "exact": false
     },
     {
       "kind": "browser",
-      "name": "the Master page shows the review escalation",
+      "name": "the Lead page shows the review escalation",
       "action": "expectText",
       "text": "GY-EREVIEW Review of the export change will not start",
       "exact": false

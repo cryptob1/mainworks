@@ -43,11 +43,11 @@ test('e2e:master-page-terminal — the operator types into the master pane live;
     expect(await handshake(url)).toBe(401);
     expect(await handshake(url, 'not-a-token')).toBe(401);
 
-    // The operator signs in from a link straight to the Master page and sees the master's screen.
+    // The operator signs in from a link straight to the Lead's live session and sees the master's screen.
     const { code } = await (await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string };
     const operator = await browser.newPage(); await serveXterm(operator);
-    await operator.goto(`${url}/#sign-in=${code}&master`);
-    await expect(operator.getByRole('heading', { name: 'Master', exact: true })).toBeVisible(settled);
+    await operator.goto(`${url}/#sign-in=${code}&master/live`);
+    await expect(operator.getByRole('heading', { name: 'Lead', exact: true })).toBeVisible(settled);
     await expect(rows(operator)).toContainText('screen of w1:master', settled);
     await expect(operator.getByRole('status')).toContainText('You can type here', settled);
     // The master is at work: the terminal carries the scanning line (GY-3272), and the pane stays interactive.

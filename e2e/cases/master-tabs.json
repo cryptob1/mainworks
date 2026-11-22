@@ -1,14 +1,19 @@
 {
   "id": "master-tabs",
-  "title": "Master page has Terminal, History and Messages tabs and never scrolls the page document",
-  "description": "A real browser against the served dashboard with a stub herdr master pane (with >=500 lines of scrollback), 300 seeded typed-input history lines and cross-install messages: Terminal is selected by default showing only the status line and terminal; History and Messages are tabs in a keyboard-navigable tablist kept in the URL hash (Messages hidden when empty); reload and shared links open the same tab; at 1280x800 and 390x844 on every tab document scrollHeight equals clientHeight and scrollWidth equals clientWidth; wheel scrolling the terminal moves only the terminal while window.scrollY stays 0, and wheel scrolling History scrolls inside its panel while window.scrollY stays 0.",
-  "tags": ["dashboard", "master"],
+  "title": "The Lead page has Conversation, Live session, History and Messages tabs and never scrolls the page document",
+  "description": "A real browser against the served dashboard with a stub herdr Lead pane (with >=500 lines of scrollback), 300 seeded typed-input history lines and cross-install messages: Conversation is selected by default showing the status line, the message box and no terminal screen; Live session, History and Messages are tabs in a keyboard-navigable tablist kept in the URL hash (Messages hidden when empty); reload and shared links open the same tab; at 1280x800 and 390x844 on every tab document scrollHeight equals clientHeight and scrollWidth equals clientWidth; wheel scrolling the terminal moves only the terminal while window.scrollY stays 0, and wheel scrolling History or the conversation feed scrolls inside its panel while window.scrollY stays 0.",
+  "tags": [
+    "dashboard",
+    "master"
+  ],
   "target": "any",
   "required": false,
-  "steps": [{
-    "kind": "command",
-    "name": "Verify Master page tabs, URL persistence, keyboard navigation and zero document scroll at 1280x800 and 390x844",
-    "run": "npm run test:browser -- browser-tests/master-tabs.spec.ts",
-    "timeoutSeconds": 300
-  }]
+  "steps": [
+    {
+      "kind": "command",
+      "name": "Verify Lead page tabs, URL persistence, keyboard navigation and zero document scroll at 1280x800 and 390x844",
+      "run": "npm run test:browser -- browser-tests/master-tabs.spec.ts",
+      "timeoutSeconds": 300
+    }
+  ]
 }

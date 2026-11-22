@@ -46,7 +46,7 @@ async function fixture(browser: Browser, phone = false) {
       .observe(document, { subtree: true, attributes: true, attributeFilter: ['data-terminal'] });
   });
   const { code } = await (await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string };
-  await page.goto(`${url}/#sign-in=${code}&master`);
+  await page.goto(`${url}/#sign-in=${code}&master/live`);
   const calls = async () => (await readFile(join(site, 'herdr.log'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
   const inputs = async () => (await calls()).filter(entry => entry.command?.type === 'terminal.input').map(entry => entry.command.text);
   await expect(page.locator('.xterm-rows')).toContainText('screen of w1:master', settled);
@@ -123,10 +123,10 @@ test('e2e:master-page-ux — history, fitting, native input, clipboard, reconnec
     await expect(page.getByRole('status')).toContainText('Working · second-account');
     await expect(page.locator('.terminal-session')).toHaveAttribute('title', 'codex · w1:replacement');
     f.current.master.pane = null; f.current.master.agentName = ''; await f.save();
-    await expect(page.getByRole('status')).toContainText('Master is restarting…');
+    await expect(page.getByRole('status')).toContainText('Lead is restarting…');
     f.child.send('drop-terminals');
     await expect(page.locator('.live-terminal')).toHaveAttribute('data-terminal', 'control');
-    await expect(page.getByRole('status')).toContainText('Master is restarting…');
+    await expect(page.getByRole('status')).toContainText('Lead is restarting…');
     await expect(page.locator('.terminal-session')).toHaveAttribute('title', 'codex · No pane');
     f.current.master.pane = 'w1:returned'; f.current.master.agentName = 'master'; await f.save();
     await expect(page.locator('.xterm-rows')).toContainText('screen of w1:returned');

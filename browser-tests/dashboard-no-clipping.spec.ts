@@ -14,7 +14,7 @@ const stub = resolve('fixtures/herdr-terminal-stub');
 const settled = { timeout: 15_000 };
 const operator = { Authorization: 'Bearer test-human-operator', 'Content-Type': 'application/json' };
 
-/** The real control plane serving the built dashboard, with the stub herdr for the Master terminal (tests/helpers/terminal-server.ts). */
+/** The real control plane serving the built dashboard, with the stub herdr for the Lead terminal (tests/helpers/terminal-server.ts). */
 async function plane(database: string, site: string) {
   const child = fork(resolve('tests/helpers/terminal-server.ts'), [database, site], { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
     env: { ...process.env, GRAPHYARD_BUILD_SHA: '1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b', PATH: `${stub}${delimiter}${process.env.PATH}`, HERDR_STUB_LOG: join(site, 'herdr.log'), GRAPHYARD_HERDR_CONFIG_HOME: '', GRAPHYARD_HERDR_SESSION: '' } });
@@ -65,8 +65,8 @@ async function check(page: Page, where: string) {
   expect.soft(read.scrollX, `${where}: the page does not scroll sideways`).toBe(0);
   expect.soft(read.first.left, `${where}: the first sidebar label starts inside the window`).toBeGreaterThanOrEqual(0);
   expect.soft(read.first.text, `${where}: the first sidebar label reads in full`).toBe('Work');
-  expect.soft(read.master.left, `${where}: the Master label starts inside the window`).toBeGreaterThanOrEqual(0);
-  expect.soft(read.master.text, `${where}: the Master label reads in full`).toBe('Master');
+  expect.soft(read.master.left, `${where}: the Lead label starts inside the window`).toBeGreaterThanOrEqual(0);
+  expect.soft(read.master.text, `${where}: the Lead label reads in full`).toBe('Lead');
   expect.soft(read.label, `${where}: the version shows`).toBe(true);
   expect.soft(read.inFoot, `${where}: the version sits in the sidebar foot`).toBe(true);
   if (width > 650) expect.soft(read.insideSidebar, `${where}: the version sits inside the sidebar`).toBe(true);
@@ -112,7 +112,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 800, height: 700 }
       await expect(page.locator('.xterm-rows')).toContainText('screen of w1:master', settled);
       await page.locator('.xterm-screen').click();
       await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
-      await checkWithMenu(page, 'Master');
+      await checkWithMenu(page, 'Lead');
 
       await page.evaluate(() => { location.hash = 'workers'; });
       await expect(page.getByRole('heading', { name: 'Workers', exact: true, level: 1 })).toBeVisible(settled);

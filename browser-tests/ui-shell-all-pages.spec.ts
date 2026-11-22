@@ -36,7 +36,7 @@ function shell(page: Page) {
     return {
       titles: titles.length, titleText: titles[0]?.textContent?.trim() ?? '', titleInHeading: !!titles[0]?.closest('.page-heading'), title: style(titles[0] ?? null),
       fact: fact?.textContent?.trim() ?? '', firstScreen: { title: onFirstScreen(titles[0] ?? null), fact: onFirstScreen(fact) },
-      // The Master page's content is its terminal, which fills the page (GY-3308).
+      // The Lead page's content is its conversation and terminal (GY-3602).
       cards: document.querySelectorAll('main .panel, main table.sessions-table, main .live-terminal').length,
       sections: [...new Set([...document.querySelectorAll('main .panel > h2, main .panel > summary')].map(style))],
       strays: [...document.querySelectorAll('main section > h2, main article > h2')].filter(h2 => !h2.parentElement!.matches('.panel, .modal')).map(h2 => h2.textContent),

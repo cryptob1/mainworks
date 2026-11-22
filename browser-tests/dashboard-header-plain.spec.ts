@@ -88,7 +88,7 @@ for (const width of [1280, 390]) {
       await expect(page.locator('.sidebar .signed-in')).toHaveText('Avery · Owner');
       await expect(page.locator('.sidebar [aria-label="Delivery"]')).toHaveCount(0);
 
-      for (const [label, heading] of [['Work', 'Work'], ['Master', 'Master'], ['Settings', 'Agents']] as const) {
+      for (const [label, heading] of [['Work', 'Work'], ['Lead', 'Lead'], ['Settings', 'Agents']] as const) {
         await go(page, label);
         await expect(page.getByRole('heading', { name: heading, exact: true, level: 1 })).toBeVisible();
         const text = await chrome(page);

@@ -1,7 +1,7 @@
 {
   "id": "blocker-escalates",
   "title": "A worker blocker becomes attention at once, prompts the master, and stays with the Master however long it waits",
-  "description": "GY-3280: on a fixture install, a worker blocker on an item becomes an attention line in master status within one cycle naming the item, the blocker and how long it has waited, and delivers a prompt to the master session naming both. GY-3394: the blocker is the Master's however long it stands — 40 minutes unanswered raises nothing on Needs you. The command step proves the loop-side behaviour on the cycle fixture; the seed, HTTP and browser steps prove the served fixture's dashboard: both the aged and the fresh blocker stay in the board's Blocked group, the human-only list carries neither, the Master page shows the aged one, and the operator's unblock clears it and returns the item to waiting for a worker.",
+  "description": "GY-3280: on a fixture install, a worker blocker on an item becomes an attention line in master status within one cycle naming the item, the blocker and how long it has waited, and delivers a prompt to the master session naming both. GY-3394: the blocker is the Master's however long it stands — 40 minutes unanswered raises nothing on Needs you. The command step proves the loop-side behaviour on the cycle fixture; the seed, HTTP and browser steps prove the served fixture's dashboard: both the aged and the fresh blocker stay in the board's Blocked group, the human-only list carries neither, the Lead page shows the aged one, and the operator's unblock clears it and returns the item to waiting for a worker.",
   "tags": [
     "api",
     "dashboard",
@@ -107,7 +107,7 @@
     },
     {
       "kind": "browser",
-      "name": "open the Master page",
+      "name": "open the Lead page",
       "action": "click",
       "role": "button",
       "text": "Master",

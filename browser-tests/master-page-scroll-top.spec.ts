@@ -27,7 +27,7 @@ const onlyTerminalScrolls = (page: Page) => page.evaluate(() => {
 });
 
 /**
- * The Master page against the real control plane, with the host-side herdr stub holding more
+ * The Lead page against the real control plane, with the host-side herdr stub holding more
  * history than one screen and its TUI running on the alternate screen: exactly the report (GY-3308).
  */
 async function fixture(browser: Browser, width: 1280 | 390) {
@@ -60,7 +60,7 @@ async function fixture(browser: Browser, width: 1280 | 390) {
     } });
   });
   const { code } = await (await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string };
-  await page.goto(`${url}/#sign-in=${code}&master`);
+  await page.goto(`${url}/#sign-in=${code}&master/live`);
   await expect(page.locator('.xterm-rows')).toContainText('master TUI on w1:master', settled);
   return { page, stop: async () => {
     await context.close(); stopping.abort();

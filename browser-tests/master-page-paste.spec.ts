@@ -32,7 +32,7 @@ test('e2e:master-page-paste — Ctrl+V text arrives as one bracketed paste, a PN
   try {
     const { code } = await (await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string };
     const operator = await browser.newPage(); await serveXterm(operator);
-    await operator.goto(`${url}/#sign-in=${code}&master`);
+    await operator.goto(`${url}/#sign-in=${code}&master/live`);
     await expect(operator.getByRole('status')).toContainText('You can type here', settled);
     await operator.locator('.terminal-host').click();
 
@@ -55,7 +55,7 @@ test('e2e:master-page-paste — Ctrl+V text arrives as one bracketed paste, a PN
     const before = (await typed()).length;
     const reader = await browser.newPage(); await serveXterm(reader);
     await reader.addInitScript(() => sessionStorage.setItem('graphyard-token', 'test-reader'));
-    await reader.goto(`${url}/#master`);
+    await reader.goto(`${url}/#master/live`);
     await expect(reader.getByRole('status')).toContainText('View only', settled);
     await paste(reader, 'sneaky', true);
     await expect(reader.getByRole('status')).toContainText('Paste refused', settled);

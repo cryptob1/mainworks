@@ -7,8 +7,8 @@ import { boardStatus, boardWork, NOW } from './ui-board';
 import { serveXterm } from './xterm';
 
 // GY-3320: the dashboard has one mode. There is no Fun control anywhere, a Fun preference stored
-// before the change does nothing, and the menu and the Master page read Master and Workers.
-test('e2e:one-mode-no-fun-toggle — no Fun control on any page, a stored Fun preference has no effect, Master and Workers', async ({ page }) => {
+// before the change does nothing, and the menu and the Lead page read Lead and Workers.
+test('e2e:one-mode-no-fun-toggle — no Fun control on any page, a stored Fun preference has no effect, Lead and Workers', async ({ page }) => {
   test.setTimeout(60_000);
   const work = boardWork();
   await page.addInitScript(() => localStorage.setItem('graphyard.fun', 'off'));
@@ -21,7 +21,7 @@ test('e2e:one-mode-no-fun-toggle — no Fun control on any page, a stored Fun pr
     if (path.endsWith('/agent-registry')) return route.fulfill({ json: fleetView(emptyRegistry(), NOW) });
     return route.fulfill({ json: [] });
   });
-  await serveXterm(page); // the Master page's xterm.js, served locally (GY-3357)
+  await serveXterm(page); // the Lead page's xterm.js, served locally (GY-3357)
   await page.goto('/?sign-in');
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
@@ -39,10 +39,10 @@ test('e2e:one-mode-no-fun-toggle — no Fun control on any page, a stored Fun pr
   };
   await noFun();
   const menu = page.getByRole('navigation', { name: 'Primary' }).getByRole('button');
-  await expect(menu).toHaveText(['Work', 'Master', 'Workers', 'Shipped', 'Tests', 'Settings']);
+  await expect(menu).toHaveText(['Work', 'Lead', 'Workers', 'Shipped', 'Tests', 'Settings']);
 
   await menu.nth(1).click();
-  await expect(page.getByRole('heading', { name: 'Master', exact: true, level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Lead', exact: true, level: 1 })).toBeVisible();
   await noFun();
   await menu.nth(2).click();
   await expect(page.getByRole('heading', { name: 'Workers', exact: true, level: 1 })).toBeVisible();

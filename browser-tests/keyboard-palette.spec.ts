@@ -5,7 +5,7 @@ import { serveXterm } from './xterm';
 
 // GY-3272 AC-2: the dashboard is keyboard-first — Cmd/Ctrl+K opens the palette (an item key and
 // Enter opens that item), j/k walk the Work rows and Enter opens the one under the cursor,
-// g m opens Master (g w Work, g s Setup), ? shows the shortcut sheet — and the top bar's strip
+// g m opens Lead (g w Work, g s Setup), ? shows the shortcut sheet — and the top bar's strip
 // counts what is happening now (GY-3483) with the same numbers the Workers page and the ledger read.
 /** The board fixture with one merge from tonight (GY-18). */
 const stripWork = () => boardWork().map(item => {
@@ -27,7 +27,7 @@ async function serve(page: Page) {
     if (path.includes('/work/')) return route.fulfill({ json: state.work.find(w => path.endsWith(w.id)) ?? {} });
     return route.fulfill({ json: [] });
   });
-  await serveXterm(page); // the Master page's xterm.js, served locally (GY-3357)
+  await serveXterm(page); // the Lead page's xterm.js, served locally (GY-3357)
   await page.goto('/?sign-in');
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
@@ -53,11 +53,11 @@ test('e2e:keyboard-palette — Cmd/Ctrl+K opens the palette; an item key and Ent
   await expect(page.locator('article.item-page')).toContainText('Add dark mode to settings');
   await page.keyboard.press('Escape');
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible();
-  // A command by name: the Master page — its title is Master — then the theme, both without the mouse.
+  // A command by name: the Lead page — its title is Lead — then the theme, both without the mouse.
   await page.keyboard.press('Control+k');
-  await search(page).fill('Master');
+  await search(page).fill('Lead');
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('heading', { name: 'Master', exact: true, level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Lead', exact: true, level: 1 })).toBeVisible();
   await page.keyboard.press('Control+k');
   await search(page).fill('Daylight');
   await page.keyboard.press('Enter');
@@ -100,12 +100,12 @@ test('e2e:keyboard-palette — j/k move a cursor through the Work rows, Enter op
   await page.getByLabel('Search work').fill('');
 });
 
-test('e2e:keyboard-palette — g m opens Master, g w Work, g s Setup, and ? shows the shortcut sheet', async ({ page }) => {
+test('e2e:keyboard-palette — g m opens Lead, g w Work, g s Setup, and ? shows the shortcut sheet', async ({ page }) => {
   test.setTimeout(60_000);
   await serve(page);
   await page.keyboard.press('g');
   await page.keyboard.press('m');
-  await expect(page.getByRole('heading', { name: 'Master', exact: true, level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Lead', exact: true, level: 1 })).toBeVisible();
   await page.keyboard.press('g');
   await page.keyboard.press('w');
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible();
