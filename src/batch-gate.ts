@@ -364,18 +364,19 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
   // A whole-catalog batch run measures the catalog's gate-run time, a timeout its elapsed time.
   const mainKey = stepKey(tip, checks), mainCached = mainKey in finished, mainStarted = ports.now();
   const measure = (ms: number) => { if (whole) record.gateRuns = [...record.gateRuns ?? [], { ms, at: at() }].slice(-gateRunsWindow); };
-  // GY-3620: the rerun and the verified-commit probe run a few named test files, each bounded as a
-  // merge trial bounds a file (trialFileTimeoutMs from when its tests start, one per file): a file
-  // still running then stops, and the step's checks count as failed, so a hanging file settles the
-  // step under the rules below instead of running out the whole gate.
+  // GY-3620: the rerun and the verified-commit probe bound their test files as a merge trial bounds a
+  // file (trialFileTimeoutMs per `test:` check, from the trial's own `tests` step, which runs test files
+  // only, after any e2e cases): a file still running then stops, and the step's checks count as failed,
+  // so a hanging file settles the step under the rules below instead of running out the whole gate.
+  // e2e cases keep their own per-step timeouts and only the gate's bound.
   const run = (commit: string, runChecks: readonly string[], runFiles: readonly string[], perFile = false) => {
     const key = stepKey(commit, runChecks);
     if (key in finished) return Promise.resolve(finished[key]!); // a step the last loop finished
     const left = deadline() - ports.now();
     if (left <= 0) return Promise.reject(new GateTimeout());
     let last = ports.now(), saved = last, timer: NodeJS.Timeout | undefined, testsAt: number | null = null;
-    const fileBound = trialFileTimeoutMs * Math.max(1, runChecks.length);
-    const onStep = perFile ? (line: string) => { if (testsAt === null && line.startsWith('tests')) testsAt = ports.now(); } : undefined;
+    const testFiles = runChecks.filter(check => check.startsWith('test:')).length, fileBound = trialFileTimeoutMs * testFiles;
+    const onStep = perFile && testFiles ? (line: string) => { if (testsAt === null && line === 'tests') testsAt = ports.now(); } : undefined;
     const tick = () => {
       const now = ports.now();
       record.inFlight = { ...record.inFlight!, seenAt: new Date(now).toISOString(), ...(ports.waiting?.() ? { waitedMs: (record.inFlight!.waitedMs ?? 0) + now - last } : {}) };

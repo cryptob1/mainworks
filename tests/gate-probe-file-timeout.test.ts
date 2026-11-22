@@ -62,3 +62,23 @@ test('e2e:gate-probe-file-timeout — a gate whose verified-commit probe hits a 
   const { outcome } = await gate('probe');
   assert.notEqual(outcome.outcome, 'timeout');
 });
+
+test('integration:gate-probe-file-timeout — an e2e case in the rerun keeps its own step timeouts: one that runs past five minutes and passes is not stopped as a test file', { timeout: 60_000 }, async () => {
+  const started = Date.now(), e2e = 'e2e:slow-case';
+  let tipRuns = 0;
+  const ports: GatePorts = {
+    now: () => started + (Date.now() - started) * speed,
+    fetch: async () => tip, landings: async () => [], files: async () => [], catalog: async () => ['slow-case'], core: async () => [],
+    run: async (commit, _checks, _files, _timeoutMs, signal, onStep) => {
+      if (commit !== tip || ++tipRuns === 1) return [e2e];
+      onStep?.('tests: e2e');
+      // The rerun's case passes after 15 gate minutes: three per-file bounds, well inside its own 30-minute step limit.
+      await new Promise<void>(resolve => { const timer = setTimeout(resolve, 15 * 60_000 / speed); signal?.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true }); });
+      return signal?.aborted ? [e2e] : [];
+    },
+    revert: async () => { throw new Error('unused'); }, file: async () => ({ item: null }),
+  };
+  const outcome = await runGate(ports, bootstrapGate('owner/project', verified));
+  assert.equal(outcome.outcome, 'verified', `the e2e rerun was cut short: ${JSON.stringify(outcome)}`);
+  assert.deepEqual(outcome.outcome === 'verified' && outcome.flakes, [e2e]);
+});
