@@ -298,6 +298,8 @@ export function daemonStatePath(config: MasterConfig) {
 /** A file beside the loop's cursor, under the credential's private directory. */
 export const besideCursor = (config: Pick<MasterConfig, 'credentialFile'>, suffix: string) =>
   resolve(dirname(config.credentialFile), `${basename(config.credentialFile).replace(/\.token$/, '')}.${suffix}.json`);
+/** The file a master or caretaker writes to ask the loop to restart after its current cycle. */
+export const loopRestartRequestPath = (config: Pick<MasterConfig, 'credentialFile'>) => besideCursor(config, 'loop-restart');
 
 export async function readDaemonState(root: string, config: MasterConfig): Promise<DaemonState> {
   const file = daemonStatePath(config);
