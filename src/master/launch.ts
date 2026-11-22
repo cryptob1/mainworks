@@ -125,9 +125,9 @@ export function writeLaunchFiles(directory: string, name: string, text: { role?:
 
 /**
  * Whether `argv1` is one of the launcher's own entries: `bin/graphyard.mjs` or the `src/cli.ts`
- * child it spawns — in each the checkout is two levels up.
+ * or built `dist/cli.mjs` child it spawns — in each the checkout is two levels up.
  */
-const cliEntry = (argv1: string) => ['graphyard.mjs', 'cli.ts'].includes(basename(argv1));
+const cliEntry = (argv1: string) => ['graphyard.mjs', 'cli.ts', 'cli.mjs'].includes(basename(argv1));
 /**
  * The coordinator checkout the launching process itself runs from, or null when this is not the
  * Graphyard CLI or the test runner is driving: nothing is confined there. Both entries count —
