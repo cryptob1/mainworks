@@ -372,7 +372,7 @@ export function changedDeclarations(changed, base, root = repositoryRoot, head =
  * (`changedDeclarations`) names them — and a file the map does not hold the tests that import or name
  * it. A change limited to documentation selects nothing: no test executes it. A narrowed selection
  * (`declarations` given: an item's trial against its base) skips the tests whose only link to a
- * changed file is listing its directory (GY-3541); a selection with no base runs them.
+ * changed file is listing its directory (GY-3541); the batch gate selects with no base and runs them.
  */
 export function selectAffected(changed, map, tests, declarations) {
   if (!changed) return { mode: 'full', reason: 'the changed files are unknown', files: tests };

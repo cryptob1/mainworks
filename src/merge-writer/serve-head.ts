@@ -78,6 +78,7 @@ export async function serveStaticSite(directory: string, sha: string): Promise<S
     } catch { return send(404, 'text/plain; charset=utf-8', 'Not found\n'); }
   });
   await new Promise<void>((accept, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', () => accept()); });
+  server.unref();
   const { port } = server.address() as { port: number };
   return { url: `http://127.0.0.1:${port}`, close: () => new Promise<void>(accept => { server.closeAllConnections?.(); server.close(() => accept()); }) };
 }
