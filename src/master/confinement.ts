@@ -1,4 +1,5 @@
 // Concern: OS-level host filesystem and coordinator confinement for every launched role.
+import { PRODUCT_NAME } from '../model/product.js';
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -378,7 +379,7 @@ export function assertIsolatableHostControlEndpoints(environment: NodeJS.Process
   for (const variable of ['DOCKER_HOST', 'CONTAINER_HOST', 'BUILDKIT_HOST']) {
     const endpoint = environment[variable];
     if (endpoint && !endpoint.startsWith('unix:///'))
-      throw new Error(`Graphyard refuses the sandbox launch: ${variable} declares a host command endpoint that filesystem mounts cannot isolate. Use a local unix:/// socket, which the sandbox masks. No command was started.`);
+      throw new Error(`${PRODUCT_NAME} refuses the sandbox launch: ${variable} declares a host command endpoint that filesystem mounts cannot isolate. Use a local unix:/// socket, which the sandbox masks. No command was started.`);
   }
 }
 

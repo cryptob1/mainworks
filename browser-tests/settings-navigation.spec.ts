@@ -1,10 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
 import { boardApi } from './ui-board';
 
-// GY-3297: Settings holds configuration only. Product sits under Master (the Master keeps the brief), Costs under Workers and
-// Test cases under Tests; Settings keeps Agents and Setup, with Operator automation behind an
-// Advanced fold for the admin alone. Each is reached by click and by keyboard at 1280px and 390px,
-// the old direct links still open, and the phone menu neither clips nor scrolls sideways.
+// GY-3598: the four places. Settings holds Agents, Workers, Costs, Setup, Delivery and Help, with
+// Operator automation behind an Advanced fold for the admin alone; Product sits under Lead and
+// Test cases under Work → Advanced. Each is reached by click and by keyboard at 1280px and 390px,
+// the old direct links still open, and nothing scrolls sideways.
 
 async function open(page: Page, role: string, hash = '') {
   await page.route('**/api/**', route => {
@@ -36,7 +36,7 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
     await expect(tabs(page).getByText('Advanced', { exact: true })).toBeVisible();
     await expect(tabs(page).getByRole('button', { name: 'Operator automation', includeHidden: true })).toBeHidden();
     await tabs(page).getByRole('button', { name: 'Setup', exact: true }).click();
-    await heading(page, 'Set up Graphyard');
+    await heading(page, 'Set up Mainworks');
     await tabs(page).getByText('Advanced', { exact: true }).click();
     await tabs(page).getByRole('button', { name: 'Operator automation' }).click();
     await heading(page, 'Operator automation');
@@ -53,6 +53,26 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
     await tabs(page).getByRole('button', { name: 'Test cases', exact: true }).click();
     await heading(page, 'Test-case library');
 
+    // The configuration area by keyboard alone: Enter opens the Settings place, Tab along its tabs, open Advanced.
+    await primary(page).getByRole('link', { name: /^Settings/ }).focus();
+    await page.keyboard.press('Enter');
+    await heading(page, 'Agents');
+    await tabs(page).getByRole('button', { name: 'Agents', exact: true }).focus();
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Enter');
+    await heading(page, 'Set up Mainworks');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    await expect(tabs(page).locator('summary')).toBeFocused();
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Enter');
+    await heading(page, 'Operator automation');
+    await expect(tabs(page).getByRole('button', { name: 'Operator automation' })).toHaveAttribute('aria-current', 'page');
+
     // Every top-bar link fits, nothing scrolls sideways.
     for (const link of await primary(page).getByRole('link').all()) {
       const box = await link.evaluate(element => ({ clipped: element.scrollWidth > element.clientWidth + 1, right: element.getBoundingClientRect().right }));
@@ -64,7 +84,7 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
   });
 }
 
-for (const [hash, name] of [['#setup', 'Set up Graphyard'], ['#master', 'Master']] as const) test(`e2e:settings-navigation — the direct link ${hash} still opens its page`, async ({ page }) => {
+for (const [hash, name] of [['#setup', 'Set up Mainworks'], ['#master', 'Master']] as const) test(`e2e:settings-navigation — the direct link ${hash} still opens its page`, async ({ page }) => {
   await open(page, 'admin', hash);
   await heading(page, name);
 });

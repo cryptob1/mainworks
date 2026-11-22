@@ -83,7 +83,7 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: '
     await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings', exact: true }).click();
     await page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: 'Help', exact: true }).click();
     const docs = page.locator('article.guide');
-    await expect(docs.getByRole('heading', { name: 'How Graphyard works', level: 1 })).toBeVisible();
+    await expect(docs.getByRole('heading', { name: 'How Mainworks works', level: 1 })).toBeVisible();
     await expect(docs).toContainText('coding factory');
 
     // Every link on the page that stays on the page lands on something that exists.
@@ -119,7 +119,7 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: '
       ['faq-context', ['product brief', 'AGENTS.md', 'work item', 'committed work']],
       ['faq-delivery', ['reviews it', 'proof', 'latest main', 'batch', 'reverts', 'rolls back']],
       ['faq-deploy', ['Railway', 'AWS', 'delivery.applications', 'versionUrl']],
-      ['faq-access', ['http://127.0.0.1:4310', 'first free port', '--port N', 'graphyard login', 'Invite someone', 'each install', 'http://HOST:PORT', 'signs them in once', 'any device']],
+      ['faq-access', ['http://127.0.0.1:4310', 'first free port', '--port N', 'mainworks login', 'Invite someone', 'each install', 'http://HOST:PORT', 'signs them in once', 'any device']],
     ];
     for (const [id, says] of answers) {
       const faq = docs.locator(`#${id}`);

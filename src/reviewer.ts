@@ -55,6 +55,7 @@ import { resolveRepositoryPolicy } from './model-boundary/repository-policy.js';
 import { type E2eServe, policySections } from './model/repository-policy.js';
 import { servingReport } from './deploy-watch.js';
 import { commandApplication, serveHead } from './merge-writer/serve-head.js';
+import { freePort } from './serve-app.js';
 import { runEnvironment } from './runner/pi.js';
 import { browserInstallCommand, browserToolName, provisionBrowserTool } from './browser-tool.js';
 export { controlPlaneFindingSection } from './review-prompt.js';
@@ -565,6 +566,25 @@ async function serveTurn(url: string): Promise<() => void> {
   await earlier;
   return release;
 }
+/** GY-3584 / GY-3608: environment variable a serve command reads its free port from. */
+export const servePortVariable = 'GRAPHYARD_E2E_SERVE_PORT';
+/**
+ * GY-3608: whether `command` (or a script file it names in `worktree`) reads `GRAPHYARD_E2E_SERVE_PORT`.
+ * Commands that honour it serve each product review on its own free port in parallel; commands that
+ * cannot keep the GY-3580 take-turns lock on their declared URL.
+ */
+async function serveHonoursPort(worktree: string, command: string): Promise<boolean> {
+  if (command.includes(servePortVariable)) return true;
+  for (const token of command.split(/\s+/)) {
+    const file = token.replace(/^['"]|['"]$/g, '');
+    if (!file || file.startsWith('-')) continue;
+    try {
+      const content = await readFile(resolve(worktree, file), 'utf8');
+      if (content.includes(servePortVariable)) return true;
+    } catch { /* not a file in the worktree */ }
+  }
+  return false;
+}
 /** GY-3331: the head's own e2e.serve declaration, read from the graphyard.json its commit holds; null when the head declares none (or its policy does not parse). */
 export async function headServeDeclaration(root: string, sha: string, run: ChildRun = defaultChildRun): Promise<E2eServe | null> {
   let text: string;
@@ -684,10 +704,11 @@ function productPostSection(cliPath: string) {
  * A headless session's answer (in place of `review post`): one JSON object the launcher posts as
  * this launch's verdict through the same route and token, each finding as a BLOCKING: line.
  */
-export function headlessReviewAnswer(key: string, product = false) {
+export function headlessReviewAnswer(key: string, product = false, screenshots?: string) {
   return `Answer in one JSON object, the last thing you print: {"verdict": "APPROVE" or "BLOCKING"${product ? ' or "REJECT" or "COULD_NOT_RUN"' : ''}, "body": "THE REVIEW BODY", "findings": ["${product ? 'SCREEN OR FLOW' : 'PATH:LINE'} — FINDING", …]}. `
     + `APPROVE when no blocking finding stands, with findings empty; BLOCKING when one does, each in findings${product ? '; REJECT when the feature should not ship at all, the reason in the body: the master closes the item unmerged on it; COULD_NOT_RUN when your own environment failed — GRAPHYARD_URL unset, no Graphyard CLI, no browser tool, or an app you cannot reach — the reason in the body and no findings: Graphyard retries the review on another reviewer and the item never returns to its worker for it' : ''}. `
-    + (product ? 'Open the body by naming the head you judged, and name each screenshot you saved (at most 5, .png or .jpg, each under 2 MiB) on its own "Screenshot: PATH" line: the item shows them beside your verdict. ' : '')
+    + (product ? (screenshots ? `Save each screenshot in ${screenshots} — the one directory both this session and Graphyard, which posts your answer, can read — and open the body by naming the head you judged, then name each screenshot you saved (at most 5, .png or .jpg, each under 2 MiB) on its own "Screenshot: NAME" line, NAME its file name in that directory: the item shows them beside your verdict. `
+      : 'Open the body by naming the head you judged, and name each screenshot you saved (at most 5, .png or .jpg, each under 2 MiB) on its own "Screenshot: PATH" line: the item shows them beside your verdict. ') : '')
     + 'Graphyard posts that answer as your verdict under this launch, each finding on a BLOCKING: line, so run no review post. '
     + `Judge whether this change meets what ${key} requires; never weaken a requirement to let it pass, and never hold a change that meets its criteria over a FOLLOW-UP. Decide on your own: never ask a human or wait on input.`;
 }
@@ -702,11 +723,13 @@ export function headlessVerdictPost(answer: z.infer<typeof headlessVerdictSchema
   return { event, body: [answer.body, ...answer.findings.map(finding => `BLOCKING: ${finding.replace(/^BLOCKING:\s*/i, '')}`)].join('\n') };
 }
 /** What posting and settling a headless review's answer needs (GY-3113): read back by a restarted loop, so paths and names only, never a credential. */
-export type HeadlessReviewContext = { id: string; sha: string; reviewer: string; kind: string; cliPath: string; GH_CONFIG_DIR: string; GRAPHYARD_REVIEW: string; GRAPHYARD_URL: string };
+export type HeadlessReviewContext = { id: string; sha: string; reviewer: string; kind: string; cliPath: string; GH_CONFIG_DIR: string; GRAPHYARD_REVIEW: string; GRAPHYARD_URL: string;
+  /** GY-3590: a product review's screenshot directory, in its checkout, which its sandbox and this launcher both see. */
+  screenshots?: string };
 /** Posts a headless answer through review post's own route, under the launch binding its session directory holds. */
 export function postHeadlessReview(root: string, context: HeadlessReviewContext, output: string, run: ChildRun = defaultChildRun) {
   const environment = { GH_CONFIG_DIR: context.GH_CONFIG_DIR, GRAPHYARD_REVIEW: context.GRAPHYARD_REVIEW, GRAPHYARD_URL: context.GRAPHYARD_URL };
-  return postReview({ ...headlessVerdictPost(jsonAnswer(output, headlessVerdictSchema)), cliPath: context.cliPath, environment }, { run: (command, args) => run(command, args, { cwd: root }) });
+  return postReview({ ...headlessVerdictPost(jsonAnswer(output, headlessVerdictSchema)), cliPath: context.cliPath, environment, screenshotDirectory: context.screenshots }, { run: (command, args) => run(command, args, { cwd: root }) });
 }
 /**
  * The posted answer is the record's verdict, which the next reconcile settles; a run with no
@@ -1128,11 +1151,21 @@ export async function launchReview(root: string, work: Work, profileName: string
                   try { await git(build[0]!, build.slice(1), { cwd: checkout.worktree, env: runEnvironment(process.env), timeoutMs: 1_200_000 }); }
                   catch (error: any) { throw new Error(`${build.join(' ')} failed in the review checkout of ${binding.sha.slice(0, 12)}: ${`${error.stdout ?? ''}${error.stderr ?? ''}`.trim().slice(-1500) || error.message}`); }
                 }
-                // GY-3580: a review whose head serves on the address another review's head is serving waits its turn; the address frees when that session ends.
-                const release = await serveTurn(declared.url);
-                const served = serveHead(checkout.worktree, commandApplication(declared), { sha: binding.sha, env: runEnvironment(process.env), budgetMs: (declared.readySeconds + 60) * 1000, scratch: join(checkout.directory, '.graphyard', 'scratch'), log: () => {} });
-                try { serving = { url: await served.ready, close: () => served.close().catch(() => {}).finally(release) }; }
-                catch (error) { await served.close().catch(() => {}); release(); throw error; }
+                if (await serveHonoursPort(checkout.worktree, declared.command)) {
+                  // GY-3608: a serve command that honours GRAPHYARD_E2E_SERVE_PORT serves each product review on its own free port so reviews run in parallel.
+                  const port = await freePort();
+                  const target = new URL(declared.url);
+                  target.port = String(port);
+                  const served = serveHead(checkout.worktree, commandApplication({ ...declared, url: target.href }), { sha: binding.sha, env: runEnvironment(process.env, { [servePortVariable]: String(port) }), budgetMs: (declared.readySeconds + 60) * 1000, scratch: join(checkout.directory, '.graphyard', 'scratch'), log: () => {} });
+                  try { serving = { url: await served.ready, close: () => served.close().catch(() => {}) }; }
+                  catch (error) { await served.close().catch(() => {}); throw error; }
+                } else {
+                  // GY-3580: a review whose head serves on the address another review's head is serving waits its turn; the address frees when that session ends.
+                  const release = await serveTurn(declared.url);
+                  const served = serveHead(checkout.worktree, commandApplication(declared), { sha: binding.sha, env: runEnvironment(process.env), budgetMs: (declared.readySeconds + 60) * 1000, scratch: join(checkout.directory, '.graphyard', 'scratch'), log: () => {} });
+                  try { serving = { url: await served.ready, close: () => served.close().catch(() => {}).finally(release) }; }
+                  catch (error) { await served.close().catch(() => {}); release(); throw error; }
+                }
               } else noApp = true;
             }
           }
@@ -1140,6 +1173,8 @@ export async function launchReview(root: string, work: Work, profileName: string
         // What posting and settling a headless answer needs, which a restarted loop reads back from the run directory (GY-3113).
         headlessContext = { id, sha: binding.sha, reviewer: reviewerIdentity, kind: launch.kind!, cliPath: config.cliPath ?? launcherPath,
           GH_CONFIG_DIR: sessionDirectory, GRAPHYARD_REVIEW: `${binding.key}@${binding.sha}`, GRAPHYARD_URL: config.url };
+        // GY-3590: a sandboxed runtime keeps its own /tmp and home; its screenshots go in the checkout directory it may write, which this launcher reads.
+        if (product) await mkdir(headlessContext.screenshots = join(checkout.directory, 'screenshots'), { recursive: true });
         const memory = await readProjectMemory(root).catch(() => null);
         const maps = await (dependencies.verificationMaps ?? readVerificationMaps)(root, config.baseBranch).catch(() => []);
         const request = (answer?: string) => reviewPrompt(config, binding, checkout, undefined, reservation.record.reviewInputs!.criteria, reservation.record.reviewRound, work.observation?.candidate.sha === binding.sha ? work.observation.files : null, null, memory, { maps, paths: [...new Set([work.description, ...work.criteria.map(criterion => criterion.text)].flatMap(namedPaths))] }, { head: binding.sha, baseTip: binding.baseSha, ...(postMerge ? { postMerge: { mergeSha: postMerge.mergeSha } } : {}), ...(product ? { product: true, trialEvidence: productTrialEvidence(work, binding.sha), ...(work.preview?.state === 'running' ? { previewUrl: `${config.url}${work.preview.path}/` } : {}), ...(serving ? { servedUrl: serving.url } : {}), ...(noApp ? { noApp: true } : {}) } : {}), ...(answer ? { answer } : {}) }, reservation.record.reviewInputs?.scenarioRequirements);
@@ -1159,7 +1194,7 @@ export async function launchReview(root: string, work: Work, profileName: string
               await updateReviewLedger(root, ledger => { const record = ledger.reviews.find(entry => entry.id === id); if (record) { record.headless = run; record.session = registrySessionOf(on.current); } });
             },
             holdAccount: notice => recordObservedExhaustion(config, on.current.account?.name ?? profileAccount(profile.name), { at: now().toISOString(), resetsAt: notice.resetsAt, reason: notice.reason, role: 'reviewer', profile: profile.name, work: binding.key }, now().getTime(), { registry: dependencies.probe?.registry, smoke: dependencies.probe?.smoke }),
-            prompt: request(`${await reviewDiff(root, binding.baseSha, binding.sha, dependencies.run)}\n${headlessReviewAnswer(binding.key, product)}`),
+            prompt: request(`${await reviewDiff(root, binding.baseSha, binding.sha, dependencies.run)}\n${headlessReviewAnswer(binding.key, product, headlessContext.screenshots)}`),
             answer: output => postHeadlessReview(root, headlessContext!, output, dependencies.run), root, route: 'review', context: headlessContext }));
         }
       } catch (error) {

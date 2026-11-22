@@ -83,7 +83,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 800, height: 700 }
       await page.goto(`${http.url}/#sign-in=${code}`);
       await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible(settled);
       await expect(page.locator('.work-row').first()).toBeVisible(settled);
-      await expect(page.locator('.version-label')).toContainText('Graphyard 1a2b3c4', settled);
+      await expect(page.locator('.version-label')).toContainText('Mainworks 1a2b3c4', settled);
       await checkWithMenu(page, 'Work');
 
       if (viewport.width === 800) {
@@ -110,7 +110,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 800, height: 700 }
       await checkWithMenu(page, 'Settings → Agents');
 
       await page.evaluate(() => { location.hash = 'setup'; });
-      await expect(page.getByRole('heading', { name: 'Set up Graphyard', exact: true, level: 1 })).toBeVisible(settled);
+      await expect(page.getByRole('heading', { name: 'Set up Mainworks', exact: true, level: 1 })).toBeVisible(settled);
       await checkWithMenu(page, 'Settings → Setup');
 
       // GY-3486: the Invite dialog from the top bar fits the window too.

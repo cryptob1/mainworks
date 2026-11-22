@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '../src/model/product.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -351,7 +352,8 @@ const forwardsLabel = new Set(['string', 'who', 'steps.who']);
 test('manual:review-followups-triaged GY-469.2 (actor-role-covers-every-label): every `who` label nextActor, prSteps and waitsOn write — as `who:` in any quote, or the last argument of prSteps\' make() — names a role; any other `who` expression fails the scan; an unknown label reads as held, never the control plane (GY-469)', async () => {
   const labels = new Set<string>();
   const unscanned: string[] = [];
-  const take = (path: string, expression: string) => {
+  const take = (path: string, written: string) => {
+    const expression = written.replaceAll('${PRODUCT_NAME}', PRODUCT_NAME);
     const literal = /^(['"`])([^'"`]*)\1$/.exec(expression);
     if (literal && !(literal[1] === '`' && literal[2]!.includes('${'))) labels.add(literal[2]!);
     else if (!forwardsLabel.has(expression)) unscanned.push(`${path}: ${expression}`);
