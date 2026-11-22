@@ -506,10 +506,15 @@ export function shardTestFiles(files: readonly string[], lanes: number, duration
 /** Where a passing trial saves its per-file durations (GY-3542): beside the install's other local state, never in a checkout. */
 export const refreshedDurationsPath = (root: string, path: string) => join(root, '.graphyard', basename(path));
 const durationsIn = (text: string): Record<string, number> => { try { const files = (JSON.parse(text) as { files?: unknown } | null)?.files; return files && typeof files === 'object' ? files as Record<string, number> : {}; } catch { return {}; } };
-/** The timings a trial plans its shards from: the merge's own baseline in its checkout, under what passing trials on this install measured since; `{}` when neither exists. */
-const checkoutDurations = async (worktree: string, root: string, path?: string): Promise<Record<string, number>> => path
-  ? Object.assign({}, ...await Promise.all([join(worktree, path), refreshedDurationsPath(root, path)].map(file => readFile(file, 'utf8').then(durationsIn, () => ({})))))
-  : {};
+/** The timings a trial plans its shards from: the base commit's baseline when selectorApproved is false (GY-3635) or the merge's own baseline in its checkout when approved, under what passing trials on this install measured since; `{}` when neither exists. */
+const checkoutDurations = async (worktree: string, root: string, path?: string, options?: { baseTip?: string; selectorApproved?: boolean; run?: ChildRun }): Promise<Record<string, number>> => {
+  if (!path) return {};
+  const baselinePromise = options?.baseTip && !options.selectorApproved && options.run
+    ? Promise.resolve(options.run('git', ['-C', root, 'show', `${options.baseTip}:${path}`])).then(text => durationsIn(String(text)), () => ({}))
+    : readFile(join(worktree, path), 'utf8').then(durationsIn, () => ({}));
+  const refreshedPromise = readFile(refreshedDurationsPath(root, path), 'utf8').then(durationsIn, () => ({}));
+  return Object.assign({}, ...await Promise.all([baselinePromise, refreshedPromise]));
+};
 /** A passing trial's durations for the files it ran (`ran`), from its runner records, laid over those saved before. */
 async function refreshDurations(root: string, path: string, records: string, ran: readonly string[]): Promise<void> {
   const file = refreshedDurationsPath(root, path), files = durationsIn(await readFile(file, 'utf8').catch(() => ''));
@@ -754,6 +759,8 @@ export interface RunTrialInput {
   baseTip?: string;
   changedFiles: readonly string[];
   timeoutMs: number;
+  /** GY-3635: whether the candidate's changes to the test selector and timing baseline were approved in review; false/absent uses the base commit's copy. */
+  selectorApproved?: boolean;
   /** GY-3418: keep the dependency image and test-result caches in the repository's git directory (the detached merge trial and batch gate do); absent, a trial caches nothing. */
   caches?: boolean;
   key?: string;
@@ -1578,7 +1585,31 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     enterStep('selection');
     // A selection child the host killed or could not start is no verdict (GY-1832); only one that exits non-zero fails the selection.
     // GY-3192: the base tip lets the selection narrow each changed file to the declarations its diff touches.
-    const selection = await child('selection', selector[0]!, [...selector.slice(1), ...input.changedFiles], input.baseTip ? { env: { ...env, GRAPHYARD_SELECTION_BASE: input.baseTip } } : {});
+    // GY-3635: unless the candidate's change to the selector was approved in review, run the base commit's copy of the selector script against the candidate's worktree so candidate new tests still run.
+    const selectorScript = input.baseTip && !input.selectorApproved
+      ? selector.slice(1).find(arg => !arg.startsWith('-') && /\.(?:[cm]?js|ts)$/.test(arg))
+      : undefined;
+    let restoreSelector: (() => Promise<void>) | null = null;
+    if (selectorScript) {
+      const baseSelector = await Promise.resolve(run('git', ['-C', input.root, 'show', `${input.baseTip}:${selectorScript}`], { timeoutMs: remaining() })).then(String, () => null);
+      if (baseSelector !== null) {
+        const scriptPath = join(worktree, selectorScript);
+        const originalSelector = await readFile(scriptPath, 'utf8').catch(() => null);
+        if (originalSelector !== baseSelector) {
+          await writeFile(scriptPath, baseSelector, 'utf8');
+          restoreSelector = async () => {
+            if (originalSelector !== null) await writeFile(scriptPath, originalSelector, 'utf8');
+            else await rm(scriptPath, { force: true });
+          };
+        }
+      }
+    }
+    let selection: Ended;
+    try {
+      selection = await child('selection', selector[0]!, [...selector.slice(1), ...input.changedFiles], input.baseTip ? { env: { ...env, GRAPHYARD_SELECTION_BASE: input.baseTip } } : {});
+    } finally {
+      if (restoreSelector) await restoreSelector().catch(() => {});
+    }
     if (hostEnded(selection)) throw runnerFailure('selection', selection);
     if (!selection.ok) return result({ passed: 0, failed: [strategy.command], files: 0 });
     const pattern = new RegExp(strategy.pattern);
@@ -1624,7 +1655,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const split = await splitLocalOnlyTests(files, file => readFile(join(worktree, file), 'utf8'),
       hosts.length ? { remoteBrowser: () => trialImageHasBrowser(runImage ?? trialImage(), run) } : {});
     if (split.browserLocalOnly) log.push('browser tests stay on this machine: the trial image lacks a browser');
-    const durations = await checkoutDurations(worktree, input.root, strategy.durations);
+    const durations = await checkoutDurations(worktree, input.root, strategy.durations, { baseTip: input.baseTip, selectorApproved: input.selectorApproved, run });
     const shards: string[][] = [], pinned: boolean[] = [];
     for (const pool of [{ files: split.remoteable, lanes: trialShardLanes(cores) + remoteLanes, local: false }, { files: split.localOnly, lanes: trialShardLanes(cores), local: true }])
       for (const group of input.groupSize === undefined ? shardTestFiles(pool.files, pool.lanes, durations) : groupTestFiles(pool.files, input.groupSize)) { shards.push(group); pinned.push(pool.local); }
