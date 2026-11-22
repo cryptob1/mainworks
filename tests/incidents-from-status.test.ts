@@ -9,7 +9,7 @@ import type { Work } from '../src/model.js';
 const minute = 60_000, hour = 60 * minute, now = Date.parse('2026-11-22T15:00:00.000Z');
 const ago = (ms: number) => new Date(now - ms).toISOString();
 const item = (n: number, extra: Partial<Work> = {}) => ({ id: `id-${n}`, key: `GY-${n}`, title: `Item ${n}`, stage: 'build', stageEnteredAt: ago(10 * minute), lease: null, dependencies: [], ...extra }) as unknown as Work;
-const building = (n: number) => item(n, { lease: { owner: 'graphyard-claude-1', epoch: 1, expiresAt: ago(-hour) } as Work['lease'] });
+const building = (n: number, ms = 10 * minute) => item(n, { stageEnteredAt: ago(ms), lastAssignment: { owner: 'graphyard-claude-1', epoch: 1, claimedAt: ago(ms) }, lease: { owner: 'graphyard-claude-1', epoch: 1, expiresAt: ago(-hour) } as Work['lease'] });
 const mergedAgo = (n: number, ms: number) => item(n, { stage: 'done', delivery: { mergedAt: ago(ms) } as Work['delivery'] });
 const account = (name: string, eligible: boolean, resetsAt: string | null = null) => ({ name, eligible, resetsAt, roles: [{ role: 'worker' }] });
 const kinds = (status: StatusSnapshot, work: Work[] = []) => incidentsFromStatus(status, work, now).map(incident => incident.kind);
@@ -50,10 +50,15 @@ test('unit:incidents-from-status — a test machine fires when away over 5 minut
 
 test('unit:incidents-from-status — no merge in 2 hours fires only while tasks are in flight, and stops the line', () => {
   assert.deepEqual(kinds({}, [mergedAgo(1, 3 * hour)]), []);
-  assert.deepEqual(kinds({}, [mergedAgo(1, 90 * minute), building(2)]), []);
-  const work = [mergedAgo(1, 3 * hour), building(2)];
+  assert.deepEqual(kinds({}, [mergedAgo(1, 90 * minute), building(2, 3 * hour)]), []);
+  // After an idle gap over 2 hours, a freshly claimed task must not fire no-merge.
+  assert.deepEqual(kinds({}, [mergedAgo(1, 3 * hour), building(2, 10 * minute)]), []);
+  assert.equal(statusLine({}, [mergedAgo(1, 3 * hour), building(2, 10 * minute)], [], now).state, 'Moving');
+  // Fires when the last merge is over 2 hours ago and a task has been in flight at least 2 hours.
+  const work = [mergedAgo(1, 3 * hour), building(2, 2 * hour)];
   const incidents = incidentsFromStatus({}, work, now);
   assert.deepEqual(incidents.map(incident => incident.kind), ['no-merge']);
+  assert.equal(incidents[0].broke, 'Nothing has merged for 2 h.');
   assert.equal(statusLine({}, work, incidents, now).state, 'Stopped');
 });
 

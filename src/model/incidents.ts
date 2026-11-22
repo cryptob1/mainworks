@@ -25,7 +25,7 @@ export interface Incident {
   broke: string;
   impact: string;
   doing: string;
-  action: { label: string; open: 'master' | 'agents' | 'workers' | 'item'; item?: string } | null;
+  action: { label: string; open: 'lead' | 'agents' | 'workers' | 'item'; item?: string } | null;
 }
 
 const minute = 60_000, hour = 60 * minute;
@@ -51,7 +51,7 @@ export function incidentsFromStatus(status: StatusSnapshot, work: Work[], now: n
   const trying = status.releaseCheck?.since ? now - Date.parse(status.releaseCheck.since) : 0;
   if (trying >= 30 * minute) incidents.push({ kind: 'release-check', broke: `The release check has not passed in ${span(trying)}.`,
     impact: waiting ? `${plural(waiting, 'finished change')} ${waiting === 1 ? 'waits' : 'wait'} to go live.` : 'Nothing new can go live.',
-    doing: 'The loop keeps retrying the same check.', action: { label: 'Ask the Lead', open: 'master' } });
+    doing: 'The loop keeps retrying the same check.', action: { label: 'Ask the Lead', open: 'lead' } });
 
   // 2. A finished, approved head not pushed in 30 minutes.
   for (const w of work.filter(item => item.stage === 'merge' && now - Date.parse(item.stageEnteredAt) >= 30 * minute))
@@ -75,13 +75,14 @@ export function incidentsFromStatus(status: StatusSnapshot, work: Work[], now: n
       impact: 'Checks run on fewer machines and take longer.', doing: 'The loop probes it every cycle.', action: { label: 'Open machines', open: 'workers' } });
   }
 
-  // 5. No merge in 2 hours while tasks are in flight. With no merge yet, count from when tasks went in flight.
+  // 5. No merge in 2 hours while tasks are in flight, counted from the later of the last merge and the earliest in-flight claim.
   const flying = inFlight(work, now);
   if (flying.length) {
     const last = Math.max(...work.filter(merged).map(mergedAt), Number.NEGATIVE_INFINITY);
-    const since = Number.isFinite(last) ? last : Math.min(...flying.map(w => Date.parse(w.lastAssignment?.claimedAt ?? w.stageEnteredAt)).filter(Number.isFinite));
+    const started = Math.min(...flying.map(w => Date.parse(w.lastAssignment?.claimedAt ?? w.stageEnteredAt)).filter(Number.isFinite));
+    const since = Number.isFinite(started) ? Math.max(last, started) : last;
     if (Number.isFinite(since) && now - since >= 2 * hour) incidents.push({ kind: 'no-merge', broke: `Nothing has merged for ${span(now - since)}.`,
-      impact: `${plural(flying.length, 'task')} in flight ${flying.length === 1 ? 'is' : 'are'} stuck.`, doing: 'Builders keep working.', action: { label: 'Ask the Lead', open: 'master' } });
+      impact: `${plural(flying.length, 'task')} in flight ${flying.length === 1 ? 'is' : 'are'} stuck.`, doing: 'Builders keep working.', action: { label: 'Ask the Lead', open: 'lead' } });
   }
   return incidents;
 }
