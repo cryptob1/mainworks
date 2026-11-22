@@ -401,8 +401,9 @@ async function launchWorker(root: string, config: MasterConfig, work: Work, prof
       // on lease loss. The instruction is its own first request on the command line, never pasted;
       // a worker never reaches the operator's keyring, and no Herdr pane is opened for it.
       // GY-3632: a rework in its Builder's own worktree continues that runtime session with the reason as its next message.
-      let resume = continuing && rework && resolve(continuing.path) === resolve(prepared.path) ? continuing : null;
-      let fresh = continuing && !resume ? `the worktree moved from ${continuing.path} to ${prepared.path}` : null;
+      const sameTree = !!continuing && resolve(continuing.path) === resolve(prepared.path);
+      let resume = continuing && rework && sameTree && continuable(launch.kind, launch.contract) ? continuing : null;
+      let fresh = continuing && !resume ? (sameTree ? `the ${launch.kind} launch contract has no continue form` : `the worktree moved from ${continuing.path} to ${prepared.path}`) : null;
       const start = (session: string | null) => startHeadlessWorker({ name: profile.agentName, work: work.key, subject: `${work.key}: ${work.title}`, epoch: prepared.epoch, principal: profile.principal, account: launch.account ?? null,
         kind: launch.kind!, args: [...args, ...sessionHarness.args], contract: launch.contract, credentialMask, role: sessionHarness.role, directory: prepared.path, prompt: session ? continuedPrompt(config, work, prepared.epoch, rework!) : prompt, session, root, exec: headless, coordinatorRoot,
         environment: { GRAPHYARD_URL: config.url, GRAPHYARD_TOKEN_FILE: profile.credentialFile!, GRAPHYARD_HOST_ID: config.hostId, GRAPHYARD_HERDR_AGENT_KIND: launch.kind!, ...(process.env.XDG_RUNTIME_DIR ? { XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR } : {}), ...(process.env.DBUS_SESSION_BUS_ADDRESS ? { DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS } : {}), ...withVerificationPath(sessionHarness.environment, launch.environment) },
