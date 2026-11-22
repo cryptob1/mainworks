@@ -189,19 +189,20 @@ export function PreviewPanel({ preview }: { preview: ItemPreview }) {
 
 /**
  * One work item's page (GY-161), the Task page (GY-3599). Its first screen is the header: the
- * title; the state with its time, a link to the pull request or the commit, the Builder and the
- * model the session reported, the diff stats and one state-changing action; then one sentence on
- * why a stuck or waiting task waits and one on what happens next — the why leads with the item's
- * own why (GY-3382) or its plain summary (GY-2011) — then the pipeline row: where the time went.
- * Under it four tabs: Checks and diff (the merge trial's checks with the failing output, the
- * changed files and each file's diff, then the evidence the proofs kept: the trial's browser
- * screenshots, the product review, the real-world checks), Live session (the Builder's terminal,
- * read-only), Lead (the Lead's decisions) and Details (what changed for the user, the description
- * and criteria, the preview, Costs and Activity). A decision only the human may make is answered
- * right here. Everything technical — what is left per gate and who clears it (GY-171), gate
- * internals, sessions and their attach commands, review provider, next action, agent requests,
- * evidence — is in one collapsed "Technical details" section under Details, and policy changes
- * are in the admin Edit menu.
+ * title; the state with its time (GY-108: its Work row's number); a link to the pull request, or
+ * to the commit of a change the control plane observed itself (GY-3173); the Builder and the model
+ * the session reported; the diff stats; one state-changing action; the key and commit, small; and,
+ * when it differs from the title, the item's own why (GY-3382) or plain summary (GY-2011). Under
+ * it, for a task that is stuck or waiting, one sentence on why and one on what happens next. Then
+ * the pipeline row — where the time went — and four tabs: Checks and diff (the merge trial's checks
+ * with the failing output, the changed files and each file's diff, then the evidence the proofs
+ * kept: the trial's browser screenshots, the product review, the real-world checks), Live session
+ * (the Builder's terminal, read-only, or its saved output), Lead (the Lead's decisions) and Details
+ * (what changed for the user, the description and criteria, the preview, Costs and Activity). A
+ * decision only the human may make is answered right here. Everything technical — what is left per
+ * gate and who clears it (GY-171), gate internals, sessions and their attach commands, review
+ * provider, next action, agent requests, evidence — is in one collapsed "Technical details" section
+ * under Details, and policy changes are in the admin Edit menu.
  */
 export default function WorkDetails({ item, work, status, token, observedAt, jobs, events, busy, editingRequirements, setEditingRequirements, action, api, refresh, setSelected, setView, sessionEpoch, signOut }: Dashboard & { item: Work }) {
   const now = Number.isNaN(observedAt) ? Date.now() : observedAt;
@@ -290,9 +291,9 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
         : { label: 'Hold task', run: () => action(item.id, 'hold', { reason: 'Held from the Task page', expectedRevision: item.revision }) };
   // Stuck or waiting: one sentence why, one on what happens next. Moving work reads the same two lines as where it is now.
   const stuck = !closed && group !== 'shipped' && (group !== 'moving' || held.overdue || trialFailed || plain.tone === 'stuck');
-  // A waiting or stuck task's why names a failed trial by its counts; the output itself is under Checks, shown once.
+  // A waiting or stuck task's why names a failed trial by its counts, also once the Lead has sent the task back on it — unless something else holds the task now; the output itself is under Checks, shown once.
   const failures = trial?.groups.filter(entry => entry.failed > 0).map(entry => `${entry.failed} of ${entry.total} ${entry.name === 'tests' ? 'test files' : 'e2e cases'} failed`).join(', ');
-  const why = stuck && trialHasFailed ? `Its merge trial failed${failures ? `: ${failures}` : ''}.` : stateSentence;
+  const why = stuck && trialHasFailed && (trialFailed || plain.tone !== 'stuck') ? `Its merge trial failed${failures ? `: ${failures}` : ''}.` : stateSentence;
   // Time in state, one number everywhere (GY-108): what the task's Work row counts while the task moves or is blocked, overdue mark and all; since it entered its group's state in the groups that carry no clock; from the trial's end while a failed trial holds it.
   const entered = group === 'needs-you' ? item.humanRequest?.at ?? statusSince(item, now) : statusSince(item, now);
   const inState = closed ? null : trialFailed ? statusDuration(trial?.finishedAt ?? item.stageEnteredAt, now)

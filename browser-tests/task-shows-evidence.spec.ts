@@ -225,6 +225,18 @@ test('e2e:task-shows-evidence — a released task waiting for a Builder shows ho
   expect(await noSideScroll(page)).toBe(true);
 });
 
+// A moving task past the bound says so in its header, in the words and shape its Work row uses (GY-108).
+test('e2e:task-shows-evidence — a moving task held past the bound is marked overdue in its header', async ({ page }) => {
+  // A trial that passed and waits for its review: nothing failed, the task has simply been handed in for 31 minutes.
+  const late = { ...item, mergeLedger: { ...item.mergeLedger, refusal: { kind: 'merge', reason: 'trial passed ahead of review: the trial that passed is kept and the head lands once the same head is approved' } },
+    pipeline: { ...item.pipeline, submittedAt: at(31), resubmittedAt: at(31) } };
+  await open(page, 390, late, { ...timings, trial: { ...timings.trial, steps: timings.trial.steps.map(step => ({ ...step, result: 'passed' })) } });
+  const state = page.locator('article.item-page [data-task-state]');
+  await expect(state).toHaveText(/^Moving Testing · ▲ 31m overdue$/);
+  expect(await state.locator('.status-age.overdue').count()).toBe(1);
+  expect(await noSideScroll(page)).toBe(true);
+});
+
 // AC-3: a change the control plane observed itself is never pushed, so no fetch can reach its head: it is checked out by its commit into a worktree of the install's checkout under /tmp, whose own files stay as they are.
 test('e2e:task-shows-evidence — a change the control plane observed itself is checked out by its commit from the install\'s checkout, never fetched', async ({ page }) => {
   const observed = { ...item, candidate: { ...candidate, pr: 0 }, submission: { epoch: 3, pr: 0 },

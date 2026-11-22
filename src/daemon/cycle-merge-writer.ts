@@ -767,8 +767,9 @@ async function startMergeFlight(cycle: Pick<Cycle, 'state' | 'effects' | 'now'>,
     // By key, not index: a stale entry may have been dropped from the list (GY-3148).
     const reporting = heads[index]!, place = writer.inFlights?.findIndex(candidate => candidate.key === reporting.key) ?? -1, position = writer.inFlights?.[place];
     if (!live.has(entry) || !position) return;
+    // The same step sent again keeps its start; a new step takes now's, and is written even when the clock has not moved since.
     const startedAt = step === position.step && position.stepStartedAt ? position.stepStartedAt : at();
-    if (startedAt !== position.stepStartedAt) {
+    if (step !== position.step || startedAt !== position.stepStartedAt) {
       writer.inFlights![place] = { ...position, step, stepStartedAt: startedAt };
       if (place === 0) nameFlight(state);
       void effects.persist(state).catch(() => {});

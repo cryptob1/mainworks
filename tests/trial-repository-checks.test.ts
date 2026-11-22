@@ -518,5 +518,5 @@ test('unit:trial-declared-selection — a non-Node repository selects and shards
     changedFiles: ['frontend/app.js'], timeoutMs: 60_000, run, retries: 0, cores: 2, checkoutRoots: [] });
   assert.deepEqual(commands, ['check-ui', 'select-specs', 'check-specs', 'check-specs']);
   assert.deepEqual(selected.sort(), ['spec/a.spec.js', 'spec/b.spec.js']);
-  assert.deepEqual(verdict.tests, { passed: 3, failed: [], files: 3 });
+  assert.deepEqual(verdict.tests, { passed: 3, failed: [], files: 3, slowest: { file: 'spec/a.spec.js', durationMs: 1 } });
 });
