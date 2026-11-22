@@ -80,7 +80,7 @@ test('unit:caretaker-checklist-is-complete — the one prompt file holds all six
   assert.equal(caretakerChecks.length, 6);
   for (let index = 1; index <= 6; index++) assert.match(prompt, new RegExp(`^\\(${index}\\) `, 'm'), `check ${index} is numbered`);
   assert.match(prompt, /no open item already names the fault/, 'it looks for an open item before filing one');
-  const named = [...prompt.matchAll(/graphyard ((?:[a-z]+ ?)+)/g)].map(match => match[1]!.trim());
+  const named = [...prompt.matchAll(/mainworks ((?:[a-z]+ ?)+)/g)].map(match => match[1]!.trim());
   assert.ok(named.length >= 8);
   const allowed = [...caretakerCommands, ...caretakerReads];
   for (const command of named) assert.ok(allowed.some(entry => command === entry || command.startsWith(`${entry} `)), `${command} is a permitted command`);

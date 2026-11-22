@@ -423,7 +423,7 @@ test('unit:install-principal-roster — init --scan --apply without an install w
     const { stdout } = await run(['init', '--scan', '--apply', '--url', 'https://graphyard.example']);
     const result = JSON.parse(stdout);
     assert.equal(result.principalsFile, null);
-    assert.match(result.next, /graphyard install --apply/);
+    assert.match(result.next, /mainworks install --apply/);
     await assert.rejects(stat(join(fixture.root, '.graphyard/principals.json')), { code: 'ENOENT' });
     const state = JSON.parse(await readFile(join(fixture.root, '.graphyard/repository-setup.json'), 'utf8'));
     assert.equal(state.artifacts.principals, null);

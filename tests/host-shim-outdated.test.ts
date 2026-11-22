@@ -77,7 +77,7 @@ test(`${proof} — a host whose shim reports another digest takes no shard, read
   const attention = outdatedShimAttention(await probes());
   assert.equal(attention.length, 1);
   assert.match(attention[0]!.text, new RegExp(`^${target}`));
-  assert.match(attention[0]!.next, /graphyard host prepare/);
+  assert.match(attention[0]!.next, /mainworks host prepare/);
 
   // With this release's shim the same host takes shards.
   await writeFile(hosts.shim, hostShimScript);

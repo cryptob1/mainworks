@@ -93,7 +93,7 @@ test('integration:blocker-escalates — one cycle after the blocker: an attentio
   assert.ok(line, `master status carries the blocker as attention: ${JSON.stringify(status.attention)}`);
   assert.match(line.text, /GY-1's blocker has waited 1m/);
   assert.ok(line.text.includes(blocker), 'the attention line names the blocker');
-  assert.match(line.next, /graphyard master unblock GY-1 REASON/);
+  assert.match(line.next, /mainworks master unblock GY-1 REASON/);
   assert.doesNotMatch(line.next, /Needs you/, 'the attention line no longer promises a Needs you escalation');
   // Unchanged, the blocker prompts nobody again and the attention line stands as it was.
   f.restart();

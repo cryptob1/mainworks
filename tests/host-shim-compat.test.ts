@@ -70,7 +70,7 @@ test(`${proof} — master status reads each host's latest probe with when it was
   await install(hostShimScript.replace(hostShimDigest, 'e'.repeat(64)).replace(verbsLine, 'verbs probe:1'));
   const away = await readHostReadings([], { file, run, local: 'here' });
   assert.equal(outdatedShimAttention(away).length, 1, 'an attention line names the host while it waits');
-  assert.match(outdatedShimAttention(away)[0]!.next, /graphyard host prepare/);
+  assert.match(outdatedShimAttention(away)[0]!.next, /mainworks host prepare/);
   const reading = await trialReading();
   await recordRemoteShardRun(root, { at: new Date().toISOString(), wallMs: 1000, shards: 2, remote: 0, queuedWhileIdle: 0, host: 'here', celsius: null,
     hosts: [{ name: target, away: true, reason: reading.reason, celsius: null, freeCores: 0 }] });

@@ -79,7 +79,7 @@ test('unit:managed-tests-page-lists-repository-cases-only — a managed reposito
   const page = text(renderToStaticMarkup(createElement(TestsView, { data: empty, view: 'cases', error: '', loading: false, filter: 'all', setFilter: noop, retry: noop, api: async () => ({}), canEdit: false })));
   assert.match(page, /No test cases yet/, 'the empty state, with no fabricated rows');
   assert.match(page, /e2e\/cases\/ID\.json/, 'it names the e2e/cases/ format a case is added as');
-  assert.match(page, /graphyard e2e run/, 'it names the command that records a run');
+  assert.match(page, /mainworks e2e run/, 'it names the command that records a run');
   assert.ok(!page.includes('capacity-limit-redispatch') && !page.includes('fixture-static-home') && !page.includes('fixture-compose-app'), 'no seeded fixture case is named');
 
   // Two cases under the fixture's e2e/cases/: exactly those two are listed, each with a real timestamp.

@@ -38,7 +38,8 @@ GRAPHYARD_[A-Z0-9_]*
 POSTGRES_(USER|PASSWORD|DB): graphyard\b
 -U graphyard\b
 //graphyard:
-/graphyard\b(?=["'`\s]|$)
+:\d+/graphyard\b
+graphyard\\\.(json|mjs)
 <!-- /?graphyard(-master)? -->
 # HTTP headers clients and loops already send
 \b[Xx]-[Gg]raphyard-[\w-]+
@@ -79,3 +80,9 @@ POSTGRES_(USER|DB)=graphyard
 [Tt]he old `?graphyard`? command
 # Image tags installs built before the rename
 \bgraphyard-(local|trial):[\w.$-]+
+# The same names escaped inside regular expressions, and the database name in connection strings
+@cryptob1\\/graphyard\b
+\\/(opt|bin)\\/graphyard\b
+@[^/\s]+/graphyard\b
+pathname = '/graphyard'
+--server-name graphyard\b

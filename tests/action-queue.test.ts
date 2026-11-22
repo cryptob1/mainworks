@@ -413,7 +413,7 @@ test('integration:typed-agent-requests — an agent that needs something records
   blocked = await engine.execute(worker, 'request', blocked.id, { type: 'blocker', epoch: blocked.epoch, reason: 'the deployment provider is refusing every token' }, randomUUID());
   const blocker = openAgentRequests(blocked, new Date())[0];
   assert.equal(blocker.decider.kind, 'follow-up');
-  assert.match(blocker.decider.command!, /graphyard master create — a follow-up item naming GY-\d+/);
+  assert.match(blocker.decider.command!, /mainworks master create — a follow-up item naming GY-\d+/);
   assert.equal(blocked.blocker, 'the deployment provider is refusing every token');
   assert.equal(blocked.lease, null);
   // A note is a record, not a hand-off: it keeps the lease and asks nobody for anything.
@@ -763,7 +763,7 @@ test('integration:typed-next-action — the gate evaluator and the action comput
   const own = nextAction(both, [both, dependency], new Date(at));
   assert.equal(own!.kind, 'attention', 'the filing refusal is this item\'s own');
   assert.match(own!.refusal!, /owes an end-to-end proof/);
-  assert.match(own!.needsHuman!.resolve!, /graphyard master requirements GY-2/);
+  assert.match(own!.needsHuman!.resolve!, /mainworks master requirements GY-2/);
 });
 
 test('unit:board-api — unused reads return 404 and still require authentication', async () => {

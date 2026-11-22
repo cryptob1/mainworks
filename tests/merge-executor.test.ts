@@ -463,7 +463,7 @@ test('integration:executor-trial-failure-rework-no-approver — a rework the pla
   waiting.mergeWriter.reworks = [{ key: 'GY-1', id: 'w1', head: sha('head1'), reason: `${trialFailurePrefix}: tests tests/item.test.ts`, refusedAt: iso(start), attempts: 0, lastError: null }];
   const waited = await runCycle(config, waiting, effectsFor({ work: () => [submitted(1, 30)], now, mergeWriter: fakePorts().ports }), now);
   assert.equal(waiting.mergeWriter.reworks[0]?.lastError, 'this loop runs without the master identity');
-  assert.ok(waited.actions.some(action => action.state === 'failed' && /graphyard master rework GY-1 REASON/.test(action.detail)), JSON.stringify(waited.actions.map(action => action.detail)));
+  assert.ok(waited.actions.some(action => action.state === 'failed' && /mainworks master rework GY-1 REASON/.test(action.detail)), JSON.stringify(waited.actions.map(action => action.detail)));
 });
 
 test('unit:merge-writer-status — master status and the daemon summary show mergeWriter.queue (oldest first), inFlight, lastMergeAt and refusals; the loop\'s own effects wire the reads with the merge-record post under one key per step; docs/delivery-redesign.md Merge writer states the sequence and the reconcile rule within 80 net words', async () => {

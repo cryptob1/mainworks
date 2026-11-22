@@ -54,7 +54,7 @@ test(`${proof} — on a Tailscale SSH host the printed script runs an OpenSSH fo
 
   await assert.rejects(readFile(join(hosts.host('box'), 'etc', 'ssh', 'sshd_graphyard_config')), 'a host without Tailscale SSH gets no second OpenSSH');
   assert.doesNotMatch(hosts.prepareOutput('box'), /Tailscale/);
-  assert.match(hosts.prepareOutput('box'), /graphyard host add gy-compute@box\s*$/);
+  assert.match(hosts.prepareOutput('box'), /mainworks host add gy-compute@box\s*$/);
 });
 
 test(`${proof} — host add takes USER@HOST:PORT and an alias, refuses Tailscale SSH's plain shell, and reports whether ${me}@HOST logs in unattended`, async () => {

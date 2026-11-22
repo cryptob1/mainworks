@@ -97,7 +97,7 @@ test('unit:setup-self-provision — master setup plans the derived variables the
     // A host that recorded no deployment names the install that records one, and sets nothing.
     const unnamed = await masterSetup(root, master, { apply: true }, { locate: async () => null });
     assert.equal(unnamed.target, null);
-    assert.match(unnamed.next, /graphyard install --provider compose\|local --repo owner\/project --apply/);
+    assert.match(unnamed.next, /mainworks install --provider compose\|local --repo owner\/project --apply/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
