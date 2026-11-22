@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { access, readdir, realpath, stat } from 'node:fs/promises';
 import { launchRecipe } from './harness.js';
 import { isMiseShim, onSearchPath, realRuntimeBinary } from './runtime-binary.js';
-import { runtimeAdapter, runtimeAdapters, providerUsageErrors, cursorLoginFile, accountHomeEnvironment } from './master/runtimes.js';
+import { runtimeAdapter, runtimeAdapters, reportedModel, providerUsageErrors, cursorLoginFile, accountHomeEnvironment } from './master/runtimes.js';
 import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { homedir } from 'node:os';
@@ -14,9 +14,11 @@ import { environmentKinds, type AgentEnvironment, type EnvironmentKind, type Mas
 import { readCredentialFile } from './private-file.js';
 import { masterConfinementVariable } from './master/confinement.js';
 import { planModelUnused, smokeRegistryAccount } from './runner/roles.js';
+import { wrongModel } from './model/account-quota.js';
 import { fleetOrder, roleUnsupported } from './model/worker-preference.js';
 import type { SmokeResult } from './runner/pi.js';
 import { accountIneligibility, lastGoodUsage, deriveAccountPlan, pinnedInstall, fleetRoles, liveSessions, roleLimit, proposedConcurrency, proposedRuntimeRoles, proposedRuntimes, rolePolicy, roleRuntimeKinds, roleRuntimeRefusal, smokeFailureDue, smokeTestedKinds, type AccountKey, type AgentRegistry, type RolePolicy, type FleetAccount, type FleetAccountInput, type FleetModel, type FleetRole, type FleetRoleName, type FleetRuntime, type FleetSession, type LaunchContract, type QuotaObservation, type RunOutcome, type SessionSkip, type SmokeObservation } from './model/registry.js';
+import { parseProbeFailure } from './model/account-quota.js';
 import { hostAccountCheck, recordHostAccountCheck, clearEndedHostAccountSessions, clearHostAccountSession, hostAccountSessions, registerHostAccountSession } from './host-accounts.js';
 export { exhaustionTail, outOfCreditsScreen } from './exhaustion-screen.js';
 
@@ -207,13 +209,17 @@ export async function checkAccountLive(account: FleetAccount, runtime: FleetRunt
     let result: SmokeResult;
     try { result = await (probe.smoke ?? (target => smokeRegistryAccount(target, { timeoutMs: probe.smokeTimeoutMs })))(target); }
     catch (error) { result = { ok: false, error: String(error) }; }
-    const said = result.ok ? null : (result.error || 'The live request failed').replace(/[\u0000-\u001f\u007f\s]+/g, ' ').trim().slice(0, 500);
+    // A request that reported a model other than the account's own is broken, naming both, passing or
+    // failing (GY-3596): a failing OpenCode smoke reports the banner as its error (`build · big-pickle`, GY-3592).
+    const wrong = wrongModel(reportedModel(runtime.launch.kind, result.output ?? result.error ?? ''), model);
+    if (wrong) result = { ok: false, error: wrong };
+    const parsed = result.ok ? null : parseProbeFailure(result.error, now, (text, at) => runtimeResetTime(text, runtime.launch.kind, at));
     // GY-3592: OpenCode answering on another model says the plan's model never ran, not that the plan is spent.
-    const reason = said && planModelUnused(said, model) ? `${account.name}'s plan model ${model} was not used: OpenCode answered on another model` : said;
+    const unused = !!parsed && planModelUnused(parsed.reason, model);
+    const reason = parsed ? unused ? `${account.name}'s plan model ${model} was not used: OpenCode answered on another model` : parsed.reason : null;
     // The answer to a one-word prompt is the provider's alone, never an agent's prose, so any runtime's limit notice reads as one.
-    const limited = !!reason && liveLimitNotices().some(notice => notice.test(reason));
-    const stated = limited ? runtimeResetTime(reason, runtime.launch.kind, now) : null;
-    const reset = stated && Date.parse(stated) > now ? stated : null;
+    const limited = !!parsed && !unused && (parsed.apiError === 'usage_limit_reached' || liveLimitNotices().some(notice => notice.test(parsed.reason)));
+    const reset = limited ? parsed.resetsAt : null;
     const since = new Date(now).toISOString();
     // A refusal that names no reset is held for one check interval, shown as reset unknown.
     const quota: QuotaObservation = { loggedIn: result.ok || !detectLoggedOut(reason ?? ''), state: result.ok ? 'available' : limited ? 'exhausted' : 'broken', usage, since,

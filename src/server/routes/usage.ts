@@ -1,14 +1,14 @@
 import { z } from 'zod';
 import { demand } from '../../model.js';
 import { defineRoutes, parseJson } from '../routes.js';
-import { readRegistry } from '../../agent-registry.js';
+import { readRegistry, recordSessionModels } from '../../agent-registry.js';
 import { builderModel, costSummary, type UsageRow } from '../../model/token-costs.js';
 
 const tokens = z.number().int().min(0).max(1e13);
 const rowSchema = z.object({
   id: z.string().min(1).max(300), work: z.string().min(1).max(80).nullable(), role: z.enum(['worker', 'reviewer', 'producer', 'master']),
   account: z.string().max(80).nullable(), runtime: z.string().min(1).max(40), model: z.string().min(1).max(200).nullable(), reported: z.boolean(),
-  input: tokens, output: tokens, cacheRead: tokens, cacheWrite: tokens, at: z.string().datetime(),
+  input: tokens, output: tokens, cacheRead: tokens, cacheWrite: tokens, at: z.string().datetime(), ran: z.string().min(1).max(200).nullable().optional(),
 }).strict();
 
 /**
@@ -31,6 +31,9 @@ export const usageRoutes = defineRoutes('usage', [
           ON CONFLICT (id) DO UPDATE SET reported=EXCLUDED.reported, input_tokens=EXCLUDED.input_tokens, output_tokens=EXCLUDED.output_tokens, cache_read_tokens=EXCLUDED.cache_read_tokens, cache_write_tokens=EXCLUDED.cache_write_tokens, at=EXCLUDED.at`,
           [row.id, row.work, row.role, row.account, row.runtime, row.model ?? own?.id ?? own?.name ?? null, row.reported, row.input, row.output, row.cacheRead, row.cacheWrite, row.at]);
       }
+      // A finished session that ran a model other than its account's own marks the account broken (GY-3596).
+      const ran = rows.filter(row => row.account && row.ran);
+      if (ran.length) await services.engine.store.transaction((db, now) => recordSessionModels(db, actor, ran.map(row => ({ account: row.account!, ran: row.ran! })), now));
       return { recorded: rows.length };
     },
   },

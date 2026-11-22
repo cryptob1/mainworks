@@ -1,0 +1,13 @@
+{
+  "id": "caretaker-report-on-home",
+  "title": "A caretaker pass frees a held account that answers, reports, and Home shows what needs the owner",
+  "description": "Seed a held account whose live request passes and a compute host that is away, run one loop cycle whose caretaker pass is a stub agent following the checklist with the caretaker's own token, and assert the account becomes available, the report is saved, Home shows the away host's line under Needs you, and a requirements call with the caretaker's token answers 403.",
+  "target": "any",
+  "required": false,
+  "steps": [{
+    "kind": "command",
+    "name": "one caretaker pass reports and Home shows its needs-the-owner line",
+    "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:caretaker-report-on-home tests/caretaker.test.ts",
+    "timeoutSeconds": 300
+  }]
+}

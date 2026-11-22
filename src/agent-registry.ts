@@ -8,7 +8,7 @@ import { unownedFamilySql } from './store/tables/work.js';
 import { registryRoles, RegistryError, chooseSession, emptyRegistry, fleetView, foldObservations, liveSessions, endRegistrySession, runOutcomes, refusalHistoryLimit, settleSessions, type AgentRegistry as RegistryDocument, type FleetSession, type RegistryMutation } from './model/registry.js';
 import { applyRegistryMutation, registryMutationSchemas, observationRequestSchema, selectionRequestSchema } from './model-boundary/registry.js';
 import { implementerProvider, type ReviewDiversity } from './model/review-diversity.js';
-import { requestLimitNoticeCheck } from './model/account-quota.js';
+import { recordSessionModel, requestLimitNoticeCheck } from './model/account-quota.js';
 
 /**
  * The agent registry as control-plane state.
@@ -25,7 +25,7 @@ import { requestLimitNoticeCheck } from './model/account-quota.js';
  */
 export const registryEventPrefix = 'agent-registry.';
 const configurators = ['admin', 'coordinator'] as const;
-const readers = ['admin', 'coordinator', 'reader', 'slice-lead'] as const;
+const readers = ['admin', 'coordinator', 'reader', 'slice-lead', 'caretaker'] as const;
 
 /** GY-3285's command, the only writer that set the worker role's concurrency per account before this marker existed. */
 const perAccountWorkerReason = 'master workers ';
@@ -86,6 +86,15 @@ export async function recordLimitNoticeCheck(db: Pick<pg.PoolClient, 'query'>, a
   registry.revision++; registry.updatedAt = at;
   await appendRegistry(db, actor, 'observed', registry, { limitNotice: { account, work: notice.work, role: notice.role, reason: notice.reason, resetsAt: notice.resetsAt } });
   return account;
+}
+
+/** Persist the accounts finished sessions caught on a model other than their own (GY-3596), in the caller's transaction. */
+export async function recordSessionModels(db: Pick<pg.PoolClient, 'query'>, actor: Principal, reports: { account: string; ran: string }[], now: Date) {
+  const registry = await readRegistry(db), at = now.toISOString();
+  const marked = reports.filter(report => recordSessionModel(registry, report.account, report.ran, { actor: actor.id, at }));
+  if (!marked.length) return;
+  registry.revision++; registry.updatedAt = at;
+  await appendRegistry(db, actor, 'observed', registry, { wrongModel: marked });
 }
 
 export class AgentRegistry {
@@ -151,7 +160,8 @@ export class AgentRegistry {
 
   /** One configuration change: validated, referentially whole, idempotent, appended with its reason. */
   async mutate(actor: Principal, kind: RegistryMutation, input: unknown, key: string) {
-    demand((configurators as readonly string[]).includes(actor.role), 'The agent registry is configured by admin and coordinator identities', 403);
+    // GY-3593: the caretaker corrects an account's quota mark, and changes nothing else in the registry.
+    demand((configurators as readonly string[]).includes(actor.role) || actor.role === 'caretaker' && kind === 'account.quota', 'The agent registry is configured by admin and coordinator identities', 403);
     demand(key && key.length <= 200, 'An Idempotency-Key is required', 400);
     demand(kind in registryMutationSchemas, `Unknown registry change ${kind}`, 404);
     const receiptInput = { kind, input };

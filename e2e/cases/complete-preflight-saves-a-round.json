@@ -1,0 +1,13 @@
+{
+  "id": "complete-preflight-saves-a-round",
+  "title": "complete refuses a missing proof title in seconds and accepts once fixed",
+  "description": "A stub Builder submits a head whose criterion proof id is missing from its test title against a control-plane stub. Asserts complete refuses within 10 seconds with the proof id named, the item stays in build with the same lease and epoch, and no review or trial was requested; after the title is fixed and committed, the same complete is accepted.",
+  "target": "any",
+  "required": false,
+  "steps": [{
+    "kind": "command",
+    "name": "Complete refuses a missing proof title before submit and accepts once the title is fixed",
+    "run": "node --import tsx tests/helpers/run-tests.ts tests/complete-preflight-saves-a-round.test.ts",
+    "timeoutSeconds": 60
+  }]
+}
