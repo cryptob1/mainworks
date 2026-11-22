@@ -6,16 +6,17 @@ import type { Work } from '../model.js';
 import { mergeLedgerKinds, mergeTrialKind, mergeTrialStepKind } from '../model/merge-ledger.js';
 import { trialTimings, type TrialTimings } from '../model/task-evidence.js';
 import { workIdByRef } from '../store/locked-read.js';
+import { checkoutRoot } from '../merge-writer/local-observation.js';
 import { gitRunner } from './merge-record.js';
 import type { Services } from './routes.js';
 
-/** `GET /api/work/ID/timings`: when the item was released, and its newest merge trial's timings. */
-export async function readTaskTimings(services: Services, id: string): Promise<{ releasedAt: string | null; trial: TrialTimings | null }> {
+/** `GET /api/work/ID/timings`: when the item was released, its newest merge trial's timings, and the install's checkout a head is checked out in. */
+export async function readTaskTimings(services: Services, id: string): Promise<{ releasedAt: string | null; trial: TrialTimings | null; checkout: string }> {
   const pool = services.engine.store.pool;
   const read = await pool.query(`SELECT kind, payload, created_at, clock_timestamp() AS now FROM events WHERE work_id = ${workIdByRef('$1')} AND kind = ANY($2::text[]) ORDER BY seq`,
     [id, ['ready', mergeLedgerKinds.intent, mergeTrialStepKind, mergeTrialKind]]);
   const released = read.rows.find(row => row.kind === 'ready');
-  return { releasedAt: released ? new Date(released.created_at).toISOString() : null, trial: trialTimings(read.rows, read.rows[0] ? new Date(read.rows[0].now).getTime() : Date.now()) };
+  return { releasedAt: released ? new Date(released.created_at).toISOString() : null, trial: trialTimings(read.rows, read.rows[0] ? new Date(read.rows[0].now).getTime() : Date.now()), checkout: checkoutRoot() };
 }
 
 /** How much of one file's diff the page is sent. */

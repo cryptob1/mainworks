@@ -27,9 +27,9 @@ const item = {
   sessions: [{ id: `${builder}:3`, kind: 'implementation', principal: builder, epoch: 3, runtime: 'claude', host: 'vish-msi', transcript: `run:${run}`, subject: 'GY-3588', state: 'running', observed: 'working', observedAt: at(0), startedAt: at(41), updatedAt: at(0), seenAt: at(0) }],
   createdAt: at(60), updatedAt: at(0),
 };
-const timings = { releasedAt: at(41), trial: { head, startedAt: at(21), finishedAt: at(2) as string | null, durationMs: 19 * 60_000, output: null as string | null,
+const timings = { releasedAt: at(41), checkout: '/srv/mainworks/checkout', trial: { head, startedAt: at(21), finishedAt: at(2) as string | null, durationMs: 19 * 60_000, output: null as string | null,
   steps: [{ step: 'checkout', durationMs: 20_000, result: 'passed' }, { step: 'install', durationMs: 60_000, result: 'passed' }, { step: 'build', durationMs: 40_000, result: 'passed' }, { step: 'tests', durationMs: 17 * 60_000, result: 'failed' }],
-  groups: [{ name: 'tests', passed: 39, total: 40 }, { name: 'e2e', passed: 2, total: 2 }], slowest: { file: slow, durationMs: 14 * 60_000 } as { file: string; durationMs: number } | null } };
+  groups: [{ name: 'tests', passed: 39, failed: 1, total: 40 }, { name: 'e2e', passed: 2, failed: 0, total: 2 }], slowest: { file: slow, durationMs: 14 * 60_000 } as { file: string; durationMs: number } | null } };
 const files = [{ path: 'src/merge-writer/remote-shards.ts', additions: 9, deletions: 4 }, { path: slow, additions: 77, deletions: 0 }, { path: 'e2e/cases/verification-uses-remote-hosts.json', additions: 0, deletions: 27 }];
 const patch = '@@ -1,2 +1,3 @@\n-const usable = host => underHeatLimit(host.reading);\n+// This machine\'s launcher already waits on heat per container.\n+const usable = host => host === hosts[0] || underHeatLimit(host.reading);';
 const events = [
@@ -140,6 +140,7 @@ for (const width of [1280, 390]) {
     const lead = task.getByRole('tabpanel', { name: 'Lead' });
     await expect(lead.locator('[data-decision]')).toHaveText([/Master messaged the builder.*Keep the local host in placement\./, /Released for work.*Hotfix for the trial bottleneck/]);
     await expect(lead).not.toContainText('Picked up by a builder');
+    expect(await noSideScroll(page)).toBe(true);
 
     // Details: ids, epochs, criteria and proofs.
     await tabs.getByRole('tab', { name: 'Details' }).click();
@@ -173,11 +174,11 @@ test('e2e:task-shows-evidence — a trial that passed ahead of review is not sho
   await expect(task.getByLabel('Test output')).toHaveCount(0);
 });
 
-// A running trial shows the output of the tests that ran so far, and its time in state counts from the trial's start.
-test('e2e:task-shows-evidence — a running trial shows its test output so far', async ({ page }) => {
+// A running trial shows the output of the tests that ran so far, the counts so far and the slowest file so far, and its time in state counts from the trial's start.
+test('e2e:task-shows-evidence — a running trial shows its test output, counts and slowest file so far', async ({ page }) => {
   const running = { ...item, mergeLedger: { ...item.mergeLedger, state: 'intent', refusal: null }, gates: item.gates.map(gate => ({ ...gate, passed: gate.name !== 'test' && gate.name !== 'merge', reasons: [] })) };
   const sofar = `$ node --test (shard 2)\nnot ok 3 - ${slow}\n  a CPU sensor reads 96C, at or over 85C`;
-  await open(page, 390, running as unknown as typeof item, { ...timings, trial: { ...timings.trial, finishedAt: null, groups: [], slowest: null, output: sofar,
+  await open(page, 390, running as unknown as typeof item, { ...timings, trial: { ...timings.trial, finishedAt: null, groups: [{ name: 'tests', passed: 12, failed: 0, total: 40 }], slowest: { file: 'tests/shard-hosts.test.ts', durationMs: 4 * 60_000 }, output: sofar,
     steps: [...timings.trial.steps.slice(0, 3), { step: 'tests', durationMs: 17 * 60_000, result: 'running' }] } });
   const task = page.locator('article.item-page');
   await expect(task.locator('[data-task-state]')).not.toContainText('Merge trial failed');
@@ -185,5 +186,41 @@ test('e2e:task-shows-evidence — a running trial shows its test output so far',
   const checks = task.getByRole('region', { name: 'Checks' });
   await expect(checks.locator('[data-check="tests"]')).toHaveText(/tests.*running.*17 min/);
   await expect(checks.getByLabel('Test output')).toHaveText(sofar);
+  const trial = task.locator('[data-stage="trial"]');
+  await expect(trial).toContainText('So far: tests 12/40');
+  await expect(trial).toContainText('slowest: tests/shard-hosts.test.ts 4 min');
+  expect(await noSideScroll(page)).toBe(true);
+});
+
+// AC-1: a failed trial the Lead has already sent back is no longer what holds the task. The failing counts stay as the why;
+// the state, its time and the next step are the task's own, as its Work row reads them.
+for (const width of [1280, 390]) {
+  test(`e2e:task-shows-evidence — at ${width}px a failed trial the Lead has sent back shows the task's real state, time and next step`, async ({ page }) => {
+    const sentBack = { ...item, stage: 'build', stageEnteredAt: at(12), lease: null, reworkRequested: true,
+      lastRework: { reason: `trial failed: ${slow}`, binding: `${head}:merge-writer-trial-failed`, at: at(12) }, pipeline: { ...item.pipeline, reworkRounds: 1 },
+      sessions: [{ ...item.sessions[0]!, state: 'ended', observed: 'ended', endedAt: at(12), updatedAt: at(12) }] };
+    await open(page, width, sentBack as unknown as typeof item);
+    const task = page.locator('article.item-page');
+    await expect(task.locator('[data-task-state]')).toHaveText(/^Up next\s*Waiting · 12m$/);
+    await expect(task.locator('[data-stuck-why]')).toHaveText('Why: Its merge trial failed: 1 of 40 test files failed.');
+    await expect(task.locator('[data-stuck-next]')).toHaveText(/^Next: Mainworks \(assigns a builder\) — Hands it to the next free builder agent$/);
+    await expect(task.getByText(/It goes back to a Builder/)).toHaveCount(0);
+    // The trial's failure stays on the record: its stage, its counts and its output.
+    await expect(task.locator('[data-stage="trial"]')).toHaveAttribute('data-state', 'failed');
+    await expect(task.locator('[data-stage="trial"]')).toContainText('tests 39/40');
+    await expect(task.getByLabel('Test output')).toContainText('a CPU sensor reads 96C, at or over 85C');
+    expect(await noSideScroll(page)).toBe(true);
+  });
+}
+
+// AC-3: a change the control plane observed itself is never pushed, so its head is checked out by its commit in the install's checkout.
+test('e2e:task-shows-evidence — a change the control plane observed itself is checked out by its commit, in the install\'s checkout', async ({ page }) => {
+  const observed = { ...item, candidate: { ...candidate, pr: 0 }, submission: { epoch: 3, pr: 0 },
+    observation: { ...item.observation, source: 'control-plane', candidate: { ...candidate, pr: 0 } } };
+  await open(page, 390, observed as unknown as typeof item);
+  const task = page.locator('article.item-page');
+  await expect(task.locator('.task-header').getByRole('link', { name: new RegExp(`${head.slice(0, 8)}, open commit for GY-3588 in GitHub`) })).toHaveAttribute('href', `https://github.com/fixture/repository/commit/${head}`);
+  await expect(task.locator('.task-header').getByRole('link', { name: /PR #/ })).toHaveCount(0);
+  await expect(task.locator('.task-commands code')).toHaveText([`tail -f .graphyard/worker-runs/${run}/log.jsonl`, `git -C /srv/mainworks/checkout checkout ${head}`]);
   expect(await noSideScroll(page)).toBe(true);
 });

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ItemCostsView } from './costs';
 import type { CostSummary } from '../../src/model/token-costs';
 import LiveRun from '../components/live-run';
-import { ChangedFiles, Checks, LeadDecisions, PipelineRow, taskStages, useEvidence, type ChangedFile, type TaskTimings } from '../components/task-evidence';
+import { ChangedFiles, Checks, LeadDecisions, PipelineRow, useEvidence, type ChangedFile, type TaskTimings } from '../components/task-evidence';
 import { friendlyName } from '../fun';
 import { deploySmokeRequired, isClosed, needsProductReview, type Work } from '../../src/model';
 import { sessionSummary, transcriptRun, type SessionHandle } from '../../src/model/sessions';
@@ -19,15 +19,14 @@ import { CandidatePr, CandidateSha, shortShas } from '../candidate';
 import EvidenceArtifacts from '../components/evidence-artifacts';
 import PostDeployment from '../components/post-deployment';
 import TestCases from '../components/test-cases';
-import StatusAge from '../components/status-age';
 import Term, { Explained } from '../components/term';
 import { age } from '../../src/model/format';
 import { formatAge } from '../../src/model/duration';
 import { historyLabel, overlapLine, whatIsLeft, type LeftGroup } from '../item-page';
-import { plainStatus } from '../../src/model/plain-status';
+import { plainStatus, statusSince } from '../../src/model/plain-status';
 import { stageLabel, serveView } from '../../src/model/plain-stage';
 import { groupWithin, nextActor, timedGroups } from '../groups';
-import { checkStates, prSteps, stepHeld } from '../../src/model/pr-steps';
+import { checkStates, prSteps, stepHeld, stepSince } from '../../src/model/pr-steps';
 import { releaseView } from '../../src/model/release';
 import { shownRisk } from '../../src/model-boundary/risk-class.js';
 import StatusBadge from '../components/status-badge';
@@ -188,17 +187,20 @@ export function PreviewPanel({ preview }: { preview: ItemPreview }) {
 }
 
 /**
- * One work item's page (GY-161). Its first screen is the plate (GY-3392): the why sentence — the
- * item's own why (GY-3382) or its plain summary (GY-2011), or the title when neither exists — then
- * the evidence the proofs kept (the merge trial's browser screenshots, the product review, the
- * real-world checks, the worker runs' output), then one plain line on what changed for the user,
- * then who acts next (a role, never a code name), the state sentence and the four states. A
- * decision only the human may make is answered right here. Below it: Details (the full description
- * and criteria, folded, GY-2011), the preview, Costs and Activity. Everything technical — what is
- * left per gate and who clears it (GY-171), the change's commit, checks and trials, gate
+ * One work item's page (GY-161), the Task page (GY-3599). Its first screen is the header: the
+ * title; the state with its time, a link to the pull request or the commit, the Builder and the
+ * model the session reported, the diff stats and one state-changing action; then one sentence on
+ * why a stuck or waiting task waits and one on what happens next — the why leads with the item's
+ * own why (GY-3382) or its plain summary (GY-2011) — then the pipeline row: where the time went.
+ * Under it four tabs: Checks and diff (the merge trial's checks with the failing output, the
+ * changed files and each file's diff, then the evidence the proofs kept: the trial's browser
+ * screenshots, the product review, the real-world checks), Live session (the Builder's terminal,
+ * read-only), Lead (the Lead's decisions) and Details (what changed for the user, the description
+ * and criteria, the preview, Costs and Activity). A decision only the human may make is answered
+ * right here. Everything technical — what is left per gate and who clears it (GY-171), gate
  * internals, sessions and their attach commands, review provider, next action, agent requests,
- * evidence — is in one collapsed "Technical details" section, and policy changes are in the admin
- * Edit menu.
+ * evidence — is in one collapsed "Technical details" section under Details, and policy changes
+ * are in the admin Edit menu.
  */
 export default function WorkDetails({ item, work, status, token, observedAt, jobs, events, busy, editingRequirements, setEditingRequirements, action, api, refresh, setSelected, setView, sessionEpoch, signOut }: Dashboard & { item: Work }) {
   const now = Number.isNaN(observedAt) ? Date.now() : observedAt;
@@ -271,9 +273,11 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
   const costs = useEvidence<CostSummary & { builder?: { model: string; accountModel: string | null; differs: boolean } | null }>(api, `costs?work=${encodeURIComponent(item.key)}`, item.revision);
   const [tab, setTab] = useState<typeof tabs[number]>(tabs[0]);
   const trial = timings?.trial && timings.trial.head === item.candidate?.sha ? timings.trial : null;
-  // Only a refusal that says the trial of this head failed is a failed trial; a hold such as 'trial passed ahead of review' is not (GY-1524).
+  // The trial of this head failed when a refusal says so (a hold such as 'trial passed ahead of review' is not a failure, GY-1524) or a step of its verdict failed.
   const refusal = trialFailedGround(item) ? item.mergeLedger!.refusal!.reason : null;
-  const trialFailed = !!refusal || !!trial?.steps.some(step => step.result === 'failed');
+  const trialHasFailed = !!refusal || !!trial?.steps.some(step => step.result === 'failed');
+  // Its failure holds the task as stuck only until the Lead has sent it back. From then the state, its time and the next step are the task's own, as its Work row reads them; the failing counts stay as the why.
+  const trialFailed = trialHasFailed && !item.reworkRequested;
   // The Builder: who holds or last held the task, and the newest run of theirs the host keeps.
   const builderRun = (item.sessions ?? []).filter(handle => handle.kind === 'implementation' && transcriptRun(handle.transcript)).sort((a, b) => a.startedAt.localeCompare(b.startedAt)).at(-1);
   const builder = worker.owner ?? builderRun?.principal ?? null, builderName = builder ? friendlyName(builder) ?? builder : null;
@@ -285,11 +289,12 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
         : { label: 'Hold task', run: () => action(item.id, 'hold', { reason: 'Held from the Task page', expectedRevision: item.revision }) };
   // Stuck or waiting: one sentence why, one on what happens next. Moving work reads the same two lines as where it is now.
   const stuck = !closed && group !== 'shipped' && (group !== 'moving' || held.overdue || trialFailed || plain.tone === 'stuck');
-  // The why names the failure by its counts; the output itself is under Checks, shown once.
-  const failures = trial?.groups.filter(entry => entry.passed < entry.total).map(entry => `${entry.total - entry.passed} of ${entry.total} ${entry.name === 'tests' ? 'test files' : 'e2e cases'} failed`).join(', ');
-  const why = trialFailed ? `Its merge trial failed${failures ? `: ${failures}` : ''}.` : stateSentence;
-  // Time in state: since the pipeline stage it is in began, or its trial failed; before it is handed in, how long it has held its group.
-  const inStateSince = closed ? null : taskStages(item, timings, now).since;
+  // A waiting or stuck task's why names a failed trial by its counts; the output itself is under Checks, shown once.
+  const failures = trial?.groups.filter(entry => entry.failed > 0).map(entry => `${entry.failed} of ${entry.total} ${entry.name === 'tests' ? 'test files' : 'e2e cases'} failed`).join(', ');
+  const why = stuck && trialHasFailed ? `Its merge trial failed${failures ? `: ${failures}` : ''}.` : stateSentence;
+  // Time in state: from the trial's end while its failure holds the task; else since the task entered the state its group names, as its Work row counts it.
+  const inStateSince = closed ? null : trialFailed ? Date.parse(trial?.finishedAt ?? item.stageEnteredAt)
+    : Date.parse(group && timedGroups.has(group) ? stepSince(item, now, null, release) : statusSince(item, now));
   const add = files?.reduce((sum, file) => sum + file.additions, 0), del = files?.reduce((sum, file) => sum + file.deletions, 0);
   const panel = (name: typeof tabs[number], content: React.ReactNode) => <div role="tabpanel" aria-label={name} className="task-panel" hidden={tab !== name}>{content}</div>;
   return <article className="item-page" aria-label={item.title}>
@@ -303,7 +308,7 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
         </div>
       </div>
       <div className="item-meta">
-        <span data-task-state>{trialFailed ? <StatusBadge group="blocked">Stuck</StatusBadge> : group && <StatusBadge group={group}/>} <strong>{trialFailed ? 'Merge trial failed' : stageLabel(item, now, release, serve)}</strong>{inStateSince !== null ? <> · <span className="status-age">{formatAge(inStateSince, now)}</span></> : timedGroups.has(group ?? 'shipped') && <> · <StatusAge held={held}/></>}</span>
+        <span data-task-state>{trialFailed ? <StatusBadge group="blocked">Stuck</StatusBadge> : group && <StatusBadge group={group}/>} <strong>{trialFailed ? 'Merge trial failed' : stageLabel(item, now, release, serve)}</strong>{inStateSince !== null && <> · <span className="status-age">{formatAge(inStateSince, now)}</span></>}</span>
         {builderName && <span data-builder title={builder!}>Builder {builderName}</span>}
         {model && <span data-model={model.differs ? 'differs' : 'same'} className={model.differs ? 'amber' : undefined}>Model <span className="mono">{model.model}</span>{model.differs ? ` ▲ not the account's ${model.accountModel}` : ''}</span>}
         {files && files.length > 0 && <span className="mono" data-diff-stats>+{add} −{del} · {files.length} {files.length === 1 ? 'file' : 'files'}</span>}
@@ -329,7 +334,7 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
       <HumanChecksPanel item={item} token={token}/>
     </>)}
     {panel('Live session', tab !== 'Live session' ? null : builderRun ? <>
-      <p className="muted">{builderName}'s session on {builderRun.host}, read-only.</p>
+      <p className="muted">{builderRun.principal === builder ? builderName : friendlyName(builderRun.principal) ?? builderRun.principal}'s session on {builderRun.host}, read-only.</p>
       <LiveRun workId={item.id} run={transcriptRun(builderRun.transcript)!} token={token}/>
       <WorkerRunsPanel item={item} token={token}/>
     </> : <p className="muted">No Builder has started a session on this task yet.</p>)}
@@ -420,9 +425,12 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
       <h3>Evidence ({item.evidence.length})</h3>{item.evidence.map(e => <div className="criterion evidence-row" key={e.id}><strong>{e.revocation ? '⦸' : e.result === 'pass' ? '✓' : '×'} {e.proof}</strong><p>{e.trusted ? 'Trusted producer' : 'Worker assertion'} · {e.producer} · {e.sha.slice(0, 8)} · {e.executed} executed / {e.skipped} skipped</p>{e.reason && <p>Attested: {e.reason}</p>}{e.revocation && <p className="amber">Revoked by {e.revocation.actor}: {shortShas(e.revocation.reason)}</p>}{e.reuse && <p className="muted">Reused from the pass observed {new Date(e.reuse.observedAt).toLocaleString()} on {e.reuse.sourceSha.slice(0, 8)} (attempt sequence {e.reuse.sequence}, policy {e.reuse.policy.id} r{e.reuse.policy.revision}); a newer live attempt supersedes it.</p>}<EvidenceArtifacts evidence={e} token={token} observedAt={observedAt}/></div>)}
     </details>
     </>)}
+    {/* A change the control plane observed itself is never pushed: its head lives only in the install's checkout, so it is checked out there by its commit. */}
     {(builderRun || item.candidate) && <div className="task-commands muted"><span>From your terminal:</span>
       {builderRun && <code>tail -f .graphyard/worker-runs/{transcriptRun(builderRun.transcript)}/log.jsonl</code>}
-      {item.candidate && <code>git fetch origin {item.candidate.branch} && git checkout FETCH_HEAD</code>}
+      {item.candidate && (item.observation?.source === 'control-plane'
+        ? timings?.checkout && <code>git -C {timings.checkout} checkout {item.candidate.sha}</code>
+        : <code>git fetch origin {item.candidate.branch} && git checkout FETCH_HEAD</code>)}
     </div>}
   </article>;
 }

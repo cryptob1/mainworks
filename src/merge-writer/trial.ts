@@ -525,6 +525,14 @@ export function slowestFile(records: string): { file: string; durationMs: number
   }
   return slowest;
 }
+/**
+ * GY-3599: a trial's test counts so far, as each test shard's end reports them while the trial runs:
+ * of every file the trial runs, those that have passed and those that have failed so far, and the
+ * file that has run longest so far.
+ */
+export interface TrialCounts { passed: number; failed: number; files: number; slowest?: { file: string; durationMs: number } }
+/** GY-3599: what a trial sends beside its step as each test shard ends: its counts so far, and what it printed so far. */
+export interface TrialStepReport { output?: string; tests?: TrialCounts }
 /** How much of a failing runner child's output its diagnostic record keeps: enough to read the exit, little enough for one daemon action. */
 export const runnerDiagnosticTailLength = 1200;
 /**
@@ -761,8 +769,8 @@ export interface RunTrialInput {
   retries?: number;
   /** Called as each attempt starts, before it runs anything (GY-1832): a caller keeping attempt-scoped evidence starts it afresh. */
   onAttempt?: (attempt: number) => void;
-  /** GY-2963: called at each step's start — checkout, install, build, selection, the tests, each repository check by name — so the merge writer records where the trial is. */
-  onStep?: (step: string, output?: string) => void;
+  /** GY-2963: called at each step's start — checkout, install, build, selection, the tests, each repository check by name — so the merge writer records where the trial is. GY-3599: called again under the same step as each test shard ends, with the trial's counts so far and what it printed so far. */
+  onStep?: (step: string, report?: TrialStepReport) => void;
   onTiming?: (step: string, durationMs: number) => void;
   /** GY-3099: aborting it kills the trial's install, build and test children and starts no more, rejecting with its reason (`TrialCancelledError`), never retried. */
   signal?: AbortSignal;
@@ -1491,6 +1499,9 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const groups: TrialGroup[] = [];
     let detail: { failingCase?: string | null; timedOut?: boolean } | undefined;
     let failingOutput: string | undefined;
+    // GY-3599: the file that ran longest over every check, for the verdict and the Task page.
+    let slowest: { file: string; durationMs: number } | undefined;
+    const counted = (tests: { passed: number; failed: string[]; files: number }) => ({ ...tests, ...(slowest ? { slowest } : {}) });
     for (const check of checks) {
       if (check.paths && !touchesPaths(input.changedFiles, check.paths)) continue;
       if (check.selection) {
@@ -1499,7 +1510,8 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         passed += selected.tests.passed; files += selected.tests.files;
         failed.push(...selected.tests.failed); groups.push(...(selected.groups ?? []));
         runnerExit = selected.runnerExit ?? null;
-        if (failed.length) return finishTests('pass', { passed, failed, files }, runnerExit, groups, selected.logTail);
+        if (selected.tests.slowest && selected.tests.slowest.durationMs > (slowest?.durationMs ?? -1)) slowest = selected.tests.slowest;
+        if (failed.length) return finishTests('pass', counted({ passed, failed, files }), runnerExit, groups, selected.logTail);
         continue;
       }
       files++;
@@ -1519,7 +1531,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       passed++;
     }
     const logTail = failingOutput && log.join('\n').length > tailLength ? failureTail([failingOutput]) : tail();
-    return finishTests('pass', { passed, failed, files }, runnerExit, groups.length ? groups : undefined, logTail, detail);
+    return finishTests('pass', counted({ passed, failed, files }), runnerExit, groups.length ? groups : undefined, logTail, detail);
   };
   const runSelected = async (check: RepositoryTrialCheck): Promise<Pick<TrialRun, 'tests' | 'runnerExit' | 'groups' | 'logTail'>> => {
     const result = (tests: TrialRun['tests'], runnerExit: number | null = null, groups?: TrialGroup[], logTail = tail()) => ({ tests, runnerExit, groups, logTail });
@@ -1583,8 +1595,9 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const { lanes, breadth } = trialShardBreadth(cores, shards.length, await trialAffordableFiles(input.memory));
     input.onTiming?.(`tests: ${lanes} lanes, breadth ${breadth}`, 0);
     const settledShards: ({ group: TrialGroup; entries: string[]; unattributed: TrialRunnerError | null; passed: string[]; records: string } | undefined)[] = [];
+    // A shard's output goes to its own `entries` while the shards run, so the log keeps shard order whichever finishes first.
     let stopped: unknown = null;
-    // GY-3599: each shard's output as it ends, sent with the running step so the Task page shows it while the trial runs; a failing shard's stays shown.
+    // GY-3599: each shard's end sends the trial's counts so far with the running step, so the Task page shows them while the trial runs; what it printed so far goes with the first, and a failing shard's output stays shown.
     let failingShown = false;
     // A shard a host turned away is noted after every shard's output, so the note stays in the log tail kept on the item.
     const dropped = new Map<string, HostDroppedError>();
@@ -1618,7 +1631,11 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         const passed = tests.ok && !failing.length ? group : recorded.filter(record => record.passed && group.includes(record.file) && !failing.includes(record.file)).map(record => record.file);
         settledShards[index] = { group: { files: group, status: tests.status, signal: tests.signal, failed: failing }, entries, passed, records: recordText,
           unattributed: !tests.ok && !failing.length ? runnerFailure('tests', tests, group, recorded.filter(record => group.includes(record.file)).length) : null };
-        if (!failingShown || !tests.ok) { failingShown ||= !tests.ok; input.onStep?.(stepLabel, entries.join('\n').slice(-4000)); }
+        const ended = settledShards.filter(shard => shard !== undefined), slowest = slowestFile(ended.map(shard => shard.records).join('\n'));
+        const shown = !failingShown || !tests.ok;
+        failingShown ||= !tests.ok;
+        input.onStep?.(stepLabel, { tests: { passed: cached.size + ended.reduce((sum, shard) => sum + shard.passed.length, 0), failed: new Set(ended.flatMap(shard => shard.group.failed)).size, files: counted, ...(slowest ? { slowest } : {}) },
+          ...(shown ? { output: entries.join('\n').slice(-4000) } : {}) });
       } catch (error) {
         if (error instanceof HostDroppedError) { if (!dropped.has(error.host)) dropped.set(error.host, error); throw error; }
         log.push(...entries);

@@ -10,7 +10,7 @@ import { maskSecrets } from '../redaction.js';
 import { leadingProof } from '../model/flake-ledger.js';
 import type { TrialFlaked } from '../model/merge-ledger.js';
 import { defaultChildRun, type ChildRun } from '../child-runner.js';
-import { runTrial, recordedTests, trialAttempts, TrialCleanupError, ansiEscape, type RunTrialInput, type TrialNoVerdict, type TrialNoVerdictOutcome, type TrialPhase, type TrialPhaseDurations, type TrialRun } from './trial.js';
+import { runTrial, recordedTests, trialAttempts, TrialCleanupError, ansiEscape, type RunTrialInput, type TrialNoVerdict, type TrialNoVerdictOutcome, type TrialPhase, type TrialPhaseDurations, type TrialRun, type TrialStepReport } from './trial.js';
 import { trialScreenshotCasesMax, type TrialE2eCase } from './e2e-trial.js';
 import type { ItemPreview, PreviewSiteFile } from '../project-previews.js';
 
@@ -128,7 +128,7 @@ export type MergeRecordEvent =
   | { kind: 'reconciled'; mergeSha: string; observedTip: string }
   | { kind: 'refused'; head: string; reason: string }
   /** GY-2963: the trial's newest step while it runs — where the merge is, before any verdict exists. */
-  | { kind: 'trial-step'; head: string; step: string; at: string; /** GY-3599: what the trial printed so far, sent again as each test shard ends; the same step keeps its start. */ output?: string };
+  | { kind: 'trial-step'; head: string; step: string; at: string; /** GY-3599: sent again as each test shard ends, under the step's own start: what the trial printed so far, and its test counts so far. */ output?: string; tests?: TrialStepReport['tests'] };
 /**
  * GY-1902: an item preview's record (project-previews.ts), written through the same coordinator
  * route and record port as the ledger's steps; it moves no merge state and is no ledger event, so
@@ -769,7 +769,7 @@ export interface MergePorts {
    * `share` is how many trials run at once (`mergeHeads`): each takes that share of the host's cores.
    * Aborting `signal` stops the trial's children (GY-3099). `timeoutMs` bounds the whole trial; absent, the merge-trial deadline (`trialTimeoutMinutes`).
    */
-  trial(mergeSha: string, files: readonly string[], item: Pick<Work, 'key' | 'criteria'> & { type?: Work['type']; /** GY-3296: case id → URL of the named app environment the batch gate provisioned for it. */ environments?: Record<string, string> }, baseTip?: string, onStep?: (step: string, output?: string) => void, onTiming?: (step: string, durationMs: number) => void, heads?: { key: string; head: string }[], share?: number, signal?: AbortSignal, timeoutMs?: number): Promise<MergeTrialRun>;
+  trial(mergeSha: string, files: readonly string[], item: Pick<Work, 'key' | 'criteria'> & { type?: Work['type']; /** GY-3296: case id → URL of the named app environment the batch gate provisioned for it. */ environments?: Record<string, string> }, baseTip?: string, onStep?: (step: string, report?: TrialStepReport) => void, onTiming?: (step: string, durationMs: number) => void, heads?: { key: string; head: string }[], share?: number, signal?: AbortSignal, timeoutMs?: number): Promise<MergeTrialRun>;
   /** The leased push of `mergeSha` onto `baseTip`; `rejected` when the remote reported a stale lease (`staleLeaseRejection`), any other failure thrown. */
   push(mergeSha: string, baseTip: string): Promise<'pushed' | 'rejected'>;
   /** Whether the base branch's first-parent history holds `sha`, as last fetched. */
@@ -784,7 +784,7 @@ export interface MergePorts {
   /** Records one step on the coordinator (`POST /api/work/:id/merge-record`), idempotent under `mergeRecordKey`, under the attempt `item` names (GY-1852). */
   record(item: Pick<Work, 'id' | 'key'> & { mergeAttempt?: MergeAttempt | null }, event: MergeRecordEvent): Promise<unknown>;
   /** GY-2963: where the flight's trial is while it runs, recorded on the in-flight entry and the item's ledger; absent, the trial is not reported step by step. */
-  onStep?: (step: string, output?: string) => void;
+  onStep?: (step: string, report?: TrialStepReport) => void;
   /** GY-3545: the open "Flaky check on main" item for `check` (`test:FILE`), or null; absent, no failure is excused as flaky. */
   flaky?(check: string): Promise<Pick<Work, 'id' | 'key'> | null>;
   /** GY-3545: records `text` as a note on `item` under `idempotencyKey`; absent, nothing is noted and a base-tip failure holds the head as before (GY-1834). */
@@ -954,7 +954,7 @@ export type HeadResult = { work: Work; outcome: MergeOutcome } | { work: Work; e
  * left. The base reads and writes (fetch, merge, push) take turns, so two heads never write the
  * checkout's refs at once. `onStep` names each head's trial step; `share` is how many trials divide the cores (GY-3182).
  */
-export async function mergeHeads(ports: MergePorts, items: readonly Work[], onStep?: (index: number, step: string, output?: string) => void, share = items.length): Promise<HeadResult[]> {
+export async function mergeHeads(ports: MergePorts, items: readonly Work[], onStep?: (index: number, step: string, report?: TrialStepReport) => void, share = items.length): Promise<HeadResult[]> {
   let turn: Promise<unknown> = Promise.resolve();
   const serial = <A extends unknown[], T>(call: (...args: A) => Promise<T>) => (...args: A): Promise<T> => {
     const next = turn.then(() => call(...args));
@@ -964,7 +964,7 @@ export async function mergeHeads(ports: MergePorts, items: readonly Work[], onSt
   const shared: MergePorts = { ...ports, fetch: serial(ports.fetch), merge: serial(ports.merge), push: serial(ports.push),
     trial: (mergeSha, files, item, baseTip, step, onTiming, heads, _share, signal) => ports.trial(mergeSha, files, item, baseTip, step, onTiming, heads, share, signal) };
   return Promise.all(items.map(async (work, index): Promise<HeadResult> => {
-    try { return { work, outcome: await mergeOne({ ...shared, ...(onStep ? { onStep: (step: string, output?: string) => onStep(index, step, output) } : {}) }, work) }; }
+    try { return { work, outcome: await mergeOne({ ...shared, ...(onStep ? { onStep: (step: string, report?: TrialStepReport) => onStep(index, step, report) } : {}) }, work) }; }
     catch (error) { return { work, error }; }
   }));
 }
