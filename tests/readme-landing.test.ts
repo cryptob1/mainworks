@@ -12,11 +12,11 @@ test('unit:tests/readme-landing.test.ts — README is a short landing page namin
   assert.ok(words <= 310, `README is at most 310 words: ${words}`);
 
   const [title, , pitch] = readme.split('\n');
-  assert.equal(title, '# Graphyard', 'README opens with an H1');
+  assert.equal(title, '# Mainworks', 'README opens with an H1');
   for (const name of ['AI coding agents', 'Claude Code', 'Codex']) assert.ok(pitch.includes(name), `the one-line value proposition names ${name}`);
 
   const sections = [...readme.matchAll(/^## (.+)$/gm)].map(match => match[1]);
-  assert.deepEqual(sections, ['Why Graphyard', 'Quick start', 'Where things run', 'Learn more']);
+  assert.deepEqual(sections, ['Why Mainworks', 'Quick start', 'Where things run', 'Learn more']);
   const where = readme.split('\n## Where things run\n')[1]?.split('\n## ')[0] ?? '';
   assert.ok(where.trim().split(/\s+/).length < 50, 'the Where things run section is the diagram and a pointer');
 

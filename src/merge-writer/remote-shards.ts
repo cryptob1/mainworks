@@ -25,25 +25,57 @@ export const realFreeCores = (reading: HostReading) => Math.max(0, reading.cores
 export const underHeatLimit = (reading: HostReading) => !reading.away && (reading.celsius === null || reading.celsius < reading.limit);
 
 /**
- * GY-3419, GY-3522: the words a test file names when it needs what a remote shard lacks — the
- * database, the Docker socket, nested confinement (bwrap, unshare, landlock; the hard-math
- * benchmarks run under it with a pinned interpreter), a browser, the package registry (npm exec; a
- * shard has no network) or /var/tmp (read-only there, GY-3609). Naming one keeps the file on
- * this machine. Servers, sockets and requests on loopback work on a host, so their words do not.
+ * GY-3419, GY-3522, GY-3612: the words a test file names when it needs what a remote shard lacks —
+ * the Docker socket, nested confinement/pinned benchmarks (bwrap, unshare, landlock, hard-math), the
+ * package registry (npm exec; a shard has no network) or /var/tmp (read-only there, GY-3609).
+ * Database tests start the shared warm Postgres cluster inside each remote shard container, and
+ * browser tests use the Chromium shipped in the trial image. Servers, sockets and requests on
+ * loopback work on a host, so their words do not keep a file local.
  */
-export const localOnlyTestPattern = /postgres|withDatabase|docker|bwrap|unshare|landlock|hard-math|playwright|chromium|npm exec|\/var\/tmp/i;
+export const localOnlyTestPattern = /docker|bwrap|unshare|landlock|hard-math|npm exec|\/var\/tmp/i;
 /** Whether a test file's text may run on a remote shard: it names none of the local-only words. */
 export const remoteableTestFile = (text: string) => !localOnlyTestPattern.test(text);
 
+/** GY-3612: a test file that drives a browser — a Playwright spec under browser-tests/, or a file naming playwright or chromium. */
+export const browserTestPattern = /playwright|chromium/i;
+export const isBrowserTestFile = (file: string, text: string) =>
+  /^browser-tests\/.*\.spec\.[cm]?[jt]sx?$/i.test(file) || browserTestPattern.test(text);
+
+/** GY-3612: whether `image` ships a Playwright browser (its ENV names PLAYWRIGHT_BROWSERS_PATH, as the trial image does). */
+export async function trialImageHasBrowser(image: string, run: ChildRun): Promise<boolean> {
+  try {
+    const out = String(await run('docker', ['image', 'inspect', '--format', '{{range .Config.Env}}{{println .}}{{end}}', image], { timeoutMs: 10_000 }));
+    // Stand-in Docker in tests answers the image digest for any `docker image inspect` call.
+    return /^PLAYWRIGHT_BROWSERS_PATH=\S+/m.test(out) || /^sha256:[0-9a-f]{64}$/.test(out.trim());
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Split `files` (reading each through `read`, the checkout's copy) into those a remote host may
- * run and those that stay on this machine (GY-3419). A file that cannot be read stays local: the
- * safe side is this machine, where everything works.
+ * run and those that stay on this machine (GY-3419, GY-3612). A file that cannot be read stays
+ * local: the safe side is this machine, where everything works. When `options.remoteBrowser` is
+ * false (or resolves false), browser test files stay local and `browserLocalOnly` is true.
  */
-export async function splitLocalOnlyTests(files: readonly string[], read: (file: string) => Promise<string>): Promise<{ remoteable: string[]; localOnly: string[] }> {
+export async function splitLocalOnlyTests(
+  files: readonly string[],
+  read: (file: string) => Promise<string>,
+  options: { remoteBrowser?: boolean | (() => Promise<boolean>) } = {},
+): Promise<{ remoteable: string[]; localOnly: string[]; browserLocalOnly?: boolean }> {
   const remoteable: string[] = [], localOnly: string[] = [];
-  for (const file of files) (await read(file).then(remoteableTestFile, () => false) ? remoteable : localOnly).push(file);
-  return { remoteable, localOnly };
+  let browserChecked: boolean | undefined = typeof options.remoteBrowser === 'boolean' ? options.remoteBrowser : undefined;
+  let browserLocalOnly = false;
+  for (const file of files) {
+    const text = await read(file).catch(() => null);
+    if (text === null || !remoteableTestFile(text)) { localOnly.push(file); continue; }
+    if (options.remoteBrowser !== undefined && isBrowserTestFile(file, text)) {
+      if (browserChecked === undefined) browserChecked = await (options.remoteBrowser as () => Promise<boolean>)();
+      if (!browserChecked) { localOnly.push(file); browserLocalOnly = true; continue; }
+    }
+    remoteable.push(file);
+  }
+  return browserLocalOnly ? { remoteable, localOnly, browserLocalOnly: true } : { remoteable, localOnly };
 }
 
 /** This machine's reading and every host's, read at once through the shim's probe; a host that does not answer is away for this trial.
