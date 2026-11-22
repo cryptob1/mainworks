@@ -49,7 +49,7 @@ test('unit:tests/node-pin.test.ts — accepted and rejected forms: a value pins 
   assert.equal(nodePin(unreadable), null);
 });
 
-test('unit:tests/node-pin.test.ts — no declaration leaves PATH unchanged and runs nothing, Graphyard\'s own checkout included; a pin that differs from the running node fetches it once through npm exec and puts its bin directory first; the guide names the rule', async () => {
+test('unit:tests/node-pin.test.ts — no declaration leaves PATH unchanged and runs nothing, Mainworks\'s own checkout included; a pin that differs from the running node fetches it once through npm exec and puts its bin directory first; the guide names the rule', async () => {
   const none = async () => { throw new Error('nothing runs for a checkout that pins nothing'); };
   assert.equal(await pinnedNodePath(await checkout({ 'package.json': '{"name":"x"}' }), '/usr/bin:/bin', none), '/usr/bin:/bin');
   assert.equal(nodePin(join(import.meta.dirname, '..')), null);

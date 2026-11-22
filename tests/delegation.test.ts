@@ -212,7 +212,7 @@ test('integration:lead-enforcement — violating lead actions are refused server
   assert.match(unscoped.payload.reason, /targets another slice/);
   const asLead = (path: string, payload: unknown) => fetch(`${url}${path}`, { method: 'POST',
     headers: { Authorization: `Bearer ${credentials.find(c => c.id === lead.id)!.token}`, 'Content-Type': 'application/json', 'Idempotency-Key': id() }, body: JSON.stringify(payload) });
-  // GitHub merges (GY-1235): Graphyard serves no merge route a lead could try.
+  // GitHub merges (GY-1235): Mainworks serves no merge route a lead could try.
   const mergeRoute = await asLead(`/api/work/${item.id}/merge-acquire`, { enqueue: true });
   assert.equal(mergeRoute.status, 404, 'the guarded merge route is gone');
   assert.equal((await reload(item)).mergeExecution ?? null, null, 'no merge call left execution state behind');
@@ -347,7 +347,7 @@ test('integration:lead-enforcement — violating lead actions are refused server
   await assert.rejects(recordLeadRuling(store, lead, bound.id, { action: 'classify-failure', ...rule, expectedRevision: 1 }, id()), /Task revision changed; reload before ruling/);
 });
 
-test('integration:ownership-and-delivery-invariants — Graphyard owns leases, worktrees, and the only merge path', async () => {
+test('integration:ownership-and-delivery-invariants — Mainworks owns leases, worktrees, and the only merge path', async () => {
   let item = await engine.execute(admin, 'create', null, input('ownership', 'infrastructure'), id());
   item = await engine.execute(admin, 'ready', item.id, {}, id());
   item = await engine.execute(workerA, 'claim', item.id, {}, id());
@@ -365,7 +365,7 @@ test('integration:ownership-and-delivery-invariants — Graphyard owns leases, w
   item = await engine.execute(workerA, 'submit', item.id, { epoch: item.epoch, pr: ++pr }, id());
   item = await engine.observe(item.id, item.revision, observation(item));
   // GitHub merges the head whose gates pass (GY-1235): no proof gate stands in between and
-  // Graphyard issues no merge authorization of its own.
+  // Mainworks issues no merge authorization of its own.
   assert.equal(item.gates.find(gate => gate.name === 'acceptance')?.passed, false);
   assert.equal(item.mergeAuthorization ?? null, null);
   // Control-plane truth never depends on the session runtime.

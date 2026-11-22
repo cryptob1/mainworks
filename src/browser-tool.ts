@@ -35,7 +35,7 @@ export const browserInstallCommand = (directory = browserToolDirectory()) =>
 export const findBrowserTool = (environment: { PATH?: string } = process.env) =>
   browserToolOnPath({ PATH: [toolBin(browserToolDirectory()), environment.PATH ?? ''].join(delimiter) });
 
-/** What `graphyard doctor` reports: whether the tool is there, and the one command that installs it. */
+/** What `mainworks doctor` reports: whether the tool is there, and the one command that installs it. */
 export function browserToolStatus() {
   const path = findBrowserTool();
   return { tool: browserToolName, present: !!path, path, ...(path ? {} : { install: browserInstallCommand() }) };

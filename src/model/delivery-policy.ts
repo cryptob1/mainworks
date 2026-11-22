@@ -3,10 +3,10 @@ import type { gateCheckSchema, mergeGateSchema, deliveryPolicySchema } from '../
 // ---------------------------------------------------------------------------
 // The delivery model every installed repository gets (GY-1102).
 //
-// Graphyard delivers itself through a fast merge gate and release candidates (GY-1093, GY-1094):
+// Mainworks delivers itself through a fast merge gate and release candidates (GY-1093, GY-1094):
 // pull requests merge on build, typecheck and fast unit checks alone; the long suites — integration,
 // E2E, soak — run against a pinned candidate SHA cut from main, which deploys to UAT and is promoted
-// to production by that exact SHA only after UAT passed. `graphyard init` classifies a managed
+// to production by that exact SHA only after UAT passed. `mainworks init` classifies a managed
 // repository's checks into those two sets and records the result, with the deployment adapter and
 // the candidate cadence, as `delivery` in the repository's committed graphyard.json. A repository
 // opts out to the plain per-PR model with `"mode": "per-pr"`: every check stays required on pull
@@ -23,7 +23,7 @@ export type GateCheck = z.infer<typeof gateCheckSchema>;
 export type MergeGate = z.infer<typeof mergeGateSchema>;
 export type DeliveryPolicy = z.infer<typeof deliveryPolicySchema>;
 
-/** The default cadence, matching Graphyard's own release-candidate workflow. */
+/** The default cadence, matching Mainworks's own release-candidate workflow. */
 export const defaultCandidateSchedule = '0 */6 * * *';
 
 /**

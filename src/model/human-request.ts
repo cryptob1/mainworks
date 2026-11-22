@@ -98,7 +98,7 @@ export interface ParkQuestion { kind?: string; needed: string; ask?: string | nu
 export function requirementsQuestionRefusal(data: ParkQuestion): string | null {
   if (data.kind !== 'goals-and-priorities') return null;
   const questioned = [data.ask, data.needed, data.reason].some(text => !!text?.trim() && requirementsQuestion(text));
-  return questioned ? 'Not a human-only decision: the request asks whether this item\'s criteria are rewritten, revised or matched to another item\'s tests — a requirements decision, never the human\'s. Agent route: record the conflict with `graphyard blocked GY-N EPOCH REASON`, so the master revises the requirements (`graphyard master requirements GY-N FILE REASON`); the item never parks.' : null;
+  return questioned ? 'Not a human-only decision: the request asks whether this item\'s criteria are rewritten, revised or matched to another item\'s tests — a requirements decision, never the human\'s. Agent route: record the conflict with `mainworks blocked GY-N EPOCH REASON`, so the master revises the requirements (`mainworks master requirements GY-N FILE REASON`); the item never parks.' : null;
 }
 /** The park refusals in the order they fire: a criterion-rewrite question first (GY-1816), then the classifier's own (GY-1395, GY-1416, GY-1692). */
 export const parkRefusal = (data: ParkQuestion): string | null => requirementsQuestionRefusal(data) ?? classifiedParkRefusal(data);
@@ -131,8 +131,8 @@ export const describeHumanRequest = (request: Pick<HumanRequest, 'kind' | 'neede
 export const parkedOnHuman = (work: { humanRequest?: HumanRequest | null }) => !!work.humanRequest && !work.humanRequest.answer;
 
 /** How to answer, exactly as the list and `master status` print it. */
-export const answerCommand = (key: string, request: Pick<HumanRequest, 'id'>) => `graphyard answer ${key} ${request.id} ANSWER`;
-export const declineCommand = (key: string, request: Pick<HumanRequest, 'id'>) => `graphyard answer ${key} ${request.id} --decline REASON`;
+export const answerCommand = (key: string, request: Pick<HumanRequest, 'id'>) => `mainworks answer ${key} ${request.id} ANSWER`;
+export const declineCommand = (key: string, request: Pick<HumanRequest, 'id'>) => `mainworks answer ${key} ${request.id} --decline REASON`;
 
 /** One button on a card (GY-738): the whole body it posts, whether it asks for words or a secret, and the field an optional note goes in (null when it takes none). */
 export interface HumanOnlyChoice { label: string; input: HumanChoice['input']; declines: boolean; body: Record<string, unknown>; note: string | null; recommended?: boolean }

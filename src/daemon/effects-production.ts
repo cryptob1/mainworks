@@ -55,7 +55,7 @@ import { collectUsage } from '../usage-capture.js';
 import { upstreamFiler } from './control-plane.js';
 import { trialRunsDirectory } from '../merge-writer/trial-run.js';
 import { deployRecordPath, readDeployRecord } from '../deploy-watch.js';
-import { graphyardVolumes, reclaimGraphyardLeftovers, reclaimJobLeftovers, stopOrphanTrialContainers, trialContainerMaxAgeMs } from './disk-headroom.js';
+import { mainworksVolumes, reclaimMainworksLeftovers, reclaimJobLeftovers, stopOrphanTrialContainers, trialContainerMaxAgeMs } from './disk-headroom.js';
 import { dataDirectory } from '../install/worktree-root.js';
 import { durableTemporaryRoot, trialCheckoutRoots } from '../merge-writer/trial.js';
 import { installDirectory, readInstallRecord } from '../install/secrets.js';
@@ -88,7 +88,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     const response = await fetcher(`${config.url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(body), signal: AbortSignal.timeout(30_000) });
     const text = await response.text();
     let result: any; try { result = JSON.parse(text); } catch { result = response.ok ? undefined : { text: text.slice(0, 200) }; }
-    if (!response.ok) throw new RefusedResponse(`Graphyard refused ${path} (${response.status}): ${refusedBodyDetail(result)}`, response.status, result);
+    if (!response.ok) throw new RefusedResponse(`Mainworks refused ${path} (${response.status}): ${refusedBodyDetail(result)}`, response.status, result);
     return result;
   };
   const rework: DaemonEffects['rework'] = (work, reason, binding) => asOperatorAgent(`work/${work.id}/rework`, { reason, previousWorkerStopped: true, ...(binding ? { binding } : {}) });
@@ -199,8 +199,8 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     },
     sweepCheckouts: () => sweepManagedCheckouts(root, current()),
     stopOrphanedProcesses: () => stopOrphansOfRemovedWorktrees([worktreesDirectory(root), worktreeRoot(root, current())]),
-    diskVolumes: () => graphyardVolumes([root, dataDirectory(), worktreeRoot(root, current()), ...trialCheckoutRoots(), durableTemporaryRoot()]),
-    reclaimDisk: () => reclaimGraphyardLeftovers(run),
+    diskVolumes: () => mainworksVolumes([root, dataDirectory(), worktreeRoot(root, current()), ...trialCheckoutRoots(), durableTemporaryRoot()]),
+    reclaimDisk: () => reclaimMainworksLeftovers(run),
     // GY-3553: the readings that clear environment blockers, the stamp repair, and the unblock itself.
     repairCliStamp: () => repairCliStamp(installDirectory(installIdFor(current().repository))),
     environmentReadings: async () => {

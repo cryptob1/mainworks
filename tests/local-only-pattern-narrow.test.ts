@@ -33,7 +33,7 @@ test('unit:local-only-pattern-narrow — at least half of the real test files ar
 });
 
 test('e2e:local-only-pattern-narrow — master status remoteShards shows a trial placing most shards on a ready added host', { timeout: 300_000 }, async () => {
-  const image = 'graphyard-trial:pattern-narrow-fixture';
+  const image = 'mainworks-trial:pattern-narrow-fixture';
   const hosts = await shardHosts('pattern-narrow', ['box'], { [image]: `sha256:${'3522'.repeat(16)}` });
   const network = Array.from({ length: 8 }, (_, index) => `tests/calls-server-${index}.test.ts`);
   const docker = ['tests/uses-docker.test.ts'];

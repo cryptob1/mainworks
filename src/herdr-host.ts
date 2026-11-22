@@ -1,4 +1,4 @@
-// Concern: Herdr on this host, set up by `graphyard up` (GY-1511) — its binary, its server's user unit,
+// Concern: Herdr on this host, set up by `mainworks up` (GY-1511) — its binary, its server's user unit,
 // an install's own instance, and the synchronous calls setup makes. Kept apart from src/master/herdr.ts,
 // which the loop reaches and which runs children only through the asynchronous runner (GY-125).
 import { controlPlaneWeight } from './session-share.js';
@@ -63,7 +63,7 @@ const unitWord = (value: string) => /^[\w@%+=:,./-]+$/.test(value) ? value : `"$
 export function herdrServerUnitText(binary: string, instance: HerdrInstance | null, path: string) {
   const call = herdrInvocation(['server'], instance);
   return `[Unit]
-Description=Herdr server for Graphyard${instance ? ` (${instance.session})` : ''}
+Description=Herdr server for Mainworks${instance ? ` (${instance.session})` : ''}
 After=network.target
 
 [Service]

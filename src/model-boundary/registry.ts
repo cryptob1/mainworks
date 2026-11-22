@@ -35,7 +35,7 @@ const launchEnvironment = z.record(
  * `homeVariable` the variable that points the CLI at one account's login home, `modelFlag` the
  * argument that selects the account's model, `login` the command an operator runs to log an
  * account in (`{home}` stands for the account's home), and `loginFile` a path inside the home
- * whose presence means the account is logged in, for runtimes Graphyard has no richer probe for.
+ * whose presence means the account is logged in, for runtimes Mainworks has no richer probe for.
  */
 export const launchContractSchema = z.object({
   kind: entryName,
@@ -81,7 +81,7 @@ export const quotaObservationSchema = z.object({
   reason: text(500).nullable().default(null),
   /**
    * The provider login behind the account (GY-1573): its runtime kind and a digest of the provider's own
-   * account and organization ids, read from the login home. Matching identities are diagnostic only; each login is checked separately; null when the login names none Graphyard can read, absent when a
+   * account and organization ids, read from the login home. Matching identities are diagnostic only; each login is checked separately; null when the login names none Mainworks can read, absent when a
    * probe could not read the login file just now and the identity last read stands.
    */
   identity: z.string().regex(/^[a-z][a-z0-9-]{0,39}:[0-9a-f]{16,64}$/, 'A provider identity is a runtime kind and a hex digest').nullable().optional(),
@@ -170,7 +170,7 @@ export const selectionRequestSchema = z.object({
   /** What the executor just observed about the accounts that live on its host. */
   observations: z.array(z.object({ account: entryName, quota: quotaObservationSchema, smoke: smokeObservationSchema.optional() }).strict()).max(200).default([]),
   /**
-   * GY-3333: the live sessions other Graphyard installs on this host hold on accounts that live
+   * GY-3333: the live sessions other Mainworks installs on this host hold on accounts that live
    * there, read from the host-level records beside each login home. Every install counts them
    * toward the account's own session limit, so one login home serves at most its `maxSessions`
    * sessions across every install on the host.

@@ -70,8 +70,8 @@ test('unit:github-gates-removed — repository setup writes no workflow; trial s
   const proposal = buildProposal(await collectScanInput(root), { delivery: { mode: 'per-pr' } });
   const result = await applyProposal(root, proposal, { url: 'http://127.0.0.1:4310' });
   assert.ok(!(result.delivery?.workflows?.length), `workflows written: ${JSON.stringify(result.delivery?.workflows)}`);
-  assert.ok(!existsSync(join(root, '.github', 'workflows', 'graphyard-delivery.yml')));
-  assert.ok(!existsSync(join(root, '.github', 'workflows', 'graphyard-release-candidate.yml')));
+  assert.ok(!existsSync(join(root, '.github', 'workflows', 'mainworks-delivery.yml')));
+  assert.ok(!existsSync(join(root, '.github', 'workflows', 'mainworks-release-candidate.yml')));
 
   const argv = secretScanArgv('/tmp/checkout', 'gitleaks', true);
   assert.ok(argv.includes('--redact'));

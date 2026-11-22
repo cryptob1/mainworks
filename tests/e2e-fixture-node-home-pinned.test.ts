@@ -6,7 +6,7 @@ import { runTrialE2eCases } from '../src/merge-writer/e2e-trial.js';
 
 // GY-3245: the scheduled full run failed e2e:fixture-node-home. GY-3201 added the case for the
 // fixture project's node application, which only the scratch delivery fixture declares; this
-// repository binds it to nothing, so the run served it Graphyard's own e2e.serve, whose page never
+// repository binds it to nothing, so the run served it Mainworks's own e2e.serve, whose page never
 // says "Fixture node app". Declaring the app here is no fix: the install's serve pass serves the
 // first node application graphyard.json declares. The trial leaves an unbound fixture case out,
 // and node-application-preview runs it against the fixture's node app.

@@ -1,4 +1,4 @@
-<title>How Graphyard Works</title>
+<title>How Mainworks Works</title>
 <style>
 /* Layout: one column holding the walkthrough player; rail-yard signal colours on a cool steel neutral */
 :root {
@@ -98,7 +98,7 @@ footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--ru
 
 <main>
   <header>
-    <span class="eyebrow">Graphyard · how it works</span>
+    <span class="eyebrow">Mainworks · how it works</span>
     <h1>From a goal to production</h1>
     <p class="lede">The human keeps goals, money and credentials. The master (AI) decides. The loop (plain code) dispatches workers, requests review and proof, and drives the merge writer, which trials every change on the latest main.</p>
   </header>
@@ -106,10 +106,10 @@ footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--ru
   <section aria-labelledby="watch">
     <div class="player">
       <div class="screen">
-        <svg id="stage" viewBox="0 0 960 540" role="img" aria-label="Animated walkthrough of Graphyard taking a goal to production"></svg>
+        <svg id="stage" viewBox="0 0 960 540" role="img" aria-label="Animated walkthrough of Mainworks taking a goal to production"></svg>
         <button class="poster" id="poster" type="button" aria-label="Play the walkthrough">
           <div class="big" aria-hidden="true"></div>
-          <strong>How Graphyard works</strong>
+          <strong>How Mainworks works</strong>
           <span>11 short scenes · 95 seconds</span>
         </button>
       </div>
@@ -287,7 +287,7 @@ footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--ru
     [63, 72, 'The loop deploys main and checks health and required end-to-end cases. Normal changes get a post-merge review.'],
     [72, 81, 'If a required live case fails, the merge writer reverts the merge automatically and files a re-land item.'],
     [81, 90, 'Any failure goes to the master, which diagnoses it and files a repair. Agents check agents; gates never relax.'],
-    [90, 95, 'It all runs on one Linux host. graphyard guide infra lists each part and its logs.'],
+    [90, 95, 'It all runs on one Linux host. mainworks guide infra lists each part and its logs.'],
   ];
   const capEl = document.getElementById('caption');
   const playBtn = document.getElementById('play'), scrub = document.getElementById('scrub');

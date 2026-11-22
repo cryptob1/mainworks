@@ -72,7 +72,9 @@ export async function publishCliRelease(directory: string, source: string, commi
     // Bring old launchers onto the pointer protocol without replacing their dependencies or code.
     if (root !== target) {
       const launcher = join(root, 'bin', 'graphyard.mjs');
-      await copyFile(join(target, 'bin', 'graphyard.mjs'), `${launcher}.tmp`);
+      // GY-3594: the launcher's code moved to bin/mainworks.mjs; an older release still holds it in graphyard.mjs.
+      const code = ['mainworks.mjs', 'graphyard.mjs'].map(name => join(target, 'bin', name)).find(path => existsSync(path))!;
+      await copyFile(code, `${launcher}.tmp`);
       await rename(`${launcher}.tmp`, launcher);
     }
     await mkdir(join(root, '.graphyard'), { recursive: true });
@@ -90,7 +92,7 @@ export const releaseOfPath = (path: string): string | null => /\/cli-releases\/(
 export interface UnitLauncherFault { unit: string; detail: string; fix: string }
 export function unitLauncherFault(input: { unit: string; launcher: string | null; installDir: string; configHome?: string }): UnitLauncherFault | null {
   if (!input.launcher) return null;
-  const fix = `graphyard master init --token-stdin --replace-supervisor from this checkout rewrites ${input.unit} onto this install's launcher, which always starts the release it serves`;
+  const fix = `mainworks master init --token-stdin --replace-supervisor from this checkout rewrites ${input.unit} onto this install's launcher, which always starts the release it serves`;
   const installDir = resolve(input.installDir), configHome = resolve(input.configHome ?? dirname(installDir));
   const within = (path: string, parent: string) => path === parent || path.startsWith(`${parent}/`);
   // The launcher's own spelling, its symlinks followed (the install launcher is one, into the

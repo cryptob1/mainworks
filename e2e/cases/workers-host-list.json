@@ -1,7 +1,7 @@
 {
   "id": "workers-host-list",
   "title": "Workers lists this machine and an added host with cores, temperature, steal and runs now, and an unreachable host as away",
-  "description": "The added host is a fixture prepared by running the script `graphyard host prepare` prints: dedicated unprivileged gy-compute user, rootless Docker on its own socket, key restricted to the forced-command graphyard-host-shim, not in the docker group. `host add` accepts it through the shim and refuses an unrestricted key, a root target and a docker-group user. Each loop cycle reads this machine and every added host (cores, hottest CPU sensor, steal, trial containers running now); /api/status serves them and the Workers page lists them in a Hosts table, this machine first; a host that does not answer reads Away with its reason. At 1280 px and 390 px.",
+  "description": "The added host is a fixture prepared by running the script `mainworks host prepare` prints: dedicated unprivileged gy-compute user, rootless Docker on its own socket, key restricted to the forced-command graphyard-host-shim, not in the docker group. `host add` accepts it through the shim and refuses an unrestricted key, a root target and a docker-group user. Each loop cycle reads this machine and every added host (cores, hottest CPU sensor, steal, trial containers running now); /api/status serves them and the Workers page lists them in a Hosts table, this machine first; a host that does not answer reads Away with its reason. At 1280 px and 390 px.",
   "tags": ["dashboard", "hosts"],
   "target": "any",
   "required": false,

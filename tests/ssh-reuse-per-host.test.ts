@@ -17,7 +17,7 @@ import { dockerCreates, shardHosts, shardRepository, sshdHost, type ShardHostsFi
 // ready over at most 3 new connections; a host that resets every connection reads away with one plain line.
 
 const proof = 'integration:ssh-reuse-per-host';
-const image = 'graphyard-trial:ssh-reuse';
+const image = 'mainworks-trial:ssh-reuse';
 const files = Array.from({ length: 30 }, (_, index) => `tests/plain-${index}.test.ts`);
 let hosts: ShardHostsFixture, repository: { root: string; sha: string }, server: { kill(): void }, proxy: Server, target: string;
 const previous = process.env.GRAPHYARD_TRIAL_IMAGE;
@@ -78,9 +78,9 @@ test(`${proof} — 30 shards placed on one host open at most 3 new SSH connectio
   // A session over the multiplexed connection still reaches only the shim's allow-list.
   const transport = shardSshSession(run);
   try {
-    const refused = await transport.session(target, words => Promise.resolve(run('ssh', [...words, 'echo graphyard-plain-shell'])).then(out => ({ out: String(out), ok: true }), (error: unknown) => ({ out: String((error as { stderr?: unknown }).stderr ?? error), ok: false })));
+    const refused = await transport.session(target, words => Promise.resolve(run('ssh', [...words, 'echo mainworks-plain-shell'])).then(out => ({ out: String(out), ok: true }), (error: unknown) => ({ out: String((error as { stderr?: unknown }).stderr ?? error), ok: false })));
     assert.equal(refused.ok, false, refused.out);
-    assert.doesNotMatch(refused.out, /^graphyard-plain-shell$/m);
+    assert.doesNotMatch(refused.out, /^mainworks-plain-shell$/m);
   } finally { await transport.close(); }
 });
 

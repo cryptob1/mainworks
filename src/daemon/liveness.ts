@@ -50,7 +50,7 @@ export function loopLiveness(state: Pick<DaemonState, 'lock' | 'cycle' | 'lastCy
   // intervals past the retry it announced, so the backoff never reads as a stall to restart.
   const backoff = backingOff(state.failures, now);
   const stalledAfterMs = 2 * intervalMs + (backoff ? Math.max(0, backoff.dueAt - lastCycleAt) : 0);
-  const restart = 'graphyard master restart (a supervised deployment restarts it on its own: systemctl --user restart graphyard-master)';
+  const restart = 'mainworks master restart (a supervised deployment restarts it on its own: systemctl --user restart graphyard-master)';
   const lock = state.lock;
   const alive = !!lock && !!hostId && lock.host === hostId ? probe(lock.pid, lock.pidNamespace) : true;
   const gone = alive === false;

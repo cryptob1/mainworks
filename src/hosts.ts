@@ -1,8 +1,8 @@
-// Concern: GY-3407 — the hosts Graphyard watches; merge trials send them test shards (GY-3412). A host lends
-// compute and nothing else: `graphyard host prepare` prints a one-time sudo script that creates the
+// Concern: GY-3407 — the hosts Mainworks watches; merge trials send them test shards (GY-3412). A host lends
+// compute and nothing else: `mainworks host prepare` prints a one-time sudo script that creates the
 // unprivileged gy-compute user (not in the docker group) with linger and rootless Docker, and lets this
 // machine's key run only graphyard-host-shim-DIGEST (restrict,command=…: no shell, pty or forwarding). The shim
-// answers fixed verbs (src/host-shim.ts). `graphyard host add USER@HOST` refuses a key
+// answers fixed verbs (src/host-shim.ts). `mainworks host add USER@HOST` refuses a key
 // that opens a plain shell, root and a docker-group user, then records the host in this machine's hosts
 // file — the one host list. Each loop cycle probes every host — cores, hottest CPU sensor, steal and the
 // trial containers running now — this machine first; a host that does not answer reads away.
@@ -142,7 +142,7 @@ GRAPHYARD_SSHD
   "$sshd" -t -f /etc/ssh/sshd_graphyard_config
   cat > /etc/systemd/system/graphyard-sshd.service <<GRAPHYARD_UNIT
 [Unit]
-Description=OpenSSH for $user only (Graphyard compute, port ${computePort})
+Description=OpenSSH for $user only (Mainworks compute, port ${computePort})
 After=network.target
 [Service]
 ExecStart=$sshd -D -f /etc/ssh/sshd_graphyard_config
@@ -156,9 +156,9 @@ GRAPHYARD_UNIT
   systemctl restart graphyard-sshd
   if command -v ufw >/dev/null && ufw status | grep -q 'Status: active'; then ufw allow in on tailscale0 to any port ${computePort} proto tcp; fi
   target="$target:${computePort}"
-  echo "Port 22 here is Tailscale SSH, which skips the shim. Tailnet check: in your tailnet policy, every ssh rule reaching this machine needs action check, never accept, so no account here logs in unattended. Graphyard reaches $user on port ${computePort}."
+  echo "Port 22 here is Tailscale SSH, which skips the shim. Tailnet check: in your tailnet policy, every ssh rule reaching this machine needs action check, never accept, so no account here logs in unattended. Mainworks reaches $user on port ${computePort}."
 fi
-echo "Ready. On the Graphyard machine run: graphyard host add $target"
+echo "Ready. On the Mainworks machine run: mainworks host add $target"
 `;
 }
 
@@ -168,11 +168,11 @@ export async function localPublicKey(home = homedir()) {
     const key = await readFile(join(home, '.ssh', name), 'utf8').catch(() => null);
     if (key?.trim()) return key.trim();
   }
-  throw new Error(`No SSH public key in ${join(home, '.ssh')}: create one with ssh-keygen -t ed25519, then run graphyard host prepare again`);
+  throw new Error(`No SSH public key in ${join(home, '.ssh')}: create one with ssh-keygen -t ed25519, then run mainworks host prepare again`);
 }
 
 export function parseHostProbe(text: string) {
-  if (/^graphyard-no-docker$/m.test(text)) return null;
+  if (/^mainworks-no-docker$/m.test(text)) return null;
   const number = (pattern: RegExp) => { const value = Number(pattern.exec(text)?.[1]); return Number.isFinite(value) ? value : null; };
   const temps = [...text.matchAll(/^temp (\S+) (\d+)$/gm)].filter(match => cpuSensorNames.includes(match[1]!)).map(match => Math.floor(Number(match[2]) / 1000));
   const user = /^user (\d+) ?(.*)$/m.exec(text);
@@ -181,7 +181,7 @@ export function parseHostProbe(text: string) {
     uid: user ? Number(user[1]) : null, groups: user ? user[2]!.split(/\s+/).filter(Boolean) : [] };
 }
 
-export const outdatedShimReason = (target: string, missing: readonly string[] = []) => `${target}'s graphyard-host-shim is older than this release: run graphyard host prepare and the script it prints there${missing.length ? ` (it lacks ${missing.join(', ')})` : ''}`;
+export const outdatedShimReason = (target: string, missing: readonly string[] = []) => `${target}'s graphyard-host-shim is older than this release: run mainworks host prepare and the script it prints there${missing.length ? ` (it lacks ${missing.join(', ')})` : ''}`;
 const lastLine = (text: string) => text.trim().split('\n').filter(Boolean).at(-1) ?? '';
 /** ssh's arguments for a host target: USER@HOST:PORT becomes -p PORT USER@HOST; USER@HOST and an alias pass as they are. */
 export const sshTarget = (target: string) => { const port = /^(.+@.+):(\d+)$/.exec(target); return port ? ['-p', port[2]!, port[1]!] : [target]; };
@@ -194,10 +194,10 @@ export async function probeHost(target: string | null, run: ChildRun = defaultCh
   try { output = String(await (target ? ssh(target, 'probe', run) : run('sh', ['-c', hostProbeScript], { timeoutMs: 15_000 }))); }
   catch (error: any) {
     if (!target) return { ok: false as const, reason: `this machine could not be read: ${lastLine(String(error?.stderr ?? '')) || String(error?.message ?? error)}` };
-    return { ok: false as const, reason: error?.status === 255 || error?.timedOut ? unreachable(target, error) : `${target} does not answer graphyard-host-shim's probe: run graphyard host prepare and the script it prints there` };
+    return { ok: false as const, reason: error?.status === 255 || error?.timedOut ? unreachable(target, error) : `${target} does not answer graphyard-host-shim's probe: run mainworks host prepare and the script it prints there` };
   }
   const reading = parseHostProbe(output);
-  if (!reading) return { ok: false as const, reason: `${target ?? 'this machine'} answers but its Docker does not: run graphyard host prepare and the script it prints there` };
+  if (!reading) return { ok: false as const, reason: `${target ?? 'this machine'} answers but its Docker does not: run mainworks host prepare and the script it prints there` };
   // GY-3476, GY-3517: a shim from an older release takes shards while it speaks every verb a trial uses; one lacking any waits for prepare.
   const missing = target ? missingTrialVerbs(reading) : [];
   if (missing.length) return { ok: false as const, update: true, reason: outdatedShimReason(target!, missing) };
@@ -206,7 +206,7 @@ export async function probeHost(target: string | null, run: ChildRun = defaultCh
 
 /** A host's key must reach only the shim: a plain shell command run through it is refused. */
 async function opensPlainShell(target: string, run: ChildRun) {
-  try { return String(await ssh(target, 'echo graphyard-plain-shell', run)).includes('graphyard-plain-shell') ? 'yes' : 'no'; }
+  try { return String(await ssh(target, 'echo mainworks-plain-shell', run)).includes('mainworks-plain-shell') ? 'yes' : 'no'; }
   catch (error: any) { return error?.status === 255 || error?.timedOut ? unreachable(target, error) : 'no'; }
 }
 
@@ -228,12 +228,12 @@ export async function addHost(target: string, options: { file?: string; run?: Ch
   const host = targetHost(target);
   const refuse = (reason: string) => { throw new Error(`${target} was not added: ${reason}`); };
   const shell = await opensPlainShell(target, run);
-  if (shell === 'yes') refuse(`its SSH key opens a plain shell, so Graphyard could reach everything that user can; run graphyard host prepare and the script it prints there, then add ${hostUser}@${host} (${hostUser}@${host}:${computePort} where port 22 is Tailscale SSH)`);
+  if (shell === 'yes') refuse(`its SSH key opens a plain shell, so Mainworks could reach everything that user can; run mainworks host prepare and the script it prints there, then add ${hostUser}@${host} (${hostUser}@${host}:${computePort} where port 22 is Tailscale SSH)`);
   if (shell !== 'no') refuse(shell);
   const probe = await probeHost(target, run);
   if (!probe.ok) refuse(probe.reason);
-  if (probe.ok && probe.uid === 0) refuse(`it logs in as root; add the unprivileged ${hostUser} user that graphyard host prepare creates`);
-  if (probe.ok && probe.groups.includes('docker')) refuse(`${target.split('@')[0]} is in the docker group, which is root on that host; use ${hostUser} with rootless Docker (graphyard host prepare)`);
+  if (probe.ok && probe.uid === 0) refuse(`it logs in as root; add the unprivileged ${hostUser} user that mainworks host prepare creates`);
+  if (probe.ok && probe.groups.includes('docker')) refuse(`${target.split('@')[0]} is in the docker group, which is root on that host; use ${hostUser} with rootless Docker (mainworks host prepare)`);
   const next = [...hosts, { target, addedAt: new Date().toISOString() }];
   await writeHosts(file, next);
   return { added: true, hosts: next, probe: probe.ok ? probe : null, operator: await operatorLogin(target, run) };

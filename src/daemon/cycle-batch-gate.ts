@@ -3,7 +3,7 @@ import { featureMapCaseId } from '../app-feature-check.js';
 // scheduled diagnostics beside it, both over the merge writer's trial container and git.
 import type { Work } from '../model.js';
 import { bootstrapGate, gateLimitMs, type DiagnosePort, gateOutcomeReason, gateRecordPath, mergeFilings, readGateRecord, runDiagnostics, runGate, writeGateRecord, type GatePorts, type GateRecord } from '../batch-gate.js';
-import { graphyardRepository } from '../scenarios.js';
+import { mainworksRepository } from '../scenarios.js';
 import { releaseNotesPath, releaseNote, appendReleaseNote } from '../release-notes.js';
 import { deployRecordPath, readDeployRecord } from '../deploy-watch.js';
 import { notCovered, servedPreviewCases } from '../merge-writer/served-previews.js';
@@ -151,13 +151,13 @@ export const pinningProof = (key: string) =>
 export const repairedProof = 'manual:batch-gate-repaired';
 
 /**
- * The E2E proof a gate filing binds (GY-3568): Graphyard's own filings keep create-work-item, the
+ * The E2E proof a gate filing binds (GY-3568): Mainworks's own filings keep create-work-item, the
  * case its install has always run; every other repository binds its own — the failing case itself
  * when the check is one, else a new case named like the pinning proof, which the fix adds to that
  * repository's catalog.
  */
 export const gateFiledE2e = (key: string, repository: string): { proof: string; clause: string } => {
-  if (repository.toLowerCase() === graphyardRepository) return { proof: 'e2e:create-work-item', clause: 'creating a work item still works' };
+  if (repository.toLowerCase() === mainworksRepository) return { proof: 'e2e:create-work-item', clause: 'creating a work item still works' };
   const check = key.slice(key.indexOf(':') + 1);
   return check.startsWith('e2e:')
     ? { proof: check, clause: `the E2E case ${check.slice(4)} passes again` }
@@ -196,7 +196,7 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
     return { item: created?.key ?? null };
   };
   const catalog = async (commit: string) => {
-    // GY-3336: a repository with no e2e/cases directory — a fresh install of a repository Graphyard
+    // GY-3336: a repository with no e2e/cases directory — a fresh install of a repository Mainworks
     // has never gated — answers an empty catalog, not a failing gate: `ls-tree COMMIT:e2e/cases`
     // errors "Not a valid object name" on a path the commit does not hold.
     try { return lines(await git(['ls-tree', '--name-only', `${commit}:e2e/cases`])).filter(name => name.endsWith('.json')).map(name => name.slice(0, -5)); }
@@ -205,8 +205,8 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
   return {
     now: reads.now,
     fetch: reads.fetch,
-    // GY-3199: only the install gating Graphyard itself publishes the verified ref; every other install's gate verifies another repository, whose verified commits no control plane follows.
-    ...(reads.gate?.repository.toLowerCase() === graphyardRepository && reads.pushVerified ? { publish: (commit: string) => reads.pushVerified!(commit) } : {}),
+    // GY-3199: only the install gating Mainworks itself publishes the verified ref; every other install's gate verifies another repository, whose verified commits no control plane follows.
+    ...(reads.gate?.repository.toLowerCase() === mainworksRepository && reads.pushVerified ? { publish: (commit: string) => reads.pushVerified!(commit) } : {}),
     landings: async (from, to) => serveLandings(await serveRangeCommits(git, from, to), work),
     files: async (from, to) => lines(await git(['diff', '--name-only', from, to])),
     catalog,
@@ -430,8 +430,8 @@ export async function batchGateStep(cycle: Pick<Cycle, 'state' | 'effects' | 'sn
   // Retire the standing blocker left by the former host publisher.
   delete cycle.state.actions['publish-verified:blocker'];
   const deployed = readDeployRecord(deployRecordPath(gate.root));
-  if (reads.pushReleaseTag && gate.repository.toLowerCase() === graphyardRepository &&
-      deployed?.repository?.toLowerCase() === graphyardRepository && (deployed.verified || deployed.tip === record.verified) &&
+  if (reads.pushReleaseTag && gate.repository.toLowerCase() === mainworksRepository &&
+      deployed?.repository?.toLowerCase() === mainworksRepository && (deployed.verified || deployed.tip === record.verified) &&
       deployed.tip && !deployed.reason && !deployed.failed && !deployed.restore && record.releaseTagged !== deployed.tip) {
     try {
       const tag = await reads.pushReleaseTag(deployed.tip);

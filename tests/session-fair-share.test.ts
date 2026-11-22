@@ -5,7 +5,7 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { piRunner, sessionLaunch } from '../src/runner/pi.js';
 import { runsDirectory } from '../src/runner/registry.js';
-import { graphyardTools } from '../src/runner/payloads.js';
+import { mainworksTools } from '../src/runner/payloads.js';
 import { systemdContainment } from '../src/session-watch.js';
 import { controlPlaneWeight, sessionScopeProperties, sessionShare } from '../src/session-share.js';
 import { loopUnitText } from '../src/install/loop-unit.js';
@@ -34,7 +34,7 @@ test('integration:session-fair-share — session scopes carry equal CPUWeight an
 
 test('integration:session-fair-share — worker, reviewer and producer launches all carry the share on their scope', async () => {
   const share = /^-p CPUWeight=100 -p IOWeight=100 -p MemoryHigh=\d+$/;
-  // A worker under `graphyard watch` (a pane session).
+  // A worker under `mainworks watch` (a pane session).
   const watched = systemdContainment('codex', ['exec'], (() => '') as unknown as typeof execFileSync);
   assert.match(watched.args.slice(4, watched.args.indexOf('--')).join(' '), share, 'a watched worker scope carries the share');
   // A headless worker or reviewer run (headless-session.ts spawnHeadless launches through sessionLaunch).
@@ -48,7 +48,7 @@ test('integration:session-fair-share — worker, reviewer and producer launches 
   const spawned: string[][] = [];
   const runner = piRunner({ command: 'pi', containment: 'systemd', pollMs: 20,
     spawn: ((file: string, args: string[]) => { spawned.push([file, ...args]); return spawn('true'); }) as unknown as typeof spawn });
-  const run = runner.start('Prove it', { tool: graphyardTools.evidence, validate: value => value, timeoutMs: 60_000, cwd, runs: runsDirectory(join(base, 'coordinator')) });
+  const run = runner.start('Prove it', { tool: mainworksTools.evidence, validate: value => value, timeoutMs: 60_000, cwd, runs: runsDirectory(join(base, 'coordinator')) });
   run.cancel('the test only inspects the launch');
   await run.result();
   assert.equal(spawned[0]![0], 'systemd-run');
@@ -60,7 +60,7 @@ test('integration:session-fair-share — the loop, the master, the server and th
   const weight = new RegExp(`^CPUWeight=${controlPlaneWeight}$`, 'm');
   assert.match(loopUnitText({ root: '/checkout', cliPath: '/checkout/bin/graphyard.mjs', repository: 'owner/project', intervalSeconds: 20, installDir: '/install' }), weight, 'the loop');
   assert.match(herdrServerUnitText('/usr/bin/herdr', null, '/usr/bin'), weight, 'the master, in its Herdr pane');
-  const compose = composeBundle({ workdir: '/fixture', installId: 'test', image: 'graphyard:test', port: 4310 } as AdapterContext, []).find(file => file.path.endsWith('compose.yaml'))!.content;
+  const compose = composeBundle({ workdir: '/fixture', installId: 'test', image: 'mainworks:test', port: 4310 } as AdapterContext, []).find(file => file.path.endsWith('compose.yaml'))!.content;
   // Docker maps cpu_shares to the cgroup v2 weight as 1 + (shares - 2) * 9999 / 262142.
   const shares = [...compose.matchAll(/^ {4}cpu_shares: (\d+)$/gm)].map(match => Number(match[1]));
   assert.equal(shares.length, 2, 'the database and the server');

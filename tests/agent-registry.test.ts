@@ -104,7 +104,7 @@ async function master(workers: { name: string; principal: string; kind: string; 
   const root = await temporaryDirectory('repo', scratch), credentialDirectory = await temporaryDirectory('credentials', scratch);
   execFileSync('git', ['init', '-q', root]); execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/owner/project.git'], { cwd: root });
   const bound = async () => new Response(JSON.stringify({ actor: { id: 'master', role: 'coordinator' }, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234 }));
-  await setupMaster(root, { url, token: tokens.get('master')!, cliPath: launcher, credentialDirectory, hostId: HOST, herdrWorkspace: 'workspace-graphyard' }, bound as typeof fetch);
+  await setupMaster(root, { url, token: tokens.get('master')!, cliPath: launcher, credentialDirectory, hostId: HOST, herdrWorkspace: 'workspace-mainworks' }, bound as typeof fetch);
   await mkdir(join(credentialDirectory, 'workers'), { recursive: true, mode: 0o700 });
   const config = await loadMasterConfig(root) as any;
   for (const entry of workers) {
@@ -166,7 +166,7 @@ test('integration:agent-registry-model — the control plane stores runtimes wit
   // API: every runtime the item names, each with its launch contract, and one added later that no code knows.
   for (const runtime of proposedRuntimes) await ok('agent-registry/runtimes', operator, { runtime, reason: `Register ${runtime.name}` });
   assert.deepEqual(proposedRuntimes.map(runtime => runtime.name).sort(), ['claude', 'codex', 'cursor', 'muse', 'opencode', 'pi']);
-  await ok('agent-registry/runtimes', coordinator, { runtime: { name: 'aider', description: 'Added after release', launch: { kind: 'aider', args: ['--yes-always'], homeVariable: 'AIDER_HOME', modelFlag: '--model', login: 'AIDER_HOME={home} aider --login', loginFile: 'session.json' } }, reason: 'A runtime Graphyard has never heard of' });
+  await ok('agent-registry/runtimes', coordinator, { runtime: { name: 'aider', description: 'Added after release', launch: { kind: 'aider', args: ['--yes-always'], homeVariable: 'AIDER_HOME', modelFlag: '--model', login: 'AIDER_HOME={home} aider --login', loginFile: 'session.json' } }, reason: 'A runtime Mainworks has never heard of' });
   // A registry holds references, never secrets: not in a contract's environment, its arguments, or an account.
   for (const launch of [{ kind: 'x', environment: { ANTHROPIC_API_KEY: 'value' } }, { kind: 'x', args: ['--key', 'sk-ant-api03-abcdefghijklmnop'] }, { kind: 'x', environment: { GRAPHYARD_TOKEN_FILE: '/x' } }])
     assert.equal((await call('agent-registry/runtimes', operator, { runtime: { name: 'leaky', launch }, reason: 'r' })).status, 400, JSON.stringify(launch));
@@ -267,7 +267,7 @@ test('integration:registry-driven-selection — an executor\'s action runs on th
   await ok('agent-registry/roles', operator, { role: { name: 'worker', accounts: ['claude-off', 'claude-spent', 'claude-out', 'claude-remote', 'claude-fresh'], concurrency: 2 }, reason: 'role' });
   await ok('agent-registry/roles', operator, { role: { name: 'producer', accounts: ['muse-a'], concurrency: 1 }, reason: 'role' });
 
-  // The profile is a Graphyard identity and nothing else here: it says codex, with Codex-only
+  // The profile is a Mainworks identity and nothing else here: it says codex, with Codex-only
   // arguments, and names no account. The registry decides what actually runs.
   const { root, config } = await master([{ name: 'worker-a', principal: 'implementer', kind: 'codex', agentArgs: ['--model', 'gpt-codex-only'] }, { name: 'worker-b', principal: 'implementer-b', kind: 'codex' }, { name: 'worker-c', principal: 'implementer-c', kind: 'claude', agentArgs: ['--permission-mode', 'default'] }]);
   assert.equal(config.environments, undefined); assert.ok(config.workers.every(entry => !entry.accounts));

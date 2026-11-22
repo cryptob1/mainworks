@@ -20,7 +20,7 @@ export async function open(c: Omit<Ctx, 'work'> & { work?: Work }): Promise<Work
   const proofNames: string[] = [...new Set<string>(data.criteria.flatMap((ac: { proofs: string[] }) => ac.proofs))];
   for (const proof of proofNames.filter(p => p.startsWith('e2e:'))) {
     // GY-1708: resolveScenario persists a shipped revision (capacity-limit-redispatch) so create
-    // pins a shipped scenario without a separate e2e sync. Only Graphyard's own repository install
+    // pins a shipped scenario without a separate e2e sync. Only Mainworks's own repository install
     // ships them; another managed repository registers its cases with e2e sync (GY-2964).
     // GY-2973: an unregistered scenario pins nothing — the case is the item's own deliverable
     // (the trial refuses a head that lacks e2e/cases/NAME.json and runs the case it adds), and

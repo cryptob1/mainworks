@@ -20,7 +20,7 @@ import { messageCauses } from '../src/daemon/master-stalled-delivery.js';
 import { messageThreads } from '../web/pages/master.js';
 import type { Principal } from '../src/model.js';
 
-// GY-3345: two installs' Masters message each other through Graphyard, with replies. Two real
+// GY-3345: two installs' Masters message each other through Mainworks, with replies. Two real
 // control planes on their own temporary Postgres databases; each issues the other a reporter
 // identity, and each Master drives the real `master peer` and `master send` commands, its loop's
 // real cycle and its real `master status`.
@@ -60,7 +60,7 @@ async function install(name: string, peer: string) {
   const issued = join(scratch, `${peer}.token`);
   await writeFile(issued, token(reporter), { mode: 0o600 });
 
-  /** The real `graphyard master peer|send` subcommand, as this install's Master. */
+  /** The real `mainworks master peer|send` subcommand, as this install's Master. */
   const master = async (id: 'peer' | 'send', ...args: string[]) => {
     const printed: any[] = [];
     await peerCommand({ id, args, print: (value: unknown) => printed.push(value), root, master: await loadMasterConfig(root), masterApi: (path: string) => api(path), masterMutation: (path: string, data: unknown, key?: string) => api(path, data, key) } as unknown as MasterSession);
@@ -146,7 +146,7 @@ test('e2e:cross-install-master-messaging — a Master messages another install\'
 });
 
 test('a message wakes the Master session with the answer path its sender can take', () => {
-  // A configured peer is answered over Graphyard; anyone else only on this install.
+  // A configured peer is answered over Mainworks; anyone else only on this install.
   const peer = messageCauses([{ id: 7, from: 'install-a', text: 'The trial image lacks Go 1.23.', replies: [] }], '/cli', ['install-a'])[0]!;
   assert.match(peer.detail, /master send install-a --reply 7 TEXT/);
   const stranger = messageCauses([{ id: 8, from: 'stranger', text: 'Hello there.', replies: [] }], '/cli', ['install-a'])[0]!;

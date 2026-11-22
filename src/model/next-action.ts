@@ -257,7 +257,7 @@ const refusalRules: { gate: string | null; match: RegExp; kind: NextActionKind }
   // against the bound base — without this rule the refusal fell through to the catch-all and
   // said "no executor step answers it" about the one thing rework is for.
   // A base the control plane cannot merge in cleanly is the worker's to resolve, on a fresh head:
-  // the refusal itself says to run `graphyard sync`, resolve it and push, and that approval and
+  // the refusal itself says to run `mainworks sync`, resolve it and push, and that approval and
   // proofs do not survive the resolution. Re-reading the pull request cannot produce that head, so
   // a conflict is rework — the one kind that says a judgment owes this item a new commit.
   { gate: 'build', match: /conflict/i, kind: 'request-rework' },

@@ -300,7 +300,7 @@ function assertProductInputs(prompt: string, work: Work) {
   assert.ok(prompt.includes('"executed":2,"failed":0'));
   assert.ok(prompt.includes('"case":"report-export","verdict":"passed"'));
   for (const side of ['before', 'after']) assert.ok(prompt.includes(`/api/work/${work.key}/trial-screenshots/report-export/${side}`));
-  assert.doesNotMatch(prompt, /(?:which|command -v) (?:graphyard|gy)\b|(?:graphyard|gy) on PATH/);
+  assert.doesNotMatch(prompt, /(?:which|command -v) (?:mainworks|gy)\b|(?:mainworks|gy) on PATH/);
 }
 
 test('integration:product-review-prompt-inputs — posted and headless prompts carry criteria, exact-head trial results, screenshots and CLI reads', () => {

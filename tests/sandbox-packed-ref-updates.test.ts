@@ -15,7 +15,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // common git directory writable and re-binds only the coordinator's own state read-only inside it,
 // so every ref update works on packed refs.
 
-/** A coordinator checkout whose every ref is packed, with an assignment worktree on a packed graphyard branch and a second packed branch carrying another commit. */
+/** A coordinator checkout whose every ref is packed, with an assignment worktree on a packed mainworks branch and a second packed branch carrying another commit. */
 function fixture(base: string) {
   const root = join(base, 'coordinator');
   const run = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -25,29 +25,29 @@ function fixture(base: string) {
   writeFileSync(join(root, '.gitignore'), '.graphyard/\n');
   run('init', '-b', 'main');
   run('config', 'user.email', 'graphyard@localhost');
-  run('config', 'user.name', 'Graphyard');
+  run('config', 'user.name', 'Mainworks');
   run('add', '.');
   run('commit', '-m', 'coordinator');
   const worktree = join(root, '.graphyard', 'worktrees', 'gy-2967-1');
   mkdirSync(dirname(worktree), { recursive: true });
   run('worktree', 'add', '-b', 'graphyard/gy-2967-1', worktree, 'main');
-  // The commit the confined worker merges, on its own graphyard branch.
+  // The commit the confined worker merges, on its own mainworks branch.
   const other = join(root, '.graphyard', 'worktrees', 'gy-2967-2');
   run('worktree', 'add', '-b', 'graphyard/gy-2967-2', other, 'main');
   writeFileSync(join(other, 'other.txt'), 'other\n');
   execFileSync('git', ['-C', other, 'add', '.']);
   execFileSync('git', ['-C', other, 'commit', '-m', 'other branch work']);
   run('worktree', 'remove', other);
-  // A packed graphyard branch nobody has checked out, for the confined update-ref -d.
+  // A packed mainworks branch nobody has checked out, for the confined update-ref -d.
   run('branch', 'graphyard/gy-2967-gone', 'main');
   // Pack every ref, exactly as any git gc does: the fault is a packed-refs lock the sandbox kept
   // read-only, and it bites every ref update, not one command alone.
   run('pack-refs', '--all');
   const packed = readFileSync(join(root, '.git', 'packed-refs'), 'utf8');
   assert.match(packed, /refs\/heads\/main/, 'refs/heads/main is packed');
-  assert.match(packed, /refs\/heads\/graphyard\/gy-2967-1/, 'the assignment branch is packed');
-  assert.match(packed, /refs\/heads\/graphyard\/gy-2967-2/, 'the second branch is packed');
-  assert.match(packed, /refs\/heads\/graphyard\/gy-2967-gone/, 'the disposable branch is packed');
+  assert.match(packed, /refs\/heads\/mainworks\/gy-2967-1/, 'the assignment branch is packed');
+  assert.match(packed, /refs\/heads\/mainworks\/gy-2967-2/, 'the second branch is packed');
+  assert.match(packed, /refs\/heads\/mainworks\/gy-2967-gone/, 'the disposable branch is packed');
   const main = run('rev-parse', 'refs/heads/main');
   const otherTip = run('rev-parse', 'refs/heads/graphyard/gy-2967-2');
   prepareConfinedGitPaths(root);

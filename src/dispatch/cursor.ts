@@ -149,12 +149,12 @@ export async function readDispatchCursor(root: string, config: MasterConfig): Pr
   await migrateLoopFile(client, 'dispatch', dispatchCursorPath(config), value => {
     const { botReviewers: _retired, ...stored } = value as Record<string, unknown>;
     const cursor = dispatchCursorSchema.parse(stored);
-    if (cursor.url !== config.url || cursor.repository.toLowerCase() !== config.repository.toLowerCase()) throw new Error('Master dispatch cursor belongs to another Graphyard server or repository');
+    if (cursor.url !== config.url || cursor.repository.toLowerCase() !== config.repository.toLowerCase()) throw new Error('Master dispatch cursor belongs to another Mainworks server or repository');
     return [cursor];
   });
   const stored = (await client.read('dispatch'))[0];
   const cursor = stored ? dispatchCursorSchema.parse(stored) : emptyDispatchCursor(config);
-  if (cursor.url !== config.url || cursor.repository.toLowerCase() !== config.repository.toLowerCase()) throw new Error('Master dispatch cursor belongs to another Graphyard server or repository');
+  if (cursor.url !== config.url || cursor.repository.toLowerCase() !== config.repository.toLowerCase()) throw new Error('Master dispatch cursor belongs to another Mainworks server or repository');
   const log: EnvironmentLog = await readEnvironmentLog(config);
   return Object.keys(log.environments).length || log.skipped.length ? { ...cursor, accounts: { environments: log.environments, skipped: log.skipped } } : cursor;
 }

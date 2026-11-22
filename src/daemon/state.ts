@@ -166,7 +166,7 @@ const failureRunSchema = z.object({
 }).strict();
 export type FailureRun = z.infer<typeof failureRunSchema>;
 
-/** GY-3190: what the close step's sweeps stopped or removed, by kind, and the disk Graphyard's leftovers hold. */
+/** GY-3190: what the close step's sweeps stopped or removed, by kind, and the disk Mainworks's leftovers hold. */
 const leftoverCountsSchema = z.object({ processes: z.number().int().min(0), trialContainers: z.number().int().min(0), reclaimed: z.number().int().min(0), panes: z.number().int().min(0), worktrees: z.number().int().min(0), networks: z.number().int().min(0).default(0),
   /** GY-3334: the CLI release copies removed and the bytes they held. */
   cliReleases: z.number().int().min(0).default(0), cliReleaseBytes: z.number().int().min(0).default(0) }).strict();
@@ -314,7 +314,7 @@ export async function readDaemonState(root: string, config: MasterConfig): Promi
   for (const action of Object.values<Record<string, unknown>>(stored.actions ?? {})) delete action.faultClass;
   delete (stored.mergeWriter as Record<string, unknown> | undefined)?.advisory;
   const state = toleratedStateSchema().parse(stored);
-  if (state.url !== config.url || state.repository.toLowerCase() !== config.repository.toLowerCase()) throw new Error('Master daemon state belongs to another Graphyard server or repository; remove it before running the loop');
+  if (state.url !== config.url || state.repository.toLowerCase() !== config.repository.toLowerCase()) throw new Error('Master daemon state belongs to another Mainworks server or repository; remove it before running the loop');
   return state;
 }
 
@@ -427,7 +427,7 @@ export function acquireDaemonLock(state: DaemonState, identity: { pid: number; h
     const age = now - Date.parse(lock.heartbeatAt);
     const sameHost = lock.host === identity.host;
     const alive = sameHost ? lock.pid !== identity.pid && liveProcess(lock.pid) : !Number.isFinite(age) || age < staleAfterMs;
-    if (alive) throw new Error(`Another Graphyard master loop holds this repository (pid ${lock.pid} on ${lock.host}, last cycle ${lock.heartbeatAt}); stop it before starting a second daemon`);
+    if (alive) throw new Error(`Another Mainworks master loop holds this repository (pid ${lock.pid} on ${lock.host}, last cycle ${lock.heartbeatAt}); stop it before starting a second daemon`);
   }
   state.lock = { id: randomUUID(), pid: identity.pid, host: identity.host, startedAt: new Date(now).toISOString(), heartbeatAt: new Date(now).toISOString(), pidNamespace: pidNamespace() };
   return state.lock;

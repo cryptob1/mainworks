@@ -35,7 +35,7 @@ export const isHerdrCommand = (command: string) => command === 'herdr' || comman
 /** A herdr call's own arguments, without the `--session NAME` herdrInvocation puts before them. */
 export const herdrSubcommand = (args: string[]) => args[0] === '--session' ? args.slice(2) : args;
 /**
- * The one way Graphyard spells a herdr command (GY-1511): for an install with its own instance, its
+ * The one way Mainworks spells a herdr command (GY-1511): for an install with its own instance, its
  * XDG_CONFIG_HOME and `--session` (which outranks a pane's HERDR_SOCKET_PATH); for the default
  * instance, the arguments unchanged. Every herdr spawn in src/ goes through here or herdrCall.
  */
@@ -141,7 +141,7 @@ export function inHerdrScope(entry: Parameters<typeof herdrWorkspaceOf>[0], scop
 }
 /** Refuses, by name, a pane or tab another install's workspace holds. */
 export function assertHerdrScope(target: string, scope: string | null = processScope) {
-  if (!inHerdrScope(target, scope)) throw new Error(`Herdr ${target} belongs to workspace ${herdrWorkspaceOf(target)}, not this installation's workspace ${scope}; Graphyard never closes, pastes into or reclaims another install's pane`);
+  if (!inHerdrScope(target, scope)) throw new Error(`Herdr ${target} belongs to workspace ${herdrWorkspaceOf(target)}, not this installation's workspace ${scope}; Mainworks never closes, pastes into or reclaims another install's pane`);
 }
 /**
  * Every Herdr call the coordinator makes. `run` is the asynchronous runner (child-runner.ts) —
@@ -179,7 +179,7 @@ export async function listHerdrAgents(run?: ChildRun, scope: string | null = pro
 }
 export async function observeHerdrAgents(run?: ChildRun, scope: string | null = processScope) {
   try { return { agents: await listHerdrAgents(run, scope), available: true, reason: null }; }
-  catch { return { agents: [] as HerdrAgent[], available: false, reason: 'Herdr session health is unavailable; Graphyard work state remains authoritative' }; }
+  catch { return { agents: [] as HerdrAgent[], available: false, reason: 'Herdr session health is unavailable; Mainworks work state remains authoritative' }; }
 }
 
 export async function closeHerdrPane(pane: string, run?: ChildRun, timeoutMs = 5_000, scope: string | null = processScope) {

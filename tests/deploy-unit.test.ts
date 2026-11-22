@@ -150,7 +150,7 @@ test('unit:deploy-prunes-old-images — one upgrade --watch pass whose health ch
   const { checkout, commit, a } = await repositories();
   const old = ['0123456789ab', 'ba9876543210'];
   const serving = await commit('B');
-  const images = new Set([...old, a, serving].map(sha => `graphyard-local:${sha.slice(0, 12)}`).concat('graphyard-local:owner-project'));
+  const images = new Set([...old, a, serving].map(sha => `mainworks-local:${sha.slice(0, 12)}`).concat('mainworks-local:owner-project'));
   const removed: string[] = [];
   const docker = async (command: string, args: string[]) => {
     assert.equal(command, 'docker');
@@ -168,13 +168,13 @@ test('unit:deploy-prunes-old-images — one upgrade --watch pass whose health ch
   const file = deployRecordPath(await temporaryDirectory('deploy-prune'));
   await watchMain(file, ports, { intervalMs: 1000, once: true, log: () => {} });
   assert.equal(readDeployRecord(file)?.tip, serving);
-  assert.deepEqual(removed, old.map(sha => `graphyard-local:${sha}`), 'exactly the two old per-commit images are removed');
-  assert.deepEqual([...images].sort(), [a, serving].map(sha => `graphyard-local:${sha.slice(0, 12)}`).concat('graphyard-local:owner-project').sort(), 'the previous and serving images, and the install-named one, are kept');
+  assert.deepEqual(removed, old.map(sha => `mainworks-local:${sha}`), 'exactly the two old per-commit images are removed');
+  assert.deepEqual([...images].sort(), [a, serving].map(sha => `mainworks-local:${sha.slice(0, 12)}`).concat('mainworks-local:owner-project').sort(), 'the previous and serving images, and the install-named one, are kept');
 
   // A tip whose health check fails removes nothing, its own image included.
-  images.add(`graphyard-local:${old[0]}`);
+  images.add(`mainworks-local:${old[0]}`);
   const failing = await commit('C');
-  images.add(`graphyard-local:${failing.slice(0, 12)}`);
+  images.add(`mainworks-local:${failing.slice(0, 12)}`);
   healthy = false; removed.length = 0;
   await watchMain(file, ports, { intervalMs: 1000, once: true, log: () => {} });
   assert.equal(readDeployRecord(file)?.failed, failing);
@@ -187,5 +187,5 @@ test('unit:deploy-unit — src/install/loop-unit.ts writes graphyard-deploy.serv
   assert.match(text, /^WorkingDirectory=\/home\/op\/repo$/m);
   assert.ok(text.includes(`ExecStart=/usr/bin/node /home/op/repo/bin/graphyard.mjs upgrade --watch --checkout ${deployCheckoutOf('/home/op/.config/graphyard/owner-repo')}`));
   assert.match(text, /^Restart=always$/m);
-  assert.match(text, /Description=Graphyard continuous deploy \(owner\/repo\)/);
+  assert.match(text, /Description=Mainworks continuous deploy \(owner\/repo\)/);
 });

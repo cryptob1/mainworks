@@ -29,7 +29,7 @@ export interface BaseRefresh {
    * merge base, which hold every conflicted path; null when neither side could be listed.
    */
   conflictPaths?: string[] | null;
-  /** How Graphyard produced the head, as the merge commit reports it; null when nothing was merged. */
+  /** How Mainworks produced the head, as the merge commit reports it; null when nothing was merged. */
   merge?: TipMerge | null;
   /** Which bindings of the replaced head carried onto it, decided once when the refresh was bound. */
   carry?: QueueCarry | null;

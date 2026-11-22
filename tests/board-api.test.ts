@@ -70,14 +70,14 @@ test('unit:board-api — GET /api/board gives each open item its group, next act
     assert.ok(item, `${key} is on the board`);
     assert.deepEqual({ group: item.group, actor: item.actor, command: item.command }, { group, actor, command }, key);
   };
-  expect('GY-172', 'blocked', 'master', 'graphyard master unblock GY-172 REASON');
+  expect('GY-172', 'blocked', 'master', 'mainworks master unblock GY-172 REASON');
   expect('GY-175', 'up-next', 'held', null);
   // GitHub merges a candidate every gate passes (GY-1235): there is no command to run for it.
   expect('GY-21', 'moving', 'executor', null);
   const request = work.find(item => item.key === 'GY-20')!.humanRequest!;
-  expect('GY-20', 'needs-you', 'human-only', `graphyard answer GY-20 ${request.id} ANSWER`);
-  expect('GY-17', 'blocked', 'master', 'graphyard master unblock GY-17 REASON');
-  expect('GY-11', 'backlog', 'master', 'graphyard master release GY-11');
+  expect('GY-20', 'needs-you', 'human-only', `mainworks answer GY-20 ${request.id} ANSWER`);
+  expect('GY-17', 'blocked', 'master', 'mainworks master unblock GY-17 REASON');
+  expect('GY-11', 'backlog', 'master', 'mainworks master release GY-11');
 
   // Every field an automation needs, on every item: stage, owner, since, overdue against the bound.
   assert.equal(board.overdueAfterMs, 30 * minute);

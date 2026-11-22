@@ -374,7 +374,7 @@ export async function removeReviewerProfile(root: string, name: string) {
 // is the observation scheduler's target, which keeps a requested head's reading recent (GY-1178).
 export function assertReviewCandidate(work: Work, observedAt: string, request?: { sha: string; baseSha: string; policyRevision: number }) {
   const now = Date.parse(observedAt);
-  if (!Number.isFinite(now)) throw new Error('A reviewer launch requires a valid Graphyard snapshot clock');
+  if (!Number.isFinite(now)) throw new Error('A reviewer launch requires a valid Mainworks snapshot clock');
   const candidate = work.candidate, observation = work.observation;
   if (!work.submission || !candidate) throw new Error(`${work.key} has no independently observed pull-request candidate to review`);
   if (work.reworkRequested) throw new Error(`${work.key} is awaiting rework; review the next submitted candidate`);
@@ -387,7 +387,7 @@ export function assertReviewCandidate(work: Work, observedAt: string, request?: 
   // integrates it with the current base when it merges (GY-191).
   // Only a head that conflicts with the base, or whose mergeability GitHub has not computed, waits
   // for a sync.
-  if (behindBaseHold(work)) throw new Error(`${work.key} candidate ${candidate.sha.slice(0, 12)} does not contain the base branch tip ${observation.baseTip?.slice(0, 12) ?? ''}; ${observation.conflicting ? 'GitHub reports a merge conflict with it' : 'GitHub does not report it mergeable'}, so a review would judge a diff the sync will change. Run graphyard sync ${work.key} and push`);
+  if (behindBaseHold(work)) throw new Error(`${work.key} candidate ${candidate.sha.slice(0, 12)} does not contain the base branch tip ${observation.baseTip?.slice(0, 12) ?? ''}; ${observation.conflicting ? 'GitHub reports a merge conflict with it' : 'GitHub does not report it mergeable'}, so a review would judge a diff the sync will change. Run mainworks sync ${work.key} and push`);
   // The binding's base is the head's merge base with the base branch (GY-2948): the delta the
   // reviewer judges is head versus that base, so a file the base branch gained after it — merged
   // while this worker worked — is never part of the reviewed diff, let alone reported as removed.
@@ -529,9 +529,9 @@ export { LauncherUnavailableError } from './master/config.js';
 export function cliUnreachableRefusal(config: Partial<Pick<MasterConfig, 'cliPath'>>, mask?: CredentialMask): string | null {
   const cli = config.cliPath ?? launcherPath;
   const underHome = (path: string) => !!mask && (path === mask.configHome || path.startsWith(`${mask.configHome}${sep}`));
-  if (!cli || !isAbsolute(cli)) return `the config names no absolute CLI path, so the session's prompt would name a CLI no sandbox holds; set cliPath with graphyard master setup`;
-  if (!existsSync(cli)) return `the CLI the prompt names (node ${cli}) is not on this host, so no session could post its verdict; restore the deploy checkout it names, or set cliPath with graphyard master setup`;
-  if (underHome(cli) && !(mask?.cli ?? []).some(kept => cli === kept || cli.startsWith(`${kept}${sep}`))) return `the CLI the prompt names (node ${cli}) sits under the masked config home and this launch's sandbox would not keep it, so no session could post its verdict; set cliPath with graphyard master setup`;
+  if (!cli || !isAbsolute(cli)) return `the config names no absolute CLI path, so the session's prompt would name a CLI no sandbox holds; set cliPath with mainworks master setup`;
+  if (!existsSync(cli)) return `the CLI the prompt names (node ${cli}) is not on this host, so no session could post its verdict; restore the deploy checkout it names, or set cliPath with mainworks master setup`;
+  if (underHome(cli) && !(mask?.cli ?? []).some(kept => cli === kept || cli.startsWith(`${kept}${sep}`))) return `the CLI the prompt names (node ${cli}) sits under the masked config home and this launch's sandbox would not keep it, so no session could post its verdict; set cliPath with mainworks master setup`;
   return null;
 }
 
@@ -544,7 +544,7 @@ export { browserToolName, browserToolOnPath } from './browser-tool.js';
  * attention line; it never becomes a change request and never reaches the item's worker.
  */
 export function productLaunchRefusal(config: Pick<MasterConfig, 'url' | 'cliPath'>, mask: CredentialMask | undefined, tool: string | null, installError?: string | null): string | null {
-  if (!config.url) return 'GRAPHYARD_URL is unset: this launch cannot tell its reviewer the control plane\'s address; set url with graphyard master setup';
+  if (!config.url) return 'GRAPHYARD_URL is unset: this launch cannot tell its reviewer the control plane\'s address; set url with mainworks master setup';
   const unreachable = cliUnreachableRefusal(config, mask);
   if (unreachable) return unreachable;
   if (!tool && installError) return `no browser tool on the session's PATH (agent-browser), and ${installError}; the loop tries the install again in 15 minutes, or run: ${browserInstallCommand()}`;
@@ -616,7 +616,7 @@ export interface ControlPlanePrompt { head: string; baseTip: string; postMerge?:
   /** GY-3635: removed or modified assertion lines in existing tests/cases for the reviewer to rule on. */
   changedAssertions?: readonly ChangedAssertion[] }
 function reviewReadSection(cliPath: string, head: string) {
-  return `Read snapshot paths: git show ${head}:PATH; surrounding code: rg, cat. node ${cliPath} --help lists commands; node ${cliPath} guide review is supported and needs no worker or coordinator credential. No graphyard show command. `;
+  return `Read snapshot paths: git show ${head}:PATH; surrounding code: rg, cat. node ${cliPath} --help lists commands; node ${cliPath} guide review is supported and needs no worker or coordinator credential. No mainworks show command. `;
 }
 /** Recover exploratory mistakes without relaxing the read-only role or hiding real blockers. */
 function reviewRecoverySection() {
@@ -625,14 +625,14 @@ function reviewRecoverySection() {
 function reviewAutonomySection() {
   return `Decide and act on your own: finish judging the diff and post exactly one verdict, APPROVE or REQUEST_CHANGES. Never ask a human for confirmation or end waiting on input. `
     + reviewRecoverySection()
-    + `Record a genuine blocker as one review posted with --event COMMENT (or, when posting is itself refused, as a final line starting BLOCKED:). After posting, stop; Graphyard closes the session.`;
+    + `Record a genuine blocker as one review posted with --event COMMENT (or, when posting is itself refused, as a final line starting BLOCKED:). After posting, stop; Mainworks closes the session.`;
 }
 export function reviewPrompt(config: Pick<MasterConfig, 'repository'> & Partial<Pick<MasterConfig, 'cliPath'>>, binding: Pick<ReviewBinding, 'key' | 'pr' | 'sha' | 'baseSha' | 'policyRevision'>, checkout?: SessionCheckout, _legacy?: unknown, criteria?: ReviewCriterion[], history?: ReviewHistory, files?: readonly string[] | null, projectMemory?: ProjectMemory | null, memory?: ProjectMemory | null, verification?: { maps: readonly VerificationMap[]; paths: readonly string[] } | null, plane?: ControlPlanePrompt | null, scenarioRequirements: Work['scenarioRequirements'] = []) {
   memory ??= projectMemory;
   if (plane) return controlPlaneReviewPrompt(config, binding, plane, checkout, criteria, history, files, memory, verification, scenarioRequirements);
   const memorySection = projectMemoryDigest(memory, 'reviewer', { baseSha: binding.baseSha });
   const standards = reviewStandards({ key: binding.key, criteria, scenarioRequirements }, binding.sha, files);
-  return `You are the independent Graphyard reviewer for ${config.repository}. Review pull request #${binding.pr} at head ${binding.sha} against base ${binding.baseSha} under policy revision ${binding.policyRevision}, for work item ${binding.key}. `
+  return `You are the independent Mainworks reviewer for ${config.repository}. Review pull request #${binding.pr} at head ${binding.sha} against base ${binding.baseSha} under policy revision ${binding.policyRevision}, for work item ${binding.key}. `
     + `Read the change with: gh pr diff ${binding.pr} --repo ${config.repository}. `
     + (memorySection || '')
     + verificationMapDigest(verification?.maps, verification?.paths, 'reviewer')
@@ -645,7 +645,7 @@ export function reviewPrompt(config: Pick<MasterConfig, 'repository'> & Partial<
     + standards.simplicity
     + standards.repetition
     + (files?.some(file => file.startsWith('web/')) ? standards.ux : '')
-    + (checkout ? `When judging the diff needs the surrounding code, read it from a detached checkout of the exact head, created only at the path Graphyard allocated for this session under its managed worktree root and never under a temporary directory: git fetch --no-write-fetch-head origin ${binding.sha} && git worktree add --detach ${checkout.worktree} ${binding.sha}. Read there and change nothing; Graphyard removes ${checkout.directory} when this session ends. ` : '')
+    + (checkout ? `When judging the diff needs the surrounding code, read it from a detached checkout of the exact head, created only at the path Mainworks allocated for this session under its managed worktree root and never under a temporary directory: git fetch --no-write-fetch-head origin ${binding.sha} && git worktree add --detach ${checkout.worktree} ${binding.sha}. Read there and change nothing; Mainworks removes ${checkout.directory} when this session ends. ` : '')
     + 'Read-only: no edits, Git mutations, work claims or evidence submissions; do not run the project\'s build, tests, or servers. '
     + reviewPostSection(config.cliPath ?? launcherPath, 'only when a BLOCKING finding stands')
     + `Posting that review is granted to this session's role, not a permission to request: post without asking for confirmation. `
@@ -679,7 +679,7 @@ export function productTrialEvidence(work: Work, head: string): string {
  * app it cannot reach) reports COULD_NOT_RUN, never a change request.
  */
 function productReviewPrompt(config: Pick<MasterConfig, 'repository'> & Partial<Pick<MasterConfig, 'cliPath'>>, binding: Pick<ReviewBinding, 'key' | 'policyRevision'>, plane: ControlPlanePrompt, _checkout?: SessionCheckout, criteria?: ReviewCriterion[], scenarioRequirements: Work['scenarioRequirements'] = []) {
-  const unreachable = `If your own environment fails — GRAPHYARD_URL unset, no Graphyard CLI, no browser tool, or an app you cannot reach — report that as COULD_NOT_RUN with the reason, never as a change request: no worker can fix it. `;
+  const unreachable = `If your own environment fails — GRAPHYARD_URL unset, no Mainworks CLI, no browser tool, or an app you cannot reach — report that as COULD_NOT_RUN with the reason, never as a change request: no worker can fix it. `;
   const walk = plane.previewUrl
     ? `Walk it with agent-browser: open the head's built preview at ${plane.previewUrl} and use the feature and the flows around it; also open the app as currently served (its address is the serving.serve.url field of GET $GRAPHYARD_URL/api/status, when one is served) and compare what a user sees there today. ${unreachable}`
     : plane.servedUrl
@@ -687,7 +687,7 @@ function productReviewPrompt(config: Pick<MasterConfig, 'repository'> & Partial<
       : plane.noApp
         ? `This install serves no app and declares no serve command, so no walkthrough is required and none is owed: judge the change from the head's diff (git diff ${plane.baseTip} ${plane.head}), the criteria and the trial evidence, and say in your findings that no app was there to walk — the absence of an app is never a reason to request changes. `
         : `The head itself is not separately previewed, so walk the app as currently served with agent-browser (its address is the serving.serve.url field of GET $GRAPHYARD_URL/api/status, when one is served), use the flows the feature belongs to, and read the head's diff (git diff ${plane.baseTip} ${plane.head}) beside what you see. ${unreachable}`;
-  return `You are the independent Graphyard product reviewer for ${config.repository}. Work item ${binding.key} is a user-facing feature: its head ${plane.head} (judged against base ${plane.baseTip}, policy revision ${binding.policyRevision}) was observed by the control plane. `
+  return `You are the independent Mainworks product reviewer for ${config.repository}. Work item ${binding.key} is a user-facing feature: its head ${plane.head} (judged against base ${plane.baseTip}, policy revision ${binding.policyRevision}) was observed by the control plane. `
     + `Judge the feature as a product, in the whole app's context — not only whether the diff is correct. `
     + reviewStandards({ ...binding, criteria, scenarioRequirements }, plane.head).criteria + criteriaVerdictRule
     + (plane.trialEvidence ?? `No trial evidence recorded for head ${plane.head}. `)
@@ -697,14 +697,14 @@ function productReviewPrompt(config: Pick<MasterConfig, 'repository'> & Partial<
     + `${reviewStandards(binding).ux}Request changes on any violation of this UX standard, with a screenshot of it. `
     + (plane.answer ? readOnlySession + plane.answer : productPostSection(config.cliPath ?? launcherPath) + readOnlySession
     + `Posting that verdict is granted to this session's role, not a permission to request: post it as soon as you have judged the feature, without asking for confirmation. `
-    + `review post sends it to the Graphyard control plane at GRAPHYARD_URL with this launch's one-time token from GH_CONFIG_DIR. `
-    + `Once it has posted, stop; Graphyard closes this session once it observes your verdict. `
+    + `review post sends it to the Mainworks control plane at GRAPHYARD_URL with this launch's one-time token from GH_CONFIG_DIR. `
+    + `Once it has posted, stop; Mainworks closes this session once it observes your verdict. `
     + autonomousSession('post the verdict yourself, APPROVE, REQUEST_CHANGES, REJECT or COULD_NOT_RUN, as soon as you have judged the feature', 'record a blocker as a final line starting BLOCKED:'));
 }
-const readOnlySession = 'This session is read-only: do not edit, stage, commit, push, rebase, or merge anything, do not run the project\'s build, tests, or servers, do not claim Graphyard work, and do not submit evidence. ';
+const readOnlySession = 'This session is read-only: do not edit, stage, commit, push, rebase, or merge anything, do not run the project\'s build, tests, or servers, do not claim Mainworks work, and do not submit evidence. ';
 function productPostSection(cliPath: string) {
-  return `Post exactly one verdict, only through Graphyard, with the body on standard input: node ${cliPath} review post --event EVENT <<'EOF' … EOF. `
-    + `--event APPROVE when the feature should ship as it stands; --event REQUEST_CHANGES when it should ship after concrete changes, each named on its own "BLOCKING: SCREEN OR FLOW — FINDING" line; --event REJECT when it should not ship at all, with the reason in the body — the master closes the item unmerged on it, or files a reshaped one; --event COULD_NOT_RUN when your own environment failed (GRAPHYARD_URL unset, no Graphyard CLI, no browser tool, or an app you cannot reach), the reason in the body — Graphyard retries the review on another reviewer and the item never returns to its worker for it. `
+  return `Post exactly one verdict, only through Mainworks, with the body on standard input: node ${cliPath} review post --event EVENT <<'EOF' … EOF. `
+    + `--event APPROVE when the feature should ship as it stands; --event REQUEST_CHANGES when it should ship after concrete changes, each named on its own "BLOCKING: SCREEN OR FLOW — FINDING" line; --event REJECT when it should not ship at all, with the reason in the body — the master closes the item unmerged on it, or files a reshaped one; --event COULD_NOT_RUN when your own environment failed (GRAPHYARD_URL unset, no Mainworks CLI, no browser tool, or an app you cannot reach), the reason in the body — Mainworks retries the review on another reviewer and the item never returns to its worker for it. `
     + `Open the body by naming the head you judged, and name each screenshot you captured (at most 5, .png or .jpg, each under 2 MiB) on its own "Screenshot: PATH" line, the path of the file you saved: review post uploads each with your verdict, and the item shows your verdict, findings and screenshots together. `;
 }
 /**
@@ -713,10 +713,10 @@ function productPostSection(cliPath: string) {
  */
 export function headlessReviewAnswer(key: string, product = false, screenshots?: string) {
   return `Answer in one JSON object, the last thing you print: {"verdict": "APPROVE" or "BLOCKING"${product ? ' or "REJECT" or "COULD_NOT_RUN"' : ''}, "body": "THE REVIEW BODY", "findings": ["${product ? 'SCREEN OR FLOW' : 'PATH:LINE'} — FINDING", …]}. `
-    + `APPROVE when no blocking finding stands, with findings empty; BLOCKING when one does, each in findings${product ? '; REJECT when the feature should not ship at all, the reason in the body: the master closes the item unmerged on it; COULD_NOT_RUN when your own environment failed — GRAPHYARD_URL unset, no Graphyard CLI, no browser tool, or an app you cannot reach — the reason in the body and no findings: Graphyard retries the review on another reviewer and the item never returns to its worker for it' : ''}. `
-    + (product ? (screenshots ? `Save each screenshot in ${screenshots} — the one directory both this session and Graphyard, which posts your answer, can read — and open the body by naming the head you judged, then name each screenshot you saved (at most 5, .png or .jpg, each under 2 MiB) on its own "Screenshot: NAME" line, NAME its file name in that directory: the item shows them beside your verdict. `
+    + `APPROVE when no blocking finding stands, with findings empty; BLOCKING when one does, each in findings${product ? '; REJECT when the feature should not ship at all, the reason in the body: the master closes the item unmerged on it; COULD_NOT_RUN when your own environment failed — GRAPHYARD_URL unset, no Mainworks CLI, no browser tool, or an app you cannot reach — the reason in the body and no findings: Mainworks retries the review on another reviewer and the item never returns to its worker for it' : ''}. `
+    + (product ? (screenshots ? `Save each screenshot in ${screenshots} — the one directory both this session and Mainworks, which posts your answer, can read — and open the body by naming the head you judged, then name each screenshot you saved (at most 5, .png or .jpg, each under 2 MiB) on its own "Screenshot: NAME" line, NAME its file name in that directory: the item shows them beside your verdict. `
       : 'Open the body by naming the head you judged, and name each screenshot you saved (at most 5, .png or .jpg, each under 2 MiB) on its own "Screenshot: PATH" line: the item shows them beside your verdict. ') : '')
-    + 'Graphyard posts that answer as your verdict under this launch, each finding on a BLOCKING: line, so run no review post. '
+    + 'Mainworks posts that answer as your verdict under this launch, each finding on a BLOCKING: line, so run no review post. '
     + `Judge whether this change meets what ${key} requires; never weaken a requirement to let it pass, and never hold a change that meets its criteria over a FOLLOW-UP. Decide on your own: never ask a human or wait on input.`;
 }
 /** The headless answer, checked before it is posted: a BLOCKING verdict names its findings, an approval none. */
@@ -785,22 +785,22 @@ function controlPlaneReviewPrompt(config: Pick<MasterConfig, 'repository'> & Par
   // open with the head and base, and the server records the launch's base beside them.
   const scope = `Open the review body by naming the head and the base you judged against, so the verdict itself records which commits were in scope. `;
   const outcome = plane.postMerge
-    ? 'Name each finding that meets the blocking standard on its own line starting BLOCKING: as PATH:LINE — FINDING; Graphyard files one follow-up item per BLOCKING line, planned on that file, keeps every other finding in project memory, and never reopens the delivered item. Post REQUEST_CHANGES when any BLOCKING line stands and APPROVE otherwise. '
+    ? 'Name each finding that meets the blocking standard on its own line starting BLOCKING: as PATH:LINE — FINDING; Mainworks files one follow-up item per BLOCKING line, planned on that file, keeps every other finding in project memory, and never reopens the delivered item. Post REQUEST_CHANGES when any BLOCKING line stands and APPROVE otherwise. '
     : '';
-  return `You are the independent Graphyard reviewer for ${config.repository}. ${subject}`
+  return `You are the independent Mainworks reviewer for ${config.repository}. ${subject}`
     + scope
     + reviewStandard({ key: binding.key, head: plane.head, base: plane.baseTip }, criteria, files, verification, { memory: memorySection || '', round: reviewRoundSection(plane.head, history), scenarioRequirements, changedAssertions: plane.changedAssertions })
     + reviewReadSection(config.cliPath ?? launcherPath, plane.head)
     + `Classify findings by node ${config.cliPath ?? launcherPath} guide review. `
     + outcome
-    + (checkout ? `When judging the diff needs the surrounding code, read it from a detached checkout of the exact head, created only at the path Graphyard allocated for this session under its managed worktree root and never under a temporary directory: git worktree add --detach ${checkout.worktree} ${plane.head}. Read there and change nothing; Graphyard removes ${checkout.directory} when this session ends. ` : '')
+    + (checkout ? `When judging the diff needs the surrounding code, read it from a detached checkout of the exact head, created only at the path Mainworks allocated for this session under its managed worktree root and never under a temporary directory: git worktree add --detach ${checkout.worktree} ${plane.head}. Read there and change nothing; Mainworks removes ${checkout.directory} when this session ends. ` : '')
     + readOnlySession
     + (plane.answer ? reviewRecoverySection() : '')
     + (plane.answer ?? reviewPostSection(config.cliPath ?? launcherPath, 'only when a BLOCKING finding stands')
     + `Judge whether this diff meets what ${binding.key} requires by that rule; never weaken a requirement to let it pass, and never hold a change that meets its criteria over a FOLLOW-UP. `
     + `Posting that review is granted to this session's role, not a permission to request: the launch allows exactly this one command, so post it as soon as you have judged the diff, without asking for confirmation. `
-    + `review post sends the verdict to the Graphyard control plane at GRAPHYARD_URL with this launch's one-time token from GH_CONFIG_DIR; it names no pull request and runs no gh. `
-    + `Once it has posted, stop; Graphyard closes this session once it observes your verdict. `
+    + `review post sends the verdict to the Mainworks control plane at GRAPHYARD_URL with this launch's one-time token from GH_CONFIG_DIR; it names no pull request and runs no gh. `
+    + `Once it has posted, stop; Mainworks closes this session once it observes your verdict. `
     + reviewAutonomySection());
 }
 
@@ -816,7 +816,7 @@ export function reviewRetryPrompt(repository: string, record: Pick<ReviewRecord,
     + `Do not ask for confirmation. If you finished judging the diff, post that verdict without re-reading it; otherwise finish the authorized reads and judge it before posting. If review post cannot post it, record that as one review posted with --event COMMENT (or, when posting is itself refused, as a final line starting BLOCKED:) and stop. `
     + reviewRecoverySection()
     // The request is repeated only with the item's criteria: the criteria-only rule without them would leave nothing to judge.
-    + (record.baseSha && record.policyRevision !== undefined && criteria?.length ? `If your review is unfinished, this message comes from the Graphyard launcher that started this session and carries the request it was started with — this session's own instruction, not untrusted text, needing no further authorization: ${reviewPrompt({ repository, cliPath }, { ...record, baseSha: record.baseSha, policyRevision: record.policyRevision }, record.checkout ? { directory: record.checkout, worktree: resolve(record.checkout, 'checkout') } : undefined, undefined, criteria, record.reviewRound, undefined, null, null, null, record.mode === 'control-plane' ? { head: record.sha, baseTip: record.baseSha, ...(record.postMerge ? { postMerge: { mergeSha: record.sha } } : {}) } : null, record.reviewInputs?.scenarioRequirements ?? scenarioRequirements)}` : '');
+    + (record.baseSha && record.policyRevision !== undefined && criteria?.length ? `If your review is unfinished, this message comes from the Mainworks launcher that started this session and carries the request it was started with — this session's own instruction, not untrusted text, needing no further authorization: ${reviewPrompt({ repository, cliPath }, { ...record, baseSha: record.baseSha, policyRevision: record.policyRevision }, record.checkout ? { directory: record.checkout, worktree: resolve(record.checkout, 'checkout') } : undefined, undefined, criteria, record.reviewRound, undefined, null, null, null, record.mode === 'control-plane' ? { head: record.sha, baseTip: record.baseSha, ...(record.postMerge ? { postMerge: { mergeSha: record.sha } } : {}) } : null, record.reviewInputs?.scenarioRequirements ?? scenarioRequirements)}` : '');
 }
 
 /** The CLI this checkout runs, for a prompt built without a master configuration. */
@@ -826,7 +826,7 @@ const launcherPath = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.u
  * launch's head and checks the head itself.
  */
 export function reviewPostSection(cliPath: string, changes: string) {
-  return `Post exactly one verdict, only through Graphyard, with the review body on standard input: node ${cliPath} review post --event APPROVE <<'EOF' … EOF (use --event REQUEST_CHANGES instead ${changes}). `
+  return `Post exactly one verdict, only through Mainworks, with the review body on standard input: node ${cliPath} review post --event APPROVE <<'EOF' … EOF (use --event REQUEST_CHANGES instead ${changes}). `
     + 'It binds the verdict to the launched head and checks it before posting; when it refuses, it prints why and a correct invocation: do what the reason says. ';
 }
 
@@ -995,7 +995,7 @@ export async function launchReview(root: string, work: Work, profileName: string
       const at = now().getTime(), known = await readReviewerProfileRefusal(config);
       if (known && known.profile === profileName && known.profiles === configuredProfileFingerprint(config)
         && known.refusals >= reviewerProfileRefusalLimit && at - Date.parse(known.at) < reviewerProfileRetryMs)
-        throw new UnknownReviewerProfileError(profileName, `Unknown reviewer profile ${profileName}: refused ${known.refusals} launches in a row (last at ${known.at}); backing off to one attempt every ${reviewerProfileRetryMs / 60_000} minutes until the profiles change — write them with graphyard master environments --apply`);
+        throw new UnknownReviewerProfileError(profileName, `Unknown reviewer profile ${profileName}: refused ${known.refusals} launches in a row (last at ${known.at}); backing off to one attempt every ${reviewerProfileRetryMs / 60_000} minutes until the profiles change — write them with mainworks master environments --apply`);
       await recordReviewerProfileRefusal(config, profileName, at);
     }
     if (profileName) throw new UnknownReviewerProfileError(profileName, `Unknown reviewer profile ${profileName}`);

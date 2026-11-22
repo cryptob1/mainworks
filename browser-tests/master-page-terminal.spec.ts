@@ -17,7 +17,7 @@ const settled = { timeout: 15_000 };
 
 /** The status a WebSocket handshake to /api/terminal answers with, carrying TOKEN as the dashboard does. */
 const handshake = (url: string, token?: string) => new Promise<number>((done, fail) => {
-  const call = request(`${url}/api/terminal`, { headers: { Connection: 'Upgrade', Upgrade: 'websocket', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': randomBytes(16).toString('base64'), ...(token ? { 'Sec-WebSocket-Protocol': `graphyard, ${token}` } : {}) } });
+  const call = request(`${url}/api/terminal`, { headers: { Connection: 'Upgrade', Upgrade: 'websocket', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': randomBytes(16).toString('base64'), ...(token ? { 'Sec-WebSocket-Protocol': `mainworks, ${token}` } : {}) } });
   call.on('upgrade', (response, socket) => { socket.destroy(); done(response.statusCode!); });
   call.on('response', response => { response.resume(); done(response.statusCode!); });
   call.on('error', fail); call.end();
@@ -66,7 +66,7 @@ test('e2e:master-page-terminal — the operator types into the master pane live;
 
     // A reader's session sees the same screen, read-only: what it types never reaches the pane.
     const reader = await browser.newPage(); await serveXterm(reader);
-    await reader.addInitScript(() => sessionStorage.setItem('graphyard-token', 'test-reader'));
+    await reader.addInitScript(() => sessionStorage.setItem('mainworks-token', 'test-reader'));
     await reader.goto(`${url}/#master/live`);
     await expect(rows(reader)).toContainText('screen of w1:master', settled);
     await expect(reader.getByRole('status')).toContainText('View only', settled);

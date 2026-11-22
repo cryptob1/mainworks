@@ -75,7 +75,7 @@ exit 0
   const root = join(base, 'install');
   const launch = async (who: 'gate' | 'merge') => {
     const load = { ...await trialLoad(root, who), slots, cap: 1, hwmon, hotCelsius: 95, floorBytes: 30e9 };
-    const [program, ...words] = trialContainerLaunch({ image: 'graphyard-trial:local', mounts: [[base, '/scratch', false]], network: 'none', load });
+    const [program, ...words] = trialContainerLaunch({ image: 'mainworks-trial:local', mounts: [[base, '/scratch', false]], network: 'none', load });
     const child = spawn(program!, [...words, 'sleep', '600'], { cwd: base, env: { PATH: `${bin}:/usr/bin:/bin` }, stdio: ['ignore', 'ignore', 'pipe'] });
     let said = '';
     child.stderr!.on('data', chunk => { said += chunk; });

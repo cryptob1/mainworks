@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { appendFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { adoptConversation, assertConversationRuntime, captureConversation, conversationArgs, conversationEvents, conversationHandover, graphyardInput, masterInputs, masterRecords, type Conversation } from '../src/master/conversation.js';
+import { adoptConversation, assertConversationRuntime, captureConversation, conversationArgs, conversationEvents, conversationHandover, mainworksInput, masterInputs, masterRecords, type Conversation } from '../src/master/conversation.js';
 import { emptyDaemonState, emptyMasterSession, readDaemonState, writeDaemonState } from '../src/daemon/state.js';
 import { masterConfigSchema } from '../src/master/profiles.js';
 
@@ -19,9 +19,9 @@ test('unit:master-session-resumes — native forms name the current conversation
 test('unit:master-session-resumes — native event metadata distinguishes person inputs, tools, partials, finals and recorded deliveries', async () => {
   const root = await temporaryDirectory('master-events');
   const launch = randomUUID(), origins = masterInputs(root, launch);
-  const automated = await graphyardInput(origins, 'launch', 'Automated launch');
-  const wake = await graphyardInput(origins, 'wake', 'Automated wake');
-  const retry = await graphyardInput(origins, 'retry', 'Automated wake');
+  const automated = await mainworksInput(origins, 'launch', 'Automated launch');
+  const wake = await mainworksInput(origins, 'wake', 'Automated wake');
+  const retry = await mainworksInput(origins, 'retry', 'Automated wake');
   const conversation: Conversation = { launch, runtime: 'claude', account: 'a', nativeId: 'native-a', transcript: join(root, 'source.jsonl'), record: join(masterRecords(root), 'a.jsonl'), origins, predecessor: null, supersededBy: null };
   const user = (id: string, text: unknown) => ({ type: 'user', uuid: id, message: { content: text } });
   const rows = [user('launch', automated), user('person-1', 'Keep my exact question?\nAnd this line.'),

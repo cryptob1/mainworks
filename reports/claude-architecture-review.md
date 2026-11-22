@@ -29,7 +29,7 @@ None of these adds a new layer or a manual gate. Each one either reuses existing
 
 ## Existing open repairs (not new findings)
 
-Status as of 2026-11-04 01:30 UTC, from `graphyard status` and the operator's notes. Each judgement holds for the head named; a later head needs its own look.
+Status as of 2026-11-04 01:30 UTC, from `mainworks status` and the operator's notes. Each judgement holds for the head named; a later head needs its own look.
 
 | Item | Pending head | Problem it fixes | Judgement |
 |---|---|---|---|
@@ -47,7 +47,7 @@ GY-3051: the native fixture was rerun at `e38dfc5`. No actual agent has succeede
 ### 1. A runtime that starts and then dies is a "successful" dispatch, so the slot crash-loops (new, high)
 
 **Evidence:**
-- `graphyard events GY-N --kind release` counts:
+- `mainworks events GY-N --kind release` counts:
   - GY-3061: 141 releases (132 on `graphyard-claude-1`);
   - GY-3064: 125 releases;
   - GY-3060: 66 releases;
@@ -159,7 +159,7 @@ No counterfactual: this review did not measure or simulate how many of GY-3064's
 ### 5. Item documents grow with every attempt and are rewritten whole (new, low-medium)
 
 **Evidence:**
-- `graphyard status GY-3064` is 178 KB:
+- `mainworks status GY-3064` is 178 KB:
   - `actionQueue` 52 KB;
   - `sessions` 32 KB (40 kept);
   - `workspaces` 20 KB (127 entries, 126 of them ended attempts whose worktrees are gone).
@@ -179,7 +179,7 @@ No counterfactual: this review did not measure or simulate how many of GY-3064's
 
 ## What to keep
 
-- **Leases, epochs and one transaction per mutation, with append-only events.** `graphyard events GY-N --kind release` reduced a day-long incident to one query. Every fix above is a few lines because the facts are already recorded.
+- **Leases, epochs and one transaction per mutation, with append-only events.** `mainworks events GY-N --kind release` reduced a day-long incident to one query. Every fix above is a few lines because the facts are already recorded.
 - **Typed release with a cause** (`supervisor.ts:228-240`). The cause line was the key evidence; finding 2 only makes it complete.
 - **Profile cooldowns and action stall classification.** They are the right tools; finding 1 only feeds them the missing case. Do not add a new watchdog or supervisor.
 - **First-class dependencies.** Use them for cross-item waits (finding 4) instead of master prose.
@@ -192,7 +192,7 @@ No counterfactual: this review did not measure or simulate how many of GY-3064's
 
 ## How this was reviewed
 
-- `graphyard status` and `graphyard events` for GY-3059, 3060, 3061, 3063, 3064, 3065 and 3066.
+- `mainworks status` and `mainworks events` for GY-3059, 3060, 3061, 3063, 3064, 3065 and 3066.
 - The `.graphyard/dispatch/dispatched-*.json` launch records.
 - `git diff --stat` of each pending head against `2982438`.
 - Reading `src/daemon/cycle.ts`, `src/daemon/sessions.ts`, `src/supervisor.ts`, `src/master/dispatch.ts`, `src/master/session-resume.ts`, `src/master/conversation.ts`, `src/engine.ts`, `src/coordination.ts` and `src/model/action-progress.ts`.

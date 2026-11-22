@@ -52,7 +52,7 @@ test('unit:keyring-probe-backoff — while the user manager stays unreachable, c
     // Once the user manager answers after the window, the unmigrated endpoint is reported and the window closes.
     clock += keyringProbeBackoffMaxMs;
     const reported = await launch('gy-c', unheld);
-    assert.ok(reported && reported.startsWith('graphyard: gy-c: ') && reported.endsWith(`migrate: ${secretsBusMigration}`), 'the endpoint is reported once judged');
+    assert.ok(reported && reported.startsWith('mainworks: gy-c: ') && reported.endsWith(`migrate: ${secretsBusMigration}`), 'the endpoint is reported once judged');
     assert.equal(backoff.windows.size, 0, 'a judged probe closes the window');
     assert.equal(await launch('gy-d', unheld), null, 'and its verdict is kept as before');
     assert.equal(probes, 8);
@@ -67,7 +67,7 @@ test('unit:keyring-probe-backoff — while the user manager stays unreachable, c
     await close(server);
     server = await listen(endpoint);
     const fresh = await launch('gy-g', unheld);
-    assert.ok(fresh && fresh.startsWith('graphyard: gy-g: '), 'a new socket is probed despite the earlier socket\'s window');
+    assert.ok(fresh && fresh.startsWith('mainworks: gy-g: '), 'a new socket is probed despite the earlier socket\'s window');
     assert.equal(probes, 10);
 
     // A caller that passes no backoff keeps asking on every launch (GY-1039's own contract).

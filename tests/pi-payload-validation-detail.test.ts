@@ -10,7 +10,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 const testTool = 'graphyard_decompose';
 const testPayloadSchema = z.object({ reason: z.string().min(1), children: z.array(z.unknown()) }).strict();
 
-// GY-1661 AC-4: a Pi tool payload that fails Graphyard's validation is reported with the validation
+// GY-1661 AC-4: a Pi tool payload that fails Mainworks's validation is reported with the validation
 // error and at most the first 1000 characters of the payload, so the operator sees what the model sent.
 const fakePi = `import { readFileSync } from 'node:fs';
 const steps = JSON.parse(readFileSync(process.argv[2], 'utf8'));

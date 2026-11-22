@@ -1,4 +1,4 @@
-// Concern: `graphyard master run` — wiring the durable loop to its effects.
+// Concern: `mainworks master run` — wiring the durable loop to its effects.
 import { insideMasterConfinement } from '../../master/confinement.js';
 import { parseArgs } from 'node:util';
 import { liveMasterConfig } from '../../master.js';
@@ -45,7 +45,7 @@ export async function loopCommand(session: MasterSession): Promise<unknown> {
       if (coordinator.actor.role !== 'coordinator') throw new Error('The durable master loop requires a coordinator credential; operator, producer, and worker credentials are refused');
       assertProtocol(coordinator);
     }
-    // GY-3290: everything heavy this loop runs or launches shares the host's budget with every other Graphyard project here.
+    // GY-3290: everything heavy this loop runs or launches shares the host's budget with every other Mainworks project here.
     joinHostHeavyBudget(master.repository);
     const state = await readDaemonState(root, master);
     // The deploy unit pins new tips while this loop still runs from its own pin; it keeps the one recorded here.

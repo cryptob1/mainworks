@@ -28,7 +28,7 @@ test('e2e:upgrade-private-herdr-install — a pre-GY-3212 private-Herdr install 
 
     // The predecessor's deploy watch restarts onto the head with its own redeploy arguments, which carry
     // --herdr-instance; the head's install accepts and ignores them, so the restart's plan and apply run.
-    const predecessor = ['--repo', 'acme/app', '--provider', 'compose', '--base-branch', 'main', '--review-policy', 'agent', '--workers', '1', '--herdr-instance', '--image', 'graphyard-local:6a33f7bc2a2a', '--source-root', '/build'];
+    const predecessor = ['--repo', 'acme/app', '--provider', 'compose', '--base-branch', 'main', '--review-policy', 'agent', '--workers', '1', '--herdr-instance', '--image', 'mainworks-local:6a33f7bc2a2a', '--source-root', '/build'];
     for (const mode of ['--plan', '--apply']) {
       const { request } = installRequestFromArgs([...predecessor, mode]);
       assert.deepEqual(request, installRequestFromArgs([...predecessor.filter(flag => flag !== '--herdr-instance'), mode]).request);
@@ -41,7 +41,7 @@ test('e2e:upgrade-private-herdr-install — a pre-GY-3212 private-Herdr install 
     const run = async (command: string, args: string[]) => {
       calls.push([command, ...args]);
       if (args[0] === '--session') return JSON.stringify({ panes });
-      if (args[0] === 'workspace') return JSON.stringify({ workspaces: [{ workspace_id: 'wMain', label: 'graphyard-acme-app' }] });
+      if (args[0] === 'workspace') return JSON.stringify({ workspaces: [{ workspace_id: 'wMain', label: 'mainworks-acme-app' }] });
       return '';
     };
     await migrateHerdr(root, run, home);
@@ -62,7 +62,7 @@ test('e2e:upgrade-private-herdr-install — a pre-GY-3212 private-Herdr install 
 
     // The next redeploy, from the migrated record, passes no --herdr-instance and stays a full install.
     const record = await readInstallRecord(installDir);
-    const args = redeployArguments(record!, 'graphyard-local:next');
+    const args = redeployArguments(record!, 'mainworks-local:next');
     assert.ok(!args.includes('--herdr-instance'));
     assert.deepEqual(args.slice(args.indexOf('--workers'), args.indexOf('--workers') + 2), ['--workers', '1']);
   } finally {

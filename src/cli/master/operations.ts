@@ -1,4 +1,4 @@
-// Concern: `graphyard master` operations subcommands — status, the confined master's restart request, dispatch, recover.
+// Concern: `mainworks master` operations subcommands — status, the confined master's restart request, dispatch, recover.
 import { parseArgs } from 'node:util';
 import { resourceConflicts } from '../../coordination.js';
 import { dispatchWork, readWorkerCredential } from '../../master.js';

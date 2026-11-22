@@ -56,7 +56,7 @@ test('e2e:master-page-paste — Ctrl+V text arrives as one bracketed paste, a PN
     // A read-only viewer's paste is refused with a note and reaches nothing.
     const before = (await typed()).length;
     const reader = await browser.newPage(); await serveXterm(reader);
-    await reader.addInitScript(() => sessionStorage.setItem('graphyard-token', 'test-reader'));
+    await reader.addInitScript(() => sessionStorage.setItem('mainworks-token', 'test-reader'));
     await reader.goto(`${url}/#master/live`);
     await expect(reader.getByRole('status')).toContainText('View only', settled);
     await paste(reader, 'sneaky', true);

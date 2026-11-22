@@ -12,9 +12,9 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // packed-refs.lock, but each runtime's own sandbox (Codex --add-dir) still omitted it, so a worker
 // nested inside both still failed every packed-ref update with EROFS. The grant now includes the
 // common directory; the outer confinement's read-only re-binds of the coordinator's index, HEAD,
-// config, hooks and non-graphyard refs keep the base branch and checkout protected.
+// config, hooks and non-mainworks refs keep the base branch and checkout protected.
 
-/** A coordinator checkout whose every ref is packed, with an assignment worktree on a packed graphyard branch and a second packed branch carrying another commit. */
+/** A coordinator checkout whose every ref is packed, with an assignment worktree on a packed mainworks branch and a second packed branch carrying another commit. */
 function fixture(base: string) {
   const root = join(base, 'coordinator');
   const run = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -24,7 +24,7 @@ function fixture(base: string) {
   writeFileSync(join(root, '.gitignore'), '.graphyard/\n');
   run('init', '-b', 'main');
   run('config', 'user.email', 'graphyard@localhost');
-  run('config', 'user.name', 'Graphyard');
+  run('config', 'user.name', 'Mainworks');
   run('add', '.');
   run('commit', '-m', 'coordinator');
   const worktree = join(root, '.graphyard', 'worktrees', 'gy-2977-1');
@@ -41,9 +41,9 @@ function fixture(base: string) {
   run('pack-refs', '--all');
   const packed = readFileSync(join(root, '.git', 'packed-refs'), 'utf8');
   assert.match(packed, /refs\/heads\/main/, 'refs/heads/main is packed');
-  assert.match(packed, /refs\/heads\/graphyard\/gy-2977-1/, 'the assignment branch is packed');
-  assert.match(packed, /refs\/heads\/graphyard\/gy-2977-2/, 'the second branch is packed');
-  assert.match(packed, /refs\/heads\/graphyard\/gy-2977-gone/, 'the disposable branch is packed');
+  assert.match(packed, /refs\/heads\/mainworks\/gy-2977-1/, 'the assignment branch is packed');
+  assert.match(packed, /refs\/heads\/mainworks\/gy-2977-2/, 'the second branch is packed');
+  assert.match(packed, /refs\/heads\/mainworks\/gy-2977-gone/, 'the disposable branch is packed');
   const main = run('rev-parse', 'refs/heads/main');
   prepareConfinedGitPaths(root);
   return { root, worktree, main, otherTip };

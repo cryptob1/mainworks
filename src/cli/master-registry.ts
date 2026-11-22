@@ -42,7 +42,7 @@ const defined = <T extends Record<string, unknown>>(value: T) => Object.fromEntr
 const number = (value: string | undefined, flag: string) => { if (value === undefined) return undefined; const parsed = Number(value); if (!Number.isFinite(parsed)) throw new Error(`${flag} takes a number`); return parsed; };
 
 /**
- * `graphyard master registry …`: the fleet is configured in the control plane, from any host that
+ * `mainworks master registry …`: the fleet is configured in the control plane, from any host that
  * holds the coordinator credential. A `set` names the entry and only what changes; the rest of an
  * existing entry stands. Every change carries a reason and appends to the registry's history.
  */
@@ -61,12 +61,12 @@ export async function registryCommand(master: Pick<MasterConfig, 'hostId'>, args
     const empty = !proposal.runtimes.length && !proposal.models.length && !proposal.accounts.length && !proposal.roles.length;
     const loggedOut = logins.filter(login => login.loggedIn === false);
     const report = { host: master.hostId, discovered: logins, proposal, applied: false,
-      next: !logins.length ? 'No agent CLI login was found on this host; log one in (or create an isolated one with graphyard master environments --create claude --apply) and rerun'
+      next: !logins.length ? 'No agent CLI login was found on this host; log one in (or create an isolated one with mainworks master environments --create claude --apply) and rerun'
         : empty ? `The registry already holds every login found on this host${loggedOut.length ? `; log in the rest (${loggedOut.map(login => login.login).filter(Boolean).join(' ; ')}) and rerun to add them` : ''}`
-        : 'Rerun with --apply to store this proposal in the control plane; then name each model and its cost with graphyard master registry model set' };
+        : 'Rerun with --apply to store this proposal in the control plane; then name each model and its cost with mainworks master registry model set' };
     if (!values.apply || empty) return report;
     const applied = await api.write('agent-registry/apply', { ...proposal, reason: values.reason ?? `Setup proposal from the agent CLIs logged in on ${master.hostId}` });
-    return { ...report, applied: true, attention: applied.attention, revision: applied.revision, registry: applied.registry, next: 'The registry decides every launch from now on; graphyard master registry shows each account and why any is ineligible' };
+    return { ...report, applied: true, attention: applied.attention, revision: applied.revision, registry: applied.registry, next: 'The registry decides every launch from now on; mainworks master registry shows each account and why any is ineligible' };
   }
   // A session the registry still counts but that nothing is running any more: a launcher killed
   // mid-flight, a host that went away. Every other end is the control plane's own doing.
@@ -129,7 +129,7 @@ export async function registryCommand(master: Pick<MasterConfig, 'hostId'>, args
     if (!positionals[0] || !values.reason) throw new Error('Use master registry account set NAME|@FILE --runtime R --model M [--home PATH] [--host HOST] --reason REASON');
     if (positionals[0].startsWith('@')) return api.write('agent-registry/accounts', { account: await fromFile(positionals[0]), reason: values.reason });
     const existing = current.accounts.find(account => account.name === positionals[0]);
-    if (!existing && (!values.runtime || !values.model)) throw new Error(`${positionals[0]} is a new account; name its --runtime and --model (graphyard master registry lists both)`);
+    if (!existing && (!values.runtime || !values.model)) throw new Error(`${positionals[0]} is a new account; name its --runtime and --model (mainworks master registry lists both)`);
     // `quotaDecision` is the registry's own record of an operator's quota mark (GY-3117), not a
     // field a write names: echoing it back made every typed `account set` on a marked account
     // fail schema validation, so an explicit model change could not even be written (GY-3301).
@@ -160,7 +160,7 @@ export async function registryCommand(master: Pick<MasterConfig, 'hostId'>, args
 }
 
 /**
- * `graphyard master workers [N]` (GY-3285): the one knob for how many workers the install runs. N is
+ * `mainworks master workers [N]` (GY-3285): the one knob for how many workers the install runs. N is
  * the worker role's concurrency — sessions per account — so the install runs its accounts times N;
  * the loop adds the worker identities and profiles itself. Without N it reports the limit.
  */
@@ -183,9 +183,9 @@ export async function workersCommand(args: string[], api: RegistryCommandApi) {
 export async function initialFleetProposal(master: Pick<MasterConfig, 'url' | 'hostId'>, token: string, fetcher: typeof fetch = fetch) {
   try {
     const response = await fetcher(`${master.url}/api/agent-registry/document`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) });
-    if (!response.ok) return { proposal: null, next: `The control plane at ${master.url} does not serve an agent registry (status ${response.status}); deploy a release that does, then run graphyard master registry propose` };
+    if (!response.ok) return { proposal: null, next: `The control plane at ${master.url} does not serve an agent registry (status ${response.status}); deploy a release that does, then run mainworks master registry propose` };
     const logins = await discoverHostLogins(), proposal = proposeFleet(logins, master.hostId, await response.json(), installDirectory);
     return { discovered: logins.map(login => ({ account: login.name, runtime: login.runtime, home: login.home, loggedIn: login.loggedIn, login: login.login })), proposal,
-      next: proposal.accounts.length ? 'graphyard master registry propose --apply stores this fleet in the control plane' : logins.length ? 'Every login found on this host is already registered (or logged out); graphyard master registry shows the fleet' : 'No agent CLI login was found on this host; log one in, then run graphyard master registry propose --apply' };
-  } catch (error) { return { proposal: null, next: `The fleet proposal could not be prepared (${error instanceof Error ? error.message : 'unknown reason'}); run graphyard master registry propose once the control plane answers` }; }
+      next: proposal.accounts.length ? 'mainworks master registry propose --apply stores this fleet in the control plane' : logins.length ? 'Every login found on this host is already registered (or logged out); mainworks master registry shows the fleet' : 'No agent CLI login was found on this host; log one in, then run mainworks master registry propose --apply' };
+  } catch (error) { return { proposal: null, next: `The fleet proposal could not be prepared (${error instanceof Error ? error.message : 'unknown reason'}); run mainworks master registry propose once the control plane answers` }; }
 }

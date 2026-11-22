@@ -1,7 +1,7 @@
 {
   "id": "node-application-preview",
   "title": "A declared node application gets a local preview its bound case runs against",
-  "description": "The fixture project declares a node application (a directory, a build and a start command, no port). A change whose bound case needs it gets a local preview: the app is built in its directory and started on a port Graphyard assigns, the bound case passes against it, and the preview link shows the change. A change that breaks the app gets a preview whose bound case fails.",
+  "description": "The fixture project declares a node application (a directory, a build and a start command, no port). A change whose bound case needs it gets a local preview: the app is built in its directory and started on a port Mainworks assigns, the bound case passes against it, and the preview link shows the change. A change that breaks the app gets a preview whose bound case fails.",
   "tags": [
     "api",
     "dashboard",

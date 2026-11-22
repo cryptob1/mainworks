@@ -12,9 +12,9 @@ Paths: src/server/**, src/server.ts
 
 ## Drive
 
-`npm run dev` serves against `DATABASE_URL`; tests use embedded Postgres. `graphyard status GY-N` reads work.
+`npm run dev` serves against `DATABASE_URL`; tests use embedded Postgres. `mainworks status GY-N` reads work.
 
-After committing and building, `graphyard verify GY-N` checks HEAD. The merge trial serves the core create, board and detail E2E cases; trusted evidence follows `complete`.
+After committing and building, `mainworks verify GY-N` checks HEAD. The merge trial serves the core create, board and detail E2E cases; trusted evidence follows `complete`.
 
 ## Invariants
 

@@ -31,7 +31,7 @@ test('e2e:init-scan-read-only — init --scan prints the proposal and leaves the
     const applied = await run(['init', '--scan', '--apply', '--url', 'https://graphyard.example']);
     assert.match(applied.proposal, /setup-proposal\.json$/);
     assert.ok((await stat(join(root, '.graphyard/repository-setup.json'))).isFile());
-    assert.match(await readFile(join(root, 'AGENTS.md'), 'utf8'), /Graphyard coordination/);
+    assert.match(await readFile(join(root, 'AGENTS.md'), 'utf8'), /Mainworks coordination/);
     assert.match(await readFile(join(root, '.gitignore'), 'utf8'), /^\.graphyard\/$/m);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

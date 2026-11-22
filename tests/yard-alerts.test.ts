@@ -240,7 +240,7 @@ test('unit:stalled-yard-alerts-operator — the alert runs inside the cycle\'s p
   const result = await runCycle(config(), state, effects, () => at);
   assert.deepEqual(result.metrics.steps, ['snapshot', 'close', 'dispatch', 'merge writer', 'persist'], 'the cycle keeps exactly its five steps');
   assert.equal(posts.length, 1, 'the alert is posted by the cycle itself once the window has passed');
-  assert.ok(posts[0].startsWith('Graphyard owner/project: the yard stopped'));
+  assert.ok(posts[0].startsWith('Mainworks owner/project: the yard stopped'));
   assert.equal(state.alerts.lastAlertAt, iso(at));
 });
 

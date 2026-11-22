@@ -257,6 +257,6 @@ export function costReport(summary: CostSummary, now: number): string {
     ...([['By role', summary.roles], ['By model', summary.models], ['By account', summary.accounts]] as const).flatMap(([title, lines]) => lines.length ? [`${title}${summary.days === null ? '' : `, last ${summary.days} day${summary.days === 1 ? '' : 's'}`}:`, ...lines.map(row)] : []),
     'Price sheet (US dollars per million tokens: input / output / cache read / cache write):',
     ...summary.prices.map(price => `  ${price.name}${price.id ? ` (${price.id})` : ''}: ${price.input === null || price.output === null ? 'price unknown' : `${price.input} / ${price.output} / ${price.cacheRead ?? '?'} / ${price.cacheWrite ?? '?'} as of ${price.asOf ?? 'an unrecorded day'}`}`),
-    ...(due.length ? [`Check against the providers' price pages (monthly): ${due.join(', ')} — graphyard master registry model set NAME --input-cost USD --output-cost USD --cache-read-cost USD --cache-write-cost USD --reason REASON`] : []),
+    ...(due.length ? [`Check against the providers' price pages (monthly): ${due.join(', ')} — mainworks master registry model set NAME --input-cost USD --output-cost USD --cache-read-cost USD --cache-write-cost USD --reason REASON`] : []),
   ].join('\n');
 }

@@ -136,7 +136,7 @@ const nearestExistingDirectory = (path: string): string | null => {
 
 /**
  * The credential locations a confined session of this install must not read (GY-1856), with the
- * session's own kept: the operator config home wholesale — Graphyard's install, master, worker,
+ * session's own kept: the operator config home wholesale — Mainworks's install, master, worker,
  * reviewer and producer directories all live under it — and every recorded credential path beside
  * it, against the session's own token file and runtime login homes.
  */
@@ -492,7 +492,7 @@ export function readOnlyMountWrapper(input: { coordinatorRoot: string; sessionDi
   // bubblewrap applies the binds in order, and inside a writable directory a read-only bind still
   // lets git take its `.lock` (which the writable directory allows) but refuses the write and the
   // rename that would commit it — so the checkout's index, HEAD, config and hooks and the refs
-  // outside the graphyard namespace keep the protection they had while the directory was read-only.
+  // outside the mainworks namespace keep the protection they had while the directory was read-only.
   const ownGitState = [join(gitDir, 'config'), join(gitDir, 'HEAD'), join(gitDir, 'index'), join(gitDir, 'refs', 'heads'), join(gitDir, 'logs', 'refs', 'heads'), join(gitDir, 'refs', 'tags'), join(gitDir, 'hooks'), ...(adminDirectory ? [join(gitDir, 'worktrees')] : [])]
     .filter(path => existsSync(path));
   const commonGitDir = isDirectoryPath(gitDir) ? [gitDir] : [];
@@ -532,12 +532,12 @@ export function readOnlyMountWrapper(input: { coordinatorRoot: string; sessionDi
 /** The one refusal text for a launch whose coordinator confinement cannot be applied (GY-888): the head names the runtime and the checkout, `problem` says what is missing. */
 export const confinementRefusalText = (kind: string, coordinatorRoot: string, problem: { platform?: string; bwrapMissing?: boolean; namespaces?: boolean; undetermined?: string; gitDirectory?: string }): string => {
   const head = `A ${kind} session cannot be launched with the coordinator checkout at ${coordinatorRoot} unwritable at the OS level`;
-  if (problem.gitDirectory) return `${head}: the Git directory it writes through cannot be resolved — ${problem.gitDirectory}. Graphyard never starts a session unconfined; repair the checkout (git worktree repair) so its .git names its Git directory.`;
-  if (problem.undetermined) return `${head}: ${problem.undetermined} Graphyard never starts a session unconfined; run the launcher through its own bin/graphyard.mjs from the checkout it serves, so every launch carries the confinement.`;
+  if (problem.gitDirectory) return `${head}: the Git directory it writes through cannot be resolved — ${problem.gitDirectory}. Mainworks never starts a session unconfined; repair the checkout (git worktree repair) so its .git names its Git directory.`;
+  if (problem.undetermined) return `${head}: ${problem.undetermined} Mainworks never starts a session unconfined; run the launcher through its own bin/graphyard.mjs from the checkout it serves, so every launch carries the confinement.`;
   const own = 'the outer filesystem and socket boundary is required for every runtime';
-  if (problem.platform) return `${head}: the read-only mount namespace it would run in needs Linux, this host is ${problem.platform}, ${own}. Graphyard never starts a session unconfined; run sessions on a Linux host with bubblewrap available.`;
-  if (problem.bwrapMissing) return `${head}: bubblewrap (bwrap) is not installed ${own}. Graphyard never starts a session unconfined; install bubblewrap (e.g. apt install bubblewrap) with bubblewrap available.`;
-  return `${head}: this host refuses the unprivileged namespaces bubblewrap needs, ${own}. Graphyard never starts a session unconfined; allow unprivileged user namespaces on this host with bubblewrap available.`;
+  if (problem.platform) return `${head}: the read-only mount namespace it would run in needs Linux, this host is ${problem.platform}, ${own}. Mainworks never starts a session unconfined; run sessions on a Linux host with bubblewrap available.`;
+  if (problem.bwrapMissing) return `${head}: bubblewrap (bwrap) is not installed ${own}. Mainworks never starts a session unconfined; install bubblewrap (e.g. apt install bubblewrap) with bubblewrap available.`;
+  return `${head}: this host refuses the unprivileged namespaces bubblewrap needs, ${own}. Mainworks never starts a session unconfined; allow unprivileged user namespaces on this host with bubblewrap available.`;
 };
 
 /** The variable the master session's wrapper sets: its `master restart` then asks the loop to restart itself instead of the host's systemd, which the confinement hides. */

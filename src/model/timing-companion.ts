@@ -47,7 +47,7 @@ export function timingBaselineCompanion(base: string, head: string, tests: reado
 const serialize = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
 
 /**
- * The baseline a conflicted `graphyard sync` writes (GY-1875): the base tip's file with, for each
+ * The baseline a conflicted `mainworks sync` writes (GY-1875): the base tip's file with, for each
  * test file the branch adds or changes relative to the merge base, the branch's own line, and the
  * lines of test files the branch deleted removed. A line the branch added for a test file neither
  * the merge base nor the base tip records is a gap fill the companion rule allows, and is kept; a

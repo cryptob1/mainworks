@@ -9,12 +9,12 @@ import { fileURLToPath } from 'node:url';
 
 /**
  * What a clean test run needs from the host, done by the tooling rather than remembered by the
- * session that runs it (GY-174). A worker, producer or master session carries its own Graphyard
+ * session that runs it (GY-174). A worker, producer or master session carries its own Mainworks
  * and Herdr credentials in its environment; the project's own tests must never see them, or the CLI
  * credential tests read the session's token instead of the one they set. Each runner owns one
  * Postgres on `GRAPHYARD_TEST_PORT`, so two runs on one host must not share a base.
  *
- * `npm test` (tests/helpers/run-tests.ts), `graphyard verify` and the proof runners all start the
+ * `npm test` (tests/helpers/run-tests.ts), `mainworks verify` and the proof runners all start the
  * suite through `isolatedTestEnvironment` with a port window `reserveTestPorts` holds for the run.
  */
 
@@ -35,7 +35,7 @@ export function isolatedTestEnvironment(environment: NodeJS.ProcessEnv = process
   const kept = Object.entries(environment).filter((entry): entry is [string, string] => {
     const [name, value] = entry;
     if (value === undefined || name === 'NODE_TEST_CONTEXT') return false;
-    return !/^(GRAPHYARD|HERDR)_/.test(name) || (passedTestControls as readonly string[]).includes(name);
+    return !/^(MAINWORKS|HERDR)_/.test(name) || (passedTestControls as readonly string[]).includes(name);
   });
   return { ...Object.fromEntries(kept), ...set };
 }
@@ -179,7 +179,7 @@ export function npmCiEnvironment(env: NodeJS.ProcessEnv = process.env): NodeJS.P
 }
 /**
  * The install runs the checkout's lifecycle scripts and its dependencies' outside any agent
- * sandbox, before a session starts, so it inherits none of the launcher's authority: no Graphyard
+ * sandbox, before a session starts, so it inherits none of the launcher's authority: no Mainworks
  * or Herdr variable (GRAPHYARD_TOKEN_FILE and every other credential or control among them) and no
  * GitHub token. npm's own registry settings stay: they are what the install needs.
  */

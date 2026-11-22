@@ -46,13 +46,13 @@ export const createSchema = z.object({
   // the human operator. See model/dispatch.ts.
   producerProofs: z.array(proofSchema).max(50).optional().refine(proofs => !proofs || proofs.every(proof => proof.startsWith('manual:')), 'producerProofs names only manual: proofs; unit and integration proofs are producer-runnable already')
     .refine(proofs => !proofs || new Set(proofs).size === proofs.length, 'producerProofs must be unique'),
-  // Proofs a criterion declares answerable as a closed question: Graphyard asks the configured
+  // Proofs a criterion declares answerable as a closed question: Mainworks asks the configured
   // responder against the bound candidate state instead of launching a producer session, and
   // records the answer as evidence. See model/closed-question.ts.
   closedQuestions: closedQuestionsSchema.optional(),
-  // A yard repair (GY-3102): a fix for Graphyard's own fault takes its own route past the release cap, the dispatch order and the merge queue.
+  // A yard repair (GY-3102): a fix for Mainworks's own fault takes its own route past the release cap, the dispatch order and the merge queue.
   yardRepair: z.boolean().optional(),
-  // Retired (GY-2875): where Graphyard itself opened an item; one filed with it keeps parsing.
+  // Retired (GY-2875): where Mainworks itself opened an item; one filed with it keeps parsing.
   origin: z.unknown().optional(),
   // A system-driven item moves only through the loop: the master CLI refuses the hand actions the
   // loop owns for it (src/cli/hand-actions.ts). New items take the shipped default; an item

@@ -1,4 +1,4 @@
-// Concern: `graphyard master peer` and `master send` — this Master messaging another install's Master through Graphyard (GY-3345), and issuing a peer install on this host its reporter identity from this session (GY-3385).
+// Concern: `mainworks master peer` and `master send` — this Master messaging another install's Master through Mainworks (GY-3345), and issuing a peer install on this host its reporter identity from this session (GY-3385).
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';

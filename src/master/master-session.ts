@@ -23,14 +23,14 @@ import { accountHomeEnvironment } from './runtimes.js';
 import type { Work } from '../model.js';
 import { simplicityParagraph } from '../review-prompt.js';
 import { createHash, randomUUID } from 'node:crypto';
-import { adoptConversation, assertConversationRuntime, awaitConversation, captureConversation, continuationContext, conversationArgs, graphyardInput, masterInputs, masterRecords, type Continuity } from './conversation.js';
+import { adoptConversation, assertConversationRuntime, awaitConversation, captureConversation, continuationContext, conversationArgs, mainworksInput, masterInputs, masterRecords, type Continuity } from './conversation.js';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { worktreeRoot } from '../install/worktree-root.js';
 import type { MasterSessionState } from '../daemon/state.js';
 
 /** The registry role and profile name the master session launches under. */
 export const masterProfile = 'master';
-export const masterSetupCommand = 'graphyard master registry role set master ACCOUNT[,ACCOUNT…] --reason REASON';
+export const masterSetupCommand = 'mainworks master registry role set master ACCOUNT[,ACCOUNT…] --reason REASON';
 /** The unconfigured-role refusal, carrying its own flag so the loop records the setup wait, not a launch failure. */
 export const masterRoleUnconfigured = (reason: string) =>
   Object.assign(new Error(`${reason}; the durable loop launches no master session until the registry names its accounts: ${masterSetupCommand} (registry accounts + concurrency, like worker/reviewer, pinned to one live session)`), { masterRoleUnconfigured: true });
@@ -100,7 +100,7 @@ export async function launchMasterSession(root: string, config: MasterConfig, he
     const context = current ? await continuationContext(current) : { handover: 'Previous master conversation: no recovered record supplied. Last unanswered person message: unknown unless established by the handover.', input: null };
     // The lessons the master recorded for itself (GY-3274), read from the file the master session writes.
     const lessons = await readProjectMemory(root).catch(() => null);
-    const request = await graphyardInput(origins, 'launch', masterRequest(config, `${handover}\n${context.handover}`, lessons));
+    const request = await mainworksInput(origins, 'launch', masterRequest(config, `${handover}\n${context.handover}`, lessons));
     // The same harness the human launch writes (master start): the master's own commands, and the
     // deny rules that keep it from borrowing another identity — never a worker or producer credential.
     await writeHarnessPermissions(root, masterHarness(root, config, kind), true);
@@ -108,7 +108,7 @@ export async function launchMasterSession(root: string, config: MasterConfig, he
     // Confined exactly as `master start` launches it (GY-1658): the checkout read-only at the OS
     // level, its managed .graphyard state and the shared Git areas writable. A host that cannot
     // apply the confinement refuses the launch; the master is never started unconfined.
-    ({ delivery } = await launchSession({ name, kind, args: [...plan.args, ...conversationArgs(kind, nativeId, resume)], text: request, workspace: config.herdrWorkspace, label: `Graphyard master · ${config.repository}`, environment: { GRAPHYARD_MASTER: '1', ...(config.forPerson ? { GRAPHYARD_FOR_PERSON: config.forPerson } : {}), GRAPHYARD_URL: config.url, GRAPHYARD_HOST_ID: config.hostId, ...plan.environment }, run, onPane: (nextPane, nextTab) => { pane = nextPane; tabId = nextTab; }, start: { directory: root, coordinatorRoot: root, retry, contract: plan.contract, environment: plan.environment, timeoutMs: launchStartMs(config), confinement: 'master', masterStateDirectory: dirname(config.credentialFile), stateDirectories, credentialMask: masterCredentialMask(config, runtimeLoginHomes(plan.environment, plan.contract?.homeVariable, plan.kind)), herdrPaths: herdrSessionPaths(config) } }));
+    ({ delivery } = await launchSession({ name, kind, args: [...plan.args, ...conversationArgs(kind, nativeId, resume)], text: request, workspace: config.herdrWorkspace, label: `Mainworks master · ${config.repository}`, environment: { GRAPHYARD_MASTER: '1', ...(config.forPerson ? { GRAPHYARD_FOR_PERSON: config.forPerson } : {}), GRAPHYARD_URL: config.url, GRAPHYARD_HOST_ID: config.hostId, ...plan.environment }, run, onPane: (nextPane, nextTab) => { pane = nextPane; tabId = nextTab; }, start: { directory: root, coordinatorRoot: root, retry, contract: plan.contract, environment: plan.environment, timeoutMs: launchStartMs(config), confinement: 'master', masterStateDirectory: dirname(config.credentialFile), stateDirectories, credentialMask: masterCredentialMask(config, runtimeLoginHomes(plan.environment, plan.contract?.homeVariable, plan.kind)), herdrPaths: herdrSessionPaths(config) } }));
     const discovered = await awaitConversation(kind, plan.environment, root, since, nativeId, launchStartMs(config), request);
     const conversation = { launch, runtime: kind, account: selected.account.name, ...discovered,
       record: resume ? current!.record : join(masterRecords(root), `${launch}.jsonl`), origins,
@@ -171,7 +171,7 @@ export const masterSessionEffects = (root: string, config: () => MasterConfig, r
     return [...dispatchCauses(work, cursor), ...deploymentCauses(serving.failedDeploy), ...batchGateCauses(readGateRecord(gateRecordPath(root)))];
   },
   wake: (target, text, continuity) => deliverPrompt(target, text, run, {
-    beforeSubmit: (text, attempt) => graphyardInput(continuity?.current.origins ?? masterInputs(root, config().masterAgentName), attempt === 1 ? 'wake' : 'retry', text),
+    beforeSubmit: (text, attempt) => mainworksInput(continuity?.current.origins ?? masterInputs(root, config().masterAgentName), attempt === 1 ? 'wake' : 'retry', text),
   }),
   closeMigratedPane: async (pane, instance) => { await herdrCall(run ?? defaultChildRun, ['pane', 'close', pane], undefined, instance); },
   launch: async (handover, previous) => {

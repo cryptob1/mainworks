@@ -125,7 +125,7 @@ export function dispatchEffects(root: string, config: MasterConfig | (() => Mast
     launchPostMergeReview: (work, request, profile, agents, observedAt) => launchReview(root, work, profile.name, agents, observedAt, { run, headless: deps.headless, coordinatorRoot: deps.coordinatorRoot, requestId: request.id, postMerge: { mergeSha: request.sha, ...(request.baseSha !== unknownParent ? { baseTip: request.baseSha } : {}) } }),
     createWork: async (body, requestId) => {
       const config = current();
-      if (!config.operatorAgent) throw new Error('No master operator-agent identity is provisioned; run graphyard master autonomy --admin-token-stdin --apply so the loop can file follow-up items');
+      if (!config.operatorAgent) throw new Error('No master operator-agent identity is provisioned; run mainworks master autonomy --admin-token-stdin --apply so the loop can file follow-up items');
       return postFollowUpItem(config.url, await agentToken(root, config, 'operatorAgent'), body, requestId);
     },
     recordFindings: async (work, record, findings) => {
@@ -136,7 +136,7 @@ export function dispatchEffects(root: string, config: MasterConfig | (() => Mast
       await writeProjectMemory(root, memory);
     },
     settlePostMerge: (record, outcome) => updateReviewLedger(root, ledger => { const entry = ledger.reviews.find(candidate => candidate.id === record.id); if (entry) entry.postMergeFollowUps = outcome; }),
-    // The handle goes where every Graphyard reader already looks, so watching a reviewer or
+    // The handle goes where every Mainworks reader already looks, so watching a reviewer or
     // producer session the loop launched never means reading this host's own ledger.
     recordSession: (work: Work, handle: SessionHandleInput) => mutate(`work/${work.id}/session`, handle, randomUUID()),
     // And ends one when the sweep finds it over. The same coordinator mutation: a record that says

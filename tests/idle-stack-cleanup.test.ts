@@ -13,11 +13,11 @@ import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { workFixture } from './helpers/work-fixture.js';
 
-// GY-3291: idle Graphyard previews and abandoned temporary stacks are stopped on a shared host,
+// GY-3291: idle Mainworks previews and abandoned temporary stacks are stopped on a shared host,
 // with `docker stop` only, while active previews, live jobs, installed services, foreign containers
 // and the shared builder keep running. The idle-stacks module is loaded by the test so a tree
 // without it fails here as a test case.
-const idleStacks = () => import('../src/idle-stacks.js').catch(() => assert.fail('src/idle-stacks.ts is missing: nothing stops idle Graphyard stacks'));
+const idleStacks = () => import('../src/idle-stacks.js').catch(() => assert.fail('src/idle-stacks.ts is missing: nothing stops idle Mainworks stacks'));
 
 const minute = 60_000, t0 = Date.parse('2030-06-01T00:00:00Z'), iso = (at: number) => new Date(at).toISOString();
 const sha = (seed: string) => createHash('sha1').update(seed).digest('hex');
@@ -48,10 +48,10 @@ function fakeDocker(containers: Container[]) {
   };
   return { docker, calls, stops: () => calls.filter(call => call[0] === 'stop').flatMap(call => call.slice(3)) };
 }
-/** What every host keeps beside Graphyard's own stacks: an installed control plane and its database, a foreign Compose project, an unlabelled preview-named one and the shared BuildKit builder. */
+/** What every host keeps beside Mainworks's own stacks: an installed control plane and its database, a foreign Compose project, an unlabelled preview-named one and the shared BuildKit builder. */
 const untouchable = (): Container[] => [
-  { id: 'server', project: 'graphyard-cryptob1-graphyard', owner: null, running: true },
-  { id: 'database', project: 'graphyard-cryptob1-graphyard', owner: null, running: true, volume: 'graphyard-cryptob1-graphyard_db' },
+  { id: 'server', project: 'mainworks-cryptob1-graphyard', owner: null, running: true },
+  { id: 'database', project: 'mainworks-cryptob1-graphyard', owner: null, running: true, volume: 'mainworks-cryptob1-graphyard_db' },
   { id: 'huck', project: 'hello-huck', owner: null, running: true },
   { id: 'openworld', project: 'cryptob1-graphyard-openworld', owner: null, running: true },
   { id: 'unowned', project: 'graphyard-preview-gy-1-unowned', owner: null, running: true },
@@ -88,7 +88,7 @@ test('unit:idle-stack-cleanup — the cleanup decision and its Docker adapter st
   assert.equal(kept['graphyard-preview-gy-58-aaaaaaaa'], "GY-58's preview, last used 2030-06-01T00:25:00.000Z");
   assert.match(kept['graphyard-preview-gy-59-bbbbbbbb']!, /in use by a review$/);
   assert.match(kept['graphyard-preview-trial-services-gy-60-cccccccc']!, /^its owner pid \d+ still runs$/);
-  for (const project of ['graphyard-cryptob1-graphyard', 'hello-huck', 'cryptob1-graphyard-openworld', 'graphyard-preview-gy-1-unowned', '']) assert.equal(kept[project], 'not a Graphyard stack', `${project || 'the builder'} is never Graphyard's to stop`);
+  for (const project of ['mainworks-cryptob1-graphyard', 'hello-huck', 'cryptob1-graphyard-openworld', 'graphyard-preview-gy-1-unowned', '']) assert.equal(kept[project], 'not a Mainworks stack', `${project || 'the builder'} is never Mainworks's to stop`);
 
   // Reconciling again, later, finds nothing new to stop: what it stopped is no longer running.
   assert.deepEqual(await stopIdleStacks(previews, { now: now + 2 * minute, idleMs: 30 * minute, docker, env: {} }), []);

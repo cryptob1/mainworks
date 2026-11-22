@@ -11,7 +11,7 @@ export function releaseLedgerGit(candidates: () => readonly { id: string; sha: s
     if (args[0] === 'for-each-ref' && String(args.at(-1)).startsWith('refs/tags/rc/'))
       return { status: 0, stdout: listed.map((entry, index) => `refs/tags/rc/${entry.id} ${tagObject(index)} tag\n`).join(''), stderr: '' };
     const index = args[0] === 'cat-file' && args[1] === 'tag' ? listed.findIndex((_, i) => tagObject(i) === args[2]) : -1;
-    if (index >= 0) return { status: 0, stdout: `object ${listed[index]!.sha}\ntype commit\ntag rc/${listed[index]!.id}\ntagger graphyard-release <release@graphyard.invalid> 0 +0000\n\n${JSON.stringify(listed[index])}\n`, stderr: '' };
+    if (index >= 0) return { status: 0, stdout: `object ${listed[index]!.sha}\ntype commit\ntag rc/${listed[index]!.id}\ntagger mainworks-release <release@graphyard.invalid> 0 +0000\n\n${JSON.stringify(listed[index])}\n`, stderr: '' };
     return { status: 128, stdout: '', stderr: `fatal: unexpected git ${args.join(' ')}` };
   }) as GitRunner };
   return ledger;

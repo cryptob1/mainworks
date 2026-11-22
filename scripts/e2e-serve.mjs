@@ -59,7 +59,7 @@ try {
   await writeFile(seedFile, JSON.stringify({ databaseUrl: runtime.databaseUrl, delivery: { ...delivery, workerToken, coordinatorToken } }), { mode: 0o600 });
   previews = startPreviewLoop({ url: runtime.url, token: coordinatorToken, root: delivery.root, base: join(directory, 'previews') });
   // The trial waits for /healthz?ready to answer 200: mutations are refused until startup validation completes.
-  console.log(`Graphyard e2e serve at ${runtime.url} on a database in ${directory}`);
+  console.log(`Mainworks e2e serve at ${runtime.url} on a database in ${directory}`);
 } catch (error) {
   await removeDirectory();
   console.error(error instanceof Error ? error.message : String(error));

@@ -6,15 +6,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultChildRun, type ChildRun } from './child-runner.js';
 import { pathToFileURL } from 'node:url';
-import { graphyardUpstreamUrl, publishedImages, publishedVersion } from './release.js';
+import { mainworksUpstreamUrl, publishedImages, publishedVersion } from './release.js';
 
 export { publishedVersion } from './release.js';
 
 /** The published package.json: the launcher and no dependency, since everything else is fetched from the upstream it names, at the commit it names. */
 export function publishedPackage(source: Record<string, unknown>, commit: string, version: string) {
-  return { name: source.name, version, description: source.description, license: source.license, type: source.type, bin: source.bin,
-    graphyardCommit: commit, graphyardUpstream: graphyardUpstreamUrl, files: ['bin/graphyard.mjs', 'bin/bootstrap.mjs', 'bin/cli-release.mjs'], engines: { node: '>=24' },
-    repository: { type: 'git', url: `git+${graphyardUpstreamUrl}.git` } };
+  return { name: '@cryptob1/graphyard', version, description: source.description, license: source.license, type: source.type, bin: source.bin,
+    graphyardCommit: commit, graphyardUpstream: mainworksUpstreamUrl, files: ['bin/mainworks.mjs', 'bin/graphyard.mjs', 'bin/bootstrap.mjs', 'bin/cli-release.mjs'], engines: { node: '>=24' },
+    repository: { type: 'git', url: `git+${mainworksUpstreamUrl}.git` } };
 }
 
 /** An image reference without its tag (a registry host may carry a port). */
@@ -24,7 +24,7 @@ const repositoryOf = (image: string) => image.slice(0, image.lastIndexOf(':'));
 export async function publishVerified(commit: string, ports: { root: string; run: ChildRun; env?: NodeJS.ProcessEnv; provenance?: boolean }) {
   const env = ports.env ?? process.env;
   const run = (command: string, args: string[], cwd?: string) => Promise.resolve(ports.run(command, args, { timeoutMs: 1_800_000, env, ...(cwd ? { cwd } : {}) })).then(String);
-  const scratch = await mkdtemp(join(tmpdir(), 'graphyard-publish-'));
+  const scratch = await mkdtemp(join(tmpdir(), 'mainworks-publish-'));
   try {
     const tree = join(scratch, 'tree');
     await mkdir(tree);

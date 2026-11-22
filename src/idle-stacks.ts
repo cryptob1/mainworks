@@ -1,13 +1,13 @@
-// Concern: stopping idle Graphyard stacks on a shared host (GY-3291) — previews nobody used for the
+// Concern: stopping idle Mainworks stacks on a shared host (GY-3291) — previews nobody used for the
 // idle period and temporary stacks whose owning process is gone — without touching anything else.
 import { composeOwnerLabel, composeProjectPrefix, defaultDocker, dockerEnvironment, type Docker } from './compose-preview.js';
 import { tempOwnerGone, tempOwnerJudgeable, tmpReclaimMinAgeMs, type TempOwner } from './tmp-reclaim.js';
 
 // ---------------------------------------------------------------------------
-// Only Compose projects named `graphyard-preview-…` whose containers carry Graphyard's owner label
-// are Graphyard's: an item preview, or a trial's check services (`graphyard-preview-trial-services-…`).
+// Only Compose projects named `graphyard-preview-…` whose containers carry Mainworks's owner label
+// are Mainworks's: an item preview, or a trial's check services (`graphyard-preview-trial-services-…`).
 // An installed control plane (`graphyard-OWNER-NAME`, hello-huck, …), its database, a shared BuildKit
-// builder and anything unlabelled are never Graphyard's to stop. A stack is stopped with `docker stop`:
+// builder and anything unlabelled are never Mainworks's to stop. A stack is stopped with `docker stop`:
 // its containers, volumes and networks stay, so stopping again is harmless and no data is lost. Age is
 // never evidence: a preview is idle only when its last use (ready, or opened through its link) is older
 // than the idle period and no review uses it; a temporary stack is abandoned only when its owner is gone.
@@ -26,7 +26,7 @@ export interface PreviewActivity { key: string; lastUsedAt: number; inUse: boole
 /** What reconciliation does with one stack, and why. */
 export interface StackDecision { project: string; containers: string[]; stop: boolean; reason: string }
 
-/** The running containers the daemon holds, with their Compose project and Graphyard owner. */
+/** The running containers the daemon holds, with their Compose project and Mainworks owner. */
 export async function runningContainers(docker: Docker = defaultDocker, env = dockerEnvironment({ PATH: process.env.PATH ?? '' })): Promise<StackContainer[]> {
   const out = await docker(['ps', '--no-trunc', '--format', `{{.ID}}\t{{.Label "com.docker.compose.project"}}\t{{.Label "${composeOwnerLabel}"}}`], { env, timeoutMs: 30_000 });
   return out.split('\n').filter(line => line.trim()).map(line => {
@@ -40,7 +40,7 @@ export async function runningContainers(docker: Docker = defaultDocker, env = do
 const minutes = (ms: number) => `${Math.round(ms / 60_000)} min`;
 /**
  * The decision for every Compose project among `containers`: stop an idle preview of this loop
- * (`previews`) and a Graphyard stack whose owner is gone; keep everything else, naming why.
+ * (`previews`) and a Mainworks stack whose owner is gone; keep everything else, naming why.
  */
 export function stackDecisions(containers: readonly StackContainer[], previews: ReadonlyMap<string, PreviewActivity>, options: { now: number; idleMs: number; procRoot?: string }): StackDecision[] {
   const projects = new Map<string, StackContainer[]>();
@@ -48,7 +48,7 @@ export function stackDecisions(containers: readonly StackContainer[], previews: 
   return [...projects].sort(([a], [b]) => a < b ? -1 : 1).map(([project, list]) => {
     const decide = (stop: boolean, reason: string): StackDecision => ({ project, containers: list.map(entry => entry.id), stop, reason });
     const owners = list.flatMap(entry => entry.owner ? [entry.owner] : []);
-    if (!project.startsWith(composeProjectPrefix) || !owners.length) return decide(false, 'not a Graphyard stack');
+    if (!project.startsWith(composeProjectPrefix) || !owners.length) return decide(false, 'not a Mainworks stack');
     const preview = previews.get(project);
     if (preview) {
       const used = `${preview.key}'s preview, last used ${new Date(preview.lastUsedAt).toISOString()}`;

@@ -32,8 +32,8 @@ export function conversationArgs(kind: string, nativeId: string | null, resume: 
 }
 
 /** Persist before submission, including each delivery retry. The marker joins origin to native input. */
-export async function graphyardInput(origins: string, origin: 'launch' | 'wake' | 'retry', text: string) {
-  const id = randomUUID(), marker = `[Graphyard input ${id}; origin=${origin}]`;
+export async function mainworksInput(origins: string, origin: 'launch' | 'wake' | 'retry', text: string) {
+  const id = randomUUID(), marker = `[Mainworks input ${id}; origin=${origin}]`;
   await mkdir(dirname(origins), { recursive: true, mode: 0o700 });
   await appendFile(origins, JSON.stringify({ id, origin, marker, text }) + '\n', { mode: 0o600 });
   return `${marker}\n${text}`;
@@ -140,7 +140,7 @@ async function conversationRecord(conversation: Conversation) {
       if (event.type === 'input') {
         // One recorded delivery identifies one native input. A later person quoting that delivery
         // remains person input, even when it includes the marker and the whole original request.
-        for (const marker of (event.text ?? '').matchAll(/\[Graphyard input ([0-9a-f-]+); origin=(?:launch|wake|retry)\]/g)) {
+        for (const marker of (event.text ?? '').matchAll(/\[Mainworks input ([0-9a-f-]+); origin=(?:launch|wake|retry)\]/g)) {
           const origin = recorded.get(marker[1]);
           if (!origin || (associations.has(origin.id) && associations.get(origin.id) !== event.id)
             || !event.text?.includes(`${origin.marker}\n${origin.text}`)) continue;

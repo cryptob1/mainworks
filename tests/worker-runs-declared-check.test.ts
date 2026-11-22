@@ -12,7 +12,7 @@ import { runWorkerCheck } from '../src/merge-writer/worker-check.js';
 import { workerVerificationPump } from '../src/daemon/worker-verification.js';
 
 // GY-3283: a confined worker runs its item's declared preMerge check, with the check's Compose
-// services, on its own head through `graphyard check NAME`; the host loop runs it as the trial does.
+// services, on its own head through `mainworks check NAME`; the host loop runs it as the trial does.
 // As in e2e:premerge-check-services, a stub docker first on PATH answers Compose, a loopback listener
 // stands in for the postgres service and a preload resolves its name. Trial children run unwrapped
 // (nested bubblewrap cannot start inside the trial); the worker runs under the session mount boundary

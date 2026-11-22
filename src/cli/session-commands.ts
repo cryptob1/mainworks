@@ -20,7 +20,7 @@ export { parkArgs, parkCommand } from './park-command.js';
  */
 
 /**
- * This host's sealing key: an RSA key pair kept under the Graphyard configuration home, mode 0600;
+ * This host's sealing key: an RSA key pair kept under the Mainworks configuration home, mode 0600;
  * the public half is returned. The private key is the authority: the public half is derived from it
  * on every use, and the `.pub` copy beside it is rewritten whenever it differs, so a copy an older
  * version left truncated, or one a lost concurrent first use wrote, never outlives the key it names.
@@ -173,7 +173,7 @@ export const answerHumanCommand: CliCommand = {
 };
 /**
  * GY-2171: the operator's admin credential this machine's install of ROOT's repository recorded, and
- * the tailnet address `graphyard up` served the dashboard on, if any. The token sits under
+ * the tailnet address `mainworks up` served the dashboard on, if any. The token sits under
  * <install>/tokens/: a local install keeps <install> under the config home with install.json naming
  * the human admin; a self-contained host writes only the tokens, its loop's GRAPHYARD_CONFIG_HOME
  * being <install> itself, and the operator is the planned `<install>-operator`. Null when neither is here.

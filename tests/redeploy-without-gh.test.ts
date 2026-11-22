@@ -66,7 +66,7 @@ test('integration:redeploy-without-gh — redeploying an existing install succee
       root: initial.root, configHome: initial.configHome, installed: true,
       extraResponses: [GH_FAILING],
     });
-    const args = redeployArguments(record, 'graphyard-local:abcdef123456');
+    const args = redeployArguments(record, 'mainworks-local:abcdef123456');
     const planSession = await prepareInstall(redeploy.root, installRequestFromArgs([...args.slice(0, -1), '--plan']).request, redeploy.deps, 'plan');
     const plan = await buildPlan(planSession);
     assert.ok(plan.preflight.every(item => item.ok), `redeploy --plan preflight passed without gh: ${JSON.stringify(plan.preflight.filter(item => !item.ok))}`);
@@ -82,7 +82,7 @@ test('e2e:redeploy-without-gh — a newly verified commit reaches the control pl
   const cluster = await startPostgres();
   const admin = new pg.Client({ connectionString: cluster.url });
   await admin.connect();
-  try { await admin.query('CREATE DATABASE graphyard'); } finally { await admin.end(); }
+  try { await admin.query('CREATE DATABASE mainworks'); } finally { await admin.end(); }
   const databaseUrl = new URL(cluster.url);
   databaseUrl.pathname = '/graphyard';
   const store = new Store(databaseUrl.href);
@@ -163,7 +163,7 @@ test('e2e:redeploy-without-gh — a newly verified commit reaches the control pl
           root: initial.root, configHome: initial.configHome, installed: true,
           extraResponses: [GH_FAILING],
         });
-        const args = redeployArguments(record, `graphyard-local:${commit.slice(0, 12)}`);
+        const args = redeployArguments(record, `mainworks-local:${commit.slice(0, 12)}`);
         const liveDeps = { ...redeploy.deps, fetch };
         // Restart the real control plane stamped with the new commit when the adapter deploys.
         const basePrepare = await prepareInstall(redeploy.root, installRequestFromArgs(args).request, liveDeps, 'apply');

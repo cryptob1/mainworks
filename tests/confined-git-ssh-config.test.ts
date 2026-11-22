@@ -10,7 +10,7 @@ import { pushEnvironment } from '../src/merge-writer/executor.js';
 import { fetchRefusalLine } from '../src/daemon/cycle-batch-gate.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-3470: Huck's confined coordinator fetched its base branch graphyard-main over SSH and ssh
+// GY-3470: Huck's confined coordinator fetched its base branch mainworks-main over SSH and ssh
 // refused before dialling anything: "Bad owner or permissions on
 // /etc/ssh/ssh_config.d/20-omarchy-keepalive.conf" — a root-owned system include reads as nobody
 // inside the user namespace. The loop then reported it as a SAML/deploy-key authorization failure.
@@ -22,7 +22,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 const hostProbe: MaskProbe = (command, args) => execFileSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 const omarchyInclude = '/etc/ssh/ssh_config.d/20-omarchy-keepalive.conf';
 
-/** A confined session of a fixture project whose origin serves graphyard-main only to the deploy key, over a door that parses ssh's real configuration first. */
+/** A confined session of a fixture project whose origin serves mainworks-main only to the deploy key, over a door that parses ssh's real configuration first. */
 async function confinedFixture(run: (fixture: { spawn: (script: string) => ReturnType<typeof spawnSync> }) => Promise<void> | void) {
   // The fixture lives in this checkout: the sandbox replaces /tmp with its own scratch.
   const checkout = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -36,13 +36,13 @@ async function confinedFixture(run: (fixture: { spawn: (script: string) => Retur
     // The origin: a bare repository whose non-default base branch carries the project's check.
     const remote = join(home, 'remote'), origin = join(remote, 'huck.git'), seed = join(remote, 'seed'), key = join(remote, 'deploy-key'), bin = join(remote, 'bin');
     mkdirSync(bin, { recursive: true });
-    execFileSync('git', ['init', '-q', '--bare', '-b', 'graphyard-main', origin]);
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'mainworks-main', origin]);
     mkdirSync(seed);
-    git(seed, 'init', '-q', '-b', 'graphyard-main');
+    git(seed, 'init', '-q', '-b', 'mainworks-main');
     writeFileSync(join(seed, 'check.sh'), 'echo VERIFIED-GRAPHYARD-MAIN\n');
     git(seed, 'add', '.');
     git(seed, 'commit', '-qm', 'base');
-    git(seed, 'push', '-q', origin, 'graphyard-main');
+    git(seed, 'push', '-q', origin, 'mainworks-main');
     execFileSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', 'gy-3470-fixture', '-f', key]);
     // The door: real ssh resolves its whole configuration with the options git hands it, refusing
     // as ssh would (its stderr passes through); only then is the deploy key and host-key checking
@@ -110,22 +110,22 @@ test('integration:confined-git-ssh-config — a confined fetch over SSH succeeds
   });
 });
 
-test('e2e:confined-git-ssh-config — a confined coordinator fetches its configured non-default base branch graphyard-main and proceeds to verification; an ssh config ownership refusal is reported as such, not as SAML', async () => {
+test('e2e:confined-git-ssh-config — a confined coordinator fetches its configured non-default base branch mainworks-main and proceeds to verification; an ssh config ownership refusal is reported as such, not as SAML', async () => {
   await confinedFixture(({ spawn }) => {
     const ran = spawn([fetchScript,
       'git -C "$1" checkout -q --detach refs/remotes/origin/graphyard-main && sh "$1/check.sh"'].join('\n'));
     const output = `${ran.stdout}\n${ran.stderr}`;
-    assert.ok(String(ran.stdout).includes('FETCH-0\n'), `the confined coordinator fetched graphyard-main: ${output.slice(-800)}`);
+    assert.ok(String(ran.stdout).includes('FETCH-0\n'), `the confined coordinator fetched mainworks-main: ${output.slice(-800)}`);
     assert.ok(String(ran.stdout).includes('VERIFIED-GRAPHYARD-MAIN\n'), `verification ran on the fetched base: ${output.slice(-800)}`);
     assert.match(String(ran.stderr), /^door: stricthostkeychecking accept-new$/m, 'host-key checking stayed enforced');
   });
   // The loop's fetch-refusal line for ssh's own ownership refusal names that file and the host fault, never SAML or the deploy key's authorization.
-  const refused = Object.assign(new Error('Command failed: git fetch --no-tags origin graphyard-main'), {
+  const refused = Object.assign(new Error('Command failed: git fetch --no-tags origin mainworks-main'), {
     stderr: `Bad owner or permissions on ${omarchyInclude}\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.\n` });
-  const line = fetchRefusalLine('cryptob1/hello-huck', 'graphyard-main', refused);
+  const line = fetchRefusalLine('cryptob1/hello-huck', 'mainworks-main', refused);
   assert.match(line, /ssh refuses its configuration file \/etc\/ssh\/ssh_config\.d\/20-omarchy-keepalive\.conf/);
   assert.match(line, /not the repository's authorization/);
   assert.doesNotMatch(line, /SAML|authorise the SSH key|--push-auth/);
   // A genuine remote refusal keeps its authorization advice.
-  assert.match(fetchRefusalLine('cryptob1/hello-huck', 'graphyard-main', Object.assign(new Error('fetch failed'), { stderr: 'ERROR: The organization has enabled or enforced SAML SSO.\n' })), /SAML organization/);
+  assert.match(fetchRefusalLine('cryptob1/hello-huck', 'mainworks-main', Object.assign(new Error('fetch failed'), { stderr: 'ERROR: The organization has enabled or enforced SAML SSO.\n' })), /SAML organization/);
 });

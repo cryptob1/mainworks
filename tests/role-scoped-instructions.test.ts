@@ -13,12 +13,12 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { masterGuide } from '../src/master/guide.js';
 
 // GY-1493: the master's rules leave AGENTS.md, which every worker, reviewer and producer session
-// loads, and reach the master session through graphyard master guide instead.
+// loads, and reach the master session through mainworks master guide instead.
 const repositoryRoot = fileURLToPath(new URL('..', import.meta.url));
 const launcher = join(repositoryRoot, 'bin/graphyard.mjs');
 const exec = promisify(execFile);
 const url = 'https://graphyard.example';
-const legacyBlock = '<!-- graphyard-master -->\n## Graphyard master agent\n\nRules an earlier master init wrote.\n<!-- /graphyard-master -->';
+const legacyBlock = '<!-- graphyard-master -->\n## Mainworks master agent\n\nRules an earlier master init wrote.\n<!-- /graphyard-master -->';
 const coordinatorStatus = async () => new Response(JSON.stringify({ actor: { id: 'master', role: 'coordinator' }, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234 }));
 // Imported per test, so a tree without the GY-1493 exports fails each case rather than the file.
 const master = async () => await import('../src/master.js') as unknown as { masterInstructions: string; withoutMasterInstructions: (existing: string) => string };
@@ -43,7 +43,7 @@ test('unit:master-block-migrated — master init writes the worker block only an
     await setup(fresh);
     const written = await readFile(join(fresh, 'AGENTS.md'), 'utf8');
     assert.equal(written, managedInstructions(''), 'a fresh AGENTS.md carries the worker block only');
-    assert.doesNotMatch(written, /graphyard-master|Graphyard master agent/);
+    assert.doesNotMatch(written, /graphyard-master|Mainworks master agent/);
 
     const existing = `${pre}${managedInstructions('').trimStart()}\n${legacyBlock}${post}`;
     await writeFile(join(migrated, 'AGENTS.md'), existing);
@@ -53,21 +53,21 @@ test('unit:master-block-migrated — master init writes the worker block only an
 
     const duplicate = `${pre}${legacyBlock}\n${legacyBlock}\n`;
     await writeFile(join(refused, 'AGENTS.md'), duplicate);
-    await assert.rejects(setup(refused), /Malformed or duplicate Graphyard master markers; resolve them before updating AGENTS\.md/);
+    await assert.rejects(setup(refused), /Malformed or duplicate Mainworks master markers; resolve them before updating AGENTS\.md/);
     assert.equal(await readFile(join(refused, 'AGENTS.md'), 'utf8'), duplicate, 'a refused file is left as it was');
   } finally { for (const root of [fresh, migrated, refused, credentialDirectory]) await rm(root, { recursive: true, force: true }); }
 });
 
-test('unit:master-guide-carries-role-instructions — graphyard master guide prints the master instructions before the master operating guide', async () => {
+test('unit:master-guide-carries-role-instructions — mainworks master guide prints the master instructions before the master operating guide', async () => {
   const { masterInstructions } = await master();
   const { stdout } = await exec(process.execPath, [launcher, 'master', 'guide'], { cwd: repositoryRoot, maxBuffer: 16 * 1024 * 1024 });
   assert.ok(stdout.startsWith(masterInstructions), 'the role instructions lead the guide');
   assert.equal(stdout, `${masterInstructions}\n${masterGuide}\n`);
   // Every rule the AGENTS.md block carried is in the text the master now reads.
-  for (const rule of ['Autonomy is the default: act without asking.', 'graphyard master create|release|unblock|requirements|rework|attest|close', 'Keep cycling: status, dispatch ready work', 'An item is delivered at merge', 'GitHub merges nothing and no pull request is opened.', 'Never use an administrative merge bypass']) assert.ok(stdout.replace(/\s+/g, ' ').includes(rule), `master guide states: ${rule}`);
+  for (const rule of ['Autonomy is the default: act without asking.', 'mainworks master create|release|unblock|requirements|rework|attest|close', 'Keep cycling: status, dispatch ready work', 'An item is delivered at merge', 'GitHub merges nothing and no pull request is opened.', 'Never use an administrative merge bypass']) assert.ok(stdout.replace(/\s+/g, ' ').includes(rule), `master guide states: ${rule}`);
 });
 
-test('unit:agents-md-worker-block-only — sync regeneration renders the worker block and drops a master block; Graphyard\'s own AGENTS.md has none', async () => {
+test('unit:agents-md-worker-block-only — sync regeneration renders the worker block and drops a master block; Mainworks\'s own AGENTS.md has none', async () => {
   const renderers = await agentsRenderers(repositoryRoot);
   assert.equal(renderers.source, 'worktree');
   const clean = managedInstructions('# Rules\n');
@@ -81,7 +81,7 @@ test('unit:agents-md-worker-block-only — sync regeneration renders the worker 
   const earlierCli = (text: string) => { const worker = renderers.managedInstructions(text); return worker.includes('<!-- graphyard-master -->') ? managedMasterInstructions(worker) : worker; };
   assert.equal(regenerateManagedBlocks(conflicted, earlierCli), `${clean}\n\n`, 'an earlier CLI never turns AGENTS.md into the master text alone');
   const own = await readFile(join(repositoryRoot, 'AGENTS.md'), 'utf8');
-  assert.doesNotMatch(own, /graphyard-master -->|## Graphyard master agent/);
+  assert.doesNotMatch(own, /graphyard-master -->|## Mainworks master agent/);
 });
 
 test('unit:role-instructions-budget — worker, reviewer and memory prompts do not draw on the master instructions', async () => {

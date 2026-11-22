@@ -24,7 +24,7 @@ import type { Services } from './routes.js';
  * (review-post.ts). The hash is kept on the item as `work.reviewLaunch`; the token itself is seen
  * only by the session. The token is also what authenticates the session's one call: the launch
  * registers it as a bearer credential for the reviewer principal, with the `reader` role, until the
- * verdict lands, the launch is refused, or it expires — so `review post` needs no Graphyard
+ * verdict lands, the launch is refused, or it expires — so `review post` needs no Mainworks
  * credential of its own, exactly as the GitHub-mode session needs none.
  *
  * `POST /api/work/:id/review-verdict` — the session's verdict. The route verifies the token's hash,
@@ -99,7 +99,7 @@ export const launchTokenBoundMs = 4 * 3_600_000;
 
 export const tokenHashOf = (token: string) => createHash('sha256').update(token, 'utf8').digest('hex');
 /** The refusal when the verdict's token is not the registered launch's. */
-export const tokenRefusal = 'The verdict token is not the one this launch registered; post only from the session Graphyard launched';
+export const tokenRefusal = 'The verdict token is not the one this launch registered; post only from the session Mainworks launched';
 /** The refusal when the verdict names a commit other than the registered head. */
 export const headRefusal = (sha: string, head: string) => `The verdict names ${sha.slice(0, 12)}, not the registered head ${head.slice(0, 12)} this session was launched to review; post nothing for a different commit`;
 /** The refusal when a launch already holds its verdict. */
@@ -197,7 +197,7 @@ export async function recordReviewVerdict(services: Services, actor: Principal, 
     const all = await decisionWork(db, [id]);
     const work = all.find(item => item.id === id || item.key === id); demand(work, 'Work item not found', 404);
     const launch = work!.reviewLaunch;
-    demand(launch, `${work!.key} has no registered reviewer launch; a control-plane verdict is posted only by the session Graphyard launched`, 409);
+    demand(launch, `${work!.key} has no registered reviewer launch; a control-plane verdict is posted only by the session Mainworks launched`, 409);
     const offered = Buffer.from(tokenHashOf(data.token), 'hex'), registered = Buffer.from(launch!.tokenHash, 'hex');
     demand(offered.length === registered.length && timingSafeEqual(offered, registered), tokenRefusal, 403);
     demand(!launch!.verdict, secondVerdictRefusal(work!.key, launch!.head), 409);

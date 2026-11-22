@@ -19,7 +19,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { catFrom, deployedRoster, harness, REPOSITORY, type Harness, type HarnessOptions } from './install-harness.js';
 
 // GY-1879: an installation keeps its principal roster in install.json as a durable record and every
-// apply reconciles with it instead of rewriting it. `graphyard principal add|remove` edits one entry,
+// apply reconciles with it instead of rewriting it. `mainworks principal add|remove` edits one entry,
 // writes GRAPHYARD_PRINCIPALS alone and reads the served roster back; a producer is created only with
 // an explicit lane grant or proof seed, and the external-results lane's grant, external-runs:import,
 // authorizes nothing else. GY-1998: `--token-file` restores a former credential.
@@ -223,9 +223,9 @@ test('unit:installer-roster-keeps-named-external-producer-across-apply — a lat
 
   // A registered entry the plan would produce under the same id is refused, full or observation-only, never replaced by the planned principal.
   const registeredCi = { id: 'owner-project-ci', role: 'producer' as const, sessionKind: 'ai' as const, grants: [GRANT], source: 'principal' as const };
-  assert.throws(() => reconcileRoster(plannedPrincipals('owner-project', { producerProofs: ['unit:*'] }), [registeredCi]), /owner-project-ci is registered by graphyard principal add as producer with grants external-runs:import, and this apply plans its own producer under the same id; nothing was written/);
+  assert.throws(() => reconcileRoster(plannedPrincipals('owner-project', { producerProofs: ['unit:*'] }), [registeredCi]), /owner-project-ci is registered by mainworks principal add as producer with grants external-runs:import, and this apply plans its own producer under the same id; nothing was written/);
   const registeredOperator = { id: 'owner-project-operator', role: 'reader' as const, sessionKind: 'ai' as const, source: 'principal' as const };
-  assert.throws(() => reconcileRoster(observeOnlyPlan, [registeredOperator], { observeOnly: true }), /owner-project-operator is registered by graphyard principal add as reader/);
+  assert.throws(() => reconcileRoster(observeOnlyPlan, [registeredOperator], { observeOnly: true }), /owner-project-operator is registered by mainworks principal add as reader/);
 });
 
 test('unit:installer-roster-keeps-named-external-producer-across-apply — an apply whose plan produces the id of an entry principal add registered is refused before any write: an import-only producer is never replaced by the planned proof producer while its token stands', async () => {
@@ -235,7 +235,7 @@ test('unit:installer-roster-keeps-named-external-producer-across-apply — an ap
     await applyInstall(session, await buildPlan(session));
     assert.equal((await principal(first, ['add', 'owner-project-ci', '--role', 'producer', '--grant', GRANT])).changed, true);
     const recordText = await readFile(join(session.directory, 'install.json'), 'utf8'), roster = deployedRoster(first.transport), writes = variableWrites(first).length;
-    await assert.rejects(prepareInstall(first.root, { repository: REPOSITORY, provider: 'compose', producerProofs: ['unit:*'] }, first.deps), /owner-project-ci is registered by graphyard principal add as producer with grants external-runs:import.*graphyard principal remove owner-project-ci/);
+    await assert.rejects(prepareInstall(first.root, { repository: REPOSITORY, provider: 'compose', producerProofs: ['unit:*'] }, first.deps), /owner-project-ci is registered by mainworks principal add as producer with grants external-runs:import.*mainworks principal remove owner-project-ci/);
     assert.equal(await readFile(join(session.directory, 'install.json'), 'utf8'), recordText, 'install.json is unchanged');
     assert.deepEqual(deployedRoster(first.transport), roster, 'the registered entry keeps its role and grant and gains no proofs');
     assert.equal(variableWrites(first).length, writes);

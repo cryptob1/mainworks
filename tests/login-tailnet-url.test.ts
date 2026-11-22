@@ -8,7 +8,7 @@ import { createContext } from '../src/cli/context.js';
 import { loginCommand } from '../src/cli/session-commands.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-3216: `graphyard login` prints the tailnet address `tailscale serve` maps to the install's loopback URL.
+// GY-3216: `mainworks login` prints the tailnet address `tailscale serve` maps to the install's loopback URL.
 
 async function login(upJson: object | undefined, stub: ((port: number) => string) | null) {
   const root = await temporaryDirectory('login-tailnet-repo');

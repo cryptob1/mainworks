@@ -128,7 +128,7 @@ export function assertClaimDeadline(key: string, claimBy: number | undefined, no
 export const describeOverlap = (overlap: ReturnType<typeof concurrentOverlap>) => overlap.map(ahead => `${ahead.key} (${ahead.state}, ${ahead.stage}) on ${ahead.paths.join(', ')}`).join('; ');
 export function assertDispatchable(work: Work, allWork: Work[], observedAt: string) {
   const now = Date.parse(observedAt);
-  if (!Number.isFinite(now)) throw new Error('Dispatch requires a valid Graphyard snapshot clock');
+  if (!Number.isFinite(now)) throw new Error('Dispatch requires a valid Mainworks snapshot clock');
   if (parkedOnHuman(work)) throw new Error(`${dispatchHumanWait} (${humanDecisionLabel[work.humanRequest!.kind]}); ${answerCommand(work.key, work.humanRequest!)} resumes it`);
   if (!work.criteria.length) throw new Error('Waiting on the master: writing the criteria');
   if (!work.ready || work.blocker) throw new Error('Dispatch requires released work without a blocker');
@@ -176,7 +176,7 @@ export async function dispatchWork(root: string, work: Work, profile: WorkerProf
   // The repository's true root, through the common Git directory: a coordinator checkout that is
   // itself a linked worktree still derives the root every sibling worktree sits under (GY-2959).
   const repositoryRoot = dirname(await sharedGitDirectory(root) ?? root);
-  if (profile.mode === 'existing') throw new Error('Existing sessions are observable but cannot be safely adopted for new work; use a launch profile so Graphyard supervises the agent process');
+  if (profile.mode === 'existing') throw new Error('Existing sessions are observable but cannot be safely adopted for new work; use a launch profile so Mainworks supervises the agent process');
   await readCredentialFile(profile.credentialFile!);
   // One headless run per profile name: a live one holds the profile (GY-3259).
   if (liveRun(profile.agentName)) throw new DispatchReservedError('profile', profile.name, `Launch profile agent name ${profile.agentName} is already running a worker; pick another profile`);
@@ -396,7 +396,7 @@ async function launchWorker(root: string, config: MasterConfig, work: Work, prof
         if (sandboxProbe) sandbox = verifyWorkerSandbox({ ...launch, args, ...(confinement?.wrapper.length ? { confinement: confinement.wrapper } : {}) }, prepared.path, writable, sandboxProbe === 'host' ? undefined : sandboxProbe);
       }
       const initialHead = await Promise.resolve().then(() => defaultChildRun('git', ['-C', prepared.path, 'rev-parse', 'HEAD'])).then(value => /^[0-9a-f]{40,64}$/.test(String(value).trim()) ? String(value).trim() : null, () => null);
-      // GY-3259: the worker is one headless run of its runtime's one-task form under `graphyard
+      // GY-3259: the worker is one headless run of its runtime's one-task form under `mainworks
       // watch`, which heartbeats this claim under the worker's own credential and stops the runtime
       // on lease loss. The instruction is its own first request on the command line, never pasted;
       // a worker never reaches the operator's keyring, and no Herdr pane is opened for it.
@@ -429,7 +429,7 @@ async function launchWorker(root: string, config: MasterConfig, work: Work, prof
       catch (releaseError) {
         // A lease that is already gone has handed its epoch back — a run that exited released it
         // through its supervisor — so the launch's own failure is reported as it is (GY-860, GY-1287).
-        if (!(releaseError instanceof Error && /Lease missing, expired, or superseded/.test(releaseError.message))) throw new Error(`${failureText(error)}; Graphyard could not release epoch ${prepared.epoch}`);
+        if (!(releaseError instanceof Error && /Lease missing, expired, or superseded/.test(releaseError.message))) throw new Error(`${failureText(error)}; Mainworks could not release epoch ${prepared.epoch}`);
       }
       throw error;
     }
@@ -596,7 +596,7 @@ function workerEnvironment(config: MasterConfig, profile: WorkerProfile) {
   delete env.GRAPHYARD_TOKEN; delete env.GRAPHYARD_MASTER_TOKEN; delete env.GRAPHYARD_REQUEST_ID;
   return env;
 }
-// A worker launch runs the Graphyard CLI to claim and to build the assigned worktree, which on a
+// A worker launch runs the Mainworks CLI to claim and to build the assigned worktree, which on a
 // large repository is the slowest thing the dispatcher waits on; it is bounded well above the
 // runtime bound, so a slow checkout is never mistaken for a hung one (GY-114).
 export const workerLaunchTimeoutMs = 600_000;
@@ -678,7 +678,7 @@ export async function prepareWorkerLaunch(root: string, key: string, profileName
         // could not build the workspace, which hands the epoch back; a release refused because
         // that already happened changes nothing, and only one that could not reach the server wraps.
         if (releaseError instanceof Error && /Lease missing, expired, or superseded/.test(releaseError.message)) throw error;
-        throw new Error(`${error instanceof Error ? error.message : 'Workspace preparation failed'}; Graphyard could not release epoch ${claimedEpoch}`);
+        throw new Error(`${error instanceof Error ? error.message : 'Workspace preparation failed'}; Mainworks could not release epoch ${claimedEpoch}`);
       }
     }
     throw error;

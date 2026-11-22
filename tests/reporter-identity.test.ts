@@ -25,7 +25,7 @@ const reporter: Principal = { id: 'huck-master', role: 'reporter' };
 const token = (principal: Principal) => `${principal.id}-token-${'x'.repeat(32)}`;
 const cli = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const exec = promisify(execFile);
-const criteria = [{ id: 'AC-1', text: 'Huck reports a Graphyard fault', proofs: ['e2e:reporter-filed'] }];
+const criteria = [{ id: 'AC-1', text: 'Huck reports a Mainworks fault', proofs: ['e2e:reporter-filed'] }];
 let close = async () => {};
 after(() => close());
 
@@ -62,17 +62,17 @@ test('e2e:reporter-identity — a reporter files an item and messages the Master
   // GY-3649: the host's git trust (GIT_CONFIG_* on a shard) rides along; it is the host's own
   // configuration, not anything of this install, and without it the CLI cannot read its release.
   const env = { PATH: process.env.PATH, HOME: home, TMPDIR: process.env.TMPDIR ?? '/tmp', GIT_CEILING_DIRECTORIES: dirname(home), GRAPHYARD_URL: url, GRAPHYARD_TOKEN_FILE: tokenFile, ...hostGitTrust() };
-  const graphyard = async (...args: string[]) => JSON.parse((await exec(process.execPath, [cli, ...args], { cwd: home, env })).stdout);
+  const mainworks = async (...args: string[]) => JSON.parse((await exec(process.execPath, [cli, ...args], { cwd: home, env })).stdout);
   const refused = async (...args: string[]) => {
     const failure: any = await exec(process.execPath, [cli, ...args], { cwd: home, env }).then(() => null, error => error);
-    assert.ok(failure, `graphyard ${args.join(' ')} was refused`);
-    assert.match(failure.stderr, /Reporter huck-master may only file items, message this install's Master and read back its own items and the Master's replies/, `graphyard ${args.join(' ')}: ${failure.stderr}`);
+    assert.ok(failure, `mainworks ${args.join(' ')} was refused`);
+    assert.match(failure.stderr, /Reporter huck-master may only file items, message this install's Master and read back its own items and the Master's replies/, `mainworks ${args.join(' ')}: ${failure.stderr}`);
   };
 
   // It files an item with the CLI and gets its key; the item is unreleased, in backlog and attributed to it.
   const itemFile = join(home, 'item.json');
   await writeFile(itemFile, JSON.stringify({ title: 'Huck: the trial image lacks Go 1.23', why: 'Huck ships Go changes again.', simplest: 'Add Go 1.23 to the trial image.', description: 'Filed by the Huck install master.', type: 'chore', criteria }));
-  const created = await graphyard('create', itemFile);
+  const created = await mainworks('create', itemFile);
   assert.match(created.key, /^GY-\d+$/);
   const filed = await api(`work/${created.key}`);
   assert.equal(filed.stage, 'backlog');
@@ -81,19 +81,19 @@ test('e2e:reporter-identity — a reporter files an item and messages the Master
   assert.equal((await api(`events?work=${filed.id}`)).find((event: any) => event.kind === 'create').actor, 'huck-master');
 
   // It messages this install's Master: the message appears once in master status attention, naming the sender.
-  const sent = await graphyard('message', `Please look at ${created.key} soon`);
+  const sent = await mainworks('message', `Please look at ${created.key} soon`);
   const named = (await masterStatus()).filter(line => line.subject.includes('huck-master'));
   assert.equal(named.length, 1, JSON.stringify(named));
   assert.equal(named[0].subject, `message ${sent.id} from huck-master`);
   assert.match(named[0].text, new RegExp(`huck-master wrote .* ago: Please look at ${created.key} soon`));
-  assert.equal(named[0].next, `Act on it, then graphyard master reply ${sent.id} TEXT`);
+  assert.equal(named[0].next, `Act on it, then mainworks master reply ${sent.id} TEXT`);
 
   // The Master replies; the line clears, and the reporter reads back its item's stage and the reply.
   await intentCommand({ id: 'reply', args: [String(sent.id), 'Queued;', 'the loop releases it next'], print: () => {},
     masterMutation: (path: string, data: unknown) => api(path, data, coordinator) } as unknown as MasterSession);
   assert.deepEqual((await masterStatus()).filter(line => line.subject.includes('huck-master')), []);
-  assert.equal((await graphyard('status', created.key)).stage, 'backlog');
-  const [message] = (await graphyard('messages')).messages;
+  assert.equal((await mainworks('status', created.key)).stage, 'backlog');
+  const [message] = (await mainworks('messages')).messages;
   assert.equal(message.text, `Please look at ${created.key} soon`);
   assert.equal(message.replies[0].by, 'graphyard-master');
   assert.equal(message.replies[0].text, 'Queued; the loop releases it next');
@@ -101,13 +101,13 @@ test('e2e:reporter-identity — a reporter files an item and messages the Master
   // An unanswered message no exchange can push out of the window: one hundred answered messages
   // later, master status still raises it (it wakes the Master session once, so it may not leave
   // the list and come back), and the reporter still reads it back, first.
-  const later = await graphyard('message', 'Anything new on the image?');
+  const later = await mainworks('message', 'Anything new on the image?');
   await store.pool.query(`INSERT INTO events(work_id,actor,kind,payload) SELECT NULL,'huck-master','master.message', json_build_object('text','filled '||n,'thread','filled'||n) FROM generate_series(1,100) n`);
   await store.pool.query(`INSERT INTO events(work_id,actor,kind,payload) SELECT NULL,'graphyard-master','master.reply', json_build_object('message', m.seq, 'text','done') FROM events m WHERE m.kind='master.message' AND m.payload->>'thread' LIKE 'filled%'`);
   const stillRaised = (await masterStatus()).filter(line => line.subject.includes('huck-master'));
   assert.equal(stillRaised.length, 1, JSON.stringify(stillRaised));
   assert.equal(stillRaised[0].subject, `message ${later.id} from huck-master`);
-  const mine = (await graphyard('messages')).messages;
+  const mine = (await mainworks('messages')).messages;
   assert.equal(mine.length, 100);
   assert.equal(mine[0].id, later.id, 'the unanswered message leads the window');
   await intentCommand({ id: 'reply', args: [String(later.id), 'Still queued'], print: () => {},

@@ -121,7 +121,7 @@ export function WeekLine({ status, work, open }: { status?: Dashboard['status'];
 export const hostsNeedingUpdate = (status?: Dashboard['status']): string[] =>
   Array.isArray(status?.hosts) ? status.hosts.filter((host: { away?: unknown; update?: unknown; host?: unknown }) => host?.away === true && host.update === true && typeof host.host === 'string').map((host: { host: string }) => host.host) : [];
 /** The one command that updates a machine's helper: its printed script is then run there with sudo. */
-export const hostUpdateCommand = 'graphyard host prepare';
+export const hostUpdateCommand = 'mainworks host prepare';
 
 /** GY-3517: one line while any compute machine needs its helper updated, naming them and the one command; gone once the next probe reads them ready. */
 export function HostUpdateLine({ status }: { status?: Dashboard['status'] }) {

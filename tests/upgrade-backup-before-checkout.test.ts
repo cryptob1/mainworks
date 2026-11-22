@@ -14,7 +14,7 @@ import { Store, advisoryLocks } from '../src/store.js';
 import { startPostgres } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-3538: `graphyard upgrade` backs up the database with the running release's CLI before it moves
+// GY-3538: `mainworks upgrade` backs up the database with the running release's CLI before it moves
 // the checkout, so a target at a newer schema generation never runs the backup against the older database.
 const repositoryRoot = new URL('..', import.meta.url).pathname;
 const now = new Date(0).toISOString();
@@ -38,12 +38,12 @@ async function cliCheckout() {
   return { root, previous, newer };
 }
 
-/** A real cluster with an empty graphyard database. */
+/** A real cluster with an empty mainworks database. */
 async function database() {
   const cluster = await startPostgres();
   const admin = new pg.Client({ connectionString: cluster.url });
   await admin.connect();
-  try { await admin.query('CREATE DATABASE graphyard'); } finally { await admin.end(); }
+  try { await admin.query('CREATE DATABASE mainworks'); } finally { await admin.end(); }
   const url = new URL(cluster.url); url.pathname = '/graphyard';
   return { cluster, url: url.href };
 }
@@ -157,7 +157,7 @@ test('e2e:upgrade-backup-before-checkout — an install on schema N upgrades to 
     const inputs = inputsFor(root, newer, databaseUrl, join(directory, 'backups', 'before.json'), schema, url);
     const plan = upgradePlan(inputs);
     const live = liveEffects(inputs, join(directory, 'upgrade.json'));
-    // The backup and checkout run as graphyard upgrade runs them; the redeploy restarts the server on the
+    // The backup and checkout run as mainworks upgrade runs them; the redeploy restarts the server on the
     // checked-out code, which migrates the database. npm ci, the loop restart and the refresh need a
     // network or a host supervisor and change nothing /healthz serves.
     const result = await runUpgrade(plan, { record: live.record, async run(step) {

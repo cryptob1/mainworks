@@ -46,7 +46,7 @@ test('unit:lease-commands-survive-cli-server-skew — heartbeat and blocked from
     // heartbeat proceeds and extends the lease.
     const heartbeat = await run(['heartbeat', 'GY-1', '1']);
     assert.deepEqual(JSON.parse(heartbeat.stdout), { ok: true }, 'the heartbeat succeeded');
-    assert.match(heartbeat.stderr, new RegExp(`CLI commit ${head} and server commit ${deployed} differ: run graphyard upgrade; the heartbeat proceeds`), 'the warning names the difference and the command carries on');
+    assert.match(heartbeat.stderr, new RegExp(`CLI commit ${head} and server commit ${deployed} differ: run mainworks upgrade; the heartbeat proceeds`), 'the warning names the difference and the command carries on');
     assert.equal(heartbeat.stderr.split('\n').filter(line => line.includes('differ')).length, 1, 'the warning is one line');
     assert.deepEqual(requests, ['GET /healthz', 'GET /api/work/GY-1', 'POST /api/work/work-1/heartbeat'], 'the request went out');
 
@@ -54,14 +54,14 @@ test('unit:lease-commands-survive-cli-server-skew — heartbeat and blocked from
     requests.length = 0;
     const blocked = await run(['blocked', 'GY-1', '1', 'waiting on the deploy to finish']);
     assert.deepEqual(JSON.parse(blocked.stdout), { ok: true }, 'the blocker was recorded');
-    assert.match(blocked.stderr, new RegExp(`CLI commit ${head} and server commit ${deployed} differ: run graphyard upgrade; the blocked proceeds`));
+    assert.match(blocked.stderr, new RegExp(`CLI commit ${head} and server commit ${deployed} differ: run mainworks upgrade; the blocked proceeds`));
     assert.deepEqual(requests, ['GET /healthz', 'GET /api/work/GY-1', 'POST /api/work/work-1/blocked']);
     assert.deepEqual(bodies.at(-1), { epoch: 1, reason: 'waiting on the deploy to finish' });
 
     // A non-lease command keeps today's behaviour: refused by name, before its first API request.
     requests.length = 0;
     const status = await run(['status', 'GY-1']).then(() => null, (error: any) => error);
-    assert.match(status?.stderr ?? '', new RegExp(`CLI commit ${head} and server commit ${deployed} differ: run graphyard upgrade$`, 'm'), 'the refusal names no proceeding');
+    assert.match(status?.stderr ?? '', new RegExp(`CLI commit ${head} and server commit ${deployed} differ: run mainworks upgrade$`, 'm'), 'the refusal names no proceeding');
     assert.doesNotMatch(status?.stderr ?? '', /proceeds/);
     assert.equal(status?.code, 1, 'persistent skew exits with failure after the bounded handover window');
     assert.equal((status?.stderr.match(/release handover: retry/g) ?? []).length, 3, 'each of the three retries is observable');

@@ -116,8 +116,8 @@ export async function producerSecretsPrefix(directory: string, env: Record<strin
  * group, one principal whose evidence the control plane trusts by its grants and never by what
  * the session says. The session holds the producer's own credential file (a path in its
  * environment, never a value on a command line), works in a detached worktree it creates in the
- * session directory Graphyard allocated for it under the managed worktree root — on durable
- * storage, outside every Graphyard worktree, removed when the session resolves — and submits
+ * session directory Mainworks allocated for it under the managed worktree root — on durable
+ * storage, outside every Mainworks worktree, removed when the session resolves — and submits
  * each proof with the exact head, base and policy revision it was launched for. The ledger here
  * records launch, completion and outcome per session, which is what `master status` reports as
  * running per candidate and since when.
@@ -254,7 +254,7 @@ export function sessionRetry(records: { requestId?: string; state: string; reque
 // launched for anything else would submit evidence the gates cannot bind.
 export function assertProducerCandidate(work: Work, request: DispatchRequest, observedAt: string) {
   const now = Date.parse(observedAt);
-  if (!Number.isFinite(now)) throw new Error('A producer launch requires a valid Graphyard snapshot clock');
+  if (!Number.isFinite(now)) throw new Error('A producer launch requires a valid Mainworks snapshot clock');
   if (request.kind !== 'producer' || !request.group || !request.proofs?.length) throw new Error(`${work.key} request ${request.id} is not a producer request`);
   const live = work.autoDispatch?.producers.find(entry => entry.id === request.id);
   if (!live || live.state !== 'requested') throw new Error(`${work.key} no longer requests a producer for ${request.group} proofs on ${request.sha.slice(0, 12)}`);
@@ -347,15 +347,15 @@ export function producerPrompt(config: Pick<MasterConfig, 'repository' | 'cliPat
   const worktree = checkout.worktree, stripped = resolve(checkout.directory, 'exercise');
   const evidenceFile = (proof: string) => resolve(checkout.directory, `${proof.replace(/[^a-zA-Z0-9]+/g, '-')}.evidence.json`);
   const memorySection = projectMemoryDigest(memory, 'producer', { baseSha: binding.baseSha });
-  return `You are an independent Graphyard proof producer for ${config.repository}, principal ${profile.principal}. Produce trusted evidence for work item ${binding.key} (pull request #${binding.pr}) at exact head ${binding.sha} against base ${binding.baseSha} under policy revision ${binding.policyRevision}, for the ${binding.group} proof group: ${binding.proofs.join(', ')}. `
+  return `You are an independent Mainworks proof producer for ${config.repository}, principal ${profile.principal}. Produce trusted evidence for work item ${binding.key} (pull request #${binding.pr}) at exact head ${binding.sha} against base ${binding.baseSha} under policy revision ${binding.policyRevision}, for the ${binding.group} proof group: ${binding.proofs.join(', ')}. `
     + (memorySection || '')
-    + `Your Graphyard credential is the file named by GRAPHYARD_TOKEN_FILE and is used only by node ${config.cliPath}; never print, copy, cat, or echo it or any other credential, and never read .graphyard/connection.json, .graphyard/credentials.json, .env, or anything under ~/.config. `
+    + `Your Mainworks credential is the file named by GRAPHYARD_TOKEN_FILE and is used only by node ${config.cliPath}; never print, copy, cat, or echo it or any other credential, and never read .graphyard/connection.json, .graphyard/credentials.json, .env, or anything under ~/.config. `
     + liveInstallGuidance(binding.proofs, checkout.directory, binding.key, binding.sha)
-    + `Work in a detached worktree of the exact head, created only at the path Graphyard allocated under its managed worktree root — never in the repository's own checkout, never under .graphyard/worktrees and never under a temporary directory: git fetch --no-write-fetch-head origin ${binding.sha} && git worktree add --detach ${worktree} ${binding.sha}. Install and build there, then run what establishes each proof: the tests and scripts named for the proof and the acceptance criteria in node ${config.cliPath} status ${binding.key}, through the project's own runners (node ${config.cliPath} guide proof names the runner, the title rule and the manual: judging). `
-    + 'Do not edit, commit, push, rebase or merge the candidate, do not claim Graphyard work, do not post a review, and never weaken, skip or narrow a test to make a proof pass. '
+    + `Work in a detached worktree of the exact head, created only at the path Mainworks allocated under its managed worktree root — never in the repository's own checkout, never under .graphyard/worktrees and never under a temporary directory: git fetch --no-write-fetch-head origin ${binding.sha} && git worktree add --detach ${worktree} ${binding.sha}. Install and build there, then run what establishes each proof: the tests and scripts named for the proof and the acceptance criteria in node ${config.cliPath} status ${binding.key}, through the project's own runners (node ${config.cliPath} guide proof names the runner, the title rule and the manual: judging). `
+    + 'Do not edit, commit, push, rebase or merge the candidate, do not claim Mainworks work, do not post a review, and never weaken, skip or narrow a test to make a proof pass. '
     + `A proof that passes against an unchanged tree proves nothing, so for each proof that passes also show it exercises its criterion: in a second detached worktree of the same head at ${stripped} (git worktree add --detach ${stripped} ${binding.sha}), remove the behaviour the criterion the proof is attached to describes — revert or stub exactly the lines of the change that implement it — and run the same proof there. `
     + `For each proof write its evidence JSON at ${evidenceFile(binding.proofs[0])} (node ${config.cliPath} guide proof names the fields) and submit it with node ${config.cliPath} evidence ${binding.key} FILE. `
-    + `Keep everything this session writes inside ${checkout.directory}; Graphyard removes it when the session ends. When every proof is submitted, remove both worktrees, print a one-paragraph summary naming each proof and its result, and stop; Graphyard closes this session once it observes the evidence. `
+    + `Keep everything this session writes inside ${checkout.directory}; Mainworks removes it when the session ends. When every proof is submitted, remove both worktrees, print a one-paragraph summary naming each proof and its result, and stop; Mainworks closes this session once it observes the evidence. `
     + destructivePromptGuidance
     + autonomousSession('submit pass or fail evidence for every proof of the group', `submit that proof as result fail with executed as the cases that ran, putting the blocked command and its error in environment`);
 }
@@ -505,7 +505,7 @@ export async function launchProducer(root: string, work: Work, request: Dispatch
  * The unit proof producer on the headless runner (GY-169). The same request, binding, profile and
  * principal as a Herdr session, and the same ledger record, but no pane: the run is registered
  * under the session name, each proof comes back as a validated graphyard_submit_evidence call, and
- * the loop submits it as the producer principal on the route `graphyard evidence` uses, so the
+ * the loop submits it as the producer principal on the route `mainworks evidence` uses, so the
  * server trusts it by the producer's grants and the exercise rule exactly as it does today. When
  * the run ends its record is kept on the session record, and reconciliation settles it as usual.
  */

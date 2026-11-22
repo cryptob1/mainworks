@@ -147,13 +147,13 @@ test(`${proof} — two trials on one base commit build the tip once, the second 
 
 test(`${proof} — bare unbuilt kept directory is reclaimed when main moves, a concurrent base pass waits for the build in progress, and pnpm workspace populates kept tree with a full build`, { timeout: 300_000 }, async () => {
   const sha = 'a'.repeat(40);
-  assert.equal(keptBaseBuildSha(`graphyard-base-build-${sha}`), sha);
-  assert.equal(keptBaseBuildSha(`graphyard-base-build-${sha}.built`), sha);
-  assert.equal(keptBaseBuildSha(`graphyard-base-build-${sha}.lock`), sha);
-  assert.equal(keptBaseBuildSha(`graphyard-base-build-${sha}.lock.owner`), sha);
-  assert.equal(keptBaseBuildSha(`graphyard-base-build-${sha}.use-0b9f6c1e-1111-4222-8333-444455556666`), sha);
-  assert.equal(keptBaseBuildSha(`graphyard-base-build-${sha}.use-0b9f6c1e-1111-4222-8333-444455556666.owner`), sha);
-  assert.equal(keptBaseBuildSha(`graphyard-base-build-${sha}.other`), null);
+  assert.equal(keptBaseBuildSha(`mainworks-base-build-${sha}`), sha);
+  assert.equal(keptBaseBuildSha(`mainworks-base-build-${sha}.built`), sha);
+  assert.equal(keptBaseBuildSha(`mainworks-base-build-${sha}.lock`), sha);
+  assert.equal(keptBaseBuildSha(`mainworks-base-build-${sha}.lock.owner`), sha);
+  assert.equal(keptBaseBuildSha(`mainworks-base-build-${sha}.use-0b9f6c1e-1111-4222-8333-444455556666`), sha);
+  assert.equal(keptBaseBuildSha(`mainworks-base-build-${sha}.use-0b9f6c1e-1111-4222-8333-444455556666.owner`), sha);
+  assert.equal(keptBaseBuildSha(`mainworks-base-build-${sha}.other`), null);
 
   // 1. Bare unbuilt directory left after a failed/aborted build is reclaimed when main moves.
   const repo = await repository();
@@ -265,7 +265,7 @@ test(`${proof} — a kept tree that took the warm dependency image keeps its nod
   assert.ok(existsSync(keptBaseBuildMarker(keptBaseBuild(baseRoot, second))));
 
   // A lockfile change elsewhere evicts that image; the kept tree's reuse must still find its dependencies.
-  rmSync(join(root, '.git', 'graphyard-dependency-images'), { recursive: true, force: true });
+  rmSync(join(root, '.git', 'mainworks-dependency-images'), { recursive: true, force: true });
   const reused = await pass(second);
   assert.deepEqual(reused.tests, passed, 'the reused kept tree still holds its node_modules');
 });

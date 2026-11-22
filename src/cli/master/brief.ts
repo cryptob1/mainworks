@@ -1,4 +1,4 @@
-// Concern: `graphyard master brief` — the install's product brief (GY-3274), kept in project memory
+// Concern: `mainworks master brief` — the install's product brief (GY-3274), kept in project memory
 // and mirrored to the control plane, whose dashboard shows it on its Product page.
 import { runBriefCommand } from '../../master/brief.js';
 import { unhandled, type MasterSession } from './session.js';

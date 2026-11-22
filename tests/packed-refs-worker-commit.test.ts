@@ -51,7 +51,7 @@ test('e2e:packed-refs-worker-commit — with graphyard/* refs packed and refs/he
   assert.equal(await removeAttemptWorktree(root, second!, run), true);
   assert.equal(existsSync(second!), false, 'the closed attempt\'s worktree is removed');
   assert.equal(git(root, 'rev-parse', 'refs/graphyard/preserved/GY-7-2'), unsubmitted, 'its unsubmitted commits are kept under the preserved ref');
-  assert.match(await preservedWorkNote(root, 'GY-7', run), /refs\/graphyard\/preserved\/GY-7-2/, 'the next attempt\'s prompt names the ref');
+  assert.match(await preservedWorkNote(root, 'GY-7', run), /refs\/mainworks\/preserved\/GY-7-2/, 'the next attempt\'s prompt names the ref');
   assert.equal(await preservedWorkNote(root, 'GY-8', run), '', 'an item with nothing kept is told nothing');
 
   // The confined worker commits on its assigned branch and completes with that head.

@@ -1,4 +1,4 @@
-// `graphyard upgrade` (GY-1962): one command moves the CLI checkout, the server, the loop and
+// `mainworks upgrade` (GY-1962): one command moves the CLI checkout, the server, the loop and
 // executors, and the managed repository's generated files to one dated release, in order.
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, readlinkSync } from 'node:fs';
@@ -6,7 +6,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createBackup } from '../backup.js';
 import { Store } from '../store.js';
-import { checkoutRelease, compareDateVersions, datedVersionPattern, graphyardBaseBranch, imageRepository, installationRoot, type Release } from '../release.js';
+import { checkoutRelease, compareDateVersions, datedVersionPattern, mainworksBaseBranch, imageRepository, installationRoot, type Release } from '../release.js';
 import { repositoryFromRemote } from '../onboarding.js';
 import { installDirectory, readInstallRecord, type InstallRecord } from '../install/secrets.js';
 import { installIdFor } from '../install/types.js';
@@ -44,7 +44,7 @@ const cli = (root: string, ...args: string[]) => ['node', JSON.stringify(join(ro
 const npmCiCommand = (root: string) => `npm ci --prefix ${JSON.stringify(root)}`;
 /** The command that returns to `previous`: the same upgrade towards its release, or its commit when it had none. */
 export const rollbackCommand = (previous: Release, cliRoot: string) => previous.released
-  ? `graphyard upgrade --to ${previous.version}`
+  ? `mainworks upgrade --to ${previous.version}`
   : `git -C ${JSON.stringify(cliRoot)} checkout --detach ${previous.revision} && npm ci --prefix ${JSON.stringify(cliRoot)}, then redeploy the image the server ran before`;
 
 /**
@@ -67,7 +67,7 @@ export function upgradePlan(inputs: UpgradeInputs): UpgradePlan {
   const steps: UpgradeStep[] = [
     { id: 'checkout', title: `Check out ${target.version} (${target.revision.slice(0, 12)}) detached in the CLI checkout`, command: `git -C ${JSON.stringify(cliRoot)} checkout --detach ${target.revision}` },
     { id: 'npm-ci', title: 'Install the dependencies the target\'s lockfile names', command: npmCiCommand(cliRoot) },
-    { id: 'backup', title: `Back up the database at generation ${databaseSchema ?? 'unknown'} (DATABASE_URL) before the server migrates it`, command: `graphyard db backup ${inputs.backupFile}` },
+    { id: 'backup', title: `Back up the database at generation ${databaseSchema ?? 'unknown'} (DATABASE_URL) before the server migrates it`, command: `mainworks db backup ${inputs.backupFile}` },
     { id: 'redeploy', title: `Redeploy the server at ${image} through the install adapter`, command: redeploy },
     { id: 'restart', title: 'Restart the master loop on the target code', command: cli(cliRoot, 'master', 'restart') },
     { id: 'refresh', title: 'Refresh the generated workflows and the AGENTS.md managed block', command: `${cli(cliRoot, 'init', '--scan', ...url)} && ${cli(cliRoot, 'init', '--scan', '--apply', ...url)}` },
@@ -75,7 +75,7 @@ export function upgradePlan(inputs: UpgradeInputs): UpgradePlan {
   ];
   const migrates = target.schema !== null && databaseSchema !== null && target.schema > databaseSchema;
   return { from: inputs.current, to: target, databaseSchema, steps, rollback: rollbackCommand(inputs.current, cliRoot), cliChanges: inputs.cliChanges,
-    rollforward: migrates ? `the server migrates the database from generation ${databaseSchema} to ${target.schema} when it redeploys, and ${inputs.current.version} refuses it after that: fix the failing step and rerun graphyard upgrade --to ${target.version}, or restore ${inputs.backupFile} with graphyard db restore into an empty database migrated by ${inputs.current.version} before rolling back` : null };
+    rollforward: migrates ? `the server migrates the database from generation ${databaseSchema} to ${target.schema} when it redeploys, and ${inputs.current.version} refuses it after that: fix the failing step and rerun mainworks upgrade --to ${target.version}, or restore ${inputs.backupFile} with mainworks db restore into an empty database migrated by ${inputs.current.version} before rolling back` : null };
 }
 
 export interface UpgradeEffects {
@@ -118,13 +118,13 @@ export function schemaAt(source: string): number | null {
   return fixed ? Number(fixed[1]) : null;
 }
 
-/** The dated release `--to` names, or without one Graphyard's fetched origin/main tip, from the CLI checkout's refs. */
+/** The dated release `--to` names, or without one Mainworks's fetched origin/main tip, from the CLI checkout's refs. */
 export function resolveTarget(cliRoot: string, to?: string): UpgradeTarget {
-  if (to !== undefined && !datedVersionPattern.test(to)) throw new Error('Use upgrade --to VERSION (a dated release such as 2026.10.17), or no --to for Graphyard\'s main');
-  const ref = to === undefined ? `refs/remotes/origin/${graphyardBaseBranch}` : `refs/tags/${to}`;
+  if (to !== undefined && !datedVersionPattern.test(to)) throw new Error('Use upgrade --to VERSION (a dated release such as 2026.10.17), or no --to for Mainworks\'s main');
+  const ref = to === undefined ? `refs/remotes/origin/${mainworksBaseBranch}` : `refs/tags/${to}`;
   let revision: string;
   try { revision = git(cliRoot, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`); }
-  catch { throw new Error(`The CLI checkout has no ${ref}; run git -C ${JSON.stringify(cliRoot)} fetch --tags origin ${graphyardBaseBranch} (upgrade without --plan fetches it)`); }
+  catch { throw new Error(`The CLI checkout has no ${ref}; run git -C ${JSON.stringify(cliRoot)} fetch --tags origin ${mainworksBaseBranch} (upgrade without --plan fetches it)`); }
   const version = to ?? releaseOfCommit(cliRoot, revision).version;
   let source = '';
   try { source = git(cliRoot, 'show', `${revision}:src/release.ts`); } catch {}
@@ -160,7 +160,7 @@ export function liveEffects(inputs: UpgradeInputs, recordFile: string, fetchHeal
     async record(entry) { await mkdir(resolve(recordFile, '..'), { recursive: true }); await writeFile(recordFile, `${JSON.stringify({ at: new Date().toISOString(), ...entry }, null, 2)}\n`); },
     async run(step) {
       if (step.id === 'backup') {
-        if (!process.env.DATABASE_URL) throw new Error('Set DATABASE_URL to the Graphyard database so the upgrade can back it up before the server migrates it');
+        if (!process.env.DATABASE_URL) throw new Error('Set DATABASE_URL to the Mainworks database so the upgrade can back it up before the server migrates it');
         const store = new Store(process.env.DATABASE_URL);
         try { const backup = await createBackup(store.pool); await mkdir(resolve(inputs.backupFile, '..'), { recursive: true }); await writeFile(inputs.backupFile, JSON.stringify(backup), { flag: 'wx', mode: 0o600 }); }
         finally { await store.close(); }
@@ -182,13 +182,13 @@ export async function healthVerdict(response: Pick<Response, 'ok' | 'status' | '
 }
 
 /**
- * The git half of the deploy unit's ports: fetch Graphyard's own main (GY-2982) — never the managed
- * repository's base branch, which Graphyard's origin may not have — read HEAD, check a commit out detached.
+ * The git half of the deploy unit's ports: fetch Mainworks's own main (GY-2982) — never the managed
+ * repository's base branch, which Mainworks's origin may not have — read HEAD, check a commit out detached.
  */
 export function gitWatchPorts(cliRoot: string, run: ChildRun): Pick<DeployWatchPorts, 'fetch' | 'head' | 'checkout'> {
   const git = async (...args: string[]) => String(await run('git', ['-C', cliRoot, ...args])).trim();
   return {
-    fetch: async () => { await git('fetch', '--quiet', 'origin', graphyardBaseBranch); return git('rev-parse', `refs/remotes/origin/${graphyardBaseBranch}`); },
+    fetch: async () => { await git('fetch', '--quiet', 'origin', mainworksBaseBranch); return git('rev-parse', `refs/remotes/origin/${mainworksBaseBranch}`); },
     head: () => git('rev-parse', 'HEAD'),
     checkout: async commit => { await git('checkout', '--detach', '--quiet', commit); },
   };
@@ -393,17 +393,17 @@ export const servedRepository = (cliRoot: string): string | null => {
 };
 
 /**
- * Removes every per-commit image `graphyard-local:<sha12>` (or the older `previous-<sha12>`) but the kept
+ * Removes every per-commit image `mainworks-local:<sha12>` (or the older `previous-<sha12>`) but the kept
  * commits', one `docker image rm` each; docker refuses one a container uses, and each failure is one
  * logged line, never the deploy's.
  */
 export async function pruneImages(run: ChildRun, keep: string[], log: (line: string) => void = line => console.error(line)) {
   const kept = new Set(keep.map(sha => sha.slice(0, 12)));
   const failed = (what: string) => (error: unknown) => log(`[graphyard-deploy] ${what}: ${error instanceof Error ? error.message : String(error)}`);
-  const tags = await Promise.resolve(run('docker', ['image', 'ls', 'graphyard-local', '--format', '{{.Tag}}'])).then(String, failed('could not list the per-commit images'));
+  const tags = await Promise.resolve(run('docker', ['image', 'ls', 'mainworks-local', '--format', '{{.Tag}}'])).then(String, failed('could not list the per-commit images'));
   for (const tag of (tags ?? '').split('\n').map(line => line.trim())) {
     const sha = /^(?:previous-)?([0-9a-f]{12})$/.exec(tag)?.[1];
-    if (sha && !kept.has(sha)) await Promise.resolve(run('docker', ['image', 'rm', `graphyard-local:${tag}`])).catch(failed(`could not remove graphyard-local:${tag}`));
+    if (sha && !kept.has(sha)) await Promise.resolve(run('docker', ['image', 'rm', `mainworks-local:${tag}`])).catch(failed(`could not remove mainworks-local:${tag}`));
   }
 }
 
@@ -421,7 +421,7 @@ export async function watchPorts(input: { cliRoot: string; repoRoot: string; rep
   const recorded = await readInstallRecord(directory).catch(() => null);
   // GY-2941: an installation whose own Herdr instance master.json names redeploys with --herdr-instance, though its record predates the field.
   const install = recorded && input.herdrInstance ? { ...recorded, herdrInstance: true } : recorded;
-  if (install?.provider !== 'compose' && install?.provider !== 'local') return `the deploy unit needs a compose or local install; ${install ? `this one runs on ${install.provider}` : 'no install record names this repository'}, so releases reach it only through graphyard upgrade`;
+  if (install?.provider !== 'compose' && install?.provider !== 'local') return `the deploy unit needs a compose or local install; ${install ? `this one runs on ${install.provider}` : 'no install record names this repository'}, so releases reach it only through mainworks upgrade`;
   const run = (command: string, args: string[], cwd: string, env?: NodeJS.ProcessEnv) => Promise.resolve(input.run(command, args, { cwd, timeoutMs: 1_800_000, ...(env ? { env } : {}) })).then(String);
   // GY-2978: the pass builds and redeploys from this worktree at the deployed commit — for a local
   // install the redeploying CLI and the server it starts are this worktree's code — never from the
@@ -430,7 +430,7 @@ export async function watchPorts(input: { cliRoot: string; repoRoot: string; rep
   const inputsFor = (commit: string): UpgradeInputs => {
     const current = checkoutRelease(cliRoot);
     return { cliRoot: build, repoRoot, current, target: { version: releaseOfCommit(cliRoot, commit).version, revision: commit, schema: null }, databaseSchema: null, install, url, cliChanges: [],
-      image: install.provider === 'compose' ? `graphyard-local:${commit.slice(0, 12)}` : install.deployment?.image ?? `graphyard-local:${install.installId}`, backupFile: join(directory, 'backups', `before-${commit.slice(0, 12)}-${Date.now()}.json`) };
+      image: install.provider === 'compose' ? `mainworks-local:${commit.slice(0, 12)}` : install.deployment?.image ?? `mainworks-local:${install.installId}`, backupFile: join(directory, 'backups', `before-${commit.slice(0, 12)}-${Date.now()}.json`) };
   };
   const step = (commit: string, id: UpgradeStepId) => upgradePlan(inputsFor(commit)).steps.find(entry => entry.id === id)!;
   const tree = gitWatchPorts(cliRoot, input.run);
@@ -465,7 +465,7 @@ export const upgradeCommands = defineCommands([{
     '  upgrade [--to VERSION] [--plan]',
     '                                Move the CLI checkout (then npm ci), back up the database,',
     '                                redeploy the server, restart loop and executors, refresh the',
-    '                                generated files, and check /healthz, to Graphyard\'s main tip',
+    '                                generated files, and check /healthz, to Mainworks\'s main tip',
     '                                (or the dated release VERSION);',
     '                                --plan prints the steps only; a failure names its step and rollback',
     '  upgrade --watch [--once] [--checkout DIR]',
@@ -496,7 +496,7 @@ export const upgradeCommands = defineCommands([{
     const toIndex = flags.indexOf('--to');
     const to = toIndex >= 0 ? flags[toIndex + 1] ?? '' : undefined;
     const cliRoot = installationRoot, repoRoot = context.repositoryRoot();
-    if (!flags.includes('--plan')) git(cliRoot, 'fetch', '--tags', '--force', 'origin', graphyardBaseBranch);
+    if (!flags.includes('--plan')) git(cliRoot, 'fetch', '--tags', '--force', 'origin', mainworksBaseBranch);
     const repository = repositoryFromRemote(git(repoRoot, 'remote', 'get-url', 'origin'));
     const directory = repository ? installDirectory(installIdFor(repository)) : null;
     const url = process.env.GRAPHYARD_URL || context.connection?.url ? context.base : null;
@@ -509,7 +509,7 @@ export const upgradeCommands = defineCommands([{
     console.log(renderPlan(plan));
     if (flags.includes('--plan')) return;
     // Every precondition a later step needs is checked before the record and the checkout move.
-    if (!process.env.DATABASE_URL) throw new Error('Set DATABASE_URL to the Graphyard database so the upgrade can back it up before the server migrates it; nothing was changed');
+    if (!process.env.DATABASE_URL) throw new Error('Set DATABASE_URL to the Mainworks database so the upgrade can back it up before the server migrates it; nothing was changed');
     if (!url) throw new Error('Set GRAPHYARD_URL so the upgrade can read /healthz after the redeploy; nothing was changed');
     const result = await runUpgrade(plan, liveEffects(inputs, join(repoRoot, '.graphyard', 'upgrade.json')));
     if (result.ok) { console.log(`upgraded to ${target.version}`); return; }

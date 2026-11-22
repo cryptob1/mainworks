@@ -31,7 +31,7 @@ test('integration:vite-private-cache — actual project config starts cold and w
     // Each startup runs in its own process: Vite's optimizer reruns on a timer after close,
     // and a closed prior-config server's late cache failure must not fail the next startup.
     if (!process.argv[2]) {
-      await assert.rejects(writeFile('node_modules/graphyard-forbidden', 'bad'), { code: 'EROFS' });
+      await assert.rejects(writeFile('node_modules/mainworks-forbidden', 'bad'), { code: 'EROFS' });
       const run = configFile => spawnSync(process.execPath, [process.argv[1], configFile], { encoding: 'utf8' });
       const prior = run('vite.previous.config.ts');
       assert.equal(prior.status, 1, 'prior config must fail on the read-only cache, not serve: ' + prior.stdout.slice(-1500) + prior.stderr.slice(-1500));

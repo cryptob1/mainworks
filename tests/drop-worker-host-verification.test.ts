@@ -102,11 +102,11 @@ for (const proof of ['integration:drop-worker-host-verification', 'e2e:drop-work
     // Run the real merge trial and its real failing test. Only the container launcher is omitted:
     // this fixture tests submission and verdict handling, not the separately tested isolation boundary.
     const run: ChildRun = async (command, args, options) => {
-      if (args.includes('/graphyard-harness/node_modules/tsx/dist/loader.mjs')) {
+      if (args.includes('/mainworks-harness/node_modules/tsx/dist/loader.mjs')) {
         const script = args.at(-1)!;
         const harness = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '');
-        await writeFile(script, (await readFile(script, 'utf8')).replaceAll('/graphyard-harness', harness));
-        args = args.map(arg => arg === '/graphyard-harness/node_modules/tsx/dist/loader.mjs' ? fileURLToPath(new URL(import.meta.resolve('tsx'))) : arg);
+        await writeFile(script, (await readFile(script, 'utf8')).replaceAll('/mainworks-harness', harness));
+        args = args.map(arg => arg === '/mainworks-harness/node_modules/tsx/dist/loader.mjs' ? fileURLToPath(new URL(import.meta.resolve('tsx'))) : arg);
         options = { ...options, timeoutMs: 15_000 };
       }
       return defaultChildRun(command, args, { ...options, wrapper: [] });

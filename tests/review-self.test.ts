@@ -10,7 +10,7 @@ import { reviewStandard } from '../src/reviewer.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-1987: the worker never saw the standard the independent reviewer judges it by, so a blocking
-// finding cost a whole build, test and review round. `graphyard review self GY-N` prints that
+// finding cost a whole build, test and review round. `mainworks review self GY-N` prints that
 // standard — the same reviewStandard text the reviewer's launch request is built from — for this
 // worktree's HEAD against its merge-base with the item's base branch, prefixed with the one
 // instruction to fix every finding the worker would mark BLOCKING before complete. It is a read:

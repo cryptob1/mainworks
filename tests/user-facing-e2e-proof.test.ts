@@ -103,7 +103,7 @@ test('unit:e2e-serve-declaration-required-and-documented — create refuses an e
   try {
     const message = await refusalOf(withE2e(of('chore')));
     assert.match(message, /e2e:home-shows-change has no way to serve a head/);
-    assert.match(message, /"e2e": \{ "serve": \{ "command", "url", "readySeconds" \} \} in graphyard\.json/);
+    assert.match(message, /"e2e": \{ "serve": \{ "command", "url", "readySeconds" \} \} in mainworks\.json/);
     assert.match(message, /delivery\.applications/);
   } finally { setRepositoryPolicy(servePolicy); setProjectDelivery(null); }
   const accepted = await engine.execute(operator, 'create', null, withE2e(of('chore')), id());

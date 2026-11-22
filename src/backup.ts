@@ -13,7 +13,7 @@ import { retryDeadlocks } from './store/migration-locks.js';
  * snapshot and verified by digest on restore.
  *
  * `pg_dump` remains the right tool for a physical copy of the database, but it needs a
- * client that matches the server major version and it says nothing about what Graphyard
+ * client that matches the server major version and it says nothing about what Mainworks
  * expects to find inside. This format is what the documented upgrade, backup and restore
  * exercises are held to: every ledger table, the serial sequences that order work, events,
  * proof-grant history and observations, and the schema generation the rows were written
@@ -197,7 +197,7 @@ async function* streamedChunks(file: string, hash?: Hash): AsyncGenerator<Chunk,
       yield { name: name!, rows }; name = null; rows = []; bytes = 0;
     } else if (name === null) {
       const start = /^(,?)\{"name":("[a-z_]+"),"rows":\[$/.exec(line);
-      if (!start) throw new Error('Backup file is not a backup Graphyard wrote; the file is corrupt or truncated');
+      if (!start) throw new Error('Backup file is not a backup Mainworks wrote; the file is corrupt or truncated');
       hash?.update(line); name = tableName.parse(JSON.parse(start[2])); count = 0;
     } else {
       const row = z.record(z.string(), z.unknown()).parse(JSON.parse(line.startsWith(',') ? line.slice(1) : line));
@@ -269,7 +269,7 @@ async function restoreFrom(pool: pg.Pool, backup: RestoreSource) {
     // schema check has shown the tables exist: a write waits for the restore, then sees its ledger (GY-257).
     await db.query('SELECT pg_advisory_xact_lock($1)', [advisoryLocks.backup]);
     const current = Number((await db.query('SELECT COALESCE(MAX(version),0) AS version FROM graphyard_schema')).rows[0].version);
-    if (current !== schemaVersion) throw new Error(`Restore requires a database migrated to schema generation ${schemaVersion} (found ${current}); run \`graphyard db migrate\` with the release that took the backup or a newer one, then restore`);
+    if (current !== schemaVersion) throw new Error(`Restore requires a database migrated to schema generation ${schemaVersion} (found ${current}); run \`mainworks db migrate\` with the release that took the backup or a newer one, then restore`);
     // Postgres takes those locks one table at a time, so a writer holding a later table that then asks for
     // one already locked here deadlocks with the restore, and Postgres may abort the restore (GY-443). That
     // is transient, as it is for a migration: the restore rolls back and runs again, waits for the writer
@@ -318,7 +318,7 @@ export async function ledgerCounts(pool: pg.Pool) {
  * handling and any agent session still calling it can no longer write — wherever they run — while
  * reads (and `db backup`, a read-only snapshot) keep working. A write the old server attempts
  * afterwards fails instead of landing in a ledger the new host never sees. `release` lifts it, for
- * a migration that is abandoned. Requires the database owner (the role Graphyard's server uses).
+ * a migration that is abandoned. Requires the database owner (the role Mainworks's server uses).
  */
 export async function fenceDatabase(pool: pg.Pool, options: { release?: boolean } = {}) {
   const db = await pool.connect();

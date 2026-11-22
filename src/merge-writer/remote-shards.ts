@@ -1,5 +1,5 @@
 // Concern: GY-3412 — a trial's test shards fanned out across hosts over SSH. The hosts are the one host
-// list `graphyard host add` keeps (GY-3407); this machine is always one. Each trial reads every host
+// list `mainworks host add` keeps (GY-3407); this machine is always one. Each trial reads every host
 // once, places each shard on the host with the most real free CPU under its heat limit, and runs it
 // there through graphyard-host-shim (src/host-shim.ts), whose fixed verbs are all this machine's key
 // may run. A host that drops or turns away a shard has it re-queued on another host: capacity, never a fault.
@@ -16,7 +16,7 @@ import { trialContainerFault, trialHotCelsius } from './trial-load.js';
 /** One host's reading: cores, cores busy (1-minute load), the share of CPU stolen, and its hottest CPU sensor against the heat limit. */
 export interface HostReading { name: string; cores: number; busy: number; steal: number; celsius: number | null; limit: number; away: boolean; reason?: string; /** GY-3645: its shim runs a check's Compose services. */ compose?: boolean }
 
-/** The targets of the hosts `graphyard host add` recorded; none when it recorded none. */
+/** The targets of the hosts `mainworks host add` recorded; none when it recorded none. */
 export const shardHosts = async () => (await readHosts().catch(() => [])).map(host => host.target);
 
 /** Real free CPU in cores: idle cores less the share the hypervisor steals. */
@@ -31,7 +31,7 @@ export const underHeatLimit = (reading: HostReading) => !reading.away && (readin
  * package registry (npm exec, or the npm cache a trial fixture installs through, npm_config_cache,
  * GY-3604; a shard has no network), /var/tmp (read-only there, GY-3609) or durable storage for a
  * managed worktree root (worktreeRoot, GY-3648: a shard container's writable temporary storage is
- * its tmpfs /tmp, HOME included, and Graphyard refuses a managed root on memory-backed storage).
+ * its tmpfs /tmp, HOME included, and Mainworks refuses a managed root on memory-backed storage).
  * Database tests start the shared warm Postgres cluster inside each remote shard container, and
  * browser tests use the Chromium shipped in the trial image. Servers, sockets and requests on
  * loopback work on a host, so their words do not keep a file local.
@@ -171,7 +171,7 @@ export function shardSshSession(run: ChildRun) {
       const userConfig = join(homedir(), '.ssh', 'config');
       const resolved = String(await run('ssh', ['-G', '-F', existsSync(userConfig) ? userConfig : '/dev/null', ...sshTarget(target)], { timeoutMs: 5_000 }));
       const settings = resolved.split('\n').filter(line => /^(hostname|user|port|identityfile|certificatefile|userknownhostsfile|globalknownhostsfile|hostkeyalias|stricthostkeychecking) /i.test(line));
-      const path = join(await (directory ??= mkdtemp(join(tmpdir(), 'graphyard-shard-ssh-'))), `${randomUUID()}.conf`);
+      const path = join(await (directory ??= mkdtemp(join(tmpdir(), 'mainworks-shard-ssh-'))), `${randomUUID()}.conf`);
       await writeFile(path, ['Host *', 'BatchMode yes', 'ConnectTimeout 10', 'IdentitiesOnly yes', 'ControlPersist 15m', ...settings, ''].join('\n'), { mode: 0o600 });
       return path;
     })() });
@@ -288,7 +288,7 @@ export function remoteShardSession(input: { root: string; sha: string; image: st
       // (less the launcher's own waiting lines, which on a hot host would fill it).
       const fault = trialContainerFault(end.out);
       // A session over a shared connection that lost its host prints nothing of its own, so name that loss.
-      const said = end.out.replace(/^graphyard trial container: (waiting|starting).*\n/gm, '').slice(-500).trim();
+      const said = end.out.replace(/^mainworks trial container: (waiting|starting).*\n/gm, '').slice(-500).trim();
       if (!end.ok && (end.status === 255 || end.status === null || fault || !records.trim())) throw new HostDroppedError(target, fault ?? (said || `the SSH connection to ${target} closed mid-shard (exit ${end.status ?? 'signal'})`));
       return { ...end, records };
     },
@@ -297,10 +297,10 @@ export function remoteShardSession(input: { root: string; sha: string; image: st
       if (!ready.has(target)) ready.set(target, prepare(target));
       const run = await ready.get(target)!;
       const out = await shim(target, `run-check ${run}`, `printf '%s' ${shellQuote(JSON.stringify({ ...check, deadline: input.deadline }))}`);
-      const exit = /\ngraphyard-check exit (\d+)\n?$/.exec(out), fault = trialContainerFault(out);
+      const exit = /\nmainworks-check exit (\d+)\n?$/.exec(out), fault = trialContainerFault(out);
       // No exit line, or a launcher that gave up on the host's heat or disk: the host never judged the check.
       if (!exit || fault) throw new HostDroppedError(target, fault ?? (out.slice(-300).trim() || 'the check ended without an exit code'));
-      return { out: out.replace(/\n(?:graphyard-check .*\n?)+$/, '\n'), status: Number(exit[1]), steps: [...out.matchAll(/^graphyard-check (services|command|teardown) (\d+)$/gm)].map(match => ({ step: match[1]!, ms: Number(match[2]) })) };
+      return { out: out.replace(/\n(?:mainworks-check .*\n?)+$/, '\n'), status: Number(exit[1]), steps: [...out.matchAll(/^mainworks-check (services|command|teardown) (\d+)$/gm)].map(match => ({ step: match[1]!, ms: Number(match[2]) })) };
     },
     async close() {
       await Promise.all([...ready.entries()].map(async ([target, prepared]) => {
@@ -352,7 +352,7 @@ export function remoteShardSummary(runs: readonly RemoteShardRun[], probes?: rea
 
 /** GY-3476, GY-3517: one attention line for each host the latest probe reads away because its shim lacks a verb trials use; it clears on the first probe that reads it ready. */
 export const outdatedShimAttention = (probes: readonly Pick<HostProbe, 'host' | 'away' | 'update'>[]) => probes.filter(probe => probe.away && probe.update).map(probe =>
-  ({ subject: `host ${probe.host}`, text: `${probe.host} takes no trial shards: its graphyard-host-shim is older than this release`, next: `Run graphyard host prepare and, with sudo on ${probe.host}, the script it prints` }));
+  ({ subject: `host ${probe.host}`, text: `${probe.host} takes no trial shards: its graphyard-host-shim is older than this release`, next: `Run mainworks host prepare and, with sudo on ${probe.host}, the script it prints` }));
 
 /** GY-3534: one attention line for each host the latest trial left away because its SSH server reset the connection. */
 export const connectionResetAttention = (runs: readonly RemoteShardRun[]) => (runs.at(-1)?.hosts ?? []).filter(host => host.away && /connection reset|kex_exchange_identification/i.test(host.reason ?? '')).map(host =>

@@ -50,7 +50,7 @@ test(`${proof} — a shim from another release that speaks every trial verb stay
   const stale = await probe();
   assert.equal(stale.away, true);
   assert.equal(stale.update, true);
-  assert.match(stale.reason ?? '', new RegExp(`older than this release: run graphyard host prepare .*lacks ${older}`));
+  assert.match(stale.reason ?? '', new RegExp(`older than this release: run mainworks host prepare .*lacks ${older}`));
   const trial = await trialReading();
   assert.equal(trial.away, true, 'a trial sends it no shard');
   assert.match(trial.reason ?? '', /older than this release/);

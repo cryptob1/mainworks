@@ -1,7 +1,7 @@
 import { defineCommands } from './registry.js';
 import { cliRelease, type Release } from '../release.js';
 
-/** How long `graphyard version` waits for the server's /healthz before reporting it unreachable. */
+/** How long `mainworks version` waits for the server's /healthz before reporting it unreachable. */
 export const versionProbeTimeoutMs = 5_000;
 
 export interface VersionReport {

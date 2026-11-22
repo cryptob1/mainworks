@@ -89,7 +89,7 @@ exit 0\n`, { mode: 0o755 });
   await mkdir(join(install, 'compose'), { recursive: true });
   await writeFile(join(install, 'compose', 'compose.yaml'), `name: graphyard-owner-project\nservices:\n  server:\n    ports: ["127.0.0.1:${port}:4310"]\n`);
   await writeFile(join(install, 'install.json'), `${JSON.stringify({ version: 1, installId: 'owner-project', repository, provider: 'compose', baseBranch: 'main', url,
-    deployment: { local: false, port, image: 'graphyard-local:owner-project' }, createdAt: '2026-11-05T00:00:00.000Z', updatedAt: '2026-11-05T00:00:00.000Z' }, null, 2)}\n`);
+    deployment: { local: false, port, image: 'mainworks-local:owner-project' }, createdAt: '2026-11-05T00:00:00.000Z', updatedAt: '2026-11-05T00:00:00.000Z' }, null, 2)}\n`);
   await writeFile(join(base, 'master.token'), 'fixture-master-token-0123456789abcdef\n', { mode: 0o600 });
   await mkdir(join(checkout, '.graphyard'), { recursive: true });
   await writeFile(join(checkout, '.graphyard', 'master.json'), `${JSON.stringify({ version: 1, url, credentialFile: join(base, 'master.token'), cliPath: join(launcherRoot, 'bin', 'graphyard.mjs'),
@@ -100,7 +100,7 @@ exit 0\n`, { mode: 0o755 });
   await dependencies(launcherRoot);
 
   const watch = { out: '', err: '' };
-  // The watch gets the environment the unit gives it: no Graphyard variables of the enclosing run.
+  // The watch gets the environment the unit gives it: no Mainworks variables of the enclosing run.
   const clean: Record<string, string> = {};
   for (const [name, value] of Object.entries(process.env)) if (!name.startsWith('GRAPHYARD_') && !name.startsWith('HERDR_') && value !== undefined) clean[name] = value;
   const child = spawn(process.execPath, [join(launcherRoot, 'bin', 'graphyard.mjs'), 'upgrade', '--watch', '--checkout', deploySrc], {
@@ -111,7 +111,7 @@ exit 0\n`, { mode: 0o755 });
 
   const record = deployRecordPath(checkout);
   const buildsOf = async (sha: string) => {
-    try { return ((await readFile(join(state, 'docker.log'), 'utf8')).match(new RegExp(`--tag graphyard-local:${sha.slice(0, 12)}( |$)`, 'gm')) ?? []).length; } catch { return 0; }
+    try { return ((await readFile(join(state, 'docker.log'), 'utf8')).match(new RegExp(`--tag mainworks-local:${sha.slice(0, 12)}( |$)`, 'gm')) ?? []).length; } catch { return 0; }
   };
   const markers = () => (watch.err.match(/running the deployed watch code/g) ?? []).length;
   const handovers = () => (watch.err.match(/release handover: retry/g) ?? []).length;

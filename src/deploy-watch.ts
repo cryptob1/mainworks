@@ -10,7 +10,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type { GitRunner } from './merge-writer/local-observation.js';
 import { serveRecordPath, readServeRecord, type ServeCheck } from './serve-app.js';
 import { servedVerified } from './batch-gate.js';
-import { graphyardRepository } from './scenarios.js';
+import { mainworksRepository } from './scenarios.js';
 import { servedCommit } from './production-watch.js';
 import type { Work } from './model/work.js';
 
@@ -35,17 +35,17 @@ async function writeDeployRecord(file: string, record: Omit<DeployRecord, 'at'>)
 
 /**
  * The control plane's own update record (GY-3199), beside the deploy record but never standing in
- * for it: the Graphyard commit this install's server, loop and CLI run, when the watch last
+ * for it: the Mainworks commit this install's server, loop and CLI run, when the watch last
  * checked for a verified commit, when it last moved the control plane, and the step of the last
  * failed upgrade. The deploy record stays the managed repository's serving and rollback state;
  * this is the control plane's update clock, which master status and the daily diagnostics read.
  */
 export interface ControlPlaneRecord {
-  /** The Graphyard commit the control plane runs; null before the first pass learned one. */
+  /** The Mainworks commit the control plane runs; null before the first pass learned one. */
   commit: string | null;
   /** When the watch last completed a check for a verified commit. */
   checkedAt: string | null;
-  /** When the control plane last moved to a new Graphyard commit. */
+  /** When the control plane last moved to a new Mainworks commit. */
   updatedAt: string | null;
   /** The latest verified commit the check has seen, and when this install first saw it: the ref carries no publication time, so the first sighting is the staleness clock. */
   verified: string | null;
@@ -82,7 +82,7 @@ export function controlPlaneStaleLines(record: ControlPlaneRecord | null, now: n
   const checked = record.checkedAt ? age(record.checkedAt) : null;
   const seen = record.verifiedSeenAt ? age(record.verifiedSeenAt) : null;
   return [
-    ...(checked !== null && checked > controlPlaneStaleAfterMs ? [`the last check for a verified Graphyard commit is ${Math.round(checked / 3_600_000)} hours old (over 24 hours)`] : []),
+    ...(checked !== null && checked > controlPlaneStaleAfterMs ? [`the last check for a verified Mainworks commit is ${Math.round(checked / 3_600_000)} hours old (over 24 hours)`] : []),
     ...(record.verified && record.commit !== record.verified && seen !== null && seen > controlPlaneStaleAfterMs
       ? [`the control plane still runs ${record.commit?.slice(0, 12) ?? 'no recorded commit'} while the verified commit ${record.verified.slice(0, 12)} was first seen ${Math.round(seen / 3_600_000)} hours ago (over 24 hours)`]
       : []),
@@ -104,10 +104,10 @@ export interface DeployWatchPorts {
   /** Fetches origin and answers the base branch's tip. */
   fetch(): Promise<string>;
   /**
-   * GY-3199: the latest batch-gate-verified Graphyard commit as `refs/graphyard/verified` on
-   * Graphyard's canonical upstream names it — a constant in the code, fetched with the host's
+   * GY-3199: the latest batch-gate-verified Mainworks commit as `refs/graphyard/verified` on
+   * Mainworks's canonical upstream names it — a constant in the code, fetched with the host's
    * existing git access; null when the ref resolves to nothing. An install that does not gate
-   * Graphyard itself serves only this commit, never the fetched main tip. Absent, the watch
+   * Mainworks itself serves only this commit, never the fetched main tip. Absent, the watch
    * deploys the fetched tip as before.
    */
   verifiedUpstream?(): Promise<string | null>;
@@ -223,7 +223,7 @@ const message = (error: unknown) => error instanceof Error ? error.message : Str
  * succeeds; a new base tip is deployed in its place.
  *
  * GY-3199: an install that does not gate this checkout's repository — every install for another
- * repository — serves only the commit Graphyard's own gate publishes at refs/graphyard/verified on
+ * repository — serves only the commit Mainworks's own gate publishes at refs/graphyard/verified on
  * its canonical upstream, never a fetched main tip the gate has not verified; a failed upgrade
  * retries once its failure is an hour old. Every pass writes the control plane's own record
  * (.graphyard/control-plane.json: the commit it runs, last check, last update, last failed step),
@@ -254,7 +254,7 @@ async function deployPass(file: string, ports: DeployWatchPorts, log: (line: str
   // GY-3119: once the loop's batch gate names this repository, only its latest verified commit serves, never the fetched main tip.
   const fetched = await ports.fetch();
   const verified = servedVerified(join(dirname(file), 'main-gate.json'), owner);
-  const followsUpstream = !verified && !!ports.verifiedUpstream && owner?.toLowerCase() === graphyardRepository;
+  const followsUpstream = !verified && !!ports.verifiedUpstream && owner?.toLowerCase() === mainworksRepository;
   const upstream = followsUpstream ? await ports.verifiedUpstream!() : null;
   const gated = verified ?? upstream;
   const tip = verified ?? (followsUpstream ? upstream : fetched) as string | null;

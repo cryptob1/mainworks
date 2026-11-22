@@ -49,7 +49,7 @@ function coordinator(options: { loseReply?: (event: MergeRecordEvent) => boolean
     // A request that never reached the server: nothing stored, no reply.
     if (!dropped.has(event.kind) && options.dropRequest?.(event)) { dropped.add(event.kind); sent.push({ key, input, answer: 'lost' }); throw new Error('connect ECONNREFUSED'); }
     if (held !== undefined) {
-      if (held !== input) { sent.push({ key, input, answer: 'refused' }); throw Object.assign(new Error(`Graphyard refused work/${item.id}/merge-record (409): ${reused}`), { status: 409 }); }
+      if (held !== input) { sent.push({ key, input, answer: 'refused' }); throw Object.assign(new Error(`Mainworks refused work/${item.id}/merge-record (409): ${reused}`), { status: 409 }); }
       sent.push({ key, input, answer: 'receipt' });
       return { receipt: key };
     }
@@ -140,7 +140,7 @@ test('unit:merge-record-reuse-recovers — a merge record the server refuses as 
   const record = inner.record;
   const refused: string[] = [];
   inner.record = async (item, event) => {
-    if (event.kind === 'intent' && refuseIntent-- > 0) { refused.push(mergeRecordKey(item, event)); throw new Error(`Graphyard refused work/w1/merge-record (409): ${reused}`); }
+    if (event.kind === 'intent' && refuseIntent-- > 0) { refused.push(mergeRecordKey(item, event)); throw new Error(`Mainworks refused work/w1/merge-record (409): ${reused}`); }
     return record(item, event);
   };
   const live = emptyDaemonState(config);

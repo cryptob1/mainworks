@@ -29,7 +29,7 @@ import { adoptTrialRun, finishedTrialRun, launchTrialRun, stopTrialRun, trialRun
 import { loadProjectDelivery } from '../model-boundary/project-applications.js';
 import { standingBaseFailure } from '../merge-writer/base-failure-hold.js';
 import { baseFailureHoldMs, baseFailurePrefix, isBaseRepair, isHotfix, criterionProofs, pushPassedTrial, mergeHeads, mergeBatches, type HeadResult, e2eProofsOf, firstParentHolds, keyReusedRefusal, mergeRecordStatus, mergeQueue, previewRecordEvent, proofTestFiles, pushArgs, pushEnvironment, mergeWriterRemote, pushFailureWithStderr, reconcileIntents, runMergeTrial, staleLeaseRejection, trialAheadOfReviewPrefix, trialRefusalHeld, type MergePorts, type MergeRecordEvent, type MergeTrialRun } from '../merge-writer/executor.js';
-import { graphyardVerifiedRef, publishedVersion } from '../release.js';
+import { mainworksVerifiedRef, publishedVersion } from '../release.js';
 import { message, storeAction, type DaemonState } from './state.js';
 import { cpuPressureHeld, trialCapNow } from './cpu-pressure.js';
 import { standingLimit } from '../master/profiles.js';
@@ -104,7 +104,7 @@ const output = (error: unknown) => { const failed = error as { stdout?: unknown;
 
 /**
  * GY-3290: a trial — a merge's, the batch gate's, a diagnostic's, a revert's; in this process or
- * detached — is one heavy job of the host: it waits here for a slot of the budget every Graphyard
+ * detached — is one heavy job of the host: it waits here for a slot of the budget every Mainworks
  * project on the host shares, naming the holders as its step, before anything of it starts.
  */
 export const heavyTrial = <T>(key: string, onStep: ((step: string) => void) | undefined, signal: AbortSignal | undefined, trial: () => Promise<T>, until?: AbortSignal, gate?: boolean) =>
@@ -166,7 +166,7 @@ export function mergeWriterReads(config: Pick<MasterConfig, 'baseBranch' | 'run'
     },
     // GY-3199: the batch gate's own publication — the verified commit at refs/graphyard/verified, pushed with the deploy key alone like every other push.
     pushVerified: async commit => {
-      await run('git', ['-C', root, 'push', remote, `${commit}:${graphyardVerifiedRef}`], { env: pushEnvironment(settings, options.environment) });
+      await run('git', ['-C', root, 'push', remote, `${commit}:${mainworksVerifiedRef}`], { env: pushEnvironment(settings, options.environment) });
     },
     pushReleaseTag: async commit => {
       const date = new Date(Number((await git('show', '-s', '--format=%ct', commit)).trim()) * 1000);
@@ -475,7 +475,7 @@ export async function requestPendingReworks(cycle: Pick<Cycle, 'state' | 'effect
     const applied = !item || item.stage === 'done' || item.reworkRequested || item.candidate?.sha.toLowerCase() !== pending.head;
     const action = (actionState: 'done' | 'failed', detail: string) => performed.push(storeAction(state, key, { kind: 'judgement', work: pending.key, principal: null, state: actionState, detail: detail.slice(0, 1900), attempts: pending.attempts + 1, epoch: null, cycle: state.cycle, at: at() }));
     if (applied) { action('done', `The rework the merge writer's refusal of ${pending.key} head ${pending.head} grounds is applied: the snapshot shows the item ${!item || item.stage === 'done' ? 'done' : item.reworkRequested ? 'returned to a worker' : 'on a new head'}`); continue; }
-    if (!effects.rework) { kept.push({ ...pending, attempts: pending.attempts + 1, lastError: 'this loop runs without the master identity' }); action('failed', `The rework the merge writer's refusal of ${pending.key} head ${pending.head} grounds waits: this loop runs without the master identity, so apply it with graphyard master rework ${pending.key} REASON`); continue; }
+    if (!effects.rework) { kept.push({ ...pending, attempts: pending.attempts + 1, lastError: 'this loop runs without the master identity' }); action('failed', `The rework the merge writer's refusal of ${pending.key} head ${pending.head} grounds waits: this loop runs without the master identity, so apply it with mainworks master rework ${pending.key} REASON`); continue; }
     const rework = trialFailureRework(item, pending.head, pending.reason);
     try {
       await effects.rework(item, rework.reason, rework.input.binding);

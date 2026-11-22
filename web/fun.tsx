@@ -15,7 +15,7 @@ const NAMES = ['Ada', 'Juno', 'Pixel', 'Milo', 'Nova', 'Otto', 'Iris', 'Felix', 
   'Rue', 'Sol', 'Tess', 'Ugo', 'Vale', 'Wim', 'Xavi', 'Yoyo', 'Zuzu', 'Aggie', 'Bix', 'Dara', 'Eli', 'Fable', 'Gil', 'Hopper', 'Juniper', 'Koko', 'Lumen', 'Mochi'];
 
 const isMaster = (id: string) => /master/.test(id);
-/** Ids that are not an agent account: Graphyard itself and the people who run it keep their own names. */
+/** Ids that are not an agent account: Mainworks itself and the people who run it keep their own names. */
 const unnamed = (id: string) => id === 'graphyard' || /operator|admin|human/.test(id);
 /** An account's friendly name: the same on every page and every install, from its id alone. A master account is always the Master. */
 export function friendlyName(id: string): string | null {

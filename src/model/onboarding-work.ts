@@ -1,5 +1,5 @@
 /**
- * The onboarding change as a work item the loop owns (GY-1478). `graphyard up` publishes the files
+ * The onboarding change as a work item the loop owns (GY-1478). `mainworks up` publishes the files
  * `init --scan --apply` wrote as one commit on `graphyard/onboarding` and submits that commit as a
  * work item exactly as a worker's `complete --head` does, so the loop's reviewer reviews it and the
  * control plane merges it under the normal gates; no pull request is opened and no person merges it
@@ -8,12 +8,12 @@
  */
 import { COMMAND_NAME, PRODUCT_NAME } from './product.js';
 
-/** The branch `graphyard up` publishes the onboarding files on, and the workspace its work item registers. */
+/** The branch `mainworks up` publishes the onboarding files on, and the workspace its work item registers. */
 export const onboardingBranch = 'graphyard/onboarding';
 /** The work item's title: what the Setup page and `up` find it by, with its branch. */
 export const onboardingWorkTitle = `Add ${PRODUCT_NAME} onboarding`;
 /** The title installs onboarded before the rename filed it under. */
-const formerOnboardingWorkTitle = 'Add Graphyard onboarding';
+const formerOnboardingWorkTitle = 'Add Mainworks onboarding';
 /**
  * GY-3037: every item owes an e2e proof, so onboarding leaves every repository able to carry one:
  * the first case `init --scan --apply` writes when the repository has none (e2e.serve it writes

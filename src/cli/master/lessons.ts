@@ -1,4 +1,4 @@
-// Concern: `graphyard master lesson` — the master's own durable lessons (GY-3274).
+// Concern: `mainworks master lesson` — the master's own durable lessons (GY-3274).
 import { lessonCommand } from '../../master/lessons.js';
 import { unhandled, type MasterSession } from './session.js';
 

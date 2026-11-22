@@ -22,14 +22,14 @@ async function serve(page: Page) {
 const settled = { timeout: 15_000 };
 async function namesMainworks(page: Page) {
   await expect(page.locator('body')).toContainText('Mainworks', settled);
-  await expect(page.locator('body')).not.toContainText('Graphyard');
+  await expect(page.locator('body')).not.toContainText('Mainworks');
   // The wordmark beside the logo is the name too, lower case in the top bar.
   await expect(page.locator('.brand')).toHaveText(/^\s*mainworks\s*$/i);
   await expect(page).toHaveTitle(/Mainworks/);
-  expect(await page.title()).not.toContain('Graphyard');
+  expect(await page.title()).not.toContain('Mainworks');
 }
 
-test('e2e:product-name-mainworks — sign-in, home and an invite link say Mainworks, never Graphyard', async ({ page }) => {
+test('e2e:product-name-mainworks — sign-in, home and an invite link say Mainworks, never Mainworks', async ({ page }) => {
   test.setTimeout(90_000);
   await serve(page);
   await page.goto('/?sign-in');

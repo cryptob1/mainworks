@@ -169,7 +169,7 @@ for (const [index, kind] of runtimeKinds.entries()) test(`e2e:headless-reviewers
   assert.match(record.headless!.id, /^[0-9a-f-]{36}$/);
   const argv = (await started(kind)).args as string[];
   assert.equal(argv[0], 'one-task');
-  assert.equal(argv.filter(word => word.includes('You are the independent Graphyard reviewer')).length, 1);
+  assert.equal(argv.filter(word => word.includes('You are the independent Mainworks reviewer')).length, 1);
   assert.ok(argv.includes('--role-policy') && argv.includes('--tools') && argv.includes('read'));
   assert.ok(!argv.includes('--interactive-must-not-appear'));
   assert.equal(argv[argv.indexOf('--prompt') + 1].includes(head), true);

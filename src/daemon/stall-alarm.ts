@@ -67,7 +67,7 @@ export function stallCauses({ now, open, ready, holds = [], gates, state, regist
   const spent = accounts.map(account => [account.name, exhaustionEvidence(account.quota, now)] as const);
   if (spent.length && spent.every(([, evidence]) => evidence)) causes.push(`every worker account is out of quota: ${spent.map(([name, evidence]) => `${name} (${evidence})`).join(', ')}`);
   const loaded = state.release?.commit ?? null;
-  if (serving && loaded && serving !== loaded) causes.push(`the loop runs ${loaded.slice(0, 12)}, older than the served ${serving.slice(0, 12)}; restart it with graphyard master restart`);
+  if (serving && loaded && serving !== loaded) causes.push(`the loop runs ${loaded.slice(0, 12)}, older than the served ${serving.slice(0, 12)}; restart it with mainworks master restart`);
   if (!causes.length) causes.push(...ready.slice(0, 5).map(item => gates?.get(item.key) ?? `${item.key} has no actor: ready, with no lease and no session`));
   return causes;
 }

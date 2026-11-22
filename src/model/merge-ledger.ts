@@ -2,7 +2,7 @@ import type { z } from 'zod';
 import type { mergeReconciledSchema, previewVerdictSchema, trialFlakedSchema } from '../model-boundary/merge-ledger.js';
 import type { Work } from './work.js';
 /**
- * The merge ledger: every merge Graphyard intends, pushes, reconciles or refuses leaves an event
+ * The merge ledger: every merge Mainworks intends, pushes, reconciles or refuses leaves an event
  * here, so main's history can be read against what the control plane meant to land. The fold
  * gives each item's latest ledger state; a reader of main's history calls a commit on
  * main that matches a state's merge commit `ledger`, and one nothing explains `unknown`.

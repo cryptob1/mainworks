@@ -29,7 +29,7 @@ export const hostCommands = defineCommands([{
       console.log((await removeHost(target)).removed ? `Removed ${target}.` : `${target} was not added.`);
     } else if (context.id === 'list' || !context.id) {
       const hosts = await readHosts();
-      console.log(hosts.length ? hosts.map(host => `${host.target}  added ${host.addedAt}`).join('\n') : 'No host added: this machine runs all work. Prepare one with graphyard host prepare, then graphyard host add gy-compute@HOST.');
-    } else throw new Error('Usage: graphyard host prepare | host add USER@HOST[:PORT] | host add ALIAS | host remove USER@HOST | host list');
+      console.log(hosts.length ? hosts.map(host => `${host.target}  added ${host.addedAt}`).join('\n') : 'No host added: this machine runs all work. Prepare one with mainworks host prepare, then mainworks host add gy-compute@HOST.');
+    } else throw new Error('Usage: mainworks host prepare | host add USER@HOST[:PORT] | host add ALIAS | host remove USER@HOST | host list');
   },
 }]);

@@ -288,7 +288,7 @@ test('unit:workspace-failure-spares-profile — the launcher tolerates a claim t
     // The launcher names the attempt and carries the command's own stderr (GY-1078), never only its command line.
     assert.match(failure.message, /^Worker launch failed: the worktree for GY-860 epoch 9 could not be created \(CLI .+\): Git worktree creation failed: fatal: /, 'the real child stderr, not a stub');
     // A release that genuinely could not reach the server is wrapped, not swallowed.
-    await assert.rejects(prepareWorkerLaunch(root, 'GY-860', 'launch', run('checkout failed', 'connect ECONNREFUSED')), /Graphyard could not release epoch 9/);
+    await assert.rejects(prepareWorkerLaunch(root, 'GY-860', 'launch', run('checkout failed', 'connect ECONNREFUSED')), /Mainworks could not release epoch 9/);
   } finally { await rm(root, { recursive: true, force: true }); await rm(credentialDirectory, { recursive: true, force: true }); }
 });
 
@@ -319,7 +319,7 @@ test('unit:workspace-failure-spares-profile — a rework whose registered start 
     assert.equal((missing.calls[1][1] as { epoch: number }).epoch, 2);
     // No start object is registered at all: no head is bound, and the store holds no branch by the workspace's name.
     const unregistered = await drive({ workspaces: [{ epoch: 1, branch: 'graphyard/gy-870-9' }] });
-    assert.match(unregistered.outcome?.message ?? '', /No start object is registered for graphyard\/gy-870-9/);
+    assert.match(unregistered.outcome?.message ?? '', /No start object is registered for mainworks\/gy-870-9/);
     assert.deepEqual(unregistered.calls.map(([path]) => path), ['status', 'work/work-870/release']);
   } finally { await rm(root, { recursive: true, force: true }); await rm(origin, { recursive: true, force: true }); }
 });

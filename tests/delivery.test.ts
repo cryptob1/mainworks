@@ -19,7 +19,7 @@ setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocki
 /**
  * D3 acceptance checks of the turnkey delivery roadmap, one test per check, named
  * "D3-N". Every test runs against a disposable real Postgres database; nothing here talks
- * to a deployment provider, because what is under test is what Graphyard does with what an
+ * to a deployment provider, because what is under test is what Mainworks does with what an
  * authenticated adapter reports — and what it refuses to do without one.
  */
 const operator: Principal = { id: 'operator', role: 'admin' };

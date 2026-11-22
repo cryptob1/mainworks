@@ -23,7 +23,7 @@ const derived = (source = 'the install plan\'s credentials') => [
   { name: 'GRAPHYARD_PRINCIPALS', value: principals, secret: true, source },
 ];
 
-/** A deployment whose `graphyard` service runs with DEPLOYED set and no other derived variable, behind a scripted adapter that sets variables in place and redeploys. */
+/** A deployment whose `mainworks` service runs with DEPLOYED set and no other derived variable, behind a scripted adapter that sets variables in place and redeploys. */
 function deployment(deployed: Record<string, string>, faults: { listing?: boolean; redeploys?: number } = {}) {
   const calls: { kind: 'observe' | 'set' | 'redeploy'; values?: { name: string; value: string; secret: boolean }[] }[] = [];
   const context = { provider: 'local', service: 'graphyard', repository: 'owner/project', installId: 'owner-project', vault: new Vault() } as unknown as AdapterContext;
@@ -65,7 +65,7 @@ test('unit:setup-self-provision — master setup plans the derived variables the
     assert.deepEqual(plan.missing.map(value => value.name), derivedNames, 'GITHUB_REPOSITORY is already deployed');
     assert.deepEqual(plan.missing.slice(0, 2).map(value => value.value), ['main', 'docs/index.md']);
     assert.deepEqual(plan.missing[2], { name: 'GRAPHYARD_PRINCIPALS', value: REDACTED, secret: true, fingerprint: fingerprint(principals), source: 'the install plan\'s credentials' });
-    assert.equal(plan.next, 'graphyard master setup --apply');
+    assert.equal(plan.next, 'mainworks master setup --apply');
     assert.deepEqual(plan.set, []);
     assert.equal(calls.some(call => call.kind === 'set' || call.kind === 'redeploy'), false, 'a plan sets nothing');
     await assert.rejects(readFile(setupAuditFile(root), 'utf8'), { code: 'ENOENT' }, 'and audits nothing');
@@ -114,7 +114,7 @@ test('unit:setup-self-provision — a deployment that already has every derived 
     const planned = await masterSetup(root, master, { apply: true }, { locate: async () => ({ context: { ...bundle.context, provider: 'compose' as const }, adapter: { ...rewrites, provider: 'compose' as const }, derived: derived() }) });
     assert.deepEqual(planned.set, []);
     assert.equal(planned.canApply, false);
-    assert.match(planned.next!, /rewrites the whole environment: graphyard install --provider compose --repo owner\/project --apply/);
+    assert.match(planned.next!, /rewrites the whole environment: mainworks install --provider compose --repo owner\/project --apply/);
 
     // A variable listing that could not be read is not an empty one: nothing is applied from it.
     const unread = deployment({}, { listing: true });
@@ -138,7 +138,7 @@ test('unit:setup-self-provision — the first derivation of a name wins, and var
     await assert.rejects(masterSetup(root, master, { apply: true }, { locate }), /redeploy failed/);
     assert.deepEqual(Object.keys(deployed), names, 'set, but never redeployed');
     const owed = await masterSetup(root, master, { apply: false }, { locate });
-    assert.deepEqual([owed.missing, owed.pendingRedeploy, owed.next], [[], names, 'graphyard master setup --apply'], 'present variables still owe their redeploy');
+    assert.deepEqual([owed.missing, owed.pendingRedeploy, owed.next], [[], names, 'mainworks master setup --apply'], 'present variables still owe their redeploy');
     staged.calls.length = 0;
     const retried = await masterSetup(root, master, { apply: true }, { locate });
     assert.deepEqual([retried.set, retried.redeployed, retried.pendingRedeploy], [[], names, []]);
@@ -162,7 +162,7 @@ test('unit:setup-self-provision — an audit entry that failed to append after t
     await rm(setupAuditFile(root), { recursive: true, force: true });
     bundle.calls.length = 0;
     const owed = await masterSetup(root, master, { apply: false }, { locate });
-    assert.equal(owed.next, 'graphyard master setup --apply', 'the unwritten audit is still owed');
+    assert.equal(owed.next, 'mainworks master setup --apply', 'the unwritten audit is still owed');
     const retried = await masterSetup(root, master, { apply: true }, { locate });
     assert.deepEqual([retried.set, retried.redeployed, retried.audit.map(entry => entry.variable)], [[], [], derivedNames]);
     assert.equal(bundle.calls.some(call => call.kind === 'set' || call.kind === 'redeploy'), false, 'nothing set or redeployed again');

@@ -405,7 +405,7 @@ test('integration:role-scoped-harness-rules — worker, reviewer and producer se
     assert.equal(reviewCalls.some(args => args[0] === 'pane'), false);
     assert.equal(reviewArgs[reviewArgs.indexOf('--permission-mode') + 1], 'bypassPermissions');
     assert.equal(reviewArgs[reviewArgs.indexOf('--settings') + 1], reviewerFile);
-    assert.match(reviewArgs.at(-1)!, /You are the independent Graphyard reviewer/);
+    assert.match(reviewArgs.at(-1)!, /You are the independent Mainworks reviewer/);
     const reviewerSettings = JSON.parse(await readFile(reviewerFile, 'utf8'));
     assert.ok(reviewerSettings.permissions.allow.includes(`Bash(node ${config.cliPath} review post:*)`));
     assert.equal(denied(reviewerSettings.permissions.deny, `node ${config.cliPath} review post --event APPROVE`), false, 'the master deny on review calls cannot block the reviewer');
@@ -420,7 +420,7 @@ test('integration:role-scoped-harness-rules — worker, reviewer and producer se
     const producerFile = sessionHarnessFile(root, 'producer', 'producer-a');
     const typedProduce = expandTypedCommand(produceCalls[1][3]);
     assert.deepEqual(typedProduce.args.slice(-7, -3), ['--setting-sources', 'user', '--settings', producerFile]);
-    assert.match(typedProduce.args.at(-1)!, /^You are an independent Graphyard proof producer/, 'the request is the positional prompt (GY-93)');
+    assert.match(typedProduce.args.at(-1)!, /^You are an independent Mainworks proof producer/, 'the request is the positional prompt (GY-93)');
     const producerSettings = JSON.parse(await readFile(producerFile, 'utf8'));
     assert.ok(producerSettings.permissions.allow.includes(`Bash(node ${launcher} evidence:*)`));
     assert.ok(producerSettings.permissions.deny.includes('Bash(git push:*)'));
@@ -433,7 +433,7 @@ test('integration:role-scoped-harness-rules — worker, reviewer and producer se
     await launchReview(root, work(), 'cursor-reviewer', [], new Date().toISOString(), { headless: (command, args, options) => { cursorArgs = args; return pendingHeadless(command, args, options); }, run: herdr(cursorCalls), probe: fleet('cursor'), registerLaunch });
     assert.equal(cursorCalls.some(args => args[0] === 'pane'), false);
     assert.deepEqual(cursorArgs.slice(0, -1), ['--force', '--trust', '-p', '--output-format', 'json']);
-    assert.ok(cursorArgs.at(-1)!.startsWith(`${autonomyContract} You are the independent Graphyard reviewer`));
+    assert.ok(cursorArgs.at(-1)!.startsWith(`${autonomyContract} You are the independent Mainworks reviewer`));
 
   } finally { await cleanup(); }
 });
@@ -608,7 +608,7 @@ test('unit:master-early-stop — a stop signal received during the loop\'s start
     assert.equal(listeners(), before, 'the stop listener is removed');
     // A startup refused on another host's live loop lock rejects and leaves no listener behind.
     const held = emptyDaemonState(master); held.lock = { pid: process.pid + 1, host: 'machine-b', heartbeatAt: new Date().toISOString() } as any;
-    await assert.rejects(runDaemon(master, held, daemonEffects(), { intervalMs: 60_000, identity: { pid: process.pid, host: 'machine-a' }, signals: ['SIGUSR2'], log: () => {} }), /Another Graphyard master loop holds/);
+    await assert.rejects(runDaemon(master, held, daemonEffects(), { intervalMs: 60_000, identity: { pid: process.pid, host: 'machine-a' }, signals: ['SIGUSR2'], log: () => {} }), /Another Mainworks master loop holds/);
     assert.equal(listeners(), before, 'a failed startup removes its listener');
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

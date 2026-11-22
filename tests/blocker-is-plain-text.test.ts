@@ -51,7 +51,7 @@ test('unit:blocker-is-plain-text — blocked sets the item\'s blocker as that st
   // The board shows it as one sentence and nothing else: no class, kind or probe.
   const row = buildBoard([blocked], Date.now()).groups.blocked.find(entry => entry.key === blocked.key)!;
   assert.deepEqual(Object.keys(row.blocker!).sort(), ['summary']);
-  assert.equal(row.command, `graphyard master unblock ${blocked.key} REASON`, 'the master clears it');
+  assert.equal(row.command, `mainworks master unblock ${blocked.key} REASON`, 'the master clears it');
   assert.equal(blockerSummary(reason, Date.now()).kind, 'fault');
   // Still blocked, the item is not claimable.
   const refused = await engine.pullAssignment(worker, { work: w.id }, randomUUID());

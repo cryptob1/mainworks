@@ -12,13 +12,13 @@ import { moveInstall } from '../install/move.js';
 import { upCommand } from '../up.js'; import { runDoctor } from './install-doctor.js';
 
 /** GY-2009: install registers no GitHub App, so `up --reuse-app` would reuse nothing; it is refused rather than silently ignored. */
-export const upAppReuseRefusal = 'graphyard up --reuse-app is refused: install registers no GitHub App and the merge writer\'s deploy key is its only GitHub access (GY-2009); rerun without --reuse-app';
+export const upAppReuseRefusal = 'mainworks up --reuse-app is refused: install registers no GitHub App and the merge writer\'s deploy key is its only GitHub access (GY-2009); rerun without --reuse-app';
 export function refuseUpAppReuse(args: readonly (string | undefined)[]): void {
   if (args.some(arg => arg === '--reuse-app' || arg?.startsWith('--reuse-app='))) throw new Error(upAppReuseRefusal);
 }
 
 /**
- * `graphyard principal add|remove` (GY-1879): one entry of this host's installation roster. The
+ * `mainworks principal add|remove` (GY-1879): one entry of this host's installation roster. The
  * install.json record is the roster; `add` judges the entry as the planner judges its own
  * (`rosterEntry`: a producer needs an explicit lane grant or proof seed), and `applyRosterChange`
  * writes its credential, hands the deployment GRAPHYARD_PRINCIPALS alone and reads the served
@@ -37,7 +37,7 @@ export async function principalCommand(args: string[], dependencies: InstallDepe
   const repository = values.repo ?? (await discover(root)).repository;
   if (!repository) throw new Error('Use --repo OWNER/NAME, or run from a checkout whose origin is the managed repository');
   const directory = installDirectory(installIdFor(repository), dependencies.configHome);
-  if (!await readInstallRecord(directory)) throw new Error(`No installation of ${repository} is recorded under ${directory}; run graphyard install --apply first`);
+  if (!await readInstallRecord(directory)) throw new Error(`No installation of ${repository} is recorded under ${directory}; run mainworks install --apply first`);
   // The edit holds the installation's apply lock from reading the roster until it is persisted and read back,
   // so two edits, or an edit and an install --apply, never each deploy a roster missing the other's entry.
   const release = await acquireApplyLock(directory, (dependencies.now ?? Date.now)());
@@ -45,7 +45,7 @@ export async function principalCommand(args: string[], dependencies: InstallDepe
 }
 async function editRoster(root: string, directory: string, id: string, entry: ReturnType<typeof rosterEntry> | null, dependencies: InstallDependencies & { cwd: string }, tokenSource: string | null = null) {
   const record = await readInstallRecord(directory);
-  if (!record) throw new Error(`No installation is recorded under ${directory}; run graphyard install --apply first`);
+  if (!record) throw new Error(`No installation is recorded under ${directory}; run mainworks install --apply first`);
   const { roster, changed } = entry ? upsertRosterEntry(recordedRoster(record), entry) : removeRosterEntry(recordedRoster(record), id);
   // GY-1998: --token-file is judged only after the edit is: a refused edit imports nothing.
   // The deployment is reached where install --apply reached it: its port and image.
@@ -164,7 +164,7 @@ export const installCommands = defineCommands([
       '       [--delivery local] [--candidate-cron CRON|off]',
       '                                Print the proposed delivery workflow, writing nothing (--scan), or apply it (--scan --apply);',
       '                                the scan shows the merge-gate split (pre-merge vs per-candidate checks) before anything is applied;',
-      '                                after graphyard install, --apply reuses the install\'s identities and writes no principals file',
+      '                                after mainworks install, --apply reuses the install\'s identities and writes no principals file',
     ],
     async run(context) {
       const { base, connection, print } = context;
@@ -191,7 +191,7 @@ export const installCommands = defineCommands([
           const selected = values.url ?? stored?.proposal.server ?? null;
           const installed = await installedOnboarding(root, fresh.repository, selected);
           const url = selected ?? installed?.url;
-          if (!url) throw new Error('Applying requires the Graphyard server URL; pass --url');
+          if (!url) throw new Error('Applying requires the Mainworks server URL; pass --url');
           if (installed) {
             const result = await applyProposal(root, fresh, { url, installed });
             return print({ proposal: file, ...result, installed: installed.directory });

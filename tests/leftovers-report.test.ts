@@ -14,7 +14,7 @@ import { type DaemonEffects } from '../src/daemon/effects.js';
 import { masterConfigSchema } from '../src/master.js';
 import type { Work } from '../src/model.js';
 
-// GY-3190: the loop reports once a UTC day what its sweeps stopped or removed and the disk Graphyard's leftovers hold.
+// GY-3190: the loop reports once a UTC day what its sweeps stopped or removed and the disk Mainworks's leftovers hold.
 
 // Imported in each test, so a base without the module fails each case rather than the file.
 const leftovers = () => import('../src/daemon/leftovers.js');
@@ -34,9 +34,9 @@ function fixture() {
     recordSession: async (_item, input) => { handle.state = input.state; },
     removeWorktree: async path => { removed.push(path); return true; },
     stopOrphanedProcesses: async () => ['chrome (1)', 'node (2)'],
-    stopOrphanTrials: async () => ['container graphyard-trial-a'],
+    stopOrphanTrials: async () => ['container mainworks-trial-a'],
     diskVolumes: async () => [{ path: '/home', freeBytes: low ? 1e9 : 100e9 }],
-    reclaimDisk: async () => { low = false; return ['image graphyard-trial:old', 'container graphyard-trial-b', '/home/.gy/trials/gy-t1']; },
+    reclaimDisk: async () => { low = false; return ['image mainworks-trial:old', 'container mainworks-trial-b', '/home/.gy/trials/gy-t1']; },
     leftoverDisk: async () => disk,
   };
   return { effects, lines, removed, tick: (ms: number) => { clock += ms; }, log: (line: string) => lines.push(line) };
@@ -69,7 +69,7 @@ test('unit:tests/leftovers-report.test.ts — the day tallies what each sweep re
   assert.deepEqual(state.leftovers.counts, { processes: 2, trialContainers: 1, reclaimed: 0, panes: 0, worktrees: 0, networks: 0, cliReleases: 0, cliReleaseBytes: 0 });
 });
 
-test('unit:tests/leftovers-report.test.ts — disk readings are recursive bytes of each directory and docker system df sizes of graphyard-trial images and the build cache, null when unreadable', async () => {
+test('unit:tests/leftovers-report.test.ts — disk readings are recursive bytes of each directory and docker system df sizes of mainworks-trial images and the build cache, null when unreadable', async () => {
   const { directoryBytes, leftoverDisk } = await leftovers();
   const root = mkdtempSync(join(tmpdir(), 'leftovers-'));
   try {
@@ -78,7 +78,7 @@ test('unit:tests/leftovers-report.test.ts — disk readings are recursive bytes 
     writeFileSync(join(root, 'runs/a/b/two'), 'y'.repeat(500));
     const runs = await directoryBytes(join(root, 'runs'));
     assert.ok(runs !== null && runs >= 1500, String(runs));
-    const df = { Images: [{ Repository: 'graphyard-trial', Tag: 'a', Size: '1.5GB' }, { Repository: 'graphyard-trial-base', Tag: 'b', Size: '500MB' }, { Repository: 'postgres', Tag: '16', Size: '400MB' }],
+    const df = { Images: [{ Repository: 'mainworks-trial', Tag: 'a', Size: '1.5GB' }, { Repository: 'mainworks-trial-base', Tag: 'b', Size: '500MB' }, { Repository: 'postgres', Tag: '16', Size: '400MB' }],
       BuildCache: [{ Size: '2GB' }, { Size: '250kB' }] };
     const calls: string[][] = [];
     const reading = await leftoverDisk({ trialRuns: join(root, 'runs'), worktrees: join(root, 'missing'), trialCheckouts: join(root, 'runs/a/b') }, (command, args) => { calls.push([command, ...args]); return JSON.stringify(df); });

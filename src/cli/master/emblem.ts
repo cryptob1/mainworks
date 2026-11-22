@@ -1,4 +1,4 @@
-// Concern: `graphyard master emblem [set FILE]` (GY-3273) — read or store the project's emblem.
+// Concern: `mainworks master emblem [set FILE]` (GY-3273) — read or store the project's emblem.
 import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import { unhandled, type MasterSession } from './session.js';

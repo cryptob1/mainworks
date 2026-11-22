@@ -7,7 +7,7 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { stopProcessesUnder } from '../session-processes.js';
 
 /**
- * The managed worktree root: the one directory on this host under which Graphyard creates every
+ * The managed worktree root: the one directory on this host under which Mainworks creates every
  * ephemeral checkout — a proof producer's detached worktree of the exact head, and the checkout a
  * reviewer may read surrounding code from. They must sit outside every worktree of the repository
  * (a session that builds inside an assignment worktree would be building someone else's work),
@@ -99,7 +99,7 @@ export async function verifyWorktreeRoot(path: string, options: { minFreeBytes: 
 // `trial` is the merge writer's detached checkout of a trial merge commit (GY-1524).
 export const checkoutKinds = ['proof', 'review', 'approval', 'trial'] as const;
 export type CheckoutKind = typeof checkoutKinds[number];
-const managedName = /^graphyard-(proof|review|approval|trial)-[a-z0-9][a-z0-9-]{0,39}-[0-9a-f]{7}-[0-9a-f]{8}$/;
+const managedName = /^mainworks-(proof|review|approval|trial)-[a-z0-9][a-z0-9-]{0,39}-[0-9a-f]{7}-[0-9a-f]{8}$/;
 export interface SessionCheckout { directory: string; worktree: string }
 export const sessionCheckoutName = (kind: CheckoutKind, key: string, sha: string, id: string) => `graphyard-${kind}-${key.toLowerCase().replace(/[^a-z0-9-]/g, '-')}-${sha.slice(0, 7).toLowerCase()}-${id.replace(/-/g, '').slice(0, 8).toLowerCase()}`;
 export function sessionCheckout(base: string, kind: CheckoutKind, key: string, sha: string, id: string): SessionCheckout {
@@ -109,7 +109,7 @@ export function sessionCheckout(base: string, kind: CheckoutKind, key: string, s
 /** The only thing ever removed: a session directory, by its managed name, directly inside the root. */
 function assertManaged(base: string, directory: string) {
   if (dirname(resolve(directory)) !== resolve(base) || !managedName.test(basename(directory)))
-    throw new Error(`Refusing to remove ${directory}: only a Graphyard session checkout directly inside ${base} is ever removed`);
+    throw new Error(`Refusing to remove ${directory}: only a Mainworks session checkout directly inside ${base} is ever removed`);
 }
 export async function allocateSessionCheckout(base: string, kind: CheckoutKind, key: string, sha: string, id: string): Promise<SessionCheckout> {
   const checkout = sessionCheckout(base, kind, key, sha, id);

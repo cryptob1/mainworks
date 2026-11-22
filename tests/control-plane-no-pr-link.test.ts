@@ -75,7 +75,7 @@ test('unit:tests/control-plane-no-pr-link.test.ts — the candidate component li
   assert.ok(!open.includes('/pull/'), open);
   // A pull-request item keeps its pull request link.
   const pr = renderToStaticMarkup(createElement(CandidatePr, { repository, candidate, workKey: 'GY-31', observation: observation(false, false) }));
-  assert.match(pr, /href="https:\/\/github\.com\/owner\/graphyard\/pull\/12"/);
+  assert.match(pr, /href="https:\/\/github\.com\/owner\/mainworks\/pull\/12"/);
   assert.match(pr, /PR #12/);
 });
 
@@ -88,5 +88,5 @@ test('unit:tests/control-plane-no-pr-link.test.ts — a shipped Work row links a
   assert.match(shipped, new RegExp(`href="${commit(mergeSha)}"`));
   assert.doesNotMatch(shipped, /\/pull\/|PR #\d/);
   // A pull-request item's row keeps its pull request link.
-  assert.match(page(item({ observation: observation(false, true) })), /href="https:\/\/github\.com\/owner\/graphyard\/pull\/12"/);
+  assert.match(page(item({ observation: observation(false, true) })), /href="https:\/\/github\.com\/owner\/mainworks\/pull\/12"/);
 });

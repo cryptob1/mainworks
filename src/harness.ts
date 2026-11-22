@@ -50,9 +50,9 @@ export const launchRecipe = (kind: string | null | undefined): LaunchRecipe | un
  * That record also lets Claude Code load the folder's own configuration — the repository's
  * checked-in `.claude/settings.json` with its hooks, its `.mcp.json` — under the session's
  * credentials, which the launcher never grants on its own (consent-prompt.ts). A
- * `settings.local.json` that git ignores there is the operator's or Graphyard's own (a worker's is
+ * `settings.local.json` that git ignores there is the operator's or Mainworks's own (a worker's is
  * written by installWorkerHarness only into a worktree that ignores it); one git tracks or would
- * track is the repository's, and counts. So Graphyard records it only where it enables none of that: for a launch
+ * track is the repository's, and counts. So Mainworks records it only where it enables none of that: for a launch
  * whose `--setting-sources` leaves out `project`, as every session under
  * a repository that carries Claude settings is launched with its role file (master.ts
  * prepareSessionHarness), or for a folder that, with its ancestors, carries no such configuration.
@@ -201,7 +201,7 @@ async function checkoutSessionSources(checkout: string) {
  * GY-3225: which registered Claude account launches in the checkout the folder-trust step
  * (trustClaudeFolder) would refuse — the checkout carries repository Claude configuration the
  * launch's own arguments load, and the account's config records neither the folder nor an ancestor
- * trusted. Graphyard never records that trust itself, so every launch named here is refused until
+ * trusted. Mainworks never records that trust itself, so every launch named here is refused until
  * the operator records trust or the role's arguments stop loading project settings; the check is
  * the loop's and `up`'s, so both stop once instead of launching into the refusal. Accounts on
  * another host are not this host's to read and never name.
@@ -243,7 +243,7 @@ export function checkoutTrustLine(refusals: readonly CheckoutTrustRefusal[]): st
   if (!refusals.length) return '';
   const trust = [...new Set(refusals.map(entry => entry.home))].map(home => home ? `CLAUDE_CONFIG_DIR=${home} claude` : 'claude').join(' and ');
   const sources = [...new Set(refusals.map(entry => entry.role))].map(role =>
-    `graphyard master registry role set ${role} ${[...new Set(refusals.filter(entry => entry.role === role).map(entry => entry.account))].join(',')} --arg=--setting-sources --arg=user --reason "launch without the repository's own Claude settings"`).join('; ');
+    `mainworks master registry role set ${role} ${[...new Set(refusals.filter(entry => entry.role === role).map(entry => entry.account))].join(',')} --arg=--setting-sources --arg=user --reason "launch without the repository's own Claude settings"`).join('; ');
   return `${refusals[0].folder} carries its own Claude configuration (${refusals[0].carried}), which these registered Claude accounts do not trust: ${refusals.map(entry => `${entry.role}/${entry.account} (${entry.home ?? 'its default config'})`).join(', ')}. ${PRODUCT_NAME} never records that trust itself. Either trust the folder once as the operator — run ${trust} in the checkout and accept the prompt, once per account — or launch those roles without the repository's project settings: ${sources}`;
 }
 
@@ -252,12 +252,12 @@ export function checkoutTrustLine(refusals: readonly CheckoutTrustRefusal[]): st
  * as trusted, and neither `--ask-for-approval never` nor the sandbox flag skips it: a reviewer or
  * producer launched into a freshly allocated managed checkout stopped there (GY-1306). Its "Trust
  * and continue" writes `[projects."<folder>"] trust_level = "trusted"` into `config.toml` of the
- * home the session runs under (`$CODEX_HOME`, else `~/.codex`), so Graphyard records it there
+ * home the session runs under (`$CODEX_HOME`, else `~/.codex`), so Mainworks records it there
  * before the session starts, under the same lock, read-back and test-runner rules as
  * trustClaudeFolder. A table for the folder that holds another trust level is the operator's
  * decision and refuses the launch; one written any other way than a `[projects."…"]` table is not
  * rewritten (a second table would make the whole config unreadable to Codex) and refuses it too.
- * Records of Graphyard checkouts that no longer exist are dropped as trustAgyFolder drops them.
+ * Records of Mainworks checkouts that no longer exist are dropped as trustAgyFolder drops them.
  */
 export const codexConfigFile = (environment: Record<string, string> = {}) => {
   const home = environment.CODEX_HOME ?? process.env.CODEX_HOME;
@@ -303,7 +303,7 @@ export async function createCodexProtectedPaths(folder: string) {
     try { if ((await lstat(path)).isSymbolicLink()) linked.push(path); continue; } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     try { await mkdir(path); created.push(path); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
   }
-  if (linked.length) throw new LaunchRefusedError('codex', `${PRODUCT_NAME} refuses to launch the codex runtime in ${folder}: ${linked.join(' and ')} ${linked.length > 1 ? 'are symlinks' : 'is a symlink'}, which Codex's bubblewrap sandbox rejects as a protected path, so every command in the session would fail in the sandbox; Graphyard leaves it untouched, so remove the symlink, then launch again.`);
+  if (linked.length) throw new LaunchRefusedError('codex', `${PRODUCT_NAME} refuses to launch the codex runtime in ${folder}: ${linked.join(' and ')} ${linked.length > 1 ? 'are symlinks' : 'is a symlink'}, which Codex's bubblewrap sandbox rejects as a protected path, so every command in the session would fail in the sandbox; Mainworks leaves it untouched, so remove the symlink, then launch again.`);
   return created;
 }
 export async function trustCodexFolder(directory: string, environment: Record<string, string> = {}): Promise<FolderTrust> {
@@ -317,9 +317,9 @@ export async function trustCodexFolder(directory: string, environment: Record<st
     try { text = await readFile(file, 'utf8'); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw refuse(`its config ${file} could not be read (${error instanceof Error ? error.message : String(error)}); fix or remove it, then launch again`); }
     const projects = codexProjects(text), own = projects.find(project => project.path === folder);
-    if (own && own.trust !== null && own.trust !== 'trusted') throw refuse(`its config ${file} records the folder with trust_level "${own.trust}", which the operator set and Graphyard does not override`);
-    if (!own && text.includes(JSON.stringify(folder))) throw refuse(`its config ${file} names the folder other than as a [projects."…"] table, which Graphyard does not rewrite; record it as [projects.${JSON.stringify(folder)}] trust_level = "trusted"`);
-    const stale = projects.filter(project => removedGraphyardWorktree(project.path));
+    if (own && own.trust !== null && own.trust !== 'trusted') throw refuse(`its config ${file} records the folder with trust_level "${own.trust}", which the operator set and Mainworks does not override`);
+    if (!own && text.includes(JSON.stringify(folder))) throw refuse(`its config ${file} names the folder other than as a [projects."…"] table, which Mainworks does not rewrite; record it as [projects.${JSON.stringify(folder)}] trust_level = "trusted"`);
+    const stale = projects.filter(project => removedMainworksWorktree(project.path));
     return { text, own, trusted: own?.trust === 'trusted', stale };
   };
   const current = await read();
@@ -359,16 +359,16 @@ export async function verifyCodexTrust(trust: FolderTrust) {
  * folder its settings do not list, and `--dangerously-skip-permissions` does not skip it (GY-1152):
  * every fresh worktree stopped there holding its lease. Its "Yes, I trust this folder" adds the
  * exact folder (no ancestor counts) to `trustedWorkspaces` in `~/.gemini/antigravity-cli/settings.json`
- * of the home the session runs under, so Graphyard records it there before the session starts,
+ * of the home the session runs under, so Mainworks records it there before the session starts,
  * under the same lock, read-back and test-runner rules as trustClaudeFolder. Antigravity loads no
  * repository-controlled configuration on that record, so nothing is refused for carrying one.
  *
  * A registry account whose runtime names `AGY_CONFIG_DIR` as its home variable runs with that
  * directory in place of `~/.gemini/antigravity-cli`, so its record goes to `$AGY_CONFIG_DIR/settings.json`,
  * as claudeConfigFile honors `CLAUDE_CONFIG_DIR`, and never into the launcher's own home (GY-1183).
- * Every call also drops the records of Graphyard checkouts that no longer exist — implementation
+ * Every call also drops the records of Mainworks checkouts that no longer exist — implementation
  * worktrees (`.graphyard/worktrees/…`) and the managed review, proof and approval checkouts
- * (`graphyard-<kind>-…/checkout`, wherever `run.worktreeRoot` puts them) — so the list does not
+ * (`mainworks-<kind>-…/checkout`, wherever `run.worktreeRoot` puts them) — so the list does not
  * grow by one per dispatch, and does so even when the folder is already trusted, so a stale record
  * goes at the next launch rather than the next fresh worktree (GY-1194); any other entry, the
  * operator's own, is kept as it is, existing or not.
@@ -378,8 +378,8 @@ export const agyConfigFile = (environment: Record<string, string> = {}) => {
   return home ? resolve(home, 'settings.json') : resolve(environment.HOME ?? homedir(), '.gemini', 'antigravity-cli', 'settings.json');
 };
 /** A managed session checkout's leaf, by the name install/worktree-root.ts `sessionCheckoutName` gives its directory, under any root. */
-const managedCheckout = /[\\/]graphyard-(proof|review|approval)-[a-z0-9][a-z0-9-]{0,39}-[0-9a-f]{7}-[0-9a-f]{8}[\\/]checkout$/;
-const removedGraphyardWorktree = (entry: unknown) => typeof entry === 'string'
+const managedCheckout = /[\\/]mainworks-(proof|review|approval)-[a-z0-9][a-z0-9-]{0,39}-[0-9a-f]{7}-[0-9a-f]{8}[\\/]checkout$/;
+const removedMainworksWorktree = (entry: unknown) => typeof entry === 'string'
   && (entry.includes(`${sep}.graphyard${sep}worktrees${sep}`) || managedCheckout.test(entry)) && !existsSync(entry);
 export async function trustAgyFolder(directory: string, environment: Record<string, string> = {}): Promise<FolderTrust> {
   const file = agyConfigFile(environment), folder = canonicalPath(directory);
@@ -393,7 +393,7 @@ export async function trustAgyFolder(directory: string, environment: Record<stri
     }
     if (!document || typeof document !== 'object' || Array.isArray(document)) throw refuse(`its settings ${file} are not a JSON object; fix or remove them, then launch again`);
     const workspaces: unknown[] = Array.isArray(document.trustedWorkspaces) ? document.trustedWorkspaces : [];
-    const kept = workspaces.filter(entry => !removedGraphyardWorktree(entry));
+    const kept = workspaces.filter(entry => !removedMainworksWorktree(entry));
     return { document, kept, trusted: workspaces.includes(folder), stale: kept.length < workspaces.length };
   };
   const current = await read();
@@ -423,7 +423,7 @@ export class LaunchRefusedError extends Error { constructor(readonly kind: strin
 /**
  * The launch contract a registry runtime brings with it (model/registry.ts): its own startup
  * arguments and environment are that runtime's no-approval mode, registered by the operator who
- * added it, so a kind Graphyard has no built-in recipe for still launches from it. A registry
+ * added it, so a kind Mainworks has no built-in recipe for still launches from it. A registry
  * contract that registers neither names no way past the runtime's prompts and is refused like a
  * runtime without a recipe, naming the runtime and the fix.
  */
@@ -436,7 +436,7 @@ export class LaunchRefusedError extends Error { constructor(readonly kind: strin
  */
 export const requestPlaceholder = '{request}';
 export interface RegisteredLaunch { args: string[]; headlessArgs?: string[]; environment?: Record<string, string>; homeVariable?: string | null }
-export const registryContractRefusal = (kind: string) => `${PRODUCT_NAME} refuses to launch the ${kind} runtime: its agent-registry launch contract registers no arguments or environment, so nothing suppresses its own approval or trust prompts and the session would wait for a human. Register the flags that start ${kind} without approvals with graphyard master registry runtime set NAME --kind ${kind} --arg=FLAG --reason REASON.`;
+export const registryContractRefusal = (kind: string) => `${PRODUCT_NAME} refuses to launch the ${kind} runtime: its agent-registry launch contract registers no arguments or environment, so nothing suppresses its own approval or trust prompts and the session would wait for a human. Register the flags that start ${kind} without approvals with mainworks master registry runtime set NAME --kind ${kind} --arg=FLAG --reason REASON.`;
 export function assertLaunchable(kind: string, registered: RegisteredLaunch | null = null) {
   if (launchRecipe(kind)) return;
   if (!registered) throw new LaunchRefusedError(kind);
@@ -479,9 +479,9 @@ export const runtimeEndedStates: RuntimeStates = runtime => runtimeAdapter(runti
 export function launchPlan(kind: string | undefined, approvals: ApprovalMode = 'auto', agentArgs: string[] = [], environment: Record<string, string> = {}) {
   const recipe = launchRecipe(kind);
   const base = { approvals, args: [...agentArgs], environment: {} as Record<string, string>, applied: false, refusal: null as string | null, prompts: recipe?.prompts ?? null, tradeoff: recipe?.tradeoff ?? null };
-  if (!recipe) return { ...base, reason: kind ? `Graphyard has no non-interactive launch contract for ${kind}; a session of it is refused at launch rather than left at its own approval prompt` : 'A launched session requires an agent kind' };
+  if (!recipe) return { ...base, reason: kind ? `Mainworks has no non-interactive launch contract for ${kind}; a session of it is refused at launch rather than left at its own approval prompt` : 'A launched session requires an agent kind' };
   if (approvals === 'prompt') return { ...base, reason: approvalOptOutRefusal(kind!), refusal: approvalOptOutRefusal(kind!) };
-  const refuse = (setting: string) => { const refusal = `${PRODUCT_NAME} refuses to launch the ${kind} runtime with ${setting}: that setting leaves the session able to stop at its own approval prompts for a human, and every launched session must run without asking. Remove it from the profile, or set the value Graphyard's ${kind} recipe uses.`; return { ...base, reason: refusal, refusal }; };
+  const refuse = (setting: string) => { const refusal = `${PRODUCT_NAME} refuses to launch the ${kind} runtime with ${setting}: that setting leaves the session able to stop at its own approval prompts for a human, and every launched session must run without asking. Remove it from the profile, or set the value Mainworks's ${kind} recipe uses.`; return { ...base, reason: refusal, refusal }; };
   // Every value the operator gives a recipe flag, in whichever spelling (`--flag value`,
   // `--flag=value`, an alias): a runtime may honour a later occurrence over an earlier one, so each
   // is checked, and a repeated flag with any value but the recipe's is refused.
@@ -514,9 +514,9 @@ export function launchPlan(kind: string | undefined, approvals: ApprovalMode = '
   }
   // A flag that already selects the no-approval mode stands in for the recipe, which adds nothing
   // beside it; the values checked above still may not contradict it.
-  if (recipe.equivalents?.some(flag => agentArgs.includes(flag))) return { ...base, applied: true, reason: 'This profile already selects the runtime\'s no-approval mode; Graphyard added nothing' };
+  if (recipe.equivalents?.some(flag => agentArgs.includes(flag))) return { ...base, applied: true, reason: 'This profile already selects the runtime\'s no-approval mode; Mainworks added nothing' };
   const addedNothing = !added.length && Object.keys(variables).length === 0 && (recipe.args.length > 0 || Object.keys(recipe.environment).length > 0);
-  return { ...base, args: [...added, ...agentArgs], environment: variables, applied: true, reason: addedNothing ? 'This profile already configures the runtime approval flags with no-approval values; Graphyard added nothing' : null };
+  return { ...base, args: [...added, ...agentArgs], environment: variables, applied: true, reason: addedNothing ? 'This profile already configures the runtime approval flags with no-approval values; Mainworks added nothing' : null };
 }
 
 export interface HarnessRule { rule: string; why: string }
@@ -566,23 +566,23 @@ export function harnessDecision(plan: Pick<HarnessPlan, 'allow' | 'deny'>, comma
 }
 
 // The master's own loop, and nothing else. A harness allowlist is a prompt policy, not an
-// authority boundary: branch protection and Graphyard's required check remain the enforcement.
+// authority boundary: branch protection and Mainworks's required check remain the enforcement.
 export function masterHarnessPlan(input: { harness: string; root: string; cliPath: string; repository: string; baseBranch: string; credentialHome: string }): HarnessPlan {
   const note = 'These rules remove operator keypresses from the master\'s own routine commands, including the audited review-thread resolution the auto-mode classifier otherwise refuses as a permission grant, CI bypass, or self-modification. They grant no merge path and no credential read; the enforced merge boundary stays the control plane\'s guarded merge, whose deploy key is the only push.';
   if (input.harness === 'codex') return { harness: 'codex', file: null, allow: [], deny: [], note,
     manual: `# Add to $CODEX_HOME/config.toml (default ~/.codex/config.toml)\n[projects.${JSON.stringify(input.root)}]\ntrust_level = "trusted"\n` };
   if (input.harness !== 'claude') return { harness: input.harness, file: null, allow: [], deny: [], manual: null,
-    note: `Graphyard generates harness permissions for Claude Code and trust configuration for Codex; ${input.harness} has no generated rules, so its own approval configuration applies.` };
+    note: `Mainworks generates harness permissions for Claude Code and trust configuration for Codex; ${input.harness} has no generated rules, so its own approval configuration applies.` };
   const cli = `node ${input.cliPath}`;
   const allow: HarnessRule[] = [
     { rule: `Bash(${cli} master:*)`, why: 'Run the master\'s own coordinator commands: status, dispatch, review, reviewer, harness, run, merge, and guide.' },
-    { rule: `Bash(${cli} master review:*)`, why: 'The reviewer launcher. Listed on its own because the classifier reads launching a second agent as a permission grant; the launched reviewer holds a read-only, hour-long App token and no Graphyard credential.' },
+    { rule: `Bash(${cli} master review:*)`, why: 'The reviewer launcher. Listed on its own because the classifier reads launching a second agent as a permission grant; the launched reviewer holds a read-only, hour-long App token and no Mainworks credential.' },
     { rule: `Bash(${cli} status:*)`, why: 'Read control-plane and work-item status without an operator keypress.' },
     { rule: `Bash(${cli} diagnose:*)`, why: 'Explain a refusing gate for an item the master is routing.' },
     { rule: `Bash(${cli} events:*)`, why: 'Read the immutable history the master reports from.' },
     { rule: `Bash(${cli} list)`, why: 'List every open work item when reporting the board to the operator.' },
     { rule: `Bash(${cli} next)`, why: 'List claimable work before dispatch.' },
-    { rule: 'Bash(herdr:*)', why: 'Observe and control the sessions the master launched; Herdr never changes Graphyard ownership.' },
+    { rule: 'Bash(herdr:*)', why: 'Observe and control the sessions the master launched; Herdr never changes Mainworks ownership.' },
     { rule: 'Bash(gh pr view:*)', why: 'Read the pull request behind a candidate.' },
     { rule: 'Bash(gh pr list:*)', why: 'Find the pull request for an item.' },
     { rule: 'Bash(gh pr diff:*)', why: 'Read the candidate diff while routing or triaging a review.' },
@@ -612,10 +612,10 @@ export function masterHarnessPlan(input: { harness: string; root: string; cliPat
     { rule: 'Bash(gh api *DELETE*)', why: 'Deleting protection, a check, or an installation is never reconciliation, wherever the method flag sits in the command.' },
     { rule: 'Bash(gh api *PUT*)', why: 'Replacing whole branch protection could drop the App-bound check, and adding a repository to an installation is a grant; only subresource PATCHes and the recorded browser flows change those, wherever the method flag sits in the command.' },
     { rule: 'Bash(gh api *POST*)', why: 'The master creates nothing through the API: no review, comment, check run, or installation.' },
-    { rule: 'Bash(agent-browser *)', why: 'The operator\'s browser profile is their identity: its cookies, state, restore, and auth-vault commands would export the operator\'s login, and no Graphyard flow drives it.' },
+    { rule: 'Bash(agent-browser *)', why: 'The operator\'s browser profile is their identity: its cookies, state, restore, and auth-vault commands would export the operator\'s login, and no Mainworks flow drives it.' },
     { rule: 'Bash(git push:*)', why: 'The master implements nothing and pushes nothing.' },
     { rule: `Read(//${input.credentialHome}/**)`, why: 'Coordinator, worker, and reviewer credentials live here; the master uses them through the CLI and never reads their bytes.' },
-    { rule: 'Read(./.graphyard/connection.json)', why: 'Holds an individual Graphyard credential.' },
+    { rule: 'Read(./.graphyard/connection.json)', why: 'Holds an individual Mainworks credential.' },
     { rule: 'Read(./.graphyard/credentials.json)', why: 'Holds local principal credentials.' },
     { rule: 'Read(./.graphyard/github-app.json)', why: 'Holds the control-plane App private key.' },
     { rule: 'Read(**/*.pem)', why: 'App private keys are never read into a session transcript.' },
@@ -625,7 +625,7 @@ export function masterHarnessPlan(input: { harness: string; root: string; cliPat
   return { harness: 'claude', file: '.claude/settings.local.json', allow, deny, manual: null, note, retired: retiredMasterRules };
 }
 /**
- * Rules an earlier Graphyard wrote into the master's settings and no longer generates: word-wide
+ * Rules an earlier Mainworks wrote into the master's settings and no longer generates: word-wide
  * merge and GraphQL denies that refused reads (GY-1217). An installed copy is harness drift, and
  * `master harness --apply` removes it; any other operator-added entry is kept.
  */
@@ -669,7 +669,7 @@ export async function writeHarnessPermissions(root: string, plan: HarnessPlan, a
   const removed = staleRules(plan, permissions);
   if (!apply) return { harness: plan.harness, file: plan.file, applied: false, added, removed, manual: plan.manual, note: plan.note };
   // Operator-added entries are never removed; generation adds the master's own rules and removes
-  // only the retired rules an earlier Graphyard itself generated.
+  // only the retired rules an earlier Mainworks itself generated.
   const kept = (list: unknown) => (Array.isArray(list) ? list : []).filter(rule => !plan.retired?.includes(rule));
   const next = { ...settings, permissions: { ...permissions, allow: [...kept(permissions.allow), ...addedAllow.map(entry => entry.rule)], deny: [...kept(permissions.deny), ...addedDeny.map(entry => entry.rule)] } };
   await mkdir(dirname(file), { recursive: true, mode: 0o700 });

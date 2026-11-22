@@ -4,7 +4,7 @@ import { awaitRuntimeStart, observeStart, paneForeground } from '../src/master/l
 import { workspaceCommands } from '../src/cli/workspace.js';
 import type { CliContext } from '../src/cli/context.js';
 
-const command = 'GY=/w/.graphyard/launch/graphyard-claude-1; graphyard watch GY-1023 4 -- claude "$(cat "$GY.request")"';
+const command = 'GY=/w/.graphyard/launch/graphyard-claude-1; mainworks watch GY-1023 4 -- claude "$(cat "$GY.request")"';
 const echo = `vish@vishrog GY-1023-4 ❯ ${command}`;
 
 test('manual:review-followups-triaged GY-1053.1: observeStart calls pane process-info at most once per observation when output is printed and command still running (Findings 1, 9, 13, 14, 15)', async () => {
@@ -12,7 +12,7 @@ test('manual:review-followups-triaged GY-1053.1: observeStart calls pane process
   const run = (_cmd: string, args: string[]) => {
     calls.push(args);
     const json = (result: unknown) => JSON.stringify({ result });
-    if (args[0] === 'pane' && args[1] === 'read') return `${echo}\ngraphyard: establishing containment for GY-1023 epoch 4\n`;
+    if (args[0] === 'pane' && args[1] === 'read') return `${echo}\nmainworks: establishing containment for GY-1023 epoch 4\n`;
     if (args[0] === 'pane' && args[1] === 'process-info') {
       return json({ process_info: { pane_id: args[3], shell_pid: 4100, foreground_process_group_id: 5200, foreground_processes: [] } });
     }
@@ -22,7 +22,7 @@ test('manual:review-followups-triaged GY-1053.1: observeStart calls pane process
 
   const observed = await observeStart('w1V:pC1', 'claude', command, run);
   assert.equal(observed.state, 'starting');
-  assert.equal(observed.detail, 'the launch command is running, its supervisor setting up: "graphyard: establishing containment for GY-1023 epoch 4"');
+  assert.equal(observed.detail, 'the launch command is running, its supervisor setting up: "mainworks: establishing containment for GY-1023 epoch 4"');
 
   const processInfoCalls = calls.filter(args => args[0] === 'pane' && args[1] === 'process-info');
   assert.equal(processInfoCalls.length, 1, 'pane process-info must be called at most once per observeStart poll');
@@ -70,11 +70,11 @@ test('manual:review-followups-triaged GY-1184.1: a foreground Herdr lists as an 
   let now = 0;
   await assert.rejects(awaitRuntimeStart('w1V:pC1', 'claude', command, unrelated, { timeoutMs: 60_000, ceilingMs: 120_000, pollMs: 5_000, clock: () => now, wait: ms => { now += ms; } }), (error: any) => error.startCase === 'never started' && error.waitedMs === 60_000);
 
-  const supervising = listedPane(`${echo}\ngraphyard: establishing containment for GY-1023 epoch 4\n`, [supervisorProcess]);
+  const supervising = listedPane(`${echo}\nmainworks: establishing containment for GY-1023 epoch 4\n`, [supervisorProcess]);
   assert.equal(await paneForeground('w1V:pC1', supervising, 'claude'), 'supervisor');
   const setting = await observeStart('w1V:pC1', 'claude', command, supervising);
   assert.equal(setting.state, 'starting');
-  assert.equal(setting.detail, 'the launch command is running, its supervisor setting up: "graphyard: establishing containment for GY-1023 epoch 4"');
+  assert.equal(setting.detail, 'the launch command is running, its supervisor setting up: "mainworks: establishing containment for GY-1023 epoch 4"');
 
   const runtime = listedPane(`${echo}\n`, [{ pid: 5200, name: 'claude', argv: ['/home/u/.local/bin/claude', '--print'] }]);
   const spawned = await observeStart('w1V:pC1', 'claude', command, runtime);

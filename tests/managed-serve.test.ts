@@ -68,7 +68,7 @@ const serveJs = [
 ].join('\n');
 /** The workspace app graphyard.json declares: its lockfile at the root, its build and start in apps/game. */
 const application = { id: 'game', kind: 'node', directory: 'apps/game', build: 'node build.js', start: 'node serve.js' };
-const graphyardJson = JSON.stringify({ delivery: { mode: 'local', applications: [{ id: 'site', kind: 'static', directory: 'public', build: null }, application] } });
+const mainworksJson = JSON.stringify({ delivery: { mode: 'local', applications: [{ id: 'site', kind: 'static', directory: 'public', build: null }, application] } });
 
 /** A minimal npm package and its lockfile, so the fixture's install is the npm ci a real app runs. */
 const packageJson = JSON.stringify({ name: 'fixture-game', version: '1.0.0', private: true }) + '\n';
@@ -81,7 +81,7 @@ async function managedRepository(label: string) {
   git(base, 'init', '-q', '--bare', '-b', 'main', origin);
   git(base, 'clone', '-q', origin, pusher);
   await push(pusher, { 'package.json': packageJson, 'package-lock.json': packageLock, 'apps/game/build.js': buildJs, 'apps/game/serve.js': serveJs, 'apps/game/fail.txt': 'no' }, 'the build and its serve');
-  await push(pusher, { 'graphyard.json': graphyardJson }, 'declare the node application');
+  await push(pusher, { 'graphyard.json': mainworksJson }, 'declare the node application');
   git(base, 'clone', '-q', origin, root);
   return { root, pusher, push };
 }
@@ -96,7 +96,7 @@ const escaped = (url: string) => url.replace(/[.:]/g, match => `\\${match}`);
 
 test('unit:tests/managed-serve.test.ts — the deploy pass serves the node application main declares: installed at the root, built and started in its directory on a free PORT; a merged main moves what the port answers, and master status reports the URL, the served commit and atMain; a failing build keeps the previous commit serving and records the failure', async () => {
   const { root, pusher, push } = await managedRepository('managed-serve');
-  assert.deepEqual(servedApplication(graphyardJson), application, 'the first node application is the one served; the static site is for previews only');
+  assert.deepEqual(servedApplication(mainworksJson), application, 'the first node application is the one served; the static site is for previews only');
   try {
     const ports = managedServePorts({ root, baseBranch: 'main', run: defaultChildRun });
 

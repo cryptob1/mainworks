@@ -13,7 +13,7 @@ import { harness, type Harness } from './install-harness.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 /**
- * GY-1500: `graphyard install --provider local` (and `graphyard up --local`) runs the control plane
+ * GY-1500: `mainworks install --provider local` (and `mainworks up --local`) runs the control plane
  * on this machine against an embedded Postgres cluster under ~/.config/graphyard/INSTALL/postgres,
  * supervised by a systemd user unit. Docker is reserved for merge trials. Each test is named for the proof it produces.
  */
@@ -120,7 +120,7 @@ test('unit:local-provider-plan — install --provider local --plan lists embedde
 
     const directory = join(fixture.configHome, INSTALL);
     const action = (id: string) => plan.actions.find(entry => entry.id === id)!;
-    assert.match(action('provider.trial-image').command!, /--target.*trial.*--tag.*graphyard-trial:local/);
+    assert.match(action('provider.trial-image').command!, /--target.*trial.*--tag.*mainworks-trial:local/);
     assert.equal(action('provider.provision.database').state, 'create');
     assert.match(action('provider.provision.database').title, new RegExp(`under ${join(directory, 'postgres').replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')} \\(directory 0700, password file 0600\\)`));
     assert.equal(action('provider.provision.app').command, `systemctl --user enable --now ${localUnit(INSTALL)}`);

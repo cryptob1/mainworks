@@ -23,7 +23,7 @@ export const RunLine = ({ run }: { run: CaseRun }) => run.e2e ? <E2eRunLine run=
     ? <a href={run.run.url} target="_blank" rel="noopener noreferrer">{run.run.kind} run {run.run.id.slice(0, 12)}{run.run.attempt ? ` attempt ${String(run.run.attempt).slice(0, 8)}` : ''} ↗</a>
     : <>{run.run.kind} run {run.run.id.slice(0, 12)}{run.run.attempt ? ` attempt ${String(run.run.attempt).slice(0, 8)}` : ''}</>}
   {run.scenarioRevision ? ` · v${run.scenarioRevision}` : ''} · {run.executed} executed / {run.skipped} skipped · {run.producer} · {day(run.at)}{run.withdrawn ? <strong className="amber"> · withdrawn</strong> : null}</>;
-/** A `graphyard e2e run` of a repository case: the target it ran against, how long it took, and the step that failed. */
+/** A `mainworks e2e run` of a repository case: the target it ran against, how long it took, and the step that failed. */
 const E2eRunLine = ({ run, e2e }: { run: CaseRun; e2e: NonNullable<CaseRun['e2e']> }) => <>
   <Result result={run.result}/> {run.sha === 'unknown' ? 'unreported commit' : <Commit sha={run.sha}/>} on {run.environment}
   {' · '}e2e run {run.run.id.slice(0, 40)} · {e2e.baseUrl}{run.scenarioRevision ? ` · v${run.scenarioRevision}` : ''} · {(e2e.durationMs / 1000).toFixed(1)} s · {run.producer} · {day(run.at)}
@@ -217,7 +217,7 @@ export function MatrixView({ cases, filter, setFilter, collapsed, toggle, openIt
   return <>
     <p className="matrix-summary" data-summary="">{inCategory.length} {inCategory.length === 1 ? 'case' : 'cases'} · {inCategory.filter(entry => entry.e2e?.required).length} required · {states.filter(state => state === 'pass').length} passing · {states.filter(state => state === 'fail').length} failing · {states.filter(state => state === 'none').length} not run{filter.column === 'all' ? '' : ` in ${places[filter.column].label}`}</p>
     {categories.length > 0 && <CoverageGrid cases={kept} categories={categories} filter={filter} setFilter={setFilter}/>}
-    <details className="matrix-help"><summary>How this works</summary><p>Trial is the merge trial, which runs an item's bound cases against its candidate merged onto main before it lands. Main is the batch gate, which runs the merged batch's cases on main's tip before anything serves it, and Served is a <code>graphyard e2e run</code> against the release this install serves. Nightly is the daily full run of every case on the last verified commit, which never blocks a merge.</p></details>
+    <details className="matrix-help"><summary>How this works</summary><p>Trial is the merge trial, which runs an item's bound cases against its candidate merged onto main before it lands. Main is the batch gate, which runs the merged batch's cases on main's tip before anything serves it, and Served is a <code>mainworks e2e run</code> against the release this install serves. Nightly is the daily full run of every case on the last verified commit, which never blocks a merge.</p></details>
     <div className="case-filters" role="group" aria-label="Filter the matrix">
       <Chip on={filter.failing} onClick={() => setFilter({ ...filter, failing: !filter.failing })}>Only failing</Chip>
       {(['all', 'required', 'optional'] as const).map(value => <Chip key={value} on={required === value} onClick={() => setFilter({ ...filter, required: value })}>{value === 'all' ? 'Required and optional' : value === 'required' ? 'Required' : 'Optional'}</Chip>)}</div>
@@ -259,14 +259,14 @@ export function TestsView({ data, error, loading, filter, setFilter, item = '', 
     {error && <div role="alert" className="notice danger">{error} <button type="button" disabled={loading} onClick={retry}>Retry loading tests</button>{data ? <p>Previously loaded results are shown; they may be stale.</p> : null}</div>}
     {loading && !data && <p role="status">Loading tests…</p>}
     {data?.environments?.length ? <WhereTestsRun environments={data.environments}/> : null}
-    {data && !cases.length && !manual.length && <EmptyState title="No test cases yet.">Add a case as <code>e2e/cases/ID.json</code> in the repository, register it with <code>graphyard e2e sync</code>, and <code>graphyard e2e run</code> records its runs here.</EmptyState>}
+    {data && !cases.length && !manual.length && <EmptyState title="No test cases yet.">Add a case as <code>e2e/cases/ID.json</code> in the repository, register it with <code>mainworks e2e sync</code>, and <code>mainworks e2e run</code> records its runs here.</EmptyState>}
     {(cases.length > 0 || manual.length > 0) && <div className="case-filters" role="group" aria-label="View">{([['matrix', 'Where each case runs'], ['cases', 'By item and criterion']] as const).map(([id, label]) =>
       <button key={id} type="button" className={view === id ? 'chip active' : 'chip'} aria-pressed={view === id} onClick={() => setTestsView(id)}>{label}</button>)}</div>}
     {view === 'matrix' && (cases.length > 0 || manual.length > 0) && <Matrix cases={cases.filter(entry => !notBuilt(entry))} filter={matrix} setFilter={setMatrix} openItem={openItem} showHistory={() => setTestsView('cases')}/>}
     {view === 'cases' && (cases.length > 0 || manual.length > 0) && <>
       <div className="case-filters" role="group" aria-label="Filter test cases">{filters.map(f => <button key={f.id} type="button" className={filter === f.id ? 'chip active' : 'chip'} aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>{f.label} <span className="count">{count(f.id)}</span></button>)}
         <input type="search" aria-label="Filter by item" placeholder="Filter by item" value={item} onChange={event => setItem(event.target.value)}/></div>
-      <p className="muted">Failing first. Flaky: passed and failed on the same commit, or changed result twice or more in its last {data!.window} runs. Pass rate is over those runs. Skipped runs count as neither. E2E cases live in <code>e2e/cases/</code>; <code>graphyard e2e run</code> records their runs.</p>
+      <p className="muted">Failing first. Flaky: passed and failed on the same commit, or changed result twice or more in its last {data!.window} runs. Pass rate is over those runs. Skipped runs count as neither. E2E cases live in <code>e2e/cases/</code>; <code>mainworks e2e run</code> records their runs.</p>
       {visible.length > 0 && <CaseTable cases={visible} label="Test cases" api={api} openItem={openItem}/>}
       {unbuilt.length > 0 && <details className="unbuilt-proofs"><summary>{folded(unbuilt.length)}</summary><CaseTable cases={unbuilt} label="Test cases of items not built yet" api={api} openItem={openItem}/></details>}
       {!shown.length && <p className="muted">No test case matches this filter.</p>}

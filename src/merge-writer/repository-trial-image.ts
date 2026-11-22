@@ -1,6 +1,6 @@
 // Concern: GY-3275 — a managed repository extends the trial image with its own toolchain.
 // A repository may commit `graphyard.trial.Dockerfile`, whose `FROM` names the build arg
-// `GRAPHYARD_TRIAL_IMAGE`: it layers the repository's toolchain over the image Graphyard runs
+// `GRAPHYARD_TRIAL_IMAGE`: it layers the repository's toolchain over the image Mainworks runs
 // trials in. The merge writer builds it from the trial's base tip (and a head that edits the file
 // from that head too, see runTrialAttempt) and caches the built image by the file's digest and the base
 // image, so two trials of one base build it once (a change the file does not name, a COPY the
@@ -15,7 +15,7 @@ import { trialImage } from './trial-container.js';
 /** The file a repository commits to extend the trial image; its `FROM` names the build arg `GRAPHYARD_TRIAL_IMAGE`. */
 export const trialDockerfile = 'graphyard.trial.Dockerfile';
 /** Where a repository's extended trial image is tagged, beside the trial images the leftovers report already counts. */
-export const repositoryTrialImageRepository = 'graphyard-trial-repo';
+export const repositoryTrialImageRepository = 'mainworks-trial-repo';
 
 /** The tag a repository's Dockerfile builds under: the digest of the file's content, the base image and the checkout naming the repository — so an edit of the file changes it and two repositories never share one. */
 export const repositoryTrialImageTag = (repository: string, base: string, dockerfile: string) =>

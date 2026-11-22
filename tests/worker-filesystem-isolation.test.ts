@@ -10,7 +10,7 @@ import { runTrialAttempt, trialConfinement } from '../src/merge-writer/trial.js'
 import { herdrSocketPath, herdrTarget, targetHerdr } from '../src/master/herdr.js';
 import { piRunner } from '../src/runner/pi.js';
 import { runConfinement } from '../src/runner/roles.js';
-import { graphyardTools } from '../src/runner/payloads.js';
+import { mainworksTools } from '../src/runner/payloads.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { setupMaster } from '../src/master/config.js';
 import { startMaster } from '../src/master/harness.js';
@@ -231,7 +231,7 @@ test('integration:worker-control-socket-isolation — host Docker, systemd and c
     // Publish one after constructing every wrapper, to rule out a socket inventory.
     const undeclared = join(f.home, 'executor.sock');
     const alias = join(f.worktree, 'executor-alias');
-    const abstract = '\0graphyard-fixture-' + process.pid;
+    const abstract = '\0mainworks-fixture-' + process.pid;
     const undeclaredServer = createServer(connection => { reached++; connection.end('undeclared host executor'); });
     const abstractServer = createServer(connection => { reached++; connection.end('abstract host executor'); });
     await new Promise<void>(resolve => undeclaredServer.listen(undeclared, resolve));
@@ -386,7 +386,7 @@ test('integration:worker-control-socket-isolation — declared TCP host executor
         const result = await piRunner({ command: process.execPath, ...('environment' in extra ? extra : {}),
           confine: runConfinement({ coordinatorRoot: f.root }),
           spawn: (() => { launched++; throw new Error('must refuse before spawn'); }) as typeof import('node:child_process').spawn,
-        }).start('Run', { cwd: f.worktree, runs: join(f.worktree, 'runs'), tool: graphyardTools.evidence,
+        }).start('Run', { cwd: f.worktree, runs: join(f.worktree, 'runs'), tool: mainworksTools.evidence,
           validate: value => value, timeoutMs: 1000, ...('env' in extra ? extra : {}) }).result();
         assert.equal(result.ok, false);
         assert.match(JSON.stringify(result), /host command endpoint that filesystem mounts cannot isolate/);
@@ -511,7 +511,7 @@ test('integration:worker-control-socket-isolation — headless effective environ
       const result = await piRunner({ command: process.execPath, commandArgs: ['-e', code, '--'],
         environment: { [variable]: `unix://${socket}` },
         confine: runConfinement({ coordinatorRoot: f.root }), containment: 'setsid', pollMs: 10, exitGraceMs: 10,
-      }).start('Run', { cwd: f.worktree, runs: join(f.worktree, 'runs'), tool: graphyardTools.evidence,
+      }).start('Run', { cwd: f.worktree, runs: join(f.worktree, 'runs'), tool: mainworksTools.evidence,
         validate: value => value, timeoutMs: 10_000 }).result();
       assert.equal(readFileSync(marker, 'utf8'), 'denied', JSON.stringify(result));
     }

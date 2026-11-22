@@ -30,7 +30,7 @@ const briefMarkdown = (problem: string) => `## Problem
 Teams lose the plot between rounds of automated delivery: nobody remembers what the product is for.
 
 ## Users
-Small product teams running Graphyard on one repository, and their operator.
+Small product teams running Mainworks on one repository, and their operator.
 
 ## What success looks like
 - Sign-up to first delivered item within a day (measured weekly, dashboard cohort)

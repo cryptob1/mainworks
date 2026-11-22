@@ -24,7 +24,7 @@ import { trialFailureReason } from '../src/merge-writer/executor.js';
 // GY-1522: the merge writer's trial merge — the exact merge commit made in the object store, and its
 // build and affected tests run in a detached, credential-free checkout that is always removed.
 
-// Every scratch directory here sits under the host's tmpdir without the `graphyard-` prefix: a trial takes seconds to
+// Every scratch directory here sits under the host's tmpdir without the `mainworks-` prefix: a trial takes seconds to
 // minutes, and a runner sweep by a session in another PID namespace (a confined worker beside this one) would take a
 // prefixed directory whose owner it cannot see out from under the running trial. The file's after hook removes them.
 const identity = { GIT_AUTHOR_NAME: 'Someone', GIT_AUTHOR_EMAIL: 'someone@example.com', GIT_COMMITTER_NAME: 'Someone', GIT_COMMITTER_EMAIL: 'someone@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
@@ -206,7 +206,7 @@ test('integration:trial-run-build-and-tests — a trial checkout that cannot be 
   const head = repo.commitOnBase({ 'tests/a.test.ts': 'x\n' }, 'head');
   const stuck: RunTrialInput['remove'] = async () => { throw new Error('EBUSY: the checkout is in use'); };
   await assert.rejects(trialOf(repo, head, ['tests/a.test.ts'], { PATH: process.env.PATH! }, stuck, cpu), (error: unknown) =>
-    error instanceof TrialCleanupError && /graphyard-trial-gy-9-/.test(error.directory) && /EBUSY/.test(error.message) && /answered build pass, 0 failing/.test(error.message)
+    error instanceof TrialCleanupError && /mainworks-trial-gy-9-/.test(error.directory) && /EBUSY/.test(error.message) && /answered build pass, 0 failing/.test(error.message)
     && error.verdict?.build === 'pass' && error.verdict.tests.files === 1);
   const broken = repo.commitOnBase({ 'break-build': '' }, 'breaks the build');
   await assert.rejects(trialOf(repo, broken, [], { PATH: process.env.PATH! }, stuck, cpu), (error: unknown) => error instanceof TrialCleanupError && error.verdict?.build === 'fail');
@@ -289,7 +289,7 @@ test('unit:trial-credential-free-runner-exits-zero — this repository\'s own tw
   const keep = ['tests/stable-json.test.ts', 'tests/vite-config-loader.test.ts'];
   const trial = await ownRepositoryTrial(keep);
   assert.ok(trial.dropped > 100, `the scratch tree keeps only the two files (${trial.dropped} dropped)`);
-  const planted: NodeJS.ProcessEnv = { ...process.env, GH_CONFIG_DIR: '/nowhere/gh', GH_TOKEN: 'gh-secret', GITHUB_TOKEN: 'github-secret', SSH_AUTH_SOCK: '/nowhere/agent.sock', GIT_SSH_COMMAND: 'ssh -i /nowhere/key', GRAPHYARD_TOKEN: 'graphyard-secret', HERDR_PANE_ID: 'p1', GIT_CONFIG_GLOBAL: '/nowhere/.gitconfig' };
+  const planted: NodeJS.ProcessEnv = { ...process.env, GH_CONFIG_DIR: '/nowhere/gh', GH_TOKEN: 'gh-secret', GITHUB_TOKEN: 'github-secret', SSH_AUTH_SOCK: '/nowhere/agent.sock', GIT_SSH_COMMAND: 'ssh -i /nowhere/key', GRAPHYARD_TOKEN: 'mainworks-secret', HERDR_PANE_ID: 'p1', GIT_CONFIG_GLOBAL: '/nowhere/.gitconfig' };
   const environment = trialEnvironment(planted);
   for (const name of [...withheldTrialVariables, 'GRAPHYARD_TOKEN', 'GRAPHYARD_TEST_PORT', 'HERDR_PANE_ID']) assert.ok(!(name in environment), `${name} is withheld from the trial`);
   assert.deepEqual([environment.GIT_CONFIG_NOSYSTEM, environment.GIT_CONFIG_GLOBAL], ['1', '/dev/null']);
@@ -305,7 +305,7 @@ test('unit:trial-credential-free-runner-exits-zero — this repository\'s own tw
 test('unit:trial-run-credential-free — the trial child sees none of GH_CONFIG_DIR, GH_TOKEN, GITHUB_TOKEN, SSH_AUTH_SOCK, GIT_SSH_COMMAND, the host\'s TMPDIR, AWS_SECRET_ACCESS_KEY, NPM_TOKEN or any GRAPHYARD_*/HERDR_* variable, and git\'s global configuration is off', async () => {
   const planted: NodeJS.ProcessEnv = { PATH: process.env.PATH!, HOME: '/home/me', GH_CONFIG_DIR: '/home/me/.config/gh', GH_TOKEN: 'gh-secret', GITHUB_TOKEN: 'github-secret', SSH_AUTH_SOCK: '/run/agent.sock', GIT_SSH_COMMAND: 'ssh -i key',
     XDG_RUNTIME_DIR: '/run/user/1000', TMPDIR: '/var/tmp', TMP: '/var/tmp', TEMP: '/var/tmp', AWS_SECRET_ACCESS_KEY: 'aws-secret-key', NPM_TOKEN: 'npm-secret-token',
-    GRAPHYARD_TOKEN: 'graphyard-secret', GRAPHYARD_URL: 'https://example.test', GRAPHYARD_TIMING_RECORD: '/tmp/record', HERDR_PANE_ID: 'p1', HERDR_SOCKET_PATH: '/run/herdr.sock', GIT_CONFIG_GLOBAL: '/home/me/.gitconfig', KEPT: 'yes' };
+    GRAPHYARD_TOKEN: 'mainworks-secret', GRAPHYARD_URL: 'https://example.test', GRAPHYARD_TIMING_RECORD: '/tmp/record', HERDR_PANE_ID: 'p1', HERDR_SOCKET_PATH: '/run/herdr.sock', GIT_CONFIG_GLOBAL: '/home/me/.gitconfig', KEPT: 'yes' };
   const withheld = [...withheldTrialVariables, 'AWS_SECRET_ACCESS_KEY', 'NPM_TOKEN', 'GRAPHYARD_TOKEN', 'GRAPHYARD_URL', 'GRAPHYARD_TIMING_RECORD', 'HERDR_PANE_ID', 'HERDR_SOCKET_PATH'];
   const environment = trialEnvironment(planted);
   for (const name of withheld) assert.ok(!(name in environment), `${name} is withheld`);
@@ -349,7 +349,7 @@ test('unit:trial-base-run-registry-files-pass — with a stray .git in each shar
   entries.add(join(home, '.git'));
   assert.equal(trialTemporaryRoot('/session', [sharedTmp, sharedVar, durable], exists, onDisk), '/session', 'an isolated HOME below a checkout is not a clean fallback');
   // Check the production short-root shape separately from the caller's arbitrary HOME length.
-  const endpoint = join(durable, 'graphyard-keyring-probe-backoff-abcdefghij', 'graphyard-secrets-bus');
+  const endpoint = join(durable, 'mainworks-keyring-probe-backoff-abcdefghij', 'graphyard-secrets-bus');
   assert.ok(endpoint.length <= 107, `the socket path stays inside the kernel's 108-byte sun_path (${endpoint.length} bytes)`);
   mkdirSync(dirname(endpoint), { recursive: true });
   const server = createServer();
@@ -537,8 +537,8 @@ test('integration:trial-run-build-and-tests — a trial that outruns its time bu
 
 // ——— GY-1548: a runner exit that names no failing test is a runner failure, never a failing verdict; the selection runs in bounded groups. ———
 const mergeOf = async (repo: Awaited<ReturnType<typeof fixture>>, head: string) => { const merged = await trialMerge(gitFor(repo.root), { head, baseTip: repo.base }); assert.ok('mergeSha' in merged); return merged.mergeSha; };
-const planted: NodeJS.ProcessEnv = { PATH: process.env.PATH!, GH_TOKEN: 'gh-secret-token', GITHUB_TOKEN: 'github-secret-token', GRAPHYARD_TOKEN: 'graphyard-secret-token', SSH_AUTH_SOCK: '/nowhere/agent.sock', AWS_SECRET_ACCESS_KEY: 'aws-secret-access-key', NPM_TOKEN: 'npm-registry-token' };
-const secrets = ['gh-secret-token', 'github-secret-token', 'graphyard-secret-token', '/nowhere/agent.sock', 'aws-secret-access-key', 'npm-registry-token'];
+const planted: NodeJS.ProcessEnv = { PATH: process.env.PATH!, GH_TOKEN: 'gh-secret-token', GITHUB_TOKEN: 'github-secret-token', GRAPHYARD_TOKEN: 'mainworks-secret-token', SSH_AUTH_SOCK: '/nowhere/agent.sock', AWS_SECRET_ACCESS_KEY: 'aws-secret-access-key', NPM_TOKEN: 'npm-registry-token' };
+const secrets = ['gh-secret-token', 'github-secret-token', 'mainworks-secret-token', '/nowhere/agent.sock', 'aws-secret-access-key', 'npm-registry-token'];
 
 test('integration:shadow-trial-failure-diagnostics — a runner that exits non-zero naming a failing file is a failing verdict with the exit, the group and the files; one that exits non-zero or on a signal naming none (every record passed) rejects with TrialRunnerError carrying the phase, status or signal, the group\'s files and how many finished, a bounded credential-free output tail and the trial merge sha, as does a build a signal ended; a partial-record run that prints a named failure is still a failing verdict; and the loop records a runner exit against head, base tip and merge sha, retried twice then given up under one attention line, never as a verdict', async () => {
   const repo = await fixture();
@@ -808,7 +808,7 @@ test('unit:trial-checkout-reclaim-soak — a simulated day of real trials: crash
   assert.ok(existsSync(kept) && existsSync(tempOwnerMarker(kept)), 'the live owner\'s checkout stands at the end of the day');
   // A poisoned ancestor forces the managed session fallback; a clean trials root gets the short checkout.
   for (const made of checkouts) {
-    const expected = lookupPoisoned(trials!) ? `${sessions}/graphyard-trial-` : `${trials}/${trialCheckoutPrefix}`;
+    const expected = lookupPoisoned(trials!) ? `${sessions}/mainworks-trial-` : `${trials}/${trialCheckoutPrefix}`;
     assert.ok(made.startsWith(expected) && made.endsWith('/checkout'), `${made} uses ${expected}`);
   }
   assert.deepEqual(trialExcludedRoots('/var/tmp', '/home/me'), ['/tmp', '/var/tmp', '/home/me/.gy/tmp'], 'every temporary root keeps the checkout out');
@@ -818,14 +818,14 @@ test('unit:trial-checkout-reclaim-soak — a simulated day of real trials: crash
 // GY-3008: deleting the dead base-break refresh must leave a failed trial's rework path intact —
 // the merge writer grounds and requests the rework; next-action waits on it, never on a base-break hold.
 test('unit:trial-merge — a failed trial grounds a rework for the candidate and next-action waits on the merge writer, never a base-break hold', async () => {
-  // The proof this case carries is bound to the declared trial (AC-1): Graphyard's own graphyard.json
+  // The proof this case carries is bound to the declared trial (AC-1): Mainworks's own graphyard.json
   // must parse to usable preMerge declarations with a test selection. Imported dynamically — the
   // declarations exist only with this change, and this case must fail as a case against a tree
   // without it, never as a module crash.
   const { declaredPreMerge } = await import('../src/merge-writer/trial.js');
   const declared = declaredPreMerge(readFileSync(new URL('../graphyard.json', import.meta.url), 'utf8'));
-  if ('refusal' in declared) assert.fail(`Graphyard's own declarations are refused: ${declared.refusal}`);
-  assert.ok(declared.preMerge?.some(check => check.selection), "Graphyard's own graphyard.json declares its test selection");
+  if ('refusal' in declared) assert.fail(`Mainworks's own declarations are refused: ${declared.refusal}`);
+  assert.ok(declared.preMerge?.some(check => check.selection), "Mainworks's own graphyard.json declares its test selection");
   const now = new Date('2026-10-31T12:00:00.000Z');
   const head = 'c'.repeat(40), base = 'a'.repeat(40);
   const reason = `${trialFailurePrefix}: tests tests/policy.test.ts`;
@@ -867,12 +867,12 @@ test('unit:trial-declared-policy-refusal — a head whose graphyard.json is malf
   const { declaredPreMerge } = await import('../src/merge-writer/trial.js');
   const policy = (check: Record<string, unknown>) => JSON.stringify({ delivery: { mergeGate: { preMerge: [{ check: 'test', command: 'npm test', source: 'script', reason: 'r', ...check }], perCandidate: [] } } });
   const refusal = (text: string) => { const declared = declaredPreMerge(text); return 'refusal' in declared ? declared.refusal : null; };
-  assert.match(refusal('{ not json')!, /graphyard\.json is not valid JSON/);
+  assert.match(refusal('{ not json')!, /mainworks\.json is not valid JSON/);
   assert.match(refusal(policy({ source: 'elsewhere' }))!, /preMerge is invalid: 0\.source/);
   assert.match(refusal(policy({ selection: { command: '   ', pattern: '.' } }))!, /empty selection command/);
   assert.match(refusal(policy({ selection: { command: 'node select.mjs', pattern: '(' } }))!, /no regular expression/);
   assert.deepEqual(declaredPreMerge('{}'), { preMerge: null });
-  assert.equal(refusal(readFileSync(new URL('../graphyard.json', import.meta.url), 'utf8')), null, "Graphyard's own declarations are valid");
+  assert.equal(refusal(readFileSync(new URL('../graphyard.json', import.meta.url), 'utf8')), null, "Mainworks's own declarations are valid");
   // The refusal is a failing verdict naming the policy, so the merge writer sends the head back instead of re-trialling it.
   const reason = 'graphyard.json is not valid JSON: x';
   assert.equal(trialFailureReason({ run: { build: 'pass', tests: { passed: 0, failed: ['graphyard.json'], files: 0 }, failingCase: reason } }), `${trialFailurePrefix}: tests graphyard.json: ${reason}`);

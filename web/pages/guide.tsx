@@ -15,13 +15,13 @@ const flow: [string, string][] = [
   ['Deploy and verify', 'Verified in batches; a failing batch reverts its culprit. Main deploys.'],
 ];
 
-/** Where each part runs: the same parts `graphyard guide infra` lists, in two panels instead of one wiring diagram. */
+/** Where each part runs: the same parts `mainworks guide infra` lists, in two panels instead of one wiring diagram. */
 const host: [string, string, string][] = [
   ['The loop', 'graphyard-master-OWNER-NAME.service', 'Hands out work, trials, merges.'],
   ['Deploy watch', 'graphyard-deploy-OWNER-NAME.service', 'Deploys and rolls back.'],
   ['Server and dashboard', 'graphyard-OWNER-NAME-server-1', 'Docker, on 127.0.0.1:4310.'],
   ['Database', 'graphyard-OWNER-NAME-db-1', 'Postgres 17 in Docker.'],
-  ['Merge trials', 'graphyard-trial-…', 'One container per trial.'],
+  ['Merge trials', 'mainworks-trial-…', 'One container per trial.'],
   ['Agent sessions', 'Workers, reviewers, the Master', 'Confined, one worktree, fair CPU.'],
   ['Hosts', `${COMMAND_NAME} host prepare`, 'Test shards; local-only tests stay here.'],
 ];
@@ -68,15 +68,15 @@ const commands: [string, string][] = [
 
 /**
  * The Docs page, opened from Help under Settings (GY-3295): an introduction for an engineer
- * who has never heard of Graphyard. Who decides what, one first item from setup to result, the delivery
+ * who has never heard of Mainworks. Who decides what, one first item from setup to result, the delivery
  * flow and where each part runs as readable panels, then a folded FAQ and reference. The reference prints
- * `graphyard guide setup` and `graphyard guide infra` themselves, loaded once the page is open, so those
+ * `mainworks guide setup` and `mainworks guide infra` themselves, loaded once the page is open, so those
  * procedures keep one source.
  */
 export default function GuidePage() {
   const [media, setMedia] = useState<{ video: string; setup: string; infra: string } | null>(null);
   useEffect(() => {
-    Promise.all([import('../../docs/diagrams/how-graphyard-works.mp4?url'), import('../../src/guide')])
+    Promise.all([import('../../docs/diagrams/how-mainworks-works.mp4?url'), import('../../src/guide')])
       .then(([video, guide]) => setMedia({ video: video.default, setup: guide.guideText('setup'), infra: guide.guideText('infra') }));
   }, []);
   return <article className="guide">

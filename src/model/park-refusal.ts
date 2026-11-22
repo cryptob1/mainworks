@@ -20,20 +20,20 @@ const deferredAsk = /\bone at a time\b|\bpark (?:once )?(?:again|more)\b|\bpark 
 export interface HostDoableAsk { class: 'repository' | 'deployment-variable' | 'host-credential' | 'coordinator-checkout' | 'agent-identity'; what: string; route: string; command: string }
 const hostDoable: (HostDoableAsk & { test: RegExp })[] = [
   { class: 'deployment-variable', what: 'a deployment variable derived from credentials saved on this host', test: /\b(?:GRAPHYARD_REVERT_APPROVER_[A-Z_]+|GITHUB_(?:APP_ID|INSTALLATION_ID|PRIVATE_KEY(?:_FILE)?|WEBHOOK_SECRET|CI_APP_IDS)|GRAPHYARD_(?:PRINCIPALS|REVIEWER_APPS))\b|\bprovision-railway\b|\b[Ss]et\b[^.;]{0,80}\b(?:[Dd]eployment|[Ee]nvironment|[Rr]ailway|[Cc]ontrol[- ]plane) variables?\b/,
-    route: 'the master derives it from the saved App registrations and sets it through the provider adapter, secrets piped and never printed', command: 'graphyard master setup --apply' },
+    route: 'the master derives it from the saved App registrations and sets it through the provider adapter, secrets piped and never printed', command: 'mainworks master setup --apply' },
   { class: 'repository', what: 'a repository the host\'s gh login can create or administer', test: /\b(?:create|make|configure|administer|set up)\b[^.;]{0,80}\brepositor(?:y|ies)\b|\brepositor(?:y|ies)\b[^.;]{0,60}\b(?:reachable|admin)|\bgh login\b[^.;]{0,60}\badmin/i,
-    route: 'the master does it under the host\'s own gh login, outside the worker sandbox', command: 'gh repo create OWNER/NAME (or gh api repos/OWNER/NAME) as the host\'s gh login, then graphyard master unblock GY-N REASON' },
+    route: 'the master does it under the host\'s own gh login, outside the worker sandbox', command: 'gh repo create OWNER/NAME (or gh api repos/OWNER/NAME) as the host\'s gh login, then mainworks master unblock GY-N REASON' },
   { class: 'host-credential', what: 'a credential the host already holds for this purpose', test: /\b(?:paste|provide|give|send|share|supply)\b[^.;]{0,80}\b(?:github|gh|admin|app|railway)\b[^.;]{0,40}\b(?:token|private key|pem|credential)s?\b/i,
-    route: 'the master supplies it from the host: the gh login (gh auth token), the App registration saved under the install directory, or the provider CLI\'s own login', command: 'gh auth token (or the saved App registration) in the master\'s session, then graphyard master unblock GY-N REASON' },
+    route: 'the master supplies it from the host: the gh login (gh auth token), the App registration saved under the install directory, or the provider CLI\'s own login', command: 'gh auth token (or the saved App registration) in the master\'s session, then mainworks master unblock GY-N REASON' },
   // GY-1692 (GY-1666): the coordinator checkout's HEAD moved onto commits the loop does not run, and
   // the install's unit record: the master restarts the loop onto the checkout's HEAD, and master init
   // records the units.
   { class: 'coordinator-checkout', what: 'the coordinator checkout\'s HEAD or its unpushed commits, or this install\'s unit record', test: /\bcoordinator checkout\b|\bunpushed\b[^.;]{0,60}\bcommits?\b|\bdetached (?:HEAD|at)\b|\bmaster init\b[^.;]{0,100}\bunits?\b|\bunits\.json\b/i,
-    route: 'the master restarts the loop onto the checkout\'s HEAD, which graphyard-deploy.service keeps at main\'s served tip, and master init records the install\'s units', command: 'graphyard master restart' },
+    route: 'the master restarts the loop onto the checkout\'s HEAD, which graphyard-deploy.service keeps at main\'s served tip, and master init records the install\'s units', command: 'mainworks master restart' },
   // GY-1692 (GY-1691): an identity issued to an agent, not a person, whose token is a repository or
   // environment secret the host's gh login sets; the install's admin credential is saved on the host.
-  { class: 'agent-identity', what: 'an operator-agent identity issued to an agent, with its token stored as a repository or environment secret', test: /\boperator-agent setup\b|\bgraphyard-release-follow-up\b|\bGRAPHYARD_RELEASE_TOKEN\b|\bgh secret set\b|\b(?:operator[- ]agent|agent) identit(?:y|ies)\b/i,
-    route: 'the master issues or rotates it with the install\'s admin credential saved on this host and stores the token through the host\'s gh login, the loop running it itself; a host without that credential names the administrator\'s step in master status', command: 'graphyard master setup --apply' },
+  { class: 'agent-identity', what: 'an operator-agent identity issued to an agent, with its token stored as a repository or environment secret', test: /\boperator-agent setup\b|\bmainworks-release-follow-up\b|\bGRAPHYARD_RELEASE_TOKEN\b|\bgh secret set\b|\b(?:operator[- ]agent|agent) identit(?:y|ies)\b/i,
+    route: 'the master issues or rotates it with the install\'s admin credential saved on this host and stores the token through the host\'s gh login, the loop running it itself; a host without that credential names the administrator\'s step in master status', command: 'mainworks master setup --apply' },
 ];
 /** Who a credential is issued to, when it is a person: that stays the human's (`credentials-for-people`). */
 const personRecipient = /\b(?:teammate|contractor|colleague|employee|engineer|person|people|developer|new hire)s?\b/i;

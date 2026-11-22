@@ -4,7 +4,7 @@ import { z } from 'zod';
  * The headless runner (GY-169). The approver and the proof producer only need a structured
  * result, so they do not need a terminal: a runner starts an agent on one prompt, streams its
  * structured events, can be cancelled, and resolves to what the agent submitted through a typed
- * Graphyard tool, or to a typed failure. It reports; it never judges. What the agent submitted is
+ * Mainworks tool, or to a typed failure. It reports; it never judges. What the agent submitted is
  * applied by the loop through the same routes a terminal session uses, so the gates decide.
  */
 
@@ -43,7 +43,7 @@ export interface RunOptions<T> {
   cwd: string;
   /** Added to the runner's environment; the environment wrapper reads its account from here. */
   env?: Record<string, string>;
-  /** The Graphyard tool whose successful calls are this run's submission. */
+  /** The Mainworks tool whose successful calls are this run's submission. */
   tool: string;
   /** Parses one submission into the payload type, throwing on a malformed one. */
   validate: (payload: unknown) => T;

@@ -51,7 +51,7 @@ test('unit:agents-block-control-plane — the AGENTS.md worker block says comple
   assert.match(guideText('complete'), /Make `complete` your last action: do not heartbeat or edit after it\./);
   assert.equal(managedInstructions(block), block, 'regenerating keeps it exactly once');
   const agents = await readFile(join(import.meta.dirname, '../AGENTS.md'), 'utf8');
-  assert.ok(!/uses Graphyard at \S+ for ownership/.test(agents), 'this repository\'s AGENTS.md names no server: the origin lives in ignored .graphyard/connection.json (GY-2240)');
+  assert.ok(!/uses Mainworks at \S+ for ownership/.test(agents), 'this repository\'s AGENTS.md names no server: the origin lives in ignored .graphyard/connection.json (GY-2240)');
   assert.equal(managedInstructions(agents), agents, 'this repository\'s AGENTS.md is the rendering, regenerated to match');
 });
 
@@ -76,6 +76,6 @@ test('unit:agents-block-control-plane — master init (with no GitHub App), work
 
   const applied = await repository('merger-apply');
   const proposal = await scanProposal(applied, { url: 'https://graphyard.example', runtimes: [] });
-  await applyProposal(applied, proposal, { url: 'https://graphyard.example', installed: { directory: '/tmp/graphyard-install-fixture', githubApp: { appId: 1, slug: 'graphyard-owner-project' } } });
+  await applyProposal(applied, proposal, { url: 'https://graphyard.example', installed: { directory: '/tmp/mainworks-install-fixture', githubApp: { appId: 1, slug: 'graphyard-owner-project' } } });
   assert.equal(await readFile(join(applied, 'AGENTS.md'), 'utf8'), expected, 'init --apply writes the --head block');
 });

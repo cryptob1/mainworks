@@ -65,7 +65,7 @@ for (const shape of ['uncommitted', 'committed-and-uncommitted', 'clean', 'clean
     const branch = 'graphyard/attempt-1', worktree = join(root, 'attempt');
     git(['init', '-q', '-b', 'main'], root);
     git(['config', 'user.email', 'fixture@graphyard.invalid'], root);
-    git(['config', 'user.name', 'Graphyard Fixture'], root);
+    git(['config', 'user.name', 'Mainworks Fixture'], root);
     await writeFile(join(root, 'finding.txt'), 'base\n');
     git(['add', 'finding.txt'], root);
     git(['commit', '-q', '-m', 'base'], root);

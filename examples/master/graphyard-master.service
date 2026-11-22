@@ -1,4 +1,4 @@
-# Durable Graphyard master coordinator.
+# Durable Mainworks master coordinator.
 #
 # Install as a systemd *user* unit on the coordinator machine or OS identity:
 #   mkdir -p ~/.config/systemd/user
@@ -12,7 +12,7 @@
 # repository. Do not add a worker, producer, or operator credential here: the coordinator must not
 # be able to claim work, publish evidence, or revise requirements.
 [Unit]
-Description=Graphyard master coordination loop
+Description=Mainworks master coordination loop
 After=network-online.target
 Wants=network-online.target
 # Never give up restarting it. Under the default start limit a loop that crashed five times inside

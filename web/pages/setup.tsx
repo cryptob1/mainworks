@@ -10,7 +10,7 @@ import type { Dashboard } from './dashboard';
 
 /**
  * The first-run Setup page (GY-1419): the checklist a new installation needs, each item's live
- * state read from the control plane, one plain sentence and one button. `graphyard up` prints this
+ * state read from the control plane, one plain sentence and one button. `mainworks up` prints this
  * page's address and waits on the same checklist (src/model/setup-checklist.ts). The checklist names
  * no command, sha or file: the person reading it may never open a terminal. Once every item is
  * green it asks what to build and submits that as the first work item. Beside it, the commands that
@@ -19,7 +19,7 @@ import type { Dashboard } from './dashboard';
 
 let opened: string | undefined;
 /**
- * The page the address asks for, read once before anything renders (web/main.tsx): `graphyard up`
+ * The page the address asks for, read once before anything renders (web/main.tsx): `mainworks up`
  * prints a sign-in link ending `&setup`, which opens this page once the person is signed in. The
  * marker leaves the address bar so the sign-in page redeems the exact link fragment it knows.
  */
@@ -39,7 +39,7 @@ function ItemAction({ item, onConnect }: { item: SetupItem; onConnect: () => voi
 }
 
 /**
- * The onboarding change as the current setup step (GY-1478): the commit `graphyard up` published on
+ * The onboarding change as the current setup step (GY-1478): the commit `mainworks up` published on
  * its branch, filed as a work item the loop reviews and merges by itself. It shows what it waits
  * for and how long, until the change is merged (GY-2938: no pull request, no link to open).
  */
@@ -94,7 +94,7 @@ export function AlertsLine({ status }: { status: any }) {
       {on ? <span className="green">Stall alerts: on (after {alerts} min)</span> : alerts === false ? <span className="amber">Stall alerts: off</span> : 'Stall alerts: not known yet'}
     </p>
     {alerts === false && <MoreDetails summary="Turn them on">To be told when queued work cannot start or merge, set <code>run.alertUrl</code> in <code>.graphyard/master.json</code> on the host that runs the master loop to a webhook URL that takes a POST, such as an ntfy topic (<code>https://ntfy.sh/your-topic</code>); <code>run.alertMinutes</code> sets the stall window (default 20).</MoreDetails>}
-    {!on && alerts !== false && <MoreDetails summary="Why">The dashboard learns it from a running master loop. Start the loop on the host with <code>graphyard master run</code>, or check it with <code>graphyard master status</code>.</MoreDetails>}
+    {!on && alerts !== false && <MoreDetails summary="Why">The dashboard learns it from a running master loop. Start the loop on the host with <code>mainworks master run</code>, or check it with <code>mainworks master status</code>.</MoreDetails>}
   </div>;
 }
 
@@ -102,24 +102,24 @@ export function AlertsLine({ status }: { status: any }) {
  * Where this install's parts run (GY-3277), as its loop named them (`setup.where`): the units and
  * containers beside the command that reads their logs, then the URL, the master's Herdr pane and the
  * directories. Collapsed at the foot of the page: onboarding does not need it, operating does.
- * `graphyard guide infra` explains each part; this shows only this install's own names.
+ * `mainworks guide infra` explains each part; this shows only this install's own names.
  */
 export function WhereThingsRunPanel({ where, panes }: { where: WhereThingsRun | null; panes: { session: string | null; master?: string | null } | null }) {
-  if (!where) return <p data-where-things-run="unknown" className="muted">Not known yet: the loop names these once it runs (graphyard master run).</p>;
+  if (!where) return <p data-where-things-run="unknown" className="muted">Not known yet: the loop names these once it runs (mainworks master run).</p>;
   const rows: [string, string][] = [['The loop', where.loopUnit], ['Deploy watch', where.deployUnit], ['Server and dashboard', where.server], ['Database', where.database]];
   return <div data-where-things-run="known">
     <table className="sessions-table" aria-label="Where things run">
       <thead><tr><th scope="col">Part</th><th scope="col">Runs as</th><th scope="col">Logs</th></tr></thead>
       <tbody>{rows.map(([part, name]) => { const logs = whereLogs(name); return <tr key={part}><th scope="row">{part}</th><td data-label="Runs as">{name}</td><td data-label="Logs">{logs ? <code>{logs}</code> : <span className="muted">—</span>}</td></tr>; })}</tbody>
     </table>
-    <p className="muted">Dashboard {where.url} (port {where.port}){panes?.session ? ` · Herdr session ${panes.session}${panes.master ? `, master pane ${panes.master}` : ''}` : ''} · checkout {where.checkout} · install directory {where.installDirectory}. <code>graphyard guide infra</code> explains each part.</p>
+    <p className="muted">Dashboard {where.url} (port {where.port}){panes?.session ? ` · Herdr session ${panes.session}${panes.master ? `, master pane ${panes.master}` : ''}` : ''} · checkout {where.checkout} · install directory {where.installDirectory}. <code>mainworks guide infra</code> explains each part.</p>
   </div>;
 }
 
 /**
  * The page body for a status answer and the work items (WORK, read at NOW), without the dashboard's
  * state: what the tests render. The onboarding change is a step of its own while it is open, as
- * `graphyard up` waits for it. WORKUNREAD: the work items are not read yet (or the read failed), so
+ * `mainworks up` waits for it. WORKUNREAD: the work items are not read yet (or the read failed), so
  * whether the change merged is unknown and the page is not yet green.
  */
 export function SetupView({ status, work, workUnread, now, onConnect }: { status: any; work?: readonly any[] | null; workUnread?: boolean; now?: number; onConnect: () => void }) {

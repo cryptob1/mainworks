@@ -8,7 +8,7 @@ import { createWorktree } from '../src/cli/workspace-worktree.js';
 import type { CliContext } from '../src/cli/context.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-2017: a control-plane rework workspace starts from the head Graphyard registered at the last
+// GY-2017: a control-plane rework workspace starts from the head Mainworks registered at the last
 // submission, read from the shared object store. It needs no pull-request observation and runs no
 // fetch or push of the worker branch — origin may lack the branch or hold a stale one from the
 // legacy flow, and only the merge writer pushes. The fake remote here serves the base branch
@@ -190,7 +190,7 @@ test('integration:control-plane-rework-ownership — a missing or unregistered s
         git(root, 'branch', '-D', branch);
       }
       const state = await runWorktree(root, item(root, candidate, head));
-      assert.match(state.failure ?? '', /registered start head of graphyard\/gy-1-1: /, 'the refusal names the branch');
+      assert.match(state.failure ?? '', /registered start head of mainworks\/gy-1-1: /, 'the refusal names the branch');
       assert.match(state.failure ?? '', /released as a workspace failure/, 'the claim was released, so the attempt costs nothing');
       assert.deepEqual(reserved(state), undefined, 'nothing was reserved');
       assert.deepEqual(released(state).length, 1, 'the claim alone was released');

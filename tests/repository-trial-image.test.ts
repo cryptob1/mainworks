@@ -85,12 +85,12 @@ const confinedWrappers = (wrappers: readonly (readonly string[])[]) => wrappers.
 const runsIn = (wrapper: readonly string[], image: string) => nested || wrapper.some(word => word.includes(`"image":"${image}"`));
 
 test('unit:tests/repository-trial-image.test.ts — the image tag keys on the Dockerfile, the base image and the repository: an edit changes it, two repositories never share one', () => {
-  const tag = repositoryTrialImageTag('/repos/a', 'graphyard-trial:local', 'FROM one\n');
-  assert.match(tag, /^graphyard-trial-repo:[0-9a-f]{24}$/);
-  assert.equal(tag, repositoryTrialImageTag('/repos/a', 'graphyard-trial:local', 'FROM one\n'));
-  assert.notEqual(tag, repositoryTrialImageTag('/repos/a', 'graphyard-trial:local', 'FROM two\n'));
+  const tag = repositoryTrialImageTag('/repos/a', 'mainworks-trial:local', 'FROM one\n');
+  assert.match(tag, /^mainworks-trial-repo:[0-9a-f]{24}$/);
+  assert.equal(tag, repositoryTrialImageTag('/repos/a', 'mainworks-trial:local', 'FROM one\n'));
+  assert.notEqual(tag, repositoryTrialImageTag('/repos/a', 'mainworks-trial:local', 'FROM two\n'));
   assert.notEqual(tag, repositoryTrialImageTag('/repos/a', 'published:1', 'FROM one\n'));
-  assert.notEqual(tag, repositoryTrialImageTag('/repos/b', 'graphyard-trial:local', 'FROM one\n'));
+  assert.notEqual(tag, repositoryTrialImageTag('/repos/b', 'mainworks-trial:local', 'FROM one\n'));
 });
 
 test('unit:tests/repository-trial-image.test.ts — a repository without the file answers null and no docker is called; one with the file reuses a built image without building again', { timeout: 60_000 }, async () => {
@@ -156,7 +156,7 @@ test('unit:tests/repository-trial-image.test.ts — a build that fails is a tria
   assert.equal(trialHostFaultHost(failed), null, 'a build fault is no fetch fault');
   const item = trialImageFaultItem('owner/game');
   assert.match(item.title, /Merge trials cannot build owner\/game's trial image/);
-  assert.match(item.description, /graphyard\.trial\.Dockerfile/);
+  assert.match(item.description, /mainworks\.trial\.Dockerfile/);
 });
 
 // AC-1: the real merge-trial path with a stub docker and a stub gofake standing in for the tool the

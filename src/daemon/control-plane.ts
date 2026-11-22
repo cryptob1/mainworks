@@ -1,13 +1,13 @@
 // Concern: GY-3199, GY-3233, GY-3249 — the control plane's own faults, as the loop sees them. The deploy
 // watch keeps .graphyard/control-plane.json; this step reads it each cycle, and the cycle hands it
-// the steps that ran past their timeout; the merge writer hands it trial-host faults. A fault belongs to Graphyard, not to the managed
+// the steps that ran past their timeout; the merge writer hands it trial-host faults. A fault belongs to Mainworks, not to the managed
 // repository: it is filed once to the configured upstream install (`upstream` in master.json),
-// into this install only when it manages Graphyard itself, and otherwise raised as one attention
+// into this install only when it manages Mainworks itself, and otherwise raised as one attention
 // line — never filed again per cycle. Once a day it reports the staleness the record shows.
 import { controlPlaneRecordPath, controlPlaneStaleLines, readControlPlaneRecord, type ControlPlaneRecord } from '../deploy-watch.js';
 import { readCredentialFile } from '../private-file.js';
 import { serverOrigin } from '../repository-setup.js';
-import { graphyardRepository } from '../scenarios.js';
+import { mainworksRepository } from '../scenarios.js';
 import type { MasterConfig } from '../master/profiles.js';
 import { actionLine, message, storeAction } from './state.js';
 import type { Cycle } from './cycle.js';
@@ -19,7 +19,7 @@ export const upstreamRetryMs = 3_600_000;
  * The bug item every fault the loop files is built from (GY-3160, GY-3365): the batch gate's flakes,
  * known reds and diagnostics, and the control plane's own faults. AC-1 binds a new pinning test,
  * which fails on the base, so the bug trial reproduces the defect there; AC-2 binds an E2E case,
- * so the item meets the filing rule that every bug owes an e2e proof. Graphyard's own filings bind
+ * so the item meets the filing rule that every bug owes an e2e proof. Mainworks's own filings bind
  * create-work-item, an existing case that passes on any base; a gate filing in any other repository
  * binds that repository's own case instead (GY-3568).
  */
@@ -27,7 +27,7 @@ export const faultItem = (input: { title: string; description: string; proof: st
   const e2e = input.e2e ?? { proof: 'e2e:create-work-item', clause: 'creating a work item still works' };
   return {
   title: input.title.slice(0, 200), type: 'bug' as const, priority: 1, description: input.description, dependencies: [],
-  why: 'A fault in Graphyard slows or stops delivery for everyone using this install until it is fixed.',
+  why: 'A fault in Mainworks slows or stops delivery for everyone using this install until it is fixed.',
   simplest: 'Fix the one cause the description names and pin it with a test; nothing else changes.',
   criteria: [
     // AC-1 never repeats the title: a title like "… on the install for X" reads as a live-install observation the filing refuses.
@@ -44,9 +44,9 @@ export function controlPlaneUpgradeItem(record: ControlPlaneRecord) {
   const step = record.failedStep ?? 'an unknown step', verified = record.verified ?? 'an unknown commit';
   return faultItem({
     title: `Control-plane upgrade stuck at ${step}`,
-    description: `The daily control-plane upgrade to the verified Graphyard commit ${verified.slice(0, 12)} fails at ${step}: ${(record.failedReason ?? 'no reason recorded').slice(0, 500)}. The install keeps running ${record.commit?.slice(0, 12) ?? 'its previous version'} and retries about hourly; .graphyard/control-plane.json carries the record and master status shows it. Fix the upgrade's cause — the failed step and reason above — so the install runs the latest verified commit again.`,
+    description: `The daily control-plane upgrade to the verified Mainworks commit ${verified.slice(0, 12)} fails at ${step}: ${(record.failedReason ?? 'no reason recorded').slice(0, 500)}. The install keeps running ${record.commit?.slice(0, 12) ?? 'its previous version'} and retries about hourly; .graphyard/control-plane.json carries the record and master status shows it. Fix the upgrade's cause — the failed step and reason above — so the install runs the latest verified commit again.`,
     proof: 'unit:control-plane-upgrade-pinned',
-    repaired: { text: 'The install again runs the latest verified Graphyard commit within a day of its publishing', proof: 'manual:control-plane-current' },
+    repaired: { text: 'The install again runs the latest verified Mainworks commit within a day of its publishing', proof: 'manual:control-plane-current' },
     reason: 'Filed by the master loop from the control-plane update record (GY-3199)',
   });
 }
@@ -70,7 +70,7 @@ export const trialHostFaultItem = (host: string, repository: string) => faultIte
 /** GY-3339: the bug item a merge trial whose nested sandbox AppArmor denied files upstream: one per repository. */
 export const trialSandboxFaultItem = (repository: string) => faultItem({
   title: `Merge trials cannot start nested sandboxes on ${repository}'s trial host`,
-  description: `A merge trial on the install for ${repository} failed because AppArmor denied a nested bubblewrap sandbox inside the trial container. The head was neither refused nor reworked and stays queued; the trial record carries the output. graphyard doctor names the fix: load the graphyard-trial AppArmor profile on the trial host (rerun graphyard up).`,
+  description: `A merge trial on the install for ${repository} failed because AppArmor denied a nested bubblewrap sandbox inside the trial container. The head was neither refused nor reworked and stays queued; the trial record carries the output. mainworks doctor names the fix: load the mainworks-trial AppArmor profile on the trial host (rerun mainworks up).`,
   proof: 'unit:trial-sandbox-starts',
   reason: 'Filed by the master loop from a trial-host fault (GY-3339)',
 });
@@ -86,7 +86,7 @@ export const trialImageFaultItem = (repository: string) => faultItem({
 /** GY-3316: the bug item a merge trial that Docker refused a network for spent address pools files upstream: one per repository. */
 export const trialNetworkFaultItem = (repository: string, networks: string) => faultItem({
   title: `Merge trials cannot create Docker networks on the install for ${repository}`,
-  description: `A merge trial on the install for ${repository} failed to create its network: all predefined address pools have been fully subnetted, with ${networks} Graphyard preview networks on the trial host. The head was neither refused nor reworked and stays queued. Find what leaks the networks and remove it; the loop's leftovers sweep removes trial networks no container uses.`,
+  description: `A merge trial on the install for ${repository} failed to create its network: all predefined address pools have been fully subnetted, with ${networks} Mainworks preview networks on the trial host. The head was neither refused nor reworked and stays queued. Find what leaks the networks and remove it; the loop's leftovers sweep removes trial networks no container uses.`,
   proof: 'unit:trial-network-created',
   reason: 'Filed by the master loop from a trial-host fault (GY-3316)',
 });
@@ -107,7 +107,7 @@ export function upstreamFiler(upstream: NonNullable<MasterConfig['upstream']>, f
 
 /**
  * Reports one fault once: filed upstream when one is configured, into this install only when it
- * manages Graphyard's own repository, otherwise one attention line. A failed upstream filing
+ * manages Mainworks's own repository, otherwise one attention line. A failed upstream filing
  * stands as its attention line and is asked again an hour later; nothing else repeats.
  */
 async function reportFault(cycle: Pick<Cycle, 'state' | 'effects' | 'clock' | 'log' | 'config'>, key: string, item: FaultItem, fault: string) {
@@ -117,28 +117,28 @@ async function reportFault(cycle: Pick<Cycle, 'state' | 'effects' | 'clock' | 'l
     const entry = storeAction(cycle.state, key, { kind: 'attention', work: null, principal: null, state, detail: detail.slice(0, 1900), attempts: (row?.attempts ?? 0) + 1, epoch: null, cycle: cycle.state.cycle, at: new Date(cycle.clock).toISOString() });
     cycle.log(actionLine(cycle.state.cycle, entry));
   };
-  const local = cycle.config.repository?.toLowerCase() === graphyardRepository ? cycle.effects.mergeWriter?.createWork : undefined;
+  const local = cycle.config.repository?.toLowerCase() === mainworksRepository ? cycle.effects.mergeWriter?.createWork : undefined;
   const file = upstream ?? local;
-  if (!file) return note('failed', `Graphyard fault: ${fault}. No upstream install is configured (upstream in master.json), so it is not filed; report it to Graphyard, never as work in ${cycle.config.repository}`);
+  if (!file) return note('failed', `Mainworks fault: ${fault}. No upstream install is configured (upstream in master.json), so it is not filed; report it to Mainworks, never as work in ${cycle.config.repository}`);
   try {
     const filed = await file(item, key);
     note('done', `Filed ${filed?.key ?? 'an item'}${upstream ? ' to the upstream install' : ''}: ${fault}`);
-  } catch (error) { note('failed', `Graphyard fault: ${fault}. Could not file it${upstream ? ' to the upstream install' : ''}: ${message(error)}`); }
+  } catch (error) { note('failed', `Mainworks fault: ${fault}. Could not file it${upstream ? ' to the upstream install' : ''}: ${message(error)}`); }
 }
 
-/** GY-3249: a merge trial that could not fetch from `host` is reported once per host, like any Graphyard fault. */
+/** GY-3249: a merge trial that could not fetch from `host` is reported once per host, like any Mainworks fault. */
 export const reportTrialHostFault = (cycle: Pick<Cycle, 'state' | 'effects' | 'clock' | 'log' | 'config'>, host: string) =>
   reportFault(cycle, `trial-host-fault:${host}`, trialHostFaultItem(host, cycle.config.repository), `merge trials cannot fetch from ${host}, a host a normal build needs`);
 
 /** GY-3316: a merge trial Docker refused a network for spent address pools is reported once per repository, naming the preview networks on the host. */
 export const reportTrialNetworkFault = (cycle: Pick<Cycle, 'state' | 'effects' | 'clock' | 'log' | 'config'>, networks: string) =>
-  reportFault(cycle, `trial-network-fault:${cycle.config.repository}`, trialNetworkFaultItem(cycle.config.repository, networks), `merge trials cannot create a Docker network on the install for ${cycle.config.repository}: its address pools are spent, with ${networks} Graphyard preview networks on the trial host`);
+  reportFault(cycle, `trial-network-fault:${cycle.config.repository}`, trialNetworkFaultItem(cycle.config.repository, networks), `merge trials cannot create a Docker network on the install for ${cycle.config.repository}: its address pools are spent, with ${networks} Mainworks preview networks on the trial host`);
 
-/** GY-3275: a merge trial that could not build a repository's own trial image is reported once per repository, like any Graphyard fault. */
+/** GY-3275: a merge trial that could not build a repository's own trial image is reported once per repository, like any Mainworks fault. */
 export const reportTrialImageFault = (cycle: Pick<Cycle, 'state' | 'effects' | 'clock' | 'log' | 'config'>) =>
   reportFault(cycle, `trial-image-fault:${cycle.config.repository}`, trialImageFaultItem(cycle.config.repository), `merge trials cannot build the repository's graphyard.trial.Dockerfile image on the install for ${cycle.config.repository}`);
 
-/** GY-3339: a merge trial whose nested sandbox AppArmor denied is reported once per repository, like any Graphyard fault. */
+/** GY-3339: a merge trial whose nested sandbox AppArmor denied is reported once per repository, like any Mainworks fault. */
 export const reportTrialSandboxFault = (cycle: Pick<Cycle, 'state' | 'effects' | 'clock' | 'log' | 'config'>) =>
   reportFault(cycle, `trial-sandbox-fault:${cycle.config.repository}`, trialSandboxFaultItem(cycle.config.repository), `merge trials cannot start nested sandboxes: AppArmor denies them in the trial container on the install for ${cycle.config.repository}`);
 

@@ -100,7 +100,7 @@ export class Store {
    * the coordination lock (GY-203), only for the tables whose DDL is not yet recorded. Every lock
    * wait shares one `lockTimeoutMs` deadline, each attempt waiting at most `attemptLockTimeoutMs`
    * (3 s) before it rolls back and retries, so startup fails naming the lock inside the health
-   * window. The migration's own work is not timed: a long backfill (the offline `graphyard db
+   * window. The migration's own work is not timed: a long backfill (the offline `mainworks db
    * migrate` Job) still completes.
    */
   async init(options: { lockTimeoutMs?: number; attemptLockTimeoutMs?: number } = {}) { return runStartupMigration(this.pool, options); }

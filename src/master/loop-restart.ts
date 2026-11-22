@@ -135,7 +135,7 @@ export async function restartMasterLoop(root: string, config: MasterConfig, lock
     return { supervisor: found.unit, stopped: found.mainPid || null, unsupervised, started, log: null, mismatch: null };
   }
   const mismatch = found
-    ? `${found.unit} was not restarted: ${found.mismatch}; the unit was stopped first, so systemd does not bring its loop back beside the detached one (fix: graphyard master init --token-stdin --replace-supervisor rewrites it onto this install's launcher); the loop was restarted detached instead`
+    ? `${found.unit} was not restarted: ${found.mismatch}; the unit was stopped first, so systemd does not bring its loop back beside the detached one (fix: mainworks master init --token-stdin --replace-supervisor rewrites it onto this install's launcher); the loop was restarted detached instead`
     : null;
   if (found) await systemctl(['stop', found.unit], (loopStopTimeoutSeconds + 60) * 1000);
   let stopped: number | null = null;
@@ -193,7 +193,7 @@ export async function recordLockRefusal(root: string, holder: LoopLock, at = new
 export async function recordingLockRefusal<T>(root: string, held: LoopLock | null, run: Promise<T>): Promise<T> {
   try { return await run; }
   catch (error) {
-    if (held && String((error as Error)?.message).startsWith('Another Graphyard master loop holds')) await recordLockRefusal(root, held).catch(() => {});
+    if (held && String((error as Error)?.message).startsWith('Another Mainworks master loop holds')) await recordLockRefusal(root, held).catch(() => {});
     throw error;
   }
 }

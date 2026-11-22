@@ -61,7 +61,7 @@ export async function createWorktree(context: CliContext, work: any) {
   const path = reuse && (!existsSync(reuse) || spawnSync('git', ['-C', reuse, 'symbolic-ref', '--short', 'HEAD'], { encoding: 'utf8' }).stdout.trim() === branch) ? reuse : resolve(root, '.graphyard/worktrees', `${work.key}-${epoch}`);
   let startPoint = args[1] ?? 'HEAD';
   if (work.submission) {
-    // GY-2017: a control-plane rework starts from the head Graphyard registered at the last
+    // GY-2017: a control-plane rework starts from the head Mainworks registered at the last
     // submission, read from the shared object store: no pull-request observation and no fetch or
     // push of the worker branch, whether origin lacks it or holds a stale one from the legacy
     // flow — only the merge writer pushes. A start object nothing registered, or the store does

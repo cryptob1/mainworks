@@ -2,7 +2,7 @@
 
 **Run AI coding agents like Claude Code and Codex, ship each goal to production with independent review and proof.**
 
-[![Mainworks walkthrough: goal through review, merge trial, deploy, revert](docs/diagrams/how-graphyard-works.gif)](docs/diagrams/how-graphyard-works.mp4)
+[![Mainworks walkthrough: goal through review, merge trial, deploy, revert](docs/diagrams/how-mainworks-works.gif)](docs/diagrams/how-mainworks-works.mp4)
 
 ## Why Mainworks
 
@@ -15,13 +15,13 @@ Prerequisites: Linux 7.0+ with Landlock ABI 9+ (`uname -r`; Ubuntu 26.04: `linux
 ## Quick start
 
 ```sh
-git clone https://github.com/cryptob1/graphyard.git && cd graphyard
+git clone https://github.com/cryptob1/graphyard.git && cd mainworks
 npm ci
 npm run build
 node bin/graphyard.mjs up --repo OWNER/NAME
 ```
 
-The `graphyard` command and `GRAPHYARD_*` settings still work.
+The `mainworks` command and `GRAPHYARD_*` settings still work.
 
 Once published to npm:
 

@@ -14,7 +14,7 @@ import { coordinationViewHeader } from '../src/server/work-view';
 // coordination read exactly as `master run` sends them (X-Graphyard-Loop-Hosts), the Workers page
 // lists this machine and an added host with cores, temperature, steal and runs now, and an
 // unreachable host as away — on a desktop viewport and on a phone's. The added host is the fixture
-// tests/helpers/fake-hosts.ts prepares by running the script `graphyard host prepare` prints, and
+// tests/helpers/fake-hosts.ts prepares by running the script `mainworks host prepare` prints, and
 // the readings below are read from it through its shim, not invented.
 
 /** The real control plane serving the built dashboard, proxying the page's API reads to it. */

@@ -16,8 +16,8 @@ import { ensureShippedScenarios } from '../src/scenarios.js';
 import { TestsView } from '../web/pages/tests.js';
 
 // GY-2964: a managed repository's Tests page lists that repository's own end-to-end cases, never
-// Graphyard's seeded built-in scenarios. The built-in scenario revisions ship in code and are
-// materialized only for an install managing Graphyard's own repository (cryptob1/graphyard); an
+// Mainworks's seeded built-in scenarios. The built-in scenario revisions ship in code and are
+// materialized only for an install managing Mainworks's own repository (cryptob1/graphyard); an
 // install managing another repository registers exactly the cases synced from its e2e/cases/, and
 // with none the page shows the empty state that says how to add one.
 
@@ -29,13 +29,13 @@ let gameStore: Store, gameEngine: Engine, gameHttp: ReturnType<typeof server>, g
   gyStore: Store, gyEngine: Engine, gyHttp: ReturnType<typeof server>, gyUrl: string;
 
 before(async () => {
-  // The managed install: a fixture repository that is not Graphyard's own.
+  // The managed install: a fixture repository that is not Mainworks's own.
   gameStore = await withDatabase('managed-tests-page'); await gameStore.init();
   gameEngine = new Engine(gameStore, 120, game);
   gameHttp = server(gameEngine, [{ ...operator, token: tokens.get(operator.id)! }]);
   await new Promise<void>(resolve => gameHttp.listen(0, '127.0.0.1', resolve));
   gameUrl = `http://127.0.0.1:${(gameHttp.address() as any).port}`;
-  // The control plane for Graphyard's own repository.
+  // The control plane for Mainworks's own repository.
   gyStore = await withDatabase('managed-tests-page'); await gyStore.init();
   gyEngine = new Engine(gyStore, 120, 'cryptob1/graphyard');
   gyHttp = server(gyEngine, [{ ...operator, token: tokens.get(operator.id)! }]);
@@ -71,7 +71,7 @@ const caseFile = (id: string) => ({ id, title: `Case ${id}`, tags: ['api'], targ
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/&#x27;/g, '\'').replace(/&amp;/g, '&').replace(/\s+/g, ' ');
 const noop = () => {};
 
-test('unit:managed-tests-page-lists-repository-cases-only — a managed repository lists only the cases its own e2e/cases/ synced, never Graphyard\'s built-in scenarios; the Graphyard install still lists them', async () => {
+test('unit:managed-tests-page-lists-repository-cases-only — a managed repository lists only the cases its own e2e/cases/ synced, never Mainworks\'s built-in scenarios; the Mainworks install still lists them', async () => {
   // The registry listing is the read that materializes shipped revisions; a managed repository ships none.
   assert.deepEqual((await gameApi('scenarios')).map((scenario: any) => scenario.id), [], 'no built-in scenario is registered for the managed repository');
   const empty = await gameApi('tests');
@@ -93,11 +93,11 @@ test('unit:managed-tests-page-lists-repository-cases-only — a managed reposito
     assert.equal(entry.changed.by, 'operator');
   }
 
-  // Graphyard's own repository install still lists the built-in scenarios, each with a real timestamp.
+  // Mainworks's own repository install still lists the built-in scenarios, each with a real timestamp.
   await gyApi('scenarios');
   const gyTests = await gyApi('tests');
   const ids = (gyTests.cases as any[]).map(entry => entry.id);
-  for (const id of ['capacity-limit-redispatch', 'fixture-static-home', 'fixture-compose-app']) assert.ok(ids.includes(id), `the Graphyard repository install lists the built-in ${id}`);
+  for (const id of ['capacity-limit-redispatch', 'fixture-static-home', 'fixture-compose-app']) assert.ok(ids.includes(id), `the Mainworks repository install lists the built-in ${id}`);
   for (const entry of (gyTests.cases as any[]).filter(({ id }) => ['capacity-limit-redispatch', 'fixture-static-home', 'fixture-compose-app'].includes(id)))
     assert.ok(Date.parse(entry.changed.at) > 0, `a seeded revision carries a real timestamp, not ${entry.changed.at}`);
 

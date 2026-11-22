@@ -6,8 +6,8 @@ import { join } from 'node:path';
 import { describeUpEvent, onboardingBranch, publishOnboarding, runUp, type UpDependencies, type UpEvent } from '../src/up.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-3221: `up` refuses a base branch inside Graphyard's own branch namespace before anything
-// runs; onboarding commits are authored by Graphyard's own identity, so a host with no global git
+// GY-3221: `up` refuses a base branch inside Mainworks's own branch namespace before anything
+// runs; onboarding commits are authored by Mainworks's own identity, so a host with no global git
 // identity commits all the same; and a failing step's event and printed error carry the failed
 // command's stderr. Every scratch repository here runs with HOME pointing at an empty directory
 // (and no system git config), so no host git identity exists anywhere in these tests.
@@ -19,7 +19,7 @@ async function scratchRepository(label: string) {
   const home = await temporaryDirectory(`up-preflight-${label}-home`);
   const configHome = await temporaryDirectory(`up-preflight-${label}-config`);
   // No global (~/.gitconfig, ~/.config/git/config) and no system git config: the only identity any
-  // git command could find is the one Graphyard's own commands carry.
+  // git command could find is the one Mainworks's own commands carry.
   const environment = { ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, '.config'), GIT_CONFIG_NOSYSTEM: '1' };
   const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', env: environment, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   git('init', '--bare', '-q', '-b', 'main', origin);
@@ -53,7 +53,7 @@ const onboardingFiles = async (root: string) => {
   await writeFile(join(root, 'graphyard.json'), '{}\n');
 };
 
-test("unit:tests/up-preflight-branch-identity.test.ts — up refuses --base-branch graphyard and graphyard/x before any action runs", async () => {
+test("unit:tests/up-preflight-branch-identity.test.ts — up refuses --base-branch mainworks and graphyard/x before any action runs", async () => {
   const root = await temporaryDirectory('up-preflight-namespace');
   const calls: string[][] = [];
   const events: UpEvent[] = [];
@@ -73,25 +73,25 @@ test("unit:tests/up-preflight-branch-identity.test.ts — up refuses --base-bran
     calls.length = 0; events.length = 0;
     const result = await runUp({ repository: 'owner/project', provider: 'compose', agent: false, master: 'claude', baseBranch: branch }, deps);
     assert.equal(result.ok, false, `${branch} is refused`);
-    assert.match(result.next, /--base-branch graphyard[/\w.-]* is Graphyard's own branch namespace/);
+    assert.match(result.next, /--base-branch mainworks[/\w.-]* is Mainworks's own branch namespace/);
     assert.match(result.next, new RegExp(onboardingBranch));
     assert.deepEqual(calls, [], `${branch}: no command ran before the refusal`);
     assert.ok(events.every(event => event.kind !== 'step'), `${branch}: no step ran: ${JSON.stringify(events)}`);
   }
   // A branch outside the namespace — even one containing the word — is not refused: preflight runs.
   calls.length = 0; events.length = 0;
-  const outside = await runUp({ repository: 'owner/project', provider: 'compose', agent: false, master: 'claude', baseBranch: 'release/graphyard-mirror' }, deps);
+  const outside = await runUp({ repository: 'owner/project', provider: 'compose', agent: false, master: 'claude', baseBranch: 'release/mainworks-mirror' }, deps);
   assert.ok(calls.some(args => args[0] === 'install' && args.includes('--plan')), `preflight ran: ${outside.next}`);
   assert.ok(events.some(event => event.kind === 'step' && event.state === 'done'), JSON.stringify(events));
 });
 
-test("unit:tests/up-preflight-branch-identity.test.ts — onboarding commits succeed with no host git identity, authored by Graphyard", async () => {
+test("unit:tests/up-preflight-branch-identity.test.ts — onboarding commits succeed with no host git identity, authored by Mainworks", async () => {
   const { root, origin, configHome, git, run } = await scratchRepository('identity');
   await onboardingFiles(root);
   const published = await withConfigHome(configHome, () => publishOnboarding(root, 'owner/scratch-up-preflight', run));
   assert.ok(published, 'the onboarding commit was built with no host git identity');
-  assert.equal(git('show', '-s', '--format=%an <%ae>', published.commit), 'Graphyard <graphyard@localhost>');
-  assert.equal(git('show', '-s', '--format=%cn <%ce>', published.commit), 'Graphyard <graphyard@localhost>');
+  assert.equal(git('show', '-s', '--format=%an <%ae>', published.commit), 'Mainworks <graphyard@localhost>');
+  assert.equal(git('show', '-s', '--format=%cn <%ce>', published.commit), 'Mainworks <graphyard@localhost>');
   assert.match(git('ls-remote', origin, `refs/heads/${onboardingBranch}`), new RegExp(published.commit), 'pushed to the onboarding branch');
   assert.deepEqual(await withConfigHome(configHome, () => publishOnboarding(root, 'owner/scratch-up-preflight', run)), published, 'a rerun publishes the same head');
 });

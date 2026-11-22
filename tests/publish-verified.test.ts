@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { publishVerified } from '../src/publish-verified.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-3214: each commit Graphyard's batch gate verifies is published as two images and the npm
+// GY-3214: each commit Mainworks's batch gate verifies is published as two images and the npm
 // package `@cryptob1/graphyard` in Actions or local registry tests.
 
 const identity = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
@@ -19,7 +19,7 @@ async function checkout() {
   git(root, ['init', '-q', '-b', 'main']);
   await mkdir(join(root, 'bin'));
   await writeFile(join(root, 'bin', 'graphyard.mjs'), '#!/usr/bin/env node\n');
-  await writeFile(join(root, 'package.json'), JSON.stringify({ name: '@cryptob1/graphyard', version: '0.1.0', private: true, type: 'module', description: 'd', license: 'Apache-2.0', bin: { graphyard: './bin/graphyard.mjs' }, dependencies: { zod: '4.4.3' } }));
+  await writeFile(join(root, 'package.json'), JSON.stringify({ name: '@cryptob1/graphyard', version: '0.1.0', private: true, type: 'module', description: 'd', license: 'Apache-2.0', bin: { mainworks: './bin/graphyard.mjs' }, dependencies: { zod: '4.4.3' } }));
   git(root, ['add', '.']);
   git(root, ['commit', '-q', '-m', 'base'], { ...identity, GIT_COMMITTER_DATE: '2026-11-09T23:30:00-05:00' });
   return { root, commit: git(root, ['rev-parse', 'HEAD']) };
@@ -45,7 +45,7 @@ test('unit:tests/publish-verified.test.ts — a verified commit is pushed as bot
   assert.deepEqual(outcome, { version, images: [`ghcr.io/cryptob1/graphyard:${commit}`, 'ghcr.io/cryptob1/graphyard:verified', `ghcr.io/cryptob1/graphyard-trial:${commit}`, 'ghcr.io/cryptob1/graphyard-trial:verified'] },
     'the version is the commit\'s UTC day and short sha; each image is tagged by the commit and as verified');
   const build = calls.find(call => call.startsWith('docker build '))!, trial = calls.find(call => call.startsWith('docker buildx build '))!;
-  for (const [call, image] of [[build, 'graphyard'], [trial, 'graphyard-trial']] as const) {
+  for (const [call, image] of [[build, 'graphyard'], [trial, 'mainworks-trial']] as const) {
     assert.match(call, new RegExp(`--build-arg GRAPHYARD_BUILD_SHA=${commit} `), `${image} is stamped with the commit`);
     assert.match(call, new RegExp(`--tag ghcr\\.io/cryptob1/${image}:${commit} --tag ghcr\\.io/cryptob1/${image}:verified `));
   }
@@ -56,7 +56,7 @@ test('unit:tests/publish-verified.test.ts — a verified commit is pushed as bot
   assert.equal(published.length, 1);
   const { manifest, npmrc } = published[0]!;
   assert.deepEqual({ name: manifest.name, version: manifest.version, graphyardCommit: manifest.graphyardCommit, graphyardUpstream: manifest.graphyardUpstream, private: manifest.private, dependencies: manifest.dependencies, bin: manifest.bin },
-    { name: '@cryptob1/graphyard', version, graphyardCommit: commit, graphyardUpstream: 'https://github.com/cryptob1/graphyard', private: undefined, dependencies: undefined, bin: { graphyard: './bin/graphyard.mjs' } }, 'the package names the commit it fetches and installs nothing itself');
+    { name: '@cryptob1/graphyard', version, graphyardCommit: commit, graphyardUpstream: 'https://github.com/cryptob1/graphyard', private: undefined, dependencies: undefined, bin: { mainworks: './bin/graphyard.mjs' } }, 'the package names the commit it fetches and installs nothing itself');
   assert.match(npmrc, /^\/\/registry\.npmjs\.org\/:_authToken=\$\{NPM_TOKEN\}$/m);
   assert.ok(!calls.some(call => /npm-secret|ghcr-secret/.test(call)), 'no token is a command argument');
   assert.match(calls[0]!, /printf %s "\$GITHUB_TOKEN".*docker login .*--password-stdin/, 'docker reads the environment token on stdin');
@@ -66,7 +66,7 @@ test('unit:tests/publish-verified.test.ts — a verified commit is pushed as bot
   // Another registry (a mirror, or a test's local one) is named by the environment.
   const mirror = stubs();
   const mirrored = await publishVerified(commit, { root, run: mirror.run, env: { NPM_TOKEN: 'npm-secret', GRAPHYARD_IMAGE_REGISTRY: '127.0.0.1:5000/mirror', npm_config_registry: 'http://127.0.0.1:4873/' } }) as { images: string[] };
-  assert.equal(mirrored.images[0], `127.0.0.1:5000/mirror/graphyard:${commit}`);
+  assert.equal(mirrored.images[0], `127.0.0.1:5000/mirror/mainworks:${commit}`);
   assert.match(mirror.published[0]!.npmrc, /^registry=http:\/\/127\.0\.0\.1:4873\/\n\/\/127\.0\.0\.1:4873\/:_authToken=\$\{NPM_TOKEN\}$/m);
 });
 

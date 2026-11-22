@@ -12,7 +12,7 @@ import { deliveryOutcome, shortShas } from './format.js';
 import { isFilingRefusal } from './user-facing.js';
 
 /**
- * Plain-English status for people who have never read the Graphyard docs. Every sentence is
+ * Plain-English status for people who have never read the Mainworks docs. Every sentence is
  * derived from the first refusing gate (the same order the control plane evaluates), so the
  * dashboard never says anything the gates do not. Internal vocabulary stays out of this copy;
  * `jargon` lists the words a test keeps out of every generated sentence.
@@ -71,7 +71,7 @@ export function plainReason(reason: string, gate: string, now: number, work?: Wo
     [/^The merge writer has not observed the current candidate$/, () => `${PRODUCT_NAME} is re-reading the latest code`],
     [mergeWriterTrialPattern, () => `Waiting for ${PRODUCT_NAME} to build and test the merge`],
     [mergeWriterPushPattern, () => `Waiting for ${PRODUCT_NAME} to merge it`],
-    [/^Required Graphyard check and merge-queue branch protection/, () => 'GitHub merge protection is not confirmed yet', true],
+    [/^Required Mainworks check and merge-queue branch protection/, () => 'GitHub merge protection is not confirmed yet', true],
     [/^Pull request is not mergeable against the current base$/, () => 'The pull request conflicts with the main branch', true],
     [/^Slice lead (\S+) ruled \S+ under rule \S+; delivery is blocked until the authorized recovery: (.*)$/s, m => `Held by team lead ${m[1]}: ${m[2]}`, true],
   ];
@@ -181,7 +181,7 @@ export function phaseOf(work: Work, now: number): Phase {
 }
 
 /** Lower-cases a leading common word so a reason reads mid-sentence; names stay capitalized. */
-const lowerFirst = (text: string) => new RegExp(`^(Graphyard|${PRODUCT_NAME}|GitHub|Codex|AC-|GY-)`).test(text) ? text : text[0].toLowerCase() + text.slice(1);
+const lowerFirst = (text: string) => new RegExp(`^(Mainworks|${PRODUCT_NAME}|GitHub|Codex|AC-|GY-)`).test(text) ? text : text[0].toLowerCase() + text.slice(1);
 /**
  * What the item's sentences name it by. The merge writer opens no pull request, so an item the
  * control plane observed itself is named by its commit — the merge commit once merged, the head

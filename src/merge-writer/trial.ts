@@ -145,9 +145,9 @@ export const withheldTrialVariables = ['GH_CONFIG_DIR', 'GH_TOKEN', 'GITHUB_TOKE
 export const credentialTrialVariable = (name: string) =>
   (withheldTrialVariables as readonly string[]).includes(name)
   || /(?:TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE_KEY|API_KEY|ACCESS_KEY|CREDENTIAL)/i.test(name);
-/** The trial child's environment: the isolated test one, with every credential and Graphyard control removed and git's global configuration off. */
+/** The trial child's environment: the isolated test one, with every credential and Mainworks control removed and git's global configuration off. */
 export function trialEnvironment(environment: NodeJS.ProcessEnv = process.env): Record<string, string> {
-  const kept = Object.fromEntries(Object.entries(isolatedTestEnvironment(environment)).filter(([name]) => !/^(GRAPHYARD|HERDR|LC)_/.test(name) && name !== 'LANG' && !credentialTrialVariable(name)));
+  const kept = Object.fromEntries(Object.entries(isolatedTestEnvironment(environment)).filter(([name]) => !/^(MAINWORKS|HERDR|LC)_/.test(name) && name !== 'LANG' && !credentialTrialVariable(name)));
   // Use the running Node installation before host version-manager shims: the trial's empty
   // home intentionally cannot supply the host's mise trust/configuration to those shims.
   // The private image supplies C.UTF-8, not the service manager's host locales.
@@ -330,14 +330,14 @@ export async function clearTrialCheckout(directory: string, remove: (path: strin
 }
 /**
  * The name prefix of a trial's temporary directory. It stays this short, as CI's /tmp is
- * (`graphyard-trial-` lengthened master-agent-envs' and master-loop-resilience's launch lines past
+ * (`mainworks-trial-` lengthened master-agent-envs' and master-loop-resilience's launch lines past
  * their bound).
  */
 export const trialTemporaryPrefix = 'gy-t';
 /**
  * The name prefix of the short directory a trial's checkout is made in, beside its temporary one
  * (GY-1565). The managed session directory's path (~/.local/share/graphyard/worktrees/<repo>/
- * graphyard-trial-<key>-<sha>-<id>/checkout, 116 bytes on vishrog) put the launch lines
+ * mainworks-trial-<key>-<sha>-<id>/checkout, 116 bytes on vishrog) put the launch lines
  * master-agent-envs and master-loop-resilience type past `launchCommandLimit`, which CI's
  * 37-byte checkout never reaches: two of GY-1535's ten shadow-only-fails. The session directory
  * still holds the trial's lists and records, and is removed and reclaimed as before.
@@ -354,7 +354,7 @@ export const trialCheckoutPrefix = 'gy-c';
  * by the pass building it, and each pass using it holds `<entry>.use-<id>`. The `keptBuildLimit`
  * most recently used idle trees stay; older ones are taken back.
  */
-export const keptBaseBuildPrefix = 'graphyard-base-build-';
+export const keptBaseBuildPrefix = 'mainworks-base-build-';
 export const keptBuildPlacePrefix = 'gy-b';
 export const keptBuildLimit = 4;
 /** The kept built tree's entry for commit `sha` under the trial worktree root `base`. */
@@ -648,13 +648,13 @@ export const trialHostFaultHost = (error: unknown): string | null =>
  */
 export class TrialNetworkPoolError extends Error {
   constructor(readonly networks: number | null) {
-    super(`${trialHostFaultPrefix}: Docker could not create the trial's network (${addressPoolsSpent}); ${networks ?? 'an unknown number of'} Graphyard preview networks are on the trial host`);
+    super(`${trialHostFaultPrefix}: Docker could not create the trial's network (${addressPoolsSpent}); ${networks ?? 'an unknown number of'} Mainworks preview networks are on the trial host`);
     this.name = 'TrialNetworkPoolError';
   }
 }
 /** The preview-network count a network-pool fault names, from the error or the message it crossed a process boundary as; null for any other error. */
 export const trialNetworkPoolFault = (error: unknown): string | null =>
-  new RegExp(`^${trialHostFaultPrefix}: Docker could not create the trial's network .*; (.+) Graphyard preview networks`).exec(error instanceof Error ? error.message : '')?.[1] ?? null;
+  new RegExp(`^${trialHostFaultPrefix}: Docker could not create the trial's network .*; (.+) Mainworks preview networks`).exec(error instanceof Error ? error.message : '')?.[1] ?? null;
 /** `error` as a network-pool fault when Docker refused a network for spent address pools, else null. */
 const networkPoolFault = async (error: unknown, env: Record<string, string>) => (error instanceof Error ? error.message : String(error)).includes(addressPoolsSpent)
   ? new TrialNetworkPoolError((error as { previewNetworks?: number | null }).previewNetworks ?? await previewNetworkCount(dockerEnvironment(env, { DOCKER_HOST: 'unix:///var/run/docker.sock' }))) : null;
@@ -851,9 +851,9 @@ export interface RunTrialInput {
   services?: typeof startCheckServices;
   /** GY-3577: the merge trial's proof count: every test shard, on this machine or a host, runs with `args` before its file list, and its output goes to `output`. */
   reporter?: { args: readonly string[]; output: (out: string) => void };
-  /** GY-3283: run only the declared check of this name, whatever paths it is limited to (a worker's `graphyard check NAME`). */
+  /** GY-3283: run only the declared check of this name, whatever paths it is limited to (a worker's `mainworks check NAME`). */
   only?: string;
-  /** GY-3412: the hosts a selection's shards fan out to — those `graphyard host add` recorded unless a test names others — and how they are read. */
+  /** GY-3412: the hosts a selection's shards fan out to — those `mainworks host add` recorded unless a test names others — and how they are read. */
   remote?: { hosts: readonly string[]; read?: (hosts: readonly string[], transport: ShardSshSession) => Promise<HostReading[]> };
   /** GY-3526: a worker verification's label: it holds a host heavy-job slot under it only while a test shard or check runs on this machine, never while its shards run on other hosts. */
   localSlot?: string;
@@ -1559,7 +1559,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     try {
       const readings = (await (input.remote?.read ?? ((named, shared) => readShardHosts(named, run, cpu.cores(), shared)))(hosts, transport)).slice(1);
       const host = readings.filter(reading => underHeatLimit(reading) && reading.compose).sort((a, b) => realFreeCores(b) - realFreeCores(a))[0];
-      if (!host) return here(`no host is ready (${readings.map(reading => `${reading.name}: ${reading.away ? reading.reason ?? 'away' : reading.compose ? 'too hot' : 'no Docker Compose plugin, see graphyard host prepare'}`).join('; ')})`);
+      if (!host) return here(`no host is ready (${readings.map(reading => `${reading.name}: ${reading.away ? reading.reason ?? 'away' : reading.compose ? 'too hot' : 'no Docker Compose plugin, see mainworks host prepare'}`).join('; ')})`);
       enterStep(`tests: ${check.check} on ${host.name}`);
       const probe = tcpAcceptProbe(check.services!.map(({ service, port }) => ({ host: service, port })), 120_000);
       const ended = await session.check(host.name, { file: check.services![0]!.file, services: check.services!.map(({ service, port }) => ({ service, port })), cpus: Math.max(1, host.cores),

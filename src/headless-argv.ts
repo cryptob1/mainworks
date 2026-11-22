@@ -25,7 +25,7 @@ export function headlessArgs(kind: string, args: readonly string[], prompt: stri
     return [...words.slice(0, subcommand), ...args.filter(arg => arg !== requestPlaceholder), ...words.slice(subcommand).map(arg => arg === requestPlaceholder ? prompt : arg)];
   }
   const form = runtimeAdapter(kind)?.headless;
-  if (!form) throw new HeadlessConfigurationError(`The ${kind} runtime has no one-task contract. Set launch.headlessArgs with exactly one {request} using graphyard master registry runtime set NAME --headless-arg=ARG --reason REASON; reviews never use Herdr.`);
+  if (!form) throw new HeadlessConfigurationError(`The ${kind} runtime has no one-task contract. Set launch.headlessArgs with exactly one {request} using mainworks master registry runtime set NAME --headless-arg=ARG --reason REASON; reviews never use Herdr.`);
   const drop = form.drop ?? [], optional = form.optional ?? [];
   const kept = args.filter((arg, index) => !drop.some(flag => arg === flag || arg.startsWith(`${flag}=`) || args[index - 1] === flag) && !optional.includes(arg));
   const placed = kept.includes(requestPlaceholder);

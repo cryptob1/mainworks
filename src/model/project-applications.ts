@@ -1,7 +1,7 @@
 import type { z } from 'zod';
 import type { applicationSchema } from '../model-boundary/project-applications.js';
 export type Application = z.infer<typeof applicationSchema>;
-/** An application Graphyard can serve as a preview or trial; an `external` one is only observed (GY-3459). */
+/** An application Mainworks can serve as a preview or trial; an `external` one is only observed (GY-3459). */
 export type PreviewableApplication = Exclude<Application, { kind: 'external' }>;
 export const previewable = (applications: readonly Application[]) => applications.filter((application): application is PreviewableApplication => application.kind !== 'external');
 

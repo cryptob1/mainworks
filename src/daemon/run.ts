@@ -24,7 +24,7 @@ import { activeCliRoot } from '../install/cli-release.js';
 import { loopCodeRoot } from './checkout-state.js';
 import { noteControlPlane } from './compose-recovery.js';
 
-/** The compact daemon view `master status` joins onto Graphyard truth. */
+/** The compact daemon view `master status` joins onto Mainworks truth. */
 export function daemonSummary(state: DaemonState, now: number, intervalMs: number, hostId?: string, masterAgent?: { agent_status?: string }) {
   const lastCycleAt = state.lastCycleAt ? Date.parse(state.lastCycleAt) : Number.NaN;
   const lagMs = Number.isFinite(lastCycleAt) ? now - lastCycleAt : null;

@@ -45,7 +45,7 @@ async function host(enabled: boolean) {
   await writeFile(join(bin, 'docker'), `#!/bin/sh
 echo "$*" >> '${log}'
 case " $* " in
-  *" create "*) case " $* " in *apparmor=graphyard-trial*) [ -f '${loaded}' ] || { echo "docker: Error response from daemon: AppArmor enabled on system but the graphyard-trial profile could not be loaded." >&2; exit 125; } ;; esac ;;
+  *" create "*) case " $* " in *apparmor=mainworks-trial*) [ -f '${loaded}' ] || { echo "docker: Error response from daemon: AppArmor enabled on system but the mainworks-trial profile could not be loaded." >&2; exit 125; } ;; esac ;;
   *" start "*) [ -n "$STUB_SANDBOX_ERROR" ] && { echo "$STUB_SANDBOX_ERROR" >&2; exit 1; } ;;
 esac
 exit 0
@@ -73,7 +73,7 @@ test('e2e:trial-container-apparmor — on an AppArmor host install plans and loa
   const apparmor = await host(true);
   const [action] = trialAppArmorPlan();
   assert.equal(action?.id, 'provider.trial-apparmor');
-  assert.match(action!.command!, /profile graphyard-trial flags=\(unconfined\) \{\s+userns,\s+\}/);
+  assert.match(action!.command!, /profile mainworks-trial flags=\(unconfined\) \{\s+userns,\s+\}/);
   assert.match(action!.command!, new RegExp(`sudo apparmor_parser -r -W ${trialAppArmorProfilePath}`));
   const calls: { program: string; args: string[]; input?: string }[] = [];
   await provisionTrialAppArmor(stubTransport(calls));
@@ -81,10 +81,10 @@ test('e2e:trial-container-apparmor — on an AppArmor host install plans and loa
   assert.match(calls[0]!.input!, /flags=\(unconfined\)/); assert.match(calls[0]!.input!, /^\s+userns,$/m);
   assert.ok(existsSync(apparmor.loaded), 'the stub apparmor_parser loaded the profile');
 
-  const [command, ...args] = trialContainerLaunch({ image: 'graphyard-trial:local', mounts: [], network: 'none' });
+  const [command, ...args] = trialContainerLaunch({ image: 'mainworks-trial:local', mounts: [], network: 'none' });
   execFileSync(command!, [...args, 'true'], { cwd: '/', env: process.env });
   const [created] = await apparmor.createArgs();
-  assert.match(created!, /--security-opt=apparmor=graphyard-trial /);
+  assert.match(created!, /--security-opt=apparmor=mainworks-trial /);
   assert.doesNotMatch(created!, /apparmor=unconfined/);
 
   const plain = await host(false);
@@ -92,7 +92,7 @@ test('e2e:trial-container-apparmor — on an AppArmor host install plans and loa
   calls.length = 0;
   await provisionTrialAppArmor(stubTransport(calls));
   assert.deepEqual(calls, [], 'nothing is loaded without AppArmor');
-  const [again, ...rest] = trialContainerLaunch({ image: 'graphyard-trial:local', mounts: [], network: 'none' });
+  const [again, ...rest] = trialContainerLaunch({ image: 'mainworks-trial:local', mounts: [], network: 'none' });
   execFileSync(again!, [...rest, 'true'], { cwd: '/', env: process.env });
   const [createdPlain] = await plain.createArgs();
   assert.ok(createdPlain, 'the trial container was created');
@@ -105,7 +105,7 @@ const doctorLines = async (root: string) => (await setupFromZeroChecks({ root, s
 test('e2e:trial-container-apparmor — doctor prints a FAIL line naming AppArmor and the fix when the profile is not loaded or the nested sandbox is denied, PASS when it starts', async () => {
   const apparmor = await host(true);
   const [notLoaded] = await doctorLines(apparmor.root);
-  assert.match(notLoaded!, /^FAIL trial-apparmor: AppArmor .*graphyard-trial profile could not be loaded.*\(fix: rerun graphyard up, which writes the graphyard-trial AppArmor profile .*apparmor_parser -r -W/);
+  assert.match(notLoaded!, /^FAIL trial-apparmor: AppArmor .*mainworks-trial profile could not be loaded.*\(fix: rerun mainworks up, which writes the mainworks-trial AppArmor profile .*apparmor_parser -r -W/);
   await writeFile(apparmor.loaded, '');
   for (const denied of [slave, uidMap]) {
     process.env.STUB_SANDBOX_ERROR = denied;
@@ -113,10 +113,10 @@ test('e2e:trial-container-apparmor — doctor prints a FAIL line naming AppArmor
       const [line] = await doctorLines(apparmor.root);
       assert.ok(line!.startsWith('FAIL trial-apparmor: AppArmor denies a nested sandbox'), line);
       assert.ok(line!.includes(denied), line);
-      assert.match(line!, /\(fix: rerun graphyard up/);
+      assert.match(line!, /\(fix: rerun mainworks up/);
     } finally { delete process.env.STUB_SANDBOX_ERROR; }
   }
-  assert.deepEqual(await doctorLines(apparmor.root), ['PASS trial-apparmor: merge-trial containers start nested sandboxes under the graphyard-trial AppArmor profile']);
+  assert.deepEqual(await doctorLines(apparmor.root), ['PASS trial-apparmor: merge-trial containers start nested sandboxes under the mainworks-trial AppArmor profile']);
   const plain = await host(false);
   assert.deepEqual(await doctorLines(plain.root), [], 'no AppArmor, no line');
 });
@@ -187,7 +187,7 @@ test('e2e:trial-container-apparmor — a trial whose nested sandbox AppArmor den
     const failed = await mergeOne(ports, work).then(() => null, (error: unknown) => error);
     assert.ok(failed instanceof TrialSandboxFaultError, `a trial-host fault, not a red verdict: ${String(failed)}`);
     assert.ok(trialSandboxFault(new Error(failed.message)), 'the fault survives the detached run\'s process boundary as its message');
-    assert.match(failed.message, /AppArmor.*rerun graphyard up/);
+    assert.match(failed.message, /AppArmor.*rerun mainworks up/);
     assert.equal(attempts, 1, 'the trial is not retried');
     const recorded = trials.at(-1) as { outcome?: string; reason?: string } | undefined;
     assert.equal(recorded?.outcome, 'host-failure', 'the trial records no verdict on the head');

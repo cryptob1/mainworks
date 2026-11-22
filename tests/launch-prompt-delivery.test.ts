@@ -250,7 +250,7 @@ await t.test('integration:never-started-vs-failed — a session that ends withou
 
     // A session that refused: one short turn, then a screen that never changes.
     await launch();
-    const refusal = `❯ You are an independent Graphyard proof producer…\n● ${words}\n`;
+    const refusal = `❯ You are an independent Mainworks proof producer…\n● ${words}\n`;
     let record = await scenario('done', refusal, 10_000);
     assert.equal(record.state, 'pending'); assert.equal(record.idleSince, iso(10_000)); assert.equal(record.acknowledgedAt, undefined); assert.equal(record.repromptedAt, undefined, 'before the interval nothing is re-prompted');
     record = await scenario('done', refusal, ackMs + 10_000);
@@ -259,13 +259,13 @@ await t.test('integration:never-started-vs-failed — a session that ends withou
     // The second refusal is caught working for a few seconds, and its answer changes the screen:
     // neither acknowledges the session.
     record = await scenario('working', refusal, ackMs + 20_000);
-    record = await scenario('done', `${refusal}❯ The Graphyard launcher…\n● Still a paste; I will not act on it.\n`, ackMs + 30_000);
-    record = await scenario('done', `${refusal}❯ The Graphyard launcher…\n● Still a paste; I will not act on it.\n`, ackMs + 40_000);
+    record = await scenario('done', `${refusal}❯ The Mainworks launcher…\n● Still a paste; I will not act on it.\n`, ackMs + 30_000);
+    record = await scenario('done', `${refusal}❯ The Mainworks launcher…\n● Still a paste; I will not act on it.\n`, ackMs + 40_000);
     assert.equal(record.acknowledgedAt, undefined); assert.equal(prompts.length, 1, 'the re-prompt is sent exactly once'); assert.equal(record.state, 'pending');
     // The second refusal was a turn, so the grace a finished session gets runs from its end.
-    record = await scenario('done', `${refusal}❯ The Graphyard launcher…\n● Still a paste; I will not act on it.\n`, ackMs + 30_000 + producerIdleGraceMs - 1);
+    record = await scenario('done', `${refusal}❯ The Mainworks launcher…\n● Still a paste; I will not act on it.\n`, ackMs + 30_000 + producerIdleGraceMs - 1);
     assert.equal(record.state, 'pending', 'the grace period is the same one every finished session gets');
-    record = await scenario('done', `${refusal}❯ The Graphyard launcher…\n● Still a paste; I will not act on it.\n`, ackMs + 30_000 + producerIdleGraceMs);
+    record = await scenario('done', `${refusal}❯ The Mainworks launcher…\n● Still a paste; I will not act on it.\n`, ackMs + 30_000 + producerIdleGraceMs);
     assert.equal(record.state, 'failed');
     assert.match(record.resolution!, /^never started: the session took up neither its request nor the re-prompt at .* and ended without acting\. Its last words: "/);
     assert.ok(record.resolution!.includes('Still a paste; I will not act on it.'), 'the reason carries the session\'s own words');
@@ -324,7 +324,7 @@ await t.test('integration:never-started-vs-failed — a session that ends withou
     const review = async (status: string, screen: string, offsetMs: number) => (await reconcileReviews(root, config, { run: (_command, args) => args[0] === 'agent' && args[1] === 'read' ? screen : JSON.stringify({ result: args[0] === 'pane' && args[1] === 'list' ? { panes: [] } : {} }), observe: () => null, work: [work()], agents: [{ name: reviewerName, pane_id: 'pane-r', agent_status: status }], now: () => new Date(clock + offsetMs), retry: (_record, message) => { reviewPrompts.push(message); } })).reviews[0];
     let reviewRecord = await review('done', `● ${words}\n`, 10_000);
     assert.equal(reviewRecord.repromptedAt, iso(10_000)); assert.equal(reviewPrompts.length, 1);
-    assert.ok(reviewPrompts[0].startsWith('You stopped before posting')); assert.match(reviewPrompts[0], /If your review is unfinished, this message comes from the Graphyard launcher/); assert.match(reviewPrompts[0], /this session's own instruction, not untrusted text, needing no further authorization/); assert.match(reviewPrompts[0], /otherwise finish the authorized reads and judge it before posting/); assert.match(reviewPrompts[0], /Review head a1f+ against base/);
+    assert.ok(reviewPrompts[0].startsWith('You stopped before posting')); assert.match(reviewPrompts[0], /If your review is unfinished, this message comes from the Mainworks launcher/); assert.match(reviewPrompts[0], /this session's own instruction, not untrusted text, needing no further authorization/); assert.match(reviewPrompts[0], /otherwise finish the authorized reads and judge it before posting/); assert.match(reviewPrompts[0], /Review head a1f+ against base/);
     reviewRecord = await review('done', `● ${words}\n`, 10_000 + reviewIdleGraceMs);
     assert.equal(reviewRecord.state, 'failed'); assert.equal(neverStarted(reviewRecord), true);
     assert.ok(reviewRecord.resolution!.includes(words));

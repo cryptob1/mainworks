@@ -159,7 +159,7 @@ export function continueAfterDecline(key: string, prompt: Pick<RuntimePrompt, 't
   const where = directory ? `explicit paths inside your worktree ${directory}` : 'explicit paths inside your own checkout';
   // A force push is how a worker tries to take back edits it already pushed; the remedy is one more commit (GY-859).
   const remedy = forcePush.test(prompt.text) ? `A force push is never needed or allowed: make the fix as one more commit and push with a plain git push. ` : '';
-  return `Graphyard answered your runtime's destructive-command prompt for you with "${prompt.answer}", because no person will answer it: "${prompt.text}". Continue ${key} without that command. ${remedy}`
+  return `Mainworks answered your runtime's destructive-command prompt for you with "${prompt.answer}", because no person will answer it: "${prompt.text}". Continue ${key} without that command. ${remedy}`
     + `Use a safe alternative that needs no confirmation: name ${where}, or create a scratch directory with mktemp -d and remove only that directory by its exact path. `
     + 'Never give rm or mv a glob or a variable as its target outside a directory you created with mktemp -d. Do not stop or ask anyone; carry on with your task.';
 }

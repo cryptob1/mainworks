@@ -50,7 +50,7 @@ export function cliCommit(root: string, run: SyncRun = syncRun): string | null {
 /**
  * The release a process loads from `root`, read once at its startup: the commit, and whether tracked
  * files differ from it (a dirty checkout runs code no commit names). AGENTS.md differing only inside
- * its managed block is Graphyard's own writing, never loaded code, so it is not dirty (GY-3271).
+ * its managed block is Mainworks's own writing, never loaded code, so it is not dirty (GY-3271).
  */
 export function readRelease(root: string, run: SyncRun = syncRun): { commit: string | null; dirty: boolean | null } {
   const commit = cliCommit(root, run);

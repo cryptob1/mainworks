@@ -1,4 +1,4 @@
-// Concern: disk headroom (GY-3122) — the close step measures the volumes Graphyard writes; below the
+// Concern: disk headroom (GY-3122) — the close step measures the volumes Mainworks writes; below the
 // floor it reclaims only its own leftovers, and while still below it no new merge trial or worker starts.
 import { existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
@@ -27,7 +27,7 @@ const gb = (bytes: number) => `${(bytes / 1e9).toFixed(1)} GB`;
 const short = (volumes: Volume[], floor: number) => volumes.filter((volume): volume is Volume & { freeBytes: number } => volume.freeBytes !== null && volume.freeBytes < floor);
 
 /**
- * One cycle's headroom check. Above the floor it changes nothing. Below it, Graphyard's own
+ * One cycle's headroom check. Above the floor it changes nothing. Below it, Mainworks's own
  * leftovers are reclaimed and the volumes measured again; a shortage that remains is kept on the
  * cursor (`state.diskHeadroom`, which dispatch, the merge writer and master status read) and as
  * the failed `disk-headroom` attention row that wakes the master. The row names the volumes and
@@ -43,7 +43,7 @@ export async function diskHeadroomStep(cycle: { config: Pick<MasterConfig, 'run'
     const removed = await effects.reclaimDisk();
     tallyLeftovers(state, 'reclaimed', removed.length);
     if (removed.length) performed.push(await record(state, `disk-reclaim:${state.cycle}`, { kind: 'reclaim', work: null, principal: null, state: 'done', attempts: 1, cycle: state.cycle,
-      detail: `Free space fell below the ${gb(floor)} floor; reclaimed Graphyard's own leftovers: ${removed.join(', ')}` }, now(), effects.persist));
+      detail: `Free space fell below the ${gb(floor)} floor; reclaimed Mainworks's own leftovers: ${removed.join(', ')}` }, now(), effects.persist));
     low = short(await effects.diskVolumes(), floor);
   }
   if (!low.length) {
@@ -53,15 +53,15 @@ export async function diskHeadroomStep(cycle: { config: Pick<MasterConfig, 'run'
   }
   const at = new Date(now()).toISOString();
   state.diskHeadroom = { at, floorBytes: floor, volumes: low.map(volume => ({ path: volume.path, freeBytes: volume.freeBytes })),
-    shortage: `${low.map(volume => `${volume.path} has ${gb(volume.freeBytes)} free`).join('; ')}, below the ${gb(floor)} floor after reclaiming Graphyard's own leftovers: no new merge trial or worker starts until space is freed` };
-  const detail = `Disk headroom: ${low.map(volume => volume.path).join(', ')} below the ${gb(floor)} free-space floor after reclaiming Graphyard's own leftovers; no new merge trial or worker starts. Free space outside Graphyard (or raise the volume) — Graphyard never deletes what it did not create`;
+    shortage: `${low.map(volume => `${volume.path} has ${gb(volume.freeBytes)} free`).join('; ')}, below the ${gb(floor)} floor after reclaiming Mainworks's own leftovers: no new merge trial or worker starts until space is freed` };
+  const detail = `Disk headroom: ${low.map(volume => volume.path).join(', ')} below the ${gb(floor)} free-space floor after reclaiming Mainworks's own leftovers; no new merge trial or worker starts. Free space outside Mainworks (or raise the volume) — Mainworks never deletes what it did not create`;
   const standing = state.actions[diskHeadroomKey];
   if (standing?.state === 'failed' && standing.detail === detail) { standing.at = at; return; }
   performed.push(await record(state, diskHeadroomKey, { kind: 'attention', work: null, principal: null, state: 'failed', attempts: (standing?.attempts ?? 0) + 1, cycle: state.cycle, detail }, now(), effects.persist));
 }
 
-/** The durable volumes Graphyard writes: its checkout, data directory, worktree root, trial checkout root and durable temporary root — one path per device. A memory-backed /tmp is never measured: its size is not disk headroom. */
-export async function graphyardVolumes(paths: string[]): Promise<Volume[]> {
+/** The durable volumes Mainworks writes: its checkout, data directory, worktree root, trial checkout root and durable temporary root — one path per device. A memory-backed /tmp is never measured: its size is not disk headroom. */
+export async function mainworksVolumes(paths: string[]): Promise<Volume[]> {
   const seen = new Set<number>(), volumes: Volume[] = [];
   for (const path of paths) {
     const device = (await stat(path).catch(() => null))?.dev;
@@ -78,8 +78,8 @@ const trialNetworkPrefix = `${composeProjectPrefix}trial-`;
 /**
  * GY-3188: what every ended job leaves, taken back by the loop's sweep: trial temporary, home and
  * checkout directories and worker verification allocations whose owner marker names a process
- * that is gone (a running one's are kept), stopped `graphyard-trial-` containers with their
- * anonymous volumes, preview and trial Compose projects whose owner is gone, trial networks no container uses, and Graphyard's own
+ * that is gone (a running one's are kept), stopped `mainworks-trial-` containers with their
+ * anonymous volumes, preview and trial Compose projects whose owner is gone, trial networks no container uses, and Mainworks's own
  * trial-image build cache older than a day (its dedicated builder only). What was removed, by name.
  */
 export async function reclaimJobLeftovers(run: ChildRun, roots: { temporary?: string[]; checkouts?: string[]; verification?: string[] } = {}): Promise<string[]> {
@@ -89,11 +89,11 @@ export async function reclaimJobLeftovers(run: ChildRun, roots: { temporary?: st
   for (const root of roots.verification ?? [workerVerificationRoot()]) removed.push(...await reclaimTrialCheckouts(root, [workerVerificationPrefix]));
   const docker = async (args: string[]) => String(await run('docker', args, { timeoutMs: 60_000 })).split('\n').map(line => line.trim()).filter(Boolean);
   try {
-    const containers = await docker(['ps', '--all', '--filter', 'name=^graphyard-trial-', '--filter', 'status=exited', '--filter', 'status=dead', '--format', '{{.Names}}']);
-    for (const name of containers.filter(name => name.startsWith('graphyard-trial-'))) {
+    const containers = await docker(['ps', '--all', '--filter', 'name=^mainworks-trial-', '--filter', 'status=exited', '--filter', 'status=dead', '--format', '{{.Names}}']);
+    for (const name of containers.filter(name => name.startsWith('mainworks-trial-'))) {
       try { await docker(['rm', '--volumes', name]); removed.push(`container ${name}`); } catch { /* the next */ }
     }
-  } catch { /* no Docker on this host: nothing of Graphyard's there to reclaim */ }
+  } catch { /* no Docker on this host: nothing of Mainworks's there to reclaim */ }
   try { removed.push(...(await sweepComposePreviews({ docker: async (args, options) => String(await run('docker', args, options)) })).map(project => `compose project ${project}`)); } catch { /* the next sweep */ }
   // GY-3316: a trial network no container uses any more — its trial ended without removing it — is removed, so leaks never spend Docker's address pools.
   try {
@@ -112,11 +112,11 @@ export async function reclaimJobLeftovers(run: ChildRun, roots: { temporary?: st
 }
 
 /**
- * Below the disk floor: every job leftover, and `graphyard-trial` images other than the one trials
+ * Below the disk floor: every job leftover, and `mainworks-trial` images other than the one trials
  * run (never forced, so Docker keeps an image a container still uses). Ended attempts' worktrees and
  * settled managed checkouts are already removed by the close step itself.
  */
-export async function reclaimGraphyardLeftovers(run: ChildRun, roots: { temporary?: string[]; checkouts?: string[]; verification?: string[] } = {}): Promise<string[]> {
+export async function reclaimMainworksLeftovers(run: ChildRun, roots: { temporary?: string[]; checkouts?: string[]; verification?: string[] } = {}): Promise<string[]> {
   const removed = await reclaimJobLeftovers(run, roots);
   const docker = async (args: string[]) => String(await run('docker', args, { timeoutMs: 20_000 })).split('\n').map(line => line.trim()).filter(Boolean);
   try {
@@ -140,18 +140,18 @@ export const trialContainerMaxAgeMs = (run: Pick<MasterConfig, 'run'>['run']) =>
   2 * Math.max(trialShareAllowance(run.mergeWriter?.parallel ?? defaultMergeWriterParallel).timeoutMs, workerVerificationTimeoutMs);
 
 /**
- * GY-3186: every cycle, stops (removes) a running `graphyard-trial-` container whose checkout (its working
+ * GY-3186: every cycle, stops (removes) a running `mainworks-trial-` container whose checkout (its working
  * directory) is gone or that has run past `maxAgeMs` — a trial nothing will end any more. What it stopped, by name.
  */
 export async function stopOrphanTrialContainers(run: ChildRun, maxAgeMs: number, now = Date.now()): Promise<string[]> {
   const docker = async (args: string[]) => String(await run('docker', args, { timeoutMs: 20_000 })).split('\n').map(line => line.trim()).filter(Boolean);
   const stopped: string[] = [];
   try {
-    const names = (await docker(['ps', '--filter', 'name=^graphyard-trial-', '--filter', 'status=running', '--format', '{{.Names}}'])).filter(name => name.startsWith('graphyard-trial-'));
+    const names = (await docker(['ps', '--filter', 'name=^mainworks-trial-', '--filter', 'status=running', '--format', '{{.Names}}'])).filter(name => name.startsWith('mainworks-trial-'));
     if (!names.length) return stopped;
     for (const line of await docker(['inspect', '--format', '{{.Name}}\t{{.State.StartedAt}}\t{{.Config.WorkingDir}}', ...names])) {
       const [name, startedAt, workdir] = line.replace(/^\//, '').split('\t');
-      if (!name?.startsWith('graphyard-trial-') || (workdir && existsSync(workdir) && now - Date.parse(startedAt ?? '') <= maxAgeMs)) continue;
+      if (!name?.startsWith('mainworks-trial-') || (workdir && existsSync(workdir) && now - Date.parse(startedAt ?? '') <= maxAgeMs)) continue;
       try { await docker(['rm', '--force', '--volumes', name]); stopped.push(`container ${name}`); } catch { /* the next */ }
     }
   } catch { /* no Docker on this host: no trial container to stop */ }

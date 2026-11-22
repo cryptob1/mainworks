@@ -33,7 +33,7 @@ test('integration:app-url-declared — master status lists main\'s app.url with 
   const none = await app();
   assert.equal(none?.url, null);
   assert.match(String(none?.missing), /app\.url|"app": \{ "url"/, 'with none declared, master status names the setting to add');
-  assert.match(String(none?.missing), /graphyard\.json/);
+  assert.match(String(none?.missing), /mainworks\.json/);
 
   for (const loopback of ['http://127.0.0.1:8088/', 'http://localhost:3000', 'http://[::1]:8080/']) {
     await declare(loopback);

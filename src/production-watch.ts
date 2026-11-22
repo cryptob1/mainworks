@@ -8,7 +8,7 @@ import { posix } from 'node:path';
 /**
  * Production deployment observation for the managed base branch.
  *
- * Graphyard marks work Done when it observes the merge; whether the merged commit ever
+ * Mainworks marks work Done when it observes the merge; whether the merged commit ever
  * reached production is a separate fact that nothing used to record. The watch polls the
  * hosting provider's deployment list for the linked service after every merge, takes what
  * production serves from a fresh endpoint observation of the exact release, the provider's
@@ -32,7 +32,7 @@ const railwayStatus: Record<string, ProviderDeploymentStatus> = {
   BUILDING: 'building', INITIALIZING: 'building', DEPLOYING: 'deploying', QUEUED: 'queued', WAITING: 'queued', NEEDS_APPROVAL: 'queued',
   REMOVED: 'removed', REMOVING: 'removed', SKIPPED: 'skipped',
 };
-const railwayQuery = `query graphyardDeployments($input: DeploymentListInput!, $first: Int) {
+const railwayQuery = `query mainworksDeployments($input: DeploymentListInput!, $first: Int) {
   deployments(input: $input, first: $first) { edges { node { id status createdAt updatedAt url meta } } }
 }`;
 /**
@@ -346,7 +346,7 @@ export async function servedCommit(url: string, fetcher: typeof fetch): Promise<
 
 /**
  * What each application declaring a versionUrl serves, against main's tip in the managed checkout.
- * Railway (or any host) deploys each app from git on its own; Graphyard only reads the endpoint,
+ * Railway (or any host) deploys each app from git on its own; Mainworks only reads the endpoint,
  * with no provider credential. A change to the app's directory counts as on main since its committer date.
  */
 export async function observeApplications(applications: Application[], main: string | null, git: (args: readonly string[]) => Promise<string>, options: { fetcher?: typeof fetch; now?: number } = {}): Promise<ApplicationRelease[]> {

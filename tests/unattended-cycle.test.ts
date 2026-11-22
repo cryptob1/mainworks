@@ -191,7 +191,7 @@ function plane(scripts: Script[], options: { hostId?: string; delivered?: number
     },
     // The master's operator-agent rework (POST work/:id/rework), applied by the server at once.
     rework: async (item, reason) => {
-      if (refusals.rework > 0) { refusals.rework--; throw new Error(`Graphyard refused work/${item.id}/rework (503): the control plane is restarting`); }
+      if (refusals.rework > 0) { refusals.rework--; throw new Error(`Mainworks refused work/${item.id}/rework (503): the control plane is restarting`); }
       rework(find(item.id), reason);
       return {};
     },
@@ -213,7 +213,7 @@ const steps = (actions: DaemonAction[]) => actions.filter(action => action.kind 
 
 test('integration:unattended-full-cycle — with no master session and no human input the loop drives one item from ready to delivered: it dispatches, redispatches after a dead session, returns the head to a worker after a verdict and after a base conflict, and leaves the candidate whose gates are green to GitHub to merge', async () => {
   // Attempt 1's session dies and its lease lapses; attempt 2 is told to change the work; attempt 3
-  // hits a base branch Graphyard cannot merge in; attempt 4 delivers. Every step between them is the loop's to take.
+  // hits a base branch Mainworks cannot merge in; attempt 4 delivers. Every step between them is the loop's to take.
   const master = config({ workers: [profile('claude-a'), profile('claude-b')] });
   const simulation = plane([{ key: 'GY-84', rounds: ['die', 'changes', 'conflict', 'pass'] }]);
   const state = emptyDaemonState(master);
@@ -259,7 +259,7 @@ test('integration:loop-liveness — an absent or stalled loop is the top attenti
   const absent = loopLiveness(state, now, intervalMs, master.hostId);
   assert.equal(absent.state, 'absent');
   assert.match(absent.detail, /No master loop holds this repository and none has ever cycled/);
-  assert.match(absent.restart, /^graphyard master restart/);
+  assert.match(absent.restart, /^mainworks master restart/);
   assert.match(absent.restart, /systemctl --user restart graphyard-master/);
 
   // A lock whose process is gone on this host is an absence, not a stall.

@@ -83,7 +83,7 @@ export interface Incident { id: string; generation: number; releaseId: string; r
  * D4 rollback. A rollback is a selection of a previously verified release plus one external
  * operation with a durable identity. It is requested, claimed by a registered executor,
  * settled with the executor's outcome, and complete only once the target is observed running
- * and the environment verifies — `applied` is the provider's word, `verified` is Graphyard's.
+ * and the environment verifies — `applied` is the provider's word, `verified` is Mainworks's.
  */
 export type RollbackState = 'requested' | 'in-flight' | 'applied' | 'failed' | 'unknown' | 'verified' | 'cancelled' | 'superseded';
 export interface RollbackReport { at: string; actor: string; outcome: 'applied' | 'failed' | 'unknown'; providerOperationId: string | null; detail: string | null; authoritative: boolean; reasons: string[] }
@@ -485,7 +485,7 @@ export class Delivery {
    * executor that claimed it, under a lease that is current now: a partitioned executor
    * re-acquires its lease and reports against the same operation identity. A report for a
    * superseded target is kept as non-authoritative history — the provider fence is what
-   * stopped the write, and Graphyard records what the executor says happened either way.
+   * stopped the write, and Mainworks records what the executor says happened either way.
    */
   async settleRollback(actor: Principal, input: unknown, key: string) {
     const data = rollbackSettleSchema.parse(input);
@@ -554,7 +554,7 @@ export class Delivery {
     }
     await this.openRollback(db, state, environment, target!, approval, previous!.verifiedAt!, 'graphyard', `Automatic rollback: generation ${state.generation - 1} degraded after verification`, true, null, now);
   }
-  /** A rollback completes only when Graphyard verifies the generation it selected: the target observed running across the manifest, healthy, with measured identity and a fresh common interval. */
+  /** A rollback completes only when Mainworks verifies the generation it selected: the target observed running across the manifest, healthy, with measured identity and a fresh common interval. */
   private async completeRollbacks(db: pg.PoolClient, state: EnvironmentDelivery, now: Date) {
     for (const rollback of await this.rollbacks(db, state.environmentId, state.generation)) {
       if (rollback.state !== 'applied') continue;

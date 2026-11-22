@@ -106,7 +106,7 @@ export function holderRefusals(root: string, holders: BranchHolder[], work: Pick
     const name = `${holder.path} (${holder.missing ? 'deleted, still recorded' : holder.via === 'checkout' ? 'checked out' : `${holder.via} in progress`})`;
     const checkout = holder.via === 'checkout' && !holder.missing, session = resolve(dirname(holder.path)) === sessions;
     if (!session && !checkout) refusals.push(`${name} is not a session worktree under ${sessions}`);
-    else if (session && holder.key !== work.key) refusals.push(`${name} belongs to ${holder.key ?? 'no Graphyard item'}, not ${work.key}`);
+    else if (session && holder.key !== work.key) refusals.push(`${name} belongs to ${holder.key ?? 'no Mainworks item'}, not ${work.key}`);
     else if (session && live(holder)) refusals.push(`${name} belongs to ${work.key} epoch ${holder.epoch}, which holds a live lease`);
     else if (!holder.missing && options.dirty) {
       // An unreadable status is not a clean one: the worktree is left alone and named.

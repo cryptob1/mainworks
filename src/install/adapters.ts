@@ -131,7 +131,7 @@ export function composeBundle(ctx: AdapterContext, values: EnvValue[]): BundleFi
     `"./serve:/run/graphyard"`,
   ];
   const files: BundleFile[] = [
-    { path: `${ctx.workdir}/db.env`, mode: 0o600, content: `POSTGRES_USER=graphyard\nPOSTGRES_DB=graphyard\nPOSTGRES_PASSWORD=${ctx.databasePassword}\n` },
+    { path: `${ctx.workdir}/db.env`, mode: 0o600, content: `POSTGRES_USER=mainworks\nPOSTGRES_DB=mainworks\nPOSTGRES_PASSWORD=${ctx.databasePassword}\n` },
     { path: `${ctx.workdir}/server.env`, mode: 0o600, content: `${environment.join('\n')}\n` },
     // Made by the installer before Docker would make it root's, so the server (uid 1000) can create its serve socket there.
     { path: `${ctx.workdir}/serve/.keep`, mode: 0o600, content: '' },
@@ -177,7 +177,7 @@ volumes:
 /**
  * Docker names a container's endpoint that outlived the container: a reinstall after the
  * containers and data volume were removed failed with `endpoint with name
- * graphyard-…-db-1 already exists in network graphyard-…_default` (GY-1840). Only an
+ * mainworks-…-db-1 already exists in network mainworks-…_default` (GY-1840). Only an
  * endpoint in this project's own network is read, so another project's state is never touched.
  */
 export function staleComposeEndpoints(message: string, project: string) {
@@ -231,7 +231,7 @@ export function markersFromEnvFile(content: string) {
 function composeActions(ctx: AdapterContext, observation: AdapterObservation): PlanAction[] {
   return [
     { id: 'provider.provision.database', target: 'provider', title: 'Start Postgres 17 with a durable volume on this machine', state: observation.database ? 'satisfied' : 'create', command: `docker compose --project-directory ${ctx.workdir} up -d db` },
-    { id: 'provider.provision.app', target: 'provider', title: `Start the Graphyard application container (${ctx.image}) on this machine${ctx.repoCheckout ? `, with ${ctx.repoCheckout} mounted at /repo` : ''}`, state: observation.app ? 'satisfied' : 'create', command: `docker compose --project-directory ${ctx.workdir} up -d server` },
+    { id: 'provider.provision.app', target: 'provider', title: `Start the Mainworks application container (${ctx.image}) on this machine${ctx.repoCheckout ? `, with ${ctx.repoCheckout} mounted at /repo` : ''}`, state: observation.app ? 'satisfied' : 'create', command: `docker compose --project-directory ${ctx.workdir} up -d server` },
   ];
 }
 
@@ -286,7 +286,7 @@ export function sourceTreeDirty(root: string, run: (command: string, args: strin
 /**
  * The stamp a locally built image carries: the source checkout's release and commit. Without it
  * the Dockerfile's `0.0.0-dev`/`unknown` defaults win and /healthz reports `unreleased unknown`,
- * as the upgrade gate's compose install did after `graphyard upgrade` rebuilt its image (GY-1977).
+ * as the upgrade gate's compose install did after `mainworks upgrade` rebuilt its image (GY-1977).
  * A checkout with changes HEAD does not hold gets no stamp: its bytes are not HEAD's release.
  */
 export function imageBuildArgs(sourceRoot: string, dirty = sourceTreeDirty) {
@@ -301,7 +301,7 @@ export function imageBuildArgs(sourceRoot: string, dirty = sourceTreeDirty) {
 }
 
 /**
- * GY-3214: the images Graphyard published for the source checkout's commit, which an install pulls
+ * GY-3214: the images Mainworks published for the source checkout's commit, which an install pulls
  * instead of building — the release a deploy vouches (GY-2167), else a clean checkout's HEAD. Null
  * for a checkout with changes HEAD does not hold, whose bytes no published image has, and for a
  * commit released under a date version: the published image is stamped `unreleased <sha>`, and the
@@ -340,8 +340,8 @@ export const composeAdapter: ProviderAdapter = {
       trialImagePlan(ctx, published?.trial ?? null),
       ...trialAppArmorPlan(),
       published
-        ? { id: 'provider.image', target: 'provider', title: `Pull the Graphyard image ${published.server} as ${ctx.image}, or build it from ${ctx.sourceRoot} when it is not published`, state: 'update', command: `docker image pull ${published.server} && docker tag ${published.server} ${ctx.image} || ${build}` }
-        : { id: 'provider.image', target: 'provider', title: `Build the Graphyard image ${ctx.image} from ${ctx.sourceRoot}`, state: 'update', command: build },
+        ? { id: 'provider.image', target: 'provider', title: `Pull the Mainworks image ${published.server} as ${ctx.image}, or build it from ${ctx.sourceRoot} when it is not published`, state: 'update', command: `docker image pull ${published.server} && docker tag ${published.server} ${ctx.image} || ${build}` }
+        : { id: 'provider.image', target: 'provider', title: `Build the Mainworks image ${ctx.image} from ${ctx.sourceRoot}`, state: 'update', command: build },
       ...composeActions(ctx, observation),
     ];
   },

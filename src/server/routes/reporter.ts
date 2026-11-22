@@ -39,7 +39,7 @@ export const masterMessageRoutes = defineRoutes('master-messages', [
     demand(input.to ? actor.role === 'coordinator' || actor.role === 'admin' : actor.role === 'reporter' || actor.role === 'admin', input.to ? 'Only the Master records a message it sent a peer' : 'Only a reporter or the operator messages the Master', 403);
     return services.engine.store.transaction(db => once(db, actor, context.idempotencyKey(), { command: 'master.message', ...input }, async () => {
       const row = (await db.query('INSERT INTO events(work_id,actor,kind,payload) VALUES(NULL,$1,$2,$3) RETURNING seq', [actor.id, messageKind, JSON.stringify(input)])).rows[0];
-      return { id: Number(row.seq), sent: true, next: 'Read the Master\'s reply with graphyard messages' };
+      return { id: Number(row.seq), sent: true, next: 'Read the Master\'s reply with mainworks messages' };
     }));
   } },
   { method: 'GET', path: '/api/master/messages', async handle({ actor, services }) {

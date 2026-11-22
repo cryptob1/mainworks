@@ -2,7 +2,7 @@
  * Generated files: paths whose content is derived from other files by a script (the docs
  * indexes `scripts/check-docs.mjs --write` renders) and verified current by CI, never hand-merged.
  * No work item owns them, so the regression guard classifies a candidate that regenerates one as
- * `generated` rather than as an out-of-scope rewrite, and `graphyard sync` resolves a merge
+ * `generated` rather than as an out-of-scope rewrite, and `mainworks sync` resolves a merge
  * conflict in one by regenerating it.
  *
  * The control plane learns the set from `GRAPHYARD_GENERATED_FILES`, a comma-separated list of

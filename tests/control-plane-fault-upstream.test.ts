@@ -14,7 +14,7 @@ import { guideTopics } from '../src/guide.js';
 import { masterConfigSchema } from '../src/master.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-3233: a fault in Graphyard itself — a stuck control-plane upgrade, a loop step past its
+// GY-3233: a fault in Mainworks itself — a stuck control-plane upgrade, a loop step past its
 // timeout — on an install for another repository is never filed as work in that repository: it is
 // filed once to the upstream install, or without one raised as one attention line, every cycle after.
 
@@ -86,14 +86,14 @@ test('e2e:control-plane-fault-upstream — without upstream, each fault raises o
   const { effects, local, lines } = await install();
   const state = await cycles(3, config(), effects, lines);
   assert.deepEqual(local, [], 'nothing is filed into owner/game');
-  const attention = lines.filter(line => / attention failed: Graphyard fault/.test(line));
+  const attention = lines.filter(line => / attention failed: Mainworks fault/.test(line));
   assert.equal(attention.length, 2, 'one attention line per fault across three cycles');
   assert.equal(state.actions['loop-step-stall:dispatch']?.state, 'failed');
   assert.match(state.actions[`control-plane-upgrade:${c}:health`]!.detail, /keeps failing at health.*No upstream install is configured/);
 });
 
 test('e2e:control-plane-fault-upstream — the master prompt and guide master state the upstream rule', () => {
-  assert.match(masterPrompt(config()), /A Graphyard fault .* goes to master\.json's upstream or master status; never file it in owner\/game or change owner\/game to work around it\./);
-  assert.doesNotMatch(masterPrompt({ ...config(), repository: 'cryptob1/graphyard' }), /A Graphyard fault/, 'Graphyard\'s own install manages the repository its faults belong to');
-  assert.match(guideTopics.master, /A Graphyard fault .* files it once to the upstream install .*never file it as work in the managed repository/);
+  assert.match(masterPrompt(config()), /A Mainworks fault .* goes to master\.json's upstream or master status; never file it in owner\/game or change owner\/game to work around it\./);
+  assert.doesNotMatch(masterPrompt({ ...config(), repository: 'cryptob1/graphyard' }), /A Mainworks fault/, 'Mainworks\'s own install manages the repository its faults belong to');
+  assert.match(guideTopics.master, /A Mainworks fault .* files it once to the upstream install .*never file it as work in the managed repository/);
 });

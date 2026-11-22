@@ -140,7 +140,7 @@ else throw new Error('Unexpected fixture CLI call: ' + command);
     if (url.endsWith('/review-launch')) return Response.json({ launch: 'fixture-review-launch' });
     throw new Error(`Unexpected fixture HTTP request: ${url}`);
   });
-  // The headless model calls: a worker's run (under `graphyard watch`) finishes at once; the
+  // The headless model calls: a worker's run (under `mainworks watch`) finishes at once; the
   // reviewer's real confined argv probes the boundary, then holds.
   let reviewLaunch: { command: string; args: string[]; cwd: string } | null = null, workerLaunch: { command: string; args: string[]; cwd: string } | null = null;
   const headless: import('../src/headless-session.js').HeadlessExec = (command, args, options) => {

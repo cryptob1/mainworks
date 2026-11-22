@@ -19,7 +19,7 @@ test('unit:tests/herdr-shared-migration.test.ts — private panes drain while ne
   await mkdir(join(root, '.graphyard'));
   await writeFile(unit, 'legacy unit');
   const file = join(root, '.graphyard/master.json');
-  const instance = { configHome, session: 'graphyard-acme-app' };
+  const instance = { configHome, session: 'mainworks-acme-app' };
   const ownership = [{ name: 'worker-1', principal: 'worker-1' }];
   await writeFile(file, JSON.stringify({ repository: 'acme/app', herdrWorkspace: 'wOld', herdrInstance: instance, workers: ownership, masterAgentName: 'master' }));
   let panes = [{ pane_id: 'wOld:p1', agent_status: 'working' }];
@@ -27,7 +27,7 @@ test('unit:tests/herdr-shared-migration.test.ts — private panes drain while ne
   const run = async (command: string, args: string[]) => {
     calls.push([command, ...args]);
     if (args[0] === '--session') return JSON.stringify({ panes });
-    if (args[0] === 'workspace') return JSON.stringify({ workspaces: [{ workspace_id: 'wMain', label: 'graphyard-acme-app' }] });
+    if (args[0] === 'workspace') return JSON.stringify({ workspaces: [{ workspace_id: 'wMain', label: 'mainworks-acme-app' }] });
     return '';
   };
   await migrateHerdr(root, run, home);

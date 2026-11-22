@@ -109,7 +109,7 @@ test('unit:worktree-failure-names-git-error — a failing git worktree add repor
   const plane = await controlPlane(item({ epoch: 3, live: true }));
   try {
     const refused = await run(process.execPath, [launcher, 'worktree', 'GY-7', '3'], { cwd: root, env: plane.env }).then(() => null, error => error as { stderr: string });
-    assert.match(refused!.stderr, /Git worktree creation failed: git worktree add .*GY-7-3 graphyard\/gy-7-3 failed \(exit \d+\): .*fatal: '.*GY-7-3' already exists/);
+    assert.match(refused!.stderr, /Git worktree creation failed: git worktree add .*GY-7-3 mainworks\/gy-7-3 failed \(exit \d+\): .*fatal: '.*GY-7-3' already exists/);
 
     // The launcher captures that stderr instead of passing it to its own terminal.
     const credential = join(credentials, 'worker.token'); await writeFile(credential, workerToken, { mode: 0o600 });
@@ -124,7 +124,7 @@ test('unit:worktree-failure-names-git-error — a failing git worktree add repor
       // The real worktree command, run with exactly the streams the launcher asked for.
       return defaultChildRun(command, args.slice(0, 4), { cwd: options?.cwd, env: plane.env, stdout: options?.stdio?.[1] === 'inherit' ? 'inherit' : 'capture', stderr: options?.stdio?.[2] === 'inherit' ? 'inherit' : 'capture' });
     }).then(() => null, error => error as Error);
-    assert.match(failure!.message, /^Worker launch failed: the worktree for GY-7 epoch 3 could not be created \(CLI .*bin\/graphyard\.mjs\): Git worktree creation failed: .*fatal: '.*GY-7-3' already exists/);
+    assert.match(failure!.message, /^Worker launch failed: the worktree for GY-7 epoch 3 could not be created \(CLI .*bin\/mainworks\.mjs\): Git worktree creation failed: .*fatal: '.*GY-7-3' already exists/);
     assert.deepEqual(released, ['3'], 'the claimed epoch is released');
 
     // The loop records that failure with git's words in it.

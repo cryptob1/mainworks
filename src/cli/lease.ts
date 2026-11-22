@@ -24,7 +24,7 @@ export function keepBlockedWork(work: { key: string; workspaces?: { epoch: numbe
   const head = () => git('rev-parse', 'HEAD').stdout.trim();
   if (!git('status', '--porcelain').stdout?.trim()) return { state: 'clean' as const, commit: head(), ...described, detail: 'the worktree held no uncommitted change; every commit of the attempt is on its branch' };
   const added = git('add', '-A');
-  const committed = added.status === 0 ? git('-c', 'user.name=Graphyard', '-c', 'user.email=graphyard@localhost', '-c', 'commit.gpgsign=false', 'commit', '--no-verify', '-m', `WIP: ${work.key} attempt ${epoch} blocked`) : added;
+  const committed = added.status === 0 ? git('-c', 'user.name=Mainworks', '-c', 'user.email=graphyard@localhost', '-c', 'commit.gpgsign=false', 'commit', '--no-verify', '-m', `WIP: ${work.key} attempt ${epoch} blocked`) : added;
   if (committed.status === 0) return { state: 'committed' as const, commit: head(), ...described, detail: 'uncommitted changes were committed on the attempt branch, unpushed' };
   const tip = head();
   return { state: 'not-applicable' as const, ...(/^[0-9a-f]{40}$/.test(tip) ? { commit: tip } : {}), ...described,

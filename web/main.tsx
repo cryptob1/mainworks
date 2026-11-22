@@ -121,7 +121,7 @@ function App() {
     return () => { active = false; controller.abort(); polling.stop(); document.removeEventListener('visibilitychange', visible); };
   }, [token, live]);
   // The browser tab names the project it serves (GY-3306): gh · OWNER/REPO from the same status
-  // reply the header's project name renders, so an operator's tabs tell installs apart. Graphyard
+  // reply the header's project name renders, so an operator's tabs tell installs apart. Mainworks
   // stands until that identity arrives — and returns on sign-out — so a tab is never untitled,
   // undefined, or a stale other project's name.
   const project = typeof status?.repository === 'string' && status.repository ? status.repository : null;

@@ -365,7 +365,7 @@ export function fleetView(registry: AgentRegistry, now: number, host: string | n
   });
   const unassigned = accounts.filter(account => !account.roles.length).map(account => `${account.name} serves no role; name it in a role or remove it`);
   const missing = registry.accounts.length ? fleetRoles.filter(name => !registry.roles.some(role => role.name === name)).map(name => name === 'master' || name === 'caretaker'
-    ? `role ${name} is not configured; the durable loop launches no ${name} session until graphyard master registry role set ${name} ACCOUNT[,ACCOUNT…] --reason REASON names its accounts`
+    ? `role ${name} is not configured; the durable loop launches no ${name} session until mainworks master registry role set ${name} ACCOUNT[,ACCOUNT…] --reason REASON names its accounts`
     : `role ${name} is not configured; its sessions launch from local profiles until it is`) : [];
   const plans = groupAccountsByPlan({ accounts: registry.accounts }, now);
   return { revision: registry.revision, updatedAt: registry.updatedAt, configured: registry.roles.length > 0, host, runtimes: registry.runtimes, models: registry.models, accounts, roles, plans,

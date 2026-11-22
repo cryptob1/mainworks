@@ -1,4 +1,4 @@
-// Concern: how a unit or integration proof's cases are counted (GY-3170), one function for the merge trial and `graphyard verify`.
+// Concern: how a unit or integration proof's cases are counted (GY-3170), one function for the merge trial and `mainworks verify`.
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ChildRun } from './child-runner.js';

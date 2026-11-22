@@ -240,7 +240,7 @@ export async function reserveReleasingHold(root: string, branch: string, path: s
   const holders = branchExists ? branchHolders(root, branch, path).filter(holder => !holder.missing) : [];
   const refusals = holderRefusals(root, holders, work, now, { dirty: false });
   if (!work.submission) for (const holder of holders) {
-    if (holder.via === 'checkout' && resolve(dirname(holder.path)) !== worktreesDirectory(root)) refusals.push(`${holder.path} (checked out) is outside the session worktrees under ${worktreesDirectory(root)}, and Graphyard detaches only its own session worktrees: check out another branch there`);
+    if (holder.via === 'checkout' && resolve(dirname(holder.path)) !== worktreesDirectory(root)) refusals.push(`${holder.path} (checked out) is outside the session worktrees under ${worktreesDirectory(root)}, and Mainworks detaches only its own session worktrees: check out another branch there`);
   }
   if (refusals.length) {
     const detail = heldBranchRefusal(branch, refusals);

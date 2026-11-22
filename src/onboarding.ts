@@ -32,7 +32,7 @@ export function repositoryFromRemote(remote: string) {
 export function assertRepository(repository: string | null, configured: unknown) {
   if (typeof configured !== 'string' || !configured) return;
   if (!repository) throw new Error('Cannot verify this checkout against the configured server repository; configure its GitHub origin first');
-  if (repository.toLowerCase() !== configured.toLowerCase()) throw new Error('This checkout and Graphyard server are configured for different repositories');
+  if (repository.toLowerCase() !== configured.toLowerCase()) throw new Error('This checkout and Mainworks server are configured for different repositories');
 }
 export async function discover(root: string) {
   const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
@@ -68,13 +68,13 @@ export async function localDirectory(root: string) {
   let ignore = ''; try { ignore = await readFile(ignorePath, 'utf8'); } catch (error: any) { if (error.code !== 'ENOENT') throw error; }
   const ignored = (path: string) => {
     try { execFileSync('git', ['check-ignore', '--quiet', '--', path], { cwd: root, stdio: 'ignore' }); return true; }
-    catch (error: any) { if (error.status === 1) return false; throw new Error('Cannot verify Git ignores local Graphyard credentials'); }
+    catch (error: any) { if (error.status === 1) return false; throw new Error('Cannot verify Git ignores local Mainworks credentials'); }
   };
   // An earlier matching line can be overridden by later negations. Ignore the
   // directory itself so nested rules cannot re-include credentials or temp files.
   const directory = resolve(root, '.graphyard'); await mkdir(directory, { recursive: true, mode: 0o700 });
   if (!ignored('.graphyard')) await writeFile(ignorePath, `${ignore}${ignore.endsWith('\n') || !ignore ? '' : '\n'}.graphyard/\n`);
-  if (!ignored('.graphyard') || !ignored('.graphyard/connection.json')) throw new Error('Local Graphyard credentials must be ignored by Git before saving');
+  if (!ignored('.graphyard') || !ignored('.graphyard/connection.json')) throw new Error('Local Mainworks credentials must be ignored by Git before saving');
   return directory;
 }
 
@@ -92,7 +92,7 @@ const scanInteresting: RegExp[] = [
   /^(?:.+\/)?package\.json$/, /^pnpm-workspace\.yaml$/, /^pyproject\.toml$/, /^requirements(?:-dev)?\.txt$/, /^setup\.(?:py|cfg)$/, /^Pipfile$/, /^tox\.ini$/,
   /^Dockerfile(?:\.[^/]*)?$/, /^(?:docker-)?compose\.ya?ml$/, /^railway\.(?:json|toml)$/, /^vercel\.json$/, /^fly\.toml$/, /^netlify\.toml$/,
   /^\.nojekyll$/, /^CNAME$/, /^index\.html$/, /^\.env\.example$/, /^pytest\.ini$/, /^conftest\.py$/,
-  /^\.github\/workflows\/[^/]+\.ya?ml$/, /^graphyard\.json$/, /^e2e\/cases\/[^/]+\.json$/,
+  /^\.github\/workflows\/[^/]+\.ya?ml$/, /^mainworks\.json$/, /^e2e\/cases\/[^/]+\.json$/,
 ];
 export const scanLimits = { files: 5000, depth: 6, bytes: 262_144 };
 
@@ -110,7 +110,7 @@ export async function collectScanInput(root: string): Promise<ScanInput> {
       if (entry.isDirectory()) { await walk(path, depth + 1); continue; }
       if (!entry.isFile()) continue;
       files.push(path);
-      // The workflows `init --apply` generates are Graphyard's output, never an input to the next
+      // The workflows `init --apply` generates are Mainworks's output, never an input to the next
       // scan: reading them back would make every apply change the scan it was applied from.
       if ((generatedWorkflowFiles as readonly string[]).includes(path) || path === deliveryWorkflowFile) continue;
       if (scanInteresting.some(pattern => pattern.test(path))) {
@@ -213,7 +213,7 @@ export function workflowCheckNames(input: ScanInput, options: { onlyPullRequest?
 /**
  * GY-1480: the delivery workflow `init --scan --apply` writes for a repository with no CI of its
  * own, so the onboarding change gives the base branch a pull-request check from the first merge.
- * It is Graphyard's output like the candidate workflows, so a rescan never reads it back as the
+ * It is Mainworks's output like the candidate workflows, so a rescan never reads it back as the
  * repository's own CI: the repository still has none, and the apply renders it unchanged.
  */
 export const deliveryWorkflowFile = '.github/workflows/graphyard-delivery.yml';
@@ -223,7 +223,7 @@ export const deliveryGateJob = 'graphyard-gate';
 /**
  * Whether the scan found no CI of the repository's own: no workflow of its own runs on pull requests.
  * A stale-issue bot, a labeler or a push-only deploy reports no check a pull request could wait on,
- * so it does not count; Graphyard's generated workflows never count (the scan never reads them).
+ * so it does not count; Mainworks's generated workflows never count (the scan never reads them).
  */
 export const hasNoCi = (input: ScanInput) =>
   !Object.entries(input.contents).some(([path, raw]) => /^\.github\/workflows\/[^/]+\.ya?ml$/.test(path) && path !== deliveryWorkflowFile
@@ -249,7 +249,7 @@ export async function removeDeliveryWorkflow(root: string, base = originBase(roo
 }
 
 /**
- * The minimal delivery workflow for the detected stack: a build job and a test job, then Graphyard's
+ * The minimal delivery workflow for the detected stack: a build job and a test job, then Mainworks's
  * gate job, which fails unless both passed, so one check name gates a pull request whatever the
  * stack later adds. Superseded pull-request runs are cancelled; runs on the base never are.
  */
@@ -280,8 +280,8 @@ export function renderDeliveryWorkflow(stack: Pick<StackDetection, 'name' | 'fra
 ${setup ? `${setup}
 ` : ''}      - run: ${command}
 `;
-  return { path: deliveryWorkflowFile, content: `name: Graphyard delivery
-# Written by graphyard init --scan --apply because no workflow of this repository ran on pull requests.
+  return { path: deliveryWorkflowFile, content: `name: Mainworks delivery
+# Written by mainworks init --scan --apply because no workflow of this repository ran on pull requests.
 # Edit the build and test commands freely (a rerun keeps your edits); ${deliveryGateJob} passes only when both jobs passed.
 on:
   pull_request:
@@ -310,7 +310,7 @@ export type DeployTarget = 'railway' | 'vercel' | 'fly' | 'github-pages' | 'cont
 export interface DeployDetection { target: DeployTarget; evidence: string[]; verification: string; proofName: string }
 
 const deployVerification: Record<Exclude<DeployTarget, 'none'>, string> = {
-  railway: 'Railway deploys each application from git on its own; Graphyard deploys nothing there. Declare each app\'s versionUrl in graphyard.json delivery.applications (an endpoint answering the commit it serves, such as RAILWAY_GIT_COMMIT_SHA); Graphyard observes it and master status names an app that lags main or fails to answer.',
+  railway: 'Railway deploys each application from git on its own; Mainworks deploys nothing there. Declare each app\'s versionUrl in graphyard.json delivery.applications (an endpoint answering the commit it serves, such as RAILWAY_GIT_COMMIT_SHA); Mainworks observes it and master status names an app that lags main or fails to answer.',
   vercel: 'Inspect the Vercel deployment for the candidate (VERCEL_GIT_COMMIT_SHA in its build metadata or the deployments API) and compare it with the candidate SHA before recording deploy evidence.',
   fly: 'Run fly status (or the releases API) for the application and confirm the active release was built from the candidate SHA before recording deploy evidence.',
   'github-pages': 'Publish a versioned artifact (for example version.json containing the commit SHA) during the Pages build, then fetch it from the deployed site and compare it with the candidate SHA before recording deploy evidence.',
@@ -415,7 +415,7 @@ export function classifyChecks(input: ScanInput, stack: StackDetection = detectS
  */
 export function deliveryWorkflowGate(classified: MergeGate, mode: DeliveryMode): MergeGate {
   return {
-    preMerge: [{ check: deliveryGateJob, command: null, source: 'workflow', reason: `Graphyard's generated delivery workflow (${deliveryWorkflowFile}): passes only when its build and test jobs passed` }],
+    preMerge: [{ check: deliveryGateJob, command: null, source: 'workflow', reason: `Mainworks's generated delivery workflow (${deliveryWorkflowFile}): passes only when its build and test jobs passed` }],
     perCandidate: mode === 'per-pr' ? [] : classified.perCandidate.filter(entry => entry.command),
   };
 }
@@ -437,7 +437,7 @@ export function proposeDelivery(input: ScanInput, deploy: DeployDetection, stack
   if (parsed.success) committed = parsed.data;
   else if (declared !== undefined) {
     const declarations = parsed.error.issues.filter(issue => ['applications', 'cases'].includes(String(issue.path[0])));
-    if (declarations.length) throw new Error(`graphyard.json delivery declares applications or case bindings Graphyard cannot use: ${declarations.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; ')}. Correct them, then rescan`);
+    if (declarations.length) throw new Error(`graphyard.json delivery declares applications or case bindings Mainworks cannot use: ${declarations.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; ')}. Correct them, then rescan`);
   }
   const unknownCases = committed ? applicationProblems(committed, caseIdsOf(input.files)).filter(problem => problem.includes('does not exist')) : [];
   if (unknownCases.length) throw new Error(`${unknownCases.join('; ')}`);
@@ -459,7 +459,7 @@ export function proposeDelivery(input: ScanInput, deploy: DeployDetection, stack
     mode,
     mergeGate,
     candidateSchedule: overrides.candidateSchedule !== undefined ? overrides.candidateSchedule : committed ? committed.candidateSchedule : defaultCandidateSchedule,
-    // Graphyard deploys through commands the operator names; Railway deploys from git on its own.
+    // Mainworks deploys through commands the operator names; Railway deploys from git on its own.
     deploy: committed?.deploy ?? { adapter: 'command', uat: null, production: null },
     ...local, ...kept,
   });
@@ -576,7 +576,7 @@ export function buildProposal(input: ScanInput, options: { repository?: string |
     policy: { checks: policyChecks, review: true, reviewProvider: 'github',
       evidenceExpectations: 'Automated proofs are submitted only by a trusted producer credential in protected CI, for the exact candidate SHA with executed > 0 and skipped = 0. Manual proofs are inspected and submitted by a separate operator session. Implementation workers never hold producer or admin credentials.' },
     profiles: { workers, reviewer: { provider: 'github', note: 'An independent reviewer session records its verdict on the submitted code.' } },
-    githubApp: options.repository && /^[\w.-]+\/[\w.-]+$/.test(options.repository) ? { name: `Graphyard ${repository.replace('/', '-')}`, repository, flow: 'github-setup' } : null,
+    githubApp: options.repository && /^[\w.-]+\/[\w.-]+$/.test(options.repository) ? { name: `Mainworks ${repository.replace('/', '-')}`, repository, flow: 'github-setup' } : null,
     ...Object.fromEntries(Object.entries(discoverWorkspaces(input)).filter(([, list]) => list.length)),
     delivery,
   });
@@ -590,7 +590,7 @@ export function canonicalJson(value: unknown): string {
 }
 
 /**
- * The `graphyard install` that already owns this repository's identities, as `init --scan --apply`
+ * The `mainworks install` that already owns this repository's identities, as `init --scan --apply`
  * must reuse them (GY-1413): its install directory and the App a pull-request-era install recorded
  * (null for every install since GY-2010), or null when the repository has no install on this
  * machine. Its identities belong to the server it installed, so an
@@ -603,7 +603,7 @@ export async function installedOnboarding(root: string, repository: string, url:
   const record = await readInstallRecord(directory);
   if (!record || record.repository.toLowerCase() !== repository.toLowerCase()) return null;
   const origin = (value: string) => { try { return new URL(value).origin; } catch { return value; } };
-  if (url && (!record.url || origin(url) !== origin(record.url))) throw new Error(`graphyard install --apply owns ${repository}'s identities for ${record.url ?? 'its own server'} (${resolve(directory, 'install.json')}), not ${url}. Rerun init --scan --apply with --url ${record.url ?? 'that server'}; init mints no principals for another server beside the install's. Nothing was written in ${root}.`);
+  if (url && (!record.url || origin(url) !== origin(record.url))) throw new Error(`mainworks install --apply owns ${repository}'s identities for ${record.url ?? 'its own server'} (${resolve(directory, 'install.json')}), not ${url}. Rerun init --scan --apply with --url ${record.url ?? 'that server'}; init mints no principals for another server beside the install's. Nothing was written in ${root}.`);
   return { directory, url: record.url, githubApp: record.github ? { appId: record.github.appId, slug: record.github.slug } : null };
 }
 

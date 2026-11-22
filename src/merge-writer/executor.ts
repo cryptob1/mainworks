@@ -168,7 +168,7 @@ export const mergeRecordKey = (work: Pick<Work, 'id'> & { mergeLedger?: Pick<Mer
 /** Whether a record write failed because the server already holds its key with other input: replaying it can never succeed. */
 export const keyReusedRefusal = (error: unknown) => /Idempotency key reused with different input/.test(error instanceof Error ? error.message : String(error));
 
-/** A failed write's HTTP status: the error's own, or the `Graphyard refused PATH (NNN)` its message names; null for a transport failure or a kill. */
+/** A failed write's HTTP status: the error's own, or the `Mainworks refused PATH (NNN)` its message names; null for a transport failure or a kill. */
 export const mergeRecordStatus = (error: unknown) => {
   const status = (error as { status?: unknown } | null)?.status;
   if (typeof status === 'number') return status;

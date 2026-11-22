@@ -93,9 +93,9 @@ export interface DaemonEffects {
    * items are reclaimed.
    */
   attemptWorktrees?: () => Promise<{ path: string; changedAt: number }[]>;
-  /** The free space of each volume Graphyard writes (GY-3122). Absent, no headroom is kept. */
+  /** The free space of each volume Mainworks writes (GY-3122). Absent, no headroom is kept. */
   diskVolumes?: () => Promise<{ path: string; freeBytes: number | null }[]>;
-  /** Reclaims Graphyard's own leftovers when free space is below the floor (GY-3122): what it removed, by name. */
+  /** Reclaims Mainworks's own leftovers when free space is below the floor (GY-3122): what it removed, by name. */
   reclaimDisk?: () => Promise<string[]>;
   /**
    * GY-3348: the host's CPU reading — the text of /proc/pressure/cpu and /proc/stat, or null where
@@ -126,7 +126,7 @@ export interface DaemonEffects {
   environmentReadings?: () => Promise<Omit<EnvironmentReadings, 'heatClear'>>;
   /** GY-3553: clears a blocker whose environment cause is gone, as the operator agent. */
   unblock?: (work: Work, reason: string) => Promise<unknown>;
-  /** The disk Graphyard's leftovers hold, read once a day for the leftovers report (GY-3190). */
+  /** The disk Mainworks's leftovers hold, read once a day for the leftovers report (GY-3190). */
   leftoverDisk?: () => Promise<LeftoverDisk>;
   /** Reports the token usage this host's sessions' runtimes printed (GY-3289, usage-capture.ts); `master` is the master session's conversation. */
   usage?: (master: Conversation | null) => Promise<unknown>;

@@ -49,7 +49,7 @@ async function view(context: RouteContext) {
   };
 }
 
-/** GY-3486: every teammate: the machine's roster, and those invited to this install alone (`graphyard invite`). */
+/** GY-3486: every teammate: the machine's roster, and those invited to this install alone (`mainworks invite`). */
 async function teammates(context: RouteContext, team: MachineTeam, url: string | null) {
   const local = (await context.services.engine.store.pool.query<{ name: string; team: string }>('SELECT name, team FROM team_members ORDER BY name')).rows;
   const listed = Object.entries(team.members).map(([login, member]) => ({ login, role: member.role, installs: member.installs }));

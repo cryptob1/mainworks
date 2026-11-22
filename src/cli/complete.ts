@@ -160,7 +160,7 @@ const boundText = (ms: number) => ms % 60_000 === 0 ? `${ms / 60_000} min` : `${
 /**
  * GY-2974: the command that runs exactly `files` in `root`. `npm test -- FILES` ran the whole suite
  * wherever the test script already globs every file (Open City's GY-101 hung 24 minutes on it), so
- * the files go straight to a runner: Graphyard's own suite runner, which runs just the files it is
+ * the files go straight to a runner: Mainworks's own suite runner, which runs just the files it is
  * given under the suite's isolation, else node's test runner, through tsx when the tree installs it.
  */
 export function rerunCommand(root: string, files: readonly string[]): [string, string[]] {
@@ -355,7 +355,7 @@ export async function judgeRerun(root: string, work: { key: string; criteria?: {
 /**
  * `complete GY-N EPOCH [--head [SHA]]` (GY-1523): submit the commit and end the lease; nothing is
  * pushed, since the shared object store already holds it. Beside the control plane's answer it
- * reports the worker's own verification of HEAD (`graphyard verify GY-N`): which
+ * reports the worker's own verification of HEAD (`mainworks verify GY-N`): which
  * mechanical proofs were run and their outcome, which proofs are outstanding, or that none was run.
  * The report never changes what is submitted — the gates decide from trusted evidence alone — but a
  * head whose proof failed here is the head the control plane returns before review.
@@ -512,7 +512,7 @@ export const completeCommand: CliCommand = {
     '                                the control plane does not answer (its 120 s request bound, a',
     '                                dropped connection) is resent under one idempotency key for up',
     '                                to 10 minutes, so a slow plane strands no finished head. Reports',
-    '                                what graphyard verify ran on HEAD and its outcome. Refused while',
+    '                                what mainworks verify ran on HEAD and its outcome. Refused while',
     '                                GitHub requests are paused, it waits for the named reset and',
     '                                submits again (bounded). Preflight refuses a missing proof id,',
     '                                a missing feature E2E case, a base conflict, or a failing fast',
@@ -526,7 +526,7 @@ export const completeCommand: CliCommand = {
     // a checkout (another install's Master, which may only file items and message this Master) is
     // told so plainly, before git's raw error, whatever way --head was given.
     completeArgs(context.args);
-    await checkoutRoot(context, `graphyard complete ${work.key}`);
+    await checkoutRoot(context, `mainworks complete ${work.key}`);
     const root = context.repositoryRoot();
     const body = completionBody(context.args, () => worktreeHead(root)), requestId = process.env.GRAPHYARD_REQUEST_ID ?? `complete:${work.id}:${body.epoch}:${body.head}`;
     await completePreflight(root, work, body.head);

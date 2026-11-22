@@ -116,7 +116,7 @@ async function installation(pi = false) {
   const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   git('init', '-q', '-b', 'main'); git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   await writeFile(join(root, 'README.md'), 'producer environment\n');
-  git('add', 'README.md'); git('-c', 'user.name=Graphyard', '-c', 'user.email=graphyard@example.test', 'commit', '-q', '-m', 'initial');
+  git('add', 'README.md'); git('-c', 'user.name=Mainworks', '-c', 'user.email=graphyard@example.test', 'commit', '-q', '-m', 'initial');
   await setupMaster(root, { url: 'https://graphyard.example', token: 'coordinator-token-'.padEnd(40, 'x'), cliPath: launcher, credentialDirectory: credentials, herdrWorkspace: 'workspace', run: { worktreeRoot: managed } }, coordinatorStatus, { probe: durable });
   const credential = join(credentials, 'producer.token'); await writeFile(credential, 'producer-token-'.padEnd(40, 'x'), { mode: 0o600 });
   await saveProducerProfile(root, { name: 'producer-a', principal: 'proof-runner', agentName: 'produce-a', kind: 'codex', credentialFile: credential }, async () => ({ actor: { id: 'proof-runner', role: 'producer', proofs: ['unit:*', 'integration:*', 'manual:*'] } }));
@@ -157,7 +157,7 @@ function producerPrefix(typed: ReturnType<typeof expandTypedCommand>, checkout: 
   assert.ok(prefix.slice(1, secrets).some(word => word.startsWith('PATH=')), 'native runtime PATH is reapplied');
   assert.ok(prefix.slice(1, secrets).includes('MISE_NO_CONFIG=1'));
   assert.equal(typed.kind, 'codex');
-  assert.match(requestOf(typed.kind, typed.args)!, /independent Graphyard proof producer/);
+  assert.match(requestOf(typed.kind, typed.args)!, /independent Mainworks proof producer/);
   return prefix;
 }
 
@@ -353,7 +353,7 @@ test('unit:live-install-ssh-key-available without HETZNER_SSH_KEY the launch is 
     const item = work('GY-717', 'manual', ['manual:host-install-live']), calls: string[][] = [];
     const launched = await launchProducer(root, item, item.autoDispatch!.producers[0] as any, (await loadMasterConfig(root)).producers[0], [], new Date().toISOString(), { run: herdr(calls), filesystem: durable, probe: fleet() });
     const prompt = producerPrompt({ repository: 'owner/project', cliPath: launcher }, { ...item.autoDispatch!.producers[0] as any, key: 'GY-717', checkout: launched.checkout }, { principal: 'proof-runner' });
-    const name = `graphyard-gy-717-${H.slice(0, 8)}`;
+    const name = `mainworks-gy-717-${H.slice(0, 8)}`;
     assert.ok(prompt.includes(`ssh-keygen -t ed25519 -N '' -C ${name} -f ${join(launched.checkout, 'hetzner-ssh-key')}`), 'the key is generated inside the session directory');
     assert.ok(prompt.includes(`hcloud ssh-key create --name ${name} --public-key-from-file ${join(launched.checkout, 'hetzner-ssh-key')}.pub`), 'registered with the provided HCLOUD_TOKEN');
     assert.ok(prompt.includes(`pass --ssh-key ${name}`));

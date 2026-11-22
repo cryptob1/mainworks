@@ -25,7 +25,7 @@ test(`${proof} — tests that import the benchmarks are local-only, the trial ru
 });
 
 test(`${proof} — a trial with a ready compute host runs the benchmark file on this machine and reports them passing`, { timeout: 120_000 }, async () => {
-  const image = 'graphyard-trial:sandbox-local-fixture';
+  const image = 'mainworks-trial:sandbox-local-fixture';
   const hosts = await shardHosts('sandbox-local-trial', ['box'], { [image]: `sha256:${'35a6'.repeat(16)}` });
   const pure = Array.from({ length: 4 }, (_, index) => `tests/plain-${index}.test.ts`);
   const files = [...pure, ...sandboxed];

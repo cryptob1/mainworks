@@ -43,9 +43,9 @@ async function reviewSelf({ api, args }: CliContext) {
 }
 
 /**
- * `review post` (GY-1492): the reviewer session posts its verdict through Graphyard, which checks
+ * `review post` (GY-1492): the reviewer session posts its verdict through Mainworks, which checks
  * the launch's review binding and the bound head first. It never reads the repository connection
- * file: a reviewer holds no Graphyard credential. The binding carries a one-time verdict token
+ * file: a reviewer holds no Mainworks credential. The binding carries a one-time verdict token
  * (GY-1525), and the verdict goes to `POST /api/work/:id/review-verdict` at GRAPHYARD_URL as that token.
  * `review self` (GY-1987) is the worker's own read: it uses the worker's connection, never a
  * binding, and never writes.

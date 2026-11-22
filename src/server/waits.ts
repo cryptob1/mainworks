@@ -169,7 +169,7 @@ export async function answerHumanProof(services: Services, actor: Principal, id:
 /**
  * Seal a secret to the requesting host (GY-738): a fresh AES-256-GCM key encrypts the value and
  * the host's RSA public key wraps that key (OAEP, SHA-256), so only the host holding the private
- * key reads it (`graphyard unseal`). The value itself is never written anywhere.
+ * key reads it (`mainworks unseal`). The value itself is never written anywhere.
  */
 export function sealToHost(publicKey: string, secret: string) {
   const key = randomBytes(32), iv = randomBytes(12);
@@ -193,7 +193,7 @@ export async function humanOnlySubjects(services: Services, work: readonly Work[
 
 /**
  * Every open human-only action the caller may see, longest wait first: the whole surface the
- * page, `graphyard human-requests` and `master status` render — a parked decision only a human
+ * page, `mainworks human-requests` and `master status` render — a parked decision only a human
  * may make, and every approval the server will take from the operator's own credential alone.
  */
 export async function listHumanRequests(services: Services, actor: Principal) {

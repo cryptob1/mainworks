@@ -27,7 +27,7 @@ export function regenerateGenerated(cwd: string, manifest: GeneratedManifest) {
 }
 
 /**
- * Graphyard's own repository renders the AGENTS.md worker block with the templates the merged
+ * Mainworks's own repository renders the AGENTS.md worker block with the templates the merged
  * tree carries, so the result matches what its drift test expects; any other repository, and a
  * tree whose sources will not load, use the templates this CLI ships. A graphyard-master block an
  * earlier master init wrote is dropped, not rendered: the master reads it from master guide.

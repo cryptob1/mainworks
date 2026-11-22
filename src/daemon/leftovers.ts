@@ -1,5 +1,5 @@
 // Concern: the daily leftovers report (GY-3190) — what the close step's sweeps stopped or removed across
-// one UTC day, with the disk Graphyard's own directories and Docker images hold, reported once a day.
+// one UTC day, with the disk Mainworks's own directories and Docker images hold, reported once a day.
 import { lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ChildRun } from '../child-runner.js';
@@ -54,12 +54,12 @@ export const dockerBytes = (size: unknown) => {
   return match && units[match[2]!.toLowerCase()] ? Math.round(Number(match[1]) * units[match[2]!.toLowerCase()]!) : 0;
 };
 
-/** `docker system df -v`: the bytes of images named graphyard-trial* and the build cache total, each null without Docker. */
+/** `docker system df -v`: the bytes of images named mainworks-trial* and the build cache total, each null without Docker. */
 export async function dockerLeftoverBytes(run: ChildRun): Promise<{ trialImages: number | null; buildCache: number | null }> {
   try {
     const df = JSON.parse(String(await run('docker', ['system', 'df', '-v', '--format', 'json'], { timeoutMs: 60_000 })));
     const sum = (rows: { Size?: string }[] = []) => rows.reduce((total, row) => total + dockerBytes(row.Size), 0);
-    return { trialImages: sum((df.Images ?? []).filter((image: { Repository?: string }) => image.Repository?.startsWith('graphyard-trial'))), buildCache: sum(df.BuildCache) };
+    return { trialImages: sum((df.Images ?? []).filter((image: { Repository?: string }) => /^(graphyard|mainworks)-trial/.test(image.Repository ?? ''))), buildCache: sum(df.BuildCache) };
   } catch { return { trialImages: null, buildCache: null }; }
 }
 

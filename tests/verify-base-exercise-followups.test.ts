@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { baseTree, selfVerification, testSide, verifyWorkingTree } from '../src/cli/verify.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-1240: the follow-ups from GY-1174's review. The base exercise of `graphyard verify` keeps its
+// GY-1240: the follow-ups from GY-1174's review. The base exercise of `mainworks verify` keeps its
 // scratch tree inside the worktree, records every base run it does not make as indeterminate with
 // its reason, records an abnormal base run as such, spends no base runs once a proof failed on
 // HEAD, treats nested tests and fixtures as test-side, and lets a worker declare a proof that

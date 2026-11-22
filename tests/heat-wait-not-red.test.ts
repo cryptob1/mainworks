@@ -51,7 +51,7 @@ function idleCpu() {
   let total = 0, idle = 0;
   return { read: () => readTrialCpu(() => `cpu  ${total - idle} 0 0 ${idle} 0 0 0 0 0 0\n`, 0, total), step: () => { total += 1000; idle += 900; } };
 }
-const heatWait = (seconds: number) => `graphyard trial container: waiting: a CPU sensor reads 97C, at or over its 85C limit\ngraphyard trial container: waiting: a CPU sensor held this start ${seconds}s\ngraphyard trial container: starting\n`;
+const heatWait = (seconds: number) => `mainworks trial container: waiting: a CPU sensor reads 97C, at or over its 85C limit\nmainworks trial container: waiting: a CPU sensor held this start ${seconds}s\nmainworks trial container: starting\n`;
 const testTimeout = 'not ok - tests/one.test.ts\n  test at tests/one.test.ts:1:1\n  test file timed out after 300000ms';
 const testFailure = 'not ok - tests/one.test.ts\n  test at tests/one.test.ts:1:1\n  AssertionError: \'fail\' !== \'pass\'';
 

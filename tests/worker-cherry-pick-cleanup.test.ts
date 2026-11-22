@@ -25,7 +25,7 @@ function fixture(base: string) {
   writeFileSync(join(root, 'shared.txt'), 'base\n');
   run('init', '-b', 'main');
   run('config', 'user.email', 'graphyard@localhost');
-  run('config', 'user.name', 'Graphyard');
+  run('config', 'user.name', 'Mainworks');
   run('add', '.');
   run('commit', '-m', 'coordinator');
   const worktree = join(root, '.graphyard', 'worktrees', 'gy-2950-1');
@@ -55,7 +55,7 @@ function fixture(base: string) {
   run('pack-refs', '--all');
   const packed = readFileSync(join(root, '.git', 'packed-refs'), 'utf8');
   assert.match(packed, /refs\/heads\/main/, 'refs/heads/main is packed');
-  assert.match(packed, /refs\/heads\/graphyard\/gy-2950-1/, 'the assignment branch is packed');
+  assert.match(packed, /refs\/heads\/mainworks\/gy-2950-1/, 'the assignment branch is packed');
   assert.match(packed, /refs\/remotes\/origin\/main/, 'the base tip is packed');
   prepareConfinedGitPaths(root);
   return { root, worktree, saved, savedTwo, admin: join(root, '.git', 'worktrees', 'gy-2950-1') };

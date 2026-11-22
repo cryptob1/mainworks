@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 // character. The fields that name things — producer, runId, case id, toolVersion — keep their
 // trimming normalisation, so a padded hand-in still matches the names it is replayed by.
 
-/** The module under test, imported inside each test so that run against a tree without the import (graphyard verify's exercise) each case fails on its own assertion instead of the file failing to load. */
+/** The module under test, imported inside each test so that run against a tree without the import (mainworks verify's exercise) each case fails on its own assertion instead of the file failing to load. */
 const load = async () => (await import('../src/runner-report.js')).importExternalRun;
 
 const sha = 'a'.repeat(40);

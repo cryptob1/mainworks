@@ -79,7 +79,7 @@ async function writeFiles(root: string, files: Record<string, string | null>) {
   }
 }
 
-/** The plane, the remote and the checkout, with `extra` fixture files in the base commit. `repo` overrides the managed repository (GY-3199: a world that gates Graphyard itself). */
+/** The plane, the remote and the checkout, with `extra` fixture files in the base commit. `repo` overrides the managed repository (GY-3199: a world that gates Mainworks itself). */
 export async function pipelineWorld(label: string, extra: Record<string, string> = {}, repo: string = repository): Promise<World> {
   const root = await temporaryDirectory(label);
   const origin = join(root, 'origin.git'), checkout = join(root, 'checkout'), trials = join(root, 'trials');
@@ -140,12 +140,12 @@ export async function pipelineWorld(label: string, extra: Record<string, string>
  * test runs (a worker sandbox, the trial container). The trusted harness the confined runner names
  * resolves to this checkout.
  */
-const harnessLoader = '/graphyard-harness/node_modules/tsx/dist/loader.mjs';
+const harnessLoader = '/mainworks-harness/node_modules/tsx/dist/loader.mjs';
 const fixtureRun: ChildRun = async (command, args, options) => {
   if (args.includes(harnessLoader)) {
     const script = args.at(-1)!;
     const harness = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '');
-    await writeFile(script, (await readFile(script, 'utf8')).replaceAll('/graphyard-harness', harness));
+    await writeFile(script, (await readFile(script, 'utf8')).replaceAll('/mainworks-harness', harness));
     args = args.map(arg => arg === harnessLoader ? fileURLToPath(new URL(import.meta.resolve('tsx'))) : arg);
   }
   if (command === 'git') return defaultChildRun(command, args, { ...options, env: { ...process.env, ...identity, ...options?.env } });
@@ -157,7 +157,7 @@ type Where = Pick<World, 'checkout' | 'trials' | 'url' | 'config'> & { snapshot(
 const post = async (url: string, token: string, path: string, body: unknown, key: string) => {
   const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(body) });
   const text = await response.text();
-  if (!response.ok) throw new Error(`Graphyard refused ${path} (${response.status}): ${text}`);
+  if (!response.ok) throw new Error(`Mainworks refused ${path} (${response.status}): ${text}`);
   return JSON.parse(text);
 };
 
@@ -184,7 +184,7 @@ export function loopReads(where: Where, options: { gate: boolean }): MergeWriter
       where.filings?.push({ key, gate: readGateRecord(gateRecordPath(where.checkout)) });
       return post(where.url, adminToken, 'work', input, key);
     },
-    // The gate record this loop keeps is its own managed repository's (GY-3199: a world may gate Graphyard itself).
+    // The gate record this loop keeps is its own managed repository's (GY-3199: a world may gate Mainworks itself).
     ...(options.gate ? { gate: { root: where.checkout, repository: where.config.repository } } : {}) };
 }
 

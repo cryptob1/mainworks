@@ -1,5 +1,5 @@
 {
-  "name": "@cryptob1/graphyard",
+  "name": "mainworks",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
   "description": "Evidence-backed coordination for distributed software agents",
   "license": "Apache-2.0",
   "bin": {
-    "mainworks": "./bin/graphyard.mjs",
+    "mainworks": "./bin/mainworks.mjs",
     "graphyard": "./bin/graphyard.mjs"
   },
   "scripts": {

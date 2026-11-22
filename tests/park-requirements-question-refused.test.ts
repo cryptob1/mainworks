@@ -20,7 +20,7 @@ setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocki
 // Requirement rewrites are two agent identities' decision: the master
 // requests one, an independent approver approves it. So `park` refuses a goals-and-priorities park
 // whose ask, needed text or reason asks whether a criterion is rewritten, revised or matched to
-// another item's tests, naming the agent route — record the conflict with `graphyard blocked`, so
+// another item's tests, naming the agent route — record the conflict with `mainworks blocked`, so
 // the master requests the requirements decision — while a goals-and-priorities park about scope,
 // ordering or product direction still parks, and every refusal the base classifier raises
 // (GY-1395, GY-1416, GY-1692) still fires beneath the wrapper.
@@ -132,7 +132,7 @@ test('unit:park-requirements-question-refused — GY-1816 AC-1: a goals-and-prio
 
 test('unit:park-requirements-question-refused — the park endpoint refuses the criterion-rewrite question with the lease kept and the human never asked, and a product-direction park under the same kind still reaches Needs you', async () => {
   // Refused, exactly as GY-1814's worker wrote it: the endpoint answers 422 with the route, the
-  // attempt keeps its lease to record the conflict with `graphyard blocked`, and nothing parks.
+  // attempt keeps its lease to record the conflict with `mainworks blocked`, and nothing parks.
   const refusedWork = await claimed(1);
   const body = { epoch: refusedWork.epoch, kind: 'goals-and-priorities' as const, needed: 'Which shape the release-soak criterion takes', ask: 'Decide which yields: rewrite AC-1 to match GY-1762\'s test assertions, or reverse GY-1762', reason: 'AC-1 and GY-1762\'s suite contradict each other as written, so one criterion must be revised before either gate can pass; the worker cannot choose' };
   const refusal = parkRefusal({ kind: body.kind, needed: body.needed, ask: body.ask, reason: body.reason })!;
@@ -140,7 +140,7 @@ test('unit:park-requirements-question-refused — the park endpoint refuses the 
   assert.deepEqual([refused.status, refused.body.error], [422, refusal], JSON.stringify(refused.body));
   const afterRefusal = await reload(refusedWork.id);
   assert.equal(afterRefusal.humanRequest ?? null, null, 'the human is never asked a requirements question');
-  assert.equal(afterRefusal.lease?.owner, worker.id, 'the attempt continues: the worker records the conflict with graphyard blocked instead');
+  assert.equal(afterRefusal.lease?.owner, worker.id, 'the attempt continues: the worker records the conflict with mainworks blocked instead');
   assert.equal(afterRefusal.blocker ?? null, null);
 
   // Accepted under the same kind: product direction parks, ends the attempt, and reaches Needs you.

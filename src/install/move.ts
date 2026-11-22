@@ -1,4 +1,4 @@
-// `graphyard install move --to HOST` (GY-3318): one command moves an install to another host. It
+// `mainworks install move --to HOST` (GY-3318): one command moves an install to another host. It
 // checks through the running control plane that nothing is leased, trialled or queued to merge,
 // re-points the registry accounts placed on this host, stops the install, copies the database, the
 // install files, the credential directory (the operator tokens and the loop's state files beside
@@ -115,7 +115,7 @@ function targetTransport(to: string, into: string | undefined, exec: (program: s
     },
     async putFile(path, content, mode) {
       if (into) { await mkdir(dirname(path), { recursive: true, mode: 0o700 }); await writeFile(path, content, { mode }); return; }
-      const scratch = await mkdtemp(join(tmpdir(), 'graphyard-move-'));
+      const scratch = await mkdtemp(join(tmpdir(), 'mainworks-move-'));
       try {
         const staged = join(scratch, basename(path));
         await writeFile(staged, content, { mode });
@@ -169,7 +169,7 @@ export async function moveInstall(root: string, options: { to: string; into?: st
   const start = [
     ...(local ? [] : [`docker volume create ${volume}`, `docker run --rm -v ${volume}:/data -v ${directory}:/in postgres:17-alpine tar -C /data -xf /in/graphyard-data.tar`, `docker compose --project-directory ${join(directory, 'compose')} up -d`]),
     ...(unitNames.length ? ['systemctl --user daemon-reload', `systemctl --user enable --now ${unitNames.join(' ')}`] : []),
-    `cd ${root} && graphyard master status`,
+    `cd ${root} && mainworks master status`,
   ];
   const plan = { from, to, target: options.into ? resolve(options.into) : `${to} over SSH`, database, files, worktrees, credentials, accounts, refusals,
     trialImage: { title: trialImage.title, command: trialImage.command }, stop: stop.map(command => command.join(' ')), start };
@@ -200,7 +200,7 @@ export async function moveInstall(root: string, options: { to: string; into?: st
     const rewritten = { ...JSON.parse(await readFile(file, 'utf8')), hostId: to };
     if (options.into) await atomicPrivateWrite(destination(file), rewritten);
     else {
-      const scratch = await mkdtemp(join(tmpdir(), 'graphyard-move-'));
+      const scratch = await mkdtemp(join(tmpdir(), 'mainworks-move-'));
       try {
         const staged = join(scratch, basename(file));
         await atomicPrivateWrite(staged, rewritten);

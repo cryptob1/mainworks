@@ -12,7 +12,7 @@ import type { CliContext } from '../src/cli/context.js';
 
 // GY-1059: the follow-ups of GY-860's review. A revert or squash merge a stale attempt worktree
 // is stopped inside is ended without moving the branch; the record keeps untracked contents and a
-// bounded diff; only Graphyard's own session worktrees are released; a refused failure release is
+// bounded diff; only Mainworks's own session worktrees are released; a refused failure release is
 // never reported as one; and the `worktree` command is driven end to end against a held branch.
 
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();

@@ -8,7 +8,7 @@ import { setupAutonomy } from './autonomy.js';
 import { autonomyPlan } from './harness.js';
 import type { MasterConfig } from './profiles.js';
 
-export const promoteCommand = 'graphyard master promote --admin-token-stdin';
+export const promoteCommand = 'mainworks master promote --admin-token-stdin';
 /** Recorded on every control-plane identity the promotion creates, configures or rotates, ahead of the autonomy apply's own reason. */
 export const promotionReason = `Promotion of a supervised install to autonomy (${promoteCommand})`;
 /** The master's administration records: the promotion's audit entry is appended beside them. */
@@ -26,7 +26,7 @@ export class PromotionRefusedError extends Error {
 
 /** A reviewer profile is all a control-plane review needs. */
 export function promotionPreconditions(config: Pick<MasterConfig, 'reviewers'>): PromotionStep[] {
-  return config.reviewers.length ? [] : [{ missing: 'no reviewer profile is configured', command: 'graphyard master reviewer add PROFILE.json' }];
+  return config.reviewers.length ? [] : [{ missing: 'no reviewer profile is configured', command: 'mainworks master reviewer add PROFILE.json' }];
 }
 
 /**
@@ -53,7 +53,7 @@ function reasoned(fetcher: typeof fetch): typeof fetch {
 
 export interface PromotionDependencies { fetcher?: typeof fetch; operatorLogin?: () => string | null | Promise<string | null>; now?: () => Date; harness?: string }
 /**
- * `graphyard master promote --admin-token-stdin`: the operator's one audited transition from
+ * `mainworks master promote --admin-token-stdin`: the operator's one audited transition from
  * supervised to autonomous. It refuses, naming each missing step, until the reviewer preconditions
  * hold; then appends an audit entry under .graphyard/master-actions,
  * and only once that is durable provisions the operator-agent and approver identities through the

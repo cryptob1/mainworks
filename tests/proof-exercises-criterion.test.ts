@@ -47,7 +47,7 @@ const create = () => engine.execute(operator, 'create', null, { type: 'chore',  
   { id: 'AC-1', text: 'An expired lease cannot claim', proofs: [PROOF, 'e2e:fixture'] },
   { id: 'AC-2', text: 'Something else holds', proofs: [OTHER] },
 ] }, id()) as Promise<Work>;
-// Submitted over the producer's own HTTP route, exactly as `graphyard evidence KEY FILE` does.
+// Submitted over the producer's own HTTP route, exactly as `mainworks evidence KEY FILE` does.
 async function submit(work: Work, body: Record<string, unknown>) {
   const response = await fetch(`${url}/api/work/${work.id}/evidence`, { method: 'POST',
     headers: { Authorization: `Bearer ${tokens.get(producer.id)}`, 'Content-Type': 'application/json', 'Idempotency-Key': id() },

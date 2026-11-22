@@ -20,7 +20,7 @@ const coordinatorToken = 'coordinator-token-'.padEnd(40, 'x');
 const workerToken = 'worker-token-'.padEnd(40, 'x');
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
-/** A repository laid out like a Graphyard checkout: an origin, the main clone, and a managed linked worktree. */
+/** A repository laid out like a Mainworks checkout: an origin, the main clone, and a managed linked worktree. */
 async function linkedWorktree(name = 'GY-1-1') {
   const root = await realpath(await temporaryDirectory('sandbox'));
   const origin = join(root, 'origin.git'), main = join(root, 'repo');

@@ -53,7 +53,7 @@ async function machine(label: string) {
     if (free !== undefined) await writeFile(join(path, '.avail'), `${free}\n`);
     return path;
   };
-  const words = (mounts: string[], spec: TrialLoad) => trialContainerLaunch({ image: 'graphyard-trial:local', mounts: mounts.map(path => [path, path, false]), network: 'none', load: spec });
+  const words = (mounts: string[], spec: TrialLoad) => trialContainerLaunch({ image: 'mainworks-trial:local', mounts: mounts.map(path => [path, path, false]), network: 'none', load: spec });
   const launch = (mounts: string[], spec: TrialLoad) => {
     const [program, ...rest] = words(mounts, spec);
     const child = spawn(program!, [...rest, 'sleep', '600'], { cwd: base, env, stdio: ['ignore', 'ignore', 'pipe'] });

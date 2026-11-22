@@ -20,7 +20,7 @@ test('unit:tests/readme-landing.test.ts — README is a short landing page namin
   const where = readme.split('\n## Where things run\n')[1]?.split('\n## ')[0] ?? '';
   assert.ok(where.trim().split(/\s+/).length < 50, 'the Where things run section is the diagram and a pointer');
 
-  const alt = readme.match(/!\[([^\]]*)\]\(docs\/diagrams\/how-graphyard-works\.gif\)/)?.[1] ?? '';
+  const alt = readme.match(/!\[([^\]]*)\]\(docs\/diagrams\/how-mainworks-works\.gif\)/)?.[1] ?? '';
   assert.ok(alt.split(/\s+/).length >= 8, `the GIF has descriptive alt text: "${alt}"`);
 
   assert.match(readme, /\]\(docs\/walkthrough\.md\)/, 'README links the walkthrough re-render steps');

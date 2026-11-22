@@ -56,7 +56,7 @@ test(`e2e:codex-reviewer-git-write — ${layout}: a codex reviewer launched for 
     gitIn(repo, 'remote', 'add', 'origin', `https://github.com/${repository}.git`);
     const root = layout === 'repository' ? repo : join(base, 'coordinator');
     if (layout === 'linked-worktree') gitIn(repo, 'worktree', 'add', '-q', '--detach', root);
-    await setupMaster(root, { url, token: credentials[0].token, cliPath: launcher, credentialDirectory, herdrWorkspace: 'workspace-graphyard', run: { worktreeRoot: join(base, 'sessions') } });
+    await setupMaster(root, { url, token: credentials[0].token, cliPath: launcher, credentialDirectory, herdrWorkspace: 'workspace-mainworks', run: { worktreeRoot: join(base, 'sessions') } });
     await saveReviewerProfile(root, { name: 'reviewer-codex', agentName: 'review-codex-1', kind: 'codex' });
     const now = new Date().toISOString();
     const candidate = { sha: head, baseSha, pr: 7, branch: 'graphyard/gy-7-1', author: worker.id };

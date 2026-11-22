@@ -33,7 +33,7 @@ exit 0
   const launch = async (who: 'gate' | 'merge') => {
     const load = { ...await trialLoad(join(base, 'install'), who, 4, 4), slots, hwmon, hotCelsius: 95, floorBytes: 30e9 };
     if (who === 'gate') assert.equal(load.hotCap, Math.floor(load.cap / 2), 'the gate\'s hot cap is half the cap');
-    const [program, ...words] = trialContainerLaunch({ image: 'graphyard-trial:local', mounts: [[base, '/scratch', false]], network: 'none', load: { ...load, cap: 2, ...(who === 'gate' ? { hotCap: 1 } : {}) } });
+    const [program, ...words] = trialContainerLaunch({ image: 'mainworks-trial:local', mounts: [[base, '/scratch', false]], network: 'none', load: { ...load, cap: 2, ...(who === 'gate' ? { hotCap: 1 } : {}) } });
     const child = spawn(program!, [...words, 'sleep', '600'], { cwd: base, env: { PATH: `${bin}:/usr/bin:/bin` }, stdio: ['ignore', 'ignore', 'pipe'] });
     let said = '';
     child.stderr!.on('data', chunk => { said += chunk; });

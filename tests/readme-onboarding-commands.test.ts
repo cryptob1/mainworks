@@ -17,7 +17,7 @@ test('unit:readme-onboarding-commands — the Quick start uses commands and flag
   assert.ok(command, 'onboarding gives an explicit up command');
   assert.match(command, /--repo OWNER\/NAME/);
   for (const flag of start.matchAll(/--[a-z-]+/g)) {
-    if (flag[0] === '--scopes') continue; // gh auth login, not Graphyard
+    if (flag[0] === '--scopes') continue; // gh auth login, not Mainworks
     assert.ok(`${up}\n${all}`.includes(flag[0]), `help advertises ${flag[0]}`);
   }
   for (const command of ['master status', 'upgrade --plan', 'upgrade']) {

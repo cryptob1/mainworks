@@ -461,7 +461,7 @@ async function closeStep(cycle: Cycle) {
       await note(cycle, key, 'close', item.key, 'done', `Released ${session.id}'s agent-registry session (${ended ?? 'none recorded'}): ${reason}`, session.principal ?? null);
     } catch (error) { await note(cycle, key, 'close', item.key, 'failed', `Could not release ${session.id}'s agent-registry session: ${message(error)}`, session.principal ?? null); }
   }
-  // GY-3188: a pane Graphyard launched is closed once its session has ended (its item done, or its
+  // GY-3188: a pane Mainworks launched is closed once its session has ended (its item done, or its
   // session no longer running) unless its agent is still working, and so is one whose runtime exited
   // in a worktree since removed. A live session's pane is never touched.
   const launched = new Set(snapshot.work.flatMap(item => (item.sessions ?? []).map(session => session.pane)));
@@ -999,7 +999,7 @@ async function masterSession(cycle: Cycle, open: Work[]) {
   const since = Date.parse(state.master.lastWake?.at ?? state.master.startedAt ?? cycle.snapshot.now);
   const heartbeat = !changed.length && open.length > 0 && cycle.now() - since >= (config.run.masterHeartbeatMinutes ?? 30) * 60_000;
   if ((!changed.length && !heartbeat) || !target || !sessions.wake) return;
-  const prompt = changed.length ? masterCausePrompt(changed) : `Graphyard coordinator heartbeat: open in-scope work remains. Continue from node ${config.cliPath} master status, diagnose stalled work and advance typed agent actions with every gate intact. Act without asking for routine human approval.`;
+  const prompt = changed.length ? masterCausePrompt(changed) : `Mainworks coordinator heartbeat: open in-scope work remains. Continue from node ${config.cliPath} master status, diagnose stalled work and advance typed agent actions with every gate intact. Act without asking for routine human approval.`;
   const key = config.forPerson ? `master:wake:${config.forPerson}` : 'master:wake';
   cycle.launcher.submit(key, [], async sink => {
     try {

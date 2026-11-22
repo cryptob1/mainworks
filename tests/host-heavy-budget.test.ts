@@ -8,7 +8,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { sessionSlotsGrant } from '../src/master/harness.js';
 import { gateSlot, heavyCommand, heavyJobLimit, heldSlots, hostHeavyJobsDirectory, requestHeavyDrain, resumeHeavyDrain, slotsDirectoryVariable, verificationBin, verificationEnvironment, waitStep, withHeavyJob } from '../src/master/verification-slots.js';
 
-// GY-3290: every Graphyard project of one user on one host shares one heavy-job budget. On
+// GY-3290: every Mainworks project of one user on one host shares one heavy-job budget. On
 // 13 November 2026 a 24-core host shared by several projects sat at load 50–86 and local
 // verification timed out: each project bounded only its own runs, under its own managed root.
 
@@ -113,7 +113,7 @@ test('e2e:host-heavy-budget — two installs on one host launch eight heavy jobs
   assert.equal(new Set(waits.map(({ job }) => job.id)).size, 5, `five of eight waited: ${waits.map(({ job }) => job.id).join(', ')}`);
   for (const { line } of waits) assert.match(line, /held by .+\(acme\/(app|site)\)/);
   assert.ok(waits.some(({ job, line }) => line.includes(`(${job.project === 'acme/app' ? 'acme/site' : 'acme/app'})`)), 'a waiter names a holder of the other project');
-  assert.ok(waits.some(({ line }) => line.includes('every Graphyard project on this host shares 2 at once') && line.includes(join(fixture.directory, 'limit'))), 'and the shared limit, with where it is set');
+  assert.ok(waits.some(({ line }) => line.includes('every Mainworks project on this host shares 2 at once') && line.includes(join(fixture.directory, 'limit'))), 'and the shared limit, with where it is set');
   assert.deepEqual(heldSlots(fixture.directory), [], 'every slot is given back');
 });
 
@@ -156,7 +156,7 @@ test('e2e:host-heavy-budget — a lowered limit keeps running jobs and admits no
     let ran = false;
     const queued = withHeavyJob('merge trial GY-9', async () => { ran = true; return holders(); }, { onWait: line => lines.push(line) });
     await until(() => lines.length === 1, 'the new job reports its wait');
-    assert.match(lines[0], /merge trial GY-9 waits for a host heavy-job slot: every Graphyard project on this host shares 2 at once, held by held job /);
+    assert.match(lines[0], /merge trial GY-9 waits for a host heavy-job slot: every Mainworks project on this host shares 2 at once, held by held job /);
     for (const holder of ['held job one (acme/app) [pid ', 'held job two (acme/site) [pid ', 'held job three (acme/site) [pid ']) assert.ok(lines[0].includes(holder), `${holder}: ${lines[0]}`);
     // A merge trial's step says the same within the control plane's 100 characters.
     assert.match(waitStep(fixture.directory), /^waiting for a host heavy-job slot, held by held job (one|two|three) \(acme\/(app|site)\), held job /);

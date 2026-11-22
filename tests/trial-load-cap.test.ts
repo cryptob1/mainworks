@@ -37,7 +37,7 @@ async function machine(label: string) {
     await writeFile(join(hwmon, name, 'temp1_input'), `${millidegrees}\n`);
   };
   const launch = (load: { cap?: number; order?: number } = {}) => {
-    const [program, ...words] = trialContainerLaunch({ image: 'graphyard-trial:local', mounts: [[base, '/scratch', false]], network: 'none',
+    const [program, ...words] = trialContainerLaunch({ image: 'mainworks-trial:local', mounts: [[base, '/scratch', false]], network: 'none',
       load: { slots: join(base, 'slots'), cap: load.cap ?? 2, order: load.order ?? trialStartOrder.merge, hotCelsius: 95, floorBytes: 30e9, hwmon, pressureBoundSeconds: 600 } });
     const child = spawn(program!, [...words, 'sleep', '600'], { cwd: base, env: { PATH: `${bin}:/usr/bin:/bin` }, stdio: ['ignore', 'ignore', 'pipe'] });
     let said = '';
@@ -163,7 +163,7 @@ test(`${proof} — a serve command's time to answer starts when its container do
   const base = await temporaryDirectory('load-serve', process.cwd());
   const port = await new Promise<number>(resolve => { const probe = createServer().listen(0, '127.0.0.1', () => { const { port } = probe.address() as { port: number }; probe.close(() => resolve(port)); }); });
   const launcher = join(base, 'launcher');
-  await writeFile(launcher, '#!/bin/sh\necho "graphyard trial container: waiting: a CPU sensor reads 95C or more" >&2\nsleep 2\necho "graphyard trial container: starting" >&2\nexec "$@"\n');
+  await writeFile(launcher, '#!/bin/sh\necho "mainworks trial container: waiting: a CPU sensor reads 95C or more" >&2\nsleep 2\necho "mainworks trial container: starting" >&2\nexec "$@"\n');
   await chmod(launcher, 0o755);
   const server = join(base, 'server.cjs');
   await writeFile(server, `require('http').createServer((q, r) => r.end('ok')).listen(${port}, '127.0.0.1');\n`);

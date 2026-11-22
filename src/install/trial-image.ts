@@ -5,11 +5,11 @@ import { pulledTrialImageFile, trialContainerImage, trialImage } from '../merge-
 import { localTransport, shellQuote } from './transport.js';
 import { appArmorEnabled, trialAppArmorLoadCommand, trialAppArmorProfile, trialAppArmorProfilePath, trialAppArmorProfileText } from '../merge-writer/trial-apparmor.js';
 
-/** GY-3188: trial images build on Graphyard's own builder, so its cache is pruned without touching another project's. */
-export const trialBuilder = 'graphyard-trial';
+/** GY-3188: trial images build on Mainworks's own builder, so its cache is pruned without touching another project's. */
+export const trialBuilder = 'mainworks-trial';
 export const trialBuilderCreateArgs = ['buildx', 'create', '--name', trialBuilder, '--driver', 'docker-container'];
 export const trialImageBuildArgs = (root: string) => ['buildx', 'build', '--builder', trialBuilder, '--load', '--target', 'trial', '--tag', trialContainerImage, root];
-/** `published` (GY-3214) is the trial image Graphyard published for the source checkout's commit, null for a tree no published image holds. */
+/** `published` (GY-3214) is the trial image Mainworks published for the source checkout's commit, null for a tree no published image holds. */
 export const trialImagePlan = (ctx: Pick<AdapterContext, 'sourceRoot'>, published: string | null): PlanAction => ({
   id: 'provider.trial-image', target: 'provider', state: 'update',
   title: published ? `Pull the private-root merge-trial image ${published}, or build it here when it is not published (Docker is required for trials)` : 'Build the private-root merge-trial image (Docker is required for trials)',

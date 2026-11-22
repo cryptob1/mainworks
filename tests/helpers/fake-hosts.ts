@@ -1,9 +1,9 @@
-// GY-3407: SSH hosts as stand-ins on PATH, prepared by running the script `graphyard host prepare`
+// GY-3407: SSH hosts as stand-ins on PATH, prepared by running the script `mainworks host prepare`
 // actually prints. The privileged commands that script calls — useradd, gpasswd, usermod, loginctl,
 // install, chown, sudo, dockerd-rootless-setuptool.sh — are PATH stand-ins acting on a fixture /etc,
 // /usr/local/bin and /run, and the shim's install prefix is redirected into the fixture because the
 // test is not root; every other line of the printed script runs as printed. The fake `ssh` then
-// honours the authorized_keys the script wrote the way sshd does: a restrict,command="graphyard-
+// honours the authorized_keys the script wrote the way sshd does: a restrict,command="mainworks-
 // host-shim" line runs only the shim with the caller's command in SSH_ORIGINAL_COMMAND, a bare key
 // line gives a plain shell. Key material is never read, exactly as tests/helpers/ssh-origin.ts does
 // not. A host with no directory refuses the connection exactly as OpenSSH words it. GY-3440: a
@@ -36,7 +36,7 @@ export interface FakeHost {
 }
 
 /** The operator public key the fixture authorizes on every host (the wrapper reads no key material). */
-export const fixturePublicKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFJpeHR1cmU graphyard-host-fixture';
+export const fixturePublicKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFJpeHR1cmU mainworks-host-fixture';
 /** This process's uid: GY-3412's shim names its socket by the real uid (os.getuid), which in the fixture is this, not gy-compute's 1001. */
 const uid = process.getuid?.() ?? 1000;
 
@@ -48,7 +48,7 @@ export interface PrepareInstall { publicKey?: string; shim?: { script: string; d
 /** The user's own Docker, as dockerd-rootless-setuptool.sh leaves it: it answers only through its own socket. */
 const rootlessDockerTemplate = (dir: string) => `#!/bin/sh
 D='${dir}'
-case "$1" in --version) echo "Docker version 29.10.0, build graphyard-fixture" ;; esac
+case "$1" in --version) echo "Docker version 29.10.0, build mainworks-fixture" ;; esac
 case "$DOCKER_HOST" in unix://*) [ -e "$D\${DOCKER_HOST#unix://}" ] || { echo "Cannot connect to the Docker daemon at $DOCKER_HOST" >&2; exit 1; } ;; esac
 case "$1" in info) exit 0 ;; ps) printf 'a1\nb2\n' ;; esac
 `;
@@ -59,7 +59,7 @@ const systemDocker = "#!/bin/sh\ncase \"$1\" in info) exit 0 ;; ps) printf 'a1\\
 /** Stand-ins for the privileged commands the printed script calls, each acting on the host's fixture root. */
 const standins = (dir: string, host: FakeHost): Record<string, string> => ({
   docker: `#!/bin/sh
-case "$1" in --version) echo "Docker version 29.10.0, build graphyard-fixture" ;; info) exit 0 ;; ps) printf 'a1\nb2\n' ;; *) exit 1 ;; esac
+case "$1" in --version) echo "Docker version 29.10.0, build mainworks-fixture" ;; info) exit 0 ;; ps) printf 'a1\nb2\n' ;; *) exit 1 ;; esac
 `,
   useradd: `#!/bin/sh
 D='${dir}'

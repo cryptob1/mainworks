@@ -11,7 +11,7 @@ import { behindBaseHold } from './behind-base.js';
  * none binds the head, and one producer request per group of automatable proofs that no trusted
  * evidence binds. Each request is bound to head, base and policy revision, so a head change
  * cancels it (with the reason) and a fresh head requests again — unless the merge queue carried
- * the approval or the proof across a Graphyard-authored tip, in which case nothing is asked for.
+ * the approval or the proof across a Mainworks-authored tip, in which case nothing is asked for.
  * The master loop launches at most one session per request id; the record here is what makes
  * that idempotent, and the resolved requests kept in `history` are what `master status` reads
  * back. Nothing in this file authorizes progression: a request is a fact about what is missing,

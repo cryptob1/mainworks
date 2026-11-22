@@ -26,7 +26,7 @@ test('unit:control-plane-upgrade-pinned — the deploy watch\'s restart plan of 
       extraResponses: [GH_FAILING],
     });
     // The exact argv the watch's restart port runs first (src/cli/upgrade.ts watchPorts).
-    const args = redeployArguments(record, 'graphyard-local:abcdef123456');
+    const args = redeployArguments(record, 'mainworks-local:abcdef123456');
     const planned = await prepareInstall(restart.root, installRequestFromArgs([...args.slice(0, -1), '--plan']).request, restart.deps, 'plan');
     const plan = await buildPlan(planned);
     assert.deepEqual(plan.preflight.filter(item => !item.ok), [], 'the restart plan passes preflight without a gh login');

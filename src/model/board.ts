@@ -204,9 +204,9 @@ export function actorRole(work: Work, group: Group | null, who: string): ActorRo
 export function nextCommand(work: Work, group: Group | null, actor: ActorRole, humanRow?: HumanRequestRow): string | null {
   const key = work.key;
   if (actor === 'human-only') return humanRow?.answer.cli ?? (work.humanRequest ? answerCommand(key, work.humanRequest) : null);
-  if (actor === 'reviewer') return `graphyard master review ${key}`;
-  if (group === 'backlog') return actor === 'master' ? `graphyard master release ${key}` : null;
-  if (work.blocker) return `graphyard master unblock ${key} REASON`;
+  if (actor === 'reviewer') return `mainworks master review ${key}`;
+  if (group === 'backlog') return actor === 'master' ? `mainworks master release ${key}` : null;
+  if (work.blocker) return `mainworks master unblock ${key} REASON`;
   return null;
 }
 

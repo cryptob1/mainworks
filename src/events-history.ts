@@ -185,7 +185,7 @@ export async function readEventHistory(pool: pg.Pool, query: EventHistoryQuery, 
 }
 
 /**
- * The same vocabulary on the command line: `graphyard events GY-N --kind claim,submit --since …`.
+ * The same vocabulary on the command line: `mainworks events GY-N --kind claim,submit --since …`.
  * `--routine` is the explicit flag that returns the rows the default summarises, and `--all`
  * follows the cursor to the end of the range instead of stopping at one page.
  */

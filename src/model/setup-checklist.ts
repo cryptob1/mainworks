@@ -1,6 +1,6 @@
 /**
  * The first-run checklist (GY-1419): what a new installation needs before it can build anything,
- * read live from the control plane's `/api/status`. `graphyard up` waits on it and the dashboard's
+ * read live from the control plane's `/api/status`. `mainworks up` waits on it and the dashboard's
  * Setup page shows it, so both judge one checklist. Every line is plain language: no sha, file path
  * or command.
  */
@@ -25,12 +25,12 @@ export interface SetupItem {
   line: string;
   /** The single action that moves it forward; null once it is done. */
   action: SetupAction | null;
-  /** Steps only a person can do (a click on GitHub, an account sign-in); the rest Graphyard does itself. */
+  /** Steps only a person can do (a click on GitHub, an account sign-in); the rest Mainworks does itself. */
   human: boolean;
 }
 
 /**
- * The address `graphyard up` prints (GY-1419): the dashboard's Setup page, signed in. A one-time
+ * The address `mainworks up` prints (GY-1419): the dashboard's Setup page, signed in. A one-time
  * sign-in link (`#sign-in=CODE`, or a host install's `#claim=CODE`) carries `&setup`, so the person
  * who opens it lands on the Setup page once the link signs them in; without a link it is `#setup`.
  */

@@ -27,7 +27,7 @@ const planeFetch = (plane: Plane): typeof fetch => async (input, init) => {
   const body = init?.body ? JSON.parse(String(init.body)) : undefined;
   const answer = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status });
   const agent = plane.agents.find(entry => entry.token === bearer && !entry.revoked);
-  if (bearer !== ADMIN && bearer !== MASTER && !agent) return answer({ error: 'A valid Graphyard bearer token is required' }, 401);
+  if (bearer !== ADMIN && bearer !== MASTER && !agent) return answer({ error: 'A valid Mainworks bearer token is required' }, 401);
   if (path === 'status') return answer(bearer === ADMIN ? { actor: { id: 'acme-shop-operator', role: 'admin' } } : agent ? { actor: { id: agent.id, role: 'operator-agent' } }
     : { actor: { id: 'acme-shop-master', role: 'coordinator' }, repository: 'acme/shop', baseBranch: 'main', githubAppId: 1234 });
   if (path === 'operator-agents' && bearer === ADMIN) { if (body) plane.agents.push({ id: body.id, token: body.token }); return answer(body ? { id: body.id } : plane.agents.map(({ id, revoked }) => ({ id, capabilities: [], scope: {}, revision: 1, ...(revoked ? { revokedAt: '2026-10-16T00:00:00.000Z' } : {}) }))); }

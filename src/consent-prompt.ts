@@ -61,7 +61,7 @@ export const settingsSuggestionAnswer: ConsentRule = {
 };
 /**
  * GY-3336: the one folder-trust prompt the launcher answers itself — a session launched in the
- * install's own checkout, the folder the operator connected Graphyard to. The master session runs
+ * install's own checkout, the folder the operator connected Mainworks to. The master session runs
  * there confined, its HOME a scratch home, so the trust record the launch wrote never reaches the
  * runtime and it stops at the dialog; the operator already chose that folder, so the launcher
  * accepts its "Yes" for that folder alone. It is never in the global allow-list: a trust prompt in

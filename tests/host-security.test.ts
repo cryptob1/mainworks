@@ -64,7 +64,7 @@ test(`${proof} — the script host prepare prints, run, prepares the host: gy-co
   assert.match(log, /sudo -u gy-compute XDG_RUNTIME_DIR=\/run\/user\/1001 [^\n]*dockerd-rootless-setuptool\.sh install/);
   assert.match(log, /dockerd-rootless-setuptool\.sh install for gy-compute at \/run\/user\/1001\/docker\.sock/, 'rootless Docker installed as the user, on its own socket');
   await stat(join(box, 'run', 'user', '1001', 'docker.sock'));
-  assert.match(hosts.prepareOutput('box'), /Ready\. On the Graphyard machine run: graphyard host add gy-compute@box\s*$/);
+  assert.match(hosts.prepareOutput('box'), /Ready\. On the Mainworks machine run: mainworks host add gy-compute@box\s*$/);
 });
 
 test(`${proof} — the shim the script installed answers only its verbs: a plain shell command is refused`, async () => {
@@ -86,7 +86,7 @@ test(`${proof} — host add accepts the prepared host into the one host list and
   await main(['host', 'add', 'gy-compute@box']);
   const recorded = () => readFile(join(config, 'machine', 'hosts.json'), 'utf8').then(text => JSON.parse(text).map((host: { target: string }) => host.target));
   assert.deepEqual(await recorded(), ['gy-compute@box']);
-  await assert.rejects(main(['host', 'add', 'vish@open']), /vish@open was not added: its SSH key opens a plain shell, so Graphyard could reach everything that user can; run graphyard host prepare and the script it prints there, then add gy-compute@open/);
+  await assert.rejects(main(['host', 'add', 'vish@open']), /vish@open was not added: its SSH key opens a plain shell, so Mainworks could reach everything that user can; run mainworks host prepare and the script it prints there, then add gy-compute@open/);
   await assert.rejects(main(['host', 'add', 'root@rooty']), /root@rooty was not added: it logs in as root/);
   await assert.rejects(main(['host', 'add', 'gy-compute@dockery']), /gy-compute@dockery was not added: gy-compute is in the docker group, which is root on that host/);
   assert.deepEqual(await recorded(), ['gy-compute@box'], 'a refused host is never recorded');

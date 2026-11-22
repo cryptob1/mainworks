@@ -367,7 +367,7 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
       else {
         try {
           // The session is registered before its runtime starts and its coordinates written once it
-          // has (GY-172), where every Graphyard reader looks — so watching this reviewer never means
+          // has (GY-172), where every Mainworks reader looks — so watching this reviewer never means
           // reading this host's local ledger, and the session report observes it from the start.
           const launched = await launchInTurns(review, withRoom(), candidate => {
             const handle = launchedSessionHandle('review', review, `${item.key}: review ${review.sha.slice(0, 12)} (PR #${review.pr})`, config.hostId, undefined, candidate.kind, config.herdrWorkspace);

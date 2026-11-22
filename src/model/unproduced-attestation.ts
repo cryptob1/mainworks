@@ -38,5 +38,5 @@ export const attestationOwner = 'master';
 /** The wait an item holding only such proofs is in: the master's attestation, never a person's step. */
 export function attestationWait(work: Work, all: Work[], now: Date): ActionWait | null {
   const proofs = unproducedManualProofs(work, all, now);
-  return proofs.length ? { kind: 'session', on: attestationOwner, detail: `${work.key} waits on the master's attestation of ${proofs.join(', ')} on ${work.candidate!.sha.slice(0, 12)}: graphyard master attest ${work.key} ${proofs[0]} REASON once it verifies the criterion on that head` } : null;
+  return proofs.length ? { kind: 'session', on: attestationOwner, detail: `${work.key} waits on the master's attestation of ${proofs.join(', ')} on ${work.candidate!.sha.slice(0, 12)}: mainworks master attest ${work.key} ${proofs[0]} REASON once it verifies the criterion on that head` } : null;
 }

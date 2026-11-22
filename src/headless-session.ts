@@ -337,7 +337,7 @@ export type HeadlessWorkerRecord = z.infer<typeof workerRecordSchema>;
 export interface HeadlessWorker extends HeadlessAccountLaunch {
   /** The profile's agent name the run is listed under while it lasts, beside the role's other sessions. */
   name: string; work: string; subject: string; epoch: number; principal: string; account: string | null;
-  /** The worktree the attempt was assigned; `supervisor` the `graphyard watch KEY EPOCH --` words that hold its lease. */
+  /** The worktree the attempt was assigned; `supervisor` the `mainworks watch KEY EPOCH --` words that hold its lease. */
   directory: string; supervisor: string[]; coordinatorRoot?: string; prompt: string;
   root: string; exec: HeadlessExec; cores?: number;
   /** GY-3632: the runtime session this run continues; its request is then `prompt` alone, the session's next message. */
@@ -351,7 +351,7 @@ export interface HeadlessWorker extends HeadlessAccountLaunch {
 }
 
 /**
- * Start one worker run: its runtime's one-task form under `graphyard watch`, which claims nothing
+ * Start one worker run: its runtime's one-task form under `mainworks watch`, which claims nothing
  * itself but heartbeats the lease the launcher claimed under the worker's own identity, stops the
  * runtime the moment that lease is lost and releases it when the runtime exits without `complete`.
  * The run is watched for `workerStartupMs`; one that ended in that time is returned with what it

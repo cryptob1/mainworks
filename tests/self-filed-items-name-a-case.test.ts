@@ -20,7 +20,7 @@ import { defaultRepositoryPolicy } from '../src/model/repository-policy.js';
 import { setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { setProjectDelivery } from '../src/model-boundary/project-applications.js';
 
-// GY-3037 AC-2: every item Graphyard files itself — a base-failure repair, a post-merge review
+// GY-3037 AC-2: every item Mainworks files itself — a base-failure repair, a post-merge review
 // follow-up, onboarding work — is accepted under the rule that every item owes an e2e proof, and
 // names a case that exists on the head: the merge trial runs it against the served head.
 

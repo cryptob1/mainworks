@@ -1,4 +1,4 @@
-// Concern: one adapter record per agent runtime kind — everything Graphyard knows of a runtime, in one place (GY-3034).
+// Concern: one adapter record per agent runtime kind — everything Mainworks knows of a runtime, in one place (GY-3034).
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
@@ -21,7 +21,7 @@ export interface AccountReading { loggedIn: boolean; usage: AccountUsage[]; note
   /** GY-3516: the fingerprint of the key the reading was taken with. */
   key?: string }
 /**
- * Everything Graphyard knows of one runtime kind. Every field is optional but `kind`: a kind with
+ * Everything Mainworks knows of one runtime kind. Every field is optional but `kind`: a kind with
  * no `recipe` is still a kind profiles may name, and is refused at launch unless an agent-registry
  * contract brings its own no-approval arguments.
  *
@@ -126,7 +126,7 @@ async function cursorAccount(environment: ProbedHome): Promise<AccountReading> {
   const config = await readFile(resolve(environment.home, cursorLoginFile), 'utf8').then(text => JSON.parse(text), () => null);
   const signIn = await readFile(resolve(environment.home, cursorSignInFile), 'utf8').then(text => text.trim(), () => '');
   const loggedIn = !!(config?.authInfo?.userId || config?.authInfo?.email) || !!signIn;
-  return { loggedIn, usage: [], note: 'Cursor exposes no quota Graphyard can read; the session reports its own limit', ...(loggedIn ? {} : { loggedOutReason: `${resolve(environment.home, cursorLoginFile)} names no signed-in user` }) };
+  return { loggedIn, usage: [], note: 'Cursor exposes no quota Mainworks can read; the session reports its own limit', ...(loggedIn ? {} : { loggedOutReason: `${resolve(environment.home, cursorLoginFile)} names no signed-in user` }) };
 }
 /**
  * GY-3329: the login-home variables an account's home is applied to beyond its home variable.
@@ -164,7 +164,7 @@ const piModel = (output: string) => jsonRows(output).filter(row => row?.type ===
 export const reportedModel = (kind: string | null | undefined, output: string) => runtimeAdapter(kind)?.model?.(output) ?? null;
 
 // Per-runtime startup contracts that remove the approval and workspace-trust prompts a freshly
-// launched session blocks on. These are runtime CLI contracts, not Graphyard authority: a session
+// launched session blocks on. These are runtime CLI contracts, not Mainworks authority: a session
 // that never asks can still only act inside its own assigned worktree and its own credentials.
 const builtInAdapters = {
   claude: {
@@ -292,7 +292,7 @@ type WithHome<K extends RuntimeKind> = typeof builtInAdapters[K] extends { home:
 export type EnvironmentKind = { [K in RuntimeKind]: WithHome<K> }[RuntimeKind];
 /** Every runtime kind a profile may name: the one list the profile schema, the environment kinds and the launch tables read. */
 export const runtimeKinds = Object.keys(builtInAdapters) as [RuntimeKind, ...RuntimeKind[]];
-/** The kinds whose account homes Graphyard creates, probes and selects: those whose adapter names a login home. */
+/** The kinds whose account homes Mainworks creates, probes and selects: those whose adapter names a login home. */
 export const environmentKinds = runtimeKinds.filter(kind => 'home' in builtInAdapters[kind]) as [EnvironmentKind, ...EnvironmentKind[]];
 
 const adapters = new Map<string, RuntimeAdapter>(Object.entries(builtInAdapters).map(([kind, adapter]) => [kind, { kind, ...adapter } as RuntimeAdapter]));
@@ -308,7 +308,7 @@ export function withModel(kind: string, args: readonly string[], contract: { mod
   const kept = args.filter((arg, index) => arg !== flag && !arg.startsWith(`${flag}=`) && args[index - 1] !== flag);
   return modelId ? [...kept, flag, modelId] : kept;
 }
-/** The adapter for `kind`, or undefined for a kind Graphyard knows nothing of. */
+/** The adapter for `kind`, or undefined for a kind Mainworks knows nothing of. */
 /** The remedy for a session stuck on its runtime's first-run screen, or null when the screen is not one. */
 export const runtimeAdapter = (kind: string | null | undefined): RuntimeAdapter | undefined => kind ? adapters.get(kind) : undefined;
 /** Every adapter, built-in and registered. */

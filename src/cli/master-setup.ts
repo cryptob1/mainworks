@@ -24,7 +24,7 @@ export interface MasterSetupDependencies {
   now?: () => number;
 }
 
-/** The deployment this host installed, from its install record (`graphyard install`); null without one. */
+/** The deployment this host installed, from its install record (`mainworks install`); null without one. */
 export async function recordedDeployment(root: string, master: Pick<MasterConfig, 'repository'>, options: MasterSetupOptions) {
   const record = await readInstallRecord(installDirectory(installIdFor(master.repository)));
   if (!record) return null;
@@ -44,7 +44,7 @@ export async function masterSetup(root: string, master: Pick<MasterConfig, 'repo
   const audit = async (entry: SelfProvisionAudit) => { await mkdir(resolve(root, '.graphyard'), { recursive: true }); await appendFile(setupAuditFile(root), `${JSON.stringify(entry)}\n`, { mode: 0o600 }); };
   const located = await (deps.locate ?? recordedDeployment)(root, master, options);
   if (!located) return { mode: options.apply ? 'apply' as const : 'plan' as const, target: null, observed: false, canApply: false, missing: [], set: [], redeployed: [] as string[], pendingRedeploy: [] as string[], audit: [],
-    next: `No deployment is recorded for ${master.repository} on this host (no graphyard install record): run graphyard install --provider compose|local --repo ${master.repository} --apply first` };
+    next: `No deployment is recorded for ${master.repository} on this host (no mainworks install record): run mainworks install --provider compose|local --repo ${master.repository} --apply first` };
   const pendingFile = resolve(root, '.graphyard', `setup-redeploy-${located.context.provider}-${located.context.service}.json`);
   const pending: PendingRedeploy = {
     read: () => readFile(pendingFile, 'utf8').then(text => JSON.parse(text) as PendingSetup, () => ({ redeploy: [], audit: [] })),

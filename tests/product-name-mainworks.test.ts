@@ -9,7 +9,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 const exec = promisify(execFile);
 
 // GY-3572: package.json installs both command names for the one CLI; each prints the Mainworks help.
-test('e2e:product-name-mainworks — mainworks and graphyard are the same CLI and print Mainworks help', async () => {
+test('e2e:product-name-mainworks — mainworks and mainworks are the same CLI and print Mainworks help', async () => {
   const bin = JSON.parse(await readFile('package.json', 'utf8')).bin as Record<string, string>;
   assert.equal(bin.mainworks, bin.graphyard, 'both names point at the same file');
   const dir = await temporaryDirectory('product-name');
@@ -21,16 +21,16 @@ test('e2e:product-name-mainworks — mainworks and graphyard are the same CLI an
       const help = await exec(name, ['--help'], { env, cwd: dir });
       assert.match(help.stdout, /^Mainworks /, `${name} --help names Mainworks`);
       assert.match(help.stdout, /Usage: mainworks COMMAND/, `${name} --help shows mainworks usage`);
-      assert.doesNotMatch(help.stdout, /Graphyard/, `${name} --help never names Graphyard as the product`);
+      assert.doesNotMatch(help.stdout, /Mainworks/, `${name} --help never names Mainworks as the product`);
       const guide = await exec(name, ['guide'], { env, cwd: dir });
       assert.match(guide.stdout, /^Mainworks guide topics/, `${name} guide names Mainworks`);
       assert.match(guide.stdout, /mainworks guide TOPIC/, `${name} guide shows mainworks usage`);
       const setup = await exec(name, ['guide', 'setup'], { env, cwd: dir });
       assert.match(setup.stdout, /^Mainworks runs on a Linux host\./, `${name} guide setup names Mainworks`);
-      assert.doesNotMatch(setup.stdout, /Graphyard/, `${name} guide setup never names Graphyard as the product`);
+      assert.doesNotMatch(setup.stdout, /Mainworks/, `${name} guide setup never names Mainworks as the product`);
       const infra = await exec(name, ['guide', 'infra'], { env, cwd: dir });
       assert.match(infra.stdout, /Mainworks's files/, `${name} guide infra names Mainworks`);
-      assert.doesNotMatch(infra.stdout, /Graphyard/, `${name} guide infra never names Graphyard as the product`);
+      assert.doesNotMatch(infra.stdout, /Mainworks/, `${name} guide infra never names Mainworks as the product`);
     }
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

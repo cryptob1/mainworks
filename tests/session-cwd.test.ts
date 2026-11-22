@@ -1,5 +1,5 @@
 import { pendingHeadless } from './helpers/pending-review.js';
-// GY-866: no session Graphyard launches starts where the master starts. Every role's launch is
+// GY-866: no session Mainworks launches starts where the master starts. Every role's launch is
 // built here the way the loop builds it — the real launch functions against a stubbed Herdr — and
 // the pane's `--cwd`, the launch files' checkout and the runtime's recorded working folder must be
 // the session's own managed checkout (or its assigned worktree, or the loop's scratch checkout for
@@ -95,7 +95,7 @@ function herdr() {
 const paneCwd = (tab: string[]) => { const index = tab.indexOf('--cwd'); return index >= 0 ? tab[index + 1] : null; };
 /** The checkout the launch files were written in: the stem's path before its `.graphyard/launch/` segment. */
 const checkoutOfStem = (stem: string | null) => stem && stem.includes(`${sep}.graphyard${sep}launch${sep}`) ? stem.slice(0, stem.indexOf(`${sep}.graphyard${sep}launch${sep}`)) : null;
-/** Outside the coordinator checkout: another tree altogether, or Graphyard's own managed area under `.graphyard/`. */
+/** Outside the coordinator checkout: another tree altogether, or Mainworks's own managed area under `.graphyard/`. */
 const outsideCoordinator = (path: string, coordinatorRoot: string) => {
   const directory = resolve(path), base = resolve(coordinatorRoot);
   return directory !== base && (!directory.startsWith(`${base}${sep}`) || directory.startsWith(`${base}${sep}.graphyard${sep}`));

@@ -6,9 +6,9 @@ import { pendingOutcomeRules, releaseFailureActions, type RepositoryPolicy, type
  * What a repository declares about its own changes in `graphyard.json`, beside its documentation and
  * delivery policy: which paths are sensitive (`risk.sensitive`), whether a required E2E case bound to an outcome not yet
  * delivered blocks (`e2e.pendingOutcomes`), and what a failed release candidate does
- * (`release.onFailure`, `release.revertUnmatched`). Nothing here names Graphyard's own layout: a
+ * (`release.onFailure`, `release.revertUnmatched`). Nothing here names Mainworks's own layout: a
  * repository that declares no `risk` gets `genericSensitiveRules`, common sensitive surfaces
- * anywhere in a tree, and Graphyard's own graphyard.json declares its list like any other repository.
+ * anywhere in a tree, and Mainworks's own graphyard.json declares its list like any other repository.
  *
  * A sensitive entry is one glob (documentation-glob syntax: `dir/` a tree, `*` within a segment,
  * `**` across segments) and the rule a reason cites; several entries may share a rule. A glob
@@ -134,7 +134,7 @@ export function loadRepositoryPolicy(env?: Record<string, string | undefined>, r
  * The policy a checkout itself declares, read from its own graphyard.json and never from the
  * process's GRAPHYARD_REPOSITORY_POLICY: a release candidate's checkout at its exact SHA is the
  * policy that candidate is validated under, though the plane validating it was installed with
- * another (an older declaration, or Graphyard's own).
+ * another (an older declaration, or Mainworks's own).
  */
 export const checkoutRepositoryPolicy = (root: string): RepositoryPolicy => loadRepositoryPolicy({}, root).policy;
 

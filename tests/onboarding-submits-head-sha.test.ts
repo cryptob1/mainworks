@@ -14,7 +14,7 @@ import { onboardingBranch } from '../src/model/onboarding-work.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 /**
- * GY-2938: `graphyard up`'s onboarding apply publishes the files `init --scan --apply` wrote as one
+ * GY-2938: `mainworks up`'s onboarding apply publishes the files `init --scan --apply` wrote as one
  * commit on `graphyard/onboarding` and submits that commit as a work item by head sha, exactly as a
  * worker's `complete --head` submits (GY-1523) — no pull request is opened, and the build gate reads
  * the submitted head as its candidate. Against a control-plane merger the old filing submitted

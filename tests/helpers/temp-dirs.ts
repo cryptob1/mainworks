@@ -10,7 +10,7 @@ import { livePostmasters, liveServersUnder, stopServersUnder } from '../../src/p
 // data dir, a worktree, a store, a home. Every test in the suite creates its directories here and
 // never with a bare `mkdtemp`, so none is left behind whether its tests pass or fail.
 //
-// A directory under the host's tmpdir is created as `<tmpdir>/graphyard-<label>-*` and marked — as
+// A directory under the host's tmpdir is created as `<tmpdir>/mainworks-<label>-*` and marked — as
 // a sibling `<directory>.owner` file, so the directory itself stays empty for initdb — with the
 // process that made it. A directory under another parent (`temporaryDirectory('home', scratch)`)
 // is `<parent>/<label>-*` and carries no marker: it goes with its parent. Every directory is
@@ -30,7 +30,7 @@ const created = new Set<string>();
 
 /**
  * Create a temporary directory, scheduled for removal in this file's after hook: under the host's
- * tmpdir as `graphyard-<label>-*`, marked with its owner; under `parent` as `<label>-*`.
+ * tmpdir as `mainworks-<label>-*`, marked with its owner; under `parent` as `<label>-*`.
  */
 export async function temporaryDirectory(label: string, parent?: string): Promise<string> {
   const directory = parent ? await mkdtemp(join(parent, `${label}-`)) : await mkdtemp(join(tmpdir(), `graphyard-${label}-`));

@@ -83,7 +83,7 @@ test('integration:verification-owner-identity — private container PID collisio
   // PID 1 in the nested private root collides with the caller's live PID 1.
   // This uses the ordinary trial container, including its real nested namespace support.
   const script = `
-    import { acquireVerificationSlot, declareSlotFiles } from '/graphyard-harness/src/master/verification-slots.ts';
+    import { acquireVerificationSlot, declareSlotFiles } from '/mainworks-harness/src/master/verification-slots.ts';
     import { writeFileSync } from 'node:fs';
     const held = await acquireVerificationSlot({ directory: ${JSON.stringify(directory)}, slots: 1, label: 'private suite' });
     declareSlotFiles(held, 46);
@@ -91,7 +91,7 @@ test('integration:verification-owner-identity — private container PID collisio
     setInterval(() => {}, 1000);
   `;
   const child = spawn(wrapper[0], [...wrapper.slice(1), 'bwrap', '--die-with-parent', '--unshare-user', '--unshare-pid', '--as-pid-1', '--ro-bind', '/', '/',
-    '--proc', '/proc', '--dev', '/dev', '--bind', directory, directory, '--', 'node', '--import', '/graphyard-harness/node_modules/tsx/dist/loader.mjs', '--input-type=module', '-e', script],
+    '--proc', '/proc', '--dev', '/dev', '--bind', directory, directory, '--', 'node', '--import', '/mainworks-harness/node_modules/tsx/dist/loader.mjs', '--input-type=module', '-e', script],
     { detached: true, cwd: directory, env: { ...trialEnvironment(), HOME: directory, TMPDIR: directory, PATH: '/usr/local/bin:/usr/bin:/bin' }, stdio: ['ignore', 'ignore', 'pipe'] });
   const stop = ownedGroupStop(child);
   let output = ''; child.stderr!.on('data', chunk => output += chunk);

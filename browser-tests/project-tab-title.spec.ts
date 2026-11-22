@@ -39,7 +39,7 @@ async function tabNamesTheProject(page: Page, repository: string) {
   await expect(page.getByRole('heading', { name: item, level: 1 })).toBeVisible();
   await expect(page).toHaveTitle(title);
   await page.getByRole('button', { name: '← Back' }).click();
-  // A reload restarts from the page's own Graphyard fallback and lands on the same project again.
+  // A reload restarts from the page's own Mainworks fallback and lands on the same project again.
   await page.reload();
   await expect(page.locator('.top-bar .project-name')).toHaveText(repository, settled);
   await expect(page).toHaveTitle(title);

@@ -115,7 +115,7 @@ export async function main(options: MainOptions = {}) {
     // Routine ledger rows past the retention window go in bounded, audited batches (store/compaction.ts).
     if (Date.now() - ledgerCompactedAt >= ledgerCompactionIntervalMs) { ledgerCompactedAt = Date.now(); await step('compactLedger', () => compactLedger(store.pool, { retentionMs: configuredLedgerRetentionMs() }).catch(error => { console.error('ledger compaction failed', error instanceof Error ? error.message : 'unknown'); return null; })); }
   }, 2000);
-  http.listen(options.port ?? Number(process.env.PORT ?? 4310), options.host ?? process.env.HOST ?? '127.0.0.1', () => console.log(`Graphyard listening on port ${(http.address() as AddressInfo).port}`));
+  http.listen(options.port ?? Number(process.env.PORT ?? 4310), options.host ?? process.env.HOST ?? '127.0.0.1', () => console.log(`Mainworks listening on port ${(http.address() as AddressInfo).port}`));
   await once(http, 'listening');
   // GY-3486: the serve socket tailscaled proxies the tailnet to; up serves it once it exists, else the TCP port as before.
   const socketPath = process.env.GRAPHYARD_SERVE_SOCKET;

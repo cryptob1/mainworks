@@ -97,7 +97,7 @@ export const masterCommands = defineCommands([
     ],
     async run(context) {
       const { id } = context;
-      const root = await checkoutRoot(context, `graphyard master ${id ?? ''}`.trimEnd());
+      const root = await checkoutRoot(context, `mainworks master ${id ?? ''}`.trimEnd());
       // The master's role instructions lead the guide.
       if (id === 'guide') return console.log(`${masterInstructions}\n${masterGuide}`);
       if (id === 'init') return masterInit(context, root);

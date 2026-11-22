@@ -20,7 +20,7 @@ import type { Principal } from '../src/model.js';
 import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 
-// GY-3333: one machine runs several Graphyard installs that share the same login homes, and each
+// GY-3333: one machine runs several Mainworks installs that share the same login homes, and each
 // counted an account's live sessions and quota holds only for itself — the core and hwd-backend
 // installs on rexera-remote could run one Claude account at once, and a limit one observed was news
 // to the other. The login home is now a host-level resource: every install registers its live

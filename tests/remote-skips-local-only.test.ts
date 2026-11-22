@@ -18,7 +18,7 @@ import { killTrees, shardHosts, shardRepository, sshdHost, type ShardHostsFixtur
 // two-host verdict is the one-host verdict, while the plain files still run on both hosts.
 
 const proof = 'e2e:remote-skips-local-only';
-const image = 'graphyard-trial:remote-skips';
+const image = 'mainworks-trial:remote-skips';
 const plain = Array.from({ length: 6 }, (_, index) => `tests/plain-${index}.test.ts`);
 const docker = Array.from({ length: 4 }, (_, index) => `tests/uses-docker-${index}.test.ts`);
 const files = [...plain, ...docker];

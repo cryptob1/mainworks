@@ -12,7 +12,7 @@ import { composeContainer, loopWhereReport } from '../src/master/where.js';
 import { WhereThingsRunPanel } from '../web/pages/setup.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-3277: the docs, the walkthrough video and the Setup page show where every part of Graphyard
+// GY-3277: the docs, the walkthrough video and the Setup page show where every part of Mainworks
 // runs — one diagram embedded in the README section and the dashboard Guide, the guide topic `infra`
 // listing its every unit, container, port and log command, and the Setup page's panel naming this
 // install's own values as its loop reports them.
@@ -31,7 +31,7 @@ const diagramFacts = [
   'graphyard-OWNER-NAME-db-1',
   'docker logs graphyard-OWNER-NAME-db-1',
   '4310',
-  'graphyard-trial-',
+  'mainworks-trial-',
   '~/.config/graphyard/<install>/',
 ];
 
@@ -50,17 +50,17 @@ test('unit:tests/where-things-run-docs.test.ts — guide infra prints the same f
   for (const word of ['| Part | Runs as | Where | Port | Logs |', 'OWNER-NAME', '--provider local', 'GitHub Actions']) assert.ok(infra.includes(word), `guide infra carries ${word}`);
   for (const fact of diagramFacts) assert.ok(infra.includes(fact), `guide infra lists ${fact}`);
   const printed = execFileSync('node', ['--import', 'tsx', 'src/cli.ts', 'guide', 'infra'], { cwd: root, encoding: 'utf8' });
-  assert.equal(printed.trim(), infra.trim(), 'graphyard guide infra prints the topic');
+  assert.equal(printed.trim(), infra.trim(), 'mainworks guide infra prints the topic');
 });
 
 test('unit:tests/where-things-run-docs.test.ts — the diagram SVG exists, names the same units and containers, and the dashboard Guide draws them as readable panels', () => {
   const svg = read('docs/diagrams/where-things-run.svg');
   assert.ok(svg.startsWith('<svg'), 'the diagram is an SVG');
-  for (const fact of ['graphyard-master-OWNER-NAME.service', 'graphyard-deploy-OWNER-NAME.service', 'graphyard-OWNER-NAME-server-1', 'graphyard-OWNER-NAME-db-1', 'graphyard-trial-', '4310', 'YOUR HOST', 'DOCKER', 'GitHub', 'Agent providers', 'npm + GHCR', 'Your browser', 'Herdr'])
+  for (const fact of ['graphyard-master-OWNER-NAME.service', 'graphyard-deploy-OWNER-NAME.service', 'graphyard-OWNER-NAME-server-1', 'graphyard-OWNER-NAME-db-1', 'mainworks-trial-', '4310', 'YOUR HOST', 'DOCKER', 'GitHub', 'Agent providers', 'npm + GHCR', 'Your browser', 'Herdr'])
     assert.ok(svg.includes(fact), `the diagram names ${fact}`);
   // GY-3295: the Guide shows where things run as HTML panels, readable at any width, naming the same parts.
   const guidePage = read('web/pages/guide.tsx');
-  for (const fact of ['graphyard-master-OWNER-NAME.service', 'graphyard-deploy-OWNER-NAME.service', 'graphyard-OWNER-NAME-server-1', 'graphyard-OWNER-NAME-db-1', 'graphyard-trial-', '4310', 'Your Linux host', 'GitHub', 'Agent providers', 'npm and GHCR', 'Your browser'])
+  for (const fact of ['graphyard-master-OWNER-NAME.service', 'graphyard-deploy-OWNER-NAME.service', 'graphyard-OWNER-NAME-server-1', 'graphyard-OWNER-NAME-db-1', 'mainworks-trial-', '4310', 'Your Linux host', 'GitHub', 'Agent providers', 'npm and GHCR', 'Your browser'])
     assert.ok(guidePage.includes(fact), `the Guide's Where things run panels name ${fact}`);
 });
 
@@ -82,8 +82,8 @@ test('unit:tests/where-things-run-docs.test.ts — the loop reports its install\
     server: composeContainer('fixture-shop', 'server'), database: composeContainer('fixture-shop', 'db'),
     port: 4310, url: master.url, checkout, installDirectory: install,
   } satisfies WhereThingsRun);
-  assert.equal(where!.server, 'graphyard-fixture-shop-server-1');
-  assert.equal(where!.database, 'graphyard-fixture-shop-db-1');
+  assert.equal(where!.server, 'mainworks-fixture-shop-server-1');
+  assert.equal(where!.database, 'mainworks-fixture-shop-db-1');
 
   // The header round-trips exactly what the loop gathered, and refuses anything that is not one report.
   assert.deepEqual(loopWhere(encodeLoopWhere(where!)), where);
@@ -104,22 +104,22 @@ test('unit:tests/where-things-run-docs.test.ts — the loop reports its install\
   assert.equal(await loopWhereReport(checkout, master, configHome), null);
 
   assert.equal(whereLogs('graphyard-master-fixture-shop.service'), 'journalctl --user -u graphyard-master-fixture-shop.service');
-  assert.equal(whereLogs('graphyard-fixture-shop-server-1'), 'docker logs graphyard-fixture-shop-server-1');
+  assert.equal(whereLogs('mainworks-fixture-shop-server-1'), 'docker logs mainworks-fixture-shop-server-1');
   assert.equal(whereLogs(local!.database), null, 'the embedded cluster answers no docker logs command');
 });
 
 test('unit:tests/where-things-run-docs.test.ts — the Setup panel names this install\'s units, containers, port, URL, directories and master pane, and says so while the loop has not reported', () => {
   const where: WhereThingsRun = {
     loopUnit: 'graphyard-master-fixture-shop.service', deployUnit: 'graphyard-deploy-fixture-shop.service',
-    server: 'graphyard-fixture-shop-server-1', database: 'graphyard-fixture-shop-db-1',
+    server: 'mainworks-fixture-shop-server-1', database: 'mainworks-fixture-shop-db-1',
     port: 4310, url: 'http://127.0.0.1:4310', checkout: '/home/op/fixture-shop', installDirectory: '/home/op/.config/graphyard/fixture-shop',
   };
   const status = { setup: { where, panes: { configHome: '/home/op/.config/herdr', session: 'graphyard-master-fixture-shop', host: 'host-a', running: true, master: '3' } } };
   const html = renderToStaticMarkup(createElement(WhereThingsRunPanel, { where: status.setup.where, panes: status.setup.panes }));
   for (const shown of [
     'graphyard-master-fixture-shop.service', 'graphyard-deploy-fixture-shop.service',
-    'graphyard-fixture-shop-server-1', 'docker logs graphyard-fixture-shop-server-1',
-    'graphyard-fixture-shop-db-1', 'docker logs graphyard-fixture-shop-db-1',
+    'mainworks-fixture-shop-server-1', 'docker logs mainworks-fixture-shop-server-1',
+    'mainworks-fixture-shop-db-1', 'docker logs mainworks-fixture-shop-db-1',
     'http://127.0.0.1:4310', '4310', '/home/op/fixture-shop', '/home/op/.config/graphyard/fixture-shop',
     'graphyard-master-fixture-shop', 'master pane 3', 'journalctl --user -u graphyard-master-fixture-shop.service',
   ]) assert.ok(html.includes(shown), `the panel shows ${shown}`);

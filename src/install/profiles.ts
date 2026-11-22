@@ -30,7 +30,7 @@ export async function registerLocalProfiles(request: ProfileRequest): Promise<Pr
     await setupMaster(request.root, { url: request.url, token: request.coordinatorToken, cliPath: request.cliPath, hostId: request.hostId, herdrWorkspace: workspace, credentialDirectory: request.installDirectory,
       // GY-3269: master.json records that the merge writer pushes with the gh login.
       ...(request.pushAuth ? { run: { mergeWriter: { pushAuth: request.pushAuth } } } : {}) });
-    registration.master = { configured: true, kind: request.masterKind, detail: request.masterKind ? `run: graphyard master start ${request.masterKind}` : 'no authenticated agent runtime was detected for the master session' };
+    registration.master = { configured: true, kind: request.masterKind, detail: request.masterKind ? `run: mainworks master start ${request.masterKind}` : 'no authenticated agent runtime was detected for the master session' };
   } catch (error: any) { registration.master = { configured: false, kind: request.masterKind, detail: `master setup did not complete: ${error.message}` }; }
 
   if (registration.master.configured) {
@@ -41,7 +41,7 @@ export async function registerLocalProfiles(request: ProfileRequest): Promise<Pr
       try {
         await saveWorkerProfile(request.root, profile, async token => {
           const response = await fetch(`${request.url}/api/status`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30_000) });
-          if (!response.ok) throw new Error(`Graphyard rejected the worker credential (${response.status})`);
+          if (!response.ok) throw new Error(`Mainworks rejected the worker credential (${response.status})`);
           return response.json();
         });
         registration.workers.push({ name: profile.name, principal: profile.principal, kind: profile.kind });

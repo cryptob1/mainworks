@@ -6,7 +6,7 @@ import type { Work } from './work.js';
  *
  * A launched agent session is otherwise invisible to everyone but the process that launched it:
  * its pane identifier lives in that launcher's local ledger, and watching a specific agent means
- * asking a master to relay it. A handle puts the same facts on the item, where Graphyard's own
+ * asking a master to relay it. A handle puts the same facts on the item, where Mainworks's own
  * readers already look — what runtime and host it runs on, the workspace, tab and pane it occupies
  * there, the transcript it writes, and the one command or link that attaches to it.
  *

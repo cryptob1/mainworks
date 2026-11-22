@@ -50,7 +50,7 @@ test('e2e:doctor-host-readiness — a missing runtime executable, a missing PATH
   assert.ok(account.some(line => line.includes('account badpath-a') && line.includes(`PATH entry ${mise}`) && line.includes('(fix: mise install pi@latest)')), account.join('\n'));
   assert.ok(!printed.some(line => line.includes('elsewhere')), 'an account on another host is not this host\'s to judge');
   const plugin = printed.filter(line => line.includes('herdr-plugin'));
-  assert.deepEqual(plugin, ['FAIL herdr-plugin: Herdr has no enabled graphyard plugin (fix: rerun graphyard up from this checkout; its Herdr step links and enables the graphyard plugin)']);
+  assert.deepEqual(plugin, ['FAIL herdr-plugin: Herdr has no enabled mainworks plugin (fix: rerun mainworks up from this checkout; its Herdr step links and enables the mainworks plugin)']);
   const remote = printed.filter(line => line.includes('git-remote'));
   assert.equal(remote.length, 1);
   assert.match(remote[0], /^FAIL git-remote: git ls-remote origin failed: .*absent\.git.* \(fix: make git fetch from origin work on this host/);
@@ -65,7 +65,7 @@ test('e2e:doctor-host-readiness — with every executable, PATH entry, the plugi
     accounts: [{ name: 'ok-a', runtime: 'claude-ok', credential: { host: 'host-a' } }, { name: 'ok-b', runtime: 'claude-ok', credential: { host: 'host-a' } }],
   };
   assert.deepEqual(await lines(root, bin, document), [
-    `PASS herdr-plugin: Herdr has the graphyard plugin enabled (${join(bin, 'herdr')})`,
+    `PASS herdr-plugin: Herdr has the mainworks plugin enabled (${join(bin, 'herdr')})`,
     `PASS account-runtime: account ok-a runs ${join(bin, 'claude')}`,
     `PASS account-runtime: account ok-b runs ${join(bin, 'claude')}`,
     'PASS git-remote: git ls-remote origin answered',

@@ -33,8 +33,8 @@ export class EnvironmentFault extends Error {
 }
 
 /** The environments graphyard.json declares (`e2e.environments`); none for text that declares none or does not parse. */
-export function declaredEnvironments(graphyardJson: string | null): Record<string, AppEnvironment> {
-  try { return appEnvironmentsSchema.parse(JSON.parse(graphyardJson ?? '{}')?.e2e?.environments ?? {}); } catch { return {}; }
+export function declaredEnvironments(mainworksJson: string | null): Record<string, AppEnvironment> {
+  try { return appEnvironmentsSchema.parse(JSON.parse(mainworksJson ?? '{}')?.e2e?.environments ?? {}); } catch { return {}; }
 }
 
 export function readEnvironmentState(file: string): EnvironmentState {

@@ -66,7 +66,7 @@ test('integration:one-link-invite — one-use links valid for the owner\'s days,
     assert.equal(again.status, 401);
     assert.equal(again.body.error, inviteRefused);
     assert.match(inviteRefused, /^[^\n]+\. Ask the owner for a new one\.$/, 'one line, one next action');
-    // A 1-day link has expired after two days; there is no other fixed Graphyard expiry.
+    // A 1-day link has expired after two days; there is no other fixed Mainworks expiry.
     assert.equal((await install.as(install.operator, '/api/invites', { body: { name: 'vera', role: 'viewer', days: 3 } })).status, 400, 'only the offered choices');
     const short = await install.as(install.operator, '/api/invites', { body: { name: 'vera', role: 'viewer', days: 1 } });
     install.advance(2 * day);

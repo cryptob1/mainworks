@@ -26,14 +26,14 @@ export const HELPER_TEXT = 'Tokens are scoped to your role and kept for this bro
 /** The one command that signs the human operator in without a token (GY-738, GY-2171). */
 export const SIGN_IN_COMMAND = `${COMMAND_NAME} open`;
 /** Where a session a sign-in link opens is kept: it lasts until 90 days unused, so it outlives the browser session a typed token keeps to (GY-2171). */
-export const HUMAN_SESSION_KEY = 'graphyard-token';
+export const HUMAN_SESSION_KEY = 'mainworks-token';
 /** The token this browser holds: a typed one for this browser session, else a sign-in link's human session. */
 export const storedToken = () => sessionStorage.getItem(HUMAN_SESSION_KEY) ?? localStorage.getItem(HUMAN_SESSION_KEY) ?? '';
 /** What an action the local viewer may not take says; the notice beside it offers Sign in. */
 export const SIGN_IN_NEEDED = 'Sign in to do that.';
 /** The sign-in form opens at once for `/?sign-in` and for a sign-in or claim link; otherwise the dashboard first tries the local viewer. */
 export const wantsSignIn = () => new URLSearchParams(location.search).has('sign-in') || !!signInCode(location.hash) || !!claimFromHash(location.hash);
-/** The operator's line: run the command (a click copies it) on the Graphyard host. */
+/** The operator's line: run the command (a click copies it) on the Mainworks host. */
 function SignInCommand() {
   return <p className="login-help">Operator? Run <code className="login-command" title="Click to copy" onClick={() => void navigator.clipboard?.writeText(SIGN_IN_COMMAND).catch(() => {})}>{SIGN_IN_COMMAND}</code> on the {PRODUCT_NAME} host, or {COMMAND_NAME} login to print a link to open elsewhere.</p>;
 }
@@ -112,7 +112,7 @@ export interface LoginViewProps {
 export function LoginView({ state, error, draftToken, setDraftToken, submit, retry, useAnotherToken }: LoginViewProps) {
   const escape = <button type="button" className="text-button login-escape" onClick={useAnotherToken}>Use another token</button>;
   return <main className="login">
-    <div className="brand"><img className="mark" src="/graphyard-symbol.svg" alt="" width="32" height="32"/> {PRODUCT_NAME}</div>
+    <div className="brand"><img className="mark" src="/mainworks-symbol.svg" alt="" width="32" height="32"/> {PRODUCT_NAME}</div>
     <h1>Keep the work<br/>moving forward.</h1>
     <p className="login-tagline">One place for ownership, evidence, and delivery.</p>
     {state.kind === 'form' && <form className="login-form" method="post" onSubmit={e => { e.preventDefault(); submit(); }}>
@@ -160,7 +160,7 @@ export default function LoginPage({ token, error, signOut, setError, sessionEpoc
     history.replaceState(null, '', `${location.pathname}${location.search}`);
     void redeemClaim(code, (input, init) => fetch(input, init)).then(value => {
       if (!value) { setError(CLAIM_REFUSED); return; }
-      sessionEpoch.current++; setError(''); sessionStorage.setItem('graphyard-token', value); setToken(value);
+      sessionEpoch.current++; setError(''); sessionStorage.setItem('mainworks-token', value); setToken(value);
     }, () => setError(CLAIM_REFUSED));
   }, []);
   // With no token, the first read is the local viewer's: a refusal (a proxied or remote address) opens the form.
@@ -178,6 +178,6 @@ export default function LoginPage({ token, error, signOut, setError, sessionEpoc
     return () => { active = false; check.cancel(); };
   }, [token, attempt, signingIn]);
   const state: LoginState = !token && signingIn ? { kind: 'form' } : unreachable ? { kind: 'unreachable', host } : { kind: 'verifying' };
-  const submit = () => { const value = draftToken.trim(); if (!value) { setError('Enter an access token.'); return; } sessionEpoch.current++; setError(''); sessionStorage.setItem('graphyard-token', value); setToken(value); };
+  const submit = () => { const value = draftToken.trim(); if (!value) { setError('Enter an access token.'); return; } sessionEpoch.current++; setError(''); sessionStorage.setItem('mainworks-token', value); setToken(value); };
   return <LoginView state={state} error={error} draftToken={draftToken} setDraftToken={setDraftToken} submit={submit} retry={() => setAttempt(n => n + 1)} useAnotherToken={signOut}/>;
 }

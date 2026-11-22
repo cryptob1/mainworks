@@ -31,7 +31,7 @@ export const principalSchema = z.array(z.object({ id: z.string().min(1), role: z
 export type Credential = Principal & { token: string };
 
 /**
- * GY-3215: the roles of a teammate the operator invites (`graphyard invite NAME --role ROLE`). Both are
+ * GY-3215: the roles of a teammate the operator invites (`mainworks invite NAME --role ROLE`). Both are
  * database-backed human principals of role reader, so a viewer reads everything and acts on nothing; a
  * maintainer may also file work. Neither is admin, so neither answers a human-only decision.
  */

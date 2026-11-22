@@ -17,8 +17,8 @@ test('e2e:setup-failures-say-the-fix — doctor gives remedies on a host missing
   const line = (id: string) => setupLine(checks.find(check => check.id === id)!);
   assert.match(line('worker-sandbox'), /^FAIL worker-sandbox:.*not installed.*sudo apt install bubblewrap/);
   assert.match(line('landlock'), /^FAIL landlock:.*Landlock ABI 8.*Linux 7\.0.*fix: boot Linux 7\.0 or later.*Landlock ABI 9/);
-  assert.match(line('control-plane'), /fix: run graphyard up/);
-  assert.match(line('agent-environments'), /fix: run graphyard up.*Setup link/);
+  assert.match(line('control-plane'), /fix: run mainworks up/);
+  assert.match(line('agent-environments'), /fix: run mainworks up.*Setup link/);
 });
 
 test('e2e:setup-failures-say-the-fix — prerequisites have README checks and source has no obsolete step references', async () => {

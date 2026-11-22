@@ -21,7 +21,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const clock = Date.parse('2030-01-01T00:00:00Z');
 
-test('unit:tests/job-end-cleanup.test.ts — the sweep closes a Graphyard pane whose session has ended and leaves a live session\'s pane alone', async () => {
+test('unit:tests/job-end-cleanup.test.ts — the sweep closes a Mainworks pane whose session has ended and leaves a live session\'s pane alone', async () => {
   const directory = await temporaryDirectory('job-end-panes');
   const credentialFile = join(directory, 'coordinator.token');
   await writeFile(credentialFile, 'coordinator-token-'.padEnd(40, 'x'), { mode: 0o600 });
@@ -74,7 +74,7 @@ test('unit:tests/job-end-cleanup.test.ts — a trial container ending by pass, f
     await mkdir(bin);
     await writeFile(join(bin, 'docker'), fakeDocker(log));
     await chmod(join(bin, 'docker'), 0o755);
-    const [program, ...words] = trialContainerLaunch({ image: 'graphyard-trial:local', mounts: [], network: 'none' });
+    const [program, ...words] = trialContainerLaunch({ image: 'mainworks-trial:local', mounts: [], network: 'none' });
     const child = spawn(program!, [...words, 'true'], { cwd: base, env: { PATH: `${bin}:/usr/bin:/bin`, ...(ending === 'abort' ? {} : { FAKE_EXIT: ending }) }, stdio: 'ignore' });
     const exited = new Promise(resolve => child.once('exit', resolve));
     const calls = async () => (await readFile(log, 'utf8').catch(() => '')).split('\n').filter(Boolean);
@@ -86,7 +86,7 @@ test('unit:tests/job-end-cleanup.test.ts — a trial container ending by pass, f
       child.kill('SIGTERM');
     }
     await exited;
-    const name = /--name (graphyard-trial-[0-9a-f]+)/.exec((await calls()).find(line => line.includes(' create '))!)![1]!;
+    const name = /--name (mainworks-trial-[0-9a-f]+)/.exec((await calls()).find(line => line.includes(' create '))!)![1]!;
     assert.ok((await calls()).some(line => line.endsWith(`rm --force --volumes ${name}`)), `a trial ending by ${ending} removes its container and volumes`);
   }
 });
@@ -98,7 +98,7 @@ test('unit:tests/job-end-cleanup.test.ts — a verification run that fails leave
   assert.deepEqual(await readdir(parent), []);
 });
 
-test('unit:tests/job-end-cleanup.test.ts — the sweep removes leftovers whose owner is gone, keeps a running one\'s, and prunes only Graphyard\'s trial build cache older than a day', async () => {
+test('unit:tests/job-end-cleanup.test.ts — the sweep removes leftovers whose owner is gone, keeps a running one\'s, and prunes only Mainworks\'s trial build cache older than a day', async () => {
   const root = await temporaryDirectory('job-end-sweep');
   const temporary = join(root, 'tmp'), checkouts = join(root, 'checkouts'), verification = join(root, 'trials');
   const gone = 2 ** 22 + 12345;
@@ -110,19 +110,19 @@ test('unit:tests/job-end-cleanup.test.ts — the sweep removes leftovers whose o
   const run = (async (command: string, args: string[]) => {
     assert.equal(command, 'docker');
     docker.push(args);
-    if (args[0] === 'ps' && args.includes('name=^graphyard-trial-')) return 'graphyard-trial-ended\n';
+    if (args[0] === 'ps' && args.includes('name=^mainworks-trial-')) return 'mainworks-trial-ended\n';
     if (args[0] === 'buildx') return 'ID\tRECLAIMABLE\tSIZE\nabc\ttrue\t2GB\nTotal:\t2GB\n';
     return '';
   }) as ChildRun;
   const removed = await reclaimJobLeftovers(run, { temporary: [temporary], checkouts: [checkouts], verification: [verification] });
   for (const path of [deadVerify, deadTrial, deadCheckout]) assert.ok(!existsSync(path) && !existsSync(`${path}.owner`), `${path} goes: its owner is gone`);
   for (const path of [liveVerify, liveTrial]) assert.ok(existsSync(path), `${path} stays: its owner runs`);
-  assert.ok(docker.some(args => args.join(' ') === 'rm --volumes graphyard-trial-ended'), 'a stopped trial container goes with its volumes');
+  assert.ok(docker.some(args => args.join(' ') === 'rm --volumes mainworks-trial-ended'), 'a stopped trial container goes with its volumes');
   const prunes = docker.filter(args => args.includes('prune'));
   assert.deepEqual(prunes, [
     ['image', 'prune', '--all', '--force', '--filter', `label=${composeImageLabel}`, '--filter', `until=${composeImageKeepHours}h`],
     ['buildx', 'prune', '--builder', trialBuilder, '--filter', 'until=24h', '--force'],
-  ], 'only Graphyard\'s own preview images and trial builder\'s cache older than a day are pruned');
+  ], 'only Mainworks\'s own preview images and trial builder\'s cache older than a day are pruned');
   assert.ok(trialImageBuildArgs('/src').join(' ').includes(`buildx build --builder ${trialBuilder} --load`), 'trial images build on that builder');
   assert.ok(removed.includes('trial build cache older than a day (2GB)'));
 });

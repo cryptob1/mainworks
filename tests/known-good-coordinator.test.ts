@@ -78,7 +78,7 @@ test('unit:known-good-keeps-last-pin — a new pin removes every older one, keep
 test('unit:master-unit-uses-known-good — ExecStart runs coordinator/current/dist/cli.js once a pin exists and the checkout path before', async () => {
   const w = await world();
   const input = { root: w.repository, cliPath: '/checkout/bin/graphyard.mjs', repository: 'owner/project', intervalSeconds: 60, execPath: '/usr/bin/node', installDir: w.installDir };
-  assert.match(loopUnitText(input), /^ExecStart=\/usr\/bin\/node \/checkout\/bin\/graphyard\.mjs master run$/m);
+  assert.match(loopUnitText(input), /^ExecStart=\/usr\/bin\/node \/checkout\/bin\/mainworks\.mjs master run$/m);
   await pinKnownGood(w.pin, w.shas[0], w.run);
   assert.match(loopUnitText(input), new RegExp(`^ExecStart=/usr/bin/node ${knownGoodDirectory(w.installDir)}/current/dist/cli\\.js master run$`, 'm'));
 });

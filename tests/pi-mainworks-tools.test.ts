@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
-import graphyard, { guardCommand, mktempDirectories, mktempOptions, systemPromptSection, type ExtensionApi, type ToolDefinition } from '../integrations/pi/index.js';
+import mainworks, { guardCommand, mktempDirectories, mktempOptions, systemPromptSection, type ExtensionApi, type ToolDefinition } from '../integrations/pi/index.js';
 import { autonomyContract } from '../src/autonomy.js';
 import { evidencePayloadSchema } from '../src/runner/payloads.js';
 import { piArgs, piRunner } from '../src/runner/pi.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-169: the Graphyard Pi extension (integrations/pi). One test per proof it produces:
-// unit:pi-graphyard-tools (AC-2), unit:pi-session-autonomous (AC-4), unit:pi-destructive-guard (AC-5).
+// GY-169: the Mainworks Pi extension (integrations/pi). One test per proof it produces:
+// unit:pi-mainworks-tools (AC-2), unit:pi-session-autonomous (AC-4), unit:pi-destructive-guard (AC-5).
 
 const H = 'a'.repeat(40), B = 'b'.repeat(40);
 
@@ -24,23 +24,23 @@ function load(role?: string) {
   if (role === undefined) delete process.env.GRAPHYARD_PI_ROLE; else process.env.GRAPHYARD_PI_ROLE = role;
   const tools = new Map<string, ToolDefinition>(), handlers = new Map<string, ((event: any, ctx: any) => unknown)[]>(), prompted: string[] = [];
   const api: ExtensionApi = { registerTool: tool => { tools.set(tool.name, tool); }, on: (event, handler) => { handlers.set(event, [...handlers.get(event) ?? [], handler]); } };
-  try { graphyard(api); } finally { if (previous === undefined) delete process.env.GRAPHYARD_PI_ROLE; else process.env.GRAPHYARD_PI_ROLE = previous; }
+  try { mainworks(api); } finally { if (previous === undefined) delete process.env.GRAPHYARD_PI_ROLE; else process.env.GRAPHYARD_PI_ROLE = previous; }
   const ui = new Proxy({}, { get: (_target, name) => { prompted.push(String(name)); return () => { throw new Error(`the extension asked the user through ui.${String(name)}`); }; } });
   const ctx = (cwd: string) => ({ cwd, hasUI: false, ui });
   const emit = async (event: string, payload: any, cwd = process.cwd()) => { let answer: unknown; for (const handler of handlers.get(event) ?? []) answer = await handler(payload, ctx(cwd)) ?? answer; return answer; };
   return { tools, handlers, prompted, emit };
 }
 
-const evidence = { proof: 'unit:pi-graphyard-tools', sha: H, baseSha: B, policyRevision: 4, result: 'pass', executed: 3, skipped: 0,
+const evidence = { proof: 'unit:pi-mainworks-tools', sha: H, baseSha: B, policyRevision: 4, result: 'pass', executed: 3, skipped: 0,
   exercise: { criterion: 'AC-2', behaviour: 'schema validation in execute removed', result: 'fail', executed: 3 } };
 
-test('unit:pi-graphyard-tools the extension registers typed Graphyard tools whose schemas accept a valid call and reject a malformed one', async () => {
+test('unit:pi-mainworks-tools the extension registers typed Mainworks tools whose schemas accept a valid call and reject a malformed one', async () => {
   const { tools } = load();
   assert.deepEqual([...tools.keys()].sort(), ['graphyard_submit_evidence']);
   const submit = tools.get('graphyard_submit_evidence')!;
   assert.deepEqual(submit.parameters.required, ['proof', 'sha', 'baseSha', 'policyRevision', 'result', 'executed', 'skipped', 'exercise']);
 
-  // A valid call passes: its details are the payload the runner hands back, and Graphyard's own
+  // A valid call passes: its details are the payload the runner hands back, and Mainworks's own
   // payload schema accepts exactly that.
   const submitted = await submit.execute('call-2', evidence);
   assert.deepEqual(evidencePayloadSchema.parse(submitted.details), evidence);
@@ -56,11 +56,11 @@ test('unit:pi-graphyard-tools the extension registers typed Graphyard tools whos
   await rejects('graphyard_submit_evidence', { ...evidence, exercise: { result: 'fail' } }, /input\.exercise\.behaviour is required/);
   const { exercise: _dropped, ...unexercised } = evidence;
   await rejects('graphyard_submit_evidence', unexercised, /input\.exercise is required/);
-  // Graphyard's own schema refuses the same malformed payloads independently of the extension.
+  // Mainworks's own schema refuses the same malformed payloads independently of the extension.
   assert.throws(() => evidencePayloadSchema.parse({ ...evidence, sha: 'abc' }));
 
   // One submission per subject: the first accepted call stands.
-  await assert.rejects(submit.execute('call-3', { ...evidence, result: 'fail' }), /already recorded proof unit:pi-graphyard-tools/);
+  await assert.rejects(submit.execute('call-3', { ...evidence, result: 'fail' }), /already recorded proof unit:pi-mainworks-tools/);
 
   // A role session gets only its own tool.
   assert.deepEqual([...load('decomposition').tools.keys()], []);
@@ -71,7 +71,7 @@ test('unit:pi-session-autonomous the extension puts the autonomy contract in the
   const { tools, handlers, prompted, emit } = load();
   // The system prompt: as a structured section when Pi offers one, appended otherwise.
   assert.ok(systemPromptSection.includes(autonomyContract), 'the section carries the contract verbatim');
-  for (const phrase of ['act without asking', 'Never ask a human for review, approval or confirmation', 'record the blocker in Graphyard', 'Stop for a human only before an irreversible destructive action'])
+  for (const phrase of ['act without asking', 'Never ask a human for review, approval or confirmation', 'record the blocker in Mainworks', 'Stop for a human only before an irreversible destructive action'])
     assert.ok(systemPromptSection.includes(phrase), phrase);
   const sections: Record<string, string> = {};
   await emit('before_agent_start', { prompt: 'p', systemPromptOptions: { sections } });
@@ -139,7 +139,7 @@ test('unit:pi-destructive-guard the tool-call guard refuses rm on a statically u
       const verdict = await call(command);
       assert.equal(verdict?.block, true, `${command} is refused`);
       assert.match(verdict!.reason, reason, command);
-      assert.match(verdict!.reason, /^Graphyard refused this command: .*Retry with each target spelled out as a literal path/, `${command}: the reason says how to retry`);
+      assert.match(verdict!.reason, /^Mainworks refused this command: .*Retry with each target spelled out as a literal path/, `${command}: the reason says how to retry`);
     }
 
     // Literal targets inside the worktree, and commands that are not rm or mv, run.
