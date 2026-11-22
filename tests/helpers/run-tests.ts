@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { chmodSync, mkdirSync, readdirSync, readFileSync, statfsSync, writeFileSync } from 'node:fs';
 import { readdir, rm } from 'node:fs/promises';
 import { availableParallelism, homedir, tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseShard, shardFiles } from '../../scripts/ci-tests.mjs';
 import { hostAccountsVariable } from '../../src/host-accounts.js';
@@ -68,12 +68,12 @@ const tmpfsType = 0x01021994;
  * checkout, so no fixture finds a repository or an install above it, and sticky and shared (1777)
  * as /tmp is, which tests/runner-executor.test.ts requires of the fixture root.
  */
-export function durableTestTmpdir(current = tmpdir(), home = homedir(), statfs: (path: string) => { type: number } = statfsSync, cwd = process.cwd()): string | null {
+export function durableTestTmpdir(current = tmpdir(), home = homedir(), statfs: (path: string) => { type: number } = statfsSync, spare = '/var/tmp/gy-tmp'): string | null {
   try { if (statfs(current).type !== tmpfsType) return null; } catch { return null; }
   // GY-3633: a remote shard's HOME is its /tmp, a tmpfs counted against the container's memory cap, so
-  // the >2 GiB records of tests/master-session-resumes.test.ts were killed there; the run directory
-  // holding the shard's checkout is on disk.
-  for (const directory of [join(home, '.gy', 'tmp'), join(dirname(cwd), '.gy-tmp')]) {
+  // the >2 GiB records of tests/master-session-resumes.test.ts were killed there. /var/tmp is on disk
+  // and, unlike the shard's run directory (under ~/.graphyard), no fixture finds an install above it.
+  for (const directory of [join(home, '.gy', 'tmp'), spare]) {
     try { mkdirSync(directory, { recursive: true }); if (statfs(directory).type === tmpfsType) continue; chmodSync(directory, 0o1777); return directory; } catch { /* the next candidate */ }
   }
   return null;
