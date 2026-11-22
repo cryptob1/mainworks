@@ -98,10 +98,10 @@ test('integration:master-large-transcript-wake — actual >2 GiB transcripts rec
   const { largeTranscript } = await import('./helpers/large-transcript.js');
   const { createReadStream } = await import('node:fs');
   const { createHash } = await import('node:crypto');
-  const { stat } = await import('node:fs/promises');
+  const { rm, stat } = await import('node:fs/promises');
   const digest = async (path: string) => {
     const hash = createHash('sha256');
-    for await (const chunk of createReadStream(path)) hash.update(chunk);
+    for await (const chunk of createReadStream(path, { highWaterMark: 1 << 20 })) hash.update(chunk);
     return hash.digest('hex');
   };
   for (const runtime of ['claude', 'codex']) {
@@ -133,6 +133,8 @@ test('integration:master-large-transcript-wake — actual >2 GiB transcripts rec
     assert.equal(await captureConversation(successor), 'A newer person input');
     await appendFile(transcript, '\n' + JSON.stringify(runtime === 'claude' ? { ...final, uuid: 'pending-final', parentUuid: 'pending' } : final) + '\n');
     assert.equal(await captureConversation(adopted.current), null, 'native finals beyond the size boundary answer the pending input');
+    // A record copy on a tmpfs holds every padding byte in memory: release this runtime's before the next (GY-3637).
+    await Promise.all([root, home].map(path => rm(path, { recursive: true, force: true })));
   }
 });
 
@@ -156,4 +158,12 @@ test('integration:master-large-transcript-wake — a streaming read failure pres
   await writeFile(conversation.inherited!.record, user('person', 'Original question'));
   assert.equal(await captureConversation(conversation), 'Current question');
   assert.equal(await readFile(record, 'utf8'), await readFile(transcript, 'utf8'));
+});
+
+// GY-3633: the >2 GiB records above need a disk. A remote shard's /tmp and HOME are tmpfs counted
+// against its memory cap (the records were killed there) and its /var/tmp is read-only, so this file
+// names a local-only word and the trial keeps it on this machine, where the suite's tmpdir is on disk.
+test('unit:master-session-resumes — the >2 GiB record file never goes to a remote shard', async () => {
+  const { remoteableTestFile } = await import('../src/merge-writer/remote-shards.js');
+  assert.equal(remoteableTestFile(await readFile(new URL(import.meta.url), 'utf8')), false);
 });

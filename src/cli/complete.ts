@@ -13,6 +13,8 @@ import { defaultChildRun, type ChildRun } from '../child-runner.js';
 import { leadingProof } from '../model/flake-ledger.js';
 import { trialFailurePrefix } from '../model/rework-ground.js';
 import { trialTimeoutMinutes } from '../master/merge-writer-settings.js';
+import { workerFastGates, workerFastGatesPresent } from '../master/worker-fast-gates.js';
+import { criterionProofs, e2eProofsOf, featureCaseFailure, proofTestFiles, requiredProofFailure, trialFailureReason } from '../merge-writer/executor.js';
 import { trialHomeVariables, trialTemporaryMode, trialTemporaryVariables } from '../merge-writer/trial.js';
 
 /**
@@ -378,6 +380,128 @@ export async function completionRerun(root: string, work: any) {
     return rerun;
 }
 
+export interface CompletePreflightOptions {
+  /** Base branch to look up under `refs/remotes/origin/<baseBranch>`; defaults to `main` (else `origin/HEAD`). */
+  baseBranch?: string;
+  /** Child runner for git and fast-gate invocations; defaults to `defaultChildRun`. */
+  run?: ChildRun;
+}
+
+const fullSha = /^[0-9a-f]{40}$/i;
+
+async function fetchedBaseTip(git: (args: string[]) => Promise<string>, baseBranch?: string): Promise<string | null> {
+  const candidates = baseBranch ? [`refs/remotes/origin/${baseBranch}`] : ['refs/remotes/origin/main', 'refs/remotes/origin/HEAD'];
+  for (const ref of candidates) {
+    try {
+      const sha = String(await git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`])).trim().toLowerCase();
+      if (fullSha.test(sha)) return sha;
+    } catch { /* ref not present */ }
+  }
+  return null;
+}
+
+async function hasTsTests(git: (args: string[]) => Promise<string>, head: string): Promise<boolean> {
+  try {
+    const out = await git(['ls-tree', '--name-only', head, 'tests/']);
+    return out.split('\n').some(line => /^tests\/[^/]+\.test\.ts$/.test(line.trim()));
+  } catch { return false; }
+}
+
+/**
+ * GY-3638: fast local preflight before `complete` submits a head. Refuses in seconds what the
+ * merge writer would refuse after review, the queue and trial start-up — reusing the executor's
+ * own functions and sentences so the two can never disagree:
+ * 1. `git merge-tree --write-tree` against the fetched base (`refs/remotes/origin/<baseBranch>`);
+ * 2. `requiredProofFailure` over `proofTestFiles` for each non-bootstrap unit/integration proof;
+ * 3. `featureCaseFailure` over the files added or modified by the head;
+ * 4. `workerFastGates` when the repository carries them (`workerFastGatesPresent`).
+ */
+export async function completePreflight(
+  root: string,
+  work: { key: string; type?: string; criteria?: { id: string; proofs: string[]; bootstrap?: unknown }[] },
+  head: string,
+  options: CompletePreflightOptions = {},
+): Promise<void> {
+  const run = options.run ?? defaultChildRun;
+  const criteria = work.criteria ?? [];
+  const git = async (args: string[]) => String(await run('git', ['-C', root, ...args]));
+
+  // 1. Merge-tree conflict check against the fetched base (never fetches over the network).
+  const baseTip = await fetchedBaseTip(git, options.baseBranch);
+  let mergedTree: string | null = null;
+  if (baseTip) {
+    try {
+      const out = await git(['merge-tree', '--write-tree', '--name-only', '-z', baseTip, head]);
+      const tree = out.split('\0')[0]?.trim() ?? '';
+      if (fullSha.test(tree)) mergedTree = tree;
+    } catch (error: any) {
+      if (error?.status === 1 && typeof error.stdout === 'string') {
+        const [, ...rest] = String(error.stdout).split('\0');
+        const end = rest.indexOf('');
+        const conflict = [...new Set(rest.slice(0, end < 0 ? rest.length : end))].filter(Boolean);
+        if (conflict.length) {
+          throw new Error(`${trialFailureReason({ conflict })}; run sync ${work.key} and resolve the conflicts`);
+        }
+      }
+      throw error;
+    }
+  }
+
+  // 2. Required unit/integration proof ids must appear in tests/*.test.ts on the head
+  // (only for repositories that carry tests/*.test.ts; Go or custom-runner fixtures have none).
+  if (criteria.length) {
+    if (await hasTsTests(git, head)) {
+      const counts: Record<string, { executed: number; failed: number; skipped: number }> = {};
+      for (const criterion of criteria) {
+        if (criterion.bootstrap) continue;
+        for (const proof of criterion.proofs) {
+          if (/^e2e:/.test(proof)) counts[proof] = { executed: 1, failed: 0, skipped: 0 };
+        }
+      }
+      const unitProofs = criterionProofs({ criteria: criteria.filter(entry => !entry.bootstrap) as any });
+      const found = await Promise.all(unitProofs.map(async proof => [proof, await proofTestFiles(run, root, head, [proof])] as const));
+      for (const [proof, files] of found) {
+        if (files.length) counts[proof] = { executed: 1, failed: 0, skipped: 0 };
+      }
+      const proofFailure = requiredProofFailure({ criteria: criteria as any }, { proofs: counts });
+      if (proofFailure) throw new Error(proofFailure);
+    }
+
+    // 3. Feature E2E case check via featureCaseFailure.
+    if (work.type === 'feature' && e2eProofsOf({ criteria: criteria as any }).length) {
+      const diffOut = baseTip && mergedTree
+        ? await git(['diff', '--name-status', '--no-renames', baseTip, mergedTree])
+        : await git(['diff-tree', '--no-commit-id', '--name-status', '--no-renames', '-r', '--root', head]);
+      const addedOrModified = diffOut.split('\n').filter(line => line.trim())
+        .map(line => line.trim().split('\t') as [string, string])
+        .filter(([status]) => status === 'A' || status === 'M')
+        .map(([, path]) => path);
+      const caseFailure = featureCaseFailure({ type: 'feature', criteria: criteria as any }, addedOrModified);
+      if (caseFailure) throw new Error(caseFailure);
+    }
+  }
+
+  // 4. Fast gates, when the repository carries them.
+  if (workerFastGatesPresent(root)) {
+    const fast = await rerunTrialFiles(root, workerFastGates.tests, run);
+    if (!fast.ok) {
+      const cases = rerunFailingCases(fast.output, workerFastGates.tests);
+      const failed = [...new Set(cases.map(entry => entry.file).filter((file): file is string => Boolean(file)))];
+      const failingCase = cases[0] ? locateRerunCase(cases[0]) : undefined;
+      const reason = trialFailureReason({
+        run: {
+          build: 'pass',
+          tests: { passed: 0, failed: failed.length ? failed : [...workerFastGates.tests], files: workerFastGates.tests.length },
+          failingCase,
+          timedOut: fast.timedOut,
+          logTail: fast.output,
+        },
+      });
+      throw new Error(reason ?? `${trialFailurePrefix}: tests ${workerFastGates.tests.join(', ')}`);
+    }
+  }
+}
+
 export const completeCommand: CliCommand = {
   name: 'complete',
   scope: 'work',
@@ -390,8 +514,9 @@ export const completeCommand: CliCommand = {
     '                                to 10 minutes, so a slow plane strands no finished head. Reports',
     '                                what graphyard verify ran on HEAD and its outcome. Refused while',
     '                                GitHub requests are paused, it waits for the named reset and',
-    '                                submits again (bounded). No host verification runs here;',
-    '                                the merge trial decides whether the head passes.',
+    '                                submits again (bounded). Preflight refuses a missing proof id,',
+    '                                a missing feature E2E case, a base conflict, or a failing fast',
+    '                                gate before submitting; the merge trial decides the rest.',
   ],
   run: async (context, work) => {
     // GY-3330: one idempotency key for this attempt and head — a caller's GRAPHYARD_REQUEST_ID,
@@ -402,9 +527,11 @@ export const completeCommand: CliCommand = {
     // told so plainly, before git's raw error, whatever way --head was given.
     completeArgs(context.args);
     await checkoutRoot(context, `graphyard complete ${work.key}`);
-    const body = completionBody(context.args, () => worktreeHead(context.repositoryRoot())), requestId = process.env.GRAPHYARD_REQUEST_ID ?? `complete:${work.id}:${body.epoch}:${body.head}`;
+    const root = context.repositoryRoot();
+    const body = completionBody(context.args, () => worktreeHead(root)), requestId = process.env.GRAPHYARD_REQUEST_ID ?? `complete:${work.id}:${body.epoch}:${body.head}`;
+    await completePreflight(root, work, body.head);
     let verification: Awaited<ReturnType<typeof selfVerification>> | { state: 'unavailable'; reason: string };
-    try { verification = await selfVerification(context.repositoryRoot(), work.key); } catch (error: any) { verification = { state: 'unavailable', reason: `the worktree could not be read: ${error.message}` }; }
+    try { verification = await selfVerification(root, work.key); } catch (error: any) { verification = { state: 'unavailable', reason: `the worktree could not be read: ${error.message}` }; }
     const submitted = await submitUntilAnswered(() => submitThroughPause(() => context.api(`work/${work.id}/submit`, body, requestId)));
     context.print({ ...submitted, selfVerification: verification });
   },

@@ -9,12 +9,15 @@ import { acceptedFlags, runtimeAdapter } from './master/runtimes.js';
  */
 export const headlessKind = (kind: string | undefined, contract?: RegisteredLaunch | null): kind is string => !!kind && (!!runtimeAdapter(kind)?.headless || !!contract?.headlessArgs);
 export class HeadlessConfigurationError extends Error {}
+/** GY-3632: whether a run of `kind` can continue an earlier runtime session: its built-in form names a continue form. */
+export const continuable = (kind: string | null | undefined, contract?: RegisteredLaunch | null) => !contract?.headlessArgs && !!runtimeAdapter(kind)?.continue;
 
 /**
  * Explicit argv replaces the interactive argv and built-in form. A leading subcommand precedes policy flags.
  * Of the form's optional flags, only `accepted` ones are passed, once each, whether the form or the profile names them (GY-3425).
  */
-export function headlessArgs(kind: string, args: readonly string[], prompt: string, contract?: RegisteredLaunch | null, accepted: readonly string[] = []): string[] {
+export function headlessArgs(kind: string, args: readonly string[], prompt: string, contract?: RegisteredLaunch | null, accepted: readonly string[] = [], session?: string | null): string[] {
+  if (session && !continuable(kind, contract)) throw new HeadlessConfigurationError(`The ${kind} runtime has no continue form`);
   if (contract?.headlessArgs) {
     const words = contract.headlessArgs;
     if (words.filter(word => word === requestPlaceholder).length !== 1) throw new HeadlessConfigurationError(`${kind}: launch.headlessArgs must contain exactly one {request}`);
@@ -26,13 +29,14 @@ export function headlessArgs(kind: string, args: readonly string[], prompt: stri
   const drop = form.drop ?? [], optional = form.optional ?? [];
   const kept = args.filter((arg, index) => !drop.some(flag => arg === flag || arg.startsWith(`${flag}=`) || args[index - 1] === flag) && !optional.includes(arg));
   const placed = kept.includes(requestPlaceholder);
-  return [...form.before, ...kept.map(arg => arg === requestPlaceholder ? prompt : arg), ...form.flags, ...optional.filter(flag => accepted.includes(flag)), ...(placed ? [] : [prompt])];
+  const resumed = session ? runtimeAdapter(kind)!.continue!(session) : [];
+  return [...form.before, ...kept.map(arg => arg === requestPlaceholder ? prompt : arg), ...form.flags, ...optional.filter(flag => accepted.includes(flag)), ...resumed, ...(placed ? [] : [prompt])];
 }
 
 /** The headless command line of one run: the installed runtime, asked once which of its form's optional flags it takes. */
-export async function headlessArgv(launch: { kind: string; args: readonly string[]; contract?: RegisteredLaunch | null }, request: string, env: NodeJS.ProcessEnv): Promise<string[]> {
+export async function headlessArgv(launch: { kind: string; args: readonly string[]; contract?: RegisteredLaunch | null; session?: string | null }, request: string, env: NodeJS.ProcessEnv): Promise<string[]> {
   const form = runtimeAdapter(launch.kind)?.headless;
   const program = realRuntimeBinary(form?.program ?? (launchRecipe(launch.kind)?.program ?? launch.kind), env);
   const accepted = launch.contract?.headlessArgs || !form ? [] : await acceptedFlags(program, form.before, form.optional ?? [], env);
-  return [program, ...headlessArgs(launch.kind, launch.args, request, launch.contract, accepted)];
+  return [program, ...headlessArgs(launch.kind, launch.args, request, launch.contract, accepted, launch.session)];
 }
