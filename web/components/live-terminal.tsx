@@ -79,16 +79,29 @@ export default function LiveTerminal({ token, label }: { token: string; label: s
         if (lines > 0 && terminal.buffer.active.viewportY + lines >= terminal.buffer.active.baseY) { terminal.scrollLines(-1); lines++; }
         terminal.scrollLines(lines);
       };
+      let cell = { w: 0, h: 0 }, resized = false;
       const fit = () => {
         if (!host.current || !section.current) return;
         const screen = host.current.querySelector('.xterm-screen')?.getBoundingClientRect();
         if (!screen?.width || !screen.height) return;
         // xterm 6's scrollbar overlays the text: the columns take the container's whole width (GY-3313),
-        // measured unrounded, since clientWidth rounds a fractional width up past the edge.
-        const box = host.current.getBoundingClientRect();
-        const cols = Math.max(10, Math.min(500, Math.floor(box.width / (screen.width / terminal.cols))));
-        const rows = Math.max(10, Math.min(500, Math.floor(box.height / (screen.height / terminal.rows))));
-        if (cols !== terminal.cols || rows !== terminal.rows) terminal.resize(cols, rows);
+        // measured unrounded, since clientWidth rounds a fractional width up past the edge. The width
+        // reads the fluid section, never the host, whose width is pinned to whole cells below.
+        const box = host.current.getBoundingClientRect(), fluid = section.current.getBoundingClientRect();
+        // The cell size is adopted only from a render that followed the last resize (or the first
+        // one), so the pair (screen, cols) is consistent; a late webfont load changes it and is
+        // picked up on the next settled render.
+        if (!resized) { cell = { w: screen.width / terminal.cols, h: screen.height / terminal.rows }; }
+        if (!cell.w || !cell.h) return;
+        // The half-pixel tolerance keeps the width snap below stable across the observer's own refits.
+        const cols = Math.max(10, Math.min(500, Math.floor((fluid.width + 0.5) / cell.w)));
+        const rows = Math.max(10, Math.min(500, Math.floor(box.height / cell.h)));
+        resized = cols !== terminal.cols || rows !== terminal.rows;
+        if (resized) terminal.resize(cols, rows);
+        // The host snaps to whole cells, so the drawing meets the container's right edge exactly on
+        // every width instead of leaving a fractional column (up to a whole cell) of empty host.
+        const snap = Math.round(cols * cell.w);
+        if (Math.abs(snap - box.width) >= 1) host.current.style.width = `${snap}px`;
         send({ type: 'resize', cols, rows });
       };
       const connect = () => {
@@ -190,7 +203,7 @@ export default function LiveTerminal({ token, label }: { token: string; label: s
       element.addEventListener('paste', paste, true); element.addEventListener('drop', drop); element.addEventListener('dragover', over); element.addEventListener('contextmenu', context);
       element.addEventListener('touchstart', touchStart, { passive: true }); element.addEventListener('touchmove', touchMove, { passive: false });
       const typing = terminal.onData(input);
-      const observer = new ResizeObserver(fit); observer.observe(host.current!);
+      const observer = new ResizeObserver(fit); observer.observe(section.current!);
       // Back on the page after another tab or app sized the pane, the pane is fitted to this page again (GY-3313).
       const visible = () => { if (document.visibilityState === 'visible') fit(); };
       window.addEventListener('resize', fit); document.addEventListener('visibilitychange', visible);

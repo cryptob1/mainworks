@@ -23,14 +23,22 @@ export const humanDecisionLabel = {
   'credentials-for-people': 'issuing credentials to people',
 } as const satisfies Record<HumanDecisionKind, string>;
 export type HumanChoice = z.infer<typeof humanChoiceSchema>;
-const decline: HumanChoice = { id: 'decline', label: 'Decline', outcome: 'declined', input: 'none' };
-/** The choices a request offers when its requester named none: one per kind, always ending with Decline. */
+/** Bare labels that say nothing of what changes (GY-3598): refused on park and banned on state-changing buttons. */
+export const bannedBareChoiceLabels = ['Approve', 'Decline', 'Decide', 'Confirm', 'OK', 'Yes', 'No', 'Go ahead as asked', 'Go ahead differently'] as const;
+const bannedChoiceSet = new Set(bannedBareChoiceLabels.map(label => label.toLowerCase()));
+export const isGenericChoiceLabel = (label: string) => bannedChoiceSet.has(label.trim().replace(/[….:]+$/, '').toLowerCase());
+export function genericChoiceIssues(choices?: readonly Pick<HumanChoice, 'label'>[] | null): string[] {
+  return (choices ?? []).filter(choice => isGenericChoiceLabel(choice.label))
+    .map(choice => `Choice "${choice.label}" is too generic: name both verb and object (for example "Hold this task" or "Approve 2 more seats")`);
+}
+const decline: HumanChoice = { id: 'decline', label: 'Decline this request', outcome: 'declined', input: 'none' };
+/** The choices a request offers when its requester named none: one per kind, always ending with Decline this request. */
 export function defaultChoices(kind: HumanDecisionKind, sealed = false): HumanChoice[] {
   // An account or spend is approved or set up in words (GY-1395): a bare Approve resumed GY-1384 with nothing
   // provided, and the resumed worker could only ask again.
   if (kind === 'money-or-accounts') return [{ id: 'approve', label: 'Approve, saying what you approved or set up…', outcome: 'provided', input: 'text' }, { id: 'approve-other', label: 'Approve with a different cap…', outcome: 'provided', input: 'text' }, decline];
-  if (kind === 'credentials-for-people') return [sealed ? { id: 'provide', label: 'Provide now', outcome: 'provided', input: 'secret' } : { id: 'provided', label: 'Provided it', outcome: 'provided', input: 'text' }, decline];
-  return [{ id: 'agree', label: 'Go ahead as asked', outcome: 'provided', input: 'none' }, { id: 'differently', label: 'Go ahead differently…', outcome: 'provided', input: 'text' }, decline];
+  if (kind === 'credentials-for-people') return [sealed ? { id: 'provide', label: 'Provide credential now', outcome: 'provided', input: 'secret' } : { id: 'provided', label: 'Provided credential', outcome: 'provided', input: 'text' }, decline];
+  return [{ id: 'agree', label: 'Approve this plan', outcome: 'provided', input: 'none' }, { id: 'differently', label: 'Change this plan…', outcome: 'provided', input: 'text' }, decline];
 }
 /** The choices a request carries: the requester's, with Decline added when they left it out, or the kind's defaults. */
 export function requestChoices(request: { kind: HumanDecisionKind; choices?: HumanChoice[] | null; sealTo?: string | null }): HumanChoice[] {
@@ -155,7 +163,7 @@ export function openHumanRequests(work: readonly { id: string; key: string; titl
       choices: recommendedFirst(requestChoices(request).map(choice => ({ label: choice.label, input: choice.input, declines: choice.outcome === 'declined', body: { request: request.id, choice: choice.id }, note: 'note', recommended: choice.id === recommended }))),
       answer: { cli: answerCommand(item.key, request), decline: declineCommand(item.key, request), dashboard: 'Work → Needs you → Answer', api: `POST /api/work/${item.key}/answer {"request":"${request.id}","answer":"…"}`,
         post: { command: 'answer', body: { request: request.id, outcome: 'provided' }, field: 'answer', submit: `Answer and resume ${item.key}`,
-          decline: { body: { request: request.id, outcome: 'declined' }, submit: 'Decline' } } },
+          decline: { body: { request: request.id, outcome: 'declined' }, submit: 'Decline this request' } } },
     };
   }).sort((a, b) => b.waitedMs - a.waitedMs);
 }

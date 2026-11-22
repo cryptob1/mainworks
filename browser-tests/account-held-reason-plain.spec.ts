@@ -61,7 +61,7 @@ async function openAccounts(page: Page, url: string) {
   const { code } = await signIn.json() as { code: string };
   await page.goto(`/#sign-in=${code}`);
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
-  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Settings(\s+\d+)?$/ }).click();
   await expect(page.getByRole('heading', { name: 'Agents', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
 }
 
