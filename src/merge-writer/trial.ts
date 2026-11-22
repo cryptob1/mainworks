@@ -24,7 +24,7 @@ import { mergeGateSchema } from '../model-boundary/delivery-policy.js';
 import type { GateCheck } from '../model/delivery-policy.js';
 import { containerTrialE2e, trialContainerBoundary, trialContainerDependencies, trialImage } from './trial-container.js';
 import { cachedPasses, commitDependencies, dependencyKey, moduleFile, recordPasses, testResultKeys, warmDependencies } from './trial-caches.js';
-import { HostDroppedError, readShardHosts, shardSshSession, type ShardSshSession, runShardsOnHosts, realFreeCores, recordRemoteShardRun, remoteShardSession, shardHosts, splitLocalOnlyTests, underHeatLimit, type HostReading, type PlacedHost } from './remote-shards.js';
+import { HostDroppedError, readShardHosts, shardSshSession, type ShardSshSession, runShardsOnHosts, realFreeCores, recordRemoteShardRun, remoteShardSession, shardHosts, splitLocalOnlyTests, trialImageHasBrowser, underHeatLimit, type HostReading, type PlacedHost } from './remote-shards.js';
 import { repositoryTrialImage, trialDockerfile, TrialRepositoryImageError } from './repository-trial-image.js';
 import { addressPoolsSpent, checkServiceVariables, dockerEnvironment, previewNetworkCount, startCheckServices, tcpAcceptProbe, type CheckServices } from '../compose-preview.js';
 import { diskFloorBytes, gateTrialKey, trialFileTimeoutMs, heatWaitSeconds, TrialHeatError, trialContainerFault, trialLoad, trialShardLanes, trialStartOwner } from './trial-load.js';
@@ -1452,11 +1452,13 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const transport = hosts.length ? shardSshSession(run) : undefined;
     const readings = hosts.length ? await (input.remote?.read ?? ((named, shared) => readShardHosts(named, run, cores, shared)))(hosts, transport!) : [];
     const remoteLanes = readings.slice(1).filter(underHeatLimit).reduce((sum, reading) => sum + Math.floor(realFreeCores(reading)), 0);
-    // GY-3419: test files naming the database, Docker, nested confinement or a browser are local-only —
-    // a remote shard has none, so they would fail there as red verdicts that measure nothing. Each pool is cut into its own shards, so a local-only file never pins a whole
-    // shared shard to this machine, and placement keeps the local-only shards here (runShardsOnHosts
-    // `pinned`) while the others may go to any host.
-    const split = await splitLocalOnlyTests(files, file => readFile(join(worktree, file), 'utf8'));
+    // GY-3419, GY-3612: test files naming Docker or host-pinned confinement stay local-only;
+    // database and browser tests run on remote shards (browser tests stay local when the trial image
+    // lacks a browser, recorded once). Each pool is cut into its own shards, so a local-only file
+    // never pins a whole shared shard to this machine, and placement keeps local-only shards here.
+    const split = await splitLocalOnlyTests(files, file => readFile(join(worktree, file), 'utf8'),
+      hosts.length ? { remoteBrowser: () => trialImageHasBrowser(runImage ?? trialImage(), run) } : {});
+    if (split.browserLocalOnly) log.push('browser tests stay on this machine: the trial image lacks a browser');
     const durations = await checkoutDurations(worktree, input.root, strategy.durations);
     const shards: string[][] = [], pinned: boolean[] = [];
     for (const pool of [{ files: split.remoteable, lanes: trialShardLanes(cores) + remoteLanes, local: false }, { files: split.localOnly, lanes: trialShardLanes(cores), local: true }])
