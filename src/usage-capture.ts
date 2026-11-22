@@ -9,6 +9,7 @@ import { runtimeReport, transcriptUsage, type UsageRow } from './model/token-cos
 import { fleetRequest, type FleetConfig } from './fleet.js';
 import { readWorkerRecord, runLogTail, workerRunsDirectory } from './headless-session.js';
 import { runFiles } from './runner/pi.js';
+import { reportedModel } from './master/runtimes.js';
 import { listRunDirectories, runsDirectory } from './runner/registry.js';
 import type { Conversation } from './master/conversation.js';
 
@@ -17,9 +18,9 @@ type Session = Pick<UsageRow, 'id' | 'work' | 'role' | 'account' | 'runtime' | '
 
 /** A run's rows: its tokens by model, or one 'not reported' row for a runtime that printed no usage. */
 export function usageRows(session: Session, output: string): UsageRow[] {
-  const usage = runtimeReport(output).usage;
-  if (!usage) return [{ ...session, model: null, reported: false, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }];
-  return usage.map(({ model, tokens }) => ({ ...session, id: `${session.id}:${model ?? ''}`, model, reported: true, ...tokens }));
+  const usage = runtimeReport(output).usage, ran = reportedModel(session.runtime, output);
+  if (!usage) return [{ ...session, model: null, reported: false, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, ran }];
+  return usage.map(({ model, tokens }) => ({ ...session, id: `${session.id}:${model ?? ''}`, model, reported: true, ...tokens, ran }));
 }
 
 /** Notes one ended run's usage for the loop's next report: called where the run's output is at hand, before its directory is removed. */
