@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statfsSync, writeFileSync } from 'node:fs';
 import { readdir, rm } from 'node:fs/promises';
 import { availableParallelism, homedir, tmpdir } from 'node:os';
@@ -82,13 +82,6 @@ export function durableTestTmpdir(current = tmpdir(), home = homedir(), statfs: 
 
 /** The browser suite's historical port, tried first. */
 export const defaultBrowserPort = 4319;
-
-/** `vite build` for the dashboard under `cwd`/dist: the same command `npm run build` runs. */
-export function buildDashboard(cwd: string) {
-  const vite = join(dirname(fileURLToPath(import.meta.resolve('vite/package.json'))), 'bin', 'vite.js');
-  const built = spawnSync(process.execPath, [vite, 'build', '--configLoader', 'runner'], { cwd, stdio: 'inherit' });
-  if (built.status !== 0) throw new Error(`building the dashboard failed with exit ${built.status}`);
-}
 
 /**
  * Admission still budgets Node processes and test workloads, even with one shared Postgres.
@@ -217,6 +210,16 @@ export function nestedFirst(environment: NodeJS.ProcessEnv = process.env): { fir
   return Number.isInteger(parent) && parent > 0 ? { first: parent + nestedPortGap } : {};
 }
 
+/** Whether a selected test file drives a browser or runs E2E cases against the served dashboard. */
+const opensDashboard = (cwd: string, args: string[]) => args.filter(arg => /\.test\.[cm]?[jt]sx?$/.test(arg)).some(file => {
+  try { return /chromium|playwright|projectCaseSuite/.test(readFileSync(resolve(cwd, file), 'utf8')); } catch { return false; }
+});
+/** The dashboard `npm run build` writes to dist/ (the server serves it), built here when a checkout never ran the build. */
+async function buildDashboard(cwd: string) {
+  const { build } = await import('vite');
+  await build({ configFile: join(cwd, 'vite.config.ts'), root: join(cwd, 'web'), cacheDir: join(cwd, '.graphyard', 'vite'), logLevel: 'warn', build: { outDir: join(cwd, 'dist'), emptyOutDir: true } });
+}
+
 export async function runTests(options: RunOptions = {}): Promise<RunResult> {
   const tmpRoot = durableTestTmpdir() ?? undefined;
   await sweepLeftoverTempDirectories(tmpRoot);
@@ -232,12 +235,8 @@ export async function runTests(options: RunOptions = {}): Promise<RunResult> {
   // the run's shared Postgres cluster and the sentinel that holds the window (GY-3356); a Node
   // run's window is its shared cluster's own.
   const repository = fileURLToPath(new URL('../..', import.meta.url));
-  // The dashboard the browser-driving tests read is dist/ too, which no checkout carries (it is
-  // ignored): a remote shard's fresh clone and a host that never ran the build would fail every
-  // page load, so the site is built once ahead of the files when it is missing — and ahead of
-  // the entries, as in `npm run build`, because vite empties dist/ and would take them with it.
-  if (resolve(cwd) === resolve(repository) && !existsSync(join(cwd, 'dist', 'index.html')))
-    await buildDashboard(cwd);
+  // A remote shard's fresh checkout has no built dashboard either: a selected file that opens it in a browser would find no sign-in page.
+  if (resolve(cwd) === resolve(repository) && !existsSync(join(cwd, 'dist', 'index.html')) && opensDashboard(cwd, selection?.args ?? [])) await buildDashboard(cwd);
   // GY-3611: the CLI and server the tests start run from dist/; build them once, before the first file, when missing or stale.
   if (resolve(cwd) === resolve(repository) && !builtEntries.every(name => builtEntry(cwd, name))) await buildEntries(cwd);
   const reservation = await reserveTestPorts(options.browser ? { first: defaultBrowserPort, span: 2 + testPortSpan, last: 65_000, ...options.ports } : { ...nestedFirst(), ...options.ports });

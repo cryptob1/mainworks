@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { boardFromStatus } from '../src/model/board';
 import { flowAttention, flowNumbers, flowWindows, type FlowItem } from '../src/flow-numbers';
 
-// GY-3624: the Work page's header shows merges an hour, attempts an hour and first-pass yield; its
+// GY-3624: the Work page's header shows merges an hour; the flow line under it shows attempts an hour and first-pass yield, and its
 // fold opens each station's median and slowest-tenth wait and the rework causes; a station whose
 // slowest tenth passes an hour is one warning line naming it and its oldest item.
 const at = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
@@ -42,7 +42,7 @@ for (const width of [390, 1280]) {
   test(`e2e:flow-numbers-shown — at ${width}px the header shows merges and attempts an hour and 75% first pass, the review wait and the slow-station line`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await serve(page);
-    await expect(page.locator('[data-speed-figure]')).toHaveText('0.1 merges an hour (3 in the last 24 hours)');
+    await expect(page.locator('[data-work-header]')).toContainText('0.5 merges/hour (6h)');
     await expect(page.locator('[data-flow-attempts]')).toHaveText('0.2 attempts an hour');
     await expect(page.locator('[data-flow-yield]')).toHaveText('75% first pass');
     await expect(page.locator('[data-flow-attention]')).toHaveText('Review is slow: the slowest tenth waited 2 h over the last 24 hours. Oldest: GY-5 Waiting in review, 2 h.');
@@ -55,7 +55,6 @@ for (const width of [390, 1280]) {
     const label = await review.locator('td').nth(1).evaluate(cell => getComputedStyle(cell, '::before').content);
     if (width < 650) expect(label).toBe('"Slowest tenth"');
     else await expect(page.getByRole('columnheader', { name: 'Slowest tenth' })).toBeVisible();
-    await expect(page.getByText('No merges to time yet.')).toHaveCount(0);
     await expect(page.locator('[data-cause="merge trial"] td')).toHaveText('1');
     expect(await noSideScroll(page)).toBe(true);
   });

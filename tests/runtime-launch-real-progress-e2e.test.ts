@@ -10,7 +10,7 @@ test('e2e:runtime-launch-real-progress — the bound command case exercises real
   const root = join(import.meta.dirname, '..'), file = 'e2e/cases/runtime-launch-real-progress.json';
   const definition = parseCase(file, readFileSync(join(root, file), 'utf8'));
   // The merge writer runs command cases in its private-root trial. This case's
-  // nested namespaces reproduce /run masking and retain the real socket policy.
+  // nested bwrap namespaces reproduce /run masking and retain the real socket policy.
   // GY-3624: its command step runs bwrap with the host's HOME, which is memory-backed on a remote
   // shard (the managed worktree root is refused there), so naming bwrap keeps this file local.
   const report = await runCases([{ file, definition }], {

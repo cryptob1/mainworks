@@ -35,7 +35,7 @@ async function tabNamesTheProject(page: Page, repository: string) {
     await expect(page).toHaveTitle(title);
   }
   const item = 'Cut the documentation to a short set';
-  await page.getByRole('button', { name: item }).first().click();
+  await page.getByRole('link', { name: item }).first().click();
   await expect(page.getByRole('heading', { name: item, level: 1 })).toBeVisible();
   await expect(page).toHaveTitle(title);
   await page.getByRole('button', { name: '← Back' }).click();

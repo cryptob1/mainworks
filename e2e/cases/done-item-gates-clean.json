@@ -33,16 +33,17 @@
     },
     {
       "kind": "browser",
-      "name": "open the Delivered page under Work, where the delivered row lives",
+      "name": "filter Work to what shipped today, where the delivered row lives",
       "action": "click",
       "role": "button",
-      "text": "Delivered"
+      "text": "Shipped today",
+      "exact": false
     },
     {
       "kind": "browser",
-      "name": "open the delivered row's item page — its button, not the page header's latest-shipped line that names it first",
+      "name": "open the delivered row's item page from its title link",
       "action": "click",
-      "role": "button",
+      "role": "link",
       "text": "E2E case done-item-gates-clean run {{run}}",
       "exact": false
     },
