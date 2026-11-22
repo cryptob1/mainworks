@@ -1,6 +1,6 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -9,6 +9,8 @@ import { checkAccountLive, selectFleetSession, type FleetClient } from '../src/f
 import { hostAccountsVariable } from '../src/host-accounts.js';
 import { applyRegistryMutation } from '../src/model-boundary/registry.js';
 import { chooseSession, emptyRegistry, fleetView, foldObservations, proposedRuntimes, type AgentRegistry } from '../src/model/registry.js';
+import { smokeRegistryAccount } from '../src/runner/roles.js';
+import { wrongModelAttention } from '../src/cli/master-status.js';
 import { AccountAvailability } from '../web/pages/workers.js';
 import type { MasterConfig } from '../src/master/profiles.js';
 
@@ -29,8 +31,12 @@ test('e2e:wrong-model-is-caught — a live check on another model marks the acco
   }, { actor: 'operator', at: new Date().toISOString() }).registry as AgentRegistry;
   const account = registry.accounts[0]!, runtime = registry.runtimes[0]!;
 
-  // The live check's run answered, on big-pickle.
-  const quota = await checkAccountLive(account, runtime, { smoke: async () => ({ ok: true, error: null, output: '\n> build · big-pickle\n\nOK\n' }) }, 'zai-coding-plan/glm-5.3');
+  // The live check's own smoke decides: OpenCode answered, on big-pickle, so the smoke's banner path
+  // (GY-3592) returns the banner as its error — the check still names both models. The launcher stands
+  // in for the runtime binary; everything above it is the production path.
+  const launcher = join(home, 'launcher.cjs');
+  await writeFile(launcher, "#!/usr/bin/env node\nconsole.log('> build · big-pickle');\nconsole.log('OK');\n", { mode: 0o700 });
+  const quota = await checkAccountLive(account, runtime, { smoke: target => smokeRegistryAccount(target, { command: launcher, timeoutMs: 10_000 }) }, 'zai-coding-plan/glm-5.3');
   assert.equal(quota.state, 'broken');
   assert.equal(quota.reason, 'ran on big-pickle, not zai-coding-plan/glm-5.3');
   foldObservations(registry, { host: 'host', observations: [{ account: 'opencode-a', quota }] }, { actor: 'coordinator', at: new Date().toISOString() });
@@ -41,6 +47,9 @@ test('e2e:wrong-model-is-caught — a live check on another model marks the acco
   assert.match(page, /data-availability-row="opencode-a" data-state="broken"/);
   assert.match(page, /big-pickle/);
   assert.match(page, /zai-coding-plan\/glm-5\.3/);
+
+  // Master status attention carries one line for it.
+  assert.deepEqual(wrongModelAttention(view).map(line => line.text), ['opencode-a ran on big-pickle, not zai-coding-plan/glm-5.3; it takes no new session']);
 
   // The next launch is not offered it.
   let offered: string | null = null;

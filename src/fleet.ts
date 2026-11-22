@@ -208,8 +208,9 @@ export async function checkAccountLive(account: FleetAccount, runtime: FleetRunt
     let result: SmokeResult;
     try { result = await (probe.smoke ?? (target => smokeRegistryAccount(target, { timeoutMs: probe.smokeTimeoutMs })))(target); }
     catch (error) { result = { ok: false, error: String(error) }; }
-    // A passing request on a model other than the account's own is broken, naming both (GY-3596).
-    const wrong = result.ok ? wrongModel(reportedModel(runtime.launch.kind, result.output ?? ''), model) : null;
+    // A request that reported a model other than the account's own is broken, naming both, passing or
+    // failing (GY-3596): a failing OpenCode smoke reports the banner as its error (`build · big-pickle`, GY-3592).
+    const wrong = wrongModel(reportedModel(runtime.launch.kind, result.output ?? result.error ?? ''), model);
     if (wrong) result = { ok: false, error: wrong };
     const said = result.ok ? null : (result.error || 'The live request failed').replace(/[\u0000-\u001f\u007f\s]+/g, ' ').trim().slice(0, 500);
     // GY-3592: OpenCode answering on another model says the plan's model never ran, not that the plan is spent.
