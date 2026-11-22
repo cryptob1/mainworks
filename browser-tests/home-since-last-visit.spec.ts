@@ -15,7 +15,11 @@ const at = (ago: number) => new Date(Date.now() - ago).toISOString();
 const item = (key: string, title: string, extra: Record<string, unknown> = {}) => ({ dependencies: [], scenarioRequirements: [], id: `fixture-${key}`, key, title, description: title, type: 'feature', priority: 2,
   stage: 'build', stageEnteredAt: at(10 * minute), createdAt: at(hour), ready: true, policy: { review: true, checks: ['test'] }, policyRevision: 1, revision: 1, violations: [], workspaces: [], criteria: [], evidence: [], gates: [], sessions: [], lease: null, ...extra });
 const merged = (key: string, title: string, mergedAt: string) => item(key, title, { stage: 'done', delivery: { mergedAt, mergeSha: key.replace(/\D/g, '').padStart(40, 'a') } });
-const status = { actor: { id: 'operator', role: 'admin', sessionKind: 'human' }, repository: 'fixture/repository', jobs: [], live: { commit: 'c'.repeat(40), waiting: [] } };
+const status = { actor: { id: 'operator', role: 'admin', sessionKind: 'human' }, repository: 'fixture/repository', jobs: [], live: { commit: 'c'.repeat(40), waiting: ['GY-5'] } };
+const spendRequest = (id: string, outcome: 'provided' | 'declined', answeredAt: string) => ({
+  id, kind: 'money-or-accounts', reason: 'Spend check', needed: 'Approve spend', requestedBy: 'graphyard-claude-1', epoch: 1, at: answeredAt,
+  answer: { by: 'operator', at: answeredAt, outcome, text: outcome === 'provided' ? 'Approved' : 'Declined', waitedMs: 1000 },
+});
 
 async function plane(page: Page, state: { work: unknown[]; actor?: unknown }) {
   const store = await withDatabase(`home_since_${randomUUID().slice(0, 8)}`);
@@ -61,12 +65,19 @@ test('e2e:home-since-last-visit — the second visit counts exactly the merge in
     await visit(page, true);
     await expect(page.locator('[data-since="first"]')).toContainText('This is your first look.');
 
-    // One merge and one Lead decision land between the two visits.
+    // One live merge, one merge waiting on release, one Lead decision, and one approved + one declined spend request land between visits.
     const [earlier, building] = state.work as Record<string, unknown>[];
-    state.work = [earlier, { ...building, lastRework: { reason: 'its trial failed on main', binding: null, at: new Date().toISOString() } }, other, merged('GY-3', 'Needs you leads with the question', new Date().toISOString())];
+    const between = new Date().toISOString();
+    state.work = [
+      earlier,
+      { ...building, lastRework: { reason: 'its trial failed on main', binding: null, at: between }, humanRequests: [spendRequest('req-1', 'provided', between), spendRequest('req-2', 'declined', between)] },
+      other,
+      merged('GY-3', 'Needs you leads with the question', between),
+      merged('GY-5', 'Release check waits on live', between),
+    ];
     await visit(page);
     const brief = page.getByRole('region', { name: 'Since you last looked' });
-    await expect(brief.locator('[data-since-counts]')).toHaveText('1 went live · 0 in release · 1 Lead decision · 0 spend approvals');
+    await expect(brief.locator('[data-since-counts]')).toHaveText('1 went live · 1 in release · 1 Lead decision · 1 spend approval');
     await expect(brief).toContainText('Live: Needs you leads with the question.');
     await expect(brief).not.toContainText('Earlier change');
     const decision = brief.getByRole('listitem').filter({ hasText: 'The Lead sent “Rows are one line” back: its trial failed on main' });

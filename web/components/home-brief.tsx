@@ -28,7 +28,7 @@ export default function HomeBrief({ work, status, now, api }: Props) {
   const fresh = since ? work.filter(w => w.stage === 'done' && !w.closure && !!(w.delivery?.mergedAt ?? w.observation?.mergedAt) && mergedAt(w) > since) : [];
   const live = fresh.filter(w => waiting && !waiting.has(w.key)), releasing = fresh.filter(w => !waiting || waiting.has(w.key));
   const led = since ? decisions(work, since) : [];
-  const spend = since ? work.flatMap(w => (w.humanRequests ?? []).filter(r => r.kind === 'money-or-accounts' && r.answer && Date.parse(r.answer.at) > since)).length : 0;
+  const spend = since ? work.flatMap(w => (w.humanRequests ?? []).filter(r => r.kind === 'money-or-accounts' && r.answer?.outcome === 'provided' && Date.parse(r.answer.at) > since)).length : 0;
   const bullets = [...(live.length ? [{ text: `Live: ${live.map(w => w.title).join(', ')}.` }] : []), ...led.map(d => ({ text: d.text, decision: d }))].slice(0, 3);
   // Active goals as Work groups them (a task's own `goal`): any goal with a task still open, and how many of its tasks shipped.
   const goals = [...new Set(work.flatMap(w => w.goal && w.stage !== 'done' && !isClosed(w) ? [w.goal] : []))].sort((a, b) => a.localeCompare(b))
