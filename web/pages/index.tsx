@@ -1,9 +1,7 @@
 import { PRODUCT_NAME } from '../../src/model/product';
 import type { ReactNode } from 'react';
 import type { Dashboard } from './dashboard';
-import { WorkPage } from './overview';
-import NowPage from './now';
-import ShippedPage from './shipped';
+import WorkPage, { workFilters, type WorkFilter } from './work';
 import HumanRequestsPage from './human-requests';
 import GuidePage from './guide';
 import AutomationPage from './automation';
@@ -17,6 +15,7 @@ import ReleasesView from '../releases';
 import TestsPage from './tests';
 import ProductPage from './product';
 import { DeliveryDefaults } from '../components/delivery-slices';
+import { requestedView } from '../../src/model/setup-checklist';
 
 /**
  * The one navigation (GY-161): the sidebar and nothing beside it. Every page belongs to one of
@@ -28,7 +27,6 @@ export const sections = [
   // The master agent has its own entry so anyone looking for it finds it at once (GY-3287); it always reads Master (GY-3307).
   { id: 'master', icon: 'master', label: 'Master' },
   { id: 'workers', icon: 'workers', label: 'Workers' },
-  { id: 'shipped', icon: 'shipped', label: 'Shipped' },
   { id: 'tests', icon: 'tests', label: 'Tests' },
   { id: 'settings', icon: 'settings', label: 'Settings' },
 ] as const;
@@ -58,17 +56,15 @@ const configured = (value: boolean | null | undefined) => value !== false;
 
 export const views: readonly View[] = [
   { id: 'work', icon: '▥', label: 'Work', section: 'work', render: dashboard => <WorkPage {...dashboard}/> },
-  { id: 'now', icon: '◷', label: 'Now', section: 'work', visible: dashboard => dashboard.status?.actor?.sessionKind === 'human', render: dashboard => <NowPage {...dashboard}/> },
   // What waits on the human (GY-89) is the Work page's Needs you group (GY-161): one place, answered on the item page.
   // This page, the full list with recently answered requests, is opened from that group, not from the navigation.
   { id: 'needs-you', icon: '☝', label: 'Needs you', render: dashboard => <HumanRequestsPage {...dashboard}/> },
-  { id: 'shipped', icon: '✓', label: 'Delivered', section: 'shipped', render: dashboard => <ShippedPage {...dashboard}/> },
   // Every agent session across every item (GY-116), its own sidebar entry (GY-161).
   { id: 'workers', icon: '⚙', label: 'Workers', section: 'workers', render: dashboard => <WorkersPage {...dashboard}/> },
   // The master agent's live terminal (GY-3211), with the blockers it owes above it (GY-3394).
   { id: 'master', icon: '▶', label: 'Master', section: 'master', render: dashboard => <MasterPage {...dashboard}/> },
-  // What waits on a release, beside what shipped.
-  { id: 'releases', icon: '⇈', label: 'Releases', section: 'shipped', visible: dashboard => configured(dashboard.features.releases), render: dashboard => <ReleasesView api={dashboard.api} work={dashboard.work}/> },
+  // What waits on a release.
+  { id: 'releases', icon: '⇈', label: 'Releases', section: 'work', visible: dashboard => configured(dashboard.features.releases), render: dashboard => <ReleasesView api={dashboard.api} work={dashboard.work}/> },
   // Every test case with its latest trusted result and history (GY-162). It is shown even before the
   // first run, as never run, rather than hidden; operator agents' scoped API refuses its read.
   { id: 'tests', icon: '⚗', label: 'Tests', section: 'tests', visible: dashboard => role(dashboard) !== 'operator-agent', render: dashboard => <TestsPage api={dashboard.api} canEdit={role(dashboard) === 'admin'} setView={dashboard.setView} openItem={dashboard.setSelected}/> },
@@ -104,3 +100,13 @@ export function primaryEntry(dashboard: Dashboard, view: View) {
 export const primaryEntries = (dashboard: Dashboard) => sections.flatMap(section => views.map(view => primaryEntry(dashboard, view)).filter(entry => entry?.id === section.id));
 /** The page for a view id; unknown ids fall back to the work page. */
 export const viewFor = (id: string) => views.find(view => view.id === id) ?? views[0];
+
+/** GY-3600: the removed Now and Shipped pages' routes open Work with the matching filter. */
+export const redirects: Readonly<Record<string, WorkFilter>> = { now: 'in-flight', shipped: 'shipped-today' };
+/** The page and Work filter an address asks for: `#page`, with the filter as `?filter=` (unknown values ignored). */
+export function route(hash: string, search: string): { view: string | null; filter: WorkFilter | null } {
+  const page = requestedView(hash, [...views.map(view => view.id), ...Object.keys(redirects)]).view;
+  if (page && redirects[page]) return { view: 'work', filter: redirects[page] };
+  const asked = new URLSearchParams(search).get('filter');
+  return { view: page, filter: page === 'work' && workFilters.includes(asked as WorkFilter) ? asked as WorkFilter : null };
+}

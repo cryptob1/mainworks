@@ -2,19 +2,19 @@ import { PRODUCT_NAME } from '../src/model/product';
 import { useEffect, useState, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { type Work } from '../src/model';
-import { isBoard, type Board, type OpenGroup } from './groups';
+import { isBoard, type Board } from './groups';
 import './style.css';
 import type { IntegrationJob } from '../src/coordination';
 import Sidebar from './components/sidebar';
 import type { Dashboard } from './pages/dashboard';
-import { primaryEntry, viewFor, views } from './pages';
+import { primaryEntry, route, viewFor, views } from './pages';
+import type { WorkFilter } from './pages/work';
 import TopBar from './components/top-bar';
 import { useFeatures } from './features';
 import LoginPage, { HUMAN_SESSION_KEY, REJECTED_NOTICE, SIGN_IN_NEEDED, storedToken, wantsSignIn } from './pages/login';
 import WorkDetails, { useOpenedWork } from './pages/work-details';
 import CreateWork from './pages/create-work';
 import { initialView } from './pages/setup';
-import { requestedView } from '../src/model/setup-checklist';
 const itemLink = (hash: string) => /^#([A-Z][A-Z0-9]*-[A-Z0-9]+)$/.exec(hash)?.[1] ?? null;
 import { idempotencyKey } from './idempotency-key';
 import { poll } from './poll';
@@ -22,7 +22,6 @@ import { ShippedToast } from './fun';
 import { applyTheme } from './theme';
 import { boot } from './boot';
 import KeyboardNav from './keyboard';
-import type { TrustKind } from './trust';
 
 applyTheme();
 boot();
@@ -56,9 +55,14 @@ function App() {
   const [error, setError] = useState('');
   const [connected, setConnected] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  // GY-3600: the address names the page and the Work filter; the old Now and Shipped routes open Work filtered.
   const [view, setView] = useState(() => initialView(views.map(page => page.id)));
-  const [filter, setFilter] = useState<OpenGroup | null>(null);
-  const [shippedFilter, setShippedFilter] = useState<TrustKind | null>(null);
+  const [filter, keepFilter] = useState<WorkFilter | null>(() => route(location.hash || '#work', location.search).filter);
+  const setFilter = (next: WorkFilter | null) => {
+    const search = new URLSearchParams(location.search); if (next) search.set('filter', next); else search.delete('filter');
+    history.replaceState(null, '', `${location.pathname}${search.size ? `?${search}` : ''}#work`); keepFilter(next);
+  };
+  useEffect(() => { if (/^#(now|shipped)$/.test(location.hash)) setFilter(filter); }, []);
   const [selected, setSelected] = useState<string | null>(null);
   const [events, setEvents] = useState<any[]>([]);
   const [creating, setCreating] = useState(false);
@@ -140,7 +144,7 @@ function App() {
   useEffect(() => { if (!shipped) return; const timer = setTimeout(() => setShipped(null), 8000); return () => clearTimeout(timer); }, [shipped]);
   // Every page has an address (GY-3322): following a link to #costs opens Costs without a reload.
   useEffect(() => {
-    const follow = () => { const page = requestedView(location.hash, views.map(entry => entry.id)).view; if (page) { setSelected(null); setView(page); } };
+    const follow = () => { const { view: page, filter: asked } = route(location.hash, location.search); if (page) { setSelected(null); setView(page); if (page === 'work') setFilter(asked); } };
     addEventListener('hashchange', follow); return () => removeEventListener('hashchange', follow);
   }, []);
   // GY-3415: #GY-N is an item's address, so the link the master hands an owner opens that item with its Answer.
@@ -150,7 +154,7 @@ function App() {
   const item = useOpenedWork(work, selected, token, api, sessionEpoch, setError);
   async function action(id: string, command: string, data: unknown = {}) { const epoch = sessionEpoch.current; setBusy(true); try { await api(`work/${id}/${command}`, data); if (epoch !== sessionEpoch.current) return; await refresh(epoch); } catch (e) { if (epoch === sessionEpoch.current) setError((e as Error).message); } finally { if (epoch === sessionEpoch.current) setBusy(false); } }
   const { features, operatorAgents, operatorAgentsError } = useFeatures(token, !!status, api, status?.actor?.role === 'admin', work.some(w => w.scenarioRequirements?.length > 0));
-  const dashboard: Dashboard = { token, work, board, status, error, connected, lastUpdated, view, setView, filter, setFilter, shippedFilter, setShippedFilter, selected, setSelected, creating, setCreating, busy, setBusy, observedAt, jobs, query, setQuery, operatorAgents, operatorAgentsError, features, events, editingRequirements, setEditingRequirements, sessionEpoch, api, refresh, action, setError, signOut };
+  const dashboard: Dashboard = { token, work, board, status, error, connected, lastUpdated, view, setView, filter, setFilter, selected, setSelected, creating, setCreating, busy, setBusy, observedAt, jobs, query, setQuery, operatorAgents, operatorAgentsError, features, events, editingRequirements, setEditingRequirements, sessionEpoch, api, refresh, action, setError, signOut };
   if (!status) return <LoginPage signingIn={signingIn} setSigningIn={setSigningIn} token={token} error={error} signOut={signOut} setError={setError} sessionEpoch={sessionEpoch} setToken={setToken} draftToken={draftToken} setDraftToken={setDraftToken} host={location.host} onVerified={firstLoad}/>;
   // One page at a time: an open item replaces the page it was opened from, and "← Back" returns to it.
   return <div className="shell"><Sidebar entries={views.map(entry => primaryEntry(dashboard, entry))} dashboard={dashboard}/>

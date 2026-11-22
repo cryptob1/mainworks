@@ -35,8 +35,9 @@ function tasks(now: number, { request = true } = {}) {
 
 async function open(page: Page, width: number, options?: { request?: boolean }) {
   await page.setViewportSize({ width, height: 900 });
+  const now = Date.now(), work = tasks(now, options);
   await page.route('**/api/**', async route => {
-    const path = new URL(route.request().url()).pathname, now = Date.now(), work = tasks(now, options);
+    const path = new URL(route.request().url()).pathname;
     if (path.endsWith('/status')) return route.fulfill({ json: { actor: { id: 'operator', role: 'admin', sessionKind: 'human' }, repository: 'fixture/repository', jobs: [] } });
     if (path.endsWith('/work-snapshot')) return route.fulfill({ json: { work, now: new Date(now).toISOString() } });
     if (path.endsWith('/board')) return route.fulfill({ json: boardFromStatus(work as never, now, null) });
@@ -94,7 +95,7 @@ for (const width of [1280, 390]) {
     await expect(row.locator('[data-col="pr"] a')).toHaveAttribute('href', 'https://github.com/fixture/repository/pull/401');
     await expect(row.locator('[data-col="time"]')).toHaveText('12m');
     await expect(speedGroup.locator('[data-row="GY-102"] [data-col="state"]')).toHaveText('Stuck');
-    await expect(speedGroup.locator('[data-row="GY-102"] [data-col="now"]')).toContainText('The merge trial failed three times');
+    await expect(speedGroup.locator('[data-row="GY-102"] [data-col="now"]')).toHaveText('A fault blocks it; the master agent clears it.');
     await expect(speedGroup.locator('[data-row="GY-103"] [data-col="state"]')).toHaveText('Shipped');
 
     // The task with no goal sits in a collapsed 'No goal' group.
