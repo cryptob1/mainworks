@@ -82,9 +82,6 @@ test('unit:graphyard-repo-serves-its-head-for-e2e — the declared serve command
 
     // GY-3038: the same served head must actually deliver to its scratch bare origin. A push
     // failure after a passing build/test trial must fail this case, never manufacture delivery.
-    // GY-3658: scripts/e2e-delivery-pipeline.mjs runs a real nested merge trial under bwrap
-    // (inside a trial container) or docker (outside one), so this file must stay on a local shard
-    // rather than a remote compute host lacking nested confinement.
     await t.test('unit:delivery-pipeline — the case delivers a reviewed exact head and fails after a passing trial when the bare origin is unwritable', async () => {
       const deliveryFile = 'e2e/cases/delivery-pipeline.json';
       const definition = parseCase(deliveryFile, readFileSync(join(checkout, deliveryFile), 'utf8'));
