@@ -64,7 +64,7 @@ export const views: readonly View[] = [
   { id: 'needs-you', icon: '☝', label: 'Needs you', section: 'work', inlineOnly: true, render: dashboard => <HumanRequestsPage {...dashboard}/> },
   { id: 'releases', icon: '⇈', label: 'Releases', section: 'work', advanced: true, visible: dashboard => configured(dashboard.features.releases), render: dashboard => <ReleasesView api={dashboard.api} work={dashboard.work}/> },
   { id: 'tests', icon: '⚗', label: 'Tests', section: 'work', visible: dashboard => role(dashboard) !== 'operator-agent', render: dashboard => <TestsPage api={dashboard.api} canEdit={role(dashboard) === 'admin'} setView={dashboard.setView} openItem={dashboard.setSelected}/> },
-  { id: 'scenarios', icon: '✓', label: 'Test cases', section: 'work', advanced: true, render: dashboard => <ScenarioLibrary api={dashboard.api} canEdit={role(dashboard) === 'admin'}/> },
+  { id: 'scenarios', icon: '✓', label: 'Test cases', section: 'work', advanced: true, visible: dashboard => role(dashboard) === 'admin' || configured(dashboard.features.scenarios), render: dashboard => <ScenarioLibrary api={dashboard.api} canEdit={role(dashboard) === 'admin'}/> },
   { id: 'lead', icon: '▶', label: 'Lead', section: 'lead', render: dashboard => <MasterPage {...dashboard}/> },
   { id: 'product', icon: '◎', label: 'Product', section: 'lead', render: dashboard => <ProductPage api={dashboard.api}/> },
   { id: 'agents', icon: '⛭', label: 'Agents', section: 'settings', visible: dashboard => ['admin', 'coordinator', 'reader', 'slice-lead'].includes(role(dashboard)), render: dashboard => <FleetPage api={dashboard.api} status={dashboard.status} observedAt={dashboard.observedAt} onOpenSetup={role(dashboard) === 'admin' ? () => dashboard.setView('setup') : undefined}/> },
