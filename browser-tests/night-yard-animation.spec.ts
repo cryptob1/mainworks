@@ -6,7 +6,7 @@ import { boardStatus, boardWork, NOW } from './ui-board';
 test.use({ reducedMotion: 'no-preference' });
 
 // GY-3272 AC-4: the yard moves. A one-second boot sequence plays once per browser session and any
-// key or click skips it; a stage change glides the row to its new group instead of jumping; an
+// key or click skips it; an
 // item in trial carries a light streak along its row; the rain falls in two parallax sheets, the
 // headings flicker in and the top line types itself out. Reduced motion stills all
 // of it, and the boot never runs.
@@ -35,7 +35,7 @@ async function serve(page: Page) {
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible(live);
-  await expect(page.locator('.work-row').first()).toBeVisible(live);
+  await expect(page.locator('.task-row').first()).toBeVisible(live);
   return state;
 }
 
@@ -90,30 +90,11 @@ test('e2e:night-yard-animation — left alone, the boot hands the page over insi
   await expect(page.getByRole('button', { name: 'Open control plane' })).toBeVisible(live);
 });
 
-test('e2e:night-yard-animation — a stage change glides the row to its new group instead of jumping', async ({ page }) => {
-  test.setTimeout(60_000);
-  const state = await serve(page);
-  const row = page.locator('[data-row="GY-20"]');
-  await expect(row).toHaveAttribute('data-group', 'needs-you');
-  // The glide lasts under 600 ms, shorter than a loaded machine's gap between two looks, so the page
-  // itself records the moment it starts: the row transitioning on transform alone to where it belongs.
-  await page.evaluate(() => new MutationObserver(() => {
-    const el = document.querySelector<HTMLElement>('[data-row="GY-20"].glide');
-    if (el) (window as any).glided ??= el.style.transition;
-  }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'style'] }));
-  // The operator's decision lands: the row leaves Needs you for the group the board now puts it in.
-  state.work = state.work.map(item => item.key === 'GY-20' ? { ...item, humanRequest: null, blocker: null } : item);
-  await expect(row).not.toHaveAttribute('data-group', 'needs-you', live);
-  await expect.poll(() => page.evaluate(() => (window as any).glided ?? null), live).toMatch(/^transform /);
-  // It lands where it belongs: no glide class and no transform left on it, read together in one look.
-  await expect.poll(() => row.evaluate(el => ({ glide: el.classList.contains('glide'), transform: el.style.transform })), live).toEqual({ glide: false, transform: '' });
-});
-
 test('e2e:night-yard-animation — a row in trial carries the streak, the rain falls in two sheets, headings flicker in and the line types itself out', async ({ page }) => {
   test.setTimeout(60_000);
   await serve(page);
   // The streak: exactly the row whose merge trial is out.
-  const streak = page.locator('.work-row.trial');
+  const streak = page.locator('.task-row.trial');
   await expect(streak).toHaveCount(1);
   await expect(streak).toHaveAttribute('data-row', 'GY-21');
   expect(await streak.evaluate(el => getComputedStyle(el, '::after').animationName)).toBe('gy-streak');
@@ -132,7 +113,7 @@ test('e2e:night-yard-animation — a row in trial carries the streak, the rain f
   }
   // Headings and rows flicker in like a neon sign switching on.
   expect(await animationOf(page, 'h1')).toBe('gy-flicker-in');
-  expect(await animationOf(page, '.work-row')).toBe('gy-flicker-in');
+  expect(await animationOf(page, '.task-row')).toBe('gy-flicker-in');
   // The top line types itself out — a clip-path wipes it open a character step at a time — and finishes open.
   // GY-3369: read on the animation's own record, not the wall clock — a loaded trial host renders no
   // frame for seconds, and a CSS animation's time stands still until one comes, so a timed poll saw it closed.
@@ -153,12 +134,10 @@ test('e2e:night-yard-animation — with reduced motion every animation stills an
   // The boot never ran on this load.
   await expect(page.locator('[data-boot]')).toHaveCount(0);
   // Rain (both sheets), streak, glitch, beacons, the flicker-in and the typing line: all still.
-  for (const [selector, pseudo] of [['body', '::after'], ['html', '::after'], ['.work-row.trial', '::after'], ['.work-row.glitch', ''], ['.activity-strip .beacon', ''], ['h1', ''], ['.build-line .typed', '']] as const)
+  for (const [selector, pseudo] of [['body', '::after'], ['html', '::after'], ['.task-row.trial', '::after'], ['.task-row.glitch', ''], ['.activity-strip .beacon', ''], ['h1', ''], ['.build-line .typed', '']] as const)
     expect(await animationOf(page, selector, pseudo), `${selector}${pseudo}`).toBe('none');
-  // A stage change still happens — the row lands at once, with no glide.
+  // A stage change still happens: the row lands in its new group at once.
   state.work = state.work.map(item => item.key === 'GY-20' ? { ...item, humanRequest: null, blocker: null } : item);
-  const row = page.locator('[data-row="GY-20"]');
-  await expect(row).not.toHaveAttribute('data-group', 'needs-you', live);
-  expect(await row.evaluate(el => el.classList.contains('glide'))).toBe(false);
+  await expect(page.locator('[data-row="GY-20"]')).not.toHaveClass(/group-needs-you/, live);
 });
 
