@@ -100,12 +100,17 @@ const until = async (what: string, check: () => Promise<boolean> | boolean) => {
   for (let tries = 0; tries < 2400; tries++) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 25)); }
   assert.fail(`timed out waiting for ${what}`);
 };
+// GY-3647: the settled budget until() polls on is also the wait for the other reviewer. A fixed
+// five seconds decided this check on the loaded batch-gate host, where a reviewer's launch can lag
+// the other's by more than that; and a reviewer whose timed-out run was retried then counted as
+// the second reviewer, so the both-alive assertion could never be set again.
+const settledMs = 2400 * 25;
 const answers = (address: string) => fetch(address).then(() => true, () => false);
 
 test('integration:product-reviews-run-in-parallel — two product reviews of different heads serve at once on different free ports and record both verdicts', async () => {
   const addresses: Record<string, string> = {};
   const pages: Record<string, string> = {};
-  let arrived = 0;
+  const arrived = new Set<string>();
   let releaseBoth!: () => void;
   const bothAlive = new Promise<void>(resolve => { releaseBoth = resolve; });
   let bothAliveAtOnce = false;
@@ -115,16 +120,17 @@ test('integration:product-reviews-run-in-parallel — two product reviews of dif
     const match = prompt.match(/served for this review at (http:\/\/127\.0\.0\.1:\d+)/);
     assert.ok(match, `${name} reviewer prompt must name its own served address`);
     addresses[name] = match[1]!;
-    arrived++;
-    if (arrived === 2) releaseBoth();
-    // Both reviewers must be alive at the same time before either finishes.
+    arrived.add(name);
+    if (arrived.size === 2) releaseBoth();
+    // Both reviewers must be alive at the same time before either finishes: each waits for the
+    // other by name, on the settled budget, so a launch lagging under load waits instead of failing.
     await Promise.race([
       bothAlive,
-      new Promise<void>((_resolve, reject) => setTimeout(() => reject(new Error('product reviews did not run in parallel')), 5_000)),
+      new Promise<void>((_resolve, reject) => setTimeout(() => reject(new Error('product reviews did not run in parallel')), settledMs)),
     ]);
     // While both serve processes are alive concurrently, fetch this review's own address.
     pages[name] = await fetch(addresses[name]!).then(response => response.text(), () => '');
-    if (arrived === 2 && addresses.first && addresses.second) {
+    if (arrived.has('first') && arrived.has('second')) {
       const [a, b] = await Promise.all([answers(addresses.first), answers(addresses.second)]);
       if (a && b) bothAliveAtOnce = true;
     }
