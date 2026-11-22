@@ -7,14 +7,14 @@ import type { MasterConfig } from './profiles.js';
 import { herdrCall, herdrInvocation, herdrTarget, herdrTerminalArgs, observeHerdrAgents } from './herdr.js';
 import { readSessionScreenOrError } from './prompt-delivery.js';
 
-export interface TerminalSession { account: string | null; runtime: string | null; pane: string | null; state: string }
+export interface TerminalSession { account: string | null; runtime: string | null; pane: string | null; state: string; since?: string | null }
 export type SessionReader = () => Promise<TerminalSession>;
 export const terminalSessionReader = (config: () => MasterConfig): SessionReader => async () => {
   const master = masterSessionSchema.parse(JSON.parse(await readFile(daemonStatePath(config()), 'utf8').catch(error => { if (error.code === 'ENOENT') return '{}'; throw error; })).master ?? {});
   const runtime = master.agentName ? await observeHerdrAgents(undefined, null) : null;
   const agent = runtime?.agents.find(agent => agent.name === master.agentName || agent.pane_id === master.pane);
   const screen = master.agentName ? (await readSessionScreenOrError(agent?.pane_id ?? master.agentName)).screen : undefined;
-  return { account: master.account, runtime: master.runtime, pane: master.pane, state: masterSessionState(master, Date.now(), agent, screen) };
+  return { account: master.account, runtime: master.runtime, pane: master.pane, state: masterSessionState(master, Date.now(), agent, screen), since: master.startedAt };
 };
 export interface TerminalRequest { control: boolean; pane: string | null; master?: boolean; cols: string; rows: string }
 export interface TerminalHandlers { line(line: string): void; exit(reason: string): void }

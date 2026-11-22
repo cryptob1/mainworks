@@ -76,6 +76,8 @@ export interface ScopeFile {
   path: string; status: 'added' | 'modified' | 'removed' | 'renamed' | 'copied' | 'changed' | 'unchanged';
   previousPath?: string; sha: string | null; additions: number; deletions: number; binary: boolean;
   baseSha?: string | null; previousBaseSha?: string | null; /** Timing-baseline companion verdict (GY-1023), from both versions' contents. */ companion?: { allowed: boolean; detail: string };
+  /** Whether a change to graphyard.json modifies its checks section (GY-3635). */
+  checksChanged?: boolean;
 }
 export interface Observation {
   clockOffset?: { min: number; max: number };

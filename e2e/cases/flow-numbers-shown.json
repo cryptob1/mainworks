@@ -1,0 +1,12 @@
+{
+  "id": "flow-numbers-shown",
+  "title": "Flow numbers: attempts an hour, first-pass yield, wait per station and a slow-station line, on Work and in master status",
+  "description": "The real control plane reads four attempts ended in the last 24 hours, one sent back by the merge trial, and an item waiting 2 hours in review from the ledger: /api/status carries 75% first-pass yield and the review station's wait for 6 hours, 24 hours and 7 days, and master status carries the same numbers with one attention line naming review and its oldest item. A real browser on the built dashboard at 1280 and 390 px shows merges an hour, attempts an hour and '75%' first pass in the Work page header, the slow-station line, and a fold opening each station's median and slowest-tenth wait and the rework causes with counts, with no sideways scroll.",
+  "tags": ["dashboard"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "status and master status read 75% first pass, the review wait and one attention line from the ledger", "run": "node --import tsx tests/helpers/run-tests.ts tests/flow-numbers-shown.test.ts", "timeoutSeconds": 240 },
+    { "kind": "command", "name": "Work page header, slow-station line and flow fold at 1280 and 390 px", "run": "npm run test:browser -- browser-tests/flow-numbers-shown.spec.ts", "timeoutSeconds": 420 }
+  ]
+}

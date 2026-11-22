@@ -37,7 +37,7 @@ if (mode === 'control') {
 // The session record Herdr's stream opens with, read off the same state file the agent list reads:
 // a master at work shows its scan line (GY-3272), one standing idle shows none.
 { const state = fixture(), master = state.master ?? { account: 'master-agent', runtime: 'claude', agentName: 'master' };
-  process.stdout.write(`${JSON.stringify({ type: 'session', session: { pane, account: master.account ?? null, runtime: master.runtime ?? null, state: state.status ?? 'working' } })}\n`); }
+  process.stdout.write(`${JSON.stringify({ type: 'session', session: { pane, account: master.account ?? null, runtime: master.runtime ?? null, state: state.status ?? 'working', since: state.since ?? null } })}\n`); }
 // Enable bracketed paste as a real TUI does. The fixture's `tui` runs the pane's program on the
 // alternate screen (GY-3308): the opening frame switches to it and repaints, then live output
 // keeps arriving while the page is open.
