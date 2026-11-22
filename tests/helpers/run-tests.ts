@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { chmodSync, mkdirSync, readdirSync, readFileSync, statfsSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statfsSync, writeFileSync } from 'node:fs';
 import { readdir, rm } from 'node:fs/promises';
 import { availableParallelism, homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -204,6 +204,16 @@ export function nestedFirst(environment: NodeJS.ProcessEnv = process.env): { fir
   return Number.isInteger(parent) && parent > 0 ? { first: parent + nestedPortGap } : {};
 }
 
+/** Whether a selected test file drives a browser or runs E2E cases against the served dashboard. */
+const opensDashboard = (cwd: string, args: string[]) => args.filter(arg => /\.test\.[cm]?[jt]sx?$/.test(arg)).some(file => {
+  try { return /chromium|playwright|projectCaseSuite/.test(readFileSync(resolve(cwd, file), 'utf8')); } catch { return false; }
+});
+/** The dashboard `npm run build` writes to dist/ (the server serves it), built here when a checkout never ran the build. */
+async function buildDashboard(cwd: string) {
+  const { build } = await import('vite');
+  await build({ configFile: join(cwd, 'vite.config.ts'), root: join(cwd, 'web'), cacheDir: join(cwd, '.graphyard', 'vite'), logLevel: 'warn', build: { outDir: join(cwd, 'dist'), emptyOutDir: true } });
+}
+
 export async function runTests(options: RunOptions = {}): Promise<RunResult> {
   const tmpRoot = durableTestTmpdir() ?? undefined;
   await sweepLeftoverTempDirectories(tmpRoot);
@@ -220,6 +230,8 @@ export async function runTests(options: RunOptions = {}): Promise<RunResult> {
   // run's window is its shared cluster's own.
   // GY-3611: the CLI and server the tests start run from dist/; build them once, before the first file, when missing or stale.
   const repository = fileURLToPath(new URL('../..', import.meta.url));
+  // A remote shard's fresh checkout has no built dashboard either: a selected file that opens it in a browser would find no sign-in page.
+  if (resolve(cwd) === resolve(repository) && !existsSync(join(cwd, 'dist', 'index.html')) && opensDashboard(cwd, selection?.args ?? [])) await buildDashboard(cwd);
   if (resolve(cwd) === resolve(repository) && !builtEntries.every(name => builtEntry(cwd, name))) await buildEntries(cwd);
   const reservation = await reserveTestPorts(options.browser ? { first: defaultBrowserPort, span: 2 + testPortSpan, last: 65_000, ...options.ports } : { ...nestedFirst(), ...options.ports });
   let postgres: Awaited<ReturnType<typeof import('./postgres.js').startPostgres>> | undefined;
