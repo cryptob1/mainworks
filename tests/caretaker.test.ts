@@ -19,7 +19,7 @@ import { caretakerIntervalMs, caretakerStep, type CaretakerOutcome } from '../sr
 import type { DaemonEffects } from '../src/daemon/effects.js';
 import { caretakerChecks, caretakerCommands, caretakerPrompt, caretakerReads, caretakerRequestsFile } from '../src/master/caretaker-prompt.js';
 import { serveCaretakerRequests } from '../src/master/caretaker.js';
-import { loopRestartRequestPath } from '../src/daemon/run.js';
+import { loopRestartRequestPath } from '../src/daemon/state.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master.js';
 import { encodeLoopHosts, loopHostsHeader, loopPresenceHeader } from '../src/model/loop-presence.js';
 import { proposedRuntimes } from '../src/model/registry.js';

@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import type { CaretakerOutcome } from '../daemon/caretaker.js';
 import { fleetRequest } from '../fleet.js';
 import { defaultHeadlessExec, headlessRunMs, startHeadlessWorker, type HeadlessExec } from '../headless-session.js';
-import { loopRestartRequestPath } from '../daemon/run.js';
+import { loopRestartRequestPath } from '../daemon/state.js';
 import { atomicPrivateWrite } from '../private-file.js';
 import { caretakerPrompt, caretakerRequestsFile, type CaretakerRequest } from './caretaker-prompt.js';
 import { dispatchWork } from './dispatch.js';
