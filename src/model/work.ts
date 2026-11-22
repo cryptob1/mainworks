@@ -46,7 +46,8 @@ export type OperatorCapability = typeof operatorCapabilities[number];
 export const operatorCredentialHash = Symbol('operatorCredentialHash');
 export interface Principal {
   /** GY-3344: a reporter is another install's Master: it files items, messages this install's Master and reads back its own items and replies, and nothing else (server/routes/reporter.ts). */
-  id: string; role: 'admin' | 'operator-agent' | 'coordinator' | 'slice-lead' | 'worker' | 'producer' | 'reader' | 'reporter';
+  /** GY-3593: a caretaker is the install's scheduled health check: it reads, corrects account marks, unblocks, files items and reports, and nothing else (server/routes/caretaker.ts). */
+  id: string; role: 'admin' | 'operator-agent' | 'coordinator' | 'slice-lead' | 'worker' | 'producer' | 'reader' | 'reporter' | 'caretaker';
   proofs?: string[]; displayName?: string; runtime?: string;
   // Deployment observation is a separate lane from acceptance-proof collection. A
   // producer's `proofs` allowlist grants no authority here and is never widened to
@@ -233,6 +234,11 @@ export interface Work extends Create {
    * by any fresh claim. While it stands on an unblocked item the item is not offered to a worker.
    */
   finishedBlockerHead?: { head: string; epoch: number; branch: string; owner: string; at: string; reason: string } | null;
+  /**
+   * GY-3543: the last passed host verification, keyed by head and policy revision. A repeat request
+   * for that head under that revision is answered from it instead of running the proof files again.
+   */
+  passedVerification?: { head: string; policyRevision: number; at: string; result: unknown } | null;
   // Durable state for a blocking lead ruling. History records the ruling; this
   // field is what the gate evaluator and the merge broker read independently.
   leadHold?: { action: BlockingRulingAction; rulingId: string; leadId: string; slice: SliceId; ruleId: string; reason: string; at: string } | null;

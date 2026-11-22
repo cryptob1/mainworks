@@ -1,0 +1,16 @@
+{
+  "id": "account-held-reason-plain",
+  "title": "A held account on the Accounts page shows the provider's sentence and back time, not raw JSON",
+  "description": "Seeds an account held from the 2026-11-21 Claude probe JSON fixture, opens Settings › Agents (the Accounts page) in a browser, and asserts the held row shows 'weekly limit' and 'back <day> at <time>' with no '{' or '\"api_error'.",
+  "tags": ["accounts", "quota", "dashboard"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "Accounts page renders held account sentence and reset day without raw JSON",
+      "run": "npm run test:browser -- browser-tests/account-held-reason-plain.spec.ts",
+      "timeoutSeconds": 420
+    }
+  ]
+}

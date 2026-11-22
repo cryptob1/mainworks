@@ -17,8 +17,8 @@ The details the [README](../README.md) leaves out. `graphyard guide setup` print
 - Tailnet check rule: every Tailscale ssh rule that reaches a host must use action `check`, never `accept`, so no account there logs in unattended. `host add` tries your own account on the host's port 22 and warns when it gets in without you.
 - `graphyard host remove USER@HOST` stops reading one; `graphyard host list` shows the one host list.
 - Accepted risk: a host can forge its own shard results, so add only machines you own. Remote shard runs read this same host list.
-- Each trial sends each test shard to the host with the most free CPU under its heat limit. There the shard gets a clone of the commit and runs with no network, under CPU, memory and process limits. A host that drops a shard hands it back: capacity, never a fault. `master status` → `remoteShards` shows each host.
-- Tests that name the database, Docker, nested confinement (bwrap, unshare, landlock, the hard-math benchmarks) or a browser stay on this machine: a host's shard has none of them, so they would only fail there. Every other test file, loopback servers included, may run on a host.
+- Each trial sends each test shard to another host with room under its heat limit, else this machine. There the shard gets a clone of the commit and runs with no network, under CPU, memory and process limits. A host that drops a shard hands it back: capacity, never a fault. `master status` → `remoteShards` shows each host.
+- Tests that name Docker, nested confinement (bwrap, unshare, landlock, the hard-math benchmarks), npm exec or /var/tmp stay on this machine: a host's shard has none of them. Every other test file, database, browser and loopback servers included, may run on a host.
 
 ## Onboarding a project
 

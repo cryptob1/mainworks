@@ -1,0 +1,15 @@
+{
+  "id": "worker-dispatch-during-batch-gate",
+  "title": "A ready repair reaches a worker while the batch gate runs",
+  "description": "Runs the real dispatch cycle beside a batch gate over a temporary Git origin. A released repair is invited to claim with spare worker capacity while batch checks remain in flight; review, proof and merge gates remain required, gate priority stays intact, and the batch finishes its checks normally.",
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "dispatch a repair while batch checks remain in flight",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:worker-dispatch-during-batch-gate tests/batch-gate-first.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}

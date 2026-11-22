@@ -7,7 +7,8 @@ import { dispatchedFile } from './dispatch-reservation.js';
  * the runtime and account it ran on, the runtime's own session id, its worktree, and the attempt it
  * resumed, if any. Written once the launch started; a record from before GY-2971 has only the epoch.
  */
-export interface AttemptLaunch { epoch: number; runtime?: string | null; account?: string | null; session?: string | null; path?: string | null; resumedFrom?: number | null }
+export interface AttemptLaunch { epoch: number; runtime?: string | null; account?: string | null; run?: string | null; path?: string | null; resumedFrom?: number | null;
+  /** GY-3632: why a rework launch started a fresh session instead of continuing its Builder's. */ fresh?: string | null }
 export async function readAttemptLaunch(root: string, key: string): Promise<AttemptLaunch | null> {
   const record = await readFile(dispatchedFile(root, key), 'utf8').then(text => JSON.parse(text) as AttemptLaunch, () => null);
   return typeof record?.epoch === 'number' ? record : null;
@@ -16,8 +17,8 @@ export async function readAttemptLaunch(root: string, key: string): Promise<Atte
 /** How soon after its start a worker that exits counts as an early exit, a launch incident rather than work (GY-2971). */
 export const resumeExitWindowMs = 60_000;
 
-/** The attempt line `master status` shows for an item: `attempt N`, with the attempt it resumed when it did. */
+/** The attempt line `master status` shows for an item: `attempt N`, and `rework by the same Builder` when it continued the last attempt's session (GY-3632). */
 export function attemptLabel(epoch: number, launched: AttemptLaunch | null) {
   if (!epoch) return null;
-  return launched?.epoch === epoch && launched.resumedFrom ? `attempt ${epoch} (resumed from ${launched.resumedFrom})` : `attempt ${epoch}`;
+  return launched?.epoch === epoch && launched.resumedFrom ? `attempt ${epoch}: rework by the same Builder` : `attempt ${epoch}`;
 }

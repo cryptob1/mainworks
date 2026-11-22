@@ -1,5 +1,5 @@
 import { headlessArgs, headlessArgv, HeadlessConfigurationError } from './headless-argv.js';
-export { headlessKind, headlessArgs, headlessArgv, HeadlessConfigurationError } from './headless-argv.js';
+export { continuable, headlessKind, headlessArgs, headlessArgv, HeadlessConfigurationError } from './headless-argv.js';
 // Concern: headless sessions — reviews, and since GY-3259 workers (at the end of this file). A reviewer no longer needs a Herdr pane,
 // a TUI start wait or a CLI call to post: its runtime runs once, non-interactively, as one child
 // process in the session's checkout, under the same coordinator confinement and credential mask a
@@ -26,7 +26,8 @@ import { sessionLaunch, processIdentity, readRunMeta, runAlive, runContainment, 
 import { runRecord } from './runner/types.js';
 import { underTestRunner } from './runtime-environment.js';
 import { confinedRuntimeArgs } from './worker-sandbox.js';
-import { runtimeReport } from './model/token-costs.js';
+import { freePort } from './serve-app.js';
+import { runtimeReport, runtimeSessionId } from './model/token-costs.js';
 import { noteRunUsage } from './usage-capture.js';
 
 /**
@@ -340,6 +341,8 @@ export interface HeadlessWorker extends HeadlessAccountLaunch {
   /** The worktree the attempt was assigned; `supervisor` the `graphyard watch KEY EPOCH --` words that hold its lease. */
   directory: string; supervisor: string[]; coordinatorRoot?: string; prompt: string;
   root: string; exec: HeadlessExec; cores?: number;
+  /** GY-3632: the runtime session this run continues; its request is then `prompt` alone, the session's next message. */
+  session?: string | null;
   /** The run's hard bound, the configured attempt ceiling; the loop's attempt bound stops a run without progress first. */
   timeoutMs: number;
   /** How long the start is watched; `workerStartupMs` by default. */
@@ -364,10 +367,11 @@ export async function startHeadlessWorker(input: HeadlessWorker): Promise<{ id: 
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const record: HeadlessWorkerRecord = { id, name: input.name, work: input.work, epoch: input.epoch, principal: input.principal, account: input.account, kind: launch.kind, subject: input.subject.slice(0, 300), startedAt: new Date().toISOString(), ...(input.remote ? { host: input.remote.host } : {}) };
   writeFileSync(join(directory, sessionFile), JSON.stringify(record), { mode: 0o600 });
-  const env = runEnvironment(process.env, { ...launch.environment, GRAPHYARD_RUN_LOG: join(directory, runLogName) });
+  // GY-3584: the session's e2e serve (scripts/e2e-serve.mjs) takes a free port of its own, so reviews and trials keep the declared 4391.
+  const env = runEnvironment(process.env, { ...launch.environment, GRAPHYARD_RUN_LOG: join(directory, runLogName), GRAPHYARD_E2E_SERVE_PORT: String(await freePort()) });
   // GY-3405: on a host the container confines the runtime; its relayed `graphyard` calls run here under this machine's confinement, as a local worker's do.
   const remote = input.remote && (launch.wrapper.length ? [...input.remote.words.slice(0, -1), '--confine', JSON.stringify(launch.wrapper), '--'] : input.remote.words);
-  const argv = [...input.supervisor, ...remote ?? launch.wrapper, ...await headlessArgv(launch, launch.request, env)];
+  const argv = [...input.supervisor, ...remote ?? launch.wrapper, ...await headlessArgv({ ...launch, session: input.session }, input.session ? input.prompt : launch.request, env)];
   const stop = new AbortController(), detached = new AbortController();
   const running = input.exec(argv[0]!, argv.slice(1), { cwd: input.directory, env, timeoutMs: input.timeoutMs, signal: stop.signal, run: directory, detached: detached.signal });
   const ended = await Promise.race([running.then(() => ({ ok: true }), () => ({ ok: false })), new Promise<null>(done => setTimeout(() => done(null), input.startupMs ?? workerStartupMs).unref())]);
@@ -420,6 +424,11 @@ export function runLogTail(root: string, id: string, bytes = 4000): string | nul
   if (!z.string().uuid().safeParse(id).success || !existsSync(join(workerRunsDirectory(root), id))) return null;
   const size = logSize(root, id);
   return parseLog(readLogBytes(root, id, Math.max(0, size - 4 * bytes), 4 * bytes)).map(line => line.text).join('\n').slice(-bytes);
+}
+/** GY-3632: the runtime's own session id a worker run printed, read from the start and the end of its log; null when it printed none. */
+export function runSessionId(root: string, id: string): string | null {
+  const head = readRunLog(root, id)?.lines.map(line => line.text).join('\n') ?? '';
+  return runtimeSessionId(head) ?? runtimeSessionId(runLogTail(root, id, runLogChunkBytes) ?? '');
 }
 const logFile = (root: string, id: string) => join(workerRunsDirectory(root), id, runLogName);
 const logSize = (root: string, id: string) => { try { return statSync(logFile(root, id)).size; } catch { return 0; } };

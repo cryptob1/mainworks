@@ -9,12 +9,13 @@
   "description": "Evidence-backed coordination for distributed software agents",
   "license": "Apache-2.0",
   "bin": {
+    "mainworks": "./bin/graphyard.mjs",
     "graphyard": "./bin/graphyard.mjs"
   },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "dev:web": "vite --configLoader runner --host 127.0.0.1",
-    "build": "node --import tsx tests/helpers/run-tests.ts --typecheck && vite build --configLoader runner",
+    "build": "node --import tsx tests/helpers/run-tests.ts --typecheck && vite build --configLoader runner && node bin/built-entry.mjs",
     "start": "tsx src/server.ts",
     "cli": "tsx src/cli.ts",
     "test": "node --import tsx tests/helpers/run-tests.ts",

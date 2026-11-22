@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from './model/product.js';
 import { loopStateClient, migrateLoopFile, ledgerSnapshot, saveLedger } from './loop-state.js';
 import { writeFailure } from './disk-space.js';
 import { parseEnvValue } from './env-file.js';
@@ -417,7 +418,7 @@ export async function launchProducer(root: string, work: Work, request: Dispatch
   // (dispatch/tick.ts), so it surfaces once per attempt and launches once .env is provisioned.
   const producerEnv = needsProducerEnv(binding.proofs) ? await readProducerEnvironment(root) : {};
   const missingEnv = missingProducerEnv(binding.proofs, producerEnv);
-  if (missingEnv.length) throw new Error(`Graphyard refuses to launch the ${binding.key} ${binding.group} proofs (${binding.proofs.join(', ')}): ${missingEnv.join(' and ')} ${missingEnv.length > 1 ? 'are' : 'is'} not set in ${resolve(root, '.env')} on this coordinator; add ${missingEnv.length > 1 ? 'them' : 'it'} there and the request is launched again`);
+  if (missingEnv.length) throw new Error(`${PRODUCT_NAME} refuses to launch the ${binding.key} ${binding.group} proofs (${binding.proofs.join(', ')}): ${missingEnv.join(' and ')} ${missingEnv.length > 1 ? 'are' : 'is'} not set in ${resolve(root, '.env')} on this coordinator; add ${missingEnv.length > 1 ? 'them' : 'it'} there and the request is launched again`);
   // The group is part of the request: a producer session answers one proof group of one item, so a
   // relaunch for that group replaces its own predecessor instead of being refused by it.
   // GY-1705: re-hold a producer account this item's last two sessions each spent, before registry /
@@ -435,7 +436,7 @@ export async function launchProducer(root: string, work: Work, request: Dispatch
   // refused, its session given back, rather than started as a Herdr terminal session no launch path
   // supervises for Pi (GY-397).
   if (registry?.account.kind === 'pi') {
-    const reason = `Graphyard refuses to launch account ${registry.account.name} for ${work.key} ${binding.group} proofs: runtime ${registry.account.fleet.runtime} runs producer sessions headless for the unit group only. Name an account of a terminal runtime ahead of it in the producer role (master registry role set producer ACCOUNT[,ACCOUNT…] --reason R).`;
+    const reason = `${PRODUCT_NAME} refuses to launch account ${registry.account.name} for ${work.key} ${binding.group} proofs: runtime ${registry.account.fleet.runtime} runs producer sessions headless for the unit group only. Name an account of a terminal runtime ahead of it in the producer role (master registry role set producer ACCOUNT[,ACCOUNT…] --reason R).`;
     await registry.release(reason.slice(0, 400));
     throw new LaunchRefusedError('pi', reason);
   }

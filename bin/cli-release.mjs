@@ -27,6 +27,8 @@ export async function prepareCliRelease(directory, source, commit, run) {
   } else if (!existsSync(join(target, '.git'))) await run('git', ['-C', source, 'worktree', 'add', '--detach', '--quiet', target, commit]);
   if (!existsSync(join(target, '.graphyard', 'cli-ready'))) {
     await run('npm', ['ci', '--prefix', target], { cwd: target, timeoutMs: 1_800_000 });
+    // GY-3611: the release's CLI starts from one built file (bin/built-entry.mjs), not its TypeScript sources.
+    if (existsSync(join(target, 'bin', 'built-entry.mjs'))) await run(process.execPath, [join(target, 'bin', 'built-entry.mjs')], { cwd: target, timeoutMs: 600_000 });
     await mkdir(join(target, '.graphyard'), { recursive: true });
     await writeFile(join(target, '.graphyard', 'cli-ready'), commit);
   }

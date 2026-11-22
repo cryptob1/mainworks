@@ -115,7 +115,7 @@ export const teamAccessRoutes = defineRoutes('team-access', [
   // GY-3514: what people typed into the master's pane, newest first, for everyone signed in.
   { method: 'GET', path: '/api/typed-input', handle: async context => {
     const { rows } = await context.services.engine.store.pool.query<{ actor: string; at: Date; payload: { line: string } }>(
-      'SELECT actor, created_at AS at, payload FROM events WHERE work_id IS NULL AND kind=$1 ORDER BY seq DESC LIMIT 100', [terminalInputEvent]);
+      'SELECT actor, created_at AS at, payload FROM events WHERE work_id IS NULL AND kind=$1 ORDER BY seq DESC LIMIT 500', [terminalInputEvent]);
     return { typed: rows.map(row => ({ who: row.actor, at: new Date(row.at).toISOString(), text: row.payload.line })) };
   } },
 ]);

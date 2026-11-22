@@ -6,11 +6,14 @@
  * by hand. While the item is open, `up` and the dashboard's Setup page show it as the current setup
  * step from the same reading (onboardingWait). Browser-safe: the Setup page imports it.
  */
+import { COMMAND_NAME, PRODUCT_NAME } from './product.js';
 
 /** The branch `graphyard up` publishes the onboarding files on, and the workspace its work item registers. */
 export const onboardingBranch = 'graphyard/onboarding';
 /** The work item's title: what the Setup page and `up` find it by, with its branch. */
-export const onboardingWorkTitle = 'Add Graphyard onboarding';
+export const onboardingWorkTitle = `Add ${PRODUCT_NAME} onboarding`;
+/** The title installs onboarded before the rename filed it under. */
+const formerOnboardingWorkTitle = 'Add Graphyard onboarding';
 /**
  * GY-3037: every item owes an e2e proof, so onboarding leaves every repository able to carry one:
  * the first case `init --scan --apply` writes when the repository has none (e2e.serve it writes
@@ -64,10 +67,10 @@ export function appOnboarding(config: any): AppOnboarding {
 export function onboardingWorkRequest(commit: string, checks: string[] | null, caseId: string | null) {
   return {
     title: onboardingWorkTitle, type: 'chore' as const, priority: 0,
-    why: 'Lands the onboarding files so Graphyard can start delivering this repository\'s work.',
-    simplest: 'It merges only the files graphyard up wrote; nothing else changes.',
-    description: `${commit.slice(0, 12)} on ${onboardingBranch}\n\nThe commit graphyard up published with the files it wrote while onboarding this repository: coordination instructions (AGENTS.md), configuration (graphyard.json) and, when the repository had no E2E case, the first one (${onboardingCasePath}). It changes nothing else. Filed by graphyard up so the loop reviews and merges it under the normal gates (GY-1478).`,
-    criteria: [{ id: 'AC-1', text: `The change adds only Graphyard's onboarding files (AGENTS.md, .gitignore, graphyard.json and, when written, ${onboardingCasePath}); no .github/workflows file is written.`, proofs: caseId ? [`e2e:${caseId}`] : [] }],
+    why: `Lands the onboarding files so ${PRODUCT_NAME} can start delivering this repository's work.`,
+    simplest: `It merges only the files ${COMMAND_NAME} up wrote; nothing else changes.`,
+    description: `${commit.slice(0, 12)} on ${onboardingBranch}\n\nThe commit ${COMMAND_NAME} up published with the files it wrote while onboarding this repository: coordination instructions (AGENTS.md), configuration (graphyard.json) and, when the repository had no E2E case, the first one (${onboardingCasePath}). It changes nothing else. Filed by ${COMMAND_NAME} up so the loop reviews and merges it under the normal gates (GY-1478).`,
+    criteria: [{ id: 'AC-1', text: `The change adds only ${PRODUCT_NAME}'s onboarding files (AGENTS.md, .gitignore, graphyard.json and, when written, ${onboardingCasePath}); no .github/workflows file is written.`, proofs: caseId ? [`e2e:${caseId}`] : [] }],
     policy: { checks: checks?.length ? checks : ['test', 'typecheck'], review: true },
   };
 }
@@ -75,7 +78,7 @@ export function onboardingWorkRequest(commit: string, checks: string[] | null, c
 /** The onboarding item among WORK: the one with KEY, else the newest titled and branched as `up` files it. */
 export function findOnboardingWork(work: readonly any[] | null | undefined, key?: string | null) {
   const items = (work ?? []).filter(item => key ? item?.key === key
-    : item?.title === onboardingWorkTitle && (item.workspaces ?? []).some((space: any) => space?.branch === onboardingBranch));
+    : (item?.title === onboardingWorkTitle || item?.title === formerOnboardingWorkTitle) && (item.workspaces ?? []).some((space: any) => space?.branch === onboardingBranch));
   return [...items].sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')))[0] ?? null;
 }
 
@@ -117,8 +120,8 @@ export function onboardingWait(work: any, now: number): OnboardingWait {
   const since = typeof work?.createdAt === 'string' && Number.isFinite(Date.parse(work.createdAt)) ? work.createdAt : new Date(now).toISOString();
   const waitedMs = Math.max(0, now - Date.parse(since));
   const what = waitingFor.map(entry => entry === 'checks' ? 'its tests to pass' : entry === 'review' ? 'an independent review' : 'the merge').join(' and ');
-  const line = merged ? 'The change that adds Graphyard\'s delivery workflows to your repository is merged.'
-    : closed ? 'The change that adds Graphyard\'s delivery workflows to your repository was closed without merging, so your repository still lacks them.'
-    : `The change that adds Graphyard's delivery workflows to your repository is waiting for ${what}. It has waited ${waitedFor(waitedMs)} and merges by itself; nothing is needed from you.`;
+  const line = merged ? `The change that adds ${PRODUCT_NAME}'s delivery workflows to your repository is merged.`
+    : closed ? `The change that adds ${PRODUCT_NAME}'s delivery workflows to your repository was closed without merging, so your repository still lacks them.`
+    : `The change that adds ${PRODUCT_NAME}'s delivery workflows to your repository is waiting for ${what}. It has waited ${waitedFor(waitedMs)} and merges by itself; nothing is needed from you.`;
   return { key: String(work?.key ?? ''), waitingFor, merged, closed, since, waitedMs, line };
 }

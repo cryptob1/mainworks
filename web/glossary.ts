@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from '../src/model/product';
+
 /**
  * The one glossary behind every hover definition in the dashboard. A technical word that stays
  * visible is wrapped in <Term> (web/components/term.tsx), which reads its meaning from here, so a
@@ -9,7 +11,7 @@ export const glossary = {
   'acceptance criterion': 'One thing that must be true when the work is done, written so it can be checked.',
   proof: 'A named test or check that shows an acceptance criterion is true, for example unit:login-works. It only counts when it passes on the latest code and comes from someone who did not build the work.',
   'pull request': 'The proposed code change on GitHub, written PR #42. It is merged into the main branch once every step passes.',
-  commit: 'One saved version of the code. Its long name — a SHA, forty letters and numbers — belongs to that exact version, and Graphyard judges one commit at a time.',
+  commit: `One saved version of the code. Its long name — a SHA, forty letters and numbers — belongs to that exact version, and ${PRODUCT_NAME} judges one commit at a time.`,
   'handed in': 'The moment the worker hands the code in to be checked. Pushing new code hands it in again, and the checks start over on the new version.',
   review: 'Someone other than the builder reads the change and approves it on GitHub.',
   'automated checks': 'Tests that GitHub runs on every change, such as “test” and “typecheck”.',
@@ -22,7 +24,7 @@ export const glossary = {
   blocker: 'A worker’s reason it cannot continue. The master clears it; the Master page lists the ones waiting.',
   'gates removed this week': 'Lessons the master turned into code — a lint rule, type or test — in the last seven days, so agents no longer have to be told them.',
   'reverts this week': 'Merged changes the check on main took back out in the last seven days because they broke something.',
-  'bootstrap obligation': 'A proof that was put off when Graphyard was first set up. The next change to the same files must provide it.',
+  'bootstrap obligation': `A proof that was put off when ${PRODUCT_NAME} was first set up. The next change to the same files must provide it.`,
   'feature map': 'The list of an app’s features in graphyard.json, each with the page or command that reaches it and its known traps. Every batch and deploy check walks it.',
   'post-deploy check': 'A test run against the live site after a change is deployed (e2e:deploy-smoke).',
   'end-to-end test': 'A test that uses the finished product the way a person would, from start to finish, usually through a browser. Its proof names start with e2e:.',
