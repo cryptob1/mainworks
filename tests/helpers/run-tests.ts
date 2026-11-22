@@ -68,15 +68,10 @@ const tmpfsType = 0x01021994;
  * checkout, so no fixture finds a repository or an install above it, and sticky and shared (1777)
  * as /tmp is, which tests/runner-executor.test.ts requires of the fixture root.
  */
-export function durableTestTmpdir(current = tmpdir(), home = homedir(), statfs: (path: string) => { type: number } = statfsSync, spare = '/var/tmp/gy-tmp'): string | null {
+export function durableTestTmpdir(current = tmpdir(), home = homedir(), statfs: (path: string) => { type: number } = statfsSync): string | null {
   try { if (statfs(current).type !== tmpfsType) return null; } catch { return null; }
-  // GY-3633: a remote shard's HOME is its /tmp, a tmpfs counted against the container's memory cap, so
-  // the >2 GiB records of tests/master-session-resumes.test.ts were killed there. /var/tmp is on disk
-  // and, unlike the shard's run directory (under ~/.graphyard), no fixture finds an install above it.
-  for (const directory of [join(home, '.gy', 'tmp'), spare]) {
-    try { mkdirSync(directory, { recursive: true }); if (statfs(directory).type === tmpfsType) continue; chmodSync(directory, 0o1777); return directory; } catch { /* the next candidate */ }
-  }
-  return null;
+  const directory = join(home, '.gy', 'tmp');
+  try { mkdirSync(directory, { recursive: true }); chmodSync(directory, 0o1777); return directory; } catch { return null; }
 }
 
 /** The browser suite's historical port, tried first. */

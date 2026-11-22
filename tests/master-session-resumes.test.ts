@@ -160,9 +160,10 @@ test('integration:master-large-transcript-wake — a streaming read failure pres
   assert.equal(await readFile(record, 'utf8'), await readFile(transcript, 'utf8'));
 });
 
-test('unit:master-session-resumes — a remote shard, whose /tmp and HOME are both tmpfs, keeps the >2 GiB records on disk under /var/tmp, outside any .graphyard directory', async () => {
-  const { durableTestTmpdir } = await import('./helpers/run-tests.js');
-  const root = await temporaryDirectory('shard-run'), home = join(root, 'home'), onDisk = join(root, 'var-tmp');
-  const statfs = (path: string) => ({ type: path === onDisk ? 0 : 0x01021994 });
-  assert.equal(durableTestTmpdir('/tmp', home, statfs, onDisk), onDisk);
+// GY-3633: the >2 GiB records above need a disk. A remote shard's /tmp and HOME are tmpfs counted
+// against its memory cap (the records were killed there) and its /var/tmp is read-only, so this file
+// names a local-only word and the trial keeps it on this machine, where the suite's tmpdir is on disk.
+test('unit:master-session-resumes — the >2 GiB record file never goes to a remote shard', async () => {
+  const { remoteableTestFile } = await import('../src/merge-writer/remote-shards.js');
+  assert.equal(remoteableTestFile(await readFile(new URL(import.meta.url), 'utf8')), false);
 });

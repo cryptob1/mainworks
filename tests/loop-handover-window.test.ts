@@ -6,7 +6,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
-import { loopRestartRequestPath, runDaemon } from '../src/daemon/run.js';
+import { runDaemon } from '../src/daemon/run.js';
+import { loopRestartRequestPath } from '../src/daemon/state.js';
 import { masterConfigSchema } from '../src/master.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 

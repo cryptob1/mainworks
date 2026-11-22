@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { masterConfinementVariable, masterSessionConfinement, startAgentSession } from '../src/master/launch.js';
 import { dirtyCheckoutPaths, readCoordinatorCheckout } from '../src/master/profiles.js';
 import { hostProcessLaunchTargets, masterCredentialMask, peerTokenDirectory, preparePeerExchange, sessionMountNamespaceWorks } from '../src/master/confinement.js';
-import { loopRestartRequestPath } from '../src/daemon/run.js';
+import { loopRestartRequestPath } from '../src/daemon/state.js';
 import { confinedMaster } from '../src/cli/master/operations.js';
 import { masterRecords } from '../src/master/conversation.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
