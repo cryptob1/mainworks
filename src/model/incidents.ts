@@ -116,11 +116,8 @@ export function filedItemForFailure(work: readonly Work[], group: RepeatedFailur
   const needle = group.line.toLowerCase();
   return work.find(w => {
     if (w.stage === 'done' || w.closure || group.items.includes(w.key)) return false;
-    const title = w.title ?? '', description = w.description ?? '';
-    return title.toLowerCase().includes(needle)
-      || description.toLowerCase().includes(needle)
-      || normaliseFailureLine(title).toLowerCase().includes(needle)
-      || normaliseFailureLine(description).toLowerCase().includes(needle);
+    const text = [w.title ?? '', ...(w.description ?? '').split(/\r?\n/)];
+    return text.some(line => line.toLowerCase().includes(needle) || normaliseFailureLine(line).toLowerCase().includes(needle));
   }) ?? null;
 }
 

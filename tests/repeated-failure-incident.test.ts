@@ -1,4 +1,4 @@
-import { after, before, test } from 'node:test';
+import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -105,33 +105,29 @@ test('unit:repeated-failure-is-one-incident — removes item keys, hashes, temp 
 
 const operator: Principal = { id: 'operator', role: 'admin' };
 const token = `operator-${'r'.repeat(32)}`;
-let store: Store, http: ReturnType<typeof server>, url: string;
-
-before(async () => {
-  store = await withDatabase('repeated-failure-incident');
-  await store.init();
-  http = server(new Engine(store, 120, 'owner/game'), [{ ...operator, token }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
-});
+let store: Store | undefined, http: ReturnType<typeof server> | undefined;
 
 after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
+  if (http) await new Promise<void>(resolve => http!.close(() => resolve()));
   if (store) await store.close();
 });
 
-const api = async (path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, {
-    method: body ? 'POST' : 'GET',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': `${path}-${Math.random()}` },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const json = await response.json() as any;
-  if (!response.ok) throw new Error(`${path}: ${json?.error}`);
-  return json;
-};
-
 test('e2e:repeated-failure-incident — three ended sessions with the same error produce one Home card and one attention line, and none after 30 minutes', async () => {
+  store = await withDatabase('repeated-failure-incident');
+  await store.init();
+  http = server(new Engine(store, 120, 'owner/game'), [{ ...operator, token }]);
+  await new Promise<void>(resolve => http!.listen(0, '127.0.0.1', resolve));
+  const url = `http://127.0.0.1:${(http.address() as any).port}`;
+  const api = async (path: string, body?: unknown) => {
+    const response = await fetch(`${url}/api/${path}`, {
+      method: body ? 'POST' : 'GET',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': `${path}-${Math.random()}` },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const json = await response.json() as any;
+    if (!response.ok) throw new Error(`${path}: ${json?.error}`);
+    return json;
+  };
   const hashes = [['a1b2', 'c3d4'], ['e5f6', '7890'], ['12ab', '34cd']] as const;
   const items: Work[] = [];
   for (const [index, [cliSha, serverSha]] of hashes.entries()) {
