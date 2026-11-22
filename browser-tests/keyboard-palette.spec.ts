@@ -111,7 +111,7 @@ test('e2e:keyboard-palette — g m opens Master, g w Work, g s Setup, and ? show
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible();
   await page.keyboard.press('g');
   await page.keyboard.press('s');
-  await expect(page.getByRole('heading', { name: 'Set up Graphyard' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Set up Mainworks' })).toBeVisible();
   // The sheet: every shortcut on one dialog, closed with Escape.
   await page.keyboard.press('g');
   await page.keyboard.press('w');

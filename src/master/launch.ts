@@ -1,4 +1,5 @@
 // Concern: launching an agent session — request files, start observation, prompt delivery and acknowledgement.
+import { PRODUCT_NAME } from '../model/product.js';
 import { createHash } from 'node:crypto';
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
@@ -80,7 +81,7 @@ export const launchDelivery = (kind: string | undefined, args: string[] = []): R
  * (GY-93): a runtime without a way to take it there is refused before launch, naming the runtime
  * and the fix, rather than started and handed text it may rightly treat as untrusted (GY-184).
  */
-export const requestContractRefusal = (kind: string) => `Graphyard refuses to launch the ${kind} runtime: it has no way to take the session's first request on its command line, and a launched session's instruction is never pasted into it. Register where ${kind} takes its first prompt with graphyard master registry runtime set NAME --kind ${kind} --arg=${requestPlaceholder} (or --arg=FLAG --arg=${requestPlaceholder}) --reason REASON.`;
+export const requestContractRefusal = (kind: string) => `${PRODUCT_NAME} refuses to launch the ${kind} runtime: it has no way to take the session's first request on its command line, and a launched session's instruction is never pasted into it. Register where ${kind} takes its first prompt with graphyard master registry runtime set NAME --kind ${kind} --arg=${requestPlaceholder} (or --arg=FLAG --arg=${requestPlaceholder}) --reason REASON.`;
 /** The most bytes a launch command line may hold: the runtime, its flags and two file paths, never the request. */
 export const launchCommandLimit = 512;
 export const launchDirectory = (directory: string) => resolve(directory, '.graphyard/launch');

@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from './product.js';
 import { observationWindowHold, type Gate, type Work } from './work.js';
 import type { PipelineTimeline } from '../pipeline-speed.js';
 import { assignment } from './assignment.js';
@@ -50,7 +51,7 @@ export function plainReason(reason: string, gate: string, now: number, work?: Wo
     [/^(?:a feature|a bug|a chore) item owes an end-to-end proof/, () => 'The change owes an end-to-end proof that it works; the master agent adds it to the requirements', true],
     [/ has no way to serve a head/, () => 'Its end-to-end proof needs a served head, and the repository does not say how to serve one yet', true],
     [/^Worker has not submitted implementation for this attempt$/, () => 'The work has not been handed in yet'],
-    [/^Pull request has not been independently observed$/, () => 'Graphyard has not seen the pull request on GitHub yet'],
+    [/^Pull request has not been independently observed$/, () => `${PRODUCT_NAME} has not seen the pull request on GitHub yet`],
     [/^No workspace registered$/, () => 'The builder has not said where the code lives yet'],
     [/^Verified clean Codex review/, () => 'Waiting for the Codex reviewer to approve the latest code'],
     [/^Every configured reviewer profile is exhausted/, () => 'No reviewer is available — more reviewers are needed', true],
@@ -67,9 +68,9 @@ export function plainReason(reason: string, gate: string, now: number, work?: Wo
     [/^(AC-\d+): (\S+) needs trusted passing evidence[^;]*(; previously accepted evidence was revoked)?/, m => `${m[1]} is not proven yet (${m[2]})${m[3] ? ' — an earlier proof was withdrawn' : ''}`],
     [/^Bootstrap obligation inherited from (\S+) (\S+): (\S+) needs/, m => `Owes the proof ${m[3]} that ${m[1]} put off`],
     [/^Trusted (\S+) evidence from (\S+) is no longer independent/, m => `The ${m[1]} proof no longer counts: ${m[2]} later worked on this item`, true],
-    [/^The merge writer has not observed the current candidate$/, () => 'Graphyard is re-reading the latest code'],
-    [mergeWriterTrialPattern, () => 'Waiting for Graphyard to build and test the merge'],
-    [mergeWriterPushPattern, () => 'Waiting for Graphyard to merge it'],
+    [/^The merge writer has not observed the current candidate$/, () => `${PRODUCT_NAME} is re-reading the latest code`],
+    [mergeWriterTrialPattern, () => `Waiting for ${PRODUCT_NAME} to build and test the merge`],
+    [mergeWriterPushPattern, () => `Waiting for ${PRODUCT_NAME} to merge it`],
     [/^Required Graphyard check and merge-queue branch protection/, () => 'GitHub merge protection is not confirmed yet', true],
     [/^Pull request is not mergeable against the current base$/, () => 'The pull request conflicts with the main branch', true],
     [/^Slice lead (\S+) ruled \S+ under rule \S+; delivery is blocked until the authorized recovery: (.*)$/s, m => `Held by team lead ${m[1]}: ${m[2]}`, true],
@@ -180,7 +181,7 @@ export function phaseOf(work: Work, now: number): Phase {
 }
 
 /** Lower-cases a leading common word so a reason reads mid-sentence; names stay capitalized. */
-const lowerFirst = (text: string) => /^(Graphyard|GitHub|Codex|AC-|GY-)/.test(text) ? text : text[0].toLowerCase() + text.slice(1);
+const lowerFirst = (text: string) => new RegExp(`^(Graphyard|${PRODUCT_NAME}|GitHub|Codex|AC-|GY-)`).test(text) ? text : text[0].toLowerCase() + text.slice(1);
 /**
  * What the item's sentences name it by. The merge writer opens no pull request, so an item the
  * control plane observed itself is named by its commit — the merge commit once merged, the head

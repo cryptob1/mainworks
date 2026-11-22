@@ -104,15 +104,28 @@ export function sessionSuiteBreadth(host: number | null, environment: NodeJS.Pro
   return Number.isInteger(budget) && budget >= 1 ? Math.min(host ?? budget, budget) : host;
 }
 
+/** GY-3610: the most files a run on the coordinator starts at once, whatever its cores and memory. */
+export const coordinatorTestBreadth = 4;
+/**
+ * GY-3610: whether this run is on a machine that runs the master loop (the loop joined the host's
+ * heavy-job budget, which every session it starts carries) and is not a trial shard (no list, no
+ * shard). Such a run starts at most `coordinatorTestBreadth` files at once and none while the CPU is hot.
+ */
+export const coordinatorRun = (environment: NodeJS.ProcessEnv, args: string[]) => {
+  const { filesFrom, shard } = runnerOptions(args);
+  return !!environment[slotsDirectoryVariable] && !filesFrom && !shard;
+};
+
 /** The breadth this run starts at, or null when nothing judges it: a run inside a run, a host whose memory cannot be read (CI keeps node's own default). */
-export async function hostSuiteBreadth(environment: NodeJS.ProcessEnv = process.env, memory: typeof readHostMemory = readHostMemory, pid: number = process.pid): Promise<number | null> {
+export async function hostSuiteBreadth(environment: NodeJS.ProcessEnv = process.env, memory: typeof readHostMemory = readHostMemory, pid: number = process.pid, cpus = availableParallelism(), args: string[] = []): Promise<number | null> {
   if (environment[heldVariable]) return null;
+  const cap = coordinatorRun(environment, args) ? coordinatorTestBreadth : Infinity;
   const reading = await memory();
-  if (!reading) return null;
+  if (!reading) return Number.isFinite(cap) ? cap : null;
   const directory = environment[slotsDirectoryVariable];
   const otherFiles = directory ? await othersDeclaredFiles(directory, pid) : 0;
   const budgetBytes = reading.availableBytes - hostMemoryFloor(reading.totalBytes) - memoryRecoveryMarginBytes;
-  return suiteBreadth({ budgetBytes, otherFiles, cpus: availableParallelism() });
+  return Math.min(cap, suiteBreadth({ budgetBytes, otherFiles, cpus }));
 }
 
 export interface RunOptions {
@@ -125,6 +138,8 @@ export interface RunOptions {
   stdio?: 'inherit' | 'pipe';
   /** How many files to run at once (GY-1821): passed to `node --test` as its own flag when the run is not a shard. Absent: node's default. */
   breadth?: number;
+  /** GY-3610: hold each new file while the CPU sensors under this hwmon directory read at the heat limit (a coordinator run; never a shard). */
+  holdWhenHot?: string;
 }
 export interface RunResult { code: number; base: number; environment: Record<string, string>; stdout: string; stderr: string }
 
@@ -151,7 +166,7 @@ function runnerOptions(args: string[]) {
 /** The merge trial's per-file bound (src/merge-writer/trial.ts): a targeted re-run of named files carries it. */
 export const trialFileTimeoutMs = 300_000;
 
-export function nodeTestArgs(cwd: string, args: string[]) {
+export function nodeTestArgs(cwd: string, args: string[], perFile = false) {
   const { rest, filesFrom, shard, durations, fileTimeout: given } = runnerOptions(args);
   // A run of named files is a targeted re-run — complete's pre-submit rerun of the trial's failing
   // files (complete.ts: "the rerun runs under the trial's own bound"), `npm run test:affected --
@@ -161,9 +176,10 @@ export function nodeTestArgs(cwd: string, args: string[]) {
   // stays unbounded.
   const fileTimeout = given ?? (!filesFrom && !shard && rest.some(argument => !argument.startsWith('-')) ? String(trialFileTimeoutMs) : undefined);
   if (fileTimeout && (!Number.isFinite(Number(fileTimeout)) || Number(fileTimeout) <= 0)) throw new Error('--file-timeout needs positive milliseconds');
-  const bounded = fileTimeout ? { bounded: true } : {};
-  const reporters = fileTimeout
-    ? [`--file-timeout=${fileTimeout}`, ...(durations ? ['--durations', resolve(cwd, durations)] : [])]
+  // GY-3610: a run that holds files on heat starts each file itself (bounded-tests.mjs), bounded or not.
+  const perFileRun = !!fileTimeout || perFile && !filesFrom && !shard, bounded = perFileRun ? { bounded: true } : {};
+  const reporters = perFileRun
+    ? [...(fileTimeout ? [`--file-timeout=${fileTimeout}`] : []), ...(durations ? ['--durations', resolve(cwd, durations)] : [])]
     : durations ? ['--test-reporter=spec', '--test-reporter-destination=stdout', `--test-reporter=${fileURLToPath(new URL('./file-durations.mjs', import.meta.url))}`, `--test-reporter-destination=${resolve(cwd, durations)}`] : [];
   const all = () => readdirSync(resolve(cwd, 'tests')).filter(name => name.endsWith('.test.ts')).sort().map(name => `tests/${name}`);
   if (!filesFrom && !shard) return { ...bounded, args: [...reporters, ...rest, ...(rest.some(arg => !arg.startsWith('-')) ? [] : all())], empty: false, ordered: false };
@@ -192,7 +208,7 @@ export async function runTests(options: RunOptions = {}): Promise<RunResult> {
   const tmpRoot = durableTestTmpdir() ?? undefined;
   await sweepLeftoverTempDirectories(tmpRoot);
   const cwd = resolve(options.cwd ?? process.cwd()), args = options.args ?? [];
-  const selection = options.browser ? null : nodeTestArgs(cwd, args);
+  const selection = options.browser ? null : nodeTestArgs(cwd, args, !!options.holdWhenHot);
   // An empty selection (a shard with nothing assigned, a change that affects no test) runs nothing:
   // `node --test` with no files would run every file it discovers instead.
   if (selection?.empty) {
@@ -235,6 +251,7 @@ export async function runTests(options: RunOptions = {}): Promise<RunResult> {
         // The breadth the host's memory affords (GY-1821). A caller's own flag stands; a shard's
         // order is ordered-tests.mjs's own concurrency, which stays node's default as CI has it.
         ...(selection.ordered || options.breadth === undefined || !Number.isFinite(options.breadth) || options.breadth < 1 || runnerOptions(args).rest.some(argument => argument.startsWith('--test-concurrency')) ? [] : [`--test-concurrency=${Math.floor(options.breadth)}`]),
+        ...(selection.bounded && options.holdWhenHot ? [`--hold-when-hot=${options.holdWhenHot}`] : []),
         ...selection.args]];
     // Core dumps off for the run and every Postgres it starts (GY-3112): a crash costs no disk.
     const child = spawn('/bin/sh', ['-c', 'ulimit -c 0 && exec "$@"', 'sh', command, ...commandArgs], { cwd, env: environment, stdio: options.stdio === 'pipe' ? ['ignore', 'pipe', 'pipe'] : 'inherit' });
@@ -275,8 +292,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const directory = process.env[slotsDirectoryVariable], label = heavyRunLabel(mode, args, !!directory && !!readStrictCap(directory)), held = label ? await sessionVerificationSlot(label) : null;
   // The breadth the host affords is computed with the slot already held, so a run that starts later
   // sees this one's declaration; it is declared back onto the slot for the runs after it (GY-1821).
-  const breadth = mode === 'test' ? sessionSuiteBreadth(await hostSuiteBreadth()) : null;
+  const breadth = mode === 'test' ? sessionSuiteBreadth(await hostSuiteBreadth(process.env, readHostMemory, process.pid, availableParallelism(), args)) : null;
   if (held && breadth !== null) declareSlotFiles(held, breadth);
-  try { process.exitCode = mode === 'typecheck' ? await typecheck(process.cwd(), args) : (await runTests({ browser: mode === 'browser', args, breadth: breadth ?? undefined })).code; }
+  const holdWhenHot = mode === 'test' && coordinatorRun(process.env, args) ? '/sys/class/hwmon' : undefined;
+  try { process.exitCode = mode === 'typecheck' ? await typecheck(process.cwd(), args) : (await runTests({ browser: mode === 'browser', args, breadth: breadth ?? undefined, holdWhenHot })).code; }
   finally { held?.release(); }
 }
