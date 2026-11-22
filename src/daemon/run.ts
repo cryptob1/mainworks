@@ -1,5 +1,6 @@
 // Concern: the long-running loop — cycle scheduling, config reload, the watchdog, and the restart onto a newly served commit.
 import { setTimeout as delay } from 'node:timers/promises';
+import { mergeLedgerKinds, mergeTrialKind } from '../model/merge-ledger.js';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { ConfigReload } from '../master/config.js';
@@ -143,6 +144,9 @@ export function deployRestartCause(root: string, running: DeployUnitProcess | nu
   return { serving, reason: `${running.unit} runs ${running.commit.slice(0, 12)}, older code than ${serving.slice(0, 12)} it serves` };
 }
 
+/** The loop's own events that wake it (GY-3642): a merge, a finished trial, an accepted submission. */
+const ownWakeKinds: ReadonlySet<string> = new Set([mergeLedgerKinds.pushed, mergeLedgerKinds.reconciled, mergeTrialKind, 'submit']);
+
 /**
  * Supervised entry point. The process owns no lease and no credential beyond the coordinator token,
  * so a restart is always safe. A cycle that throws is recorded, logged and retried after a growing
@@ -167,9 +171,11 @@ export async function runDaemon(config: MasterConfig, state: DaemonState, raw: D
   /**
    * The control plane's event ledger, newest first. Polled during the wait: an event another actor
    * wrote (a submission, a verdict, an unblock, a release) ends the wait, so the next stage starts
-   * at once; a burst is one wake, and the interval stays the upper bound.
+   * at once; a burst is one wake, and the interval stays the upper bound. GY-3642: the loop's own
+   * merges, finished trials and accepted submissions wake it too; its other writes, its persist
+   * write among them, do not.
    */
-  events?: { read: () => Promise<{ seq: string | number; actor: string }[]>; self: string; pollMs?: number }; }) {
+  events?: { read: () => Promise<{ seq: string | number; actor: string; kind?: string }[]>; self: string; pollMs?: number }; }) {
   const now = options.now ?? Date.now, log = options.log ?? (line => console.error(line));
   const interval = () => typeof options.intervalMs === 'function' ? options.intervalMs() : options.intervalMs;
   const host = options.process ?? process;
@@ -226,17 +232,17 @@ export async function runDaemon(config: MasterConfig, state: DaemonState, raw: D
     const fresh = async () => {
       try {
         const rows = await options.events!.read(), newest = Math.max(0, ...rows.map(row => Number(row.seq)));
-        const woke = seen !== null && rows.some(row => Number(row.seq) > seen! && row.actor !== options.events!.self);
+        const woke = seen !== null && rows.some(row => Number(row.seq) > seen! && (row.actor !== options.events!.self || ownWakeKinds.has(row.kind ?? '')));
         seen = Math.max(seen ?? 0, newest);
         return woke;
       } catch { return false; }
     };
     const sleep = async (ms: number) => {
       if (!options.events) return pause(ms);
-      const end = Date.now() + ms;
+      const end = now() + ms;
       if (seen === null) await fresh();
-      while (!stopping && Date.now() < end) {
-        await pause(Math.min(end - Date.now(), options.events.pollMs ?? 2_000));
+      while (!stopping && now() < end) {
+        await pause(Math.min(end - now(), options.events.pollMs ?? 2_000));
         if (!stopping && await fresh()) return;
       }
     };
