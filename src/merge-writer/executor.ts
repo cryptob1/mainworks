@@ -929,18 +929,27 @@ export async function mergeOne(ports: MergePorts, item: Work): Promise<MergeOutc
   }
 }
 
-/** Land a completed trial on its exact base without occupying a trial slot. A moved base stays on the normal path. */
+/**
+ * Land a completed trial without occupying a trial slot: on its exact base, or (GY-3644) a trial kept
+ * ahead of review or acceptance re-merged onto the moved tip as its flight would, so a head whose gates
+ * clear while every slot is busy never waits out other heads' trials.
+ */
 export async function pushPassedTrial(ports: MergePorts, item: Work): Promise<boolean> {
-  const state = item.mergeLedger, head = item.candidate?.sha.toLowerCase();
-  if (!state || !head || state.head !== head || !state.mergeSha || !state.baseTip
-    || (state.state !== 'intent' && !keptTrialAheadOfReview(item.candidate, state))
-    || state.trial?.head !== head || state.trial.mergeSha !== state.mergeSha || state.trial.passedBaseTip !== state.baseTip) return false;
-  if (await ports.fetch() !== state.baseTip || await ports.hold?.(item)) return false;
+  const state = item.mergeLedger, head = item.candidate?.sha.toLowerCase(), kept = keptTrialAheadOfReview(item.candidate, state);
+  const exact = !!state && !!head && state.head === head && !!state.mergeSha && !!state.baseTip && (state.state === 'intent' || kept)
+    && state.trial?.head === head && state.trial.mergeSha === state.mergeSha && state.trial.passedBaseTip === state.baseTip;
+  if (!exact && !kept) return false;
+  const moved = await ports.fetch() !== state!.baseTip;
+  if ((moved && !kept) || await ports.hold?.(item)) return false;
+  if (!exact || moved) {
+    const outcome = (await mergeOne(ports, item)).outcome;
+    return outcome === 'merged' || outcome === 'reconciled';
+  }
   // A kept review verdict has a refused intent; reopen it before recording its push.
-  if (state.state === 'refused') await ports.record(item, { kind: 'intent', head, baseTip: state.baseTip, mergeSha: state.mergeSha, risk: riskOf(item).risk, at: new Date(ports.now()).toISOString() });
-  if (await ports.push(state.mergeSha, state.baseTip) !== 'pushed') return false;
-  await ports.record(item, { kind: 'pushed', mergeSha: state.mergeSha, pushedAt: new Date(ports.now()).toISOString() });
-  await ports.record(item, { kind: 'reconciled', mergeSha: state.mergeSha, observedTip: await ports.fetch() });
+  if (state!.state === 'refused') await ports.record(item, { kind: 'intent', head: head!, baseTip: state!.baseTip!, mergeSha: state!.mergeSha!, risk: riskOf(item).risk, at: new Date(ports.now()).toISOString() });
+  if (await ports.push(state!.mergeSha!, state!.baseTip!) !== 'pushed') return false;
+  await ports.record(item, { kind: 'pushed', mergeSha: state!.mergeSha!, pushedAt: new Date(ports.now()).toISOString() });
+  await ports.record(item, { kind: 'reconciled', mergeSha: state!.mergeSha!, observedTip: await ports.fetch() });
   return true;
 }
 
