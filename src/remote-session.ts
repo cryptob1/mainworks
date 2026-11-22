@@ -79,6 +79,12 @@ def say(kind, text):
         write((b'\n' if unfinished else b'') + ('\x1egraphyard-' + kind + ' ' + text + '\n').encode())
         unfinished = False
 def sync():
+    # A state that cannot be read now is sent at the next tick; the relayed call it precedes still goes.
+    try:
+        send()
+    except Exception:
+        pass
+def send():
     # The checkout as it stands: HEAD, and a snapshot commit of its changed files when there are any.
     with state:
         head = out('rev-parse', 'HEAD')
