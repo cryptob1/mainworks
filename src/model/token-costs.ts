@@ -166,6 +166,16 @@ const total = (tokens: Tokens) => tokens.input + tokens.output + tokens.cacheRea
 export const flatPlan = (account: { plan?: string; monthlyFee?: number } | undefined) => !!account && (!!account.plan || account.monthlyFee !== undefined);
 const roleNames: Record<string, string> = { worker: 'Workers', reviewer: 'Reviewers', producer: 'Producers', master: 'Master' };
 
+/**
+ * GY-3599: the model the item's newest Builder session reported, beside its account's own, for the
+ * Task page. `differs` only when the account names a model id and the reported one is not it.
+ */
+export function builderModel(rows: readonly UsageRow[], registry: Pick<AgentRegistry, 'models' | 'accounts'>) {
+  const row = rows.filter(entry => entry.role === 'worker' && entry.model).sort((a, b) => a.at.localeCompare(b.at)).at(-1);
+  if (!row) return null;
+  const own = registry.models.find(model => model.name === registry.accounts.find(account => account.name === row.account)?.model);
+  return { account: row.account, model: row.model!, accountModel: own?.id ?? null, differs: !!own?.id && pricedModel([own], row.model) === null };
+}
 /** The project's Costs view: totals per window, the breakdowns over `days`, and the price sheet they were priced from. `shipped` are the keys of delivered items. */
 export function costSummary(rows: readonly UsageRow[], registry: Pick<AgentRegistry, 'models' | 'accounts'>, shipped: ReadonlySet<string>, now: number, days: number | null = null): CostSummary {
   const day = 24 * 60 * 60_000, models = priceModels(registry.models);

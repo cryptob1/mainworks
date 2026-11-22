@@ -181,10 +181,6 @@ img.mark{width:26px;height:26px}
 .group-blocked .step-seg.current{background:var(--blocked)}
 .steps-label{font-size:var(--type-small);color:color-mix(in srgb,var(--moving) 75%,var(--text))}.group-blocked .steps-label{color:color-mix(in srgb,var(--blocked) 75%,var(--text))}
 @keyframes gy-pulse{0%,100%{opacity:1}50%{opacity:.35}}
-.steps-detail{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
-.step-seg-detail{display:flex;flex-direction:column;gap:var(--space-2);color:var(--text-2)}.step-seg-detail strong{display:flex;align-items:center;gap:6px;font-size:var(--type-body);font-weight:600;color:var(--text)}
-.step-seg-detail.current strong{color:color-mix(in srgb,var(--moving) 75%,var(--text))}.step-seg-detail.pending strong{color:var(--text-3)}.step-mark{font-size:12px}
-.step-seg-detail.done .step-mark{color:var(--shipped)}.step-note{font-size:var(--type-tiny)}
 /* The item page. */
 .item-page{display:flex;flex-direction:column;gap:var(--space-5)}
 .back{align-self:flex-start;color:var(--accent);font-size:var(--type-body)}
@@ -267,7 +263,7 @@ img.mark{width:26px;height:26px}
   .group-needs-you .work-row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"key key" "main main" "who who" "time decide";border-color:color-mix(in srgb,var(--needs-you) 45%,var(--bg));background:color-mix(in srgb,var(--needs-you) 6%,var(--bg))}
   .row-key{grid-area:key;color:var(--group);font-size:var(--type-tiny)}.row-time{grid-area:time;text-align:right;font-size:var(--type-tiny)}.row-main{grid-area:main}.row-steps{grid-area:steps}.row-steps:empty{display:none}.row-who{grid-area:who;font-size:var(--type-tiny)}.row-who::before{content:'Next: '}.decide{grid-area:decide}
   .steps-track .step-seg{height:4px}
-  .steps-detail{grid-template-columns:repeat(4,minmax(0,1fr))}.time-legend{grid-template-columns:1fr}
+  .time-legend{grid-template-columns:1fr}
   .shipped-line{flex-wrap:wrap}
 }
 .panel>h2 .push{margin-left:auto;font-size:var(--type-small);font-weight:500;color:var(--accent)}
@@ -539,6 +535,27 @@ kbd{font-family:var(--font-mono);font-size:11px;color:var(--text);background:var
 @media(max-width:650px){.sessions-table.figures .detail{display:none}.sessions-table.figures th,.sessions-table.figures td{padding-left:var(--space-2);padding-right:var(--space-2)}}
 .invite-button{padding:7px 13px;font-size:12px}.modal.invite fieldset{border:1px solid var(--border);border-radius:5px;display:grid;gap:8px;padding:10px 12px;min-width:0}.modal.invite legend{font-size:12px;color:var(--text-2)}.modal.invite label.check{display:flex;gap:8px;align-items:center;overflow-wrap:anywhere}.modal.invite label.check input{width:auto}.teammates{padding-left:18px;font-size:12px}.teammates li{overflow-wrap:anywhere;margin:6px 0}
 .flow-attention{color:var(--blocked);font-weight:500}.flow-line{margin:var(--space-2) 0 0;font-size:var(--type-small);color:var(--text-2);overflow-wrap:anywhere}.flow-details{display:inline}.flow-details summary{display:inline;cursor:pointer;color:var(--accent)}.flow-details[open]{display:block}.flow-fold{margin:var(--space-2) 0 0}.flow-table{margin:var(--space-2) 0 0;max-width:100%}.flow-table td,.flow-table th{overflow-wrap:anywhere}
+/* GY-3599: the Task page — header facts, the pipeline row, the evidence tabs and the terminal commands. */
+.task-header{display:flex;flex-direction:column;gap:var(--space-2)}.task-header .page-heading{flex-wrap:wrap;align-items:center}.task-header h1{flex:1 1 320px;min-width:0;overflow-wrap:anywhere}
+.task-header .page-actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-3)}.task-header .item-meta{margin:0;gap:var(--space-2) var(--space-4)}.task-header [data-task-ids]{font-size:var(--type-tiny)}
+.task-pipeline p{margin:0;font-size:var(--type-small)}.task-pipeline ol{list-style:none;margin:var(--space-2) 0 0;padding:0;display:grid;grid-template-columns:1fr 1fr 1fr 2.4fr 1fr;gap:6px}
+.task-pipeline li{display:flex;flex-direction:column;gap:2px;min-width:0;padding-top:var(--space-2);border-top:4px solid var(--border);font-size:var(--type-small);color:var(--text-2);overflow-wrap:anywhere}
+.task-pipeline li strong{color:var(--text);font-size:var(--type-body)}.task-pipeline .stage-done{border-color:var(--shipped)}.task-pipeline .stage-current{border-color:var(--moving)}
+.task-pipeline .stage-failed{border-color:var(--blocked)}.task-pipeline .stage-failed strong,.task-pipeline .stage-failed .stage-note{color:var(--blocked)}.task-pipeline .stage-pending strong{color:var(--text-3)}
+.task-tabs{display:flex;flex-wrap:wrap;gap:var(--space-1);border-bottom:1px solid var(--border)}
+.task-tabs button{min-height:44px;padding:0 14px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--text-2);font-weight:500}
+.task-tabs button[aria-selected=true]{border-bottom-color:var(--accent);color:var(--text);font-weight:600}
+.task-panel{display:flex;flex-direction:column;gap:var(--space-5);min-width:0}.task-panel[hidden]{display:none}
+.task-evidence{display:flex;flex-wrap:wrap;gap:var(--space-5)}.task-checks{flex:1 1 320px;min-width:0}.task-diff{flex:1.3 1 400px;min-width:0}.task-checks p,.task-diff p{margin:0}
+.task-checks ul,.lead-decisions{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--space-2)}.task-checks li{display:flex;gap:var(--space-3);align-items:baseline}
+.check-name{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}.check-result,.check-time{font-size:var(--type-small);color:var(--text-2)}
+.check-passed>span:first-child{color:var(--shipped)}.check-running>span:first-child{color:var(--moving)}.check-failed>span:first-child,.check-failed .check-result{color:var(--blocked)}
+.diff-file{display:flex;gap:var(--space-3);width:100%;min-height:36px;align-items:center;padding:0;border:0;background:transparent;color:var(--text);font-family:var(--font-mono);font-size:var(--type-small);text-align:left}
+.diff-path{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}.diff-add{color:var(--shipped)}.diff-del{color:var(--blocked)}.diff-text{font-family:var(--font-mono)}
+.lead-decisions li{display:flex;flex-wrap:wrap;gap:var(--space-1) var(--space-3);align-items:baseline}.lead-decisions span{flex:1 1 240px;min-width:0;overflow-wrap:anywhere}
+.task-commands{display:flex;flex-direction:column;gap:var(--space-2);padding-top:var(--space-4);border-top:1px solid var(--border);font-size:var(--type-small)}.task-commands code{margin:0;font-size:var(--type-small);color:var(--text)}
+.item-page .where-now p{margin:0}.item-page .where-now{display:flex;flex-direction:column;gap:var(--space-2)}.task-header .item-title-full{margin:0}
+@media(max-width:650px){.task-header h1{flex:none}.task-pipeline ol{grid-template-columns:1fr}.task-pipeline li{flex-direction:row;flex-wrap:wrap;gap:var(--space-1) var(--space-3);align-items:baseline;border-top:0;border-left:4px solid var(--border);padding:2px 0 2px var(--space-3)}}
 /* GY-3598: Redesign 1 — Mainworks top bar, four places (Home, Work, Lead, Settings), Caretaker pill, Pause team, and 390 px bottom tab bar. */
 .shell{display:flex;flex-direction:column;min-height:100vh;background:var(--bg)}
 header.main-top-bar{height:auto;min-height:60px;display:flex;flex-wrap:wrap;align-items:center;gap:10px 20px;padding:12px 32px;border-bottom:1px solid var(--border);background:var(--bg);color:var(--text);font-size:var(--type-body)}

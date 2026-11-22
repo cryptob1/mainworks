@@ -50,6 +50,6 @@ test('integration:feature-skips-spec-check — bugs show no obsolete panel', asy
   await expect(page.getByRole('heading', { name: 'Work', exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: /Export 500s.*GY-21/ }).click();
-  await expect(page.locator('article.item-page h1')).toHaveText('The export button 500s.');
+  await expect(page.locator('article.item-page [data-lead-sentence]')).toHaveText('The export button 500s.');
   await expect(page.locator('section[aria-label="Spec check"]')).toHaveCount(0);
 });

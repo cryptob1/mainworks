@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { demand } from '../../model.js';
 import { defineRoutes, parseJson } from '../routes.js';
 import { readRegistry, recordSessionModels } from '../../agent-registry.js';
-import { costSummary, type UsageRow } from '../../model/token-costs.js';
+import { builderModel, costSummary, type UsageRow } from '../../model/token-costs.js';
 
 const tokens = z.number().int().min(0).max(1e13);
 const rowSchema = z.object({
@@ -46,7 +46,9 @@ export const usageRoutes = defineRoutes('usage', [
       const rows: UsageRow[] = read.rows.map(row => ({ id: row.id, work: row.work, role: row.role, account: row.account, runtime: row.runtime, model: row.model, reported: row.reported,
         input: Number(row.input_tokens), output: Number(row.output_tokens), cacheRead: Number(row.cache_read_tokens), cacheWrite: Number(row.cache_write_tokens), at: new Date(row.at).toISOString() }));
       const shipped = new Set<string>((await pool.query(`SELECT key FROM work_index WHERE stage = 'done' AND key = ANY($1::text[])`, [[...new Set(rows.flatMap(row => row.work ?? []))]])).rows.map(row => row.key));
-      return costSummary(rows, await readRegistry(pool), shipped, read.rows[0] ? new Date(read.rows[0].now).getTime() : Date.now(), days);
+      const registry = await readRegistry(pool);
+      // GY-3599: one item's costs also name the model its Builder's session reported.
+      return { ...costSummary(rows, registry, shipped, read.rows[0] ? new Date(read.rows[0].now).getTime() : Date.now(), days), ...(work ? { builder: builderModel(rows, registry) } : {}) };
     },
   },
 ]);

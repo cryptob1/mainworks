@@ -104,7 +104,7 @@ test('e2e:item-page-plate — the item page opens on why, the proof screenshot a
 
     await page.locator(`[data-row="${filed.key}"]`).click();
     const article = page.locator('article.item-page');
-    const heading = article.locator('h1[data-why="true"]');
+    const heading = article.locator('[data-why="true"]');
     const shots = article.locator('section[aria-label="Screenshots"]');
     const changed = article.locator('[data-what-changed]');
     const next = article.locator('.next-line');
@@ -113,12 +113,10 @@ test('e2e:item-page-plate — the item page opens on why, the proof screenshot a
     // follows it — the screenshot before the what-changed line, and one who-acts-next line after.
     await expect(heading).toHaveText(why, { timeout: 15_000 });
     await expect(shots).toBeVisible();
-    await expect(changed).toHaveText(`What changed: ${summary}`);
-    await expect(article.locator('[data-simplest]')).toHaveText(`Simplest: ${simplest}`);
+    // GY-3599: why, then who acts next, then the evidence; what changed and Simplest are under the Details tab.
     const top = async (locator: typeof heading) => (await locator.boundingBox())!.y;
-    expect(await top(heading)).toBeLessThan(await top(shots));
-    expect(await top(shots)).toBeLessThan(await top(changed));
-    expect(await top(changed)).toBeLessThan(await top(next));
+    expect(await top(heading)).toBeLessThan(await top(next));
+    expect(await top(next)).toBeLessThan(await top(shots));
 
     // The evidence is the proof that ran the real app: both sides load as images, and they differ.
     const images = shots.locator('img.artifact-preview');
@@ -129,11 +127,14 @@ test('e2e:item-page-plate — the item page opens on why, the proof screenshot a
 
     // One who-acts-next line, no "What is left" count, and no pull request wording anywhere.
     await expect(next).toHaveCount(1);
-    await expect(next).toContainText('Who acts next:');
+    await expect(next).toContainText('Next:');
     await expect(article).not.toContainText(/\d+ things?/);
     await expect(article).not.toContainText(/pull request/i);
 
     // The gate detail sits inside a collapsed Details block: hidden until it is opened.
+    await article.getByRole('tab', { name: 'Details' }).click();
+    await expect(changed).toHaveText(`What changed: ${summary}`);
+    await expect(article.locator('[data-simplest]')).toHaveText(`Simplest: ${simplest}`);
     const technical = article.locator('details[aria-label="Technical details"]');
     await expect(technical).not.toHaveAttribute('open');
     const gateDetail = technical.locator('[aria-label="What is left"]');
@@ -146,8 +147,9 @@ test('e2e:item-page-plate — the item page opens on why, the proof screenshot a
     // holds the layout itself to it).
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(heading).toBeVisible();
-    await expect(shots).toBeVisible();
     await expect(changed).toBeVisible();
+    await article.getByRole('tab', { name: 'Checks and diff' }).click();
+    await expect(shots).toBeVisible();
     await expect(next).toBeVisible();
   } finally {
     await page.unrouteAll({ behavior: 'wait' }).catch(() => {});
