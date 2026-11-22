@@ -169,14 +169,16 @@ for (const width of [1280, 390]) {
         const status = await (await fetch(`${url}/api/status`, { headers: { Authorization: 'Bearer test-human-operator' } })).json() as { fleet: { roles: { role: string; concurrency: number }[] } };
         return status.fleet.roles.find(role => role.role === 'worker')?.concurrency;
       };
+      // The apply above is another client's write: this page learns it only on the next 5 s status
+      // poll, so every assertion in this block waits out that poll the way a loaded host runs it.
       await expect(pause).toHaveText('Pause team', { timeout: 20_000 });
-      await expect(pause).toBeEnabled();
+      await expect(pause).toBeEnabled({ timeout: 20_000 });
       await pause.click();
-      await expect.poll(workerConcurrency).toBe(0);
-      await expect(pause).toHaveText('Resume team');
+      await expect.poll(workerConcurrency, { timeout: 20_000 }).toBe(0);
+      await expect(pause).toHaveText('Resume team', { timeout: 20_000 });
       await pause.click();
-      await expect.poll(workerConcurrency).toBe(2);
-      await expect(pause).toHaveText('Pause team');
+      await expect.poll(workerConcurrency, { timeout: 20_000 }).toBe(2);
+      await expect(pause).toHaveText('Pause team', { timeout: 20_000 });
     } finally {
       await page.close();
       await close();
