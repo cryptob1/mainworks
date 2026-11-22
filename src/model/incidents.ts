@@ -5,13 +5,26 @@ import type { Work } from './work.js';
  * serves and the work snapshot beside it. None of them waits on an agent to report: each reads a
  * clock against a fact the control plane observes itself.
  */
+export interface StatusAccount {
+  name: string;
+  enabled?: boolean;
+  eligible?: boolean;
+  quota?: 'available' | 'exhausted' | 'broken' | 'unknown';
+  loggedIn?: boolean | null;
+  smoke?: { result: 'pass' | 'fail' } | null;
+  held?: { role: string }[];
+  resetsAt?: string | null;
+  resetUnknown?: boolean;
+  roles: { role: string }[];
+}
+
 export interface StatusSnapshot {
   /** The release check on main: when it began trying without a pass (batch gate), null while it is not trying. */
   releaseCheck?: { since: string } | null;
   /** Merged items the live commit does not carry yet, by key. */
   live?: { commit?: unknown; waiting?: unknown } | null;
-  /** The fleet as the registry holds it: each account's roles and eligibility, each role's live sessions and limit. */
-  fleet?: { accounts?: { name: string; eligible: boolean; resetsAt?: string | null; roles: { role: string }[] }[]; roles?: { role: string; live: number; limit: number }[] } | null;
+  /** The fleet as the registry holds it: each account's roles, health and quota, each role's live sessions and limit. */
+  fleet?: { accounts?: StatusAccount[]; roles?: { role: string; live: number; limit: number }[] } | null;
   /** The test machines the loop reads; `since` is when an away machine stopped answering. */
   hosts?: { host: string; away: boolean; at?: string; since?: string }[];
   /** When the live commit was deployed. */
@@ -36,10 +49,17 @@ const merged = (w: Work) => w.stage === 'done' && !w.closure && !!(w.delivery?.m
 const mergedAt = (w: Work) => Date.parse(w.delivery?.mergedAt ?? w.observation?.mergedAt ?? w.stageEnteredAt);
 /** Tasks in flight: open items a Builder holds now. */
 const inFlight = (work: Work[], now: number) => work.filter(w => w.stage !== 'done' && w.lease && Date.parse(w.lease.expiresAt) > now);
-/** The worker accounts and those held or broken (not eligible to take work). */
+/** Whether an enabled worker account is held or broken — not merely busy at its session limit or disabled. */
+const accountHeld = (account: StatusAccount) =>
+  account.quota === 'exhausted'
+  || account.quota === 'broken'
+  || account.loggedIn === false
+  || account.smoke?.result === 'fail'
+  || !!account.held?.some(entry => entry.role === 'worker');
+/** The enabled worker accounts and those held or broken. */
 const workerAccounts = (status: StatusSnapshot) => {
-  const all = (status.fleet?.accounts ?? []).filter(account => account.roles.some(role => role.role === 'worker'));
-  return { all, held: all.filter(account => !account.eligible) };
+  const all = (status.fleet?.accounts ?? []).filter(account => account.enabled !== false && account.roles.some(role => role.role === 'worker'));
+  return { all, held: all.filter(accountHeld) };
 };
 
 /**
@@ -73,7 +93,14 @@ export function incidentsFromStatus(status: StatusSnapshot, work: Work[], now: n
   // 3. More than a quarter of worker accounts held or broken. Held only until a known reset heals itself.
   const accounts = workerAccounts(status);
   if (accounts.held.length * 4 > accounts.all.length) {
-    const heals = accounts.held.every(account => account.resetsAt && Date.parse(account.resetsAt) > now);
+    const heals = accounts.held.every(account =>
+      account.quota === 'exhausted'
+      && account.loggedIn !== false
+      && account.smoke?.result !== 'fail'
+      && !account.held?.some(entry => entry.role === 'worker')
+      && !account.resetUnknown
+      && !!account.resetsAt
+      && Date.parse(account.resetsAt) > now);
     incidents.push({ kind: 'accounts', broke: `${accounts.held.length} of ${plural(accounts.all.length, 'Builder account')} are held, so the team runs slower.`,
       impact: `${plural(inFlight(work, now).length, 'task')} in flight on the rest.`,
       doing: heals ? 'They come back on their own when their limits reset. Nothing needed.' : 'The caretaker re-tests held accounts each pass.',

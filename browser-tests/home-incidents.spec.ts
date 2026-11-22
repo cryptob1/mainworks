@@ -9,7 +9,7 @@ const at = (ago: number) => new Date(Date.now() - ago).toISOString();
 const item = (key: string, title: string, extra: Record<string, unknown> = {}) => ({ dependencies: [], scenarioRequirements: [], id: `fixture-${key}`, key, title, description: title, type: 'feature', priority: 2,
   stage: 'build', stageEnteredAt: at(10 * minute), createdAt: at(hour), ready: true, policy: { review: true, checks: ['test'] }, policyRevision: 1, revision: 1, violations: [], workspaces: [], criteria: [], evidence: [], gates: [], sessions: [], lease: null, ...extra });
 const merged = (key: string, title: string, mergedAt: string) => item(key, title, { stage: 'done', delivery: { mergedAt, mergeSha: key.replace(/\D/g, '').padStart(40, 'a') } });
-const account = (name: string, eligible: boolean) => ({ name, eligible, resetsAt: null, roles: [{ role: 'worker' }] });
+const account = (name: string, eligible: boolean) => ({ name, enabled: true, eligible, quota: eligible ? 'available' : 'broken', loggedIn: true, smoke: null, held: [], resetsAt: null, roles: [{ role: 'worker' }] });
 const status = {
   actor: { id: 'operator', role: 'admin', sessionKind: 'human' }, repository: 'fixture/repository', jobs: [],
   releaseCheck: { since: at(28 * hour) }, live: { commit: 'c'.repeat(40), waiting: [] }, app: { deployedAt: at(2 * hour) },

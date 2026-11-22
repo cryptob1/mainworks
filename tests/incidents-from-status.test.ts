@@ -11,7 +11,8 @@ const ago = (ms: number) => new Date(now - ms).toISOString();
 const item = (n: number, extra: Partial<Work> = {}) => ({ id: `id-${n}`, key: `GY-${n}`, title: `Item ${n}`, stage: 'build', stageEnteredAt: ago(10 * minute), lease: null, dependencies: [], ...extra }) as unknown as Work;
 const building = (n: number, ms = 10 * minute) => item(n, { stageEnteredAt: ago(ms), lastAssignment: { owner: 'graphyard-claude-1', epoch: 1, claimedAt: ago(ms) }, lease: { owner: 'graphyard-claude-1', epoch: 1, expiresAt: ago(-hour) } as Work['lease'] });
 const mergedAgo = (n: number, ms: number) => item(n, { stage: 'done', delivery: { mergedAt: ago(ms) } as Work['delivery'] });
-const account = (name: string, eligible: boolean, resetsAt: string | null = null) => ({ name, eligible, resetsAt, roles: [{ role: 'worker' }] });
+const account = (name: string, extra: Partial<NonNullable<NonNullable<StatusSnapshot['fleet']>['accounts']>[number]> = {}) =>
+  ({ name, enabled: true, eligible: true, quota: 'available' as const, loggedIn: true, smoke: null, held: [], resetsAt: null, roles: [{ role: 'worker' }], ...extra });
 const kinds = (status: StatusSnapshot, work: Work[] = []) => incidentsFromStatus(status, work, now).map(incident => incident.kind);
 
 test('unit:incidents-from-status — the release check fires after 30 minutes of trying, not before', () => {
@@ -48,15 +49,27 @@ test('unit:incidents-from-status — a finished, approved head fires when not pu
   assert.deepEqual(card.action, { label: 'Open the change', open: 'item', item: 'id-1' });
 });
 
-test('unit:incidents-from-status — held accounts fire above a quarter; held until a known reset says nothing is needed', () => {
-  assert.deepEqual(kinds({ fleet: { accounts: [account('a', false), account('b', true), account('c', true), account('d', true)] } }), []);
-  const [broken] = incidentsFromStatus({ fleet: { accounts: [account('a', false), account('b', false), account('c', true), account('d', true)] } }, [], now);
+test('unit:incidents-from-status — held accounts fire above a quarter; busy or disabled accounts do not; known resets heal themselves', () => {
+  // A fully busy, healthy fleet (at session limit -> eligible: false) and disabled accounts never fire.
+  assert.deepEqual(kinds({ fleet: { accounts: [
+    account('a', { eligible: false }),
+    account('b', { eligible: false }),
+    account('c', { enabled: false, eligible: false }),
+  ] } }), []);
+  // Exactly a quarter held (1 of 4 enabled) does not fire; disabled accounts do not dilute or inflate the denominator.
+  assert.deepEqual(kinds({ fleet: { accounts: [account('a', { quota: 'broken' }), account('b'), account('c'), account('d'), account('e', { enabled: false, quota: 'broken' })] } }), []);
+  // Above a quarter held (broken, logged out, failed smoke, or held from worker) fires with Open accounts.
+  const [broken] = incidentsFromStatus({ fleet: { accounts: [account('a', { quota: 'broken' }), account('b', { loggedIn: false }), account('c'), account('d')] } }, [], now);
   assert.equal(broken.kind, 'accounts');
   assert.equal(broken.broke, '2 of 4 Builder accounts are held, so the team runs slower.');
   assert.equal(broken.action?.label, 'Open accounts');
-  const [healing] = incidentsFromStatus({ fleet: { accounts: [account('a', false, ago(-hour)), account('b', false, ago(-hour)), account('c', true)] } }, [], now);
+  assert.deepEqual(kinds({ fleet: { accounts: [account('a', { smoke: { result: 'fail' } }), account('b', { held: [{ role: 'worker' }] }), account('c')] } }), ['accounts']);
+  // Exhausted with a known future reset heals itself; an unknown reset window still asks for Open accounts.
+  const [healing] = incidentsFromStatus({ fleet: { accounts: [account('a', { quota: 'exhausted', resetsAt: ago(-hour) }), account('b', { quota: 'exhausted', resetsAt: ago(-hour) }), account('c')] } }, [], now);
   assert.equal(healing.action, null);
   assert.match(healing.doing, /Nothing needed/);
+  const [unknownReset] = incidentsFromStatus({ fleet: { accounts: [account('a', { quota: 'exhausted', resetsAt: ago(-hour), resetUnknown: true }), account('b', { quota: 'exhausted', resetsAt: ago(-hour) }), account('c')] } }, [], now);
+  assert.equal(unknownReset.action?.label, 'Open accounts');
 });
 
 test('unit:incidents-from-status — a test machine fires when away over 5 minutes, not when answering or briefly away', () => {
