@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from './product.js';
 import type { Work } from './work.js';
 import { fleetRoles, rolePolicy, roleRuntimeRefusal } from './registry.js';
 import { exhaustionEvidence, foldObservation, utcClock } from './account-quota.js';
@@ -131,7 +132,7 @@ export function accountIneligibility(registry: AgentRegistry, account: FleetAcco
   // account's own limit — one home serves at most its maxSessions sessions across every install.
   const foreign = options.hostSessions ?? [], holders = [...new Set(foreign.map(session => session.install))];
   if (account.maxSessions !== null && running + foreign.length >= account.maxSessions)
-    return `${account.name} is at its session limit (${running + foreign.length} of ${account.maxSessions} live${foreign.length ? `, ${foreign.length} held by ${holders.length === 1 ? `the Graphyard install ${holders[0]}` : `the Graphyard installs ${holders.join(' and ')}`}` : ''})`;
+    return `${account.name} is at its session limit (${running + foreign.length} of ${account.maxSessions} live${foreign.length ? `, ${foreign.length} held by ${holders.length === 1 ? `the ${PRODUCT_NAME} install ${holders[0]}` : `the ${PRODUCT_NAME} installs ${holders.join(' and ')}`}` : ''})`;
   return null;
 }
 

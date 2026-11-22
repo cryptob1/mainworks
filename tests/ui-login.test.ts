@@ -195,7 +195,7 @@ test('unit:login-password-manager-saves-token the form is a username/password lo
   class FakeCredential { constructor(readonly data: { id: string; password: string; name?: string }) {} }
   const scope = { PasswordCredential: FakeCredential, navigator: { credentials: { store: async (credential: unknown) => { stored.push(credential); } } } };
   assert.equal(offerToSavePassword('token-1', scope), true);
-  assert.deepEqual((stored[0] as FakeCredential).data, { id: LOGIN_USERNAME, password: 'token-1', name: 'Graphyard control plane' });
+  assert.deepEqual((stored[0] as FakeCredential).data, { id: LOGIN_USERNAME, password: 'token-1', name: 'Mainworks control plane' });
   assert.equal(offerToSavePassword('token-1', {}), false, 'a browser without the Credential Management API is left to the extension');
 });
 

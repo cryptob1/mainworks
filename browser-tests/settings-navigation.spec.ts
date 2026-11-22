@@ -44,7 +44,7 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
     for (const everyday of ['Product', 'Costs', 'Test cases']) await expect(tabs(page).getByRole('button', { name: everyday, exact: true })).toHaveCount(0);
     // The same destinations by click.
     await tabs(page).getByRole('button', { name: 'Setup', exact: true }).click();
-    await heading(page, 'Set up Graphyard');
+    await heading(page, 'Set up Mainworks');
     await tabs(page).getByText('Advanced', { exact: true }).click();
     await tabs(page).getByRole('button', { name: 'Operator automation' }).click();
     await heading(page, 'Operator automation');
@@ -70,7 +70,7 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
     await tabs(page).getByRole('button', { name: 'Agents', exact: true }).focus();
     await page.keyboard.press('Tab');
     await page.keyboard.press('Enter');
-    await heading(page, 'Set up Graphyard');
+    await heading(page, 'Set up Mainworks');
     await page.keyboard.press('Tab');
     await page.keyboard.press('Tab');
     await expect(tabs(page).locator('summary')).toBeFocused();
@@ -92,7 +92,7 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
   });
 }
 
-for (const [hash, name] of [['#setup', 'Set up Graphyard'], ['#master', 'Master']] as const) test(`e2e:settings-navigation — the direct link ${hash} still opens its page`, async ({ page }) => {
+for (const [hash, name] of [['#setup', 'Set up Mainworks'], ['#master', 'Master']] as const) test(`e2e:settings-navigation — the direct link ${hash} still opens its page`, async ({ page }) => {
   await open(page, 'admin', hash);
   await heading(page, name);
 });

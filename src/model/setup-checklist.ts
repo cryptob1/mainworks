@@ -45,9 +45,10 @@ export function setupAddress(server: string, signIn?: string | null) {
  * way by its id (`#master`, `#costs`, GY-3322); a fragment that names no page opens none.
  */
 export function requestedView(hash: string, pages: readonly string[]): { view: string | null; hash: string } {
-  const signIn = /^(#(?:sign-in|claim)=[A-Za-z0-9_-]{16,200})&([a-z-]+)$/.exec(hash);
+  const signIn = /^(#(?:sign-in|claim)=[A-Za-z0-9_-]{16,200})&([a-z-]+)(?:\/[a-z-]+)?$/.exec(hash);
   if (signIn && pages.includes(signIn[2])) return { view: signIn[2], hash: signIn[1] };
-  return { view: pages.includes(hash.slice(1)) ? hash.slice(1) : null, hash };
+  const page = hash.slice(1).split('/')[0] ?? '';
+  return { view: pages.includes(page) ? page : null, hash };
 }
 
 const roleTitle: Record<RequiredSetupRole, string> = { worker: 'An agent account that writes code', reviewer: 'An agent account that reviews code' };

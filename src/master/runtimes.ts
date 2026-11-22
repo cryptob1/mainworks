@@ -213,7 +213,8 @@ const builtInAdapters = {
     // account's XDG_DATA_HOME, so the run fell back to the free model and stopped at once. An
     // OpenCode without it rejects the flag, so it is passed only where `run --help` lists it (GY-3425).
     headless: { before: ['run'], flags: ['--format', 'json'], optional: ['--standalone'] },
-    recipe: { args: [], environment: { OPENCODE_PERMISSION: '{"edit":"allow","bash":"allow","webfetch":"allow"}' }, permits: { OPENCODE_PERMISSION: asksNothing }, prompts: 'edit, bash, and webfetch permission prompts',
+    // GY-3592: the interactive launch needs it too, or the pane runs on the service's login and its free model.
+    recipe: { args: ['--standalone'], environment: { OPENCODE_PERMISSION: '{"edit":"allow","bash":"allow","webfetch":"allow"}' }, permits: { OPENCODE_PERMISSION: asksNothing }, prompts: 'edit, bash, and webfetch permission prompts',
       tradeoff: 'opencode edits files, runs shell commands, and fetches URLs without asking.' },
     request: reference => `--prompt ${reference}`,
     // OpenCode's own TUI never prints the capitalized word (GY-417): 1.18's start screen shows the

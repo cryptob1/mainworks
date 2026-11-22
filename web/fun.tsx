@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '../src/model/product';
 import { useState, type CSSProperties } from 'react';
 import type { Work } from '../src/model';
 
@@ -73,7 +74,7 @@ function Confetti() {
 export function ShippedToast({ item, onClose }: { item: Work; onClose(): void }) {
   const builder = builderOf(item), name = builder ? friendlyName(builder) ?? builder : builder;
   return <><div className="toast pulse" aria-live="polite" data-toast={item.key} onClick={onClose}>
-    {builder ? <span title={builder}>{name}</span> : 'Graphyard'} shipped “{item.title}” 🎉
+    {builder ? <span title={builder}>{name}</span> : PRODUCT_NAME} shipped “{item.title}” 🎉
   </div><Confetti/></>;
 }
 
