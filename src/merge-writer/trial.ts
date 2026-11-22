@@ -1146,12 +1146,12 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       else {
         await discardKeptTree();
         worktree = kept!;
-        await run('git', ['-C', input.root, 'worktree', 'add', '--detach', worktree, input.mergeSha], { timeoutMs: remaining() });
+        await run('git', ['-C', input.root, 'worktree', 'add', '--detach', worktree, input.mergeSha], { timeoutMs: remaining(), ...(input.signal ? { signal: input.signal } : {}) });
       }
     } else {
       const near = await trialCheckoutRoot(input.checkoutRoots ?? trialCheckoutRoots(), input.minFreeBytes ?? defaultWorktreeRootMinFreeGb * 1e9, input.probe, input.checkoutRoots ? [] : undefined);
       if (near) { place = await mkdtemp(join(near, trialCheckoutPrefix)); await writeTempOwner(place); worktree = join(place, 'checkout'); }
-      await run('git', ['-C', input.root, 'worktree', 'add', '--detach', worktree, input.mergeSha], { timeoutMs: remaining() });
+      await run('git', ['-C', input.root, 'worktree', 'add', '--detach', worktree, input.mergeSha], { timeoutMs: remaining(), ...(input.signal ? { signal: input.signal } : {}) });
     }
   };
   // GY-3275: a repository that commits graphyard.trial.Dockerfile runs its trials in its own image,
