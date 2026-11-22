@@ -90,7 +90,7 @@ test('unit:repeated-failure-is-one-incident — removes item keys, hashes, temp 
     { item: 'GY-4', reason: 'Free usage limit reached', at: ago(5 * minute) },
   ], baseNow), []);
 
-  // Sources on Work: failed session exit, trial failure, and rework reason combine across distinct items,
+  // Sources on Work: failed session exits and trial failures combine across distinct items,
   // while benign session closures are ignored.
   const work = [
     { id: '1', key: 'GY-1', title: 'One', stage: 'build', stageEnteredAt: ago(10 * minute), updatedAt: ago(10 * minute), lease: null, dependencies: [],
@@ -101,9 +101,15 @@ test('unit:repeated-failure-is-one-incident — removes item keys, hashes, temp 
     { id: '2', key: 'GY-2', title: 'Two', stage: 'test', stageEnteredAt: ago(10 * minute), updatedAt: ago(6 * minute), lease: null, dependencies: [],
       mergeLedger: { state: 'refused', refusal: { kind: 'merge', reason: 'Free usage limit reached\ndetails' }, trialStep: { step: 'tests', at: ago(6 * minute) } } },
     { id: '3', key: 'GY-3', title: 'Three', stage: 'ready', stageEnteredAt: ago(10 * minute), updatedAt: ago(7 * minute), lease: null, dependencies: [],
-      lastRework: { reason: 'Free usage limit reached', binding: null, at: ago(7 * minute) } },
+      sessions: [{ id: 's3', kind: 'review', state: 'finished', endedAt: ago(7 * minute), updatedAt: ago(7 * minute), outcome: 'Free usage limit reached' }] },
   ] as unknown as Work[];
   const groups = repeatedFailureGroups(work, baseNow);
+
+  // Rework reasons are instructions to workers, not failures: three items sent back after main moved are no incident.
+  const conflict = (key: string, sha: string) => ({ id: key, key, title: key, stage: 'ready', stageEnteredAt: ago(5 * minute), updatedAt: ago(5 * minute), lease: null, dependencies: [],
+    lastRework: { reason: `${key}: GitHub reports that candidate ${sha} conflicts with base branch tip 9f8e7d6c. The base moved: run sync ${key}, resolve, then complete ${key} EPOCH --head NEWSHA.`, binding: null, at: ago(5 * minute) },
+    reworkHistory: [{ reason: `${key}: GitHub reports that candidate ${sha} conflicts with base branch tip 9f8e7d6c. The base moved: run sync ${key}, resolve, then complete ${key} EPOCH --head NEWSHA.`, at: ago(4 * minute) }] });
+  assert.deepEqual(repeatedFailureGroups([conflict('GY-7', 'a1b2c3d4'), conflict('GY-8', 'b2c3d4e5'), conflict('GY-9', 'c3d4e5f6')] as unknown as Work[], baseNow), []);
   assert.equal(groups.length, 1);
   assert.equal(groups[0].line, 'Free usage limit reached');
   assert.deepEqual(groups[0].items, ['GY-1', 'GY-2', 'GY-3']);

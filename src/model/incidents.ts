@@ -107,7 +107,7 @@ export function groupRepeatedFailures(entries: readonly FailureEntry[], now: num
   return result.sort((a, b) => b.count - a.count || a.line.localeCompare(b.line));
 }
 
-/** Failed session exits, trial failures and rework reasons carried on the work snapshot. */
+/** Failed session exits and merge-trial refusals on the work snapshot; rework reasons are worker instructions, not failures. */
 export function recentWorkFailures(work: readonly Work[]): FailureEntry[] {
   const entries: FailureEntry[] = [];
   for (const w of work) {
@@ -118,10 +118,6 @@ export function recentWorkFailures(work: readonly Work[]): FailureEntry[] {
     }
     if (w.mergeLedger?.state === 'refused' && w.mergeLedger.refusal?.reason)
       entries.push({ item: w.key, reason: w.mergeLedger.refusal.reason, at: w.mergeLedger.trialStep?.at ?? w.updatedAt ?? w.mergeLedger.intentAt ?? '' });
-    for (const rework of w.reworkHistory ?? [])
-      if (rework.reason) entries.push({ item: w.key, reason: rework.reason, at: rework.at });
-    if (w.lastRework?.reason)
-      entries.push({ item: w.key, reason: w.lastRework.reason, at: w.lastRework.at });
   }
   return entries;
 }
