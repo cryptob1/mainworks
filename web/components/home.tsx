@@ -17,7 +17,7 @@ export function HomeStatus({ work, status, now, setView, setSelected }: Omit<Hom
   const line = statusLine(status ?? {}, work, incidents, now);
   const open = (action: NonNullable<Incident['action']>) => action.open === 'item' ? setSelected(action.item!) : setView(action.open);
   return <>
-    <p className="status-line" data-status-line={line.state}>
+    <p className="home-status-line" data-status-line={line.state}>
       <strong className={`status-state state-${line.state.toLowerCase()}`}>{line.state}</strong>
       <span>{line.builders.allowed === null ? plural(line.builders.working, 'Builder') : `${line.builders.working} of ${line.builders.allowed} Builders`} working</span>
       <span>{line.machines.configured ? `${line.machines.ready} of ${line.machines.configured} test machines ready` : 'No test machines'}</span>
