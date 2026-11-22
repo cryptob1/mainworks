@@ -647,18 +647,36 @@ function deployKeyAction(session: InstallSession): PlanAction {
   return { id: 'github.deploy-key', target: 'github', state: existsSync(file) ? 'update' : 'create', title: `${title} (${file}, mode 0600) when absent and register it read-write on ${inputs.repository} through the gh login unless already listed; the merge writer pushes ${inputs.baseBranch} with it, and no GitHub App, webhook or branch protection is set up` };
 }
 
+/**
+ * GY-3653: an existing install whose deploy key is already registered (the deploy watch's restart
+ * path) needs nothing from GitHub CLI — `record.deployment` is written only after `ensureDeployKey`
+ * succeeded on an earlier install, and the key file is still on disk. A first install, or an install
+ * using `--push-auth gh` / `--observe-only` / `--merge-token-stdin`, keeps the GitHub CLI preflight.
+ */
+function existingDeployKeyRegistered(session: Pick<InstallSession, 'record' | 'directory' | 'inputs'>): boolean {
+  return !!session.record?.deployment
+    && !session.inputs.observeOnly
+    && !session.inputs.mergeToken
+    && !session.inputs.pushAuth
+    && existsSync(resolve(session.directory, DEPLOY_KEY_FILE));
+}
+
 export async function buildPlan(session: InstallSession): Promise<InstallPlan> {
   const { adapter, context, record } = session;
   const preflight = await adapter.preflight(context);
   const gh = githubCli(context.transport);
   const observeOnly = !!session.inputs.observeOnly;
+  const deployKeyReady = existingDeployKeyRegistered(session);
   // gh registers the deploy key; observe-only still refuses a signed-out caller (GY-1862). It needs
   // only the `repo` scope. Under --push-auth gh the login is itself the merge writer's credential,
   // so the same check asks `gh auth token` in the push child's environment: a login that answers
   // `gh auth status` in this fuller shell but not there would push an empty password every cycle.
-  preflight.push(githubCliPreflight(context.provider, await gh(['auth', 'status'], { allowFailure: true }), session.inputs.repository, session.inputs.pushAuth,
-    session.inputs.pushAuth ? await gh(['auth', 'token'], { allowFailure: true, env: pushEnvironment({ pushAuth: 'gh' }) }) : null));
-  if (!observeOnly && !session.inputs.mergeToken && !session.inputs.pushAuth) { const orgKeys = await orgDeployKeysPreflight(gh, session.inputs.repository); if (orgKeys) preflight.push(orgKeys); }
+  // GY-3653: skip when redeploying an existing install whose deploy key is already registered.
+  if (!deployKeyReady) {
+    preflight.push(githubCliPreflight(context.provider, await gh(['auth', 'status'], { allowFailure: true }), session.inputs.repository, session.inputs.pushAuth,
+      session.inputs.pushAuth ? await gh(['auth', 'token'], { allowFailure: true, env: pushEnvironment({ pushAuth: 'gh' }) }) : null));
+    if (!observeOnly && !session.inputs.mergeToken && !session.inputs.pushAuth) { const orgKeys = await orgDeployKeysPreflight(gh, session.inputs.repository); if (orgKeys) preflight.push(orgKeys); }
+  }
   // GY-2940: the control-plane merge writer pushes this checkout with the deploy key over SSH alone, so an https origin is refused before anything is installed. GY-3269: under --push-auth gh it pushes the repository's https URL with the gh login, so origin's shape is no longer its credential.
   if (session.delivery.merger === 'control-plane' && !observeOnly && !session.inputs.pushAuth) preflight.push(await repositoryOriginPreflight(session.root, session.inputs.repository, context.transport));
   // The master loop runs from this checkout and its unit refuses a temporary directory: say so
@@ -964,7 +982,9 @@ async function performInstall(session: InstallSession, plan: InstallPlan): Promi
   const ghLogin = !observeOnly && session.inputs.pushAuth;
   if (token && !deps.mergeToken) throw new Error('--merge-token-stdin requires a nonempty token on stdin');
   if (token) { await writeMergeToken(session.directory, deps.mergeToken!); log(`Merge writer token stored at ${resolve(session.directory, MERGE_TOKEN_FILE)}`); }
-  const deployKey = observeOnly || token || ghLogin ? null : await ensure(session.directory, session.inputs.repository, gh);
+  const deployKey = observeOnly || token || ghLogin ? null
+    : existingDeployKeyRegistered(session) ? resolve(session.directory, DEPLOY_KEY_FILE)
+    : await ensure(session.directory, session.inputs.repository, gh);
   if (deployKey) log(`Deploy key ${deployKey} is registered read-write on ${session.inputs.repository} for the merge writer`);
   if (ghLogin) log(`The merge writer pushes with the operator's gh login (--push-auth gh); no deploy key is registered`);
 
