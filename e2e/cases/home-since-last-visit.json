@@ -1,0 +1,11 @@
+{
+  "id": "home-since-last-visit",
+  "title": "Home counts what changed since this person last looked, shows active goals, and sends text to the Lead",
+  "description": "A real browser on the built dashboard, its last visit stored by a real control plane. The first visit says it is the first look. One merge and one Lead decision land, and the second visit counts exactly that merge and that decision, offers Ask why and Do it differently, shows active goals with progress and what is being built now, and the box sends its text to the Lead's message route. Works at 1280 and 390 px with no horizontal scroll.",
+  "tags": ["dashboard"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "since you last looked, goals and the box to the Lead on Home", "run": "npm run test:browser -- browser-tests/home-since-last-visit.spec.ts", "timeoutSeconds": 420 }
+  ]
+}
