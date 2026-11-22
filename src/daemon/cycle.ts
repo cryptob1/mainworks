@@ -20,6 +20,7 @@ import { capacityRefusal } from '../fleet.js';
 import type { CoordinationRounds } from '../server/work-view.js';
 import { masterCauses, masterCausePrompt, messageCauses } from './master-stalled-delivery.js';
 import { accountNames, advanceFailureRuns, diagnosisSection, failureHeld, normalizeFailureReason, repeatingItems } from './repeated-failure.js';
+import { reworkCapHeld, reworkCapLabel } from '../model/rework-ground.js';
 import { captureConversation } from '../master/conversation.js';
 import { masterHandover } from '../master/master-session.js';
 import { herdrWorkspaceOf } from '../master/herdr.js';
@@ -715,6 +716,8 @@ async function dispatchStep(cycle: Cycle) {
     // Two claimable items sharing an exclusive resource: the first goes, the other waits for it to land.
     const holder = launched.find(other => sharedResources(item, other).length);
     if (holder) { refused(item, sharedResources(item, holder)[0]!, holder.key); continue; }
+    // GY-3636: after three counted refusals of any cause, hold for the Lead instead of launching again.
+    if (reworkCapHeld(item)) { wait(item, reworkCapLabel(item)); continue; }
     // GY-3104: a third equal failure holds the item for the master's decision.
     if (failureHeld(state.failureRuns[item.id])) { wait(item, 'held for the master after the same failure three times'); continue; }
     const incident = state.actions[earlyExitKey(item)];
@@ -769,8 +772,8 @@ async function dispatchStep(cycle: Cycle) {
   // GY-3432: the stall alarm, before the master is woken, so a raised alarm wakes it this cycle.
   if (!config.forPerson) {
     const running = snapshot.work.flatMap(item => item.sessions ?? []).filter(session => session.kind === 'implementation' && session.state === 'running').length;
-    // An item in a run of equal failures already wakes the master by that run (GY-3104), held or not.
-    const repeating = repeatingItems(state.failureRuns), unheld = (item: Work) => !repeating.has(item.key);
+    // An item in a run of equal failures or held at the 3-refusal cap already wakes the master (GY-3104, GY-3636).
+    const repeating = repeatingItems(state.failureRuns), unheld = (item: Work) => !repeating.has(item.key) && !reworkCapHeld(item);
     const alarm = stallAlarm({ now: clock, open: open.filter(unheld), ready: claimable.filter(unheld), freeSlots: allowed - running, holds, gates,
       state, registry, serving: await Promise.resolve(effects.servingCommit?.()).catch(() => null) ?? null });
     if (recordStallAlarm(state, alarm, clock)) { cycle.log(`[graphyard-master] cycle ${state.cycle}: ${alarm ?? 'the stall alarm cleared'}`); await effects.persist(state); }
