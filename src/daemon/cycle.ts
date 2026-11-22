@@ -206,7 +206,7 @@ export async function runCycle(config: MasterConfig, state: DaemonState, effects
       settled();
       noteStep(name, error);
       if (name === 'snapshot') throw error;
-      log(`[graphyard-master] cycle ${state.cycle}: the ${name} step failed and runs again next cycle: ${message(error)}`);
+      log(`[mainworks-master] cycle ${state.cycle}: the ${name} step failed and runs again next cycle: ${message(error)}`);
       return undefined;
     } finally { clearTimeout(timer); }
   };
@@ -256,7 +256,7 @@ export async function runCycle(config: MasterConfig, state: DaemonState, effects
     if (!config.forPerson) await controlPlaneStep(cycle, stalled);
     if (!config.forPerson) await leftoversStep(state, clock, effects.leftoverDisk, log);
     // GY-3289: what this host's sessions spent, reported at most once a minute; a failed report is made again.
-    if (!config.forPerson) await effects.usage?.(state.master.continuity?.current ?? null).catch(error => log(`[graphyard-master] token usage was not reported and is reported again: ${message(error)}`));
+    if (!config.forPerson) await effects.usage?.(state.master.continuity?.current ?? null).catch(error => log(`[mainworks-master] token usage was not reported and is reported again: ${message(error)}`));
   });
   const metrics = cycleMetricsSchema.parse({ cycle: state.cycle, at: new Date(clock).toISOString(), open: read.snapshot.work.filter(item => item.stage !== 'done').length, actions: performed.length, steps });
   state.metrics.push(metrics);
@@ -510,15 +510,15 @@ async function closeStep(cycle: Cycle) {
   tallyLeftovers(state, 'reclaimed', leftovers.length - networks);
   tallyLeftovers(state, 'networks', networks);
   if (leftovers.length) await note(cycle, `job-leftovers:${state.cycle}`, 'reclaim', null, 'done', `Removed ${leftovers.join(', ')}: left behind by jobs that have ended`);
-  const releases = await effects.sweepCliReleases?.().catch(error => { cycle.log(`[graphyard-master] the CLI release sweep failed: ${message(error)}`); return null; });
+  const releases = await effects.sweepCliReleases?.().catch(error => { cycle.log(`[mainworks-master] the CLI release sweep failed: ${message(error)}`); return null; });
   if (releases?.removed.length) {
     tallyLeftovers(state, 'cliReleases', releases.removed.length);
     tallyLeftovers(state, 'cliReleaseBytes', releases.bytes);
     await note(cycle, `cli-releases:${state.cycle}`, 'reclaim', null, 'done', `Removed ${releases.removed.length} CLI release copies (${Math.round(releases.bytes / 1e6)} MB) nothing serves or runs: ${releases.removed.join(', ')}`);
   }
-  if (releases?.left.length) cycle.log(`[graphyard-master] CLI release copies left in place: ${releases.left.join('; ')}`);
+  if (releases?.left.length) cycle.log(`[mainworks-master] CLI release copies left in place: ${releases.left.join('; ')}`);
   // GY-3553: a served CLI release whose commit stamp names another commit than it holds is restamped.
-  const restamped = await cycle.effects.repairCliStamp?.().catch(error => { cycle.log(`[graphyard-master] the CLI release stamp check failed: ${message(error)}`); return null; });
+  const restamped = await cycle.effects.repairCliStamp?.().catch(error => { cycle.log(`[mainworks-master] the CLI release stamp check failed: ${message(error)}`); return null; });
   if (restamped) await note(cycle, `cli-stamp:${restamped.commit}`, 'reclaim', null, 'done', `Restored the CLI release commit stamp ${restamped.file} to ${restamped.commit.slice(0, 12)}, the commit checked out in it (was ${restamped.was?.slice(0, 12) ?? 'missing'})`);
   // GY-3122: with ended worktrees and settled checkouts gone, the volumes are measured against the floor.
   await diskHeadroomStep(cycle);
@@ -529,7 +529,7 @@ async function closeStep(cycle: Cycle) {
   // GY-3438: and every agent session's use against its CPU and memory caps.
   sessionUsageStep(cycle);
   // GY-3407: every host is read for the Workers page; one that does not answer reads away until it does.
-  if (cycle.effects.hostReadings) cycle.state.hosts = await cycle.effects.hostReadings(cycle.state.hosts).catch(error => { cycle.log(`[graphyard-master] the host readings failed: ${message(error)}`); return cycle.state.hosts; });
+  if (cycle.effects.hostReadings) cycle.state.hosts = await cycle.effects.hostReadings(cycle.state.hosts).catch(error => { cycle.log(`[mainworks-master] the host readings failed: ${message(error)}`); return cycle.state.hosts; });
 }
 
 /**
@@ -671,7 +671,7 @@ async function dispatchStep(cycle: Cycle) {
   const wait = (item: Work, why: string) => { if (!gates.has(item.key)) gates.set(item.key, `${item.key} waits: ${why}`); };
   const refused = (item: Work, resource: string, holder: string) => {
     const line = `${item.key} waits: exclusive resource ${resource} is held by ${holder}`;
-    if (!before.has(line) && !standing.has(line)) cycle.log(`[graphyard-master] cycle ${state.cycle}: ${line}`);
+    if (!before.has(line) && !standing.has(line)) cycle.log(`[mainworks-master] cycle ${state.cycle}: ${line}`);
     standing.add(line);
     wait(item, `exclusive resource ${resource} is held by ${holder}`);
   };
@@ -782,7 +782,7 @@ async function dispatchStep(cycle: Cycle) {
     const repeating = repeatingItems(state.failureRuns), unheld = (item: Work) => !repeating.has(item.key) && !reworkCapHeld(item);
     const alarm = stallAlarm({ now: clock, open: open.filter(unheld), ready: claimable.filter(unheld), freeSlots: allowed - running, holds, gates,
       state, registry, serving: await Promise.resolve(effects.servingCommit?.()).catch(() => null) ?? null });
-    if (recordStallAlarm(state, alarm, clock)) { cycle.log(`[graphyard-master] cycle ${state.cycle}: ${alarm ?? 'the stall alarm cleared'}`); await effects.persist(state); }
+    if (recordStallAlarm(state, alarm, clock)) { cycle.log(`[mainworks-master] cycle ${state.cycle}: ${alarm ?? 'the stall alarm cleared'}`); await effects.persist(state); }
   }
   // A dispatch tick that fails (its state cannot be saved) still wakes the master.
   // GY-3605: the tick's session launches each have the launch bound — minutes, when a product review

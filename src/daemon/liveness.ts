@@ -239,7 +239,7 @@ export function loopHeartbeat(notify: () => void | Promise<void>, windowMs: numb
     const at = now();
     if (Number.isFinite(lastBeat) && at - lastBeat < nudgeMs) return;
     lastBeat = at;
-    void Promise.resolve(notify()).catch(error => options.log?.(`[graphyard-master] supervisor notification failed: ${message(error)}`));
+    void Promise.resolve(notify()).catch(error => options.log?.(`[mainworks-master] supervisor notification failed: ${message(error)}`));
   };
   if (windowMs !== null) {
     timer = setInterval(() => { if (now() - lastProgress <= windowMs) beat(); }, nudgeMs);

@@ -27,7 +27,7 @@ export async function leftoversStep(state: DaemonState, clock: number, disk: (()
   leftovers.counts = emptyLeftoverCounts();
   const readings = disk ? await disk() : { trialRuns: null, worktrees: null, trialCheckouts: null, trialImages: null, buildCache: null };
   leftovers.report = { day: ended, counts, disk: readings, at: new Date(clock).toISOString() };
-  log(`[graphyard-master] leftovers report ${JSON.stringify(leftovers.report)}`);
+  log(`[mainworks-master] leftovers report ${JSON.stringify(leftovers.report)}`);
 }
 
 /** The recursive size of a directory in bytes (symlinks not followed), or null when it cannot be read. */

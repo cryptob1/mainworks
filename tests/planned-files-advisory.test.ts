@@ -143,5 +143,5 @@ test('integration:planned-files-advisory — overlapping planned or observed fil
   await cycle();
   assert.ok(!claims.includes(waiting.key), 'the item waits for the resource');
   const lines = log.filter(line => line.includes(waiting.key));
-  assert.deepEqual(lines.map(line => line.replace(/cycle \d+: /, '')), [`[graphyard-master] ${waiting.key} waits: exclusive resource staging is held by ${holder.key}`], 'one log line names the item, the resource and the holder');
+  assert.deepEqual(lines.map(line => line.replace(/cycle \d+: /, '')), [`[mainworks-master] ${waiting.key} waits: exclusive resource staging is held by ${holder.key}`], 'one log line names the item, the resource and the holder');
 });

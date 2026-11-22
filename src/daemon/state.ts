@@ -370,7 +370,7 @@ export function storeAction(state: DaemonState, key: string, action: DaemonActio
 }
 
 /** The line the loop logs for each action a cycle took; the tests that pin a logged failure build it from here. It lives beside storeAction so a step that settles beside the cycle logs without importing the loop's runner. */
-export const actionLine = (cycle: number, action: Pick<DaemonAction, 'kind' | 'state' | 'detail'>) => `[graphyard-master] cycle ${cycle} ${action.kind} ${action.state}: ${action.detail}`;
+export const actionLine = (cycle: number, action: Pick<DaemonAction, 'kind' | 'state' | 'detail'>) => `[mainworks-master] cycle ${cycle} ${action.kind} ${action.state}: ${action.detail}`;
 /** A refusal that still stands, observed again with the same detail (GY-1086): its row is not rewritten, but its time moves. */
 export function touchStanding(state: DaemonState, key: string, at: string) {
   const row = state.actions[key];

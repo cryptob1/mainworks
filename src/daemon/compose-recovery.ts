@@ -45,7 +45,7 @@ export function composeServer(directory: string, run: ChildRun): ComposeServer {
  */
 export async function noteControlPlane(state: DaemonState, failure: { call: string | null; reason: string; answered: boolean } | null, now: number, server: (() => ComposeServer | null | Promise<ComposeServer | null>) | undefined, log: (line: string) => void) {
   if (!failure) {
-    if (state.controlPlane) log(`[graphyard-master] the control plane answers again after being unreachable since ${state.controlPlane.unreachableSince}`);
+    if (state.controlPlane) log(`[mainworks-master] the control plane answers again after being unreachable since ${state.controlPlane.unreachableSince}`);
     state.controlPlane = null;
     return;
   }
@@ -61,5 +61,5 @@ export async function noteControlPlane(state: DaemonState, failure: { call: stri
   record.restartedAt = at;
   [record.exitReason, record.freeDisk] = await Promise.all([compose.exitReason(), compose.freeDisk()]);
   record.restart = await compose.up().then(output => `started${output ? `: ${output.slice(-300)}` : ''}`, error => `failed: ${message(error).slice(0, 300)}`);
-  log(`[graphyard-master] the control plane has been unreachable since ${record.unreachableSince} (${record.error}); ran docker compose up -d in ${compose.directory}: ${record.restart}; the server's last exit: ${record.exitReason}; ${record.freeDisk}`);
+  log(`[mainworks-master] the control plane has been unreachable since ${record.unreachableSince} (${record.error}); ran docker compose up -d in ${compose.directory}: ${record.restart}; the server's last exit: ${record.exitReason}; ${record.freeDisk}`);
 }

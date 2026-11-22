@@ -651,7 +651,7 @@ test('unit:batch-gate-outcome-visible — every settled run is the record\'s las
     assert.ok(Date.parse(done.lastOutcome!.finishedAt!) > 0);
     const outcomeLines = lines.filter(line => line.includes('Batch gate on'));
     assert.equal(outcomeLines.length, 1, 'one journal line names the outcome');
-    assert.match(outcomeLines[0]!, new RegExp(`^\\[graphyard-master\\] cycle \\d+ merge done: Batch gate on ${realTip.slice(0, 12)}: verified$`));
+    assert.match(outcomeLines[0]!, new RegExp(`^\\[mainworks-master\\] cycle \\d+ merge done: Batch gate on ${realTip.slice(0, 12)}: verified$`));
   }
 
   // A failing run end to end: the error outcome reaches the record on disk and the journal in one line.

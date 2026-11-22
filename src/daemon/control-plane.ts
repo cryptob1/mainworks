@@ -162,6 +162,6 @@ export async function controlPlaneStep(cycle: Pick<Cycle, 'state' | 'effects' | 
   if (cycle.state.controlPlaneDay !== day) {
     cycle.state.controlPlaneDay = day;
     const stale = controlPlaneStaleLines(readControlPlaneRecord(controlPlaneRecordPath(root)), cycle.clock);
-    if (stale.length) cycle.log(`[graphyard-master] control-plane diagnostics: ${stale.join('; ')}`);
+    if (stale.length) cycle.log(`[mainworks-master] control-plane diagnostics: ${stale.join('; ')}`);
   }
 }

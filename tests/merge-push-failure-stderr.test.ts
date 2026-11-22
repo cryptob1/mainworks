@@ -87,7 +87,7 @@ test('unit:merge-push-failure-carries-stderr — the push step rethrows git\'s s
   assert.ok(detail.includes(STDERR), 'the whole stderr line survives in the record');
   // The log line the loop prints for this action, in run.ts's own format.
   const logLine = actionLine(state.cycle, action);
-  assert.match(logLine, /^\[graphyard-master\] cycle \d+ merge failed: /);
+  assert.match(logLine, /^\[mainworks-master\] cycle \d+ merge failed: /);
   assert.ok(logLine.includes(STDERR), 'the loop\'s log line names the cause');
   // Nothing was recorded pushed: the head stays queued, and the attempt's records stop at the trial.
   assert.deepEqual(recorded.map(entry => entry.event.kind), ['intent', 'trial']);

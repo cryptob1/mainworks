@@ -399,7 +399,7 @@ export const servedRepository = (cliRoot: string): string | null => {
  */
 export async function pruneImages(run: ChildRun, keep: string[], log: (line: string) => void = line => console.error(line)) {
   const kept = new Set(keep.map(sha => sha.slice(0, 12)));
-  const failed = (what: string) => (error: unknown) => log(`[graphyard-deploy] ${what}: ${error instanceof Error ? error.message : String(error)}`);
+  const failed = (what: string) => (error: unknown) => log(`[mainworks-deploy] ${what}: ${error instanceof Error ? error.message : String(error)}`);
   const tags = await Promise.resolve(run('docker', ['image', 'ls', 'mainworks-local', '--format', '{{.Tag}}'])).then(String, failed('could not list the per-commit images'));
   for (const tag of (tags ?? '').split('\n').map(line => line.trim())) {
     const sha = /^(?:previous-)?([0-9a-f]{12})$/.exec(tag)?.[1];

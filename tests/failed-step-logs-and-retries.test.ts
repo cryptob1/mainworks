@@ -36,7 +36,7 @@ test('unit:failed-step-logs-and-retries — a loop step that throws is one log l
   const lines: string[][] = [[], []];
   for (cycle = 0; cycle < 2; cycle++) await runCycle(config, state, effects, () => clock, undefined, line => lines[cycle].push(line));
 
-  assert.deepEqual(lines[0], ['[graphyard-master] cycle 0: the close step failed and runs again next cycle: checkout sweep refused']);
+  assert.deepEqual(lines[0], ['[mainworks-master] cycle 0: the close step failed and runs again next cycle: checkout sweep refused']);
   assert.equal(ticks[0], 1, 'the steps after the failed one still ran in its cycle');
   assert.equal(sweeps[1], 1, 'the next cycle runs the close step again');
   assert.deepEqual(lines[1], [], 'the step that answered logs nothing');

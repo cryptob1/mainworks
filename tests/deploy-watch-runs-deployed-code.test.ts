@@ -141,7 +141,7 @@ exit 0\n`, { mode: 0o755 });
     await until('the watch created its deploy checkout', () => existsSync(join(deploySrc, '.git')));
     // A commit that changes the deploy-watch code: every pass of the new code says so.
     const watchSource = await readFile(join(checkout, 'src', 'deploy-watch.ts'), 'utf8');
-    const marked = watchSource.replace('  for (;;) {\n    let served', `  for (;;) {\n    log('[graphyard-deploy] running the deployed watch code');\n    let served`);
+    const marked = watchSource.replace('  for (;;) {\n    let served', `  for (;;) {\n    log('[mainworks-deploy] running the deployed watch code');\n    let served`);
     assert.notEqual(marked, watchSource, 'the fixture marks the deploy-watch code');
     await writeFile(join(checkout, 'src', 'deploy-watch.ts'), marked);
     git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'B: the deploy-watch code changes');

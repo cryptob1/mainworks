@@ -83,9 +83,9 @@ export async function loopCommand(session: MasterSession): Promise<unknown> {
     const connects = values.once ? undefined : setInterval(() => {
       if (connecting || !current().url || !current().hostId) return;
       connecting = true;
-      processConnectAccounts(current()).catch(error => console.error(`[graphyard-master] connect-account worker: ${error instanceof Error ? error.message : String(error)}`))
+      processConnectAccounts(current()).catch(error => console.error(`[mainworks-master] connect-account worker: ${error instanceof Error ? error.message : String(error)}`))
         // GY-3294: and carries Setup's team access to this machine's shared record and back (a server without the routes answers 404).
-        .then(() => syncTeamAccess(current())).catch(error => { if (error?.status !== 404) console.error(`[graphyard-master] team access: ${error instanceof Error ? error.message : String(error)}`); })
+        .then(() => syncTeamAccess(current())).catch(error => { if (error?.status !== 404) console.error(`[mainworks-master] team access: ${error instanceof Error ? error.message : String(error)}`); })
         .finally(() => { connecting = false; });
     }, 15_000);
     connects?.unref?.();

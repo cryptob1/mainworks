@@ -142,7 +142,7 @@ export async function cpuPressureStep(cycle: { config?: { run: Pick<MasterRun, '
     : { at: new Date(at).toISOString(), avg60, steal: stealPercent(previous?.stat ?? null, stat), stat, celsius, samples, testBudget: sessionTestBudget(), trialCap: previous?.trialCap ?? null,
       ...(hot === undefined ? {} : { hotCelsius: hot }) };
   const waiting = cpuWaiting(state);
-  if (waiting?.split(':')[0] !== was?.split(':')[0]) log(`[graphyard-master] cycle ${state.cycle}: ${!waiting ? 'launches resume' : `${waiting}; no new worker, reviewer or trial starts until it falls`}`);
+  if (waiting?.split(':')[0] !== was?.split(':')[0]) log(`[mainworks-master] cycle ${state.cycle}: ${!waiting ? 'launches resume' : `${waiting}; no new worker, reviewer or trial starts until it falls`}`);
 }
 
 /**
@@ -156,5 +156,5 @@ export function sessionUsageStep(cycle: { state: DaemonState; effects: DaemonEff
   if (!effects.sessionScopes) return;
   const at = now(), raised = new Set(state.sessions.filter(session => overloaded([session], Date.parse(session.at)).length).map(session => session.unit));
   state.sessions = readSessionUsage(state.sessions, at, effects.sessionScopes(), state.cpuPressure?.avg60 ?? null, effects.sessionName, effects.cores?.());
-  for (const session of overloaded(state.sessions, at)) if (!raised.has(session.unit)) log(`[graphyard-master] cycle ${state.cycle}: overload: ${overloadAlarm(session, at)}`);
+  for (const session of overloaded(state.sessions, at)) if (!raised.has(session.unit)) log(`[mainworks-master] cycle ${state.cycle}: overload: ${overloadAlarm(session, at)}`);
 }
