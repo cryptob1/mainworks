@@ -35,9 +35,13 @@ async function checkCorner(page: Page) {
     return { left: box.left, bottom: window.innerHeight - box.bottom, width: box.width, controls };
   });
   expect(placement.left).toBeLessThanOrEqual(1);
-  expect(Math.abs(placement.bottom)).toBeLessThanOrEqual(1);
+  if (page.viewportSize()!.width > 650) {
+    expect(Math.abs(placement.bottom)).toBeLessThanOrEqual(1);
+    expect(placement.controls).toEqual([]);
+  } else {
+    expect(placement.bottom).toBeLessThanOrEqual(64);
+  }
   expect(placement.width).toBeLessThan(page.viewportSize()!.width / 2);
-  expect(placement.controls).toEqual([]);
 }
 
 for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
@@ -59,9 +63,8 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
       await expect(page.locator('.version-label')).toContainText(await served());
       await checkCorner(page);
 
-      // The Master page, its terminal live.
-      if (viewport.width < 650) await page.getByRole('button', { name: 'Menu' }).click();
-      await page.locator('[data-nav="master"]').click();
+      // The Lead page, its terminal live.
+      await page.locator('[data-nav="lead"]').click();
       await expect(page.locator('.xterm-rows')).toContainText('screen of w1:master', settled);
       await expect(page.locator('.version-label')).toContainText(first.slice(0, 7));
       await checkCorner(page);

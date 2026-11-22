@@ -47,7 +47,7 @@ test('e2e:master-page-terminal — the operator types into the master pane live;
     const { code } = await (await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string };
     const operator = await browser.newPage(); await serveXterm(operator);
     await operator.goto(`${url}/#sign-in=${code}&master`);
-    await expect(operator.getByRole('heading', { name: 'Master', exact: true })).toBeVisible(settled);
+    await expect(operator.getByRole('heading', { name: 'Lead', exact: true })).toBeVisible(settled);
     await expect(rows(operator)).toContainText('screen of w1:master', settled);
     await expect(operator.getByRole('status')).toContainText('You can type here', settled);
     // The master is at work: the terminal carries the scanning line (GY-3272), and the pane stays interactive.
@@ -77,7 +77,8 @@ test('e2e:master-page-terminal — the operator types into the master pane live;
     await reader.close();
 
     // The operator leaves for Workers: the page detaches, Herdr is released, and no pane is closed.
-    await operator.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Workers', exact: true }).click();
+    await operator.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings', exact: true }).click();
+    await operator.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: 'Workers', exact: true }).click();
     await expect.poll(async () => (await calls()).some(entry => entry.pane === 'w1:master' && entry.command?.type === 'terminal.release'), settled).toBe(true);
     expect((await calls()).some(entry => entry.args?.[0] === 'pane' && entry.args?.[1] === 'close')).toBe(false);
 

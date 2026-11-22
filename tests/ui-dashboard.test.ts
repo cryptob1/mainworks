@@ -149,7 +149,7 @@ test('unit:ui-needs-you-and-timers — a human-only decision is listed once, und
   assert.doesNotMatch(page, /Stuck:/, 'nothing on the page is called Stuck any more');
   const row = markup(createElement(WorkCard, { item: parked, now: NOW, onOpen: noop, group: 'needs-you' }));
   assert.match(row, new RegExp(parked.humanRequest!.needed), 'the row names the one thing needed');
-  assert.equal((row.match(/<button[^>]*class="decide"[^>]*>Decide<\/button>/g) ?? []).length, 1, 'and the single action to take');
+  assert.equal((row.match(/<button[^>]*class="decide"[^>]*>Review request<\/button>/g) ?? []).length, 1, 'and the single action to take');
   // The item page answers it in place, from the same human-only rule table.
   assert.match(itemPage('GY-20'), /Answer and resume GY-20/);
   // No overdue timer on parked, backlog or not-yet-started work, however long it has waited.
