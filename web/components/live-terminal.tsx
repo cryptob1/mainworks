@@ -159,8 +159,7 @@ export default function LiveTerminal({ token, label, onSession, handle }: { toke
               // A socket that failed while the network was down answers this check once it is back,
               // looking refused: one more attempt, on the network the check just reached, decides (GY-3368).
               if (!doubted) { doubted = true; connect(); return; }
-              gone = true; release(false);
-              setReason('Not available: sign in, and check the session still has a pane.'); setState('refused'); return;
+              setReason('Not available: sign in, and check the session still has a pane.'); gone = true; release(false); setState('refused'); return;
             }
           }
           setState('reconnecting');

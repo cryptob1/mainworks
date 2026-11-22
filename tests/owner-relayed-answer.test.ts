@@ -71,6 +71,8 @@ test('e2e:owner-relayed-answer — owner direction relayed by the master is reco
     assert.match(JSON.stringify(events[0].payload), /Not yet/);
     assert.match(JSON.stringify(events[1].payload), /It printed cleanly/);
     await page.getByRole('button', { name: /Owner decides timing/ }).first().click();
+    // The Task page keeps its full history on the Details tab (GY-3599).
+    await page.getByRole('tablist', { name: 'Task evidence' }).getByRole('tab', { name: 'Details' }).click();
     await page.locator('summary').filter({ hasText: /^History/ }).click();
     const history = page.getByRole('region', { name: 'History entries' });
     await expect(history).toContainText('relayed by master from the owner: "Not yet"');
