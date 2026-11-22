@@ -16,7 +16,7 @@
 // Anything else is refused. As in a local trial, containers may start nested sandboxes (seccomp and system
 // paths unconfined, the graphyard-trial AppArmor profile where Docker uses AppArmor; GY-3549), and never
 // get the Docker socket, so a shard, which has no network either, reaches no private address, the tailnet or the host.
-// A check's Compose project may bind only paths inside its run directory.
+// A check's Compose project may reach no host path outside its run directory, nor any host namespace, device or capability.
 import { createHash } from 'node:crypto';
 import { trialLauncher } from './merge-writer/trial-container.js';
 import { trialAppArmorProfile } from './merge-writer/trial-apparmor.js';
@@ -208,16 +208,43 @@ else:
         committed = subprocess.run(['git', '-C', repo, 'cat-file', 'blob', 'HEAD:' + file], capture_output=True)
         if not compose.startswith(repo + os.sep) or committed.returncode != 0 or not os.path.isfile(compose) or open(compose, 'rb').read() != committed.stdout:
             refuse()
-        base = ['docker', 'compose', '-p', project, '--project-directory', os.path.dirname(compose), '-f', compose]
+        base = ['docker', 'compose', '-p', project, '--project-directory', os.path.dirname(compose), '--env-file', os.devnull, '-f', compose]
+        # Compose expands include and extends from other files before any configuration can be checked.
+        if re.search(r'\\b(?:include|extends)\\b', open(compose, errors='replace').read()):
+            sys.exit('graphyard-host-shim refuses: ' + file + ' includes or extends other Compose files')
         try:
             config = json.loads(subprocess.run(base + ['config', '--format', 'json'], capture_output=True, text=True).stdout)
         except ValueError:
             sys.exit('graphyard-host-shim: docker compose cannot read ' + file)
-        # The host lends this run directory and nothing else: no service binds a path outside it.
-        for service in (config.get('services') or {}).values():
-            for volume in service.get('volumes') or []:
-                if volume.get('type') == 'bind' and not (os.path.realpath(str(volume.get('source'))) + os.sep).startswith(os.path.realpath(run) + os.sep):
-                    sys.exit('graphyard-host-shim refuses: ' + file + ' binds ' + str(volume.get('source')) + ', outside the run directory')
+        # The host lends this run directory and nothing else: no host path outside it, no host namespace, device or
+        # capability, and no volume, network, secret or config shared or driven from outside (compose-preview.ts holds a local check alike).
+        within = lambda path: isinstance(path, str) and (os.path.realpath(os.path.join(os.path.dirname(compose), path)) + os.sep).startswith(os.path.realpath(run) + os.sep)
+        problems = []
+        for name, entry in (config.get('services') or {}).items():
+            for volume in entry.get('volumes') or []:
+                if volume.get('type') == 'bind' and not within(volume.get('source')):
+                    problems.append('binds ' + str(volume.get('source')) + ', outside the run directory')
+                elif volume.get('type') not in ('bind', 'volume', 'tmpfs'):
+                    problems.append('service ' + name + ' mounts a ' + str(volume.get('type')) + ' volume')
+            for env in entry.get('env_file') or []:
+                if not within(env.get('path') if isinstance(env, dict) else env):
+                    problems.append('service ' + name + ' reads an env file outside the run directory')
+            for key in ('build', 'privileged', 'cap_add', 'devices', 'device_cgroup_rules', 'use_api_socket', 'volumes_from', 'external_links', 'security_opt', 'post_start', 'pre_stop'):
+                if entry.get(key):
+                    problems.append('service ' + name + ' sets ' + key)
+            for key in ('network_mode', 'pid', 'ipc', 'userns_mode', 'uts', 'cgroup'):
+                if re.match('host|container:|service:', str(entry.get(key) or '')):
+                    problems.append('service ' + name + ' shares the ' + key + ' ' + entry[key])
+        for kind, default in (('volumes', 'local'), ('networks', 'bridge')):
+            for name, entry in (config.get(kind) or {}).items():
+                if entry and (entry.get('external') or entry.get('driver_opts') or entry.get('driver', default) != default):
+                    problems.append(kind[:-1] + ' ' + name + ' is external or set by driver options')
+        for kind in ('secrets', 'configs'):
+            for name, entry in (config.get(kind) or {}).items():
+                if entry and (entry.get('external') or entry.get('environment') or ('file' in entry and not within(entry['file']))):
+                    problems.append(kind[:-1] + ' ' + name + ' reads from outside the run directory')
+        if problems:
+            sys.exit('graphyard-host-shim refuses: ' + file + ' ' + '; '.join(problems))
         names, steps = [entry['service'] for entry in services], []
         def stop(number, frame):
             raise SystemExit(128 + number)

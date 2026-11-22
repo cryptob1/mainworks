@@ -14,6 +14,25 @@ const proof = 'unit:host-shim-runs-only-its-own-compose-project';
 const run = 'trial-abcdef';
 let hosts: ShardHostsFixture, repo: string;
 const service = { services: { db: { image: 'postgres:16', expose: [5432] } } };
+// Committed Compose files reaching the host some other way than a service's bind: each is refused with these words.
+const db = (extra: Record<string, unknown>, top: Record<string, unknown> = {}) => JSON.stringify({ services: { db: { image: 'postgres:16', expose: [5432], ...extra } }, ...top });
+const escapes: Record<string, string> = {
+  'driver-volume': db({ volumes: [{ type: 'volume', source: 'data', target: '/data' }] }, { volumes: { data: { driver_opts: { type: 'none', device: '/home', o: 'bind' } } } }),
+  'secret-file': db({ secrets: ['key'] }, { secrets: { key: { file: '/home/gy-compute/.ssh/id_ed25519' } } }),
+  'config-file': db({ configs: ['conf'] }, { configs: { conf: { file: '/etc/shadow' } } }),
+  'env-file': db({ env_file: [{ path: '/etc/environment', required: true }] }),
+  'build': db({ build: { context: '/' } }),
+  'privileged': db({ privileged: true }),
+  'host-network': db({ network_mode: 'host' }),
+  'external-network': db({}, { networks: { default: { external: true, name: 'bridge' } } }),
+  'include': JSON.stringify({ include: ['/home/gy-compute/other/compose.yaml'], ...JSON.parse(db({})) }),
+};
+const escapeWords: Record<string, RegExp> = {
+  'driver-volume': /volume data is external or set by driver options/, 'secret-file': /secret key reads from outside the run directory/,
+  'config-file': /config conf reads from outside the run directory/, 'env-file': /service db reads an env file outside the run directory/,
+  'build': /service db sets build/, 'privileged': /service db sets privileged/, 'host-network': /service db shares the network_mode host/,
+  'external-network': /network default is external or set by driver options/, 'include': /includes or extends other Compose files/,
+};
 
 before(async () => {
   hosts = await shardHosts('host-shim-compose', ['box']);
@@ -25,6 +44,7 @@ before(async () => {
   writeFileSync(join(repo, 'compose.json'), JSON.stringify(service));
   writeFileSync(join(repo, 'changed.json'), JSON.stringify(service));
   writeFileSync(join(repo, 'binds.json'), JSON.stringify({ services: { db: { image: 'postgres:16', expose: [5432], volumes: [{ type: 'bind', source: '/etc', target: '/host-etc' }] } } }));
+  for (const [name, compose] of Object.entries(escapes)) writeFileSync(join(repo, `${name}.json`), compose);
   symlinkSync(join(hosts.home('box'), 'outside.json'), join(repo, 'link.json'));
   git(repo, 'add', '-A'); git(repo, 'commit', '-qm', 'fixture');
   // After the checkout: a Compose file the commit never held, one changed since, and the symlink's target outside the run.
@@ -62,7 +82,7 @@ test(`${proof} — a Compose file outside the run directory, absent from the com
   assert.equal(dockerEveryCall(hosts.state('box')).length, calls, 'no Docker call was made for a refused request');
 });
 
-test(`${proof} — a run directory the shim did not create is refused, and so is a committed Compose file that binds a path outside the run directory`, () => {
+test(`${proof} — a run directory the shim did not create is refused, and so is a committed Compose file that reaches the host outside the run directory: a bind, a driver-option volume, a secret, config or env file, a build, a privileged or host-network service, an external network or an include`, () => {
   const unknown = shim('run-check trial-zzzzzz', request());
   assert.equal(unknown.status, 1);
   assert.match(unknown.stderr, /graphyard-host-shim: no run trial-zzzzzz/);
@@ -70,6 +90,11 @@ test(`${proof} — a run directory the shim did not create is refused, and so is
   const binds = shim(`run-check ${run}`, request({ file: 'binds.json' }));
   assert.equal(binds.status, 1, binds.stdout);
   assert.match(binds.stderr, /graphyard-host-shim refuses: binds\.json binds \/etc, outside the run directory/);
+  for (const name of Object.keys(escapes)) {
+    const result = shim(`run-check ${run}`, request({ file: `${name}.json` }));
+    assert.equal(result.status, 1, `${name}: ${result.stdout}`);
+    assert.match(result.stderr, new RegExp(`graphyard-host-shim refuses: ${name}\\.json .*${escapeWords[name]!.source}`), name);
+  }
   assert.deepEqual(started(), [], 'no project was started');
 });
 
