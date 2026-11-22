@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statfsSync, writeFileSync } from 'node:fs';
 import { readdir, rm } from 'node:fs/promises';
 import { availableParallelism, homedir, tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseShard, shardFiles } from '../../scripts/ci-tests.mjs';
 import { hostAccountsVariable } from '../../src/host-accounts.js';
@@ -68,10 +68,16 @@ const tmpfsType = 0x01021994;
  * checkout, so no fixture finds a repository or an install above it, and sticky and shared (1777)
  * as /tmp is, which tests/runner-executor.test.ts requires of the fixture root.
  */
-export function durableTestTmpdir(current = tmpdir(), home = homedir(), statfs: (path: string) => { type: number } = statfsSync): string | null {
-  try { if (statfs(current).type !== tmpfsType) return null; } catch { return null; }
-  const directory = join(home, '.gy', 'tmp');
-  try { mkdirSync(directory, { recursive: true }); chmodSync(directory, 0o1777); return directory; } catch { return null; }
+export function durableTestTmpdir(current = tmpdir(), home = homedir(), statfs: (path: string) => { type: number } = statfsSync, besideCheckout = dirname(fileURLToPath(new URL('../..', import.meta.url)))): string | null {
+  const memoryBacked = (path: string) => { try { return statfs(path).type === tmpfsType; } catch { return false; } };
+  if (!memoryBacked(current)) return null;
+  // GY-2001's replacement assumes the home is on disk. A remote shard's container is the one place
+  // it is not: the host shim runs it with HOME=/tmp, itself a tmpfs (src/host-shim.ts), so the suite
+  // takes the one durable writable place it holds — the run allocation beside this checkout, which
+  // the shim cloned into `<run>/repo` — and keeps a fresh sticky tmp under it.
+  const directory = memoryBacked(home) ? join(besideCheckout, 'tmp') : join(home, '.gy', 'tmp');
+  try { mkdirSync(directory, { recursive: true }); chmodSync(directory, 0o1777); } catch { return null; }
+  return memoryBacked(directory) ? null : directory;
 }
 
 /** The browser suite's historical port, tried first. */
@@ -228,10 +234,10 @@ export async function runTests(options: RunOptions = {}): Promise<RunResult> {
   // The browser window is the dev server's port with a spare beside it, then one window above both
   // the run's shared Postgres cluster and the sentinel that holds the window (GY-3356); a Node
   // run's window is its shared cluster's own.
-  // GY-3611: the CLI and server the tests start run from dist/; build them once, before the first file, when missing or stale.
   const repository = fileURLToPath(new URL('../..', import.meta.url));
   // A remote shard's fresh checkout has no built dashboard either: a selected file that opens it in a browser would find no sign-in page.
   if (resolve(cwd) === resolve(repository) && !existsSync(join(cwd, 'dist', 'index.html')) && opensDashboard(cwd, selection?.args ?? [])) await buildDashboard(cwd);
+  // GY-3611: the CLI and server the tests start run from dist/; build them once, before the first file, when missing or stale.
   if (resolve(cwd) === resolve(repository) && !builtEntries.every(name => builtEntry(cwd, name))) await buildEntries(cwd);
   const reservation = await reserveTestPorts(options.browser ? { first: defaultBrowserPort, span: 2 + testPortSpan, last: 65_000, ...options.ports } : { ...nestedFirst(), ...options.ports });
   let postgres: Awaited<ReturnType<typeof import('./postgres.js').startPostgres>> | undefined;

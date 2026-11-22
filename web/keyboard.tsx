@@ -6,7 +6,7 @@ import { useTheme, toggleTheme } from './theme';
 /**
  * Keyboard-first navigation (GY-3272): ⌘/Ctrl K opens the command palette (jump to any item,
  * open a page, file a goal, switch theme), j/k walk the Work rows and Enter opens the one under
- * the cursor, g w / g m / g s jump to Work, Master and Setup, and ? shows this sheet. The keys
+ * the cursor, g w / g m / g s jump to Work, Lead and Setup, and ? shows this sheet. The keys
  * stay out of the way: nothing fires while a dialog or a field has the focus.
  */
 
@@ -16,7 +16,7 @@ export const shortcuts: [keys: string, does: string][] = [
   ['j / k', 'Move through the Work rows'],
   ['Enter', 'Open the row under the cursor'],
   ['g w', 'Go to Work'],
-  ['g m', 'Go to Master'],
+  ['g m', 'Go to Lead'],
   ['g s', 'Go to Setup'],
   ['?', 'Show this sheet'],
   ['Esc', 'Close'],

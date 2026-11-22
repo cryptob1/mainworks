@@ -12,6 +12,8 @@ export const trialTimeoutMinutes = 20;
 
 /** How many queued heads the writer trials at once, each alone on the current tip (GY-3120), and the most an install may ask for. */
 export const maxMergeWriterParallel = 6;
+/** GY-3625: the most heads one merge trial validates together; each takes its own trial slot's batch. */
+export const batchLimit = 4;
 export const defaultMergeWriterParallel = Math.min(maxMergeWriterParallel, Math.max(1, Math.floor(availableParallelism() / 2)));
 /** The install's deploy key by default: `<config home>/<install>/deploy-key` (`~/.config/graphyard`, or GRAPHYARD_CONFIG_HOME), the one credential the push child sees. */
 export const defaultDeployKeyFile = (installId: string, home?: string) => join(home === undefined ? configHome() : join(home, '.config', 'graphyard'), installId, 'deploy-key');

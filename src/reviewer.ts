@@ -5,6 +5,7 @@ import type { ReviewCriterion } from './review-prompt.js';
 export type { ReviewCriterion } from './review-prompt.js';
 import { reviewStandard, reviewStandards } from './review-prompt.js';
 import { postDeployReviewSection, singleCaseReviewSection, criteriaVerdictRule } from './review-prompt.js';
+import { extractChangedAssertions, type ChangedAssertion } from './model/changed-assertions.js';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -607,7 +608,9 @@ export interface ControlPlanePrompt { head: string; baseTip: string; postMerge?:
   /** GY-3331: this install serves no app and declares no serve command, so no walkthrough is required or owed. */
   noApp?: boolean;
   /** A headless session's answer (headlessReviewAnswer), in place of the `review post` instructions: the launcher posts it. */
-  answer?: string }
+  answer?: string;
+  /** GY-3635: removed or modified assertion lines in existing tests/cases for the reviewer to rule on. */
+  changedAssertions?: readonly ChangedAssertion[] }
 function reviewReadSection(cliPath: string, head: string) {
   return `Read snapshot paths: git show ${head}:PATH; surrounding code: rg, cat. node ${cliPath} --help lists commands; node ${cliPath} guide review is supported and needs no worker or coordinator credential. No graphyard show command. `;
 }
@@ -776,7 +779,7 @@ function controlPlaneReviewPrompt(config: Pick<MasterConfig, 'repository'> & Par
     : '';
   return `You are the independent Graphyard reviewer for ${config.repository}. ${subject}`
     + scope
-    + reviewStandard({ key: binding.key, head: plane.head, base: plane.baseTip }, criteria, files, verification, { memory: memorySection || '', round: reviewRoundSection(plane.head, history), scenarioRequirements })
+    + reviewStandard({ key: binding.key, head: plane.head, base: plane.baseTip }, criteria, files, verification, { memory: memorySection || '', round: reviewRoundSection(plane.head, history), scenarioRequirements, changedAssertions: plane.changedAssertions })
     + reviewReadSection(config.cliPath ?? launcherPath, plane.head)
     + `Classify findings by node ${config.cliPath ?? launcherPath} guide review. `
     + outcome
@@ -1070,6 +1073,11 @@ export async function launchReview(root: string, work: Work, profileName: string
       const discard = () => removeSessionCheckout(root, dirname(checkout.directory), checkout.directory).catch(() => {});
       const minted = { expiresAt: new Date(now().getTime() + 3_600_000).toISOString() };
       try { await mkdir(sessionDirectory, { recursive: true, mode: 0o700 }); } catch (error) { await discard(); throw error; }
+      // GY-3635: extract removed/modified assertion lines in existing tests and E2E cases from the diff
+      // so both the reviewer's request and the verdict guard enforce a per-line ruling before APPROVE.
+      const changedAssertions = product ? [] : await Promise.resolve()
+        .then(() => (dependencies.run ?? defaultChildRun)('git', ['-C', root, 'diff', '--no-color', '--no-ext-diff', binding.baseSha, binding.sha]))
+        .then(raw => extractChangedAssertions(String(raw)).slice(0, 200), () => [] as ChangedAssertion[]);
       // The launch's own binding, from that same read, beside the credential (GY-1492): review post
       // checks the verdict against it. A launch that cannot write it starts nothing and keeps no credential.
       try {
@@ -1077,13 +1085,14 @@ export async function launchReview(root: string, work: Work, profileName: string
           mode: 'control-plane' as const, head: binding.sha, baseTip: binding.baseSha, verdictToken: verdictToken!,
             // A control-plane re-review (GY-1988): the head it deltas from, and the paths its earlier findings named, so review post can judge a BLOCKING: line against the hunks changed since that head.
             ...(!postMerge && reservation.record.reviewRound?.previousHead ? { previousHead: reservation.record.reviewRound.previousHead,
-              ...(earlierBindingPaths(reservation.record.reviewRound.earlierFindings).length ? { earlierPaths: earlierBindingPaths(reservation.record.reviewRound.earlierFindings) } : {}) } : {}) });
+              ...(earlierBindingPaths(reservation.record.reviewRound.earlierFindings).length ? { earlierPaths: earlierBindingPaths(reservation.record.reviewRound.earlierFindings) } : {}) } : {}),
+            ...(changedAssertions.length ? { changedAssertions } : {}) });
       } catch (error) { await rm(sessionDirectory, { recursive: true, force: true }); await discard(); throw error; }
       // The control plane registers the launch before the session starts (GY-1525): the reviewer
       // principal, head, base tip and token hash. A launch it refuses starts nothing.
       let registered: { launch: string } | null = null;
       {
-        try { registered = await (dependencies.registerLaunch ?? registerControlPlaneLaunch(config))(work, { reviewer: reviewerIdentity, head: binding.sha, baseTip: binding.baseSha, tokenHash: verdictTokenHash!, expiresAt: minted.expiresAt, postMerge: !!postMerge, ...(product ? { product: true } : {}) }); }
+        try { registered = await (dependencies.registerLaunch ?? registerControlPlaneLaunch(config))(work, { reviewer: reviewerIdentity, head: binding.sha, baseTip: binding.baseSha, tokenHash: verdictTokenHash!, expiresAt: minted.expiresAt, postMerge: !!postMerge, ...(product ? { product: true } : {}), ...(changedAssertions.length ? { changedAssertions } : {}) }); }
         catch (error) { await rm(sessionDirectory, { recursive: true, force: true }); await discard(); throw error; }
       }
       const writable = await sessionWritable(root, config, checkout.directory);
@@ -1177,7 +1186,7 @@ export async function launchReview(root: string, work: Work, profileName: string
         if (product) await mkdir(headlessContext.screenshots = join(checkout.directory, 'screenshots'), { recursive: true });
         const memory = await readProjectMemory(root).catch(() => null);
         const maps = await (dependencies.verificationMaps ?? readVerificationMaps)(root, config.baseBranch).catch(() => []);
-        const request = (answer?: string) => reviewPrompt(config, binding, checkout, undefined, reservation.record.reviewInputs!.criteria, reservation.record.reviewRound, work.observation?.candidate.sha === binding.sha ? work.observation.files : null, null, memory, { maps, paths: [...new Set([work.description, ...work.criteria.map(criterion => criterion.text)].flatMap(namedPaths))] }, { head: binding.sha, baseTip: binding.baseSha, ...(postMerge ? { postMerge: { mergeSha: postMerge.mergeSha } } : {}), ...(product ? { product: true, trialEvidence: productTrialEvidence(work, binding.sha), ...(work.preview?.state === 'running' ? { previewUrl: `${config.url}${work.preview.path}/` } : {}), ...(serving ? { servedUrl: serving.url } : {}), ...(noApp ? { noApp: true } : {}) } : {}), ...(answer ? { answer } : {}) }, reservation.record.reviewInputs?.scenarioRequirements);
+        const request = (answer?: string) => reviewPrompt(config, binding, checkout, undefined, reservation.record.reviewInputs!.criteria, reservation.record.reviewRound, work.observation?.candidate.sha === binding.sha ? work.observation.files : null, null, memory, { maps, paths: [...new Set([work.description, ...work.criteria.map(criterion => criterion.text)].flatMap(namedPaths))] }, { head: binding.sha, baseTip: binding.baseSha, ...(postMerge ? { postMerge: { mergeSha: postMerge.mergeSha } } : {}), ...(changedAssertions.length ? { changedAssertions } : {}), ...(product ? { product: true, trialEvidence: productTrialEvidence(work, binding.sha), ...(work.preview?.state === 'running' ? { previewUrl: `${config.url}${work.preview.path}/` } : {}), ...(serving ? { servedUrl: serving.url } : {}), ...(noApp ? { noApp: true } : {}) } : {}), ...(answer ? { answer } : {}) }, reservation.record.reviewInputs?.scenarioRequirements);
         {
           // GY-3218: a run whose agent says its account is not logged in holds it and runs on the role's next account, under this same launch.
           const moveAccount = moveOffLoggedOutAccount(config, profile, work.key, on, dependencies.probe, async next => {
@@ -1239,7 +1248,7 @@ export async function launchReview(root: string, work: Work, profileName: string
 }
 
 /** What a control-plane launch registers with the control plane (server/review-verdict.ts `reviewLaunchBodySchema`). */
-export interface ControlPlaneLaunchInput { reviewer: string; head: string; baseTip: string; tokenHash: string; expiresAt: string; postMerge: boolean; product?: boolean }
+export interface ControlPlaneLaunchInput { reviewer: string; head: string; baseTip: string; tokenHash: string; expiresAt: string; postMerge: boolean; product?: boolean; changedAssertions?: ChangedAssertion[] }
 /** The paths the earlier round's findings named (GY-1988), de-duplicated and bounded, for the session's binding. */
 function earlierBindingPaths(findings: readonly string[] | undefined): string[] {
   return [...new Set((findings ?? []).map(finding => findingLocation(finding)?.path).filter((path): path is string => !!path))].slice(0, 10);

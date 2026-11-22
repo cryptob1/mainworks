@@ -25,7 +25,7 @@ async function serve(page: Page, work: any[]) {
     if (path.includes('/work/')) return route.fulfill({ json: state.work.find(w => path.endsWith(w.id)) ?? {} });
     return route.fulfill({ json: [] });
   });
-  await serveXterm(page); // the Master page's xterm.js, served locally (GY-3357)
+  await serveXterm(page); // the Lead page's xterm.js, served locally (GY-3357)
   await page.goto('/?sign-in');
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
@@ -98,7 +98,7 @@ test('e2e:night-yard-theme — Night Yard serves by default with rain over grain
   expect(await background(page)).toEqual([7, 11, 20]);
   expect(await rain(page)).toBe('gy-rain');
   expect(await grain(page)).toContain('svg');
-  // The strip carries what is happening now; a builder's row gets its friendly name, and the Master page's title reads Master (GY-3307).
+  // The strip carries what is happening now; a builder's row gets its friendly name, and the Lead page's title reads Lead (GY-3307, GY-3602).
   await expect(page.locator('.activity-strip')).toContainText('agents working');
   await expect(page.locator('[data-row="GY-14"] [data-col="builder"] [data-agent]')).toHaveText('Alex');
   await page.keyboard.press('Control+k');
