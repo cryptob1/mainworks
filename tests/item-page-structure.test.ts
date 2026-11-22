@@ -83,7 +83,7 @@ test('unit:item-page-sections — the plate leads with the why sentence, the evi
   // user, then who acts next and the state sentence. Below it the Details fold, Activity, then the
   // technical fold with the gate detail. No count, no pull request wording outside the control plane's own reasons.
   const order = ['data-why="true"', 'class="status-sentence', 'Next:', 'aria-label="Pipeline"', 'aria-label="Screenshots"',
-    'aria-label="Description and criteria"', 'data-what-changed', 'data-simplest', 'aria-label="Requirements"', 'aria-label="Activity"', 'aria-label="Technical details"', 'aria-label="What is left"', 'aria-label="Change"'].map(needle => html.indexOf(needle));
+    'aria-label="Details"', 'data-what-changed', 'data-simplest', 'aria-label="Requirements"', 'aria-label="Activity"', 'aria-label="Technical details"', 'aria-label="What is left"', 'aria-label="Change"'].map(needle => html.indexOf(needle));
   assert.ok(order.every(index => index >= 0), `every section is rendered: ${order}`);
   assert.deepEqual([...order].sort((a, b) => a - b), order, 'why, simplest, the evidence, what changed, who acts next, Details, Activity, then the folded gate detail');
   assert.match(html, /<p class="item-title-full" data-lead-sentence="true" data-why="true"[^>]*>Owners taste a change from its page, not its pipeline\.<\/p>/);
