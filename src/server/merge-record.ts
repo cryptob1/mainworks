@@ -64,7 +64,7 @@ export const mergeRecordBodySchema = z.discriminatedUnion('kind', [
       // GY-3267: each browser case's kept screenshots (after the candidate, before the base tip), base64 PNGs within the trial's capture bound.
       screenshots: z.array(z.object({ case: z.string().min(1).max(200),
         before: z.string().max(Math.ceil(trialScreenshotBytesMax / 3) * 4).optional(), after: z.string().max(Math.ceil(trialScreenshotBytesMax / 3) * 4).optional() }).strict()).max(trialScreenshotCasesMax).optional(),
-      preview: previewVerdictSchema.optional(), flaked: trialFlakedSchema.optional() }).strict(),
+      preview: previewVerdictSchema.optional(), flaked: trialFlakedSchema.optional(), batch: z.array(z.string().min(1).max(100)).max(4).optional() }).strict(),
     z.object({ kind: z.literal('trial'), head: sha, baseTip: sha, mergeSha: sha, outcome: trialNoVerdictOutcome, phase: trialPhase, reason: z.string().min(1).max(1000),
       phases: trialPhaseDurations, attempts: trialAttempts.min(1), durationMs: z.number().int().min(0) }).strict(),
   ]),
