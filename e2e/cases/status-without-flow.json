@@ -1,0 +1,12 @@
+{
+  "id": "status-without-flow",
+  "title": "Status answers without the flow numbers; master status reads them from /api/flow",
+  "description": "A fresh control plane's authenticated /api/status answers within the installer's 30 s check, runs no flow query and carries no flow; GET /api/flow returns the 6 hour, 24 hour and 7 day numbers, and master status shows 75% first pass and the review attention line read from /api/flow.",
+  "tags": ["api", "regression"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "a fresh install's /api/status answers within 30 s without reading flow; /api/flow returns it", "run": "node --import tsx tests/helpers/run-tests.ts tests/status-without-flow.test.ts", "timeoutSeconds": 240 },
+    { "kind": "command", "name": "master status still shows the flow numbers from /api/flow", "run": "node --import tsx tests/helpers/run-tests.ts tests/flow-numbers-shown.test.ts", "timeoutSeconds": 240 }
+  ]
+}

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { isClosed, type Work } from '../../src/model';
 import { mergedAt, releasedAt, timedGroups, type BoardItem, type Group } from '../groups';
 import { releaseView } from '../../src/model/release';
@@ -83,7 +84,15 @@ function FlowLine({ flow }: { flow?: FlowReport | null }) {
  * Work (GY-3600): one list of real tasks, grouped by goal, with Needs you pinned on top. The groups
  * are the board's (`GET /api/board`), never derived here; a task's goal is its own `goal` field. Hook-free, so unit tests render it.
  */
-export default function WorkPage({ work, board, status, query, setQuery, setSelected, setCreating, setView, observedAt, filter, setFilter }: Dashboard) {
+export default function WorkPage({ work, board, status, query, setQuery, setSelected, setCreating, setView, observedAt, filter, setFilter, api }: Dashboard) {
+  // GY-3677: the flow numbers from GET /api/flow, read once a minute; /api/status no longer carries them.
+  const [flow, setFlow] = useState<FlowReport | null>(null);
+  useEffect(() => {
+    let active = true;
+    const read = () => api('flow').then(value => { if (active) setFlow(value); }, () => {});
+    read(); const timer = setInterval(read, 60_000);
+    return () => { active = false; clearInterval(timer); };
+  }, []);
   const now = Number.isNaN(observedAt) ? Date.now() : observedAt;
   const release = releaseView(status), serve = serveView(status);
   const byId = new Map(work.map(item => [item.id, item]));
@@ -148,7 +157,7 @@ export default function WorkPage({ work, board, status, query, setQuery, setSele
   const noGoal = shown.filter(({ item }) => !item.goal);
 
   return <>
-    <div className="page-heading"><div><h1>Work</h1><p className="page-fact" data-work-header>{board ? header : 'Reading the board…'}</p><FlowLine flow={status?.flow}/><BuildLine/></div>
+    <div className="page-heading"><div><h1>Work</h1><p className="page-fact" data-work-header>{board ? header : 'Reading the board…'}</p><FlowLine flow={flow}/><BuildLine/></div>
       <div className="page-actions"><div className="search"><input type="search" aria-label="Search work" placeholder="Search by title, key or PR" value={query} onChange={event => setQuery(event.target.value)}/></div>
         {status?.actor?.role === 'admin' && <button type="button" onClick={() => setCreating(true)}>＋ New work item</button>}</div></div>
     {needs.length > 0 && <section className="panel needs-you-strip" aria-label="Needs you">
