@@ -657,3 +657,4 @@ header.main-top-bar{height:auto;min-height:60px;display:flex;flex-wrap:wrap;alig
   .sessions-table.work-table [data-col=now]{grid-area:now;color:var(--text-2)}.sessions-table.work-table [data-col=builder]{grid-area:builder;color:var(--text-2)}.sessions-table.work-table [data-col=pr]{grid-area:pr}
   .sessions-table.work-table td::before{content:none}
   .need{grid-template-columns:minmax(0,1fr) auto}.need button{grid-column:1/-1;justify-self:start}}
+.infra-actions{list-style:none;margin:0;padding:0;display:grid;gap:4px}.infra-actions li{font-size:var(--type-small);overflow-wrap:anywhere;min-width:0}.infra-actions time{color:var(--text-3);font-size:11px}
