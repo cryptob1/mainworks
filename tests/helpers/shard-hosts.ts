@@ -69,7 +69,8 @@ elif command == 'rm':
 elif command == 'create':
     at = args.index('--entrypoint')
     env = dict(value.split('=', 1) for flag, value in zip(args, args[1:]) if flag == '--env')
-    lo_up = "import fcntl, os, socket, struct, sys; s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); fcntl.ioctl(s, 0x8914, struct.pack('16sH', b'lo', 1)); s.close(); os.execvp(sys.argv[1], sys.argv[1:])"
+    # Loopback needs a capability to come up; bubblewrap refuses to start holding one, so the ambient set is cleared before the command runs.
+    lo_up = "import ctypes, fcntl, os, socket, struct, sys; s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); fcntl.ioctl(s, 0x8914, struct.pack('16sH', b'lo', 1)); s.close(); ctypes.CDLL(None).prctl(47, 4, 0, 0, 0); os.execvp(sys.argv[1], sys.argv[1:])"
     workdir, isolate = args[args.index('--workdir') + 1], ['unshare', '-cn', '--keep-caps', sys.executable, '-c', lo_up] if '--network=none' in args else []
     if os.path.exists(os.path.join(STATE, 'read-only-root')):
         # Docker's --read-only, for a host that asks: only the container's tmpfs and bind mounts are writable.
