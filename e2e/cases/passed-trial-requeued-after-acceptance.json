@@ -1,0 +1,15 @@
+{
+  "id": "passed-trial-requeued-after-acceptance",
+  "title": "An item attested after its trial passed reaches Done",
+  "description": "The real merge writer over a real temporary Postgres control plane and a scratch remote: a head's trial passes while its acceptance gate still awaits a manual proof, main moves and another head's trial takes the only slot. Once the proof is recorded the head lands on its kept trial within one cycle and the item reaches Done, with no rework or resubmission.",
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "an attested head lands on its kept trial while the trial slot is busy",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/passed-trial-requeued-after-acceptance.test.ts",
+      "timeoutSeconds": 600
+    }
+  ]
+}

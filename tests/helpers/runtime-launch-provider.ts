@@ -33,7 +33,7 @@ export async function runtimeLaunchProvider() {
     args: ['--ask-for-approval', 'never', 'exec', '--skip-git-repo-check', '--sandbox', 'workspace-write',
       '-c', 'model_provider="launch_test"', '-c', 'model="launch-test"',
       '-c', 'model_providers.launch_test.name="Launch regression"',
-      '-c', `model_providers.launch_test.base_url="http://localhost:${port}/v1"`,
+      '-c', `model_providers.launch_test.base_url="http://127.0.0.1:${port}/v1"`,
       '-c', 'model_providers.launch_test.wire_api="responses"',
       '-c', 'model_providers.launch_test.requires_openai_auth=false',
       '-c', 'model_providers.launch_test.request_max_retries=0',
