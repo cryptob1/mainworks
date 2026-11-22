@@ -1,0 +1,125 @@
+// Concern: GY-3624 flow numbers — attempts and merges an hour, first-pass yield with rework causes, wait per station, flaky rate and reverts, for a window, from item histories and trial ledgers. Nothing is stored.
+import { plainDuration, spread } from './pipeline-speed.js';
+import { mergeWriterTrialGround } from './model/rework-ground.js';
+
+export const flowWindows = { '6h': 6, '24h': 24, '7d': 168 } as const;
+export type FlowWindow = keyof typeof flowWindows;
+export const flowStations = ['ready', 'build', 'review', 'test queue', 'merge trial', 'acceptance', 'merge'] as const;
+export type FlowStation = typeof flowStations[number];
+export const reworkCauses = ['review', 'product review', 'merge trial', 'acceptance', 'base moved', 'red base'] as const;
+export type ReworkCause = typeof reworkCauses[number];
+
+/**
+ * One ledger row as the flow reads it: a row carrying the item's whole document names its `stage`;
+ * a `rework` its reason and ground; a `merge.trial` whether it flaked (its failing tests passed on
+ * the rerun, or failed the same way on the base); a `merge.serve-revert` whether it reverted.
+ */
+export interface FlowEvent { kind: string; at: string; stage?: string | null; reason?: string | null; binding?: string | null; flaky?: boolean; reverted?: boolean }
+export interface FlowItem {
+  key: string; title: string; stage: string; stageEnteredAt: string; mergedAt: string | null;
+  attempts: { claimedAt: string; endedAt: string | null; end: string | null }[];
+  events: FlowEvent[];
+}
+export interface StationWait { median: number; p90: number; samples: number; oldest: { key: string; title: string; minutes: number; waiting: boolean } }
+export interface FlowNumbers {
+  hours: number; attempts: number; attemptsPerHour: number; merges: number; mergesPerHour: number;
+  /** Attempts merged with no rework request ÷ attempts ended; null when none ended. */
+  firstPassYield: number | null;
+  rework: Record<ReworkCause, number>;
+  stations: Record<FlowStation, StationWait | null>;
+  trials: number; flaky: number; flakyRate: number | null;
+  reverts: number; revertRate: number | null;
+}
+
+/** Which station sent the head back, read from the rework's reason and the ground it binds. */
+export function reworkCause(reason: string, binding: string | null | undefined): ReworkCause {
+  const ground = binding ?? '';
+  if (/:conflict$|:sync:/.test(ground) || /merge conflicts in|The base moved/.test(reason)) return 'base moved';
+  if (/base failure|on the base tip too/i.test(reason)) return 'red base';
+  if (ground.endsWith(`:${mergeWriterTrialGround}`)) return 'merge trial';
+  if (/:proof|:human:/.test(ground)) return 'acceptance';
+  if (/product review/.test(reason)) return 'product review';
+  return 'review';
+}
+
+const ms = (iso: string | null | undefined) => iso ? Date.parse(iso) : Number.NaN;
+const stationOf: Record<string, FlowStation> = { ready: 'ready', build: 'build', review: 'review', acceptance: 'acceptance', merge: 'merge' };
+interface Visit { station: FlowStation; start: number; end: number; open: boolean }
+
+/** The item's stays at each station, from the stage each whole-document row records; the test stage splits at its merge intent into queue and trial. */
+function visits(item: FlowItem, now: number): Visit[] {
+  const marks = [...item.events.filter(event => event.stage).map(event => ({ at: ms(event.at), stage: event.stage! })), { at: ms(item.stageEnteredAt), stage: item.stage }]
+    .filter(mark => Number.isFinite(mark.at)).sort((a, b) => a.at - b.at);
+  const intents = item.events.filter(event => event.kind === 'merge.intent').map(event => ms(event.at));
+  const out: Visit[] = [];
+  marks.forEach((mark, index) => {
+    if (index > 0 && marks[index - 1].stage === mark.stage) return;
+    const next = marks.slice(index + 1).find(later => later.stage !== mark.stage);
+    const end = next ? next.at : now, open = !next;
+    if (mark.stage === 'test') {
+      const intent = intents.find(at => at >= mark.at && at < end);
+      if (intent === undefined) out.push({ station: 'test queue', start: mark.at, end, open });
+      else out.push({ station: 'test queue', start: mark.at, end: intent, open: false }, { station: 'merge trial', start: intent, end, open });
+    } else if (stationOf[mark.stage]) out.push({ station: stationOf[mark.stage], start: mark.at, end, open });
+  });
+  return out;
+}
+
+/** How each attempt ended, and when: reworked (with the cause), abandoned, merged, or not yet. */
+function attemptOutcomes(item: FlowItem) {
+  const reworks = item.events.filter(event => event.kind === 'rework');
+  const merged = ms(item.mergedAt);
+  return item.attempts.flatMap((attempt, index) => {
+    const from = ms(attempt.claimedAt), to = index + 1 < item.attempts.length ? ms(item.attempts[index + 1].claimedAt) : Infinity;
+    const rework = reworks.find(event => ms(event.at) >= from && ms(event.at) < to);
+    if (rework) return [{ at: ms(rework.at), merged: false }];
+    if (attempt.end === 'released' || attempt.end === 'expired') return [{ at: ms(attempt.endedAt), merged: false }];
+    if (to === Infinity && merged >= from) return [{ at: merged, merged: true }];
+    return [];
+  });
+}
+
+/** The flow over the `hours` before `now`. */
+export function flowNumbers(items: readonly FlowItem[], hours: number, now: number): FlowNumbers {
+  const from = now - hours * 3_600_000, inWindow = (at: number) => at > from && at <= now;
+  const ended = items.flatMap(attemptOutcomes).filter(outcome => inWindow(outcome.at));
+  const merges = items.filter(item => inWindow(ms(item.mergedAt))).length;
+  const events = items.flatMap(item => item.events.filter(event => inWindow(ms(event.at))));
+  const rework = Object.fromEntries(reworkCauses.map(cause => [cause, 0])) as Record<ReworkCause, number>;
+  for (const event of events) if (event.kind === 'rework') rework[reworkCause(event.reason ?? '', event.binding)] += 1;
+  const stays = items.flatMap(item => visits(item, now).filter(visit => visit.end > from).map(visit => ({ item, visit, ms: visit.end - visit.start })));
+  const stations = Object.fromEntries(flowStations.map(station => {
+    const here = stays.filter(stay => stay.visit.station === station);
+    const wait = spread(here.map(stay => stay.ms));
+    if (!wait) return [station, null];
+    // The item waiting there longest now, else the longest stay the window saw.
+    const longest = (list: typeof here) => list.reduce((a, b) => b.ms > a.ms ? b : a);
+    const waiting = here.filter(stay => stay.visit.open);
+    const oldest = longest(waiting.length ? waiting : here);
+    return [station, { ...wait, oldest: { key: oldest.item.key, title: oldest.item.title, minutes: Math.round(oldest.ms / 60_000), waiting: oldest.visit.open } }];
+  })) as Record<FlowStation, StationWait | null>;
+  const trials = events.filter(event => event.kind === 'merge.trial'), flaky = trials.filter(event => event.flaky).length;
+  const reverts = events.filter(event => event.kind === 'merge.serve-revert' && event.reverted).length;
+  const ratio = (part: number, whole: number) => whole ? part / whole : null;
+  return {
+    hours, attempts: ended.length, attemptsPerHour: ended.length / hours, merges, mergesPerHour: merges / hours,
+    firstPassYield: ratio(ended.filter(outcome => outcome.merged).length, ended.length), rework, stations,
+    trials: trials.length, flaky, flakyRate: ratio(flaky, trials.length), reverts, revertRate: ratio(reverts, merges),
+  };
+}
+
+const capital = (text: string) => text[0].toUpperCase() + text.slice(1);
+const windowWords = (hours: number) => hours === 168 ? '7 days' : `${hours} hours`;
+/** One attention line when a station's slowest tenth waited over an hour: the slowest such station and its oldest item. */
+export function flowAttention(flow: FlowNumbers): { subject: string; text: string; next: string } | null {
+  const slow = flowStations.flatMap(station => flow.stations[station] && flow.stations[station]!.p90 > 60 ? [{ station, wait: flow.stations[station]! }] : [])
+    .sort((a, b) => b.wait.p90 - a.wait.p90)[0];
+  if (!slow) return null;
+  const { oldest } = slow.wait;
+  return { subject: slow.station,
+    text: `${capital(slow.station)} is slow: the slowest tenth waited ${plainDuration(slow.wait.p90)} over the last ${windowWords(flow.hours)}. ${oldest.waiting ? 'Oldest' : 'Longest'}: ${oldest.key} ${oldest.title}, ${plainDuration(oldest.minutes)}.`,
+    next: `graphyard status ${oldest.key}` };
+}
+
+/** "75%", or a dash when nothing ended. */
+export const percent = (fraction: number | null) => fraction === null ? '—' : `${Math.round(fraction * 100)}%`;
