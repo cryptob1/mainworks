@@ -152,8 +152,9 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
   const undoNote = 'Only the operator can undo a hold or a pause.';
   /** A pasted screenshot goes to the Lead as an attachment, as pasting into the terminal does. */
   const attach = (files: File[]) => {
-    terminal.current?.attach(files);
-    setBoxNote(pane.mode === 'control' ? 'Image sent to the Lead.' : 'Not sent: ' + (pane.reason || 'this session cannot type into the Lead.'));
+    if (!terminal.current) { setBoxNote('Not sent: the Lead pane is still loading; try again in a moment.'); return; }
+    setBoxNote('Sending the image to the Lead…');
+    void terminal.current.attach(files).then(sent => setBoxNote(sent ? 'Image sent to the Lead.' : 'Not sent: ' + (pane.reason || 'this session cannot type into the Lead.')));
   };
   const pasteImage = (event: ClipboardEvent) => {
     const files = [...(event.clipboardData?.files ?? [])].filter(file => file.type.startsWith('image/'));

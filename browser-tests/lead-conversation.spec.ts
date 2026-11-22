@@ -46,6 +46,12 @@ test('e2e:lead-conversation — the Lead is a conversation of messages and cards
     const { code } = await call('test-human-operator', 'sign-in-links', {});
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     await serveXterm(context);
+    // The Lead pane's socket, held for a moment when asked, as a slow machine reconnects it.
+    let holdPane = 0;
+    await context.routeWebSocket(/\/api\/terminal/, socket => {
+      const server = socket.connectToServer(), held = holdPane;
+      server.onMessage(async message => { if (held) await new Promise(done => setTimeout(done, held)); socket.send(message); });
+    });
     const page = await context.newPage();
     await page.goto(`${url}/#sign-in=${code}&master`);
     const tablist = page.getByRole('tablist', { name: 'Lead views' });
@@ -164,6 +170,7 @@ test('e2e:lead-conversation — the Lead is a conversation of messages and cards
 
     // The filed task card's title links to its Task page.
     const taskCard = conversation.locator('.lead-card.task').filter({ hasText: 'Fix the flaky release check' });
+    holdPane = 2_000;
     await taskCard.locator('.lead-what').getByRole('button', { name: 'Fix the flaky release check' }).click();
     await expect(page.getByRole('heading', { name: /Fix the flaky release check/ })).toBeVisible(settled);
     await page.getByRole('button', { name: '← Back' }).click();
@@ -171,7 +178,8 @@ test('e2e:lead-conversation — the Lead is a conversation of messages and cards
 
     // The message box sends by typing into the Lead pane, as people always have.
     await expect(page.getByRole('button', { name: 'Attach an image' })).toBeVisible();
-    // A screenshot pasted into the message box is attached to the Lead, not dropped.
+    // A screenshot pasted into the message box is attached to the Lead, not dropped — even while the
+    // Lead pane is still reconnecting after the page came back.
     await page.locator('#lead-message').evaluate(input => {
       const data = new DataTransfer();
       data.items.add(new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], 'shot.png', { type: 'image/png' }));

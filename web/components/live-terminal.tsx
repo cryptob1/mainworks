@@ -6,10 +6,11 @@ type Session = { account: string | null; runtime: string | null; pane: string | 
 export interface TerminalHandle {
   /** One line as bracketed paste plus Enter, as typing it; false when this page cannot type. */
   typeLine(text: string): boolean;
-  /** Upload files (an image to attach) and paste their saved path into the pane. */
-  attach(files: File[]): void;
+  /** Upload files (an image to attach) and paste their saved path into the pane, waiting out a
+   *  (re)connect; resolves false when this session cannot type into the pane. */
+  attach(files: File[]): Promise<boolean>;
 }
-const noHandle: TerminalHandle = { typeLine: () => false, attach: () => {} };
+const noHandle: TerminalHandle = { typeLine: () => false, attach: async () => false };
 
 // xterm.js loads from the CDN at a pinned exact version, checked by its hash, only on a page that
 // shows a terminal: never an npm dependency of the dashboard bundle.
@@ -80,7 +81,10 @@ export default function LiveTerminal({ token, label, onSession, handle }: { toke
       const terminal = new Terminal({ cols: columns, rows, scrollback: 5000, convertEol: false, cursorBlink: true, fontSize: 13 });
       terminal.open(host.current!);
       let socket: WebSocket, reconnect: ReturnType<typeof setTimeout>, delay = 250;
-      let writable = false, doubted = false;
+      let writable = false, doubted = false, viewOnly = false, gone = false;
+      // Images attached while the pane (re)connects wait for it rather than being dropped.
+      let held: { files: File[]; done: (sent: boolean) => void }[] = [];
+      const release = (sent: boolean) => { const waiting = held; held = []; for (const { files, done } of waiting) { if (sent) void deliver(files, ''); done(sent); } };
       const send = (value: unknown) => { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value)); };
       const input = (data: string) => { if (writable) send({ type: 'input', data }); };
       sendKey.current = key => { input(key); terminal.focus(); };
@@ -128,12 +132,13 @@ export default function LiveTerminal({ token, label, onSession, handle }: { toke
           if (!live) return;
           if (typeof event.data === 'string') {
             const message = JSON.parse(event.data);
-            if (message.refused) { refused = true; writable = false; setReason(message.refused); setState('refused'); return; }
+            if (message.refused) { refused = gone = true; writable = false; release(false); setReason(message.refused); setState('refused'); return; }
             if (message.type === 'scrollback') { terminal.reset(); terminal.write(withoutAlternateScreen(message.data.replace(/\r?\n/g, '\r\n'))); return; }
             if (message.note) { setReason(message.note); return; }
             if (message.session) setSession(message.session);
             if (message.mode) {
-              writable = message.mode === 'control' && !!message.session?.pane; setState(message.mode); setReason(''); delay = 250;
+              writable = message.mode === 'control' && !!message.session?.pane; viewOnly = !writable; setState(message.mode); setReason(''); delay = 250;
+              release(writable);
               fit();
               // The pane takes focus only when nothing else has it: a late hello never pulls focus off a tab or box.
               if (writable && message.type === 'hello' && (!document.activeElement || document.activeElement === document.body)) terminal.focus();
@@ -154,6 +159,7 @@ export default function LiveTerminal({ token, label, onSession, handle }: { toke
               // A socket that failed while the network was down answers this check once it is back,
               // looking refused: one more attempt, on the network the check just reached, decides (GY-3368).
               if (!doubted) { doubted = true; connect(); return; }
+              gone = true; release(false);
               setReason('Not available: sign in, and check the session still has a pane.'); setState('refused'); return;
             }
           }
@@ -179,7 +185,11 @@ export default function LiveTerminal({ token, label, onSession, handle }: { toke
       // The page's message box (GY-3602): one line as a bracketed paste with Enter, and attached images.
       handleRef.current = {
         typeLine: line => { if (!writable) return false; input(`\x1b[200~${line.replace(/\x1b/g, '').replace(/\r?\n/g, ' ')}\x1b[201~`); input('\r'); terminal.focus(); return true; },
-        attach: files => { void deliver(files, ''); },
+        attach: files => {
+          if (writable) { void deliver(files, ''); return Promise.resolve(true); }
+          if (viewOnly || gone) return Promise.resolve(false);
+          return new Promise(done => { held.push({ files, done }); });
+        },
       };
       handle?.(handleRef.current);
       const readClipboard = async () => {
@@ -228,7 +238,7 @@ export default function LiveTerminal({ token, label, onSession, handle }: { toke
       window.addEventListener('resize', fit); document.addEventListener('visibilitychange', visible);
       fit(); connect();
       stop = () => {
-        clearTimeout(reconnect); observer.disconnect(); window.removeEventListener('resize', fit); document.removeEventListener('visibilitychange', visible);
+        release(false); clearTimeout(reconnect); observer.disconnect(); window.removeEventListener('resize', fit); document.removeEventListener('visibilitychange', visible);
         element.removeEventListener('paste', paste, true); element.removeEventListener('drop', drop); element.removeEventListener('dragover', over); element.removeEventListener('contextmenu', context);
         element.removeEventListener('touchstart', touchStart); element.removeEventListener('touchmove', touchMove);
         typing.dispose(); socket.close(); terminal.dispose(); sendKey.current = () => {}; handleRef.current = noHandle; handle?.(null);
