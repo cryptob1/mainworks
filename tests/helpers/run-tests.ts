@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process';
-import { chmodSync, mkdirSync, readdirSync, readFileSync, statfsSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statfsSync, writeFileSync } from 'node:fs';
 import { readdir, rm } from 'node:fs/promises';
 import { availableParallelism, homedir, tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseShard, shardFiles } from '../../scripts/ci-tests.mjs';
 import { hostAccountsVariable } from '../../src/host-accounts.js';
@@ -68,10 +68,13 @@ const tmpfsType = 0x01021994;
  * checkout, so no fixture finds a repository or an install above it, and sticky and shared (1777)
  * as /tmp is, which tests/runner-executor.test.ts requires of the fixture root.
  */
-export function durableTestTmpdir(current = tmpdir(), home = homedir(), statfs: (path: string) => { type: number } = statfsSync): string | null {
+export function durableTestTmpdir(current = tmpdir(), home = homedir(), statfs: (path: string) => { type: number } = statfsSync, checkout = process.cwd()): string | null {
   try { if (statfs(current).type !== tmpfsType) return null; } catch { return null; }
-  const directory = join(home, '.gy', 'tmp');
-  try { mkdirSync(directory, { recursive: true }); chmodSync(directory, 0o1777); return directory; } catch { return null; }
+  // A remote shard's HOME is /tmp, memory-backed too; its run directory, the checkout's parent, is on disk.
+  for (const directory of [join(home, '.gy', 'tmp'), join(dirname(resolve(checkout)), 'tmp')]) {
+    try { mkdirSync(directory, { recursive: true }); if (statfs(directory).type === tmpfsType) continue; chmodSync(directory, 0o1777); return directory; } catch { /* the next candidate */ }
+  }
+  return null;
 }
 
 /** The browser suite's historical port, tried first. */
@@ -204,6 +207,12 @@ export function nestedFirst(environment: NodeJS.ProcessEnv = process.env): { fir
   return Number.isInteger(parent) && parent > 0 ? { first: parent + nestedPortGap } : {};
 }
 
+/** The dashboard `npm run build` writes to dist/ (the server serves it), built here when a checkout never ran the build. */
+async function buildDashboard(cwd: string) {
+  const { build } = await import('vite');
+  await build({ configFile: join(cwd, 'vite.config.ts'), root: join(cwd, 'web'), cacheDir: join(cwd, '.graphyard', 'vite'), logLevel: 'warn', build: { outDir: join(cwd, 'dist'), emptyOutDir: true } });
+}
+
 export async function runTests(options: RunOptions = {}): Promise<RunResult> {
   const tmpRoot = durableTestTmpdir() ?? undefined;
   await sweepLeftoverTempDirectories(tmpRoot);
@@ -220,6 +229,8 @@ export async function runTests(options: RunOptions = {}): Promise<RunResult> {
   // run's window is its shared cluster's own.
   // GY-3611: the CLI and server the tests start run from dist/; build them once, before the first file, when missing or stale.
   const repository = fileURLToPath(new URL('../..', import.meta.url));
+  // A remote shard's fresh checkout has no built dashboard either: tests that open it would find no sign-in page.
+  if (resolve(cwd) === resolve(repository) && !existsSync(join(cwd, 'dist', 'index.html'))) await buildDashboard(cwd);
   if (resolve(cwd) === resolve(repository) && !builtEntries.every(name => builtEntry(cwd, name))) await buildEntries(cwd);
   const reservation = await reserveTestPorts(options.browser ? { first: defaultBrowserPort, span: 2 + testPortSpan, last: 65_000, ...options.ports } : { ...nestedFirst(), ...options.ports });
   let postgres: Awaited<ReturnType<typeof import('./postgres.js').startPostgres>> | undefined;
