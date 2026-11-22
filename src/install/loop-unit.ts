@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir, userInfo } from 'node:os';
-import { basename, isAbsolute, join, resolve, sep } from 'node:path';
+import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { deployUnitOf, installUnitsFile, legacyLoopUnit, proposedInstallUnits, readInstallUnits, resolveInstallUnits, systemdCommandLineWords } from './units.js';
 import { knownGoodCli, knownGoodState } from '../master/known-good.js';
 import { installDirectory } from './secrets.js';
@@ -173,7 +173,11 @@ function assertCoordinatorCheckout(root: string, host: LoopSupervisorHost) {
   const checkout = canonical(root);
   const temporary = (host.temporaryDirectories ?? temporaryDirectories()).map(canonical).find(directory => within(checkout, directory));
   if (temporary) throw new LoopSupervisorRefusal(`the loop's WorkingDirectory ${root} is under the temporary directory ${temporary}: a unit rooted there outlives its checkout and crash-loops once the directory is gone`, operator);
-  if (checkout.split(sep).includes('.graphyard')) throw new LoopSupervisorRefusal(`the loop's WorkingDirectory ${root} is inside a managed .graphyard directory (an assignment worktree or session checkout), never the coordinator checkout`, operator);
+  // A checkout under the process's own temporary directory is judged by its path below it: outside a
+  // fixture host the line above has refused it already, and a remote shard keeps the suite's
+  // temporary directory inside its run under ~/.graphyard/runs, which is no fixture's worktree.
+  const own = canonical(tmpdir());
+  if ((within(checkout, own) ? relative(own, checkout) : checkout).split(sep).includes('.graphyard')) throw new LoopSupervisorRefusal(`the loop's WorkingDirectory ${root} is inside a managed .graphyard directory (an assignment worktree or session checkout), never the coordinator checkout`, operator);
   if (!existsSync(join(checkout, '.graphyard', 'master.json'))) throw new LoopSupervisorRefusal(`the loop's WorkingDirectory ${root} is not the configured coordinator checkout: it holds no .graphyard/master.json`, operator);
 }
 /**
