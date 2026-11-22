@@ -9,7 +9,7 @@ import { scratchTrial } from './e2e-delivery-fixture.mjs';
 
 const token = process.argv[2], url = process.env.TARGET_URL;
 assert.ok(token && url, 'Run this case through the E2E runner against scripts/e2e-serve.mjs');
-const { delivery } = JSON.parse(await readFile('.graphyard/e2e-serve.json', 'utf8'));
+const { delivery } = JSON.parse(await readFile(`.graphyard/e2e-serve-${new URL(process.env.TARGET_URL).port}.json`, 'utf8'));
 const { root, origin, workerToken, coordinatorToken } = delivery;
 const git = async (...args) => (await defaultChildRun('git', ['-C', root, ...args])).trim();
 const call = async (path, credential, body) => {
