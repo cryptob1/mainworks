@@ -19,10 +19,13 @@ const sql = `SELECT work_id, kind, created_at,
   FROM events WHERE work_id IS NOT NULL AND created_at > $1 AND (payload ? 'work' OR kind = ANY($2::text[])) ORDER BY seq`;
 
 /**
- * Each item's attempts from its own document: the fleet serves a settled delivery as the work
- * index's summary, without its timeline. Only items open, or written to within the read span, are read.
+ * Each item's attempts from its own document, only the three fields the flow reads: the fleet serves
+ * a settled delivery as the work index's summary, without its timeline, and a hot path returns no
+ * settled document's history. Only items open, or written to within the read span, are read.
  */
-const attemptsSql = `SELECT w.id, w.document->'pipeline'->'attempts' AS attempts FROM work_items w JOIN work_index i ON i.id = w.id
+const attemptsSql = `SELECT w.id, (SELECT jsonb_agg(jsonb_build_object('claimedAt', a->'claimedAt', 'endedAt', a->'endedAt', 'end', a->'end'))
+    FROM jsonb_array_elements(CASE WHEN jsonb_typeof(w.document->'pipeline'->'attempts') = 'array' THEN w.document->'pipeline'->'attempts' ELSE '[]'::jsonb END) a) AS attempts
+  FROM work_items w JOIN work_index i ON i.id = w.id
   WHERE NOT i.settled OR i.merged_at > $1 OR w.id IN (SELECT work_id FROM events WHERE created_at > $1 AND work_id IS NOT NULL)`;
 type Attempts = Map<string, { claimedAt: string; endedAt: string | null; end?: string | null }[]>;
 
