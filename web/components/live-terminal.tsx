@@ -122,7 +122,8 @@ export default function LiveTerminal({ token, label, onSession, handle }: { toke
             if (message.mode) {
               writable = message.mode === 'control' && !!message.session?.pane; setState(message.mode); setReason(''); delay = 250;
               fit();
-              if (writable && message.type === 'hello') terminal.focus();
+              // The pane takes focus only when nothing else has it: a late hello never pulls focus off a tab or box.
+              if (writable && message.type === 'hello' && (!document.activeElement || document.activeElement === document.body)) terminal.focus();
             }
             return;
           }
