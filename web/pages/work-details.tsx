@@ -21,15 +21,16 @@ import PostDeployment from '../components/post-deployment';
 import TestCases from '../components/test-cases';
 import Term, { Explained } from '../components/term';
 import { age } from '../../src/model/format';
-import { formatAge } from '../../src/model/duration';
+import { formatAge, statusDuration } from '../../src/model/duration';
 import { historyLabel, overlapLine, whatIsLeft, type LeftGroup } from '../item-page';
 import { plainStatus, statusSince } from '../../src/model/plain-status';
 import { stageLabel, serveView } from '../../src/model/plain-stage';
 import { groupWithin, nextActor, timedGroups } from '../groups';
-import { checkStates, prSteps, stepHeld, stepSince } from '../../src/model/pr-steps';
+import { checkStates, prSteps, stepHeld } from '../../src/model/pr-steps';
 import { releaseView } from '../../src/model/release';
 import { shownRisk } from '../../src/model-boundary/risk-class.js';
 import StatusBadge from '../components/status-badge';
+import StatusAge from '../components/status-age';
 import { RequestCard } from './human-requests';
 import type { Dashboard } from './dashboard';
 import type { ItemPreview, ItemPreviewState } from '../../src/project-previews';
@@ -292,9 +293,10 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
   // A waiting or stuck task's why names a failed trial by its counts; the output itself is under Checks, shown once.
   const failures = trial?.groups.filter(entry => entry.failed > 0).map(entry => `${entry.failed} of ${entry.total} ${entry.name === 'tests' ? 'test files' : 'e2e cases'} failed`).join(', ');
   const why = stuck && trialHasFailed ? `Its merge trial failed${failures ? `: ${failures}` : ''}.` : stateSentence;
-  // Time in state: from the trial's end while its failure holds the task; else since the task entered the state its group names, as its Work row counts it.
-  const inStateSince = closed ? null : trialFailed ? Date.parse(trial?.finishedAt ?? item.stageEnteredAt)
-    : Date.parse(group && timedGroups.has(group) ? stepSince(item, now, null, release) : statusSince(item, now));
+  // Time in state, one number everywhere (GY-108): what the task's Work row counts while the task moves or is blocked, overdue mark and all; since it entered its group's state in the groups that carry no clock; from the trial's end while a failed trial holds it.
+  const entered = group === 'needs-you' ? item.humanRequest?.at ?? statusSince(item, now) : statusSince(item, now);
+  const inState = closed ? null : trialFailed ? statusDuration(trial?.finishedAt ?? item.stageEnteredAt, now)
+    : group && timedGroups.has(group) ? held : statusDuration(entered, now, true);
   const add = files?.reduce((sum, file) => sum + file.additions, 0), del = files?.reduce((sum, file) => sum + file.deletions, 0);
   const panel = (name: typeof tabs[number], content: React.ReactNode) => <div role="tabpanel" aria-label={name} className="task-panel" hidden={tab !== name}>{content}</div>;
   return <article className="item-page" aria-label={item.title}>
@@ -308,7 +310,7 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
         </div>
       </div>
       <div className="item-meta">
-        <span data-task-state>{trialFailed ? <StatusBadge group="blocked">Stuck</StatusBadge> : group && <StatusBadge group={group}/>} <strong>{trialFailed ? 'Merge trial failed' : stageLabel(item, now, release, serve)}</strong>{inStateSince !== null && <> · <span className="status-age">{formatAge(inStateSince, now)}</span></>}</span>
+        <span data-task-state>{trialFailed ? <StatusBadge group="blocked">Stuck</StatusBadge> : group && <StatusBadge group={group}/>} <strong>{trialFailed ? 'Merge trial failed' : stageLabel(item, now, release, serve)}</strong>{inState && <> · <StatusAge held={inState}/></>}</span>
         {builderName && <span data-builder title={builder!}>Builder {builderName}</span>}
         {model && <span data-model={model.differs ? 'differs' : 'same'} className={model.differs ? 'amber' : undefined}>Model <span className="mono">{model.model}</span>{model.differs ? ` ▲ not the account's ${model.accountModel}` : ''}</span>}
         {files && files.length > 0 && <span className="mono" data-diff-stats>+{add} −{del} · {files.length} {files.length === 1 ? 'file' : 'files'}</span>}
@@ -425,11 +427,11 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
       <h3>Evidence ({item.evidence.length})</h3>{item.evidence.map(e => <div className="criterion evidence-row" key={e.id}><strong>{e.revocation ? '⦸' : e.result === 'pass' ? '✓' : '×'} {e.proof}</strong><p>{e.trusted ? 'Trusted producer' : 'Worker assertion'} · {e.producer} · {e.sha.slice(0, 8)} · {e.executed} executed / {e.skipped} skipped</p>{e.reason && <p>Attested: {e.reason}</p>}{e.revocation && <p className="amber">Revoked by {e.revocation.actor}: {shortShas(e.revocation.reason)}</p>}{e.reuse && <p className="muted">Reused from the pass observed {new Date(e.reuse.observedAt).toLocaleString()} on {e.reuse.sourceSha.slice(0, 8)} (attempt sequence {e.reuse.sequence}, policy {e.reuse.policy.id} r{e.reuse.policy.revision}); a newer live attempt supersedes it.</p>}<EvidenceArtifacts evidence={e} token={token} observedAt={observedAt}/></div>)}
     </details>
     </>)}
-    {/* A change the control plane observed itself is never pushed: its head lives only in the install's checkout, so it is checked out there by its commit. */}
+    {/* A change the control plane observed itself is never pushed: its head lives only in the install's object store, so it is checked out by its commit into a worktree of the install's checkout under /tmp, which leaves that checkout — the control plane's own files — as it is. */}
     {(builderRun || item.candidate) && <div className="task-commands muted"><span>From your terminal:</span>
       {builderRun && <code>tail -f .graphyard/worker-runs/{transcriptRun(builderRun.transcript)}/log.jsonl</code>}
       {item.candidate && (item.observation?.source === 'control-plane'
-        ? timings?.checkout && <code>git -C {timings.checkout} checkout {item.candidate.sha}</code>
+        ? timings?.checkout && <code>git -C {timings.checkout} worktree add /tmp/{item.key} {item.candidate.sha}</code>
         : <code>git fetch origin {item.candidate.branch} && git checkout FETCH_HEAD</code>)}
     </div>}
   </article>;

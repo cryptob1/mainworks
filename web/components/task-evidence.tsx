@@ -57,7 +57,7 @@ export function PipelineRow({ item, timings, median, now }: { item: Work; timing
     {totalMs !== null && <p className="muted" data-pipeline-total>This task {plainDuration(totalMs / 60_000)}{merged ? '' : ' so far'}{median === null ? '' : ` · median ${plainDuration(median)}`}</p>}
     <ol>{stages.map(stage => <li key={stage.id} className={`stage-${stage.state}`} data-stage={stage.id} data-state={stage.state}>
       <strong>{stage.label}</strong>{stage.ms !== null && <span className="stage-time">{plainDuration(stage.ms / 60_000)}</span>}
-      {stage.id === 'trial' && trial && counts.length > 0 && <span className="stage-note">{trial.finishedAt === null ? 'So far: ' : ''}{counts.join(' · ')}</span>}
+      {stage.id === 'trial' && trial && counts.length > 0 && <span className="stage-note">{trial.soFar ? 'So far: ' : ''}{counts.join(' · ')}</span>}
     </li>)}</ol>
   </section>;
 }

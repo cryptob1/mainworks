@@ -30,6 +30,8 @@ test('e2e:task-shows-evidence — the control plane serves a task\'s trial timin
   git('checkout', '-q', '-b', 'graphyard/gy-1-1');
   writeFileSync(join(repo, 'shards.ts'), 'export const usable = 3;\nexport const kept = 2;\n');
   writeFileSync(join(repo, slow), 'test one\ntest two\n');
+  // A name git would quote, and that read as a pattern would match no file.
+  writeFileSync(join(repo, 'tests/hot[1].test.ts'), 'test hot\n');
   git('add', '-A'); git('commit', '-q', '-m', 'change');
   const head = git('rev-parse', 'HEAD'), mergeSha = 'c'.repeat(40);
 
@@ -62,11 +64,12 @@ test('e2e:task-shows-evidence — the control plane serves a task\'s trial timin
     await call('builder', `${item}/submit`, { epoch: claimed.epoch, head });
 
     // The changed files with their counts, and one file's diff, from the control plane's checkout.
-    assert.deepEqual((await call('operator', `${item}/diff`)).files, [{ path: 'shards.ts', additions: 1, deletions: 1 }, { path: slow, additions: 2, deletions: 0 }]);
+    assert.deepEqual((await call('operator', `${item}/diff`)).files, [{ path: 'shards.ts', additions: 1, deletions: 1 }, { path: 'tests/hot[1].test.ts', additions: 1, deletions: 0 }, { path: slow, additions: 2, deletions: 0 }]);
     const { diff } = await call('operator', `${item}/diff?path=shards.ts`);
     assert.match(diff, /^@@ /);
     assert.match(diff, /^-export const usable = 1;\n\+export const usable = 3;$/m);
     assert.doesNotMatch(diff, /test one/);
+    assert.match((await call('operator', `${item}/diff?path=${encodeURIComponent('tests/hot[1].test.ts')}`)).diff, /^\+test hot$/m, "a name that reads as a pattern is still found");
 
     // A trial of 19 minutes whose tests step took 17, one file 14 of them: its steps in flight, then its verdict.
     const started = Date.now() - 19 * minute, at = (minutes: number) => new Date(started + minutes * minute).toISOString();
@@ -84,7 +87,7 @@ test('e2e:task-shows-evidence — the control plane serves a task\'s trial timin
     assert.deepEqual(running.steps.map((step: any) => [step.step, step.result]), [['checkout', 'passed'], ['build', 'passed'], ['tests', 'running']]);
     assert.equal(running.steps[0].durationMs, minute);
     assert.ok(running.steps[2].durationMs >= 17 * minute && running.steps[2].durationMs < 18 * minute);
-    assert.deepEqual([running.groups, running.slowest], [[{ name: 'tests', passed: 11, failed: 1, total: 40 }], { file: slow, durationMs: 14 * minute }]);
+    assert.deepEqual([running.groups, running.slowest, running.soFar], [[{ name: 'tests', passed: 11, failed: 1, total: 40 }], { file: slow, durationMs: 14 * minute }, true]);
 
     const slowest = slowestFile(`${JSON.stringify({ file: 'tests/quick.test.ts', durationMs: 900 })}\nnot a record\n${JSON.stringify({ file: slow, durationMs: 14 * minute })}`);
     assert.deepEqual(slowest, { file: slow, durationMs: 14 * minute });
@@ -99,6 +102,7 @@ test('e2e:task-shows-evidence — the control plane serves a task\'s trial timin
     assert.ok(Math.abs(trial.durationMs - 19 * minute) < 5000);
     assert.deepEqual(trial.groups, [{ name: 'tests', passed: 39, failed: 1, total: 40 }, { name: 'e2e', passed: 2, failed: 0, total: 2 }]);
     assert.deepEqual(trial.slowest, { file: slow, durationMs: 14 * minute });
+    assert.equal(trial.soFar, false, 'a verdict\'s counts are final');
 
     // A trial that ended with no verdict keeps the counts of the shards that ended: they are not its failure's counts.
     const head40 = 'd'.repeat(40);
@@ -108,7 +112,7 @@ test('e2e:task-shows-evidence — the control plane serves a task\'s trial timin
       { kind: 'merge.trial-step', payload: { head: head40, step: 'tests', at: at(2), tests: { passed: 30, failed: 0, files: 40, slowest } }, created_at: at(10) },
       { kind: 'merge.trial', payload: { head: head40, outcome: 'timeout', phase: 'tests' }, created_at: at(19) },
     ], Date.now());
-    assert.deepEqual([ended!.groups, ended!.slowest], [[{ name: 'tests', passed: 30, failed: 0, total: 40 }], { file: slow, durationMs: 14 * minute }]);
+    assert.deepEqual([ended!.groups, ended!.slowest, ended!.soFar], [[{ name: 'tests', passed: 30, failed: 0, total: 40 }], { file: slow, durationMs: 14 * minute }, true]);
 
     // The model the Builder's session reported, marked when the account's own is another.
     const launch = { kind: 'claude', args: [], environment: {}, homeVariable: null, modelFlag: '--model', login: null, loginFile: null };

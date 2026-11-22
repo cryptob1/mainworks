@@ -8,7 +8,7 @@ import { parseLocalScopeDiff } from '../sync.js';
 export interface GitResult { status: number | null; stdout: string; stderr: string }
 /** Runs `git` with `args` in the checkout whose object store holds the submitted heads; `timeoutMs` kills a run that outlasts it. */
 export type GitRunner = (args: readonly string[], options?: { timeoutMs?: number }) => Promise<GitResult>;
-/** The install's checkout: the directory the control plane reads submitted heads from, where nothing is pushed and a head is checked out by its commit (GY-3599). */
+/** The install's checkout: the directory the control plane reads submitted heads from, where nothing is pushed and a head is reached by its commit (GY-3599). */
 export const checkoutRoot = () => process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd();
 
 /** The default runner: `git -C root`, the coordinator checkout the control plane serves from. */

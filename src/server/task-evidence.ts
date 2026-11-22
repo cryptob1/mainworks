@@ -28,6 +28,7 @@ export async function readTaskDiff(services: Services, id: string, path: string 
   if (!work.candidate) return path === null ? { files: [] } : { diff: '' };
   const range = `${work.observation?.mergeBase ?? work.candidate.baseSha}...${work.candidate.sha}`;
   const git = async (args: string[]) => { const result = await gitRunner(services.engine)(args); demand(result.status === 0, 'This change is not in the control plane\'s checkout yet', 404); return result.stdout; };
-  if (path !== null) { const diff = await git(['diff', range, '--', path]); return { diff: diff.slice(Math.max(0, diff.indexOf('\n@@') + 1), diffLimit) }; }
-  return { files: (await git(['diff', '--numstat', '--no-renames', range])).split('\n').filter(Boolean).map(line => { const [additions, deletions, ...name] = line.split('\t'); return { path: name.join('\t'), additions: Number(additions) || 0, deletions: Number(deletions) || 0 }; }) };
+  // Names come unquoted (`-z`) and reach git as the literal path they are, never as a pattern a `[`, `*` or `?` in a name would make of them.
+  if (path !== null) { const diff = await git(['--literal-pathspecs', 'diff', range, '--', path]); return { diff: diff.slice(Math.max(0, diff.indexOf('\n@@') + 1), diffLimit) }; }
+  return { files: (await git(['diff', '--numstat', '-z', '--no-renames', range])).split('\0').filter(Boolean).map(entry => { const [additions, deletions, name] = entry.split('\t'); return { path: name ?? '', additions: Number(additions) || 0, deletions: Number(deletions) || 0 }; }) };
 }

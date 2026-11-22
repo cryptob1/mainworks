@@ -1595,10 +1595,9 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const { lanes, breadth } = trialShardBreadth(cores, shards.length, await trialAffordableFiles(input.memory));
     input.onTiming?.(`tests: ${lanes} lanes, breadth ${breadth}`, 0);
     const settledShards: ({ group: TrialGroup; entries: string[]; unattributed: TrialRunnerError | null; passed: string[]; records: string } | undefined)[] = [];
-    // A shard's output goes to its own `entries` while the shards run, so the log keeps shard order whichever finishes first.
     let stopped: unknown = null;
-    // GY-3599: each shard's end sends the trial's counts so far with the running step, so the Task page shows them while the trial runs; what it printed so far goes with the first, and a failing shard's output stays shown.
-    let failingShown = false;
+    // GY-3599: each shard's end sends the trial's counts so far with the running step, so the Task page shows them while the trial runs. What it printed so far goes with the first shard that ends and with each failing shard, so a report stays small.
+    let outputShown = false;
     // A shard a host turned away is noted after every shard's output, so the note stays in the log tail kept on the item.
     const dropped = new Map<string, HostDroppedError>();
     const session = hosts.length ? remoteShardSession({ root: input.root, sha: input.mergeSha, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport }) : null;
@@ -1632,8 +1631,8 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         settledShards[index] = { group: { files: group, status: tests.status, signal: tests.signal, failed: failing }, entries, passed, records: recordText,
           unattributed: !tests.ok && !failing.length ? runnerFailure('tests', tests, group, recorded.filter(record => group.includes(record.file)).length) : null };
         const ended = settledShards.filter(shard => shard !== undefined), slowest = slowestFile(ended.map(shard => shard.records).join('\n'));
-        const shown = !failingShown || !tests.ok;
-        failingShown ||= !tests.ok;
+        const shown = !outputShown || !tests.ok;
+        outputShown = true;
         input.onStep?.(stepLabel, { tests: { passed: cached.size + ended.reduce((sum, shard) => sum + shard.passed.length, 0), failed: new Set(ended.flatMap(shard => shard.group.failed)).size, files: counted, ...(slowest ? { slowest } : {}) },
           ...(shown ? { output: entries.join('\n').slice(-4000) } : {}) });
       } catch (error) {

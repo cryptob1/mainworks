@@ -29,7 +29,7 @@ const item = {
 };
 const timings = { releasedAt: at(41), checkout: '/srv/mainworks/checkout', trial: { head, startedAt: at(21), finishedAt: at(2) as string | null, durationMs: 19 * 60_000, output: null as string | null,
   steps: [{ step: 'checkout', durationMs: 20_000, result: 'passed' }, { step: 'install', durationMs: 60_000, result: 'passed' }, { step: 'build', durationMs: 40_000, result: 'passed' }, { step: 'tests', durationMs: 17 * 60_000, result: 'failed' }],
-  groups: [{ name: 'tests', passed: 39, failed: 1, total: 40 }, { name: 'e2e', passed: 2, failed: 0, total: 2 }], slowest: { file: slow, durationMs: 14 * 60_000 } as { file: string; durationMs: number } | null } };
+  groups: [{ name: 'tests', passed: 39, failed: 1, total: 40 }, { name: 'e2e', passed: 2, failed: 0, total: 2 }], slowest: { file: slow, durationMs: 14 * 60_000 } as { file: string; durationMs: number } | null, soFar: false } };
 const files = [{ path: 'src/merge-writer/remote-shards.ts', additions: 9, deletions: 4 }, { path: slow, additions: 77, deletions: 0 }, { path: 'e2e/cases/verification-uses-remote-hosts.json', additions: 0, deletions: 27 }];
 const patch = '@@ -1,2 +1,3 @@\n-const usable = host => underHeatLimit(host.reading);\n+// This machine\'s launcher already waits on heat per container.\n+const usable = host => host === hosts[0] || underHeatLimit(host.reading);';
 const events = [
@@ -38,7 +38,7 @@ const events = [
   { seq: 1, kind: 'ready', actor: 'graphyard-master-project', created_at: at(41), payload: { details: { reason: 'Hotfix for the trial bottleneck' } } },
 ];
 
-async function open(page: Page, width: number, task: typeof item = item, trialTimings: typeof timings = timings) {
+async function open(page: Page, width: number, task: typeof item = item, trialTimings: Omit<typeof timings, 'trial'> & { trial: typeof timings.trial | null } = timings) {
   const writes: string[] = [];
   let log = { run: { account: 'claude-a', kind: 'claude' }, lines: [{ at: at(1), stream: 'stdout', text: '$ npm run test:affected -- tests/remote-shards.test.ts' }], cursor: 1, ended: false };
   page.on('websocket', socket => writes.push(`websocket ${socket.url()}`));
@@ -102,6 +102,7 @@ for (const width of [1280, 390]) {
     await expect(trial).toContainText('tests 39/40');
     await expect(trial).toContainText('e2e 2/2');
     await expect(trial).toContainText(`slowest: ${slow} 14 min`);
+    await expect(trial).not.toContainText('So far'); // a finished trial's counts are final
 
     // AC-3: Checks and diff is the default tab.
     const tabs = task.getByRole('tablist', { name: 'Task evidence' });
@@ -174,15 +175,15 @@ test('e2e:task-shows-evidence — a trial that passed ahead of review is not sho
   await expect(task.getByLabel('Test output')).toHaveCount(0);
 });
 
-// A running trial shows the output of the tests that ran so far, the counts so far and the slowest file so far, and its time in state counts from the trial's start.
+// A running trial shows the output of the tests that ran so far, the counts so far and the slowest file so far; its time in state is its Work row's number.
 test('e2e:task-shows-evidence — a running trial shows its test output, counts and slowest file so far', async ({ page }) => {
   const running = { ...item, mergeLedger: { ...item.mergeLedger, state: 'intent', refusal: null }, gates: item.gates.map(gate => ({ ...gate, passed: gate.name !== 'test' && gate.name !== 'merge', reasons: [] })) };
   const sofar = `$ node --test (shard 2)\nnot ok 3 - ${slow}\n  a CPU sensor reads 96C, at or over 85C`;
-  await open(page, 390, running as unknown as typeof item, { ...timings, trial: { ...timings.trial, finishedAt: null, groups: [{ name: 'tests', passed: 12, failed: 0, total: 40 }], slowest: { file: 'tests/shard-hosts.test.ts', durationMs: 4 * 60_000 }, output: sofar,
+  await open(page, 390, running as unknown as typeof item, { ...timings, trial: { ...timings.trial, finishedAt: null, groups: [{ name: 'tests', passed: 12, failed: 0, total: 40 }], slowest: { file: 'tests/shard-hosts.test.ts', durationMs: 4 * 60_000 }, soFar: true, output: sofar,
     steps: [...timings.trial.steps.slice(0, 3), { step: 'tests', durationMs: 17 * 60_000, result: 'running' }] } });
   const task = page.locator('article.item-page');
   await expect(task.locator('[data-task-state]')).not.toContainText('Merge trial failed');
-  await expect(task.locator('[data-task-state]')).toHaveText(/· 21m$/);
+  await expect(task.locator('[data-task-state]')).toHaveText(/^Moving Testing · 30m$/);
   const checks = task.getByRole('region', { name: 'Checks' });
   await expect(checks.locator('[data-check="tests"]')).toHaveText(/tests.*running.*17 min/);
   await expect(checks.getByLabel('Test output')).toHaveText(sofar);
@@ -213,14 +214,25 @@ for (const width of [1280, 390]) {
   });
 }
 
-// AC-3: a change the control plane observed itself is never pushed, so its head is checked out by its commit in the install's checkout.
-test('e2e:task-shows-evidence — a change the control plane observed itself is checked out by its commit, in the install\'s checkout', async ({ page }) => {
+// A task released and waiting for a Builder has a time in state too, counted from where its Work row counts it.
+test('e2e:task-shows-evidence — a released task waiting for a Builder shows how long it has waited', async ({ page }) => {
+  const waiting = { ...item, stage: 'build', stageEnteredAt: at(41), lease: null, owner: null, lastAssignment: null, candidate: null, submission: null, observation: null, sessions: [], mergeLedger: null,
+    workspaces: [], pipeline: { attempts: [], submittedAt: null, resubmittedAt: null, reworkRounds: 0, interventions: { blocked: 0, requirements: 0 } } };
+  await open(page, 390, waiting as unknown as typeof item, { ...timings, trial: null });
+  const task = page.locator('article.item-page');
+  await expect(task.locator('[data-task-state]')).toHaveText(/^Up next\s*Waiting · 41m$/);
+  await expect(task.locator('.task-commands')).toHaveCount(0);
+  expect(await noSideScroll(page)).toBe(true);
+});
+
+// AC-3: a change the control plane observed itself is never pushed, so no fetch can reach its head: it is checked out by its commit into a worktree of the install's checkout under /tmp, whose own files stay as they are.
+test('e2e:task-shows-evidence — a change the control plane observed itself is checked out by its commit from the install\'s checkout, never fetched', async ({ page }) => {
   const observed = { ...item, candidate: { ...candidate, pr: 0 }, submission: { epoch: 3, pr: 0 },
     observation: { ...item.observation, source: 'control-plane', candidate: { ...candidate, pr: 0 } } };
   await open(page, 390, observed as unknown as typeof item);
   const task = page.locator('article.item-page');
   await expect(task.locator('.task-header').getByRole('link', { name: new RegExp(`${head.slice(0, 8)}, open commit for GY-3588 in GitHub`) })).toHaveAttribute('href', `https://github.com/fixture/repository/commit/${head}`);
   await expect(task.locator('.task-header').getByRole('link', { name: /PR #/ })).toHaveCount(0);
-  await expect(task.locator('.task-commands code')).toHaveText([`tail -f .graphyard/worker-runs/${run}/log.jsonl`, `git -C /srv/mainworks/checkout checkout ${head}`]);
+  await expect(task.locator('.task-commands code')).toHaveText([`tail -f .graphyard/worker-runs/${run}/log.jsonl`, `git -C /srv/mainworks/checkout worktree add /tmp/GY-3588 ${head}`]);
   expect(await noSideScroll(page)).toBe(true);
 });

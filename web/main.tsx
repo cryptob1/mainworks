@@ -155,7 +155,7 @@ function App() {
   // One page at a time: an open item replaces the page it was opened from, and "← Back" returns to it.
   return <div className="shell"><Sidebar entries={views.map(entry => primaryEntry(dashboard, entry))} dashboard={dashboard}/>
     <main className="main">{error && <div role="alert" className="notice danger">{error}{error === SIGN_IN_NEEDED && <> <button type="button" onClick={signOut}>Sign in</button></>}</div>}
-      <TopBar {...dashboard} onPalette={() => setPalette(true)}/>{item ? <WorkDetails {...dashboard} item={item}/> : viewFor(view).render(dashboard)}</main>
+      <TopBar {...dashboard} onPalette={() => setPalette(true)}/>{/* Keyed by item: a task opened from another open task starts on its own first tab, never on the last task's open diffs. */item ? <WorkDetails key={item.id} {...dashboard} item={item}/> : viewFor(view).render(dashboard)}</main>
     {creating && <CreateWork {...dashboard}/>}
     {shipped && <ShippedToast key={shipped.id} item={shipped} onClose={() => setShipped(null)}/>}
     <KeyboardNav dashboard={dashboard} palette={palette} setPalette={setPalette}/>
