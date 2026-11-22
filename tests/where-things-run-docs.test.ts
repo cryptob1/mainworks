@@ -40,7 +40,7 @@ test('unit:tests/where-things-run-docs.test.ts — the README\'s Where things ru
   const section = readme.split('\n## Where things run\n')[1]?.split('\n## ')[0] ?? '';
   assert.ok(section, 'README carries a Where things run section');
   assert.ok(section.includes('](docs/diagrams/where-things-run.svg)'), 'the section embeds the diagram');
-  assert.ok(section.includes('`graphyard guide infra`'), 'the section points to guide infra rather than copying its table');
+  assert.ok(section.includes('`mainworks guide infra`'), 'the section points to guide infra rather than copying its table');
   const shown = read('docs/diagrams/where-things-run.svg').replace(/<[^>]+>/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ');
   for (const fact of diagramFacts) assert.ok(shown.includes(fact), `the embedded diagram lists ${fact}`);
 });

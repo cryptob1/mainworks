@@ -174,6 +174,8 @@ export interface DaemonEffects {
   servingCommit?: () => string | null;
   /** The loop's own master session (GY-898): absent, none is launched. */
   masterSession?: MasterSessionEffects;
+  /** GY-3593: one caretaker pass on the caretaker role's first available account, settled with its result line or why it was skipped. */
+  caretaker?: () => Promise<import('./caretaker.js').CaretakerOutcome>;
   /** GY-3345: the messages to this install's Master (`GET master/messages`); each unanswered one from another install wakes the session once. Absent, none is read. */
   masterMessages?: () => Promise<MasterMessage[]>;
   personalMasterSession?: (config: MasterConfig) => MasterSessionEffects;

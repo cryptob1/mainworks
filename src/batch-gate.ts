@@ -13,9 +13,12 @@
 // fails on the last verified commit is a filed known red, and a confirmed failure is bisected over the batch's prefixes in
 // merge order (from the landing that added a failing case, GY-3409): the last item of the smallest
 // failing prefix is reverted through the serve-revert path — the case's own landing when that revert
-// does not apply — and the batch recut. A recut that fails again holds the last verified commit
-// served and wakes the master until main moves, and any held gate is one master status attention
-// line. A timeout is the host's, not the change's: it never holds, and the loop retries at once on
+// does not apply — and the batch recut. When the tip without the first culprit still fails a check
+// that passes on the verified commit, the gate bisects that reverted tip again and reverts the next
+// culprit; it files the check flaky once and exempts it only if no prefix of the reverted tip fails
+// (GY-3629). A recut that fails again on a check that also fails on the verified commit holds the
+// last verified commit served and wakes the master until main moves, and any held gate is one master
+// status attention line. A timeout is the host's, not the change's: it never holds, and the loop retries at once on
 // main's newest tip (GY-3444); the bound counts the gate's own work, not its own checks' waits for a slot (GY-3474). The
 // full suite and catalog run daily against the verified
 // commit as diagnostics that file items and never block; the three preview cases run with them on
@@ -34,8 +37,9 @@ import { basename, dirname, join } from 'node:path';
 import { EnvironmentFault } from './app-environments.js';
 import { formatAge } from './model/duration.js';
 import type { Work } from './model.js';
-import type { ServeLanding } from './merge-writer/serve-revert.js';
+import { baseStillFails, type ServeLanding } from './merge-writer/serve-revert.js';
 import type { PreviewCaseRun } from './merge-writer/served-previews.js';
+import { trialFileTimeoutMs } from './merge-writer/trial-load.js';
 
 /** How long one gate may run before it counts as failed (gate timeout). */
 export const gateLimitMs = 45 * 60_000;
@@ -178,13 +182,16 @@ export interface GatePorts {
   /**
    * Runs checks on the commit in the private trial container — `build`, `e2e:<case>`, `affected`
    * (the selection over `files`) or `test:<file>` — and answers the failing ones, a failing
-   * affected test as `test:<file>`. The run is bounded by `timeoutMs`, what is left of the gate's own limit.
+   * affected test as `test:<file>`. The run is bounded by `timeoutMs`, what is left of the gate's own limit;
+   * `onStep` hears the trial's steps, `tests` among them, as the trial's own onStep does.
    */
-  run(commit: string, checks: readonly string[], files: readonly string[], timeoutMs: number, signal?: AbortSignal): Promise<string[]>;
+  run(commit: string, checks: readonly string[], files: readonly string[], timeoutMs: number, signal?: AbortSignal, onStep?: (step: string) => void): Promise<string[]>;
   /** GY-3444, GY-3474: whether the gate's own check waits to start now — for a host slot or its container's start: time the gate's bound does not count. */
   waiting?(): boolean;
-  /** Reverts the landing from main through the serve-revert path (trial, leased push, re-land filed); answers the revert, why it is held, or a retry (main moved under the push). */
-  revert(landing: ServeLanding & { item: Work }, tip: string, check: string): Promise<{ revertSha: string } | { held: string } | { retry: string }>;
+  /** GY-3629: `commit` with `reverted` landings taken back out (without touching any ref), so a re-bisect tests prefixes without earlier culprits; null on conflict. */
+  without?(commit: string, reverted: readonly ServeLanding[]): Promise<string | null>;
+  /** Reverts the landing (stacked after any `prior` culprits) from main through the serve-revert path (trial, leased push, re-land filed); answers the revert, why it is held, or a retry (main moved under the push, or `baseStillFails` with the reverted tip commit). */
+  revert(landing: ServeLanding & { item: Work }, tip: string, check: string, prior?: readonly (ServeLanding & { item: Work })[]): Promise<{ revertSha: string } | { held: string } | { retry: string; revertSha?: string }>;
   /** Files an item owning a failure, once per `key`; answers the item it filed, when it names one. */
   file(input: { title: string; description: string; key: string }): Promise<{ item: string | null } | void>;
   /** GY-3431: the key of the open "Flaky check on main" item for `check`, or null when none is open. */
@@ -362,12 +369,19 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
   // A whole-catalog batch run measures the catalog's gate-run time, a timeout its elapsed time.
   const mainKey = stepKey(tip, checks), mainCached = mainKey in finished, mainStarted = ports.now();
   const measure = (ms: number) => { if (whole) record.gateRuns = [...record.gateRuns ?? [], { ms, at: at() }].slice(-gateRunsWindow); };
-  const run = (commit: string, runChecks: readonly string[], runFiles: readonly string[]) => {
+  // GY-3620: the rerun and the verified-commit probe bound their test files as a merge trial bounds a
+  // file (trialFileTimeoutMs per `test:` check, from the trial's own `tests` step, which runs test files
+  // only): a file still running then stops, and the step's checks count as failed, so a hanging file
+  // settles the step under the rules below instead of running out the whole gate. e2e cases keep their
+  // own per-step timeouts and only the gate's bound.
+  const run = (commit: string, runChecks: readonly string[], runFiles: readonly string[], perFile = false) => {
     const key = stepKey(commit, runChecks);
     if (key in finished) return Promise.resolve(finished[key]!); // a step the last loop finished
     const left = deadline() - ports.now();
     if (left <= 0) return Promise.reject(new GateTimeout());
-    let last = ports.now(), saved = last, timer: NodeJS.Timeout | undefined;
+    let last = ports.now(), saved = last, timer: NodeJS.Timeout | undefined, testsAt: number | null = null;
+    const testFiles = runChecks.filter(check => check.startsWith('test:')).length, fileBound = trialFileTimeoutMs * testFiles;
+    const onStep = perFile && testFiles ? (line: string) => { if (testsAt === null && line === 'tests') testsAt = ports.now(); } : undefined;
     const tick = () => {
       const now = ports.now();
       record.inFlight = { ...record.inFlight!, seenAt: new Date(now).toISOString(), ...(ports.waiting?.() ? { waitedMs: (record.inFlight!.waitedMs ?? 0) + now - last } : {}) };
@@ -378,7 +392,11 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
     // `stop`, however long its waits run. GY-3509: the trial's own clock is that same remaining time,
     // never a multiple of it, so no runner outlives the 90-minute ceiling.
     const stop = new AbortController();
-    return Promise.race([ports.run(commit, runChecks, runFiles, left, stop.signal), new Promise<never>((_, reject) => { timer = setInterval(() => { tick(); if (ports.now() > deadline()) { reject(new GateTimeout()); stop.abort(new GateTimeout()); } }, 1000); })])
+    return Promise.race([ports.run(commit, runChecks, runFiles, left, stop.signal, onStep), new Promise<string[]>((resolve, reject) => { timer = setInterval(() => {
+      tick();
+      if (ports.now() > deadline()) { reject(new GateTimeout()); stop.abort(new GateTimeout()); }
+      else if (testsAt !== null && ports.now() - testsAt > fileBound) { resolve([...runChecks]); stop.abort(new Error(`a test file ran past the ${minutes(trialFileTimeoutMs)}-minute per-file timeout`)); }
+    }, 1000); })])
       .then(async failed => {
         tick();
         if (ports.now() > deadline()) throw new GateTimeout();
@@ -398,7 +416,9 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
     if (failed.length) {
       // A failing check runs once more before anything is blamed: a pass is a flake, filed for an owner.
       await step(`re-running ${failed.join(', ')}`);
-      const again = await run(tip, failed, files);
+      // GY-3620: test files rerun in a step of their own, so a hanging one never takes other checks' results with it.
+      const testChecks = failed.filter(check => check.startsWith('test:')), others = failed.filter(check => !check.startsWith('test:'));
+      const again = [...others.length ? await run(tip, others, files) : [], ...testChecks.length ? await run(tip, testChecks, files, true) : []];
       flakes = failed.filter(check => !again.includes(check));
       for (const check of flakes) await fileFailure(ports, record, at(), { key: `flake:${check}`, title: `Flaky check on main: ${check}`, description: `The batch gate's check ${check} failed on ${tip.slice(0, 12)} and passed on its re-run. Make it deterministic.` });
       // The e2e cases that must pass outright (GY-3147): smoke, whatever gate.core names, and every
@@ -421,7 +441,7 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
         const featureMap = check === 'e2e:graphyard-feature-map';
         if (featureMap || check.startsWith('test:') || catalogOnly) {
           let failsThere = record.results[verified]?.[check];
-          if (failsThere === undefined) { await step(`probing ${check} on the verified commit`); failsThere = (await run(verified, [check], files)).includes(check); }
+          if (failsThere === undefined) { await step(`probing ${check} on the verified commit`); failsThere = (await run(verified, [check], files, true)).includes(check); }
           (record.results[verified] ??= {})[check] = failsThere;
           await ports.checkpoint?.(); // the probe's verdict is saved to the record before anything is filed (GY-3147)
           if (failsThere) {
@@ -434,7 +454,9 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
         confirmed.push(check);
       }
     }
-    if (!confirmed.length) {
+    // The run settles verified when every check that was not exempted passed: the merges are
+    // judged, the tip is recorded verified and published where every install's deploy watch reads it.
+    const verify = async (): Promise<GateOutcome> => {
       const reverted = new Set(record.merges.filter(merge => merge.reverted).map(merge => merge.sha));
       record.merges = [...record.merges, ...landings.filter(landing => landing.item && !reverted.has(landing.sha) && !record.merges.some(merge => merge.sha === landing.sha))
         .map(landing => ({ sha: landing.sha, item: landing.item!.key, reverted: false }))].slice(-revertRateWindow);
@@ -448,38 +470,109 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
         record.notes = [...record.notes ?? [], `verified-ref: ${error instanceof Error ? error.message : String(error)}`.slice(0, 200)].slice(-filingNotesWindow);
       }
       return { outcome: 'verified', tip, checks, flakes, knownRed, ...(knownFlaky.length ? { knownFlaky } : {}) };
+    };
+    const verifiedPasses = async (check: string): Promise<boolean> => {
+      let failsThere = record.results[verified]?.[check];
+      if (failsThere === undefined) {
+        await step(`probing ${check} on the verified commit`);
+        failsThere = (await run(verified, [check], files, true)).includes(check);
+        (record.results[verified] ??= {})[check] = failsThere;
+        await ports.checkpoint?.();
+      }
+      return !failsThere;
+    };
+    const exemptFlaky = async (check: string, description: string) => {
+      await fileFailure(ports, record, at(), { key: `flake:${check}`, title: `Flaky check on main: ${check}`, description });
+      const flakyItem = record.filed?.[`flake:${check}`]?.item;
+      if (flakyItem) {
+        knownFlaky.push({ check, item: flakyItem });
+        const { [flakyItem]: earlier = [], ...others } = record.flaky ?? {};
+        record.flaky = Object.fromEntries([...Object.entries(others), [flakyItem, [...earlier, { check, tip, at: at() }].slice(-filingNotesWindow)]].slice(-10));
+      }
+    };
+    if (!confirmed.length) return verify();
+    const pending = [...confirmed];
+    while (pending.length) {
+      const check = pending.shift()!;
+      const alreadyReverted = landings.filter((landing): landing is ServeLanding & { item: Work } =>
+        !!landing.item && record.merges.some(merge => merge.sha === landing.sha && merge.reverted));
+      // The smallest failing prefix in merge order names the culprit: its last item. Only the whole batch failing names the batch's last item.
+      const owned = landings.filter((landing): landing is ServeLanding & { item: Work } =>
+        !!landing.item && !record.merges.some(merge => merge.sha === landing.sha && merge.reverted));
+      if (record.attempt.recuts >= 1) {
+        // GY-3629: when the recut tip still fails a check that passes on the verified commit, bisect
+        // it again for the next culprit; hold only when the check fails on the verified commit too.
+        if (!(await verifiedPasses(check))) return hold(`the recut batch ${tip.slice(0, 12)} still fails ${check}; ${verified.slice(0, 12)} stays served`);
+        if (!owned.length) {
+          await exemptFlaky(check, `The batch gate's check ${check} passes on ${verified.slice(0, 12)} and still fails on ${tip.slice(0, 12)} with every culprit reverted. The batch gate exempts it; make it deterministic.`);
+          continue;
+        }
+      } else if (!owned.length) {
+        return hold(`${tip.slice(0, 12)} fails ${check} and no merged item in the batch is left to revert`);
+      }
+      // GY-3409: a case a batch landing added fails, as missing, on every prefix before it, so the
+      // search starts at the landing that added it — and that landing is the fallback when the
+      // culprit's revert does not apply.
+      const id = check.startsWith('e2e:') ? check.slice(4) : null;
+      let introduced: (typeof owned)[number] | undefined;
+      if (id && !(await ports.catalog(verified)).includes(id))
+        for (const landing of owned) if ((await ports.catalog(landing.sha)).includes(id)) { introduced = landing; break; }
+      const searched = introduced ? owned.slice(owned.indexOf(introduced)) : owned;
+      const bisect = async (candidates: readonly (ServeLanding & { item: Work })[], priorReverts: readonly (ServeLanding & { item: Work })[], tipCommit: string, testLast: boolean) => {
+        if (!candidates.length) return null;
+        await step(`bisecting ${check} over the batch's prefixes`);
+        const limit = testLast ? candidates.length : candidates.length - 1;
+        for (let i = 0; i < limit; i++) {
+          const landing = candidates[i]!;
+          const isLast = i === candidates.length - 1;
+          const commit = isLast ? tipCommit
+            : priorReverts.length && ports.without ? (await ports.without(landing.sha, priorReverts)) ?? landing.sha
+            : landing.sha;
+          if ((await run(commit, [check], files)).includes(check)) return landing;
+        }
+        return testLast ? null : candidates[candidates.length - 1]!;
+      };
+      const pendingReverts: (ServeLanding & { item: Work })[] = [];
+      let remaining = searched;
+      let culprit = await bisect(remaining, alreadyReverted, tip, false);
+      let settledFlaky = false;
+      while (culprit) {
+        await step(`reverting ${culprit.item.key} for ${check}`);
+        let reverted = await ports.revert(culprit, tip, check, pendingReverts), fallback: string | undefined;
+        if ('held' in reverted && introduced && introduced !== culprit && !pendingReverts.length) {
+          fallback = `${reverted.held}; reverted ${introduced.item.key}, which added ${check}, instead`;
+          culprit = introduced;
+          await step(`reverting ${culprit.item.key}, which added ${check}`);
+          reverted = await ports.revert(culprit, tip, check, pendingReverts);
+        }
+        if ('held' in reverted) return hold(reverted.held);
+        if ('retry' in reverted && reverted.retry === baseStillFails) {
+          // GY-3629: the tip without this culprit still fails; if the check passes on the verified
+          // commit, bisect the reverted tip again for the next culprit, and file flaky only if no
+          // prefix of the reverted tip fails. Never end this run with outcome retry.
+          if (!(await verifiedPasses(check))) return hold(`${tip.slice(0, 12)} fails ${check} on the verified commit too and its revert proved nothing`);
+          pendingReverts.push(culprit);
+          remaining = remaining.filter(landing => landing.sha !== culprit!.sha);
+          culprit = await bisect(remaining, [...alreadyReverted, ...pendingReverts], reverted.revertSha ?? tip, true);
+          if (!culprit) {
+            await exemptFlaky(check, `The batch gate's check ${check} failed on ${tip.slice(0, 12)} and still failed with its culprit reverted, while no prefix of the reverted tip failed. The batch gate exempts it; make it deterministic.`);
+            settledFlaky = true;
+          }
+          continue;
+        }
+        // A push the moving main rejected blames nothing new: the next cycle gates again.
+        if ('retry' in reverted) return { outcome: 'retry', tip, reason: reverted.retry };
+        const revertedAll = [...pendingReverts, culprit];
+        const revertedShas = new Set(revertedAll.map(entry => entry.sha));
+        record.merges = [...record.merges.filter(merge => !revertedShas.has(merge.sha)),
+          ...revertedAll.map(entry => ({ sha: entry.sha, item: entry.item.key, reverted: true }))].slice(-revertRateWindow);
+        record.reverts = [...record.reverts ?? [], ...revertedAll.map(entry => ({ item: entry.item.key, at: at() }))].slice(-50);
+        record.attempt = { ...record.attempt, recuts: record.attempt.recuts + 1 };
+        return { outcome: 'reverted', tip, check, culprit: revertedAll.map(entry => entry.item.key).join(', '), revertSha: reverted.revertSha, ...(fallback ? { fallback } : {}) };
+      }
+      if (settledFlaky) continue;
     }
-    const check = confirmed[0]!;
-    if (record.attempt.recuts >= 1) return hold(`the recut batch ${tip.slice(0, 12)} still fails ${check}; ${verified.slice(0, 12)} stays served`);
-    // The smallest failing prefix in merge order names the culprit: its last item. Only the whole batch failing names the batch's last item.
-    const owned = landings.filter((landing): landing is ServeLanding & { item: Work } => !!landing.item && !record.merges.some(merge => merge.sha === landing.sha && merge.reverted));
-    if (!owned.length) return hold(`${tip.slice(0, 12)} fails ${check} and no merged item in the batch is left to revert`);
-    // GY-3409: a case a batch landing added fails, as missing, on every prefix before it, so the
-    // search starts at the landing that added it — and that landing is the fallback when the
-    // culprit's revert does not apply.
-    const id = check.startsWith('e2e:') ? check.slice(4) : null;
-    let introduced: (typeof owned)[number] | undefined;
-    if (id && !(await ports.catalog(verified)).includes(id))
-      for (const landing of owned) if ((await ports.catalog(landing.sha)).includes(id)) { introduced = landing; break; }
-    const searched = introduced ? owned.slice(owned.indexOf(introduced)) : owned;
-    let culprit = searched[searched.length - 1]!;
-    await step(`bisecting ${check} over the batch's prefixes`);
-    for (const landing of searched.slice(0, -1)) if ((await run(landing.sha, [check], files)).includes(check)) { culprit = landing; break; }
-    await step(`reverting ${culprit.item.key} for ${check}`);
-    let reverted = await ports.revert(culprit, tip, check), fallback: string | undefined;
-    if ('held' in reverted && introduced && introduced !== culprit) {
-      fallback = `${reverted.held}; reverted ${introduced.item.key}, which added ${check}, instead`;
-      culprit = introduced;
-      await step(`reverting ${culprit.item.key}, which added ${check}`);
-      reverted = await ports.revert(culprit, tip, check);
-    }
-    if ('held' in reverted) return hold(reverted.held);
-    // A push the moving main rejected blames nothing new: the next cycle gates again.
-    if ('retry' in reverted) return { outcome: 'retry', tip, reason: reverted.retry };
-    record.merges = [...record.merges.filter(merge => merge.sha !== culprit.sha), { sha: culprit.sha, item: culprit.item.key, reverted: true }].slice(-revertRateWindow);
-    record.reverts = [...record.reverts ?? [], { item: culprit.item.key, at: at() }].slice(-50);
-    record.attempt = { ...record.attempt, recuts: record.attempt.recuts + 1 };
-    return { outcome: 'reverted', tip, check, culprit: culprit.item.key, revertSha: reverted.revertSha, ...(fallback ? { fallback } : {}) };
+    return verify();
   } catch (error) {
     // GY-3296: a wait for environment capacity or an environment fault blames, fails and reverts nothing: the next cycle gates again.
     if (error instanceof EnvironmentFault) return { outcome: 'retry', tip, reason: error.message };
@@ -534,11 +627,11 @@ export function gateSummary(record: GateRecord | null) {
   if (!record) return null;
   const rate = revertRate(record);
   return { verified: record.verified?.slice(0, 12) ?? null, verifiedAt: record.verifiedAt,
-    // GY-3444: a run in flight holds first claim on trial slots and pauses implementation launches until it settles.
+    // A run in flight holds first claim on trial slots; worker admission stays independent.
     inFlight: record.inFlight ? { tip: record.inFlight.tip.slice(0, 12), startedAt: record.inFlight.startedAt, step: record.inFlight.step ?? null,
       // GY-3474: what its current check is doing — waiting or its run's step — the detached run's own directory name, and the wait its bound leaves out.
       progress: record.inFlight.progress ?? null, run: record.inFlight.run ? basename(record.inFlight.run.directory) : null, waitedMs: record.inFlight.waitedMs ?? 0,
-      holds: 'first claim on trial slots; implementation launches paused until the gate settles' } : null,
+      holds: 'first claim on trial slots; implementation continues within heat and worker capacity limits' } : null,
     // GY-3141: the last settled run's outcome with its reason or failing check, beside the run in flight's current step.
     lastOutcome: record.lastOutcome ? { ...record.lastOutcome, tip: record.lastOutcome.tip ? record.lastOutcome.tip.slice(0, 12) : null } : null,
     held: record.held, revertRate: `${rate.reverted}/${rate.merges}`, diagnosticsAt: record.diagnosticsAt, catalogMs: measuredCatalogMs(record, Date.now()),

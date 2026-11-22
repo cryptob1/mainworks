@@ -5,7 +5,8 @@ import { seedPrices } from './price-sheet.js';
 
 export interface Tokens { input: number; output: number; cacheRead: number; cacheWrite: number }
 /** One session's reported tokens on one model. `reported: false` is a runtime that printed no usage: stored, never counted as zero spend. */
-export interface UsageRow extends Tokens { id: string; work: string | null; role: string; account: string | null; runtime: string; model: string | null; reported: boolean; at: string }
+/** `ran`: the model the run's runtime said it ran on (GY-3596), checked against its account's own; never stored. */
+export interface UsageRow extends Tokens { id: string; work: string | null; role: string; account: string | null; runtime: string; model: string | null; reported: boolean; at: string; ran?: string | null }
 
 const zero = (): Tokens => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 const add = (into: Tokens, more: Tokens) => { into.input += more.input; into.output += more.output; into.cacheRead += more.cacheRead; into.cacheWrite += more.cacheWrite; return into; };

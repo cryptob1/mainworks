@@ -1,0 +1,9 @@
+{
+  "id": "wrong-model-is-caught",
+  "title": "An account whose run reports another model than its own is faulty, named with both models, and skipped",
+  "description": "An OpenCode account registered for Z.AI's glm-5.3 gets a live check whose banner names big-pickle: the Accounts page shows it broken with both model names, and the next launch is not offered it.",
+  "tags": ["capacity"],
+  "target": "any",
+  "required": true,
+  "steps": [{ "kind": "command", "name": "wrong model is caught", "run": "node --import tsx tests/helpers/run-tests.ts tests/wrong-model-is-caught.test.ts", "timeoutSeconds": 600 }]
+}

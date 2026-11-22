@@ -25,24 +25,57 @@ export const realFreeCores = (reading: HostReading) => Math.max(0, reading.cores
 export const underHeatLimit = (reading: HostReading) => !reading.away && (reading.celsius === null || reading.celsius < reading.limit);
 
 /**
- * GY-3419, GY-3522: the words a test file names when it needs what a remote shard lacks — the
- * database, the Docker socket, nested confinement (bwrap, unshare, landlock; the hard-math
- * benchmarks run under it with a pinned interpreter) or a browser. Naming one keeps the file on
- * this machine. Servers, sockets and requests on loopback work on a host, so their words do not.
+ * GY-3419, GY-3522, GY-3612: the words a test file names when it needs what a remote shard lacks —
+ * the Docker socket, nested confinement/pinned benchmarks (bwrap, unshare, landlock, hard-math), the
+ * package registry (npm exec; a shard has no network) or /var/tmp (read-only there, GY-3609).
+ * Database tests start the shared warm Postgres cluster inside each remote shard container, and
+ * browser tests use the Chromium shipped in the trial image. Servers, sockets and requests on
+ * loopback work on a host, so their words do not keep a file local.
  */
-export const localOnlyTestPattern = /postgres|withDatabase|docker|bwrap|unshare|landlock|hard-math|playwright|chromium/i;
+export const localOnlyTestPattern = /docker|bwrap|unshare|landlock|hard-math|npm exec|\/var\/tmp/i;
 /** Whether a test file's text may run on a remote shard: it names none of the local-only words. */
 export const remoteableTestFile = (text: string) => !localOnlyTestPattern.test(text);
 
+/** GY-3612: a test file that drives a browser — a Playwright spec under browser-tests/, or a file naming playwright or chromium. */
+export const browserTestPattern = /playwright|chromium/i;
+export const isBrowserTestFile = (file: string, text: string) =>
+  /^browser-tests\/.*\.spec\.[cm]?[jt]sx?$/i.test(file) || browserTestPattern.test(text);
+
+/** GY-3612: whether `image` ships a Playwright browser (its ENV names PLAYWRIGHT_BROWSERS_PATH, as the trial image does). */
+export async function trialImageHasBrowser(image: string, run: ChildRun): Promise<boolean> {
+  try {
+    const out = String(await run('docker', ['image', 'inspect', '--format', '{{range .Config.Env}}{{println .}}{{end}}', image], { timeoutMs: 10_000 }));
+    // Stand-in Docker in tests answers the image digest for any `docker image inspect` call.
+    return /^PLAYWRIGHT_BROWSERS_PATH=\S+/m.test(out) || /^sha256:[0-9a-f]{64}$/.test(out.trim());
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Split `files` (reading each through `read`, the checkout's copy) into those a remote host may
- * run and those that stay on this machine (GY-3419). A file that cannot be read stays local: the
- * safe side is this machine, where everything works.
+ * run and those that stay on this machine (GY-3419, GY-3612). A file that cannot be read stays
+ * local: the safe side is this machine, where everything works. When `options.remoteBrowser` is
+ * false (or resolves false), browser test files stay local and `browserLocalOnly` is true.
  */
-export async function splitLocalOnlyTests(files: readonly string[], read: (file: string) => Promise<string>): Promise<{ remoteable: string[]; localOnly: string[] }> {
+export async function splitLocalOnlyTests(
+  files: readonly string[],
+  read: (file: string) => Promise<string>,
+  options: { remoteBrowser?: boolean | (() => Promise<boolean>) } = {},
+): Promise<{ remoteable: string[]; localOnly: string[]; browserLocalOnly?: boolean }> {
   const remoteable: string[] = [], localOnly: string[] = [];
-  for (const file of files) (await read(file).then(remoteableTestFile, () => false) ? remoteable : localOnly).push(file);
-  return { remoteable, localOnly };
+  let browserChecked: boolean | undefined = typeof options.remoteBrowser === 'boolean' ? options.remoteBrowser : undefined;
+  let browserLocalOnly = false;
+  for (const file of files) {
+    const text = await read(file).catch(() => null);
+    if (text === null || !remoteableTestFile(text)) { localOnly.push(file); continue; }
+    if (options.remoteBrowser !== undefined && isBrowserTestFile(file, text)) {
+      if (browserChecked === undefined) browserChecked = await (options.remoteBrowser as () => Promise<boolean>)();
+      if (!browserChecked) { localOnly.push(file); browserLocalOnly = true; continue; }
+    }
+    remoteable.push(file);
+  }
+  return browserLocalOnly ? { remoteable, localOnly, browserLocalOnly: true } : { remoteable, localOnly };
 }
 
 /** This machine's reading and every host's, read at once through the shim's probe; a host that does not answer is away for this trial.
@@ -68,10 +101,11 @@ export interface PlacedHost<R> { name: string; room: number; reading: HostReadin
 export interface ShardPlacement { ran: string[]; queuedWhileIdle: number; dropped: string[] }
 
 /**
- * Run `count` shards across `hosts` (this machine first). Each shard goes to the host with room under
- * its heat limit that has the most real free CPU left once its running shards (`breadth` cores each)
- * are counted, so one trial's shards spread across hosts and none waits while a host has room. This
- * machine's reading never takes it out (GY-3588): it keeps its room, and its launcher waits on heat.
+ * Run `count` shards across `hosts` (this machine first). Each shard goes to the other host with room
+ * under its heat limit that has the most real free CPU left once its running shards (`breadth` cores
+ * each) are counted, and to this machine only when no other host has room (GY-3609), so none waits
+ * while a host has room. This machine's reading never takes it out (GY-3588): it keeps its room, and
+ * its launcher waits on heat.
  * `pinned` (GY-3419) names shards that may run only on this machine: a shard holding a
  * local-only test file never reaches a host, which could not run it. A host that throws
  * `HostDroppedError` takes no more shards this trial and its shard is
@@ -85,7 +119,12 @@ export async function runShardsOnHosts<R>(input: { count: number; hosts: readonl
   // GY-3588: this machine is always usable up to its room; its launcher holds each container start while a sensor is hot.
   const usable = (host: PlacedHost<R>) => host === input.hosts[0] || !dropped.has(host.name) && underHeatLimit(host.reading);
   const left = (host: PlacedHost<R>) => realFreeCores(host.reading) - running.get(host.name)! * input.breadth;
-  const pick = (index: number) => input.hosts.filter(host => usable(host) && (!input.pinned?.[index] || host === input.hosts[0]) && running.get(host.name)! < host.room).reduce<PlacedHost<R> | undefined>((best, host) => !best || left(host) > left(best) ? host : best, undefined);
+  const pick = (index: number) => {
+    const open = input.hosts.filter(host => usable(host) && (!input.pinned?.[index] || host === input.hosts[0]) && running.get(host.name)! < host.room);
+    // GY-3609: another machine with room comes first; this machine's heat is what slows a trial.
+    const others = open.filter(host => host !== input.hosts[0]);
+    return (others.length ? others : open).reduce<PlacedHost<R> | undefined>((best, host) => !best || left(host) > left(best) ? host : best, undefined);
+  };
   const start = (host: PlacedHost<R>, index: number) => {
     running.set(host.name, running.get(host.name)! + 1);
     const flight: Promise<void> = input.run(host, index).then(() => { ran[index] = host.name; }, error => {

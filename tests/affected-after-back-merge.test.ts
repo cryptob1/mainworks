@@ -11,7 +11,8 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // GY-3250: a candidate that changes only pm and has back-merged a main commit touching sites
 // (already on the trial base) builds pm and its dependents, never sites, and the trial log names
 // each selected package and why. Huck's PM-only item built @hello-huck/sites so. The case fetches
-// pnpm and turbo through the registry on its first run.
+// pnpm and turbo through npm exec once (registry access; a remote shard has no network, so this
+// file names the local-only word and stays on this machine).
 
 const identity = {
   GIT_AUTHOR_NAME: 'Someone', GIT_AUTHOR_EMAIL: 'someone@example.com',

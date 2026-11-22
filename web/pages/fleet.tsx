@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { capabilityTiers, fleetRoles, groupAccountsByPlan, looksLikeSecret, quotaStates, unspecifiedModel, type FleetAccountView, type FleetView, type RolePolicy } from '../../src/model/registry';
+import { parseProbeFailure } from '../../src/model/account-quota';
 import { formatAge } from '../../src/model/duration';
+import { COMMAND_NAME } from '../../src/model/product';
 import { sealForHost } from '../seal';
 import type { Dashboard } from './dashboard';
-import { accountStatus, chipTones, countdown, launchFailure, localTime, monthDay, plainReason, roleLabels, roleLaunch, unconfiguredRoles, type AccountStatus, type RoleLaunch } from '../agent-status';
+import { accountStatus, backAt, chipTones, countdown, launchFailure, localTime, monthDay, plainReason, roleLabels, roleLaunch, unconfiguredRoles, type AccountStatus, type RoleLaunch } from '../agent-status';
 import { MoreDetails, PageHeader, PageSection } from '../components/page-layout';
 
 const when = (iso: string | null) => iso ? new Date(iso).toLocaleString() : '—';
@@ -143,7 +145,12 @@ export function UsageBars({ plan }: { plan: FleetPlan | null }) {
  * ineligible reason as one short phrase (GY-3482) — `raw` keeps the full text for the cell's title.
  */
 export function whyText(account: FleetAccountView, status: AccountStatus, fleet: Pick<FleetView, 'sessions'>, now: number): { text: string; raw: string } {
-  if (status.chip === 'idle' || (status.chip === 'spent' && status.until && account.quota === 'exhausted')) return { text: '', raw: '' };
+  if (status.chip === 'idle') return { text: '', raw: '' };
+  if (status.chip === 'spent' && account.quota === 'exhausted') {
+    const sentence = account.reason ? parseProbeFailure(account.reason, now).reason.replace(/[{}"]/g, '').trim() : '';
+    const back = status.until ? backAt(status.until) : '';
+    return { text: [sentence, back].filter(Boolean).join(' · ') || 'Limit reached', raw: '' };
+  }
   if (status.chip === 'working') {
     const full = account.maxSessions !== null && account.liveSessions.length >= account.maxSessions;
     const text = `${account.liveSessions.map(session => `${session.role}${session.work ? ` on ${session.work}` : ''}`).join(', ')}${full ? ` (at its limit of ${account.maxSessions})` : ''}`;
@@ -233,10 +240,12 @@ export function roleLine(launch: RoleLaunch): string {
   return `${label} · waiting: ${launch.short}${launch.nextAt ? ` until ${monthDay(launch.nextAt)}` : ''}`;
 }
 
-/** Per role, one row (GY-978 AC-2, GY-3482). */
+/** Per role, one row (GY-978 AC-2, GY-3482). A missing caretaker is one row too: the loop skips it (GY-3593). */
 export function RoleLaunches({ fleet, now }: { fleet: FleetView; now: number }) {
+  const caretaker = unconfiguredRoles(fleet).some(entry => entry.role === 'caretaker');
   return <ul className="role-launches">{fleet.roles.map(role => roleLaunch(role, fleet, now)).map(launch =>
-    <li key={launch.role} data-role-launch={launch.role} data-can-launch={launch.canLaunch ? 'yes' : 'no'} title={launch.text} className={launch.state === 'blocked' ? 'amber' : undefined}>{roleLine(launch)}</li>)}</ul>;
+    <li key={launch.role} data-role-launch={launch.role} data-can-launch={launch.canLaunch ? 'yes' : 'no'} title={launch.text} className={launch.state === 'blocked' ? 'amber' : undefined}>{roleLine(launch)}</li>)}
+    {caretaker && <li data-role-launch="caretaker" title={`Not configured: caretaker — run ${COMMAND_NAME} master registry role set caretaker ACCOUNT --reason REASON to name its account`}>Caretaker · not configured — the loop skips its health check</li>}</ul>;
 }
 
 /** The Agents page body, pure over the view so it renders the same in a test as in the browser. `now` pins the clock (tests); the page passes the dashboard's server snapshot clock (GY-952). */
@@ -245,9 +254,9 @@ export function FleetOverview({ fleet, connects = [], now = Date.now(), onChange
   const running = fleet.sessions.filter(session => !session.endedAt);
   const byName = new Map(connects.filter(connect => connect.name).map(connect => [connect.name!, connect]));
   return <>
-    {!fleet.configured && <div className="notice">No role is configured yet, so sessions still launch from each host's local profiles. Connect an account below — or run <code>graphyard master registry propose --apply</code> on a host whose agent CLIs are logged in.</div>}
-    {/* A blocked role reads in its launch line and a role-less account in its chip; only a role missing from the registry has no other place. */}
-    {(() => { const missing = unconfiguredRoles(fleet), master = missing.some(entry => entry.error), optional = missing.filter(entry => !entry.error).map(entry => entry.role);
+    {!fleet.configured && <div className="notice">No role is configured yet, so sessions still launch from each host's local profiles. Connect an account below — or run <code>{COMMAND_NAME} master registry propose --apply</code> on a host whose agent CLIs are logged in.</div>}
+    {/* A blocked role reads in its launch line and a role-less account in its chip; a missing caretaker reads in the Role summary; only another role missing from the registry has no other place. */}
+    {(() => { const missing = unconfiguredRoles(fleet), master = missing.some(entry => entry.error), optional = missing.filter(entry => !entry.error && entry.role !== 'caretaker').map(entry => entry.role);
       return <>{master && <div role="alert" className="notice danger">Not configured: master — the loop launches no master session until the role names an account.</div>}
         {optional.length > 0 && <div className="notice">Not configured: {optional.join(', ')} — {optional.length > 1 ? 'their' : 'its'} sessions launch from local profiles until {optional.length > 1 ? 'they are' : 'it is'}.</div>}</>; })()}
     {fleet.roles.length > 0 && <PageSection title="Role summary"><RoleLaunches fleet={fleet} now={now}/></PageSection>}

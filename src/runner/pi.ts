@@ -470,7 +470,8 @@ function watchRun<T>(directory: string, meta: RunMeta, options: Pick<RunOptions<
   };
 }
 
-export interface SmokeResult { ok: boolean; error: string | null }
+/** `output`: what the runtime printed, from which its adapter reads the model it ran (GY-3596). */
+export interface SmokeResult { ok: boolean; error: string | null; output?: string }
 /**
  * One prompt on a Pi account before it is trusted with a session (GY-446): Pi in JSON mode, no
  * session, no extension and no tools, asked for one word. It passes when Pi answers — an assistant
@@ -478,14 +479,15 @@ export interface SmokeResult { ok: boolean; error: string | null }
  * message, else its stderr, else its exit), with every `redact` value removed.
  */
 export function piSmoke(configured: { command: string; model: string; args?: string[]; environment?: Record<string, string>; commandArgs?: string[]; spawn?: typeof spawn }, options: { cwd?: string; timeoutMs?: number; redact?: string[] } = {}): Promise<SmokeResult> {
-  const clean = (value: string) => bounded((options.redact ?? []).filter(Boolean).reduce((text, secret) => text.split(secret).join('[redacted]'), value).trim(), 480);
+  const clean = (value: string) => bounded((options.redact ?? []).filter(Boolean).reduce((text, secret) => text.split(secret).join('[redacted]'), value).replace(/\s+/g, ' ').trim(), 480);
   return new Promise(resolveResult => {
-    let answered = false, lastError: string | null = null, stderr = '', plain = '', buffer = '', done = false;
+    let answered = false, lastError: string | null = null, stderr = '', plain = '', buffer = '', done = false, reported = '';
     const finish = (result: SmokeResult) => { if (done) return; done = true; clearTimeout(bound); resolveResult(result.error ? { ...result, error: clean(result.error) } : result); };
     const handle = (line: string) => {
       let record: any; try { record = JSON.parse(line); } catch { plain = `${plain}\n${line}`.slice(-2000); return; }
-      if (record?.type === 'message_end' && record.message?.role === 'assistant') { if (record.message.errorMessage) lastError = String(record.message.errorMessage); else answered = true; }
-      if (record?.type === 'auto_retry_end' && record.success === false && record.finalError) lastError = String(record.finalError);
+      if (record?.type === 'message_end' && record.message?.role === 'assistant') reported = line;
+      if (record?.type === 'message_end' && record.message?.role === 'assistant') { if (record.message.errorMessage) lastError = String(record.message.errorMessage).replace(/\s+/g, ' ').trim(); else answered = true; }
+      if (record?.type === 'auto_retry_end' && record.success === false && record.finalError) lastError = String(record.finalError).replace(/\s+/g, ' ').trim();
     };
     let child: ChildProcess;
     try {
@@ -500,7 +502,7 @@ export function piSmoke(configured: { command: string; model: string; args?: str
     child.on('error', error => finish({ ok: false, error: `${configured.command} could not be started: ${error.message}` }));
     child.on('close', (code, signal) => {
       buffer += decoder.end(); if (buffer.trim()) handle(buffer.replace(/\r$/, ''));
-      if (answered && !lastError && code === 0) return finish({ ok: true, error: null });
+      if (answered && !lastError && code === 0) return finish({ ok: true, error: null, output: reported });
       finish({ ok: false, error: lastError ?? (stderr.trim() || plain.trim() || `${configured.command} exited ${signal ? `on ${signal}` : `with code ${code}`} without answering`) });
     });
   });

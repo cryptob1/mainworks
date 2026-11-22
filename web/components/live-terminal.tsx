@@ -81,11 +81,6 @@ export default function LiveTerminal({ token, label }: { token: string; label: s
       };
       const fit = () => {
         if (!host.current || !section.current) return;
-        // The page below the section is its parent's bottom padding: the section takes the rest of
-        // the viewport, exactly, so the document never scrolls and the terminal is the one scrolling
-        // surface (GY-3308). It never drops into the bottom version-label strip (GY-3310).
-        const below = Math.max(parseFloat(getComputedStyle(section.current.parentElement!).paddingBottom) || 0, 30);
-        section.current.style.height = `calc(100dvh - ${section.current.getBoundingClientRect().top + below}px)`;
         const screen = host.current.querySelector('.xterm-screen')?.getBoundingClientRect();
         if (!screen?.width || !screen.height) return;
         // xterm 6's scrollbar overlays the text: the columns take the container's whole width (GY-3313),
