@@ -158,7 +158,7 @@ export function whyText(account: FleetAccountView, status: AccountStatus, fleet:
   }
   const raw = status.chip === 'launch-failing' || status.chip === 'spent' ? launchFailure(account, fleet, now)?.reason ?? status.reason : status.reason;
   const text = plainReason(raw, status.chip === 'launch-failing' ? 'Launch failed' : 'Unavailable');
-  return { text: text === 'Limit reached' && status.until ? `Limit reached · ${backAt(status.until)}` : text, raw: text === raw ? '' : raw };
+  return { text: text === 'Limit reached' && status.until ? `Limit reached · back ${monthDay(status.until)}` : text, raw: text === raw ? '' : raw };
 }
 
 /** Accounts read working, then idle, then out of work: failing, unavailable, spent, role-less, disabled. */
