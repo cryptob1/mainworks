@@ -1,0 +1,8 @@
+{
+  "id": "dispatch-keeps-fresh-lease",
+  "title": "A dispatched worker keeps its lease",
+  "description": "One dispatch starts two accounts that exit at once and then a worker that runs: the item is in build with that worker running, no session in its history is a lease loss, and dispatch is not stopped.",
+  "target": "any",
+  "required": false,
+  "steps": [{ "kind": "command", "name": "Dispatch keeps the fresh lease", "run": "node --import tsx tests/helpers/run-tests.ts tests/dispatch-keeps-fresh-lease.test.ts", "timeoutSeconds": 180 }]
+}

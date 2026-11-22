@@ -50,8 +50,8 @@ test(`${proof} — one trial's shards spread across hosts and none waits while a
   const per = (name: string) => shards.started.filter(entry => entry.host === name).length;
   assert.equal(shards.started.length, 10, JSON.stringify(shards.started));
   assert.deepEqual([per('vishrog'), per('box-a'), per('box-b'), per('hot-box')], [4, 4, 2, 0]);
-  // The first shards alternate between the two hosts with the most real free CPU left.
-  assert.deepEqual(new Set(shards.started.slice(0, 2).map(entry => entry.host)), new Set(['vishrog', 'box-a']));
+  // GY-3609: the other hosts fill first; this machine takes only what they have no room for.
+  assert.ok(shards.started.slice(0, 6).every(entry => entry.host !== 'vishrog'), JSON.stringify(shards.started));
   shards.release();
   const result = await placed;
   assert.equal(result.ran.length, 12);

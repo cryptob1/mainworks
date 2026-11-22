@@ -572,3 +572,4 @@ header.main-top-bar{height:auto;min-height:60px;display:flex;flex-wrap:wrap;alig
 }
 /* GY-3598: a test case's long ids, commands and paths wrap inside its card, so the Test-case library never scrolls sideways at 390 px. */
 .scenario-list{grid-template-columns:minmax(0,1fr)}.scenario-card,.scenario-columns>div{min-width:0;overflow-wrap:anywhere}.scenario-card code{white-space:normal;word-break:break-all}
+.caretaker-lines{list-style:none;padding:0;margin:0 0 var(--space-3);display:grid;gap:var(--space-2);font-size:var(--type-small)}
