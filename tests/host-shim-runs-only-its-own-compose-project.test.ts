@@ -24,6 +24,8 @@ const escapes: Record<string, string> = {
   'build': db({ build: { context: '/' } }),
   'privileged': db({ privileged: true }),
   'host-network': db({ network_mode: 'host' }),
+  'provider': db({ provider: { type: 'model', options: { model: 'ai/x' } } }),
+  'escape': '{"services": {"db": {"image": "postgres:16", "expose": [5432]}}, "\\u0069nclude": ["/etc/compose.yaml"]}',
   'external-network': db({}, { networks: { default: { external: true, name: 'bridge' } } }),
   'include': JSON.stringify({ include: ['/home/gy-compute/other/compose.yaml'], ...JSON.parse(db({})) }),
 };
@@ -31,7 +33,8 @@ const escapeWords: Record<string, RegExp> = {
   'driver-volume': /volume data is external or set by driver options/, 'secret-file': /secret key reads from outside the run directory/,
   'config-file': /config conf reads from outside the run directory/, 'env-file': /service db reads an env file outside the run directory/,
   'build': /service db sets build/, 'privileged': /service db sets privileged/, 'host-network': /service db shares the network_mode host/,
-  'external-network': /network default is external or set by driver options/, 'include': /includes or extends other Compose files/,
+  'provider': /service db sets provider/, 'escape': /writes a character by an escape/,
+  'external-network': /network default is external or set by driver options/, 'include': /includes or extends other files/,
 };
 
 before(async () => {
@@ -82,7 +85,7 @@ test(`${proof} — a Compose file outside the run directory, absent from the com
   assert.equal(dockerEveryCall(hosts.state('box')).length, calls, 'no Docker call was made for a refused request');
 });
 
-test(`${proof} — a run directory the shim did not create is refused, and so is a committed Compose file that reaches the host outside the run directory: a bind, a driver-option volume, a secret, config or env file, a build, a privileged or host-network service, an external network or an include`, () => {
+test(`${proof} — a run directory the shim did not create is refused, and so is a committed Compose file that reaches the host outside the run directory: a bind, a driver-option volume, a secret, config or env file, a build, a privileged, host-network or provider service, an external network, an include or an escaped key`, () => {
   const unknown = shim('run-check trial-zzzzzz', request());
   assert.equal(unknown.status, 1);
   assert.match(unknown.stderr, /graphyard-host-shim: no run trial-zzzzzz/);

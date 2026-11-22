@@ -209,9 +209,9 @@ else:
         if not compose.startswith(repo + os.sep) or committed.returncode != 0 or not os.path.isfile(compose) or open(compose, 'rb').read() != committed.stdout:
             refuse()
         base = ['docker', 'compose', '-p', project, '--project-directory', os.path.dirname(compose), '--env-file', os.devnull, '-f', compose]
-        # Compose expands include and extends from other files before any configuration can be checked.
-        if re.search(r'\\b(?:include|extends)\\b', open(compose, errors='replace').read()):
-            sys.exit('graphyard-host-shim refuses: ' + file + ' includes or extends other Compose files')
+        # Compose reads include, extends and label files from anywhere before any configuration can be checked; an escape could spell those words.
+        if re.search(r'\\b(?:include|extends|label_file)\\b|\\\\[xuU]', open(compose, errors='replace').read()):
+            sys.exit('graphyard-host-shim refuses: ' + file + ' includes or extends other files, or writes a character by an escape')
         try:
             config = json.loads(subprocess.run(base + ['config', '--format', 'json'], capture_output=True, text=True).stdout)
         except ValueError:
@@ -229,7 +229,7 @@ else:
             for env in entry.get('env_file') or []:
                 if not within(env.get('path') if isinstance(env, dict) else env):
                     problems.append('service ' + name + ' reads an env file outside the run directory')
-            for key in ('build', 'privileged', 'cap_add', 'devices', 'device_cgroup_rules', 'use_api_socket', 'volumes_from', 'external_links', 'security_opt', 'post_start', 'pre_stop'):
+            for key in ('build', 'privileged', 'cap_add', 'devices', 'device_cgroup_rules', 'use_api_socket', 'volumes_from', 'external_links', 'security_opt', 'post_start', 'pre_stop', 'provider', 'runtime', 'storage_opt', 'credential_spec'):
                 if entry.get(key):
                     problems.append('service ' + name + ' sets ' + key)
             for key in ('network_mode', 'pid', 'ipc', 'userns_mode', 'uts', 'cgroup'):
