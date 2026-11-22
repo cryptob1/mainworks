@@ -72,7 +72,7 @@ export const mergeRecordBodySchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('reconciled'), mergeSha: sha, observedTip: sha }).strict(),
   z.object({ kind: z.literal('refused'), head: sha, reason: z.string().min(1).max(2000) }).strict(),
   // GY-2963: where the trial is while it runs — a step name and the instant it began, no state.
-  z.object({ kind: z.literal('trial-step'), head: sha, step: z.string().min(1).max(100), at: instant }).strict(),
+  z.object({ kind: z.literal('trial-step'), head: sha, step: z.string().min(1).max(100), at: instant, output: z.string().max(4000).optional() }).strict(),
 ]);
 export type MergeRecordBody = z.infer<typeof mergeRecordBodySchema>;
 /** The save reason a reconciliation delivers under; the ledger's `merge-writer.<kind>` saves carry every other step. */

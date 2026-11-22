@@ -70,8 +70,12 @@ test('e2e:task-shows-evidence — the control plane serves a task\'s trial timin
     await record({ kind: 'trial-step', head, step: 'checkout', at: at(0) });
     await record({ kind: 'trial-step', head, step: 'build', at: at(1) });
     await record({ kind: 'trial-step', head, step: 'tests', at: at(2) });
+    assert.equal((await call('operator', `${item}/timings`)).trial.output, null, 'no output before a group of tests ends');
+    // A shard that ended sends the same step again under its own start, with its output: still one step, its output shown while it runs.
+    await record({ kind: 'trial-step', head, step: 'tests', at: at(2), output: `$ node --test (shard 1)\nnot ok 1 - ${slow}\n  a CPU sensor reads 96C` });
     const running = (await call('operator', `${item}/timings`)).trial;
     assert.equal(running.finishedAt, null);
+    assert.match(running.output, /not ok 1 - tests\/remote-shards\.test\.ts\n  a CPU sensor reads 96C$/);
     assert.deepEqual(running.steps.map((step: any) => [step.step, step.result]), [['checkout', 'passed'], ['build', 'passed'], ['tests', 'running']]);
     assert.equal(running.steps[0].durationMs, minute);
     assert.ok(running.steps[2].durationMs >= 17 * minute && running.steps[2].durationMs < 18 * minute);
@@ -85,6 +89,7 @@ test('e2e:task-shows-evidence — the control plane serves a task\'s trial timin
     assert.ok(Date.parse(timings.releasedAt) <= Date.now());
     assert.equal(trial.head, head);
     assert.ok(trial.finishedAt);
+    assert.equal(trial.output, null, 'a finished trial answers with its verdict, not its running output');
     assert.deepEqual(trial.steps.map((step: any) => [step.step, step.result]), [['checkout', 'passed'], ['build', 'passed'], ['tests', 'failed']]);
     assert.ok(Math.abs(trial.durationMs - 19 * minute) < 5000);
     assert.deepEqual(trial.groups, [{ name: 'tests', passed: 39, total: 40 }, { name: 'e2e', passed: 2, total: 2 }]);

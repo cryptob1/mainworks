@@ -240,7 +240,7 @@ test('integration:item-view-structure — state, who acts next and why on the pl
   // Requirements sit below the plate (GY-161 AC-10, GY-171 AC-1), folded with the description under Details
   // (GY-2011 AC-3): one line per criterion, its full text folded; each criterion appears once in Requirements (the Tests panel
   // names its proofs' criterion too, GY-2091), with one marker per proof.
-  assert.match(view, /<details class="panel item-details-fold" aria-label="Details"><summary>Details<\/summary>[\s\S]*<section class="requirements" aria-label="Requirements">/);
+  assert.match(view, /<details class="panel item-details-fold" aria-label="Description and criteria"><summary>Description and criteria<\/summary>[\s\S]*<section class="requirements" aria-label="Requirements">/);
   const requirements = view.slice(view.indexOf('aria-label="Requirements"'), view.indexOf('aria-label="Activity"'));
   for (const ac of find('GY-16').criteria) assert.equal(text(requirements).split(/\s+/).filter((word: string) => word === ac.id).length, 1, `${ac.id} once in Requirements`);
   assert.equal(view.match(/class="marker-pass"/g)?.length, 2); assert.equal(view.match(/class="marker-pending"/g)?.length, 1);

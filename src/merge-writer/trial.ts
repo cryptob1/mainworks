@@ -743,7 +743,7 @@ export interface RunTrialInput {
   /** Called as each attempt starts, before it runs anything (GY-1832): a caller keeping attempt-scoped evidence starts it afresh. */
   onAttempt?: (attempt: number) => void;
   /** GY-2963: called at each step's start — checkout, install, build, selection, the tests, each repository check by name — so the merge writer records where the trial is. */
-  onStep?: (step: string) => void;
+  onStep?: (step: string, output?: string) => void;
   onTiming?: (step: string, durationMs: number) => void;
   /** GY-3099: aborting it kills the trial's install, build and test children and starts no more, rejecting with its reason (`TrialCancelledError`), never retried. */
   signal?: AbortSignal;
@@ -1476,6 +1476,8 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     input.onTiming?.(`tests: ${lanes} lanes, breadth ${breadth}`, 0);
     const settledShards: ({ group: TrialGroup; entries: string[]; unattributed: TrialRunnerError | null; passed: string[]; records: string } | undefined)[] = [];
     let stopped: unknown = null;
+    // GY-3599: each shard's output as it ends, sent with the running step so the Task page shows it while the trial runs; a failing shard's stays shown.
+    let failingShown = false;
     // A shard a host turned away is noted after every shard's output, so the note stays in the log tail kept on the item.
     const dropped = new Map<string, HostDroppedError>();
     const session = hosts.length ? remoteShardSession({ root: input.root, sha: input.mergeSha, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport }) : null;
@@ -1508,6 +1510,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         const passed = tests.ok && !failing.length ? group : recorded.filter(record => record.passed && group.includes(record.file) && !failing.includes(record.file)).map(record => record.file);
         settledShards[index] = { group: { files: group, status: tests.status, signal: tests.signal, failed: failing }, entries, passed, records: recordText,
           unattributed: !tests.ok && !failing.length ? runnerFailure('tests', tests, group, recorded.filter(record => group.includes(record.file)).length) : null };
+        if (!failingShown || !tests.ok) { failingShown ||= !tests.ok; input.onStep?.(stepLabel, entries.join('\n').slice(-4000)); }
       } catch (error) {
         if (error instanceof HostDroppedError) { if (!dropped.has(error.host)) dropped.set(error.host, error); throw error; }
         log.push(...entries);

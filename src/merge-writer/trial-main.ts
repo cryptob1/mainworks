@@ -28,7 +28,7 @@ try {
     discoverProofFiles: options => proofTestFiles(defaultChildRun, spec.root, spec.mergeSha, spec.proofs, options),
     timeoutMs: spec.timeoutMs, key: spec.key, ...(spec.reproduce ? { reproduce: true } : {}), hidden: spec.hidden,
     ...(spec.baseTip ? { baseTip: spec.baseTip } : {}), ...(spec.cores ? { cores: spec.cores } : {}),
-    onStep: step => void record({ step, at: new Date().toISOString() }),
+    onStep: (step, output) => void record({ step, at: new Date().toISOString(), ...(output ? { output } : {}) }),
     onTiming: (step, durationMs) => void record({ timing: step, durationMs }),
     environment: process.env, signal: stop.signal, runDirectory: directory, caches: true,
   });

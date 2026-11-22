@@ -31,7 +31,7 @@ const stageLabels: [Stage['id'], string][] = [['built', 'Built'], ['reviewed', '
  * and its ledger already record: released, handed in, approved, trial started, trial ended, merged.
  * A stage is done once any later instant exists, and its time is known when both of its own do.
  */
-export function taskStages(item: Work, timings: TaskTimings | null, now: number): { stages: Stage[]; totalMs: number | null; merged: boolean } {
+export function taskStages(item: Work, timings: TaskTimings | null, now: number): { stages: Stage[]; totalMs: number | null; merged: boolean; since: number | null } {
   const time = (value: string | null | undefined) => { const at = Date.parse(value ?? ''); return Number.isFinite(at) ? at : null; };
   const head = item.candidate?.sha, ledger = head && item.mergeLedger?.head === head ? item.mergeLedger : null, trial = head && timings?.trial?.head === head ? timings.trial : null;
   const submitted = item.submission ? time(item.pipeline?.resubmittedAt ?? item.pipeline?.submittedAt) : null;
@@ -46,7 +46,9 @@ export function taskStages(item: Work, timings: TaskTimings | null, now: number)
     return { id, label, state: index < current ? 'done' : !open ? 'pending' : id === 'trial' && failed ? 'failed' : 'current', ms: ms === null ? null : Math.max(0, ms) };
   });
   const merged = marks[5] !== null;
-  return { stages, totalMs: marks[0] === null ? null : Math.max(0, (marks[5] ?? now) - marks[0]), merged };
+  // When the state it is in began: the trial's end once it failed, else the start of its current stage; null before it is handed in.
+  const since = failed && trial?.finishedAt ? time(trial.finishedAt) : current >= 1 ? marks[current]! : null;
+  return { stages, totalMs: marks[0] === null ? null : Math.max(0, (marks[5] ?? now) - marks[0]), merged, since };
 }
 
 /** The pipeline row: each stage with this task's time in it, the total beside the median, and the trial's counts and slowest file. */
@@ -63,13 +65,14 @@ export function PipelineRow({ item, timings, median, now }: { item: Work; timing
 }
 
 const marks = { passed: '✓', failed: '×', running: '●' } as const;
-/** The merge trial's checks, each with its result and time, and the output of the one that failed. */
+/** The merge trial's checks, each with its result and time, and the output of the one that failed, or of a running trial so far. */
 export function Checks({ trial, output }: { trial: TrialTimings | null; output: string | null }) {
   return <section className="task-checks" aria-label="Checks">
     {trial?.steps.length ? <ul>{trial.steps.map((step, index) => <li key={index} className={`check-${step.result}`} data-check={step.step}>
       <span aria-hidden="true">{marks[step.result]}</span><span className="check-name">{step.step}</span><span className="check-result">{step.result}</span><span className="check-time">{shortDuration(step.durationMs)}</span></li>)}</ul>
       : <p className="muted">No merge trial has run on this change yet.</p>}
     {output && <pre className="run-log" aria-label="Test output">{output}</pre>}
+    {!output && trial?.steps.at(-1)?.result === 'running' && <p className="muted">No test output yet: it shows as each group of tests ends.</p>}
   </section>;
 }
 

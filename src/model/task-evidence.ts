@@ -7,6 +7,8 @@ export interface TrialTimings {
   /** Counts per test group, known once the trial reached a verdict. */
   groups: { name: string; passed: number; total: number }[];
   slowest: { file: string; durationMs: number } | null;
+  /** What a running trial printed so far: its newest step's output, sent as each test shard ends; null once it reaches a verdict. */
+  output: string | null;
 }
 interface LedgerRow { kind: string; payload: any; created_at: string | Date }
 
@@ -15,7 +17,10 @@ export function trialTimings(rows: readonly LedgerRow[], now: number): TrialTimi
   const from = rows.findLastIndex(row => row.kind === mergeLedgerKinds.intent);
   if (from < 0) return null;
   const intent = rows[from]!.payload, own = rows.slice(from + 1).filter(row => row.payload?.head === intent.head);
-  const started = own.filter(row => row.kind === mergeTrialStepKind).map(row => ({ step: String(row.payload.step), at: Date.parse(row.payload.at) }));
+  // A step sent again under its own start carries only its output so far: it is one step.
+  const reports = own.filter(row => row.kind === mergeTrialStepKind);
+  const started = reports.filter((row, index) => index === 0 || row.payload.step !== reports[index - 1]!.payload.step || row.payload.at !== reports[index - 1]!.payload.at)
+    .map(row => ({ step: String(row.payload.step), at: Date.parse(row.payload.at) }));
   const ended = own.findLast(row => row.kind === mergeTrialKind), trial = ended?.payload, finished = ended ? new Date(ended.created_at).getTime() : null;
   const failed = (step: string, last: boolean) => !trial ? false : trial.outcome !== 'verdict' ? last
     : step === 'build' ? trial.build === 'fail' : step === 'tests' ? trial.tests.failed.length > 0
@@ -28,5 +33,5 @@ export function trialTimings(rows: readonly LedgerRow[], now: number): TrialTimi
   return { head: intent.head, startedAt: intent.at, finishedAt: finished === null ? null : new Date(finished).toISOString(), durationMs: Math.max(0, (finished ?? now) - Date.parse(intent.at)), steps,
     groups: [...(trial?.tests?.files ? [{ name: 'tests', passed: trial.tests.passed, total: trial.tests.files }] : []),
       ...(e2e.length ? [{ name: 'e2e', passed: e2e.filter(entry => entry.executed > 0 && entry.failed === 0 && !entry.missing).length, total: e2e.length }] : [])],
-    slowest: trial?.tests?.slowest ?? null };
+    slowest: trial?.tests?.slowest ?? null, output: ended ? null : reports.at(-1)?.payload.output ?? null };
 }

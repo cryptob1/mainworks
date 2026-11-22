@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ItemCostsView } from './costs';
 import type { CostSummary } from '../../src/model/token-costs';
 import LiveRun from '../components/live-run';
-import { ChangedFiles, Checks, LeadDecisions, PipelineRow, useEvidence, type ChangedFile, type TaskTimings } from '../components/task-evidence';
+import { ChangedFiles, Checks, LeadDecisions, PipelineRow, taskStages, useEvidence, type ChangedFile, type TaskTimings } from '../components/task-evidence';
 import { friendlyName } from '../fun';
 import { deploySmokeRequired, isClosed, needsProductReview, type Work } from '../../src/model';
 import { sessionSummary, transcriptRun, type SessionHandle } from '../../src/model/sessions';
@@ -23,7 +23,7 @@ import StatusAge from '../components/status-age';
 import Term, { Explained } from '../components/term';
 import { age } from '../../src/model/format';
 import { formatAge } from '../../src/model/duration';
-import { activityLabel, historyLabel, overlapLine, whatIsLeft, type LeftGroup } from '../item-page';
+import { historyLabel, overlapLine, whatIsLeft, type LeftGroup } from '../item-page';
 import { plainStatus } from '../../src/model/plain-status';
 import { stageLabel, serveView } from '../../src/model/plain-stage';
 import { groupWithin, nextActor, timedGroups } from '../groups';
@@ -285,7 +285,11 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
         : { label: 'Hold task', run: () => action(item.id, 'hold', { reason: 'Held from the Task page', expectedRevision: item.revision }) };
   // Stuck or waiting: one sentence why, one on what happens next. Moving work reads the same two lines as where it is now.
   const stuck = !closed && group !== 'shipped' && (group !== 'moving' || held.overdue || trialFailed || plain.tone === 'stuck');
-  const why = trialFailed ? (refusal?.split('\n')[0] ?? 'Its merge trial failed.') : stateSentence;
+  // The why names the failure by its counts; the output itself is under Checks, shown once.
+  const failures = trial?.groups.filter(entry => entry.passed < entry.total).map(entry => `${entry.total - entry.passed} of ${entry.total} ${entry.name === 'tests' ? 'test files' : 'e2e cases'} failed`).join(', ');
+  const why = trialFailed ? `Its merge trial failed${failures ? `: ${failures}` : ''}.` : stateSentence;
+  // Time in state: since the pipeline stage it is in began, or its trial failed; before it is handed in, how long it has held its group.
+  const inStateSince = closed ? null : taskStages(item, timings, now).since;
   const add = files?.reduce((sum, file) => sum + file.additions, 0), del = files?.reduce((sum, file) => sum + file.deletions, 0);
   const panel = (name: typeof tabs[number], content: React.ReactNode) => <div role="tabpanel" aria-label={name} className="task-panel" hidden={tab !== name}>{content}</div>;
   return <article className="item-page" aria-label={item.title}>
@@ -299,7 +303,7 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
         </div>
       </div>
       <div className="item-meta">
-        <span data-task-state>{group && <StatusBadge group={group}/>} <strong>{trialFailed ? 'Merge trial failed' : stageLabel(item, now, release, serve)}</strong>{timedGroups.has(group ?? 'shipped') && <> · <StatusAge held={held}/></>}</span>
+        <span data-task-state>{trialFailed ? <StatusBadge group="blocked">Stuck</StatusBadge> : group && <StatusBadge group={group}/>} <strong>{trialFailed ? 'Merge trial failed' : stageLabel(item, now, release, serve)}</strong>{inStateSince !== null ? <> · <span className="status-age">{formatAge(inStateSince, now)}</span></> : timedGroups.has(group ?? 'shipped') && <> · <StatusAge held={held}/></>}</span>
         {builderName && <span data-builder title={builder!}>Builder {builderName}</span>}
         {model && <span data-model={model.differs ? 'differs' : 'same'} className={model.differs ? 'amber' : undefined}>Model <span className="mono">{model.model}</span>{model.differs ? ` ▲ not the account's ${model.accountModel}` : ''}</span>}
         {files && files.length > 0 && <span className="mono" data-diff-stats>+{add} −{del} · {files.length} {files.length === 1 ? 'file' : 'files'}</span>}
@@ -319,7 +323,7 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
     {!closed && <PipelineRow item={item} timings={timings} median={status?.pipelineTime?.median ?? null} now={now}/>}
     <div role="tablist" aria-label="Task evidence" className="task-tabs">{tabs.map(name => <button key={name} type="button" role="tab" aria-selected={tab === name} onClick={() => setTab(name)}>{name}</button>)}</div>
     {panel('Checks and diff', <>
-      <div className="task-evidence"><Checks trial={trial} output={refusal}/><ChangedFiles item={item} files={files} api={api}/></div>
+      <div className="task-evidence"><Checks trial={trial} output={refusal ?? trial?.output ?? null}/><ChangedFiles item={item} files={files} api={api}/></div>
       <TrialScreenshotsPanel item={item} token={token}/>
       <ProductReviewPanel item={item} token={token}/>
       <HumanChecksPanel item={item} token={token}/>
@@ -334,7 +338,7 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
       {whatChanged && <p className="what-changed" data-what-changed><strong>What changed:</strong> {whatChanged}</p>}
       {item.simplest && <p className="item-title-full muted" data-simplest><strong>Simplest:</strong> {item.simplest}</p>}
       <div className="item-meta">{item.owner && <span>Owner · {item.owner}</span>}<span>{item.type.replace(/^./, c => c.toUpperCase())}</span><Priority item={item} disabled={busy} onChange={mayChangePriority(status?.actor) ? priority => { void action(item.id, 'priority', { priority, source: 'dashboard' }); } : undefined}/><span className="mono">{item.id}</span></div>
-    <details className="panel item-details-fold" aria-label="Details"><summary>Details</summary>
+    <details className="panel item-details-fold" aria-label="Description and criteria"><summary>Description and criteria</summary>
       {item.description ? <p className="item-description">{item.description}</p> : <p className="muted">No description.</p>}
       <section className="requirements" aria-label="Requirements"><h2>Requirements <small>{item.criteria.length} · {proofs.filter(p => p.status === 'passed').length} of {proofs.length} proofs passed</small></h2>
         {(item.warnings ?? []).map(warning => <p className="amber" key={warning}>{warning}</p>)}
@@ -345,8 +349,9 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
     </details>
     {item.preview && <PreviewPanel preview={item.preview}/>}
       <ItemCostsView costs={costs?.windows ? costs : null}/>
+    {/* The Lead tab lists its decisions; here only the full record, folded. */}
     <section className="panel activity" aria-label="Activity"><h2>Activity</h2>
-      {events.length ? <ul className="activity-list">{events.slice(0, 3).map(event => <li key={event.seq}>{activityLabel(event.kind)} <small>· {formatAge(event.created_at, now)} ago</small></li>)}</ul> : <p className="muted">Nothing recorded yet.</p>}
+      {!events.length && <p className="muted">Nothing recorded yet.</p>}
       <details className="full-history"><summary>{historyLabel(events.length)}</summary><History key={item.id} events={events}/></details>
     </section>
     {admin && item.stage !== 'done' && <details className="edit-menu"><summary>Edit</summary>

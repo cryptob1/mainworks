@@ -13,7 +13,7 @@ const candidate = { sha: head, baseSha: base, pr: 412, branch: 'graphyard/gy-358
 const item = {
   dependencies: [], scenarioRequirements: [], id: 'w-3588', key: 'GY-3588', title: 'Trials stop running one test group at a time when hot',
   why: 'A hot reading made every trial slow.', description: 'The launcher already waits on heat per container.', type: 'feature', priority: 1,
-  stage: 'test', stageEnteredAt: at(19), ready: true, epoch: 3, lease: null, owner: builder, lastAssignment: { owner: builder, epoch: 3, claimedAt: at(41) },
+  stage: 'test', stageEnteredAt: at(21), ready: true, epoch: 3, lease: null, owner: builder, lastAssignment: { owner: builder, epoch: 3, claimedAt: at(41) },
   policy: { review: true, checks: ['test'] }, policyRevision: 1, revision: 9, violations: [], blocker: null, reworkRequested: false,
   workspaces: [{ host: 'vish-msi', path: '/work/gy-3588', branch: candidate.branch, epoch: 3, owner: builder }],
   submission: { epoch: 3, pr: 412 }, candidate,
@@ -23,13 +23,13 @@ const item = {
   gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: true, reasons: [] },
     { name: 'test', passed: false, reasons: [`trial failed: ${slow}`] }, { name: 'merge', passed: false, reasons: ['The merge writer refused this head'] }],
   pipeline: { attempts: [{ epoch: 3, owner: builder, claimedAt: at(41), endedAt: at(30), end: 'submitted' }], submittedAt: at(30), resubmittedAt: at(30), reworkRounds: 0, interventions: { blocked: 0, requirements: 0 } },
-  mergeLedger: { key: 'GY-3588', state: 'refused', head, baseTip: base, mergeSha: merge, risk: 'normal', intentAt: at(19), pushedAt: null, observedTip: null, refusal: { kind: 'merge', reason: output }, events: 3 },
+  mergeLedger: { key: 'GY-3588', state: 'refused', head, baseTip: base, mergeSha: merge, risk: 'normal', intentAt: at(21), pushedAt: null, observedTip: null, refusal: { kind: 'merge', reason: output }, events: 3 },
   sessions: [{ id: `${builder}:3`, kind: 'implementation', principal: builder, epoch: 3, runtime: 'claude', host: 'vish-msi', transcript: `run:${run}`, subject: 'GY-3588', state: 'running', observed: 'working', observedAt: at(0), startedAt: at(41), updatedAt: at(0), seenAt: at(0) }],
   createdAt: at(60), updatedAt: at(0),
 };
-const timings = { releasedAt: at(41), trial: { head, startedAt: at(19), finishedAt: at(0), durationMs: 19 * 60_000,
+const timings = { releasedAt: at(41), trial: { head, startedAt: at(21), finishedAt: at(2) as string | null, durationMs: 19 * 60_000, output: null as string | null,
   steps: [{ step: 'checkout', durationMs: 20_000, result: 'passed' }, { step: 'install', durationMs: 60_000, result: 'passed' }, { step: 'build', durationMs: 40_000, result: 'passed' }, { step: 'tests', durationMs: 17 * 60_000, result: 'failed' }],
-  groups: [{ name: 'tests', passed: 39, total: 40 }, { name: 'e2e', passed: 2, total: 2 }], slowest: { file: slow, durationMs: 14 * 60_000 } } };
+  groups: [{ name: 'tests', passed: 39, total: 40 }, { name: 'e2e', passed: 2, total: 2 }], slowest: { file: slow, durationMs: 14 * 60_000 } as { file: string; durationMs: number } | null } };
 const files = [{ path: 'src/merge-writer/remote-shards.ts', additions: 9, deletions: 4 }, { path: slow, additions: 77, deletions: 0 }, { path: 'e2e/cases/verification-uses-remote-hosts.json', additions: 0, deletions: 27 }];
 const patch = '@@ -1,2 +1,3 @@\n-const usable = host => underHeatLimit(host.reading);\n+// This machine\'s launcher already waits on heat per container.\n+const usable = host => host === hosts[0] || underHeatLimit(host.reading);';
 const events = [
@@ -73,7 +73,8 @@ for (const width of [1280, 390]) {
 
     // AC-1: title, state with time in state, pull request, Builder, model with its mark, diff stats, one action, key and commit small.
     await expect(header.getByRole('heading', { level: 1 })).toHaveText(item.title);
-    await expect(header.locator('[data-task-state]')).toHaveText(/Merge trial failed · 30m/);
+    // Its time in state counts from when the trial failed, two minutes ago, not from when the change was handed in; the badge says it is stuck.
+    await expect(header.locator('[data-task-state]')).toHaveText(/^Stuck\s*Merge trial failed · 2m$/);
     await expect(header.getByRole('link', { name: /PR #412/ })).toHaveAttribute('href', 'https://github.com/fixture/repository/pull/412');
     await expect(header.locator('[data-builder]')).toHaveText(`Builder ${friendlyName(builder)}`);
     const model = header.locator('[data-model]');
@@ -87,7 +88,8 @@ for (const width of [1280, 390]) {
     await expect(small).toHaveText(`GY-3588 · ${head.slice(0, 8)}`);
     expect(await small.evaluate(element => parseFloat(getComputedStyle(element).fontSize) < parseFloat(getComputedStyle(document.querySelector('.task-header h1')!).fontSize))).toBe(true);
     // Stuck: one sentence why, one on what happens next.
-    await expect(task.locator('[data-stuck-why]')).toHaveText(/^Why: .*tests\/remote-shards\.test\.ts/);
+    // The why gives the counts; the failing output is shown once, under Checks.
+    await expect(task.locator('[data-stuck-why]')).toHaveText('Why: Its merge trial failed: 1 of 40 test files failed.');
     await expect(task.locator('[data-stuck-next]')).toHaveText(/^Next: It goes back to a Builder/);
     for (const part of [header.getByRole('heading', { level: 1 }), header.locator('[data-task-state]'), header.getByRole('link', { name: /PR #412/ }), header.locator('[data-builder]'), model, header.locator('[data-diff-stats]'), small, task.locator('[data-stuck-why]'), task.locator('[data-stuck-next]')])
       await expect(part).toBeVisible();
@@ -95,7 +97,7 @@ for (const width of [1280, 390]) {
     // AC-2: each stage with this task's time in it, the total beside the median, the trial's counts and its slowest file.
     const pipeline = task.getByRole('region', { name: 'Pipeline' });
     await expect(pipeline.locator('[data-pipeline-total]')).toHaveText('This task 41 min so far · median 29 min');
-    await expect(pipeline.locator('[data-stage]')).toHaveText([/^Built\s*11 min$/, /^Reviewed\s*4 min$/, /^Queued\s*7 min$/, /^Merge trial\s*19 min/, /^Ship/]);
+    await expect(pipeline.locator('[data-stage]')).toHaveText([/^Built\s*11 min$/, /^Reviewed\s*4 min$/, /^Queued\s*5 min$/, /^Merge trial\s*19 min/, /^Ship/]);
     const trial = pipeline.locator('[data-stage="trial"]');
     await expect(trial).toContainText('tests 39/40');
     await expect(trial).toContainText('e2e 2/2');
@@ -146,6 +148,9 @@ for (const width of [1280, 390]) {
     await expect(details).toContainText('unit:remote-shards');
     await expect(details).toContainText('w-3588');
     await expect(details).toContainText('assignment 3');
+    // Nothing twice: the Lead's decisions are not listed again, and no fold here is called Details.
+    await expect(details.locator('.activity-list')).toHaveCount(0);
+    await expect(details.locator('summary', { hasText: /^Details$/ })).toHaveCount(0);
     expect(await noSideScroll(page)).toBe(true);
 
     // The footer: follow the log, check the branch out.
@@ -166,4 +171,19 @@ test('e2e:task-shows-evidence — a trial that passed ahead of review is not sho
   await expect(task.locator('[data-stage="trial"]')).not.toHaveAttribute('data-state', 'failed');
   await expect(task.getByText(/It goes back to a Builder/)).toHaveCount(0);
   await expect(task.getByLabel('Test output')).toHaveCount(0);
+});
+
+// A running trial shows the output of the tests that ran so far, and its time in state counts from the trial's start.
+test('e2e:task-shows-evidence — a running trial shows its test output so far', async ({ page }) => {
+  const running = { ...item, mergeLedger: { ...item.mergeLedger, state: 'intent', refusal: null }, gates: item.gates.map(gate => ({ ...gate, passed: gate.name !== 'test' && gate.name !== 'merge', reasons: [] })) };
+  const sofar = `$ node --test (shard 2)\nnot ok 3 - ${slow}\n  a CPU sensor reads 96C, at or over 85C`;
+  await open(page, 390, running as unknown as typeof item, { ...timings, trial: { ...timings.trial, finishedAt: null, groups: [], slowest: null, output: sofar,
+    steps: [...timings.trial.steps.slice(0, 3), { step: 'tests', durationMs: 17 * 60_000, result: 'running' }] } });
+  const task = page.locator('article.item-page');
+  await expect(task.locator('[data-task-state]')).not.toContainText('Merge trial failed');
+  await expect(task.locator('[data-task-state]')).toHaveText(/· 21m$/);
+  const checks = task.getByRole('region', { name: 'Checks' });
+  await expect(checks.locator('[data-check="tests"]')).toHaveText(/tests.*running.*17 min/);
+  await expect(checks.getByLabel('Test output')).toHaveText(sofar);
+  expect(await noSideScroll(page)).toBe(true);
 });

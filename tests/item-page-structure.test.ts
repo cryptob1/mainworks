@@ -83,7 +83,7 @@ test('unit:item-page-sections — the plate leads with the why sentence, the evi
   // user, then who acts next and the state sentence. Below it the Details fold, Activity, then the
   // technical fold with the gate detail. No count, no pull request wording outside the control plane's own reasons.
   const order = ['data-why="true"', 'class="status-sentence', 'Next:', 'aria-label="Pipeline"', 'aria-label="Screenshots"',
-    'aria-label="Details"', 'data-what-changed', 'data-simplest', 'aria-label="Requirements"', 'aria-label="Activity"', 'aria-label="Technical details"', 'aria-label="What is left"', 'aria-label="Change"'].map(needle => html.indexOf(needle));
+    'aria-label="Description and criteria"', 'data-what-changed', 'data-simplest', 'aria-label="Requirements"', 'aria-label="Activity"', 'aria-label="Technical details"', 'aria-label="What is left"', 'aria-label="Change"'].map(needle => html.indexOf(needle));
   assert.ok(order.every(index => index >= 0), `every section is rendered: ${order}`);
   assert.deepEqual([...order].sort((a, b) => a - b), order, 'why, simplest, the evidence, what changed, who acts next, Details, Activity, then the folded gate detail');
   assert.match(html, /<p class="item-title-full" data-lead-sentence="true" data-why="true"[^>]*>Owners taste a change from its page, not its pipeline\.<\/p>/);
@@ -114,7 +114,7 @@ test('unit:item-page-sections — the plate leads with the why sentence, the evi
   for (const ac of item.criteria) assert.ok(requirements.includes(`<p>${escape(ac.text)}</p></details>`), `${ac.id}: full text behind its line`);
   // The criteria fold with the description under one closed Details (GY-2011 AC-3); inside it each criterion's full text folds again.
   assert.match(requirements, /^aria-label="Requirements"><h2>Requirements <small>/);
-  assert.match(html, /<details class="panel item-details-fold" aria-label="Details"><summary>Details<\/summary>[\s\S]*<section class="requirements" aria-label="Requirements">/);
+  assert.match(html, /<details class="panel item-details-fold" aria-label="Description and criteria"><summary>Description and criteria<\/summary>[\s\S]*<section class="requirements" aria-label="Requirements">/);
   // What a reader sees once Details is opened: each criterion's line, its full text still folded.
   const shown = visibleWords(html.replaceAll(' hidden=""', '').replace('<details class="panel item-details-fold"', '<details open class="panel item-details-fold"')).join(' ');
   assert.match(shown, /AC-1 The item page below its plate folds its sections in a fixed order\. unit:item-page-sections pending/, 'one line: the id, the first sentence, capped');
@@ -135,12 +135,10 @@ test('unit:item-page-sections — the plate leads with the why sentence, the evi
   assert.match(change, /<dt>Checks<\/dt><dd>test passed · typecheck passed<\/dd>/);
   assert.match(change, /<dt>Review<\/dt><dd>Waiting for approval<\/dd>/);
 
-  // Activity: the latest few events in plain words; the full history on expand.
+  // Activity: the full history on expand; the Lead tab lists its decisions, so no recent list repeats them (GY-3599).
   const activity = html.slice(html.indexOf('aria-label="Activity"'), technical);
-  assert.deepEqual([...activity.matchAll(/<li>([^<]+) <small>/g)].map(match => match[1]), ['Picked up by a builder', 'Released for work', 'Created']);
+  assert.doesNotMatch(activity, /activity-list/);
   assert.match(activity, /<details class="full-history"><summary>History \(3 events; routine GitHub checks and heartbeats left out\)<\/summary><section aria-label="Work history">/);
-  const many = Array.from({ length: 9 }, (_, i) => ({ seq: 9 - i, kind: 'github.observed', actor: 'github', created_at: at(-i * minute) }));
-  assert.equal(page(item, work, { events: many }).match(/<li>Mainworks checked GitHub <small>/g)?.length, 3, 'only the latest few above the fold');
 
   // No raw gate reason appears outside the collapsed technical section; inside it every one is kept.
   for (const gate of item.gates) for (const reason of gate.reasons) {
