@@ -75,11 +75,14 @@ export function incidentsFromStatus(status: StatusSnapshot, work: Work[], now: n
       impact: 'Checks run on fewer machines and take longer.', doing: 'The loop probes it every cycle.', action: { label: 'Open machines', open: 'workers' } });
   }
 
-  // 5. No merge in 2 hours while tasks are in flight.
-  const flying = inFlight(work, now).length;
-  const last = Math.max(...work.filter(merged).map(mergedAt), Number.NEGATIVE_INFINITY);
-  if (flying && now - last >= 2 * hour) incidents.push({ kind: 'no-merge', broke: Number.isFinite(last) ? `Nothing has merged for ${span(now - last)}.` : 'Nothing has merged yet.',
-    impact: `${plural(flying, 'task')} in flight ${flying === 1 ? 'is' : 'are'} stuck.`, doing: 'Builders keep working.', action: { label: 'Ask the Lead', open: 'master' } });
+  // 5. No merge in 2 hours while tasks are in flight. With no merge yet, count from when tasks went in flight.
+  const flying = inFlight(work, now);
+  if (flying.length) {
+    const last = Math.max(...work.filter(merged).map(mergedAt), Number.NEGATIVE_INFINITY);
+    const since = Number.isFinite(last) ? last : Math.min(...flying.map(w => Date.parse(w.lastAssignment?.claimedAt ?? w.stageEnteredAt)).filter(Number.isFinite));
+    if (Number.isFinite(since) && now - since >= 2 * hour) incidents.push({ kind: 'no-merge', broke: `Nothing has merged for ${span(now - since)}.`,
+      impact: `${plural(flying.length, 'task')} in flight ${flying.length === 1 ? 'is' : 'are'} stuck.`, doing: 'Builders keep working.', action: { label: 'Ask the Lead', open: 'master' } });
+  }
   return incidents;
 }
 
@@ -90,9 +93,10 @@ export function statusLine(status: StatusSnapshot, work: Work[], incidents: Inci
   const today = new Date(now).setHours(0, 0, 0, 0);
   const mergesToday = work.filter(w => merged(w) && mergedAt(w) >= today).length;
   const deployed = status.app?.deployedAt ? Date.parse(status.app.deployedAt) : null;
+  const working = builders?.live ?? inFlight(work, now).length;
   return {
-    state: incidents.some(incident => incident.kind === 'no-merge') ? 'Stopped' as const : incidents.length ? 'Slowed' as const : 'Moving' as const,
-    builders: { working: builders?.live ?? inFlight(work, now).length, allowed: builders?.limit ?? null },
+    state: incidents.some(incident => incident.kind === 'no-merge') ? 'Stopped' as const : incidents.length ? 'Slowed' as const : working === 0 ? 'Idle' as const : 'Moving' as const,
+    builders: { working, allowed: builders?.limit ?? null },
     machines: { ready: hosts.filter(host => !host.away).length, configured: hosts.length },
     lastLive: deployed === null ? null : span(now - deployed),
     mergesPerHour: Math.round(mergesToday / Math.max(1, (now - today) / hour) * 10) / 10,

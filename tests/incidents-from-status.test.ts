@@ -57,7 +57,20 @@ test('unit:incidents-from-status — no merge in 2 hours fires only while tasks 
   assert.equal(statusLine({}, work, incidents, now).state, 'Stopped');
 });
 
-test('unit:incidents-from-status — the status line: Moving with no incident, Builders of allowed, machines ready of configured, last live', () => {
+test('unit:incidents-from-status — an install with no merges counts the 2 hours from when tasks went in flight', () => {
+  // Freshly claimed task on an install that has never merged must not fire no-merge.
+  const fresh = item(1, { stageEnteredAt: ago(10 * minute), lastAssignment: { owner: 'graphyard-claude-1', epoch: 1, claimedAt: ago(10 * minute) }, lease: { owner: 'graphyard-claude-1', epoch: 1, expiresAt: ago(-hour) } as Work['lease'] });
+  assert.deepEqual(kinds({}, [fresh]), []);
+  assert.equal(statusLine({}, [fresh], [], now).state, 'Moving');
+  // Once a task has been in flight 2 hours with no merge, the timer fires and stops the line.
+  const stuck = item(2, { stageEnteredAt: ago(2 * hour), lastAssignment: { owner: 'graphyard-claude-1', epoch: 1, claimedAt: ago(2 * hour) }, lease: { owner: 'graphyard-claude-1', epoch: 1, expiresAt: ago(-hour) } as Work['lease'] });
+  const incidents = incidentsFromStatus({}, [stuck], now);
+  assert.deepEqual(incidents.map(incident => incident.kind), ['no-merge']);
+  assert.equal(statusLine({}, [stuck], incidents, now).state, 'Stopped');
+});
+
+test('unit:incidents-from-status — the status line: Idle when nothing is in flight, Moving with builders working, Slowed on an incident', () => {
+  assert.equal(statusLine({}, [], [], now).state, 'Idle');
   const status: StatusSnapshot = { fleet: { roles: [{ role: 'worker', live: 3, limit: 9 }] }, hosts: [{ host: 'a', away: false }, { host: 'b', away: false }, { host: 'c', away: true, since: ago(minute) }], app: { deployedAt: ago(2 * hour) } };
   const line = statusLine(status, [mergedAgo(1, 10 * minute)], incidentsFromStatus(status, [], now), now);
   assert.equal(line.state, 'Moving');

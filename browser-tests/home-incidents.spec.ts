@@ -79,6 +79,8 @@ async function homeAt(page: Page, width: number) {
   await expect(accounts).toContainText('2 of 4 Builder accounts are held');
   await expect(accounts.getByRole('button')).toHaveText('Open accounts');
   await expect(page.locator('[data-incident]')).toHaveCount(2);
+  // The top bar omits its duplicate activity strip on Home so working/merged counts appear once.
+  await expect(page.locator('.top-bar .activity-strip')).toHaveCount(0);
   // The status line comes first in the page's content.
   const first = await page.evaluate(() => {
     const line = document.querySelector('[data-status-line]')!, top = line.getBoundingClientRect().top;

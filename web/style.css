@@ -577,7 +577,7 @@ header.main-top-bar{height:auto;min-height:60px;display:flex;flex-wrap:wrap;alig
 .home-status-line{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin:18px 0 0;font-size:30px;font-weight:600;letter-spacing:-.6px;line-height:1.2;overflow-wrap:anywhere}
 .home-status-line span{font-weight:450;color:var(--text-2)}
 @media(max-width:650px){.home-status-line{font-size:28px;gap:2px 12px;margin-top:12px}}
-.state-moving{color:var(--shipped)}.state-slowed{color:var(--needs-you)}.state-stopped{color:var(--blocked)}
+.state-moving{color:var(--shipped)}.state-idle{color:var(--text-2)}.state-slowed{color:var(--needs-you)}.state-stopped{color:var(--blocked)}
 .incidents{display:grid;gap:var(--space-2);margin-top:var(--space-3)}
 .incident p{margin:0 0 6px;overflow-wrap:anywhere}.incident-broke{font-size:var(--type-sentence);font-weight:600}
 .since-looked ul{margin:var(--space-2) 0 0;padding-left:18px}.since-looked li{overflow-wrap:anywhere}.goals ol{margin:0;padding-left:20px}
