@@ -1,0 +1,11 @@
+{
+  "id": "home-incidents",
+  "title": "Home says whether work is moving and what broke",
+  "description": "A real browser on the built dashboard: the status snapshot is seeded with a release check wedged 28 hours and half the Builder accounts held. At 1280 and 390 px Home's first line reads Slowed with Builders working of allowed, test machines ready of configured, last live and merges an hour today, and one card each for the release check and the held accounts names what broke, the impact, what the team does and one button.",
+  "tags": ["dashboard"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "status line and incident cards on Home", "run": "npm run test:browser -- browser-tests/home-incidents.spec.ts", "timeoutSeconds": 420 }
+  ]
+}
