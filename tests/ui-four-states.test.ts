@@ -119,7 +119,7 @@ test('unit:ui-four-states-board — the board API and the Work page list only To
     assert.ok(!page.includes(`data-row="${merged.key}"`), `${merged.key} has no Work row`);
     const detail = itemPage(merged, work);
     assert.match(detail, new RegExp(`<h1 data-title="true"[^>]*>${merged.title}</h1>`));
-    assert.match(detail, /aria-label="Item states"[\s\S]*?data-step="done"/, `${merged.key} shows the four states, Done last`);
+    assert.match(detail, /aria-label="Pipeline"[\s\S]*?data-stage="ship" data-state="done"/, `${merged.key} shows the pipeline row, Ship done`);
   }
   // The tiles count the rows: no tile counts a merged item.
   for (const group of groups) {

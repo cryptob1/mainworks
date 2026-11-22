@@ -26,8 +26,14 @@ const passingTrialSchema = mergeTrialSchema.extend({
   tests: z.object({ files: z.number().int().positive(), passed: z.number().int(), failed: z.array(z.unknown()).length(0) }),
   e2e: z.array(z.object({ executed: z.number().positive(), failed: z.literal(0), missing: z.literal(false).optional() })).optional(),
 }).refine(trial => trial.tests.passed === trial.tests.files && Object.values(trial.proofs).every(counts => counts.executed > 0 && counts.failed === 0));
-/** `merge.trial-step`: the trial of `head` reported `step` at `at` (GY-2963). */
-export const mergeTrialStepSchema = z.object({ head: sha, step: z.string().min(1).max(100), at: instant }).strict();
+/** GY-3599: a trial's test counts so far, as each test shard's end reports them while the trial runs. */
+export const trialCountsSchema = z.object({ passed: z.number().int().min(0), failed: z.number().int().min(0), files: z.number().int().min(0),
+  slowest: z.object({ file: z.string().max(300), durationMs: z.number().int().min(0) }).strict().optional() }).strict();
+/**
+ * `merge.trial-step`: the trial of `head` reported `step` at `at` (GY-2963). GY-3599: the same step is
+ * sent again as each test shard ends, with what the trial printed so far and its test counts so far.
+ */
+export const mergeTrialStepSchema = z.object({ head: sha, step: z.string().min(1).max(100), at: instant, output: z.string().max(4000).optional(), tests: trialCountsSchema.optional() }).strict();
 /**
  * GY-1834: a trial's flake — the failing test files that passed on their immediate rerun of the same
  * merge commit, and the failing cases the rerun did not repeat, none of them the item's proofs.
