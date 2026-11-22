@@ -50,7 +50,8 @@ export function releaseCheckSince(gate: { verifiedAt: string | null; inFlight: {
   if (!gate?.inFlight && !gate?.held) return null;
   const verified = gate.verifiedAt ? Date.parse(gate.verifiedAt) : Number.NEGATIVE_INFINITY;
   const since = Math.min(...work.filter(merged).map(mergedAt).filter(at => at > verified));
-  return Number.isFinite(since) ? new Date(since).toISOString() : gate.inFlight?.startedAt ?? gate.held?.at ?? null;
+  // No merge after the pass: the unverified one landed while that run went, so the pass itself bounds it.
+  return Number.isFinite(since) ? new Date(since).toISOString() : gate.verifiedAt ?? gate.inFlight?.startedAt ?? gate.held?.at ?? null;
 }
 
 /** Every open incident, by the five timers. */

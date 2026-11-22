@@ -33,6 +33,8 @@ test('unit:incidents-from-status — the release check counts from the first mer
   assert.deepEqual(kinds({ releaseCheck: { since } }), ['release-check']);
   // Held on a failure with no run going still counts.
   assert.equal(releaseCheckSince(gate({ held: { at: ago(hour) } }), [mergedAgo(2, 28 * hour)]), ago(28 * hour));
+  // A merge that landed during the passing run is bounded by the pass, not by each new run's start.
+  assert.equal(releaseCheckSince(gate({ inFlight: { startedAt: ago(5 * minute) } }), [mergedAgo(1, 31 * hour)]), ago(30 * hour));
   // A fresh merge after a pass: the timer starts at that merge, not at the old pass.
   const fresh = releaseCheckSince(gate({ inFlight: { startedAt: ago(5 * minute) } }), [mergedAgo(1, 31 * hour), mergedAgo(2, 10 * minute)]);
   assert.equal(fresh, ago(10 * minute));
