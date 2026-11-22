@@ -72,7 +72,7 @@ test('unit:caretaker-runs-once-per-interval — one run starts per 30 minutes, n
 });
 
 test('unit:caretaker-checklist-is-complete — the one prompt file holds all six checks and names only permitted commands', () => {
-  const prompt = caretakerPrompt('graphyard');
+  const prompt = caretakerPrompt('mainworks');
   const checks = [/held or broken account gets a live request/, /provider's own sentence as the reason/, /compute host is ready, or the reason it is away is recorded/,
     /verified a commit within the last 6 hours, or its last outcome is named/, /no item is ready or in a stage with no actor for over 30 minutes/,
     /served build is within 10 merged items of main/, /merges per hour over the last 6 and 24 hours/];
