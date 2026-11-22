@@ -33,7 +33,7 @@ export const commands: readonly CliCommand[] = [
 export function renderHelp() {
   return `${PRODUCT_NAME} 0.1 — distributed work, explicit proof
 
-Usage: ${COMMAND_NAME} COMMAND (the mainworks command still works)
+Usage: ${COMMAND_NAME} COMMAND (the old graphyard command still works)
 Environment: GRAPHYARD_URL, GRAPHYARD_TOKEN (individual role-scoped credential)
 ${commands.flatMap(entry => entry.help).join('\n')}
 

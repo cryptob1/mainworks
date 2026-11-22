@@ -75,3 +75,7 @@ graphyard-no-docker
 POSTGRES_(USER|DB)=graphyard
 --username=graphyard
 \bgraphyard-[\w-]+-(server|db)-1\b
+# The old command, where the docs say it still works
+[Tt]he old `?graphyard`? command
+# Image tags installs built before the rename
+\bgraphyard-(local|trial):[\w.$-]+

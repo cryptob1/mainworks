@@ -15,13 +15,13 @@ Prerequisites: Linux 7.0+ with Landlock ABI 9+ (`uname -r`; Ubuntu 26.04: `linux
 ## Quick start
 
 ```sh
-git clone https://github.com/cryptob1/graphyard.git && cd mainworks
+git clone https://github.com/cryptob1/graphyard.git mainworks && cd mainworks
 npm ci
 npm run build
-node bin/graphyard.mjs up --repo OWNER/NAME
+node bin/mainworks.mjs up --repo OWNER/NAME
 ```
 
-The `mainworks` command and `GRAPHYARD_*` settings still work.
+The old `graphyard` command and `GRAPHYARD_*` settings still work.
 
 Once published to npm:
 
