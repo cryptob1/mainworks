@@ -92,7 +92,7 @@ class World {
   ports(parallel?: number): MergeWriterReads {
     const world = this;
     return {
-      baseBranch: 'main', now: this.now, ...(parallel ? { parallel } : {}),
+      baseBranch: 'main', now: this.now, cores: 8, ...(parallel ? { parallel } : {}),
       fetch: async () => world.tip(),
       merge: async (head, baseTip) => {
         const mergeSha = sha(`merge:${head}:${baseTip}`);

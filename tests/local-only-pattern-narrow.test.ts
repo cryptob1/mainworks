@@ -10,16 +10,17 @@ import { shardHosts, shardRepository } from './helpers/shard-hosts.js';
 
 // GY-3522: the local-only word list named every network word (url, http, server, fetch, connect…),
 // which kept nine test files in ten on this machine while the added hosts idled. It names only what
-// a host's shard truly lacks: the database, Docker, nested confinement and browsers.
+// a host's shard truly lacks: the Docker socket, nested confinement and the npm registry (GY-3604);
+// the database and a browser a shard container now has (GY-3612) no longer keep a file local.
 
 const repo = new URL('..', import.meta.url).pathname;
 const networkOnly = 'const server = createServer().listen(0);\nconst response = await fetch(new URL("http://127.0.0.1/sign-in"));\nsocket.connect(port);\n';
 
-test('unit:local-only-pattern-narrow — only database, Docker, confinement and browser words keep a file local; url, http, server, fetch or connect alone do not', () => {
-  assert.equal(localOnlyTestPattern.source, 'postgres|withDatabase|docker|bwrap|unshare|landlock|hard-math|playwright|chromium|npm_config_cache');
-  for (const word of ['url', 'http', 'server', 'fetch', 'connect']) assert.equal(remoteableTestFile(`test("${word}", () => ${word}())\n`), true, `${word} alone is remoteable`);
+test('unit:local-only-pattern-narrow — only Docker, confinement and npm-cache words keep a file local; url, http, server, fetch, connect, database and browser words do not', () => {
+  assert.equal(localOnlyTestPattern.source, 'docker|bwrap|unshare|landlock|hard-math|npm_config_cache');
+  for (const word of ['url', 'http', 'server', 'fetch', 'connect', 'postgres', 'withDatabase', 'playwright', 'chromium']) assert.equal(remoteableTestFile(`test("${word}", () => ${word}())\n`), true, `${word} alone is remoteable`);
   assert.equal(remoteableTestFile(networkOnly), true);
-  for (const word of ['postgres', 'withDatabase', 'docker', 'bwrap', 'unshare', 'landlock', 'playwright', 'chromium', 'npm_config_cache']) assert.equal(remoteableTestFile(`${networkOnly}${word}\n`), false, `${word} stays local`);
+  for (const word of ['docker', 'bwrap', 'unshare', 'landlock', 'npm_config_cache']) assert.equal(remoteableTestFile(`${networkOnly}${word}\n`), false, `${word} stays local`);
 });
 
 test('unit:local-only-pattern-narrow — at least half of the real test files are remoteable', async () => {

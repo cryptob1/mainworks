@@ -4,7 +4,9 @@
  * click skips it at once. It never runs under reduced motion or in Daylight, and
  * it never blocks input: the veil ignores the pointer and the dashboard renders beneath it.
  */
-const READOUT = ['graphyard control plane', 'night yard · the streetlights are on', 'the merge queue never sleeps'];
+import { COMMAND_NAME } from '../src/model/product';
+
+const READOUT = [`${COMMAND_NAME} control plane`, 'night yard · the streetlights are on', 'the merge queue never sleeps'];
 
 export function boot() {
   if (document.documentElement.dataset.theme === 'daylight') return;
@@ -17,7 +19,7 @@ export function boot() {
   veil.setAttribute('aria-hidden', 'true');
   const logo = document.createElement('div');
   logo.className = 'boot-logo';
-  logo.textContent = 'graphyard';
+  logo.textContent = COMMAND_NAME;
   const readout = document.createElement('pre');
   readout.className = 'boot-readout';
   veil.append(logo, readout);

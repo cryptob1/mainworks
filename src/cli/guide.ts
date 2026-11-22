@@ -1,5 +1,6 @@
 import { defineCommands } from './registry.js';
 import { guideList, guideText } from '../guide.js';
+import { PRODUCT_NAME } from '../model/product.js';
 
 /**
  * `guide TOPIC` prints one procedure topic; with no topic it lists them (GY-2972). The
@@ -14,7 +15,7 @@ export const guideCommands = defineCommands([
       '  guide TOPIC                   Print one procedure topic',
       '                                (topics: claim, sync, complete, park, blocked, review, proof, upgrade, master, setup, infra, publishing, runtimes);',
       '                                guide with no topic lists them; guide master says how',
-      '                                Railway deploys apps from git and Graphyard observes each versionUrl',
+      `                                Railway deploys apps from git and ${PRODUCT_NAME} observes each versionUrl`,
     ],
     async run(context) { console.log(context.id ? guideText(context.id) : guideList()); },
   },

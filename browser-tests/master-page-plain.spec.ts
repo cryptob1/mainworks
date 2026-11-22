@@ -62,7 +62,7 @@ test('e2e:master-page-plain — blockers and the terminal first, install message
       expect(box.height, 'the blocker reads as one line').toBeLessThan(box.lineHeight * 1.6);
       expect(box.clipped && box.ellipsis === 'ellipsis', 'a long blocker ends in an ellipsis').toBe(true);
 
-      // Nothing above the terminal carries a message body; one closed fold below it holds the threads.
+      // Nothing above the terminal carries a message body; messages live in the Messages tab, hidden until selected.
       const above = await page.evaluate(() => {
         const terminal = document.querySelector('.live-terminal')!;
         const main = terminal.closest('main') ?? document.body;
@@ -71,14 +71,13 @@ test('e2e:master-page-plain — blockers and the terminal first, install message
         return text;
       });
       expect(above).not.toContain(fromA); expect(above).not.toContain(toB);
-      const fold = page.locator('details', { hasText: 'Messages with other installs (2)' });
-      await expect(fold).toHaveCount(1);
-      expect(await fold.evaluate((element, terminal) => !!(terminal!.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING), await page.locator('.live-terminal').elementHandle())).toBe(true);
-      await expect(fold).not.toHaveAttribute('open');
-      await expect(page.getByText(fromA)).toBeHidden();
-      await expect(page.getByText(toB)).toBeHidden();
+      const messagesTab = page.getByRole('tab', { name: 'Messages' });
+      await expect(messagesTab).toBeVisible(settled);
+      await expect(messagesTab).toHaveAttribute('aria-selected', 'false');
+      await expect(page.getByText(fromA)).toHaveCount(0);
+      await expect(page.getByText(toB)).toHaveCount(0);
 
-      // Outside a title, the closed fold or the pane's own screen, no principal id or pane id is visible.
+      // Outside a title, the closed tabs or the pane's own screen, no principal id or pane id is visible.
       const visible = await page.evaluate(() => {
         const copy = document.body.cloneNode(true) as HTMLElement; copy.querySelector('.terminal-host')?.remove();
         copy.style.position = 'absolute'; document.body.append(copy);
@@ -87,9 +86,9 @@ test('e2e:master-page-plain — blockers and the terminal first, install message
       for (const id of ['w1:master', 'w1:worker', 'install-a', 'install-b', 'agent-a', 'executor-a', 'graphyard-master', 'test-account']) expect(visible, id).not.toContain(id);
       for (const old of ['the Master clears these', 'read-only: only the operator', 'The loop relaunches']) expect(visible).not.toContain(old);
 
-      await fold.locator('summary').click();
+      await messagesTab.click();
       for (const [peer, text] of [['install-a', fromA], ['install-b', toB]] as const) {
-        const thread = fold.getByRole('article', { name: `Thread with ${peer}` });
+        const thread = page.getByRole('article', { name: `Thread with ${peer}` });
         await expect(thread.getByRole('heading')).toHaveText(`With ${peer}`);
         await expect(thread).toContainText(text);
       }
