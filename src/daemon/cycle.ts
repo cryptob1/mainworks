@@ -414,7 +414,7 @@ async function closeStep(cycle: Cycle) {
   // or a later attempt holds it, nothing will resume that work, so the removal is forced at once.
   if (effects.removeWorktree) for (const { item, space } of endedAttemptWorktrees(snapshot.work, config.hostId, clock)) {
     const force = item.stage === 'done' || space.epoch < item.epoch;
-    const key = `worktree:${item.id}:${space.epoch}${item.stage === 'done' ? ':forced' : ''}`;
+    const key = `worktree:${item.id}:${space.epoch}${force ? ':forced' : ''}`;
     // GY-3226: a failed removal is tried again on the next cycles, up to three attempts per key.
     const prior = state.actions[key];
     if (prior && (prior.state === 'done' || prior.attempts >= 3)) continue;

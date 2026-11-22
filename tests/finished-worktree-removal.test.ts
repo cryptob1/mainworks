@@ -97,3 +97,30 @@ test('unit:tests/finished-worktree-removal.test.ts — a settled delivery\'s lef
   assert.equal(existsSync(foreign), true, 'a directory Graphyard did not name is never touched');
   assert.ok(Object.values(state.actions).some(action => action.kind === 'reclaim' && action.detail.includes('GY-9')), 'the reclaim says which settled item it removed for');
 });
+
+// GY-3691 review: an ended attempt whose dirty tree Git refused to remove three times while its item
+// stayed on that epoch is still removed, forced, once a later attempt holds the item.
+test('unit:tests/finished-worktree-removal.test.ts — an earlier attempt\'s dirty tree refused three times while current goes once a later attempt holds the item', async () => {
+  const root = await temporaryDirectory('earlier-attempt');
+  git(root, 'init', '-q', '-b', 'main');
+  writeFileSync(join(root, 'file.txt'), 'base\n');
+  git(root, 'add', 'file.txt');
+  git(root, '-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'base');
+  mkdirSync(worktreesDirectory(root), { recursive: true });
+  const path = join(worktreesDirectory(root), 'GY-5-1');
+  git(root, 'worktree', 'add', '-q', '-b', 'graphyard/gy-5-1', path);
+  writeFileSync(join(path, 'untracked.txt'), 'new\n');
+  const space = { host: 'machine-a', epoch: 1, path, owner: 'worker', branch: 'graphyard/gy-5-1' };
+  let item = { id: 'GY-5', key: 'GY-5', stage: 'review', epoch: 1, lease: null, sessions: [], updatedAt: new Date().toISOString(), workspaces: [space] } as unknown as Work;
+  const effects: DaemonEffects = {
+    snapshot: async () => ({ work: [item], now: new Date().toISOString() }),
+    agents: () => [], credentials: async () => ({}), closeSession: () => {}, dispatch: async () => {}, persist: async () => {}, dispatchTick: async () => {},
+    removeWorktree: (target, force) => removeAttemptWorktree(root, target, (command, args) => execFileSync(command, args, { encoding: 'utf8', stdio: 'pipe' }), force),
+  };
+  const state = emptyDaemonState(config);
+  for (let cycle = 0; cycle < 4; cycle++) await runCycle(config, state, effects, Date.now, undefined, () => {});
+  assert.equal(existsSync(path), true, 'Git keeps the dirty tree while its attempt is the current one');
+  item = { ...item, stage: 'build', epoch: 2 } as Work;
+  await runCycle(config, state, effects, Date.now, undefined, () => {});
+  assert.equal(existsSync(path), false, 'a later attempt holds the item: the earlier tree is removed, forced');
+});
