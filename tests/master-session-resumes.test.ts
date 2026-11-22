@@ -98,10 +98,10 @@ test('integration:master-large-transcript-wake — actual >2 GiB transcripts rec
   const { largeTranscript } = await import('./helpers/large-transcript.js');
   const { createReadStream } = await import('node:fs');
   const { createHash } = await import('node:crypto');
-  const { stat } = await import('node:fs/promises');
+  const { rm, stat } = await import('node:fs/promises');
   const digest = async (path: string) => {
     const hash = createHash('sha256');
-    for await (const chunk of createReadStream(path)) hash.update(chunk);
+    for await (const chunk of createReadStream(path, { highWaterMark: 1 << 20 })) hash.update(chunk);
     return hash.digest('hex');
   };
   for (const runtime of ['claude', 'codex']) {
@@ -133,6 +133,8 @@ test('integration:master-large-transcript-wake — actual >2 GiB transcripts rec
     assert.equal(await captureConversation(successor), 'A newer person input');
     await appendFile(transcript, '\n' + JSON.stringify(runtime === 'claude' ? { ...final, uuid: 'pending-final', parentUuid: 'pending' } : final) + '\n');
     assert.equal(await captureConversation(adopted.current), null, 'native finals beyond the size boundary answer the pending input');
+    // A record copy on a tmpfs holds every padding byte in memory: release this runtime's before the next (GY-3637).
+    await Promise.all([root, home].map(path => rm(path, { recursive: true, force: true })));
   }
 });
 
