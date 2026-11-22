@@ -16,6 +16,7 @@ import { parseCase } from '../src/e2e/case.js';
 import { projectCaseSuite } from '../src/release-project.js';
 import { runCases, type E2eReport } from '../src/e2e/runner.js';
 import { trialEnvironment } from '../src/merge-writer/trial.js';
+import { remoteableTestFile } from '../src/merge-writer/remote-shards.js';
 import { createServer } from 'node:net';
 
 const freePort = () => new Promise<number>((accept, reject) => {
@@ -58,7 +59,10 @@ test('unit:graphyard-repo-serves-its-head-for-e2e — the declared serve command
       if (!answered) await new Promise(accept => setTimeout(accept, 500));
     }
     assert.ok(answered, `${url} answered within ${serve.readySeconds}s: ${output.slice(-2000)}`);
-    await t.test('unit:graphyard-e2e-serve-pinned — the serve command answers on the port the run gives it, with the run\'s token, whatever holds the declared port', async () => {
+    // GY-3658: this file runs the delivery-pipeline case, a real nested merge trial that a remote
+    // shard's missing nested confinement fails, so the shard split must keep this file local.
+    await t.test('unit:graphyard-e2e-serve-pinned — the serve command answers on the port the run gives it, with the run\'s token, whatever holds the declared port, and this file never goes to a remote shard', async () => {
+      assert.equal(remoteableTestFile(readFileSync(new URL(import.meta.url), 'utf8')), false, 'the delivery-pipeline case keeps this file on a local shard');
       assert.notEqual(url.port, new URL(serve.url).port);
       const listed = await fetch(new URL('/api/scenarios', url), { headers: { Authorization: `Bearer ${token}` } });
       assert.equal(listed.status, 200, 'the server on the given port is this run\'s: it accepts the run\'s token');
