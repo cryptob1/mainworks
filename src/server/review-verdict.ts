@@ -207,7 +207,12 @@ export async function recordReviewVerdict(services: Services, actor: Principal, 
     demand(data.sha === launch!.head, headRefusal(data.sha, launch!.head), 409);
     demand(launch!.policyRevision === undefined || launch!.policyRevision === work!.policyRevision, 'Review policy changed since launch; a fresh review is required', 409);
     if (!launch!.postMerge) {
-      demand(work!.candidate?.sha === launch!.head && (work!.observation?.mergeBase ?? work!.candidate?.baseSha) === launch!.baseTip, 'Review head or diff base changed since launch; a fresh review is required', 409);
+      // GY-3684: a product review stands for the head it judged; main moving on while it is in flight does not discard its verdict.
+      if (launch!.product) {
+        demand(work!.candidate?.sha === launch!.head, 'Review head changed since launch; a fresh review is required', 409);
+      } else {
+        demand(work!.candidate?.sha === launch!.head && (work!.observation?.mergeBase ?? work!.candidate?.baseSha) === launch!.baseTip, 'Review head or diff base changed since launch; a fresh review is required', 409);
+      }
     }
     // Independence is identity: the reviewer is none of the item's implementers and not the launch's requester.
     const how = implementerIdentities(work!).includes(launch!.reviewer) ? 'implemented' : launch!.reviewer === launch!.requester ? 'requested' : null;
