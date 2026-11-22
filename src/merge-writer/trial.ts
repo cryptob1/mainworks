@@ -377,6 +377,21 @@ async function keptBuildUses(entry: string, own: string | null = null): Promise<
   return live;
 }
 /**
+ * GY-3679: commit `sha`'s kept built tree, held for a preview that serves it, or null when no trial
+ * left one built and idle. Held by a `.use-<id>` marker owned by this process until `release`, so no
+ * pass takes the tree back or mutates it while the preview serves it.
+ */
+export async function useKeptBaseBuild(base: string, sha: string): Promise<{ tree: string; release(): Promise<void> } | null> {
+  const entry = keptBaseBuild(base, sha), lock = `${entry}.lock`;
+  if (!existsSync(keptBaseBuildMarker(entry))) return null;
+  const use = `${entry}.use-${randomUUID()}`;
+  await mkdir(use); await writeTempOwner(use);
+  const release = async () => { await rm(use, { recursive: true, force: true }); await rm(tempOwnerMarker(use), { force: true }); };
+  // A pass that took the tree back, or holds it to rebuild or overlay it, leaves nothing to serve.
+  if (!existsSync(keptBaseBuildMarker(entry)) || existsSync(lock) && await ownerLive(lock)) { await release(); return null; }
+  return { tree: await realpath(entry), release };
+}
+/**
  * The mode of a trial's own temporary directory (GY-1639): sticky, as CI's /tmp is, so a suite that
  * holds `tmpdir()` to the sticky-shared-parent rule (the runner executor’s attested cases)
  * sees the parent CI gives it, yet private to this account, so nothing else can plant a lookup entry
@@ -1154,8 +1169,8 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       await dropOwned(`${entry}.lock`);
     }
   };
-  /** Runs this pass in its commit's kept tree: the built one, waited for while another pass builds or mutates it, else a fresh checkout this pass builds under the lock. */
-  const enterKeptTree = async (): Promise<void> => {
+  /** Runs this pass in its commit's kept tree: the built one, waited for while another pass builds or mutates it, else a fresh checkout this pass builds under the lock; false when the tree is in use and this pass needs it alone. */
+  const enterKeptTree = async (): Promise<boolean> => {
     e2eOverlay = input.e2eProofs?.length && input.e2eFrom
       ? String(await run('git', ['-C', input.root, 'diff', '--name-only', '-z', input.mergeSha, input.e2eFrom, '--', 'e2e/', 'tests/'], { timeoutMs: remaining() })).split('\0').filter(Boolean)
       : [];
@@ -1169,12 +1184,8 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         await releaseKeptUse();
       }
       if (await takeKeptLock()) {
-        // Wait for any live passes already using the tree to finish before rebuilding or mutating it.
-        while ((await keptBuildUses(keptEntry!)).length) {
-          if (now() >= deadline) { await releaseKeptLock(); throw new TrialTimeoutError('install', Math.max(0, now() - startedAt), `waited for another pass to finish with ${keptSha!.slice(0, 12)}`); }
-          input.signal?.throwIfAborted();
-          await new Promise(next => setTimeout(next, 250));
-        }
+        // A tree another pass or a preview still uses is never rebuilt or mutated: this pass builds its own checkout instead.
+        if ((await keptBuildUses(keptEntry!)).length) { await releaseKeptLock(); needsExclusive = false; e2eOverlay = []; return false; }
         await claimKeptUse();
         if (await keptTreeReady()) {
           if (!needsExclusive) await releaseKeptLock();
@@ -1194,6 +1205,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     }
     worktree = kept = await realpath(keptEntry!);
     if (reused) { const at = new Date(); await utimes(keptBaseBuildMarker(keptEntry!), at, at).catch(() => {}); }
+    return true;
   };
   const clear = async (directory: string) => {
     if (directory === place) return clearTrialCheckout(directory);
@@ -1211,8 +1223,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const { XDG_RUNTIME_DIR: _runtime, DBUS_SESSION_BUS_ADDRESS: _bus, ...hostEnv } = trialEnvironment(input.environment);
     env = { ...hostEnv, ...trialTemporaryVariables(temporary!), ...trialHomeVariables(home, input.environment, true) };
     assertIsolatableHostControlEndpoints({ ...process.env, ...input.environment });
-    if (keptEntry) await enterKeptTree();
-    else {
+    if (!keptEntry || !await enterKeptTree()) {
       const near = await trialCheckoutRoot(input.checkoutRoots ?? trialCheckoutRoots(), input.minFreeBytes ?? defaultWorktreeRootMinFreeGb * 1e9, input.probe, input.checkoutRoots ? [] : undefined);
       if (near) { place = await mkdtemp(join(near, trialCheckoutPrefix)); await writeTempOwner(place); worktree = join(place, 'checkout'); }
       await run('git', ['-C', input.root, 'worktree', 'add', '--detach', worktree, input.mergeSha], { timeoutMs: remaining(), ...(input.signal ? { signal: input.signal } : {}) });
@@ -1570,7 +1581,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       enter('tests');
       enterStep('tests: e2e');
       // Run the candidate's proof against the base application, including edited cases and assertion scripts.
-      const overlay = keptEntry ? e2eOverlay : (input.e2eFrom ? String(await run('git', ['-C', worktree, 'diff', '--name-only', '-z', input.mergeSha, input.e2eFrom, '--', 'e2e/', 'tests/'], { timeoutMs: remaining() })).split('\0').filter(Boolean) : []);
+      const overlay = kept ? e2eOverlay : (input.e2eFrom ? String(await run('git', ['-C', worktree, 'diff', '--name-only', '-z', input.mergeSha, input.e2eFrom, '--', 'e2e/', 'tests/'], { timeoutMs: remaining() })).split('\0').filter(Boolean) : []);
       if (overlay.length) await run('git', ['-C', worktree, 'restore', '--source', input.e2eFrom!, '--staged', '--worktree', '--', ...overlay], { timeoutMs: remaining() });
       const cpuBefore = cpu.sample();
       const ran = await containerTrialE2e({

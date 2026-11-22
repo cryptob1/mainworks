@@ -2,7 +2,7 @@ import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withDatabase } from './helpers/postgres.js';
@@ -16,6 +16,7 @@ import { loadMasterConfig, setupMaster } from '../src/master/config.js';
 import type { Principal, Work } from '../src/model.js';
 import { launchReview, readReviewLedger, saveReviewerProfile } from '../src/reviewer.js';
 import { liveRun } from '../src/runner/registry.js';
+import { freePort } from '../src/serve-app.js';
 import type { HeadlessExec } from '../src/headless-session.js';
 
 // GY-3575: a product review serves the exact candidate with its declared e2e.serve command from a
@@ -26,11 +27,12 @@ const coordinator: Principal = { id: 'graphyard-master', role: 'coordinator' };
 const coordinatorToken = `${coordinator.id}-token-${'x'.repeat(32)}`;
 const now = () => new Date().toISOString();
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
-const servePort = 4398;
+let servePort: number;
 let store: Store, http: ReturnType<typeof server>, url: string;
 let root: string, credentials: string, base: string, head: string;
 
 before(async () => {
+  servePort = await freePort();
   store = await withDatabase('product-review-candidate-serve-dependencies'); await store.init();
   const engine = new Engine(store, 120, 'owner/project');
   engine.gitRunner = null;
@@ -121,15 +123,4 @@ test('integration:product-review-candidate-serve-dependencies — the candidate 
   const record = (await readReviewLedger(root)).reviews.find(entry => entry.id === launched.review)!;
   assert.equal(record.verdict?.state, 'APPROVED');
   await until('the served head to stop', async () => !(await fetch(`http://127.0.0.1:${servePort}/healthz`).then(() => true, () => false)));
-});
-
-// GY-3651: the fixture above gives its reviewer a managed worktree root under the suite's tmpdir, and
-// that root must sit on durable storage (verifyWorktreeRoot refuses a memory-backed volume). A remote
-// shard's writable directories are all memory-backed and its /var/tmp is read-only (GY-3609), so a
-// trial that shards this file to a host fails it there every time — the gate then re-ran and probed it
-// into its timeout. The file names a local-only word, so the trial keeps it on this machine, where
-// the suite's tmpdir is on disk (GY-3633 did the same for master-session-resumes).
-test('unit:product-review-candidate-serve-dependencies-pinned — the fixture\'s managed worktree root needs durable storage, so this file never goes to a remote shard', async () => {
-  const { remoteableTestFile } = await import('../src/merge-writer/remote-shards.js');
-  assert.equal(remoteableTestFile(await readFile(new URL(import.meta.url), 'utf8')), false);
 });

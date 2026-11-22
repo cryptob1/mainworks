@@ -26,7 +26,8 @@ async function serve(page: Page) {
     const path = new URL(route.request().url()).pathname;
     const stamp = new Date().toISOString();
     if (path.endsWith('/status')) return route.fulfill({ json: { actor: { id: 'operator', role: 'admin', sessionKind: 'human' }, repository: 'fixture/repository', jobs: [], live: { commit: 'c'.repeat(40), waiting: [] }, checksRunning: 0,
-      pipelineTime: { merged24h: 0, median: null, p90: null, samples: 0, lastMergeAt: null, oldest: null }, flow } });
+      pipelineTime: { merged24h: 0, median: null, p90: null, samples: 0, lastMergeAt: null, oldest: null } } });
+    if (path.endsWith('/flow')) return route.fulfill({ json: flow });
     if (path.endsWith('/work-snapshot')) return route.fulfill({ json: { work, now: stamp } });
     if (path.endsWith('/board')) return route.fulfill({ json: boardFromStatus(work as never, Date.parse(stamp), null) });
     return route.fulfill({ json: [] });

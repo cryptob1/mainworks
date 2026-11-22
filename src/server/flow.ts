@@ -29,7 +29,7 @@ const attemptsSql = `SELECT w.id, (SELECT jsonb_agg(jsonb_build_object('claimedA
   WHERE NOT i.settled OR i.merged_at > $1 OR w.id IN (SELECT work_id FROM events WHERE created_at > $1 AND work_id IS NOT NULL)`;
 type Attempts = Map<string, { claimedAt: string; endedAt: string | null; end?: string | null }[]>;
 
-/** The rows are read at most once a minute per database: every dashboard polls /api/status. */
+/** The rows are read at most once a minute per database: master status and the Work page poll /api/flow. */
 const cache = new WeakMap<object, { at: number; rows: Promise<{ ledger: any[]; attempts: Attempts }> }>();
 function rows(pool: Queryable, now: number) {
   const hit = cache.get(pool);
