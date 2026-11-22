@@ -6,7 +6,7 @@ import type { Work } from './work.js';
  * clock against a fact the control plane observes itself.
  */
 export interface StatusSnapshot {
-  /** The release check on main running now: when its current run started (batch gate). */
+  /** The release check on main: when it began trying without a pass (batch gate), null while it is not trying. */
   releaseCheck?: { since: string } | null;
   /** Merged items the live commit does not carry yet, by key. */
   live?: { commit?: unknown; waiting?: unknown } | null;
@@ -41,6 +41,17 @@ const workerAccounts = (status: StatusSnapshot) => {
   const all = (status.fleet?.accounts ?? []).filter(account => account.roles.some(role => role.role === 'worker'));
   return { all, held: all.filter(account => !account.eligible) };
 };
+
+/**
+ * When the release check began trying: the first merge after the last verified commit, while a run
+ * is going or the gate is held on a failure. Each run restarts, so a run's own start never shows a long wedge.
+ */
+export function releaseCheckSince(gate: { verifiedAt: string | null; inFlight: { startedAt: string } | null; held: { at: string } | null } | null, work: Work[]): string | null {
+  if (!gate?.inFlight && !gate?.held) return null;
+  const verified = gate.verifiedAt ? Date.parse(gate.verifiedAt) : Number.NEGATIVE_INFINITY;
+  const since = Math.min(...work.filter(merged).map(mergedAt).filter(at => at > verified));
+  return Number.isFinite(since) ? new Date(since).toISOString() : gate.inFlight?.startedAt ?? gate.held?.at ?? null;
+}
 
 /** Every open incident, by the five timers. */
 export function incidentsFromStatus(status: StatusSnapshot, work: Work[], now: number): Incident[] {

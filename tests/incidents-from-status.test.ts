@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { incidentsFromStatus, statusLine, type StatusSnapshot } from '../src/model/incidents.js';
+import { incidentsFromStatus, releaseCheckSince, statusLine, type StatusSnapshot } from '../src/model/incidents.js';
 import type { Work } from '../src/model.js';
 
 // GY-3601: this week's faults — a release check wedged 28 hours, accounts wrongly held, both test
@@ -21,6 +21,22 @@ test('unit:incidents-from-status — the release check fires after 30 minutes of
   assert.equal(card.broke, 'The release check has not passed in 28 h.');
   assert.equal(card.impact, '3 finished changes wait to go live.');
   assert.equal(card.action?.label, 'Ask the Lead');
+});
+
+test('unit:incidents-from-status — the release check counts from the first merge past the last pass, across runs and holds', () => {
+  const gate = (extra: Partial<Parameters<typeof releaseCheckSince>[0] & object>) => ({ verifiedAt: ago(30 * hour), inFlight: null, held: null, ...extra });
+  // Nothing running or held: nothing is trying.
+  assert.equal(releaseCheckSince(gate({}), [mergedAgo(1, 28 * hour)]), null);
+  // The current run started 10 minutes ago, but main has failed to verify since the merge 28 hours ago.
+  const since = releaseCheckSince(gate({ inFlight: { startedAt: ago(10 * minute) } }), [mergedAgo(1, 31 * hour), mergedAgo(2, 28 * hour), mergedAgo(3, hour)]);
+  assert.equal(since, ago(28 * hour));
+  assert.deepEqual(kinds({ releaseCheck: { since } }), ['release-check']);
+  // Held on a failure with no run going still counts.
+  assert.equal(releaseCheckSince(gate({ held: { at: ago(hour) } }), [mergedAgo(2, 28 * hour)]), ago(28 * hour));
+  // A fresh merge after a pass: the timer starts at that merge, not at the old pass.
+  const fresh = releaseCheckSince(gate({ inFlight: { startedAt: ago(5 * minute) } }), [mergedAgo(1, 31 * hour), mergedAgo(2, 10 * minute)]);
+  assert.equal(fresh, ago(10 * minute));
+  assert.deepEqual(kinds({ releaseCheck: { since: fresh } }), []);
 });
 
 test('unit:incidents-from-status — a finished, approved head fires when not pushed in 30 minutes', () => {
