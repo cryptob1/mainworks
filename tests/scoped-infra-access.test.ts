@@ -12,7 +12,7 @@ import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { guideText } from '../src/guide.js';
 import { infraRefusal } from '../src/infra-access.js';
-import { SetupView } from '../web/pages/setup.js';
+import { SetupView, type InfraActionRow } from '../web/pages/setup.js';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
@@ -160,7 +160,7 @@ test('e2e:scoped-infra-access — every call made with the credential is recorde
     assert.equal((await install.cli(install.master, 'repo', 'create', 'acme/old-app')).code, 1);
 
     const response = await fetch(`${install.base}/api/infra/actions`, { headers: { Authorization: `Bearer ${install.owner}` } });
-    const { actions } = await response.json() as { actions: { who: string; at: string; action: string; target: string; outcome: string }[] };
+    const { actions } = await response.json() as { actions: InfraActionRow[] };
     assert.deepEqual(actions.map(entry => [entry.who, entry.action, entry.target, entry.outcome]), [
       ['master', 'repo.create', 'acme/old-app', 'refused'],
       ['master', 'environment.create', 'new-app/staging', 'done'],
