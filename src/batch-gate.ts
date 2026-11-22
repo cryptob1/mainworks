@@ -366,9 +366,9 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
   const measure = (ms: number) => { if (whole) record.gateRuns = [...record.gateRuns ?? [], { ms, at: at() }].slice(-gateRunsWindow); };
   // GY-3620: the rerun and the verified-commit probe bound their test files as a merge trial bounds a
   // file (trialFileTimeoutMs per `test:` check, from the trial's own `tests` step, which runs test files
-  // only, after any e2e cases): a file still running then stops, and the step's checks count as failed,
-  // so a hanging file settles the step under the rules below instead of running out the whole gate.
-  // e2e cases keep their own per-step timeouts and only the gate's bound.
+  // only): a file still running then stops, and the step's checks count as failed, so a hanging file
+  // settles the step under the rules below instead of running out the whole gate. e2e cases keep their
+  // own per-step timeouts and only the gate's bound.
   const run = (commit: string, runChecks: readonly string[], runFiles: readonly string[], perFile = false) => {
     const key = stepKey(commit, runChecks);
     if (key in finished) return Promise.resolve(finished[key]!); // a step the last loop finished
@@ -411,7 +411,9 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
     if (failed.length) {
       // A failing check runs once more before anything is blamed: a pass is a flake, filed for an owner.
       await step(`re-running ${failed.join(', ')}`);
-      const again = await run(tip, failed, files, true);
+      // GY-3620: test files rerun in a step of their own, so a hanging one never takes other checks' results with it.
+      const testChecks = failed.filter(check => check.startsWith('test:')), others = failed.filter(check => !check.startsWith('test:'));
+      const again = [...others.length ? await run(tip, others, files) : [], ...testChecks.length ? await run(tip, testChecks, files, true) : []];
       flakes = failed.filter(check => !again.includes(check));
       for (const check of flakes) await fileFailure(ports, record, at(), { key: `flake:${check}`, title: `Flaky check on main: ${check}`, description: `The batch gate's check ${check} failed on ${tip.slice(0, 12)} and passed on its re-run. Make it deterministic.` });
       // The e2e cases that must pass outright (GY-3147): smoke, whatever gate.core names, and every

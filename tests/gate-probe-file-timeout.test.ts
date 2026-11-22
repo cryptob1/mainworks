@@ -82,3 +82,26 @@ test('integration:gate-probe-file-timeout — an e2e case in the rerun keeps its
   assert.equal(outcome.outcome, 'verified', `the e2e rerun was cut short: ${JSON.stringify(outcome)}`);
   assert.deepEqual(outcome.outcome === 'verified' && outcome.flakes, [e2e]);
 });
+
+test('integration:gate-probe-file-timeout — a rerun of an e2e case and a hanging test file keeps the case\'s pass: the file stops alone', { timeout: 60_000 }, async () => {
+  const directory = await temporaryDirectory('gate-probe-file-timeout-');
+  const file = join(directory, 'hang.test.mjs');
+  await writeFile(file, "import { test } from 'node:test';\ntest('never ends', () => new Promise(() => setInterval(() => {}, 1000)));\n");
+  const started = Date.now(), e2e = 'e2e:flaky-case';
+  let tipRuns = 0;
+  const ports: GatePorts = {
+    now: () => started + (Date.now() - started) * speed,
+    fetch: async () => tip, landings: async () => [], files: async () => ['tests/hang.test.ts'], catalog: async () => ['flaky-case'], core: async () => [],
+    run: async (commit, checks, _files, _timeoutMs, signal, onStep) => {
+      if (commit === tip && ++tipRuns === 1) return [e2e, check];
+      if (commit !== tip) return [check];
+      if (checks.includes(e2e)) { onStep?.('tests: e2e'); return []; }
+      onStep?.('tests');
+      return runFile(file, signal);
+    },
+    revert: async () => { throw new Error('unused'); }, file: async () => ({ item: null }),
+  };
+  const outcome = await runGate(ports, bootstrapGate('owner/project', verified));
+  assert.equal(outcome.outcome, 'verified', JSON.stringify(outcome));
+  assert.deepEqual(outcome.outcome === 'verified' && [outcome.flakes, outcome.knownRed], [[e2e], [check]]);
+});
