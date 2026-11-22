@@ -175,11 +175,13 @@ elif verb == 'run-session':
     if not os.path.isdir(run):
         sys.exit('graphyard-host-shim: no run ' + args[0])
     name = 'graphyard-session-' + args[0][len('trial-'):]
-    # The network is the default one: the session reaches its model provider and the control plane. Only the checkout is mounted; every home is memory.
+    # The network is the default one: the session reaches its model provider and the control plane. Only the checkout is mounted; the root is
+    # read-only, as a trial's is, and every home and /tmp is memory.
     # No log driver: the login handed back on stderr never reaches the host's disk. Half the host's memory at most.
     memory = next((int(line.split()[1]) for line in open('/proc/meminfo') if line.startswith('MemTotal:')), 4 << 20) // 1024 // 2
     create = ['docker', 'create', '-i', '--init', '--name', name, '--user', '1000:0', '--workdir', cwd, '--log-driver', 'none', '--memory', '%dm' % max(1024, memory),
-              '--pids-limit', '4096', '--security-opt', 'seccomp=unconfined', '--tmpfs', '/tmp:mode=1777']
+              '--pids-limit', '4096',
+              '--read-only', '--cap-drop=ALL', '--security-opt=no-new-privileges', '--security-opt', 'seccomp=unconfined', '--tmpfs', '/tmp:mode=1777']
     if 'apparmor' in subprocess.run(['docker', 'info', '--format', '{{json .SecurityOptions}}'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True).stdout:
         create += ['--security-opt', 'apparmor=${trialAppArmorProfile}']
     for home in homes:

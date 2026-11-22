@@ -110,7 +110,7 @@ elif command == 'create':
         env['HOSTALIASES'] = os.path.join(STATE, 'aliases-' + joined)
         with open(env['HOSTALIASES'], 'w') as aliases:
             aliases.write(''.join(name + ' localhost\\n' for name in s.get('projects', {}).get(joined, {})))
-    if os.path.exists(os.path.join(STATE, 'read-only-root')):
+    if '--read-only' in args and os.path.exists(os.path.join(STATE, 'read-only-root')):
         # Docker's --read-only, for a host that asks: only the container's tmpfs and bind mounts are writable.
         isolate = ['bwrap', '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc'] + (['--unshare-net'] if isolate else [])
         for flag, value in zip(args, args[1:]):

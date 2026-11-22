@@ -1,5 +1,5 @@
 import { defineCommands } from './registry.js';
-import { addHost, hostPrepareScript, localPublicKey, readHosts, removeHost, setHostSessions } from '../hosts.js';
+import { addHost, hostPrepareScript, localPublicKey, readHosts, removeHost, sessionHelperProblem, setHostSessions } from '../hosts.js';
 import { runRemoteSession } from '../remote-session.js';
 
 /** GY-3407: lend a spare machine's compute, nothing else; merge trials send it test shards (GY-3412). */
@@ -45,7 +45,11 @@ export const hostCommands = defineCommands([{
       console.log((await removeHost(target)).removed ? `Removed ${target}.` : `${target} was not added.`);
     } else if (context.id === 'list' || !context.id) {
       const hosts = await readHosts();
-      console.log(hosts.length ? hosts.map(host => `${host.target}  added ${host.addedAt}${host.sessions ? `, takes ${host.sessions} sessions` : ''}`).join('\n') : 'No host added: this machine runs all work. Prepare one with graphyard host prepare, then graphyard host add gy-compute@HOST.');
+      const lines = await Promise.all(hosts.map(async host => {
+        const problem = host.sessions ? await sessionHelperProblem(host.target) : null;
+        return `${host.target}  added ${host.addedAt}${host.sessions ? (problem ? `, set to ${host.sessions} sessions but takes none: ${problem}` : `, takes ${host.sessions} sessions`) : ''}`;
+      }));
+      console.log(hosts.length ? lines.join('\n') : 'No host added: this machine runs all work. Prepare one with graphyard host prepare, then graphyard host add gy-compute@HOST.');
     } else throw new Error('Usage: graphyard host prepare | host add USER@HOST[:PORT] | host add ALIAS | host sessions USER@HOST N | host remove USER@HOST | host list');
   },
 }]);

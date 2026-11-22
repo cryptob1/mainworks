@@ -230,12 +230,21 @@ export async function removeHost(target: string, options: { file?: string } = {}
   return { removed: true, hosts: next };
 }
 
-/** GY-3405: open an added host to `sessions` agent sessions at once (0 closes it to them). */
-export async function setHostSessions(target: string, sessions: number, options: { file?: string } = {}) {
+/** GY-3405: why `target` cannot take agent sessions now, in one line; null when its helper runs them. */
+export async function sessionHelperProblem(target: string, run: ChildRun = defaultChildRun): Promise<string | null> {
+  const probe = await probeHost(target, run);
+  if (probe.ok && probe.verbs?.includes('run-session:1')) return null;
+  return probe.ok || probe.update ? `${target}'s helper is older than this release and takes no sessions: run graphyard host prepare and its script there first` : probe.reason;
+}
+
+/** GY-3405: open an added host to `sessions` agent sessions at once (0 closes it to them), once its helper runs them. */
+export async function setHostSessions(target: string, sessions: number, options: { file?: string; run?: ChildRun } = {}) {
   const file = options.file ?? hostsFile();
   if (!Number.isSafeInteger(sessions) || sessions < 0 || sessions > 64) throw new Error(`Name how many sessions ${target} takes at once, 0 to 64: got ${sessions}`);
   const hosts = await readHosts(file);
   if (!hosts.some(host => host.target === target)) throw new Error(`${target} is not added: run graphyard host add ${target} first`);
+  const problem = sessions ? await sessionHelperProblem(target, options.run) : null;
+  if (problem) throw new Error(problem);
   await writeHosts(file, hosts.map(host => host.target === target ? { ...host, sessions } : host));
 }
 

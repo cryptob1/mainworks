@@ -6,8 +6,9 @@
 // in-memory tmpfs at the login home's own path, so no file of it is ever written to the host's disk; the
 // tmpfs goes with the container. A login the provider refreshed during the session comes back the same
 // way and is written here. The session's `graphyard` calls are relayed to this machine over the same
-// channel and run here in the worktree, with the commits made there brought here first, so `complete`
-// submits a head this machine's object store holds. A host that drops ends the SSH channel, so the
+// channel and run here in the worktree. The worktree here mirrors the host's checkout while the session
+// runs (its commits and, uncommitted, its changed files), so the loop's attempt bound sees its progress,
+// a stop keeps its uncommitted work as a local session's, and `complete` submits a head held here. A host that drops ends the SSH channel, so the
 // runtime exits and its `watch` supervisor releases the lease: the item returns to the queue.
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -27,14 +28,19 @@ export const remoteRuntimes = ['codex'];
 export const loginFiles = ['.credentials.json', '.claude.json', 'settings.json', 'auth.json', 'config.toml', 'opencode/auth.json', 'cursor/auth.json', 'cli-config.json'];
 const sessionDirectory = '/tmp/graphyard-session';
 const marker = '\u001egraphyard-';
+/** How often the session's checkout state is sent here while it runs. */
+const syncSeconds = 5;
 
 /**
  * Runs inside the container as its first process: writes the handed-over files (the login, the
- * relay) into their tmpfs homes, relays the session's `graphyard` calls out on stderr and their
- * answers in from stdin, runs the runtime with its stderr passed through here so each frame is a line of its own, then sends back the commits it made and any login file
- * it changed. Nothing it writes outlives the container.
+ * relay) into their tmpfs homes and runs the runtime with its stderr passed through here, so each
+ * frame is a line of its own. Every few seconds, before each relayed `graphyard` call and when the
+ * runtime ends, it sends the checkout's state as a `work` frame: its HEAD and, when files changed,
+ * a snapshot commit of them, bundled since the session's start. This machine's worktree mirrors
+ * it, so the loop sees the session's progress and keeps its uncommitted work as it would a local
+ * session's. Last it sends back any login file the provider changed. Nothing it writes outlives the container.
  */
-export const sessionBoot = String.raw`import base64, json, os, subprocess, sys, threading
+export const sessionBoot = String.raw`import base64, json, os, shutil, subprocess, sys, threading, time
 session = '${sessionDirectory}'
 def line():
     data = b''
@@ -54,13 +60,14 @@ for path, data in files.items():
     os.close(fd)
 os.makedirs(os.environ['HOME'], mode=0o700, exist_ok=True)
 os.makedirs(session, mode=0o700, exist_ok=True)
-git = lambda *words: subprocess.run(['git'] + list(words), capture_output=True)
-start = git('rev-parse', 'HEAD').stdout.decode().strip()
-open(os.path.join(session, 'start'), 'w').write(start)
+def git(*words, env=None):
+    return subprocess.run(['git'] + list(words), capture_output=True, env=env)
+out = lambda *words, env=None: git(*words, env=env).stdout.decode().strip()
+start = out('rev-parse', 'HEAD')
 if os.path.exists(os.path.join(session, 'calls')):
     os.remove(os.path.join(session, 'calls'))
 os.mkfifo(os.path.join(session, 'calls'), 0o600)
-lock = threading.Lock()
+lock, state, pending, sent = threading.Lock(), threading.Lock(), set(), {}
 unfinished = False
 def write(data):
     while data:
@@ -71,6 +78,30 @@ def say(kind, text):
     with lock:
         write((b'\n' if unfinished else b'') + ('\x1egraphyard-' + kind + ' ' + text + '\n').encode())
         unfinished = False
+def sync():
+    # The checkout as it stands: HEAD, and a snapshot commit of its changed files when there are any.
+    with state:
+        head = out('rev-parse', 'HEAD')
+        if not head:
+            return
+        index = os.path.join(session, 'index')
+        shutil.copyfile(out('rev-parse', '--path-format=absolute', '--git-path', 'index'), index)
+        env = dict(os.environ, GIT_INDEX_FILE=index, GIT_AUTHOR_NAME='Graphyard', GIT_AUTHOR_EMAIL='graphyard@localhost', GIT_COMMITTER_NAME='Graphyard', GIT_COMMITTER_EMAIL='graphyard@localhost')
+        git('add', '-A', env=env)
+        tree = out('write-tree', env=env)
+        if sent.get('state') == (head, tree):
+            return
+        work = head if tree == out('rev-parse', 'HEAD^{tree}') else out('commit-tree', tree, '-p', head, '-m', 'uncommitted work', env=env)
+        if not work:
+            return
+        bundle = None
+        if work != start:
+            git('update-ref', 'refs/graphyard/work', work)
+            path = os.path.join(session, 'work.bundle')
+            if git('bundle', 'create', path, 'refs/graphyard/work', '^' + start, *(['^' + sent['head']] if sent.get('head') else [])).returncode == 0:
+                bundle = base64.b64encode(open(path, 'rb').read()).decode()
+        say('work', json.dumps({'head': head, 'work': work, 'bundle': bundle}))
+        sent.update(head=head, state=(head, tree))
 def said():
     global unfinished
     while True:
@@ -85,6 +116,8 @@ def calls():
     while True:
         with open(os.path.join(session, 'calls')) as fifo:
             for request in fifo:
+                pending.add(json.loads(request)['id'])
+                sync()
                 say('call', request.strip())
 def answers():
     while True:
@@ -93,19 +126,30 @@ def answers():
             # The channel closed: this machine is gone, so no relayed call can be answered. End the runtime.
             runtime.terminate()
             return
-        target = os.path.join(session, 'answer-' + json.loads(text)['id'] + '.json')
+        reply = json.loads(text)
+        if reply.get('commits'):
+            with state:
+                path = os.path.join(session, 'answer.bundle')
+                open(path, 'wb').write(base64.b64decode(reply['commits']))
+                git('fetch', '-q', path, 'HEAD')
+                git('merge', '-q', '--ff-only', 'FETCH_HEAD')
+        target = os.path.join(session, 'answer-' + reply['id'] + '.json')
         open(target + '.part', 'wb').write(text)
         os.rename(target + '.part', target)
+        pending.discard(reply['id'])
+def watch():
+    while True:
+        time.sleep(${syncSeconds})
+        if not pending:
+            sync()
 runtime = subprocess.Popen(sys.argv[1:], stdin=subprocess.DEVNULL, stderr=subprocess.PIPE)
 errors = threading.Thread(target=said, daemon=True)
 errors.start()
-threading.Thread(target=calls, daemon=True).start()
-threading.Thread(target=answers, daemon=True).start()
+for task in (calls, answers, watch):
+    threading.Thread(target=task, daemon=True).start()
 code = runtime.wait()
 errors.join(5)
-bundle = os.path.join(session, 'session.bundle')
-if start and git('bundle', 'create', bundle, 'HEAD', '^' + start).returncode == 0:
-    say('commits', base64.b64encode(open(bundle, 'rb').read()).decode())
+sync()
 back = {}
 for path in handover['back']:
     try:
@@ -118,22 +162,14 @@ say('login', json.dumps(back))
 sys.exit(code)
 `;
 
-/** The `graphyard` the session calls, at the CLI's own path: each call, with the commits made so far, goes to this machine and its answer comes back. */
-export const sessionRelay = `import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+/** The `graphyard` the session calls, at the CLI's own path: each call goes to this machine, after the checkout's state, and its answer comes back. */
+export const sessionRelay = `import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-const session = ${JSON.stringify(sessionDirectory)}, id = randomUUID(), bundle = session + '/' + id + '.bundle';
-const git = (...words) => execFileSync('git', words, { stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim();
-let commits = null;
-try {
-  const start = readFileSync(session + '/start', 'utf8').trim();
-  if (git('rev-parse', 'HEAD') !== start) { git('bundle', 'create', bundle, 'HEAD', '^' + start); commits = readFileSync(bundle).toString('base64'); }
-} catch {}
-writeFileSync(session + '/calls', JSON.stringify({ id, argv: process.argv.slice(2), commits }) + '\\n', { flag: 'a' });
+const session = ${JSON.stringify(sessionDirectory)}, id = randomUUID();
+writeFileSync(session + '/calls', JSON.stringify({ id, argv: process.argv.slice(2) }) + '\\n', { flag: 'a' });
 const answer = session + '/answer-' + id + '.json';
 while (!existsSync(answer)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
 const reply = JSON.parse(readFileSync(answer, 'utf8'));
-if (reply.commits) { writeFileSync(bundle, Buffer.from(reply.commits, 'base64')); git('fetch', '-q', bundle, 'HEAD'); git('merge', '-q', '--ff-only', 'FETCH_HEAD'); }
 process.stdout.write(reply.stdout); process.stderr.write(reply.stderr); process.exitCode = reply.status;
 `;
 
@@ -167,19 +203,27 @@ export async function runRemoteSession(input: RemoteSession): Promise<number> {
     catch (error) { errors.write(`The session could not start on ${input.target}: ${error instanceof Error ? error.message : String(error)}\n`); return droppedExit; }
     const login = input.homes.flatMap(home => loginFiles.map(name => join(home, name)).filter(path => existsSync(path)));
     const files = Object.fromEntries([...login.map(path => [path, readFileSync(path).toString('base64')]), [input.cli, Buffer.from(sessionRelay).toString('base64')]]);
+    // The session commits under this machine's Git identity: its home there is empty.
+    const setting = (key: string) => git('config', key).catch(() => '');
+    const [name, email] = [await setting('user.name'), await setting('user.email')];
+    const identity = { ...(name ? { GIT_AUTHOR_NAME: name, GIT_COMMITTER_NAME: name } : {}), ...(email ? { GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_EMAIL: email } : {}) };
     const request = {
       argv: ['python3', '-I', '-c', sessionBoot, basename(input.argv[0]!), ...input.argv.slice(1)],
-      env: { ...input.env, HOME: '/tmp/graphyard-home', GRAPHYARD_CLI: input.cli, GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'safe.directory', GIT_CONFIG_VALUE_0: '*' },
+      env: { ...identity, ...input.env, HOME: '/tmp/graphyard-home', GRAPHYARD_CLI: input.cli, GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'safe.directory', GIT_CONFIG_VALUE_0: '*' },
       cwd: input.worktree, homes: [...new Set([...input.homes, dirname(input.cli)])],
     };
-    /** Bring the commits the session made into the worktree: they descend from its HEAD, so the move is a fast-forward. */
-    const take = async (commits: string | null) => {
-      if (!commits) return;
-      const bundle = join(scratch, `${randomUUID()}.bundle`);
-      await writeFile(bundle, Buffer.from(commits, 'base64'));
-      await git('fetch', '-q', bundle, 'HEAD');
-      await git('merge', '-q', '--ff-only', 'FETCH_HEAD');
-      await rm(bundle, { force: true });
+    /** Make the worktree what the session's checkout is: its HEAD, with the snapshot's changes uncommitted on top, as a local session's would be. */
+    const mirror = async (body: string) => {
+      const { head, work, bundle } = JSON.parse(body) as { head: string; work: string; bundle: string | null };
+      if (bundle) {
+        const path = join(scratch, `${randomUUID()}.bundle`);
+        await writeFile(path, Buffer.from(bundle, 'base64'));
+        await git('fetch', '-q', path, 'refs/graphyard/work');
+        await rm(path, { force: true });
+      }
+      await git('reset', '-q', '--hard', head);
+      await git('clean', '-fdq');
+      if (work !== head) { await git('read-tree', '-u', '--reset', work); await git('reset', '-q'); }
     };
     const code = await transport.session(input.target, words => new Promise<number>(resolve => {
       const child = spawn('ssh', [...words, `run-session ${runName}`], { stdio: ['pipe', 'pipe', 'pipe'] });
@@ -188,10 +232,9 @@ export async function runRemoteSession(input: RemoteSession): Promise<number> {
       child.stdout.on('data', chunk => output.write(chunk));
       let queue = Promise.resolve();
       const call = async (text: string) => {
-        const { id, argv, commits } = JSON.parse(text) as { id: string; argv: string[]; commits: string | null };
+        const { id, argv } = JSON.parse(text) as { id: string; argv: string[] };
         let reply: { status: number; stdout: string; stderr: string; commits: string | null } = { status: 1, stdout: '', stderr: '', commits: null };
         try {
-          await take(commits);
           const before = await git('rev-parse', 'HEAD');
           const [program, ...words] = [...input.confine ?? [], process.execPath, input.cli, ...argv];
           const ran = await new Promise<{ status: number; stdout: string; stderr: string }>(done => execFile(program!, words, { cwd: input.worktree, maxBuffer: 64 * 1024 * 1024 },
@@ -213,7 +256,7 @@ export async function runRemoteSession(input: RemoteSession): Promise<number> {
         const space = line.indexOf(' '), kind = line.slice(marker.length, space), body = line.slice(space + 1);
         queue = queue.then(async () => {
           if (kind === 'call') await call(body);
-          else if (kind === 'commits') await take(body);
+          else if (kind === 'work') await mirror(body);
           else if (kind === 'login') for (const [path, text] of Object.entries(JSON.parse(body) as Record<string, string>)) if (login.includes(path)) writeFileSync(path, Buffer.from(text, 'base64'), { mode: 0o600 });
         }).catch(error => { errors.write(`graphyard relay: ${error instanceof Error ? error.message : String(error)}\n`); });
       });
