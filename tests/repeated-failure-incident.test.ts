@@ -63,13 +63,32 @@ test('unit:repeated-failure-is-one-incident — removes item keys, hashes, temp 
     normaliseFailureLine('Error in /home/vish/code/.graphyard/worktrees/GY-20-3/src/a.ts:88'),
   );
 
-  // Failures older than 30 minutes fall out of the window.
-  const entries = [
+  // Spaced-out failures (0, 12, 24 min) stay open at 31 min because the newest is only 7 min old,
+  // and clear once 30 minutes pass with no new matching failure (at 54 min).
+  const spaced = [
     { item: 'GY-1', reason: 'Free usage limit reached', at: ago(31 * minute) },
-    { item: 'GY-2', reason: 'Free usage limit reached', at: ago(10 * minute) },
-    { item: 'GY-3', reason: 'Free usage limit reached', at: ago(5 * minute) },
+    { item: 'GY-2', reason: 'Free usage limit reached', at: ago(19 * minute) },
+    { item: 'GY-3', reason: 'Free usage limit reached', at: ago(7 * minute) },
   ];
-  assert.deepEqual(groupRepeatedFailures(entries, baseNow), []);
+  const active = groupRepeatedFailures(spaced, baseNow);
+  assert.equal(active.length, 1);
+  assert.deepEqual(active[0].items, ['GY-1', 'GY-2', 'GY-3']);
+  assert.deepEqual(groupRepeatedFailures(spaced, baseNow + 23 * minute), []);
+
+  // Three failures that never put three distinct items inside any 30-minute window do not form a group.
+  assert.deepEqual(groupRepeatedFailures([
+    { item: 'GY-1', reason: 'Free usage limit reached', at: ago(45 * minute) },
+    { item: 'GY-2', reason: 'Free usage limit reached', at: ago(25 * minute) },
+    { item: 'GY-3', reason: 'Free usage limit reached', at: ago(5 * minute) },
+  ], baseNow), []);
+
+  // An old incident that already cleared does not stay open when a single new failure arrives later.
+  assert.deepEqual(groupRepeatedFailures([
+    { item: 'GY-1', reason: 'Free usage limit reached', at: ago(90 * minute) },
+    { item: 'GY-2', reason: 'Free usage limit reached', at: ago(85 * minute) },
+    { item: 'GY-3', reason: 'Free usage limit reached', at: ago(80 * minute) },
+    { item: 'GY-4', reason: 'Free usage limit reached', at: ago(5 * minute) },
+  ], baseNow), []);
 
   // Sources on Work: failed session exit, trial failure, and rework reason combine across distinct items,
   // while benign session closures are ignored.
@@ -89,11 +108,13 @@ test('unit:repeated-failure-is-one-incident — removes item keys, hashes, temp 
   assert.equal(groups[0].line, 'Free usage limit reached');
   assert.deepEqual(groups[0].items, ['GY-1', 'GY-2', 'GY-3']);
 
-  // Home incident card says 'the caretaker is looking' until an open item is filed for the fault.
+  // Home incident card says 'the caretaker is looking' until an open item is filed for the fault,
+  // and states the item count only once.
   const [unfiled] = incidentsFromStatus({}, work, baseNow);
   assert.equal(unfiled.kind, 'repeated-failure');
   assert.match(unfiled.broke, /Free usage limit reached/);
   assert.match(unfiled.broke, /3 items/);
+  assert.doesNotMatch(unfiled.impact, /\b3 items\b/);
   assert.match(unfiled.doing, /the caretaker is looking/);
 
   const filedItem = { id: '4', key: 'GY-4', title: 'Fix Free usage limit reached across workers', description: 'Caretaker filed', stage: 'ready', stageEnteredAt: ago(2 * minute), updatedAt: ago(2 * minute), lease: null, dependencies: [] } as unknown as Work;
@@ -170,13 +191,24 @@ test('e2e:repeated-failure-incident — three ended sessions with the same error
   assert.match(html, /3 items/);
   assert.match(html, /the caretaker is looking/);
 
-  // Age all three ended sessions past the 30-minute window and assert both clear.
-  const expired = new Date(now - 31 * minute).toISOString();
-  for (const item of items) {
-    const stored = await api(`work/${item.id}`) as Work;
-    const aged = (stored.sessions ?? []).map(session => ({ ...session, endedAt: expired, updatedAt: expired }));
-    await store.pool.query('UPDATE work_items SET document = jsonb_set(document, \'{sessions}\', $2::jsonb) WHERE id=$1', [item.id, JSON.stringify(aged)]);
-  }
+  // Spaced-out failures (0, 12, 24 min, checked at 31 min) keep the incident open because the newest is 7 min old.
+  const setSessionTimes = async (agesMin: readonly number[]) => {
+    for (const [index, item] of items.entries()) {
+      const stored = await api(`work/${item.id}`) as Work;
+      const at = new Date(now - agesMin[index] * minute).toISOString();
+      const aged = (stored.sessions ?? []).map(session => ({ ...session, endedAt: at, updatedAt: at }));
+      await store!.pool.query('UPDATE work_items SET document = jsonb_set(document, \'{sessions}\', $2::jsonb) WHERE id=$1', [item.id, JSON.stringify(aged)]);
+    }
+  };
+  await setSessionTimes([31, 19, 7]);
+  const spacedReport = await masterStatusReport(root, config, api, run);
+  assert.equal(spacedReport.attention.filter(line => line.subject === 'repeated failure').length, 1);
+  const spacedSnapshot = await api('work-snapshot');
+  const spacedHtml = renderToStaticMarkup(createElement(HomeStatus, { work: spacedSnapshot.work, status, now: Date.parse(spacedSnapshot.now), setView: () => {}, setSelected: () => {} }));
+  assert.equal((spacedHtml.match(/data-incident="repeated-failure"/g) ?? []).length, 1);
+
+  // Once 30 minutes pass with no new matching failure, both clear.
+  await setSessionTimes([55, 43, 31]);
 
   const afterReport = await masterStatusReport(root, config, api, run);
   assert.equal(afterReport.attention.filter(line => line.subject === 'repeated failure').length, 0);

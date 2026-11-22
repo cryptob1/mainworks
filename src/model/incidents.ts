@@ -69,23 +69,42 @@ export function normaliseFailureLine(reason: string): string {
     .slice(0, 200);
 }
 
-/** Group failure entries from distinct items within the 30-minute window and return each group of three or more. */
+/** Group failure entries from distinct items: opens when 3+ distinct items hit the same line within 30 minutes, and stays open until 30 minutes pass with no new matching failure. */
 export function groupRepeatedFailures(entries: readonly FailureEntry[], now: number, windowMs = repeatedFailureWindowMs): RepeatedFailureGroup[] {
-  const groups = new Map<string, { line: string; items: Set<string> }>();
+  const byLine = new Map<string, { line: string; events: { item: string; at: number }[] }>();
   for (const entry of entries) {
     const at = Date.parse(entry.at);
-    if (!Number.isFinite(at) || now - at < -minute || now - at >= windowMs) continue;
+    if (!Number.isFinite(at) || now - at < -minute) continue;
     const line = normaliseFailureLine(entry.reason);
     if (!line) continue;
     const key = line.toLowerCase();
-    const group = groups.get(key) ?? { line, items: new Set<string>() };
-    group.items.add(entry.item);
-    groups.set(key, group);
+    const bucket = byLine.get(key) ?? { line, events: [] };
+    bucket.events.push({ item: entry.item, at });
+    byLine.set(key, bucket);
   }
-  return [...groups.values()]
-    .filter(group => group.items.size >= repeatedFailureThreshold)
-    .map(group => ({ line: group.line, count: group.items.size, items: [...group.items].sort() }))
-    .sort((a, b) => b.count - a.count || a.line.localeCompare(b.line));
+  const result: RepeatedFailureGroup[] = [];
+  for (const { line, events } of byLine.values()) {
+    events.sort((a, b) => a.at - b.at);
+    if (now - events[events.length - 1].at >= windowMs) continue;
+    let start = events.length - 1;
+    while (start > 0 && events[start].at - events[start - 1].at < windowMs) start--;
+    const episode = events.slice(start);
+    const counts = new Map<string, number>();
+    let triggered = false;
+    for (let left = 0, right = 0; right < episode.length; right++) {
+      counts.set(episode[right].item, (counts.get(episode[right].item) ?? 0) + 1);
+      while (episode[right].at - episode[left].at >= windowMs) {
+        const next = (counts.get(episode[left].item) ?? 1) - 1;
+        if (next <= 0) counts.delete(episode[left].item); else counts.set(episode[left].item, next);
+        left++;
+      }
+      if (counts.size >= repeatedFailureThreshold) { triggered = true; break; }
+    }
+    if (!triggered) continue;
+    const items = [...new Set(episode.map(event => event.item))].sort();
+    result.push({ line, count: items.length, items });
+  }
+  return result.sort((a, b) => b.count - a.count || a.line.localeCompare(b.line));
 }
 
 /** Failed session exits, trial failures and rework reasons carried on the work snapshot. */
@@ -127,7 +146,7 @@ export function repeatedFailureAttention(work: readonly Work[], now: number) {
     const filed = filedItemForFailure(work, group);
     return {
       subject: 'repeated failure',
-      text: `${plural(group.count, 'item')} hit the same failure in 30 min (${group.items.join(', ')}): ${group.line} — ${filed ? `filed as ${filed.key}` : 'the caretaker is looking'}`,
+      text: `${plural(group.count, 'item')} hit the same failure (${group.items.join(', ')}): ${group.line} — ${filed ? `filed as ${filed.key}` : 'the caretaker is looking'}`,
       next: filed ? `graphyard status ${filed.key}` : `Diagnose the shared fault (${group.items.join(', ')}) or file one hotfix item with graphyard master create FILE`,
     };
   });
@@ -219,8 +238,8 @@ export function incidentsFromStatus(status: StatusSnapshot, work: Work[], now: n
     const filed = filedItemForFailure(work, group);
     incidents.push({
       kind: 'repeated-failure',
-      broke: `Same failure across ${plural(group.count, 'item')}: “${group.line}”.`,
-      impact: `${plural(group.count, 'item')} hit this in the last 30 minutes.`,
+      broke: `“${group.line}” failed on ${plural(group.count, 'item')}.`,
+      impact: 'Sessions keep stopping on the same fault until it is fixed.',
       doing: filed ? `Filed as ${filed.key} (“${filed.title}”).` : 'No item filed yet — the caretaker is looking.',
       action: filed ? { label: 'Open the item', open: 'item', item: filed.id } : { label: 'Ask the Lead', open: 'lead' },
     });
