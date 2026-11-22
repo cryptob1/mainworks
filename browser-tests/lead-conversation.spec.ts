@@ -169,6 +169,7 @@ test('e2e:lead-conversation — the Lead is a conversation of messages and cards
       input.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
     });
     const paneInput = async () => (await readFile(join(site, 'herdr.log'), 'utf8').catch(() => '')).split('\n').filter(Boolean).map(entry => JSON.parse(entry)).filter(entry => entry.command?.type === 'terminal.input').map(entry => entry.command.text as string).join('');
+    await expect(page.locator('.lead-box-note')).toHaveText('Image sent to the Lead.', settled);
     await expect.poll(paneInput, settled).toMatch(/\x1b\[200~[^\x1b]*master-inbox[^\x1b]*shot\.png\x1b\[201~/);
     await page.locator('#lead-message').fill(sentLine);
     await page.getByRole('button', { name: 'Send', exact: true }).click();

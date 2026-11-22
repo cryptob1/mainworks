@@ -151,11 +151,15 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
   const mayUndo = (entry: FeedDecision) => !entry.undo ? false : entry.undo.target === 'registry' || entry.undo.command !== 'priority' ? operator : maySteer;
   const undoNote = 'Only the operator can undo a hold or a pause.';
   /** A pasted screenshot goes to the Lead as an attachment, as pasting into the terminal does. */
+  const attach = (files: File[]) => {
+    terminal.current?.attach(files);
+    setBoxNote(pane.mode === 'control' ? 'Image sent to the Lead.' : 'Not sent: ' + (pane.reason || 'this session cannot type into the Lead.'));
+  };
   const pasteImage = (event: ClipboardEvent) => {
     const files = [...(event.clipboardData?.files ?? [])].filter(file => file.type.startsWith('image/'));
     if (!files.length) return;
     event.preventDefault();
-    terminal.current?.attach(files);
+    attach(files);
   };
   const requests = [...(status?.humanOnly ?? openHumanOnly(work.map(item => ({ work: item })), now))].sort((a, b) => b.waitedMs - a.waitedMs);
   const incidents = Array.isArray(status?.production?.incidents) ? status.production.incidents : [];
@@ -254,7 +258,7 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
             </ol>
             {maySteer ? <form className="lead-box" onSubmit={event => { event.preventDefault(); send(); }}>
               <button type="button" aria-label="Attach an image" title="Attach an image" onClick={() => fileInput.current?.click()}>＋</button>
-              <input type="file" accept="image/png,image/jpeg" hidden ref={fileInput} onChange={event => { const file = event.target.files?.[0]; if (file) terminal.current?.attach([file]); event.target.value = ''; }}/>
+              <input type="file" accept="image/png,image/jpeg" hidden ref={fileInput} onChange={event => { const file = event.target.files?.[0]; if (file) attach([file]); event.target.value = ''; }}/>
               <label htmlFor="lead-message" className="sr-only">Message the Lead</label>
               <input id="lead-message" ref={box} value={draft} onChange={event => setDraft(event.target.value)} onPaste={pasteImage} placeholder="Tell the Lead what to do, or paste a screenshot"/>
               <button type="submit" disabled={!draft.trim() || pane.mode !== 'control'}>Send</button>
