@@ -66,3 +66,12 @@ test('unit:import-cycles — src runtime import components contain at most three
   const oversized = components(await importGraph()).filter(component => component.length > 3);
   assert.deepEqual(oversized, [], `Runtime import cycles exceed three modules:\n${oversized.map(component => component.join('\n')).join('\n\n')}`);
 });
+
+// GY-3593 had src/master/caretaker.ts import loopRestartRequestPath from daemon/run.ts, closing a
+// nine-module cycle through effects-production; the batch gate read the red check as flaky. The
+// path now lives in daemon/state.ts, so the caretaker the loop starts never imports the loop back.
+test('unit:import-cycles-pinned — master/caretaker.ts shares no runtime import cycle with the loop entry daemon/run.ts', async () => {
+  const caretaker = resolve('src/master/caretaker.ts'), run = resolve('src/daemon/run.ts');
+  const component = components(await importGraph()).find(members => members.includes(caretaker));
+  assert.ok(component && !component.includes(run), `master/caretaker.ts closes a runtime import cycle with daemon/run.ts:\n${component?.join('\n')}`);
+});
