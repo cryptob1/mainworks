@@ -199,7 +199,7 @@ test('e2e:merge-proof-review-admission launched verdict persists its policy and 
         await store.pool.query('UPDATE work_items SET document=$2 WHERE id=$1', [work.id, JSON.stringify(current)]);
       }
       const post = () => recordReviewVerdict(services, { id: 'independent', role: 'reader' }, work.id,
-        { sha: H, event: 'APPROVE', body: 'The fixture meets its criteria.', token }, randomUUID());
+        { sha: H, event: 'APPROVE', body: 'AC-1 met. AC-2 met.', token }, randomUUID());
       if (change !== 'none') await assert.rejects(post, /changed since launch/);
       else {
         await post();

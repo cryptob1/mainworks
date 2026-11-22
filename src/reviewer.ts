@@ -143,6 +143,8 @@ export const reviewRecordSchema = z.object({
   launch: z.string().min(1).max(64).optional(),
   /** A post-merge review (GY-1525): `sha` is the delivered merge commit and `baseSha` its first parent. */
   postMerge: z.literal(true).optional(),
+  /** A product review (GY-2989, GY-3684): bound to the head and policy revision, not the base tip. */
+  product: z.literal(true).optional(),
   /** What the loop did with a post-merge verdict: the follow-up item filed per BLOCKING finding, the nits kept in project memory, and a filing failure to retry. `memory` is set only once the write succeeds so a failed write stays retryable. */
   postMergeFollowUps: z.object({ at: z.string().min(1).max(40), filed: z.array(z.object({ key: z.string().min(1).max(40), finding: z.string().min(1).max(300), index: z.number().int().min(0).optional() }).strict()).max(postMergeFindingsMax), through: z.number().int().min(0).optional(), pending: z.number().int().min(1).optional(), memory: z.number().int().min(0).optional(), failure: z.string().min(1).max(500).optional() }).strict().optional(),
 }).strip();
@@ -1047,7 +1049,7 @@ export async function launchReview(root: string, work: Work, profileName: string
       profile: profile.name, agentName, pane: null, sessionDirectory, requestedAt, tokenExpiresAt: new Date(Date.parse(requestedAt) + 3_600_000).toISOString(), state: 'pending', launching: true,
       ...(dependencies.requestId ? { requestId: dependencies.requestId, attempt } : {}),
       // Only the token's hash is ever recorded (GY-1525); the token itself lives in the session's binding alone.
-      mode: 'control-plane', verdictTokenHash, ...(postMerge ? { postMerge: true } : {}) });
+      mode: 'control-plane', verdictTokenHash, ...(postMerge ? { postMerge: true } : {}), ...(product ? { product: true } : {}) });
     ledger.reviews.push(record);
     return { record };
   });
@@ -1390,7 +1392,7 @@ export const settledCloseAttempts = 3;
 /** The resolutions a judged session that never posted settles with; the dispatcher relaunches these at once. */
 export const unpostedVerdict = /^the reviewer session (?:finished \(|ended waiting on input)/;
 
-export function staleReviewReason(record: Pick<ReviewRecord, 'key' | 'sha' | 'baseSha' | 'policyRevision'> & Partial<Pick<ReviewRecord, 'postMerge'>>, work: Work[] | undefined): string | null {
+export function staleReviewReason(record: Pick<ReviewRecord, 'key' | 'sha' | 'baseSha' | 'policyRevision'> & Partial<Pick<ReviewRecord, 'postMerge' | 'product'>>, work: Work[] | undefined): string | null {
   const item = work?.find(candidate => candidate.key === record.key);
   if (!item) return null;
   // A post-merge review (GY-1525) judges the delivered merge commit: it is stale only when the item is not delivered as that commit.
@@ -1399,10 +1401,14 @@ export function staleReviewReason(record: Pick<ReviewRecord, 'key' | 'sha' | 'ba
   if (item.reworkRequested) return 'rework was requested for the item';
   if (!item.submission || !item.candidate) return 'the item no longer has a submitted candidate';
   if (item.candidate.sha !== record.sha) return `head changed from ${record.sha.slice(0, 12)} to ${item.candidate.sha.slice(0, 12)}`;
-  // The record's base is the diff base its session judged: the head's merge base then, not the
-  // tip, so a tip that moved past it without changing that merge base does not stale the session.
-  const base = item.observation?.mergeBase ?? item.candidate.baseSha;
-  if (base !== record.baseSha) return `base changed from ${record.baseSha.slice(0, 12)} to ${base.slice(0, 12)}`;
+  // GY-3684: a product review stands for the head and policy revision, not the base tip, so a main
+  // move never stales a product review in flight.
+  if (!record.product) {
+    // The record's base is the diff base its session judged: the head's merge base then, not the
+    // tip, so a tip that moved past it without changing that merge base does not stale the session.
+    const base = item.observation?.mergeBase ?? item.candidate.baseSha;
+    if (base !== record.baseSha) return `base changed from ${record.baseSha.slice(0, 12)} to ${base.slice(0, 12)}`;
+  }
   if (item.policyRevision !== record.policyRevision) return `policy revision changed from ${record.policyRevision} to ${item.policyRevision}`;
   return null;
 }

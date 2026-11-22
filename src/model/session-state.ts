@@ -197,7 +197,7 @@ function handByHandPurpose(work: Parameters<typeof settledPurpose>[0], handle: P
 function dispatchRequestOf(work: Pick<Work, 'autoDispatch'>, handle: Pick<SessionHandle, 'id' | 'kind'>) {
   if (handle.kind !== 'review' && handle.kind !== 'proof') return undefined;
   const dispatch = work.autoDispatch;
-  return [dispatch?.review, ...(dispatch?.producers ?? []), ...(dispatch?.history ?? [])].find(entry => entry?.id === handle.id);
+  return [dispatch?.review, dispatch?.product, ...(dispatch?.producers ?? []), ...(dispatch?.history ?? [])].find(entry => entry?.id === handle.id);
 }
 /**
  * Whether the item's own facts end this handle in time, so absence alone never has to (GY-1532): a

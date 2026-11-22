@@ -1,0 +1,16 @@
+{
+  "id": "old-review-is-not-starved",
+  "title": "An old head owing a product review is launched first and merges without a second product review while main moves every cycle",
+  "description": "GY-3684: seeds one feature head owing a product review for a day and three fresh feature heads while main moves every cycle, with a stub product reviewer, and asserts the old head is launched first, its verdict stands across subsequent main moves, and it merges without a second product review.",
+  "tags": ["review", "product-review"],
+  "target": "any",
+  "required": true,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "old head owing a product review is launched first and merges without a second product review",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/old-review-is-not-starved.test.ts",
+      "timeoutSeconds": 900
+    }
+  ]
+}

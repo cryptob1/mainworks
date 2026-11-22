@@ -72,7 +72,7 @@ await call(`${work}/review-launch`, coordinatorToken, {
   reviewer: 'e2e-independent-reviewer', head, baseTip,
   tokenHash: createHash('sha256').update(reviewToken).digest('hex'), expiresAt: new Date(Date.now() + 120_000).toISOString(),
 });
-await call(`${work}/review-verdict`, reviewToken, { event: 'APPROVE', body: 'The scratch change and its test agree.', sha: head, token: reviewToken });
+await call(`${work}/review-verdict`, reviewToken, { event: 'APPROVE', body: 'AC-1 met — the scratch change and its test agree.', sha: head, token: reviewToken });
 
 const merged = await mergeOne(ports, item);
 assert.equal(merged.outcome, "merged", JSON.stringify(merged));

@@ -205,6 +205,13 @@ export function foldObservations(registry: AgentRegistry, request: Pick<Selectio
 export function expiringWindow(account: FleetAccount, now: number) {
   return account.quota.usage.find(usage => usage.resetsAt && Date.parse(usage.resetsAt) > now && Date.parse(usage.resetsAt) - now <= 3_600_000 && usage.percent <= 70) ?? null;
 }
+/** The highest share any of an account's unreset usage windows shows (GY-3498); null with no reading. */
+function highestWindow(account: FleetAccount, now: number): number | null {
+  const usage = account.quota.usage.filter(window => !window.resetsAt || Date.parse(window.resetsAt) > now);
+  return usage.length ? Math.max(...usage.map(window => window.percent)) : null;
+}
+/** At this share of its highest window an eligible account trails the role's accounts with room left (GY-3498). */
+const nearAllowance = 80;
 /** A choice past the role's own accounts (GY-3092): the role, the fleet account that serves it, and why each of the role's own was passed over. */
 export interface RoleFailover { role: FleetRoleName; account: string; reason: string }
 export interface SessionChoice { account: FleetAccount; runtime: FleetRuntime; model: FleetModel; policy: RolePolicy; reason: string; skipped: SessionSkip[]; failover: RoleFailover | null }
@@ -250,7 +257,10 @@ export function chooseSession(registry: AgentRegistry, request: Pick<SelectionRe
   }; // the spread trails plans already holding a live session (GY-2943); a diverse reviewer's trial keeps GY-1496's order, which records its shared-provider passes itself; past the role's own accounts the fleet's fallback takes any account the preference leaves standing (GY-3092)
   // A role's own account whose window is about to reset with quota unused goes first, so that quota is spent before it is wasted (GY-3197).
   const expiring = new Map(order.flatMap(name => { const account = registry.accounts.find(entry => entry.name === name), window = account && expiringWindow(account, now); return window ? [[name, window] as const] : []; }));
-  const own = diverse ? order : planSpreadOrder(registry, order), trial = [...own.filter(name => expiring.has(name)), ...own.filter(name => !expiring.has(name))];
+  // Eligible accounts near their allowance trail those with room left, each group keeping the plan spread and the role's order (GY-3498).
+  const near = new Map(order.flatMap(name => { const account = registry.accounts.find(entry => entry.name === name), peak = account && highestWindow(account, now);
+    return account && peak != null && peak >= nearAllowance && !accountIneligibility(registry, account, now, request.host, { hostSessions: request.hostSessions?.filter(entry => entry.account === name) }) ? [[name, peak] as const] : []; }));
+  const spread = diverse ? order : planSpreadOrder(registry, order), own = [...spread.filter(name => !near.has(name)), ...spread.filter(name => near.has(name))], trial = [...own.filter(name => expiring.has(name)), ...own.filter(name => !expiring.has(name))];
   for (const [, name] of [...trial, ...fleetOrder(registry, role, request.prefer ?? null)].entries()) {
     const account = registry.accounts.find(entry => entry.name === name);
     // GY-3333: the live sessions other installs on this host hold on the account count toward its limit.
@@ -266,7 +276,8 @@ export function chooseSession(registry: AgentRegistry, request: Pick<SelectionRe
     }
     if (diverse && !differs) { const skip = sharedProviderSkip(name, diverse); skipped.push(skip); shared.add(skip); fallback ??= { account: account!, index: order.indexOf(name), skip }; continue; }
     const window = expiring.get(name), soon = window && order.indexOf(name) > 0 ? `; chosen first: its ${window.window} window resets at ${window.resetsAt} with ${100 - window.percent}% unused` : '';
-    return chosen(account!, order.indexOf(name), skipped, `${soon}${diverse ? ` on provider ${accountProvider(registry, account!)}, not the implementer's ${diverse.provider}` : ''}`);
+    const room = near.size && !near.has(name) ? `; chosen for room left: ${[...near].map(([other, peak]) => `${other} at ${peak}%`).join(', ')} of its allowance trail${near.size === 1 ? 's' : ''}` : '';
+    return chosen(account!, order.indexOf(name), skipped, `${soon}${room}${diverse ? ` on provider ${accountProvider(registry, account!)}, not the implementer's ${diverse.provider}` : ''}`);
   }
   if (diverse && busy.length) return { account: null, skipped, reason: busyDifferentProvider(role.name, diverse, busy) };
   for (const list of [skipped, others, busy]) list.sort((first, second) => { const a = order.indexOf(first.account), b = order.indexOf(second.account); return (a < 0 ? 1 : 0) - (b < 0 ? 1 : 0) || a - b; }); // the skips read in the role's own preference order, whatever the plan spread made of the trial, a fleet account that served no role trailing (GY-2943, GY-3092)
