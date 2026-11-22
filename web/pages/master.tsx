@@ -161,7 +161,7 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
   };
   const line = leadStatus(pane.session, now);
   return <>
-    <PageHeader title="Lead" fact="Chat with the Lead; its replies are cards you can act on, and the terminal is one click away."/>
+    <PageHeader title="Lead" fact="Steer the Lead and act on its cards."/>
     {stall && <p className="stall-alarm" role="alert">{stall}</p>}
     {owes.length > 0 && <section className="panel" aria-label="Blockers the Lead owes"><h2>Blocked ({owes.length})</h2>
       <ul className="master-owes">{owes.map(entry => <li key={entry.id}>
