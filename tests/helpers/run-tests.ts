@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process';
-import { chmodSync, mkdirSync, readdirSync, readFileSync, statfsSync, writeFileSync } from 'node:fs';
-import { readdir, rm } from 'node:fs/promises';
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, statfsSync, writeFileSync } from 'node:fs';
+import { cp, readdir, rename, rm } from 'node:fs/promises';
 import { availableParallelism, homedir, tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseShard, shardFiles } from '../../scripts/ci-tests.mjs';
 import { hostAccountsVariable } from '../../src/host-accounts.js';
@@ -11,6 +11,7 @@ import { hostMemoryFloor, memoryRecoveryMarginBytes, readHostMemory } from '../.
 import { bytesPerSuiteFile, declareSlotFiles, heldVariable, othersDeclaredFiles, readStrictCap, sessionVerificationSlot, slotsDirectoryVariable } from '../../src/master/verification-slots.js';
 import { readTempOwner, tempOwnerGone, tempOwnerMarker } from '../../src/tmp-reclaim.js';
 import { stopServersUnder } from '../../src/postgres-stop.js';
+import { buildEntries, builtEntries, builtEntry } from '../../bin/built-entry.mjs';
 
 // The suite's own runner (GY-174): `npm test` and `npm run test:browser` start here, so a clean run
 // needs nothing the session has to know about the host.
@@ -67,10 +68,16 @@ const tmpfsType = 0x01021994;
  * checkout, so no fixture finds a repository or an install above it, and sticky and shared (1777)
  * as /tmp is, which tests/runner-executor.test.ts requires of the fixture root.
  */
-export function durableTestTmpdir(current = tmpdir(), home = homedir(), statfs: (path: string) => { type: number } = statfsSync): string | null {
-  try { if (statfs(current).type !== tmpfsType) return null; } catch { return null; }
-  const directory = join(home, '.gy', 'tmp');
-  try { mkdirSync(directory, { recursive: true }); chmodSync(directory, 0o1777); return directory; } catch { return null; }
+export function durableTestTmpdir(current = tmpdir(), home = homedir(), statfs: (path: string) => { type: number } = statfsSync, besideCheckout = dirname(fileURLToPath(new URL('../..', import.meta.url)))): string | null {
+  const memoryBacked = (path: string) => { try { return statfs(path).type === tmpfsType; } catch { return false; } };
+  if (!memoryBacked(current)) return null;
+  // GY-2001's replacement assumes the home is on disk. A remote shard's container is the one place
+  // it is not: the host shim runs it with HOME=/tmp, itself a tmpfs (src/host-shim.ts), so the suite
+  // takes the one durable writable place it holds — the run allocation beside this checkout, which
+  // the shim cloned into `<run>/repo` — and keeps a fresh sticky tmp under it.
+  const directory = memoryBacked(home) ? join(besideCheckout, 'tmp') : join(home, '.gy', 'tmp');
+  try { mkdirSync(directory, { recursive: true }); chmodSync(directory, 0o1777); } catch { return null; }
+  return memoryBacked(directory) ? null : directory;
 }
 
 /** The browser suite's historical port, tried first. */
@@ -103,15 +110,28 @@ export function sessionSuiteBreadth(host: number | null, environment: NodeJS.Pro
   return Number.isInteger(budget) && budget >= 1 ? Math.min(host ?? budget, budget) : host;
 }
 
+/** GY-3610: the most files a run on the coordinator starts at once, whatever its cores and memory. */
+export const coordinatorTestBreadth = 4;
+/**
+ * GY-3610: whether this run is on a machine that runs the master loop (the loop joined the host's
+ * heavy-job budget, which every session it starts carries) and is not a trial shard (no list, no
+ * shard). Such a run starts at most `coordinatorTestBreadth` files at once and none while the CPU is hot.
+ */
+export const coordinatorRun = (environment: NodeJS.ProcessEnv, args: string[]) => {
+  const { filesFrom, shard } = runnerOptions(args);
+  return !!environment[slotsDirectoryVariable] && !filesFrom && !shard;
+};
+
 /** The breadth this run starts at, or null when nothing judges it: a run inside a run, a host whose memory cannot be read (CI keeps node's own default). */
-export async function hostSuiteBreadth(environment: NodeJS.ProcessEnv = process.env, memory: typeof readHostMemory = readHostMemory, pid: number = process.pid): Promise<number | null> {
+export async function hostSuiteBreadth(environment: NodeJS.ProcessEnv = process.env, memory: typeof readHostMemory = readHostMemory, pid: number = process.pid, cpus = availableParallelism(), args: string[] = []): Promise<number | null> {
   if (environment[heldVariable]) return null;
+  const cap = coordinatorRun(environment, args) ? coordinatorTestBreadth : Infinity;
   const reading = await memory();
-  if (!reading) return null;
+  if (!reading) return Number.isFinite(cap) ? cap : null;
   const directory = environment[slotsDirectoryVariable];
   const otherFiles = directory ? await othersDeclaredFiles(directory, pid) : 0;
   const budgetBytes = reading.availableBytes - hostMemoryFloor(reading.totalBytes) - memoryRecoveryMarginBytes;
-  return suiteBreadth({ budgetBytes, otherFiles, cpus: availableParallelism() });
+  return Math.min(cap, suiteBreadth({ budgetBytes, otherFiles, cpus }));
 }
 
 export interface RunOptions {
@@ -124,6 +144,8 @@ export interface RunOptions {
   stdio?: 'inherit' | 'pipe';
   /** How many files to run at once (GY-1821): passed to `node --test` as its own flag when the run is not a shard. Absent: node's default. */
   breadth?: number;
+  /** GY-3610: hold each new file while the CPU sensors under this hwmon directory read at the heat limit (a coordinator run; never a shard). */
+  holdWhenHot?: string;
 }
 export interface RunResult { code: number; base: number; environment: Record<string, string>; stdout: string; stderr: string }
 
@@ -150,7 +172,7 @@ function runnerOptions(args: string[]) {
 /** The merge trial's per-file bound (src/merge-writer/trial.ts): a targeted re-run of named files carries it. */
 export const trialFileTimeoutMs = 300_000;
 
-export function nodeTestArgs(cwd: string, args: string[]) {
+export function nodeTestArgs(cwd: string, args: string[], perFile = false) {
   const { rest, filesFrom, shard, durations, fileTimeout: given } = runnerOptions(args);
   // A run of named files is a targeted re-run — complete's pre-submit rerun of the trial's failing
   // files (complete.ts: "the rerun runs under the trial's own bound"), `npm run test:affected --
@@ -160,9 +182,10 @@ export function nodeTestArgs(cwd: string, args: string[]) {
   // stays unbounded.
   const fileTimeout = given ?? (!filesFrom && !shard && rest.some(argument => !argument.startsWith('-')) ? String(trialFileTimeoutMs) : undefined);
   if (fileTimeout && (!Number.isFinite(Number(fileTimeout)) || Number(fileTimeout) <= 0)) throw new Error('--file-timeout needs positive milliseconds');
-  const bounded = fileTimeout ? { bounded: true } : {};
-  const reporters = fileTimeout
-    ? [`--file-timeout=${fileTimeout}`, ...(durations ? ['--durations', resolve(cwd, durations)] : [])]
+  // GY-3610: a run that holds files on heat starts each file itself (bounded-tests.mjs), bounded or not.
+  const perFileRun = !!fileTimeout || perFile && !filesFrom && !shard, bounded = perFileRun ? { bounded: true } : {};
+  const reporters = perFileRun
+    ? [...(fileTimeout ? [`--file-timeout=${fileTimeout}`] : []), ...(durations ? ['--durations', resolve(cwd, durations)] : [])]
     : durations ? ['--test-reporter=spec', '--test-reporter-destination=stdout', `--test-reporter=${fileURLToPath(new URL('./file-durations.mjs', import.meta.url))}`, `--test-reporter-destination=${resolve(cwd, durations)}`] : [];
   const all = () => readdirSync(resolve(cwd, 'tests')).filter(name => name.endsWith('.test.ts')).sort().map(name => `tests/${name}`);
   if (!filesFrom && !shard) return { ...bounded, args: [...reporters, ...rest, ...(rest.some(arg => !arg.startsWith('-')) ? [] : all())], empty: false, ordered: false };
@@ -187,11 +210,60 @@ export function nestedFirst(environment: NodeJS.ProcessEnv = process.env): { fir
   return Number.isInteger(parent) && parent > 0 ? { first: parent + nestedPortGap } : {};
 }
 
+/** Whether a selected test file drives a browser or runs E2E cases against the served dashboard. */
+export const opensDashboard = (cwd: string, args: string[]) => args.filter(arg => /\.test\.[cm]?[jt]sx?$/.test(arg)).some(file => {
+  try { return /chromium|playwright|projectCaseSuite|runCases/.test(readFileSync(resolve(cwd, file), 'utf8')); } catch { return false; }
+});
+const defaultBuildDashboard = (cwd: string) => async (outDir: string) => {
+  const { build } = await import('vite');
+  await build({ configFile: join(cwd, 'vite.config.ts'), root: join(cwd, 'web'), cacheDir: join(cwd, '.graphyard', 'vite'), logLevel: 'warn', build: { outDir, emptyOutDir: true } });
+};
+
+/**
+ * Ensures `<cwd>/dist/index.html` exists without wiping sibling files (`dist/cli.mjs`, `dist/server.mjs`)
+ * or racing another remote shard sharing the same checkout (GY-3656). Serializes behind a lock directory,
+ * builds into a private staging directory, copies assets into `dist/`, and renames `index.html` last.
+ */
+export async function ensureDashboardBuilt(
+  cwd: string,
+  build: (outDir: string) => Promise<void> = defaultBuildDashboard(cwd),
+  options: { staleMs?: number; pollMs?: number } = {},
+): Promise<boolean> {
+  const dist = join(cwd, 'dist'), index = join(dist, 'index.html');
+  if (existsSync(index)) return false;
+  const lock = join(cwd, '.graphyard', 'dist-dashboard.lock');
+  const staleMs = options.staleMs ?? 120_000, pollMs = options.pollMs ?? 100;
+  mkdirSync(dirname(lock), { recursive: true });
+  for (;;) {
+    if (existsSync(index)) return false;
+    try { mkdirSync(lock); break; } catch (error: any) {
+      if (error?.code !== 'EEXIST') throw error;
+      try { if (Date.now() - statSync(lock).mtimeMs > staleMs) { await rm(lock, { recursive: true, force: true }); continue; } } catch { continue; }
+      await new Promise(resolve => setTimeout(resolve, pollMs));
+    }
+  }
+  const staging = join(cwd, '.graphyard', `dist-dashboard-${process.pid}-${Date.now()}`);
+  try {
+    if (existsSync(index)) return false;
+    await build(staging);
+    mkdirSync(dist, { recursive: true });
+    for (const name of await readdir(staging)) {
+      if (name === 'index.html') continue;
+      await cp(join(staging, name), join(dist, name), { recursive: true, force: true });
+    }
+    await rename(join(staging, 'index.html'), index);
+    return true;
+  } finally {
+    await rm(staging, { recursive: true, force: true });
+    await rm(lock, { recursive: true, force: true });
+  }
+}
+
 export async function runTests(options: RunOptions = {}): Promise<RunResult> {
   const tmpRoot = durableTestTmpdir() ?? undefined;
   await sweepLeftoverTempDirectories(tmpRoot);
   const cwd = resolve(options.cwd ?? process.cwd()), args = options.args ?? [];
-  const selection = options.browser ? null : nodeTestArgs(cwd, args);
+  const selection = options.browser ? null : nodeTestArgs(cwd, args, !!options.holdWhenHot);
   // An empty selection (a shard with nothing assigned, a change that affects no test) runs nothing:
   // `node --test` with no files would run every file it discovers instead.
   if (selection?.empty) {
@@ -201,6 +273,11 @@ export async function runTests(options: RunOptions = {}): Promise<RunResult> {
   // The browser window is the dev server's port with a spare beside it, then one window above both
   // the run's shared Postgres cluster and the sentinel that holds the window (GY-3356); a Node
   // run's window is its shared cluster's own.
+  const repository = fileURLToPath(new URL('../..', import.meta.url));
+  // A remote shard's fresh checkout has no built dashboard either: a selected file that opens it in a browser would find no sign-in page.
+  if (resolve(cwd) === resolve(repository) && !existsSync(join(cwd, 'dist', 'index.html')) && opensDashboard(cwd, selection?.args ?? [])) await ensureDashboardBuilt(cwd);
+  // GY-3611: the CLI and server the tests start run from dist/; build them once, before the first file, when missing or stale.
+  if (resolve(cwd) === resolve(repository) && !builtEntries.every(name => builtEntry(cwd, name))) await buildEntries(cwd);
   const reservation = await reserveTestPorts(options.browser ? { first: defaultBrowserPort, span: 2 + testPortSpan, last: 65_000, ...options.ports } : { ...nestedFirst(), ...options.ports });
   let postgres: Awaited<ReturnType<typeof import('./postgres.js').startPostgres>> | undefined;
   try {
@@ -231,6 +308,7 @@ export async function runTests(options: RunOptions = {}): Promise<RunResult> {
         // The breadth the host's memory affords (GY-1821). A caller's own flag stands; a shard's
         // order is ordered-tests.mjs's own concurrency, which stays node's default as CI has it.
         ...(selection.ordered || options.breadth === undefined || !Number.isFinite(options.breadth) || options.breadth < 1 || runnerOptions(args).rest.some(argument => argument.startsWith('--test-concurrency')) ? [] : [`--test-concurrency=${Math.floor(options.breadth)}`]),
+        ...(selection.bounded && options.holdWhenHot ? [`--hold-when-hot=${options.holdWhenHot}`] : []),
         ...selection.args]];
     // Core dumps off for the run and every Postgres it starts (GY-3112): a crash costs no disk.
     const child = spawn('/bin/sh', ['-c', 'ulimit -c 0 && exec "$@"', 'sh', command, ...commandArgs], { cwd, env: environment, stdio: options.stdio === 'pipe' ? ['ignore', 'pipe', 'pipe'] : 'inherit' });
@@ -271,8 +349,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const directory = process.env[slotsDirectoryVariable], label = heavyRunLabel(mode, args, !!directory && !!readStrictCap(directory)), held = label ? await sessionVerificationSlot(label) : null;
   // The breadth the host affords is computed with the slot already held, so a run that starts later
   // sees this one's declaration; it is declared back onto the slot for the runs after it (GY-1821).
-  const breadth = mode === 'test' ? sessionSuiteBreadth(await hostSuiteBreadth()) : null;
+  const breadth = mode === 'test' ? sessionSuiteBreadth(await hostSuiteBreadth(process.env, readHostMemory, process.pid, availableParallelism(), args)) : null;
   if (held && breadth !== null) declareSlotFiles(held, breadth);
-  try { process.exitCode = mode === 'typecheck' ? await typecheck(process.cwd(), args) : (await runTests({ browser: mode === 'browser', args, breadth: breadth ?? undefined })).code; }
+  const holdWhenHot = mode === 'test' && coordinatorRun(process.env, args) ? '/sys/class/hwmon' : undefined;
+  try { process.exitCode = mode === 'typecheck' ? await typecheck(process.cwd(), args) : (await runTests({ browser: mode === 'browser', args, breadth: breadth ?? undefined, holdWhenHot })).code; }
   finally { held?.release(); }
 }

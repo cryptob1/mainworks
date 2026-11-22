@@ -1,5 +1,84 @@
 // Concern: fold this account's observations and request a live check after a session signal.
 import type { AgentRegistry, FleetAccount, ObservedQuota, QuotaObservation } from './registry.js';
+import { parseResetTime } from './capacity.js';
+
+export interface ProbeFailure { reason: string; resetsAt: string | null; apiError: string | null }
+const probeFallbackReason = 'The live request failed';
+const probeMaxLength = 160;
+const jsonOpening = /\{\s*["']/;
+const cleanLine = (line: string) => line.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
+const sanitizePlain = (line: string): { text: string; tail: string } => {
+  const idx = line.search(jsonOpening);
+  if (idx >= 0) {
+    const end = line.lastIndexOf('}');
+    const embedded = end > idx ? extractJsonMessage(line.slice(idx, end + 1)) : extractJsonMessage(line.slice(idx));
+    if (embedded?.reason) return { text: embedded.reason, tail: end > idx ? line.slice(end + 1).trim() : '' };
+    const prefix = line.slice(0, idx).replace(/[:\s-]+$/, '').trim();
+    return { text: prefix, tail: '' };
+  }
+  return { text: line, tail: '' };
+};
+function extractFromObject(record: unknown): { reason: string | null; apiError: string | null; isFailure: boolean } | null {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return null;
+  const obj = record as Record<string, unknown>;
+  const err = obj.error && typeof obj.error === 'object' ? obj.error as Record<string, unknown> : null;
+  const errData = err?.data && typeof err.data === 'object' ? err.data as Record<string, unknown> : null;
+  const msg = obj.message && typeof obj.message === 'object' ? obj.message as Record<string, unknown> : null;
+  const apiError = typeof obj.api_error === 'string' && obj.api_error.trim() ? obj.api_error.trim() : null;
+  const isFailure = obj.is_error === true || obj.type === 'error' || obj.type === 'turn.failed' || !!apiError
+    || (obj.type === 'message_end' && typeof msg?.errorMessage === 'string' && !!msg.errorMessage.trim())
+    || (obj.type === 'auto_retry_end' && obj.success === false);
+  const candidates = [obj.result, err?.message, errData?.message, msg?.errorMessage, obj.finalError, obj.error, obj.message];
+  const raw = candidates.find((value): value is string => typeof value === 'string' && value.trim().length > 0) ?? null;
+  const reason = raw ? sanitizePlain(cleanLine(raw)).text : null;
+  return { reason: reason || null, apiError, isFailure };
+}
+function extractJsonMessage(text: string): { reason: string | null; apiError: string | null; isFailure: boolean } | null {
+  try { return extractFromObject(JSON.parse(text)); } catch { return null; }
+}
+/**
+ * GY-3591: one parser for every runtime's live probe failure. Parses result/error JSON once to take
+ * the provider's own sentence and reset time; falls back to the last non-empty line, cut at 160
+ * characters, and never returns '{' followed by a quote.
+ */
+export function parseProbeFailure(
+  output: string | null | undefined,
+  now: number | null = null,
+  parseReset: (text: string, now: number) => string | null = parseResetTime,
+): ProbeFailure {
+  const raw = typeof output === 'string' ? output : '';
+  const trimmed = raw.trim();
+  let reason: string | null = null;
+  let tail = '';
+  let apiError: string | null = null;
+  const whole = trimmed.startsWith('{') ? extractJsonMessage(trimmed) : null;
+  if (whole?.reason) {
+    reason = whole.reason;
+    apiError = whole.apiError;
+  } else {
+    const lines = raw.replace(/\r/g, '').split('\n').map(cleanLine).filter(Boolean);
+    let fallbackJson: { reason: string; apiError: string | null } | null = null;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const parsed = lines[i]!.startsWith('{') ? extractJsonMessage(lines[i]!) : null;
+      if (parsed?.reason) {
+        if (parsed.isFailure) { reason = parsed.reason; apiError = parsed.apiError; break; }
+        fallbackJson ??= { reason: parsed.reason, apiError: parsed.apiError };
+      }
+    }
+    if (!reason && fallbackJson) { reason = fallbackJson.reason; apiError = fallbackJson.apiError; }
+    if (!reason) {
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const cleaned = sanitizePlain(lines[i]!);
+        if (cleaned.text && !jsonOpening.test(cleaned.text)) { reason = cleaned.text; tail = cleaned.tail; break; }
+      }
+    }
+  }
+  const finalReason = (reason || probeFallbackReason).slice(0, probeMaxLength).trim() || probeFallbackReason;
+  // The reset time is read only against the caller's clock; without one there is no reset.
+  const stated = now === null ? null : parseReset(finalReason, now) ?? (tail ? parseReset(tail, now) : null);
+  const resetsAt = stated && Date.parse(stated) > now! ? stated : null;
+  return { reason: finalReason, resetsAt, apiError };
+}
 
 /** An instant as the owner reads it: `2026-11-18 15:00 UTC`. */
 export const utcClock = (iso: string) => `${iso.slice(0, 16).replace('T', ' ')} UTC`;
@@ -50,6 +129,8 @@ export function foldObservation(account: FleetAccount, observed: QuotaObservatio
   const held = account.quota, now = Date.parse(context.at);
   const decided = account.quotaDecision ? Date.parse(account.quotaDecision.at) : null;
   if (observed.since ? decided !== null && Date.parse(observed.since) <= decided : held.source === 'operator') return false;
+  // A session caught on the wrong model stands until a newer live check (GY-3596).
+  if (held.state === 'broken' && held.reason?.startsWith('ran on ') && held.since && (!observed.since || Date.parse(observed.since) < Date.parse(held.since))) return false;
   if (!observed.since) {
     const loginHold = held.session === 'login' && held.loggedIn === false && (!observed.identity || observed.identity === held.identity);
     if (loginHold || held.since && held.state !== 'available') return false;
@@ -76,4 +157,23 @@ export function requestLimitNoticeCheck(registry: AgentRegistry, notice: { role:
   const observed: QuotaObservation = { loggedIn: account.quota.loggedIn, state: 'unknown', usage: account.quota.usage, resetsAt: null, session: 'guessed',
     reason: `Check ${account.name}: ${notice.reason}`.slice(0, 500) };
   return foldObservation(account, observed, context) ? account.name : null;
+}
+
+/** A model id as a runtime names it: lower case, no provider prefix, no context suffix (`opus[1m]`). */
+const bareModel = (id: string) => id.toLowerCase().replace(/\[[^\]]*\]$/, '').split('/').pop()!.trim();
+/**
+ * GY-3596: why a run that reported `ran` did not run the account's registered model `id` — `ran on X, not Y` —
+ * or null when it did, reported none, or the account names no id. A runtime reports the full name of an alias
+ * (`claude-opus-4-1-20250805` for `opus`) and drops a provider prefix (`glm-5.3` for `zai-coding-plan/glm-5.3`).
+ */
+export function wrongModel(ran: string | null | undefined, id: string | null | undefined): string | null {
+  return ran && id && !bareModel(ran).includes(bareModel(id)) ? `ran on ${ran}, not ${id}` : null;
+}
+/** A finished session on `accountName` reported it ran on `ran`: a model other than the account's own marks it broken, as a failed live request does. */
+export function recordSessionModel(registry: AgentRegistry, accountName: string | null, ran: string | null | undefined, context: { actor: string; at: string }) {
+  const account = registry.accounts.find(entry => entry.name === accountName);
+  const reason = account && wrongModel(ran, registry.models.find(model => model.name === account.model)?.id);
+  if (!account || !reason || account.quota.state === 'broken' && account.quota.reason === reason) return false;
+  account.quota = { ...account.quota, state: 'broken', reason, resetsAt: null, session: undefined, since: context.at, observedAt: context.at, observedBy: context.actor, source: 'probe' };
+  return true;
 }

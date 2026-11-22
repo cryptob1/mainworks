@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { emptyDaemonState } from '../src/daemon/state.js';
-import { mergeWriterIdle, mergeWriterStep, type MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
+import { mergeWriterIdle, mergeWriterInFlight, mergeWriterStep, type MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import type { TrialRunHandle, TrialRunRequest } from '../src/merge-writer/trial-run.js';
 import { mergeRecordKinds, type MergePorts, type MergeRecordEvent, type MergeTrialRun } from '../src/merge-writer/executor.js';
 import { foldMergeLedger } from '../src/model-boundary/merge-ledger.js';
@@ -44,6 +44,8 @@ class World {
   peak = 0;
   recorded = new Map<number, MergeRecordEvent[]>();
   ledgerEvents: { kind: string; payload: unknown; work: string }[] = [];
+  /** How long a merge takes, in ms: a loaded host starts a flight's trial this long after its cycle returned. */
+  mergeMs = 0;
   constructor(public submitted: number) {}
   private live() { return [...this.runs.values()].filter(run => !run.finished).length; }
   snapshot(): Work[] {
@@ -68,7 +70,7 @@ class World {
     const ports: MergePorts = {
       baseBranch: 'main', now: () => start,
       fetch: async () => world.main[0]!,
-      merge: async (head, tip) => ({ mergeSha: sha(`merge:${head}:${tip}`), files: ['src/item.ts'] }),
+      merge: async (head, tip) => { await new Promise(resolve => setTimeout(resolve, world.mergeMs)); return { mergeSha: sha(`merge:${head}:${tip}`), files: ['src/item.ts'] }; },
       trial: async () => { throw new Error('these reads launch detached trial runs only'); },
       push: async mergeSha => { world.main.unshift(mergeSha); return 'pushed'; },
       holds: async commit => world.main.includes(commit),
@@ -83,7 +85,7 @@ class World {
     const handle = (run: Run): TrialRunHandle => ({ directory: run.directory, mergeSha: run.spec.mergeSha, trial: () => run.watch(), detach: () => {}, cancel: () => { world.runs.delete(run.spec.key); } });
     return {
       ...ports,
-      parallel: 3,
+      parallel: 3, cores: 8,
       launchTrialRun: spec => {
         const run = new Run(spec, `/runs/${spec.key}-${spec.head.slice(0, 8)}`);
         world.runs.set(spec.key, run); world.launches.push(spec.key);
@@ -108,6 +110,20 @@ function loop(world: World, state: DaemonState, adopt: boolean, from: number) {
   return async () => { clock += 60_000; await mergeWriterStep({ state, effects, now: () => clock, snapshot: { work: world.snapshot(), now: iso(clock) }, performed: [] } as unknown as Cycle); };
 }
 const waitFor = async (what: () => boolean, ms = 5_000) => { for (let waited = 0; !what() && waited < ms; waited += 5) await new Promise(resolve => setTimeout(resolve, 5)); };
+/**
+ * Cycles until every head has landed, finishing each trial once it runs. GY-3615: a cycle is followed
+ * until its flight has launched its trial or settled, never for a fixed time — a trial that started
+ * later than the old 200 ms bound on a loaded host was never finished, and its flight never settled.
+ */
+async function land(world: World, state: DaemonState, cycle: () => Promise<void>) {
+  const running = () => [...world.runs.values()].filter(run => !run.finished);
+  for (let round = 0; round < 6 && world.snapshot().some(item => item.stage !== 'done'); round++) {
+    await cycle();
+    await waitFor(() => running().length > 0 || !mergeWriterInFlight(state));
+    for (const run of running()) world.finish(run.spec.key);
+    await mergeWriterIdle(state);
+  }
+}
 
 test('unit:tests/merge-writer-refills-slots.test.ts — with parallel 3 and one trial running, a head that becomes due starts its trial on the next cycle, the third fills the last slot, and a fourth waits for a slot: never more than 3 at once', { timeout: 60_000 }, async () => {
   const world = new World(1), state = emptyDaemonState(config), cycle = loop(world, state, false, start);
@@ -145,15 +161,18 @@ test('unit:tests/merge-writer-refills-slots.test.ts — with parallel 3 and one 
 
   for (const key of ['GY-2', 'GY-3', 'GY-4']) world.finish(key);
   await mergeWriterIdle(state);
-  for (let round = 0; round < 6 && world.snapshot().some(item => item.stage !== 'done'); round++) {
-    await cycle();
-    await waitFor(() => world.runs.has('GY-5'), 200);
-    if (world.runs.has('GY-5')) world.finish('GY-5');
-    await mergeWriterIdle(state);
-  }
+  await land(world, state, cycle);
   assert.ok(world.snapshot().every(item => item.stage === 'done'), 'every head landed');
   assert.equal(world.peak, 3);
   for (let n = 1; n <= 5; n++) assert.equal(world.recorded.get(n)!.filter(event => event.kind === 'trial').length, 1, `GY-${n} ran exactly one trial`);
+});
+
+test('unit:merge-writer-refills-slots-pinned — a head whose trial starts 400 ms after its cycle, as on a loaded host, is still finished and lands', { timeout: 30_000 }, async () => {
+  const world = new World(1), state = emptyDaemonState(config);
+  world.mergeMs = 400;
+  await land(world, state, loop(world, state, false, start));
+  assert.ok(world.snapshot().every(item => item.stage === 'done'), 'the head landed');
+  assert.equal(world.recorded.get(1)!.filter(event => event.kind === 'trial').length, 1, 'on exactly one trial');
 });
 
 test('unit:tests/merge-writer-refills-slots.test.ts — a loop restart while two independently started trials run adopts both runs', { timeout: 60_000 }, async () => {

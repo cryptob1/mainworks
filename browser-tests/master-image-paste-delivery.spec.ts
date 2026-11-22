@@ -40,7 +40,7 @@ const pastePng = (page: Page, base64: string, name: string) => page.locator('.xt
   area.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
 }, { base64, name });
 
-test('e2e:master-image-paste-delivery — a screenshot pasted on the Master page over HTTPS on a non-localhost origin is saved to the master inbox and its path typed, whatever way it is pasted; refusals say why', async () => {
+test('e2e:master-image-paste-delivery — a screenshot pasted on the Lead live session over HTTPS on a non-localhost origin is saved to the master inbox and its path typed, whatever way it is pasted; refusals say why', async () => {
   test.setTimeout(120_000);
   const site = await mkdtemp(join(tmpdir(), 'graphyard-master-image-'));
   const log = join(site, 'herdr.log');
@@ -75,6 +75,8 @@ test('e2e:master-image-paste-delivery — a screenshot pasted on the Master page
     const context = await browser.newContext({ ignoreHTTPSErrors: true, permissions: ['clipboard-read', 'clipboard-write'] });
     const operator = await context.newPage(); await serveXterm(operator);
     await operator.goto(`${origin}/#sign-in=${code}&master`);
+    await expect(operator.getByRole('heading', { name: 'Lead', exact: true })).toBeVisible({ timeout: 15_000 });
+    await operator.evaluate(() => { location.hash = '#master/live'; });
     await expect(operator.getByRole('status')).toContainText('You can type here', settled);
     await operator.locator('.terminal-host').click();
     const png = await screenshotPng(operator);
@@ -132,7 +134,7 @@ test('e2e:master-image-paste-delivery — a screenshot pasted on the Master page
     const viewer = await browser.newContext({ ignoreHTTPSErrors: true });
     await viewer.addInitScript(() => sessionStorage.setItem('graphyard-token', 'test-reader'));
     const reader = await viewer.newPage(); await serveXterm(reader);
-    await reader.goto(`${origin}/#master`);
+    await reader.goto(`${origin}/#master/live`);
     await expect(reader.getByRole('status')).toContainText('View only', settled);
     await pastePng(reader, png, 'sneaky.png');
     await expect(reader.getByRole('status')).toContainText('Paste refused', settled);

@@ -35,6 +35,7 @@ export interface AccountReading { loggedIn: boolean; usage: AccountUsage[]; note
  * - `home`: the login-home variable an account home is set on, and the runtime's own default home: the environment kinds.
  * - `usage`: reads an account home's login and provider quota; `sharedPlan` when its accounts share a Z.AI plan.
  * - `identity`: the login file whose provider ids name the subscription an account home is logged in to.
+ * - `model`: the model a run's output says it ran on (GY-3596).
  * - `state`: the XDG base directories (with their defaults under HOME) the runtime keeps its session state in, and its own directory in each (GY-3303).
  */
 export interface RuntimeAdapter {
@@ -42,6 +43,8 @@ export interface RuntimeAdapter {
   recipe?: LaunchRecipe;
   /** `optional`: flags passed only when the installed runtime's `BEFORE --help` lists them (acceptedFlags). */
   headless?: { program?: string; before: string[]; flags: string[]; drop?: string[]; optional?: string[] };
+  /** GY-3632: the words that make the one-task form continue runtime session `session`, placed before the request. */
+  continue?: (session: string) => string[];
   request?: (reference: string) => string;
   role?: (reference: string) => string;
   screen?: RegExp;
@@ -53,6 +56,10 @@ export interface RuntimeAdapter {
   sharedPlan?: boolean;
   identity?: { file: string; ids: (login: any) => unknown[] };
   state?: { variables: Record<string, string>; directory: string };
+  /** GY-3596: the model a run reported on its own output, or null when it names none. */
+  model?: (output: string) => string | null;
+  /** GY-3687: the flag that names the model, when the stored runtime contract names none. */
+  modelFlag?: string;
 }
 
 /** The usage-limit messages the provider APIs themselves return, in a runtime's error output. */
@@ -135,13 +142,38 @@ export function accountHomeEnvironment(kind: string | null | undefined, home: st
   return kind === 'cursor' && home ? { XDG_CONFIG_HOME: home } : {};
 }
 
+const jsonRows = (output: string): any[] => output.split('\n').flatMap(line => { if (!/^\s*\{/.test(line)) return []; try { return [JSON.parse(line)]; } catch { return []; } });
+const named = (value: unknown) => typeof value === 'string' && value.trim() ? value.trim() : null;
+/** Claude Code: stream-json's `init` names the model; json's `result` counts tokens by model, the main one using the most. */
+function claudeModel(output: string) {
+  for (const row of jsonRows(output)) {
+    if (row?.type === 'system' && row.subtype === 'init' && named(row.model)) return named(row.model);
+    if (row?.type === 'result' && row.modelUsage && typeof row.modelUsage === 'object') {
+      const used = (entry: any) => Number(entry?.outputTokens) || 0;
+      const top = Object.entries<any>(row.modelUsage).sort((a, b) => used(b[1]) - used(a[1]))[0];
+      if (top) return top[0];
+    }
+  }
+  return null;
+}
+/** Codex: its run header's `model: gpt-5.1-codex` line, or a JSON record naming `model`. */
+const codexModel = (output: string) => /^model: *(\S+)\s*$/m.exec(output)?.[1] ?? jsonRows(output).map(row => named(row?.model) ?? named(row?.payload?.model) ?? named(row?.msg?.model)).find(Boolean) ?? null;
+/** OpenCode: the run banner `> build · glm-5.3`, agent then model. */
+const opencodeModel = (output: string) => /^[\s>@]*[\w-]+ · (\S+)\s*$/m.exec(output)?.[1] ?? null;
+/** Pi: each assistant `message_end` names its model; the last one counts. */
+const piModel = (output: string) => jsonRows(output).filter(row => row?.type === 'message_end' && row.message?.role === 'assistant').map(row => named(row.message.model)).filter(Boolean).at(-1) ?? null;
+/** The model `kind`'s run reported on `output`, or null when the runtime has no reader or the output names none. */
+export const reportedModel = (kind: string | null | undefined, output: string) => runtimeAdapter(kind)?.model?.(output) ?? null;
+
 // Per-runtime startup contracts that remove the approval and workspace-trust prompts a freshly
 // launched session blocks on. These are runtime CLI contracts, not Graphyard authority: a session
 // that never asks can still only act inside its own assigned worktree and its own credentials.
 const builtInAdapters = {
   claude: {
+    modelFlag: '--model',
     // `--output-format json`: the run ends with one `result` object carrying its reply and the tokens it used by model (GY-3289).
     headless: { before: [], flags: ['-p', '--output-format', 'json'] },
+    continue: session => ['--resume', session],
     recipe: { args: ['--permission-mode', 'bypassPermissions'], environment: {}, equivalents: ['--dangerously-skip-permissions'], trust: trustClaudeFolder, verify: verifyClaudeTrust, prompts: 'tool-approval prompts on first use of each command class, and the folder-trust dialog in a folder it has not been trusted in',
       tradeoff: 'Claude Code stops classifying commands for this session and trusts its working directory without asking wherever that loads none of the repository\'s own Claude settings; everything the agent proposes runs without asking.' },
     request: reference => reference,
@@ -153,10 +185,13 @@ const builtInAdapters = {
     home: { variable: 'CLAUDE_CONFIG_DIR', default: home => resolve(home, '.claude') },
     usage: (environment, probe, { now }) => claudeAccount(environment, probe, now),
     identity: { file: '.claude.json', ids: login => [login?.oauthAccount?.accountUuid, login?.oauthAccount?.organizationUuid] },
+    model: claudeModel,
   },
   codex: {
+    modelFlag: '--model',
     // `--json`: events on standard output, the last a `turn.completed` with the tokens the turn used (GY-3289).
     headless: { before: ['exec'], flags: ['--skip-git-repo-check', '--json'], drop: ['--ask-for-approval', '-a'] },
+    continue: session => ['resume', session],
     // No Codex flag skips its "Trust this folder?" dialog in a folder its config does not list, so
     // the folder is recorded trusted first (trustCodexFolder, GY-1306).
     recipe: { args: ['--ask-for-approval', 'never', '--sandbox', 'workspace-write'], environment: {}, equivalents: ['--dangerously-bypass-approvals-and-sandbox', '--yolo'], settable: ['--sandbox'], aliases: { '-a': '--ask-for-approval', '-s': '--sandbox' }, config: { flags: ['-c', '--config'], pins: { approval_policy: 'never' } }, trust: trustCodexFolder, verify: verifyCodexTrust, prompts: 'directory-trust and per-command approval prompts',
@@ -167,8 +202,10 @@ const builtInAdapters = {
     home: { variable: 'CODEX_HOME', default: home => resolve(home, '.codex') },
     usage: (environment, probe) => codexAccount(environment, probe),
     identity: { file: 'auth.json', ids: login => [login?.tokens?.account_id] },
+    model: codexModel,
   },
   cursor: {
+    modelFlag: '--model',
     headless: { program: 'cursor-agent', before: [], flags: ['-p', '--output-format', 'json'] },
     recipe: { program: 'agent', args: ['--force', '--trust'], environment: {}, prompts: "the 'Run Everything' approval and the fresh-worktree workspace-trust prompt",
       tradeoff: 'Cursor Agent (`agent`) runs every command it proposes in the assigned worktree and trusts that worktree without asking.' },
@@ -182,12 +219,15 @@ const builtInAdapters = {
     identity: { file: 'cli-config.json', ids: login => [login?.authInfo?.userId] },
   },
   opencode: {
+    modelFlag: '--model',
     // GY-3414: OpenCode 2.x hands every command to a background service on the host's loopback
     // unless `--standalone`, and that service answers with its own login — none — whatever the
     // account's XDG_DATA_HOME, so the run fell back to the free model and stopped at once. An
     // OpenCode without it rejects the flag, so it is passed only where `run --help` lists it (GY-3425).
     headless: { before: ['run'], flags: ['--format', 'json'], optional: ['--standalone'] },
-    recipe: { args: [], environment: { OPENCODE_PERMISSION: '{"edit":"allow","bash":"allow","webfetch":"allow"}' }, permits: { OPENCODE_PERMISSION: asksNothing }, prompts: 'edit, bash, and webfetch permission prompts',
+    continue: session => ['--session', session],
+    // GY-3592: the interactive launch needs it too, or the pane runs on the service's login and its free model.
+    recipe: { args: ['--standalone'], environment: { OPENCODE_PERMISSION: '{"edit":"allow","bash":"allow","webfetch":"allow"}' }, permits: { OPENCODE_PERMISSION: asksNothing }, prompts: 'edit, bash, and webfetch permission prompts',
       tradeoff: 'opencode edits files, runs shell commands, and fetches URLs without asking.' },
     request: reference => `--prompt ${reference}`,
     // OpenCode's own TUI never prints the capitalized word (GY-417): 1.18's start screen shows the
@@ -198,9 +238,11 @@ const builtInAdapters = {
     zonelessBeijingResets: true,
     home: { variable: 'XDG_DATA_HOME', default: home => process.env.XDG_DATA_HOME ?? resolve(home, '.local/share') },
     usage: (environment, probe, { plan, now }) => opencodeAccount(environment, probe, { id: plan, now }),
+    model: opencodeModel,
     sharedPlan: true,
   },
   pi: {
+    modelFlag: '--model',
     headless: { before: [], flags: ['-p'] },
     // Pi has no approval or trust prompt to suppress: every tool it has runs without asking.
     recipe: { args: [], environment: {}, prompts: 'none: pi has no approval or workspace-trust prompts',
@@ -210,6 +252,7 @@ const builtInAdapters = {
     // pi's 429 code 1310 names `2026-10-17 08:27:35` with no zone, in Beijing time (GY-3495).
     zonelessBeijingResets: true,
     usage: (environment, probe, { plan, now }) => opencodeAccount(environment, probe, { id: plan, now }),
+    model: piModel,
     sharedPlan: true,
   },
   gemini: {
@@ -255,6 +298,18 @@ export const runtimeKinds = Object.keys(builtInAdapters) as [RuntimeKind, ...Run
 export const environmentKinds = runtimeKinds.filter(kind => 'home' in builtInAdapters[kind]) as [EnvironmentKind, ...EnvironmentKind[]];
 
 const adapters = new Map<string, RuntimeAdapter>(Object.entries(builtInAdapters).map(([kind, adapter]) => [kind, { kind, ...adapter } as RuntimeAdapter]));
+/**
+ * GY-3687: the one place a launch names its model. Every launch of a registry account — worker
+ * start and continue, code and product review, producer, master and smoke — carries the account's
+ * registered model id on the runtime's model flag, and any model a contract or role policy named
+ * (an alias such as 'opus') is dropped, so a login's own default never decides what runs.
+ */
+export function withModel(kind: string, args: readonly string[], contract: { modelFlag?: string | null } | null | undefined, modelId: string | null | undefined): string[] {
+  const flag = contract?.modelFlag ?? runtimeAdapter(kind)?.modelFlag;
+  if (!flag) return [...args];
+  const kept = args.filter((arg, index) => arg !== flag && !arg.startsWith(`${flag}=`) && args[index - 1] !== flag);
+  return modelId ? [...kept, flag, modelId] : kept;
+}
 /** The adapter for `kind`, or undefined for a kind Graphyard knows nothing of. */
 /** The remedy for a session stuck on its runtime's first-run screen, or null when the screen is not one. */
 export const runtimeAdapter = (kind: string | null | undefined): RuntimeAdapter | undefined => kind ? adapters.get(kind) : undefined;

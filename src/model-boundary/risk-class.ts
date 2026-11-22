@@ -1,6 +1,6 @@
 import { type RepositoryPolicy, type CompiledRule, compiledRules, compiledExclusion } from '../model/repository-policy.js';
 import { repositoryPolicy } from './repository-policy.js';
-import { compiled, type DeltaFile, type RiskVerdict, deltaPaths, unknownChangeReason, sensitiveReason, type DeltaSource, riskDelta, type RiskClass } from '../model/risk-class.js';
+import { compiled, type DeltaFile, type RiskVerdict, deltaPaths, unknownChangeReason, sensitiveReason, checkIntegrityReasons, type DeltaSource, riskDelta, type RiskClass } from '../model/risk-class.js';
 import type { Work } from '../model/work.js';
 /** Every rule that makes a path sensitive under `policy` (the one in force by default), with the name a reason cites. */
 export function riskRules(policy: RepositoryPolicy = repositoryPolicy()): readonly CompiledRule[] {
@@ -26,7 +26,8 @@ export function classifyRisk(files: readonly DeltaFile[], policy: RepositoryPoli
   const paths = deltaPaths(files);
   if (!paths.length) return { risk: 'sensitive', reasons: [unknownChangeReason] };
   const excluded = exclusionOf(policy);
-  const reasons = paths.filter(path => !excluded?.test(path)).flatMap(path => riskRules(policy).filter(({ pattern }) => pattern.test(path)).map(({ rule }) => sensitiveReason(path, rule)));
+  const policyReasons = paths.filter(path => !excluded?.test(path)).flatMap(path => riskRules(policy).filter(({ pattern }) => pattern.test(path)).map(({ rule }) => sensitiveReason(path, rule)));
+  const reasons = [...new Set([...policyReasons, ...checkIntegrityReasons(files)])];
   return reasons.length ? { risk: 'sensitive', reasons } : { risk: 'normal', reasons: [] };
 }
 

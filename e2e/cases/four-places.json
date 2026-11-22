@@ -1,0 +1,11 @@
+{
+  "id": "four-places",
+  "title": "Four places (Home, Work, Lead, Settings), the Mainworks top bar, old route redirects, bottom tab bar at 390 px, and Caretaker pill",
+  "description": "Opens each of the four places (Home, Work, Lead, Settings) at 1280 and 390 px, asserts one top bar with the product mark and name, exactly four navigation links with the current one marked, Pause team, bottom tab bar at 390 px with no horizontal scroll, three old hash routes redirecting to their new place, and the Caretaker pill showing 0 faults when clean and 1 fault in amber that opens the fault when seeded.",
+  "tags": ["dashboard"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "four places, top bar, mobile tab bar, old routes, and Caretaker pill", "run": "npm run test:browser -- browser-tests/four-places.spec.ts", "timeoutSeconds": 420 }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "id": "gate-probe-file-timeout",
+  "title": "A batch gate whose probe hits a hanging test file still settles",
+  "description": "Runs the real gate over ports whose clock the case controls and a real test file that never finishes: the verified-commit probe stops that file at the merge trial's five-minute per-file timeout, counts it as failed there, and the gate keeps the batch with the check as a known red instead of timing out (GY-3620).",
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "a hanging probe file stops at the per-file timeout and the gate settles",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:gate-probe-file-timeout tests/gate-probe-file-timeout.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}

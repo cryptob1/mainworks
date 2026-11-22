@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { rm, writeFile } from 'node:fs/promises';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withDatabase } from './helpers/postgres.js';
@@ -21,6 +21,9 @@ import type { HeadlessExec } from '../src/headless-session.js';
 
 // GY-3580: product reviews whose heads declare the same serve URL take turns on it; an address
 // another application holds still fails the launch with the existing message.
+// GY-3652: setupMaster refuses a managed worktree root on a tmpfs, and a remote shard's /tmp and HOME
+// are both tmpfs (its /var/tmp is read-only), so this file names a local-only word and the trial keeps
+// it on this machine, where the suite's tmpdir is on disk.
 
 const coordinator: Principal = { id: 'graphyard-master', role: 'coordinator' };
 const coordinatorToken = `${coordinator.id}-token-${'x'.repeat(32)}`;
@@ -128,4 +131,9 @@ test('a serve URL another application holds still fails the launch with the exis
     await assert.rejects(launchReview(root, work, 'product-claude', [], now(), { run, headless: async () => '', product: true }),
       /already answers before the serve command starts; another application holds it/);
   } finally { await new Promise<void>(resolve => other.close(() => resolve())); }
+});
+
+test('unit:product-reviews-share-serve-address-pinned — this file never goes to a remote shard, whose tmpfs refuses the review checkouts', async () => {
+  const { remoteableTestFile } = await import('../src/merge-writer/remote-shards.js');
+  assert.equal(remoteableTestFile(await readFile(new URL(import.meta.url), 'utf8')), false);
 });

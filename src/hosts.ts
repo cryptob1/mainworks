@@ -1,7 +1,7 @@
 // Concern: GY-3407 — the hosts Graphyard watches; merge trials send them test shards (GY-3412). A host lends
 // compute and nothing else: `graphyard host prepare` prints a one-time sudo script that creates the
 // unprivileged gy-compute user (not in the docker group) with linger and rootless Docker, and lets this
-// machine's key run only graphyard-host-shim (restrict,command=…: no shell, pty or forwarding). The shim
+// machine's key run only graphyard-host-shim-DIGEST (restrict,command=…: no shell, pty or forwarding). The shim
 // answers fixed verbs (src/host-shim.ts). `graphyard host add USER@HOST` refuses a key
 // that opens a plain shell, root and a docker-group user, then records the host in this machine's hosts
 // file — the one host list. Each loop cycle probes every host — cores, hottest CPU sensor, steal and the
@@ -16,13 +16,13 @@ import { defaultChildRun, type ChildRun } from './child-runner.js';
 import { configHome } from './install/secrets.js';
 import { cpuSensorNames } from './merge-writer/trial-load.js';
 import { cpuStatTotals, stealPercent } from './daemon/cpu-pressure.js';
-import { hostProbeScript, hostShimScript, missingTrialVerbs } from './host-shim.js';
+import { hostProbeScript, hostShimDigest, hostShimScript, missingTrialVerbs } from './host-shim.js';
 import { trialAppArmorProfilePath, trialAppArmorProfileText } from './merge-writer/trial-apparmor.js';
 import { shellQuote } from './install/transport.js';
 
 export interface HostRecord { target: string; addedAt: string }
 /** GY-3517: `at` is when this probe read the host; `update` marks one away only because its shim lacks a trial verb. */
-export interface HostReading { host: string; local?: boolean; at?: string; away: boolean; update?: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; stat?: { total: number; steal: number } | null }
+export interface HostReading { host: string; local?: boolean; at?: string; away: boolean; /** GY-3601: when an away host stopped answering. */ since?: string; update?: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; stat?: { total: number; steal: number } | null }
 
 /** Machine-wide, beside the machine-share link (team-access.ts): every install's loop on this machine reads the same hosts. */
 export const hostsFile = (home = configHome()) => join(home, 'machine', 'hosts.json');
@@ -38,8 +38,14 @@ export async function readHosts(file = hostsFile()): Promise<HostRecord[]> {
 }
 const writeHosts = async (file: string, hosts: HostRecord[]) => { await mkdir(dirname(file), { recursive: true }); await writeFile(file, JSON.stringify(hosts, null, 2) + '\n'); };
 
-/** The one-time script `host prepare` prints, for the host's owner to run with sudo. */
-export function hostPrepareScript(publicKey: string) {
+/**
+ * The one-time script `host prepare` prints, for the host's owner to run with sudo. GY-3688: one host
+ * serves several installs, so the helper is named by its digest, this machine's key is appended beside
+ * the others bound to that helper, and helpers no key names are removed.
+ */
+export function hostPrepareScript(publicKey: string, shim = { script: hostShimScript, digest: hostShimDigest }) {
+  const helper = `graphyard-host-shim-${shim.digest}`;
+  const [type, body] = publicKey.trim().split(/\s+/);
   return `#!/bin/sh
 # Run once on the host with: sudo sh prepare.sh
 # Creates ${hostUser}: no sudo, not in the docker group, its own rootless Docker. This machine's key
@@ -56,13 +62,25 @@ loginctl enable-linger "$user"
 if [ "$(cat /sys/module/apparmor/parameters/enabled 2>/dev/null)" = Y ]; then
   printf %s ${shellQuote(trialAppArmorProfileText)} > ${trialAppArmorProfilePath} && apparmor_parser -r -W ${trialAppArmorProfilePath}
 fi
-cat > /usr/local/bin/graphyard-host-shim <<'GRAPHYARD_SHIM'
-${hostShimScript}GRAPHYARD_SHIM
-chmod 755 /usr/local/bin/graphyard-host-shim
+cat > /usr/local/bin/${helper} <<'GRAPHYARD_SHIM'
+${shim.script}GRAPHYARD_SHIM
+chmod 755 /usr/local/bin/${helper}
 home=$(getent passwd "$user" | cut -d: -f6)
 install -d -m 700 -o "$user" -g "$user" "$home/.ssh"
-echo 'restrict,command="graphyard-host-shim" ${publicKey.trim()}' > "$home/.ssh/authorized_keys"
-chown "$user:$user" "$home/.ssh/authorized_keys"; chmod 600 "$home/.ssh/authorized_keys"
+# This machine's key, bound to its own helper, beside other installs' keys: only its own older line is replaced.
+keys="$home/.ssh/authorized_keys"
+line=${shellQuote(`restrict,command="${helper}" ${publicKey.trim()}`)}
+touch "$keys"
+if ! grep -qxF "$line" "$keys"; then
+  { grep -vF ${shellQuote(` ${type} ${body}`)} "$keys" || true; echo "$line"; } > "$keys.new"
+  mv "$keys.new" "$keys"
+fi
+chown "$user:$user" "$keys"; chmod 600 "$keys"
+# Helpers no key names are left from older releases: remove them.
+for helper in /usr/local/bin/graphyard-host-shim*; do
+  [ -e "$helper" ] || continue
+  grep -qF "command=\\"\${helper##*/}\\"" "$keys" || rm -f "$helper"
+done
 uid=$(id -u "$user")
 # Rootless Docker for $user (GY-3419): the host's own extras when both tools are installed, else the
 # static rootless extras for the host's reported Docker version plus a static slirp4netns fetched
@@ -99,6 +117,9 @@ install -d "$home/.graphyard"
 chown -R "$user:$user" "$home/.graphyard"
 for _ in 1 2 3 4 5 6 7 8 9 10; do [ -S "/run/user/$uid/bus" ] && break; sleep 1; done
 sudo -u "$user" XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" PATH="$(dirname "$setuptool"):$PATH" "$setuptool" install
+# A check that declares Compose services runs whole on this host, so its rootless Docker needs the Compose plugin.
+if sudo -u "$user" docker compose version >/dev/null 2>&1; then echo "Docker Compose plugin: found. Checks that declare Compose services can run here."
+else echo "Docker Compose plugin: missing. This host's rootless Docker needs it to run checks that declare Compose services; install docker-compose-plugin and they run here. Test shards work without it."; fi
 # Tailscale SSH on port 22 ignores authorized_keys, so the shim: give $user its own OpenSSH on port ${computePort}.
 if tailscale debug prefs 2>/dev/null | grep -q '"RunSSH": *true'; then
   sshd=$(command -v sshd) || { echo "Install the OpenSSH server (sshd), then run this again." >&2; exit 1; }
@@ -116,7 +137,6 @@ AllowStreamLocalForwarding no
 X11Forwarding no
 PermitTunnel no
 PermitTTY no
-ForceCommand /usr/local/bin/graphyard-host-shim
 PidFile /run/graphyard-sshd.pid
 GRAPHYARD_SSHD
   "$sshd" -t -f /etc/ssh/sshd_graphyard_config
@@ -132,6 +152,8 @@ WantedBy=multi-user.target
 GRAPHYARD_UNIT
   systemctl daemon-reload
   systemctl enable --now graphyard-sshd
+  # An older prepare's config forced one helper for every key: restart so this config is the one serving.
+  systemctl restart graphyard-sshd
   if command -v ufw >/dev/null && ufw status | grep -q 'Status: active'; then ufw allow in on tailscale0 to any port ${computePort} proto tcp; fi
   target="$target:${computePort}"
   echo "Port 22 here is Tailscale SSH, which skips the shim. Tailnet check: in your tailnet policy, every ssh rule reaching this machine needs action check, never accept, so no account here logs in unattended. Graphyard reaches $user on port ${computePort}."
@@ -155,7 +177,7 @@ export function parseHostProbe(text: string) {
   const temps = [...text.matchAll(/^temp (\S+) (\d+)$/gm)].filter(match => cpuSensorNames.includes(match[1]!)).map(match => Math.floor(Number(match[2]) / 1000));
   const user = /^user (\d+) ?(.*)$/m.exec(text);
   const verbs = /^verbs (.*)$/m.exec(text)?.[1]?.split(' ').filter(Boolean) ?? null;
-  return { shim: /^shim ([0-9a-f]{64})$/m.exec(text)?.[1] ?? null, verbs, cores: number(/^cores (\d+)$/m), load: number(/^load ([\d.]+)$/m), runs: number(/^runs\s+(\d+)$/m), celsius: temps.length ? Math.max(...temps) : null, stat: cpuStatTotals(text),
+  return { shim: /^shim ([0-9a-f]{64})$/m.exec(text)?.[1] ?? null, verbs, compose: /^compose \S/m.test(text), cores: number(/^cores (\d+)$/m), load: number(/^load ([\d.]+)$/m), runs: number(/^runs\s+(\d+)$/m), celsius: temps.length ? Math.max(...temps) : null, stat: cpuStatTotals(text),
     uid: user ? Number(user[1]) : null, groups: user ? user[2]!.split(/\s+/).filter(Boolean) : [] };
 }
 
@@ -232,8 +254,9 @@ export async function readHostReadings(previous: HostReading[], options: { file?
   return Promise.all(targets.map(async target => {
     const host = target ?? options.local ?? hostname();
     const probe = await probeHost(target, options.run), at = new Date().toISOString();
-    if (!probe.ok) return { host, ...(target ? {} : { local: true }), at, away: true, ...('update' in probe ? { update: true } : {}), reason: probe.reason, cores: null, celsius: null, steal: null, runs: null, stat: null };
-    const before = previous.find(reading => reading.host === host)?.stat ?? null;
+    const was = previous.find(reading => reading.host === host);
+    if (!probe.ok) return { host, ...(target ? {} : { local: true }), at, away: true, since: was?.away ? was.since ?? was.at ?? at : at, ...('update' in probe ? { update: true } : {}), reason: probe.reason, cores: null, celsius: null, steal: null, runs: null, stat: null };
+    const before = was?.stat ?? null;
     return { host, ...(target ? {} : { local: true }), at, away: false, cores: probe.cores, celsius: probe.celsius, steal: stealPercent(before, probe.stat), runs: probe.runs, stat: probe.stat };
   }));
 }

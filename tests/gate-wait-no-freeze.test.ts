@@ -20,7 +20,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // GY-3518: one batch gate waiting for a host heavy-job slot paused every new implementation launch,
 // so the items that would have cleared the jam could not start either. A gate that only waits for
 // its slot now pauses nothing: free workers launch ready items, and the gate takes the next slot
-// that frees. Once its check runs, launches pause as before (GY-3444).
+// that frees. GY-3462: a running check pauses no launch either; only saturation and capacity do.
 
 const repository = 'owner/project';
 const start = Date.parse('2030-06-01T00:00:00Z');

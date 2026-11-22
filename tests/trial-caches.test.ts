@@ -121,9 +121,9 @@ test('integration:test-result-cache — a file that passed in a trial is skipped
   const gate = await mergeAndTrial(fixture, run, { 'src/unrelated.ts': 'export {};\n' });
   assert.deepEqual(gate.ran, ['tests/c.test.ts'], gate.verdict.logTail);
 
-  // A change whose effect imports cannot trace (docs, data) runs every selected file.
+  // GY-3639: a doc no test reads changes no key, so only the failing file runs.
   const docs = await mergeAndTrial(fixture, run, { 'README.md': 'changed\n' });
-  assert.deepEqual(docs.ran, ['tests/a.test.ts', 'tests/b.test.ts', 'tests/c.test.ts', 'tests/d.test.ts']);
+  assert.deepEqual(docs.ran, ['tests/c.test.ts'], docs.verdict.logTail);
 
   // A new dependency key (lockfile) runs everything again.
   const lock = await mergeAndTrial(fixture, run, { 'package-lock.json': '{"lockfileVersion":3,"v":3}\n', 'src/x.ts': 'export {};\n' });
@@ -132,6 +132,20 @@ test('integration:test-result-cache — a file that passed in a trial is skipped
   // Only the trial records passes: no worker-session path (verify, complete, worker verification) writes the cache.
   const writers = execFileSync('git', ['grep', '-l', 'recordPasses(', '--', 'src'], { cwd: join(import.meta.dirname, '..'), encoding: 'utf8' }).split('\n').filter(Boolean).sort();
   assert.deepEqual(writers, ['src/merge-writer/trial-caches.ts', 'src/merge-writer/trial.ts']);
+});
+
+test('integration:cached-trial-with-a-doc-edit — a second trial of a head that adds a doc line and changes one module runs only the tests that depend on that module, and its result counts the files served from the cache and the files run', { timeout: 120_000 }, async () => {
+  const fixture = await repository(), { run } = runner();
+  write(fixture.root, { 'tests/c.test.ts': '// passes now\n', 'README.md': 'readme\n' });
+  git(fixture.root, 'add', '-A'); git(fixture.root, 'commit', '-qm', 'c passes');
+  const first = await mergeAndTrial(fixture, run, { 'src/unrelated.ts': 'export {};\n' });
+  assert.deepEqual(first.ran, ['tests/a.test.ts', 'tests/b.test.ts', 'tests/c.test.ts']);
+  assert.deepEqual(first.verdict.testCache, { cached: 0, ran: 3 });
+
+  const second = await mergeAndTrial(fixture, run, { 'README.md': 'readme\none more line\n', 'src/a.ts': 'export const a = 2;\n' });
+  assert.deepEqual(second.ran, ['tests/a.test.ts'], second.verdict.logTail);
+  assert.deepEqual(second.verdict.tests, { passed: 3, failed: [], files: 3 });
+  assert.deepEqual(second.verdict.testCache, { cached: 2, ran: 1 });
 });
 
 test('e2e:cpu-per-merged-item — after two merges whose second changes one source file, the second trial skips the unaffected cached tests and installs nothing, and master status shows CPU-seconds per merged item with the target', { timeout: 120_000 }, async () => {

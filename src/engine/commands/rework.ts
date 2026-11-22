@@ -9,8 +9,11 @@ export async function run(c: Ctx) {
   if (actor.role !== 'operator-agent') admin(actor);
   demand(!work.observation?.merged, 'Merged work requires a follow-up task');
   work.reworkRequested = true;
-  // The round's brief: the next worker's request carries this reason (master/rework-brief.ts).
-  work.lastRework = { reason: data.reason, binding: data.binding ?? null, at: now.toISOString() };
+  // The round's brief: the next worker's request carries this reason and the attempt ledger (master/rework-brief.ts).
+  const at = now.toISOString();
+  const binding = data.binding ?? null;
+  work.lastRework = { reason: data.reason, binding, at };
+  work.reworkHistory = [...(work.reworkHistory ?? []), { attempt: work.submission?.epoch ?? work.epoch, reason: data.reason, binding, at }];
   // Reassignment discards whatever assignment still stood: its end is recorded here, the
   // last moment it is visible, and the item is claimable again.
   preserveAssignment(work);

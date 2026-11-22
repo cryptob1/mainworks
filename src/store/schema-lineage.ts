@@ -65,6 +65,10 @@ export const schemaGenerations: readonly (string | null)[] = [
   'sha256:7afddc723107a3fa442bc324ec8900b253ee732711d8be84b6751100987fb881',
   // GY-3539: the work index's resources are the declared exclusive resources only; planned files are advisory.
   'sha256:81ef8c55e2436e897df225a3bac46964aab8b0b25838e020b870abc4b96bb34d',
+  // GY-3593: the caretaker identity the loop mints.
+  'sha256:547e64f90d1c902e7774b34320e359616bf0e72c91e536b7e2807131c58ad5c3',
+  // GY-3671: each person's last look at Home (home_visits).
+  'sha256:4e8e9cd523874b3e522c8c2142b9cca07e18b3a6ec672c53c94e8036567ed8e3',
 ];
 /** The schema generation the code in this process expects: its table definitions' place in the lineage. */
 export const schemaVersion = schemaGenerations.length - 1;

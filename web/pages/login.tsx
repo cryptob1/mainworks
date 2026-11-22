@@ -1,3 +1,4 @@
+import { COMMAND_NAME, PRODUCT_NAME } from '../../src/model/product';
 import { useEffect, useState } from 'react';
 import type { Dashboard } from './dashboard';
 
@@ -18,12 +19,12 @@ const visuallyHidden = { position: 'absolute', width: 1, height: 1, overflow: 'h
 export function offerToSavePassword(token: string, scope: { PasswordCredential?: new (data: { id: string; password: string; name?: string }) => unknown; navigator?: { credentials?: { store?(credential: unknown): Promise<unknown> } } } = globalThis as never) {
   const Credential = scope.PasswordCredential, store = scope.navigator?.credentials?.store;
   if (!Credential || !store) return false;
-  void store.call(scope.navigator!.credentials, new Credential({ id: LOGIN_USERNAME, password: token, name: 'Graphyard control plane' })).catch(() => {});
+  void store.call(scope.navigator!.credentials, new Credential({ id: LOGIN_USERNAME, password: token, name: `${PRODUCT_NAME} control plane` })).catch(() => {});
   return true;
 }
 export const HELPER_TEXT = 'Tokens are scoped to your role and kept for this browser session.';
 /** The one command that signs the human operator in without a token (GY-738, GY-2171). */
-export const SIGN_IN_COMMAND = 'graphyard open';
+export const SIGN_IN_COMMAND = `${COMMAND_NAME} open`;
 /** Where a session a sign-in link opens is kept: it lasts until 90 days unused, so it outlives the browser session a typed token keeps to (GY-2171). */
 export const HUMAN_SESSION_KEY = 'graphyard-token';
 /** The token this browser holds: a typed one for this browser session, else a sign-in link's human session. */
@@ -34,7 +35,7 @@ export const SIGN_IN_NEEDED = 'Sign in to do that.';
 export const wantsSignIn = () => new URLSearchParams(location.search).has('sign-in') || !!signInCode(location.hash) || !!claimFromHash(location.hash);
 /** The operator's line: run the command (a click copies it) on the Graphyard host. */
 function SignInCommand() {
-  return <p className="login-help">Operator? Run <code className="login-command" title="Click to copy" onClick={() => void navigator.clipboard?.writeText(SIGN_IN_COMMAND).catch(() => {})}>{SIGN_IN_COMMAND}</code> on the Graphyard host, or graphyard login to print a link to open elsewhere.</p>;
+  return <p className="login-help">Operator? Run <code className="login-command" title="Click to copy" onClick={() => void navigator.clipboard?.writeText(SIGN_IN_COMMAND).catch(() => {})}>{SIGN_IN_COMMAND}</code> on the {PRODUCT_NAME} host, or {COMMAND_NAME} login to print a link to open elsewhere.</p>;
 }
 export const LINK_REFUSED_NOTICE = 'That sign-in link has expired or was already used. Ask for a new one.';
 
@@ -111,7 +112,7 @@ export interface LoginViewProps {
 export function LoginView({ state, error, draftToken, setDraftToken, submit, retry, useAnotherToken }: LoginViewProps) {
   const escape = <button type="button" className="text-button login-escape" onClick={useAnotherToken}>Use another token</button>;
   return <main className="login">
-    <div className="brand"><img className="mark" src="/graphyard-symbol.svg" alt="" width="32" height="32"/> graphyard</div>
+    <div className="brand"><img className="mark" src="/favicon.svg" alt="" width="32" height="32"/> {PRODUCT_NAME}</div>
     <h1>Keep the work<br/>moving forward.</h1>
     <p className="login-tagline">One place for ownership, evidence, and delivery.</p>
     {state.kind === 'form' && <form className="login-form" method="post" onSubmit={e => { e.preventDefault(); submit(); }}>
@@ -119,7 +120,7 @@ export function LoginView({ state, error, draftToken, setDraftToken, submit, ret
       {/* A password manager saves a login as a username/password pair: the fixed, visually hidden username lets
           1Password and the browser offer to save the token and fill it next time. */}
       <input type="text" name="username" autoComplete="username" value={LOGIN_USERNAME} readOnly tabIndex={-1} aria-hidden="true" style={visuallyHidden}/>
-      <label>Access token<input type="password" name="password" required autoFocus value={draftToken} onChange={e => setDraftToken(e.target.value)} autoComplete="current-password" placeholder="Your Graphyard token"/></label>
+      <label>Access token<input type="password" name="password" required autoFocus value={draftToken} onChange={e => setDraftToken(e.target.value)} autoComplete="current-password" placeholder={`Your ${PRODUCT_NAME} token`}/></label>
       <button type="submit">Open control plane ↗</button>
       <SignInCommand/>
     </form>}

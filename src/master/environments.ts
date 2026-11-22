@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '../model/product.js';
 import { registryToolsArgs } from '../registry-tools.js';
 export { registryToolsArgs } from '../registry-tools.js';
 // Concern: agent environments and accounts — discovery, health, quota, selection and the launch plan.
@@ -23,7 +24,7 @@ import { getCachedPlanUsage, setCachedPlanUsage } from '../provider-usage.js';
 export { describeObservedExhaustion, providerIdentity } from './account-identity.js';
 // The per-provider login and quota probes live in ./environment-quota.ts, reached through each runtime's adapter.
 import type { PlanReading } from './environment-quota.js';
-import { accountHomeEnvironment, runtimeAdapter, type AccountReading } from './runtimes.js';
+import { accountHomeEnvironment, runtimeAdapter, withModel, type AccountReading } from './runtimes.js';
 
 /** Where agent environments live: one directory per account, named <agent>-<letter>. */
 export function agentEnvironmentRoot(input?: string) {
@@ -341,8 +342,7 @@ export function registryLaunchArgs(account: FleetLaunchAccount, headless = false
   const { contract, policy, modelId } = account.fleet, args = [...(headless && contract.headlessArgs ? [] : contract.args), ...(policy?.args ?? [])];
   // OpenCode's interactive TUI refuses --model (only `run` takes it), so its model rides in
   // OPENCODE_CONFIG_CONTENT instead (GY-3118), whatever flag a stored runtime still names.
-  const model = contract.kind !== 'opencode' && contract.modelFlag && modelId && !args.includes(contract.modelFlag) ? [contract.modelFlag, modelId] : [];
-  return [...args, ...model, ...registryToolsArgs(account)];
+  return [...withModel(contract.kind, args, contract, contract.kind === 'opencode' ? null : modelId), ...registryToolsArgs(account)];
 }
 
 /**
@@ -381,7 +381,7 @@ export function accountLaunch(profile: { kind?: string; approvals: 'auto' | 'pro
     // A runtime that names no home variable falls back to its kind's known one, and an account
     // whose home still cannot be applied is refused rather than started on the default login (GY-180).
     const variable = contract?.homeVariable ?? (Object.hasOwn(environmentVariable, account.kind) ? environmentVariable[account.kind as EnvironmentKind] : null);
-    if (!variable && account.home) throw new LaunchRefusedError(account.kind, `Graphyard refuses to launch account ${account.name}: its home ${account.home} cannot be applied because ${contract && 'fleet' in account ? `runtime ${account.fleet.runtime}` : 'its environment'} names no login-home variable and the ${account.kind} kind has none known, so the session would run on the default login instead of ${account.name}. Set the runtime's home variable with master registry runtime set NAME --home-variable VAR.`);
+    if (!variable && account.home) throw new LaunchRefusedError(account.kind, `${PRODUCT_NAME} refuses to launch account ${account.name}: its home ${account.home} cannot be applied because ${contract && 'fleet' in account ? `runtime ${account.fleet.runtime}` : 'its environment'} names no login-home variable and the ${account.kind} kind has none known, so the session would run on the default login instead of ${account.name}. Set the runtime's home variable with master registry runtime set NAME --home-variable VAR.`);
     if (variable && account.home) environment[variable] = account.home;
     // GY-3329: cursor-agent reads its sign-in from `$XDG_CONFIG_HOME/cursor/auth.json`, never from
     // CURSOR_CONFIG_DIR, so the account's home is applied there too — per account, over any value

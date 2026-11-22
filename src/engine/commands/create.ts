@@ -12,7 +12,7 @@ export async function open(c: Omit<Ctx, 'work'> & { work?: Work }): Promise<Work
   if (actor.role === 'operator-agent') {
     authorizeOperatorCommand(actor, command, data, undefined, engine.repository);
   // GY-3215: an invited maintainer files work as themselves; a viewer does not. GY-3344: so does a reporter.
-  } else if (actor.team !== 'maintainer' && actor.role !== 'reporter') admin(actor);
+  } else if (actor.team !== 'maintainer' && actor.role !== 'reporter' && actor.role !== 'caretaker') admin(actor);
   demand(data.dependencies.every((dep: string) => all.some(w => w.id === dep)), 'Unknown dependency');
   demand(new Set(data.criteria.map((ac: { id: string }) => ac.id)).size === data.criteria.length, 'Criterion IDs must be unique');
   const criteria = data.criteria.length ? declareBootstrap(engine, actor, data, [], 1, now) : [];

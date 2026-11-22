@@ -8,7 +8,7 @@ import { defineCommands } from './registry.js';
 export const admissionAuditCommands = defineCommands([{
   name: 'audit-merge-admission',
   help: ['  audit-merge-admission [installs.json]  Read-only merge proof/review audit with coverage gaps',
-    '                                Defaults to this connection and installs named in the local Graphyard plugin config.',
+    '                                Defaults to this connection and installs named in the local Mainworks plugin config.',
     '                                Optional JSON array: {name,url,credentialFile}; use only your permitted agent credentials.',
     '                                Reports hwd GY-3/GY-4 explicitly. Missing history/access is an external blocker.',
     '                                After verified deployment, file remediation for unsafe merges and attach the report to',

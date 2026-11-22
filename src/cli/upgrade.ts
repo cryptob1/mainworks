@@ -555,6 +555,8 @@ export async function watchPorts(input: { cliRoot: string; repoRoot: string; rep
     // GY-3347: the compose stack this install's control plane runs as, brought back up when its
     // health fails and the pass has nothing to deploy.
     ...(install.provider === 'compose' ? { stoppedPlane: stoppedPlanePorts(url, join(directory, 'compose'), input.run) } : {}),
+    // GY-3676: one deploy at a time for this install, whichever checkout a watcher runs from.
+    lockFile: join(directory, 'deploy', 'deploy.lock'),
   };
 }
 
@@ -567,7 +569,7 @@ export const upgradeCommands = defineCommands([{
     '  upgrade [--to VERSION] [--plan]',
     '                                Back up the database, move the CLI checkout (then npm ci),',
     '                                redeploy the server, restart loop and executors, refresh the',
-    '                                generated files, and check /healthz, to Graphyard\'s main tip',
+    '                                generated files, and check /healthz, to Mainworks\' main tip',
     '                                (or the dated release VERSION);',
     '                                --plan prints the steps only; a failure names its step and rollback',
     '  upgrade --repair-identity     Restore a moved CLI release’s local commit stamp.',
@@ -577,8 +579,8 @@ export const upgradeCommands = defineCommands([{
     '                                to the previous tip on failure; the watch then restarts on the',
     '                                code it served; DIR is the install\'s own checkout.',
     '                                An install for another repository upgrades its own control plane',
-    '                                by itself: each pass (at least daily) checks the commit Graphyard\'s',
-    '                                batch gate verified, as refs/graphyard/verified on Graphyard\'s',
+    '                                by itself: each pass (at least daily) checks the commit Mainworks\'',
+    '                                batch gate verified, as refs/graphyard/verified on Mainworks\'',
     '                                canonical upstream — never an unverified main tip — and runs the',
     '                                upgrade steps to exactly that commit, keeping its state in',
     '                                .graphyard/control-plane.json (commit, last check, last update,',

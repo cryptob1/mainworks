@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from './product.js';
 import type { Work } from './work.js';
 import { fleetRoles, rolePolicy, roleRuntimeRefusal } from './registry.js';
 import { allowanceHold, exhaustionEvidence, foldObservation, utcClock } from './account-quota.js';
@@ -5,6 +6,7 @@ import type { AccountSmoke, AgentRegistry, FleetAccount, FleetModel, FleetRefusa
 import { accountProvider, busyDifferentProvider, sameProviderFallback, sharedProviderSkip, type ReviewDiversity } from './review-diversity.js';
 import { workerOrder, planSpreadOrder, fleetOrder, roleUnsupported } from './worker-preference.js';
 import { deriveAccountPlan, groupAccountsByPlan, type FleetPlanView } from './provider-usage.js';
+import { allowanceSentence } from './allowance.js';
 
 /**
  * Which sessions of the agent registry are live, which accounts may take another, the choice an
@@ -123,6 +125,7 @@ export function accountIneligibility(registry: AgentRegistry, account: FleetAcco
   if (account.quota.loggedIn === false) return `${account.name} is not logged in${account.quota.reason ? `: ${account.quota.reason}; checked again within 30 minutes` : ''}`;
   const pi = registry.runtimes.some(runtime => runtime.name === account.runtime && smokeTestedKinds.includes(runtime.launch.kind));
   if (account.smoke?.result === 'fail' && !(options.expiredSmokeRetestable && pi && smokeFailureDue(account, now))) return `${account.name} failed its smoke test${account.smoke.reason ? `: ${account.smoke.reason}` : ''}; it is tested again after ${smokeRetestMs / 60_000} minutes, or at once when the account is changed (master registry account set)`;
+  if (account.quota.state === 'broken' && account.quota.reason?.startsWith('ran on ')) return `${account.name} is broken: it ${account.quota.reason}; checked again within 30 minutes`;
   if (account.quota.state === 'broken') return `${account.name} is broken: its live request failed${account.quota.reason ? ` (${account.quota.reason})` : ''}; checked again within 30 minutes`;
   if (exhaustionEvidence(account.quota, now)) {
     // A limit-list window's sentence already names its window and reset: one plain sentence, nothing twice (GY-3497).
@@ -134,7 +137,7 @@ export function accountIneligibility(registry: AgentRegistry, account: FleetAcco
   // account's own limit — one home serves at most its maxSessions sessions across every install.
   const foreign = options.hostSessions ?? [], holders = [...new Set(foreign.map(session => session.install))];
   if (account.maxSessions !== null && running + foreign.length >= account.maxSessions)
-    return `${account.name} is at its session limit (${running + foreign.length} of ${account.maxSessions} live${foreign.length ? `, ${foreign.length} held by ${holders.length === 1 ? `the Graphyard install ${holders[0]}` : `the Graphyard installs ${holders.join(' and ')}`}` : ''})`;
+    return `${account.name} is at its session limit (${running + foreign.length} of ${account.maxSessions} live${foreign.length ? `, ${foreign.length} held by ${holders.length === 1 ? `the ${PRODUCT_NAME} install ${holders[0]}` : `the ${PRODUCT_NAME} installs ${holders.join(' and ')}`}` : ''})`;
   return null;
 }
 
@@ -207,6 +210,13 @@ export function foldObservations(registry: AgentRegistry, request: Pick<Selectio
 export function expiringWindow(account: FleetAccount, now: number) {
   return account.quota.usage.find(usage => usage.resetsAt && Date.parse(usage.resetsAt) > now && Date.parse(usage.resetsAt) - now <= 3_600_000 && usage.percent <= 70) ?? null;
 }
+/** The highest share any of an account's unreset usage windows shows (GY-3498); null with no reading. */
+function highestWindow(account: FleetAccount, now: number): number | null {
+  const usage = account.quota.usage.filter(window => !window.resetsAt || Date.parse(window.resetsAt) > now);
+  return usage.length ? Math.max(...usage.map(window => window.percent)) : null;
+}
+/** At this share of its highest window an eligible account trails the role's accounts with room left (GY-3498). */
+const nearAllowance = 80;
 /** A choice past the role's own accounts (GY-3092): the role, the fleet account that serves it, and why each of the role's own was passed over. */
 export interface RoleFailover { role: FleetRoleName; account: string; reason: string }
 export interface SessionChoice { account: FleetAccount; runtime: FleetRuntime; model: FleetModel; policy: RolePolicy; reason: string; skipped: SessionSkip[]; failover: RoleFailover | null }
@@ -252,7 +262,10 @@ export function chooseSession(registry: AgentRegistry, request: Pick<SelectionRe
   }; // the spread trails plans already holding a live session (GY-2943); a diverse reviewer's trial keeps GY-1496's order, which records its shared-provider passes itself; past the role's own accounts the fleet's fallback takes any account the preference leaves standing (GY-3092)
   // A role's own account whose window is about to reset with quota unused goes first, so that quota is spent before it is wasted (GY-3197).
   const expiring = new Map(order.flatMap(name => { const account = registry.accounts.find(entry => entry.name === name), window = account && expiringWindow(account, now); return window ? [[name, window] as const] : []; }));
-  const own = diverse ? order : planSpreadOrder(registry, order), trial = [...own.filter(name => expiring.has(name)), ...own.filter(name => !expiring.has(name))];
+  // Eligible accounts near their allowance trail those with room left, each group keeping the plan spread and the role's order (GY-3498).
+  const near = new Map(order.flatMap(name => { const account = registry.accounts.find(entry => entry.name === name), peak = account && highestWindow(account, now);
+    return account && peak != null && peak >= nearAllowance && !accountIneligibility(registry, account, now, request.host, { hostSessions: request.hostSessions?.filter(entry => entry.account === name) }) ? [[name, peak] as const] : []; }));
+  const spread = diverse ? order : planSpreadOrder(registry, order), own = [...spread.filter(name => !near.has(name)), ...spread.filter(name => near.has(name))], trial = [...own.filter(name => expiring.has(name)), ...own.filter(name => !expiring.has(name))];
   for (const [, name] of [...trial, ...fleetOrder(registry, role, request.prefer ?? null)].entries()) {
     const account = registry.accounts.find(entry => entry.name === name);
     // GY-3333: the live sessions other installs on this host hold on the account count toward its limit.
@@ -268,7 +281,8 @@ export function chooseSession(registry: AgentRegistry, request: Pick<SelectionRe
     }
     if (diverse && !differs) { const skip = sharedProviderSkip(name, diverse); skipped.push(skip); shared.add(skip); fallback ??= { account: account!, index: order.indexOf(name), skip }; continue; }
     const window = expiring.get(name), soon = window && order.indexOf(name) > 0 ? `; chosen first: its ${window.window} window resets at ${window.resetsAt} with ${100 - window.percent}% unused` : '';
-    return chosen(account!, order.indexOf(name), skipped, `${soon}${diverse ? ` on provider ${accountProvider(registry, account!)}, not the implementer's ${diverse.provider}` : ''}`);
+    const room = near.size && !near.has(name) ? `; chosen for room left: ${[...near].map(([other, peak]) => `${other} at ${peak}%`).join(', ')} of its allowance trail${near.size === 1 ? 's' : ''}` : '';
+    return chosen(account!, order.indexOf(name), skipped, `${soon}${room}${diverse ? ` on provider ${accountProvider(registry, account!)}, not the implementer's ${diverse.provider}` : ''}`);
   }
   if (diverse && busy.length) return { account: null, skipped, reason: busyDifferentProvider(role.name, diverse, busy) };
   for (const list of [skipped, others, busy]) list.sort((first, second) => { const a = order.indexOf(first.account), b = order.indexOf(second.account); return (a < 0 ? 1 : 0) - (b < 0 ? 1 : 0) || a - b; }); // the skips read in the role's own preference order, whatever the plan spread made of the trial, a fleet account that served no role trailing (GY-2943, GY-3092)
@@ -290,6 +304,8 @@ export interface FleetAccountView {
   checkedLive?: string | null;
   /** Why it is held or broken, in the provider's own words from that request (or the operator's mark); null when available. */
   reason?: string | null;
+  /** What is left in one plain sentence (GY-3499): `about 24% of this week left, back Sun 22 Nov 05:00`, or `allowance not reported`. */
+  allowance?: string;
   /** Why an unknown account shows no usage, in the probe's words: `this key reports no allowance` (GY-3495). */
   usageNote?: string | null;
   /** GY-3497: the extra-usage line the provider's answer gave when spend is enabled (`extra usage on: $3.21 of $10.00 used`); shown, never changed. */
@@ -339,6 +355,7 @@ export function fleetView(registry: AgentRegistry, now: number, host: string | n
       roles: registry.roles.filter(role => role.accounts.includes(account.name)).map(role => ({ role: role.name, preference: role.accounts.indexOf(account.name) + 1, of: role.accounts.length })),
       liveSessions: live.filter(session => session.account === account.name).map(session => ({ id: session.id, role: session.role, work: session.work, host: session.host, since: session.selectedAt })),
       quota: evidence ? 'exhausted' : account.quota.state === 'exhausted' ? 'unknown' : account.quota.state, evidence, loggedIn: account.quota.loggedIn, usage: account.quota.usage.map(({ readAt, ...usage }) => readAt ? { ...usage, lastRead: `last read ${utcClock(readAt)}` } : usage), resetsAt: account.quota.resetsAt, observedAt: account.quota.observedAt, checkedLive: account.quota.since ?? null, reason: account.quota.state === 'available' ? null : account.quota.reason, quotaSource: account.quota.source, resetUnknown: account.quota.session === 'guessed',
+      allowance: allowanceSentence(account.quota.usage, now),
       usageNote: !evidence && account.quota.state !== 'available' && !account.quota.usage.length ? account.quota.reason : null,
       spend: account.quota.spend ?? null,
       eligible: !ineligible, ineligible, smoke: account.smoke ?? null,
@@ -354,8 +371,8 @@ export function fleetView(registry: AgentRegistry, now: number, host: string | n
     return { role: role.name, accounts: role.accounts, concurrency: role.concurrency, limit: roleLimit(role), live: running, next: blocked ? null : first, blocked, policy: rolePolicy(role) };
   });
   const unassigned = accounts.filter(account => !account.roles.length).map(account => `${account.name} serves no role; name it in a role or remove it`);
-  const missing = registry.accounts.length ? fleetRoles.filter(name => !registry.roles.some(role => role.name === name)).map(name => name === 'master'
-    ? 'role master is not configured; the durable loop launches no master session until graphyard master registry role set master ACCOUNT[,ACCOUNT…] --reason REASON names its accounts'
+  const missing = registry.accounts.length ? fleetRoles.filter(name => !registry.roles.some(role => role.name === name)).map(name => name === 'master' || name === 'caretaker'
+    ? `role ${name} is not configured; the durable loop launches no ${name} session until graphyard master registry role set ${name} ACCOUNT[,ACCOUNT…] --reason REASON names its accounts`
     : `role ${name} is not configured; its sessions launch from local profiles until it is`) : [];
   const plans = groupAccountsByPlan({ accounts: registry.accounts }, now);
   return { revision: registry.revision, updatedAt: registry.updatedAt, configured: registry.roles.length > 0, host, runtimes: registry.runtimes, models: registry.models, accounts, roles, plans,

@@ -100,13 +100,7 @@
       "text": "Open control plane",
       "exact": false
     },
-    {
-      "kind": "browser",
-      "name": "unfold the backlog group",
-      "action": "click",
-      "text": "Backlog",
-      "exact": false
-    },
+    { "kind": "browser", "name": "find the item by searching Work", "action": "fill", "label": "Search work", "value": "E2E case {{case}} run {{run}}" },
     {
       "kind": "browser",
       "action": "click",
@@ -115,9 +109,16 @@
     },
     {
       "kind": "browser",
-      "name": "unfold Details, where the criteria fold (GY-2011)",
+      "name": "open Details, where an item's description and criteria are (GY-3599)",
       "action": "click",
       "text": "Details",
+      "exact": true
+    },
+    {
+      "kind": "browser",
+      "name": "unfold the description and criteria, folded inside Details (GY-2011)",
+      "action": "click",
+      "text": "Description and criteria",
       "exact": true
     },
     {

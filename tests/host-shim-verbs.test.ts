@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { stat } from 'node:fs/promises';
 import { defaultChildRun } from '../src/child-runner.js';
 import { hostPrepareScript } from '../src/hosts.js';
+import { hostShimDigest } from '../src/host-shim.js';
 import { remoteShardSession } from '../src/merge-writer/remote-shards.js';
 import { dockerCreates, shardHosts, shardRepository, type ShardHostsFixture } from './helpers/shard-hosts.js';
 
@@ -26,7 +27,7 @@ const shim = (command: string) => spawnSync(hosts.shim, ['--home', hosts.home('b
 
 test(`${proof} — host prepare installs the shim as the only command of this machine's key, for gy-compute outside the docker group`, () => {
   const script = hostPrepareScript('ssh-ed25519 AAAAC3NzaOperatorKey operator@vishrog');
-  assert.match(script, /'restrict,command="graphyard-host-shim" ssh-ed25519 AAAAC3NzaOperatorKey operator@vishrog' > "\$home\/\.ssh\/authorized_keys"/);
+  assert.ok(script.includes(`line='restrict,command="graphyard-host-shim-${hostShimDigest}" ssh-ed25519 AAAAC3NzaOperatorKey operator@vishrog'`));
   assert.match(script, /gpasswd -d "\$user" docker/);
   // GY-3419: the host's own tools when both are installed, else the static extras fetched into the home; either way the install runs.
   assert.match(script, /"\$setuptool" install/, 'rootless Docker');

@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from './model/product.js';
 import { ChildProcessError, defaultChildRun } from './child-runner.js';
 import { chmod, lstat, readFile, mkdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
@@ -113,7 +114,7 @@ async function withConfigLock<T>(file: string, body: () => Promise<T>, waitMs = 
 export async function trustClaudeFolder(directory: string, environment: Record<string, string> = {}, args: string[] = []): Promise<FolderTrust> {
   const file = claudeConfigFile(environment), folder = canonicalPath(directory);
   if (underTestRunner() && !temporaryDirectories().some(temporary => canonicalPath(file).startsWith(`${temporary}${sep}`))) return { file, directory: folder, written: false };
-  const refuse = (why: string) => new LaunchRefusedError('claude', `Graphyard refuses to launch the claude runtime in ${folder}: ${why}, so the session would stop at Claude Code's folder-trust dialog for a human.`);
+  const refuse = (why: string) => new LaunchRefusedError('claude', `${PRODUCT_NAME} refuses to launch the claude runtime in ${folder}: ${why}, so the session would stop at Claude Code's folder-trust dialog for a human.`);
   const read = async () => {
     let document: Record<string, any> = {};
     try { document = JSON.parse(await readFile(file, 'utf8')); }
@@ -158,8 +159,8 @@ export async function verifyClaudeTrust(trust: FolderTrust) {
   if (underTestRunner() && !temporaryDirectories().some(temporary => canonicalPath(trust.file).startsWith(`${temporary}${sep}`))) return;
   let projects: Record<string, any> = {};
   try { const document = JSON.parse(await readFile(trust.file, 'utf8')); projects = document?.projects && typeof document.projects === 'object' ? document.projects : {}; }
-  catch (error) { throw new LaunchRefusedError('claude', `Graphyard refuses to start the claude runtime in ${trust.directory}: its account config ${trust.file} could not be read back before the session started (${error instanceof Error ? error.message : String(error)}), so the session could stop at Claude Code's folder-trust dialog for a human.`); }
-  if (!ancestors(trust.directory).some(path => projects[path]?.hasTrustDialogAccepted === true)) throw new LaunchRefusedError('claude', `Graphyard refuses to start the claude runtime in ${trust.directory}: the folder's hasTrustDialogAccepted record in its account config ${trust.file} was dropped by a concurrent rewrite of that config before the session started, so the session would stop at Claude Code's folder-trust dialog for a human; the launch is tried again.`);
+  catch (error) { throw new LaunchRefusedError('claude', `${PRODUCT_NAME} refuses to start the claude runtime in ${trust.directory}: its account config ${trust.file} could not be read back before the session started (${error instanceof Error ? error.message : String(error)}), so the session could stop at Claude Code's folder-trust dialog for a human.`); }
+  if (!ancestors(trust.directory).some(path => projects[path]?.hasTrustDialogAccepted === true)) throw new LaunchRefusedError('claude', `${PRODUCT_NAME} refuses to start the claude runtime in ${trust.directory}: the folder's hasTrustDialogAccepted record in its account config ${trust.file} was dropped by a concurrent rewrite of that config before the session started, so the session would stop at Claude Code's folder-trust dialog for a human; the launch is tried again.`);
 }
 
 /** One Claude launch the checkout's folder trust would refuse, as setup and the loop name it (GY-3225). */
@@ -243,7 +244,7 @@ export function checkoutTrustLine(refusals: readonly CheckoutTrustRefusal[]): st
   const trust = [...new Set(refusals.map(entry => entry.home))].map(home => home ? `CLAUDE_CONFIG_DIR=${home} claude` : 'claude').join(' and ');
   const sources = [...new Set(refusals.map(entry => entry.role))].map(role =>
     `graphyard master registry role set ${role} ${[...new Set(refusals.filter(entry => entry.role === role).map(entry => entry.account))].join(',')} --arg=--setting-sources --arg=user --reason "launch without the repository's own Claude settings"`).join('; ');
-  return `${refusals[0].folder} carries its own Claude configuration (${refusals[0].carried}), which these registered Claude accounts do not trust: ${refusals.map(entry => `${entry.role}/${entry.account} (${entry.home ?? 'its default config'})`).join(', ')}. Graphyard never records that trust itself. Either trust the folder once as the operator — run ${trust} in the checkout and accept the prompt, once per account — or launch those roles without the repository's project settings: ${sources}`;
+  return `${refusals[0].folder} carries its own Claude configuration (${refusals[0].carried}), which these registered Claude accounts do not trust: ${refusals.map(entry => `${entry.role}/${entry.account} (${entry.home ?? 'its default config'})`).join(', ')}. ${PRODUCT_NAME} never records that trust itself. Either trust the folder once as the operator — run ${trust} in the checkout and accept the prompt, once per account — or launch those roles without the repository's project settings: ${sources}`;
 }
 
 /**
@@ -302,15 +303,15 @@ export async function createCodexProtectedPaths(folder: string) {
     try { if ((await lstat(path)).isSymbolicLink()) linked.push(path); continue; } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     try { await mkdir(path); created.push(path); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
   }
-  if (linked.length) throw new LaunchRefusedError('codex', `Graphyard refuses to launch the codex runtime in ${folder}: ${linked.join(' and ')} ${linked.length > 1 ? 'are symlinks' : 'is a symlink'}, which Codex's bubblewrap sandbox rejects as a protected path, so every command in the session would fail in the sandbox; Graphyard leaves it untouched, so remove the symlink, then launch again.`);
+  if (linked.length) throw new LaunchRefusedError('codex', `${PRODUCT_NAME} refuses to launch the codex runtime in ${folder}: ${linked.join(' and ')} ${linked.length > 1 ? 'are symlinks' : 'is a symlink'}, which Codex's bubblewrap sandbox rejects as a protected path, so every command in the session would fail in the sandbox; Graphyard leaves it untouched, so remove the symlink, then launch again.`);
   return created;
 }
 export async function trustCodexFolder(directory: string, environment: Record<string, string> = {}): Promise<FolderTrust> {
   const file = codexConfigFile(environment), folder = canonicalPath(directory);
   try { await createCodexProtectedPaths(folder); }
-  catch (error) { if (error instanceof LaunchRefusedError) throw error; throw new LaunchRefusedError('codex', `Graphyard refuses to launch the codex runtime in ${folder}: its sandbox-protected ${codexProtectedPaths.join(' and ')} could not be created (${error instanceof Error ? error.message : String(error)}), so every command in the session would fail in the sandbox.`); }
+  catch (error) { if (error instanceof LaunchRefusedError) throw error; throw new LaunchRefusedError('codex', `${PRODUCT_NAME} refuses to launch the codex runtime in ${folder}: its sandbox-protected ${codexProtectedPaths.join(' and ')} could not be created (${error instanceof Error ? error.message : String(error)}), so every command in the session would fail in the sandbox.`); }
   if (underTestRunner() && !temporaryDirectories().some(temporary => canonicalPath(file).startsWith(`${temporary}${sep}`))) return { file, directory: folder, written: false };
-  const refuse = (why: string) => new LaunchRefusedError('codex', `Graphyard refuses to launch the codex runtime in ${folder}: ${why}, so the session would stop at Codex's "Trust this folder?" dialog for a human.`);
+  const refuse = (why: string) => new LaunchRefusedError('codex', `${PRODUCT_NAME} refuses to launch the codex runtime in ${folder}: ${why}, so the session would stop at Codex's "Trust this folder?" dialog for a human.`);
   const read = async () => {
     let text = '';
     try { text = await readFile(file, 'utf8'); }
@@ -350,7 +351,7 @@ export async function verifyCodexTrust(trust: FolderTrust) {
   if (underTestRunner() && !temporaryDirectories().some(temporary => canonicalPath(trust.file).startsWith(`${temporary}${sep}`))) return;
   let text = '';
   try { text = await readFile(trust.file, 'utf8'); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-  if (!codexProjects(text).some(project => project.path === trust.directory && project.trust === 'trusted')) throw new LaunchRefusedError('codex', `Graphyard refuses to start the codex runtime in ${trust.directory}: the folder's trust_level record in its account config ${trust.file} was dropped by a concurrent rewrite of that config before the session started, so the session would stop at Codex's "Trust this folder?" dialog for a human; the launch is tried again.`);
+  if (!codexProjects(text).some(project => project.path === trust.directory && project.trust === 'trusted')) throw new LaunchRefusedError('codex', `${PRODUCT_NAME} refuses to start the codex runtime in ${trust.directory}: the folder's trust_level record in its account config ${trust.file} was dropped by a concurrent rewrite of that config before the session started, so the session would stop at Codex's "Trust this folder?" dialog for a human; the launch is tried again.`);
 }
 
 /**
@@ -383,7 +384,7 @@ const removedGraphyardWorktree = (entry: unknown) => typeof entry === 'string'
 export async function trustAgyFolder(directory: string, environment: Record<string, string> = {}): Promise<FolderTrust> {
   const file = agyConfigFile(environment), folder = canonicalPath(directory);
   if (underTestRunner() && !temporaryDirectories().some(temporary => canonicalPath(file).startsWith(`${temporary}${sep}`))) return { file, directory: folder, written: false };
-  const refuse = (why: string) => new LaunchRefusedError('agy', `Graphyard refuses to launch the agy runtime in ${folder}: ${why}, so the session would stop at Antigravity's workspace-trust prompt for a human.`);
+  const refuse = (why: string) => new LaunchRefusedError('agy', `${PRODUCT_NAME} refuses to launch the agy runtime in ${folder}: ${why}, so the session would stop at Antigravity's workspace-trust prompt for a human.`);
   const read = async () => {
     let document: Record<string, any> = {};
     try { document = JSON.parse(await readFile(file, 'utf8')); }
@@ -417,7 +418,7 @@ export async function trustAgyFolder(directory: string, environment: Record<stri
 }
 
 export class LaunchRefusedError extends Error { constructor(readonly kind: string, message?: string) {
-  super(message ?? `Graphyard refuses to launch the ${kind} runtime: it has no non-interactive launch contract for ${kind} (no-approval flags and a first request on its command line), so the session would stop at its own approval or trust prompt or never receive its instruction. Choose a runtime with a launch recipe (${runtimeAdapters().filter(adapter => adapter.recipe).map(adapter => adapter.kind).join(', ')}) for this profile or registry role.`);
+  super(message ?? `${PRODUCT_NAME} refuses to launch the ${kind} runtime: it has no non-interactive launch contract for ${kind} (no-approval flags and a first request on its command line), so the session would stop at its own approval or trust prompt or never receive its instruction. Choose a runtime with a launch recipe (${runtimeAdapters().filter(adapter => adapter.recipe).map(adapter => adapter.kind).join(', ')}) for this profile or registry role.`);
 } }
 /**
  * The launch contract a registry runtime brings with it (model/registry.ts): its own startup
@@ -435,7 +436,7 @@ export class LaunchRefusedError extends Error { constructor(readonly kind: strin
  */
 export const requestPlaceholder = '{request}';
 export interface RegisteredLaunch { args: string[]; headlessArgs?: string[]; environment?: Record<string, string>; homeVariable?: string | null }
-export const registryContractRefusal = (kind: string) => `Graphyard refuses to launch the ${kind} runtime: its agent-registry launch contract registers no arguments or environment, so nothing suppresses its own approval or trust prompts and the session would wait for a human. Register the flags that start ${kind} without approvals with graphyard master registry runtime set NAME --kind ${kind} --arg=FLAG --reason REASON.`;
+export const registryContractRefusal = (kind: string) => `${PRODUCT_NAME} refuses to launch the ${kind} runtime: its agent-registry launch contract registers no arguments or environment, so nothing suppresses its own approval or trust prompts and the session would wait for a human. Register the flags that start ${kind} without approvals with graphyard master registry runtime set NAME --kind ${kind} --arg=FLAG --reason REASON.`;
 export function assertLaunchable(kind: string, registered: RegisteredLaunch | null = null) {
   if (launchRecipe(kind)) return;
   if (!registered) throw new LaunchRefusedError(kind);
@@ -447,7 +448,7 @@ export function assertLaunchable(kind: string, registered: RegisteredLaunch | nu
  * on a human (GY-184), so such a profile is refused before launch, naming the runtime and the fix;
  * the mode is still read so an existing master.json loads and says why it cannot launch.
  */
-export const approvalOptOutRefusal = (kind: string) => `Graphyard refuses to launch the ${kind} runtime with approvals "prompt": the session would wait at its own approval prompts for a human in the session tab, and every launched session must run without asking. Set "approvals": "auto" on this profile.`;
+export const approvalOptOutRefusal = (kind: string) => `${PRODUCT_NAME} refuses to launch the ${kind} runtime with approvals "prompt": the session would wait at its own approval prompts for a human in the session tab, and every launched session must run without asking. Set "approvals": "auto" on this profile.`;
 export function assertNoApprovalOptOut(kind: string, approvals: ApprovalMode = 'auto') {
   if (approvals === 'prompt') throw new LaunchRefusedError(kind, approvalOptOutRefusal(kind));
 }
@@ -480,7 +481,7 @@ export function launchPlan(kind: string | undefined, approvals: ApprovalMode = '
   const base = { approvals, args: [...agentArgs], environment: {} as Record<string, string>, applied: false, refusal: null as string | null, prompts: recipe?.prompts ?? null, tradeoff: recipe?.tradeoff ?? null };
   if (!recipe) return { ...base, reason: kind ? `Graphyard has no non-interactive launch contract for ${kind}; a session of it is refused at launch rather than left at its own approval prompt` : 'A launched session requires an agent kind' };
   if (approvals === 'prompt') return { ...base, reason: approvalOptOutRefusal(kind!), refusal: approvalOptOutRefusal(kind!) };
-  const refuse = (setting: string) => { const refusal = `Graphyard refuses to launch the ${kind} runtime with ${setting}: that setting leaves the session able to stop at its own approval prompts for a human, and every launched session must run without asking. Remove it from the profile, or set the value Graphyard's ${kind} recipe uses.`; return { ...base, reason: refusal, refusal }; };
+  const refuse = (setting: string) => { const refusal = `${PRODUCT_NAME} refuses to launch the ${kind} runtime with ${setting}: that setting leaves the session able to stop at its own approval prompts for a human, and every launched session must run without asking. Remove it from the profile, or set the value Graphyard's ${kind} recipe uses.`; return { ...base, reason: refusal, refusal }; };
   // Every value the operator gives a recipe flag, in whichever spelling (`--flag value`,
   // `--flag=value`, an alias): a runtime may honour a later occurrence over an earlier one, so each
   // is checked, and a repeated flag with any value but the recipe's is refused.

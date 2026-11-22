@@ -1,0 +1,11 @@
+{
+  "id": "work-list",
+  "title": "Work is one list of real tasks, grouped by goal, with Needs you pinned on top",
+  "description": "A real browser on the built dashboard, served two goals of three tasks each and one task with no goal, at 1280 and 390 px. The header line gives the count in flight, merges an hour over 6 hours and the median review-to-live time. Rows sit under their goal heading with shipped/total and a progress bar; the task with no goal is in a collapsed 'No goal' group. Each row shows its state, its title on one line linking to the Task page, what it is doing now, the Builder and model, the PR link and the time in state; the stuck row is tinted and first in its group. The filters In flight, Stuck, Up next and Shipped today show their counts and narrow the list to exactly that many rows, as a query parameter; search finds a task by PR number, key and title. With one open human request a 'Needs you' strip above the filters shows it with how long it waited and a 'Review request' button that opens it; with none the strip is absent. No page scrolls sideways.",
+  "tags": ["dashboard"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "Work list: header, Needs you, goal groups, columns, filters and search at 1280 and 390 px", "run": "npm run test:browser -- browser-tests/work-list.spec.ts", "timeoutSeconds": 420 }
+  ]
+}

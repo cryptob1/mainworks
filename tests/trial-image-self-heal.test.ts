@@ -67,7 +67,7 @@ class World {
   }
   reads(root: string): MergeWriterReads {
     return {
-      baseBranch: 'main', now: () => start, parallel: 2,
+      baseBranch: 'main', now: () => start, parallel: 2, cores: 8,
       fetch: async () => base,
       merge: async (head, tip) => ({ mergeSha: sha(`merge:${head}:${tip}`), files: ['src/item.ts'] }),
       trial: async () => { throw new Error('these reads launch detached trial runs only'); },

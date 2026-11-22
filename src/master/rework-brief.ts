@@ -5,6 +5,7 @@
 // round never read it, so it resubmitted the same head. The rework command records its reason on
 // the item (`lastRework`), and the launcher puts it in the request.
 import type { Work } from '../model.js';
+import { attemptSummaryMax, oneLineSummary, reworkStation } from '../model/rework-ground.js';
 
 /** The longest reason the request carries; the full text stays in the item's history. */
 export const reworkBriefMax = 4000;
@@ -12,7 +13,7 @@ export const reworkBriefMax = 4000;
 /** The applied rework whose round this attempt is. */
 export interface AppliedRework { reason: string; at: string }
 
-type BriefWork = Partial<Pick<Work, 'key' | 'submission' | 'candidate' | 'pipeline' | 'lastRework'>>;
+type BriefWork = Partial<Pick<Work, 'key' | 'epoch' | 'submission' | 'candidate' | 'pipeline' | 'lastRework' | 'reworkHistory'>>;
 
 /**
  * The last applied rework, when it sent back the item's last hand-in: applied after that hand-in
@@ -27,6 +28,16 @@ export function appliedReworkBrief(work: BriefWork): AppliedRework | null {
   return { reason, at: latest.at };
 }
 
+/** One line per earlier attempt in order: attempt number, station, and first 200 characters of the reason (GY-3636). */
+function attemptLedger(work: BriefWork, rework: AppliedRework): string {
+  const entries = work.reworkHistory?.length
+    ? work.reworkHistory
+    : work.submission ? [{ attempt: work.submission.epoch ?? work.epoch ?? 1, reason: rework.reason, binding: work.lastRework?.binding ?? null, at: rework.at }] : [];
+  if (!entries.length) return '';
+  const lines = entries.map(entry => `- Attempt ${entry.attempt} (${reworkStation(entry)}): ${oneLineSummary(entry.reason, attemptSummaryMax)}`);
+  return `Earlier attempts:\n${lines.join('\n')}\n`;
+}
+
 /** The applied reason, with distinct instructions for pre-submit handoffs and submitted rework. */
 export function reworkBriefSection(work: BriefWork, rework: AppliedRework | null | undefined): string {
   if (!rework) return '';
@@ -34,6 +45,7 @@ export function reworkBriefSection(work: BriefWork, rework: AppliedRework | null
   if (!work.submission) return `Applied master guidance for ${work.key} before its first submission (applied at ${rework.at}), for this attempt: ${reason} `
     + 'Follow this guidance on the assigned branch; when it asks only to verify preserved work, a new source commit is not required. Submit the resulting head with complete --head. ';
   const head = work.candidate?.sha ? ` at head ${work.candidate.sha.slice(0, 12)}` : '';
-  return `This attempt is a rework round of change #${work.submission.pr}${head}. The rework applied at ${rework.at} sent it back for this reason, which is this round's brief: ${reason} `
+  const ledger = attemptLedger(work, rework);
+  return `This attempt is a rework round of change #${work.submission.pr}${head}.\n${ledger}The rework applied at ${rework.at} sent it back for this reason, which is this round's brief: ${reason} `
     + 'Answer every point it names with a new commit on the assigned branch, submitted with complete --head; resubmitting the same head answers nothing, because what sent it back still stands on it. ';
 }

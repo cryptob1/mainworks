@@ -12,7 +12,7 @@ import { serveXterm } from './xterm';
 
 // e2e:stall-alarm — GY-3432: a fixture install with a ready item and a free worker slot whose
 // launches have been held for 10 minutes. The loop's coordination read names its stall alarm
-// exactly as `master run` sends it, and the served Master page shows it first, with its cause; once
+// exactly as `master run` sends it, and the served Lead page shows it first, with its cause; once
 // a launch starts the loop names none and the page clears it.
 
 async function plane(context: BrowserContext) {
@@ -43,7 +43,7 @@ async function loopRead(url: string, alarm: string | null) {
   expect(read.status).toBe(200);
 }
 
-test('e2e:stall-alarm — the Master page shows the stall alarm with its cause while launches are held, and clears it once a launch starts', async ({ page, context }) => {
+test('e2e:stall-alarm — the Lead page shows the stall alarm with its cause while launches are held, and clears it once a launch starts', async ({ page, context }) => {
   test.setTimeout(90_000);
   const { url, close } = await plane(context);
   await serveXterm(context);
@@ -52,7 +52,7 @@ test('e2e:stall-alarm — the Master page shows the stall alarm with its cause w
     const start = Date.parse('2026-11-16T08:00:00Z');
     const state = emptyDaemonState({ url: 'http://127.0.0.1:9', repository: 'fixture/shop' } as never);
     state.cpuPressure = { at: new Date(start).toISOString(), avg60: 96, steal: 0, stat: null, celsius: 96, samples: [], testBudget: null, trialCap: null };
-    const item = { key: 'GY-1', stage: 'ready', ready: true, updatedAt: new Date(start).toISOString(), sessions: [] } as unknown as Work;
+    const item = { key: 'GY-1', stage: 'ready', ready: true, updatedAt: new Date(start).toISOString(), sessions: [], dependencies: [] } as unknown as Work;
     // GY-3473: the cause is dispatch's own hold this cycle, as the loop passes it.
     const holds = [implementationWaiting(state)!];
     const alarm = stallAlarm({ now: start + 11 * 60_000, open: [item], ready: [item], freeSlots: 1, holds, state, registry: null, serving: null });
@@ -61,7 +61,7 @@ test('e2e:stall-alarm — the Master page shows the stall alarm with its cause w
     const signIn = await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } });
     const { code } = await signIn.json() as { code: string };
     await page.goto(`/#sign-in=${code}&master`);
-    await expect(page.getByRole('heading', { name: 'Master', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Lead', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
     const banner = page.locator('.stall-alarm');
     await expect(banner).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('.page-heading + .stall-alarm')).toBeVisible();
