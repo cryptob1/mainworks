@@ -3,6 +3,7 @@ import type { ServeCheck } from '../serve-app.js';
 import { noRelease, servedFor, type ReleaseView } from './release.js';
 import { parkedOnHuman } from './human-request.js';
 import { humanAsk } from './human-ask.js';
+import { reworkCapHeld, reworkCapLabel } from './rework-ground.js';
 
 /**
  * Plain words for an item's derived stage (GY-2988). The control plane still derives
@@ -60,6 +61,7 @@ export function waitingReason(work: Work): string | null {
   // GY-3503: a parked item waits on its request, never on a launch.
   if (parkedOnHuman(work)) return `waits on a human: ${humanAsk(work.humanRequest!)}`;
   if (work.blocker) return work.blocker;
+  if (reworkCapHeld(work)) return reworkCapLabel(work);
   const dispatch = work.actionQueue?.actions.find(action => action.kind === 'dispatch');
   if (!dispatch) return null;
   const failed = dispatch.history.findLast(record => record.event === 'failed');
