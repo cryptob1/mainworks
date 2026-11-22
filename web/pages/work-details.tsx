@@ -79,14 +79,14 @@ function HumanChecksPanel({ item, token }: { item: Work; token: string }) {
 }
 /**
  * The item's worker runs by attempt (GY-3259) — earlier accounts, failed runs and the one running
- * now — each opening its log: what the worker printed, stdout and stderr, read from the host that
- * ran it through the item's run-log endpoint.
+ * now, the same run the live session above streams — each opening its log: what the worker printed,
+ * stdout and stderr, read from the host that ran it through the item's run-log endpoint.
  */
-function WorkerRunsPanel({ item, token, except }: { item: Work; token: string; except?: string }) {
-  const runs = (item.sessions ?? []).filter(handle => handle.kind === 'implementation' && transcriptRun(handle.transcript) && handle.id !== except)
+function WorkerRunsPanel({ item, token }: { item: Work; token: string }) {
+  const runs = (item.sessions ?? []).filter(handle => handle.kind === 'implementation' && transcriptRun(handle.transcript))
     .sort((a, b) => (handleEpoch(a) || 0) - (handleEpoch(b) || 0) || a.startedAt.localeCompare(b.startedAt));
   if (!runs.length) return null;
-  return <section className="panel" aria-label="Worker runs"><h2>Earlier attempts</h2>{runs.map(handle => <WorkerRunLog key={handle.id} item={item} handle={handle} token={token}/>)}</section>;
+  return <section className="panel" aria-label="Worker runs"><h2>Runs by attempt</h2>{runs.map(handle => <WorkerRunLog key={handle.id} item={item} handle={handle} token={token}/>)}</section>;
 }
 type RunLogChunk = { run: { account: string | null; kind: string }; lines: { at: string; stream: string; text: string }[]; cursor: number; ended: boolean };
 function WorkerRunLog({ item, handle, token }: { item: Work; handle: SessionHandle; token: string }) {
@@ -327,7 +327,7 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
     {panel('Live session', tab !== 'Live session' ? null : builderRun ? <>
       <p className="muted">{builderName}'s session on {builderRun.host}, read-only.</p>
       <LiveRun workId={item.id} run={transcriptRun(builderRun.transcript)!} token={token}/>
-      <WorkerRunsPanel item={item} token={token} except={builderRun.id}/>
+      <WorkerRunsPanel item={item} token={token}/>
     </> : <p className="muted">No Builder has started a session on this task yet.</p>)}
     {panel('Lead', <LeadDecisions events={events} now={now}/>)}
     {panel('Details', <>

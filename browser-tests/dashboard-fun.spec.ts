@@ -55,6 +55,7 @@ test('e2e:dashboard-fun — named agents on every page, a rotating line, and a t
 
   // The item history names the same account the same way, and the master as the Master.
   await page.getByRole('button', { name: /Change priority from the dashboard.*GY-1/ }).click();
+  await page.getByRole('tab', { name: 'Details' }).click();
   await page.locator('.full-history > summary').click();
   const history = page.getByRole('region', { name: 'History entries' });
   await expect(history.locator(`[data-agent="${builder}"]`)).toHaveText(name);
