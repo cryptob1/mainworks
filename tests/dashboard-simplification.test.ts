@@ -142,12 +142,12 @@ test('unit:plain-status-copy — every stage and every gate reason reads as one 
   assert.equal(plainReason('Internal epoch lease candidate mismatch', 'merge', Date.now()).text, 'Waiting to merge');
 });
 
-test('integration:dashboard-navigation — one sidebar (Work, Master, Workers, Shipped, Tests, Settings); every other page sits under one entry; admin-only and unconfigured pages hidden', async () => {
+test('integration:dashboard-navigation — one sidebar (Work, Lead, Workers, Shipped, Tests, Settings); every other page sits under one entry; admin-only and unconfigured pages hidden', async () => {
   const labels = (d: Dashboard) => primaryEntries(d).map(entry => entry!.label);
   // Tests opens the test-case results (GY-162); the Insights analytics page left with flow analytics (GY-2876).
-  assert.deepEqual(sections.map(section => section.label), ['Work', 'Master', 'Workers', 'Shipped', 'Tests', 'Settings']);
+  assert.deepEqual(sections.map(section => section.label), ['Work', 'Lead', 'Workers', 'Shipped', 'Tests', 'Settings']);
   for (const role of ['admin', 'reader', 'worker', 'coordinator', 'operator-agent']) assert.ok(labels(dashboard({}, role)).length <= 6, role);
-  assert.deepEqual(labels(dashboard()), ['Work', 'Master', 'Workers', 'Shipped', 'Tests', 'Settings']);
+  assert.deepEqual(labels(dashboard()), ['Work', 'Lead', 'Workers', 'Shipped', 'Tests', 'Settings']);
   const sectionOf = Object.fromEntries(views.map(view => [view.label, view.section]));
   for (const page of ['Delivered', 'Releases']) assert.equal(sectionOf[page], 'shipped', page);
   // Settings is configuration only (GY-3297): everyday pages sit beside the work they describe.
@@ -164,7 +164,7 @@ test('integration:dashboard-navigation — one sidebar (Work, Master, Workers, S
   assert.match(markup(createElement(TopBar, { ...dashboard(), view: 'agents' })), /<details class="tabs-advanced"><summary class="tab">Advanced<\/summary><button[^>]*>(<abbr[^>]*>)?Operator automation</);
   assert.deepEqual(tabs(dashboard(), 'tests'), ['Tests', 'Test cases']);
   assert.deepEqual(tabs(dashboard(), 'workers'), ['Workers', 'Costs']);
-  assert.deepEqual(tabs(dashboard(), 'master'), ['Master', 'Product'], "the Master's own tab reads as its sidebar entry does");
+  assert.deepEqual(tabs(dashboard(), 'master'), ['Lead', 'Product'], "the Lead's own tab reads as its sidebar entry does");
   assert.deepEqual(tabs(dashboard(), 'work'), ['Work', 'Now'], 'a signed-in person has a Now page beside Work');
   const agent = fixtureStatus('admin');
   agent.actor = { ...agent.actor, sessionKind: 'ai' };
@@ -206,7 +206,7 @@ test('integration:dashboard-navigation — one sidebar (Work, Master, Workers, S
 test('integration:dashboard-word-budget — the home page answers what needs you, what is blocked, what is moving and what shipped on one screen in at most 165 words', () => {
   const page = home();
   const count = words(page).length;
-  // Keep the existing budget: the new Master entry replaces the duplicate sidebar repository name.
+  // Keep the existing budget: the Lead entry replaces the duplicate sidebar repository name.
   assert.ok(count <= 165, `home renders ${count} words excluding item titles: ${text(page)}`);
   for (const gone of ['Delivery slices', 'NO LEAD ASSIGNED', 'ENGINEERING, IN VIEW', 'Every change has an owner', 'Explicit reasons, actionable next steps', 'No delivery requires', 'sessions retain goals', 'leads coordinate only', 'Ownership is explicit', 'Agent fleet'])
     assert.ok(!text(page).includes(gone), `no ${gone}`);
