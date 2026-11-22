@@ -18,7 +18,7 @@ setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocki
 // the worker on an account that exited at once, its supervisor released the epoch, and the same
 // dispatch started the next account under the next epoch. The loop's snapshot keeps only the newest
 // attempt's end, so the close step read each earlier epoch as a lease loss; two of them stop dispatch.
-test('integration:dispatch-keeps-fresh-lease, e2e:dispatch-keeps-fresh-lease — a released item builds on its running worker with no lease-loss session', { timeout: 120_000 }, async () => {
+test('integration:dispatch-keeps-fresh-lease — a released item builds on its running worker with no lease-loss session', { timeout: 120_000 }, async () => {
   const store = await withDatabase('dispatch-keeps-fresh-lease');
   await store.init();
   try {
