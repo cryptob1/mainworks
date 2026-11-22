@@ -347,7 +347,7 @@ export const trialCheckoutPrefix = 'gy-c';
  * GY-3589, GY-3640: a commit's kept built tree — one entry per commit under the trial's worktree
  * root, named by the commit's full sha. The first caching pass on a commit checks it out, installs
  * and builds it once; every later pass on that commit — a rerun of failing tests, a base pass, the
- * release check, a static preview — runs in that tree without installing or building again, and a
+ * release check — runs in that tree without installing or building again, and a
  * pass that arrives while the first still builds waits for it. The entry is a link to a short
  * directory beside the trial checkouts (`keptBuildPlacePrefix`; the entry itself when no short root
  * is free). `<entry>.built` marks a tree whose install and build both passed, `<entry>.lock` is held
@@ -375,20 +375,6 @@ async function keptBuildUses(entry: string, own: string | null = null): Promise<
     else { await rm(use, { recursive: true, force: true }).catch(() => {}); await rm(tempOwnerMarker(use), { force: true }).catch(() => {}); }
   }
   return live;
-}
-/**
- * GY-3640: holds commit `sha`'s kept built tree for a reader outside the trial (a static preview):
- * the tree's directory and the `release` that gives it back, or null when no built tree is kept.
- */
-export async function holdKeptBuild(base: string, sha: string): Promise<{ tree: string; release(): Promise<void> } | null> {
-  const entry = keptBaseBuild(base, sha), use = `${entry}.use-${randomUUID()}`, lock = `${entry}.lock`;
-  if (!existsSync(keptBaseBuildMarker(entry)) || (existsSync(lock) && await ownerLive(lock))) return null;
-  await mkdir(use); await writeTempOwner(use);
-  const release = async () => { await rm(use, { recursive: true, force: true }).catch(() => {}); await rm(tempOwnerMarker(use), { force: true }).catch(() => {}); };
-  try {
-    if (!existsSync(keptBaseBuildMarker(entry)) || (existsSync(lock) && await ownerLive(lock))) throw new Error('busy');
-    return { tree: await realpath(entry), release };
-  } catch { await release(); return null; }
 }
 /**
  * The mode of a trial's own temporary directory (GY-1639): sticky, as CI's /tmp is, so a suite that

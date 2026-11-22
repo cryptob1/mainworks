@@ -60,10 +60,6 @@
           "equals": "running"
         },
         {
-          "path": "preview.source",
-          "equals": "base"
-        },
-        {
           "path": "preview.cases",
           "type": "array"
         },

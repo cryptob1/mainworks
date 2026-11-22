@@ -15,7 +15,6 @@ import { reclaimJobLeftovers } from '../src/daemon/disk-headroom.js';
 import { trialContainerLaunch } from '../src/merge-writer/trial-container.js';
 import { runWorkerVerification } from '../src/merge-writer/worker-verification.js';
 import { trialBuilder, trialImageBuildArgs } from '../src/install/trial-image.js';
-import { composeImageKeepHours, composeImageLabel } from '../src/compose-preview.js';
 import { processPidNamespace, processStartTicks } from '../src/tmp-reclaim.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
@@ -119,10 +118,7 @@ test('unit:tests/job-end-cleanup.test.ts — the sweep removes leftovers whose o
   for (const path of [liveVerify, liveTrial]) assert.ok(existsSync(path), `${path} stays: its owner runs`);
   assert.ok(docker.some(args => args.join(' ') === 'rm --volumes graphyard-trial-ended'), 'a stopped trial container goes with its volumes');
   const prunes = docker.filter(args => args.includes('prune'));
-  assert.deepEqual(prunes, [
-    ['image', 'prune', '--all', '--force', '--filter', `label=${composeImageLabel}`, '--filter', `until=${composeImageKeepHours}h`],
-    ['buildx', 'prune', '--builder', trialBuilder, '--filter', 'until=24h', '--force'],
-  ], 'only Graphyard\'s own preview images and trial builder\'s cache older than a day are pruned');
+  assert.deepEqual(prunes, [['buildx', 'prune', '--builder', trialBuilder, '--filter', 'until=24h', '--force']], 'only Graphyard\'s own builder\'s cache older than a day is pruned');
   assert.ok(trialImageBuildArgs('/src').join(' ').includes(`buildx build --builder ${trialBuilder} --load`), 'trial images build on that builder');
   assert.ok(removed.includes('trial build cache older than a day (2GB)'));
 });

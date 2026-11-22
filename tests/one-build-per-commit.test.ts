@@ -22,7 +22,8 @@ const policy = { mode: 'local', mergeGate: { preMerge: [{ check: 'test', command
 const run: ChildRun = (command, args, options) => defaultChildRun(command, args, { ...options, wrapper: undefined,
   ...(command === 'git' ? { env: { ...process.env, ...identity, ...options?.env } } : {}) });
 
-test(`${proof} — a trial with a flaky test, two concurrent base passes and the release check build each distinct commit once`, { timeout: 300_000 }, async () => {
+/** A repository whose build appends the commit it built to `builds`, and whose one test file flakes once on the change. */
+async function fixture() {
   const root = await temporaryDirectory('one-build-repo', tmpdir()), state = await temporaryDirectory('one-build-state', tmpdir());
   const builds = join(state, 'builds.log');
   const write = (path: string, content: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); };
@@ -48,9 +49,12 @@ process.exit(fixed && !flaked ? 0 : 1);
   gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'the change');
   const merge = gitIn(root, 'rev-parse', 'HEAD');
   gitIn(root, 'checkout', '-q', '--detach', tip);
-
   const base = await temporaryDirectory('one-build-trials', tmpdir());
-  const common = { root, base, caches: true, timeoutMs: 120_000, run, environment: { PATH: process.env.PATH! } };
+  return { root, builds, tip, merge, common: { root, base, caches: true, timeoutMs: 120_000, run, environment: { PATH: process.env.PATH! } } };
+}
+
+test(`${proof} — a trial with a flaky test, two concurrent base passes and the release check build each distinct commit once`, { timeout: 300_000 }, async () => {
+  const { builds, tip, merge, common } = await fixture();
   const basePass = () => runTrialAttempt({ ...common, mergeSha: tip, baseTip: tip, changedFiles: ['tests/flaky.test.ts'] });
   // The trial (its flaky rerun on the merge commit, then its own base pass) beside two more base passes on the same tip.
   const [trial, ...passes] = await Promise.all([
@@ -71,4 +75,15 @@ process.exit(fixed && !flaked ? 0 : 1);
 
   assert.ok(existsSync(builds), 'the build command ran');
   assert.deepEqual(readFileSync(builds, 'utf8').trim().split('\n').sort(), [tip, merge].sort(), 'one build per distinct commit');
+});
+
+test('e2e:one-build-per-commit — a merge trial whose failing test file reruns on the same merge commit records one build step for it', { timeout: 300_000 }, async () => {
+  const { builds, tip, merge, common } = await fixture();
+  const steps: string[] = [];
+  const trial = await runMergeTrial({ ...common, mergeSha: merge, baseTip: tip, changedFiles: ['src/fixed'], proofs: [proof], e2eProofs: [], proofFiles: [], reproduce: false,
+    onStep: step => { steps.push(step); } });
+  assert.deepEqual(trial.flaked, { files: ['tests/flaky.test.ts'], tests: ['sometimes slow'] }, `the failing file reran on the merge commit: ${trial.logTail}`);
+  assert.deepEqual(steps.filter(step => step === 'build'), ['build'], `one build step for the merge commit: ${steps.join(', ')}`);
+  assert.ok(steps.includes('build: reused'), 'the rerun reused the build');
+  assert.deepEqual(readFileSync(builds, 'utf8').trim().split('\n'), [merge], 'the build command ran once');
 });
