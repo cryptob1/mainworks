@@ -165,5 +165,5 @@ test('e2e:task-shows-evidence — each test shard\'s end reports the trial\'s co
     assert.doesNotMatch(output, /super-secret-shard-token/, 'shard output masks credentials before leaving the trial');
     assert.match(output, /\[redacted\]/);
   }
-  assert.deepEqual(verdict.tests, { passed: 1, failed: [quick], files: 2, slowest: { file: slow, durationMs: 14 * minute } });
+  assert.deepEqual([verdict.tests, verdict.slowest], [{ passed: 1, failed: [quick], files: 2 }, { file: slow, durationMs: 14 * minute }]);
 });

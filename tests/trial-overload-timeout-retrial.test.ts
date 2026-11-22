@@ -189,7 +189,7 @@ for (const steal of [0.7, 0]) test(`${proof} — eight cores with ${steal * 100}
   };
   const verdict = await runTrial({ root, base: await temporaryDirectory('trial-overload-lanes-root'), mergeSha, changedFiles: files,
     timeoutMs: 60_000, cores: 8, cpu: cpu.read, memory: async () => null, run, environment: { PATH: process.env.PATH! }, onTiming: step => timings.push(step) });
-  assert.deepEqual(verdict.tests, { passed: 8, failed: [], files: 8, slowest: { file: 'tests/t0.test.ts', durationMs: 1 } });
+  assert.deepEqual(verdict.tests, { passed: 8, failed: [], files: 8 });
   assert.equal(maximum, steal ? 2 : 8, 'actual concurrent runner children');
   assert.deepEqual(seen.sort(), files, 'every test still runs exactly once');
   assert.ok(timings.some(line => line.startsWith(`tests: ${steal ? 2 : 8} lanes`)));

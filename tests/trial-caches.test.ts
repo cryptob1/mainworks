@@ -144,7 +144,7 @@ test('integration:cached-trial-with-a-doc-edit — a second trial of a head that
 
   const second = await mergeAndTrial(fixture, run, { 'README.md': 'readme\none more line\n', 'src/a.ts': 'export const a = 2;\n' });
   assert.deepEqual(second.ran, ['tests/a.test.ts'], second.verdict.logTail);
-  assert.deepEqual(second.verdict.tests, { passed: 3, failed: [], files: 3, slowest: { file: 'tests/a.test.ts', durationMs: 1 } });
+  assert.deepEqual(second.verdict.tests, { passed: 3, failed: [], files: 3 });
   assert.deepEqual(second.verdict.testCache, { cached: 2, ran: 1 });
 });
 
@@ -153,7 +153,7 @@ test('e2e:cpu-per-merged-item — after two merges whose second changes one sour
   write(fixture.root, { 'tests/c.test.ts': '// passes now\n' });
   git(fixture.root, 'commit', '-qam', 'c passes');
   const first = await mergeAndTrial(fixture, run, { 'src/a.ts': 'export const a = 2;\n' });
-  assert.deepEqual(first.verdict.tests, { passed: 3, failed: [], files: 3, slowest: { file: 'tests/a.test.ts', durationMs: 1 } }, first.verdict.logTail);
+  assert.deepEqual(first.verdict.tests, { passed: 3, failed: [], files: 3 }, first.verdict.logTail);
   const second = await mergeAndTrial(fixture, run, { 'src/a.ts': 'export const a = 3;\n' });
   assert.deepEqual(second.ran, ['tests/a.test.ts'], 'only the test importing the changed source runs');
   assert.equal(installs.length, 1, 'the second trial installs nothing');

@@ -381,7 +381,9 @@ export const trialTemporaryVariables = (directory: string) => ({ TMPDIR: directo
  * selection, or an empty one.
  */
 export interface TrialRun {
-  build: 'pass' | 'fail'; tests: { passed: number; failed: string[]; files: number; /** GY-3599: the file that ran longest, from the runner's records, for the Task page. */ slowest?: { file: string; durationMs: number } }; durationMs: number; logTail: string; runnerExit?: number | null; groups?: TrialGroup[];
+  build: 'pass' | 'fail'; tests: { passed: number; failed: string[]; files: number }; durationMs: number; logTail: string; runnerExit?: number | null; groups?: TrialGroup[];
+  /** GY-3599: the test file that ran longest, from the runner's records, for the Task page; absent when no record named one. */
+  slowest?: { file: string; durationMs: number };
   /** How long each phase took (GY-1832), so the slow one is named; absent only from a trial stub. */
   phases?: TrialPhaseDurations;
   /** The attempts before this one that reached no verdict (GY-1832): a verdict on the retry carries the first attempt's outcome. */
@@ -1536,7 +1538,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     let failingOutput: string | undefined;
     // GY-3599: the file that ran longest over every check, for the verdict and the Task page.
     let slowest: { file: string; durationMs: number } | undefined;
-    const counted = (tests: { passed: number; failed: string[]; files: number }) => ({ ...tests, ...(slowest ? { slowest } : {}) });
+    const withSlowest = (verdict: TrialRun): TrialRun => slowest ? { ...verdict, slowest } : verdict;
     for (const check of checks) {
       if (check.paths && !touchesPaths(input.changedFiles, check.paths)) continue;
       if (check.selection) {
@@ -1545,8 +1547,8 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         passed += selected.tests.passed; files += selected.tests.files;
         failed.push(...selected.tests.failed); groups.push(...(selected.groups ?? []));
         runnerExit = selected.runnerExit ?? null;
-        if (selected.tests.slowest && selected.tests.slowest.durationMs > (slowest?.durationMs ?? -1)) slowest = selected.tests.slowest;
-        if (failed.length) return finishTests('pass', counted({ passed, failed, files }), runnerExit, groups, selected.logTail);
+        if (selected.slowest && selected.slowest.durationMs > (slowest?.durationMs ?? -1)) slowest = selected.slowest;
+        if (failed.length) return withSlowest(await finishTests('pass', { passed, failed, files }, runnerExit, groups, selected.logTail));
         continue;
       }
       files++;
@@ -1566,9 +1568,9 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       passed++;
     }
     const logTail = failingOutput && log.join('\n').length > tailLength ? failureTail([failingOutput]) : tail();
-    return finishTests('pass', counted({ passed, failed, files }), runnerExit, groups.length ? groups : undefined, logTail, detail);
+    return withSlowest(await finishTests('pass', { passed, failed, files }, runnerExit, groups.length ? groups : undefined, logTail, detail));
   };
-  const runSelected = async (check: RepositoryTrialCheck): Promise<Pick<TrialRun, 'tests' | 'runnerExit' | 'groups' | 'logTail'>> => {
+  const runSelected = async (check: RepositoryTrialCheck): Promise<Pick<TrialRun, 'tests' | 'runnerExit' | 'groups' | 'logTail' | 'slowest'>> => {
     const result = (tests: TrialRun['tests'], runnerExit: number | null = null, groups?: TrialGroup[], logTail = tail()) => ({ tests, runnerExit, groups, logTail });
     const strategy = check.selection!;
     const selector = checkCommandArgv(strategy.command)!;
@@ -1730,8 +1732,8 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     if (!failed.length && strategy.durations) await refreshDurations(input.root, strategy.durations, ran.map(shard => shard.records).join('\n'), files).catch(() => {});
     const worst = groups.find(group => group.status !== 0);
     const slowest = slowestFile(ran.map(shard => shard.records).join('\n'));
-    return result({ passed: Math.max(0, counted - failed.length), failed, files: counted, ...(slowest ? { slowest } : {}) }, worst ? exitCode({ status: worst.status, signal: worst.signal, cause: undefined }) : 0, groups,
-      failingOutput.length && log.join('\n').length > tailLength ? failureTail(failingOutput) : tail());
+    return { ...result({ passed: Math.max(0, counted - failed.length), failed, files: counted }, worst ? exitCode({ status: worst.status, signal: worst.signal, cause: undefined }) : 0, groups,
+      failingOutput.length && log.join('\n').length > tailLength ? failureTail(failingOutput) : tail()), ...(slowest ? { slowest } : {}) };
   };
   const trial = async (): Promise<TrialRun> => {
     try {
