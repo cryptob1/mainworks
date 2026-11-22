@@ -100,7 +100,7 @@ test('e2e:night-yard-theme — Night Yard serves by default with rain over grain
   expect(await grain(page)).toContain('svg');
   // The strip carries what is happening now; a builder's row gets its friendly name, and the Master page's title reads Master (GY-3307).
   await expect(page.locator('.activity-strip')).toContainText('agents working');
-  await expect(page.locator('[data-row="GY-14"] [data-col="builder"]')).toContainText('Theo');
+  await expect(page.locator('[data-row="GY-14"] [data-col="builder"] [data-agent]')).toHaveText('Alex');
   await page.keyboard.press('Control+k');
   await page.getByLabel('Search commands').fill('Master');
   await page.keyboard.press('Enter');

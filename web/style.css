@@ -543,7 +543,7 @@ kbd{font-family:var(--font-mono);font-size:11px;color:var(--text);background:var
 .work-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:var(--type-small);color:var(--text)}
 .work-table th{text-align:left;font-weight:500;color:var(--text-3);padding:6px 8px}
 .work-table td{padding:8px;border-top:1px solid var(--border);vertical-align:top;overflow-wrap:anywhere}
-.work-table th:nth-child(1){width:92px}.work-table th:nth-child(2){width:32%}.work-table th:nth-child(4){width:130px}.work-table th:nth-child(5){width:84px}.work-table th:nth-child(6){width:72px}
+.work-table th:nth-child(1){width:92px}.work-table th:nth-child(2){width:32%}.work-table th:nth-child(4){width:130px}.work-table th:nth-child(5){width:84px}.work-table th:nth-child(6){width:120px}
 .work-table [data-col=task] a{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
 .work-table [data-col=state],.work-table [data-col=time]{color:var(--text-2)}
 .task-row{cursor:pointer}.task-row[data-stuck=true]{background:color-mix(in srgb,var(--blocked) 12%,transparent)}.task-row[data-stuck=true] [data-col=state]{color:var(--blocked)}

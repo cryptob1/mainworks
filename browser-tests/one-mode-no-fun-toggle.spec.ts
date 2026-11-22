@@ -47,7 +47,7 @@ test('e2e:one-mode-no-fun-toggle — no Fun control on any page, a stored Fun pr
   await menu.nth(2).click();
   await expect(page.getByRole('heading', { name: 'Workers', exact: true, level: 1 })).toBeVisible();
   await noFun();
-  await menu.nth(5).click();
+  await menu.nth(4).click();
   const tabs = page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button');
   await expect(tabs.first()).toBeVisible(); // allInnerTexts does not wait: read the tab names once the bar has rendered.
   for (const name of await tabs.allInnerTexts()) {

@@ -9,6 +9,8 @@ const seats = 'Add two Claude seats so more Builders can work';
 
 function tasks(now: number, { request = true } = {}) {
   const at = (offset: number) => new Date(now + offset).toISOString();
+  // The shipped task merged today, even for a run just after local midnight, and went live 1h 40m after its review began.
+  const merged = -Math.min(30 * minute, (now - new Date(now).setHours(0, 0, 0, 0)) / 2), live = merged / 2;
   const sha = (seed: string) => seed.repeat(40).slice(0, 40);
   const base = { description: '', type: 'feature', priority: 2, dependencies: [], criteria: [{ id: 'AC-1', text: 'It works', proofs: ['unit:it-works'] }], policy: { checks: ['test'], review: true },
     policyRevision: 1, revision: 1, ready: true, epoch: 1, lease: null, gates: [], violations: [], workspaces: [], evidence: [], scenarioRequirements: [], sessions: [],
@@ -24,8 +26,8 @@ function tasks(now: number, { request = true } = {}) {
       gates: [{ name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }] }),
     item(102, 'Trials stop running one test group at a time when hot', { goal: speed, stage: 'build', stageEnteredAt: at(-41 * minute), ...builder('worker-b', 'Milo', 'Codex'), ...pr(402, -45 * minute),
       blocker: 'The merge trial failed three times on remote-shards.test.ts' }),
-    item(103, 'Build each base commit once per trial', { goal: speed, stage: 'done', stageEnteredAt: at(-30 * minute), ...pr(403, -2 * hour), lastAssignment: { owner: 'worker-c', epoch: 1, displayName: 'Wren', runtime: 'Claude' },
-      delivery: { mergedAt: at(-30 * minute), mergeSha: sha('3'), authorizationRevision: 1, deployment: { sha: sha('3'), mergeSha: sha('3'), source: 'endpoint', covers: 'exact', observedAt: at(-20 * minute), at: at(-20 * minute), observer: 'master' } } }),
+    item(103, 'Build each base commit once per trial', { goal: speed, stage: 'done', stageEnteredAt: at(merged), ...pr(403, live - 100 * minute), lastAssignment: { owner: 'worker-c', epoch: 1, displayName: 'Wren', runtime: 'Claude' },
+      delivery: { mergedAt: at(merged), mergeSha: sha('3'), authorizationRevision: 1, deployment: { sha: sha('3'), mergeSha: sha('3'), source: 'endpoint', covers: 'exact', observedAt: at(live), at: at(live), observer: 'master' } } }),
     item(104, 'Lead page: History and Messages are their own tabs', { goal: plain, stage: 'build', stageEnteredAt: at(-5 * minute) }),
     item(105, seats, { goal: plain, stage: 'build', stageEnteredAt: at(-2 * hour), ...decision }),
     item(106, 'The product is called Mainworks everywhere', { goal: plain, stage: 'build', stageEnteredAt: at(-9 * minute), ...builder('worker-c', 'Wren', 'Claude') }),

@@ -84,7 +84,7 @@ for (const viewport of viewports) test(`every page is captured at ${viewport.nam
   }
   await nav(page, 'Work', phone);
   for (const [name, title] of [['item-moving', 'Cut the documentation to a short set'], ['item-needs-you', 'Prove the one-command install on a real cloud host'], ['item-blocked', 'Move sessions to Postgres']]) {
-    await page.getByRole('button', { name: new RegExp(title) }).first().click();
+    await page.getByRole('link', { name: new RegExp(title) }).first().click();
     await expect(page.getByRole('heading', { name: title, level: 1 })).toBeVisible();
     await shot(name);
     await page.getByRole('button', { name: '← Back' }).click();

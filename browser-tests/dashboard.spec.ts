@@ -32,7 +32,7 @@ async function fixture(page: Page, role = 'admin', extra: Record<string, unknown
 const cardSelect = (page: Page) => page.getByRole('link', { name: /Browser fixture.*GY-1/ });
 
 async function login(page: Page, value = 'browser-fixture') { await page.getByLabel('Access token').fill(value); await page.getByRole('button', { name: 'Open control plane' }).click(); }
-// The one navigation (GY-161): the sidebar holds Work, Master, Workers, Shipped, Tests and
+// The one navigation (GY-161): the sidebar holds Work, Master, Workers, Tests and
 // Settings; the other pages are sub-page links under one of them. On a phone the sidebar folds into
 // a Menu button. An open work item is a page of its own, left with "← Back".
 const workHeading = (page: Page) => page.getByRole('heading', { name: 'Work', exact: true, level: 1 });
@@ -41,7 +41,7 @@ async function sidebarEntry(page: Page, entry: string) {
   if (page.viewportSize()!.width <= 650 && await menu.getAttribute('aria-expanded') !== 'true') await menu.click();
   await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: entry, exact: true }).click();
 }
-async function openPage(page: Page, section: 'Shipped' | 'Tests' | 'Settings', tab: string) {
+async function openPage(page: Page, section: 'Work' | 'Tests' | 'Settings', tab: string) {
   await sidebarEntry(page, section);
   await page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: tab, exact: true }).click();
 }
@@ -573,7 +573,7 @@ test('releases view labels verification precisely, shows membership and reports 
     reason: 'Incident', automatic: true, requestedBy: 'graphyard', requestedAt: '2026-01-01T00:00:00Z', repairWorkId: null, state: 'applied', verifiedAt: null, interval: null, history: [],
     operation: { id: 'op-12345678', registration: { id: 'rollback', revision: 1 }, principal: 'railway-rollback', epoch: 1, fencing: 'provider', claimedAt: '2026-01-01T00:00:10Z', precondition: { environment: 'production', generation: 2, expectedRunning: 'g', token: 't' }, outcome: 'applied', settledAt: '2026-01-01T00:00:40Z', providerOperationId: 'dep-9', detail: null, resolvedBy: null, evidence: null, reports: [] } };
   await page.route('**/api/delivery', route => route.fulfill(fail ? { status: 503, json: { error: 'Delivery state unavailable' } } : { json: { environments: [environment], releases: [release], rollbacks: [rollback], now: '2026-01-01T00:02:00Z' } }));
-  await login(page); await openPage(page, 'Shipped', 'Releases');
+  await login(page); await openPage(page, 'Work', 'Releases');
   await expect(page.getByRole('heading', { name: 'Releases', level: 1 })).toBeVisible();
   await expect(page.getByRole('alert')).toContainText('Delivery state unavailable');
   await expect(page.getByText('No release selected yet.')).toHaveCount(0);

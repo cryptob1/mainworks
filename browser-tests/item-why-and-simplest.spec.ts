@@ -6,7 +6,7 @@ import type { Work } from '../src/model';
 const why = 'Owners see at a glance how an item helps users.';
 const simplest = 'Two sentences on create, shown where items already show.';
 
-test('e2e:item-why-and-simplest — the create box files both sentences, the item page and Work list lead with them, requirements revise them, an older item opens without them', async ({ page }) => {
+test('e2e:item-why-and-simplest — the create box files both sentences, the item page leads with them, requirements revise them, an older item opens without them', async ({ page }) => {
   test.setTimeout(180_000);
   const f = await priorityServer();
   const settled = { timeout: 15_000 };
@@ -50,12 +50,9 @@ test('e2e:item-why-and-simplest — the create box files both sentences, the ite
     expect(leadTop).toBeLessThan(detailsTop);
 
     await page.getByRole('button', { name: '← Back' }).click();
-    // Both items are unreleased: open the Backlog group, where the owner looks for them.
-    await page.getByRole('button', { name: /^Backlog/ }).click();
-    await expect(page.locator(`[data-row="${created.key}"] [data-lead]`)).toBeVisible(settled);
-    await expect(page.locator(`[data-row="${created.key}"] [data-lead]`)).toHaveText(`${why} ${simplest}`);
+    // Both items are unreleased Backlog rows of the Work list (GY-3600), each opening its item page.
+    await expect(page.locator(`[data-row="${created.key}"]`)).toBeVisible(settled);
     await expect(page.locator(`[data-row="${older.key}"]`)).toBeVisible();
-    await expect(page.locator(`[data-row="${older.key}"] [data-lead]`)).toHaveCount(0);
 
     await page.locator(`[data-row="${created.key}"]`).getByRole('link', { name: /open/ }).click();
     await itemPage.locator('details.edit-menu > summary').click();
@@ -68,8 +65,6 @@ test('e2e:item-why-and-simplest — the create box files both sentences, the ite
     await expect(heading.locator('h1[data-why="true"]')).toHaveText('Agents build what users need.', settled);
     await expect(heading.locator('[data-simplest]')).toHaveText(`Simplest: ${simplest}`);
     await page.getByRole('button', { name: '← Back' }).click();
-    await expect(page.locator(`[data-row="${created.key}"] [data-lead]`)).toBeVisible(settled);
-    await expect(page.locator(`[data-row="${created.key}"] [data-lead]`)).toHaveText(`Agents build what users need. ${simplest}`, settled);
 
     await page.locator(`[data-row="${older.key}"]`).getByRole('link', { name: /open/ }).click();
     await expect(itemPage.locator('h1')).toHaveText('Older item', settled);
