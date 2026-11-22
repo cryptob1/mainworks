@@ -66,7 +66,7 @@ test('e2e:master-page-terminal — the operator types into the master pane live;
 
     // A reader's session sees the same screen, read-only: what it types never reaches the pane.
     const reader = await browser.newPage(); await serveXterm(reader);
-    await reader.addInitScript(() => sessionStorage.setItem('mainworks-token', 'test-reader'));
+    await reader.addInitScript(() => sessionStorage.setItem('graphyard-token', 'test-reader'));
     await reader.goto(`${url}/#master/live`);
     await expect(rows(reader)).toContainText('screen of w1:master', settled);
     await expect(reader.getByRole('status')).toContainText('View only', settled);

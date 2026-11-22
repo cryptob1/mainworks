@@ -32,7 +32,7 @@ const hostDoable: (HostDoableAsk & { test: RegExp })[] = [
     route: 'the master restarts the loop onto the checkout\'s HEAD, which graphyard-deploy.service keeps at main\'s served tip, and master init records the install\'s units', command: 'mainworks master restart' },
   // GY-1692 (GY-1691): an identity issued to an agent, not a person, whose token is a repository or
   // environment secret the host's gh login sets; the install's admin credential is saved on the host.
-  { class: 'agent-identity', what: 'an operator-agent identity issued to an agent, with its token stored as a repository or environment secret', test: /\boperator-agent setup\b|\bmainworks-release-follow-up\b|\bGRAPHYARD_RELEASE_TOKEN\b|\bgh secret set\b|\b(?:operator[- ]agent|agent) identit(?:y|ies)\b/i,
+  { class: 'agent-identity', what: 'an operator-agent identity issued to an agent, with its token stored as a repository or environment secret', test: /\boperator-agent setup\b|\b(?:graphyard|mainworks)-release-follow-up\b|\bGRAPHYARD_RELEASE_TOKEN\b|\bgh secret set\b|\b(?:operator[- ]agent|agent) identit(?:y|ies)\b/i,
     route: 'the master issues or rotates it with the install\'s admin credential saved on this host and stores the token through the host\'s gh login, the loop running it itself; a host without that credential names the administrator\'s step in master status', command: 'mainworks master setup --apply' },
 ];
 /** Who a credential is issued to, when it is a person: that stays the human's (`credentials-for-people`). */

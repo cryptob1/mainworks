@@ -378,7 +378,7 @@ export const agyConfigFile = (environment: Record<string, string> = {}) => {
   return home ? resolve(home, 'settings.json') : resolve(environment.HOME ?? homedir(), '.gemini', 'antigravity-cli', 'settings.json');
 };
 /** A managed session checkout's leaf, by the name install/worktree-root.ts `sessionCheckoutName` gives its directory, under any root. */
-const managedCheckout = /[\\/]mainworks-(proof|review|approval)-[a-z0-9][a-z0-9-]{0,39}-[0-9a-f]{7}-[0-9a-f]{8}[\\/]checkout$/;
+const managedCheckout = /[\\/]graphyard-(proof|review|approval)-[a-z0-9][a-z0-9-]{0,39}-[0-9a-f]{7}-[0-9a-f]{8}[\\/]checkout$/;
 const removedMainworksWorktree = (entry: unknown) => typeof entry === 'string'
   && (entry.includes(`${sep}.graphyard${sep}worktrees${sep}`) || managedCheckout.test(entry)) && !existsSync(entry);
 export async function trustAgyFolder(directory: string, environment: Record<string, string> = {}): Promise<FolderTrust> {

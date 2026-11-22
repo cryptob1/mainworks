@@ -31,16 +31,16 @@ test('e2e:signin-session-survives-restart — login link remains signed in after
     const { code } = await response.json() as { code: string };
     await page.goto('/#sign-in=' + code);
     await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible(settled);
-    const token = await page.evaluate(() => localStorage.getItem('mainworks-token'));
+    const token = await page.evaluate(() => localStorage.getItem('graphyard-token'));
     expect(token).toMatch(/^gyh_/);
     await http.close();
     http = await signInProcess(database.url);
     await page.reload();
     await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible(settled);
-    expect(await page.evaluate(() => localStorage.getItem('mainworks-token'))).toBe(token);
+    expect(await page.evaluate(() => localStorage.getItem('graphyard-token'))).toBe(token);
     await page.getByRole('button', { name: 'Sign out', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toBeHidden(settled);
-    expect(await page.evaluate(() => localStorage.getItem('mainworks-token'))).toBeNull();
+    expect(await page.evaluate(() => localStorage.getItem('graphyard-token'))).toBeNull();
     expect((await fetch(http.url + '/api/status', { headers: { Authorization: `Bearer ${token}` } })).status).toBe(401);
     expect((await database.store.pool.query('SELECT * FROM human_sign_in_sessions')).rowCount).toBe(0);
   } finally { await http.close(); await database.close(); }

@@ -263,7 +263,7 @@ test('mobile sign out is reachable and removes the session', async ({ page }) =>
   const signOut = page.getByRole('button', { name: 'Sign out' });
   await expect(signOut).toBeVisible(); await signOut.click();
   await expect(page.getByLabel('Access token')).toBeVisible();
-  expect(await page.evaluate(() => sessionStorage.getItem('mainworks-token'))).toBeNull();
+  expect(await page.evaluate(() => sessionStorage.getItem('graphyard-token'))).toBeNull();
 });
 
 async function checkDialog(page: Page, trigger: ReturnType<Page['getByRole']>) {

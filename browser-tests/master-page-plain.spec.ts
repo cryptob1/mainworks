@@ -100,7 +100,7 @@ test('e2e:master-page-plain — blockers and the terminal first, install message
 
       // A viewer reads 'View only' on the Live session tab; signed out reads 'Sign in to see the terminal.'
       const viewer = await context.newPage();
-      await viewer.addInitScript(() => sessionStorage.setItem('mainworks-token', 'test-reader'));
+      await viewer.addInitScript(() => sessionStorage.setItem('graphyard-token', 'test-reader'));
       await viewer.goto(`${url}/#master/live`);
       await expect(viewer.getByRole('status')).toContainText('View only', settled);
 

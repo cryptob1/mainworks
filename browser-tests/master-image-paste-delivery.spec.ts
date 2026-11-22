@@ -132,7 +132,7 @@ test('e2e:master-image-paste-delivery — a screenshot pasted on the Lead live s
     expect((await typed()).length).toBe(before);
     await context.close();
     const viewer = await browser.newContext({ ignoreHTTPSErrors: true });
-    await viewer.addInitScript(() => sessionStorage.setItem('mainworks-token', 'test-reader'));
+    await viewer.addInitScript(() => sessionStorage.setItem('graphyard-token', 'test-reader'));
     const reader = await viewer.newPage(); await serveXterm(reader);
     await reader.goto(`${origin}/#master/live`);
     await expect(reader.getByRole('status')).toContainText('View only', settled);

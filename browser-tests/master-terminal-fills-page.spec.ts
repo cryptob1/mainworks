@@ -56,7 +56,7 @@ async function open(browser: Browser, url: string, width: 1280 | 390, viewer: 't
     await page.goto(`${url}/#sign-in=${code}&master`);
     await openLiveSession(page);
   } else {
-    await page.addInitScript(() => sessionStorage.setItem('mainworks-token', 'test-reader'));
+    await page.addInitScript(() => sessionStorage.setItem('graphyard-token', 'test-reader'));
     await page.goto(`${url}/#master/live`);
   }
   await expect(page.getByRole('status')).toContainText(viewer === 'typing' ? 'You can type here' : 'View only', settled);

@@ -46,7 +46,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
     expect(posted[0]).toEqual({ path: '/api/sign-in', body: { code: 'one-time-code-from-mainworks-login' } });
     expect(new URL(page.url()).hash).toBe('');
     // GY-2171: the human session lasts until 90 days unused, so it is kept beyond this browser session.
-    expect(await page.evaluate(() => localStorage.getItem('mainworks-token'))).toBe('browser-human');
+    expect(await page.evaluate(() => localStorage.getItem('graphyard-token'))).toBe('browser-human');
 
     await page.getByRole('button', { name: 'Every request and answer →' }).click();
     await expect(page.getByText('Signed in as')).toContainText('operator · human operator');

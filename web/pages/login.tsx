@@ -26,7 +26,7 @@ export const HELPER_TEXT = 'Tokens are scoped to your role and kept for this bro
 /** The one command that signs the human operator in without a token (GY-738, GY-2171). */
 export const SIGN_IN_COMMAND = `${COMMAND_NAME} open`;
 /** Where a session a sign-in link opens is kept: it lasts until 90 days unused, so it outlives the browser session a typed token keeps to (GY-2171). */
-export const HUMAN_SESSION_KEY = 'mainworks-token';
+export const HUMAN_SESSION_KEY = 'graphyard-token';
 /** The token this browser holds: a typed one for this browser session, else a sign-in link's human session. */
 export const storedToken = () => sessionStorage.getItem(HUMAN_SESSION_KEY) ?? localStorage.getItem(HUMAN_SESSION_KEY) ?? '';
 /** What an action the local viewer may not take says; the notice beside it offers Sign in. */
@@ -160,7 +160,7 @@ export default function LoginPage({ token, error, signOut, setError, sessionEpoc
     history.replaceState(null, '', `${location.pathname}${location.search}`);
     void redeemClaim(code, (input, init) => fetch(input, init)).then(value => {
       if (!value) { setError(CLAIM_REFUSED); return; }
-      sessionEpoch.current++; setError(''); sessionStorage.setItem('mainworks-token', value); setToken(value);
+      sessionEpoch.current++; setError(''); sessionStorage.setItem('graphyard-token', value); setToken(value);
     }, () => setError(CLAIM_REFUSED));
   }, []);
   // With no token, the first read is the local viewer's: a refusal (a proxied or remote address) opens the form.
@@ -178,6 +178,6 @@ export default function LoginPage({ token, error, signOut, setError, sessionEpoc
     return () => { active = false; check.cancel(); };
   }, [token, attempt, signingIn]);
   const state: LoginState = !token && signingIn ? { kind: 'form' } : unreachable ? { kind: 'unreachable', host } : { kind: 'verifying' };
-  const submit = () => { const value = draftToken.trim(); if (!value) { setError('Enter an access token.'); return; } sessionEpoch.current++; setError(''); sessionStorage.setItem('mainworks-token', value); setToken(value); };
+  const submit = () => { const value = draftToken.trim(); if (!value) { setError('Enter an access token.'); return; } sessionEpoch.current++; setError(''); sessionStorage.setItem('graphyard-token', value); setToken(value); };
   return <LoginView state={state} error={error} draftToken={draftToken} setDraftToken={setDraftToken} submit={submit} retry={() => setAttempt(n => n + 1)} useAnotherToken={signOut}/>;
 }

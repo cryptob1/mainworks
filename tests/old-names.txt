@@ -86,3 +86,5 @@ POSTGRES_(USER|DB)=graphyard
 @[^/\s]+/graphyard\b
 pathname = '/graphyard'
 --server-name graphyard\b
+'graphyard-token'
+\[\\\\/\]graphyard-\(

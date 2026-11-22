@@ -231,7 +231,7 @@ async function openAs(browser: Browser, url: string, token: string) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   await serveXterm(context);
   const page = await context.newPage();
-  await page.addInitScript(value => sessionStorage.setItem('mainworks-token', value), token);
+  await page.addInitScript(value => sessionStorage.setItem('graphyard-token', value), token);
   await page.goto(`${url}/#master`);
   return page;
 }
