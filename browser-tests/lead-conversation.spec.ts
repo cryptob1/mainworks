@@ -85,6 +85,11 @@ test('e2e:lead-conversation — the Lead is a conversation of messages and cards
     await expect(approvalCard).toContainText(/Waiting \d+m/);
     await expect(approvalCard.getByRole('button', { name: 'Approve 2 more seats' })).toBeEnabled();
     await expect(approvalCard.getByRole('button', { name: 'Keep 9 accounts' })).toBeEnabled();
+    // A choice that needs words is never hidden: it opens the Task, where the answer is written.
+    await approvalCard.getByRole('button', { name: 'Approve a different number…' }).click();
+    await expect(page.getByRole('heading', { name: /Watch a worker/ })).toBeVisible(settled);
+    await page.getByRole('button', { name: '← Back' }).click();
+    await expect(conversation).toBeVisible(settled);
 
     // The Live session tab is the terminal one click away; History and Messages still work.
     await tablist.getByRole('tab', { name: 'Live session' }).click();

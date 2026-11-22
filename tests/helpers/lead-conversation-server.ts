@@ -65,7 +65,7 @@ await requestHumanDecision(services, worker, watchItem.id, {
   ask: 'Approve 2 more agent seats so more builders can work — same plan, 2 more seats.',
   why: 'The release fix ships an hour earlier with a second builder on it.',
   recommendation: 'Approve 2 more seats',
-  choices: [{ id: 'approve-2', label: 'Approve 2 more seats', outcome: 'provided', input: 'none' }, { id: 'keep-9', label: 'Keep 9 accounts', outcome: 'declined', input: 'none' }],
+  choices: [{ id: 'approve-2', label: 'Approve 2 more seats', outcome: 'provided', input: 'none' }, { id: 'approve-other', label: 'Approve a different number…', outcome: 'provided', input: 'text' }, { id: 'keep-9', label: 'Keep 9 accounts', outcome: 'declined', input: 'none' }],
 }, randomUUID());
 await engine.execute(operator, 'priority', fixItem.id, { priority: 0, reason: 'the release fix outranks new pages.' }, randomUUID());
 await services.agentRegistry.mutate(operator, 'apply', { runtimes: [proposedRuntimes.find(runtime => runtime.name === 'claude')!], models: [{ name: 'opus', id: 'claude-opus-5' }], accounts: [{ name: 'claude-a', runtime: 'claude', model: 'opus', credential: { host: 'host-1', home: '/home/agent/.claude' } }], roles: [{ name: 'worker', accounts: ['claude-a'], concurrency: 2 }], reason: 'The fleet at the start of the run' }, randomUUID());

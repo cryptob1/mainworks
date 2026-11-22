@@ -228,7 +228,8 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
                   {refusalFor(entry.row) ? <>
                     <div className="lead-actions">{(choicesOf(entry.row).length ? choicesOf(entry.row) : [{ label: 'Answer', body: {} as Record<string, unknown> }]).map(choice => <button key={choice.label} type="button" disabled title={refusalFor(entry.row)!}>{choice.label}</button>)}</div>
                     <p className="muted">{refusalFor(entry.row)}</p>
-                  </> : choicesOf(entry.row).length ? <div className="lead-actions">{choicesOf(entry.row).map(choice => <button key={choice.label} type="button" disabled={busy} onClick={() => void action(entry.row.id, entry.row.answer.post.command, choice.body)}>{choice.label}</button>)}</div>
+                  </> : choicesOf(entry.row).length ? <div className="lead-actions">{choicesOf(entry.row).map(choice => <button key={choice.label} type="button" disabled={busy}
+                      onClick={() => choice.input === 'none' ? void action(entry.row.id, entry.row.answer.post.command, choice.body) : setSelected(entry.row.id)}>{choice.label}</button>)}</div>
                     : <div className="lead-actions"><button type="button" disabled={busy} onClick={() => setSelected(entry.row.id)}>Answer in your own words</button></div>}
                 </article>}
                 {entry.kind === 'decision' && <article className="lead-card decision">
@@ -298,9 +299,12 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
   </>;
 }
 
-/** The choices an approval offers, recommended first — the request's own verb-and-object buttons. */
+/**
+ * The choices an approval offers, recommended first — the request's own verb-and-object buttons.
+ * A choice that needs no words answers in place; one that needs words or a secret opens the Task.
+ */
 function choicesOf(row: HumanRequestRow) {
-  return recommendedFirst(row.choices ?? []).filter(choice => choice.input === 'none');
+  return recommendedFirst(row.choices ?? []);
 }
 function decisionNoun(row: HumanRequestRow): string {
   return ({ 'goals-and-priorities': 'priorities', 'money-or-accounts': 'spend', 'credentials-for-people': 'credentials' } as Record<string, string>)[row.request.kind] ?? row.request.kind;
