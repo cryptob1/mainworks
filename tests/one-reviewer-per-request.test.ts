@@ -210,52 +210,52 @@ async function assertOneSession(master: Awaited<ReturnType<typeof reviewerMaster
 test('unit:one-reviewer-per-request — the cycle step and the dispatcher launching for the same request in one tick start one session with one record, recorded before its runtime starts', async () => {
   await sessionProviderContract();
   await mirrored(async ledger => {
-  const master = await reviewerMaster(ledger);
-  try {
-    // GY-1111: the dispatcher losing used to read as "both stood down" — its refusal is settled as its
-    // result (GY-1090), not thrown — so each launcher's outcome is now read where it launches, and
-    // every order the two can reach the ledger in is driven explicitly.
-    let last!: Awaited<ReturnType<typeof race>>, record!: ReviewRecord;
-    for (const order of interleavings) { last = await race(master, order); record = await assertOneSession(master, order, last); }
-    const { item, request, agents } = last;
+    const master = await reviewerMaster(ledger);
+    try {
+      // GY-1111: the dispatcher losing used to read as "both stood down" — its refusal is settled as its
+      // result (GY-1090), not thrown — so each launcher's outcome is now read where it launches, and
+      // every order the two can reach the ledger in is driven explicitly.
+      let last!: Awaited<ReturnType<typeof race>>, record!: ReviewRecord;
+      for (const order of interleavings) { last = await race(master, order); record = await assertOneSession(master, order, last); }
+      const { item, request, agents } = last;
 
-    // `master review`, the third launcher, is refused for the same request while the session is pending.
-    await assert.rejects(reviewCommand(master.root, ['GY-114', 'second-reviewer'], { work: [item], now: new Date().toISOString() }, agents, { run: master.run, headless: master.headless, registerLaunch: master.registerLaunch }), /already pending on c1fffff/);
-    assert.equal(master.log.tabs.length, 1);
+      // `master review`, the third launcher, is refused for the same request while the session is pending.
+      await assert.rejects(reviewCommand(master.root, ['GY-114', 'second-reviewer'], { work: [item], now: new Date().toISOString() }, agents, { run: master.run, headless: master.headless, registerLaunch: master.registerLaunch }), /already pending on c1fffff/);
+      assert.equal(master.log.tabs.length, 1);
 
-    // A Herdr session serving the request refuses a launch even when the ledger has no pending
-    // record for it — here the settled record whose pane Herdr could not close.
-    await updateReviewLedger(master.root, current => { current.reviews = current.reviews.map(entry => ({ ...entry, state: 'failed' as const, closeFailure: 'Herdr could not close pane' })); });
-    await assert.rejects(launchReview(master.root, item, 'second-reviewer', [{ name: record.agentName }], new Date().toISOString(), { run: master.run, headless: master.headless, registerLaunch: master.registerLaunch, requestId: request.id }),
-      new RegExp(`Reviewer session ${record.agentName} is already visible in Herdr for GY-114 review request ${request.id}`));
-    // So does a session a multi-session profile named for the request, with no record at all.
-    await updateReviewLedger(master.root, current => { current.reviews = []; });
-    await saveReviewerProfile(master.root, { name: 'many-reviewer', agentName: 'review-many', kind: 'claude', concurrency: 3 });
-    const derived = sessionAgentName({ agentName: 'review-many', concurrency: 3 }, { id: request.id, requestId: request.id, attempt: 2 });
-    await assert.rejects(launchReview(master.root, item, 'second-reviewer', [{ name: derived }], new Date().toISOString(), { run: master.run, headless: master.headless, registerLaunch: master.registerLaunch, requestId: request.id }),
-      new RegExp(`Reviewer session ${derived} is already visible in Herdr`));
-    assert.equal(master.log.tabs.length, 1, 'no refused launch created a tab');
+      // A Herdr session serving the request refuses a launch even when the ledger has no pending
+      // record for it — here the settled record whose pane Herdr could not close.
+      await updateReviewLedger(master.root, current => { current.reviews = current.reviews.map(entry => ({ ...entry, state: 'failed' as const, closeFailure: 'Herdr could not close pane' })); });
+      await assert.rejects(launchReview(master.root, item, 'second-reviewer', [{ name: record.agentName }], new Date().toISOString(), { run: master.run, headless: master.headless, registerLaunch: master.registerLaunch, requestId: request.id }),
+        new RegExp(`Reviewer session ${record.agentName} is already visible in Herdr for GY-114 review request ${request.id}`));
+      // So does a session a multi-session profile named for the request, with no record at all.
+      await updateReviewLedger(master.root, current => { current.reviews = []; });
+      await saveReviewerProfile(master.root, { name: 'many-reviewer', agentName: 'review-many', kind: 'claude', concurrency: 3 });
+      const derived = sessionAgentName({ agentName: 'review-many', concurrency: 3 }, { id: request.id, requestId: request.id, attempt: 2 });
+      await assert.rejects(launchReview(master.root, item, 'second-reviewer', [{ name: derived }], new Date().toISOString(), { run: master.run, headless: master.headless, registerLaunch: master.registerLaunch, requestId: request.id }),
+        new RegExp(`Reviewer session ${derived} is already visible in Herdr`));
+      assert.equal(master.log.tabs.length, 1, 'no refused launch created a tab');
 
-    // A reservation whose launcher died mid-launch is failed by reconciliation once it is stale,
-    // and a reconciliation never drops a record a launcher reserved while it was running.
-    const stale: ReviewRecord = { ...record, id: randomUUID(), state: 'pending', launching: true, pane: null, requestedAt: new Date(Date.now() - 11 * 60_000).toISOString() };
-    const running: ReviewRecord = { ...record, id: randomUUID(), state: 'pending', pane: 'pane-running', agentName: 'review-claude-1' };
-    await updateReviewLedger(master.root, current => { current.reviews = [stale, running]; });
-    let concurrent: ReviewRecord | null = null;
-    const reconciled = await reconcileReviews(master.root, await loadMasterConfig(master.root), { run: master.run, work: [item], agents: [], observe: () => {
-      // While the pass is reading GitHub, another launcher reserves a record.
-      if (!concurrent) { concurrent = { ...record, id: randomUUID(), state: 'pending', launching: true, pane: null, requestedAt: new Date().toISOString() }; void updateReviewLedger(master.root, current => { current.reviews.push(concurrent!); }); }
-      return null;
-    } });
-    await new Promise(done => setTimeout(done, 200));
-    const after = await readReviewLedger(master.root);
-    assert.equal(after.reviews.find(entry => entry.id === stale.id)?.state, 'failed');
-    assert.match(after.reviews.find(entry => entry.id === stale.id)!.resolution!, /never confirmed its runtime started/);
-    assert.ok(reconciled.changed >= 1);
-    assert.ok(concurrent, 'the pass read GitHub for the running session');
-    assert.equal(after.reviews.find(entry => entry.id === concurrent!.id)?.launching, true, 'the reservation made during the pass survives its save');
-    assert.ok(after.reviews.find(entry => entry.id === running.id)?.idleSince, 'and the pass still records what it changed');
-  } finally { await master.cleanup(); }
+      // A reservation whose launcher died mid-launch is failed by reconciliation once it is stale,
+      // and a reconciliation never drops a record a launcher reserved while it was running.
+      const stale: ReviewRecord = { ...record, id: randomUUID(), state: 'pending', launching: true, pane: null, requestedAt: new Date(Date.now() - 11 * 60_000).toISOString() };
+      const running: ReviewRecord = { ...record, id: randomUUID(), state: 'pending', pane: 'pane-running', agentName: 'review-claude-1' };
+      await updateReviewLedger(master.root, current => { current.reviews = [stale, running]; });
+      let concurrent: ReviewRecord | null = null;
+      const reconciled = await reconcileReviews(master.root, await loadMasterConfig(master.root), { run: master.run, work: [item], agents: [], observe: () => {
+        // While the pass is reading GitHub, another launcher reserves a record.
+        if (!concurrent) { concurrent = { ...record, id: randomUUID(), state: 'pending', launching: true, pane: null, requestedAt: new Date().toISOString() }; void updateReviewLedger(master.root, current => { current.reviews.push(concurrent!); }); }
+        return null;
+      } });
+      await new Promise(done => setTimeout(done, 200));
+      const after = await readReviewLedger(master.root);
+      assert.equal(after.reviews.find(entry => entry.id === stale.id)?.state, 'failed');
+      assert.match(after.reviews.find(entry => entry.id === stale.id)!.resolution!, /never confirmed its runtime started/);
+      assert.ok(reconciled.changed >= 1);
+      assert.ok(concurrent, 'the pass read GitHub for the running session');
+      assert.equal(after.reviews.find(entry => entry.id === concurrent!.id)?.launching, true, 'the reservation made during the pass survives its save');
+      assert.ok(after.reviews.find(entry => entry.id === running.id)?.idleSince, 'and the pass still records what it changed');
+    } finally { await master.cleanup(); }
   });
 });
 
