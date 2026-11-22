@@ -54,6 +54,7 @@ import { leftoversStep, tallyLeftovers } from './leftovers.js';
 import { yardAlertStep } from './yard-alerts.js';
 import { recordStallAlarm, stallAlarm } from './stall-alarm.js';
 import { controlPlaneStep } from './control-plane.js';
+import { reworkWorktreePath } from '../cli/workspace-worktree.js';
 
 /** How many session launches the launcher runs at once when master.json sets no `run.launchConcurrency` (GY-616). */
 export const defaultLaunchConcurrency = 3;
@@ -305,6 +306,8 @@ export function endedAttemptWorktrees(work: Work[], hostId: string, now: number)
   return work.flatMap(item => (item.workspaces ?? []).filter(space => space.host === hostId
     // GY-3632: a rework that reused the path owns it now.
     && !(item.workspaces ?? []).some(later => later.epoch > space.epoch && later.host === hostId && later.path === space.path)
+    // GY-3689: an open submitted item's rework reuses its latest worktree on this host (reworkWorktreePath); removing it races that launch.
+    && !(item.stage !== 'done' && item.submission && reworkWorktreePath(item, space.branch, hostId) === space.path)
     && !(item.lease && item.lease.epoch === space.epoch && Date.parse(item.lease.expiresAt) > now)
     && !(item.sessions ?? []).some(handle => handle.kind === 'implementation' && handle.state === 'running' && (handle.epoch ?? Number(/:(\d+)$/.exec(handle.id)?.[1])) === space.epoch))
     .map(space => ({ item, space })));

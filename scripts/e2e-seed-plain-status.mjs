@@ -4,14 +4,14 @@
 //   node scripts/e2e-seed-plain-status.mjs
 //
 // Run from the checkout scripts/e2e-serve.mjs serves: it reads the database URL that serve wrote to
-// .graphyard/e2e-serve-PORT.json and writes the serve record in the serving root it names (the delivery
+// .graphyard/e2e-serve.json and writes the serve record in the serving root it names (the delivery
 // fixture's repository, GY-3131; else this checkout). Re-running re-dates the live item's merge, so
 // a retry after other cases merged still finds it the newest merge.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import pg from 'pg';
 
-const { databaseUrl, delivery } = JSON.parse(await readFile(`.graphyard/e2e-serve-${new URL(process.env.TARGET_URL).port}.json`, 'utf8')), servingRoot = delivery?.root ?? '.';
+const { databaseUrl, delivery } = JSON.parse(await readFile('.graphyard/e2e-serve.json', 'utf8')), servingRoot = delivery?.root ?? '.';
 const sha = '1234567890abcdef1234567890abcdef12345678', at = '2026-01-01T00:00:00.000Z';
 // The Work page names only the newest merge's stage, and cases before this one in the catalog merge
 // items of their own on the same control plane: the live item merges now, so it is the newest.

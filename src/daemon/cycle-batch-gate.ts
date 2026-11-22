@@ -68,7 +68,7 @@ async function trialFailures(reads: MergeWriterReads, commit: string, checks: re
   const runCases = cases.filter(proof => !(proof in environments.unknown) && !environments.untrusted.includes(proof));
   const trial = (origins: Record<string, string>, skipped: readonly string[]) => {
     const proofs = runCases.filter(proof => !skipped.includes(proof));
-    return reads.trial(commit, tests, { key: gateKey, criteria: proofs.length ? [{ id: 'AC-1', text: 'The batch gate cases pass', proofs }] as Work['criteria'] : [], ...(Object.keys(origins).length ? { environments: origins } : {}) }, undefined, onStep, undefined, undefined, undefined, signal, timeoutMs);
+    return reads.trial(commit, tests, { key: gateKey, criteria: proofs.length ? [{ id: 'AC-1', text: 'The batch gate cases pass', proofs }] as Work['criteria'] : [], ...(Object.keys(origins).length ? { environments: origins } : {}) }, trusted() ?? undefined, onStep, undefined, undefined, undefined, signal, timeoutMs);
   };
   // GY-3296: each named environment is provisioned around the one trial, its URL handed to its cases.
   // An environment wait or fault throws for the gate, which retries; the diagnostics (`skipFaults`)
@@ -391,7 +391,7 @@ export async function batchGateStep(cycle: Pick<Cycle, 'state' | 'effects' | 'sn
       await reads.ensureTrialImage?.();
       // A run that settled while the image built launches nothing.
       signal?.throwIfAborted(); run.throwIfAborted();
-      const launched = launch({ key: gateKey, head: sha, mergeSha: sha, baseTip: null, changedFiles: [...files], proofs, e2eProofs: e2eProofsOf(item),
+      const launched = launch({ key: gateKey, head: sha, mergeSha: sha, baseTip: base ?? null, changedFiles: [...files], proofs, e2eProofs: e2eProofsOf(item),
         reproduce: item.type !== 'chore', cores: null, ...trialShareAllowance(share, timeout, reads.cores) });
       gated.inFlight = { ...gated.inFlight!, run: { commit: sha, input, directory: launched.directory } };
       await mergeGateRecord(file, latest => ({ ...gated, ...diagnosticFields(latest, gated) })).catch(() => undefined);

@@ -1,0 +1,14 @@
+{
+  "id": "reclaim-spares-reused-worktree",
+  "title": "A rework re-dispatched right after its attempt ends starts in its worktree",
+  "description": "GY-3689: the loop's close step reclaims ended attempts' worktrees on a real Git repository. An item whose attempt just ended with a submission keeps its worktree, so the rework launched next resolves that path and its branch with no ENOENT; an ended attempt whose path nothing reuses is still removed.",
+  "tags": ["work", "delivery"],
+  "target": "any",
+  "required": true,
+  "steps": [{
+    "kind": "command",
+    "name": "the re-dispatched rework starts in its kept worktree",
+    "run": "node --import tsx tests/helpers/run-tests.ts tests/reclaim-spares-reused-worktree.test.ts",
+    "timeoutSeconds": 300
+  }]
+}
