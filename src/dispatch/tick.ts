@@ -5,7 +5,7 @@ import { type SessionHandleInput } from '../model/sessions.js';
 import { runtimeEndedStates } from '../harness.js';
 import { type DispatchRequest } from '../model/dispatch.js';
 import { profileAccount } from '../master/environments.js';
-import { sessionAgentName, withReviewerDefaults, type MasterConfig, type ProducerProfile, type ReviewerProfile } from '../master/profiles.js';
+import { profileConcurrency, sessionAgentName, withReviewerDefaults, type MasterConfig, type ProducerProfile, type ReviewerProfile } from '../master/profiles.js';
 import { withLaunchedRuntime } from '../master/launch.js';
 import { boundedLaunch, launchBoundMs } from '../master/launch-bound.js';
 import { capacityRefusal } from '../fleet.js';
@@ -310,19 +310,17 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
   };
   const session = (kind: 'review' | 'producer', item: Work, request: DispatchRequest, records: DispatchedSession[]) =>
     launchDue(kind, item, request, records) && (held ? (wait(kind, item, request, held), false) : true);
-  // A reviewer launch must never take a Herdr name a producer
-  // launch is taking: both read the tick's inventory, and a name joins it only once its launch
-  // returns. A launch holds the agent name of the one profile it is launching on until that name is
-  // in the inventory, and takes a failover profile's name only when failover reaches it, so a launch
-  // never waits on a name it would not have used.
-  const nameTurns = new Map<string, Promise<unknown>>();
-  const reserveName = <T>(name: string, launch: () => Promise<T>): Promise<T> => {
-    const turn = (nameTurns.get(name) ?? Promise.resolve()).then(launch);
-    nameTurns.set(name, turn.catch(() => { /* the launcher sees the failure */ }));
-    return turn;
+  // GY-3642: launches on one profile run side by side up to its concurrency; the rest wait for a
+  // running one to end. Each session's Herdr name is derived from its own request, so two launches
+  // never take the same name; the registry chooses and reserves the slot inside the launcher.
+  const profileSlots = new Map<string, { free: number; queue: (() => void)[] }>();
+  const reserveSlot = async <T>(profile: { agentName: string; concurrency?: number }, launch: () => Promise<T>): Promise<T> => {
+    let slots = profileSlots.get(profile.agentName);
+    if (!slots) profileSlots.set(profile.agentName, slots = { free: profileConcurrency(profile), queue: [] });
+    if (slots.free > 0) slots.free--; else await new Promise<void>(resolve => slots.queue.push(resolve));
+    try { return await launch(); } finally { const next = slots.queue.shift(); if (next) next(); else slots.free++; }
   };
-  // Launch over `profiles` in order, each in its own name's turn. Room is read again once the name
-  // is this launch's. The registry chooses and reserves the slot inside the launcher.
+  // Launch over `profiles` in order, each within its profile's slots. The registry chooses and reserves the slot inside the launcher.
   // GY-3235: a profile whose launch failed the same sandbox probe twice in a row is skipped for its
   // role until its backoff ends, in favour of the next; the probe failure is the profile's, never
   // a refusal counted against the request.
@@ -331,7 +329,7 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
     const skipped = backedOffProfiles(cursor, now()).filter(entry => entry.role === role);
     const usable = profiles.filter(profile => !skipped.some(entry => entry.profile === profile.name));
     if (profiles.length && !usable.length) throw Object.assign(new Error(`every ${role} profile is backed off after failing its launch probe: ${skipped.map(entry => `${entry.profile} until ${entry.until} (${entry.cause})`).join('; ')}`), { probeBackoff: true });
-    return launchWithFailover(usable, profile => reserveName(profile.agentName, async () => {
+    return launchWithFailover(usable, profile => reserveSlot(profile, async () => {
       let result: unknown;
       try { result = await launch(profile); }
       catch (error) {
@@ -450,26 +448,20 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
       }
     }
   };
-  // Producer launches that could not take the same profile run at once (GY-377), so the pass is
-  // bounded by the profiles' capacity and not by the sum of every launch's duration. Requests that
-  // could take the same profile keep the pass's order: each waits for the earlier ones on any agent
-  // name it could launch under, failover included, and then reads its room as a serial pass would.
-  const producerLaunches: Promise<{ error: unknown } | null>[] = [];
-  const producerTurns = new Map<string, Promise<unknown>>();
-  const afterEarlier = (names: string[], launch: () => Promise<void>) => {
-    const earlier = [...new Set(names)].map(name => producerTurns.get(name)).filter(Boolean);
-    const turn = Promise.allSettled(earlier).then(launch);
-    for (const name of names) producerTurns.set(name, turn.catch(() => { /* the launch reports its own failure */ }));
-    return turn;
-  };
-  let outcomes: ({ error: unknown } | null)[] = [];
+  // Review and producer launches run side by side (GY-377, GY-3642), so the pass is bounded by the
+  // profiles' concurrency (reserveSlot) and not by the sum of every launch's duration. A product
+  // review waits for its head's code review launch and takes turns with the other product reviews,
+  // which serve their heads one at a time (GY-3580).
+  const launches: Promise<{ error: unknown } | null>[] = [];
+  const sideBySide = (launch: () => Promise<void>) => { const started = launch(); launches.push(started.then(() => null, (error: unknown) => ({ error }))); return started; };
+  let productTurn: Promise<unknown> = Promise.resolve(), outcomes: ({ error: unknown } | null)[] = [];
   await (async () => {
     try {
+      const productLaunches: { item: Work; product: DispatchRequest; code: Promise<void> | null }[] = [];
       for (const item of snapshot.work.filter(work => work.stage !== 'done' && work.autoDispatch)) {
-        const review = item.autoDispatch!.review;
-        if (review?.state === 'requested' && review.provider === 'github') await dispatchReview(item, review);
-        const product = item.autoDispatch!.product;
-        if (product?.state === 'requested' && product.kind === 'product') await dispatchReview(item, product);
+        const review = item.autoDispatch!.review, product = item.autoDispatch!.product;
+        const code = review?.state === 'requested' && review.provider === 'github' ? sideBySide(() => dispatchReview(item, review)) : null;
+        if (product?.state === 'requested' && product.kind === 'product') productLaunches.push({ item, product, code });
         for (const request of item.autoDispatch!.producers.filter(entry => entry.state === 'requested')) {
           // Evidence recorded as not exercising its criterion goes back to the worker as a rework the
           // loop requests (master-daemon.ts); no producer is launched for the head again (GY-193 AC-3).
@@ -493,7 +485,7 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
             : !independent.length ? `every producer principal (${config.producers.map(profile => profile.principal).join(', ')}) has held an assignment on ${item.key}; its evidence would not be trusted`
             : `every independent producer profile is busy or unavailable (${independent.map(profile => credentials[profile.name]?.available === false ? `${profile.name}: ${credentials[profile.name].reason}` : `${profile.name}: registry slot unavailable`).join('; ')}); set concurrency on the registry producer role`);
           if (!available.some(eligible)) { busy(); continue; }
-          producerLaunches.push(afterEarlier(available.map(profile => profile.agentName), async () => {
+          sideBySide(async () => {
             if (!usable().length) { busy(); return; }
             try {
               const launched = await launchInTurns(request, usable(), candidate => {
@@ -512,10 +504,17 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
               else if (!outOfCapacity('producer', item, request, error)) refuse('producer', item, request, error);
             }
             await persist();
-          }).then(() => null, (error: unknown) => ({ error })));
+          });
         }
       }
-    } finally { outcomes = await Promise.all(producerLaunches); }
+      // GY-3684: launch owed product reviews oldest request first so long-waiting heads are never starved.
+      const requestedAt = (r: DispatchRequest) => { const t = Date.parse(r.requestedAt); return Number.isNaN(t) ? -Infinity : t; };
+      for (const { item, product, code } of productLaunches.sort((a, b) => requestedAt(a.product) - requestedAt(b.product) || (a.product.id < b.product.id ? -1 : a.product.id > b.product.id ? 1 : 0))) {
+        const turn = Promise.allSettled([productTurn, code]).then(() => dispatchReview(item, product));
+        productTurn = turn.catch(() => { /* the launch reports its own failure */ });
+        sideBySide(() => turn);
+      }
+    } finally { outcomes = await Promise.all(launches); }
   })();
   for (const outcome of outcomes) if (outcome) throw outcome.error;
   // Review by risk (GY-1525 AC-4): a normal-risk delta the merge writer delivered owes one review of

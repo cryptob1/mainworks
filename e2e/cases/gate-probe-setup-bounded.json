@@ -1,0 +1,15 @@
+{
+  "id": "gate-probe-setup-bounded",
+  "title": "A batch gate whose verified-commit probe hangs in setup still settles",
+  "description": "Runs the real gate over ports whose clock the case controls and a verified-commit probe whose setup never reaches its test runner: the probe is stopped at the trial's five-minute per-step bound, releases its heavy-job slot, counts as failed on the verified commit, and the gate settles instead of timing out (GY-3659).",
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "a hanging probe setup stops at the per-step bound and the gate settles",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:gate-probe-setup-bounded tests/gate-probe-setup-bounded.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}

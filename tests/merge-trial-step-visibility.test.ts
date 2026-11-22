@@ -22,8 +22,9 @@ import { firstParentHolds, runTrial, trialCheckoutPrefix, trialMerge } from '../
 import { mergeRecordKinds, type MergePorts, type MergeRecordEvent } from '../src/merge-writer/executor.js';
 import type { Cycle } from '../src/daemon/cycle.js';
 import type { Observation, Work } from '../src/model/work.js';
-import type { ActionlessCard } from '../src/model/actionless.js';
-import WorkCard from '../web/components/work-card.js';
+import type { Dashboard } from '../web/pages/dashboard.js';
+import WorkPage from '../web/pages/work.js';
+import { boardFromStatus } from '../src/model/board.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { processPidNamespace, tempOwnerMarker } from '../src/tmp-reclaim.js';
 
@@ -114,6 +115,10 @@ function harness(): StepHarness {
 
 const text = (screen: string) => screen.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 
+/** The Work list (GY-3600) showing one item, as the dashboard renders it over the board. */
+const workList = (work: Work, now: number) => ({ work: [work], board: boardFromStatus([work], now, null), status: null, observedAt: now, query: '', filter: null,
+  setFilter: () => {}, setQuery: () => {}, setSelected: () => {}, setCreating: () => {}, setView: () => {} }) as unknown as Dashboard;
+
 test('unit:merge-trial-step-and-elapsed-reported — a trial advancing between steps names its current step and its elapsed time on master status, on the item\'s pipeline and on the Work page, and sits in no Blocked lane', async () => {
   const made = harness();
   const { state, step } = made;
@@ -141,7 +146,7 @@ test('unit:merge-trial-step-and-elapsed-reported — a trial advancing between s
   // The Work page: the item is in no Blocked lane, the row names the merge's step, and no PR number appears.
   assert.deepEqual(stalledCards([work], now), [], 'an advancing trial is never stalled');
   assert.deepEqual(actionlessCards([work], now).flatMap(card => card.movedBy ? [card.movedBy] : []), ['the merge writer\'s trial (tests: test:browser)']);
-  const screen = text(renderToStaticMarkup(createElement(WorkCard, { item: work, now, onOpen: () => {} })));
+  const screen = text(renderToStaticMarkup(createElement(WorkPage, workList(work, now))));
   assert.match(screen, /Merging: tests: test:browser, 25m/);
   assert.doesNotMatch(screen, /PR #\d+/, 'a control-plane candidate names no pull request');
 });
@@ -164,7 +169,7 @@ test('unit:merge-trial-step-and-elapsed-reported — a trial whose process exits
   const stalled = stalledCards([work], now);
   assert.deepEqual(stalled.map(card => card.item.key), ['GY-1'], 'a trial that exited with no verdict is stalled once no step has advanced for the bound');
   assert.match(stalled[0]!.missing, /its trial last ran tests: test/);
-  const screen = text(renderToStaticMarkup(createElement(WorkCard, { item: work, now, stall: stalled[0] as ActionlessCard, onOpen: () => {} })));
+  const screen = text(renderToStaticMarkup(createElement(WorkPage, workList(work, now))));
   assert.match(screen, /its trial last ran tests: test/);
 });
 

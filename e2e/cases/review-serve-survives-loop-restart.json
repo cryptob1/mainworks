@@ -1,0 +1,16 @@
+{
+  "id": "review-serve-survives-loop-restart",
+  "title": "A product review's served head survives a loop restart and posts a verdict",
+  "description": "GY-3662: a product review whose loop restarts while its reviewer session runs still finds its served head answering at the same address, posts its verdict through the restarted loop, and stops the serve when the review session ends.",
+  "tags": ["review", "product-review"],
+  "target": "any",
+  "required": true,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "product review serve survives loop restart",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/review-serve-survives-loop-restart.test.ts",
+      "timeoutSeconds": 900
+    }
+  ]
+}

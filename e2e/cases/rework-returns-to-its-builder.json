@@ -1,0 +1,14 @@
+{
+  "id": "rework-returns-to-its-builder",
+  "title": "A change sent back for rework returns to the Builder that wrote it",
+  "description": "GY-3632: an item runs on a stub runtime through submit, a merge trial's refusal and the rework it grounds, on a real store. The rework's launch uses the runtime's continue form with the first attempt's session id, on the same account in the same worktree, its first message is the rework reason, and master status shows the item as 'rework by the same Builder'.",
+  "tags": ["work", "delivery"],
+  "target": "any",
+  "required": true,
+  "steps": [{
+    "kind": "command",
+    "name": "the rework launch continues the first attempt's session on its account in its worktree",
+    "run": "node --import tsx tests/helpers/run-tests.ts tests/rework-returns-to-its-builder.test.ts",
+    "timeoutSeconds": 600
+  }]
+}

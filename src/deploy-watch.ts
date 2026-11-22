@@ -4,7 +4,7 @@ import { appOnboarding, type AppOnboarding } from './model/onboarding-work.js';
 // The master loop restarts onto the serving tip recorded here (daemon/run.ts restartCause).
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { mkdir, rename, writeFile } from 'node:fs/promises';
+import { link, mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { GitRunner } from './merge-writer/local-observation.js';
@@ -136,6 +136,8 @@ export interface DeployWatchPorts {
    * install's server runs as a compose stack; absent when there is no stack to bring up.
    */
   stoppedPlane?: StoppedPlanePorts;
+  /** GY-3676: the lock file one deploy at a time holds on this control plane; absent, one beside the deploy record. */
+  lockFile?: string;
 }
 
 /**
@@ -228,6 +230,27 @@ const message = (error: unknown) => error instanceof Error ? error.message : Str
  * separate from the deploy record.
  */
 export async function deployOnce(file: string, ports: DeployWatchPorts, log: (line: string) => void = line => console.error(line), owner: string | null = null): Promise<'unchanged' | 'deployed' | 'rolled-back' | 'kept' | 'restoring'> {
+  // GY-3676: one deploy at a time per control plane; a watcher that finds the lock held does nothing this round.
+  const lock = ports.lockFile ?? join(dirname(file), 'deploy.lock');
+  if (!await takeLock(lock)) { log(`[graphyard-deploy] another deploy holds ${lock}; skipping this round`); return 'unchanged'; }
+  try { return await deployPass(file, ports, log, owner); } finally { await rm(lock, { force: true }); }
+}
+
+/** Links the lock file into place holding this process's id, atomically; a lock whose process is gone is taken over. */
+async function takeLock(lock: string): Promise<boolean> {
+  await mkdir(dirname(lock), { recursive: true });
+  const mine = `${lock}.${process.pid}`;
+  await writeFile(mine, String(process.pid));
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try { await link(mine, lock); return true; } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+      try { process.kill(Number(readFileSync(lock, 'utf8')), 0); return false; } catch { await rm(lock, { force: true }); } // the holder is gone
+    }
+    return false;
+  } finally { await rm(mine, { force: true }); }
+}
+
+async function deployPass(file: string, ports: DeployWatchPorts, log: (line: string) => void, owner: string | null): Promise<'unchanged' | 'deployed' | 'rolled-back' | 'kept' | 'restoring'> {
   // GY-3119: once the loop's batch gate names this repository, only its latest verified commit serves, never the fetched main tip.
   const fetched = await ports.fetch();
   const verified = servedVerified(join(dirname(file), 'main-gate.json'), owner);
@@ -250,7 +273,16 @@ export async function deployOnce(file: string, ports: DeployWatchPorts, log: (li
     const current = readControlPlaneRecord(controlFile) ?? { commit: previous, checkedAt: null, updatedAt: null, verified: null, verifiedSeenAt: null, failedStep: null, failedReason: null, failedAt: null };
     await writeControlPlaneRecord(controlFile, { ...current, commit: current.commit ?? previous, ...entry });
   };
-  const run = async (commit: string) => { for (const step of steps) { log(`[graphyard-deploy] ${step} ${commit.slice(0, 12)}`); try { await ports[step](commit); } catch (error) { throw Object.assign(new Error(`${step} failed: ${message(error)}`), { step }); } } };
+  const run = async (commit: string) => {
+    for (const step of steps) {
+      log(`[graphyard-deploy] ${step} ${commit.slice(0, 12)}`);
+      try { await ports[step](commit); } catch (error) {
+        // GY-3676: a restart that failed while the commit already serves healthy (another deploy restarted it) is no failure.
+        if (step === 'restart' && await ports.health(commit).then(() => true, () => false)) { log(`[graphyard-deploy] restart failed but ${commit.slice(0, 12)} already serves healthy: ${message(error)}`); continue; }
+        throw Object.assign(new Error(`${step} failed: ${message(error)}`), { step });
+      }
+    }
+  };
   const restore = async (previous: string, failed: string, reason: string, attempts: number) => {
     try { await run(previous); } catch (error) {
       log(`[graphyard-deploy] the rollback to ${previous.slice(0, 12)} failed (attempt ${attempts}): ${message(error)}`);

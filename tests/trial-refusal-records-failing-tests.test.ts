@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { trialFailureReason } from '../src/merge-writer/executor.js';
 import { trialFailureTests } from '../src/cli/complete.js';
 import { trialFailureRework } from '../src/daemon/cycle-merge-writer.js';
+import { reworkReasonMax } from '../src/daemon/rework.js';
 import { reworkBriefSection } from '../src/master/rework-brief.js';
 import { failureSignature } from '../src/daemon/repeated-failure.js';
 import type { Work } from '../src/model/work.js';
@@ -51,7 +52,7 @@ test('unit:trial-refusal-records-failing-tests the worker rework brief shows the
   const head = 'a'.repeat(40);
   const work = { key: 'GY-1', candidate: { sha: head }, submission: { pr: 7 } } as unknown as Work;
   const rework = trialFailureRework(work, head, reason);
-  assert.ok(rework.reason.length <= 2000, `the engine takes the rework reason (${rework.reason.length})`);
+  assert.ok(rework.reason.length <= reworkReasonMax, `the engine takes the rework reason (${rework.reason.length})`);
   assert.match(rework.reason, /failing tests: browser-tests\/item-details\.spec\.ts › item details › shows the merge ledger\nlog tail:\n/);
   assert.match(rework.reason, /1 failed\. Reproduce with node --import tsx tests\/helpers\/run-tests\.ts/);
   const brief = reworkBriefSection(work, { reason: rework.reason, at: '2026-11-05T21:00:00.000Z' } as never);

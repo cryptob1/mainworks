@@ -65,7 +65,7 @@ async function runCase(runs: number) {
 
     // The case seeds its own items through the database URL scripts/e2e-serve.mjs records, as in the trial.
     await mkdir(join(root, '.graphyard'), { recursive: true });
-    await writeFile(join(root, '.graphyard', 'e2e-serve.json'), JSON.stringify({ databaseUrl: connection }));
+    await writeFile(join(root, '.graphyard', `e2e-serve-${new URL(origin).port}.json`), JSON.stringify({ databaseUrl: connection }));
     await symlink(join(process.cwd(), 'scripts'), join(root, 'scripts'));
 
     const file = 'e2e/cases/plain-status-words.json';

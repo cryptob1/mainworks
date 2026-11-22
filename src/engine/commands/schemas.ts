@@ -47,7 +47,7 @@ export const commands = {
   taste: z.object({ verdict: z.enum(['good', 'send-back']), note: z.string().trim().min(1).max(2000).optional() }).strict()
     .superRefine((data, ctx) => { if (data.verdict === 'send-back' && !data.note) ctx.addIssue({ code: 'custom', message: 'A send-back carries its note: what should change', path: ['note'] }); }),
   message: z.object({ text: z.string().trim().min(1).max(4000) }).strict(),
-  rework: z.object({ reason: z.string().trim().min(1).max(2000), previousWorkerStopped: z.literal(true), binding: z.string().min(1).max(500).optional() }).strict(),
+  rework: z.object({ reason: z.string().trim().min(1).max(4000), previousWorkerStopped: z.literal(true), binding: z.string().min(1).max(500).optional() }).strict(),
   claim: z.object({}).strict(),
   // GY-3266: a heartbeat may carry the policy revision the worker has synced — the worker's sync
   // sends it to acknowledge a requirements revision recorded under its live lease, which complete

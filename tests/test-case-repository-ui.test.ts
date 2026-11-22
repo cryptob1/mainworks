@@ -13,7 +13,7 @@ import type { Dashboard } from '../web/pages/dashboard.js';
 import WorkDetails from '../web/pages/work-details.js';
 import { TestCasesView } from '../web/components/test-cases.js';
 import { TestsView } from '../web/pages/tests.js';
-import { primaryEntries, viewFor, visibleViews } from '../web/pages/index.js';
+import { viewFor, visibleViews } from '../web/pages/index.js';
 
 // GY-162: the work item page lists the end-to-end cases linked to its pull request with their
 // result on the current head, and the Tests page lists every case with its latest result, last
@@ -153,10 +153,10 @@ test('unit:test-case-repository-ui — the Tests page lists every case with its 
   assert.match(view({ error: 'unavailable' }), /unavailable Retry loading tests/);
 });
 
-test('unit:test-case-repository-ui — Tests is a live sidebar entry, shown before any run, and not offered to operator agents', () => {
+test('unit:test-case-repository-ui — Tests sits under Work, shown before any run, and not offered to operator agents', () => {
   const as = (role: string) => ({ ...dashboard([]), status: fixtureStatus(role) }) as Dashboard;
-  assert.equal(viewFor('tests').section, 'tests');
-  assert.ok(primaryEntries(as('admin')).some(entry => entry!.id === 'tests'));
-  assert.ok(primaryEntries(as('reader')).some(entry => entry!.id === 'tests'));
+  assert.equal(viewFor('tests').section, 'work');
+  assert.ok(visibleViews(as('admin')).some(view => view.id === 'tests'));
+  assert.ok(visibleViews(as('reader')).some(view => view.id === 'tests'));
   assert.ok(!visibleViews(as('operator-agent')).some(view => view.id === 'tests'), 'the scoped operator-agent API refuses the read');
 });

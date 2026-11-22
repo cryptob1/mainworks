@@ -58,9 +58,7 @@ async function open(page: Page) {
   await page.goto('/?sign-in');
   await page.getByLabel('Access token').fill('browser-fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
-  const menu = page.getByRole('button', { name: 'Menu' });
-  if (page.viewportSize()!.width <= 650 && await menu.getAttribute('aria-expanded') !== 'true') await menu.click();
-  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings', exact: true }).click();
   await page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: 'Agents', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Agents', level: 1 })).toBeVisible();
   return { posted };

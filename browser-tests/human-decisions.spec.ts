@@ -51,7 +51,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
     await page.getByRole('button', { name: 'Every request and answer →' }).click();
     await expect(page.getByText('Signed in as')).toContainText('operator · human operator');
     const card = page.locator('.human-request');
-    await expect(card.getByRole('button', { name: 'Decline' })).toBeVisible();
+    await expect(card.getByRole('button', { name: 'Decline this request' })).toBeVisible();
     await expect(card.getByText('graphyard answer', { exact: false })).toBeHidden();
     // One click is the whole answer.
     await card.getByRole('button', { name: 'Approve up to €50/month' }).click();
@@ -62,12 +62,12 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
   });
 }
 
-test('integration:sign-in-screen-command the sign-in screen names the one command, graphyard open, that signs the operator in', async ({ page }) => {
+test('integration:sign-in-screen-command the sign-in screen names the one command, mainworks open, that signs the operator in', async ({ page }) => {
   await page.route('**/api/**', route => route.fulfill({ status: 401, json: { error: 'Rejected' } }));
   await page.goto('/');
   const line = page.locator('.login-help', { hasText: 'Operator?' });
-  await expect(line).toHaveText('Operator? Run graphyard open on the Graphyard host, or graphyard login to print a link to open elsewhere.');
-  await expect(line.locator('code')).toHaveText('graphyard open');
+  await expect(line).toHaveText('Operator? Run mainworks open on the Mainworks host, or mainworks login to print a link to open elsewhere.');
+  await expect(line.locator('code')).toHaveText('mainworks open');
 });
 
 test('the local viewer sees the dashboard without a login wall and is offered Sign in for a human-only decision', async ({ page }) => {

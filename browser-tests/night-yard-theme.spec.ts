@@ -25,12 +25,12 @@ async function serve(page: Page, work: any[]) {
     if (path.includes('/work/')) return route.fulfill({ json: state.work.find(w => path.endsWith(w.id)) ?? {} });
     return route.fulfill({ json: [] });
   });
-  await serveXterm(page); // the Master page's xterm.js, served locally (GY-3357)
+  await serveXterm(page); // the Lead page's xterm.js, served locally (GY-3357)
   await page.goto('/?sign-in');
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible(live);
-  await expect(page.locator('.work-row').first()).toBeVisible();
+  await expect(page.locator('.task-row').first()).toBeVisible();
   return state;
 }
 
@@ -98,15 +98,15 @@ test('e2e:night-yard-theme — Night Yard serves by default with rain over grain
   expect(await background(page)).toEqual([7, 11, 20]);
   expect(await rain(page)).toBe('gy-rain');
   expect(await grain(page)).toContain('svg');
-  // The strip carries what is happening now; a builder's row gets its friendly name, and the Master page's title reads Master (GY-3307).
+  // The strip carries what is happening now; a builder's row gets its friendly name, and the Lead page's title reads Lead (GY-3307, GY-3602).
   await expect(page.locator('.activity-strip')).toContainText('agents working');
-  await expect(page.locator('[data-row="GY-14"] .row-who')).toContainText('Theo is running GY-14');
+  await expect(page.locator('[data-row="GY-14"] [data-col="builder"] [data-agent]')).toHaveText('Alex');
   await page.keyboard.press('Control+k');
-  await page.getByLabel('Search commands').fill('Master');
+  await page.getByLabel('Search commands').fill('Lead');
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('heading', { name: 'Master', exact: true, level: 1 })).toBeVisible();
-  // Back by the sidebar, not g w: a loaded runner can land the w past the chord's two-second window (GY-3442).
-  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Work', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Lead', exact: true, level: 1 })).toBeVisible();
+  // Back by the top bar, not g w: a loaded runner can land the w past the chord's two-second window (GY-3442).
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Work', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible();
   // The audit covers the page an operator reads most: the Work board, an item page, the palette, the shortcut sheet.
   await expectAA(page, 'the Work page at night');
@@ -152,7 +152,7 @@ test('e2e:night-yard-theme — with reduced motion the rain, the glitch flicker 
   test.setTimeout(60_000);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const state = await serve(page, auditWork());
-  const glitch = page.locator('.work-row.glitch');
+  const glitch = page.locator('.task-row.glitch');
   await expect(glitch).toHaveCount(1);
   await expect(glitch).toHaveAttribute('data-row', 'GY-15');
   expect(await glitch.evaluate(element => getComputedStyle(element).animationName)).toBe('none');
@@ -173,7 +173,7 @@ test('e2e:night-yard-theme — with motion on a failed trial glitches and a ship
   test.setTimeout(60_000);
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   const state = await serve(page, auditWork());
-  const glitch = page.locator('.work-row.glitch');
+  const glitch = page.locator('.task-row.glitch');
   await expect(glitch).toHaveCount(1);
   expect(await glitch.evaluate(element => getComputedStyle(element).animationName)).toBe('gy-glitch');
   expect(await rain(page)).toBe('gy-rain');

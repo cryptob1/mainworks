@@ -1,3 +1,4 @@
+import { caretakerStep } from './caretaker.js';
 import { WorkerSandboxError } from '../worker-sandbox.js';
 import type { RuntimeSession } from '../model/sessions.js';
 import { sessionAgents } from '../session-inventory.js';
@@ -19,6 +20,7 @@ import { capacityRefusal } from '../fleet.js';
 import type { CoordinationRounds } from '../server/work-view.js';
 import { masterCauses, masterCausePrompt, messageCauses } from './master-stalled-delivery.js';
 import { accountNames, advanceFailureRuns, diagnosisSection, failureHeld, normalizeFailureReason, repeatingItems } from './repeated-failure.js';
+import { reworkCapHeld, reworkCapLabel } from '../model/rework-ground.js';
 import { captureConversation } from '../master/conversation.js';
 import { masterHandover } from '../master/master-session.js';
 import { herdrWorkspaceOf } from '../master/herdr.js';
@@ -39,7 +41,7 @@ import { pinnedInstall, repinRuntime, type AgentRegistry, type CanaryOffer } fro
 import { type DaemonEffects, record } from './effects.js';
 import { mergeWriterStep } from './cycle-merge-writer.js';
 import { batchGateStep } from './cycle-batch-gate.js';
-import { gateRecordPath, readGateRecord } from '../batch-gate.js';
+import { benchStep } from '../bench.js';
 import { lessonsToCode } from './lessons-to-code.js';
 import { workerLaunchHealth, earlyExitKey } from './worker-launch-health.js';
 import { actionStallDelay, actionStallThreshold } from '../model/action-progress.js';
@@ -48,7 +50,6 @@ import { reconcileMasterMemory } from '../model/project-memory.js';
 import { diskHeadroomStep } from './disk-headroom.js';
 import { cpuPressureStep, cpuWaiting, heatClear, implementationWaiting, sessionUsageStep } from './cpu-pressure.js';
 import { causeCleared, environmentCause } from './environment-blockers.js';
-import { batchGateRunning } from './trial-slots.js';
 import { leftoversStep, tallyLeftovers } from './leftovers.js';
 import { yardAlertStep } from './yard-alerts.js';
 import { recordStallAlarm, stallAlarm } from './stall-alarm.js';
@@ -73,6 +74,8 @@ export const standingStepFailures = (state: Pick<DaemonState, 'actions'>) =>
   Object.entries(state.actions).filter(([key, action]) => key.startsWith('step-failure:') && action.state === 'failed')
     .sort((a, b) => Date.parse(b[1].at) - Date.parse(a[1].at)).map(([, action]) => action.detail);
 /** The one timeout every step runs under. */
+/** GY-3605: how long the dispatch step waits the dispatcher's tick out; a slower tick runs on beside the cycle. */
+export const tickWaitMs = 10_000;
 export const stepTimeoutMs = (config: Pick<MasterConfig, 'run'>) => Math.max(60_000, config.run.intervalSeconds * 2_000);
 /** The key the master session's launch is handed to the launcher under. */
 export const masterLaunchKey = 'master:launch';
@@ -223,6 +226,7 @@ export async function runCycle(config: MasterConfig, state: DaemonState, effects
     reviewsAndTrials: new Promise<void>(resolve => { reviewedAndTrialled = resolve; }) };
 
   if (!config.forPerson) await step('close', () => closeStep(cycle));
+  caretakerStep(cycle);
   await step('dispatch', async () => {
     await dispatchStep(cycle);
     if (!config.forPerson) for (const person of config.people ?? []) {
@@ -234,7 +238,8 @@ export async function runCycle(config: MasterConfig, state: DaemonState, effects
     }
   });
   // GY-3119: the batch gate on main starts beside the cycle once the merge writer's step ran.
-  if (!config.forPerson) await step('merge writer', () => mergeWriterStep(cycle).then(() => batchGateStep(cycle)));
+  // GY-3634: the trial benchmark runs beside the cycle after new builds and every 6h when no trial is queued.
+  if (!config.forPerson) await step('merge writer', () => mergeWriterStep(cycle).then(() => batchGateStep(cycle)).then(() => { benchStep(cycle); }));
   reviewedAndTrialled();
   if (own) { await launches.idle(); performed.push(...launches.drain()); }
   await step('persist', async () => {
@@ -298,6 +303,8 @@ const finishedWorktreeKeepMs = 24 * 60 * 60 * 1000;
 /** The ended attempts' worktrees on this host: no live lease and no running session holds their epoch. */
 export function endedAttemptWorktrees(work: Work[], hostId: string, now: number) {
   return work.flatMap(item => (item.workspaces ?? []).filter(space => space.host === hostId
+    // GY-3632: a rework that reused the path owns it now.
+    && !(item.workspaces ?? []).some(later => later.epoch > space.epoch && later.host === hostId && later.path === space.path)
     && !(item.lease && item.lease.epoch === space.epoch && Date.parse(item.lease.expiresAt) > now)
     && !(item.sessions ?? []).some(handle => handle.kind === 'implementation' && handle.state === 'running' && (handle.epoch ?? Number(/:(\d+)$/.exec(handle.id)?.[1])) === space.epoch))
     .map(space => ({ item, space })));
@@ -362,23 +369,26 @@ async function closeStep(cycle: Cycle) {
   const { config, state, effects, snapshot, clock } = cycle;
   for (const item of snapshot.work) if (item.stage === 'done') delete state.actions[earlyExitKey(item)];
   await Promise.all(snapshot.work.flatMap(item => (item.sessions ?? []).map(async session => {
-    if (session.host !== config.hostId) return;
+    // GY-3458: a session another host ran is judged by the item alone — its host may be gone and
+    // answer nothing — so an ended attempt's record is closed here, its pane left to that host.
+    const here = session.host === config.hostId;
+    if (!here && session.state !== 'running') return;
     const key = `close:${item.id}:${session.id}`;
     if (state.actions[key]?.state === 'done' || (session.state !== 'running' && item.stage === 'done')) return;
-    const failure = item.stage === 'done' ? null : await workerLaunchHealth(cycle, item, session);
+    const failure = item.stage === 'done' || !here ? null : await workerLaunchHealth(cycle, item, session);
     // A reporter-finished handle can still own a pane. Diagnose it before the same idempotent close.
     if (session.state !== 'running' && !failure) return;
     const reason = sessionEnded(item, session, clock) ?? (session.state !== 'running' ? failure : null);
     if (reason) {
       try {
-        if (session.pane) await Promise.resolve(effects.closeSession(session.pane)).catch(error => { if (!paneAlreadyGone(error)) throw error; });
-        if (session.pane) tallyLeftovers(state, 'panes');
-        await effects.recordSession?.(item, { id: session.id, kind: session.kind, principal: session.principal, runtime: session.runtime, host: session.host, subject: session.subject, state: 'finished', outcome: failure ?? `closed by the loop: ${reason}`.slice(0, 500) });
+        if (session.pane && here) await Promise.resolve(effects.closeSession(session.pane)).catch(error => { if (!paneAlreadyGone(error)) throw error; });
+        if (session.pane && here) tallyLeftovers(state, 'panes');
+        await effects.recordSession?.(item, { id: session.id, kind: session.kind, principal: session.principal, runtime: session.runtime, host: session.host, subject: session.subject, state: 'finished', outcome: (failure ?? `closed by the loop: ${reason}${here ? '' : ` (it ran on ${session.host})`}`).slice(0, 500) });
         await note(cycle, key, 'close', item.key, 'done', `Closed ${session.id}${session.pane ? ` (pane ${session.pane})` : ''}: ${failure ?? reason}`, session.principal);
       } catch (error) { await note(cycle, key, 'close', item.key, 'failed', `Could not close ${session.id}: ${message(error)}`, session.principal); }
       return;
     }
-    await attemptBoundStep(cycle, item, session);
+    if (here) await attemptBoundStep(cycle, item, session);
   })));
   await endForeignHostSessions(cycle);
   if (effects.reclaimLease) for (const item of snapshot.work) {
@@ -699,20 +709,18 @@ async function dispatchStep(cycle: Cycle) {
   // no launch — only the trials and checks that make the heat wait on it.
   const cpuWaitingLine = cpuWaiting(state) ?? undefined;
   // GY-3122: below the disk floor no new worker starts; master status names the shortage.
-  // GY-3444: while a batch gate runs no implementation session starts, so the gate's checks finish
-  // inside their bound and deploys go on; reviews and producers still launch.
   // GY-3473: each hold named once, so the stall alarm reports the reason dispatch itself has this cycle.
-  const gateRun = batchGateRunning(state) ? (effects.mergeWriter?.gate ? readGateRecord(gateRecordPath(effects.mergeWriter.gate.root))?.inFlight ?? null : null) : undefined;
   const holds = [
     state.diskHeadroom && `implementation launches waiting: disk below its floor: ${state.diskHeadroom.shortage}`,
     implementationWaiting(state),
     refusedRoles.has('worker') && 'worker launches held: the checkout is not trusted for the worker accounts (see master status)',
-    gateRun !== undefined && `implementation launches paused while the batch gate runs${gateRun ? ` on ${gateRun.tip.slice(0, 12)} since ${gateRun.startedAt}` : ''}`,
   ].filter((hold): hold is string => !!hold);
   if (!holds.length) for (const item of claimable) {
     // Two claimable items sharing an exclusive resource: the first goes, the other waits for it to land.
     const holder = launched.find(other => sharedResources(item, other).length);
     if (holder) { refused(item, sharedResources(item, holder)[0]!, holder.key); continue; }
+    // GY-3636: after three counted refusals of any cause, hold for the Lead instead of launching again.
+    if (reworkCapHeld(item)) { wait(item, reworkCapLabel(item)); continue; }
     // GY-3104: a third equal failure holds the item for the master's decision.
     if (failureHeld(state.failureRuns[item.id])) { wait(item, 'held for the master after the same failure three times'); continue; }
     const incident = state.actions[earlyExitKey(item)];
@@ -767,15 +775,19 @@ async function dispatchStep(cycle: Cycle) {
   // GY-3432: the stall alarm, before the master is woken, so a raised alarm wakes it this cycle.
   if (!config.forPerson) {
     const running = snapshot.work.flatMap(item => item.sessions ?? []).filter(session => session.kind === 'implementation' && session.state === 'running').length;
-    // An item in a run of equal failures already wakes the master by that run (GY-3104), held or not.
-    const repeating = repeatingItems(state.failureRuns), unheld = (item: Work) => !repeating.has(item.key);
+    // An item in a run of equal failures or held at the 3-refusal cap already wakes the master (GY-3104, GY-3636).
+    const repeating = repeatingItems(state.failureRuns), unheld = (item: Work) => !repeating.has(item.key) && !reworkCapHeld(item);
     const alarm = stallAlarm({ now: clock, open: open.filter(unheld), ready: claimable.filter(unheld), freeSlots: allowed - running, holds, gates,
       state, registry, serving: await Promise.resolve(effects.servingCommit?.()).catch(() => null) ?? null });
     if (recordStallAlarm(state, alarm, clock)) { cycle.log(`[graphyard-master] cycle ${state.cycle}: ${alarm ?? 'the stall alarm cleared'}`); await effects.persist(state); }
   }
   // A dispatch tick that fails (its state cannot be saved) still wakes the master.
-  try { await effects.dispatchTick?.(snapshot, cpuWaitingLine); }
-  finally { await masterSession(cycle, open); }
+  // GY-3605: the tick's session launches each have the launch bound — minutes, when a product review
+  // builds and serves its head first — so a tick still running after tickWaitMs runs on beside the
+  // cycle. The effect starts no second tick, and the next cycle's step joins the one running.
+  let timer: NodeJS.Timeout | undefined;
+  try { await Promise.race([effects.dispatchTick?.(snapshot, cpuWaitingLine), new Promise(resolve => { timer = setTimeout(resolve, tickWaitMs); })]); }
+  finally { clearTimeout(timer); await masterSession(cycle, open); }
 }
 
 /**

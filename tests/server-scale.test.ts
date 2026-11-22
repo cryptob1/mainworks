@@ -121,7 +121,6 @@ function dashboard(work: Work[], now: number, overrides: Partial<Dashboard> = {}
   const status = { actor: { id: 'operator', role: 'admin' }, humanOnly: [], executors: { live: 0, liveMs: 60_000, served: [], unserved: [], attention: [] }, delegation: null, github: false, reviewProviders: ['github'], jobs: [], now: iso(now) };
   const d: Dashboard = {
     token: 'scale', work, status, error: '', connected: true, lastUpdated: '12:00:00', view: 'work', setView: noop, filter: null, setFilter: noop,
-    shippedFilter: null, setShippedFilter: noop,
     selected: null, setSelected: noop, creating: false, setCreating: noop, busy: false, setBusy: noop, observedAt: now, jobs: [], query: '', setQuery: noop,
     operatorAgents: [], operatorAgentsError: null, features: unknownFeatures, events: [], editingRequirements: false, setEditingRequirements: noop,
     sessionEpoch: { current: 0 }, api: async () => ({}), refresh: async () => {}, action: async () => {}, setError: noop, signOut: noop, ...overrides,
@@ -156,7 +155,7 @@ test('unit:snapshot-bounded — the work snapshot sends open items whole and set
     assert.equal(entry.completedActions, 12);
     assert.ok(entry.evidence!.every(record => !('artifacts' in record)));
     assert.equal(entry.pipeline!.attempts.length, SESSIONS_PER_SETTLED);
-    assert.deepEqual(Object.keys(entry.pipeline!.attempts[0]).sort(), ['claimedAt', 'endedAt']);
+    assert.deepEqual(Object.keys(entry.pipeline!.attempts[0]).sort(), ['claimedAt', 'end', 'endedAt']);
   }
   const recent = summaries.flatMap(entry => entry.sessions!);
   assert.ok(recent.length > 0 && recent.length <= 2 * SESSIONS_PER_SETTLED * Math.ceil(SETTLED / 120), `the last day's ${recent.length} sessions of settled items are kept for the Workers page, not the 3,000 before them`);

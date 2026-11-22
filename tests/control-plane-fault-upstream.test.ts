@@ -33,7 +33,7 @@ async function install(fileUpstream?: DaemonEffects['fileUpstream']) {
     credentials: async () => ({}),
     closeSession: () => {},
     dispatch: async () => ({ pane: 'p1', epoch: 1 }),
-    dispatchTick: () => new Promise(() => {}),
+    registry: () => new Promise(() => {}),
     mergeWriter: { gate: { root, repository: 'owner/game' }, createWork: async (_input: unknown, key: string) => { local.push(key); return { key: 'GY-1' }; } } as unknown as MergeWriterReads,
     ...(fileUpstream ? { fileUpstream } : {}),
     persist: async () => {},

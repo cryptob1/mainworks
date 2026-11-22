@@ -2,6 +2,7 @@
 // delta after its merge, and the one reviewer launch the control plane registers per item.
 import type { Work } from './work.js';
 import type { RiskClass } from './risk-class.js';
+import type { ChangedAssertion } from './changed-assertions.js';
 
 /**
  * In control-plane mode the review gate reads the risk class of the merge delta (risk-class.ts)
@@ -35,6 +36,8 @@ export interface ControlPlaneReviewLaunch {
   at: string; expiresAt: string; postMerge: boolean; policyRevision?: number;
   /** GY-2989: a product review's launch; its verdict is recorded on the item's product review, never as a code review. */
   product?: boolean;
+  /** GY-3635: removed or modified assertion lines in existing tests/cases that an APPROVE verdict must rule on. */
+  changedAssertions?: ChangedAssertion[];
   verdict: ControlPlaneVerdict | null;
   /** The independence refusal that ended this launch, when one did. */
   refused?: { at: string; reason: string };

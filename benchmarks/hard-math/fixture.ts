@@ -93,6 +93,8 @@ export async function fixtureExecutor(c:RunContext,options:{missingDelivery?:boo
     await c.plane.call(`agent-registry/sessions/${a.selection.session.id}/end`,c.coordinator,{reason:'Controlled executor submitted'});
     return item;
   };
+  // A verdict rules on every criterion (GY-3641).
+  const rulings=(item:any)=>(item.criteria??[]).map((criterion:any)=>`${criterion.id} met — controlled fixture.`).join('\n');
   const proofAndReview=async(item:any)=>{
     // Execute the submitted checkout, and a negative contract assertion, before binding its proof.
     const directory=item.workspaces.find((w:any)=>w.epoch===item.submission.epoch).path;
@@ -102,7 +104,7 @@ export async function fixtureExecutor(c:RunContext,options:{missingDelivery?:boo
     if(options.nativePostMerge) return c.plane.call(`work/${item.id}`,c.coordinator);
     const reviewToken=randomBytes(32).toString('hex');
     await c.plane.call(`work/${item.id}/review-launch`,c.coordinator,{reviewer:'controlled-independent-reviewer',head:item.candidate.sha,baseTip:item.observation.mergeBase??item.candidate.baseSha,tokenHash:createHash('sha256').update(reviewToken).digest('hex'),expiresAt:new Date(Date.now()+120_000).toISOString()});
-    await c.plane.call(`work/${item.id}/review-verdict`,reviewToken,{event:'APPROVE',body:'Controlled fixture review; not a real coding-agent review.',sha:item.candidate.sha,token:reviewToken});
+    await c.plane.call(`work/${item.id}/review-verdict`,reviewToken,{event:'APPROVE',body:`Controlled fixture review; not a real coding-agent review.\n${rulings(item)}`,sha:item.candidate.sha,token:reviewToken});
     const reviewed=await c.plane.call(`work/${item.id}`,c.coordinator);
     assert.ok(reviewed.observation.reviews.some((r:any)=>r.sha===item.candidate.sha && r.state==='APPROVED' && r.reviewer==='controlled-independent-reviewer'),'fixture obtains independent exact-head approval before its canonical merge call');
     return reviewed;
@@ -177,7 +179,7 @@ export async function fixtureExecutor(c:RunContext,options:{missingDelivery?:boo
       const work=c.receipt.work.find(w=>w.key===binding.key)!;
       assert.equal(binding.sha,work.merge);
       assert.equal(binding.baseTip,(work.record as any).mergeLedger.baseTip);
-      await c.plane.call(`work/${work.id}/review-verdict`,binding.verdictToken!,{event:'APPROVE',body:'Controlled native post-merge regression; no real coding-agent review.',sha:binding.sha,token:binding.verdictToken});
+      await c.plane.call(`work/${work.id}/review-verdict`,binding.verdictToken!,{event:'APPROVE',body:`Controlled native post-merge regression; no real coding-agent review.\n${rulings(work.record)}`,sha:binding.sha,token:binding.verdictToken});
     }
     await c.snapshot();
     assert.equal(reviewedDeliveries(c.receipt.work),true,'only completed exact merge approvals permit loop termination');

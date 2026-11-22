@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { maxMergeWriterParallel } from '../master/merge-writer-settings.js';
+import { batchLimit, maxMergeWriterParallel } from '../master/merge-writer-settings.js';
 /** How many queued heads, how many refusals, how many pending rework requests and how many trial-timeout records `state.mergeWriter` keeps. */
 export const mergeWriterKeptQueue = 50, mergeWriterKeptRefusals = 20, mergeWriterKeptReworks = 50, mergeWriterKeptTimeouts = 50;
 /** GY-2079: the trial timeouts a head is refused to rework after, counted only on trials where another queued head passed since the head's previous timeout (a timeout alone measures the host, not the merge). */
@@ -46,10 +46,10 @@ export const mergeWriterStateSchema = z.object({
     step: z.string().max(100).optional(), stepStartedAt: instant.optional(), revert: revertFlightSchema.optional(),
     /** GY-3159: the head's detached trial run, whose directory the next loop adopts the run from after a restart. */
     run: z.object({ directory: z.string().max(1000), mergeSha: shaField }).strict().optional() }).strict().nullable().default(null),
-  /** Every queue position the merge in flight trials at once (GY-3120 `mergeHeads`), in queue order, each with its own trial step; `inFlight` is the first. Absent while nothing merges. */
+  /** Every queue position the merge in flight trials at once (GY-3120 `mergeHeads`), in queue order, each with its own trial step; `inFlight` is the first. Absent while nothing merges. Up to `batchLimit` heads per trial slot (GY-3672). */
   inFlights: z.array(z.object({ key: z.string().max(100), id: z.string().max(100), head: shaField, startedAt: instant, attempt: z.string().max(100).optional(), step: z.string().max(100), stepStartedAt: instant,
     /** GY-3159: the head's detached trial run, whose directory the next loop adopts the run from after a restart. */
-    run: z.object({ directory: z.string().max(1000), mergeSha: shaField }).strict().optional() }).strict()).max(maxMergeWriterParallel).optional(),
+    run: z.object({ directory: z.string().max(1000), mergeSha: shaField }).strict().optional() }).strict()).max(maxMergeWriterParallel * batchLimit).optional(),
   refusals: z.array(z.object({ key: z.string().max(100), head: shaField, reason: z.string().max(2000), at: instant }).strict()).max(mergeWriterKeptRefusals).default([]),
   reworks: z.array(pendingReworkSchema).max(mergeWriterKeptReworks).default([]),
   /** GY-2053: the newest attempt progress — a retrial's intent, a trial verdict, a push, a reconcile — recorded beside every ledger write a flight or reconcile makes, so the movement the summary reports advances inside a long flight. Absent until a write records it. */

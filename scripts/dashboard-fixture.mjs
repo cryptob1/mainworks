@@ -172,12 +172,12 @@ async function main() {
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await page.getByRole('heading', { name: 'Work', level: 1 }).waitFor();
   await shot('01-home');
-  await page.getByRole('button', { name: /Rate-limit the login endpoint/ }).click();
+  await page.getByRole('link', { name: /Rate-limit the login endpoint/ }).click();
   await shot('02-item-view', '[role=dialog]');
   await page.getByText('Technical details', { exact: true }).click();
   await shot('03-item-view-details', '[role=dialog]');
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: /Shipped/ }).first().click();
+  await page.getByRole('button', { name: /Shipped today/ }).first().click();
   await shot('04-shipped');
   await page.getByRole('button', { name: /Settings/ }).click();
   await page.waitForLoadState('networkidle');
