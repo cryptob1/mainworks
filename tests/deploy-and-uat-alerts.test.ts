@@ -30,10 +30,11 @@ async function world(alertUrl: string) {
 }
 
 /** One loop cycle's alert step over the served commit the delivery watch records, as a loop just restarted onto its cursor would run it. */
-async function step(root: string, config: MasterConfig, served: string, work: Work[], webhook: (text: string) => Promise<void>) {
+async function step(root: string, config: MasterConfig, served: string, work: Work[], webhook: (text: string) => Promise<void>, watch: 'serve' | 'deploy' = 'serve') {
   const state: DaemonState = await readDaemonState(root, config);
-  const effects = { alertWebhook: webhook, persist: (next: DaemonState) => writeDaemonState(config, next),
-    mergeWriter: { serveRecord: async () => ({ commit: served, check: null }), git: async (args: string[]) => git(root, ...args), gate: { root, repository: config.repository } } } as unknown as DaemonEffects;
+  // `serve` records the commit in served.json (a declared node app); `deploy` only in the deploy watch's deploy.json.
+  const effects = { alertWebhook: webhook, persist: (next: DaemonState) => writeDaemonState(config, next), servingCommit: () => watch === 'deploy' ? served : null,
+    mergeWriter: { serveRecord: async () => watch === 'serve' ? { commit: served, check: null } : null, git: async (args: string[]) => git(root, ...args), gate: { root, repository: config.repository } } } as unknown as DaemonEffects;
   const cycle = { config, state, effects, now: () => Date.now(), snapshot: { work, now: new Date().toISOString() }, clock: Date.now(), herdr: { agents: [], available: true },
     credentials: {}, performed: [], launcher: new Launcher(1), reservedProfiles: new Set(), log: () => {} } as unknown as Cycle;
   await deliveryAlertStep(cycle);
@@ -70,6 +71,20 @@ test('integration:deploy-and-uat-alerts — newly served items are announced onc
   assert.doesNotMatch(posts.at(-1)!, /\n/, 'one short line');
   await step(root, config, b, work, webhook);
   assert.equal(posts.length, 2, 'not repeated for the same candidate, across a restart');
+});
+
+test('integration:deploy-and-uat-alerts — without a declared serve, the deploy watch\'s served commit is announced once', async () => {
+  const posts: string[] = [];
+  const { root, config } = await world('https://ntfy.example/yard');
+  const webhook = async (text: string) => { posts.push(text); };
+  const first = commit(root, 'base');
+  await step(root, config, first, [], webhook, 'deploy');
+  const merged = commit(root, 'GY-4');
+  const work = [done('GY-4', 'Deploy watch', merged)];
+  await step(root, config, merged, work, webhook, 'deploy');
+  assert.deepEqual(posts, [`Graphyard owner/project: deployed ${merged.slice(0, 12)}\nGY-4 Deploy watch (${merged.slice(0, 12)})`]);
+  await step(root, config, merged, work, webhook, 'deploy');
+  assert.equal(posts.length, 1, 'not repeated after a restart');
 });
 
 test('integration:deploy-and-uat-alerts — a Slack incoming webhook gets {"text": ...}; any other receiver keeps the plain-text body', async () => {

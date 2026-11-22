@@ -30,7 +30,7 @@ export const uatFailedText = (repository: string, candidate: string, served: str
   `Graphyard ${repository}: UAT failed on candidate ${short(candidate)}; ${served ? `${short(served)} stays served` : 'nothing is served'}. Failed: ${failed.join(', ')}`;
 
 /**
- * GY-3529: with `run.alertUrl` set, one message when the delivery watch serves a commit it had not
+ * GY-3529: with `run.alertUrl` set, one message when the declared serve or the deploy watch serves a commit it had not
  * announced — the items merged since the last announced commit — and one when the batch gate's
  * candidate fails, naming its failed cases. The last announced commit and failed candidate live on
  * the cursor, so a restart never repeats either; the first served commit a cursor sees is only
@@ -45,7 +45,8 @@ export async function deliveryAlertStep(cycle: Cycle) {
     try { await effects.alertWebhook!(text); }
     catch (error) { await record(state, 'delivery:alert', { kind: 'attention', work: null, principal: null, state: 'failed', detail: `Could not alert the operator (${text.split('\n')[0]}): ${message(error)}`, attempts: 1, cycle: state.cycle }, now(), effects.persist); }
   };
-  const served = (await reads.serveRecord?.().catch(() => null))?.commit ?? null;
+  // The declared serve's commit, else the deploy watch's (as servingReport reads them).
+  const served = (await reads.serveRecord?.().catch(() => null))?.commit ?? (await Promise.resolve(effects.servingCommit?.()).catch(() => null)) ?? null;
   if (served && served !== sent.served) {
     const previous = sent.served;
     sent.served = served;
