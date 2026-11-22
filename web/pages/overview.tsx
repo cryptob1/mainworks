@@ -28,39 +28,39 @@ export function WorkPage(dashboard: Dashboard) {
   return OverviewPage(dashboard);
 }
 
-/** GY-3527: the page's headline, merges an hour over the last 24 hours, and under it one line on how long an item takes; a warning names the item to open. */
-function Speed({ time, now, open }: { time?: PipelineTime | null; now: number; open: (id: string) => void }) {
-  if (!time) return null;
-  const line = pipelineSentence(time, now);
-  return <div className="speed">
-    <p className="speed-figure" data-speed-figure>{line.figure}</p>
-    <p className="speed-line" data-speed-line={line.warning ? 'warning' : 'calm'}>
-      {line.text}{line.open && <> <button type="button" className="text-button" onClick={() => open(line.open!)}>Open →</button></>}
-    </p>
-  </div>;
-}
-
-/** GY-3624: attempts an hour and first-pass yield over 24 hours, the slow-station line, and a fold with each station's wait and the rework causes. */
-function Flow({ flow }: { flow?: FlowReport | null }) {
-  if (!flow) return null;
-  const day = flow['24h'];
+/**
+ * GY-3527: the page's headline — merges an hour over the last 24 hours, then one line on how long an
+ * item takes; a warning names the item to open. GY-3624: one small line under it with attempts an
+ * hour and first-pass yield, whose inline fold opens each station's wait and the rework causes; a
+ * station whose slowest tenth passes an hour is one warning line naming it and its oldest item.
+ */
+function Headline({ time, flow, now, open }: { time?: PipelineTime | null; flow?: FlowReport | null; now: number; open: (id: string) => void }) {
+  const line = time ? pipelineSentence(time, now) : null;
+  const day = flow?.['24h'];
+  if (!line && !day) return null;
   const wait = (minutes: number) => plainDuration(minutes);
-  return <div className="flow" data-flow>
-    <p className="flow-line"><span data-flow-attempts>{day.attemptsPerHour.toFixed(1)} attempts an hour</span> · <span data-flow-yield>{percent(day.firstPassYield)} first pass</span> (last 24 hours)</p>
-    {flow.attention && <p className="speed-line flow-attention" data-flow-attention>{flow.attention.text}</p>}
-    <details className="flow-details">
-      <summary>Flow details →</summary>
-      <table className="sessions-table compact-table flow-table" aria-label="Wait at each station, last 24 hours">
-        <thead><tr><th scope="col">Station</th><th scope="col">Median</th><th scope="col">Slowest tenth</th><th scope="col">Oldest</th></tr></thead>
-        <tbody>{flowStations.map(station => { const at = day.stations[station]; return <tr key={station} data-station={station}>
-          <th scope="row">{station[0].toUpperCase() + station.slice(1)}</th><td>{at ? wait(at.median) : '—'}</td><td>{at ? wait(at.p90) : '—'}</td><td>{at ? `${at.oldest.key} · ${wait(at.oldest.minutes)}` : '—'}</td></tr>; })}</tbody>
-      </table>
-      <table className="sessions-table compact-table flow-table" aria-label="Sent back, last 24 hours">
-        <thead><tr><th scope="col">Sent back by</th><th scope="col">Times</th></tr></thead>
-        <tbody>{reworkCauses.map(cause => <tr key={cause} data-cause={cause}><th scope="row">{cause[0].toUpperCase() + cause.slice(1)}</th><td>{day.rework[cause]}</td></tr>)}</tbody>
-      </table>
-      <p className="muted">Flaky trials {percent(day.flakyRate)} of {day.trials}. Reverted {percent(day.revertRate)} of {day.merges} merges.</p>
-    </details>
+  return <div className="speed">
+    {line && <>
+      <p className="speed-figure" data-speed-figure>{line.figure}</p>
+      <p className="speed-line" data-speed-line={line.warning ? 'warning' : 'calm'}>
+        {line.text}{line.open && <> <button type="button" className="text-button" onClick={() => open(line.open!)}>Open →</button></>}
+      </p>
+    </>}
+    {day && <div className="flow-line"><span data-flow-attempts>{day.attemptsPerHour.toFixed(1)} attempts an hour</span> · <span data-flow-yield>{percent(day.firstPassYield)} first pass</span>{' '}
+      <details className="flow-details"><summary>Flow details →</summary><div className="flow-fold">
+        <table className="sessions-table compact-table flow-table" aria-label="Wait at each station, last 24 hours">
+          <thead><tr><th scope="col">Station</th><th scope="col">Median</th><th scope="col">Slowest tenth</th><th scope="col">Oldest</th></tr></thead>
+          <tbody>{flowStations.map(station => { const at = day.stations[station]; return <tr key={station} data-station={station}>
+            <th scope="row">{station[0].toUpperCase() + station.slice(1)}</th><td>{at ? wait(at.median) : '—'}</td><td>{at ? wait(at.p90) : '—'}</td><td>{at ? `${at.oldest.key} · ${wait(at.oldest.minutes)}` : '—'}</td></tr>; })}</tbody>
+        </table>
+        <table className="sessions-table compact-table flow-table" aria-label="Sent back, last 24 hours">
+          <thead><tr><th scope="col">Sent back by</th><th scope="col">Times</th></tr></thead>
+          <tbody>{reworkCauses.map(cause => <tr key={cause} data-cause={cause}><th scope="row">{cause[0].toUpperCase() + cause.slice(1)}</th><td>{day.rework[cause]}</td></tr>)}</tbody>
+        </table>
+        <p className="muted">Flaky trials {percent(day.flakyRate)} of {day.trials}. Reverted {percent(day.revertRate)} of {day.merges} merges.</p>
+      </div></details>
+    </div>}
+    {flow?.attention && <p className="speed-line flow-attention" data-flow-attention>{flow.attention.text}</p>}
   </div>;
 }
 
@@ -101,8 +101,7 @@ export default function OverviewPage({ work, board, status, query, setQuery, set
   </section>;
   const admin = status?.actor?.role === 'admin';
   return <>
-    <Speed time={status?.pipelineTime} now={now} open={setSelected}/>
-    <Flow flow={status?.flow}/>
+    <Headline time={status?.pipelineTime} flow={status?.flow} now={now} open={setSelected}/>
     <div className="page-heading"><div><h1>Work</h1><p className="page-fact">{board ? summarySentence(counts) : 'Reading the board…'}</p><BuildLine/></div>
       <div className="page-actions"><label className="search"><input aria-label="Search work" placeholder="Search by key or title" value={query} onChange={e => setQuery(e.target.value)}/></label>
         {admin && <button type="button" onClick={() => setCreating(true)}>＋ New work item</button>}</div></div>
