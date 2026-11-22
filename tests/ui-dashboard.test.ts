@@ -178,15 +178,13 @@ test('unit:ui-item-first-screen — an item page says on its first screen what s
     // Why: one status sentence.
     assert.equal((screen.match(/class="status-sentence/g) ?? []).length, 1, `${item.key} why`);
     // Who acts next, as a named role.
-    const who = /Who acts next:<\/span> <strong>([^<]+)<\/strong>/.exec(screen)?.[1];
+    const who = /Next:<\/span> <strong>([^<]+)<\/strong>/.exec(screen)?.[1];
     assert.ok(who && roles.includes(who), `${item.key} names a role: ${who}`);
     // Never a worker's code name.
     for (const name of [item.lastAssignment?.displayName, item.lastAssignment?.owner, item.lease?.owner].filter(Boolean)) assert.ok(!words.includes(name!), `${item.key} does not name ${name}`);
-    // GY-3392: the plate carries no pull request link, number or wording; the change is linked once, under Technical details.
-    assert.equal((screen.match(/aria-label="PR #\d+, open pull request/g) ?? []).length, 0, `${item.key} links no pull request on its plate`);
-    assert.equal(words.split(/\s+/).filter((word: string) => /^#\d+$/.test(word)).length, 0, `${item.key} shows its change number nowhere on the plate`);
-    const linked = (itemPage(item.key).match(/aria-label="The change on GitHub for/g) ?? []).length;
-    assert.equal(linked, item.candidate && item.observation?.source !== 'control-plane' ? 1 : 0, `${item.key} links its change once, folded`);
+    // GY-3599: the header links the pull request once; a control-plane change has none to link.
+    const linked = (itemPage(item.key).match(/aria-label="PR #\d+, open pull request/g) ?? []).length;
+    assert.equal(linked, item.candidate && item.observation?.source !== 'control-plane' ? 1 : 0, `${item.key} links its pull request once, in the header`);
     // No internal vocabulary in the default copy.
     for (const term of banned) assert.ok(!new RegExp(`\\b${term}`, 'i').test(words), `${item.key}: "${term}" in ${words}`);
   }
@@ -217,7 +215,7 @@ test('unit:ui-item-first-screen — an item page says on its first screen what s
     const group = groupWithin(refused, refusedBoard, NOW);
     assert.equal(group, 'blocked', reason);
     assert.equal(nextActor(refused, group, NOW).who, 'Master agent', reason);
-    assert.match(firstScreen(itemPage(base.key, dashboard({ work: refusedBoard }))), /Who acts next:<\/span> <strong>Master agent<\/strong>/, reason);
+    assert.match(firstScreen(itemPage(base.key, dashboard({ work: refusedBoard }))), /Next:<\/span> <strong>Master agent<\/strong>/, reason);
   }
   const guide = visibleWords(markup(createElement(GuidePage)));
   // GY-3295: the guide is the newcomer's Docs page; its FAQ and reference stay folded.
@@ -274,8 +272,9 @@ test('unit:ui-pr-steps — every moving item shows the four states from its gate
     assert.match(row, new RegExp(`data-step="${steps.current}" data-state="current"`));
     assert.ok(row.includes(steps.label), `${key} row labels the current state`);
     const detail = firstScreen(itemPage(key));
-    assert.match(detail, /aria-label="Item states"/);
-    assert.match(detail, new RegExp(`data-step="${steps.current}" data-state="current"`), `${key} item page`);
+    // GY-3599: the item page shows the pipeline row, one stage current.
+    assert.match(detail, /aria-label="Pipeline"/);
+    assert.equal((detail.match(/data-stage="/g) ?? []).length, 5, `${key} item page`);
   }
   const css = readdirSync(new URL('web/', root)).includes('style.css');
   assert.ok(css);
