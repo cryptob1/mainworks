@@ -52,13 +52,11 @@ async function open(page: Page, errors: string[]) {
   await expect(page.getByRole('heading', { name: 'Work', level: 1 })).toBeVisible();
 }
 
-async function openSettings(page: Page, tab: string, phone: boolean, section = 'Settings') {
-  const menu = page.getByRole('button', { name: 'Menu' });
-  if (phone && await menu.getAttribute('aria-expanded') !== 'true') await menu.click();
-  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: section, exact: true }).click();
+async function openSettings(page: Page, tab: string, _phone: boolean, section = 'Settings') {
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: section, exact: true }).click();
   const tabs = page.getByRole('navigation', { name: 'Pages in this section' });
-  // Operator automation sits behind the Settings tab row's Advanced fold (GY-3297).
-  if (tab === 'Operator automation') await tabs.getByText('Advanced', { exact: true }).click();
+  // Operator automation sits behind the Settings tab row's Advanced fold, Test cases behind Work's (GY-3297, GY-3598).
+  if (tab === 'Operator automation' || tab === 'Test cases') await tabs.getByText('Advanced', { exact: true }).click();
   await tabs.getByRole('button', { name: tab, exact: true }).click();
 }
 
@@ -67,7 +65,7 @@ const internalId = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 const rawJson = /[{[]\s*"[^"]+"\s*:/;
 const pages = [
   { tab: 'Agents', heading: 'Agents', section: 'Settings' },
-  { tab: 'Test cases', heading: 'Test-case library', section: 'Tests' },
+  { tab: 'Test cases', heading: 'Test-case library', section: 'Work' },
   { tab: 'Operator automation', heading: 'Operator automation', section: 'Settings' },
 ] as const;
 

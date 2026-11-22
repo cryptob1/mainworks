@@ -23,7 +23,7 @@ const settled = { timeout: 15_000 };
 async function namesMainworks(page: Page) {
   await expect(page.locator('body')).toContainText('Mainworks', settled);
   await expect(page.locator('body')).not.toContainText('Graphyard');
-  // The wordmark beside the logo is the name too, lower case in the sidebar.
+  // The wordmark beside the logo is the name too, lower case in the top bar.
   await expect(page.locator('.brand')).toHaveText(/^\s*mainworks\s*$/i);
   await expect(page).toHaveTitle(/Mainworks/);
   expect(await page.title()).not.toContain('Graphyard');

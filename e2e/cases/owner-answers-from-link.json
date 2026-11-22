@@ -40,7 +40,7 @@
       "name": "the main dashboard has loaded",
       "action": "expectText",
       "role": "navigation",
-      "text": "Primary"
+      "text": "Main"
     },
     {
       "kind": "browser",
@@ -67,7 +67,7 @@
       "name": "one click answers",
       "action": "click",
       "role": "button",
-      "text": "Go ahead as asked",
+      "text": "Approve this plan",
       "exact": false
     },
     {

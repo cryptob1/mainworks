@@ -98,7 +98,7 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
   const now = Number.isNaN(observedAt) ? Date.now() : observedAt;
   const owes = masterOwes(work, now);
   return <>
-    <PageHeader title="Master" fact="Files, routes and unsticks the work."/>
+    <PageHeader title="Lead" fact="Files, routes and unsticks the work."/>
     {stall && <p className="stall-alarm" role="alert">{stall}</p>}
     {owes.length > 0 && <section className="panel" aria-label="Blockers the Master owes"><h2>Blocked ({owes.length})</h2>
       <ul className="master-owes">{owes.map(entry => <li key={entry.id}>

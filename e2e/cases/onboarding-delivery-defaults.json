@@ -66,6 +66,13 @@
     },
     {
       "kind": "browser",
+      "name": "open Settings",
+      "action": "click",
+      "role": "link",
+      "text": "Settings"
+    },
+    {
+      "kind": "browser",
       "name": "open the delivery view",
       "action": "click",
       "role": "button",

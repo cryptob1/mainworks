@@ -377,14 +377,20 @@ tr.spent-summary td{padding:6px var(--space-4)}tr.spent-summary button{all:unset
 
 /* GY-3587: the Master page is one viewport tall with overflow hidden; only the active tab's panel scrolls. */
 .shell:has(.master-tabs){height:100dvh;min-height:0;overflow:hidden}
-.main:has(.master-tabs){height:100%;min-height:0;overflow:hidden;gap:var(--space-2);padding:var(--space-3) 40px 24px}
+.shell:has(.master-tabs)>header.main-top-bar{flex-shrink:0}
+.main:has(.master-tabs){flex:1 1 auto;height:auto;min-height:0;overflow:hidden;gap:var(--space-1);padding:8px 40px 24px}
+/* The full-height Master page spends its height on the pane, not on the frame around it. */
+.main:has(.master-tabs) .top-bar{min-height:0;gap:2px}
+.main:has(.master-tabs) .tab{padding:5px var(--space-3)}
+.main:has(.master-tabs) .invite-button,.main:has(.master-tabs) .text-button,.main:has(.master-tabs) .palette-button{padding:3px 10px;min-height:0}
+.main:has(.master-tabs) .page-heading{margin:0}
 .main:has(.master-tabs)>:not(.master-tabpanel){flex-shrink:0}
 .master-tabs{flex-shrink:0}
 .master-tabpanel{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;overflow:hidden}
 .master-tabpanel>.live-terminal{flex:1;min-height:0;height:auto}
 .master-tabpanel>.typed-input,.master-tabpanel>.master-messages{flex:1;min-height:0;margin-top:0;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
 @media(max-width:1000px){.main:has(.master-tabs){padding:var(--space-3) var(--space-5) 24px}}
-@media(max-width:650px){.shell:has(.master-tabs){display:flex;flex-direction:column;height:100dvh;overflow:hidden}.shell:has(.master-tabs)>.sidebar{flex-shrink:0}.main:has(.master-tabs){flex:1;height:auto;min-height:0;padding:12px var(--space-4) 24px;gap:var(--space-2)}}
+@media(max-width:650px){.shell:has(.master-tabs){display:flex;flex-direction:column;height:100dvh;overflow:hidden}.main:has(.master-tabs){flex:1;height:auto;min-height:0;padding:12px var(--space-4) 68px;gap:var(--space-2)}}
 /* GY-3345: threads with other installs' Masters, in the Messages tab; long words wrap, never widen the page. */
 .stall-alarm{margin:0 0 var(--space-2);padding:var(--space-2) var(--space-3);border-left:3px solid var(--blocked);border-radius:var(--radius);background:var(--raised);color:var(--text);overflow-wrap:anywhere}
 .master-messages{min-width:0;margin-top:8px}
@@ -533,4 +539,38 @@ kbd{font-family:var(--font-mono);font-size:11px;color:var(--text);background:var
 @media(max-width:650px){.sessions-table.figures .detail{display:none}.sessions-table.figures th,.sessions-table.figures td{padding-left:var(--space-2);padding-right:var(--space-2)}}
 .invite-button{padding:7px 13px;font-size:12px}.modal.invite fieldset{border:1px solid var(--border);border-radius:5px;display:grid;gap:8px;padding:10px 12px;min-width:0}.modal.invite legend{font-size:12px;color:var(--text-2)}.modal.invite label.check{display:flex;gap:8px;align-items:center;overflow-wrap:anywhere}.modal.invite label.check input{width:auto}.teammates{padding-left:18px;font-size:12px}.teammates li{overflow-wrap:anywhere;margin:6px 0}
 .flow-attention{color:var(--blocked);font-weight:500}.flow-line{margin:var(--space-2) 0 0;font-size:var(--type-small);color:var(--text-2);overflow-wrap:anywhere}.flow-details{display:inline}.flow-details summary{display:inline;cursor:pointer;color:var(--accent)}.flow-details[open]{display:block}.flow-fold{margin:var(--space-2) 0 0}.flow-table{margin:var(--space-2) 0 0;max-width:100%}.flow-table td,.flow-table th{overflow-wrap:anywhere}
+/* GY-3598: Redesign 1 — Mainworks top bar, four places (Home, Work, Lead, Settings), Caretaker pill, Pause team, and 390 px bottom tab bar. */
+.shell{display:flex;flex-direction:column;min-height:100vh;background:var(--bg)}
+header.main-top-bar{height:auto;min-height:60px;display:flex;flex-wrap:wrap;align-items:center;gap:10px 20px;padding:12px 32px;border-bottom:1px solid var(--border);background:var(--bg);color:var(--text);font-size:var(--type-body)}
+.brand-link{display:inline-flex;align-items:center;gap:10px;color:var(--text);text-decoration:none;flex-shrink:0}
+.brand-mark{display:block;width:30px;height:30px;flex-shrink:0}
+.brand-name{font-size:20px;font-weight:600;letter-spacing:-.4px;color:var(--text)}
+.main-nav{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.nav-link{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;color:var(--text-2);font-weight:500;text-decoration:none;white-space:nowrap}
+.nav-link:hover{color:var(--text);background:var(--raised)}
+.nav-link.active{background:var(--raised);color:var(--text);font-weight:600}
+.nav-badge{padding:1px 7px;border-radius:999px;background:var(--blocked);color:var(--on-accent);font-size:12px;font-weight:600}
+.caretaker-pill{margin-left:auto;min-height:36px;display:inline-flex;align-items:center;gap:8px;padding:0 12px;border-radius:999px;border:1px solid var(--border);font-size:var(--type-small);text-decoration:none;white-space:nowrap;max-width:100%}
+.caretaker-pill.ok{color:var(--text-2);background:transparent}
+.caretaker-pill.faults{color:var(--blocked);border-color:color-mix(in srgb,var(--blocked) 55%,var(--border));background:color-mix(in srgb,var(--blocked) 12%,var(--bg));font-weight:600}
+.caretaker-dot{width:8px;height:8px;border-radius:50%;background:var(--blocked);flex-shrink:0}
+.pause-team-btn{min-height:40px;padding:0 16px;border-radius:10px;border:1px solid color-mix(in srgb,var(--blocked) 55%,var(--border));background:transparent;color:var(--blocked);font-weight:600;font-size:var(--type-body);white-space:nowrap}
+.pause-team-btn.paused{border-color:var(--accent);background:var(--accent);color:var(--on-accent)}
+.main{width:100%;margin:0 auto;padding:var(--space-5) 32px var(--space-6);display:flex;flex-direction:column;gap:var(--space-5);min-width:0}
+.home-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--space-3)}
+.home-summary-card{display:flex;flex-direction:column;gap:var(--space-2);padding:var(--space-3);border:1px solid var(--border);border-radius:var(--radius);background:var(--raised)}
+.home-summary-card p{margin:0;font-size:var(--type-small);color:var(--text-2)}
+@media(max-width:650px){
+  header.main-top-bar{padding:10px 14px;gap:8px 10px}
+  .brand-name{font-size:18px}
+  .caretaker-pill{margin-left:0;font-size:12px;padding:0 10px;min-height:32px}
+  .pause-team-btn{margin-left:auto;min-height:36px;padding:0 12px;font-size:13px}
+  .main-nav{position:fixed;bottom:0;left:0;right:0;z-index:30;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;border-top:1px solid var(--border);background:var(--bg)}
+  .main-nav .nav-link{min-height:56px;padding:0 4px;justify-content:center;border-radius:0;font-size:13px}
+  .main{padding:var(--space-4) 14px 80px}
+  .home-summary-grid{grid-template-columns:1fr}
+  .version-label{z-index:25;bottom:57px}
+}
+/* GY-3598: a test case's long ids, commands and paths wrap inside its card, so the Test-case library never scrolls sideways at 390 px. */
+.scenario-list{grid-template-columns:minmax(0,1fr)}.scenario-card,.scenario-columns>div{min-width:0;overflow-wrap:anywhere}.scenario-card code{white-space:normal;word-break:break-all}
 .caretaker-lines{list-style:none;padding:0;margin:0 0 var(--space-3);display:grid;gap:var(--space-2);font-size:var(--type-small)}

@@ -51,12 +51,11 @@ async function openWorkers(page: Page, url: string) {
   const { code } = await signIn.json() as { code: string };
   await page.goto(`/#sign-in=${code}`);
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
-  if (viewportWidth(page) < 650) await page.getByRole('button', { name: 'Menu', exact: true }).click();
-  await page.locator('[data-nav="workers"]').click();
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: 'Workers', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Workers', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
 }
 
-const viewportWidth = (page: Page) => page.viewportSize()?.width ?? 1280;
 
 for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
   test(`e2e:dispatch-waits-on-cpu-pressure e2e:dispatch-waits-on-cpu-temperature e2e:hot-host-budget — the Workers page header shows CPU pressure, steal, temperature, test budget and trial cap at ${viewport.width} px`, async ({ page, context }) => {
