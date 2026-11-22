@@ -13,11 +13,9 @@ type Message = { id: number; from: string; to?: string; thread: string; text: st
 type Entry = { id: number; who: string; text: string; at: string };
 type MasterTab = 'conversation' | 'live' | 'history' | 'messages';
 
+// The page answers to #lead and to its old address #master (GY-3598), each with its tab after a slash.
 function masterTabFromHash(hash: string): MasterTab {
-  if (hash === '#master/live') return 'live';
-  if (hash === '#master/history') return 'history';
-  if (hash === '#master/messages') return 'messages';
-  return 'conversation';
+  return (/^#(?:master|lead)\/(live|history|messages)$/.exec(hash)?.[1] as MasterTab | undefined) ?? 'conversation';
 }
 
 /** GY-3345: messages between this Lead and other installs' Leads, one thread per conversation, oldest entry first. */

@@ -54,13 +54,11 @@ async function plane(context: BrowserContext, root: string) {
 
 /** Opens a sidebar entry, through the menu on a phone. */
 async function go(page: Page, label: string) {
-  const menu = page.getByRole('button', { name: 'Menu' });
-  if (await menu.isVisible() && await menu.getAttribute('aria-expanded') !== 'true') await menu.click();
-  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: label, exact: true }).click();
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: new RegExp(`^${label}(\\s+\\d+)?$`) }).click();
 }
 
-/** The header's and sidebar's whole text, shown or folded. */
-const chrome = (page: Page) => page.evaluate(() => ['.top-bar', '.sidebar'].map(selector => document.querySelector(selector)?.textContent ?? '').join(' '));
+/** The header's whole text. */
+const chrome = (page: Page) => page.evaluate(() => ['header.main-top-bar', '.top-bar'].map(selector => document.querySelector(selector)?.textContent ?? '').join(' '));
 
 for (const width of [1280, 390]) {
   test(`e2e:dashboard-header-plain — the header shows agents, checks running and merged today, no idle release or week line, a plain sidebar foot, and Delivery under Settings at ${width}px`, async ({ page, context }) => {
@@ -83,10 +81,8 @@ for (const width of [1280, 390]) {
       // No deploy: no release line. No reverts or gates removed: no week line.
       await expect(page.locator('.top-bar .release-line')).toHaveCount(0);
       await expect(page.locator('.top-bar .week-line')).toHaveCount(0);
-      // The sidebar foot: Live, the time only in its title, and the name and role.
-      await expect(page.locator('.sidebar .connection')).toHaveText('Live');
-      await expect(page.locator('.sidebar .signed-in')).toHaveText('Avery · Owner');
-      await expect(page.locator('.sidebar [aria-label="Delivery"]')).toHaveCount(0);
+      // The signed-in name and role sit in the top bar.
+      await expect(page.locator('.top-bar .signed-in')).toHaveText('Avery · Owner');
 
       for (const [label, heading] of [['Work', 'Work'], ['Lead', 'Lead'], ['Settings', 'Agents']] as const) {
         await go(page, label);

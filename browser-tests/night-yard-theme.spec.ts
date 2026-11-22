@@ -105,8 +105,8 @@ test('e2e:night-yard-theme — Night Yard serves by default with rain over grain
   await page.getByLabel('Search commands').fill('Lead');
   await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { name: 'Lead', exact: true, level: 1 })).toBeVisible();
-  // Back by the sidebar, not g w: a loaded runner can land the w past the chord's two-second window (GY-3442).
-  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Work', exact: true }).click();
+  // Back by the top bar, not g w: a loaded runner can land the w past the chord's two-second window (GY-3442).
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Work', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible();
   // The audit covers the page an operator reads most: the Work board, an item page, the palette, the shortcut sheet.
   await expectAA(page, 'the Work page at night');

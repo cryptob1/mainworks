@@ -136,7 +136,8 @@ test('e2e:keyboard-palette — the top bar strip counts agents working, checks r
   await expect(strip).toContainText('1 check running');
   await expect(strip).toContainText('1 merged today');
   // The same numbers the Workers page reads off the same board.
-  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Workers', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: 'Workers', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Workers', exact: true, level: 1 })).toBeVisible();
   await expect(page.locator('.page-heading .page-fact')).toContainText('2 agent sessions open. 1 not seen recently.');
 });

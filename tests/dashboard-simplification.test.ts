@@ -14,7 +14,7 @@ import { classify, groupLabel, groups, summarySentence } from '../web/groups.js'
 import WorkersPage from '../web/pages/workers.js';
 import { glossary } from '../web/glossary.js';
 import { probeFeatures, unknownFeatures, type Features } from '../web/features.js';
-import { primaryEntries, primaryEntry, sections, views, visibleViews } from '../web/pages/index.js';
+import { primaryEntries, sections, views, visibleViews } from '../web/pages/index.js';
 import type { Dashboard } from '../web/pages/dashboard.js';
 import OverviewPage from '../web/pages/overview.js';
 import { boardFromStatus } from '../src/model/board.js';
@@ -23,8 +23,7 @@ import ShippedPage from '../web/pages/shipped.js';
 import GuidePage from '../web/pages/guide.js';
 import AutomationPage from '../web/pages/automation.js';
 import CreateWork from '../web/pages/create-work.js';
-import TopBar from '../web/components/top-bar.js';
-import Sidebar from '../web/components/sidebar.js';
+import TopBar, { MainTopBar } from '../web/components/top-bar.js';
 import ScenarioLibrary from '../web/scenarios.js';
 
 // GY-67: the dashboard is rendered from the checked-in fixture (scripts/dashboard-fixture.mjs)
@@ -54,7 +53,7 @@ function dashboard(overrides: Partial<Dashboard> = {}, role = 'admin', features:
 const markup = (element: any) => renderToStaticMarkup(element);
 const words = (html: string): string[] => visibleWords(html);
 const text = (html: string) => words(html).join(' ');
-const home = (d = dashboard()) => markup(createElement('div', null, createElement(Sidebar, { entries: views.map(view => primaryEntry(d, view)), dashboard: d }), createElement(TopBar, d), createElement(OverviewPage, d)));
+const home = (d = dashboard()) => markup(createElement('div', null, createElement(MainTopBar, d), createElement(TopBar, d), createElement(OverviewPage, d)));
 const itemView = (key: string, role = 'admin') => markup(createElement(WorkDetails, { ...dashboard({}, role), item: find(key) }));
 const jargonIn = (sentence: string) => jargon.filter(term => new RegExp(`\\b${term}`, 'i').test(sentence));
 
@@ -142,47 +141,36 @@ test('unit:plain-status-copy — every stage and every gate reason reads as one 
   assert.equal(plainReason('Internal epoch lease candidate mismatch', 'merge', Date.now()).text, 'Waiting to merge');
 });
 
-test('integration:dashboard-navigation — one sidebar (Work, Lead, Workers, Shipped, Tests, Settings); every other page sits under one entry; admin-only and unconfigured pages hidden', async () => {
-  const labels = (d: Dashboard) => primaryEntries(d).map(entry => entry!.label);
-  // Tests opens the test-case results (GY-162); the Insights analytics page left with flow analytics (GY-2876).
-  assert.deepEqual(sections.map(section => section.label), ['Work', 'Lead', 'Workers', 'Shipped', 'Tests', 'Settings']);
-  for (const role of ['admin', 'reader', 'worker', 'coordinator', 'operator-agent']) assert.ok(labels(dashboard({}, role)).length <= 6, role);
-  assert.deepEqual(labels(dashboard()), ['Work', 'Lead', 'Workers', 'Shipped', 'Tests', 'Settings']);
+test('integration:dashboard-navigation — one top bar (Home, Work, Lead, Settings); every other page sits under one place; admin-only and unconfigured pages hidden', async () => {
+  const labels = (d: Dashboard) => primaryEntries(d).map(entry => entry.label);
+  assert.deepEqual(sections.map(section => section.label), ['Home', 'Work', 'Lead', 'Settings']);
+  for (const role of ['admin', 'reader', 'worker', 'coordinator', 'operator-agent']) assert.equal(labels(dashboard({}, role)).length, 4, role);
+  assert.deepEqual(labels(dashboard()), ['Home', 'Work', 'Lead', 'Settings']);
   const sectionOf = Object.fromEntries(views.map(view => [view.label, view.section]));
-  for (const page of ['Delivered', 'Releases']) assert.equal(sectionOf[page], 'shipped', page);
-  // Settings is configuration only (GY-3297): everyday pages sit beside the work they describe.
-  for (const page of ['Agents', 'Setup', 'Delivery', 'Operator automation']) assert.equal(sectionOf[page], 'settings', page);
-  assert.deepEqual([sectionOf['Product'], sectionOf['Costs'], sectionOf['Test cases']], ['master', 'workers', 'tests']);
+  for (const page of ['Work', 'Now', 'Needs you', 'Delivered', 'Releases', 'Tests', 'Test cases']) assert.equal(sectionOf[page], 'work', page);
+  for (const page of ['Lead', 'Product']) assert.equal(sectionOf[page], 'lead', page);
+  for (const page of ['Agents', 'Workers', 'Costs', 'Setup', 'Delivery', 'Help', 'Operator automation']) assert.equal(sectionOf[page], 'settings', page);
 
-  // The sidebar renders exactly the primary entries; the pages of a section are sub-page links above the content.
-  const sidebar = markup(createElement(Sidebar, { entries: views.map(view => primaryEntry(dashboard(), view)), dashboard: dashboard() }));
-  assert.equal(sidebar.match(/class="nav( active)?"/g)?.length, 6);
-  assert.equal(sidebar.match(/class="nav planned"/g), null, 'Tests has shipped (GY-162): no entry is a placeholder');
+  // The top bar renders exactly the four places; the pages of a place are sub-page links above the content.
+  const topNav = markup(createElement(MainTopBar, dashboard()));
+  assert.equal(topNav.match(/class="nav-link( active)?"/g)?.length, 4);
   const tabs = (d: Dashboard, view: string) => [...markup(createElement(TopBar, { ...d, view })).matchAll(/class="tab(?: active)?"[^>]*>(?:<abbr[^>]*>)?([^<]+)</g)].map(match => match[1]);
-  assert.deepEqual(tabs(dashboard(), 'shipped'), ['Delivered', 'Releases']);
-  assert.deepEqual(tabs(dashboard(), 'agents'), ['Agents', 'Setup', 'Delivery', 'Advanced', 'Operator automation'], 'Operator automation sits inside the Advanced fold');
-  assert.match(markup(createElement(TopBar, { ...dashboard(), view: 'agents' })), /<details class="tabs-advanced"><summary class="tab">Advanced<\/summary><button[^>]*>(<abbr[^>]*>)?Operator automation</);
-  assert.deepEqual(tabs(dashboard(), 'tests'), ['Tests', 'Test cases']);
-  assert.deepEqual(tabs(dashboard(), 'workers'), ['Workers', 'Costs']);
-  assert.deepEqual(tabs(dashboard(), 'master'), ['Lead', 'Product'], "the Lead's own tab reads as its sidebar entry does");
-  assert.deepEqual(tabs(dashboard(), 'work'), ['Work', 'Now'], 'a signed-in person has a Now page beside Work');
-  const agent = fixtureStatus('admin');
-  agent.actor = { ...agent.actor, sessionKind: 'ai' };
-  assert.deepEqual(tabs(dashboard({ status: agent }), 'work'), [], 'a section with one page draws no tab row');
-  assert.match(sidebar, />Help</, 'the guide is linked from the sidebar');
+  assert.deepEqual(tabs(dashboard(), 'work'), ['Work', 'Now', 'Delivered', 'Tests', 'Advanced', 'Releases', 'Test cases']);
+  assert.deepEqual(tabs(dashboard(), 'agents'), ['Agents', 'Workers', 'Costs', 'Setup', 'Delivery', 'Help', 'Advanced', 'Operator automation'], 'Operator automation sits inside the Advanced fold');
+  assert.match(markup(createElement(TopBar, { ...dashboard(), view: 'agents' })), /<details class="tabs-advanced"><summary class="tab">Advanced<\/summary><button[^>]*>(<abbr[^>]*>)?Operator automation/);
+  assert.deepEqual(tabs(dashboard(), 'lead'), ['Lead', 'Product']);
+  assert.deepEqual(tabs(dashboard(), 'home'), [], 'Home alone draws no tab row');
 
   // Admin-only pages are hidden from reader and worker sessions, even when configured.
   const configured = { validation: true, releases: true, automation: true };
-  assert.deepEqual(tabs(dashboard({}, 'reader', configured), 'agents'), ['Agents', 'Delivery'], 'a reader sees Agents and Delivery, not Setup');
-  assert.deepEqual(tabs(dashboard({}, 'reader', configured), 'tests'), ['Tests', 'Test cases']);
-  assert.ok(!labels(dashboard({}, 'worker', configured)).includes('Settings'), 'a worker has nothing to configure');
+  assert.deepEqual(tabs(dashboard({}, 'reader', configured), 'agents'), ['Agents', 'Workers', 'Costs', 'Delivery', 'Help'], 'a reader sees Agents, Workers, Costs, Delivery and Help, not Setup');
   for (const role of ['reader', 'worker']) assert.ok(!visibleViews(dashboard({}, role, configured)).some(view => view.adminOnly), role);
   // A feature with nothing configured is hidden, not rendered as an empty explainer; an unknown one stays.
   const probed = await probeFeatures(async path => path === 'operator-agents' ? [] : { environments: [], releases: [], requests: [], candidates: [] }, true, false);
   assert.deepEqual(probed.features, { releases: false, validation: false, automation: false });
   const none = dashboard({}, 'admin', probed.features);
-  assert.deepEqual(tabs(none, 'shipped'), [], 'Delivered alone draws no tab row');
-  assert.deepEqual(tabs(none, 'agents'), ['Agents', 'Setup', 'Delivery'], 'no Advanced fold while automation is unconfigured');
+  assert.ok(!tabs(none, 'work').includes('Releases'), 'Releases hidden when unconfigured');
+  assert.deepEqual(tabs(none, 'agents'), ['Agents', 'Workers', 'Costs', 'Setup', 'Delivery', 'Help'], 'no Advanced fold while automation is unconfigured');
   const failing = await probeFeatures(async () => { throw new Error('unavailable'); }, true, false);
   assert.deepEqual(failing.features, { releases: null, validation: false, automation: null }, 'an outage never hides a page');
   // An outage and an empty registry mean opposite things, so the page never reports one as the other.
@@ -199,8 +187,8 @@ test('integration:dashboard-navigation — one sidebar (Work, Lead, Workers, Shi
   assert.doesNotMatch(home(dashboard({ status: led })), /Delivery slices/);
   assert.doesNotMatch(markup(createElement(WorkersPage, dashboard())), /Delivery slices/);
   assert.match(markup(createElement(WorkersPage, dashboard({ status: led }))), /Delivery slices/);
-  // web/main.tsx builds the sidebar from the registry through primaryEntry.
-  assert.match(await read('web/main.tsx'), /views\.map\(entry => primaryEntry\(dashboard, entry\)\)/);
+  // web/main.tsx renders MainTopBar instead of Sidebar.
+  assert.match(await read('web/main.tsx'), /<MainTopBar/);
 });
 
 test('integration:dashboard-word-budget — the home page answers what needs you, what is blocked, what is moving and what shipped on one screen in at most 165 words', () => {

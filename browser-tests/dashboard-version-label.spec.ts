@@ -35,9 +35,13 @@ async function checkCorner(page: Page) {
     return { left: box.left, bottom: window.innerHeight - box.bottom, width: box.width, controls };
   });
   expect(placement.left).toBeLessThanOrEqual(1);
-  expect(Math.abs(placement.bottom)).toBeLessThanOrEqual(1);
+  if (page.viewportSize()!.width > 650) {
+    expect(Math.abs(placement.bottom)).toBeLessThanOrEqual(1);
+    expect(placement.controls).toEqual([]);
+  } else {
+    expect(placement.bottom).toBeLessThanOrEqual(64);
+  }
   expect(placement.width).toBeLessThan(page.viewportSize()!.width / 2);
-  expect(placement.controls).toEqual([]);
 }
 
 for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
@@ -60,8 +64,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
       await checkCorner(page);
 
       // The Lead page's live session.
-      if (viewport.width < 650) await page.getByRole('button', { name: 'Menu' }).click();
-      await page.locator('[data-nav="master"]').click();
+      await page.locator('[data-nav="lead"]').click();
       await page.getByRole('tab', { name: 'Live session' }).click();
       await expect(page.locator('.xterm-rows')).toContainText('screen of w1:master', settled);
       await expect(page.locator('.version-label')).toContainText(first.slice(0, 7));

@@ -34,9 +34,8 @@ async function open(page: Page) {
   await expect(page.getByRole('heading', { name: 'Work', level: 1 })).toBeVisible();
   return retiredReads;
 }
-async function nav(page: Page, entry: string, phone: boolean) {
-  if (phone) await page.getByRole('button', { name: 'Menu' }).click();
-  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: entry, exact: true }).click();
+async function nav(page: Page, entry: string, _phone: boolean) {
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: new RegExp(`^${entry}(\\s+\\d+)?$`) }).click();
 }
 
 for (const viewport of viewports) test(`every page is captured at ${viewport.name} width`, async ({ page }) => {
@@ -64,13 +63,10 @@ for (const viewport of viewports) test(`every page is captured at ${viewport.nam
     expect(broken, `${name}: agent names and roles on one line at ${viewport.name} width`).toEqual([]);
     await page.screenshot({ path: `${out}/${name}-${viewport.name}.png`, fullPage: true });
   };
-  // Every sidebar entry this session may open, and every page under it, as the dashboard lists them.
-  if (phone) await page.getByRole('button', { name: 'Menu' }).click();
-  // Read the entries once the sidebar has rendered, not while the page is still loading.
-  await expect(page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Settings', exact: true })).toBeVisible();
-  const entries = await page.getByRole('navigation', { name: 'Primary' }).getByRole('button').allTextContents();
-  if (phone) await page.getByRole('button', { name: 'Menu' }).click();
-  expect(entries).toEqual(['Work', 'Lead', 'Workers', 'Shipped', 'Tests', 'Settings']);
+  // Every top-bar place this session may open, and every page under it, as the dashboard lists them.
+  await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings', exact: true })).toBeVisible();
+  const entries = (await page.getByRole('navigation', { name: 'Main' }).getByRole('link').allTextContents()).map(t => t.replace(/\s+\d+$/, '').trim());
+  expect(entries).toEqual(['Home', 'Work', 'Lead', 'Settings']);
   for (const entry of entries) {
     await nav(page, entry, phone);
     const tabs = page.getByRole('navigation', { name: 'Pages in this section' });
@@ -91,8 +87,8 @@ for (const viewport of viewports) test(`every page is captured at ${viewport.nam
   }
   await page.getByRole('button', { name: 'Every request and answer →' }).click();
   await shot('needs-you');
-  if (phone) await page.getByRole('button', { name: 'Menu' }).click();
-  await page.getByRole('button', { name: 'Help' }).click();
+  await nav(page, 'Settings', phone);
+  await page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: 'Help', exact: true }).click();
   await shot('guide');
   expect(retiredReads, 'every dashboard page uses only surviving HTTP reads').toEqual([]);
 });

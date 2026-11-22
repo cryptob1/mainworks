@@ -37,13 +37,27 @@ async function login(page: Page, value = 'browser-fixture') { await page.getByLa
 // a Menu button. An open work item is a page of its own, left with "← Back".
 const workHeading = (page: Page) => page.getByRole('heading', { name: 'Work', exact: true, level: 1 });
 async function sidebarEntry(page: Page, entry: string) {
-  const menu = page.getByRole('button', { name: 'Menu' });
-  if (page.viewportSize()!.width <= 650 && await menu.getAttribute('aria-expanded') !== 'true') await menu.click();
-  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: entry, exact: true }).click();
+  const mainNav = page.getByRole('navigation', { name: 'Main' });
+  const tabs = page.getByRole('navigation', { name: 'Pages in this section' });
+  if (['Home', 'Work', 'Lead', 'Settings'].includes(entry)) {
+    await mainNav.getByRole('link', { name: new RegExp(`^${entry}(\\s+\\d+)?$`) }).click();
+  } else if (entry === 'Master') {
+    await mainNav.getByRole('link', { name: /^Lead/ }).click();
+  } else if (entry === 'Shipped' || entry === 'Tests') {
+    await mainNav.getByRole('link', { name: 'Work', exact: true }).click();
+    await tabs.getByRole('button', { name: entry === 'Shipped' ? 'Delivered' : 'Tests', exact: true }).click();
+  } else if (entry === 'Workers') {
+    await mainNav.getByRole('link', { name: 'Settings', exact: true }).click();
+    await tabs.getByRole('button', { name: 'Workers', exact: true }).click();
+  }
 }
 async function openPage(page: Page, section: 'Shipped' | 'Tests' | 'Settings', tab: string) {
-  await sidebarEntry(page, section);
-  await page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: tab, exact: true }).click();
+  await sidebarEntry(page, section === 'Shipped' || section === 'Tests' ? 'Work' : 'Settings');
+  const tabs = page.getByRole('navigation', { name: 'Pages in this section' });
+  const advanced = tabs.locator('details.tabs-advanced');
+  const btn = tabs.getByRole('button', { name: tab, exact: true });
+  if (!(await btn.isVisible()) && (await advanced.count())) await advanced.locator('summary').click();
+  await btn.click();
 }
 const itemPage = (page: Page, name?: string) => name ? page.getByRole('article', { name }) : page.locator('article.item-page');
 const technicalDetails = (page: Page) => itemPage(page).getByText('Technical details', { exact: true }).click();
@@ -191,8 +205,8 @@ test('the work page shows one count row, the groups, each tile filtering to exac
   await fixture(page); await login(page);
   // The heading carries no count; the sidebar's Work entry carries no badge.
   await expect(workHeading(page)).toHaveText('Work');
-  await expect(page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Work', exact: true })).toHaveText(/Work$/);
-  await expect(page.getByRole('navigation', { name: 'Primary' }).locator('button small')).toHaveCount(0);
+  await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Work', exact: true })).toHaveText(/Work$/);
+  await expect(page.getByRole('navigation', { name: 'Main' }).locator('a small')).toHaveCount(0);
   await expect(page.locator('.stage-strip')).toHaveCount(0);
   const tiles = page.getByRole('group', { name: 'Filter by group' }).getByRole('button');
   await expect(tiles).toHaveCount(5);
@@ -233,15 +247,15 @@ const nextPoll = (page: Page) => page.clock.runFor(5000), settled = { timeout: 1
 test('connection loss labels stale data, recovers, and revoked sessions clear the dashboard', async ({ page }) => {
   await page.clock.install();
   const state = await fixture(page); await login(page);
-  const connection = page.locator('.sidebar .connection');
-  await expect(connection).toHaveText('Live', settled);
-  await expect(connection).toHaveAttribute('title', /^Last update /);
+  await expect(workHeading(page)).toBeVisible(settled);
+  const connection = page.locator('.top-bar .connection');
+  await expect(connection).toHaveCount(0, settled);
   state.offline = true; await nextPoll(page);
   await expect(connection).toHaveText('Offline · retrying', settled);
   await expect(page.getByRole('alert')).toContainText('stale');
   await expect(page.getByRole('heading', { name: 'Browser fixture' })).toBeVisible();
   state.offline = false; await nextPoll(page);
-  await expect(connection).toHaveText('Live', settled);
+  await expect(connection).toHaveCount(0, settled);
   await expect(page.getByRole('alert')).toHaveCount(0);
   state.unauthorized = true; await nextPoll(page);
   await expect(page.getByLabel('Access token')).toBeVisible(settled);
@@ -250,8 +264,6 @@ test('connection loss labels stale data, recovers, and revoked sessions clear th
 
 test('mobile sign out is reachable and removes the session', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await fixture(page); await login(page);
-  // The sidebar folds into the Menu button on a phone; sign-out is one tap inside it.
-  await page.getByRole('button', { name: 'Menu' }).click();
   const signOut = page.getByRole('button', { name: 'Sign out' });
   await expect(signOut).toBeVisible(); await signOut.click();
   await expect(page.getByLabel('Access token')).toBeVisible();
@@ -323,14 +335,14 @@ test('slice view names leads, workers, reviewers and bottlenecks and labels each
   await expect(slices).toContainText('legacy-proof');
   await expect(slices.getByText('Session kind undeclared', { exact: true })).toHaveCount(1);
   // The signed-in summary names the role as the owner reads it, never the principal id (GY-3483), and carries no session-kind badge (GY-161, AC-10).
-  const session = page.locator('.sidebar-bottom');
+  const session = page.locator('.top-bar');
   await expect(session.locator('.signed-in')).toHaveText('Owner');
   await expect(session.locator('.identity')).toHaveCount(0);
 });
 
 test('an AI session is named in the signed-in summary without a session-kind badge', async ({ page }) => {
   await fixture(page, 'worker'); await login(page);
-  const session = page.locator('.sidebar-bottom');
+  const session = page.locator('.top-bar');
   await expect(session.locator('.signed-in')).toHaveText('Maintainer', { timeout: 15_000 });
   await expect(session.locator('.identity')).toHaveCount(0);
 });
@@ -351,7 +363,7 @@ test('a delayed post-create refresh cannot restore the signed-out session or lea
   await page.getByLabel('Title', { exact: true }).fill('Delayed creation');
   await page.getByLabel('Why it helps users').fill('Sessions never leak data.');
   await page.getByLabel('Why it is the simplest thing that works').fill('One guard on the session epoch.');
-  await page.getByText('Advanced', { exact: true }).click();
+  await page.getByRole('dialog', { name: 'New work item' }).getByText('Advanced', { exact: true }).click();
   await page.getByLabel('Acceptance criterion').fill('No data crosses sessions');
   await page.getByLabel('Required proof').fill('manual:session');
   await page.getByRole('button', { name: 'Create work item', exact: true }).click();

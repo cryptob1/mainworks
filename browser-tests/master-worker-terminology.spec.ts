@@ -21,20 +21,20 @@ test('e2e:master-worker-terminology — navigation, the Lead heading and its acc
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible();
 
-  const menu = page.getByRole('navigation', { name: 'Primary' }).getByRole('button');
-  await expect(menu).toHaveText(['Work', 'Lead', 'Workers', 'Shipped', 'Tests', 'Settings']);
+  const menu = page.getByRole('navigation', { name: 'Main' }).getByRole('link');
+  await expect(menu).toHaveText(['Home', 'Work', /^Lead/, 'Settings']);
 
-  // The Lead page: its heading, its tab row and its conversation region all say Lead.
-  await menu.nth(1).click();
+  // GY-3598, GY-3602: the master lives under Lead; its heading and its conversation region say Lead.
+  await menu.nth(2).click();
   await expect(page.getByRole('heading', { name: 'Lead', exact: true, level: 1 })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Conversation with the Lead' })).toBeVisible();
   const tabs = page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button');
   await expect(tabs).toHaveText(['Lead', 'Product']);
 
-  // Workers remains Workers: its own entry, heading and tab row.
-  await menu.nth(2).click();
+  // Workers remains Workers: its own tab under Settings and its own heading.
+  await menu.nth(3).click();
+  await tabs.filter({ hasText: /^Workers$/ }).click();
   await expect(page.getByRole('heading', { name: 'Workers', exact: true, level: 1 })).toBeVisible();
-  await expect(tabs).toHaveText(['Workers', 'Costs']);
 
   // Nothing on the board says Chief.
   await expect(page.getByText(/chief/i)).toHaveCount(0);

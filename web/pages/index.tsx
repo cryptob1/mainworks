@@ -1,6 +1,6 @@
-import { PRODUCT_NAME } from '../../src/model/product';
 import type { ReactNode } from 'react';
 import type { Dashboard } from './dashboard';
+import HomePage from './home';
 import { WorkPage } from './overview';
 import NowPage from './now';
 import ShippedPage from './shipped';
@@ -19,34 +19,35 @@ import ProductPage from './product';
 import { DeliveryDefaults } from '../components/delivery-slices';
 
 /**
- * The one navigation (GY-161): the sidebar and nothing beside it. Every page belongs to one of
- * these entries; a section with more than one visible page shows its pages as a row of sub-page
- * links above the content (web/components/top-bar.tsx), never repeating a sidebar entry.
+ * The four places (GY-3598): Home, Work, Lead, Settings. Every existing page lives under one of
+ * these four, reachable in at most two clicks; old hash routes redirect to their new place.
  */
 export const sections = [
+  { id: 'home', icon: 'home', label: 'Home' },
   { id: 'work', icon: 'work', label: 'Work' },
-  // The Lead (the master agent, renamed for people by GY-3602; the role stays 'master' in code until GY-3594)
-  // is the conversation you steer: its replies are cards you act on, with the terminal one click away.
-  { id: 'master', icon: 'master', label: 'Lead' },
-  { id: 'workers', icon: 'workers', label: 'Workers' },
-  { id: 'shipped', icon: 'shipped', label: 'Shipped' },
-  { id: 'tests', icon: 'tests', label: 'Tests' },
+  { id: 'lead', icon: 'lead', label: 'Lead' },
   { id: 'settings', icon: 'settings', label: 'Settings' },
 ] as const;
 export type Section = typeof sections[number]['id'];
 
+/** Old hash routes that redirect to a canonical view id. */
+export const oldRouteRedirects: Record<string, string> = {
+  master: 'lead',
+  settings: 'agents',
+};
+
 /**
- * One page. The sidebar, the tabs and the main pane are generated from this list, so a new page
- * is one entry here plus its component under web/pages/. An entry carries no count: a number
- * has one home, on its page (the open total is the Work heading's, GY-81).
+ * One page. The top bar, the section sub-tabs and the main pane are generated from this list.
  */
 export interface View {
   id: string; icon: string; label: string;
-  /** The primary entry it lives under; a page without one is opened by a link (the guide). */
+  /** The place it lives under (Home, Work, Lead, or Settings). */
   section?: Section;
   adminOnly?: boolean;
-  /** Rarely needed: listed under the section's Advanced fold instead of as a tab, and never its sidebar entry. */
+  /** Rarely needed: listed under the section's Advanced fold instead of as a tab. */
   advanced?: boolean;
+  /** Reached from an inline strip rather than the section's tab bar. */
+  inlineOnly?: boolean;
   /** Hides the page for some sessions, or while nothing is configured for it. */
   visible?(dashboard: Dashboard): boolean;
   render(dashboard: Dashboard): ReactNode;
@@ -58,51 +59,59 @@ const role = (dashboard: Dashboard) => dashboard.status?.actor?.role;
 const configured = (value: boolean | null | undefined) => value !== false;
 
 export const views: readonly View[] = [
+  { id: 'home', icon: '⌂', label: 'Home', section: 'home', render: dashboard => <HomePage {...dashboard}/> },
   { id: 'work', icon: '▥', label: 'Work', section: 'work', render: dashboard => <WorkPage {...dashboard}/> },
   { id: 'now', icon: '◷', label: 'Now', section: 'work', visible: dashboard => dashboard.status?.actor?.sessionKind === 'human', render: dashboard => <NowPage {...dashboard}/> },
-  // What waits on the human (GY-89) is the Work page's Needs you group (GY-161): one place, answered on the item page.
-  // This page, the full list with recently answered requests, is opened from that group, not from the navigation.
-  { id: 'needs-you', icon: '☝', label: 'Needs you', render: dashboard => <HumanRequestsPage {...dashboard}/> },
-  { id: 'shipped', icon: '✓', label: 'Delivered', section: 'shipped', render: dashboard => <ShippedPage {...dashboard}/> },
-  // Every agent session across every item (GY-116), its own sidebar entry (GY-161).
-  { id: 'workers', icon: '⚙', label: 'Workers', section: 'workers', render: dashboard => <WorkersPage {...dashboard}/> },
-  // The Lead conversation (GY-3211, GY-3602): messages and actionable cards, with the live terminal
-  // one click away and the blockers the Lead owes above it (GY-3394).
-  { id: 'master', icon: '▶', label: 'Lead', section: 'master', render: dashboard => <MasterPage {...dashboard}/> },
-  // What waits on a release, beside what shipped.
-  { id: 'releases', icon: '⇈', label: 'Releases', section: 'shipped', visible: dashboard => configured(dashboard.features.releases), render: dashboard => <ReleasesView api={dashboard.api} work={dashboard.work}/> },
-  // Every test case with its latest trusted result and history (GY-162). It is shown even before the
-  // first run, as never run, rather than hidden; operator agents' scoped API refuses its read.
-  { id: 'tests', icon: '⚗', label: 'Tests', section: 'tests', visible: dashboard => role(dashboard) !== 'operator-agent', render: dashboard => <TestsPage api={dashboard.api} canEdit={role(dashboard) === 'admin'} setView={dashboard.setView} openItem={dashboard.setSelected}/> },
-  // The library of test cases sits beside their results, under Tests (GY-3297).
-  { id: 'scenarios', icon: '✓', label: 'Test cases', section: 'tests', render: dashboard => <ScenarioLibrary api={dashboard.api} canEdit={role(dashboard) === 'admin'}/> },
-  // The product brief, kept by the Lead in project memory and mirrored here read-only (GY-3274): what the product is for, beside the Lead that keeps it.
-  { id: 'product', icon: '◎', label: 'Product', section: 'master', render: dashboard => <ProductPage api={dashboard.api}/> },
-  // What the agents spent (GY-3289): tokens and cost from the price sheet, beside the sessions that spent them.
-  { id: 'costs', icon: '$', label: 'Costs', section: 'workers', render: dashboard => <CostsPage api={dashboard.api} observedAt={dashboard.observedAt}/> },
-  // Settings is configuration only (GY-3297). The agent registry, for the identities that may read it, since it names hosts and login homes.
-  // Every agent's runtime, account, role and launch policy is configured and shown here (GY-170).
+  { id: 'needs-you', icon: '☝', label: 'Needs you', section: 'work', inlineOnly: true, render: dashboard => <HumanRequestsPage {...dashboard}/> },
+  { id: 'shipped', icon: '✓', label: 'Delivered', section: 'work', render: dashboard => <ShippedPage {...dashboard}/> },
+  { id: 'releases', icon: '⇈', label: 'Releases', section: 'work', advanced: true, visible: dashboard => configured(dashboard.features.releases), render: dashboard => <ReleasesView api={dashboard.api} work={dashboard.work}/> },
+  { id: 'tests', icon: '⚗', label: 'Tests', section: 'work', visible: dashboard => role(dashboard) !== 'operator-agent', render: dashboard => <TestsPage api={dashboard.api} canEdit={role(dashboard) === 'admin'} setView={dashboard.setView} openItem={dashboard.setSelected}/> },
+  { id: 'scenarios', icon: '✓', label: 'Test cases', section: 'work', advanced: true, render: dashboard => <ScenarioLibrary api={dashboard.api} canEdit={role(dashboard) === 'admin'}/> },
+  { id: 'lead', icon: '▶', label: 'Lead', section: 'lead', render: dashboard => <MasterPage {...dashboard}/> },
+  { id: 'product', icon: '◎', label: 'Product', section: 'lead', render: dashboard => <ProductPage api={dashboard.api}/> },
   { id: 'agents', icon: '⛭', label: 'Agents', section: 'settings', visible: dashboard => ['admin', 'coordinator', 'reader', 'slice-lead'].includes(role(dashboard)), render: dashboard => <FleetPage api={dashboard.api} status={dashboard.status} observedAt={dashboard.observedAt} onOpenSetup={role(dashboard) === 'admin' ? () => dashboard.setView('setup') : undefined}/> },
-  // The first-run checklist (GY-1419), for the admin who sets Graphyard up; the sign-in link `graphyard up` prints opens it.
+  { id: 'workers', icon: '⚙', label: 'Workers', section: 'settings', render: dashboard => <WorkersPage {...dashboard}/> },
+  { id: 'costs', icon: '$', label: 'Costs', section: 'settings', render: dashboard => <CostsPage api={dashboard.api} observedAt={dashboard.observedAt}/> },
   { id: 'setup', icon: '✔', label: 'Setup', section: 'settings', adminOnly: true, render: dashboard => <SetupPage status={dashboard.status} api={dashboard.api} setView={dashboard.setView}/> },
-  // The project's effective delivery defaults and declared applications (GY-1901), a Settings tab (GY-3483).
   { id: 'delivery', icon: '⇉', label: 'Delivery', section: 'settings', visible: dashboard => ['admin', 'coordinator', 'reader', 'slice-lead'].includes(role(dashboard)), render: dashboard => <DeliveryDefaults status={dashboard.status}/> },
+  { id: 'guide', icon: '?', label: 'Help', section: 'settings', render: () => <GuidePage/> },
   { id: 'automation', icon: '◇', label: 'Operator automation', section: 'settings', advanced: true, adminOnly: true, visible: dashboard => configured(dashboard.features.automation), render: dashboard => <AutomationPage operatorAgents={dashboard.operatorAgents} operatorAgentsError={dashboard.operatorAgentsError}/> },
-  { id: 'guide', icon: '?', label: `How ${PRODUCT_NAME} works`, render: () => <GuidePage/> },
 ];
+
+/** Every valid route id, including old hash aliases that redirect to their new place. */
+export const allRouteIds: readonly string[] = [...views.map(page => page.id), ...Object.keys(oldRouteRedirects)];
+
+/** Resolve an old or place route id to a concrete view id. */
+export function resolveViewId(id: string, dashboard?: Dashboard): string {
+  const mapped = oldRouteRedirects[id] ?? id;
+  if (dashboard && mapped === 'agents') {
+    const visible = visibleViews(dashboard);
+    if (!visible.some(page => page.id === 'agents')) {
+      return visible.find(page => page.section === 'settings')?.id ?? 'workers';
+    }
+  }
+  return views.some(view => view.id === mapped) ? mapped : 'work';
+}
 
 /** The pages this session may open, in registry order. */
 export const visibleViews = (dashboard: Dashboard) => views.filter(view => (!view.adminOnly || role(dashboard) === 'admin') && (!view.visible || view.visible(dashboard)));
-/**
- * The sidebar entry a page stands for: its section, when it is the first page of that section
- * this session may open. Mapping the registry through this yields at most the sections above.
- */
+
+/** The first visible view of a place (Home, Work, Lead, Settings). */
+export function firstViewOfSection(dashboard: Dashboard, section: Section): View {
+  return visibleViews(dashboard).find(page => page.section === section && !page.advanced)
+    ?? views.find(page => page.section === section)
+    ?? views[1];
+}
+
+/** The primary entry a page stands for: its place, when it is the first visible page of that place. */
 export function primaryEntry(dashboard: Dashboard, view: View) {
   if (!view.section) return null;
   const first = visibleViews(dashboard).find(page => page.section === view.section && !page.advanced);
   return first === view ? { ...sections.find(section => section.id === view.section)!, view } : null;
 }
-/** The sidebar's entries this session may open, in the sidebar's order. */
-export const primaryEntries = (dashboard: Dashboard) => sections.flatMap(section => views.map(view => primaryEntry(dashboard, view)).filter(entry => entry?.id === section.id));
-/** The page for a view id; unknown ids fall back to the work page. */
-export const viewFor = (id: string) => views.find(view => view.id === id) ?? views[0];
+
+/** The four places this session may open, in order (Home, Work, Lead, Settings). */
+export const primaryEntries = (dashboard: Dashboard) => sections.map(section => ({ ...section, view: firstViewOfSection(dashboard, section.id) }));
+
+/** The page for a view id; old aliases resolve to their new place, unknown ids fall back to work. */
+export const viewFor = (id: string) => views.find(view => view.id === (oldRouteRedirects[id] ?? id)) ?? views.find(view => view.id === 'work')!;

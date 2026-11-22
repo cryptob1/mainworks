@@ -80,12 +80,11 @@ test('e2e:master-terminal-fills-page — the Lead live terminal fills the page o
         // First open.
         await fillsThePage(page);
         // Away to Work and back to Lead: the page mounts a new terminal.
-        const menu = page.getByRole('navigation', { name: 'Primary' });
-        if (width === 390) await page.getByRole('button', { name: 'Menu' }).click();
-        await menu.getByRole('button', { name: 'Work', exact: true }).click();
+        const menu = page.getByRole('navigation', { name: 'Main' });
+        await menu.getByRole('link', { name: 'Work', exact: true }).click();
         await expect(page.locator('.terminal-host')).toHaveCount(0);
-        if (width === 390) await page.getByRole('button', { name: 'Menu' }).click();
-        await menu.getByRole('button', { name: 'Lead', exact: true }).click();
+        await menu.getByRole('link', { name: /^Lead/ }).click();
+        await openLiveSession(page);
         await fillsThePage(page);
         // A reconnect: the server drops the socket and the page dials back in.
         f.child.send('drop-terminals');

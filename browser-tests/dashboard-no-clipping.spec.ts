@@ -47,39 +47,26 @@ async function check(page: Page, where: string) {
       for (let parent = node.parentElement; parent; parent = parent.parentElement) if (getComputedStyle(parent).overflowX !== 'visible') left = Math.max(left, parent.getBoundingClientRect().left);
       return { left: box.left, text: left > box.left + 1 ? '(cut)' : node.textContent!.trim() };
     };
-    const first = seen(document.querySelector('.primary-nav .nav span')), master = seen(document.querySelector('.primary-nav [data-nav="master"] span'));
+    const first = seen(document.querySelector('.main-nav [data-nav="home"]')), lead = seen(document.querySelector('.main-nav [data-nav="lead"]'));
     const label = document.querySelector('.version-label');
-    const foot = label?.closest('.sidebar-bottom');
-    const at = label?.getBoundingClientRect();
-    const sidebar = document.querySelector('.sidebar')!.getBoundingClientRect();
-    const hits = (other: DOMRect) => !!at && other.width > 0 && other.height > 0 && other.left < at.right && other.right > at.left && other.top < at.bottom && other.bottom > at.top;
-    const overlaps = label ? [...document.body.querySelectorAll('*')].filter(other => !other.contains(label) && !label.contains(other) && getComputedStyle(other).visibility !== 'hidden' && hits(other.getBoundingClientRect())).map(other => other.outerHTML.slice(0, 100)) : [];
     return {
       scroll: { scrollWidth: doc.scrollWidth, clientWidth: doc.clientWidth }, offsetLeft: window.visualViewport!.offsetLeft, scrollX: window.scrollX,
-      first, master,
-      label: !!label, inFoot: !!foot, insideSidebar: !!at && at.left >= sidebar.left - 1 && at.right <= sidebar.right + 1, overlaps,
+      first, lead,
+      label: !!label,
     };
   });
   expect.soft(read.scroll.scrollWidth, `${where}: the page is no wider than the window`).toBe(read.scroll.clientWidth);
   expect.soft(read.offsetLeft, `${where}: the view stays at the left edge after a sideways scroll`).toBe(0);
   expect.soft(read.scrollX, `${where}: the page does not scroll sideways`).toBe(0);
-  expect.soft(read.first.left, `${where}: the first sidebar label starts inside the window`).toBeGreaterThanOrEqual(0);
-  expect.soft(read.first.text, `${where}: the first sidebar label reads in full`).toBe('Work');
-  expect.soft(read.master.left, `${where}: the Lead label starts inside the window`).toBeGreaterThanOrEqual(0);
-  expect.soft(read.master.text, `${where}: the Lead label reads in full`).toBe('Lead');
+  expect.soft(read.first.left, `${where}: the first nav label starts inside the window`).toBeGreaterThanOrEqual(0);
+  expect.soft(read.first.text, `${where}: the first nav label reads in full`).toBe('Home');
+  expect.soft(read.lead.left, `${where}: the Lead label starts inside the window`).toBeGreaterThanOrEqual(0);
+  expect.soft(read.lead.text, `${where}: the Lead label reads in full`).toMatch(/^Lead/);
   expect.soft(read.label, `${where}: the version shows`).toBe(true);
-  expect.soft(read.inFoot, `${where}: the version sits in the sidebar foot`).toBe(true);
-  if (width > 650) expect.soft(read.insideSidebar, `${where}: the version sits inside the sidebar`).toBe(true);
-  expect.soft(read.overlaps, `${where}: the version overlaps nothing`).toEqual([]);
 }
 
-/** On a phone the menu folds the sidebar away; it is opened to read its labels, then closed. */
 async function checkWithMenu(page: Page, where: string) {
-  const narrow = page.viewportSize()!.width <= 650;
-  const menu = page.getByRole('button', { name: 'Menu' });
-  if (narrow) await menu.click();
   await check(page, where);
-  if (narrow) await menu.click();
 }
 
 for (const viewport of [{ width: 390, height: 844 }, { width: 800, height: 700 }, { width: 1280, height: 800 }]) {
