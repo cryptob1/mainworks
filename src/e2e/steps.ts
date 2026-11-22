@@ -23,16 +23,15 @@ import type { E2eStep } from './case.js';
  */
 export const keptOutputLines = 50;
 /** Host variables a step's process keeps: what a command needs to run at all, never a credential. */
-export const hostPassthrough = ['PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'LC_ALL', 'TERM', 'TMPDIR', 'TZ', 'DISPLAY', 'XDG_RUNTIME_DIR', 'PLAYWRIGHT_BROWSERS_PATH', 'CI'] as const;
+export const hostPassthrough = ['PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'LC_ALL', 'TERM', 'TMPDIR', 'TZ', 'DISPLAY', 'XDG_RUNTIME_DIR', 'PLAYWRIGHT_BROWSERS_PATH', 'CI', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0'] as const;
 
 /** The environment a step's process gets: the host basics, the target, what was live when one serves (GY-2985), and the case's secrets — none of the three overridable by a secret. */
 export function stepEnvironment(url: string, secrets: Record<string, string>, host: NodeJS.ProcessEnv = process.env, baselineUrl?: string): Record<string, string> {
   const env: Record<string, string> = {};
+  // The host basics include the GIT_CONFIG_* pairs (above) a remote shard's host shim hands the
+  // launcher: its safe.directory is why git in a command step trusts the checkout it runs in,
+  // which the container maps to another uid (src/host-shim.ts).
   for (const name of hostPassthrough) if (host[name] !== undefined) env[name] = host[name]!;
-  // A remote shard's checkout is owned by the uid the container maps from its host user, so git in
-  // a command step refuses it as dubious ownership unless the host shim's GIT_CONFIG_* pairs — the
-  // safe.directory the shim already handed the launcher — travel with the step (src/host-shim.ts).
-  for (const [name, value] of Object.entries(host)) if (/^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+)$/.test(name)) env[name] = value!;
   return { ...env, ...secrets, ...(baselineUrl ? { BASELINE_URL: baselineUrl } : {}), TARGET_URL: url };
 }
 
