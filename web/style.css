@@ -524,7 +524,7 @@ kbd{font-family:var(--font-mono);font-size:11px;color:var(--text);background:var
 /* GY-3310: the served build, part of the sidebar foot (GY-3479), pinned to the bottom-left corner; the sidebar keeps its strip clear, and the page's own bottom padding (never the shell's, which would make the document scroll) clears it in main.
    On a phone the folded foot shows only the label; the open menu shows it in the foot's own flow. */
 .version-label{position:fixed;left:0;bottom:0;z-index:5;padding:2px 8px;font-size:10px;line-height:14px;color:var(--text-3);background:var(--bg);font-family:var(--font-mono,monospace);pointer-events:none}@media(min-width:651px){.sidebar-inner{padding-bottom:calc(var(--space-5) + 18px)}}
-@media(max-width:650px){.sidebar:not(.open) .sidebar-bottom{display:contents}.sidebar:not(.open) .sidebar-bottom>:not(.version-label){display:none}.sidebar.open .version-label{position:static;padding:0}}
+@media(max-width:650px){.sidebar:not(.open) .sidebar-bottom{display:contents}.sidebar:not(.open) .sidebar-bottom>:not(.version-label){display:none}/* GY-3601: on a phone the label reads up the page's left gutter, so it never covers a control wherever the page flows. */.sidebar:not(.open) .version-label{writing-mode:vertical-rl;padding:6px 1px;line-height:12px}.sidebar.open .version-label{position:static;padding:0}}
 /* Figure tables (GY-3315, GY-3322): the shared table for numbers, right-aligned under their headers in tabular figures;
    it stays a table on a phone, where the detail columns fold away. Inside a card the table drops its own border. */
 .table-scroll{overflow-x:auto;max-width:100%}.panel .sessions-table{border:0}
@@ -536,7 +536,7 @@ kbd{font-family:var(--font-mono);font-size:11px;color:var(--text);background:var
 /* GY-3601: Home's status line, incident cards, since you last looked, goals and the box to the Lead. */
 .status-line{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin:18px 0 0;font-size:30px;font-weight:600;letter-spacing:-.6px;line-height:1.2;overflow-wrap:anywhere}
 .status-line span{font-weight:450;color:var(--text-2)}
-@media(max-width:650px){.status-line{font-size:20px;letter-spacing:-.3px;gap:2px 10px;margin-top:12px}}
+@media(max-width:650px){.status-line{font-size:28px;gap:2px 12px;margin-top:12px}}
 .state-moving{color:var(--shipped)}.state-slowed{color:var(--needs-you)}.state-stopped{color:var(--blocked)}
 .incidents{display:grid;gap:var(--space-2);margin-top:var(--space-3)}
 .incident p{margin:0 0 6px;overflow-wrap:anywhere}.incident-broke{font-size:var(--type-sentence);font-weight:600}
