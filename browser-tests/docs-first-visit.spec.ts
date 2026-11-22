@@ -102,8 +102,11 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: '
     const overview = docs.locator('#docs-overview');
     for (const role of ['You, the owner', 'The Master', 'The loop']) await expect(overview).toContainText(role);
     const journey = docs.locator('#docs-first-item ol');
-    await expect(journey.locator('li')).toHaveCount(8);
-    for (const step of ['npx @cryptob1/graphyard doctor', 'npx @cryptob1/graphyard up --repo OWNER/NAME', 'http://127.0.0.1:4310', 'New work item', 'Shipped', 'Taste', 'Looks good', 'Send back', 'Blocked', 'Needs you']) await expect(journey).toContainText(step);
+    await expect(journey.locator('li')).toHaveCount(7);
+    for (const step of ['npx @cryptob1/graphyard doctor', 'npx @cryptob1/graphyard up --repo OWNER/NAME', 'http://127.0.0.1:4310', 'New work item', 'goal', 'Shipped today', 'Stuck', 'Needs you']) await expect(journey).toContainText(step);
+    // GY-3600: Help teaches the Work list as it now is; nothing the change removed stays behind to mislead.
+    for (const gone of ['Taste', 'Looks good', 'Send back', 'trust strip', 'Blocked', 'Moving', 'work row']) await expect(docs).not.toContainText(gone);
+    await expect(docs.locator('#faq-taste')).toHaveCount(0);
 
     // By keyboard: the FAQ link, then Tab to the first question and open it with Enter.
     await contents.getByRole('link', { name: 'FAQ', exact: true }).focus();
@@ -119,8 +122,10 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: '
     // Concrete answers to what a new engineer asks first.
     const answers: [string, string[]][] = [
       ['faq-context', ['product brief', 'AGENTS.md', 'work item', 'committed work']],
-      ['faq-delivery', ['reviews it', 'proof', 'latest main', 'batch', 'reverts', 'rolls back']],
+      ['faq-filing', ['New work item', 'P0', 'P3', 'item’s page']],
+      ['faq-delivery', ['reviews it', 'proof', 'latest main', 'batch', 'reverts', 'rolls back', 'merges an hour', 'review to live']],
       ['faq-deploy', ['Railway', 'AWS', 'delivery.applications', 'versionUrl']],
+      ['faq-app-url', ['Open app', 'Settings → Delivery', 'master status']],
       ['faq-access', ['http://127.0.0.1:4310', 'first free port', '--port N', 'mainworks login', 'Invite someone', 'each install', 'http://HOST:PORT', 'signs them in once', 'any device']],
     ];
     for (const [id, says] of answers) {
