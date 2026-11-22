@@ -9,7 +9,8 @@ import { homedir } from 'node:os';
 import { z } from 'zod';
 import { defaultChildRun } from '../child-runner.js';
 import { sessionName } from '../session-name.js';
-import { launchPlan, assertNoApprovalOptOut, LaunchRefusedError } from '../harness.js';
+import { launchPlan, assertNoApprovalOptOut, LaunchRefusedError, trustClaudeFolder, trustCodexFolder } from '../harness.js';
+import { hostInstallCheckouts } from '../install/units.js';
 import { type CapacityRole, type CapacityAccount, capacityRetryAt, quotaRoles } from '../model/capacity.js';
 import { type FleetClient, type FleetLaunchAccount, type FleetProbe, accountCheckIntervalMs, checkAccountLive, nextLiveCheck, observeAccount, selectFleetSession, fleetRoleHealth, httpFleetClient } from '../fleet.js';
 import { type AgentEnvironment, agentEnvironmentSchema, type EnvironmentKind, environmentKinds, environmentVariable, type MasterConfig, masterConfigSchema, producerProfileSchema, reviewerProfileSchema, workerProfileSchema } from './profiles.js';
@@ -44,32 +45,48 @@ export async function discoverAgentEnvironments(directory = agentEnvironmentRoot
   }
   return found.sort((a, b) => a.name.localeCompare(b.name));
 }
-/** A new, empty environment for an agent CLI: the next free <agent>-<letter> directory, mode 0700. */
-export async function createAgentEnvironment(directory: string, kind: EnvironmentKind, existing: AgentEnvironment[]) {
+/** A new, empty environment for an agent CLI: the next free <agent>-<letter> directory, mode 0700, pre-trusted for every install checkout on the host (GY-3519). */
+export async function createAgentEnvironment(directory: string, kind: EnvironmentKind, existing: AgentEnvironment[], checkouts: readonly string[] = []) {
   const taken = new Set(existing.map(environment => environment.name));
   const letter = [...'abcdefghijklmnopqrstuvwxyz'].find(candidate => !taken.has(`${kind}-${candidate}`));
   if (!letter) throw new Error(`Every ${kind}-<letter> environment name is taken under ${directory}`);
   const home = resolve(directory, `${kind}-${letter}`);
   await mkdir(home, { recursive: true, mode: 0o700 });
-  return agentEnvironmentSchema.parse({ name: `${kind}-${letter}`, kind, home });
+  const environment = agentEnvironmentSchema.parse({ name: `${kind}-${letter}`, kind, home });
+  await prepareAgentEnvironment(environment, checkouts);
+  return environment;
 }
 /**
- * The one runtime setting a fresh environment needs before an unattended launch: Claude Code asks
- * once per config home to confirm the bypass-permissions mode every launch requests, and that
- * confirmation would hold a new session at a dialog nobody is watching.
+ * The runtime settings a fresh or newly logged-in environment needs before an unattended launch:
+ * Claude Code's bypass-permissions confirmation, plus folder trust for every install checkout on
+ * the host (GY-3519) so a failover never lands on a trust prompt.
  */
-export async function prepareAgentEnvironment(environment: AgentEnvironment) {
-  if (environment.kind !== 'claude') return [] as string[];
-  const file = resolve(environment.home, 'settings.json');
-  let settings: Record<string, unknown> = {};
-  try {
-    const parsed = JSON.parse(await readFile(file, 'utf8'));
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(`${file} is not a JSON object; resolve it before preparing the environment`);
-    settings = parsed;
-  } catch (error: any) { if (error.code !== 'ENOENT') throw error; }
-  if (settings.skipDangerousModePermissionPrompt === true) return [];
-  await atomicPrivateText(file, `${JSON.stringify({ ...settings, skipDangerousModePermissionPrompt: true }, null, 2)}\n`);
-  return [`${file}: skipDangerousModePermissionPrompt`];
+export async function prepareAgentEnvironment(environment: AgentEnvironment, extraCheckouts: readonly string[] = []) {
+  const changes: string[] = [];
+  if (environment.kind === 'claude') {
+    const file = resolve(environment.home, 'settings.json');
+    let settings: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse(await readFile(file, 'utf8'));
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(`${file} is not a JSON object; resolve it before preparing the environment`);
+      settings = parsed;
+    } catch (error: any) { if (error.code !== 'ENOENT') throw error; }
+    if (settings.skipDangerousModePermissionPrompt !== true) {
+      await atomicPrivateText(file, `${JSON.stringify({ ...settings, skipDangerousModePermissionPrompt: true }, null, 2)}\n`);
+      changes.push(`${file}: skipDangerousModePermissionPrompt`);
+    }
+  }
+  const checkouts = [...new Set([...hostInstallCheckouts(), ...extraCheckouts.filter(path => existsSync(path))])];
+  for (const checkout of checkouts) {
+    if (environment.kind === 'claude') {
+      const trust = await trustClaudeFolder(checkout, { CLAUDE_CONFIG_DIR: environment.home }, ['--setting-sources', 'user']);
+      if (trust.written) changes.push(`${trust.file}: trust ${trust.directory}`);
+    } else if (environment.kind === 'codex') {
+      const trust = await trustCodexFolder(checkout, { CODEX_HOME: environment.home });
+      if (trust.written) changes.push(`${trust.file}: trust ${trust.directory}`);
+    }
+  }
+  return changes;
 }
 
 export function loginCommand(environment: AgentEnvironment) {
@@ -461,10 +478,10 @@ export async function setupAgentEnvironments(root: string, input: { directory?: 
   const created: string[] = [];
   for (const kind of input.create ?? []) {
     if (!input.apply) { created.push(`${kind} (a new ${kind}-<letter> directory under ${directory}; rerun with --apply)`); continue; }
-    const environment = await createAgentEnvironment(directory, kind, discovered);
+    const environment = await createAgentEnvironment(directory, kind, discovered, [root]);
     discovered.push(environment); created.push(environment.name);
   }
-  const prepared = input.apply ? (await Promise.all(discovered.map(environment => prepareAgentEnvironment(environment)))).flat() : [];
+  const prepared = input.apply ? (await Promise.all(discovered.map(environment => prepareAgentEnvironment(environment, [root])))).flat() : [];
   const probe = { ...input.probe, ceilingPercent: input.probe?.ceilingPercent ?? config.run.quotaCeilingPercent };
   const health = await Promise.all(discovered.map(environment => checkAgentEnvironment(environment, probe)));
   const loggedIn = discovered.filter((_, index) => health[index].loggedIn);

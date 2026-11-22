@@ -11,7 +11,7 @@ import { connectDefaultRoles, connectProvider, fleetRequest, redactKey, relaySub
 import { type EnvironmentKind, type MasterConfig } from './profiles.js';
 import { atomicPrivateText } from '../private-file.js';
 import { failureText } from '../disk-space.js';
-import { agentEnvironmentRoot, createAgentEnvironment, discoverAgentEnvironments } from './environments.js';
+import { agentEnvironmentRoot, createAgentEnvironment, discoverAgentEnvironments, prepareAgentEnvironment } from './environments.js';
 import { accountHomeEnvironment } from './runtimes.js';
 
 // Connect an account from the UI (GY-409).
@@ -169,6 +169,7 @@ export async function processConnectAccounts(config: Pick<MasterConfig, 'url' | 
         const key = unsealToHost(privateKey, connect.sealed!);
         held = key;
         await writeProviderAuthFile(provider, home, key);
+        if (provider.runtime !== 'pi') await prepareAgentEnvironment({ name, kind: provider.runtime as EnvironmentKind, home });
         await fleetRequest(config, `agent-registry/connect/${connect.id}/progress`, { body: { state: 'connecting', name }, fetch: fetcher });
         const smoke = await runSmokePrompt(provider, home, options);
         if (!smoke.healthy) { await report(false, redactKey(smoke.error!, key)); continue; }
@@ -191,6 +192,7 @@ export async function processConnectAccounts(config: Pick<MasterConfig, 'url' | 
         await Promise.allSettled(announced);
         if (!announced.length && (relay.url || relay.code)) await waiting(relay);
         if (!relay.loggedIn) { await report(false, relay.error ?? 'the login did not complete'); continue; }
+        if (provider.runtime !== 'pi') await prepareAgentEnvironment({ name, kind: provider.runtime as EnvironmentKind, home });
         const smoke = await runSmokePrompt(provider, home, options);
         await report(smoke.healthy, smoke.healthy ? null : smoke.error);
       }

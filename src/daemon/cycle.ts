@@ -87,6 +87,13 @@ export const masterLaunchKey = 'master:launch';
 export const masterLaunchBackoffAfter = 3;
 /** How long the loop waits before retrying the master launch after its `attempts`-th same-way failure: one minute doubling, capped at fifteen. */
 export const masterLaunchRetryMs = (attempts: number) => Math.min(60_000 * 2 ** Math.max(0, attempts - masterLaunchBackoffAfter), 15 * 60_000);
+/** GY-3519: two identical launch failures for the master on one account mark that account unusable for an hour and move to the next. */
+export const masterAccountFailoverAfter = 2;
+export const masterAccountHoldMs = 3_600_000;
+const masterLaunchFailureReason = (error: unknown) =>
+  normalizeFailureReason(message(error).replace(/\bin pane\s+\S+/g, 'in pane'));
+const activeUnusableAccounts = (master: DaemonState['master'], now: number) =>
+  Object.fromEntries(Object.entries(master.unusableAccounts ?? {}).filter(([, entry]) => Date.parse(entry.until) > now));
 
 /**
  * The session launcher beside the cycle (GY-616): a launch creates a Herdr pane and registers a
@@ -1072,32 +1079,57 @@ function submitMasterLaunch(cycle: Cycle, open: Work[], recoveryError?: string, 
   const standing = state.actions[launchKey];
   if (standing?.state === 'failed' && standing.attempts >= masterLaunchBackoffAfter && cycle.now() - Date.parse(standing.at) < masterLaunchRetryMs(standing.attempts)) return;
   if (launcher.busy(launchKey)) return;
+  const failoverKey = config.forPerson ? `master:failover:${config.forPerson}` : 'master:failover';
   launcher.submit(launchKey, [], async sink => {
-    try {
-      await endPreviousMasterSessions(cycle, closedPane);
-      const causes = [...masterCauses(open, state.actions, state.failureRuns), ...(await sessions.pendingCauses?.(open) ?? [])];
-      const { recoveryFailures, ...oldMaster } = state.master;
-      const failures = recoveryError ? [...recoveryFailures, { at: new Date(cycle.now()).toISOString(), error: recoveryError, master: oldMaster }] : recoveryFailures;
-      const previous = recoveryError ? null : state.master.continuity;
-      const recoveryHandoff = recoveryError ? `Previous native history is unreadable and has NOT been recovered. Recovery error: ${recoveryError}. Its history and original session provenance are retained in master.recoveryFailures; retry recovery from those references when readable. Continue current authoritative work without waiting for human approval.` : '';
-      const launched = await sessions.launch([masterHandover({ work: open, cliPath: config.cliPath }), ...(recoveryError ? [recoveryHandoff] : []), ...(causes.some(cause => !cause.quiet) ? [masterCausePrompt(causes.filter(cause => !cause.quiet))] : [])].join('\n'), previous);
-      const at = new Date(cycle.now()).toISOString();
-      state.master = { ...emptyMasterSession(), ...launched, continuity: launched.continuity ?? previous, recoveryFailures: failures, startedAt: at,
-        subjects: Object.fromEntries(causes.map(cause => [cause.key, cause.digest])),
-        lastWake: causes.length ? { at, causes: causes.map(cause => cause.key).slice(0, 20), heartbeat: false } : null };
-      sink.push(await record(state, launchKey, { kind: 'session', work: null, principal: null, state: 'done', detail: `Launched the master session ${launched.agentName} in pane ${launched.pane}`, attempts: 1, cycle: state.cycle }, cycle.now(), effects.persist));
-    } catch (error) {
-      // GY-3336: only a run of the same failure counts toward the backoff; a new error starts the
-      // count over. Both detail forms end with the error's own words, whatever prefixes the loop wrote.
-      const reason = normalizeFailureReason(message(error));
-      const prior = state.actions[launchKey];
-      const same = !!reason && prior?.state === 'failed' && normalizeFailureReason(prior.detail).endsWith(reason);
-      const attempts = same ? (prior.attempts ?? 0) + 1 : 1;
-      const retried = new Date(cycle.now() + masterLaunchRetryMs(Math.max(attempts, masterLaunchBackoffAfter))).toISOString();
-      const detail = attempts >= masterLaunchBackoffAfter
-        ? `The master session's launch failed the same way ${attempts} times, so the loop backs off and retries it at ${retried} instead of opening a pane each cycle: ${message(error)}`
-        : `The master session could not be launched; the next cycle tries again: ${message(error)}`;
-      sink.push(await record(state, launchKey, { kind: 'session', work: null, principal: null, state: 'failed', detail: detail.slice(0, actionDetailMax), attempts, cycle: state.cycle }, cycle.now(), effects.persist));
+    for (;;) {
+      const unusable = activeUnusableAccounts(state.master, cycle.now());
+      state.master.unusableAccounts = unusable;
+      const exclude = Object.keys(unusable);
+      try {
+        await endPreviousMasterSessions(cycle, closedPane);
+        const causes = [...masterCauses(open, state.actions, state.failureRuns), ...(await sessions.pendingCauses?.(open) ?? [])];
+        const { recoveryFailures, ...oldMaster } = state.master;
+        const failures = recoveryError ? [...recoveryFailures, { at: new Date(cycle.now()).toISOString(), error: recoveryError, master: oldMaster }] : recoveryFailures;
+        const previous = recoveryError ? null : state.master.continuity;
+        const recoveryHandoff = recoveryError ? `Previous native history is unreadable and has NOT been recovered. Recovery error: ${recoveryError}. Its history and original session provenance are retained in master.recoveryFailures; retry recovery from those references when readable. Continue current authoritative work without waiting for human approval.` : '';
+        const launched = await sessions.launch([masterHandover({ work: open, cliPath: config.cliPath }), ...(recoveryError ? [recoveryHandoff] : []), ...(causes.some(cause => !cause.quiet) ? [masterCausePrompt(causes.filter(cause => !cause.quiet))] : [])].join('\n'), previous, exclude.length ? { exclude } : undefined);
+        const at = new Date(cycle.now()).toISOString();
+        state.master = { ...emptyMasterSession(), ...launched, continuity: launched.continuity ?? previous, recoveryFailures: failures, startedAt: at,
+          unusableAccounts: activeUnusableAccounts(state.master, cycle.now()),
+          subjects: Object.fromEntries(causes.map(cause => [cause.key, cause.digest])),
+          lastWake: causes.length ? { at, causes: causes.map(cause => cause.key).slice(0, 20), heartbeat: false } : null };
+        sink.push(await record(state, launchKey, { kind: 'session', work: null, principal: null, state: 'done', detail: `Launched the master session ${launched.agentName} in pane ${launched.pane}`, attempts: 1, cycle: state.cycle }, cycle.now(), effects.persist));
+        return;
+      } catch (error) {
+        const reason = masterLaunchFailureReason(error);
+        const failedAccount = typeof (error as { account?: unknown })?.account === 'string' && (error as { account: string }).account ? (error as { account: string }).account : null;
+        if (failedAccount && reason && !exclude.includes(failedAccount)) {
+          const priorFailure = state.master.launchFailures?.[failedAccount];
+          const count = priorFailure?.reason === reason ? priorFailure.count + 1 : 1;
+          const at = new Date(cycle.now()).toISOString();
+          if (count >= masterAccountFailoverAfter) {
+            state.master.unusableAccounts = { ...unusable, [failedAccount]: { until: new Date(cycle.now() + masterAccountHoldMs).toISOString(), reason: reason.slice(0, 500) } };
+            const rest = { ...(state.master.launchFailures ?? {}) };
+            delete rest[failedAccount];
+            state.master.launchFailures = rest;
+            const summary = `Skipped ${failedAccount} for the master for 1 hour after ${count} identical launch failures (${message(error)}); trying the next account.`;
+            sink.push(await record(state, failoverKey, { kind: 'failover', work: null, principal: null, state: 'done', detail: summary.replace(/\s+/g, ' ').slice(0, actionDetailMax), attempts: count, cycle: state.cycle }, cycle.now(), effects.persist));
+            continue;
+          }
+          state.master.launchFailures = { ...(state.master.launchFailures ?? {}), [failedAccount]: { reason: reason.slice(0, 500), count, at } };
+        }
+        // GY-3336: only a run of the same failure counts toward the backoff; a new error starts the
+        // count over. Both detail forms end with the error's own words, whatever prefixes the loop wrote.
+        const prior = state.actions[launchKey];
+        const same = !!reason && prior?.state === 'failed' && normalizeFailureReason(prior.detail.replace(/\bin pane\s+\S+/g, 'in pane')).endsWith(reason);
+        const attempts = same ? (prior.attempts ?? 0) + 1 : 1;
+        const retried = new Date(cycle.now() + masterLaunchRetryMs(Math.max(attempts, masterLaunchBackoffAfter))).toISOString();
+        const detail = attempts >= masterLaunchBackoffAfter
+          ? `The master session's launch failed the same way ${attempts} times, so the loop backs off and retries it at ${retried} instead of opening a pane each cycle: ${message(error)}`
+          : `The master session could not be launched; the next cycle tries again: ${message(error)}`;
+        sink.push(await record(state, launchKey, { kind: 'session', work: null, principal: null, state: 'failed', detail: detail.slice(0, actionDetailMax), attempts, cycle: state.cycle }, cycle.now(), effects.persist));
+        return;
+      }
     }
   });
 }
