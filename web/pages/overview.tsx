@@ -39,9 +39,11 @@ function Headline({ time, flow, now, open }: { time?: PipelineTime | null; flow?
   const day = flow?.['24h'];
   if (!line && !day) return null;
   const wait = (minutes: number) => plainDuration(minutes);
+  // One merge count on the page: the flow's, which counts every recorded merge.
+  const figure = day ? `${day.mergesPerHour.toFixed(1)} merges an hour (${day.merges} in the last 24 hours)` : line?.figure;
   return <div className="speed">
-    {line && <>
-      <p className="speed-figure" data-speed-figure>{line.figure}</p>
+    {figure && <p className="speed-figure" data-speed-figure>{figure}</p>}
+    {line && !(day?.merges && time?.median === null) && <>
       <p className="speed-line" data-speed-line={line.warning ? 'warning' : 'calm'}>
         {line.text}{line.open && <> <button type="button" className="text-button" onClick={() => open(line.open!)}>Open →</button></>}
       </p>
@@ -51,13 +53,13 @@ function Headline({ time, flow, now, open }: { time?: PipelineTime | null; flow?
         <table className="sessions-table compact-table flow-table" aria-label="Wait at each station, last 24 hours">
           <thead><tr><th scope="col">Station</th><th scope="col">Median</th><th scope="col">Slowest tenth</th><th scope="col">Oldest</th></tr></thead>
           <tbody>{flowStations.map(station => { const at = day.stations[station]; return <tr key={station} data-station={station}>
-            <th scope="row">{station[0].toUpperCase() + station.slice(1)}</th><td>{at ? wait(at.median) : '—'}</td><td>{at ? wait(at.p90) : '—'}</td><td>{at ? `${at.oldest.key} · ${wait(at.oldest.minutes)}` : '—'}</td></tr>; })}</tbody>
+            <th scope="row">{station[0].toUpperCase() + station.slice(1)}</th><td data-label="Median">{at ? wait(at.median) : '—'}</td><td data-label="Slowest tenth">{at ? wait(at.p90) : '—'}</td><td data-label="Oldest">{at ? `${at.oldest.key} · ${wait(at.oldest.minutes)}` : '—'}</td></tr>; })}</tbody>
         </table>
         <table className="sessions-table compact-table flow-table" aria-label="Sent back, last 24 hours">
           <thead><tr><th scope="col">Sent back by</th><th scope="col">Times</th></tr></thead>
-          <tbody>{reworkCauses.map(cause => <tr key={cause} data-cause={cause}><th scope="row">{cause[0].toUpperCase() + cause.slice(1)}</th><td>{day.rework[cause]}</td></tr>)}</tbody>
+          <tbody>{reworkCauses.map(cause => <tr key={cause} data-cause={cause}><th scope="row">{cause[0].toUpperCase() + cause.slice(1)}</th><td data-label="Times">{day.rework[cause]}</td></tr>)}</tbody>
         </table>
-        <p className="muted">Flaky trials {percent(day.flakyRate)} of {day.trials}. Reverted {percent(day.revertRate)} of {day.merges} merges.</p>
+        <p className="muted">Flaky trials {percent(day.flakyRate)} of {day.trials}. Merges reverted {percent(day.revertRate)}.</p>
       </div></details>
     </div>}
     {flow?.attention && <p className="speed-line flow-attention" data-flow-attention>{flow.attention.text}</p>}

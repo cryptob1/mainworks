@@ -26,7 +26,7 @@ async function serve(page: Page) {
     const path = new URL(route.request().url()).pathname;
     const stamp = new Date().toISOString();
     if (path.endsWith('/status')) return route.fulfill({ json: { actor: { id: 'operator', role: 'admin', sessionKind: 'human' }, repository: 'fixture/repository', jobs: [], live: { commit: 'c'.repeat(40), waiting: [] }, checksRunning: 0,
-      pipelineTime: { merged24h: 3, median: 60, p90: 60, samples: 3, lastMergeAt: at(30), oldest: null }, flow } });
+      pipelineTime: { merged24h: 0, median: null, p90: null, samples: 0, lastMergeAt: null, oldest: null }, flow } });
     if (path.endsWith('/work-snapshot')) return route.fulfill({ json: { work, now: stamp } });
     if (path.endsWith('/board')) return route.fulfill({ json: boardFromStatus(work as never, Date.parse(stamp), null) });
     return route.fulfill({ json: [] });
@@ -51,6 +51,11 @@ for (const width of [390, 1280]) {
     await expect(review).toBeVisible();
     await expect(review.locator('td').nth(1)).toHaveText('2 h');
     await expect(review.locator('td').nth(2)).toHaveText('GY-5 · 2 h');
+    // Every wait keeps its label at either width: the table's header at 1280 px, each value's own at 390 px.
+    const label = await review.locator('td').nth(1).evaluate(cell => getComputedStyle(cell, '::before').content);
+    if (width < 650) expect(label).toBe('"Slowest tenth"');
+    else await expect(page.getByRole('columnheader', { name: 'Slowest tenth' })).toBeVisible();
+    await expect(page.getByText('No merges to time yet.')).toHaveCount(0);
     await expect(page.locator('[data-cause="merge trial"] td')).toHaveText('1');
     expect(await noSideScroll(page)).toBe(true);
   });
