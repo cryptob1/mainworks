@@ -84,6 +84,8 @@ export interface MergeTrialRun extends TrialRun {
     /** GY-2954: the first failing case's assertion text in the base run's TAP, bounded. */ assertion?: string };
   /** GY-2984, GY-3167: a feature or bug item's proofs that every one passed on the base tip too, with that tip: the head's proofs show nothing it changed. */
   notReproduced?: { proofs: string[]; tip: string; files: string[] };
+  /** GY-3625: the proofs that already pass on the base tip, so a batch's trial judges each head's reproduction on its own. */
+  passingOnBase?: string[];
   /**
    * GY-3267: the browser cases' kept screenshots — `after` from the candidate's run, `before` from
    * the base tip's — posted with the trial record and shown side by side on the item page.
@@ -117,7 +119,8 @@ export type MergeRecordEvent =
     /** Each phase's time (GY-1832), and the attempts before the verdict that reached none, oldest first. */ phases?: TrialPhaseDurations; attempts: TrialNoVerdict[];
     /** GY-2965: how each bound E2E case ran against the served head; the passing runs become trusted evidence (the trial is the trusted producer). */ e2e?: TrialE2eCase[];
     /** GY-3267: each browser case's kept screenshots (after the candidate, before the base tip), stored by the control plane and shown on the item page. */ screenshots?: TrialCaseShot[];
-    /** GY-1834: the trial's flake, kept on the item's merge ledger so the flake ledger reads it after any restart. */ flaked?: TrialFlaked }
+    /** GY-1834: the trial's flake, kept on the item's merge ledger so the flake ledger reads it after any restart. */ flaked?: TrialFlaked;
+    /** GY-3625: the keys of the batch, in queue order, whose one trial this is. */ batch?: string[] }
   /**
    * A trial that reached no verdict on its retry either (GY-1832): its final outcome, the phase and
    * reason, the phases' times and every attempt. It carries no proofs, so the ledger fold keeps no
@@ -605,14 +608,16 @@ async function reproduceOnBase(run: MergeTrialRun, input: MergeTrialInput, proof
   const onBase = await retest(tip, files, e2eProofs, 'count', input.mergeSha).catch(() => null);
   if (!onBase || onBase.run.build !== 'pass') return run;
   const passes = ({ executed, failed }: { executed: number; failed: number }) => executed > 0 && failed === 0;
-  const passing = input.proofs.every(proof => passes(onBase.proofs[proof]!))
-    && e2eProofs.every(proof => { const ran = onBase.run.e2e?.find(entry => entry.proof === proof); return baseCases.includes(`e2e/cases/${proof.slice(4)}.json`) && !!ran && passes(ran); });
   const proofs = [...input.proofs, ...e2eProofs];
+  const passingOnBase = proofs.filter(proof => proof.startsWith('e2e:')
+    ? (() => { const ran = onBase.run.e2e?.find(entry => entry.proof === proof); return baseCases.includes(`e2e/cases/${proof.slice(4)}.json`) && !!ran && passes(ran); })()
+    : passes(onBase.proofs[proof]!));
+  const passing = passingOnBase.length === proofs.length;
   // GY-3267: the base run's kept screenshots are the before side of whatever the trial already kept.
   const shots = mergeTrialShots(run.screenshots ?? [], onBase.run.e2e ?? [], 'before');
   const withBefore = shots.length ? { ...run, screenshots: shots } : run;
   const caseFiles = [...(files.length ? files : named), ...e2eProofs.map(proof => `e2e/cases/${proof.slice(4)}.json`)];
-  return passing ? { ...withBefore, notReproduced: { proofs, tip, files: caseFiles } } : withBefore;
+  return passing ? { ...withBefore, notReproduced: { proofs, tip, files: caseFiles } } : { ...withBefore, passingOnBase };
 }
 
 /**
@@ -890,6 +895,23 @@ export async function mergeOne(ports: MergePorts, item: Work): Promise<MergeOutc
       ...(run.e2e?.length ? { e2e: run.e2e.map(({ output: _output, screenshot: _screenshot, ...entry }) => entry) } : {}),
       ...(run.screenshots?.length ? { screenshots: run.screenshots } : {}) });
   }
+  return land(ports, item, { head, baseTip, mergeSha, failure, baseHeld, run });
+}
+
+/**
+ * The landing of one trialled head (mergeOne, mergeBatch): a failure is refused, a hold requeues, else the
+ * leased push of `mergeSha` onto `baseTip`; a push rejected because the tip moved re-merges the same head onto
+ * the new tip with no second trial (GY-3120), and a conflict there is refused for rework.
+ */
+async function land(ports: MergePorts, item: Work, landing: { head: string; baseTip: string; mergeSha: string; failure: string | null; baseHeld: string | null; run: MergeTrialRun | null }): Promise<MergeOutcome> {
+  let { baseTip, mergeSha } = landing;
+  const { head, failure, baseHeld, run } = landing, at = () => new Date(ports.now()).toISOString();
+  const held = async () => ports.hold ? ports.hold(item) : null;
+  const conflicted = async (conflict: string[]): Promise<MergeOutcome> => {
+    const reason = trialFailureReason({ conflict })!;
+    await ports.record(item, { kind: 'refused', head, reason });
+    return { outcome: 'refused', reason, trial: null, conflict };
+  };
   let pushes = 0;
   for (;;) {
     // A failed trial refuses before any landing hold (GY-3164): the ground it owes is the rework, never
@@ -902,10 +924,10 @@ export async function mergeOne(ports: MergePorts, item: Work): Promise<MergeOutc
     // The landing boundary (GY-1927): a hold recorded while the trial ran refuses the push, so nothing
     // lands under it. GY-3164: a review gate that has not passed is that hold — its marker keeps this
     // flight's passing trial for the head, which lands on it once the same head is approved.
-    const landing = await held();
-    if (landing) {
-      await ports.record(item, { kind: 'refused', head, reason: landing });
-      return { outcome: 'requeued', reason: landing, pushes };
+    const hold = await held();
+    if (hold) {
+      await ports.record(item, { kind: 'refused', head, reason: hold });
+      return { outcome: 'requeued', reason: hold, pushes };
     }
     pushes += 1;
     if (await ports.push(mergeSha, baseTip) === 'pushed') {
@@ -956,14 +978,97 @@ export async function pushPassedTrial(ports: MergePorts, item: Work): Promise<bo
 /** What one queued head came to: its merge outcome, or the error that left it queued. */
 export type HeadResult = { work: Work; outcome: MergeOutcome } | { work: Work; error: unknown };
 
+/** GY-3625: the most heads one merge trial validates together. */
+export const batchLimit = 4;
+const batchable = (item: Work) => riskOf(item).risk === 'normal' && !keptTrialAheadOfReview(item.candidate, item.mergeLedger) && !!item.observation?.files.length;
 /**
- * GY-3120: the queued heads, each trialled alone on the current tip (`mergeOne`), all at once with
- * the host's cores shared among them. A head never waits on or cancels another head's trial: one
- * whose trial passes lands as soon as it passes, re-merged onto whatever tip the heads before it
- * left. The base reads and writes (fetch, merge, push) take turns, so two heads never write the
- * checkout's refs at once. `onStep` names each head's trial step; `share` is how many trials divide the cores (GY-3182).
+ * GY-3625: the queued heads cut into merge batches, in queue order: a normal-risk head joins the batch before it
+ * when that batch is normal risk, holds fewer than `batchLimit` heads and changes none of its files; a sensitive
+ * head, or one sharing a changed file, is a batch of its own. Each batch takes one trial slot.
  */
-export async function mergeHeads(ports: MergePorts, items: readonly Work[], onStep?: (index: number, step: string, report?: TrialStepReport) => void, share = items.length): Promise<HeadResult[]> {
+export function mergeBatches(items: readonly Work[]): Work[][] {
+  const batches: Work[][] = [];
+  for (const item of items) {
+    const last = batches.at(-1);
+    const files = new Set(item.observation?.files ?? []);
+    if (last && last.length < batchLimit && batchable(item) && last.every(batchable) && !last.some(other => other.observation!.files.some(file => files.has(file)))) last.push(item);
+    else batches.push([item]);
+  }
+  return batches;
+}
+
+/**
+ * GY-3625: one batch, merged onto the tip in queue order and validated by one trial over the union of its
+ * changed files and its heads' proofs. On pass each head records its own intent and its own trial result
+ * naming the batch, then lands in order (`land`). On a failed trial or a conflict nothing is recorded and the
+ * batch is split in half, each half settled the same way; a batch of one is `mergeOne`, so only a head whose
+ * own trial fails is sent back, with that trial's reason. A second half whose first half landed whole holds
+ * the same tree that just failed, so it is split without a trial of its own.
+ */
+export async function mergeBatch(ports: MergePorts, items: readonly Work[], onStep?: (index: number, step: string, report?: TrialStepReport) => void, knownFailing = false): Promise<HeadResult[]> {
+  const stepOf = (index: number) => onStep ? { onStep: (step: string, report?: TrialStepReport) => onStep(index, step, report) } : {};
+  if (items.length === 1) {
+    try { return [{ work: items[0]!, outcome: await mergeOne({ ...ports, ...stepOf(0) }, items[0]!) }]; }
+    catch (error) { return [{ work: items[0]!, error }]; }
+  }
+  if (!knownFailing) {
+    const tried = await trialBatch(ports, items, onStep).catch(error => items.map(work => ({ work, error })));
+    if (tried) return tried;
+  }
+  const middle = Math.ceil(items.length / 2);
+  const first = await mergeBatch(ports, items.slice(0, middle), onStep);
+  const landed = first.every(result => 'outcome' in result && result.outcome.outcome === 'merged');
+  const second = await mergeBatch(ports, items.slice(middle), onStep && ((index, step, report) => onStep(index + middle, step, report)), landed);
+  return [...first, ...second];
+}
+
+/** One trial of a batch of two or more heads (`mergeBatch`): every head's results when it passed, null when it failed or conflicted. */
+async function trialBatch(ports: MergePorts, items: readonly Work[], onStep?: (index: number, step: string, report?: TrialStepReport) => void): Promise<HeadResult[] | null> {
+  const at = () => new Date(ports.now()).toISOString(), keys = items.map(item => item.key);
+  const baseTip = await ports.fetch();
+  for (const item of items) {
+    const opening = ports.holdOpening ? await ports.holdOpening(item) : ports.hold ? await ports.hold(item) : null;
+    if (opening) return null;
+  }
+  const merges: { head: string; baseTip: string; mergeSha: string; files: string[]; addedOrModified: string[] }[] = [];
+  let tip = baseTip;
+  for (const item of items) {
+    const head = item.candidate!.sha.toLowerCase(), merged = await ports.merge(head, tip, item);
+    if ('conflict' in merged) return null;
+    merges.push({ head, baseTip: tip, mergeSha: merged.mergeSha, files: merged.files, addedOrModified: merged.addedOrModified ?? [] });
+    tip = merged.mergeSha;
+  }
+  const files = [...new Set(merges.flatMap(merge => merge.files))];
+  const together = { key: items[0]!.key, criteria: items.flatMap(item => item.criteria), type: items.some(item => item.type !== 'chore') ? items.find(item => item.type !== 'chore')!.type : items[0]!.type };
+  const step = onStep ? (name: string, report?: TrialStepReport) => items.forEach((_, index) => onStep(index, name, report)) : undefined;
+  const run = await ports.trial(tip, files, together, baseTip, step, undefined, items.map((item, index) => ({ key: item.key, head: merges[index]!.head })));
+  // A feature or bug head whose every proof already passes on the base proves nothing: the batch splits, so its own trial refuses it.
+  const notReproduced = items.some(item => { const own = [...criterionProofs(item), ...e2eProofsOf(item)]; return item.type !== 'chore' && own.length && own.every(proof => run.passingOnBase?.includes(proof)); });
+  if (notReproduced || trialFailureReason({ run }) || requiredProofFailure(together, run) || items.some((item, index) => featureCaseFailure(item, merges[index]!.addedOrModified))) return null;
+  const results: HeadResult[] = [];
+  for (const [index, item] of items.entries()) {
+    const { head, baseTip: base, mergeSha } = merges[index]!, own = new Set([...criterionProofs(item), ...e2eProofsOf(item)]);
+    try {
+      await ports.record(item, { kind: 'intent', head, baseTip: base, mergeSha, risk: riskOf(item).risk, at: at() });
+      await ports.record(item, { kind: 'trial', head, baseTip: base, mergeSha, outcome: 'verdict', batch: keys, build: run.build, tests: recordedTests(run.tests), files: run.files,
+        proofs: Object.fromEntries(Object.entries(run.proofs).filter(([proof]) => own.has(proof))), durationMs: run.durationMs, ...(run.phases ? { phases: run.phases } : {}), attempts: run.retried ?? [],
+        ...(run.e2e?.length ? { e2e: run.e2e.filter(entry => own.has(entry.proof)).map(({ output: _output, screenshot: _screenshot, ...entry }) => entry) } : {}) });
+      results.push({ work: item, outcome: await land(ports, item, { head, baseTip: base, mergeSha, failure: null, baseHeld: null, run }) });
+    } catch (error) { results.push({ work: item, error }); }
+  }
+  return results;
+}
+
+/**
+ * GY-3120, GY-3625: the queued heads cut into batches (`mergeBatches`), every batch at once with the
+ * host's cores shared among them; each batch is one trial (`mergeBatch`), a batch of one the head
+ * trialled alone (`mergeOne`). A batch never waits on or cancels another's trial: one whose trial passes
+ * lands as soon as it passes, re-merged onto whatever tip the others left. The base reads and writes
+ * (fetch, merge, push) take turns, so two batches never write the checkout's refs at once. `onStep`
+ * names each head's trial step by its index in `items`; `share` is how many trials divide the cores (GY-3182).
+ */
+export async function mergeHeads(ports: MergePorts, items: readonly Work[], onStep?: (index: number, step: string, report?: TrialStepReport) => void, share?: number): Promise<HeadResult[]> {
+  const batches = mergeBatches(items), shares = share ?? batches.length;
   let turn: Promise<unknown> = Promise.resolve();
   const serial = <A extends unknown[], T>(call: (...args: A) => Promise<T>) => (...args: A): Promise<T> => {
     const next = turn.then(() => call(...args));
@@ -971,11 +1076,12 @@ export async function mergeHeads(ports: MergePorts, items: readonly Work[], onSt
     return next;
   };
   const shared: MergePorts = { ...ports, fetch: serial(ports.fetch), merge: serial(ports.merge), push: serial(ports.push),
-    trial: (mergeSha, files, item, baseTip, step, onTiming, heads, _share, signal) => ports.trial(mergeSha, files, item, baseTip, step, onTiming, heads, share, signal) };
-  return Promise.all(items.map(async (work, index): Promise<HeadResult> => {
-    try { return { work, outcome: await mergeOne({ ...shared, ...(onStep ? { onStep: (step: string, report?: TrialStepReport) => onStep(index, step, report) } : {}) }, work) }; }
-    catch (error) { return { work, error }; }
+    trial: (mergeSha, files, item, baseTip, step, onTiming, heads, _share, signal) => ports.trial(mergeSha, files, item, baseTip, step, onTiming, heads, shares, signal) };
+  const settled = await Promise.all(batches.map(batch => {
+    const offset = items.indexOf(batch[0]!);
+    return mergeBatch(shared, batch, onStep && ((index, step, report) => onStep(index + offset, step, report)));
   }));
+  return settled.flat();
 }
 
 /** Only the orphan-intent refusal can be reconsidered after a concurrent trial actually pushed. */
