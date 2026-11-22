@@ -1,0 +1,11 @@
+{
+  "id": "shipped-tests-agree",
+  "title": "Shipped pages its long list, Tests counts failures once, and Test cases read as steps",
+  "description": "A real browser on the built dashboard, served 1200 items merged today, three tracked cases whose latest results disagree with the matrix, and a repository case whose steps are recorded as JSON, at 390 and 1280 px. Shipped shows 50 rows and a 'Show 50 more' button that adds 50; its headline counts all 1200 merged; no row shows a 7-character SHA. Tests' headline failing count equals its matrix summary's and the page has one row of chips. Test cases shows each step as one plain line by name, the JSON only in a closed 'Raw' fold. No page scrolls sideways, and Shipped at 390 px is under 15000 px tall.",
+  "tags": ["dashboard"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "Shipped, Tests and Test cases at 390 and 1280 px", "run": "npm run test:browser -- browser-tests/shipped-tests-agree.spec.ts", "timeoutSeconds": 420 }
+  ]
+}
