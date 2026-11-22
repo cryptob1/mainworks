@@ -1,12 +1,16 @@
+import { COMMAND_NAME, PRODUCT_NAME } from '../../src/model/product';
+import { useState } from 'react';
 import { glossary, type GlossaryTerm } from '../glossary';
 import Invite from './invite';
 import Term from './term';
-import { viewFor, visibleViews, type View } from '../pages';
+import { firstViewOfSection, sections, viewFor, visibleViews, type Section, type View } from '../pages';
 import type { Dashboard } from '../pages/dashboard';
 import { mergedAt, shippedCounts } from '../groups';
 import { workersView } from '../workers-view';
 import type { Work } from '../../src/model';
 import { OpenApp } from './where-it-runs';
+import { masterOwes } from '../pages/master';
+import { setTheme, useTheme } from '../theme';
 
 /** The commit as the release line shows it: the first 8 characters, the whole SHA in the title. */
 const shortSha = (sha: string) => <span className="mono" title={sha}>{sha.slice(0, 8)}</span>;
@@ -134,24 +138,185 @@ const meaning = (label: string): GlossaryTerm | null => {
   return key in glossary ? key as GlossaryTerm : singular in glossary ? singular as GlossaryTerm : null;
 };
 
+/** GY-3598: one Caretaker fault, linking to the place where it is shown. */
+export interface CaretakerFault { summary: string; view: string }
+
 /**
- * The board's top bar: the configured repository, then the release line, then the pages
- * of the current section, when it has more than one (Work, Workers, Shipped, Tests, Settings); a
- * rarely needed page sits behind the row's Advanced fold. The tabs are not a second navigation:
- * no page shares a label with a sidebar entry (a test holds the registry to that), they list only
- * the pages under the entry the sidebar has selected, and a section with a single page draws none
- * at all. An open item keeps the repository and release line, with its own Back control.
- *
- * The project's emblem (GY-3273) rides beside the repository name through an `<img>` of
- * `/favicon.svg`: the master's drawing once one is stored, the default Graphyard mark until then.
- * An image never runs script, and the same route serves the page's favicon, so one address is the
- * whole feature.
+ * GY-3598: what the Caretaker pill reports. Once GY-3593 reports `status.caretaker`, it reads that;
+ * until then, it reads from master status attention and the stall alarm.
+ */
+export function caretakerSummary(status: Dashboard['status'], work: Work[], now: number): { faults: CaretakerFault[]; minutesAgo: number } {
+  const reported = status?.caretaker as { faults?: { summary?: string; view?: string }[]; checkedAt?: string } | null | undefined;
+  const checkedAtMs = typeof reported?.checkedAt === 'string' ? Date.parse(reported.checkedAt)
+    : typeof status?.now === 'string' ? Date.parse(status.now) : now;
+  const minutesAgo = Number.isFinite(checkedAtMs) ? Math.max(0, Math.floor((now - checkedAtMs) / 60_000)) : 0;
+  if (reported && Array.isArray(reported.faults)) {
+    return {
+      faults: reported.faults.map(f => ({ summary: String(f.summary ?? 'Fault'), view: typeof f.view === 'string' ? f.view : 'lead' })),
+      minutesAgo,
+    };
+  }
+  const faults: CaretakerFault[] = [];
+  if (typeof status?.setup?.stallAlarm === 'string' && status.setup.stallAlarm.trim()) {
+    faults.push({ summary: status.setup.stallAlarm, view: 'lead' });
+  }
+  if (typeof status?.setup?.checkoutTrust === 'string' && status.setup.checkoutTrust.trim()) {
+    faults.push({ summary: status.setup.checkoutTrust, view: 'setup' });
+  }
+  if (typeof status?.setup?.stepFailure === 'string' && status.setup.stepFailure.trim()) {
+    faults.push({ summary: status.setup.stepFailure, view: 'setup' });
+  }
+  if (typeof status?.setup?.fetchRefusal === 'string' && status.setup.fetchRefusal.trim()) {
+    faults.push({ summary: status.setup.fetchRefusal, view: 'setup' });
+  }
+  if (typeof status?.setup?.workerGrowth === 'string' && status.setup.workerGrowth.trim()) {
+    faults.push({ summary: status.setup.workerGrowth, view: 'needs-you' });
+  }
+  if (Array.isArray(status?.fleet?.attention)) {
+    for (const line of status.fleet.attention) {
+      if (typeof line === 'string' && line.trim()) faults.push({ summary: line, view: 'agents' });
+    }
+  }
+  if (Array.isArray(status?.production?.incidents)) {
+    for (const inc of status.production.incidents) {
+      faults.push({ summary: typeof inc === 'string' ? inc : 'Production incident', view: 'delivery' });
+    }
+  }
+  if (Array.isArray(status?.starvedJobs)) {
+    for (const job of status.starvedJobs) {
+      faults.push({ summary: typeof job?.error === 'string' ? job.error : 'Starved job', view: 'lead' });
+    }
+  }
+  if (hostsNeedingUpdate(status).length > 0) {
+    faults.push({ summary: `Hosts need update: ${hostsNeedingUpdate(status).join(', ')}`, view: 'workers' });
+  }
+  for (const owed of masterOwes(work, now)) {
+    faults.push({ summary: `${owed.key}: ${owed.blocker}`, view: 'lead' });
+  }
+  return { faults, minutesAgo };
+}
+
+/** Where Pause team keeps each role's concurrency so Resume team brings it back. */
+const pausedConcurrencyKey = 'graphyard.pausedConcurrency';
+
+/** GY-3598: the Mainworks product mark from the approved prototype, reading the active theme tokens. */
+function MainworksMark() {
+  return <svg className="brand-mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="30" height="30" fill="none" aria-hidden="true">
+    <rect width="64" height="64" rx="14" fill="var(--surface)"/>
+    <path d="M12 50V24L26 34V24L40 34V24L54 34V50Z" stroke="var(--up-next)" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <rect x="19" y="40" width="8" height="6" rx="1.5" fill="var(--blocked)"/>
+    <rect x="31" y="40" width="8" height="6" rx="1.5" fill="var(--up-next)" opacity=".45"/>
+    <rect x="43" y="40" width="5" height="6" rx="1.5" fill="var(--up-next)" opacity=".45"/>
+  </svg>;
+}
+
+/**
+ * GY-3598: the one Mainworks top bar rendered on every page — product mark and name, exactly four
+ * navigation links (Home, Work, Lead, Settings) with the current one marked, the Caretaker pill,
+ * and Pause team. At 390 px, CSS turns `<nav aria-label="Main">` into a fixed bottom tab bar.
+ */
+export function MainTopBar(dashboard: Dashboard) {
+  const { view, setView, setSelected, status, work, observedAt, api, refresh, sessionEpoch, setError } = dashboard;
+  const currentSection: Section = viewFor(view).section ?? 'work';
+  const now = Number.isNaN(observedAt) ? Date.now() : observedAt;
+  const { faults, minutesAgo } = caretakerSummary(status, work, now);
+  const owesCount = masterOwes(work, now).length;
+  const [pausing, setPausing] = useState(false);
+
+  const roles: { role: string; accounts: string[]; concurrency: number }[] = Array.isArray(status?.fleet?.roles) ? status.fleet.roles : [];
+  const managedRoles = roles.filter(r => r.role === 'worker' || r.role === 'reviewer');
+  const allPaused = managedRoles.length > 0 && managedRoles.every(r => r.concurrency === 0);
+  // Only the owner can change the fleet, and only once it has worker or reviewer roles to pause.
+  const cannotPause = status?.actor?.role !== 'admin' ? 'Only the owner can pause the team'
+    : managedRoles.length === 0 ? 'No workers or reviewers to pause yet' : null;
+
+  const go = (section: Section) => {
+    const target = firstViewOfSection(dashboard, section);
+    setSelected(null);
+    setView(target.id);
+    if (typeof history !== 'undefined' && typeof location !== 'undefined') {
+      history.replaceState(null, '', `${location.pathname}${location.search}#${section}`);
+    }
+  };
+
+  const openFaults = () => {
+    const target = faults[0]?.view ?? 'lead';
+    setSelected(null);
+    setView(target);
+    if (typeof history !== 'undefined' && typeof location !== 'undefined') {
+      history.replaceState(null, '', `${location.pathname}${location.search}#${target}`);
+    }
+  };
+
+  const togglePause = async () => {
+    if (pausing || cannotPause) return;
+    setPausing(true);
+    try {
+      // Resume restores each role's concurrency from before the pause, remembered in this browser.
+      const remembered: Record<string, number> = JSON.parse(localStorage.getItem(pausedConcurrencyKey) ?? '{}');
+      if (!allPaused) localStorage.setItem(pausedConcurrencyKey, JSON.stringify(Object.fromEntries(managedRoles.map(r => [r.role, r.concurrency]))));
+      await api('agent-registry/apply', {
+        roles: managedRoles.map(r => ({ name: r.role, accounts: r.accounts, concurrency: allPaused ? remembered[r.role] || 1 : 0 })),
+        reason: allPaused ? 'Resumed team from top bar' : 'Paused team from top bar',
+      });
+      await refresh(sessionEpoch.current);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setPausing(false);
+    }
+  };
+
+  const faultHref = `#${faults[0]?.view ?? 'lead'}`;
+  const pillText = faults.length > 0
+    ? `Caretaker: ${faults.length} ${faults.length === 1 ? 'fault' : 'faults'} · ${minutesAgo} min ago`
+    : `Caretaker ✓ ${minutesAgo} min ago`;
+
+  return <header className="main-top-bar">
+    <a href="#home" className="brand-link" onClick={event => { event.preventDefault(); go('home'); }}>
+      <MainworksMark/><span className="brand brand-name">{COMMAND_NAME}</span>
+    </a>
+    <nav className="main-nav" aria-label="Main">
+      {sections.map(place => {
+        const active = currentSection === place.id;
+        return <a key={place.id} href={`#${place.id}`} data-nav={place.id} className={active ? 'nav-link active' : 'nav-link'} aria-current={active ? 'page' : undefined} onClick={event => { event.preventDefault(); go(place.id); }}>
+          {place.label}{place.id === 'lead' && owesCount > 0 && <> <span className="nav-badge">{owesCount}</span></>}
+        </a>;
+      })}
+    </nav>
+    <a href={faultHref} className={faults.length > 0 ? 'caretaker-pill faults' : 'caretaker-pill ok'} data-caretaker-faults={faults.length} title={faults[0]?.summary ?? 'Last health pass found no faults'} onClick={event => { event.preventDefault(); openFaults(); }}>
+      {faults.length > 0 && <span className="caretaker-dot" aria-hidden="true"/>}
+      {pillText}
+    </a>
+    <button type="button" className={allPaused ? 'pause-team-btn paused' : 'pause-team-btn'} disabled={pausing || !!cannotPause} title={cannotPause ?? undefined} onClick={() => void togglePause()}>
+      {allPaused ? 'Resume team' : 'Pause team'}
+    </button>
+  </header>;
+}
+
+/** GY-3483: a role as the owner names it — Owner, Maintainer or Viewer. */
+const roleName = (role: unknown) => role === 'admin' ? 'Owner' : role === 'reader' ? 'Viewer' : 'Maintainer';
+
+/** GY-3310: the version and serving commit each status poll reports. */
+function VersionLabel({ status }: { status: any }) {
+  const commit: string | undefined = status.build?.commit;
+  const version: string | undefined = status.release?.version && !status.release.version.startsWith('unreleased') ? status.release.version : undefined;
+  const parts = [version && `v${version}`, commit && commit.slice(0, 7)].filter(Boolean);
+  if (!parts.length) return null;
+  return <span className="version-label" title={commit}>{PRODUCT_NAME} {parts.join(' · ')}</span>;
+}
+
+/**
+ * The section sub-bar: the configured repository, live activity strip, release line, and sub-page
+ * tabs for the current place (Work, Lead, Settings).
  */
 export default function TopBar(dashboard: Dashboard & { onPalette?: () => void }) {
-  const { view, setView, status, selected, work, observedAt, onPalette } = dashboard;
+  const { view, setView, status, selected, work, observedAt, onPalette, connected, lastUpdated, signOut } = dashboard;
   const section = viewFor(view).section;
-  const pages = section ? visibleViews(dashboard).filter(page => page.section === section) : [];
+  const pages = section ? visibleViews(dashboard).filter(page => page.section === section && !page.inlineOnly) : [];
   const tabs = pages.filter(page => !page.advanced), advanced = pages.filter(page => page.advanced);
+  const theme = useTheme();
+  const actor = status?.actor;
   const tab = (page: View) => { const term = meaning(page.label); return <button key={page.id} type="button" className={page.id === view ? 'tab active' : 'tab'} aria-current={page.id === view ? 'page' : undefined} onClick={() => setView(page.id)}>{term ? <Term term={term} focusable={false}>{page.label}</Term> : page.label}</button>; };
   return <div className="top-bar">
     <div className="top-bar-row">
@@ -161,6 +326,10 @@ export default function TopBar(dashboard: Dashboard & { onPalette?: () => void }
         <ShippedStrip work={work} observedAt={observedAt} live={status?.live}/>
         <OpenApp status={status}/>
         <Invite api={dashboard.api} status={status}/>
+        {!connected && <span className="connection" title={lastUpdated ? `Last update ${lastUpdated}` : undefined}><span className="dot"/>Offline · retrying</span>}
+        {actor && <span className="signed-in" title="Signed in as">{[actor.displayName, roleName(actor.role)].filter(Boolean).join(' · ')}</span>}
+        <button type="button" className="text-button theme-button" aria-label={`Switch theme to ${theme === 'night' ? 'Daylight' : 'Night Yard'}`} title="Night Yard is the default look; Daylight is the light one" onClick={() => setTheme(theme === 'night' ? 'daylight' : 'night')}>{theme === 'night' ? '☀' : '☾'}</button>
+        <button type="button" className="text-button" onClick={signOut}>{dashboard.token ? 'Sign out' : 'Sign in'}</button>
         {onPalette && <button type="button" className="palette-button" title="Ctrl K / ⌘ K" aria-label="Command palette (Ctrl K)" onClick={onPalette}><kbd>⌘</kbd><kbd>K</kbd></button>}
       </div>
     </div>
@@ -168,5 +337,6 @@ export default function TopBar(dashboard: Dashboard & { onPalette?: () => void }
     {status && <ReleaseLine status={status}/>}
     {status && <WeekLine status={status} work={work} open={dashboard.setSelected}/>}
     {!selected && pages.length >= 2 && <nav className="tabs" aria-label="Pages in this section">{tabs.map(tab)}{advanced.length > 0 && <details className="tabs-advanced" open={advanced.some(page => page.id === view) || undefined}><summary className="tab">Advanced</summary>{advanced.map(tab)}</details>}</nav>}
+    {status && <VersionLabel status={status}/>}
   </div>;
 }

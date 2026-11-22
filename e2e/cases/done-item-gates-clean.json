@@ -33,10 +33,10 @@
     },
     {
       "kind": "browser",
-      "name": "open the Shipped page, where the delivered row lives",
+      "name": "open the Delivered page under Work, where the delivered row lives",
       "action": "click",
       "role": "button",
-      "text": "Shipped"
+      "text": "Delivered"
     },
     {
       "kind": "browser",

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { humanDecisionKinds } from '../model/human-request.js';
+import { genericChoiceIssues, humanDecisionKinds } from '../model/human-request.js';
 import { shortAskIssues } from '../model/human-ask.js';
 import { hostDoableAsk, hostDoableRefusal, HostDoableAsk } from '../model/park-refusal.js';
 /**
@@ -31,6 +31,8 @@ export const humanRequestSchema = z.object({
   /** The requesting host's public key (PEM): a `secret` choice's value is sealed to it. */
   sealTo: z.string().trim().min(1).max(4000).optional(),
 }).strict().refine(data => data.sealTo || !data.choices?.some(choice => choice.input === 'secret'), 'A secret choice needs sealTo, the requesting host\'s public key')
-  .superRefine((data, context) => { for (const message of shortAskIssues(data)) context.addIssue({ code: 'custom', message }); });
+  .superRefine((data, context) => {
+    for (const message of [...shortAskIssues(data), ...genericChoiceIssues(data.choices)]) context.addIssue({ code: 'custom', message });
+  });
 // The park-refusal classifier (GY-1395, GY-1416, GY-1692) lives in park-refusal.ts; `parkRefusal` here refuses a criterion-rewrite question first (GY-1816).
 export { hostDoableAsk, hostDoableRefusal, type HostDoableAsk };

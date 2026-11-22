@@ -63,13 +63,14 @@ test('e2e:dashboard-fun — named agents on every page, a rotating line, and a t
   await expect(history.locator(`[data-agent="${builder}"]`)).toHaveAttribute('title', builder);
 
   // The Workers page: the same name for the same account, the master as the Master.
-  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Workers', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: 'Workers', exact: true }).click();
   const sessions = page.getByRole('table', { name: 'Agent sessions' });
   await expect(sessions.locator(`[data-agent="${builder}"]`).first()).toHaveText(name);
   await expect(sessions.locator(`[data-agent="${master}"]`).first()).toHaveText('the Master');
 
   // GY-1 merges while the page is open: a toast names its builder, and confetti runs.
-  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Work', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Work', exact: true }).click();
   state.work = [merged(state.work[0]), state.work[1]];
   await expect(page.locator('[data-toast="GY-1"]')).toContainText(`${name} shipped “Change priority from the dashboard”`, live);
   await expect(page.locator('.confetti')).toHaveCount(1);

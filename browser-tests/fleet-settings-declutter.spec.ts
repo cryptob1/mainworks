@@ -60,8 +60,7 @@ async function openAgents(page: Page, phone: boolean) {
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.getByRole('heading', { name: 'Work', level: 1 })).toBeVisible();
-  if (phone) await page.getByRole('button', { name: 'Menu' }).click();
-  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings', exact: true }).click();
   await page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: 'Agents', exact: true }).click();
   await expect(page.getByRole('main').getByRole('table', { name: 'Accounts at a glance' })).toBeVisible();
   await page.waitForTimeout(250);
