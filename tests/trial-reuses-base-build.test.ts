@@ -1,20 +1,23 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { mergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { mergeOne, runMergeTrial, type MergePorts, type MergeRecordEvent } from '../src/merge-writer/executor.js';
-import { keptBaseBuild, keptBaseBuildMarker, keptBaseBuildSha, runTrialAttempt } from '../src/merge-writer/trial.js';
+import { keptBaseBuild, keptBaseBuildMarker, keptBaseBuildSha, keptBuildLimit, runTrialAttempt } from '../src/merge-writer/trial.js';
 import { masterConfigSchema } from '../src/master.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3589: a merge trial's base-tip pass reuses the base tip's kept built tree, so two trials
 // against one base commit build that commit once — the second base pass records a reused build
-// under 2 s — and a base pass on a newer tip takes the old tip's tree back and builds the new tip once.
+// under 2 s. GY-3640: the tree is kept per commit, the most recently used few staying; a pass that
+// arrives while another builds the commit waits for that build.
+/** Where a kept tree's entry leads: the directory its build ran in. */
+const treeOf = (entry: string) => realpathSync(entry);
 
 const proof = 'integration:trial-reuses-base-build';
 const identity = { GIT_AUTHOR_NAME: 'Someone', GIT_AUTHOR_EMAIL: 'someone@example.com', GIT_COMMITTER_NAME: 'Someone', GIT_COMMITTER_EMAIL: 'someone@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
@@ -117,30 +120,39 @@ test(`${proof} — two trials on one base commit build the tip once, the second 
     assert.deepEqual(verdict(reuse.trial!), verdict(plain.trial!), 'the verdict matches the run without reuse');
   }
   assert.ok(existsSync(kept1) && existsSync(keptBaseBuildMarker(kept1)), 'the tip\'s built tree stays kept');
-  assert.equal(builds.filter(cwd => cwd === kept1).length, 1, `the base tip's build ran once: ${JSON.stringify(builds)}`);
+  assert.equal(builds.filter(cwd => cwd === treeOf(kept1)).length, 1, `the base tip's build ran once: ${JSON.stringify(builds)}`);
   assert.ok(!first.steps.includes('build: reused'), 'the first trial built the base tip itself');
   const reused = second.timings.find(([step]) => step === 'build: reused');
   assert.ok(reused, `the second trial's base pass records a reused build step: ${JSON.stringify(second.steps)}`);
   assert.ok(reused[1] < 2000, `the reused build step took ${reused[1]} ms of wall time`);
 
-  // AC-2: main moves — the old tip's kept build goes, the new tip is built once.
+  // Main moves: the new tip is built once, and the old tip's tree stays while it is among the most recently used.
   repo.advance('one');
   const headC = repo.head('c');
-  const kept2 = keptBaseBuild(reuseRoot, repo.base);
+  const kept2 = keptBaseBuild(reuseRoot, repo.base), tree1 = treeOf(kept1);
   const third = await merge(repo, 'GY-3589-E', headC, { baseRoot: reuseRoot, reuse: true });
   assert.equal(third.outcome.outcome, 'merged', JSON.stringify(third.outcome));
-  assert.ok(!existsSync(kept1) && !existsSync(keptBaseBuildMarker(kept1)), 'the moved-past tip\'s kept build went');
   assert.ok(existsSync(kept2) && existsSync(keptBaseBuildMarker(kept2)), 'the new tip\'s built tree is kept');
-  assert.equal(builds.filter(cwd => cwd === kept2).length, 1, 'the new tip\'s build ran once');
-  assert.equal(builds.filter(cwd => cwd === kept1).length, 1, 'and the old tip still exactly once');
+  assert.equal(builds.filter(cwd => cwd === treeOf(kept2)).length, 1, 'the new tip\'s build ran once');
+  assert.equal(builds.filter(cwd => cwd === tree1).length, 1, 'and the old tip still exactly once');
+
+  // Past the limit the least recently used trees go, with their markers and directories.
+  for (let moved = 0; moved <= keptBuildLimit; moved++) {
+    repo.advance(`more-${moved}`);
+    await runTrialAttempt({ root: repo.root, base: reuseRoot, mergeSha: repo.base, baseTip: repo.base, changedFiles: ['src/fixed'], timeoutMs: 60_000, caches: true, run, environment: { PATH: process.env.PATH! } });
+  }
+  assert.ok(!existsSync(kept1) && !existsSync(keptBaseBuildMarker(kept1)) && !existsSync(tree1), 'the oldest tip\'s kept build went');
+  assert.equal(new Set(readdirSync(reuseRoot).map(keptBaseBuildSha).filter(Boolean)).size, keptBuildLimit + 1, 'the last pass\'s tree and the limit of idle ones stay');
 });
 
-test(`${proof} — bare unbuilt kept directory is reclaimed when main moves, concurrent base pass does not mark locked kept tree built, and pnpm workspace populates kept tree with a full build`, { timeout: 300_000 }, async () => {
+test(`${proof} — bare unbuilt kept directory is reclaimed when main moves, a concurrent base pass waits for the build in progress, and pnpm workspace populates kept tree with a full build`, { timeout: 300_000 }, async () => {
   const sha = 'a'.repeat(40);
   assert.equal(keptBaseBuildSha(`graphyard-base-build-${sha}`), sha);
   assert.equal(keptBaseBuildSha(`graphyard-base-build-${sha}.built`), sha);
   assert.equal(keptBaseBuildSha(`graphyard-base-build-${sha}.lock`), sha);
   assert.equal(keptBaseBuildSha(`graphyard-base-build-${sha}.lock.owner`), sha);
+  assert.equal(keptBaseBuildSha(`graphyard-base-build-${sha}.use-0b9f6c1e-1111-4222-8333-444455556666`), sha);
+  assert.equal(keptBaseBuildSha(`graphyard-base-build-${sha}.use-0b9f6c1e-1111-4222-8333-444455556666.owner`), sha);
   assert.equal(keptBaseBuildSha(`graphyard-base-build-${sha}.other`), null);
 
   // 1. Bare unbuilt directory left after a failed/aborted build is reclaimed when main moves.
@@ -160,40 +172,32 @@ test(`${proof} — bare unbuilt kept directory is reclaimed when main moves, con
   assert.ok(!existsSync(staleTree), 'bare unbuilt directory of the old tip was removed');
   assert.ok(existsSync(currentKept) && existsSync(keptBaseBuildMarker(currentKept)));
 
-  // 2. Concurrent base pass when another live pass holds the lock builds in its own ephemeral worktree and never writes .built on the locked kept tree.
+  // 2. A base pass that arrives while another builds the tip waits for that build and runs in its tree: one build.
   const concRoot = await temporaryDirectory('base-build-conc', tmpdir());
   const concKept = keptBaseBuild(concRoot, repo.base);
-  let releaseFirst!: () => void;
+  let releaseFirst!: () => void, concBuilds = 0;
   let firstPromise!: Promise<Awaited<ReturnType<typeof runTrialAttempt>>>;
-  const firstEnteredBuild = new Promise<void>(resolve => {
-    let firstBuild = true;
-    const concRun: ChildRun = async (command, args, options) => {
-      options = { ...options, wrapper: undefined };
-      if (command === 'git') return defaultChildRun(command, args, { ...options, env: { ...process.env, ...identity, ...options?.env } });
-      if (command === 'npm' && args[0] === 'run' && args[1] === 'build' && firstBuild && options?.cwd === concKept) {
-        firstBuild = false;
-        resolve();
-        await new Promise<void>(done => { releaseFirst = done; });
-        return '';
-      }
-      return run(command, args, options);
-    };
-    firstPromise = runTrialAttempt({
-      root: repo.root, base: concRoot, mergeSha: repo.base, baseTip: repo.base, changedFiles: ['src/fixed'],
-      timeoutMs: 60_000, caches: true, run: concRun, environment: { PATH: process.env.PATH! },
-    });
-  });
+  const concRun: ChildRun = async (command, args, options) => {
+    if (command === 'npm' && args[0] === 'run' && args[1] === 'build' && ++concBuilds === 1) { entered(); await new Promise<void>(done => { releaseFirst = done; }); return ''; }
+    return run(command, args, options);
+  };
+  let entered!: () => void;
+  const firstEnteredBuild = new Promise<void>(resolve => { entered = resolve; });
+  const concPass = () => runTrialAttempt({ root: repo.root, base: concRoot, mergeSha: repo.base, baseTip: repo.base, changedFiles: ['src/fixed'],
+    timeoutMs: 60_000, caches: true, run: concRun, environment: { PATH: process.env.PATH! } });
+  firstPromise = concPass();
   await firstEnteredBuild;
-  const second = await runTrialAttempt({
-    root: repo.root, base: concRoot, mergeSha: repo.base, baseTip: repo.base, changedFiles: ['src/fixed'],
-    timeoutMs: 60_000, caches: true, run, environment: { PATH: process.env.PATH! },
-  });
-  assert.equal(second.build, 'pass');
-  assert.ok(!existsSync(keptBaseBuildMarker(concKept)), 'concurrent non-owning pass did not mark the live owner\'s kept tree .built');
+  let secondSettled = false;
+  const secondPromise = concPass().finally(() => { secondSettled = true; });
+  await new Promise(next => setTimeout(next, 1500));
+  assert.ok(!secondSettled && !existsSync(keptBaseBuildMarker(concKept)), 'the second pass waits while the first still builds');
   releaseFirst();
-  const first = await firstPromise;
+  const [first, second] = await Promise.all([firstPromise, secondPromise]);
   assert.equal(first.build, 'pass');
-  assert.ok(existsSync(keptBaseBuildMarker(concKept)), 'owning pass marked the kept tree .built once its own build finished');
+  assert.equal(second.build, 'pass');
+  assert.equal(concBuilds, 1, 'the tip was built once for both passes');
+  assert.match(second.logTail, /reused: an earlier pass already built this commit/);
+  assert.ok(existsSync(keptBaseBuildMarker(concKept)), 'the building pass marked the kept tree built');
 
   // 3. pnpm workspace: populating the kept base tree builds the full workspace, not only packages affected by changedFiles.
   const pnpmRepo = await temporaryDirectory('base-build-pnpm', tmpdir());

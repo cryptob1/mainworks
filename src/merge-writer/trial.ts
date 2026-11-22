@@ -1139,7 +1139,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       return String(await run('git', ['-C', keptEntry!, 'status', '--porcelain'], { timeoutMs: remaining() })).trim() === '';
     } catch { return false; }
   };
-  /** The `keptBuildLimit` most recently used idle trees of other commits stay; the rest are taken back. */
+  /** The `keptBuildLimit` most recently used idle built trees of other commits stay; the rest are taken back. */
   const reclaimKeptTrees = async (): Promise<void> => {
     const shas = new Set((await readdir(input.base).catch(() => [] as string[])).flatMap(name => { const sha = keptBaseBuildSha(name); return sha && sha !== keptSha ? [sha] : []; }));
     const idle: { entry: string; usedAt: number }[] = [];
@@ -1148,7 +1148,8 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       if (existsSync(lock) && await ownerLive(lock) || (await keptBuildUses(entry)).length) continue;
       idle.push({ entry, usedAt: await stat(keptBaseBuildMarker(entry)).then(found => found.mtimeMs, () => 0) });
     }
-    for (const { entry } of idle.sort((a, b) => b.usedAt - a.usedAt).slice(keptBuildLimit)) {
+    // A tree with no built marker is a build that failed or was killed: it goes at once.
+    for (const { entry } of [...idle.filter(tree => tree.usedAt).sort((a, b) => b.usedAt - a.usedAt).slice(keptBuildLimit), ...idle.filter(tree => !tree.usedAt)]) {
       await takeBackKeptTree(entry);
       await dropOwned(`${entry}.lock`);
     }
