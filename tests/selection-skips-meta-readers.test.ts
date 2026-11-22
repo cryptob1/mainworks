@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { changedDeclarations, dependencyMap, listTestFiles, repositoryRoot, selectAffected } from '../scripts/ci-tests.mjs';
@@ -12,10 +13,15 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // file is listing its directory, and the batch gate (no base) still runs them.
 
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-// GY-3597: a compute machine's trial container runs as a user that does not own the checkout, and the
-// machine trusts the checkout, not its .git directory, which is where a clone's source is read from.
-// The clone trusts its source for that one command; nothing in it runs from the source.
-const sourceTrust = ['-c', 'safe.directory=*'];
+// GY-3597: a compute machine's trial container runs as a user that does not own the checkout. A clone
+// reads its source through git's transport, whose server side refuses a repository another user owns
+// and never sees the caller's safe.directory. The copy borrows the source's objects instead: no transport.
+function sharedCheckout(source: string, root: string) {
+  const head = git(source, 'rev-parse', 'HEAD').trim();
+  git(root, 'init', '-q');
+  writeFileSync(join(root, '.git/objects/info/alternates'), `${git(source, 'rev-parse', '--path-format=absolute', '--git-path', 'objects').trim()}\n`);
+  git(root, 'checkout', '-q', '--detach', head);
+}
 async function write(root: string, files: Record<string, string>) {
   for (const [path, text] of Object.entries(files)) { await mkdir(dirname(join(root, path)), { recursive: true }); await writeFile(join(root, path), text); }
 }
@@ -47,8 +53,7 @@ test('unit:selection-skips-meta-readers — a new test file, a new e2e case and 
 
 test('selection-skips-meta-readers — on this repository, the trial selection for a new test file, a new e2e case and a source edit holds fewer than 60 test files', async () => {
   const root = await temporaryDirectory('selection-meta-repo');
-  git(repositoryRoot, ...sourceTrust, 'clone', '-q', '--shared', '--no-checkout', repositoryRoot, root);
-  git(root, 'checkout', '-q', '--detach', git(repositoryRoot, 'rev-parse', 'HEAD').trim());
+  sharedCheckout(repositoryRoot, root);
   await symlink(join(repositoryRoot, 'node_modules'), join(root, 'node_modules'));
   const base = git(root, 'rev-parse', 'HEAD').trim(), source = 'src/model/timing-companion.ts';
   const text = await readFile(join(root, source), 'utf8');
@@ -69,15 +74,17 @@ test('selection-skips-meta-readers — on this repository, the trial selection f
   assert.ok(files.length < 60, `the trial runs ${files.length} test files: ${out.split('\n')[0]}`);
 });
 
-test('unit:selection-skips-meta-readers-pinned — the clone of the checkout reads a source another user owns, as on a compute machine that trusts the checkout but not its .git directory', async () => {
-  const root = await temporaryDirectory('selection-meta-owner');
-  await write(root, { 'a.txt': 'a\n' });
-  git(root, 'init', '-q', '-b', 'main'); git(root, 'add', '.'); git(root, 'commit', '-qm', 'base');
-  // The compute machine's environment: another user owns the run's checkout, and only the checkout is trusted.
-  const env = { ...process.env, GIT_TEST_ASSUME_DIFFERENT_OWNER: '1', GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'safe.directory', GIT_CONFIG_VALUE_0: root };
-  const inGitDirectory = (...args: string[]) => execFileSync('git', [...args, 'rev-parse', 'HEAD'], { cwd: join(root, '.git'), env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  assert.throws(() => inGitDirectory(), /dubious ownership/, 'git refuses the .git directory on the machine\'s own trust');
-  assert.equal(inGitDirectory(...sourceTrust), git(root, 'rev-parse', 'HEAD').trim(), 'the clone\'s git reads it');
-  const target = join(await temporaryDirectory('selection-meta-owner-clone'), 'clone');
-  execFileSync('git', [...sourceTrust, 'clone', '-q', '--shared', '--no-checkout', root, target], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+test('unit:selection-skips-meta-readers-pinned — the copy of the checkout reads a source another user owns, as on a compute machine, where git\'s transport refuses it', async () => {
+  const source = await temporaryDirectory('selection-meta-owner'), root = await temporaryDirectory('selection-meta-owner-copy');
+  await write(source, { 'a.txt': 'a\n' });
+  git(source, 'init', '-q', '-b', 'main'); git(source, 'add', '.'); git(source, 'commit', '-qm', 'base');
+  // The compute machine: another user owns the checkout, only work trees are trusted, and the transport refuses the source.
+  const machine = { GIT_TEST_ASSUME_DIFFERENT_OWNER: '1', GIT_CONFIG_COUNT: '2', GIT_CONFIG_KEY_0: 'safe.directory', GIT_CONFIG_VALUE_0: source, GIT_CONFIG_KEY_1: 'safe.directory', GIT_CONFIG_VALUE_1: root, GIT_ALLOW_PROTOCOL: 'https' };
+  const before = { ...process.env };
+  Object.assign(process.env, machine);
+  try {
+    assert.throws(() => git(source, 'clone', '-q', '--shared', '--no-checkout', source, join(root, 'clone')), /dubious ownership|not allowed/, 'a clone is refused there');
+    sharedCheckout(source, root);
+    assert.equal(await readFile(join(root, 'a.txt'), 'utf8'), 'a\n');
+  } finally { for (const name of Object.keys(machine)) { if (before[name] === undefined) delete process.env[name]; else process.env[name] = before[name]; } }
 });
