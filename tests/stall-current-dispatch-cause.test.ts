@@ -7,14 +7,13 @@ import { emptyDaemonState, daemonStatePath, type DaemonState } from '../src/daem
 import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
 import { stallAlarmKey } from '../src/daemon/stall-alarm.js';
-import { batchGateFlights } from '../src/daemon/trial-slots.js';
-import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../src/master/profiles.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-3473: the stall alarm names the reason dispatch holds launches now — a running batch gate,
+// GY-3473: the stall alarm names the reason dispatch holds launches now — a disk-floor hold,
 // CPU pressure, a launch refusal still backing off — never an expired launch failure an
 // item recovered from, and an unexplained idle queue still alarms. Driven through the loop's cycle.
 
@@ -70,29 +69,29 @@ async function status(config: MasterConfig, state: DaemonState, work: Work[]) {
 }
 
 const alarmOf = (state: DaemonState) => state.actions[stallAlarmKey]?.detail;
-const holdGate = (state: DaemonState) => batchGateFlights.set(state, { gate: new Promise<void>(() => {}), diagnostics: null });
-const endGate = (state: DaemonState) => batchGateFlights.set(state, { gate: null, diagnostics: null });
+const holdDisk = (state: DaemonState) => { state.diskHeadroom = { at: at(start), floorBytes: 1024, volumes: [{ path: '/var/lib/graphyard', freeBytes: 512 }], shortage: '512 B free below 1.0 KB floor' }; };
+const endDisk = (state: DaemonState) => { state.diskHeadroom = null; };
 
-test(`${proof} — a running batch gate is the named cause, not the expired worktree failure; status shows it and it clears once dispatch resumes`, async () => {
+test(`${proof} — an active disk-floor hold is the named cause, not the expired worktree failure; status shows it and it clears once dispatch resumes`, async () => {
   const f = await fixture();
-  holdGate(f.state);
+  holdDisk(f.state);
   await f.cycle();
   assert.equal(alarmOf(f.state), undefined, 'no alarm before 10 minutes pass');
   f.advance(11);
   await f.cycle();
   const alarm = alarmOf(f.state)!;
   assert.match(alarm, /GY-1/);
-  assert.match(alarm, /Cause: implementation launches paused while the batch gate runs/);
+  assert.match(alarm, /Cause: implementation launches waiting: disk below its floor/);
   assert.doesNotMatch(alarm, /worktree|50ddae|dispatch error/, 'an expired launch failure is not the cause');
   const report = await status(f.config, f.state, f.work());
   assert.equal(Object.keys(report)[0], 'stallAlarm');
   assert.equal(report.stallAlarm, alarm, 'master status names the current hold');
-  assert.ok(f.prompts.some(prompt => prompt.includes('batch gate runs')), 'the master is woken with the current cause');
-  endGate(f.state);
+  assert.ok(f.prompts.some(prompt => prompt.includes('disk below its floor')), 'the master is woken with the current cause');
+  endDisk(f.state);
   f.allow();
   f.advance(1);
   await f.cycle();
-  assert.deepEqual(f.dispatched, ['GY-1'], 'dispatch resumes once the gate settles');
+  assert.deepEqual(f.dispatched, ['GY-1'], 'dispatch resumes once the hold clears');
   await f.cycle();
   assert.equal(alarmOf(f.state), undefined, 'the alarm clears after dispatch resumes');
   assert.equal((await status(f.config, f.state, f.work())).stallAlarm, null);

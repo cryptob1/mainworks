@@ -22,10 +22,10 @@ function repositoryTexts(): string[] {
   return tracked.filter(path => textFile.test(path) && path !== self).map(path => join(root, path));
 }
 
-test('unit:tests/npm-package-name.test.ts — package.json names @cryptob1/graphyard with the graphyard bin', () => {
+test('unit:tests/npm-package-name.test.ts — package.json names @cryptob1/graphyard with the mainworks and graphyard bins', () => {
   const manifest = JSON.parse(read('package.json'));
   assert.equal(manifest.name, '@cryptob1/graphyard');
-  assert.deepEqual(manifest.bin, { graphyard: './bin/graphyard.mjs' });
+  assert.deepEqual(manifest.bin, { mainworks: './bin/graphyard.mjs', graphyard: './bin/graphyard.mjs' });
 });
 
 test('unit:tests/npm-package-name.test.ts — the README Quick start runs npx @cryptob1/graphyard up', () => {

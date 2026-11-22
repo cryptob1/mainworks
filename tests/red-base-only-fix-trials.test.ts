@@ -23,7 +23,7 @@ const unrelated = sha('unrelated-head'), fix = sha('fix-head'), recorderHead = s
 const failingTest = 'tests/budget.test.ts';
 
 const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',
-  repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [], run: { mergeWriter: { deployKeyFile: '/keys/deploy' } } });
+  repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [], run: { mergeWriter: { deployKeyFile: '/keys/deploy', parallel: 3 } } });
 
 const reason = baseFailureReason({ tip: red, files: [failingTest], tests: ['unit:budget'] });
 const refusedOn = (key: string, head: string, why: string): MergeLedgerState => ({ key, state: 'refused', head, baseTip: null, mergeSha: null, risk: null, intentAt: null, pushedAt: null, observedTip: null, refusal: { kind: 'merge', reason: why }, events: 1 });
@@ -71,6 +71,7 @@ function harness(work: Work[]) {
     record: async (target, event) => { recorded.push({ key: target.key, event }); return {}; },
     trial: async (input): Promise<MergeTrialRun> => { trialled.push(input.key!); return { build: 'pass', tests: { passed: 1, failed: [], files: 1 }, durationMs: 1, logTail: '', files: [failingTest], proofs: { 'unit:item-works': { executed: 1, failed: 0 } } }; },
   });
+  reads.cores = 8;
   const state = emptyDaemonState(config);
   let clock = start;
   const step = async () => { clock += 1000; await mergeWriterStep({ state, effects: { mergeWriter: reads, persist: async () => {}, rework: async () => {} }, now: () => clock, snapshot: { work }, performed } as unknown as Cycle); await mergeWriterIdle(state); };

@@ -177,7 +177,7 @@ export function loopReads(where: Where, options: { gate: boolean }): MergeWriter
     where.trialLog?.push(entry);
     try { return await reads.trial(mergeSha, ...rest); } finally { entry.endedAt = Date.now(); }
   };
-  return { ...reads, trial,
+  return { ...reads, trial, cores: 8,
     flaky: async check => openFlakyItem(await where.snapshot(), check),
     note: (item, text, key) => post(where.url, coordinatorToken, `work/${item.id}/request`, { type: 'note', reason: text }, key),
     createWork: (input, key) => {

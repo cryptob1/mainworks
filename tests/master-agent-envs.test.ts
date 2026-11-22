@@ -499,7 +499,7 @@ test('unit:registry-account-home-applied — a registry account of a runtime wit
 
 test('unit:unappliable-home-refused — an account whose home no variable can carry is refused before launch, naming the account and the missing variable', () => {
   assert.throws(() => accountLaunch({ approvals: 'auto', agentArgs: [], environment: {} }, registryAccount('muse', '/accounts/muse-b')),
-    { name: 'Error', message: /^Graphyard refuses to launch account muse-b: its home \/accounts\/muse-b cannot be applied because runtime muse names no login-home variable and the muse kind has none known, so the session would run on the default login instead of muse-b\. Set the runtime's home variable with master registry runtime set NAME --home-variable VAR\.$/ });
+    { name: 'Error', message: /^Mainworks refuses to launch account muse-b: its home \/accounts\/muse-b cannot be applied because runtime muse names no login-home variable and the muse kind has none known, so the session would run on the default login instead of muse-b\. Set the runtime's home variable with master registry runtime set NAME --home-variable VAR\.$/ });
   // An account with no home runs on the runtime's own login, as before.
   assert.equal(accountLaunch({ approvals: 'auto', agentArgs: [], environment: {} }, registryAccount('muse', null)).account, 'muse-b');
 });
