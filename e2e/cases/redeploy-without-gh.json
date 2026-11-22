@@ -1,0 +1,16 @@
+{
+  "id": "redeploy-without-gh",
+  "title": "A newly verified commit deploys to an existing install without a GitHub CLI login",
+  "description": "The deploy watch restarts an installed release with gh failing in its environment: preflight and apply skip GitHub CLI checks because the deploy key is already registered, and the newly verified commit reaches the control plane's /healthz. A first install without gh still refuses preflight naming the gh login fix and changes nothing.",
+  "tags": ["deployment", "regression"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "Redeploy an installed release without gh and verify /healthz serves the new commit",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/redeploy-without-gh.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}
