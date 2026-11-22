@@ -322,7 +322,7 @@ test('integration:registry-driven-selection — an executor\'s action runs on th
   await ok('agent-registry/roles', operator, { role: { name: 'worker', accounts: ['claude-fresh'], concurrency: 3 }, reason: 'the approval prompt stays off' });
   const refusedLaunch = (await ok('agent-registry/document', coordinator) as Registry).sessions.at(-1)!;
   assert.equal(refusedLaunch.principal, 'implementer-c'); assert.ok(refusedLaunch.endedAt, 'the refused launch gives its session back');
-  assert.match(refusedLaunch.endReason!, /worker launch for GY-\d+ failed: Graphyard refuses to launch the claude runtime/);
+  assert.match(refusedLaunch.endReason!, /worker launch for GY-\d+ failed: Mainworks refuses to launch the claude runtime/);
 
   // A role missing from the registry cannot fall back to local profiles.
   await assert.rejects(selectAccount(config, 'reviewer', { name: 'review-a' }, probe), /must be configured in the control-plane registry/);

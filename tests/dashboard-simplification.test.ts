@@ -87,7 +87,7 @@ test('unit:plain-status-copy — every stage and every gate reason reads as one 
     ['ready (dependency)', evaluated({ ready: true, dependencies: [find('GY-15').id] }), 'Waiting for GY-15 to ship first', 'waiting'],
     ['build', { ...find('GY-14') }, 'Alex is building it — no pull request yet', 'working'],
     ['build (rework)', { ...find('GY-15'), reworkRequested: true, lease: null }, 'Sent back for changes — waiting for someone to pick it up', 'waiting'],
-    ['build (handed in)', withGates(handedIn, 'build', ['Pull request has not been independently observed']), 'Handed in — Graphyard has not seen the pull request on GitHub yet', 'waiting'],
+    ['build (handed in)', withGates(handedIn, 'build', ['Pull request has not been independently observed']), 'Handed in — Mainworks has not seen the pull request on GitHub yet', 'waiting'],
     ['review', { ...find('GY-15') }, 'Waiting for review of PR #42', 'waiting'],
     ['review (changes)', withGates(handedIn, 'review', ['Outstanding change requests must be resolved through a new review']), 'A reviewer asked for changes on PR #42', 'waiting'],
     ['test', withGates(handedIn, 'test', ['Required CI check test has not passed on the current candidate']), 'Waiting for automated checks on PR #42', 'waiting'],
@@ -268,7 +268,7 @@ test('plain-language support for manual:plain-language-review — every visible 
   assert.ok(words(guide).length <= 550, `guide is ${words(guide).length} words`);
   const form = markup(createElement(CreateWork, dashboard({ creating: true })));
   const screens: [string, string][] = [
-    ['How Graphyard works', guide],
+    ['How Mainworks works', guide],
     ['home', home(dashboard({ status: (() => { const s = fixtureStatus('admin'); s.delegation.slices[0].lead = { id: 'l', displayName: 'Pine', sessionKind: 'ai' } as any; return s; })() }))],
     ['item view', itemView('GY-16')],
     ['create form', form],

@@ -99,7 +99,7 @@ class World {
       trial: () => run.watch(), detach: () => {}, cancel: () => { run.stopped = true; world.runs.delete(run.spec.key); } });
     return {
       ...ports,
-      parallel: 2,
+      parallel: 2, cores: 8,
       launchTrialRun: spec => { const run = new Run(spec, `/runs/${spec.key}-${spec.head.slice(0, 8)}`); world.runs.set(spec.key, run); return handle(run); },
       ...(options.adopt ? { adoptTrialRun: async (ref: { key: string; head: string; mergeSha: string; directory: string }) => {
         const run = world.runs.get(ref.key);

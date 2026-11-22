@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { capabilityTiers, fleetRoles, groupAccountsByPlan, looksLikeSecret, quotaStates, unspecifiedModel, type FleetAccountView, type FleetView, type RolePolicy } from '../../src/model/registry';
 import { formatAge } from '../../src/model/duration';
+import { COMMAND_NAME } from '../../src/model/product';
 import { sealForHost } from '../seal';
 import type { Dashboard } from './dashboard';
 import { accountStatus, chipTones, countdown, launchFailure, localTime, monthDay, plainReason, roleLabels, roleLaunch, unconfiguredRoles, type AccountStatus, type RoleLaunch } from '../agent-status';
@@ -238,7 +239,7 @@ export function RoleLaunches({ fleet, now }: { fleet: FleetView; now: number }) 
   const caretaker = unconfiguredRoles(fleet).some(entry => entry.role === 'caretaker');
   return <ul className="role-launches">{fleet.roles.map(role => roleLaunch(role, fleet, now)).map(launch =>
     <li key={launch.role} data-role-launch={launch.role} data-can-launch={launch.canLaunch ? 'yes' : 'no'} title={launch.text} className={launch.state === 'blocked' ? 'amber' : undefined}>{roleLine(launch)}</li>)}
-    {caretaker && <li data-role-launch="caretaker" title="Not configured: caretaker — run graphyard master registry role set caretaker ACCOUNT --reason REASON to name its account">Caretaker · not configured — the loop skips its health check</li>}</ul>;
+    {caretaker && <li data-role-launch="caretaker" title={`Not configured: caretaker — run ${COMMAND_NAME} master registry role set caretaker ACCOUNT --reason REASON to name its account`}>Caretaker · not configured — the loop skips its health check</li>}</ul>;
 }
 
 /** The Agents page body, pure over the view so it renders the same in a test as in the browser. `now` pins the clock (tests); the page passes the dashboard's server snapshot clock (GY-952). */
@@ -247,7 +248,7 @@ export function FleetOverview({ fleet, connects = [], now = Date.now(), onChange
   const running = fleet.sessions.filter(session => !session.endedAt);
   const byName = new Map(connects.filter(connect => connect.name).map(connect => [connect.name!, connect]));
   return <>
-    {!fleet.configured && <div className="notice">No role is configured yet, so sessions still launch from each host's local profiles. Connect an account below — or run <code>graphyard master registry propose --apply</code> on a host whose agent CLIs are logged in.</div>}
+    {!fleet.configured && <div className="notice">No role is configured yet, so sessions still launch from each host's local profiles. Connect an account below — or run <code>{COMMAND_NAME} master registry propose --apply</code> on a host whose agent CLIs are logged in.</div>}
     {/* A blocked role reads in its launch line and a role-less account in its chip; a missing caretaker reads in the Role summary; only another role missing from the registry has no other place. */}
     {(() => { const missing = unconfiguredRoles(fleet), master = missing.some(entry => entry.error), optional = missing.filter(entry => !entry.error && entry.role !== 'caretaker').map(entry => entry.role);
       return <>{master && <div role="alert" className="notice danger">Not configured: master — the loop launches no master session until the role names an account.</div>}

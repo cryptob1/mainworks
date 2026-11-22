@@ -53,6 +53,6 @@ test('unit:tests/agents-page-neutral-states.test.ts — a running master, an unc
   assert.ok(page.includes('Running since') && page.includes('Not configured: producer'));
   // GY-3593: the caretaker never launches from local profiles; its Role summary row says the loop skips it.
   assert.ok(page.includes('Not configured: producer — its sessions launch from local profiles'));
-  assert.ok(page.includes('<li data-role-launch="caretaker" title="Not configured: caretaker — run graphyard master registry role set caretaker ACCOUNT --reason REASON to name its account">Caretaker · not configured — the loop skips its health check</li>'));
+  assert.ok(page.includes('<li data-role-launch="caretaker" title="Not configured: caretaker — run mainworks master registry role set caretaker ACCOUNT --reason REASON to name its account">Caretaker · not configured — the loop skips its health check</li>'));
   assert.ok(!/caretaker[^<]*local profiles/.test(page), 'the caretaker is never said to launch from local profiles');
 });

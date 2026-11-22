@@ -71,7 +71,7 @@ class World {
   ports(extra: Partial<MergeWriterReads> = {}): MergeWriterReads {
     const world = this;
     return {
-      baseBranch: 'main', now: () => start, parallel: this.parallel,
+      baseBranch: 'main', now: () => start, parallel: this.parallel, cores: 8,
       fetch: async () => world.main[0]!,
       merge: async (head, baseTip) => {
         const n = Array.from({ length: world.count }, (_, index) => index + 1).find(entry => world.head(entry) === head)!;

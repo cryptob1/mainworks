@@ -125,12 +125,12 @@ test('e2e:host-shared-account-limits — a live session of the first install hol
   assert.equal(sessions[0]!.install, 'owner/one');
   // The second install's own selection passes the account over: one home, one session, every install counted.
   await assert.rejects(select(1), (error: Error) => {
-    assert.match(error.message, /shared-a is at its session limit \(1 of 1 live, 1 held by the Graphyard install owner\/one\)/);
+    assert.match(error.message, /shared-a is at its session limit \(1 of 1 live, 1 held by the Mainworks install owner\/one\)/);
     return true;
   });
   // And its registry names the other install as the holder, in the refusal it recorded.
   const refusal = (await fleet(1)).refusals.at(-1)!;
-  assert.match(refusal.reason, /held by the Graphyard install owner\/one/);
+  assert.match(refusal.reason, /held by the Mainworks install owner\/one/);
   assert.ok(refusal.skipped.some(entry => entry.account === 'shared-a'));
 });
 
@@ -151,7 +151,7 @@ test('e2e:host-shared-account-limits — killing the holder releases the account
   const sessions = await hostAccountSessions(home);
   assert.equal(sessions.length, 1);
   assert.equal(sessions[0]!.install, 'owner/one');
-  await assert.rejects(select(1), /held by the Graphyard install owner\/one/);
+  await assert.rejects(select(1), /held by the Mainworks install owner\/one/);
   await endRegistrySessionById(installs[0]!.config, sessionOf(again)!, 'the session ended');
   assert.deepEqual(await hostAccountSessions(home), [], 'the ended session cleared its host record');
   const next = await select(1);

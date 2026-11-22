@@ -138,6 +138,10 @@ export interface CanaryOffer { runtime: string; entry: string; version: string }
 export const versionEntry = (pin: { root: string; rest: string }, version: string) => [pin.root, version, pin.rest].filter(Boolean).join('/');
 /** A PATH whose first entry is `entry`, the rest kept. */
 export const repinPath = (path: string, entry: string) => [entry, ...path.split(':').slice(1)].join(':');
-/** The runtime launched from `entry`: its PATH led by it, every other part of its launch kept. */
-export const repinRuntime = (runtime: FleetRuntime, entry: string): FleetRuntime =>
-  ({ ...runtime, launch: { ...runtime.launch, environment: { ...runtime.launch.environment, PATH: repinPath(runtime.launch.environment?.PATH ?? '', entry) } } });
+/** The runtime launched from `entry`: its PATH led by it and its mise version pin moved with it (GY-3592), every other part of its launch kept. */
+export function repinRuntime(runtime: FleetRuntime, entry: string): FleetRuntime {
+  const environment: Record<string, string> = { ...runtime.launch.environment, PATH: repinPath(runtime.launch.environment?.PATH ?? '', entry) };
+  const was = pinnedInstall(runtime)?.version, now = pinnedInstall({ launch: { ...runtime.launch, environment } })?.version;
+  if (was && now) for (const name of Object.keys(environment)) if (/^MISE_\w+_VERSION$/.test(name) && environment[name] === was) environment[name] = now;
+  return { ...runtime, launch: { ...runtime.launch, environment } };
+}
