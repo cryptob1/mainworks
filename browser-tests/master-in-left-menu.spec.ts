@@ -26,7 +26,7 @@ test('e2e:master-in-left-menu — Master is the second left-menu entry, opens th
   const menu = page.getByRole('navigation', { name: 'Main' }).getByRole('link');
   await expect(menu).toHaveText(['Home', 'Work', /^Lead/, 'Settings'], settled);
   await menu.nth(2).click();
-  await expect(page.getByRole('heading', { name: 'Master', exact: true, level: 1 })).toBeVisible(settled);
+  await expect(page.getByRole('heading', { name: 'Lead', exact: true, level: 1 })).toBeVisible(settled);
   await expect(page.getByRole('region', { name: 'Master terminal' })).toBeVisible(settled);
   await expect(menu.nth(2)).toHaveAttribute('aria-current', 'page', settled);
 

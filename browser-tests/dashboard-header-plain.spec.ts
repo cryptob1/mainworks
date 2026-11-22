@@ -84,7 +84,7 @@ for (const width of [1280, 390]) {
       // The signed-in name and role sit in the top bar.
       await expect(page.locator('.top-bar .signed-in')).toHaveText('Avery · Owner');
 
-      for (const [label, heading] of [['Work', 'Work'], ['Lead', 'Master'], ['Settings', 'Agents']] as const) {
+      for (const [label, heading] of [['Work', 'Work'], ['Lead', 'Lead'], ['Settings', 'Agents']] as const) {
         await go(page, label);
         await expect(page.getByRole('heading', { name: heading, exact: true, level: 1 })).toBeVisible();
         const text = await chrome(page);

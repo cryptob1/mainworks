@@ -57,7 +57,7 @@ test('e2e:keyboard-palette — Cmd/Ctrl+K opens the palette; an item key and Ent
   await page.keyboard.press('Control+k');
   await search(page).fill('Lead');
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('heading', { name: 'Master', exact: true, level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Lead', exact: true, level: 1 })).toBeVisible();
   await page.keyboard.press('Control+k');
   await search(page).fill('Daylight');
   await page.keyboard.press('Enter');
@@ -105,7 +105,7 @@ test('e2e:keyboard-palette — g m opens Master, g w Work, g s Setup, and ? show
   await serve(page);
   await page.keyboard.press('g');
   await page.keyboard.press('m');
-  await expect(page.getByRole('heading', { name: 'Master', exact: true, level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Lead', exact: true, level: 1 })).toBeVisible();
   await page.keyboard.press('g');
   await page.keyboard.press('w');
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible();

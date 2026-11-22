@@ -61,7 +61,7 @@ test('e2e:stall-alarm — the Master page shows the stall alarm with its cause w
     const signIn = await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } });
     const { code } = await signIn.json() as { code: string };
     await page.goto(`/#sign-in=${code}&master`);
-    await expect(page.getByRole('heading', { name: 'Master', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Lead', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
     const banner = page.locator('.stall-alarm');
     await expect(banner).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('.page-heading + .stall-alarm')).toBeVisible();

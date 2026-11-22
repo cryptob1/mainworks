@@ -102,6 +102,32 @@ for (const width of [1280, 390]) {
         await assertTopBar(page, place, width);
       }
 
+      // The Lead place is headed Lead, not by another name.
+      await nav.getByRole('link', { name: /^Lead(\s+\d+)?$/ }).click();
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText('Lead');
+
+      // A page two clicks below a place fits too: Work → Advanced → Test cases, with a long case on it.
+      const scenario = await fetch(`${url}/api/scenarios`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-human-operator', 'Content-Type': 'application/json', 'Idempotency-Key': `four-places-case-${width}` },
+        body: JSON.stringify({
+          id: 'dashboard-plain-human-request-choices-and-stall-alarm-recovery', title: 'Owner answers a parked request from a phone', purpose: 'The owner reads a parked request and answers it with the worker\'s own choice labels.',
+          setup: ['GRAPHYARD_REVIEWER_RUNTIME_SESSION_PATH=/home/operator/.local/share/graphyard/worktrees/review-session-recording.json'],
+          steps: ['npm run test:browser -- browser-tests/dashboard-plain-human-request-choices-and-stall-alarm-recovery.spec.ts'],
+          expected: ['The request closes with the chosen label recorded on the item.'],
+          environment: 'staging', runner: 'Playwright', testPath: 'browser-tests/dashboard-plain-human-request-choices-and-stall-alarm-recovery.spec.ts',
+        }),
+      });
+      expect(scenario.status, await scenario.clone().text()).toBe(200);
+      await nav.getByRole('link', { name: /^Work(\s+\d+)?$/ }).click();
+      const sectionTabs = page.getByRole('navigation', { name: 'Pages in this section' });
+      await sectionTabs.getByText('Advanced', { exact: true }).click();
+      await sectionTabs.getByRole('button', { name: 'Test cases', exact: true }).click();
+      await expect(page.locator('.scenario-card')).toHaveCount(1);
+      // Its text wraps inside the card rather than running past the right edge.
+      expect(await page.locator('.scenario-card').evaluate(card => card.scrollWidth - card.clientWidth), 'the test case fits its card').toBeLessThanOrEqual(0);
+      await assertTopBar(page, 'Work', width);
+
       // Follow three old hash routes and assert they land on the right place.
       const oldRoutes: [string, 'Work' | 'Lead' | 'Settings'][] = [
         ['#master', 'Lead'],

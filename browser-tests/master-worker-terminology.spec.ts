@@ -24,8 +24,9 @@ test('e2e:master-worker-terminology — navigation, the Master heading and its a
   const menu = page.getByRole('navigation', { name: 'Main' }).getByRole('link');
   await expect(menu).toHaveText(['Home', 'Work', /^Lead/, 'Settings']);
 
-  // GY-3598: the master lives under Lead; its terminal region still says Master.
+  // GY-3598: the master lives under Lead, and its page is headed Lead; its terminal region still says Master.
   await menu.nth(2).click();
+  await expect(page.getByRole('heading', { name: 'Lead', exact: true, level: 1 })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Master terminal' })).toBeVisible();
   const tabs = page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button');
   await expect(tabs).toHaveText(['Lead', 'Product']);

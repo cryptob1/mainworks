@@ -87,7 +87,7 @@ test('e2e:workers-page-live-session — one compact row per agent; opening it sh
 
     // The master's row opens the Master page.
     await page.locator(`tr[data-session="${master}"]`).click();
-    await expect(page.getByRole('heading', { name: 'Master', exact: true })).toBeVisible(settled);
+    await expect(page.getByRole('heading', { name: 'Lead', exact: true })).toBeVisible(settled);
     await page.close();
 
     // On a phone each agent is one card, and the page does not scroll sideways.
