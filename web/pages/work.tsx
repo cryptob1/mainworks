@@ -95,7 +95,7 @@ export default function WorkPage({ work, board, status, query, setQuery, setSele
     if (entry?.who === 'Nobody yet') return entry.does;
     return group === 'up-next' ? 'Waiting for a builder' : group === 'backlog' ? 'Not released yet' : plainWords(entry?.does ?? '');
   };
-  const table = (list: Row[]) => <table className="sessions-table work-table">
+  const table = (list: Row[]) => <table className="work-table">
     <thead><tr><th scope="col">State</th><th scope="col">Task</th><th scope="col">Now</th><th scope="col">Builder</th><th scope="col"><Term term="pull request" focusable={false}>PR</Term></th><th scope="col">Time</th></tr></thead>
     <tbody>{[...list].sort((a, b) => order[a.group] - order[b.group]).map(row => {
       const { item, group, entry } = row;
@@ -118,7 +118,7 @@ export default function WorkPage({ work, board, status, query, setQuery, setSele
 
   return <>
     <div className="page-heading"><div><h1>Work</h1><p className="page-fact" data-work-header>{board ? header : 'Reading the board…'}</p><BuildLine/></div>
-      <div className="page-actions"><input type="search" aria-label="Search work" placeholder="Search every task by title, key or PR" value={query} onChange={event => setQuery(event.target.value)}/>
+      <div className="page-actions"><div className="search"><input type="search" aria-label="Search work" placeholder="Search by title, key or PR" value={query} onChange={event => setQuery(event.target.value)}/></div>
         {status?.actor?.role === 'admin' && <button type="button" onClick={() => setCreating(true)}>＋ New work item</button>}</div></div>
     {needs.length > 0 && <section className="panel needs-you-strip" aria-label="Needs you">
       <h2>Needs you <span className="count">{needs.length}</span><button type="button" className="text-button push" onClick={() => setView('needs-you')}>Every request and answer →</button></h2>

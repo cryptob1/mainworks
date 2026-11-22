@@ -99,6 +99,9 @@ for (const width of [1280, 390]) {
     await expect(speedGroup.locator('[data-row="GY-102"] [data-col="state"]')).toHaveText('Stuck');
     await expect(speedGroup.locator('[data-row="GY-102"] [data-col="now"]')).toHaveText('A fault blocks it; the master agent clears it.');
     await expect(speedGroup.locator('[data-row="GY-103"] [data-col="state"]')).toHaveText('Shipped');
+    // At 390 px a row is a compact three-line grid, not a stack of six cells; the search box shows its whole placeholder.
+    expect(await row.evaluate(r => getComputedStyle(r).display)).toBe(width === 390 ? 'grid' : 'table-row');
+    expect(await page.getByLabel('Search work').evaluate((input: HTMLInputElement) => input.clientWidth >= 240)).toBe(true);
 
     // The task with no goal sits in a collapsed 'No goal' group.
     const none = page.locator('details[data-goal="none"]');
