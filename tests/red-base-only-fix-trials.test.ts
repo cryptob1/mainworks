@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mergeWriterIdle, mergeWriterReads, mergeWriterStep, mergeWriterSummary } from '../src/daemon/cycle-merge-writer.js';
+import { trialSlotCount } from '../src/merge-writer/trial-load.js';
+import { trialAffordableFiles } from '../src/merge-writer/trial.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { masterConfigSchema } from '../src/master.js';
 import { baseFailureReason, type MergeTrialRun } from '../src/merge-writer/executor.js';
@@ -71,10 +73,9 @@ function harness(work: Work[]) {
     record: async (target, event) => { recorded.push({ key: target.key, event }); return {}; },
     trial: async (input): Promise<MergeTrialRun> => { trialled.push(input.key!); return { build: 'pass', tests: { passed: 1, failed: [], files: 1 }, durationMs: 1, logTail: '', files: [failingTest], proofs: { 'unit:item-works': { executed: 1, failed: 0 } } }; },
   });
-  reads.cores = 8;
   // GY-3609: two heads are trialled in one cycle here, so the harness states the slots itself instead
   // of reading the live host — a loaded trial machine's memory once computed parallel 1 and broke it.
-  const placed = { ...reads, parallel: 2, memory: async () => ({ totalBytes: 16 * 2 ** 30, availableBytes: 16 * 2 ** 30 }) };
+  const placed = { ...reads, cores: 8, parallel: 2, memory: async () => ({ totalBytes: 16 * 2 ** 30, availableBytes: 16 * 2 ** 30 }) };
   const state = emptyDaemonState(config);
   let clock = start;
   const step = async () => { clock += 1000; await mergeWriterStep({ state, effects: { mergeWriter: placed, persist: async () => {}, rework: async () => {} }, now: () => clock, snapshot: { work }, performed } as unknown as Cycle); await mergeWriterIdle(state); };
@@ -87,7 +88,7 @@ function harness(work: Work[]) {
       else if (event.kind === 'refused') work[at] = { ...work[at]!, mergeLedger: refusedOn(key, event.head, event.reason) };
     }
   };
-  return { tip, trialled, recorded, state, step, settle, waiting: () => mergeWriterSummary(state.mergeWriter).queue.filter(entry => (entry as { waiting?: string }).waiting).map(entry => entry.key) };
+  return { tip, trialled, recorded, state, step, settle, reads: placed, waiting: () => mergeWriterSummary(state.mergeWriter).queue.filter(entry => (entry as { waiting?: string }).waiting).map(entry => entry.key) };
 }
 
 test('integration:red-base-only-fix-trials — while main fails, only the base repair (here changing what the failing test reads) is trialled; the others wait for a green base, across a merge that leaves main red, and start once main changes what fails', async () => {
@@ -183,4 +184,20 @@ test('e2e:held-candidates-no-trial — with main red, a base-repair head starts 
   await run.step();
   await run.step();
   assert.deepEqual(run.trialled, ['GY-5', 'GY-1'], 'the repair is trialled first, the earlier ordinary head after main is green');
+});
+
+// GY-3613: the batch gate's check of this file failed on d20ba3daba5f and passed on its re-run. The
+// harness then stated no trial-slot input of its own, so the cycle's parallel count came from
+// whatever machine ran the file — a two-CPU shard computed parallel 1 and trialled one head of the
+// two the scenarios assert. GY-3592 and GY-3609 stated the slots; this pin keeps them stated: take
+// any one away and the count the cycle computes falls with it, on every machine, not just a small one.
+test('unit:red-base-only-fix-trials-pinned — the harness states every trial-slot input itself, so the machine running the file cannot cut its two-head cycle to one', async () => {
+  const work = [item('w1', 'GY-1', unrelated, start - 5_000), item('w2', 'GY-2', fix, start - 1_000, { title: repairTitle }), item('w4', 'GY-4', hotfix, start - 1_000, { title: 'Hotfix: main passes again' })];
+  const stated = harness(work).reads;
+  assert.ok(Number.isInteger(stated.parallel) && stated.parallel! >= 2, 'the harness states its parallel count, not the machine\'s own default');
+  assert.ok(Number.isInteger(stated.cores) && stated.cores! >= 2 * stated.parallel!, 'the harness states its cores, not the machine\'s');
+  const memory = await stated.memory?.();
+  assert.ok(!!memory, 'the harness states its memory reading, not the machine\'s');
+  assert.equal(trialSlotCount(stated.cores!, stated.parallel!, await trialAffordableFiles(stated.memory)), stated.parallel,
+    'the cycle trials both heads the scenarios assert, whatever machine runs the file');
 });
