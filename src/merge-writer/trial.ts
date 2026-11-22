@@ -23,7 +23,7 @@ import { configHome } from '../install/secrets.js';
 import { mergeGateSchema } from '../model-boundary/delivery-policy.js';
 import type { GateCheck } from '../model/delivery-policy.js';
 import { containerTrialE2e, trialContainerBoundary, trialContainerDependencies, trialImage } from './trial-container.js';
-import { cachedPasses, commitDependencies, dependencyKey, moduleFile, recordPasses, testResultKeys, warmDependencies } from './trial-caches.js';
+import { cachedPasses, commitDependencies, dependencyKey, recordPasses, testResultKeys, warmDependencies } from './trial-caches.js';
 import { shellQuote } from '../shell-quote.js';
 import { HostDroppedError, readShardHosts, shardSshSession, type ShardSshSession, runShardsOnHosts, realFreeCores, recordRemoteShardRun, remoteShardSession, shardHosts, splitLocalOnlyTests, trialImageHasBrowser, underHeatLimit, type HostReading, type PlacedHost } from './remote-shards.js';
 import { repositoryTrialImage, trialDockerfile, TrialRepositoryImageError } from './repository-trial-image.js';
@@ -397,6 +397,8 @@ export interface TrialRun {
   timedOut?: boolean;
   /** GY-2965: how every bound E2E case ran against the served head; present when the item names e2e: proofs. */
   e2e?: TrialE2eCase[];
+  /** GY-3639: of the selected test files, how many an earlier trial's pass served and how many ran; present when any was selected under the cache. */
+  testCache?: { cached: number; ran: number };
 }
 /** A trial's phases, in order (GY-1832): the checkout and its install, the build, the test selection, the test run. */
 export const trialPhases = ['install', 'build', 'selection', 'tests'] as const;
@@ -1180,6 +1182,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
   const log: string[] = [];
   // GY-2965: how the item's bound E2E cases ran against the served head, filled once the build has passed and riding every verdict after it.
   const e2e: TrialE2eCase[] = [];
+  let testCache = { cached: 0, ran: 0 };
   const remaining = () => Math.max(1000, deadline - now());
   const tail = () => log.join('\n').slice(-tailLength);
   const output = (error: unknown) => {
@@ -1285,6 +1288,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     return { build, tests, durationMs: Math.max(0, now() - startedAt), logTail: logTail === undefined ? tail() : `${logTail}\n${line}`, runnerExit, ...(groups ? { groups } : {}), phases: closed,
       ...(detail?.failingCase ? { failingCase: detail.failingCase } : {}),
       ...(detail?.timedOut ? { timedOut: true } : {}),
+      ...(testCache.cached + testCache.ran ? { testCache } : {}),
       ...(e2e.length ? { e2e } : {}) };
   };
   const holds = async (path: string) => {
@@ -1549,10 +1553,10 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     if (!selection.ok) return result({ passed: 0, failed: [strategy.command], files: 0 });
     const pattern = new RegExp(strategy.pattern);
     let selected = selection.out.split('\n').map(line => line.trim()).filter(line => pattern.test(line));
-    // GY-3418: a selected file that passed in an earlier trial with the same content, imports and
-    // dependencies is not run again — unless the change touches a file whose effect imports cannot
-    // trace (docs, data, configuration); the proof files the caller adds always run.
-    const cached = dependencies && input.changedFiles.every(moduleFile) ? cachedPasses(caches, testResultKeys(worktree, selected, dependencies)) : new Set<string>();
+    // GY-3418: a selected file that passed in an earlier trial with the same content, imports, data
+    // files and dependencies is not run again; the proof files the caller adds always run. GY-3639:
+    // each file's key decides alone, so a doc or a case edited beside code leaves the others cached.
+    const cached = dependencies ? cachedPasses(caches, testResultKeys(worktree, selected, dependencies)) : new Set<string>();
     if (cached.size) {
       log.push(`test-result cache: ${cached.size} file(s) passed in an earlier trial with the same content, imports and dependencies, so they are not run again: ${[...cached].join(', ')}`);
       selected = selected.filter(file => !cached.has(file));
@@ -1565,6 +1569,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     }
     // A cached pass counts in the verdict as the pass it was; a file selectFiles runs anyway counts once.
     const counted = new Set([...files, ...cached]).size;
+    if (dependencies) testCache = { cached: testCache.cached + counted - files.length, ran: testCache.ran + files.length };
     // An affected selection of nothing runs nothing.
     if (!files.length) return result({ passed: counted, failed: [], files: counted });
     enter('tests');
