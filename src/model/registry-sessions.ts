@@ -124,6 +124,7 @@ export function accountIneligibility(registry: AgentRegistry, account: FleetAcco
   if (account.quota.loggedIn === false) return `${account.name} is not logged in${account.quota.reason ? `: ${account.quota.reason}; checked again within 30 minutes` : ''}`;
   const pi = registry.runtimes.some(runtime => runtime.name === account.runtime && smokeTestedKinds.includes(runtime.launch.kind));
   if (account.smoke?.result === 'fail' && !(options.expiredSmokeRetestable && pi && smokeFailureDue(account, now))) return `${account.name} failed its smoke test${account.smoke.reason ? `: ${account.smoke.reason}` : ''}; it is tested again after ${smokeRetestMs / 60_000} minutes, or at once when the account is changed (master registry account set)`;
+  if (account.quota.state === 'broken' && account.quota.reason?.startsWith('ran on ')) return `${account.name} is broken: it ${account.quota.reason}; checked again within 30 minutes`;
   if (account.quota.state === 'broken') return `${account.name} is broken: its live request failed${account.quota.reason ? ` (${account.quota.reason})` : ''}; checked again within 30 minutes`;
   if (exhaustionEvidence(account.quota, now)) return `${account.name} quota is exhausted${until(account.quota.resetsAt)}${account.quota.reason ? ` (${account.quota.reason})` : ''}`;
   const running = liveSessions(registry).filter(session => session.account === account.name).length;
