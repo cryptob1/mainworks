@@ -43,7 +43,7 @@ function extractJsonMessage(text: string): { reason: string | null; apiError: st
  */
 export function parseProbeFailure(
   output: string | null | undefined,
-  now = Date.now(),
+  now: number | null = null,
   parseReset: (text: string, now: number) => string | null = parseResetTime,
 ): ProbeFailure {
   const raw = typeof output === 'string' ? output : '';
@@ -74,8 +74,9 @@ export function parseProbeFailure(
     }
   }
   const finalReason = (reason || probeFallbackReason).slice(0, probeMaxLength).trim() || probeFallbackReason;
-  const stated = parseReset(finalReason, now) ?? (tail ? parseReset(tail, now) : null);
-  const resetsAt = stated && Date.parse(stated) > now ? stated : null;
+  // The reset time is read only against the caller's clock; without one there is no reset.
+  const stated = now === null ? null : parseReset(finalReason, now) ?? (tail ? parseReset(tail, now) : null);
+  const resetsAt = stated && Date.parse(stated) > now! ? stated : null;
   return { reason: finalReason, resetsAt, apiError };
 }
 
