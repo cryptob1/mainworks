@@ -90,11 +90,12 @@ test('e2e:dashboard-fun — with reduced motion set, a merge brings the toast an
 
 test('e2e:dashboard-fun — a goal whose last task ships gets a larger burst', async ({ page }) => {
   test.setTimeout(60_000);
-  const task = item('GY-1', 'Change priority from the dashboard'), goal = { ...item('GY-2', 'Six merges an hour'), lease: null, dependencies: [task.id] };
-  const state = await serve(page, [task, goal]);
-  state.work = [merged(task), goal];
-  await expect(page.locator('[data-toast="GY-1"]')).toContainText(`${name} shipped “Change priority from the dashboard” in 38 min`, live);
-  await expect(page.locator('[data-toast="GY-1"]')).toContainText('That finishes “Six merges an hour”.');
+  const earlier = merged({ ...item('GY-1', 'Earlier task'), goal: 'Six merges an hour' });
+  const last = { ...item('GY-2', 'Change priority from the dashboard'), goal: 'Six merges an hour' };
+  const state = await serve(page, [earlier, last]);
+  state.work = [earlier, merged(last)];
+  await expect(page.locator('[data-toast="GY-2"]')).toContainText(`${name} shipped “Change priority from the dashboard” in 38 min`, live);
+  await expect(page.locator('[data-toast="GY-2"]')).toContainText('That finishes “Six merges an hour”.');
   await expect(page.locator('.confetti.big')).toHaveCount(1);
 });
 

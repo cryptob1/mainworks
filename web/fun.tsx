@@ -1,6 +1,6 @@
 import { PRODUCT_NAME } from '../src/model/product';
 import { useState, type CSSProperties } from 'react';
-import type { Work } from '../src/model';
+import { isClosed, type Work } from '../src/model';
 import { plainDuration } from '../src/pipeline-speed';
 
 /**
@@ -77,15 +77,18 @@ export function buildTime(item: Work): string | null {
   return Number.isNaN(merged) || Number.isNaN(started) ? null : plainDuration((merged - started) / 60_000);
 }
 /** The toast when an item goes live while the page is open: who built it, what, and how long it took, with confetti — a larger burst when it was its goal's last task. The neon pulse (GY-3272) stops under reduced motion. */
-export function ShippedToast({ item, goal, onClose }: { item: Work; goal?: Work | null; onClose(): void }) {
+export function ShippedToast({ item, goal, onClose }: { item: Work; goal?: string | null; onClose(): void }) {
   const builder = builderOf(item), name = builder ? friendlyName(builder) ?? builder : builder, took = buildTime(item);
   return <><div className="toast pulse" aria-live="polite" data-toast={item.key} onClick={onClose}>
-    {builder ? <span title={builder}>{name}</span> : PRODUCT_NAME} shipped “{item.title}”{took && <> in {took}</>} 🎉{goal && <> That finishes “{goal.title}”.</>}
+    {builder ? <span title={builder}>{name}</span> : PRODUCT_NAME} shipped “{item.title}”{took && <> in {took}</>} 🎉{goal && <> That finishes “{goal}”.</>}
   </div><Confetti big={!!goal}/></>;
 }
-/** The open goal (an item with tasks) whose last open task is `item`, now that it shipped. */
-export const finishedGoal = (item: Work, work: Work[]) => work.find(goal => goal.stage !== 'done' && goal.dependencies?.includes(item.id)
-  && goal.dependencies.every(id => id === item.id || work.find(w => w.id === id)?.stage === 'done')) ?? null;
+/** The goal whose last non-closed task is `item`, now that it shipped (GY-3601). */
+export const finishedGoal = (item: Work, work: Work[], done: (w: Work) => boolean = w => w.stage === 'done'): string | null => {
+  if (!item.goal) return null;
+  const tasks = work.filter(w => w.goal === item.goal && !isClosed(w));
+  return tasks.length > 0 && tasks.every(w => w.id === item.id || done(w)) ? item.goal : null;
+};
 
 /** Whether an item's latest merge trial failed on the head it stands at — the row that earns the glitch flicker (GY-3272). */
 export const failedTrial = (item: Pick<Work, 'candidate' | 'mergeLedger'>) =>

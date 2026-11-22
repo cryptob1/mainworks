@@ -133,7 +133,8 @@ function App() {
   // GY-3268: an item that goes live while the page is open gets a toast naming its builder, and confetti;
   // GY-3601: live means merged and carried by the live commit, when one is known.
   const merged = useRef<Map<string, boolean> | null>(null);
-  const [shipped, setShipped] = useState<Work | null>(null);
+  const celebratedGoals = useRef<Set<string>>(new Set());
+  const [shipped, setShipped] = useState<{ item: Work; goal: string | null } | null>(null);
   useEffect(() => {
     if (!work.length) return;
     const waiting = typeof status?.live?.commit === 'string' && Array.isArray(status.live.waiting) ? new Set<string>(status.live.waiting) : new Set<string>();
@@ -141,7 +142,11 @@ function App() {
     const fresh = merged.current ? work.filter(w => isLive(w) && merged.current!.get(w.id) === false) : [];
     merged.current = new Map(work.map(w => [w.id, isLive(w)]));
     if (!fresh.length) return;
-    setShipped(fresh.at(-1)!);
+    const last = fresh.at(-1)!;
+    const goal = finishedGoal(last, work, isLive);
+    const celebrate = goal && !celebratedGoals.current.has(goal) ? goal : null;
+    if (celebrate) celebratedGoals.current.add(celebrate);
+    setShipped({ item: last, goal: celebrate });
   }, [work, status]);
   useEffect(() => { if (!shipped) return; const timer = setTimeout(() => setShipped(null), 8000); return () => clearTimeout(timer); }, [shipped]);
   // Every page has an address (GY-3322, GY-3598): following a link to #costs opens Costs under Settings,
@@ -175,7 +180,7 @@ function App() {
     <main className="main">{error && <div role="alert" className="notice danger">{error}{error === SIGN_IN_NEEDED && <> <button type="button" onClick={signOut}>Sign in</button></>}</div>}
       <TopBar {...dashboard} onPalette={() => setPalette(true)}/>{/* Keyed by item: a task opened from another open task starts on its own first tab, never on the last task's open diffs. */item ? <WorkDetails key={item.id} {...dashboard} item={item}/> : viewFor(view).render(dashboard)}</main>
     {creating && <CreateWork {...dashboard}/>}
-    {shipped && <ShippedToast key={shipped.id} item={shipped} goal={finishedGoal(shipped, work)} onClose={() => setShipped(null)}/>}
+    {shipped && <ShippedToast key={shipped.item.id} item={shipped.item} goal={shipped.goal} onClose={() => setShipped(null)}/>}
     <KeyboardNav dashboard={dashboard} palette={palette} setPalette={setPalette}/>
   </div>;
 }

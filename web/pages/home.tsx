@@ -5,13 +5,13 @@ import { humanAsk } from '../../src/model/human-ask';
 import { formatDuration } from '../../src/model/duration';
 import { classify, summarySentence } from '../groups';
 import { masterOwes } from './master';
-import { HomeBrief, HomeStatus } from '../components/home';
+import { HomeStatus } from '../components/home';
 
 /**
- * The Home place (GY-3598) answers "is it OK and what changed" (GY-3601): the status line and
- * incident cards first, then what needs you, since you last looked, goals and the box to the Lead.
+ * The Home place (GY-3598) answers "is it OK" (GY-3601): the status line and
+ * incident cards first, then what needs you and the summary.
  */
-export default function HomePage({ work, board, status, observedAt, api, setView, setSelected, setCreating }: Dashboard) {
+export default function HomePage({ work, board, status, observedAt, setView, setSelected, setCreating }: Dashboard) {
   const now = Number.isNaN(observedAt) ? Date.now() : observedAt;
   const requests = [...(status?.humanOnly ?? openHumanOnly(work.map(item => ({ work: item })), now))]
     .sort((a, b) => b.waitedMs - a.waitedMs);
@@ -50,7 +50,6 @@ export default function HomePage({ work, board, status, observedAt, api, setView
     {stall && <PageSection title="Stall alarm" className="work-group group-blocked" actions={<button type="button" className="text-button" onClick={() => setView('lead')}>Open Lead →</button>}>
       <p className="stall-alarm" role="alert">{stall}</p>
     </PageSection>}
-    <HomeBrief work={work} status={status} now={now} api={api} setView={setView} setSelected={setSelected}/>
     <PageSection title="Summary">
       <div className="home-summary-grid">
         <div className="home-summary-card">

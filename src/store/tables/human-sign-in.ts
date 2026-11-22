@@ -23,11 +23,3 @@ export const teamInvites = defineTable({
   code_hash text PRIMARY KEY, name text NOT NULL, expires_at timestamptz NOT NULL
 );`,
 });
-
-/** GY-3601: when each person last opened Home, so "Since you last looked" counts from their own visit. */
-export const homeVisits = defineTable({
-  name: 'home_visits', orderBy: 'principal',
-  ddl: `CREATE TABLE IF NOT EXISTS home_visits (
-  principal text PRIMARY KEY, seen_at timestamptz NOT NULL
-);`,
-});
