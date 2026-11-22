@@ -28,7 +28,7 @@ test('unit:readme-guide-details — guide setup prints every prerequisite, check
     'Contents read/write on the one repository', '--merge-token-stdin',
     'npx @cryptob1/graphyard install --repo OWNER/NAME --plan', '--provider local',
   ]) assert.ok(setup.includes(detail), `guide setup carries ${detail}`);
-  assert.ok(readme.includes('graphyard guide setup'), 'README names graphyard guide setup');
+  assert.ok(readme.includes('mainworks guide setup'), 'README names mainworks guide setup');
 });
 
 test('unit:readme-guide-details — guide publishing prints the publishing account setup the landing page summarizes, and the README names it', () => {
@@ -40,5 +40,5 @@ test('unit:readme-guide-details — guide publishing prints the publishing accou
     'placeholder `0.0.0`', 'npm publish --access public', 'Trusted Publisher', 'cryptob1/graphyard',
     'workflow **publish.yml**', 'grant **cryptob1/graphyard** Actions write access',
   ]) assert.ok(publishing.includes(detail), `guide publishing carries ${detail}`);
-  assert.ok(readme.includes('graphyard guide publishing'), 'README names graphyard guide publishing');
+  assert.ok(readme.includes('mainworks guide publishing'), 'README names mainworks guide publishing');
 });

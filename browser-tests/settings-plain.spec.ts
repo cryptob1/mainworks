@@ -98,7 +98,7 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
   await expect(main.locator('details.more-details', { hasText: 'Account details' })).toContainText('/home/agent/.coding_agents/spent-a');
 
   // Setup: stall alerts in one line, the terminal commands in one closed fold.
-  await openTab(page, 'Setup', 'Set up Graphyard');
+  await openTab(page, 'Setup', 'Set up Mainworks');
   await expect(main.locator('[data-alerts] p').first()).toHaveText('Stall alerts: off');
   await expect(main.getByText('run.alertUrl')).toBeHidden();
   const terminal = main.locator('details', { hasText: 'Watch agents in a terminal' });
@@ -113,6 +113,6 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
 
 test('e2e:settings-plain — stall alerts that are on read with their window', async ({ page }) => {
   await open(page, 20);
-  await openTab(page, 'Setup', 'Set up Graphyard');
+  await openTab(page, 'Setup', 'Set up Mainworks');
   await expect(page.getByRole('main').locator('[data-alerts] p').first()).toHaveText('Stall alerts: on (after 20 min)');
 });
