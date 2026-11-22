@@ -14,10 +14,6 @@ import { ChildProcessError, defaultChildTimeoutMs } from '../src/child-runner.js
 import { alignLoopUnit, installLoopSupervisor, LoopSupervisorRefusal, loopStopTimeoutSeconds, loopSupervision, loopSupervisionAttention, loopUnitDirectory, loopUnitName, loopUnitText, loopWatchdogSeconds, supervisorSupport, temporaryDirectories, testSuiteHomeGuard, underTestRunner, unsupervisedInstruction } from '../src/install/loop-unit.js';
 import { deployUnitOf, perInstallUnits } from '../src/install/units.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-
-// GY-3624: this file stays on the trial's own machine. A remote shard keeps the suite's fixtures
-// under ~/.graphyard/runs (its /tmp and HOME are memory-backed and its /var/tmp is read-only), and
-// the coordinator guard these cases exercise refuses any checkout under a .graphyard directory.
 // Time-bomb allowance (GY-1694): Date.now() only measures how long the bounded runs took.
 
 /**

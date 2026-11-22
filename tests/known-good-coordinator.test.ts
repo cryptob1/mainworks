@@ -15,10 +15,6 @@ import { operationsCommand } from '../src/cli/master/operations.js';
 import type { MasterSession } from '../src/cli/master/session.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-3624: this file stays on the trial's own machine. A remote shard keeps the suite's fixtures
-// under ~/.graphyard/runs (its /tmp and HOME are memory-backed and its /var/tmp is read-only), and
-// the coordinator guard these cases exercise refuses any checkout under a .graphyard directory.
-
 /** GY-1529: the known-good coordinator — a pinned checkout at the last promoted SHA runs the loop; recover repins it. */
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
 /** A real repository with three commits; npm is a recorded stub, git is real. */

@@ -12,10 +12,6 @@ import * as supervisorModule from '../src/install/loop-unit.js';
 import { installLoopSupervisor, loopUnitText } from '../src/install/loop-unit.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-3624: this file stays on the trial's own machine. A remote shard keeps the suite's fixtures
-// under ~/.graphyard/runs (its /tmp and HOME are memory-backed and its /var/tmp is read-only), and
-// the coordinator guard these cases exercise refuses any checkout under a .graphyard directory.
-
 /**
  * GY-1441: several installations on one host. The greenfield pilot (2026-10-07) ran a second
  * install on the host that serves production and found three ways it could disrupt the first: a
