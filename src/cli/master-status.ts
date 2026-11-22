@@ -27,6 +27,7 @@ import { attemptLabel, readAttemptLaunch, type AttemptLaunch } from '../master/s
 import { plainStage, waitingReason } from '../model/plain-stage.js';
 import { stalledDelivery, stalledDeliveryAction } from '../daemon/master-stalled-delivery.js';
 import { failureHeld, repeatedFailureCause } from '../daemon/repeated-failure.js';
+import { reworkCapCause, reworkCapHeld } from '../model/rework-ground.js';
 import { alertMinutesOf } from '../daemon/yard-alerts.js';
 import { stallAlarmKey } from '../daemon/stall-alarm.js';
 import { stoppedRoles, type StoppedRole } from '../master/stopped-roles.js';
@@ -177,7 +178,11 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     return item ? [{ subject: item.key, text: `${item.key}'s worker launch failed ${entry.failures} times with the same reason, so it is not relaunched until ${entry.until}: ${entry.reason}`,
       next: `Repair the cause the reason names; the loop launches ${item.key} again once its backoff ends` }] : [];
   });
-  const reworked = reworkAttention(open);
+  const reworkCaps = open.flatMap(item => {
+    const cap = reworkCapCause(item);
+    return cap ? [{ subject: item.key, text: cap.detail, next: `Revise requirements (graphyard master requirements ${item.key} FILE REASON), split (graphyard master create FILE), or park (graphyard master hold ${item.key} REASON)` }] : [];
+  });
+  const reworked = reworkAttention(open.filter(item => !reworkCapHeld(item)));
   // GY-3331: a product review that could not run, one line per item — the fault is the launch's
   // or the reviewer's own environment, retried on another eligible reviewer, never the worker's.
   const couldNotRunReviews = open.flatMap(item => {
@@ -226,7 +231,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     caretaker: state?.caretaker ? `Last ran ${formatAge(Date.parse(state.caretaker.at), now)} ago: ${state.caretaker.result}` : 'Not run yet',
     // GY-3095: the pipeline has stopped where a role cannot launch; each line names the role, the refusal, how long it has lasted and the next command.
     // GY-3204: and each application whose versionUrl lags main or fails to answer.
-    attention: [...humanAttention, ...leaseLosses, ...blockerAttention, ...drained, ...growth, ...trialImageFault, ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now) : []), ...backedOff, ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...wrongModelAttention(fleet), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(readRemoteShardRuns(root)), ...gateStalled, ...overloadAttention, ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
+    attention: [...humanAttention, ...reworkCaps, ...leaseLosses, ...blockerAttention, ...drained, ...growth, ...trialImageFault, ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now) : []), ...backedOff, ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...wrongModelAttention(fleet), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(readRemoteShardRuns(root)), ...gateStalled, ...overloadAttention, ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
     // GY-3199: the control plane's own update record — the Graphyard commit this install runs, its
     // last check and last update, the step of a failed upgrade, and the staleness the daily
     // diagnostics reports (a check over a day old, or a verified commit first seen over a day ago

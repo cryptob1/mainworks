@@ -7,6 +7,7 @@ import type { Work } from '../model.js';
 import { parseBaseFailureReason } from '../merge-writer/executor.js';
 import { gateCauses, type GateRecord } from '../batch-gate.js';
 import { normalizeFailureReason, repeatedFailureCause, repeatingItems } from './repeated-failure.js';
+import { reworkCapCause } from '../model/rework-ground.js';
 import { stallAlarmKey } from './stall-alarm.js';
 
 export const stalledDeliveryAction = 'Diagnose the shared base failure, file or advance its repair, and resume delivery with every test and merge requirement intact. Act as the operator-agent; no human review or approval is needed.';
@@ -46,7 +47,9 @@ export function masterCauses(work: readonly Work[], actions: DaemonState['action
   for (const item of open) {
     if (!item.criteria.length) causes.push(cause(subject('draft', item.id), `${item.key}: Waiting on the master: writing the criteria; next action master requirements ${item.key} FILE REASON`));
     if (item.blocker) causes.push(cause(subject('blocker', item.id), `${item.key}: ${item.blocker}; diagnose and repair, then master unblock ${item.key} REASON`));
-    const repeat = repeatedFailureCause(runs[item.id]);
+    const cap = reworkCapCause(item);
+    if (cap) causes.push(cause(cap.key, cap.detail));
+    const repeat = cap ? null : repeatedFailureCause(runs[item.id]);
     if (repeat) causes.push(cause(repeat.key, repeat.detail));
     for (const action of item.actionQueue?.actions ?? []) {
       const last = action.history.at(-1);
