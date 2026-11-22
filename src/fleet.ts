@@ -19,7 +19,7 @@ import { fleetOrder, roleUnsupported } from './model/worker-preference.js';
 import type { SmokeResult } from './runner/pi.js';
 import { accountIneligibility, lastGoodUsage, deriveAccountPlan, pinnedInstall, fleetRoles, liveSessions, roleLimit, proposedConcurrency, proposedRuntimeRoles, proposedRuntimes, rolePolicy, roleRuntimeKinds, roleRuntimeRefusal, smokeFailureDue, smokeTestedKinds, type AccountKey, type AgentRegistry, type RolePolicy, type FleetAccount, type FleetAccountInput, type FleetModel, type FleetRole, type FleetRoleName, type FleetRuntime, type FleetSession, type LaunchContract, type QuotaObservation, type RunOutcome, type SessionSkip, type SmokeObservation } from './model/registry.js';
 import { parseProbeFailure } from './model/account-quota.js';
-import { hostAccountCheck, recordHostAccountCheck, clearEndedHostAccountSessions, clearHostAccountSession, hostAccountSessions, registerHostAccountSession } from './host-accounts.js';
+import { hostAccountCheck, hostAccountUsage, recordHostAccountCheck, recordHostAccountUsage, withHostAccountUsageLock, clearEndedHostAccountSessions, clearHostAccountSession, hostAccountSessions, registerHostAccountSession } from './host-accounts.js';
 export { exhaustionTail, outOfCreditsScreen } from './exhaustion-screen.js';
 
 /**
@@ -231,6 +231,26 @@ export async function checkAccountLive(account: FleetAccount, runtime: FleetRunt
   return running;
 }
 
+/** A provider usage read is shared by every install on the host and taken at most once in this interval per login home (GY-3500). */
+export const usageReadIntervalMs = 5 * 60_000;
+/** The account's reading, from the host's record when one was taken within the interval on this login and key; otherwise one provider read, written back. */
+async function readAccountShared(account: FleetAccount, runtime: FleetRuntime, probe: FleetProbe, allAccounts: readonly FleetAccount[], model: string | undefined, now: number): Promise<{ quota: QuotaObservation; health: EnvironmentHealth | null }> {
+  const home = account.credential.home, key = account.credential.key ?? null;
+  // A read with quota off, or one that must be fresh, never touches the shared record.
+  if (!home || probe.quota === false || probe.cacheMs === 0) return readAccount(account, runtime, probe, allAccounts, model);
+  const fresh = () => {
+    const saved = hostAccountUsage(home), age = saved ? now - Date.parse(saved.at) : NaN;
+    return saved && JSON.stringify(saved.key ?? null) === JSON.stringify(key) && age >= 0 && age < usageReadIntervalMs ? { quota: saved.quota, health: saved.health } : null;
+  };
+  return fresh() ?? withHostAccountUsageLock(home, async () => {
+    const saved = fresh();
+    if (saved) return saved;
+    const reading = await readAccount(account, runtime, probe, allAccounts, model);
+    try { recordHostAccountUsage(home, { key, at: new Date(now).toISOString(), ...reading }); } catch { /* the next read retries */ }
+    return reading;
+  });
+}
+
 export async function observeAccount(account: FleetAccount, runtime: FleetRuntime, probe: FleetProbe = {}, allAccounts: readonly FleetAccount[] = [account], model?: string): Promise<{ quota: QuotaObservation; health: EnvironmentHealth | null }> {
   const now = probe.now?.() ?? Date.now(), saved = account.credential.home ? hostAccountCheck(account.credential.home) : null;
   const cached = saved && JSON.stringify(saved.key ?? null) === JSON.stringify(account.credential.key ?? null) ? saved : null;
@@ -250,10 +270,10 @@ export async function observeAccount(account: FleetAccount, runtime: FleetRuntim
   const ceiling = probe.ceilingPercent ?? defaultQuotaCeilingPercent;
   if (cached && !signalled && Date.parse(cached.nextCheck) > now) {
     if (cached.quota.state !== 'available') return { quota: cached.quota, health: null };
-    const reading = await readAccount(account, runtime, probe, allAccounts, model);
+    const reading = await readAccountShared(account, runtime, probe, allAccounts, model, now);
     return { ...reading, quota: { ...cached.quota, usage: lastGoodUsage(account, reading.quota, now), identity: reading.quota.identity } };
   }
-  const reading = await readAccount(account, runtime, { ...probe, ...(account.quota.loggedIn === false ? { cacheMs: 0 } : {}) }, allAccounts, model);
+  const reading = await readAccountShared(account, runtime, { ...probe, ...(account.quota.loggedIn === false ? { cacheMs: 0 } : {}) }, allAccounts, model, now);
   const usage = lastGoodUsage(account, reading.quota, now);
   // A usage window at its ceiling, or a reading of exhausted, only asks for the live request; it never holds by itself.
   const spent = reading.quota.state === 'exhausted' || usage.some(window => window.percent >= ceiling && !!window.resetsAt && Date.parse(window.resetsAt) > now);
