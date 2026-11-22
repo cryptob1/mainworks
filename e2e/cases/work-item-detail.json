@@ -100,13 +100,7 @@
       "text": "Open control plane",
       "exact": false
     },
-    {
-      "kind": "browser",
-      "name": "unfold the backlog group",
-      "action": "click",
-      "text": "Backlog",
-      "exact": false
-    },
+    { "kind": "browser", "name": "find the item by searching Work", "action": "fill", "label": "Search work", "value": "E2E case {{case}} run {{run}}" },
     {
       "kind": "browser",
       "action": "click",
