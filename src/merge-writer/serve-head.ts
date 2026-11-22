@@ -77,6 +77,8 @@ export async function serveStaticSite(directory: string, sha: string): Promise<S
       return send(200, staticTypes[extname(path).toLowerCase()] ?? 'application/octet-stream', await readFile(path));
     } catch { return send(404, 'text/plain; charset=utf-8', 'Not found\n'); }
   });
+  // The loop serves a kept preview until its item moves on; the server alone never keeps a process alive.
+  server.unref();
   await new Promise<void>((accept, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', () => accept()); });
   const { port } = server.address() as { port: number };
   return { url: `http://127.0.0.1:${port}`, close: () => new Promise<void>(accept => { server.closeAllConnections?.(); server.close(() => accept()); }) };
