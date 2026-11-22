@@ -152,6 +152,8 @@ WantedBy=multi-user.target
 GRAPHYARD_UNIT
   systemctl daemon-reload
   systemctl enable --now graphyard-sshd
+  # An older prepare's config forced one helper for every key: restart so this config is the one serving.
+  systemctl restart graphyard-sshd
   if command -v ufw >/dev/null && ufw status | grep -q 'Status: active'; then ufw allow in on tailscale0 to any port ${computePort} proto tcp; fi
   target="$target:${computePort}"
   echo "Port 22 here is Tailscale SSH, which skips the shim. Tailnet check: in your tailnet policy, every ssh rule reaching this machine needs action check, never accept, so no account here logs in unattended. Graphyard reaches $user on port ${computePort}."

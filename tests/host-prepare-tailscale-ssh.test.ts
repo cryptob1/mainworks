@@ -45,6 +45,10 @@ test(`${proof} — on a Tailscale SSH host the printed script runs an OpenSSH fo
   const log = await readFile(join(desk, 'log'), 'utf8');
   assert.match(log, /^sshd -t -f \S*sshd_graphyard_config$/m, 'the config is checked before it runs');
   assert.match(log, /^systemctl enable --now graphyard-sshd$/m);
+  assert.match(log, /^systemctl restart graphyard-sshd$/m, 'a running compute sshd takes the new config');
+  // GY-3688: no ForceCommand, so each install's key runs the helper its own line binds; every line is restricted.
+  assert.ok(!/^ForceCommand/m.test(sshd));
+  assert.match(await readFile(join(hosts.home('desk'), '.ssh', 'authorized_keys'), 'utf8'), /^restrict,command="graphyard-host-shim-[0-9a-f]{64}" ssh-ed25519 \S+ graphyard-host-fixture\n$/);
   assert.match(hosts.prepareOutput('desk'), /Port 22 here is Tailscale SSH, which skips the shim\. Tailnet check: in your tailnet policy, every ssh rule reaching this machine needs action check, never accept/);
   assert.match(hosts.prepareOutput('desk'), /Ready\. On the Graphyard machine run: graphyard host add gy-compute@desk:2222\s*$/);
 
