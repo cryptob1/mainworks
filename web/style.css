@@ -565,7 +565,7 @@ kbd{font-family:var(--font-mono);font-size:11px;color:var(--text);background:var
 /* GY-3310: the served build, part of the sidebar foot (GY-3479), pinned to the bottom-left corner; the sidebar keeps its strip clear, and the page's own bottom padding (never the shell's, which would make the document scroll) clears it in main.
    On a phone the folded foot shows only the label; the open menu shows it in the foot's own flow. */
 .version-label{position:fixed;left:0;bottom:0;z-index:5;padding:2px 8px;font-size:10px;line-height:14px;color:var(--text-3);background:var(--bg);font-family:var(--font-mono,monospace);pointer-events:none}@media(min-width:651px){.sidebar-inner{padding-bottom:calc(var(--space-5) + 18px)}}
-@media(max-width:650px){.sidebar:not(.open) .sidebar-bottom{display:contents}.sidebar:not(.open) .sidebar-bottom>:not(.version-label){display:none}.sidebar.open .version-label{position:static;padding:0}}
+@media(max-width:650px){.sidebar:not(.open) .sidebar-bottom{display:contents}.sidebar:not(.open) .sidebar-bottom>:not(.version-label){display:none}/* GY-3601: on a phone the label reads up the page's left gutter, so it never covers a control wherever the page flows. */.sidebar:not(.open) .version-label{writing-mode:vertical-rl;padding:6px 1px;line-height:12px}.sidebar.open .version-label{position:static;padding:0}}
 /* Figure tables (GY-3315, GY-3322): the shared table for numbers, right-aligned under their headers in tabular figures;
    it stays a table on a phone, where the detail columns fold away. Inside a card the table drops its own border. */
 .table-scroll{overflow-x:auto;max-width:100%}.panel .sessions-table{border:0}
@@ -630,6 +630,13 @@ header.main-top-bar{height:auto;min-height:60px;display:flex;flex-wrap:wrap;alig
 /* GY-3598: a test case's long ids, commands and paths wrap inside its card, so the Test-case library never scrolls sideways at 390 px. */
 .scenario-list{grid-template-columns:minmax(0,1fr)}.scenario-card,.scenario-columns>div{min-width:0;overflow-wrap:anywhere}.scenario-card code{white-space:normal;word-break:break-all}
 .caretaker-lines{list-style:none;padding:0;margin:0 0 var(--space-3);display:grid;gap:var(--space-2);font-size:var(--type-small)}
+/* GY-3601: Home's status line and incident cards. */
+.home-status-line{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin:18px 0 0;font-size:30px;font-weight:600;letter-spacing:-.6px;line-height:1.2;overflow-wrap:anywhere}
+.home-status-line span{font-weight:450;color:var(--text-2)}
+@media(max-width:650px){.home-status-line{font-size:28px;gap:2px 12px;margin-top:12px}}
+.state-moving{color:var(--shipped)}.state-idle{color:var(--text-2)}.state-slowed{color:var(--needs-you)}.state-stopped{color:var(--blocked)}
+.incidents{display:grid;gap:var(--space-2);margin-top:var(--space-3)}
+.incident p{margin:0 0 6px;overflow-wrap:anywhere}.incident-broke{font-size:var(--type-sentence);font-weight:600}
 /* GY-3600: Work is one list of tasks grouped by goal, with Needs you pinned on top. */
 .work-filters{display:flex;flex-wrap:wrap;gap:var(--space-2);margin:0 0 var(--space-4)}
 .needs-you-strip{border-color:color-mix(in srgb,var(--needs-you) 45%,var(--bg))}.needs-you-strip h2{display:flex;align-items:center}
