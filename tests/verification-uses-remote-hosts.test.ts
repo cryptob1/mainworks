@@ -63,7 +63,9 @@ async function verification(label: string, selected: string[]) {
     ...Object.fromEntries([...plain.map(file => [file, `test("adds ${label}", () => equal(1 + 1, 2))\n`]), ...docker.map(file => [file, `import { docker } from "docker"\ntest("runs ${label}", () => docker.run("alpine"))\n`])]) });
   const result = await runWorkerCheck({ root: repository.root, base: await temporaryDirectory(`${label}-base`), baseBranch: 'main', key: 'GY-1', head: repository.sha, check: 'test',
     trial: input => runTrial({ ...input, run, cores: 2, timeoutMs: 240_000,
-      remote: { hosts: ['gy-compute@host-a', 'gy-compute@host-b'], read: async named => (await readShardHosts(named, run, 2)).map((reading, index) => ({ ...reading, cores: index ? 8 : 2, busy: index ? 0 : 2, steal: 0, celsius: null })) } }) });
+      // GY-3607: the reading is the fixture's own — away pinned false, so a probe hiccup under load never reads
+      // a ready host away and moves this trial's shards onto this machine.
+      remote: { hosts: ['gy-compute@host-a', 'gy-compute@host-b'], read: async named => (await readShardHosts(named, run, 2)).map((reading, index) => ({ ...reading, cores: index ? 8 : 2, busy: index ? 0 : 2, steal: 0, celsius: null, away: false })) } }) });
   const lines = existsSync(answers) ? (await readFile(answers, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { file: string; where: string; slot: boolean }) : [];
   return { result, lines, root: repository.root };
 }
