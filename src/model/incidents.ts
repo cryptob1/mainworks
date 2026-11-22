@@ -79,7 +79,7 @@ export function incidentsFromStatus(status: StatusSnapshot, work: Work[], now: n
   const flying = inFlight(work, now).length;
   const last = Math.max(...work.filter(merged).map(mergedAt), Number.NEGATIVE_INFINITY);
   if (flying && now - last >= 2 * hour) incidents.push({ kind: 'no-merge', broke: Number.isFinite(last) ? `Nothing has merged for ${span(now - last)}.` : 'Nothing has merged yet.',
-    impact: `${plural(flying, 'task')} in flight ${flying === 1 ? 'is' : 'are'} not landing.`, doing: 'Builders keep working; nothing reaches main.', action: { label: 'Ask the Lead', open: 'master' } });
+    impact: `${plural(flying, 'task')} in flight ${flying === 1 ? 'is' : 'are'} stuck.`, doing: 'Builders keep working.', action: { label: 'Ask the Lead', open: 'master' } });
   return incidents;
 }
 
