@@ -65,7 +65,7 @@ for (const width of [390, 1280]) {
     await serve(page, { merged24h: 0, median: 40, p90: 400, samples: 10, lastMergeAt: at(150), oldest: { id: 'fixture-GY-3', key: 'GY-3', title: 'Slow', stage: 'test', releasedAt: at(100) } });
     const line = page.locator('[data-speed-line]');
     await expect(line).toHaveAttribute('data-speed-line', 'warning');
-    await expect(page.locator('[data-speed-figure]')).toHaveText('0.0 merges an hour (0 in the last 24 hours)');
+    await expect(page.locator('[data-status-line]')).toContainText('merges an hour today');
     await expect(line).toContainText(/^No merge for 2 h 3\d min, over three times the usual 40 min\. Oldest: GY-3 Slow, in its merge trial\. Next: open GY-3 and clear what holds it\./);
     expect(await noSideScroll(page)).toBe(true);
   });

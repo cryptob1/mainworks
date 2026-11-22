@@ -37,8 +37,8 @@ export function HomeStatus({ work, status, now, setView, setSelected }: Omit<Hom
 
 /** A Lead decision since the last look: a closure or a rework, with its reason. */
 const decisions = (work: Work[], since: number) => [
-  ...work.flatMap(w => w.closure && w.closure.kind !== 'delivered-observation' && Date.parse(w.closure.at) > since ? [{ at: w.closure.at, text: `the Lead closed “${w.title}”: ${w.closure.reason}` }] : []),
-  ...work.flatMap(w => w.lastRework && Date.parse(w.lastRework.at) > since ? [{ at: w.lastRework.at, text: `the Lead sent “${w.title}” back: ${w.lastRework.reason}` }] : []),
+  ...work.flatMap(w => w.closure && w.closure.kind !== 'delivered-observation' && Date.parse(w.closure.at) > since ? [{ at: w.closure.at, text: `the Lead closed “${w.title}”: ${w.closure.reason}`, ask: `Why did you close “${w.title}”?`, other: `Instead of closing “${w.title}”, ` }] : []),
+  ...work.flatMap(w => w.lastRework && Date.parse(w.lastRework.at) > since ? [{ at: w.lastRework.at, text: `the Lead sent “${w.title}” back: ${w.lastRework.reason}`, ask: `Why did you send “${w.title}” back?`, other: `Instead of sending “${w.title}” back, ` }] : []),
 ].sort((a, b) => b.at.localeCompare(a.at));
 
 /** "Since you last looked", from this person's own last visit, then active goals and the box that tells the Lead. */
@@ -52,7 +52,7 @@ export function HomeBrief({ work, status, now, api }: HomeProps) {
   const live = fresh.filter(w => waiting && !waiting.has(w.key)), releasing = fresh.filter(w => !waiting || waiting.has(w.key));
   const led = since ? decisions(work, since) : [];
   const spend = since ? work.flatMap(w => (w.humanRequests ?? []).filter(r => r.kind === 'money-or-accounts' && r.answer && Date.parse(r.answer.at) > since)).length : 0;
-  const bullets = [...(live.length ? [{ text: `Live: ${live.map(w => w.title).join(', ')}.` }] : []), ...led.map(d => ({ text: `Decision: ${d.text}`, decision: d.text }))].slice(0, 3);
+  const bullets = [...(live.length ? [{ text: `Live: ${live.map(w => w.title).join(', ')}.` }] : []), ...led.map(d => ({ text: `Decision: ${d.text}`, decision: d }))].slice(0, 3);
   const goals = work.filter(w => w.stage !== 'done' && w.dependencies?.length);
   const building = work.filter(w => w.stage !== 'done' && w.lease && Date.parse(w.lease.expiresAt) > now);
   async function send() {
@@ -63,7 +63,7 @@ export function HomeBrief({ work, status, now, api }: HomeProps) {
       <h2>Since you last looked{since ? <small> · {span(now - since)} ago</small> : null}</h2>
       {since === null ? <p className="muted">This is your first look. Next time this shows what changed.</p> : <>
         <p data-since-counts><span data-went-live={live.length}>{live.length} went live</span> · <span data-in-release={releasing.length}>{releasing.length} in release</span> · <span data-decisions={led.length}>{plural(led.length, 'Lead decision')}</span> · <span data-spend={spend}>{plural(spend, 'spend approval')}</span></p>
-        {bullets.length > 0 && <ul>{bullets.map(b => <li key={b.text}>{b.text}{'decision' in b && <> <button type="button" className="text-button" onClick={() => setDraft(`Why did ${b.decision}?`)}>Ask why</button> · <button type="button" className="text-button" onClick={() => setDraft(`Do it differently: instead of how ${b.decision}, `)}>Do it differently</button></>}</li>)}</ul>}
+        {bullets.length > 0 && <ul>{bullets.map(b => <li key={b.text}>{b.text}{'decision' in b && <> <button type="button" className="text-button" onClick={() => setDraft(b.decision.ask)}>Ask why</button> · <button type="button" className="text-button" onClick={() => setDraft(b.decision.other)}>Do it differently</button></>}</li>)}</ul>}
       </>}
     </section>}
     <section className="panel goals" aria-label="Active goals"><h2>Active goals</h2>

@@ -16,7 +16,8 @@ const item = (key: string, title: string) => ({ dependencies: [], scenarioRequir
   policy: { review: true, checks: ['test'] }, policyRevision: 1, revision: 1, violations: [], workspaces: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['e2e:dashboard-fun'] }], evidence: [],
   gates: [{ name: 'build', passed: false, reasons: ['Worker has not submitted implementation for this attempt'] }], lease: { epoch: 1, owner: builder, expiresAt: at(-60) }, implementers: [builder],
   sessions: [session(`${builder}:1`, 'implementation', builder), session('master:1', 'coordination', master)] });
-const merged = (work: any) => ({ ...work, stage: 'done', lease: undefined, gates: [], delivery: { mergedAt: new Date().toISOString(), mergeSha: 'a'.repeat(40) } });
+// GY-3601: its Builder claimed it 38 minutes before it merged, so the toast says how long it took.
+const merged = (work: any) => ({ ...work, stage: 'done', lease: undefined, gates: [], lastAssignment: { owner: builder, epoch: 1, claimedAt: at(38) }, delivery: { mergedAt: new Date().toISOString(), mergeSha: 'a'.repeat(40) } });
 
 async function serve(page: Page, work: any[]) {
   const state = { work };
@@ -67,11 +68,12 @@ test('e2e:dashboard-fun — named agents on every page, a rotating line, and a t
   await expect(sessions.locator(`[data-agent="${builder}"]`).first()).toHaveText(name);
   await expect(sessions.locator(`[data-agent="${master}"]`).first()).toHaveText('the Master');
 
-  // GY-1 merges while the page is open: a toast names its builder, and confetti runs.
+  // GY-1 merges while the page is open: a toast names the change, its Builder and how long it took, and confetti runs.
   await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Work', exact: true }).click();
   state.work = [merged(state.work[0]), state.work[1]];
-  await expect(page.locator('[data-toast="GY-1"]')).toContainText(`${name} shipped “Change priority from the dashboard”`, live);
+  await expect(page.locator('[data-toast="GY-1"]')).toContainText(`${name} shipped “Change priority from the dashboard” in 38 min`, live);
   await expect(page.locator('.confetti')).toHaveCount(1);
+  await expect(page.locator('.confetti.big')).toHaveCount(0);
 
 });
 
@@ -80,8 +82,18 @@ test('e2e:dashboard-fun — with reduced motion set, a merge brings the toast an
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const state = await serve(page, [item('GY-1', 'Change priority from the dashboard')]);
   state.work = [merged(state.work[0])];
-  await expect(page.locator('[data-toast="GY-1"]')).toContainText(`${name} shipped`, live);
+  await expect(page.locator('[data-toast="GY-1"]')).toContainText(`${name} shipped “Change priority from the dashboard” in 38 min`, live);
   await expect(page.locator('.confetti')).toHaveCount(0);
+});
+
+test('e2e:dashboard-fun — a goal whose last task ships gets a larger burst', async ({ page }) => {
+  test.setTimeout(60_000);
+  const task = item('GY-1', 'Change priority from the dashboard'), goal = { ...item('GY-2', 'Six merges an hour'), lease: null, dependencies: [task.id] };
+  const state = await serve(page, [task, goal]);
+  state.work = [merged(task), goal];
+  await expect(page.locator('[data-toast="GY-1"]')).toContainText(`${name} shipped “Change priority from the dashboard” in 38 min`, live);
+  await expect(page.locator('[data-toast="GY-1"]')).toContainText('That finishes “Six merges an hour”.');
+  await expect(page.locator('.confetti.big')).toHaveCount(1);
 });
 
 test('e2e:dashboard-fun — an empty board shows the playful empty-state line', async ({ page }) => {
