@@ -63,7 +63,7 @@ export interface World {
   /** Every item the loops in this process filed, with main-gate.json as it stood on disk at that moment. */
   filings: { key: string; gate: GateRecord | null }[];
   /** Commits a branch from main's tip writing `files` (null deletes) and submits it as a reviewed item (`unreviewed`: a sensitive delta whose review gate holds). */
-  submit(title: string, files: Record<string, string | null>, options?: { unreviewed?: boolean }): Promise<Work>;
+  submit(title: string, files: Record<string, string | null>, options?: { unreviewed?: boolean; proofs?: string[] }): Promise<Work>;
   /** Every item's current document. */
   work(): Promise<Work[]>;
   /** main's tip on the remote. */
@@ -106,7 +106,7 @@ export async function pipelineWorld(label: string, extra: Record<string, string>
     root, origin, checkout, trials, url, database, config, store, engine, base, trialLog: [], filings: [],
     work,
     main: () => git(origin, 'rev-parse', 'main'),
-    submit: async (title, files, options: { unreviewed?: boolean } = {}) => {
+    submit: async (title, files, options: { unreviewed?: boolean; proofs?: string[] } = {}) => {
       const branch = `graphyard/pipeline-${++branches}-1`;
       git(checkout, 'fetch', '-q', 'origin', 'main');
       git(checkout, 'checkout', '-qb', branch, 'origin/main');
@@ -114,7 +114,7 @@ export async function pipelineWorld(label: string, extra: Record<string, string>
       git(checkout, 'add', '-A'); git(checkout, 'commit', '-qm', title);
       const head = git(checkout, 'rev-parse', 'HEAD');
       git(checkout, 'checkout', '-q', '--detach');
-      let item = await engine.execute(operator, 'create', null, { type: 'chore', title, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:declared', 'e2e:fixture'] }, { id: 'AC-2', text: 'Observe after deployment', proofs: ['manual:post-deploy/observed'] }] }, randomUUID());
+      let item = await engine.execute(operator, 'create', null, { type: 'chore', title, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:declared', 'e2e:fixture', ...(options.proofs ?? [])] }, { id: 'AC-2', text: 'Observe after deployment', proofs: ['manual:post-deploy/observed'] }] }, randomUUID());
       item = await engine.execute(operator, 'ready', item.id, {}, randomUUID());
       item = await engine.execute(worker, 'claim', item.id, {}, randomUUID());
       await engine.execute(worker, 'workspace', item.id, { epoch: item.epoch, host: 'fixture', path: join(root, branch), branch }, randomUUID());
