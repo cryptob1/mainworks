@@ -116,6 +116,7 @@ test('integration:expired-worker-real-snapshot-handoff — a supervisor-ended un
   // worker's claim whose returned document builds the handoff, exactly as the dispatcher's
   // preparation does (GY-2956: the prompt reads the claimed document, not the older snapshot).
   // The host's CPU reads nothing (GY-3373): a hot trial host must not hold this redispatch.
+  // Nor does its disk (GY-3650): a nearly-full host volume must not hold it either.
   const closed: string[] = [], launched: { key: string; epoch: number; handoff: string }[] = [];
   const snapshot = async () => {
     const response = await fetch(`${url}/api/work-snapshot`, { headers: { Authorization: `Bearer ${token(coordinator)}`, 'X-Graphyard-View': 'coordination' } });
@@ -142,6 +143,7 @@ test('integration:expired-worker-real-snapshot-handoff — a supervisor-ended un
     },
     dispatchTick: async () => {}, sweepCheckouts: async () => {}, masterSession: undefined, mergeWriter: null,
     cpuPressure: async () => null,
+    diskVolumes: async () => [{ path: install, freeBytes: 1e12 }],
   };
   const state: DaemonState = emptyDaemonState(config);
 
