@@ -16,6 +16,7 @@ import { loadMasterConfig, setupMaster } from '../src/master/config.js';
 import type { Principal, Work } from '../src/model.js';
 import { launchReview, readReviewLedger, saveReviewerProfile } from '../src/reviewer.js';
 import { liveRun } from '../src/runner/registry.js';
+import { freePort } from '../src/serve-app.js';
 import type { HeadlessExec } from '../src/headless-session.js';
 
 // GY-3575: a product review serves the exact candidate with its declared e2e.serve command from a
@@ -26,11 +27,12 @@ const coordinator: Principal = { id: 'graphyard-master', role: 'coordinator' };
 const coordinatorToken = `${coordinator.id}-token-${'x'.repeat(32)}`;
 const now = () => new Date().toISOString();
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
-const servePort = 4398;
+let servePort: number;
 let store: Store, http: ReturnType<typeof server>, url: string;
 let root: string, credentials: string, base: string, head: string;
 
 before(async () => {
+  servePort = await freePort();
   store = await withDatabase('product-review-candidate-serve-dependencies'); await store.init();
   const engine = new Engine(store, 120, 'owner/project');
   engine.gitRunner = null;

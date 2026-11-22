@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { costFigure, costText, costWindows, dollars, lineTokens, priceCheckDays, pricesDue, tokenCount, tokensText, type CostLine, type CostSummary } from '../../src/model/token-costs';
-import type { Work } from '../../src/model';
 import { EmptyState, PageHeader } from '../components/page-layout';
 
 type Api = (path: string) => Promise<any>;
@@ -65,10 +64,6 @@ export function CostsView({ costs, error, now }: { costs: CostSummary | null; er
 }
 
 /** The item page's own figures: what this item's sessions spent, by role. Nothing is drawn for an item no session reported on. */
-export function ItemCosts({ item, api }: { item: Pick<Work, 'id' | 'key' | 'revision'>; api: Api }) {
-  const { costs } = useCosts(api, `costs?work=${encodeURIComponent(item.key)}`, `${item.id}:${item.revision}`);
-  return <ItemCostsView costs={costs}/>;
-}
 export function ItemCostsView({ costs }: { costs: CostSummary | null }) {
   const all = costs?.windows.all;
   if (!all || (!lineTokens(all) && !all.notReported)) return null;

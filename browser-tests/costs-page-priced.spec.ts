@@ -31,9 +31,7 @@ async function open(page: Page, astraPriced: boolean) {
   await page.goto('/?sign-in');
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
-  const menu = page.getByRole('button', { name: 'Menu' });
-  if (page.viewportSize()!.width <= 650 && await menu.getAttribute('aria-expanded') !== 'true') await menu.click();
-  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Workers', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings', exact: true }).click();
   await page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: 'Costs', exact: true }).click();
   await expect(page.getByRole('main').getByRole('heading', { name: 'Costs', level: 1 })).toBeVisible();
   await expect(page.locator('[data-cost-window]')).toHaveCount(4);

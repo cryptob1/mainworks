@@ -1,7 +1,7 @@
 // What a worker runs before complete (GY-3139): the tests scripts/ci-tests.mjs selects for the files
 // this checkout changes against its merge-base with origin/main — committed, uncommitted and
-// untracked — plus the test files named as arguments (the item's bound proof test files), through
-// the suite's own runner. The merge writer's trial runs the same selection; `npm test` stays for
+// untracked — plus the test files named as arguments (the item's bound proof test files), on a ready
+// compute host or through the suite's own runner here (GY-3610). The merge writer's trial runs the same selection; `npm test` stays for
 // whole-suite runs by hand.
 //
 //   npm run test:affected -- tests/a.test.ts tests/b.test.ts
@@ -33,7 +33,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const selection = affectedTests(repositoryRoot, process.argv.slice(2));
   console.log(`${selection.mode}: ${selection.reason}${selection.files.length ? `; running ${selection.files.length} test file(s)` : '; no tests to run'}`);
   if (selection.files.length) {
-    const run = spawnSync(process.execPath, ['--import', 'tsx', 'tests/helpers/run-tests.ts', ...selection.files], { cwd: repositoryRoot, stdio: 'inherit' });
+    // GY-3610: on a ready compute host when there is one (tests/helpers/compute-host-tests.ts), else here through the suite's own runner.
+    const run = spawnSync(process.execPath, ['--import', 'tsx', 'tests/helpers/compute-host-tests.ts', ...selection.files], { cwd: repositoryRoot, stdio: 'inherit' });
     process.exitCode = run.status ?? 1;
   }
 }

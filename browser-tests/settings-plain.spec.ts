@@ -49,9 +49,7 @@ async function open(page: Page, alerts: number | false) {
 }
 
 async function openTab(page: Page, tab: string, heading: string) {
-  const menu = page.getByRole('button', { name: 'Menu' });
-  if (page.viewportSize()!.width <= 650 && await menu.getAttribute('aria-expanded') !== 'true') await menu.click();
-  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings', exact: true }).click();
   const tabs = page.getByRole('navigation', { name: 'Pages in this section' });
   if (tab === 'Operator automation') await tabs.getByText('Advanced', { exact: true }).click();
   await tabs.getByRole('button', { name: tab, exact: true }).click();
@@ -98,7 +96,7 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
   await expect(main.locator('details.more-details', { hasText: 'Account details' })).toContainText('/home/agent/.coding_agents/spent-a');
 
   // Setup: stall alerts in one line, the terminal commands in one closed fold.
-  await openTab(page, 'Setup', 'Set up Graphyard');
+  await openTab(page, 'Setup', 'Set up Mainworks');
   await expect(main.locator('[data-alerts] p').first()).toHaveText('Stall alerts: off');
   await expect(main.getByText('run.alertUrl')).toBeHidden();
   const terminal = main.locator('details', { hasText: 'Watch agents in a terminal' });
@@ -113,6 +111,6 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
 
 test('e2e:settings-plain — stall alerts that are on read with their window', async ({ page }) => {
   await open(page, 20);
-  await openTab(page, 'Setup', 'Set up Graphyard');
+  await openTab(page, 'Setup', 'Set up Mainworks');
   await expect(page.getByRole('main').locator('[data-alerts] p').first()).toHaveText('Stall alerts: on (after 20 min)');
 });

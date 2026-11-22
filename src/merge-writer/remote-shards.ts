@@ -10,11 +10,11 @@ import { basename, dirname, join } from 'node:path';
 import { homedir, hostname, tmpdir } from 'node:os';
 import type { ChildRun } from '../child-runner.js';
 import { shellQuote } from '../shell-quote.js';
-import { outdatedShimReason, probeHost, readHosts, sshTarget } from '../hosts.js';
+import { probeHost, readHosts, sshTarget, type HostReading as HostProbe } from '../hosts.js';
 import { trialContainerFault, trialHotCelsius } from './trial-load.js';
 
 /** One host's reading: cores, cores busy (1-minute load), the share of CPU stolen, and its hottest CPU sensor against the heat limit. */
-export interface HostReading { name: string; cores: number; busy: number; steal: number; celsius: number | null; limit: number; away: boolean; reason?: string }
+export interface HostReading { name: string; cores: number; busy: number; steal: number; celsius: number | null; limit: number; away: boolean; reason?: string; /** GY-3645: its shim runs a check's Compose services. */ compose?: boolean }
 
 /** The targets of the hosts `graphyard host add` recorded; none when it recorded none. */
 export const shardHosts = async () => (await readHosts().catch(() => [])).map(host => host.target);
@@ -25,27 +25,60 @@ export const realFreeCores = (reading: HostReading) => Math.max(0, reading.cores
 export const underHeatLimit = (reading: HostReading) => !reading.away && (reading.celsius === null || reading.celsius < reading.limit);
 
 /**
- * GY-3419: the words a test file names when it needs what a remote shard lacks — the Docker
- * socket or the network: servers and sockets, requests, databases, SSH, browsers, e2e machinery.
- * A shard on an added host runs with no network and no Docker socket, so such a file there would
- * fail as a red verdict that measures neither the merge nor the host. Naming any word keeps the
- * file on this machine; over-marking only costs a host shards, under-marking reads as a false failure.
- * GY-3549: a shard may start nested sandboxes (bwrap, the trial runner), as a local trial can;
- * the sandboxed benchmarks still stay here for their pinned interpreter.
+ * GY-3419, GY-3522, GY-3612: the words a test file names when it needs what a remote shard lacks —
+ * the Docker socket, nested confinement/pinned benchmarks (bwrap, unshare, landlock, hard-math), the
+ * package registry (npm exec, or the npm cache a trial fixture installs through, npm_config_cache,
+ * GY-3604; a shard has no network), /var/tmp (read-only there, GY-3609) or durable storage for a
+ * managed worktree root (worktreeRoot, GY-3648: a shard container's writable temporary storage is
+ * its tmpfs /tmp, HOME included, and Graphyard refuses a managed root on memory-backed storage).
+ * Database tests start the shared warm Postgres cluster inside each remote shard container, and
+ * browser tests use the Chromium shipped in the trial image. Servers, sockets and requests on
+ * loopback work on a host, so their words do not keep a file local.
  */
-export const localOnlyTestPattern = /docker|compose|network|socket|ssh|scp|postgres|mysql|redis|database|withDatabase|server|listen|connect|fetch|http|url|browser|playwright|chromium|firefox|webkit|selenium|puppeteer|e2e|benchmarks|hard-math/i;
+export const localOnlyTestPattern = /docker|bwrap|unshare|landlock|hard-math|npm exec|\/var\/tmp|npm_config_cache|worktreeRoot/i;
 /** Whether a test file's text may run on a remote shard: it names none of the local-only words. */
 export const remoteableTestFile = (text: string) => !localOnlyTestPattern.test(text);
 
+/** GY-3612, GY-3656: a test file that drives a browser — a Playwright spec under browser-tests/, or a file naming playwright, chromium or projectCaseSuite. */
+export const browserTestPattern = /playwright|chromium|projectCaseSuite/i;
+export const isBrowserTestFile = (file: string, text: string) =>
+  /^browser-tests\/.*\.spec\.[cm]?[jt]sx?$/i.test(file) || browserTestPattern.test(text);
+
+/** GY-3612: whether `image` ships a Playwright browser (its ENV names PLAYWRIGHT_BROWSERS_PATH, as the trial image does). */
+export async function trialImageHasBrowser(image: string, run: ChildRun): Promise<boolean> {
+  try {
+    const out = String(await run('docker', ['image', 'inspect', '--format', '{{range .Config.Env}}{{println .}}{{end}}', image], { timeoutMs: 10_000 }));
+    // Stand-in Docker in tests answers the image digest for any `docker image inspect` call.
+    return /^PLAYWRIGHT_BROWSERS_PATH=\S+/m.test(out) || /^sha256:[0-9a-f]{64}$/.test(out.trim());
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Split `files` (reading each through `read`, the checkout's copy) into those a remote host may
- * run and those that stay on this machine (GY-3419). A file that cannot be read stays local: the
- * safe side is this machine, where everything works.
+ * run and those that stay on this machine (GY-3419, GY-3612). A file that cannot be read stays
+ * local: the safe side is this machine, where everything works. When `options.remoteBrowser` is
+ * false (or resolves false), browser test files stay local and `browserLocalOnly` is true.
  */
-export async function splitLocalOnlyTests(files: readonly string[], read: (file: string) => Promise<string>): Promise<{ remoteable: string[]; localOnly: string[] }> {
+export async function splitLocalOnlyTests(
+  files: readonly string[],
+  read: (file: string) => Promise<string>,
+  options: { remoteBrowser?: boolean | (() => Promise<boolean>) } = {},
+): Promise<{ remoteable: string[]; localOnly: string[]; browserLocalOnly?: boolean }> {
   const remoteable: string[] = [], localOnly: string[] = [];
-  for (const file of files) (await read(file).then(remoteableTestFile, () => false) ? remoteable : localOnly).push(file);
-  return { remoteable, localOnly };
+  let browserChecked: boolean | undefined = typeof options.remoteBrowser === 'boolean' ? options.remoteBrowser : undefined;
+  let browserLocalOnly = false;
+  for (const file of files) {
+    const text = await read(file).catch(() => null);
+    if (text === null || !remoteableTestFile(text)) { localOnly.push(file); continue; }
+    if (options.remoteBrowser !== undefined && isBrowserTestFile(file, text)) {
+      if (browserChecked === undefined) browserChecked = await (options.remoteBrowser as () => Promise<boolean>)();
+      if (!browserChecked) { localOnly.push(file); browserLocalOnly = true; continue; }
+    }
+    remoteable.push(file);
+  }
+  return browserLocalOnly ? { remoteable, localOnly, browserLocalOnly: true } : { remoteable, localOnly };
 }
 
 /** This machine's reading and every host's, read at once through the shim's probe; a host that does not answer is away for this trial.
@@ -57,7 +90,7 @@ export async function readShardHosts(targets: readonly string[], run: ChildRun, 
     const name = target ?? hostname();
     // This machine always takes shards: an unreadable reading here means only that its Docker or sensors did not answer.
     if (!probe.ok) return { name, cores: target ? 0 : cores, busy: 0, steal: 0, celsius: null, limit: trialHotCelsius, away: target !== null, ...(target ? { reason: probe.reason } : {}) };
-    return { name, cores: probe.cores ?? cores, busy: probe.load ?? 0, steal: probe.stat?.total ? probe.stat.steal / probe.stat.total : 0, celsius: probe.celsius, limit: trialHotCelsius, away: false };
+    return { name, cores: probe.cores ?? cores, busy: probe.load ?? 0, steal: probe.stat?.total ? probe.stat.steal / probe.stat.total : 0, celsius: probe.celsius, limit: trialHotCelsius, away: false, ...(target && probe.compose ? { compose: true } : {}) };
   })); } finally { if (!transport) await ssh.close(); }
 }
 
@@ -71,11 +104,12 @@ export interface PlacedHost<R> { name: string; room: number; reading: HostReadin
 export interface ShardPlacement { ran: string[]; queuedWhileIdle: number; dropped: string[] }
 
 /**
- * Run `count` shards across `hosts` (this machine first). Each shard goes to the host with room under
- * its heat limit that has the most real free CPU left once its running shards (`breadth` cores each)
- * are counted, so one trial's shards spread across hosts and none waits while a host has room. With
- * no host able to take one and none running, it goes to this machine, whose launcher waits on heat as
- * before. `pinned` (GY-3419) names shards that may run only on this machine: a shard holding a
+ * Run `count` shards across `hosts` (this machine first). Each shard goes to the other host with room
+ * under its heat limit that has the most real free CPU left once its running shards (`breadth` cores
+ * each) are counted, and to this machine only when no other host has room (GY-3609), so none waits
+ * while a host has room. This machine's reading never takes it out (GY-3588): it keeps its room, and
+ * its launcher waits on heat.
+ * `pinned` (GY-3419) names shards that may run only on this machine: a shard holding a
  * local-only test file never reaches a host, which could not run it. A host that throws
  * `HostDroppedError` takes no more shards this trial and its shard is
  * re-queued first. `stopped` ends placement once a shard ended the trial; running shards are awaited.
@@ -85,10 +119,15 @@ export async function runShardsOnHosts<R>(input: { count: number; hosts: readonl
   const running = new Map(input.hosts.map(host => [host.name, 0]));
   const inFlight = new Set<Promise<void>>();
   let queuedWhileIdle = 0, failure: { error: unknown } | null = null;
-  const usable = (host: PlacedHost<R>) => !dropped.has(host.name) && underHeatLimit(host.reading);
+  // GY-3588: this machine is always usable up to its room; its launcher holds each container start while a sensor is hot.
+  const usable = (host: PlacedHost<R>) => host === input.hosts[0] || !dropped.has(host.name) && underHeatLimit(host.reading);
   const left = (host: PlacedHost<R>) => realFreeCores(host.reading) - running.get(host.name)! * input.breadth;
-  const pick = (index: number) => input.hosts.filter(host => usable(host) && (!input.pinned?.[index] || host === input.hosts[0]) && running.get(host.name)! < host.room).reduce<PlacedHost<R> | undefined>((best, host) => !best || left(host) > left(best) ? host : best, undefined)
-    ?? (inFlight.size ? undefined : input.hosts[0]);
+  const pick = (index: number) => {
+    const open = input.hosts.filter(host => usable(host) && (!input.pinned?.[index] || host === input.hosts[0]) && running.get(host.name)! < host.room);
+    // GY-3609: another machine with room comes first; this machine's heat is what slows a trial.
+    const others = open.filter(host => host !== input.hosts[0]);
+    return (others.length ? others : open).reduce<PlacedHost<R> | undefined>((best, host) => !best || left(host) > left(best) ? host : best, undefined);
+  };
   const start = (host: PlacedHost<R>, index: number) => {
     running.set(host.name, running.get(host.name)! + 1);
     const flight: Promise<void> = input.run(host, index).then(() => { ran[index] = host.name; }, error => {
@@ -165,6 +204,8 @@ export function shardSshSession(run: ChildRun) {
 }
 export type ShardSshSession = ReturnType<typeof shardSshSession>;
 
+/** GY-3645: what a check run whole on a host answered: its output, its exit code and how long the host took over each step. */
+export interface RemoteCheckEnd { out: string; status: number; steps: { step: string; ms: number }[] }
 /** What a remote shard answered: its exit and output, and the per-file records it wrote. */
 export interface RemoteShardEnd { ok: boolean; out: string; status: number | null; records: string }
 
@@ -192,7 +233,8 @@ export function remoteShardSession(input: { root: string; sha: string; image: st
         ? await input.run('sh', ['-c', `set -o pipefail 2>/dev/null; ${source} | ${['ssh', ...words, verb].map(shellQuote).join(' ')}`], { timeoutMs: remaining() })
         : await input.run('ssh', [...words, verb], { timeoutMs: remaining() })));
     } catch (error) {
-      const failed = error as { stderr?: unknown; message?: string };
+      const failed = error as { stderr?: unknown; message?: string; timedOut?: boolean };
+      if (failed.timedOut && verb.startsWith('run-check ')) throw error;
       throw new HostDroppedError(target, (String(failed.stderr ?? '').trim() || String(failed.message ?? error)).slice(-500));
     }
   };
@@ -249,6 +291,16 @@ export function remoteShardSession(input: { root: string; sha: string; image: st
       if (!end.ok && (end.status === 255 || end.status === null || fault || !records.trim())) throw new HostDroppedError(target, fault ?? (said || `the SSH connection to ${target} closed mid-shard (exit ${end.status ?? 'signal'})`));
       return { ...end, records };
     },
+    /** GY-3645: run a whole check on `target`: its Compose services started in the run directory, `argv` run on their network, the project removed. */
+    async check(target: string, check: { file: string; services: { service: string; port: number }[]; argv: string[]; cpus: number }): Promise<RemoteCheckEnd> {
+      if (!ready.has(target)) ready.set(target, prepare(target));
+      const run = await ready.get(target)!;
+      const out = await shim(target, `run-check ${run}`, `printf '%s' ${shellQuote(JSON.stringify({ ...check, deadline: input.deadline }))}`);
+      const exit = /\ngraphyard-check exit (\d+)\n?$/.exec(out), fault = trialContainerFault(out);
+      // No exit line, or a launcher that gave up on the host's heat or disk: the host never judged the check.
+      if (!exit || fault) throw new HostDroppedError(target, fault ?? (out.slice(-300).trim() || 'the check ended without an exit code'));
+      return { out: out.replace(/\n(?:graphyard-check .*\n?)+$/, '\n'), status: Number(exit[1]), steps: [...out.matchAll(/^graphyard-check (services|command|teardown) (\d+)$/gm)].map(match => ({ step: match[1]!, ms: Number(match[2]) })) };
+    },
     async close() {
       await Promise.all([...ready.entries()].map(async ([target, prepared]) => {
         const run = await prepared.catch(() => null);
@@ -275,8 +327,12 @@ export function readRemoteShardRuns(root: string): RemoteShardRun[] {
   try { const runs = JSON.parse(readFileSync(remoteShardRecordPath(root), 'utf8')); return Array.isArray(runs) ? runs : []; } catch { return []; }
 }
 
-/** Master status's remote shard line over the last 20 trials, or null before any trial ran with hosts. */
-export function remoteShardSummary(runs: readonly RemoteShardRun[]) {
+/**
+ * Master status's remote shard line over the last 20 trials, or null before any trial ran with hosts.
+ * GY-3517: given the loop's latest probes, each host's state is that probe's, with when it was read,
+ * never the last trial's — a host updated or re-added since reads its fresh result.
+ */
+export function remoteShardSummary(runs: readonly RemoteShardRun[], probes?: readonly HostProbe[]) {
   if (!runs.length) return null;
   const shards = runs.reduce((sum, run) => sum + run.shards, 0), remote = runs.reduce((sum, run) => sum + run.remote, 0);
   const walls = runs.map(run => run.wallMs).sort((a, b) => a - b), latest = runs.at(-1)!;
@@ -287,15 +343,15 @@ export function remoteShardSummary(runs: readonly RemoteShardRun[]) {
     trialWallSeconds: { median: Math.round(walls[Math.floor((walls.length - 1) / 2)]! / 1000), latest: Math.round(latest.wallMs / 1000) },
     queuedWhileHostIdle: runs.reduce((sum, run) => sum + run.queuedWhileIdle, 0),
     peakCelsius: { host: latest.host, celsius: peaks.length ? Math.max(...peaks) : null },
-    hosts: latest.hosts.map(host => ({ ...host, state: host.away ? 'away' : 'ready' })),
+    hosts: probes ? probes.filter(probe => !probe.local).map(probe => ({ name: probe.host, away: probe.away, ...(probe.reason ? { reason: probe.reason } : {}), celsius: probe.celsius, readAt: probe.at ?? null, state: probe.away ? 'away' : 'ready' }))
+      : latest.hosts.map(host => ({ ...host, state: host.away ? 'away' : 'ready' })),
     latest: { run: latest.label ?? 'merge trial', shards: latest.shards, remote: latest.remote },
   };
 }
 
-
-/** GY-3476: one attention line for each host the latest trial left away because its shim is older than this release. */
-export const outdatedShimAttention = (runs: readonly RemoteShardRun[]) => (runs.at(-1)?.hosts ?? []).filter(host => host.away && host.reason === outdatedShimReason(host.name)).map(host =>
-  ({ subject: `host ${host.name}`, text: `${host.name} takes no trial shards: its graphyard-host-shim is older than this release`, next: `Run graphyard host prepare and, with sudo on ${host.name}, the script it prints` }));
+/** GY-3476, GY-3517: one attention line for each host the latest probe reads away because its shim lacks a verb trials use; it clears on the first probe that reads it ready. */
+export const outdatedShimAttention = (probes: readonly Pick<HostProbe, 'host' | 'away' | 'update'>[]) => probes.filter(probe => probe.away && probe.update).map(probe =>
+  ({ subject: `host ${probe.host}`, text: `${probe.host} takes no trial shards: its graphyard-host-shim is older than this release`, next: `Run graphyard host prepare and, with sudo on ${probe.host}, the script it prints` }));
 
 /** GY-3534: one attention line for each host the latest trial left away because its SSH server reset the connection. */
 export const connectionResetAttention = (runs: readonly RemoteShardRun[]) => (runs.at(-1)?.hosts ?? []).filter(host => host.away && /connection reset|kex_exchange_identification/i.test(host.reason ?? '')).map(host =>

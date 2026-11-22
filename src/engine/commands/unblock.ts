@@ -8,7 +8,7 @@ export function operator({ work, data }: Ctx) {
 }
 
 export async function run({ db, actor, work }: Ctx) {
-  if (actor.role !== 'operator-agent') admin(actor);
+  if (actor.role !== 'operator-agent' && actor.role !== 'caretaker') admin(actor);
   work.blocker = null;
   work.blockedAt = null;
   await adoptFollowUpWindow(db, work);

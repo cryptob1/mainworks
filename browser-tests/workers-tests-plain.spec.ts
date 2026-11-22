@@ -44,11 +44,14 @@ async function open(page: Page, role = 'admin') {
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
 }
-async function go(page: Page, section: string, sub?: string) {
-  const menu = page.getByRole('button', { name: 'Menu' });
-  if (page.viewportSize()!.width <= 650 && await menu.getAttribute('aria-expanded') !== 'true') await menu.click();
-  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: section, exact: true }).click();
-  if (sub) await page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: sub, exact: true }).click();
+// GY-3598's four places: Workers and Costs sit under Settings, Tests and Test cases (Advanced) under Work.
+async function go(page: Page, tab: 'Workers' | 'Costs' | 'Tests' | 'Test cases') {
+  const place = tab === 'Workers' || tab === 'Costs' ? 'Settings' : 'Work';
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: new RegExp(`^${place}(\\s+\\d+)?$`) }).click();
+  const tabs = page.getByRole('navigation', { name: 'Pages in this section' });
+  const button = tabs.getByRole('button', { name: tab, exact: true });
+  if (!(await button.isVisible())) await tabs.locator('details.tabs-advanced summary').click();
+  await button.click();
 }
 
 /** The text a person sees in the main pane: rendered, and outside the body of a closed fold. Titles are attributes, never text. */
@@ -94,7 +97,7 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
     await expect(machine.getByRole('table', { name: 'Session usage' })).toContainText('graphyard-run-6f1c2d3e-0000-4000-8000-000000000001.scope');
 
     // Costs: dollars this week and how many models have no price, named in its title; the breakdowns but By role fold away.
-    await go(page, 'Workers', 'Costs');
+    await go(page, 'Costs');
     await expect(main.getByRole('heading', { name: 'Costs', level: 1 })).toBeVisible();
     const fact = main.locator('.page-fact');
     await expect(fact).toHaveText('$12.00 this week · 2 models have no price');
@@ -121,7 +124,7 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
     await plain(page);
 
     // Test cases: an empty library is one line and one button for an admin.
-    await go(page, 'Tests', 'Test cases');
+    await go(page, 'Test cases');
     await expect(main).toContainText('No test cases yet.');
     await expect(main.locator('button:not(.top-bar button)')).toHaveCount(1);
     await expect(main.getByRole('button', { name: '＋ New test case' })).toBeVisible();
@@ -136,5 +139,5 @@ test('e2e:workers-tests-plain — with an empty library the Test cases tab is hi
   await open(page, 'reader');
   await go(page, 'Tests');
   await expect(page.getByRole('main').getByRole('heading', { name: 'Tests', level: 1 })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Test cases', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Test cases', exact: true, includeHidden: true })).toHaveCount(0);
 });

@@ -6,11 +6,11 @@ import { mergeWriterIdle } from '../src/daemon/cycle-merge-writer.js';
 import { deployRecordPath, readDeployRecord } from '../src/deploy-watch.js';
 import { coordinatorToken, cycleUntil, deployPass, git, pipelineWorld, rollout, worldLoop } from './helpers/pipeline-world.js';
 
-// GY-3152 AC-1 (GY-3120, GY-3151): two reviewed heads trial at once on the real loop. When one
-// lands, the other — its candidate's base now behind main — is re-merged onto the new tip on a
-// clean rebase and pushed: never refused as "candidate changed", never trialled a second time.
+// GY-3152 AC-1 (GY-3120, GY-3151): two reviewed heads are in flight at once on the real loop.
+// GY-3625: their changes are normal risk and disjoint, so one trial validates both on their combined
+// tip, and the second lands on the first one's tip: never refused as "candidate changed", never trialled again.
 
-test('e2e:pipeline-concurrent-merge — two reviewed heads trial at once; the second lands on the first one\'s tip with exactly one trial each and no candidate-changed refusal', { timeout: 280_000 }, async () => {
+test('e2e:pipeline-concurrent-merge — two reviewed heads are in flight at once; one batch trial covers both and the second lands on the first one\'s tip with no candidate-changed refusal', { timeout: 280_000 }, async () => {
   const world = await pipelineWorld('pipeline-concurrent-merge');
   try {
     await rollout(world);
@@ -23,9 +23,7 @@ test('e2e:pipeline-concurrent-merge — two reviewed heads trial at once; the se
     await cycleUntil(loop, 'both items delivered', async () => (await world.work()).filter(item => item.stage === 'done').length === 2);
 
     const trials = world.trialLog.filter(entry => entry.key !== 'batch-gate');
-    assert.deepEqual(trials.map(entry => entry.key).sort(), [first.key, second.key].sort(), 'exactly one trial per head');
-    const [a, b] = trials;
-    assert.ok(a!.startedAt < b!.endedAt! && b!.startedAt < a!.endedAt!, 'the two trials ran at the same time');
+    assert.deepEqual(trials.map(entry => entry.key), [first.key], 'one trial for the batch of both heads');
     const done = await world.work();
     for (const item of done) {
       assert.ok(!(item.mergeLedger?.refusal?.reason ?? '').includes('candidate changed'), `${item.key} was not refused as candidate changed`);

@@ -16,8 +16,8 @@ import { detoasted } from './coordination-sql.js';
  * answered human requests), and with the three things the readers derive
  * figures from, each bounded:
  *
- * - `pipeline`: the timeline reduced to what the speed report measures (each attempt's claim and
- *   end, the submission, rework rounds, hand-offs, the reconstruction's coverage);
+ * - `pipeline`: the timeline reduced to what the speed report measures (each attempt's claim,
+ *   end and how it ended, the submission, rework rounds, hand-offs, the reconstruction's coverage);
  * - `sessions`: only those that ended in the last `summarySessionWindowMs`, which the Workers page
  *   counts per account;
  * - `completedActions`: how many action rows it completed, which the action report totals.
@@ -32,7 +32,7 @@ export const summaryOmitted = ['description', 'humanRequests', 'sessions', 'pipe
 const array = (path: string) => `(CASE WHEN jsonb_typeof(${path}) = 'array' THEN ${path} ELSE '[]'::jsonb END)`;
 /** The timeline `p` as the item summary reads it (src/pipeline-speed.ts). */
 const compactPipeline = (p: string) => `jsonb_build_object('submittedAt', ${p}->'submittedAt', 'reworkRounds', ${p}->'reworkRounds', 'interventions', ${p}->'interventions', 'backfill', ${p}->'backfill',
-  'attempts', (SELECT COALESCE(jsonb_agg(jsonb_build_object('claimedAt', a.entry->'claimedAt', 'endedAt', a.entry->'endedAt') ORDER BY a.position), '[]'::jsonb) FROM jsonb_array_elements(${array(`${p}->'attempts'`)}) WITH ORDINALITY AS a(entry, position)))`;
+  'attempts', (SELECT COALESCE(jsonb_agg(jsonb_build_object('claimedAt', a.entry->'claimedAt', 'endedAt', a.entry->'endedAt', 'end', a.entry->'end') ORDER BY a.position), '[]'::jsonb) FROM jsonb_array_elements(${array(`${p}->'attempts'`)}) WITH ORDINALITY AS a(entry, position)))`;
 const recentSessions = (sessions: string) => `(SELECT COALESCE(jsonb_agg(s.entry ORDER BY s.position), '[]'::jsonb) FROM jsonb_array_elements(${array(sessions)}) WITH ORDINALITY AS s(entry, position)
   WHERE graphyard_timestamptz(COALESCE(s.entry->>'endedAt', s.entry->>'updatedAt', s.entry->>'startedAt')) >= statement_timestamp() - interval '${summarySessionWindowMs} milliseconds')`;
 

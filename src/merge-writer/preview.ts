@@ -9,6 +9,7 @@ import { loadCases, type CaseFile } from '../e2e/case.js';
 import type { E2eLauncher, E2eReport } from '../e2e/runner.js';
 import { hostPassthrough } from '../e2e/steps.js';
 import { serveHead } from './serve-head.js';
+import { useKeptBaseBuild } from './trial.js';
 import { projectCaseSuite, type StaticBuildShell } from '../release-project.js';
 import { composeBounds, composeLeftovers, composeProjectName, dockerEnvironment, snapshotComposeSite, sweepComposePreviews, type ComposeBounds, type Docker } from '../compose-preview.js';
 import { previewIdleMs, stopIdleStacks, type PreviewActivity } from '../idle-stacks.js';
@@ -178,6 +179,8 @@ export interface OpenedPreview { verdict: PreviewVerdict; url: string | null; si
  * runs out the run is cancelled and awaited until it has ended. A passing preview stays served when
  * `keep` is set — its slot freed, its server and checkout kept until `close`; every other outcome is
  * cleaned up before this answers. The first preview of a process sweeps the leftovers of dead ones first.
+ * GY-3679: a static application whose commit a trial already built is served from that kept built
+ * tree (`useKeptBaseBuild`), held until `close`: no second checkout and no second build.
  */
 export async function openPreview(input: PreviewInput, options: PreviewOptions & { keep: boolean }): Promise<OpenedPreview> {
   const now = input.now ?? Date.now, run = input.run ?? defaultChildRun;
@@ -192,12 +195,14 @@ export async function openPreview(input: PreviewInput, options: PreviewOptions &
   const cancelled = () => { if (signal.aborted) throw new Error('the preview was cancelled'); };
   let directory: string | null = null, served = null as Served | null, timer: NodeJS.Timeout | undefined, running: Promise<PreviewVerdict> | null = null;
   let closed: Promise<void> | null = null, outcome: PreviewVerdict | null = null;
+  let built: Awaited<ReturnType<typeof useKeptBaseBuild>> = null;
   // A Compose project that could not be removed rejects close (after the checkout goes), and the next close tries it again.
   const close = () => closed ??= (async () => {
     let left: unknown = null;
     try { await (served as Served | null)?.close(); } catch (error) { if (input.application.kind === 'compose') left = error; /* a static server is gone either way */ }
     if (directory) {
-      try { await run('git', ['-C', input.root, 'worktree', 'remove', '--force', join(directory, 'checkout')]); } catch { /* removed below; the next prune forgets it */ }
+      if (!built) try { await run('git', ['-C', input.root, 'worktree', 'remove', '--force', join(directory, 'checkout')]); } catch { /* removed below; the next prune forgets it */ }
+      await built?.release();
       await rm(directory, { recursive: true, force: true });
       await rm(tempOwnerMarker(directory), { force: true });
       directory = null;
@@ -208,9 +213,12 @@ export async function openPreview(input: PreviewInput, options: PreviewOptions &
     if (options.signal?.aborted) return { verdict: outcome = verdict('error', 'the preview was cancelled before it started'), url: null, close };
     directory = await mkdtemp(join(input.base, previewCheckoutPrefix));
     await writeTempOwner(directory);
-    const checkout = join(directory, 'checkout');
+    built = input.application.kind === 'static' ? await useKeptBaseBuild(input.base, input.mergeSha) : null;
+    const checkout = built?.tree ?? join(directory, 'checkout');
+    // The trial's build stands in for the site's own unless it left no output directory.
+    const application = built && input.application.kind === 'static' && existsSync(join(built.tree, input.application.directory)) ? { ...input.application, build: null } : input.application;
     const preview = async (): Promise<PreviewVerdict> => {
-      await run('git', ['-C', input.root, 'worktree', 'add', '--detach', checkout, input.mergeSha], { timeoutMs: input.timeoutMs });
+      if (!built) await run('git', ['-C', input.root, 'worktree', 'add', '--detach', checkout, input.mergeSha], { timeoutMs: input.timeoutMs });
       cancelled();
       // The case files are the merge's own, loaded and kept before any of its code runs: the build cannot add, erase or rewrite a case the preview then judges. One that does not load fails the preview as a failing case would, naming why.
       let selected: CaseFile[] = [];
@@ -228,7 +236,7 @@ export async function openPreview(input: PreviewInput, options: PreviewOptions &
       // GY-3290: the build is one heavy job of the host budget; the preview it leaves running holds no slot.
       try {
         origin = await withHeavyJob(`preview build ${input.mergeSha.slice(0, 12)}`, () => {
-          const serving = serveHead(checkout, input.application, { sha: input.mergeSha, env: environment, budgetMs: input.timeoutMs, signal, shell: input.shell, scratch: join(directory!, 'compose'),
+          const serving = serveHead(checkout, application, { sha: input.mergeSha, env: environment, budgetMs: input.timeoutMs, signal, shell: input.shell, scratch: join(directory!, 'compose'),
             project: input.compose?.project, bounds: input.compose?.bounds, docker: input.compose?.docker, fetcher: input.fetcher, variables: options.variables, hostEnvironment: input.hostEnvironment });
           // Whatever started is closed with the preview, even while it still comes up.
           served = { url: null, close: serving.close };
@@ -255,8 +263,7 @@ export async function openPreview(input: PreviewInput, options: PreviewOptions &
     const first = await Promise.race([running, expired, stopped]);
     if (first === 'stopped') return { verdict: outcome = verdict('error', 'the preview was cancelled'), url: null, close };
     const url = (served as Served | null)?.url ?? null;
-    const application = input.application;
-    if (first !== 'expired') return { verdict: outcome = first, url, site: served && application.kind === 'static' ? join(directory, 'checkout', application.directory) : null, ...(application.kind !== 'static' && url ? { publish: (signal?: AbortSignal) => snapshotComposeSite(url, input.fetcher, signal) } : {}), close };
+    if (first !== 'expired') return { verdict: outcome = first, url, site: served && application.kind === 'static' ? join(checkout, application.directory) : null, ...(application.kind !== 'static' && url ? { publish: (signal?: AbortSignal) => snapshotComposeSite(url, input.fetcher, signal) } : {}), close };
     // Past the budget: the run is cancelled, and its slot is not freed until it has ended (finally).
     cancel.abort();
     return { verdict: outcome = verdict('timeout', `the preview ran past its ${Math.round(input.timeoutMs / 60_000)}-minute budget`), url: null, close };

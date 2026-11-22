@@ -2,9 +2,9 @@ import { trialCpuMonitor, trialOverloadFault, type TrialCpuReading } from './tri
 // Concern: the merge writer's trial merge — the exact merge commit of a head onto main, and its build and affected tests in a credential-free checkout.
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync, statfsSync } from 'node:fs';
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
-import { availableParallelism, constants, homedir, tmpdir } from 'node:os';
-import { delimiter, dirname, join, relative, isAbsolute, resolve } from 'node:path';
+import { chmod, cp, mkdir, mkdtemp, readdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { availableParallelism, constants, homedir, hostname, tmpdir } from 'node:os';
+import { basename, delimiter, dirname, join, relative, isAbsolute, resolve } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../child-runner.js';
 import { allocateSessionCheckout, defaultWorktreeRootMinFreeGb, removeSessionCheckout, removeTree, verifyWorktreeRoot, volatileFilesystem, type FilesystemProbe } from '../install/worktree-root.js';
 import { isolatedTestEnvironment, npmCiEnvironment } from '../cli/test-isolation.js';
@@ -23,12 +23,14 @@ import { configHome } from '../install/secrets.js';
 import { mergeGateSchema } from '../model-boundary/delivery-policy.js';
 import type { GateCheck } from '../model/delivery-policy.js';
 import { containerTrialE2e, trialContainerBoundary, trialContainerDependencies, trialImage } from './trial-container.js';
-import { cachedPasses, commitDependencies, dependencyKey, moduleFile, recordPasses, testResultKeys, warmDependencies } from './trial-caches.js';
-import { HostDroppedError, readShardHosts, shardSshSession, type ShardSshSession, runShardsOnHosts, realFreeCores, recordRemoteShardRun, remoteShardSession, shardHosts, splitLocalOnlyTests, underHeatLimit, type HostReading, type PlacedHost } from './remote-shards.js';
+import { cachedPasses, commitDependencies, dependencyKey, recordPasses, testResultKeys, warmDependencies } from './trial-caches.js';
+import { shellQuote } from '../shell-quote.js';
+import { HostDroppedError, readShardHosts, shardSshSession, type ShardSshSession, runShardsOnHosts, realFreeCores, recordRemoteShardRun, remoteShardSession, shardHosts, splitLocalOnlyTests, trialImageHasBrowser, underHeatLimit, type HostReading, type PlacedHost } from './remote-shards.js';
 import { repositoryTrialImage, trialDockerfile, TrialRepositoryImageError } from './repository-trial-image.js';
 import { addressPoolsSpent, checkServiceVariables, dockerEnvironment, previewNetworkCount, startCheckServices, tcpAcceptProbe, type CheckServices } from '../compose-preview.js';
-import { diskFloorBytes, gateTrialKey, heatWaitSeconds, TrialHeatError, trialContainerFault, trialLoad, trialShardLanes, trialStartOwner } from './trial-load.js';
+import { diskFloorBytes, gateTrialKey, trialFileTimeoutMs, heatWaitSeconds, TrialHeatError, trialContainerFault, trialLoad, trialShardLanes, trialStartOwner } from './trial-load.js';
 import { nestedSandboxDenied, trialAppArmorFix } from './trial-apparmor.js';
+import { maskSecrets } from '../redaction.js';
 
 /** One git call in the coordinator's object store: the arguments after `git -C <root>`, the child's stdout. */
 export type TrialGit = (args: string[], env?: Record<string, string>) => Promise<string>;
@@ -342,6 +344,41 @@ export const trialTemporaryPrefix = 'gy-t';
  */
 export const trialCheckoutPrefix = 'gy-c';
 /**
+ * GY-3589: the base tip's kept built tree — one directory per base commit under the trial's
+ * worktree root, named by the commit's full sha. A caching trial's base-tip pass checks the tip
+ * out there, installs and builds it once, and every later base pass on the same tip runs its
+ * checks in that tree without installing or building again, so one unchanged commit never holds
+ * trial slots for repeat builds. A base pass on another tip takes every other tip's tree back, so
+ * at most one stays. `<directory>.built` marks a tree whose install and build both passed; a tree
+ * without it, or one git no longer reports clean at the tip, is checked out fresh.
+ */
+export const keptBaseBuildPrefix = 'graphyard-base-build-';
+/** The kept built tree of base commit `sha` under the trial worktree root `base`. */
+export const keptBaseBuild = (base: string, sha: string) => join(base, `${keptBaseBuildPrefix}${sha.toLowerCase()}`);
+/** Sibling marker: the kept tree's install and build both passed, so a later base pass may run in it. */
+export const keptBaseBuildMarker = (directory: string) => `${directory}.built`;
+/** The base commit a kept-tree entry under the trial worktree root names: its directory, built marker, lock or lock owner marker. */
+export const keptBaseBuildSha = (name: string): string | null =>
+  new RegExp(`^${keptBaseBuildPrefix}([0-9a-f]{40})(?:\\.built|(?:\\.lock|\\.use-[0-9a-f-]+)(?:\\.owner)?)?$`).exec(name)?.[1] ?? null;
+/** GY-3679: the markers `<tree>.use-<id>` of the previews serving a kept tree; a live one keeps it from being taken back. */
+const keptBaseBuildUses = async (tree: string) => (await readdir(dirname(tree)).catch(() => [] as string[]))
+  .filter(name => name.startsWith(`${basename(tree)}.use-`) && !name.endsWith('.owner')).map(name => join(dirname(tree), name));
+/**
+ * GY-3679: base commit `sha`'s kept built tree, held for a preview that serves it, or null when no
+ * trial left one built. Held by a `.use-<id>` marker owned by this process until `release`, so a base
+ * pass on another tip leaves the tree in place while the preview serves it.
+ */
+export async function useKeptBaseBuild(base: string, sha: string): Promise<{ tree: string; release(): Promise<void> } | null> {
+  const tree = keptBaseBuild(base, sha);
+  if (!existsSync(keptBaseBuildMarker(tree))) return null;
+  const use = `${tree}.use-${randomUUID()}`;
+  await mkdir(use); await writeTempOwner(use);
+  const release = async () => { await rm(use, { recursive: true, force: true }); await rm(tempOwnerMarker(use), { force: true }); };
+  // A pass that took the tree back between the check and the marker leaves nothing to serve.
+  if (!existsSync(keptBaseBuildMarker(tree))) { await release(); return null; }
+  return { tree, release };
+}
+/**
  * The mode of a trial's own temporary directory (GY-1639): sticky, as CI's /tmp is, so a suite that
  * holds `tmpdir()` to the sticky-shared-parent rule (the runner executor’s attested cases)
  * sees the parent CI gives it, yet private to this account, so nothing else can plant a lookup entry
@@ -363,6 +400,8 @@ export const trialTemporaryVariables = (directory: string) => ({ TMPDIR: directo
  */
 export interface TrialRun {
   build: 'pass' | 'fail'; tests: { passed: number; failed: string[]; files: number }; durationMs: number; logTail: string; runnerExit?: number | null; groups?: TrialGroup[];
+  /** GY-3599: the test file that ran longest, from the runner's records, for the Task page; absent when no record named one. */
+  slowest?: { file: string; durationMs: number };
   /** How long each phase took (GY-1832), so the slow one is named; absent only from a trial stub. */
   phases?: TrialPhaseDurations;
   /** The attempts before this one that reached no verdict (GY-1832): a verdict on the retry carries the first attempt's outcome. */
@@ -379,6 +418,8 @@ export interface TrialRun {
   timedOut?: boolean;
   /** GY-2965: how every bound E2E case ran against the served head; present when the item names e2e: proofs. */
   e2e?: TrialE2eCase[];
+  /** GY-3639: of the selected test files, how many an earlier trial's pass served and how many ran; present when any was selected under the cache. */
+  testCache?: { cached: number; ran: number };
 }
 /** A trial's phases, in order (GY-1832): the checkout and its install, the build, the test selection, the test run. */
 export const trialPhases = ['install', 'build', 'selection', 'tests'] as const;
@@ -480,10 +521,45 @@ export function shardTestFiles(files: readonly string[], lanes: number, duration
   }
   return shards.map(shard => shard.files).filter(shard => shard.length);
 }
-/** The merge's own timing baseline in its checkout, `{}` when it has none or it does not parse. */
-const checkoutDurations = (worktree: string, path?: string): Promise<Record<string, number>> => path ? readFile(join(worktree, path), 'utf8')
-  .then(text => { const files = (JSON.parse(text) as { files?: unknown } | null)?.files; return files && typeof files === 'object' ? files as Record<string, number> : {}; })
-  .catch(() => ({})) : Promise.resolve({});
+/** Where a passing trial saves its per-file durations (GY-3542): beside the install's other local state, never in a checkout. */
+export const refreshedDurationsPath = (root: string, path: string) => join(root, '.graphyard', basename(path));
+const durationsIn = (text: string): Record<string, number> => { try { const files = (JSON.parse(text) as { files?: unknown } | null)?.files; return files && typeof files === 'object' ? files as Record<string, number> : {}; } catch { return {}; } };
+/** The timings a trial plans its shards from: the base commit's baseline when selectorApproved is false (GY-3635) or the merge's own baseline in its checkout when approved, under what passing trials on this install measured since; `{}` when neither exists. */
+const checkoutDurations = async (worktree: string, root: string, path?: string, options?: { baseTip?: string; selectorApproved?: boolean; run?: ChildRun }): Promise<Record<string, number>> => {
+  if (!path) return {};
+  const baselinePromise = options?.baseTip && !options.selectorApproved && options.run
+    ? Promise.resolve(options.run('git', ['-C', root, 'show', `${options.baseTip}:${path}`])).then(text => durationsIn(String(text)), () => ({}))
+    : readFile(join(worktree, path), 'utf8').then(durationsIn, () => ({}));
+  const refreshedPromise = readFile(refreshedDurationsPath(root, path), 'utf8').then(durationsIn, () => ({}));
+  return Object.assign({}, ...await Promise.all([baselinePromise, refreshedPromise]));
+};
+/** A passing trial's durations for the files it ran (`ran`), from its runner records, laid over those saved before. */
+async function refreshDurations(root: string, path: string, records: string, ran: readonly string[]): Promise<void> {
+  const file = refreshedDurationsPath(root, path), files = durationsIn(await readFile(file, 'utf8').catch(() => ''));
+  for (const line of records.split('\n')) {
+    try { const record = JSON.parse(line) as { file?: unknown; durationMs?: unknown }; if (typeof record.file === 'string' && typeof record.durationMs === 'number' && ran.includes(record.file)) files[record.file] = record.durationMs; } catch { /* not a record */ }
+  }
+  await mkdir(dirname(file), { recursive: true });
+  const temporary = `${file}.${randomUUID().slice(0, 8)}`;
+  await writeFile(temporary, `${JSON.stringify({ files }, null, 2)}\n`);
+  await rename(temporary, file);
+}
+/** The file that ran longest among the runner's per-file records (GY-3599); null when they name none. */
+export function slowestFile(records: string): { file: string; durationMs: number } | null {
+  let slowest: { file: string; durationMs: number } | null = null;
+  for (const line of records.split('\n')) {
+    try { const record = JSON.parse(line) as { file?: unknown; durationMs?: unknown }; if (typeof record.file === 'string' && typeof record.durationMs === 'number' && record.durationMs > (slowest?.durationMs ?? -1)) slowest = { file: record.file.slice(0, 300), durationMs: Math.round(record.durationMs) }; } catch { /* not a record */ }
+  }
+  return slowest;
+}
+/**
+ * GY-3599: a trial's test counts so far, as each test shard's end reports them while the trial runs:
+ * of every file the trial runs, those that have passed and those that have failed so far, and the
+ * file that has run longest so far.
+ */
+export interface TrialCounts { passed: number; failed: number; files: number; slowest?: { file: string; durationMs: number } }
+/** GY-3599: what a trial sends beside its step as each test shard ends: its counts so far, and what it printed so far. */
+export interface TrialStepReport { output?: string; tests?: TrialCounts }
 /** How much of a failing runner child's output its diagnostic record keeps: enough to read the exit, little enough for one daemon action. */
 export const runnerDiagnosticTailLength = 1200;
 /**
@@ -686,6 +762,11 @@ export function trialTestGateStatus(root: string):
   if (checks.length) return { configured: true, via: 'checks', checks: checks.map(entry => entry.check) };
   return { configured: false, detail: noTestCheckConfigured };
 }
+export interface TrialRunMetrics {
+  shardsPerHost: Record<string, number>;
+  hostTemperatures: Record<string, number | null>;
+  fileDurations: { file: string; durationMs: number }[];
+}
 export interface RunTrialInput {
   /** The coordinator checkout whose object store holds the merge commit. */
   root: string;
@@ -696,6 +777,8 @@ export interface RunTrialInput {
   baseTip?: string;
   changedFiles: readonly string[];
   timeoutMs: number;
+  /** GY-3635: whether the candidate's changes to the test selector and timing baseline were approved in review; false/absent uses the base commit's copy. */
+  selectorApproved?: boolean;
   /** GY-3418: keep the dependency image and test-result caches in the repository's git directory (the detached merge trial and batch gate do); absent, a trial caches nothing. */
   caches?: boolean;
   key?: string;
@@ -720,8 +803,8 @@ export interface RunTrialInput {
   retries?: number;
   /** Called as each attempt starts, before it runs anything (GY-1832): a caller keeping attempt-scoped evidence starts it afresh. */
   onAttempt?: (attempt: number) => void;
-  /** GY-2963: called at each step's start — checkout, install, build, selection, the tests, each repository check by name — so the merge writer records where the trial is. */
-  onStep?: (step: string) => void;
+  /** GY-2963: called at each step's start — checkout, install, build, selection, the tests, each repository check by name — so the merge writer records where the trial is. GY-3599: called again under the same step as each test shard ends, with the trial's counts so far and what it printed so far. */
+  onStep?: (step: string, report?: TrialStepReport) => void;
   onTiming?: (step: string, durationMs: number) => void;
   /** GY-3099: aborting it kills the trial's install, build and test children and starts no more, rejecting with its reason (`TrialCancelledError`), never retried. */
   signal?: AbortSignal;
@@ -753,12 +836,16 @@ export interface RunTrialInput {
   hidden?: readonly string[];
   /** GY-3209: starts a check's declared Compose services; `startCheckServices` unless a test injects a fake. */
   services?: typeof startCheckServices;
+  /** GY-3577: the merge trial's proof count: every test shard, on this machine or a host, runs with `args` before its file list, and its output goes to `output`. */
+  reporter?: { args: readonly string[]; output: (out: string) => void };
   /** GY-3283: run only the declared check of this name, whatever paths it is limited to (a worker's `graphyard check NAME`). */
   only?: string;
   /** GY-3412: the hosts a selection's shards fan out to — those `graphyard host add` recorded unless a test names others — and how they are read. */
   remote?: { hosts: readonly string[]; read?: (hosts: readonly string[], transport: ShardSshSession) => Promise<HostReading[]> };
   /** GY-3526: a worker verification's label: it holds a host heavy-job slot under it only while a test shard or check runs on this machine, never while its shards run on other hosts. */
   localSlot?: string;
+  /** GY-3634: optional benchmark metrics callback receiving shards per host, host temperatures at start, and per-file durations. */
+  onMetrics?: (metrics: TrialRunMetrics) => void;
 }
 const tailLength = 4000;
 /**
@@ -1009,6 +1096,62 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
   let home: string | null = null, temporary: string | null = null, place: string | null = null, worktree = checkout.worktree, guarded: string | null = null;
   let env: Record<string, string>, wrapper: string[], boundary: ReturnType<typeof trialContainerBoundary>, runImage: string | undefined;
   let dependencies: string | null = null, warm: string | null = null, caches = '';
+  // GY-3589: this trial is the base tip itself (a caching trial's base pass), so it may run in the
+  // tip's kept built tree (keptBaseBuild): one built tree per base commit under the trial's
+  // worktree root, built by the first base pass on the tip and reused by every later one.
+  const keptSha = input.caches && input.baseTip && input.baseTip.toLowerCase() === input.mergeSha.toLowerCase() ? input.mergeSha.toLowerCase() : null;
+  const keptPath = keptSha ? keptBaseBuild(input.base, keptSha) : null;
+  let kept: string | null = null, keptLock: string | null = null, reused = false;
+  /** Takes the kept tree's lock for this pass: one pass owns the tree at a time, and a pass that cannot take it (a live pass holds it) builds its own checkout as trials did before. */
+  const takeKeptTree = async (): Promise<boolean> => {
+    if (!keptPath) return false;
+    const lock = `${keptPath}.lock`;
+    try { await mkdir(lock); }
+    catch (error) {
+      // A lock a live pass holds is respected; one whose owner is gone (a killed pass) is taken back.
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') return false;
+      const owner = await readTempOwner(lock).catch(() => null);
+      if (!owner || !tempOwnerGone(owner)) return false;
+      await removeTree(lock).catch(() => {});
+      try { await mkdir(lock); } catch { return false; }
+    }
+    keptLock = lock;
+    await writeTempOwner(lock).catch(() => {});
+    return true;
+  };
+  /** Takes a kept tree away: its worktree registration first, then the tree and its built marker. */
+  const takeBackKeptTree = async (tree: string): Promise<void> => {
+    try { await run('git', ['-C', input.root, 'worktree', 'remove', '--force', tree], { timeoutMs: remaining() }); } catch { /* never registered, or already gone */ }
+    await removeTree(tree).catch(() => {});
+    await rm(`${tree}.built`, { force: true }).catch(() => {});
+  };
+  /** Whether the kept tree still sits clean at the tip — a tree a pass left different is never reused; git's own word decides. */
+  const keptTreeReady = async (): Promise<boolean> => {
+    if (!existsSync(keptBaseBuildMarker(kept!))) return false;
+    try {
+      const head = String(await run('git', ['-C', kept!, 'rev-parse', 'HEAD'], { timeoutMs: remaining() })).trim().toLowerCase();
+      const clean = String(await run('git', ['-C', kept!, 'status', '--porcelain'], { timeoutMs: remaining() })).trim();
+      return head === keptSha && clean === '';
+    } catch { return false; }
+  };
+  /** Takes the kept tree away, its worktree registration first, so the pass below checks the tip out fresh in its place. */
+  const discardKeptTree = async (): Promise<void> => { await takeBackKeptTree(kept!); };
+  /** One kept tree per base commit: a pass on this tip takes every other tip's back, unless a live pass holds that tip's lock. */
+  const reclaimKeptTrees = async (): Promise<void> => {
+    const shas = new Set((await readdir(input.base).catch(() => [] as string[])).flatMap(name => { const sha = keptBaseBuildSha(name); return sha && sha !== keptSha ? [sha] : []; }));
+    for (const sha of shas) {
+      const tree = keptBaseBuild(input.base, sha), lock = `${tree}.lock`;
+      const owner = await readTempOwner(lock).catch(() => null);
+      if (existsSync(lock) && (!owner || !tempOwnerGone(owner))) continue;
+      // GY-3679: a tree a live preview serves stays; a gone preview's marker goes with the tree.
+      const uses = await keptBaseBuildUses(tree);
+      if (await Promise.all(uses.map(use => readTempOwner(use).catch(() => null))).then(owners => owners.some(owner => owner && !tempOwnerGone(owner)))) continue;
+      await takeBackKeptTree(tree);
+      for (const use of uses) { await removeTree(use).catch(() => {}); await rm(tempOwnerMarker(use), { force: true }).catch(() => {}); }
+      await removeTree(lock).catch(() => {});
+      await rm(`${lock}.owner`, { force: true }).catch(() => {});
+    }
+  };
   const clear = async (directory: string) => {
     if (directory === place) return clearTrialCheckout(directory);
     try { await removeTree(directory); } finally { await rm(tempOwnerMarker(directory), { force: true }).catch(() => {}); }
@@ -1022,12 +1165,26 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     temporary = await mkdtemp(join(root, trialTemporaryPrefix)); await chmod(temporary, trialTemporaryMode); await writeTempOwner(temporary);
     // HOME stays beside the short tempdir: nested tests derive socket paths from it.
     home = await mkdtemp(join(root, 'gy-h')); await writeTempOwner(home);
-    const near = await trialCheckoutRoot(input.checkoutRoots ?? trialCheckoutRoots(), input.minFreeBytes ?? defaultWorktreeRootMinFreeGb * 1e9, input.probe, input.checkoutRoots ? [] : undefined);
-    if (near) { place = await mkdtemp(join(near, trialCheckoutPrefix)); await writeTempOwner(place); worktree = join(place, 'checkout'); }
     const { XDG_RUNTIME_DIR: _runtime, DBUS_SESSION_BUS_ADDRESS: _bus, ...hostEnv } = trialEnvironment(input.environment);
     env = { ...hostEnv, ...trialTemporaryVariables(temporary!), ...trialHomeVariables(home, input.environment, true) };
     assertIsolatableHostControlEndpoints({ ...process.env, ...input.environment });
-    await run('git', ['-C', input.root, 'worktree', 'add', '--detach', worktree, input.mergeSha], { timeoutMs: remaining() });
+    // GY-3589: a base pass that took the kept tree's lock works in that tree — the tip's built tree
+    // when an earlier pass left one ready (nothing to install or build), else a fresh checkout of
+    // the tip it builds and leaves ready — and takes every other tip's kept tree back first.
+    if (await takeKeptTree()) {
+      kept = keptPath;
+      await reclaimKeptTrees();
+      if (await keptTreeReady()) { worktree = kept!; reused = true; }
+      else {
+        await discardKeptTree();
+        worktree = kept!;
+        await run('git', ['-C', input.root, 'worktree', 'add', '--detach', worktree, input.mergeSha], { timeoutMs: remaining(), ...(input.signal ? { signal: input.signal } : {}) });
+      }
+    } else {
+      const near = await trialCheckoutRoot(input.checkoutRoots ?? trialCheckoutRoots(), input.minFreeBytes ?? defaultWorktreeRootMinFreeGb * 1e9, input.probe, input.checkoutRoots ? [] : undefined);
+      if (near) { place = await mkdtemp(join(near, trialCheckoutPrefix)); await writeTempOwner(place); worktree = join(place, 'checkout'); }
+      await run('git', ['-C', input.root, 'worktree', 'add', '--detach', worktree, input.mergeSha], { timeoutMs: remaining(), ...(input.signal ? { signal: input.signal } : {}) });
+    }
   };
   // GY-3275: a repository that commits graphyard.trial.Dockerfile runs its trials in its own image,
   // built from the base tip over the image the trials would otherwise run in; a candidate's edits to
@@ -1073,13 +1230,14 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       caches = resolve(input.root, String(await run('git', ['-C', input.root, 'rev-parse', '--git-common-dir'], { timeoutMs: remaining() })).trim());
       dependencies = dependencyKey(chosen ?? trialImage(), lockfile); warm = warmDependencies(caches, dependencies);
     }
-    boundary = trialContainerBoundary([checkout.directory, place, temporary, home], [...trialContainerDependencies(input.root), ...(warm ? [warm] : [])], Date.now() + remaining(), { ...await trialLoad(input.root, input.key === gateTrialKey ? 'gate' : 'merge', cpu.cores(), input.cores ?? availableParallelism()), owner: trialStartOwner(input.root, input.mergeSha) }, chosen ?? undefined);
+    boundary = trialContainerBoundary([checkout.directory, place, kept, temporary, home], [...trialContainerDependencies(input.root), ...(warm ? [warm] : [])], Date.now() + remaining(), { ...await trialLoad(input.root, input.key === gateTrialKey ? 'gate' : 'merge', cpu.cores(), input.cores ?? availableParallelism()), owner: trialStartOwner(input.root, input.mergeSha) }, chosen ?? undefined);
     wrapper = boundary();
     runImage = chosen ?? undefined;
   };
   const log: string[] = [];
   // GY-2965: how the item's bound E2E cases ran against the served head, filled once the build has passed and riding every verdict after it.
   const e2e: TrialE2eCase[] = [];
+  let testCache = { cached: 0, ran: 0 };
   const remaining = () => Math.max(1000, deadline - now());
   const tail = () => log.join('\n').slice(-tailLength);
   const output = (error: unknown) => {
@@ -1160,7 +1318,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
   const readOnly = (phase: string, ended: Ended) => {
     if (ended.ok) return;
     const path = readOnlyPath(ended.out);
-    const granted = [checkout.directory, place, temporary, home].filter((directory): directory is string => !!directory);
+    const granted = [checkout.directory, place, kept, temporary, home].filter((directory): directory is string => !!directory);
     if (path && granted.some(directory => path === directory || path.startsWith(`${directory}/`))) throw new TrialReadOnlyError(phase, path);
   };
   // GY-3249: a step whose output shows a failed fetch from an external host runs once more; failing so again, it is a trial-host fault.
@@ -1185,6 +1343,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     return { build, tests, durationMs: Math.max(0, now() - startedAt), logTail: logTail === undefined ? tail() : `${logTail}\n${line}`, runnerExit, ...(groups ? { groups } : {}), phases: closed,
       ...(detail?.failingCase ? { failingCase: detail.failingCase } : {}),
       ...(detail?.timedOut ? { timedOut: true } : {}),
+      ...(testCache.cached + testCache.ran ? { testCache } : {}),
       ...(e2e.length ? { e2e } : {}) };
   };
   const holds = async (path: string) => {
@@ -1247,39 +1406,59 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         if (!ran.ok) throw runnerFailure('install', ran);
         return ran.out;
       }))! };
-      const lockfile = (dir: string) => readFile(join(dir, 'package-lock.json'), 'utf8').catch(() => null);
-      const [own, merged] = await Promise.all([lockfile(input.root), lockfile(worktree)]);
-      // GY-3200: a pnpm checkout always installs afresh, never through the root's node_modules.
-      if (manager.name === 'npm' && existsSync(join(input.root, 'node_modules')) && own !== null && own === merged) await symlink(join(input.root, 'node_modules'), join(worktree, 'node_modules'));
-      else if (manager.name === 'npm' && warm) {
-        await symlink(warm, join(worktree, 'node_modules'));
-        log.push(`dependency image ${dependencies!.slice(0, 12)} reused: the same trial image and lockfile installed before, so nothing is installed`);
-      } else if (manager.name === 'pnpm' || await holds('package-lock.json')) {
-        const [command, ...args] = installArgv(manager);
-        const installed = await fetching('install', () => child('install', command!, args, { env: npmCiEnvironment(env) }));
-        if (hostEnded(installed) || toolchainStartFailed(installed)) throw runnerFailure('install', installed);
-        readOnly('install', installed);
-        if (!installed.ok) return finish('fail', { passed: 0, failed: [], files: 0 });
-        if (manager.name === 'npm' && dependencies) {
-          await commitDependencies(caches, dependencies, join(worktree, 'node_modules'))
-            .then(() => log.push(`dependency image ${dependencies!.slice(0, 12)} committed for later trials with the same trial image and lockfile`),
-              error => log.push(`the dependency image was not committed (the next trial installs again): ${error instanceof Error ? error.message : String(error)}`));
+      if (reused) {
+        // GY-3589: the tip's kept built tree answered ready, so this base pass installs and builds nothing.
+        log.push(`base build of ${input.mergeSha.slice(0, 12)} reused: an earlier pass already built this tip`);
+        enter('build');
+        enterStep('build: reused');
+      } else {
+        const lockfile = (dir: string) => readFile(join(dir, 'package-lock.json'), 'utf8').catch(() => null);
+        const [own, merged] = await Promise.all([lockfile(input.root), lockfile(worktree)]);
+        // GY-3200: a pnpm checkout always installs afresh, never through the root's node_modules.
+        // GY-3589: a kept tree never links the coordinator root's node_modules — that tree outlives
+        // this pass while the root's install may change under it — so it takes the immutable
+        // dependency image, or a real install, instead.
+        if (manager.name === 'npm' && !kept && existsSync(join(input.root, 'node_modules')) && own !== null && own === merged) await symlink(join(input.root, 'node_modules'), join(worktree, 'node_modules'));
+        else if (manager.name === 'npm' && warm) {
+          // A kept tree outlives this pass while the image may be evicted, so it takes its own copy.
+          if (kept) await cp(warm, join(worktree, 'node_modules'), { recursive: true, verbatimSymlinks: true });
+          else await symlink(warm, join(worktree, 'node_modules'));
+          log.push(`dependency image ${dependencies!.slice(0, 12)} reused: the same trial image and lockfile installed before, so nothing is installed`);
+        } else if (manager.name === 'pnpm' || await holds('package-lock.json')) {
+          const [command, ...args] = installArgv(manager);
+          const installed = await fetching('install', () => child('install', command!, args, { env: npmCiEnvironment(env) }));
+          if (hostEnded(installed) || toolchainStartFailed(installed)) throw runnerFailure('install', installed);
+          readOnly('install', installed);
+          if (!installed.ok) return finish('fail', { passed: 0, failed: [], files: 0 });
+          if (manager.name === 'npm' && dependencies) {
+            await commitDependencies(caches, dependencies, join(worktree, 'node_modules'))
+              .then(() => log.push(`dependency image ${dependencies!.slice(0, 12)} committed for later trials with the same trial image and lockfile`),
+                error => log.push(`the dependency image was not committed (the next trial installs again): ${error instanceof Error ? error.message : String(error)}`));
+          }
         }
       }
       const manifest = await readFile(join(worktree, 'package.json'), 'utf8').catch(() => undefined);
       // An unreadable package.json builds as before; one the merge broke is its failed build, never the host's (PRRT_kwDOUZby-s6tZsNG); only one that declares no build script skips it.
       try { packageScripts = manifest === undefined ? undefined : JSON.parse(manifest)?.scripts; } catch { enter('build'); return finish('fail', { passed: 0, failed: [], files: 0 }); }
-      const argv = buildArgv(manager, affected);
-      if (argv && (packageScripts === undefined || packageScripts?.build || (manager.name === 'pnpm' && manager.workspace))) {
-        enter('build');
-        enterStep('build');
-        const [command, ...args] = argv;
-        const built = await fetching('build', () => child('build', command!, args));
-        if (hostEnded(built) || toolchainStartFailed(built)) throw runnerFailure('build', built);
-        readOnly('build', built);
-        if (!built.ok) return finish('fail', { passed: 0, failed: [], files: 0 });
+      if (!reused) {
+        // GY-3589: populating a kept base tree in a pnpm workspace must build the whole workspace,
+        // not only the packages affected by this first pass's changedFiles, so later base passes
+        // for other packages reuse a fully built tree.
+        const argv = buildArgv(manager, kept ? null : affected);
+        if (argv && (packageScripts === undefined || packageScripts?.build || (manager.name === 'pnpm' && manager.workspace))) {
+          enter('build');
+          enterStep('build');
+          const [command, ...args] = argv;
+          const built = await fetching('build', () => child('build', command!, args));
+          if (hostEnded(built) || toolchainStartFailed(built)) throw runnerFailure('build', built);
+          readOnly('build', built);
+          if (!built.ok) return finish('fail', { passed: 0, failed: [], files: 0 });
+        }
       }
     }
+    // GY-3589: this pass reached the end of the base tip's install and build, so the tree it leaves
+    // is the built tree later base passes on the same tip reuse (a failed step returned above).
+    if (kept && !reused) await writeFile(keptBaseBuildMarker(kept), `${new Date(now()).toISOString()}\n`).catch(() => {});
   };
   const finishTests = async (...verdict: Parameters<typeof finish>) => {
     await input.countProofs?.({
@@ -1321,6 +1500,32 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       await started.close();
     }
   };
+  // GY-3645: a check with Compose services and no selection runs whole on the ready compute host with the most free CPU:
+  // the commit sent as a shard's is, the services started there, the command run on their network. With no host
+  // ready, or one that drops the check, null: the check runs on this machine as before, the reason in the log.
+  const onHost = async (check: RepositoryTrialCheck): Promise<Ended | null> => {
+    const here = (reason: string) => { log.push(`[remote] check ${check.check} runs on this machine: ${reason}`); return null; };
+    const hosts = input.remote?.hosts ?? await shardHosts();
+    if (!hosts.length) return here('no compute host is added');
+    const transport = shardSshSession(run);
+    const session = remoteShardSession({ root: input.root, sha: input.mergeSha, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport });
+    try {
+      const readings = (await (input.remote?.read ?? ((named, shared) => readShardHosts(named, run, cpu.cores(), shared)))(hosts, transport)).slice(1);
+      const host = readings.filter(reading => underHeatLimit(reading) && reading.compose).sort((a, b) => realFreeCores(b) - realFreeCores(a))[0];
+      if (!host) return here(`no host is ready (${readings.map(reading => `${reading.name}: ${reading.away ? reading.reason ?? 'away' : reading.compose ? 'too hot' : 'no Docker Compose plugin, see graphyard host prepare'}`).join('; ')})`);
+      enterStep(`tests: ${check.check} on ${host.name}`);
+      const probe = tcpAcceptProbe(check.services!.map(({ service, port }) => ({ host: service, port })), 120_000);
+      const ended = await session.check(host.name, { file: check.services![0]!.file, services: check.services!.map(({ service, port }) => ({ service, port })), cpus: Math.max(1, host.cores),
+        argv: ['/bin/sh', '-c', `${probe.map(shellQuote).join(' ')} && exec ${check.argv.map(shellQuote).join(' ')}`] });
+      for (const { step, ms } of ended.steps) input.onTiming?.(`${step}: ${check.check} on ${host.name}`, ms);
+      log.push(`[remote] check ${check.check} ran on ${host.name}: ${ended.steps.map(({ step, ms }) => `${step} ${stepSeconds(ms)}`).join(', ')}`, `$ [${host.name}] ${check.argv.join(' ')}\n${ended.out}`);
+      return { ok: ended.status === 0, out: ended.out, status: ended.status, signal: null, cause: undefined };
+    } catch (error) {
+      if (error instanceof HostDroppedError) return here(error.message);
+      if ((error as { timedOut?: boolean }).timedOut) throw new TrialTimeoutError('tests', Math.max(0, now() - startedAt), tail());
+      throw error;
+    } finally { await session.close(); }
+  };
   // GY-3526: a worker verification's tests on this machine run on one shared host slot; a merge trial already holds its own.
   const onThisMachine = input.localSlot ? (await import('../master/verification-slots.js')).sharedHeavyJob(input.localSlot, { strictOnly: true }) : <T>(part: () => Promise<T>) => part();
   const runChecks = async (checks: RepositoryTrialCheck[]): Promise<TrialRun> => {
@@ -1360,6 +1565,9 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const groups: TrialGroup[] = [];
     let detail: { failingCase?: string | null; timedOut?: boolean } | undefined;
     let failingOutput: string | undefined;
+    // GY-3599: the file that ran longest over every check, for the verdict and the Task page.
+    let slowest: { file: string; durationMs: number } | undefined;
+    const withSlowest = (verdict: TrialRun): TrialRun => slowest ? { ...verdict, slowest } : verdict;
     for (const check of checks) {
       if (check.paths && !touchesPaths(input.changedFiles, check.paths)) continue;
       if (check.selection) {
@@ -1368,12 +1576,13 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         passed += selected.tests.passed; files += selected.tests.files;
         failed.push(...selected.tests.failed); groups.push(...(selected.groups ?? []));
         runnerExit = selected.runnerExit ?? null;
-        if (failed.length) return finishTests('pass', { passed, failed, files }, runnerExit, groups, selected.logTail);
+        if (selected.slowest && selected.slowest.durationMs > (slowest?.durationMs ?? -1)) slowest = selected.slowest;
+        if (failed.length) return withSlowest(await finishTests('pass', { passed, failed, files }, runnerExit, groups, selected.logTail));
         continue;
       }
       files++;
       enterStep(`tests: ${check.check}`);
-      const ran = await withServices(check, () => onThisMachine(() => child('tests', check.argv[0]!, check.argv.slice(1))));
+      const ran = (check.services?.length ? await onHost(check) : null) ?? await withServices(check, () => onThisMachine(() => child('tests', check.argv[0]!, check.argv.slice(1))));
       if ('services' in ran) { failed.push(check.check); detail = { failingCase: ran.services }; runnerExit = null; break; }
       if (hostEnded(ran)) throw runnerFailure('tests', ran);
       if (!ran.ok) {
@@ -1388,9 +1597,9 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       passed++;
     }
     const logTail = failingOutput && log.join('\n').length > tailLength ? failureTail([failingOutput]) : tail();
-    return finishTests('pass', { passed, failed, files }, runnerExit, groups.length ? groups : undefined, logTail, detail);
+    return withSlowest(await finishTests('pass', { passed, failed, files }, runnerExit, groups.length ? groups : undefined, logTail, detail));
   };
-  const runSelected = async (check: RepositoryTrialCheck): Promise<Pick<TrialRun, 'tests' | 'runnerExit' | 'groups' | 'logTail'>> => {
+  const runSelected = async (check: RepositoryTrialCheck): Promise<Pick<TrialRun, 'tests' | 'runnerExit' | 'groups' | 'logTail' | 'slowest'>> => {
     const result = (tests: TrialRun['tests'], runnerExit: number | null = null, groups?: TrialGroup[], logTail = tail()) => ({ tests, runnerExit, groups, logTail });
     const strategy = check.selection!;
     const selector = checkCommandArgv(strategy.command)!;
@@ -1398,15 +1607,39 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     enterStep('selection');
     // A selection child the host killed or could not start is no verdict (GY-1832); only one that exits non-zero fails the selection.
     // GY-3192: the base tip lets the selection narrow each changed file to the declarations its diff touches.
-    const selection = await child('selection', selector[0]!, [...selector.slice(1), ...input.changedFiles], input.baseTip ? { env: { ...env, GRAPHYARD_SELECTION_BASE: input.baseTip } } : {});
+    // GY-3635: unless the candidate's change to the selector was approved in review, run the base commit's copy of the selector script against the candidate's worktree so candidate new tests still run.
+    const selectorScript = input.baseTip && !input.selectorApproved
+      ? selector.slice(1).find(arg => !arg.startsWith('-') && /\.(?:[cm]?js|ts)$/.test(arg))
+      : undefined;
+    let restoreSelector: (() => Promise<void>) | null = null;
+    if (selectorScript) {
+      const baseSelector = await Promise.resolve(run('git', ['-C', input.root, 'show', `${input.baseTip}:${selectorScript}`], { timeoutMs: remaining() })).then(String, () => null);
+      if (baseSelector !== null) {
+        const scriptPath = join(worktree, selectorScript);
+        const originalSelector = await readFile(scriptPath, 'utf8').catch(() => null);
+        if (originalSelector !== baseSelector) {
+          await writeFile(scriptPath, baseSelector, 'utf8');
+          restoreSelector = async () => {
+            if (originalSelector !== null) await writeFile(scriptPath, originalSelector, 'utf8');
+            else await rm(scriptPath, { force: true });
+          };
+        }
+      }
+    }
+    let selection: Ended;
+    try {
+      selection = await child('selection', selector[0]!, [...selector.slice(1), ...input.changedFiles], input.baseTip ? { env: { ...env, GRAPHYARD_SELECTION_BASE: input.baseTip } } : {});
+    } finally {
+      if (restoreSelector) await restoreSelector().catch(() => {});
+    }
     if (hostEnded(selection)) throw runnerFailure('selection', selection);
     if (!selection.ok) return result({ passed: 0, failed: [strategy.command], files: 0 });
     const pattern = new RegExp(strategy.pattern);
     let selected = selection.out.split('\n').map(line => line.trim()).filter(line => pattern.test(line));
-    // GY-3418: a selected file that passed in an earlier trial with the same content, imports and
-    // dependencies is not run again — unless the change touches a file whose effect imports cannot
-    // trace (docs, data, configuration); the proof files the caller adds always run.
-    const cached = dependencies && input.changedFiles.every(moduleFile) ? cachedPasses(caches, testResultKeys(worktree, selected, dependencies)) : new Set<string>();
+    // GY-3418: a selected file that passed in an earlier trial with the same content, imports, data
+    // files and dependencies is not run again; the proof files the caller adds always run. GY-3639:
+    // each file's key decides alone, so a doc or a case edited beside code leaves the others cached.
+    const cached = dependencies ? cachedPasses(caches, testResultKeys(worktree, selected, dependencies)) : new Set<string>();
     if (cached.size) {
       log.push(`test-result cache: ${cached.size} file(s) passed in an earlier trial with the same content, imports and dependencies, so they are not run again: ${[...cached].join(', ')}`);
       selected = selected.filter(file => !cached.has(file));
@@ -1419,6 +1652,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     }
     // A cached pass counts in the verdict as the pass it was; a file selectFiles runs anyway counts once.
     const counted = new Set([...files, ...cached]).size;
+    if (dependencies) testCache = { cached: testCache.cached + counted - files.length, ran: testCache.ran + files.length };
     // An affected selection of nothing runs nothing.
     if (!files.length) return result({ passed: counted, failed: [], files: counted });
     enter('tests');
@@ -1436,21 +1670,24 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const transport = hosts.length ? shardSshSession(run) : undefined;
     const readings = hosts.length ? await (input.remote?.read ?? ((named, shared) => readShardHosts(named, run, cores, shared)))(hosts, transport!) : [];
     const remoteLanes = readings.slice(1).filter(underHeatLimit).reduce((sum, reading) => sum + Math.floor(realFreeCores(reading)), 0);
-    // GY-3419: test files naming Docker or the network are local-only — a remote shard runs
-    // with no network or Docker socket, so they would fail there as red verdicts that
-    // measure nothing. Each pool is cut into its own shards, so a local-only file never pins a whole
-    // shared shard to this machine, and placement keeps the local-only shards here (runShardsOnHosts
-    // `pinned`) while the others may go to any host.
-    const split = await splitLocalOnlyTests(files, file => readFile(join(worktree, file), 'utf8'));
-    const durations = await checkoutDurations(worktree, strategy.durations);
+    // GY-3419, GY-3612: test files naming Docker or host-pinned confinement stay local-only;
+    // database and browser tests run on remote shards (browser tests stay local when the trial image
+    // lacks a browser, recorded once). Each pool is cut into its own shards, so a local-only file
+    // never pins a whole shared shard to this machine, and placement keeps local-only shards here.
+    const split = await splitLocalOnlyTests(files, file => readFile(join(worktree, file), 'utf8'),
+      hosts.length ? { remoteBrowser: () => trialImageHasBrowser(runImage ?? trialImage(), run) } : {});
+    if (split.browserLocalOnly) log.push('browser tests stay on this machine: the trial image lacks a browser');
+    const durations = await checkoutDurations(worktree, input.root, strategy.durations, { baseTip: input.baseTip, selectorApproved: input.selectorApproved, run });
     const shards: string[][] = [], pinned: boolean[] = [];
     for (const pool of [{ files: split.remoteable, lanes: trialShardLanes(cores) + remoteLanes, local: false }, { files: split.localOnly, lanes: trialShardLanes(cores), local: true }])
       for (const group of input.groupSize === undefined ? shardTestFiles(pool.files, pool.lanes, durations) : groupTestFiles(pool.files, input.groupSize)) { shards.push(group); pinned.push(pool.local); }
     const slotsDirectory = process.env[(await import('../master/verification-slots.js')).slotsDirectoryVariable];
     const { lanes, breadth } = trialShardBreadth(cores, shards.length, await trialAffordableFiles(input.memory));
     input.onTiming?.(`tests: ${lanes} lanes, breadth ${breadth}`, 0);
-    const settledShards: ({ group: TrialGroup; entries: string[]; unattributed: TrialRunnerError | null; passed: string[] } | undefined)[] = [];
+    const settledShards: ({ group: TrialGroup; entries: string[]; unattributed: TrialRunnerError | null; passed: string[]; records: string } | undefined)[] = [];
     let stopped: unknown = null;
+    // GY-3599: each shard's end sends the trial's counts so far with the running step, so the Task page shows them while the trial runs. What it printed so far goes with the first shard that ends and with each failing shard, so a report stays small.
+    let outputShown = false;
     // A shard a host turned away is noted after every shard's output, so the note stays in the log tail kept on the item.
     const dropped = new Map<string, HostDroppedError>();
     const session = hosts.length ? remoteShardSession({ root: input.root, sha: input.mergeSha, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport }) : null;
@@ -1459,7 +1696,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       const group = shards[index]!, entries: string[] = [];
       try {
         const list = join(checkout.directory, `tests-${index + 1}.txt`), records = join(checkout.directory, `tests-${index + 1}.jsonl`);
-        const argv = (list: string, records: string) => [...check.argv.slice(1), '--files-from', list, '--durations', records, `--test-concurrency=${breadth}`, '--file-timeout=300000'];
+        const argv = (list: string, records: string) => [...check.argv.slice(1), ...input.reporter?.args ?? [], '--files-from', list, '--durations', records, `--test-concurrency=${breadth}`, `--file-timeout=${trialFileTimeoutMs}`];
         const shardAt = now();
         let tests: Ended, recordText: string;
         try {
@@ -1474,14 +1711,20 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
             recordText = await readFile(records, 'utf8').catch(() => '');
           }
         } finally { input.onTiming?.(`tests: shard ${index + 1}${remote ? ` on ${remote}` : ''}`, Math.max(0, now() - shardAt)); }
+        input.reporter?.output(tests.out);
         const recorded = runnerRecords(recordText);
         // Only the shard's own files count: the records and the log may name a file a test ran or printed itself (GY-1645).
         const namedByRecords = recorded.filter(record => !record.passed && group.includes(record.file)).map(record => record.file);
         const failing = [...new Set(namedByRecords.length ? namedByRecords : tests.ok ? [] : failingFilesInLog(tests.out, group))];
         // GY-3418: the files that passed — the whole shard when it exited 0 naming none, else those its records name passing.
         const passed = tests.ok && !failing.length ? group : recorded.filter(record => record.passed && group.includes(record.file) && !failing.includes(record.file)).map(record => record.file);
-        settledShards[index] = { group: { files: group, status: tests.status, signal: tests.signal, failed: failing }, entries, passed,
+        settledShards[index] = { group: { files: group, status: tests.status, signal: tests.signal, failed: failing }, entries, passed, records: recordText,
           unattributed: !tests.ok && !failing.length ? runnerFailure('tests', tests, group, recorded.filter(record => group.includes(record.file)).length) : null };
+        const ended = settledShards.filter(shard => shard !== undefined), slowest = slowestFile(ended.map(shard => shard.records).join('\n'));
+        const shown = !outputShown || !tests.ok;
+        outputShown = true;
+        input.onStep?.(stepLabel, { tests: { passed: cached.size + ended.reduce((sum, shard) => sum + shard.passed.length, 0), failed: new Set(ended.flatMap(shard => shard.group.failed)).size, files: counted, ...(slowest ? { slowest } : {}) },
+          ...(shown ? { output: maskSecrets(entries.join('\n')).slice(-4000) } : {}) });
       } catch (error) {
         if (error instanceof HostDroppedError) { if (!dropped.has(error.host)) dropped.set(error.host, error); throw error; }
         log.push(...entries);
@@ -1497,6 +1740,29 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       const placed = [local, ...hosts.map((host, index) => ({ name: host, remote: host, reading: readings[index + 1]!, room: Math.floor(realFreeCores(readings[index + 1]!) / breadth) }))];
       const placement = await runShardsOnHosts({ count: shards.length, hosts: placed, breadth, pinned, stopped: () => stopped !== null,
         run: (host, index) => shard(index, host.remote) });
+      if (input.onMetrics) {
+        const shardsPerHost: Record<string, number> = {};
+        for (const host of placement.ran) {
+          const name = host === 'local' ? hostname() : host;
+          shardsPerHost[name] = (shardsPerHost[name] ?? 0) + 1;
+        }
+        const hostTemperatures: Record<string, number | null> = readings.length
+          ? Object.fromEntries(readings.map(reading => [reading.name, reading.celsius]))
+          : {};
+        const fileDurations: { file: string; durationMs: number }[] = [];
+        for (const settled of settledShards) {
+          if (!settled) continue;
+          for (const line of settled.records.split('\n')) {
+            try {
+              const record = JSON.parse(line) as { file?: unknown; durationMs?: unknown };
+              if (typeof record.file === 'string' && typeof record.durationMs === 'number' && Number.isFinite(record.durationMs)) {
+                fileDurations.push({ file: record.file, durationMs: record.durationMs });
+              }
+            } catch { /* ignore non-JSON lines */ }
+          }
+        }
+        input.onMetrics({ shardsPerHost, hostTemperatures, fileDurations });
+      }
       if (hosts.length) await recordRemoteShardRun(input.root, { ...(input.localSlot ? { label: input.localSlot } : {}), at: new Date().toISOString(), wallMs: Math.max(0, now() - startedAt), shards: placement.ran.length, remote: placement.ran.filter(name => name !== local.name).length,
         queuedWhileIdle: placement.queuedWhileIdle, host: local.name, celsius: local.reading.celsius,
         hosts: readings.map(reading => ({ name: reading.name, away: reading.away || placement.dropped.includes(reading.name), reason: dropped.get(reading.name)?.reason ?? reading.reason, celsius: reading.celsius, freeCores: Math.round(realFreeCores(reading) * 10) / 10 })) }).catch(() => {});
@@ -1515,9 +1781,12 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const unattributed = ran.find(shard => shard.unattributed)?.unattributed ?? null;
     const failed = [...new Set(groups.flatMap(group => group.failed))];
     if (!failed.length && unattributed) throw unattributed;
+    // GY-3542: a passing trial's own timings balance the next trial's shards.
+    if (!failed.length && strategy.durations) await refreshDurations(input.root, strategy.durations, ran.map(shard => shard.records).join('\n'), files).catch(() => {});
     const worst = groups.find(group => group.status !== 0);
-    return result({ passed: Math.max(0, counted - failed.length), failed, files: counted }, worst ? exitCode({ status: worst.status, signal: worst.signal, cause: undefined }) : 0, groups,
-      failingOutput.length && log.join('\n').length > tailLength ? failureTail(failingOutput) : tail());
+    const slowest = slowestFile(ran.map(shard => shard.records).join('\n'));
+    return { ...result({ passed: Math.max(0, counted - failed.length), failed, files: counted }, worst ? exitCode({ status: worst.status, signal: worst.signal, cause: undefined }) : 0, groups,
+      failingOutput.length && log.join('\n').length > tailLength ? failureTail(failingOutput) : tail()), ...(slowest ? { slowest } : {}) };
   };
   const trial = async (): Promise<TrialRun> => {
     try {
@@ -1564,6 +1833,11 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
   const failures: { directory: string; cause: unknown }[] = [];
   for (const directory of [temporary, home, place]) if (directory) await clear(directory).catch(cause => { failures.push({ directory, cause }); });
   await (input.remove ?? removeSessionCheckout)(input.root, input.base, checkout.directory, input.run).catch(cause => { failures.push({ directory: checkout.directory, cause }); });
+  // GY-3589: the kept built tree stays for the next base pass on the same tip; this pass's lock goes.
+  if (keptLock) {
+    await rm(keptLock, { recursive: true, force: true }).catch(() => {});
+    await rm(tempOwnerMarker(keptLock), { force: true }).catch(() => {});
+  }
   const failure = failures[0];
   if (failure) {
     const outcome = 'verdict' in settled ? `the trial itself answered build ${settled.verdict.build}, ${settled.verdict.tests.failed.length} failing test file(s)` : `the trial itself failed: ${settled.error instanceof Error ? settled.error.message : String(settled.error)}`;

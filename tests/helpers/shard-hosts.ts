@@ -1,9 +1,13 @@
 // GY-3412: hosts for remote shard runs. Every host runs the real graphyard-host-shim, exactly as
 // `graphyard host prepare` installs it, in its own home; only Docker is a stand-in, keeping its images
 // and containers in a state file, logging each call, and running a container's command in its working
-// directory — under `unshare -rn` (no network) when it was created with --network=none. This machine
+// directory — under `unshare -cn` (no network, nonroot as `--user 1000:0`) when it was created with --network=none, and with a
+// read-only root (bubblewrap) on a host whose Docker state holds a `read-only-root` file. This machine
 // has the same stand-in Docker. `ssh` here routes USER@NAME to the host named NAME (exit 255 while
 // NAME.down exists, as OpenSSH does for a host it cannot reach); `sshd` runs a real OpenSSH server.
+// GY-3645: `docker compose` reads a Compose file written as JSON: `up` starts a TCP listener on 127.0.0.1 for
+// each named service's first `expose` port (it fails while the state holds `compose-up-fails`), `down` stops
+// them, and a container created on a service's network resolves the project's service names to this machine.
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync, readdirSync, readFileSync, readlinkSync } from 'node:fs';
@@ -32,7 +36,36 @@ def log(word):
     open(os.path.join(STATE, 'calls.log'), 'a').write(word + '\\n')
 command = args[0]
 open(os.path.join(STATE, 'every-call.log'), 'a').write(command + '\\n')
-if command == 'info':
+if command == 'compose':
+    s.setdefault('projects', {})
+    flag = lambda name: args[args.index(name) + 1] if name in args else None
+    project, file = flag('-p'), flag('-f')
+    verb = next(word for word in args[1:] if word in ('version', 'config', 'up', 'ps', 'down'))
+    if verb == 'version':
+        print('2.fixture')
+    elif verb == 'config':
+        print(open(file).read())
+    elif verb == 'up':
+        if os.path.exists(os.path.join(STATE, 'compose-up-fails')):
+            sys.exit('Error response from daemon: fixture refuses to start services')
+        names = args[args.index('--quiet-pull') + 1:]
+        listen = "import socket, sys; s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(('127.0.0.1', int(sys.argv[1]))); s.listen()\\nwhile True: s.accept()[0].close()"
+        declared = json.load(open(file))['services']
+        s['projects'][project] = {name: subprocess.Popen([sys.executable, '-c', listen, str(declared[name]['expose'][0])], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True).pid for name in names}
+        log('compose up ' + ' '.join(names))
+        save()
+    elif verb == 'ps':
+        if args[-1] in s['projects'].get(project, {}):
+            print(project + '.' + args[-1])
+    elif verb == 'down':
+        for pid in s['projects'].pop(project, {}).values():
+            try:
+                os.kill(pid, 9)
+            except OSError:
+                pass
+        log('compose down')
+        save()
+elif command == 'info':
     print('fixture')
 elif command == 'ps':
     pass
@@ -68,8 +101,26 @@ elif command == 'rm':
 elif command == 'create':
     at = args.index('--entrypoint')
     env = dict(value.split('=', 1) for flag, value in zip(args, args[1:]) if flag == '--env')
-    s['containers'][args[args.index('--name') + 1]] = {'workdir': args[args.index('--workdir') + 1], 'env': env, 'image': args[at + 2],
-        'command': (['unshare', '-rn'] if '--network=none' in args else []) + [args[at + 1]] + args[at + 3:]}
+    # Loopback needs a capability to come up; bubblewrap refuses to start holding one, so the ambient set is cleared before the command runs.
+    lo_up = "import ctypes, fcntl, os, socket, struct, sys; s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); fcntl.ioctl(s, 0x8914, struct.pack('16sH', b'lo', 1)); s.close(); ctypes.CDLL(None).prctl(47, 4, 0, 0, 0); os.execvp(sys.argv[1], sys.argv[1:])"
+    workdir, isolate = args[args.index('--workdir') + 1], ['unshare', '-cn', '--keep-caps', sys.executable, '-c', lo_up] if '--network=none' in args else []
+    joined = next((word[len('--network=container:'):].split('.')[0] for word in args if word.startswith('--network=container:')), None)
+    if joined:
+        # glibc resolves each of the project's service names to this machine through HOSTALIASES.
+        env['HOSTALIASES'] = os.path.join(STATE, 'aliases-' + joined)
+        with open(env['HOSTALIASES'], 'w') as aliases:
+            aliases.write(''.join(name + ' localhost\\n' for name in s.get('projects', {}).get(joined, {})))
+    if os.path.exists(os.path.join(STATE, 'read-only-root')):
+        # Docker's --read-only, for a host that asks: only the container's tmpfs and bind mounts are writable.
+        isolate = ['bwrap', '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc'] + (['--unshare-net'] if isolate else [])
+        for flag, value in zip(args, args[1:]):
+            if flag == '--tmpfs':
+                isolate += ['--tmpfs', value.split(':')[0]]
+            if flag == '--mount':
+                mount = dict(part.split('=', 1) for part in value.split(',') if '=' in part)
+                isolate += ['--ro-bind' if value.endswith(',readonly') else '--bind', mount['src'], mount['dst']]
+        isolate += ['--chdir', workdir, '--']
+    s['containers'][args[args.index('--name') + 1]] = {'workdir': workdir, 'env': env, 'image': args[at + 2], 'command': isolate + [args[at + 1]] + args[at + 3:]}
     open(os.path.join(STATE, 'creates.jsonl'), 'a').write(json.dumps(sys.argv[1:]) + '\\n')
     save()
 elif command == 'start':

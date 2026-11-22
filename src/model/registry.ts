@@ -27,7 +27,8 @@ export interface QuotaDecision { state: QuotaObservation['state']; at: string }
 export interface FleetAccount extends FleetAccountInput { quota: ObservedQuota; quotaDecision?: QuotaDecision; smoke?: AccountSmoke | null; unjudged?: Partial<Record<FleetRoleName, UnjudgedRuns>> }
 
 /** The roles a configured registry is expected to name. Setup proposes every one of them, master included (GY-2939); an operator re-names any role's accounts. */
-export const fleetRoles = ['worker', 'reviewer', 'producer', 'master'] as const;
+// GY-3593: the caretaker keeps the install healthy on a schedule, apart from the master that builds.
+export const fleetRoles = ['worker', 'reviewer', 'producer', 'master', 'caretaker'] as const;
 export const registryRoles = fleetRoles;
 export type FleetRoleName = typeof registryRoles[number];
 /**
@@ -137,6 +138,10 @@ export interface CanaryOffer { runtime: string; entry: string; version: string }
 export const versionEntry = (pin: { root: string; rest: string }, version: string) => [pin.root, version, pin.rest].filter(Boolean).join('/');
 /** A PATH whose first entry is `entry`, the rest kept. */
 export const repinPath = (path: string, entry: string) => [entry, ...path.split(':').slice(1)].join(':');
-/** The runtime launched from `entry`: its PATH led by it, every other part of its launch kept. */
-export const repinRuntime = (runtime: FleetRuntime, entry: string): FleetRuntime =>
-  ({ ...runtime, launch: { ...runtime.launch, environment: { ...runtime.launch.environment, PATH: repinPath(runtime.launch.environment?.PATH ?? '', entry) } } });
+/** The runtime launched from `entry`: its PATH led by it and its mise version pin moved with it (GY-3592), every other part of its launch kept. */
+export function repinRuntime(runtime: FleetRuntime, entry: string): FleetRuntime {
+  const environment: Record<string, string> = { ...runtime.launch.environment, PATH: repinPath(runtime.launch.environment?.PATH ?? '', entry) };
+  const was = pinnedInstall(runtime)?.version, now = pinnedInstall({ launch: { ...runtime.launch, environment } })?.version;
+  if (was && now) for (const name of Object.keys(environment)) if (/^MISE_\w+_VERSION$/.test(name) && environment[name] === was) environment[name] = now;
+  return { ...runtime, launch: { ...runtime.launch, environment } };
+}

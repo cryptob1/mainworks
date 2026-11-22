@@ -5,10 +5,11 @@
 // records it on the item's observation (server/review-verdict.ts).
 import { randomUUID } from 'node:crypto';
 import { chmod, readFile, writeFile } from 'node:fs/promises';
-import { extname, join } from 'node:path';
+import { extname, isAbsolute, join } from 'node:path';
 import { z } from 'zod';
 import type { ChildRun } from './child-runner.js';
 import { blockingFindings, findingLocation } from './review-cap.js';
+import { validateAssertionRulings } from './model/changed-assertions.js';
 
 /** The file, in the session's GH_CONFIG_DIR, that binds a reviewer session to its launch. */
 export const reviewBindingFile = 'review-binding.json';
@@ -29,6 +30,8 @@ export const reviewBindingSchema = z.object({
   head: sha.optional(), baseTip: sha.optional(), verdictToken: verdictTokenSchema.optional(),
   /** A control-plane re-review (GY-1988): the earlier head this round deltas from, and the paths its findings named — the session's own launch context for the unchanged-code check. */
   previousHead: sha.optional(), earlierPaths: z.array(z.string().min(1).max(1000)).max(10).optional(),
+  /** GY-3635: removed or modified assertion lines in existing tests/cases that an APPROVE verdict must rule on. */
+  changedAssertions: z.array(z.object({ path: z.string().min(1).max(1000), line: z.number().int().positive(), before: z.string().max(1000), after: z.string().max(1000).optional() })).max(200).optional(),
 // Not strict (GY-2933): the loop's release writes the binding and the checkout's CLI reads it, so a field one version still writes and the other dropped is ignored, not refused.
 }).refine(binding => binding.mode !== 'control-plane' || (!!binding.head && !!binding.baseTip && !!binding.verdictToken), 'A control-plane binding carries head, baseTip and verdictToken')
   .refine(binding => binding.mode === 'control-plane' || (binding.head === undefined && binding.baseTip === undefined && binding.verdictToken === undefined), 'Only a control-plane binding carries head, baseTip or verdictToken')
@@ -97,16 +100,17 @@ export function unchangedCodeFindings(body: string, binding: Pick<ReviewPostBind
 /**
  * The screenshots a product verdict uploads (GY-2989): each "Screenshot: PATH" line naming a local
  * PNG or JPEG file, read so the control plane keeps the image and the item shows it. A line naming an
- * http(s) URL is a link and is sent only in the body.
+ * http(s) URL is a link and is sent only in the body. GY-3590: a headless session's bare file name
+ * resolves against the screenshot directory its launch named, which the sandbox and this process share.
  */
-export async function screenshotUploads(body: string, read: (path: string) => Promise<Buffer> = readFile) {
+export async function screenshotUploads(body: string, read: (path: string) => Promise<Buffer> = readFile, directory?: string) {
   const named = body.split('\n').map(line => /^\s*Screenshot:\s*(.+?)\s*$/i.exec(line)?.[1]).filter((path): path is string => !!path && !/^https?:\/\//i.test(path));
   const uploads: Array<{ name: string; mediaType: 'image/png' | 'image/jpeg'; bytes: string }> = [];
   for (const name of [...new Set(named)]) {
     const extension = extname(name).toLowerCase();
     if (!['.png', '.jpg', '.jpeg'].includes(extension)) throw new ReviewPostRefusal(`Screenshot ${name} is not a .png or .jpg file`);
     let bytes: Buffer;
-    try { bytes = await read(name); } catch { throw new ReviewPostRefusal(`Screenshot ${name} cannot be read; name the file you saved, by its path`); }
+    try { bytes = await read(directory && !isAbsolute(name) ? join(directory, name) : name); } catch { throw new ReviewPostRefusal(`Screenshot ${name} cannot be read; name the file you saved, by its path`); }
     uploads.push({ name, mediaType: extension === '.png' ? 'image/png' : 'image/jpeg', bytes: bytes.toString('base64') });
   }
   return uploads;
@@ -133,7 +137,7 @@ export const verdictStateOf = (event: ReviewEvent) => event === 'APPROVE' ? 'APP
  * binding and the credential, GRAPHYARD_REVIEW the KEY@SHA the launch was for. Every refusal is a
  * `ReviewPostRefusal` whose message ends with a correct invocation for this session.
  */
-export async function postReview(input: { event: string | undefined; body: string; cliPath: string; environment: NodeJS.ProcessEnv }, dependencies: ReviewPostDependencies) {
+export async function postReview(input: { event: string | undefined; body: string; cliPath: string; environment: NodeJS.ProcessEnv; screenshotDirectory?: string }, dependencies: ReviewPostDependencies) {
   const event = reviewEvents.find(entry => entry === input.event?.toUpperCase());
   let binding: ReviewPostBinding | null = null;
   const refuse = (reason: string): never => { throw new ReviewPostRefusal(`Review not posted: ${reason}.\nPost it like this:\n${reviewPostExample(input.cliPath, event ?? 'APPROVE')}`); };
@@ -156,11 +160,15 @@ export async function postReview(input: { event: string | undefined; body: strin
       const unchanged = unchangedCodeFindings(body, bound, diff);
       if (unchanged.length) refuse(`${unchanged.map(finding => `"${finding}"`).join('; ')} name${unchanged.length === 1 ? 's' : ''} code unchanged since the earlier head ${bound.previousHead} this round deltas from, and no earlier finding named ${unchanged.length === 1 ? 'its path' : 'their paths'}; this round judges only what changed: move it to a "Nit: PATH:LINE — FINDING" line, or name the acceptance criterion (AC-N) it leaves unmet`);
     }
+    if (event === 'APPROVE' && bound.changedAssertions?.length) {
+      const assertionRefusal = validateAssertionRulings(body, bound.changedAssertions);
+      if (assertionRefusal) refuse(assertionRefusal);
+    }
     const base = input.environment.GRAPHYARD_URL;
     if (!base) refuse('GRAPHYARD_URL is unset; a control-plane reviewer session is launched with the control plane\'s address');
     const post = dependencies.fetch ?? fetch;
     let screenshots: Awaited<ReturnType<typeof screenshotUploads>> = [];
-    try { screenshots = await screenshotUploads(body); } catch (error) { refuse((error as Error).message); }
+    try { screenshots = await screenshotUploads(body, readFile, input.screenshotDirectory); } catch (error) { refuse((error as Error).message); }
     let response: Response;
     try {
       response = await post(`${base!.replace(/\/$/, '')}/api/work/${encodeURIComponent(bound.key)}/review-verdict`, { method: 'POST', headers: { Authorization: `Bearer ${bound.verdictToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },

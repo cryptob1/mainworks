@@ -48,8 +48,9 @@ test('e2e:app-test-environments — the Tests view\'s Where tests run block show
     const { code } = await (await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string };
     await page.goto(`${baseURL}/#sign-in=${code}`);
     await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
-    const primary = page.getByRole('navigation', { name: 'Primary' });
-    await primary.getByRole('button', { name: 'Tests', exact: true }).click();
+    const mainNav = page.getByRole('navigation', { name: 'Main' });
+    const tabs = page.getByRole('navigation', { name: 'Pages in this section' });
+    await tabs.getByRole('button', { name: 'Tests', exact: true }).click();
 
     // GY-3485: the block sits in the Tests page's Details fold.
     await page.getByRole('main').getByText('Details', { exact: true }).click();
@@ -75,23 +76,20 @@ test('e2e:app-test-environments — the Tests view\'s Where tests run block show
 
     // It fits the width and adds no Settings page.
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await primary.getByRole('button', { name: 'Settings', exact: true }).click();
-    await expect(page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button')).toHaveText(['Agents', 'Setup', 'Delivery']);
+    await mainNav.getByRole('link', { name: 'Settings', exact: true }).click();
+    await expect(tabs.getByRole('button')).toHaveText(['Agents', 'Workers', 'Costs', 'Setup', 'Delivery', 'Help']);
 
-    // The same block answers at phone width: every row still readable, nothing overflows, the
-    // navigation folds behind the menu, and it still adds no Settings page.
+    // The same block answers at phone width: every row still readable, nothing overflows, and it still adds no Settings page.
     await page.setViewportSize({ width: 390, height: 844 });
-    const menu = page.getByRole('button', { name: 'Menu' });
-    if (await menu.getAttribute('aria-expanded') !== 'true') await menu.click();
-    await primary.getByRole('button', { name: 'Tests', exact: true }).click();
+    await mainNav.getByRole('link', { name: 'Work', exact: true }).click();
+    await tabs.getByRole('button', { name: 'Tests', exact: true }).click();
     await page.getByRole('main').getByText('Details', { exact: true }).click();
     await expect(block).toBeVisible({ timeout: 15_000 });
     await expect(local).toContainText('Every merge trial and batch gate');
     await expect(staging).toContainText('environment fault, retried 5 min ago in 42 s');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    if (await menu.getAttribute('aria-expanded') !== 'true') await menu.click();
-    await primary.getByRole('button', { name: 'Settings', exact: true }).click();
-    await expect(page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button')).toHaveText(['Agents', 'Setup', 'Delivery']);
+    await mainNav.getByRole('link', { name: 'Settings', exact: true }).click();
+    await expect(tabs.getByRole('button')).toHaveText(['Agents', 'Workers', 'Costs', 'Setup', 'Delivery', 'Help']);
   } finally {
     if (previous === undefined) delete process.env.GRAPHYARD_REPOSITORY_ROOT; else process.env.GRAPHYARD_REPOSITORY_ROOT = previous;
     http.closeAllConnections();

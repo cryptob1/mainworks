@@ -11,6 +11,7 @@ import { shortShas } from '../candidate';
 import { Agent } from '../fun';
 import { EmptyState, PageHeader } from '../components/page-layout';
 import { overloadAlarm, overloaded } from '../../src/model/session-usage';
+import { formatAge } from '../../src/model/duration';
 import type { FleetAccountView } from '../../src/model/registry';
 import { localTime } from '../agent-status';
 
@@ -201,24 +202,26 @@ export function AccountAvailability({ accounts, now }: { accounts: FleetAccountV
   </ul></section>;
 }
 
-type HostRow = { host: string; local?: boolean; away: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null };
+type HostRow = { host: string; local?: boolean; at?: string; away: boolean; update?: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null };
 /**
  * GY-3407: the hosts the loop watches — this machine first, then each one added with
  * `graphyard host add USER@HOST` — as the loop read them this cycle. A host that does not answer
  * reads Away and is read again next cycle. Merge trials send test shards to added hosts (GY-3412).
+ * GY-3517: each row is the latest probe, with how long ago it was read; one away only because its helper is too old says so.
  */
-function Hosts({ hosts }: { hosts: HostRow[] }) {
+function Hosts({ hosts, now }: { hosts: HostRow[]; now: number }) {
   if (!hosts.length) return null;
   const figure = (value: number | null, unit = '') => value === null ? '—' : `${Math.round(value)}${unit}`;
   return <section className="hosts-section"><h2>Hosts</h2><table className="sessions-table hosts" aria-label="Hosts" data-hosts>
-    <thead><tr><th scope="col">Host</th><th scope="col">Cores</th><th scope="col">Temperature</th><th scope="col">Steal</th><th scope="col">Runs now</th></tr></thead>
+    <thead><tr><th scope="col">Host</th><th scope="col">Cores</th><th scope="col">Temperature</th><th scope="col">Steal</th><th scope="col">Runs now</th><th scope="col">Read</th></tr></thead>
     <tbody>{hosts.map(host => <tr key={host.host} data-host={host.host} data-away={host.away || undefined}>
       <th scope="row" data-label="Host">{host.host}{host.local ? <span className="muted"> (this machine)</span> : null}</th>
-      {host.away ? <td data-label="State" colSpan={4}><span className="muted" title={host.reason}>Away: not answering, tried again each cycle</span></td> : <>
+      {host.away ? <td data-label="State" colSpan={4}><span className="muted" title={host.reason}>{host.update ? 'Away: needs an update, see the line at the top' : 'Away: not answering, tried again each cycle'}</span></td> : <>
         <td data-label="Cores">{figure(host.cores)}</td>
         <td data-label="Temperature">{figure(host.celsius, '°C')}</td>
         <td data-label="Steal">{figure(host.steal, '%')}</td>
         <td data-label="Runs now">{figure(host.runs)}</td></>}
+      <td data-label="Read">{host.at ? `${formatAge(host.at, now)} ago` : '—'}</td>
     </tr>)}</tbody>
   </table></section>;
 }
@@ -316,7 +319,7 @@ export default function WorkersPage({ work, observedAt, setSelected, setView, to
     {internals || sessions.length || hosts.length ? <details className="panel finished-sessions machine-details"><summary>Machine details</summary>
       {internals ? <p className="muted" data-machine-figures>{internals}</p> : null}
       <SessionUsage sessions={sessions} now={now}/>
-      <Hosts hosts={hosts}/>
+      <Hosts hosts={hosts} now={now}/>
     </details> : null}
     <ProjectMemorySection memory={status?.projectMemory}/>
     {/* A watched run that ends moves here: the section opens to it, so its panel stays in view. */}

@@ -14,6 +14,13 @@ import type { Cycle } from '../src/daemon/cycle.js';
 import type { DaemonState } from '../src/daemon/state.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { slotsDirectoryVariable, withHeavyJob } from '../src/master/verification-slots.js';
+import { trialAffordableFiles } from '../src/merge-writer/trial.js';
+
+// GY-3616: each merge trial first waits for a slot of the host's heavy-job budget when the process
+// carries the host's slot directory, and a host busy with other projects' jobs held GY-1's and GY-2's
+// launches past every wait. The scenario names its own host: no shared slot directory, no memory reading.
+delete process.env[slotsDirectoryVariable];
 
 // GY-3564: a merge trial whose run has finished — its result file written — but whose completion
 // never reached the loop (the watcher's promise stays pending) is collected from its files within
@@ -75,7 +82,7 @@ class World {
     };
     return {
       ...ports,
-      parallel: 2,
+      parallel: 2, cores: 8, memory: async () => null,
       // Each run's directory is real, but its completion is lost: the watcher's promise never settles.
       launchTrialRun: (spec): TrialRunHandle => {
         const directory = join(world.root, spec.key);
@@ -97,6 +104,12 @@ function loop(world: World, state: DaemonState) {
 
 const waitFor = async (what: () => boolean, ms = 5_000) => { for (let waited = 0; !what() && waited < ms; waited += 5) await new Promise(resolve => setTimeout(resolve, 5)); };
 const kinds = (world: World, n: number) => (world.recorded.get(n) ?? []).map(event => event.kind).filter(kind => kind !== 'trial-step');
+
+test('unit:collect-finished-trial-pinned — the scenario takes no slot of the host\'s heavy-job budget and no memory reading, so a busy host never holds its trials\' launches', async () => {
+  assert.equal(process.env[slotsDirectoryVariable], undefined, 'the test process carries no host slot directory');
+  assert.equal(await withHeavyJob('merge trial GY-1', async () => 'ran', { onWait: () => assert.fail('a trial waited for a host slot') }), 'ran');
+  assert.equal(await trialAffordableFiles(new World(1, tmpdir()).reads().memory), null, 'the reads take no memory reading of the host running the test');
+});
 
 test('integration:collect-finished-trial — a trial whose completion is lost but whose result file exists is settled from its files without a loop restart, its lane takes the next candidate, and a trial still running is untouched', { timeout: 60_000 }, async () => {
   const world = new World(3, await temporaryDirectory('collect-finished-trial', tmpdir()));

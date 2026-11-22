@@ -21,10 +21,19 @@ import { processPidNamespace, processStartTicks, tempOwnerGone, tempOwnerJudgeab
 
 /** Every preview's Compose project name starts so; nothing else on the host is ever removed. */
 export const composeProjectPrefix = 'graphyard-preview-';
-/** The label naming the process that owns a preview's containers, networks and built images (a TempOwner, as JSON). */
+/** The label naming the process that owns a preview's containers and networks (a TempOwner, as JSON). */
 export const composeOwnerLabel = 'graphyard.preview.owner';
-/** The label naming the preview project an image was built for, so its removal finds every image it built whatever its tag. */
-export const composeImageLabel = 'graphyard.preview.project';
+/**
+ * GY-3679: the one label every image a preview builds carries. Its value never changes between
+ * runs, so a second build of the same commit finds every layer cached; teardown keeps the images
+ * and `sweepComposePreviews` removes those older than `composeImageKeepHours`.
+ */
+export const composeImageLabel = 'graphyard.preview.image';
+export const composeImageKeepHours = 24;
+/** The labels a preview's build adds to the file's own: nothing that names the run, its project or its owner. */
+export const composeBuildLabels = (declared: Record<string, unknown> = {}): Record<string, unknown> => ({ ...declared, [composeImageLabel]: 'kept' });
+/** How a preview's project is taken down: its containers, volumes and networks go; its images stay for the next build's cache. */
+export const composeDownArgs = (project: string) => ['compose', '-p', project, 'down', '--volumes', '--remove-orphans', '--timeout', '5'];
 /** A preview's Compose project: the item's key and the preview's id, lower-cased as Compose requires. */
 export const composeProjectName = (key: string, id: string) => `${composeProjectPrefix}${key.toLowerCase().replace(/[^a-z0-9-]/g, '-')}-${id.slice(0, 8).toLowerCase()}`;
 
@@ -135,9 +144,9 @@ export function composePreviewConfig(config: Json, options: { project: string; s
   const services = Object.fromEntries(Object.entries<Json>(config.services ?? {}).map(([name, entry]) => {
     const { container_name: _name, ports: _ports, cpus: _cpus, mem_limit: _memory, memswap_limit: _swap, pids_limit: _pids, restart: _restart, scale: _scale, deploy, ...rest } = entry;
     const { resources: _resources, restart_policy: _policy, replicas: _replicas, ...placement } = deploy ?? {};
-    // A built image is the preview's own, by name and label: it never retags a host image, and its removal finds it.
+    // A built image is the preview's own by name: it never retags a host image.
     const build = typeof entry.build === 'string' ? { context: entry.build } : entry.build;
-    const built = build ? { image: `${options.project}-${name}`, build: { ...build, labels: { ...keyed(build.labels), ...labels, [composeImageLabel]: options.project } } } : {};
+    const built = build ? { image: `${options.project}-${name}`, build: { ...build, labels: composeBuildLabels(keyed(build.labels)) } } : {};
     return [name, {
       ...rest, ...built, ...(Object.keys(placement).length ? { deploy: placement } : {}),
       cpus: options.bounds.cpus, mem_limit: `${options.bounds.memoryMb}m`, memswap_limit: `${options.bounds.memoryMb}m`, pids_limit: options.bounds.pids, restart: 'no',
@@ -359,26 +368,24 @@ const accepts = (host, port) => new Promise(done => { const socket = net.connect
   console.log(target + ' accepts TCP connections'); } })();`, ...targets.map(target => `${target.host}:${target.port}`)];
 
 /**
- * Removes `project`: its containers, its volumes and networks, and the images it built; then anything
- * carrying its labels that `down` missed, built images by `composeImageLabel` whatever their tag.
- * Rejects, naming what is left, unless the daemon then holds nothing of it.
+ * Removes `project`: its containers, its volumes and networks; then anything carrying its labels
+ * that `down` missed. The images it built stay (GY-3679). Rejects, naming what is left, unless the daemon then holds nothing of it.
  */
 export async function removeComposeProject(project: string, options: { docker?: Docker; env?: Record<string, string> } = {}) {
   if (!project.startsWith(composeProjectPrefix)) throw new Error(`${project} is not a preview's Compose project`);
   const docker = options.docker ?? defaultDocker, env = options.env ?? dockerEnvironment({ PATH: process.env.PATH ?? '' });
   // Run from `/`: by its project name alone, never reading a Compose file or .env where this process happens to be.
   const failures: string[] = [], note = (error: unknown) => { failures.push(error instanceof Error ? error.message : String(error)); return ''; };
-  await docker(['compose', '-p', project, 'down', '--volumes', '--remove-orphans', '--rmi', 'local', '--timeout', '5'], { env, cwd: '/', timeoutMs: 120_000 }).catch(note);
+  await docker(composeDownArgs(project), { env, cwd: '/', timeoutMs: 120_000 }).catch(note);
   // What `down` left is removed by id; a network still detaching from a removed container is tried again.
   for (let pass = 0; ; pass++) {
     const left = await composeLeftovers(project, { docker, env });
-    const named = [...left.containers.map(id => `container ${id}`), ...left.volumes.map(id => `volume ${id}`), ...left.networks.map(id => `network ${id}`), ...left.images.map(id => `image ${id}`)];
+    const named = [...left.containers.map(id => `container ${id}`), ...left.volumes.map(id => `volume ${id}`), ...left.networks.map(id => `network ${id}`)];
     if (!named.length) return;
     if (pass === 3) throw new Error(`${project} was not removed: ${named.join(', ')} remain (${failures.slice(-3).join('; ').slice(0, 600)})`);
     if (left.containers.length) await docker(['rm', '--force', '--volumes', ...left.containers], { env, timeoutMs: 60_000 }).catch(note);
     if (left.volumes.length) await docker(['volume', 'rm', '--force', ...left.volumes], { env, timeoutMs: 60_000 }).catch(note);
     if (left.networks.length) await docker(['network', 'rm', ...left.networks], { env, timeoutMs: 60_000 }).catch(note);
-    if (left.images.length && !left.containers.length) await docker(['image', 'rm', '--force', ...left.images], { env, timeoutMs: 60_000 }).catch(note);
     if (pass) await new Promise(accept => setTimeout(accept, 500 * pass));
   }
 }
@@ -391,17 +398,16 @@ export async function previewNetworkCount(env: Record<string, string>, docker: D
   try { return lines(await docker(['network', 'ls', '--format', '{{.Name}}', '--filter', `name=${composeProjectPrefix}`], { env, timeoutMs: 30_000 })).filter(name => name.startsWith(composeProjectPrefix)).length; }
   catch { return null; }
 }
-/** What of `project` the daemon still holds: container ids, volume and network names, and the ids of images built for it. */
+/** What of `project` the daemon still holds: container ids, volume and network names. */
 export async function composeLeftovers(project: string, options: { docker?: Docker; env?: Record<string, string> } = {}) {
   const docker = options.docker ?? defaultDocker, env = options.env ?? dockerEnvironment({ PATH: process.env.PATH ?? '' });
   const filter = `label=com.docker.compose.project=${project}`;
-  const [containers, volumes, networks, images] = await Promise.all([
+  const [containers, volumes, networks] = await Promise.all([
     docker(['ps', '--all', '--quiet', '--filter', filter], { env, timeoutMs: 30_000 }),
     docker(['volume', 'ls', '--quiet', '--filter', filter], { env, timeoutMs: 30_000 }),
     docker(['network', 'ls', '--format', '{{.Name}}', '--filter', filter], { env, timeoutMs: 30_000 }),
-    docker(['image', 'ls', '--quiet', '--no-trunc', '--filter', `label=${composeImageLabel}=${project}`], { env, timeoutMs: 30_000 }),
   ]);
-  return { containers: lines(containers), volumes: lines(volumes), networks: lines(networks), images: [...new Set(lines(images))] };
+  return { containers: lines(containers), volumes: lines(volumes), networks: lines(networks) };
 }
 
 /**
@@ -409,20 +415,19 @@ export async function composeLeftovers(project: string, options: { docker?: Dock
  * gone — or one this reader cannot judge and older than `tmpReclaimMinAgeMs` — removed with its
  * volumes and networks. A project whose owner still runs is left serving, and one naming no owner is
  * not known to be Graphyard's, so it is left alone (GY-3291). Answers the removed projects.
+ * GY-3679: it also removes the images previews built more than `composeImageKeepHours` ago that no container uses.
  */
 export async function sweepComposePreviews(options: { docker?: Docker; env?: Record<string, string>; procRoot?: string; now?: () => number } = {}): Promise<string[]> {
   const docker = options.docker ?? defaultDocker, env = options.env ?? dockerEnvironment({ PATH: process.env.PATH ?? '' }), procRoot = options.procRoot ?? '/proc';
   const format = `{{.Label "com.docker.compose.project"}}\t{{.Label "${composeOwnerLabel}"}}`;
-  const [containers, networks, volumes, images] = await Promise.all([
+  await docker(['image', 'prune', '--all', '--force', '--filter', `label=${composeImageLabel}`, '--filter', `until=${composeImageKeepHours}h`], { env, timeoutMs: 120_000 }).catch(() => '');
+  const [containers, networks, volumes] = await Promise.all([
     docker(['ps', '--all', '--filter', 'label=com.docker.compose.project', '--format', format], { env, timeoutMs: 30_000 }),
     docker(['network', 'ls', '--filter', 'label=com.docker.compose.project', '--format', format], { env, timeoutMs: 30_000 }),
     docker(['volume', 'ls', '--filter', 'label=com.docker.compose.project', '--format', `{{.Label "com.docker.compose.project"}}\t`], { env, timeoutMs: 30_000 }),
-    // An image's labels are read by inspecting it: `image ls` cannot format them.
-    docker(['image', 'ls', '--quiet', '--no-trunc', '--filter', `label=${composeImageLabel}`], { env, timeoutMs: 30_000 }).then(ids => lines(ids).length
-      ? docker(['image', 'inspect', '--format', `{{index .Config.Labels "${composeImageLabel}"}}\t{{index .Config.Labels "${composeOwnerLabel}"}}`, ...new Set(lines(ids))], { env, timeoutMs: 30_000 }) : ''),
   ]);
   const owners = new Map<string, TempOwner[]>();
-  for (const line of lines(`${containers}\n${networks}\n${volumes}\n${images}`)) {
+  for (const line of lines(`${containers}\n${networks}\n${volumes}`)) {
     const [project, label] = line.split('\t');
     if (!project?.startsWith(composeProjectPrefix)) continue;
     const list = owners.get(project) ?? [];

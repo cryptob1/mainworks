@@ -12,6 +12,10 @@ import { trialFailurePrefix } from '../src/model/rework-ground.js';
 import type { MergeLedgerState } from '../src/model/merge-ledger.js';
 import { masterConfigSchema } from '../src/master.js';
 import type { Work } from '../src/model.js';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { acquireVerificationSlot, heldVariable, slotsDirectoryVariable } from '../src/master/verification-slots.js';
+import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 /**
  * GY-1524: the control-plane merge executor over a simulated day of the real loop's cycles, in the
@@ -26,6 +30,10 @@ import type { Work } from '../src/model.js';
  * item exactly once, push every merge commit exactly once, run one merge at a time, request each
  * owed rework exactly once, and keep its state bounded.
  */
+// GY-3617: the day's trials are in-process stubs, so they take none of the host's heavy-job slots. A run
+// under GRAPHYARD_VERIFICATION_SLOTS_DIR (a worker's check, the batch gate) otherwise queued every stub
+// trial behind the host's real suites: one at a time, and stalled past the test's timeout.
+process.env[heldVariable] = '1';
 const minute = 60_000;
 const start = Date.parse('2030-05-01T00:00:00Z');
 const iso = (at: number) => new Date(at).toISOString();
@@ -92,7 +100,7 @@ class World {
   ports(parallel?: number): MergeWriterReads {
     const world = this;
     return {
-      baseBranch: 'main', now: this.now, ...(parallel ? { parallel } : {}),
+      baseBranch: 'main', now: this.now, cores: 8, ...(parallel ? { parallel } : {}),
       fetch: async () => world.tip(),
       merge: async (head, baseTip) => {
         const mergeSha = sha(`merge:${head}:${baseTip}`);
@@ -248,4 +256,33 @@ test('unit:soak-merge-writer-concurrent — GY-3120: the simulated day with thre
   const failing = Array.from({ length: items }, (_, index) => index + 1).filter(n => failsTrial(n) || timesOut(n));
   assert.deepEqual(world.decided.map(entry => entry.n).sort((a, b) => a - b), failing, 'only a failing head is reworked, never one trialled beside it');
   assert.deepEqual(state.mergeWriter.reworks, [], 'no rework is still owed');
+});
+
+test('unit:soak-merge-writer-pinned — GY-3617: with every heavy-job slot on the host held by another run, the simulated day still trials heads at once and delivers them; its in-process trials never wait on the host', { timeout: 60_000 }, async () => {
+  const slots = join(await temporaryDirectory('soak-merge-writer-slots'), 'heavy-jobs');
+  await mkdir(slots, { recursive: true }); await writeFile(join(slots, 'limit'), '1\n');
+  const previous = process.env[slotsDirectoryVariable];
+  process.env[slotsDirectoryVariable] = slots;
+  const other = await acquireVerificationSlot({ directory: slots, label: 'another run on this host' });
+  try {
+    let now = start;
+    const world = new World(() => now);
+    for (let n = 1; n <= items; n++) world.submit(n, 1, start + n * submitEveryMs);
+    const effects = { agents: () => [], herdr: () => ({ agents: [], available: true }), credentials: async () => ({}),
+      snapshot: async () => ({ work: world.snapshot(), now: iso(now) }), closeSession: () => {}, dispatch: async () => {},
+      decisions: async () => ({ decisions: [] }), persist: async () => {},
+      github: githubDouble, merge: githubDouble, mergeWriter: world.ports(3), rework: world.rework } as unknown as DaemonEffects;
+    const state = emptyDaemonState(config);
+    // The day runs until two heads are trialled at once; the record outages leave several due together.
+    for (let cycle = 0; cycle < cycles && world.widest < 2; cycle++) {
+      now = start + cycle * cycleMs; world.cycle = cycle;
+      await runCycle(config, state, effects, () => now);
+      await mergeWriterIdle(state);
+    }
+    assert.ok(world.widest > 1, 'heads were trialled at once');
+    assert.ok(world.snapshot().filter(item => item.stage === 'done').length > 10, 'and delivered');
+  } finally {
+    other.release();
+    if (previous === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = previous;
+  }
 });

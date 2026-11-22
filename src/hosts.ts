@@ -16,12 +16,13 @@ import { defaultChildRun, type ChildRun } from './child-runner.js';
 import { configHome } from './install/secrets.js';
 import { cpuSensorNames } from './merge-writer/trial-load.js';
 import { cpuStatTotals, stealPercent } from './daemon/cpu-pressure.js';
-import { hostProbeScript, hostShimDigest, hostShimScript } from './host-shim.js';
+import { hostProbeScript, hostShimScript, missingTrialVerbs } from './host-shim.js';
 import { trialAppArmorProfilePath, trialAppArmorProfileText } from './merge-writer/trial-apparmor.js';
 import { shellQuote } from './install/transport.js';
 
 export interface HostRecord { target: string; addedAt: string }
-export interface HostReading { host: string; local?: boolean; away: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; stat?: { total: number; steal: number } | null }
+/** GY-3517: `at` is when this probe read the host; `update` marks one away only because its shim lacks a trial verb. */
+export interface HostReading { host: string; local?: boolean; at?: string; away: boolean; /** GY-3601: when an away host stopped answering. */ since?: string; update?: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; stat?: { total: number; steal: number } | null }
 
 /** Machine-wide, beside the machine-share link (team-access.ts): every install's loop on this machine reads the same hosts. */
 export const hostsFile = (home = configHome()) => join(home, 'machine', 'hosts.json');
@@ -98,6 +99,9 @@ install -d "$home/.graphyard"
 chown -R "$user:$user" "$home/.graphyard"
 for _ in 1 2 3 4 5 6 7 8 9 10; do [ -S "/run/user/$uid/bus" ] && break; sleep 1; done
 sudo -u "$user" XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" PATH="$(dirname "$setuptool"):$PATH" "$setuptool" install
+# A check that declares Compose services runs whole on this host, so its rootless Docker needs the Compose plugin.
+if sudo -u "$user" docker compose version >/dev/null 2>&1; then echo "Docker Compose plugin: found. Checks that declare Compose services can run here."
+else echo "Docker Compose plugin: missing. This host's rootless Docker needs it to run checks that declare Compose services; install docker-compose-plugin and they run here. Test shards work without it."; fi
 # Tailscale SSH on port 22 ignores authorized_keys, so the shim: give $user its own OpenSSH on port ${computePort}.
 if tailscale debug prefs 2>/dev/null | grep -q '"RunSSH": *true'; then
   sshd=$(command -v sshd) || { echo "Install the OpenSSH server (sshd), then run this again." >&2; exit 1; }
@@ -153,11 +157,12 @@ export function parseHostProbe(text: string) {
   const number = (pattern: RegExp) => { const value = Number(pattern.exec(text)?.[1]); return Number.isFinite(value) ? value : null; };
   const temps = [...text.matchAll(/^temp (\S+) (\d+)$/gm)].filter(match => cpuSensorNames.includes(match[1]!)).map(match => Math.floor(Number(match[2]) / 1000));
   const user = /^user (\d+) ?(.*)$/m.exec(text);
-  return { shim: /^shim ([0-9a-f]{64})$/m.exec(text)?.[1] ?? null, cores: number(/^cores (\d+)$/m), load: number(/^load ([\d.]+)$/m), runs: number(/^runs\s+(\d+)$/m), celsius: temps.length ? Math.max(...temps) : null, stat: cpuStatTotals(text),
+  const verbs = /^verbs (.*)$/m.exec(text)?.[1]?.split(' ').filter(Boolean) ?? null;
+  return { shim: /^shim ([0-9a-f]{64})$/m.exec(text)?.[1] ?? null, verbs, compose: /^compose \S/m.test(text), cores: number(/^cores (\d+)$/m), load: number(/^load ([\d.]+)$/m), runs: number(/^runs\s+(\d+)$/m), celsius: temps.length ? Math.max(...temps) : null, stat: cpuStatTotals(text),
     uid: user ? Number(user[1]) : null, groups: user ? user[2]!.split(/\s+/).filter(Boolean) : [] };
 }
 
-export const outdatedShimReason = (target: string) => `${target}'s graphyard-host-shim is older than this release: run graphyard host prepare and the script it prints there`;
+export const outdatedShimReason = (target: string, missing: readonly string[] = []) => `${target}'s graphyard-host-shim is older than this release: run graphyard host prepare and the script it prints there${missing.length ? ` (it lacks ${missing.join(', ')})` : ''}`;
 const lastLine = (text: string) => text.trim().split('\n').filter(Boolean).at(-1) ?? '';
 /** ssh's arguments for a host target: USER@HOST:PORT becomes -p PORT USER@HOST; USER@HOST and an alias pass as they are. */
 export const sshTarget = (target: string) => { const port = /^(.+@.+):(\d+)$/.exec(target); return port ? ['-p', port[2]!, port[1]!] : [target]; };
@@ -174,8 +179,9 @@ export async function probeHost(target: string | null, run: ChildRun = defaultCh
   }
   const reading = parseHostProbe(output);
   if (!reading) return { ok: false as const, reason: `${target ?? 'this machine'} answers but its Docker does not: run graphyard host prepare and the script it prints there` };
-  // GY-3476: a shim from an older release may lack verbs or checks this one relies on, so its host takes no shards until prepare runs again.
-  if (target && reading.shim !== hostShimDigest) return { ok: false as const, reason: outdatedShimReason(target) };
+  // GY-3476, GY-3517: a shim from an older release takes shards while it speaks every verb a trial uses; one lacking any waits for prepare.
+  const missing = target ? missingTrialVerbs(reading) : [];
+  if (missing.length) return { ok: false as const, update: true, reason: outdatedShimReason(target!, missing) };
   return { ok: true as const, ...reading };
 }
 
@@ -228,9 +234,10 @@ export async function readHostReadings(previous: HostReading[], options: { file?
   const targets = [null, ...(await readHosts(options.file).catch(() => [])).map(host => host.target)];
   return Promise.all(targets.map(async target => {
     const host = target ?? options.local ?? hostname();
-    const probe = await probeHost(target, options.run);
-    if (!probe.ok) return { host, ...(target ? {} : { local: true }), away: true, reason: probe.reason, cores: null, celsius: null, steal: null, runs: null, stat: null };
-    const before = previous.find(reading => reading.host === host)?.stat ?? null;
-    return { host, ...(target ? {} : { local: true }), away: false, cores: probe.cores, celsius: probe.celsius, steal: stealPercent(before, probe.stat), runs: probe.runs, stat: probe.stat };
+    const probe = await probeHost(target, options.run), at = new Date().toISOString();
+    const was = previous.find(reading => reading.host === host);
+    if (!probe.ok) return { host, ...(target ? {} : { local: true }), at, away: true, since: was?.away ? was.since ?? was.at ?? at : at, ...('update' in probe ? { update: true } : {}), reason: probe.reason, cores: null, celsius: null, steal: null, runs: null, stat: null };
+    const before = was?.stat ?? null;
+    return { host, ...(target ? {} : { local: true }), at, away: false, cores: probe.cores, celsius: probe.celsius, steal: stealPercent(before, probe.stat), runs: probe.runs, stat: probe.stat };
   }));
 }

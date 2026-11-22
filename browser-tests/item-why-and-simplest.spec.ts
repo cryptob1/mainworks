@@ -6,7 +6,7 @@ import type { Work } from '../src/model';
 const why = 'Owners see at a glance how an item helps users.';
 const simplest = 'Two sentences on create, shown where items already show.';
 
-test('e2e:item-why-and-simplest — the create box files both sentences, the item page and Work list lead with them, requirements revise them, an older item opens without them', async ({ page }) => {
+test('e2e:item-why-and-simplest — the create box files both sentences, the item page leads with them, requirements revise them, an older item opens without them', async ({ page }) => {
   test.setTimeout(180_000);
   const f = await priorityServer();
   const settled = { timeout: 15_000 };
@@ -41,23 +41,22 @@ test('e2e:item-why-and-simplest — the create box files both sentences, the ite
     expect([created.why, created.simplest]).toEqual([why, simplest]);
 
     const itemPage = page.locator('article.item-page');
-    const heading = itemPage.locator('.page-heading');
-    // GY-3392: the why sentence is the plate's heading, the first thing on the page.
-    await expect(heading.locator('h1[data-why="true"]')).toHaveText(why, settled);
+    // GY-3599: the why sentence sits under the title; Simplest is under the Details tab.
+    const heading = itemPage;
+    await expect(heading.locator('[data-why="true"]')).toHaveText(why, settled);
+    await itemPage.getByRole('tab', { name: 'Details' }).click();
     await expect(heading.locator('[data-simplest]')).toHaveText(`Simplest: ${simplest}`);
     // Above the description and criteria, which fold under Details further down.
-    const leadTop = (await heading.locator('h1[data-why="true"]').boundingBox())!.y, detailsTop = (await itemPage.locator('.item-details-fold').boundingBox())!.y;
+    const leadTop = (await heading.locator('[data-why="true"]').boundingBox())!.y, detailsTop = (await itemPage.locator('.item-details-fold').boundingBox())!.y;
     expect(leadTop).toBeLessThan(detailsTop);
 
     await page.getByRole('button', { name: '← Back' }).click();
-    // Both items are unreleased: open the Backlog group, where the owner looks for them.
-    await page.getByRole('button', { name: /^Backlog/ }).click();
-    await expect(page.locator(`[data-row="${created.key}"] [data-lead]`)).toBeVisible(settled);
-    await expect(page.locator(`[data-row="${created.key}"] [data-lead]`)).toHaveText(`${why} ${simplest}`);
+    // Both items are unreleased Backlog rows of the Work list (GY-3600), each opening its item page.
+    await expect(page.locator(`[data-row="${created.key}"]`)).toBeVisible(settled);
     await expect(page.locator(`[data-row="${older.key}"]`)).toBeVisible();
-    await expect(page.locator(`[data-row="${older.key}"] [data-lead]`)).toHaveCount(0);
 
-    await page.locator(`[data-row="${created.key}"]`).getByRole('button', { name: /open/ }).click();
+    await page.locator(`[data-row="${created.key}"]`).getByRole('link', { name: /open/ }).click();
+    await itemPage.getByRole('tab', { name: 'Details' }).click();
     await itemPage.locator('details.edit-menu > summary').click();
     await page.getByRole('button', { name: 'Revise requirements', exact: true }).click();
     const revise = page.getByRole('form', { name: 'Revise requirements' });
@@ -65,15 +64,13 @@ test('e2e:item-why-and-simplest — the create box files both sentences, the ite
     await revise.getByLabel('Why it helps users').fill('Agents build what users need.');
     await revise.getByLabel('Reason for revision').fill('Sharper why');
     await revise.getByRole('button', { name: 'Save requirement revision' }).click();
-    await expect(heading.locator('h1[data-why="true"]')).toHaveText('Agents build what users need.', settled);
+    await expect(heading.locator('[data-why="true"]')).toHaveText('Agents build what users need.', settled);
     await expect(heading.locator('[data-simplest]')).toHaveText(`Simplest: ${simplest}`);
     await page.getByRole('button', { name: '← Back' }).click();
-    await expect(page.locator(`[data-row="${created.key}"] [data-lead]`)).toBeVisible(settled);
-    await expect(page.locator(`[data-row="${created.key}"] [data-lead]`)).toHaveText(`Agents build what users need. ${simplest}`, settled);
 
-    await page.locator(`[data-row="${older.key}"]`).getByRole('button', { name: /open/ }).click();
+    await page.locator(`[data-row="${older.key}"]`).getByRole('link', { name: /open/ }).click();
     await expect(itemPage.locator('h1')).toHaveText('Older item', settled);
-    await expect(itemPage.locator('h1[data-why="true"], [data-simplest]')).toHaveCount(0);
+    await expect(itemPage.locator('[data-why="true"], [data-simplest]')).toHaveCount(0);
   } finally {
     // GY-3362: 'wait' hung to the test timeout when a dashboard poll was in flight at teardown; the handler
     // already tolerates a closed server.

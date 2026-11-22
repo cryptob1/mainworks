@@ -1,0 +1,16 @@
+{
+  "id": "worker-serve-own-port",
+  "title": "A worker session serves its head on its own port, and a product review still serves on the declared address",
+  "description": "A fixture worker session runs graphyard.json's e2e serve command with its launch environment: it answers on the session's GRAPHYARD_E2E_SERVE_PORT, never 4391. While it serves, a product review of another item serves its head on the declared address with no 'already answers before the serve command starts' failure.",
+  "tags": ["dispatch"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "the worker's serve and the review's serve run side by side",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/worker-serve-own-port.test.ts",
+      "timeoutSeconds": 360
+    }
+  ]
+}

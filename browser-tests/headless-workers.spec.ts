@@ -19,7 +19,9 @@ test('e2e:headless-workers — the item page lists worker runs by attempt and sh
   try {
     const { code } = await (await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string };
     await page.goto(`${url}/#sign-in=${code}`);
-    await page.getByRole('button', { name: new RegExp(key) }).first().click();
+    await page.getByRole('link', { name: new RegExp(key) }).first().click();
+    // The worker runs live in the Task page's Live session tab (GY-3599).
+    await page.getByRole('tab', { name: 'Live session' }).click();
     const runs = page.getByRole('region', { name: 'Worker runs' });
     await expect(runs).toBeVisible(settled);
     const attempts = runs.locator('details.worker-run > summary');
