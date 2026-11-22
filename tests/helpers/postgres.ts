@@ -18,10 +18,10 @@ import { temporaryDirectory } from './temp-dirs.js';
  * `beforeExit`, silencing the failing exit code of any process that starts a cluster — this suite's
  * runner and complete's recheck runner among them.
  */
-export async function startPostgres(port?: number, template?: Parameters<typeof copyTemplateCluster>[2]) {
+export async function startPostgres(port?: number, template?: Parameters<typeof copyTemplateCluster>[2], parent?: string) {
   const reservation = port === undefined ? await reserveTestPorts() : undefined;
   port ??= reservation!.base;
-  const databaseDir = await temporaryDirectory('postgres');
+  const databaseDir = await temporaryDirectory('postgres', parent);
   const remove = () => Promise.all([rm(databaseDir, { recursive: true, force: true }), rm(tempOwnerMarker(databaseDir), { force: true })]);
   try {
     await copyTemplateCluster(databaseDir, port, template);
