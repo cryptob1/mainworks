@@ -9,7 +9,7 @@ import { join, resolve } from 'node:path';
 import { defaultPiModel, piRunner, piSmoke, runEnvironment, type SmokeResult } from './pi.js';
 import { headlessConfinementWrapper, launcherCoordinatorRoot } from '../master/launch.js';
 import { bwrapOnPath, type CredentialMask } from '../master/confinement.js';
-import { accountHomeEnvironment } from '../master/runtimes.js';
+import { accountHomeEnvironment, withModel } from '../master/runtimes.js';
 import type { FleetLaunchAccount } from '../fleet.js';
 import { registryToolsArgs } from '../registry-tools.js';
 import { claimRunWatch, liveRun, runsDirectory, superviseRun, writeRunOwner, type Applied } from './registry.js';
@@ -74,7 +74,8 @@ export function narrowRunner(pi: unknown, credentialMask?: CredentialMask, coord
  */
 export function registryHeadlessLaunch(account: FleetLaunchAccount) {
   const { contract, policy, modelId } = account.fleet;
-  const args = [...contract.args, ...(policy?.args ?? []), ...registryToolsArgs(account)];
+  // The model is named once, by the runner, from the registry's id (GY-3687): no alias the contract or policy carries.
+  const args = [...withModel(account.kind, [...contract.args, ...(policy?.args ?? [])], contract, null), ...registryToolsArgs(account)];
   // GY-3329: a cursor account's home rides on XDG_CONFIG_HOME as well, the sign-in
   // cursor-agent reads under confinement living at `$XDG_CONFIG_HOME/cursor/auth.json`.
   const environment: Record<string, string> = { ...contract.environment, ...(contract.homeVariable && account.home ? { [contract.homeVariable]: account.home } : {}), ...accountHomeEnvironment(account.kind, account.home) };
@@ -131,8 +132,7 @@ export async function smokeRegistryAccount(account: FleetLaunchAccount, options:
     const env = runEnvironment(process.env, { ...launch.environment, ...key });
     try {
       // GY-3592: `opencode run` takes --model though its contract names no flag (the TUI refuses it); unnamed, OpenCode answers on its free model.
-      const modelFlag = account.fleet.contract.modelFlag ?? (account.kind === 'opencode' ? '--model' : null);
-      const args = [...launch.args, ...(modelFlag && account.fleet.modelId ? [modelFlag, account.fleet.modelId] : [])];
+      const args = withModel(account.kind, launch.args, account.fleet.contract, account.fleet.modelId);
       const [command, ...argv] = await headlessArgv({ kind: account.kind, args, contract: account.fleet.contract }, 'Reply with the single word OK.', env);
       const output = await runChild(options.command ?? command, [...(options.commandArgs ?? []), ...argv], { env, cwd: options.cwd ?? account.home ?? undefined, timeoutMs: options.timeoutMs ?? 120_000 });
       // Print-mode runtimes can report provider errors with exit zero (OpenCode).
@@ -163,10 +163,10 @@ export function agySmoke(account: Pick<FleetLaunchAccount, 'name' | 'home' | 'fl
   rmSync(home, { recursive: true, force: true });
   mkdirSync(home);
   if (account.home) { mkdirSync(join(home, '.gemini')); symlinkSync(resolve(account.home), join(home, '.gemini', 'antigravity-cli')); }
-  const { modelFlag } = account.fleet.contract, model = account.fleet.modelId;
+  const model = withModel(account.kind, [], account.fleet.contract, account.fleet.modelId);
   return new Promise<SmokeResult>(settle => {
     let output = '';
-    const child = spawn(command, [...(modelFlag && model ? [modelFlag, model] : []), '--print', 'Reply with the single word OK.'], { cwd: options.cwd ?? home, env: { ...process.env, ...account.fleet.contract.environment, HOME: home }, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(command, [...model, '--print', 'Reply with the single word OK.'], { cwd: options.cwd ?? home, env: { ...process.env, ...account.fleet.contract.environment, HOME: home }, stdio: ['ignore', 'pipe', 'pipe'] });
     const bound = setTimeout(() => { child.kill('SIGKILL'); settle({ ok: false, error: `${command} started but gave no answer within ${Math.round(timeoutMs / 1000)}s${/authentication/i.test(output) ? ': it is waiting for a login' : ''}` }); }, timeoutMs);
     child.stdout!.on('data', chunk => { output = (output + chunk).slice(-4000); });
     child.stderr!.on('data', chunk => { output = (output + chunk).slice(-4000); });
