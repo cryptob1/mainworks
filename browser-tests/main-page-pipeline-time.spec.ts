@@ -26,18 +26,18 @@ async function serve(page: Page, pipelineTime: unknown) {
 const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
 
 for (const width of [390, 1280]) {
-  test(`e2e:main-page-pipeline-time — at ${width}px the page leads with merges an hour, largest, then a calm line: last merge and median, no ids, top bar unchanged`, async ({ page }) => {
+  test(`e2e:main-page-pipeline-time — at ${width}px the page leads with the status line and merges an hour, largest, then a calm line: last merge and median, no ids, top bar unchanged`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await serve(page, { merged24h: 31, median: 42, p90: 95, samples: 10, lastMergeAt: at(12), oldest: { id: 'fixture-GY-3', key: 'GY-3', title: 'Fresh', stage: 'review', releasedAt: at(20) } });
     const line = page.locator('[data-speed-line]');
     await expect(line).toHaveAttribute('data-speed-line', 'calm');
     await expect(line).toHaveText(/^Last merge 1[23] min ago\. An item takes 42 min from release to merge \(slowest tenth 1 h 35 min\)\.$/);
     await expect(line).not.toContainText('GY-');
-    const figure = page.locator('[data-speed-figure]');
-    await expect(figure).toHaveText('1.3 merges an hour (31 in the last 24 hours)');
-    // First and largest: nothing in the page's content (everything in .main but the shared top bar) sits above it or has bigger text.
+    // GY-3601: Home's status line leads, with merges an hour today, first and largest:
+    // nothing in the page's content (everything in .main but the shared top bar) sits above it or has bigger text.
+    await expect(page.locator('[data-status-line]')).toContainText('merges an hour today');
     const { first, largest } = await page.evaluate(() => {
-      const figure = document.querySelector('[data-speed-figure]')!, size = (el: Element) => parseFloat(getComputedStyle(el).fontSize);
+      const figure = document.querySelector('[data-status-line]')!, size = (el: Element) => parseFloat(getComputedStyle(el).fontSize);
       const text = [...document.querySelectorAll('.main *')].filter(el => el !== figure && !figure.contains(el) && !el.closest('.top-bar') && [...el.childNodes].some(n => n.nodeType === 3 && n.textContent!.trim()) && (el as HTMLElement).offsetParent);
       return { first: text.every(el => el.getBoundingClientRect().top >= figure.getBoundingClientRect().bottom - 1), largest: text.every(el => size(el) < size(figure)) };
     });

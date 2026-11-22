@@ -85,15 +85,18 @@ export const statusRoutes = defineRoutes('status', [
       const app = await appRelease(read, serving, loopRegistry(engine).live(observedAt)?.hosts?.find(host => host.local)?.host ?? hostname());
       // GY-3527: merges in the last 24 hours, release-to-merge time over the last 10 merges and the open item released longest ago, for the Work page's speed line.
       const timed = pipelineItems(visibleWork);
+      const gate = servingRoot ? readGateRecord(gateRecordPath(servingRoot)) : null;
       const released = new Map<string, number>((await engine.store.pool.query("SELECT work_id, min(created_at) AS at FROM events WHERE kind='ready' AND work_id = ANY($1::uuid[]) GROUP BY work_id", [timed.map(item => item.id)])).rows.map(row => [row.work_id, (row.at as Date).getTime()]));
       return { workerVerifications: pendingWorkerVerifications(services, actor, visibleWork), actor, humanOnly, app, delegation: delegationSnapshot(principals.map(p => p.actor), visibleWork, observedAt.getTime(), limits), repository: repository || null,
         baseBranch: process.env.GITHUB_BASE_BRANCH ?? 'main', starvedJobs, jobs, deploy, serving, live, pipelineTime: pipelineTime(timed, released, observedAt.getTime()),
         // GY-3399: the week's batch-gate reverts beside the week's gates removed, each naming its items, for the header.
         thisWeek: servingRoot && actor.role !== 'operator-agent' ? await thisWeekReport(servingRoot, observedAt.getTime()) : null,
+        // GY-3601: the release check running on main now and since when, for Home's incidents.
+        releaseCheck: gate?.inFlight ? { since: gate.inFlight.startedAt } : null,
         // GY-3483: the checks running now, for the header — merge trials the merge writer has in flight
         // (an intent with no trial verdict yet) and a batch gate run on main.
         checksRunning: visibleWork.filter(item => item.mergeLedger?.state === 'intent' && !item.mergeLedger.trial && currentMergeStep(item, observedAt.getTime())?.fresh).length
-          + (servingRoot && readGateRecord(gateRecordPath(servingRoot))?.inFlight ? 1 : 0),
+          + (gate?.inFlight ? 1 : 0),
         // GY-3348: the host's CPU as the live loop last named it on its coordination read — the
         // Workers page's pressure and steal figures; null while no live loop names any.
         cpu: loopRegistry(engine).live(observedAt)?.cpu ?? null,

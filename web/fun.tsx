@@ -1,6 +1,7 @@
 import { PRODUCT_NAME } from '../src/model/product';
 import { useState, type CSSProperties } from 'react';
 import type { Work } from '../src/model';
+import { plainDuration } from '../src/pipeline-speed';
 
 /**
  * The dashboard's character (GY-3268): friendly agent names, a line about building at the top of the
@@ -64,19 +65,27 @@ export function BuildLine() {
 
 /** The agent that built an item: the last implementer, or the lease holder. */
 export const builderOf = (w: Work) => w.implementers?.at(-1) ?? w.lease?.owner ?? null;
-/** A brief confetti burst, a few dozen CSS pieces that fall once; it lasts as long as the toast it celebrates. None with reduced motion set. */
-function Confetti() {
-  const [pieces] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches ? [] : Array.from({ length: 40 }, () => ({
-    left: `${Math.random() * 100}%`, background: `hsl(${Math.random() * 360} 90% 60%)`, animationDelay: `${Math.random() * 0.4}s`, '--drift': `${Math.random() * 200 - 100}px` }) as CSSProperties));
-  return pieces.length ? <div className="confetti" aria-hidden="true">{pieces.map((style, n) => <i key={n} style={style}/>)}</div> : null;
+/** A brief confetti burst, a few dozen CSS pieces that fall once; it lasts as long as the toast it celebrates. A finished goal gets a larger one (GY-3601). None with reduced motion set. */
+function Confetti({ big }: { big: boolean }) {
+  const [pieces] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches ? [] : Array.from({ length: big ? 160 : 40 }, () => ({
+    left: `${Math.random() * 100}%`, background: `hsl(${Math.random() * 360} 90% 60%)`, animationDelay: `${Math.random() * (big ? 1.2 : 0.4)}s`, '--drift': `${Math.random() * 200 - 100}px` }) as CSSProperties));
+  return pieces.length ? <div className={big ? 'confetti big' : 'confetti'} aria-hidden="true">{pieces.map((style, n) => <i key={n} style={style}/>)}</div> : null;
 }
-/** The toast when an item merges while the page is open: who built it and what, with confetti. The neon pulse (GY-3272) stops under reduced motion. */
-export function ShippedToast({ item, onClose }: { item: Work; onClose(): void }) {
-  const builder = builderOf(item), name = builder ? friendlyName(builder) ?? builder : builder;
+/** How long an item took: from its Builder's claim (else its filing) to its merge; null when either is unknown. */
+export function buildTime(item: Work): string | null {
+  const merged = Date.parse(item.delivery?.mergedAt ?? item.observation?.mergedAt ?? ''), started = Date.parse(item.lastAssignment?.claimedAt ?? item.createdAt ?? '');
+  return Number.isNaN(merged) || Number.isNaN(started) ? null : plainDuration((merged - started) / 60_000);
+}
+/** The toast when an item goes live while the page is open: who built it, what, and how long it took, with confetti — a larger burst when it was its goal's last task. The neon pulse (GY-3272) stops under reduced motion. */
+export function ShippedToast({ item, goal, onClose }: { item: Work; goal?: Work | null; onClose(): void }) {
+  const builder = builderOf(item), name = builder ? friendlyName(builder) ?? builder : builder, took = buildTime(item);
   return <><div className="toast pulse" aria-live="polite" data-toast={item.key} onClick={onClose}>
-    {builder ? <span title={builder}>{name}</span> : PRODUCT_NAME} shipped “{item.title}” 🎉
-  </div><Confetti/></>;
+    {builder ? <span title={builder}>{name}</span> : PRODUCT_NAME} shipped “{item.title}”{took && <> in {took}</>} 🎉{goal && <> That finishes “{goal.title}”.</>}
+  </div><Confetti big={!!goal}/></>;
 }
+/** The open goal (an item with tasks) whose last open task is `item`, now that it shipped. */
+export const finishedGoal = (item: Work, work: Work[]) => work.find(goal => goal.stage !== 'done' && goal.dependencies?.includes(item.id)
+  && goal.dependencies.every(id => id === item.id || work.find(w => w.id === id)?.stage === 'done')) ?? null;
 
 /** Whether an item's latest merge trial failed on the head it stands at — the row that earns the glitch flicker (GY-3272). */
 export const failedTrial = (item: Pick<Work, 'candidate' | 'mergeLedger'>) =>

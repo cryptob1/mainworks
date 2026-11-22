@@ -121,7 +121,7 @@ img.mark{width:26px;height:26px}
 .main .page-heading h1,.page-heading h1{margin:0;font-size:var(--type-title);font-weight:600;letter-spacing:-.5px}
 .summary{margin:var(--space-1) 0 0;font-size:var(--type-body);color:var(--text-2)}
 .page-heading .page-fact{margin:var(--space-2) 0 0;font-size:var(--type-sentence);font-weight:500;line-height:1.5;color:var(--text)}
-.speed{margin:18px 0 0}.speed-figure{margin:0;font-size:40px;font-weight:600;letter-spacing:-.8px;line-height:1.15;color:var(--text);overflow-wrap:anywhere}.speed-line{margin:var(--space-2) 0 0;font-size:var(--type-body);overflow-wrap:anywhere}.speed-line[data-speed-line=warning]{color:var(--blocked);font-weight:500}
+.speed{margin:18px 0 0}.speed-line{margin:var(--space-2) 0 0;font-size:var(--type-body);overflow-wrap:anywhere}.speed-line[data-speed-line=warning]{color:var(--blocked);font-weight:500}
 .page-actions{display:flex;align-items:center;gap:var(--space-3);flex-shrink:0}.page-actions button,.page-actions a{white-space:nowrap}
 .search input{width:280px;height:40px;padding:0 var(--space-3);border:1px solid var(--border);border-radius:var(--radius);background:var(--raised);color:var(--text);font-size:var(--type-body)}
 .count{font-size:var(--type-small);background:none;color:var(--text-2);padding:0;margin-left:var(--space-2);font-weight:400}
@@ -533,3 +533,11 @@ kbd{font-family:var(--font-mono);font-size:11px;color:var(--text);background:var
 @media(max-width:650px){.sessions-table.figures .detail{display:none}.sessions-table.figures th,.sessions-table.figures td{padding-left:var(--space-2);padding-right:var(--space-2)}}
 .invite-button{padding:7px 13px;font-size:12px}.modal.invite fieldset{border:1px solid var(--border);border-radius:5px;display:grid;gap:8px;padding:10px 12px;min-width:0}.modal.invite legend{font-size:12px;color:var(--text-2)}.modal.invite label.check{display:flex;gap:8px;align-items:center;overflow-wrap:anywhere}.modal.invite label.check input{width:auto}.teammates{padding-left:18px;font-size:12px}.teammates li{overflow-wrap:anywhere;margin:6px 0}
 .caretaker-lines{list-style:none;padding:0;margin:0 0 var(--space-3);display:grid;gap:var(--space-2);font-size:var(--type-small)}
+/* GY-3601: Home's status line, incident cards, since you last looked, goals and the box to the Lead. */
+.status-line{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin:18px 0 0;font-size:30px;font-weight:600;letter-spacing:-.6px;line-height:1.2;overflow-wrap:anywhere}
+.status-line span{font-weight:450;color:var(--text-2)}
+.state-moving{color:var(--shipped)}.state-slowed{color:var(--needs-you)}.state-stopped{color:var(--blocked)}
+.incidents{display:grid;gap:var(--space-2);margin-top:var(--space-3)}
+.incident p{margin:0 0 6px;overflow-wrap:anywhere}.incident-broke{font-size:var(--type-sentence);font-weight:600}
+.since-looked ul{margin:var(--space-2) 0 0;padding-left:18px}.since-looked li{overflow-wrap:anywhere}.goals ol{margin:0;padding-left:20px}
+.tell-lead label{display:block;font-weight:600;margin-bottom:6px}.tell-lead-row{display:flex;gap:var(--space-2);align-items:flex-end}.tell-lead textarea{flex:1;min-width:0}

@@ -18,7 +18,7 @@ import { requestedView } from '../src/model/setup-checklist';
 const itemLink = (hash: string) => /^#([A-Z][A-Z0-9]*-[A-Z0-9]+)$/.exec(hash)?.[1] ?? null;
 import { idempotencyKey } from './idempotency-key';
 import { poll } from './poll';
-import { ShippedToast } from './fun';
+import { ShippedToast, finishedGoal } from './fun';
 import { applyTheme } from './theme';
 import { boot } from './boot';
 import KeyboardNav from './keyboard';
@@ -126,17 +126,19 @@ function App() {
   // A read answered while the same item is still open is kept even when a work poll re-ran the effect meanwhile, so a later failed read never leaves history empty.
   const selectedRef = useRef(selected); selectedRef.current = selected;
   useEffect(() => { const epoch = sessionEpoch.current, current = () => selectedRef.current === selected && epoch === sessionEpoch.current; if (selected) void api(`events?work=${selected}`).then(rows => { if (current()) setEvents(rows); }).catch(e => { if (current()) setError(e.message); }); }, [selected, work]);
-  // GY-3268: an item that merges while the page is open gets a toast naming its builder, and confetti.
+  // GY-3268: an item that goes live while the page is open gets a toast naming its builder, and confetti;
+  // GY-3601: live means merged and carried by the live commit, when one is known.
   const merged = useRef<Map<string, boolean> | null>(null);
   const [shipped, setShipped] = useState<Work | null>(null);
   useEffect(() => {
     if (!work.length) return;
-    const isMerged = (w: Work) => w.stage === 'done' && !!(w.delivery?.mergedAt ?? w.observation?.mergedAt);
-    const fresh = merged.current ? work.filter(w => isMerged(w) && merged.current!.get(w.id) === false) : [];
-    merged.current = new Map(work.map(w => [w.id, isMerged(w)]));
+    const waiting = typeof status?.live?.commit === 'string' && Array.isArray(status.live.waiting) ? new Set<string>(status.live.waiting) : new Set<string>();
+    const isLive = (w: Work) => w.stage === 'done' && !!(w.delivery?.mergedAt ?? w.observation?.mergedAt) && !waiting.has(w.key);
+    const fresh = merged.current ? work.filter(w => isLive(w) && merged.current!.get(w.id) === false) : [];
+    merged.current = new Map(work.map(w => [w.id, isLive(w)]));
     if (!fresh.length) return;
     setShipped(fresh.at(-1)!);
-  }, [work]);
+  }, [work, status]);
   useEffect(() => { if (!shipped) return; const timer = setTimeout(() => setShipped(null), 8000); return () => clearTimeout(timer); }, [shipped]);
   // Every page has an address (GY-3322): following a link to #costs opens Costs without a reload.
   useEffect(() => {
@@ -157,7 +159,7 @@ function App() {
     <main className="main">{error && <div role="alert" className="notice danger">{error}{error === SIGN_IN_NEEDED && <> <button type="button" onClick={signOut}>Sign in</button></>}</div>}
       <TopBar {...dashboard} onPalette={() => setPalette(true)}/>{item ? <WorkDetails {...dashboard} item={item}/> : viewFor(view).render(dashboard)}</main>
     {creating && <CreateWork {...dashboard}/>}
-    {shipped && <ShippedToast key={shipped.id} item={shipped} onClose={() => setShipped(null)}/>}
+    {shipped && <ShippedToast key={shipped.id} item={shipped} goal={finishedGoal(shipped, work)} onClose={() => setShipped(null)}/>}
     <KeyboardNav dashboard={dashboard} palette={palette} setPalette={setPalette}/>
   </div>;
 }
