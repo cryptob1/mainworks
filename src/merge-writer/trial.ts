@@ -359,7 +359,25 @@ export const keptBaseBuild = (base: string, sha: string) => join(base, `${keptBa
 export const keptBaseBuildMarker = (directory: string) => `${directory}.built`;
 /** The base commit a kept-tree entry under the trial worktree root names: its directory, built marker, lock or lock owner marker. */
 export const keptBaseBuildSha = (name: string): string | null =>
-  new RegExp(`^${keptBaseBuildPrefix}([0-9a-f]{40})(?:\\.built|\\.lock(?:\\.owner)?)?$`).exec(name)?.[1] ?? null;
+  new RegExp(`^${keptBaseBuildPrefix}([0-9a-f]{40})(?:\\.built|(?:\\.lock|\\.use-[0-9a-f-]+)(?:\\.owner)?)?$`).exec(name)?.[1] ?? null;
+/** GY-3679: the markers `<tree>.use-<id>` of the previews serving a kept tree; a live one keeps it from being taken back. */
+const keptBaseBuildUses = async (tree: string) => (await readdir(dirname(tree)).catch(() => [] as string[]))
+  .filter(name => name.startsWith(`${basename(tree)}.use-`) && !name.endsWith('.owner')).map(name => join(dirname(tree), name));
+/**
+ * GY-3679: base commit `sha`'s kept built tree, held for a preview that serves it, or null when no
+ * trial left one built. Held by a `.use-<id>` marker owned by this process until `release`, so a base
+ * pass on another tip leaves the tree in place while the preview serves it.
+ */
+export async function useKeptBaseBuild(base: string, sha: string): Promise<{ tree: string; release(): Promise<void> } | null> {
+  const tree = keptBaseBuild(base, sha);
+  if (!existsSync(keptBaseBuildMarker(tree))) return null;
+  const use = `${tree}.use-${randomUUID()}`;
+  await mkdir(use); await writeTempOwner(use);
+  const release = async () => { await rm(use, { recursive: true, force: true }); await rm(tempOwnerMarker(use), { force: true }); };
+  // A pass that took the tree back between the check and the marker leaves nothing to serve.
+  if (!existsSync(keptBaseBuildMarker(tree))) { await release(); return null; }
+  return { tree, release };
+}
 /**
  * The mode of a trial's own temporary directory (GY-1639): sticky, as CI's /tmp is, so a suite that
  * holds `tmpdir()` to the sticky-shared-parent rule (the runner executor’s attested cases)
@@ -1125,7 +1143,11 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       const tree = keptBaseBuild(input.base, sha), lock = `${tree}.lock`;
       const owner = await readTempOwner(lock).catch(() => null);
       if (existsSync(lock) && (!owner || !tempOwnerGone(owner))) continue;
+      // GY-3679: a tree a live preview serves stays; a gone preview's marker goes with the tree.
+      const uses = await keptBaseBuildUses(tree);
+      if (await Promise.all(uses.map(use => readTempOwner(use).catch(() => null))).then(owners => owners.some(owner => owner && !tempOwnerGone(owner)))) continue;
       await takeBackKeptTree(tree);
+      for (const use of uses) { await removeTree(use).catch(() => {}); await rm(tempOwnerMarker(use), { force: true }).catch(() => {}); }
       await removeTree(lock).catch(() => {});
       await rm(`${lock}.owner`, { force: true }).catch(() => {});
     }
