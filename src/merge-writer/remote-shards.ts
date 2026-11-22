@@ -27,10 +27,11 @@ export const underHeatLimit = (reading: HostReading) => !reading.away && (readin
 /**
  * GY-3419, GY-3522: the words a test file names when it needs what a remote shard lacks — the
  * database, the Docker socket, nested confinement (bwrap, unshare, landlock; the hard-math
- * benchmarks run under it with a pinned interpreter) or a browser. Naming one keeps the file on
+ * benchmarks run under it with a pinned interpreter), a browser, the package registry (npm exec; a
+ * shard has no network) or /var/tmp (read-only there, GY-3609). Naming one keeps the file on
  * this machine. Servers, sockets and requests on loopback work on a host, so their words do not.
  */
-export const localOnlyTestPattern = /postgres|withDatabase|docker|bwrap|unshare|landlock|hard-math|playwright|chromium/i;
+export const localOnlyTestPattern = /postgres|withDatabase|docker|bwrap|unshare|landlock|hard-math|playwright|chromium|npm exec|\/var\/tmp/i;
 /** Whether a test file's text may run on a remote shard: it names none of the local-only words. */
 export const remoteableTestFile = (text: string) => !localOnlyTestPattern.test(text);
 
