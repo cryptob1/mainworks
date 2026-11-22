@@ -52,6 +52,7 @@ import { cpuPressureStep, cpuWaiting, heatClear, implementationWaiting, sessionU
 import { causeCleared, environmentCause } from './environment-blockers.js';
 import { leftoversStep, tallyLeftovers } from './leftovers.js';
 import { yardAlertStep } from './yard-alerts.js';
+import { deliveryAlertStep } from './delivery-alerts.js';
 import { recordStallAlarm, stallAlarm } from './stall-alarm.js';
 import { controlPlaneStep } from './control-plane.js';
 
@@ -251,6 +252,8 @@ export async function runCycle(config: MasterConfig, state: DaemonState, effects
     state.projectMemory = await syncProjectMemory({ existing: state.projectMemory, work: read.snapshot.work, now: clock });
     // GY-3101: the stalled-yard alert, beside the persist it survives: the loop tells the operator directly when queued work can neither start nor merge.
     if (!config.forPerson) await yardAlertStep(cycle);
+    // GY-3529: newly served items and a failed release candidate, each announced once.
+    if (!config.forPerson) await deliveryAlertStep(cycle);
     // GY-3199, GY-3233: the control plane's own faults — a stuck upgrade, a stalled step — reported upstream once, and the daily staleness line.
     if (!config.forPerson) await controlPlaneStep(cycle, stalled);
     if (!config.forPerson) await leftoversStep(state, clock, effects.leftoverDisk, log);
