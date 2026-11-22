@@ -1,0 +1,15 @@
+{
+  "id": "review-verdict-first",
+  "title": "Reviewer prompts state the verdict choices once, up front, and an unusable environment is COULD_NOT_RUN",
+  "description": "Renders product and code reviewer requests over a fixed fixture in interactive and headless modes: the product request opens with the four verdict choices once and names the unreachable-environment list once instead of three times; an install that serves an app but cannot be reached says COULD_NOT_RUN while the noApp rule stays unchanged; the code request states the no-weaken rule and autonomy once; and both reviewer requests stay at most 700 words excluding diff, criteria, memory and maps.",
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "reviewer prompts are verdict-first, deduplicated and at most 700 fixed words",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/review-verdict-first.test.ts",
+      "timeoutSeconds": 120
+    }
+  ]
+}
