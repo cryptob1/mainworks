@@ -57,6 +57,18 @@ function median(values: number[]): number | null {
  * hours, whose fold opens each station's wait and the rework causes; a station whose slowest tenth
  * passes an hour is one warning line naming it and its oldest item.
  */
+/** GY-3677: the flow numbers from GET /api/flow, read once a minute; /api/status no longer carries them. */
+function Flow({ api }: { api: Dashboard['api'] }) {
+  const [flow, setFlow] = useState<FlowReport | null>(null);
+  useEffect(() => {
+    let active = true;
+    const read = () => api('flow').then(value => { if (active) setFlow(value); }, () => {});
+    read(); const timer = setInterval(read, 60_000);
+    return () => { active = false; clearInterval(timer); };
+  }, []);
+  return <FlowLine flow={flow}/>;
+}
+
 function FlowLine({ flow }: { flow?: FlowReport | null }) {
   const day = flow?.['24h'];
   if (!day) return null;
@@ -85,14 +97,6 @@ function FlowLine({ flow }: { flow?: FlowReport | null }) {
  * are the board's (`GET /api/board`), never derived here; a task's goal is its own `goal` field. Hook-free, so unit tests render it.
  */
 export default function WorkPage({ work, board, status, query, setQuery, setSelected, setCreating, setView, observedAt, filter, setFilter, api }: Dashboard) {
-  // GY-3677: the flow numbers from GET /api/flow, read once a minute; /api/status no longer carries them.
-  const [flow, setFlow] = useState<FlowReport | null>(null);
-  useEffect(() => {
-    let active = true;
-    const read = () => api('flow').then(value => { if (active) setFlow(value); }, () => {});
-    read(); const timer = setInterval(read, 60_000);
-    return () => { active = false; clearInterval(timer); };
-  }, []);
   const now = Number.isNaN(observedAt) ? Date.now() : observedAt;
   const release = releaseView(status), serve = serveView(status);
   const byId = new Map(work.map(item => [item.id, item]));
@@ -157,7 +161,7 @@ export default function WorkPage({ work, board, status, query, setQuery, setSele
   const noGoal = shown.filter(({ item }) => !item.goal);
 
   return <>
-    <div className="page-heading"><div><h1>Work</h1><p className="page-fact" data-work-header>{board ? header : 'Reading the board…'}</p><FlowLine flow={flow}/><BuildLine/></div>
+    <div className="page-heading"><div><h1>Work</h1><p className="page-fact" data-work-header>{board ? header : 'Reading the board…'}</p><Flow api={api}/><BuildLine/></div>
       <div className="page-actions"><div className="search"><input type="search" aria-label="Search work" placeholder="Search by title, key or PR" value={query} onChange={event => setQuery(event.target.value)}/></div>
         {status?.actor?.role === 'admin' && <button type="button" onClick={() => setCreating(true)}>＋ New work item</button>}</div></div>
     {needs.length > 0 && <section className="panel needs-you-strip" aria-label="Needs you">
