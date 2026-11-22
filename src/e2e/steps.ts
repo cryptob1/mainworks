@@ -29,6 +29,10 @@ export const hostPassthrough = ['PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'LC_ALL
 export function stepEnvironment(url: string, secrets: Record<string, string>, host: NodeJS.ProcessEnv = process.env, baselineUrl?: string): Record<string, string> {
   const env: Record<string, string> = {};
   for (const name of hostPassthrough) if (host[name] !== undefined) env[name] = host[name]!;
+  // A remote shard's checkout is owned by the uid the container maps from its host user, so git in
+  // a command step refuses it as dubious ownership unless the host shim's GIT_CONFIG_* pairs — the
+  // safe.directory the shim already handed the launcher — travel with the step (src/host-shim.ts).
+  for (const [name, value] of Object.entries(host)) if (/^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+)$/.test(name)) env[name] = value!;
   return { ...env, ...secrets, ...(baselineUrl ? { BASELINE_URL: baselineUrl } : {}), TARGET_URL: url };
 }
 
