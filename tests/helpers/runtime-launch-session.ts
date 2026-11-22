@@ -10,6 +10,11 @@ import { runtimeLaunchProvider } from './runtime-launch-provider.js';
 import { runtimeLaunchTerminal } from './runtime-launch-terminal.js';
 import { temporaryDirectory } from './temp-dirs.js';
 
+/** Only the negative DNS probe caps glibc to 1 attempt / 1 s; repaired DNS keeps retries so cold lookups stay deterministic. */
+export function resolverEnvironment(expected: 'fail' | 'succeed', env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return { ...env, RES_OPTIONS: expected === 'fail' ? 'attempts:1 timeout:1' : 'attempts:3 timeout:5' };
+}
+
 /** Runs inside the fixture's systemd-resolved-style host namespace. */
 export async function runtimeLaunchSession(base: string, resolver: boolean) {
   const root = join(base, 'repo'), worktree = join(root, 'assigned'), home = join(base, 'operator');
@@ -21,17 +26,17 @@ export async function runtimeLaunchSession(base: string, resolver: boolean) {
   prepareConfinedGitPaths(root);
   await writeFile(join(home, 'sentinel'), 'protected');
   const wrapper = readOnlyMountWrapper({ coordinatorRoot: root, sessionDirectory: worktree, secretsBus: null });
-  const execute = (words: readonly string[], command: string, args: string[]) => spawnSync(words[0], [...words.slice(1), command, ...args], {
-    cwd: worktree, env: { ...process.env, RES_OPTIONS: 'attempts:1 timeout:1' }, encoding: 'utf8', timeout: 15_000,
+  const execute = (words: readonly string[], command: string, args: string[], expected: 'fail' | 'succeed' = 'succeed') => spawnSync(words[0], [...words.slice(1), command, ...args], {
+    cwd: worktree, env: resolverEnvironment(expected), encoding: 'utf8', timeout: 20_000,
   });
   if (resolver) {
     const file = '/run/systemd/resolve/stub-resolv.conf';
     const at = wrapper.findIndex((word, index) => word === '--ro-bind' && wrapper[index + 1] === file);
     assert.ok(at >= 0, 'the canonical resolver is the only file restored under /run');
     const broken = [...wrapper]; broken.splice(at, 3);
-    const failed = execute(broken, 'getent', ['ahosts', 'example.com']);
+    const failed = execute(broken, 'getent', ['ahosts', 'example.com'], 'fail');
     assert.equal(failed.status, 2, `actual DNS lookup must fail with masked /run: ${failed.stderr}`);
-    const fixed = execute(wrapper, 'getent', ['ahosts', 'example.com']);
+    const fixed = execute(wrapper, 'getent', ['ahosts', 'example.com'], 'succeed');
     assert.equal(fixed.status, 0, `repaired DNS must resolve: ${fixed.stderr}`);
     assert.match(fixed.stdout, /STREAM/);
     const isolation = execute(wrapper, '/bin/sh', ['-ec',
