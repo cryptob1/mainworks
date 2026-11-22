@@ -204,7 +204,7 @@ test('integration:dashboard-word-budget — the home page answers what needs you
   const order = ['group-blocked', 'group-moving', 'group-up-next', 'group-backlog'].map(group => page.indexOf(`class="task-row ${group}`));
   assert.ok(order.every(index => index > 0) && order.every((index, i) => i === 0 || index > order[i - 1]), `rows in order: ${order}`);
   assert.ok(page.indexOf('Move sessions to Postgres') < page.indexOf('Add dark mode to settings'), 'the stuck item is listed first');
-  assert.match(text(page), /A fault blocks it; the master agent clears it/);
+  assert.match(text(page), /a fault blocks it; the master agent clears it/i);
 });
 
 test('integration:item-view-structure — state, who acts next and why on the plate; the steps; each criterion once; edits in an admin menu; at most 250 words', () => {
@@ -348,7 +348,7 @@ test('integration:work-page-density — an empty Needs you draws no strip, and t
   const { byGroup } = classify(work, NOW);
   assert.equal(byGroup['needs-you'].length, 0);
   assert.ok(!page.includes('aria-label="Needs you"'), 'no empty Needs you strip');
-  assert.match(text(page), /A fault blocks it; the master agent clears it/, 'the stuck row says why');
+  assert.match(text(page), /a fault blocks it; the master agent clears it/i, 'the stuck row says why');
   for (const item of byGroup.moving) assert.ok(page.includes(`data-row="${item.key}"`), item.key);
   assert.ok(words(page).length <= 165, `home renders ${words(page).length} words excluding item titles: ${text(page)}`);
 });

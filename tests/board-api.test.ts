@@ -208,7 +208,7 @@ test('unit:board-blocked-declined-human-names-master — a declined human answer
   const declined = 'A human declined spending money or opening third-party accounts for this item: not this quarter';
   const { item } = blockedScenario(declined);
   const summary = plain.blockerSummary(declined, NOW, { ...item, humanRequest: null });
-  assert.match(summary.sentence, /master agent/);
+  assert.match(summary.sentence, /the master picks the next step/);
   assert.doesNotMatch(summary.sentence, /only you|Waiting on a human/);
 });
 
@@ -228,7 +228,8 @@ test('unit:board-blocked-row-no-duplicate-reason — a blocked row never says th
     const html = page(work, board);
     const line = visible(rowOf(html, item.key));
     const summary = entry(board, item.key).blocker!.summary;
-    assert.equal(line.split(summary).length - 1, 1, `the summary once in the row: ${line}`);
+    // The row reads 'Blocked <age>: ' and the summary mid-sentence (GY-3558).
+    assert.equal(line.toLowerCase().split(summary.toLowerCase()).length - 1, 1, `the summary once in the row: ${line}`);
     // No clause of eight or more words appears twice in the row.
     const clauses = line.split(/\s*[·;—]\s*|(?<=\.)\s+/).filter(clause => clause.split(/\s+/).length >= 8);
     assert.equal(new Set(clauses).size, clauses.length, `no repeated clause: ${line}`);
@@ -254,12 +255,12 @@ test('unit:board-blocked-row-waiting-until — a blocker naming a future not-bef
   const local = `Waiting until ${plain.localInstant(Date.parse(notBefore))}; nothing is broken, and the master agent lifts the hold once that time passes.`;
   assert.equal(plain.blockerSummary(blocker, NOW).sentence, local);
   for (const timeZone of ['America/Los_Angeles', 'Asia/Kolkata']) assert.notEqual(plain.localInstant(Date.parse(notBefore), timeZone), plain.localInstant(Date.parse(notBefore), 'UTC'), timeZone);
-  assert.ok(visible(rowOf(page(work, board), item.key)).includes(local));
+  assert.ok(visible(rowOf(page(work, board), item.key)).toLowerCase().includes(local.toLowerCase()));
   // With no next action the item is otherwise a stalled card: the wait still reads as the row's only sentence, never as a fault.
   const idle = work.map(entry => entry.id === item.id ? { ...entry, nextAction: null } as Work : entry);
   const idleBoard = await served(idle);
   const line = visible(rowOf(page(idle, idleBoard), item.key));
-  assert.ok(line.includes(local), line);
+  assert.ok(line.toLowerCase().includes(local.toLowerCase()), line);
   assert.doesNotMatch(line, /Nothing is happening|stuck at|nothing to do next/, line);
   // An instant already past is no wait: the block reads as the fault it is.
   const past = plain.blockerSummary(blocker.replace(notBefore, at(-60 * minute)), NOW).sentence;
