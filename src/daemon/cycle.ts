@@ -297,9 +297,6 @@ function reconciledAttempt(item: Work, hostId: string): Pick<NonNullable<Work['l
   return space ? { owner: space.owner, epoch: end.epoch } : null;
 }
 
-/** How long a done item's worktree with uncommitted files is kept after its last attempt ended. */
-const finishedWorktreeKeepMs = 24 * 60 * 60 * 1000;
-
 /** The ended attempts' worktrees on this host: no live lease and no running session holds their epoch. */
 export function endedAttemptWorktrees(work: Work[], hostId: string, now: number) {
   return work.flatMap(item => (item.workspaces ?? []).filter(space => space.host === hostId
@@ -352,7 +349,7 @@ function removeBeside(cycle: Cycle, key: string, work: string, path: string, for
   const { state, effects } = cycle;
   cycle.launcher.submit(key, [], async sink => {
     const outcome = (detail: string, result: DaemonAction['state']) => record(state, key, { kind: 'reclaim', work, principal: null, state: result, detail, attempts: (state.actions[key]?.attempts ?? 0) + 1, cycle: state.cycle }, cycle.now(), effects.persist);
-    try { if (await effects.removeWorktree!(path, force)) { tallyLeftovers(state, 'worktrees'); sink.push(await outcome(done, 'done')); } }
+    try { if (await effects.removeWorktree!(path, force)) { tallyLeftovers(state, 'worktrees'); if (state.leftovers.worktreeDisk) state.leftovers.worktreeDisk.stale = true; sink.push(await outcome(done, 'done')); } }
     catch (error) { sink.push(await outcome(`${failed}: ${message(error)}`, 'failed')); }
   });
 }
@@ -413,31 +410,42 @@ async function closeStep(cycle: Cycle) {
     }
     catch (error) { await note(cycle, key, 'reclaim', item.key, 'failed', `${item.key}: the lapsed lease could not be reconciled: ${message(error)}`, ended.owner); }
   }
-  // GY-3191: Git keeps a tree its attempt left uncommitted files in; once the item is done and a day
-  // has passed since its last attempt ended, nothing will resume that work, so the removal is forced.
+  // GY-3191: Git keeps a tree its attempt left uncommitted files in. GY-3691: once the item is done,
+  // or a later attempt holds it, nothing will resume that work, so the removal is forced at once.
   if (effects.removeWorktree) for (const { item, space } of endedAttemptWorktrees(snapshot.work, config.hostId, clock)) {
-    const endedAt = Date.parse((item as Work & CoordinationRounds).attemptEnd?.endedAt ?? item.updatedAt);
-    const force = item.stage === 'done' && clock - endedAt > finishedWorktreeKeepMs;
+    const force = item.stage === 'done' || space.epoch < item.epoch;
     const key = `worktree:${item.id}:${space.epoch}${force ? ':forced' : ''}`;
     // GY-3226: a failed removal is tried again on the next cycles, up to three attempts per key.
     const prior = state.actions[key];
     if (prior && (prior.state === 'done' || prior.attempts >= 3)) continue;
     removeBeside(cycle, key, item.key, space.path, force, `Removed ${item.key} epoch ${space.epoch}'s worktree ${space.path}: its attempt ended`, `Could not remove ${item.key} epoch ${space.epoch}'s worktree ${space.path}`);
   }
-  // GY-3341: a settled delivery's worktree never reaches this loop's snapshot again (the coordination
-  // view the loop polls reads open items and what they reference), so the disk names the leftovers:
-  // every `GY-N-EPOCH` tree still standing a day after it last changed, for an item the snapshot no
-  // longer holds, is removed — nothing of a settled delivery will resume in it. A tree the snapshot's
-  // own items own (an open item, or one they reference) is the document pass's alone, and a young
-  // tree is never touched: the snapshot may simply predate the item that just claimed it.
+  // GY-3341: a settled delivery's worktree never reaches this loop's snapshot as a document again (the
+  // coordination view the loop polls reads open items whole, settled ones as summaries), so the disk
+  // names the leftovers: every `GY-N-EPOCH` tree of an item the snapshot holds as done with no
+  // workspace record, or does not hold at all, is removed within the cycle (GY-3691) — nothing of a
+  // settled delivery will resume in it. Every open item is in the snapshot, so a tree it does not
+  // hold that predates the snapshot belongs to no open item; a younger tree waits for the next cycle.
   if (effects.removeWorktree && effects.attemptWorktrees) for (const leftover of await effects.attemptWorktrees()) {
     const named = /^(GY-\d+)-(\d+)$/i.exec(basename(leftover.path));
-    if (!named || clock - leftover.changedAt <= finishedWorktreeKeepMs) continue;
-    if (snapshot.work.some(item => item.key.toUpperCase() === named[1].toUpperCase())) continue;
+    if (!named) continue;
+    const held = snapshot.work.find(item => item.key.toUpperCase() === named[1].toUpperCase());
+    if (held ? held.stage !== 'done' || held.workspaces?.length : leftover.changedAt >= clock) continue;
     const key = `worktree:${named[1].toLowerCase()}-${named[2]}:forced`;
     const prior = state.actions[key];
     if (prior && (prior.state === 'done' || prior.attempts >= 3)) continue;
-    removeBeside(cycle, key, named[1].toUpperCase(), leftover.path, true, `Removed the worktree ${leftover.path} of settled ${named[1].toUpperCase()} epoch ${named[2]}: it last changed ${Math.round((clock - leftover.changedAt) / 3_600_000)} hour(s) ago and nothing will resume in it`, `Could not remove the worktree ${leftover.path} of settled ${named[1].toUpperCase()}`);
+    removeBeside(cycle, key, named[1].toUpperCase(), leftover.path, true, `Removed the worktree ${leftover.path} of settled ${named[1].toUpperCase()} epoch ${named[2]}: nothing will resume in it`, `Could not remove the worktree ${leftover.path} of settled ${named[1].toUpperCase()}`);
+  }
+  // GY-3691: the working copies' disk use, read beside the cycle when missing, an hour old, or after a removal.
+  const reading = state.leftovers.worktreeDisk;
+  if (effects.worktreeDisk && (!reading || reading.stale || clock - Date.parse(reading.at) > 3_600_000)) {
+    if (reading) reading.stale = false;
+    cycle.launcher.submit('leftovers:worktree-disk', [], async () => {
+      const bytes = await effects.worktreeDisk!();
+      if (bytes === null) return;
+      state.leftovers.worktreeDisk = { bytes, at: new Date(cycle.now()).toISOString(), stale: !!state.leftovers.worktreeDisk?.stale };
+      await effects.persist(state);
+    });
   }
   // GY-2944: a review or proof session whose dispatch request is answered, whose item has left
   // the stage it was launched for, or whose pane Herdr no longer reports is over — and so is the
