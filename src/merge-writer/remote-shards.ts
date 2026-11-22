@@ -14,7 +14,7 @@ import { probeHost, readHosts, sshTarget, type HostReading as HostProbe } from '
 import { trialContainerFault, trialHotCelsius } from './trial-load.js';
 
 /** One host's reading: cores, cores busy (1-minute load), the share of CPU stolen, and its hottest CPU sensor against the heat limit. */
-export interface HostReading { name: string; cores: number; busy: number; steal: number; celsius: number | null; limit: number; away: boolean; reason?: string }
+export interface HostReading { name: string; cores: number; busy: number; steal: number; celsius: number | null; limit: number; away: boolean; reason?: string; /** GY-3645: its shim runs a check's Compose services. */ compose?: boolean }
 
 /** The targets of the hosts `graphyard host add` recorded; none when it recorded none. */
 export const shardHosts = async () => (await readHosts().catch(() => [])).map(host => host.target);
@@ -87,7 +87,7 @@ export async function readShardHosts(targets: readonly string[], run: ChildRun, 
     const name = target ?? hostname();
     // This machine always takes shards: an unreadable reading here means only that its Docker or sensors did not answer.
     if (!probe.ok) return { name, cores: target ? 0 : cores, busy: 0, steal: 0, celsius: null, limit: trialHotCelsius, away: target !== null, ...(target ? { reason: probe.reason } : {}) };
-    return { name, cores: probe.cores ?? cores, busy: probe.load ?? 0, steal: probe.stat?.total ? probe.stat.steal / probe.stat.total : 0, celsius: probe.celsius, limit: trialHotCelsius, away: false };
+    return { name, cores: probe.cores ?? cores, busy: probe.load ?? 0, steal: probe.stat?.total ? probe.stat.steal / probe.stat.total : 0, celsius: probe.celsius, limit: trialHotCelsius, away: false, ...(target && probe.compose ? { compose: true } : {}) };
   })); } finally { if (!transport) await ssh.close(); }
 }
 
@@ -201,6 +201,8 @@ export function shardSshSession(run: ChildRun) {
 }
 export type ShardSshSession = ReturnType<typeof shardSshSession>;
 
+/** GY-3645: what a check run whole on a host answered: its output, its exit code and how long the host took over each step. */
+export interface RemoteCheckEnd { out: string; status: number; steps: { step: string; ms: number }[] }
 /** What a remote shard answered: its exit and output, and the per-file records it wrote. */
 export interface RemoteShardEnd { ok: boolean; out: string; status: number | null; records: string }
 
@@ -228,7 +230,8 @@ export function remoteShardSession(input: { root: string; sha: string; image: st
         ? await input.run('sh', ['-c', `set -o pipefail 2>/dev/null; ${source} | ${['ssh', ...words, verb].map(shellQuote).join(' ')}`], { timeoutMs: remaining() })
         : await input.run('ssh', [...words, verb], { timeoutMs: remaining() })));
     } catch (error) {
-      const failed = error as { stderr?: unknown; message?: string };
+      const failed = error as { stderr?: unknown; message?: string; timedOut?: boolean };
+      if (failed.timedOut && verb.startsWith('run-check ')) throw error;
       throw new HostDroppedError(target, (String(failed.stderr ?? '').trim() || String(failed.message ?? error)).slice(-500));
     }
   };
@@ -284,6 +287,16 @@ export function remoteShardSession(input: { root: string; sha: string; image: st
       const said = end.out.replace(/^graphyard trial container: (waiting|starting).*\n/gm, '').slice(-500).trim();
       if (!end.ok && (end.status === 255 || end.status === null || fault || !records.trim())) throw new HostDroppedError(target, fault ?? (said || `the SSH connection to ${target} closed mid-shard (exit ${end.status ?? 'signal'})`));
       return { ...end, records };
+    },
+    /** GY-3645: run a whole check on `target`: its Compose services started in the run directory, `argv` run on their network, the project removed. */
+    async check(target: string, check: { file: string; services: { service: string; port: number }[]; argv: string[]; cpus: number }): Promise<RemoteCheckEnd> {
+      if (!ready.has(target)) ready.set(target, prepare(target));
+      const run = await ready.get(target)!;
+      const out = await shim(target, `run-check ${run}`, `printf '%s' ${shellQuote(JSON.stringify({ ...check, deadline: input.deadline }))}`);
+      const exit = /\ngraphyard-check exit (\d+)\n?$/.exec(out), fault = trialContainerFault(out);
+      // No exit line, or a launcher that gave up on the host's heat or disk: the host never judged the check.
+      if (!exit || fault) throw new HostDroppedError(target, fault ?? (out.slice(-300).trim() || 'the check ended without an exit code'));
+      return { out: out.replace(/\n(?:graphyard-check .*\n?)+$/, '\n'), status: Number(exit[1]), steps: [...out.matchAll(/^graphyard-check (services|command|teardown) (\d+)$/gm)].map(match => ({ step: match[1]!, ms: Number(match[2]) })) };
     },
     async close() {
       await Promise.all([...ready.entries()].map(async ([target, prepared]) => {

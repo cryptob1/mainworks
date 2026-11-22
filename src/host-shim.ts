@@ -9,10 +9,14 @@
 //   run-shard RUN INDEX            JSON {files, argv, cpus, deadline} on stdin, nothing else; the trial launcher runs argv
 //                                  in IMAGE with --network=none, CPU, memory and process limits, only RUN mounted
 //   fetch-records RUN INDEX        the shard's per-file records
+//   run-check RUN                  JSON {file, services, argv, cpus, deadline} on stdin (GY-3645): the commit's own Compose file
+//                                  started as one project, argv run by the trial launcher on its first service's network
+//                                  with the services' variables, the project and its volumes removed whatever argv answered
 //   clean RUN                      remove a run directory
 // Anything else is refused. As in a local trial, containers may start nested sandboxes (seccomp and system
 // paths unconfined, the graphyard-trial AppArmor profile where Docker uses AppArmor; GY-3549), and never
-// get the Docker socket or the network, so a shard reaches no private address, the tailnet or the host.
+// get the Docker socket, so a shard, which has no network either, reaches no private address, the tailnet or the host.
+// A check's Compose project may bind only paths inside its run directory.
 import { createHash } from 'node:crypto';
 import { trialLauncher } from './merge-writer/trial-container.js';
 import { trialAppArmorProfile } from './merge-writer/trial-apparmor.js';
@@ -37,6 +41,7 @@ export const warmImagePattern = /^graphyard-warm:[0-9a-f]{12}-(?:[0-9a-f]{12}|no
  * shim (its launcher, limits, wording) leaves this list alone, so hosts on the older shim keep taking shards.
  */
 export const hostShimVerbs = ['probe:1', 'receive-pack:1', 'receive-image:1', 'prepare-run:1', 'run-shard:2', 'fetch-records:1', 'clean:1'];
+/** GY-3645: `run-check` is no trial verb: a host takes a whole check once its probe names a Compose plugin, which only a shim with the verb prints. */
 /** The verbs a merge trial uses: a host whose shim lacks any of them takes no shards until prepare runs again there. */
 export const trialVerbs = hostShimVerbs;
 /** Shims released before the probe listed its verbs, by digest: the verbs each speaks (GY-3549's shim). */
@@ -59,12 +64,13 @@ case "$SSH_ORIGINAL_COMMAND" in
     echo "shim ${shimDigestSlot}"
     echo "verbs ${hostShimVerbs.join(' ')}"
     echo "user $(id -u) $(id -Gn)"
+    echo "compose $(docker compose version --short 2>/dev/null)"
 ${hostProbeScript.split('\n').map(line => `    ${line}`).join('\n')}
     ;;
-  receive-pack\\ *|receive-image\\ *|prepare-run\\ *|run-shard\\ *|fetch-records\\ *|clean\\ *)
+  receive-pack\\ *|receive-image\\ *|prepare-run\\ *|run-shard\\ *|run-check\\ *|fetch-records\\ *|clean\\ *)
     # The verbs that take arguments, validated and run in Python.
     exec python3 -I -c "$(cat <<'GRAPHYARD_VERBS'
-import json, os, re, shutil, subprocess, sys, tempfile, time
+import json, os, re, shutil, signal, subprocess, sys, tempfile, time
 LAUNCHER = ${JSON.stringify(trialLauncher)}
 asked = os.environ.get('SSH_ORIGINAL_COMMAND', '')
 def refuse():
@@ -79,7 +85,7 @@ RUN = r'trial-[A-Za-z0-9_]{6,40}'
 IMAGE = ${JSON.stringify(warmImagePattern.source.slice(1, -1))}
 INDEX = r'[1-9][0-9]{0,3}'
 SHAPES = {'receive-pack': [NAME, SHA], 'receive-image': [IMAGE], 'prepare-run': [NAME, SHA, IMAGE],
-          'run-shard': [RUN, INDEX], 'fetch-records': [RUN, INDEX], 'clean': [RUN]}
+          'run-shard': [RUN, INDEX], 'run-check': [RUN], 'fetch-records': [RUN, INDEX], 'clean': [RUN]}
 if verb not in SHAPES or len(args) != len(SHAPES[verb]) or not all(re.fullmatch(shape, arg) for shape, arg in zip(SHAPES[verb], args)):
     refuse()
 mirrors, runs = os.path.join(home, '.graphyard', 'mirrors'), os.path.join(home, '.graphyard', 'runs')
@@ -141,48 +147,104 @@ elif verb == 'prepare-run':
     print('run ' + os.path.basename(run))
 else:
     run = os.path.join(runs, args[0])
-    # A shard request names its files, command, CPUs and deadline only: one asking for anything else (a mount, an image, a network) is refused.
-    if verb == 'run-shard':
+    project = 'graphyard-check-' + args[0][6:].lower()
+    # A request names its files or Compose file, command, CPUs and deadline only: one asking for anything else (a mount, an image, a network) is refused.
+    if verb in ('run-shard', 'run-check'):
         try:
-            shard = json.load(sys.stdin)
+            request = json.load(sys.stdin)
         except ValueError:
             refuse()
-        if not isinstance(shard, dict) or set(shard) != {'files', 'argv', 'cpus', 'deadline'}:
+        if not isinstance(request, dict) or set(request) != ({'files', 'argv', 'cpus', 'deadline'} if verb == 'run-shard' else {'file', 'services', 'argv', 'cpus', 'deadline'}):
+            refuse()
+        argv, cpus, deadline = request['argv'], request['cpus'], request['deadline']
+        strings = lambda values, forbidden: isinstance(values, list) and 0 < len(values) <= 5000 and all(isinstance(value, str) and not set(forbidden) & set(value) for value in values)
+        if not strings(argv, '\\0') or type(cpus) is not int or type(deadline) is not int:
             refuse()
     if not os.path.isdir(run):
         sys.exit('graphyard-host-shim: no run ' + args[0])
+    def launch(network, command, variables={}, **options):
+        cores = os.cpu_count() or 1
+        cap = max(2, max(${minimumTrialContainers}, cores // 2))
+        memory = next((int(line.split()[1]) for line in open('/proc/meminfo') if line.startswith('MemTotal:')), 4 << 20) // 1024 // cap
+        spec = {'image': open(os.path.join(run, 'image')).read().strip(), 'mounts': [[run, run, False]], 'network': network,
+                'deadline': min(deadline, int(time.time() * 1000) + 3 * 3600 * 1000), 'docker': os.environ['DOCKER_HOST'], 'user': '1000:0',
+                'limits': {'cpus': max(1, min(cpus, cores)), 'memory': '%dm' % max(512, memory), 'pids': 4096},
+                'apparmor': '${trialAppArmorProfile}' if 'apparmor' in subprocess.run(['docker', 'info', '--format', '{{json .SecurityOptions}}'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True).stdout else None,
+                'load': {'slots': os.path.join(home, '.gy', 'trial-slots'), 'cap': cap, 'order': ${trialStartOrder.merge}, 'hotCelsius': ${trialHotCelsius},
+                         'floorBytes': float(os.environ.get('GRAPHYARD_HOST_FLOOR_GB', ${defaultDiskFloorGb})) * 1e9, 'hwmon': '/sys/class/hwmon', 'pressureBoundSeconds': ${trialPressureBoundSeconds}}}
+        # Keep new files removable by the host's mapped group too.
+        command = ['/bin/sh', '-c', 'umask 0002; exec "$@"', 'sh'] + command
+        os.chdir(os.path.join(run, 'repo'))
+        sys.stdout.flush()
+        return subprocess.call([sys.executable, '-I', '-S', '-c', LAUNCHER, json.dumps(spec)] + command, **options,
+                               env={'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'HOME': '/tmp', 'CI': '1', **variables,
+                                    'GIT_CONFIG_COUNT': '1', 'GIT_CONFIG_KEY_0': 'safe.directory', 'GIT_CONFIG_VALUE_0': os.getcwd()})
     if verb == 'clean':
+        # A check the connection dropped under may have left its project up.
+        if os.path.exists(os.path.join(run, 'compose-project')):
+            quiet('docker', 'compose', '-p', project, 'down', '--volumes', '--remove-orphans', '--rmi', 'local', '--timeout', '5')
         shutil.rmtree(run, ignore_errors=True)
     elif verb == 'fetch-records':
         try:
             sys.stdout.write(open(os.path.join(run, 'tests-' + args[1] + '.jsonl')).read())
         except OSError:
             pass
-    else:
-        files, argv, cpus, deadline = shard.get('files'), shard.get('argv'), shard.get('cpus'), shard.get('deadline')
-        strings = lambda values, forbidden: isinstance(values, list) and 0 < len(values) <= 5000 and all(isinstance(value, str) and not set(forbidden) & set(value) for value in values)
-        if not strings(files, '\\0\\n') or not strings(argv, '\\0') or type(cpus) is not int or type(deadline) is not int:
+    elif verb == 'run-shard':
+        files = request['files']
+        if not strings(files, '\\0\\n'):
             refuse()
-        cores = os.cpu_count() or 1
-        cap = max(2, max(${minimumTrialContainers}, cores // 2))
         listed, records = os.path.join(run, 'tests-' + args[1] + '.txt'), os.path.join(run, 'tests-' + args[1] + '.jsonl')
         with open(listed, 'w') as file:
             file.write('\\n'.join(files) + '\\n')
-        memory = next((int(line.split()[1]) for line in open('/proc/meminfo') if line.startswith('MemTotal:')), 4 << 20) // 1024 // cap
-        spec = {'image': open(os.path.join(run, 'image')).read().strip(), 'mounts': [[run, run, False]], 'network': 'none',
-                'deadline': min(deadline, int(time.time() * 1000) + 3 * 3600 * 1000), 'docker': os.environ['DOCKER_HOST'], 'user': '1000:0',
-                'limits': {'cpus': max(1, min(cpus, cores)), 'memory': '%dm' % max(512, memory), 'pids': 4096},
-                'apparmor': '${trialAppArmorProfile}' if 'apparmor' in subprocess.run(['docker', 'info', '--format', '{{json .SecurityOptions}}'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True).stdout else None,
-                'load': {'slots': os.path.join(home, '.gy', 'trial-slots'), 'cap': cap, 'order': ${trialStartOrder.merge}, 'hotCelsius': ${trialHotCelsius},
-                         'floorBytes': float(os.environ.get('GRAPHYARD_HOST_FLOOR_GB', ${defaultDiskFloorGb})) * 1e9, 'hwmon': '/sys/class/hwmon', 'pressureBoundSeconds': ${trialPressureBoundSeconds}}}
-        command = [{'{list}': listed, '{records}': records}.get(word, word) for word in argv]
-        # Keep new files removable by the host's mapped group too.
-        command = ['/bin/sh', '-c', 'umask 0002; exec "$@"', 'sh'] + command
-        os.chdir(os.path.join(run, 'repo'))
-        sys.stdout.flush()
-        sys.exit(subprocess.call([sys.executable, '-I', '-S', '-c', LAUNCHER, json.dumps(spec)] + command,
-                                 env={'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'HOME': '/tmp', 'CI': '1',
-                                      'GIT_CONFIG_COUNT': '1', 'GIT_CONFIG_KEY_0': 'safe.directory', 'GIT_CONFIG_VALUE_0': os.getcwd()}))
+        sys.exit(launch('none', [{'{list}': listed, '{records}': records}.get(word, word) for word in argv]))
+    else:
+        file, services = request['file'], request['services']
+        if not isinstance(file, str) or not file or file.startswith('/') or '..' in file.split('/') or '\\0' in file or not isinstance(services, list) or not 0 < len(services) <= 8 \
+                or not all(isinstance(entry, dict) and set(entry) == {'service', 'port'} and isinstance(entry['service'], str) and re.fullmatch(NAME, entry['service']) and type(entry['port']) is int for entry in services):
+            refuse()
+        # Only the Compose file this run's commit holds, unchanged, inside its checkout.
+        repo = os.path.realpath(os.path.join(run, 'repo'))
+        compose = os.path.realpath(os.path.join(repo, file))
+        committed = subprocess.run(['git', '-C', repo, 'cat-file', 'blob', 'HEAD:' + file], capture_output=True)
+        if not compose.startswith(repo + os.sep) or committed.returncode != 0 or not os.path.isfile(compose) or open(compose, 'rb').read() != committed.stdout:
+            refuse()
+        base = ['docker', 'compose', '-p', project, '--project-directory', os.path.dirname(compose), '-f', compose]
+        try:
+            config = json.loads(subprocess.run(base + ['config', '--format', 'json'], capture_output=True, text=True).stdout)
+        except ValueError:
+            sys.exit('graphyard-host-shim: docker compose cannot read ' + file)
+        # The host lends this run directory and nothing else: no service binds a path outside it.
+        for service in (config.get('services') or {}).values():
+            for volume in service.get('volumes') or []:
+                if volume.get('type') == 'bind' and not (os.path.realpath(str(volume.get('source'))) + os.sep).startswith(os.path.realpath(run) + os.sep):
+                    sys.exit('graphyard-host-shim refuses: ' + file + ' binds ' + str(volume.get('source')) + ', outside the run directory')
+        names, steps = [entry['service'] for entry in services], []
+        def stop(number, frame):
+            raise SystemExit(128 + number)
+        signal.signal(signal.SIGTERM, stop)
+        signal.signal(signal.SIGHUP, stop)
+        open(os.path.join(run, 'compose-project'), 'w').close()
+        try:
+            at = time.time()
+            up = subprocess.run(base + ['up', '-d', '--quiet-pull'] + names, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            container = subprocess.run(base + ['ps', '-q', names[0]], capture_output=True, text=True).stdout.split() if up.returncode == 0 else []
+            if not container:
+                sys.exit('graphyard-host-shim: the services did not start: ' + up.stdout[-500:])
+            steps.append('services %d' % ((time.time() - at) * 1000))
+            variables = {}
+            for entry in services:
+                name = 'GRAPHYARD_SERVICE_' + re.sub('[^A-Z0-9]', '_', entry['service'].upper())
+                variables[name + '_HOST'], variables[name + '_PORT'] = entry['service'], str(entry['port'])
+            at = time.time()
+            status = launch('container:' + container[0], argv, variables, stderr=subprocess.STDOUT)
+            steps.append('command %d' % ((time.time() - at) * 1000))
+        finally:
+            at = time.time()
+            if quiet(*base, 'down', '--volumes', '--remove-orphans', '--rmi', 'local', '--timeout', '5'):
+                os.remove(os.path.join(run, 'compose-project'))
+            steps.append('teardown %d' % ((time.time() - at) * 1000))
+        # The command's own exit travels as a line: this verb exits 0 whenever the command ran.
+        print('\\n' + '\\n'.join('graphyard-check ' + step for step in steps) + '\\ngraphyard-check exit %d' % status)
 GRAPHYARD_VERBS
 )" "$@" ;;
   *) refuse ;;

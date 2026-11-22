@@ -1,0 +1,16 @@
+{
+  "id": "declared-check-runs-on-a-host",
+  "title": "A merge check that is one script beside a Postgres service runs whole on a compute machine",
+  "description": "A fixture repository's preMerge check is a script that needs its declared Postgres Compose service. With one compute machine added and reached through the real graphyard-host-shim, a merge trial sends it the commit, starts the service in the run directory there, runs the script on the service's network and removes the project: the script passes, nothing runs on the coordinator, no project or run directory is left behind, and the trial log names the machine with each step's time. A failing script fails the check the same way. With the machine unreachable, or its services refusing to start, the check runs on the coordinator as before and the log says why. Only Docker is a stand-in.",
+  "tags": ["trial", "hosts"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "a real merge trial runs the script and its service on the fake machine, and falls back to this machine when it is away",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/declared-check-runs-on-a-host.test.ts",
+      "timeoutSeconds": 600
+    }
+  ]
+}
