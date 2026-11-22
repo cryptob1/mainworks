@@ -1,5 +1,6 @@
 export { shellQuote } from '../shell-quote.js';
 // Concern: dispatching a worker — dispatchability, the worker launch, its prompt and environment.
+import { stateDir } from '../mainworks-names.js';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, resolve } from 'node:path';
 import { z } from 'zod';
@@ -255,7 +256,7 @@ export async function dispatchWork(root: string, work: Work, profile: WorkerProf
     }
     // History supports status; it never grants or reserves a slot.
     const at = new Date().toISOString();
-    await mkdir(resolve(root, '.graphyard/dispatch'), { recursive: true }).catch(() => {});
+    await mkdir(resolve(stateDir(root), 'dispatch'), { recursive: true }).catch(() => {});
     await writeFile(dispatchedFile(root, work.key), JSON.stringify({ epoch: result.epoch, at, runtime: launch.kind ?? null, account: chosen.account?.name ?? null, run: result.run, path: result.path,
       ...(result.resumedFrom ? { resumedFrom: result.resumedFrom } : {}), ...(fresh ? { fresh } : {}) }), { mode: 0o600 }).catch(() => {});
     // The dispatch record names the runtime and account the session runs on, the preference

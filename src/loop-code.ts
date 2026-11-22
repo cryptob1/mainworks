@@ -1,3 +1,4 @@
+import { stateDir } from './mainworks-names.js';
 import { realpathSync } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
@@ -163,7 +164,7 @@ export async function readLoopCode(root: string, options: {
   const cliCommit = head(cliRoot);
   const primary = await (async () => { try { return connectionRoots(root)[0]; } catch { return root; } })();
   let master = options.master !== undefined ? options.master : null;
-  if (options.master === undefined) { try { master = JSON.parse(await readFile(resolve(root, '.graphyard', 'master.json'), 'utf8')); } catch { master = null; } }
+  if (options.master === undefined) { try { master = JSON.parse(await readFile(resolve(stateDir(root), 'master.json'), 'utf8')); } catch { master = null; } }
   const repository = typeof master?.repository === 'string' ? master.repository : null;
   const failed = (failure: unknown): LoopCodeReading => ({ loop: null, loopCommit: null, cli: { root: cliRoot, commit: cliCommit }, repository, loopStale: null, loopReplace: null, host: null, error: failureText(failure) });
   let units: InstallUnits | null;

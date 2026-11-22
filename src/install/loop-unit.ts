@@ -1,6 +1,7 @@
 // Concern: the master loop's own supervisor unit — unit text, installLoopSupervisor, alignLoopUnit,
 // the durable-checkout preflight and test home guard — and, from inside the running loop, detecting
 // that unit and telling a self-restart that succeeded from one that failed (GY-916).
+import { stateDir } from '../mainworks-names.js';
 import { controlPlaneWeight, sessionWeight } from '../session-share.js';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -177,8 +178,8 @@ function assertCoordinatorCheckout(root: string, host: LoopSupervisorHost) {
   // fixture host the line above has refused it already, and a remote shard keeps the suite's
   // temporary directory inside its run under ~/.graphyard/runs, which is no fixture's worktree.
   const own = canonical(tmpdir());
-  if ((within(checkout, own) ? relative(own, checkout) : checkout).split(sep).includes('.graphyard')) throw new LoopSupervisorRefusal(`the loop's WorkingDirectory ${root} is inside a managed .graphyard directory (an assignment worktree or session checkout), never the coordinator checkout`, operator);
-  if (!existsSync(join(checkout, '.graphyard', 'master.json'))) throw new LoopSupervisorRefusal(`the loop's WorkingDirectory ${root} is not the configured coordinator checkout: it holds no .graphyard/master.json`, operator);
+  if ((within(checkout, own) ? relative(own, checkout) : checkout).split(sep).some(part => part === '.graphyard' || part === '.mainworks')) throw new LoopSupervisorRefusal(`the loop's WorkingDirectory ${root} is inside a managed .graphyard directory (an assignment worktree or session checkout), never the coordinator checkout`, operator);
+  if (!existsSync(join(stateDir(checkout), 'master.json'))) throw new LoopSupervisorRefusal(`the loop's WorkingDirectory ${root} is not the configured coordinator checkout: it holds no .graphyard/master.json`, operator);
 }
 /**
  * One setting of a unit file, with systemd's `%h` (the user's home, as the packaged example spells
@@ -531,11 +532,11 @@ export function loopSupervisionAttention(supervision: LoopSupervision, evidence?
 }
 
 /** The supervisor unit the loop itself runs under, when systemd supervises it: read from the process's own cgroup, like an executor's. */
-export const loopUnitPattern = /^graphyard-master(?:[@.-][A-Za-z0-9@._:-]*)?\.service$/;
+export const loopUnitPattern = /^(?:graphyard|mainworks)-master(?:[@.-][A-Za-z0-9@._:-]*)?\.service$/;
 export function detectLoopSupervisorUnit(options: { cgroup?: string | null } = {}): string | null {
   let cgroup = options.cgroup;
   if (cgroup === undefined) { try { cgroup = readFileSync('/proc/self/cgroup', 'utf8'); } catch { cgroup = null; } }
-  const match = cgroup?.match(/\/(graphyard-master[^/\s]*\.service)(?:\/|$)/m);
+  const match = cgroup?.match(/\/((?:graphyard|mainworks)-master[^/\s]*\.service)(?:\/|$)/m);
   return match && loopUnitPattern.test(match[1]) ? match[1] : null;
 }
 

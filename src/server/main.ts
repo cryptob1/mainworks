@@ -1,3 +1,4 @@
+import '../mainworks-names.js';
 import { once } from 'node:events';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';

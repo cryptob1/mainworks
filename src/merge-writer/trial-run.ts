@@ -5,6 +5,7 @@
 // the one that started it, or its successor after the restart — reads the same files and settles
 // the head on the trial's own verdict (merged, or refused for its own failure), never on the fact
 // that the loop restarted.
+import { stateDir } from '../mainworks-names.js';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -18,7 +19,7 @@ import { heldJobEnvironment } from '../master/verification-slots.js';
 import type { MergeTrialRun } from './executor.js';
 
 /** Where a loop's detached trial runs live: `<coordinator root>/.graphyard/trial-runs`, beside the deploy record it already keeps there. */
-export const trialRunsDirectory = (root: string) => join(root, '.graphyard', 'trial-runs');
+export const trialRunsDirectory = (root: string) => join(stateDir(root), 'trial-runs');
 
 /** What one merge flight asks a detached trial run to do: everything `runMergeTrial` reads that is not a function; the launch fills where it runs. */
 export interface TrialRunRequest { key: string; head: string; mergeSha: string; baseTip: string | null; changedFiles: string[]; proofs: string[]; e2eProofs: string[]; timeoutMs: number; reproduce: boolean; cores: number | null; selectorApproved?: boolean }

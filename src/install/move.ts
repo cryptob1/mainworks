@@ -7,6 +7,7 @@
 // on the target, rewrites hostId there and prints what to start. A move over SSH copies with rsync;
 // a stand-in directory (--into) copies in process, with no external tool to need. Both stay outside
 // any coordination transaction.
+import { stateDir } from '../mainworks-names.js';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -98,7 +99,7 @@ const commonGitdir = (registration: string): string => {
  * carried directory (a checkout that is its own main repository) went with the copy.
  */
 function worktreeRepositories(root: string, carried: string[]): string[] {
-  const releases = join(root, '.graphyard', 'cli-releases');
+  const releases = join(stateDir(root), 'cli-releases');
   const trees = [root, ...(existsSync(releases) ? readdirSync(releases, { withFileTypes: true }) : []).filter(entry => entry.isDirectory()).map(entry => join(releases, entry.name))];
   return [...new Set(trees.map(gitdirPointer).filter((entry): entry is string => !!entry && existsSync(entry)).map(commonGitdir))]
     .filter(entry => !carried.some(base => entry === base || entry.startsWith(`${base}/`)));
@@ -128,7 +129,7 @@ function targetTransport(to: string, into: string | undefined, exec: (program: s
 /** The move of the install whose checkout is ROOT to host TO; `into` writes the target's files under that directory instead of `TO:` over SSH. */
 export async function moveInstall(root: string, options: { to: string; into?: string; plan?: boolean }, dependencies: MoveDependencies = {}) {
   root = resolve(root);
-  const masterFile = join(root, '.graphyard/master.json'), connectionFile = join(root, '.graphyard/connection.json');
+  const masterFile = join(stateDir(root), 'master.json'), connectionFile = join(stateDir(root), 'connection.json');
   const stored = JSON.parse(await readFile(masterFile, 'utf8'));
   const config = masterConfigSchema.parse(stored);
   const from = config.hostId, to = options.to.trim();

@@ -21,7 +21,8 @@ npm run build
 node bin/graphyard.mjs up --repo OWNER/NAME
 ```
 
-The `graphyard` command and `GRAPHYARD_*` settings still work.
+Settings are `MAINWORKS_*` (`MAINWORKS_URL`, `MAINWORKS_TOKEN`, …); an install keeps its files in the checkout's `.mainworks/` and in `~/.config/mainworks/<install>/` (mode 0600) and runs `mainworks-*` units.
+The `graphyard` command and the Graphyard names (`GRAPHYARD_*`, `.graphyard/`, `~/.config/graphyard/`, `graphyard-*` units) are still honoured.
 
 Once published to npm:
 

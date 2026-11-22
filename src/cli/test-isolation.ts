@@ -35,7 +35,7 @@ export function isolatedTestEnvironment(environment: NodeJS.ProcessEnv = process
   const kept = Object.entries(environment).filter((entry): entry is [string, string] => {
     const [name, value] = entry;
     if (value === undefined || name === 'NODE_TEST_CONTEXT') return false;
-    return !/^(GRAPHYARD|HERDR)_/.test(name) || (passedTestControls as readonly string[]).includes(name);
+    return !/^(GRAPHYARD|MAINWORKS|HERDR)_/.test(name) || (passedTestControls as readonly string[]).includes(name);
   });
   return { ...Object.fromEntries(kept), ...set };
 }
@@ -183,7 +183,7 @@ export function npmCiEnvironment(env: NodeJS.ProcessEnv = process.env): NodeJS.P
  * or Herdr variable (GRAPHYARD_TOKEN_FILE and every other credential or control among them) and no
  * GitHub token. npm's own registry settings stay: they are what the install needs.
  */
-const withheldFromInstall = /^(GRAPHYARD_|HERDR_|GH_TOKEN$|GITHUB_TOKEN$|GH_ENTERPRISE_TOKEN$|GITHUB_ENTERPRISE_TOKEN$)/;
+const withheldFromInstall = /^(GRAPHYARD_|MAINWORKS_|HERDR_|GH_TOKEN$|GITHUB_TOKEN$|GH_ENTERPRISE_TOKEN$|GITHUB_ENTERPRISE_TOKEN$)/;
 
 /** Whether `path` is `parent` or lies inside it. */
 const within = (path: string, parent: string) => { const from = relative(parent, path); return from !== '..' && !from.startsWith('../') && !isAbsolute(from); };

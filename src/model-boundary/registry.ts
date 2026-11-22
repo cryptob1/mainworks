@@ -20,7 +20,7 @@ const hostName = z.string().trim().min(1).max(200).refine(value => !/[\u0000-\u0
 const text = (max: number) => z.string().trim().min(1).max(max).refine(value => !/[\u0000-\u001f\u007f]/.test(value), 'Control characters are not allowed');
 
 const launchEnvironment = z.record(
-  z.string().regex(/^[A-Z_][A-Z0-9_]*$/).refine(name => !name.startsWith('GRAPHYARD_'), 'GRAPHYARD_ variables are owned by the launcher').refine(name => !secretName.test(name), 'A launch contract never carries a secret; the credential lives in the runtime login the account references'),
+  z.string().regex(/^[A-Z_][A-Z0-9_]*$/).refine(name => !/^(GRAPHYARD|MAINWORKS)_/.test(name), 'GRAPHYARD_ variables are owned by the launcher').refine(name => !secretName.test(name), 'A launch contract never carries a secret; the credential lives in the runtime login the account references'),
   z.string().min(1).refine(value => !/[\u0000-\u001f\u007f]/.test(value), 'Environment values cannot contain control characters').refine(notSecret, 'That value looks like a credential; the registry stores references, never secrets'),
 ).default({}).superRefine((values, context) => {
   // GY-3276: a value past the limit is a host problem to fix (a PATH that long), so the refusal
@@ -44,7 +44,7 @@ export const launchContractSchema = z.object({
   headlessArgs: z.array(z.string().max(1000).refine(notSecret, 'Arguments must not contain credentials')).max(30)
     .refine(args => args.filter(arg => arg === '{request}').length === 1, 'headlessArgs must contain exactly one {request} argument').optional(),
   environment: launchEnvironment,
-  homeVariable: z.string().regex(/^[A-Z_][A-Z0-9_]*$/).refine(name => !name.startsWith('GRAPHYARD_'), 'GRAPHYARD_ variables are owned by the launcher').nullable().default(null),
+  homeVariable: z.string().regex(/^[A-Z_][A-Z0-9_]*$/).refine(name => !/^(GRAPHYARD|MAINWORKS)_/.test(name), 'GRAPHYARD_ variables are owned by the launcher').nullable().default(null),
   modelFlag: z.string().regex(/^--?[a-zA-Z][a-zA-Z0-9-]*$/).nullable().default(null),
   login: z.string().trim().min(1).max(500).refine(notSecret, 'A login command names how to log in, never the credential').nullable().default(null),
   loginFile: z.string().trim().min(1).max(200).refine(value => !isAbsolute(value) && !value.split('/').includes('..'), 'loginFile is a path inside the account home').nullable().default(null),

@@ -1,3 +1,4 @@
+import { stateDir } from './mainworks-names.js';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -10,7 +11,7 @@ import { gateRecordPath, readGateRecord } from './batch-gate.js';
 export { emptyProjectMemory, isNoteRoleRelevant, masterBriefSection, masterLessonCharacterLimit, masterLessonKind, masterLessonWordTotal, masterLessons, masterLessonsSection, productBriefExcerpt, productBriefHeadings, productBriefSectionWords, productBriefWordLimit, productBriefWorkingHeadings, projectMemoryDigest, projectMemoryWordBudget, recentChangesWindowMs, recordChangeInMemory, recordMasterLesson, recordNoteInMemory, reconcileMasterMemory, removeMasterLesson, retainedMasterLessons, retainedMemoryChanges, retainedMemoryNotes, retainedProductBriefChanges, setProductBrief, boundMemoryNotes, updateProjectMemoryFromWork, type MemoryChange, type MemoryNote, type ProjectMemory, type ProductBrief, type ProductBriefChange, type SessionRole } from './model/project-memory.js';
 export { projectMemorySchema, productBriefSchema, productBriefChangeSchema } from './model-boundary/project-memory.js';
 
-export const projectMemoryPath = (root: string) => resolve(root, '.graphyard', 'project-memory.json');
+export const projectMemoryPath = (root: string) => resolve(stateDir(root), 'project-memory.json');
 
 /**
  * What the master session wrote to `.graphyard/project-memory.json` (GY-3274) — its lessons and the

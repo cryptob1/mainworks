@@ -186,6 +186,7 @@ export const workspaceCommands = defineCommands([
       const watchToken = await context.individualToken();
       process.env.GRAPHYARD_URL = base; process.env.GRAPHYARD_TOKEN = watchToken;
       process.env.GRAPHYARD_CLI = await context.activeCliPath(); process.env.GRAPHYARD_HOST_ID = hostId;
+      for (const name of ['URL', 'TOKEN', 'CLI', 'HOST_ID']) process.env[`MAINWORKS_${name}`] = process.env[`GRAPHYARD_${name}`];
       // `complete` ends the lease, so the renewal after a submission is refused by design: say
       // so before the supervisor stops the session, so the stop reads as the end of the attempt
       // rather than as a lost assignment.

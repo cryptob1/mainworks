@@ -1,3 +1,4 @@
+import { stateDir } from '../mainworks-names.js';
 import { sessionScopeProperties } from '../session-share.js';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { confinedRuntimeArgs } from '../worker-sandbox.js';
@@ -43,7 +44,7 @@ export function piArgs(prompt: string, options: { model: string; extension?: str
 /** Inherited variables a run never sees: the loop's own Graphyard and Herdr identity. What a run may hold is passed in `env`. */
 export function runEnvironment(base: NodeJS.ProcessEnv, extra: Record<string, string> = {}) {
   const env: Record<string, string> = {};
-  for (const [name, value] of Object.entries(base)) if (value !== undefined && !/^(GRAPHYARD_|HERDR_)/.test(name)) env[name] = value;
+  for (const [name, value] of Object.entries(base)) if (value !== undefined && !/^(GRAPHYARD_|MAINWORKS_|HERDR_)/.test(name)) env[name] = value;
   return { ...env, ...extra };
 }
 
@@ -292,7 +293,7 @@ export function scratchRunsDirectory(cwd: string | undefined) {
   if (cwd) {
     // Each level made on its own, never recursively: a recursive mkdir can spin forever on a
     // pseudo-filesystem such as /proc, where a plain one fails at once.
-    const local = resolve(cwd, '.graphyard', 'scratch-runs');
+    const local = resolve(stateDir(cwd), 'scratch-runs');
     const made = (directory: string) => { try { mkdirSync(directory, { mode: 0o700 }); } catch (error: any) { if (error?.code !== 'EEXIST') throw error; } };
     try { made(dirname(local)); made(local); return local; } catch { /* a checkout it cannot write to: the temp directory */ }
   }

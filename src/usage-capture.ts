@@ -2,6 +2,7 @@
 // host. A headless review notes its run's report beside the run; a worker run's report stays in its
 // run log; the master's is its runtime's own transcript. The loop reports them all to the control
 // plane, where each row replaces itself, so nothing here needs to remember what it sent.
+import { stateDir } from './mainworks-names.js';
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
@@ -13,7 +14,7 @@ import { reportedModel } from './master/runtimes.js';
 import { listRunDirectories, runsDirectory } from './runner/registry.js';
 import type { Conversation } from './master/conversation.js';
 
-const outbox = (root: string) => resolve(root, '.graphyard', 'usage-outbox');
+const outbox = (root: string) => resolve(stateDir(root), 'usage-outbox');
 type Session = Pick<UsageRow, 'id' | 'work' | 'role' | 'account' | 'runtime' | 'at'>;
 
 /** A run's rows: its tokens by model, or one 'not reported' row for a runtime that printed no usage. */

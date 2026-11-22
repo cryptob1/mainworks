@@ -1,3 +1,4 @@
+import { stateDir } from '../mainworks-names.js';
 import { writeFailure } from '../disk-space.js';
 // Concern: removing ended attempts' worktrees, managed checkouts and shared installs, and preparing assignment worktrees: the dispatch cycle's one shared base fetch.
 import { createHash } from 'node:crypto';
@@ -20,7 +21,7 @@ import { agentOwner, type AttentionItem } from './attention.js';
 /** The dependency trees a package manager recreates from the lockfile. */
 export const dependencyDirectories = ['node_modules'] as const;
 export const lockfiles = ['package-lock.json'] as const;
-export const worktreesDirectory = (root: string) => resolve(root, '.graphyard/worktrees');
+export const worktreesDirectory = (root: string) => resolve(stateDir(root), 'worktrees');
 export { failureText } from '../disk-space.js';
 
 /** Free space on the volume holding a path, as the kernel reports it to this user. */

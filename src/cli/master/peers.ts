@@ -1,4 +1,5 @@
 // Concern: `graphyard master peer` and `master send` — this Master messaging another install's Master through Graphyard (GY-3345), and issuing a peer install on this host its reporter identity from this session (GY-3385).
+import { stateDir } from '../../mainworks-names.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
@@ -31,7 +32,7 @@ async function peerCall(peer: Peer, path: string, body?: unknown) {
 
 async function savePeers(root: string, peers: Peer[]) {
   const config = await loadStoredMasterConfig(root);
-  await atomicPrivateWrite(resolve(root, '.graphyard/master.json'), masterConfigSchema.parse({ ...config, peers }));
+  await atomicPrivateWrite(resolve(stateDir(root), 'master.json'), masterConfigSchema.parse({ ...config, peers }));
 }
 
 /** An install's config directory — the one holding its `masters` credentials — from its master.json credential path. */
@@ -57,7 +58,7 @@ export async function peerCommand(session: MasterSession): Promise<unknown> {
       const peerRoot = resolve(given);
       if (peerRoot === resolve(root)) throw new Error('That is this install\'s own checkout; master peer issue peers another install on this host');
       let stored: { url?: unknown; repository?: unknown; credentialFile?: unknown };
-      try { stored = JSON.parse(await readFile(resolve(peerRoot, '.graphyard/master.json'), 'utf8')); }
+      try { stored = JSON.parse(await readFile(resolve(stateDir(peerRoot), 'master.json'), 'utf8')); }
       catch { throw new Error(`${peerRoot} holds no readable .graphyard/master.json; name another install's coordinator checkout on this host`); }
       const peerName = typeof stored.repository === 'string' ? basename(stored.repository) : '';
       if (typeof stored.url !== 'string' || !/^https?:\/\//.test(stored.url) || !/^[\w.-]{1,60}$/.test(peerName) || typeof stored.credentialFile !== 'string' || !isAbsolute(stored.credentialFile))

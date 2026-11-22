@@ -1,3 +1,4 @@
+import { stateDir } from './mainworks-names.js';
 import { machineDirectory, readTailnet, recordMachineNode } from './team-access.js';
 export { readTailnet };
 import { readSecretFromStdin } from './cli/context.js';
@@ -303,7 +304,7 @@ interface UpState {
   /** GY-3269: the merge writer pushes with the gh login (--push-auth gh); a rerun without the flag keeps it, a piped token replaces it. */
   pushAuth?: 'gh' | null;
 }
-export const upStateFile = (root: string) => resolve(root, '.graphyard/up.json');
+export const upStateFile = (root: string) => resolve(stateDir(root), 'up.json');
 const knownUpSteps = upSteps as readonly string[];
 
 async function readState(root: string, request: UpRequest): Promise<UpState> {
@@ -407,7 +408,7 @@ const childStop = (step: string, args: string[], result: { code: number; stdout:
 export const signInAt = (link: string, base: string) => { const at = link.indexOf('#'); return at < 0 ? link : `${base.replace(/\/+$/, '')}/${link.slice(at)}`; };
 /** The steps a reinstall onto a fresh database runs again (GY-1851): the install, master init, the agent identities, the onboarding item, the accounts and the loop. */
 const reissueSteps: readonly UpStep[] = ['control-plane', 'host-supervisor', 'master-autonomy', 'onboarding', 'accounts', 'master-loop'];
-const masterJson = (root: string) => readFile(resolve(root, '.graphyard/master.json'), 'utf8').then(parseJson, () => null);
+const masterJson = (root: string) => readFile(resolve(stateDir(root), 'master.json'), 'utf8').then(parseJson, () => null);
 /**
  * GY-1851: GET /api/status at SERVER with each credential master.json records (the coordinator's,
  * the operator-agent's), answering the HTTP status of each. A credential with no
@@ -475,7 +476,7 @@ export async function stopRecordedLoop(root: string): Promise<{ unit: string | n
 
 /** The master's agent identity is recorded in master.json and its credential file is readable. */
 async function provisioned(root: string) {
-  const config = await readFile(resolve(root, '.graphyard/master.json'), 'utf8').then(parseJson, () => null);
+  const config = await readFile(resolve(stateDir(root), 'master.json'), 'utf8').then(parseJson, () => null);
   const identities = [config?.operatorAgent];
   if (identities.some(identity => typeof identity?.credentialFile !== 'string')) return false;
   return (await Promise.all(identities.map(identity => readFile(identity.credentialFile, 'utf8').then(text => text.trim().length >= 32, () => false)))).every(Boolean);
@@ -905,7 +906,7 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
      */
     const writeProfiles = async (): Promise<any> => {
       let report: any;
-      if (existsSync(resolve(deps.root, '.graphyard/master.json'))) report = parseJson(await run('accounts', ['master', 'environments', '--apply']));
+      if (existsSync(resolve(stateDir(deps.root), 'master.json'))) report = parseJson(await run('accounts', ['master', 'environments', '--apply']));
       const counts = report?.counts;
       if (counts) writtenProfiles = { workers: counts.workers ?? 0, reviewers: counts.reviewers ?? 0 };
       const refused = refusedCredentials(report);
@@ -1134,7 +1135,7 @@ export async function upCommand(root: string, cliPath: () => Promise<string>, ar
 export async function upUrlRefusal(root: string, url: string | null | undefined) {
   if (!url) return null;
   let recorded = '';
-  try { recorded = String(JSON.parse(await readFile(resolve(root, '.graphyard/master.json'), 'utf8')).url ?? ''); } catch { return null; }
+  try { recorded = String(JSON.parse(await readFile(resolve(stateDir(root), 'master.json'), 'utf8')).url ?? ''); } catch { return null; }
   let origin = recorded;
   try { origin = new URL(recorded).origin; } catch { /* compared as written */ }
   return !recorded || origin === url ? null
@@ -1255,7 +1256,7 @@ export async function publishOnboarding(root: string, repository: string, run: (
   const base = record?.baseBranch ?? child('gh', ['repo', 'view', repository, '--json', 'defaultBranchRef', '--jq', '.defaultBranchRef.name']).trim();
   child('git', ['fetch', '--quiet', remote, base], credentialEnvironment);
   const baseCommit = child('git', ['rev-parse', 'FETCH_HEAD']).trim();
-  const index = resolve(root, '.graphyard', `onboarding-index.${process.pid}`);
+  const index = resolve(stateDir(root), `onboarding-index.${process.pid}`);
   await mkdir(dirname(index), { recursive: true });
   try {
     const env = { GIT_INDEX_FILE: index };
@@ -1313,7 +1314,7 @@ export function upDependencies(root: string, cliPath: string, request: UpRequest
   // GY-1641: --url, else the address master.json records, else the one this machine's install record (install.json) holds.
   const serverUrl = async () => {
     if (request.url) return request.url;
-    try { const url = String(JSON.parse(await readFile(resolve(root, '.graphyard/master.json'), 'utf8')).url ?? ''); if (url) return url; } catch { /* not recorded yet */ }
+    try { const url = String(JSON.parse(await readFile(resolve(stateDir(root), 'master.json'), 'utf8')).url ?? ''); if (url) return url; } catch { /* not recorded yet */ }
     return (await readInstallRecord(installDirectory(installIdFor(request.repository))).catch(() => null))?.url ?? null;
   };
   // upUrlRefusal keeps --url to the server master.json records, so its credential is the one for serverUrl.
@@ -1336,7 +1337,7 @@ export function upDependencies(root: string, cliPath: string, request: UpRequest
   // The loop runs from the checkout of the CLI master init recorded, which is this CLI until it has.
   const loopCheckout = async () => {
     let recorded: unknown = null;
-    try { recorded = JSON.parse(await readFile(resolve(root, '.graphyard/master.json'), 'utf8')).cliPath; } catch { /* not initialised yet */ }
+    try { recorded = JSON.parse(await readFile(resolve(stateDir(root), 'master.json'), 'utf8')).cliPath; } catch { /* not initialised yet */ }
     return readCoordinatorCheckout(coordinatorCheckoutRoot(typeof recorded === 'string' && recorded ? recorded : cliPath));
   };
   return {
@@ -1358,7 +1359,7 @@ export function upDependencies(root: string, cliPath: string, request: UpRequest
       let token = '';
       try { token = operatorTokenFile ? (await readFile(operatorTokenFile, 'utf8')).trim() : ''; } catch { /* no credential on this machine */ }
       if (!server || token.length < 32) return null;
-      return fileOnboardingWork({ server, token, commit, checks: await onboardingChecks(root), caseId: await onboardingFirstCase(root), host: hostname(), path: resolve(root, '.graphyard', 'onboarding'), requestId });
+      return fileOnboardingWork({ server, token, commit, checks: await onboardingChecks(root), caseId: await onboardingFirstCase(root), host: hostname(), path: resolve(stateDir(root), 'onboarding'), requestId });
     },
     work: async () => {
       const url = await serverUrl(), token = await masterToken();

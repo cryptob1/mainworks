@@ -2,6 +2,7 @@
 // through the real trial runner and hosts as a proofless pseudo-item, store the last 200 results,
 // schedule in the loop after new deploys and at most every 6h when idle, surface regressions in
 // master status, and compare REF against main per step.
+import { stateDir } from './mainworks-names.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
@@ -22,7 +23,7 @@ import type { DaemonState } from './daemon/state.js';
 
 export const defaultBenchFilesPath = 'bench/trial-files.txt';
 export const benchResultsLimit = 200;
-export const benchResultsPath = (root: string) => join(root, '.graphyard', 'bench-results.jsonl');
+export const benchResultsPath = (root: string) => join(stateDir(root), 'bench-results.jsonl');
 export const benchTrialKey = 'bench-trial';
 export const benchIntervalMs = 6 * 60 * 60_000;
 export const benchRegressionThreshold = 0.25;
@@ -193,7 +194,7 @@ export async function benchTrial(input: {
   const readStat = input.readCpuStat ?? readProcStat;
   const commit = await resolveRef(input.root, input.ref, run);
   const { fileList, files, fileListHash } = readBenchFileList(input.root, input.filesPath);
-  const base = input.base ?? await loadStoredMasterConfig(input.root).then(cfg => worktreeRoot(input.root, cfg), () => join(input.root, '.graphyard', 'bench-worktrees'));
+  const base = input.base ?? await loadStoredMasterConfig(input.root).then(cfg => worktreeRoot(input.root, cfg), () => join(stateDir(input.root), 'bench-worktrees'));
   const resultsFile = input.resultsFile ?? benchResultsPath(input.root);
   const build = input.build !== undefined
     ? input.build

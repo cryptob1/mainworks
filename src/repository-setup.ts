@@ -1,3 +1,4 @@
+import { stateDir } from './mainworks-names.js';
 import { installDirectory } from './install/secrets.js';
 import { installIdFor } from './install/types.js';
 import { knownGoodDirectory, knownGoodState } from './master/known-good.js';
@@ -46,7 +47,7 @@ export async function loadConnection(cwd: string): Promise<Connection | null> {
   try { roots = connectionRoots(cwd); } catch { return null; }
   for (const root of roots) {
     try {
-      const file = resolve(root, '.graphyard/connection.json'); const info = await lstat(file);
+      const file = resolve(stateDir(root), 'connection.json'); const info = await lstat(file);
       if (!info.isFile() || info.mode & 0o077) throw new Error('Connection credentials must be a regular file with mode 0600');
       const connection = connectionSchema.parse(JSON.parse(await readFile(file, 'utf8')));
       connection.url = serverOrigin(connection.url); return connection;
@@ -285,7 +286,7 @@ export type AppliedSetup = z.infer<typeof appliedStateSchema>;
 
 /** Reads the applied record without creating .graphyard/ or touching .gitignore, so a scan writes nothing. */
 export async function loadAppliedSetup(root: string): Promise<AppliedSetup | null> {
-  const file = resolve(root, '.graphyard', appliedFileName);
+  const file = resolve(stateDir(root), appliedFileName);
   try {
     if (!(await lstat(file)).isFile()) throw new Error('The applied setup record must be a regular file');
     return appliedStateSchema.parse(JSON.parse(await readFile(file, 'utf8')));
@@ -302,7 +303,7 @@ export function setupDrift(applied: AppliedSetup | null, proposal: SetupProposal
 
 /** Non-mutating status of the local proposal and applied setup, for read-only commands. */
 export async function readSetupStatus(root: string) {
-  const directory = resolve(root, '.graphyard');
+  const directory = resolve(stateDir(root));
   const read = async (name: string, schema: z.ZodType<any>) => {
     let value: any = null;
     try { value = JSON.parse(await readFile(resolve(directory, name), 'utf8')); } catch (error: any) { if (error.code !== 'ENOENT') return { error: 'unreadable' }; }
@@ -524,7 +525,7 @@ export async function liftLoopPins(root: string, options: { installDir?: string 
 
 /** Remove the retired launcher pointer on every up, including an already current install. */
 export async function removeHeldCliPin(root: string): Promise<void> {
-  await rm(join(root, '.graphyard', 'held-cli.json'), { force: true });
+  await rm(join(stateDir(root), 'held-cli.json'), { force: true });
 }
 
 /**

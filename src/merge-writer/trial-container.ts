@@ -1,5 +1,6 @@
 // The outer trial has a private filesystem, rather than a host Landlock domain:
 // its tests can establish their own mount namespaces before applying Landlock.
+import { stateDir } from '../mainworks-names.js';
 import { chmodSync, existsSync, lstatSync, mkdtempSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,7 +17,7 @@ import { appArmorEnabled, trialAppArmorProfile } from './trial-apparmor.js';
 
 export const trialContainerImage = 'graphyard-trial:local';
 /** GY-3214: where an install names the published trial image it pulled for the release tree at `root`. */
-export const pulledTrialImageFile = (root: string) => join(root, '.graphyard', 'trial-image');
+export const pulledTrialImageFile = (root: string) => join(stateDir(root), 'trial-image');
 /** The image trials run: GRAPHYARD_TRIAL_IMAGE, else the published image the install pulled for this release, else the one built on this host. */
 export function trialImage(root = fileURLToPath(new URL('../..', import.meta.url))): string {
   if (process.env.GRAPHYARD_TRIAL_IMAGE) return process.env.GRAPHYARD_TRIAL_IMAGE;

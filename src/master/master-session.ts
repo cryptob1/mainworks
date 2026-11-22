@@ -1,4 +1,5 @@
 
+import { stateDir } from '../mainworks-names.js';
 import { gateRecordPath, readGateRecord } from '../batch-gate.js';
 import { dispatchCauses, deploymentCauses, batchGateCauses, type MasterCause } from '../daemon/master-stalled-delivery.js';
 import { readDispatchCursor } from '../dispatch/cursor.js';
@@ -154,7 +155,7 @@ export const masterSessionEffects = (root: string, config: () => MasterConfig, r
     assertConversationRuntime(kind);
     const variable = runtime?.launch.homeVariable ?? (kind === 'claude' ? 'CLAUDE_CONFIG_DIR' : 'CODEX_HOME');
     const environment = { ...runtime?.launch.environment, ...(login?.credential.home ? { [variable]: login.credential.home } : {}), ...accountHomeEnvironment(kind, login?.credential.home) };
-    const request = await readFile(master.launchRequestRecord ?? join(root, '.graphyard/launch', `${master.agentName ?? current.masterAgentName}.request`), 'utf8').catch(() => null);
+    const request = await readFile(master.launchRequestRecord ?? join(stateDir(root), 'launch', `${master.agentName ?? current.masterAgentName}.request`), 'utf8').catch(() => null);
     if (request !== null) {
       const record = join(masterRecords(root), `${createHash('sha256').update(request).digest('hex')}.request`);
       await mkdir(masterRecords(root), { recursive: true, mode: 0o700 });

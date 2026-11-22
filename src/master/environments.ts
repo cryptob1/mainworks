@@ -1,3 +1,4 @@
+import { stateDir } from '../mainworks-names.js';
 import { PRODUCT_NAME } from '../model/product.js';
 import { registryToolsArgs } from '../registry-tools.js';
 export { registryToolsArgs } from '../registry-tools.js';
@@ -572,7 +573,7 @@ export async function setupAgentEnvironments(root: string, input: { directory?: 
     if (next.reviewers.length > 1 && !next.run.reviewerProfile) next.run.reviewerProfile = next.reviewers[0].name;
   }
   const parsed = masterConfigSchema.parse(next);
-  if (input.apply) await atomicPrivateWrite(resolve(root, '.graphyard/master.json'), parsed);
+  if (input.apply) await atomicPrivateWrite(resolve(stateDir(root), 'master.json'), parsed);
   const report = health.map(entry => ({ environment: entry.name, kind: entry.kind, home: entry.home, variable: entry.variable, loggedIn: entry.loggedIn, quota: entry.quota, usage: entry.usage, healthy: entry.healthy, reason: entry.reason, note: entry.note, login: entry.login }));
   const loggedOut = report.filter(entry => !entry.loggedIn);
   return { directory, applied: !!input.apply, environments: report, created, prepared, profiles: changes, skipped,

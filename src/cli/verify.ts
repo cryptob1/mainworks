@@ -1,3 +1,4 @@
+import { stateDir } from '../mainworks-names.js';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
@@ -54,7 +55,7 @@ type Criterion = { id: string; proofs: string[]; bootstrap?: unknown };
 
 const git = (root: string, args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 export { countProofCases, proofTitle };
-export const recordPath = (root: string, key: string) => join(root, '.graphyard', 'verify', `${key}.json`);
+export const recordPath = (root: string, key: string) => join(stateDir(root), 'verify', `${key}.json`);
 
 /** Which of the item's proofs a worker can run here, and why each of the rest is outstanding. */
 export function classifyProofs(criteria: Criterion[]): { runnable: { proof: string; criteria: string[] }[]; outstanding: Outstanding[] } {
@@ -150,8 +151,8 @@ export async function baseTree(root: string, base: string): Promise<{ tree: stri
   if (!reverted.length) return null;
   let scratch: string;
   try {
-    await mkdir(join(root, '.graphyard', 'verify'), { recursive: true });
-    scratch = await mkdtemp(join(root, '.graphyard', 'verify', 'base-'));
+    await mkdir(join(stateDir(root), 'verify'), { recursive: true });
+    scratch = await mkdtemp(join(stateDir(root), 'verify', 'base-'));
   } catch (error: any) { return { tree: null, reverted, reason: `no scratch directory for the base tree: ${error.message}`, release: async () => {} }; }
   const release = () => rm(scratch, { recursive: true, force: true });
   const tree = join(scratch, 'tree');
@@ -239,7 +240,7 @@ export async function verifyWorkingTree(work: { key: string; criteria: Criterion
 }
 
 export async function written(root: string, record: VerifyRecord) {
-  await mkdir(join(root, '.graphyard', 'verify'), { recursive: true });
+  await mkdir(join(stateDir(root), 'verify'), { recursive: true });
   await writeFile(recordPath(root, record.key), JSON.stringify(record, null, 2));
   return record;
 }

@@ -6,13 +6,13 @@
 // each install's master loop (master/team-access.ts) keeps the machine's teammate roster in it.
 // GY-3514: the loop also exposes its own install, and nothing else, through Tailscale Funnel, so the
 // one-link invite opens on a device with no Tailscale.
+import { configHome } from './install/secrets.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-export const machineDirectory = (config = process.env.GRAPHYARD_CONFIG_HOME ?? join(homedir(), '.config', 'graphyard')) => join(config, 'machine');
+export const machineDirectory = (config = configHome()) => join(config, 'machine');
 const machineFile = (dir: string) => join(dir, 'tailnet.json');
 
 /**

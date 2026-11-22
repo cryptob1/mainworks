@@ -1,4 +1,5 @@
 // Concern: OS-level host filesystem and coordinator confinement for every launched role.
+import { stateDir } from '../mainworks-names.js';
 import { PRODUCT_NAME } from '../model/product.js';
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -197,7 +198,7 @@ const keptCli = (config: MaskConfig, operatorHome: string): string[] =>
 // Reviewer session bindings live beside the coordinator credential, outside every worktree.
 export function reviewerCredentialDirectory(config?: { credentialFile: string }, input?: string) {
   if (input) return resolve(input);
-  return config ? resolve(config.credentialFile, '../..', 'reviewers') : resolve(process.env.GRAPHYARD_CONFIG_HOME ?? resolve(homedir(), '.config/graphyard'), 'reviewers');
+  return config ? resolve(config.credentialFile, '../..', 'reviewers') : resolve(configHome(), 'reviewers');
 }
 /** Every absolute path a configuration names, at any depth. */
 const namedPaths = (value: unknown): string[] => typeof value === 'string' ? (isAbsolute(value) ? [value] : [])
@@ -451,7 +452,7 @@ export function readOnlyMountWrapper(input: { coordinatorRoot: string; sessionDi
   const shared = [...sharedDirectories, ...(existsSync(fetchHead) && !isDirectoryPath(fetchHead) ? [fetchHead] : [])];
   const own = directory !== root ? [directory] : [];
   const writable = [...(input.writable ?? []), ...(process.env[slotsDirectoryVariable] ? [process.env[slotsDirectoryVariable]!] : [])].filter(isDirectoryPath);
-  const scratch = join(directory, '.graphyard', 'scratch');
+  const scratch = join(stateDir(directory), 'scratch');
   mkdirSync(scratch, { recursive: true, mode: 0o700 });
   const bwrap = input.bwrap ?? 'bwrap';
   // GY-1856: the install's credential locations are hidden from the session, and its own — its
@@ -471,7 +472,7 @@ export function readOnlyMountWrapper(input: { coordinatorRoot: string; sessionDi
   // master may ask it to.
   const herdr = [...new Set((input.herdrPaths ?? []).filter(path => isAbsolute(path) && isDirectoryPath(path)).map(canonicalPath))];
   // A masked file is replaced by this unreadable empty one.
-  const blank = join(directory, '.graphyard', 'masked');
+  const blank = join(stateDir(directory), 'masked');
   if (mask && !existsSync(blank)) writeFileSync(blank, '', { mode: 0 });
   const masks = credentialMaskWords(mask, [root, directory], blank);
   const environment = { ...process.env, ...input.environment };

@@ -1,4 +1,5 @@
 // Durable executor bookkeeping. Work leases, verdicts and evidence remain owned by their domain APIs.
+import { stateDir } from './mainworks-names.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import { readFile, unlink } from 'node:fs/promises';
@@ -22,7 +23,7 @@ export async function loopStateClient(rootOrConfig: string | Config): Promise<Lo
   const injected = loopStateContext.getStore();
   if (injected) return injected(typeof rootOrConfig === 'string' ? resolve(rootOrConfig) : scopeOf(rootOrConfig));
   const config: Config = typeof rootOrConfig === 'string'
-    ? JSON.parse(await readFile(resolve(rootOrConfig, '.graphyard/master.json'), 'utf8')) : rootOrConfig;
+    ? JSON.parse(await readFile(resolve(stateDir(rootOrConfig), 'master.json'), 'utf8')) : rootOrConfig;
   const scope = scopeOf(config);
   const request = async (kind: LoopStateKind, body?: unknown, attempt = 1): Promise<any> => {
     const response = await fetch(`${config.url}/api/loop-state/${scope}/${kind}`, {

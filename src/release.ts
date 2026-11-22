@@ -1,3 +1,4 @@
+import { stateDir } from './mainworks-names.js';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -96,14 +97,14 @@ export const installationRoot = fileURLToPath(new URL('..', import.meta.url));
  * release is a Git worktree whose `.git` names the source checkout of the host that made it, so a
  * tree copied to another host cannot be read by Git; this file still names the code it holds.
  */
-export const releaseIdentityPath = (root: string) => join(root, '.graphyard', 'cli-ready');
+export const releaseIdentityPath = (root: string) => join(stateDir(root), 'cli-ready');
 export const recordedCommit = (root: string) => {
   try { const value = readFileSync(releaseIdentityPath(root), 'utf8').trim(); return /^[0-9a-f]{40}$/i.test(value) ? value.toLowerCase() : null; } catch { return null; }
 };
 /** GY-3569: record the commit a release tree now holds; every checkout move writes it, so a caller that cannot run git reads the code it runs. */
 export const recordCommit = (root: string, commit: string) => {
   const file = releaseIdentityPath(root);
-  mkdirSync(join(root, '.graphyard'), { recursive: true });
+  mkdirSync(join(stateDir(root)), { recursive: true });
   writeFileSync(file, commit.toLowerCase());
   return file;
 };

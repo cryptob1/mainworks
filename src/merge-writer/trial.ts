@@ -1,3 +1,4 @@
+import { stateDir } from '../mainworks-names.js';
 import { trialCpuMonitor, trialOverloadFault, type TrialCpuReading } from './trial-cpu.js';
 // Concern: the merge writer's trial merge — the exact merge commit of a head onto main, and its build and affected tests in a credential-free checkout.
 import { randomUUID } from 'node:crypto';
@@ -147,7 +148,7 @@ export const credentialTrialVariable = (name: string) =>
   || /(?:TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE_KEY|API_KEY|ACCESS_KEY|CREDENTIAL)/i.test(name);
 /** The trial child's environment: the isolated test one, with every credential and Graphyard control removed and git's global configuration off. */
 export function trialEnvironment(environment: NodeJS.ProcessEnv = process.env): Record<string, string> {
-  const kept = Object.fromEntries(Object.entries(isolatedTestEnvironment(environment)).filter(([name]) => !/^(GRAPHYARD|HERDR|LC)_/.test(name) && name !== 'LANG' && !credentialTrialVariable(name)));
+  const kept = Object.fromEntries(Object.entries(isolatedTestEnvironment(environment)).filter(([name]) => !/^(GRAPHYARD|MAINWORKS|HERDR|LC)_/.test(name) && name !== 'LANG' && !credentialTrialVariable(name)));
   // Use the running Node installation before host version-manager shims: the trial's empty
   // home intentionally cannot supply the host's mise trust/configuration to those shims.
   // The private image supplies C.UTF-8, not the service manager's host locales.
@@ -245,7 +246,7 @@ export const trialTemporaryRoot = (sessionDirectory: string, roots: readonly str
 export function trialTemporaryRootReport(root: string, { roots = trialTemporaryRoots(), exists = existsSync, volatile = volatileFilesystem,
   size = path => { try { const info = statfsSync(path); return Number(info.blocks) * Number(info.bsize); } catch { return null; } } }: {
   roots?: readonly string[]; exists?: (path: string) => boolean; volatile?: (path: string) => string | null; size?: (path: string) => number | null } = {}) {
-  const floor = diskFloorBytes({ run: (() => { try { return JSON.parse(readFileSync(join(root, '.graphyard', 'master.json'), 'utf8')).run ?? {}; } catch { return {}; } })() });
+  const floor = diskFloorBytes({ run: (() => { try { return JSON.parse(readFileSync(join(stateDir(root), 'master.json'), 'utf8')).run ?? {}; } catch { return {}; } })() });
   const chosen = trialTemporaryRoot('the trial session directory', roots, exists, volatile);
   const skipped = roots.filter(path => exists(path) && volatile(path)).map(path => `${path} is a ${volatile(path)}, so trials do not use it`);
   const bytes = exists(chosen) ? size(chosen) : null;
@@ -535,7 +536,7 @@ export function shardTestFiles(files: readonly string[], lanes: number, duration
   return shards.map(shard => shard.files).filter(shard => shard.length);
 }
 /** Where a passing trial saves its per-file durations (GY-3542): beside the install's other local state, never in a checkout. */
-export const refreshedDurationsPath = (root: string, path: string) => join(root, '.graphyard', basename(path));
+export const refreshedDurationsPath = (root: string, path: string) => join(stateDir(root), basename(path));
 const durationsIn = (text: string): Record<string, number> => { try { const files = (JSON.parse(text) as { files?: unknown } | null)?.files; return files && typeof files === 'object' ? files as Record<string, number> : {}; } catch { return {}; } };
 /** The timings a trial plans its shards from: the base commit's baseline when selectorApproved is false (GY-3635) or the merge's own baseline in its checkout when approved, under what passing trials on this install measured since; `{}` when neither exists. */
 const checkoutDurations = async (worktree: string, root: string, path?: string, options?: { baseTip?: string; selectorApproved?: boolean; run?: ChildRun }): Promise<Record<string, number>> => {

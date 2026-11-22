@@ -3,6 +3,7 @@
 // merge-writer/trial-run.ts) so a loop restart during a deploy never kills a review's app in
 // flight. The serve directory records its process meta on disk; whichever loop settles or closes
 // the review session stops it.
+import { stateDir } from './mainworks-names.js';
 import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
@@ -12,7 +13,7 @@ import type { E2eServe } from './model/repository-policy.js';
 import { ServeCommandError, serveTailLines } from './merge-writer/serve-head.js';
 
 /** Where detached product-review serves keep their process meta and logs, beside headless-runs and trial-runs. */
-export const reviewServesDirectory = (root: string) => resolve(root, '.graphyard', 'review-serves');
+export const reviewServesDirectory = (root: string) => resolve(stateDir(root), 'review-serves');
 
 /** Self-bound watchdog for a detached review serve: well past the 1-hour review token so no live review is cut short, while bounding any abandoned serve. */
 export const reviewServeBoundSeconds = 90 * 60;

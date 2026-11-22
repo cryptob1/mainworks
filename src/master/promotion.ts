@@ -1,4 +1,5 @@
 // Concern: promoting a supervised install to autonomy (GY-1502) — its preconditions, the autonomy apply it reuses, the supervision flip and its audit entry.
+import { stateDir } from '../mainworks-names.js';
 import { appendFile, chmod, mkdir } from 'node:fs/promises';
 import { hostname, userInfo } from 'node:os';
 import { resolve } from 'node:path';
@@ -12,7 +13,7 @@ export const promoteCommand = 'graphyard master promote --admin-token-stdin';
 /** Recorded on every control-plane identity the promotion creates, configures or rotates, ahead of the autonomy apply's own reason. */
 export const promotionReason = `Promotion of a supervised install to autonomy (${promoteCommand})`;
 /** The master's administration records: the promotion's audit entry is appended beside them. */
-export const actionsDirectory = (root: string) => resolve(root, '.graphyard/master-actions');
+export const actionsDirectory = (root: string) => resolve(stateDir(root), 'master-actions');
 /** The append-only audit of promotions, beside the master's other administration records. */
 export const promotionAuditFile = (root: string) => resolve(actionsDirectory(root), 'promotions.jsonl');
 

@@ -31,6 +31,7 @@
 // the next batch, and only the gate's own failure or timeout recuts. Each settled run is the
 // record's lastOutcome — tip, outcome, reason or failing check, end time — and the run in flight
 // names its current step; master status shows both (GY-3141).
+import { stateDir } from './mainworks-names.js';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
@@ -149,7 +150,7 @@ export interface GateRecord {
   at: string;
 }
 
-export const gateRecordPath = (root: string) => join(root, '.graphyard', 'main-gate.json');
+export const gateRecordPath = (root: string) => join(stateDir(root), 'main-gate.json');
 export function readGateRecord(file: string): GateRecord | null {
   if (!existsSync(file)) return null;
   try { return JSON.parse(readFileSync(file, 'utf8')) as GateRecord; } catch { return null; }

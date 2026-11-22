@@ -1,3 +1,4 @@
+import { stateDir } from '../mainworks-names.js';
 import { constants as cryptoConstants, createDecipheriv, createPublicKey, generateKeyPairSync, privateDecrypt, randomUUID } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
 import { chmod, link, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
@@ -190,7 +191,7 @@ export async function recordedOperator(root: string): Promise<{ token: string; r
     if ((token = await readToken(directory, operator).catch(() => null))) break;
   }
   if (!token) return null;
-  const up = await readFile(join(root, '.graphyard/up.json'), 'utf8').then(JSON.parse, () => null);
+  const up = await readFile(join(stateDir(root), 'up.json'), 'utf8').then(JSON.parse, () => null);
   return { token, reachableUrl: typeof up?.tailnetUrl === 'string' && up.tailnetUrl ? up.tailnetUrl : null };
 }
 /**

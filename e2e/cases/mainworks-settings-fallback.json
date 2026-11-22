@@ -1,0 +1,16 @@
+{
+  "id": "mainworks-settings-fallback",
+  "title": "Mainworks names for settings, paths and units, with the Graphyard ones still honoured",
+  "description": "status GY-1 runs once with only MAINWORKS_URL and once with only GRAPHYARD_URL and both reach the same control plane, the new name winning when both are set. A fresh temporary home and checkout get ~/.config/mainworks/<install>/ (mode 0600), .mainworks/ and mainworks-* units only; a home and checkout seeded with the Graphyard layout still run status with nothing moved. README.md and the CLI guide name only the new settings and paths, with one line saying the Graphyard names are still honoured.",
+  "tags": ["deployment", "regression"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "Run status under both setting names and against fresh and old layouts",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/mainworks-settings-fallback.test.ts",
+      "timeoutSeconds": 240
+    }
+  ]
+}
