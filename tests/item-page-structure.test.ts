@@ -79,18 +79,19 @@ test('unit:item-page-sections — the plate leads with the why sentence, the evi
   assert.ok(technical > 0, 'the page has a Technical details section');
   const above = html.slice(0, technical);
 
-  // The plate (GY-3392): the why sentence, then the evidence the proof kept, then what changed for the
-  // user, then who acts next and the state sentence. Below it the Details fold, Activity, then the
-  // technical fold with the gate detail. No count, no pull request wording outside the control plane's own reasons.
-  const order = ['data-why="true"', 'data-simplest', 'aria-label="Screenshots"', 'data-what-changed', 'Who acts next:', 'class="steps-detail', 'class="status-sentence',
-    'aria-label="Details"', 'aria-label="Requirements"', 'aria-label="Activity"', 'aria-label="Technical details"', 'aria-label="What is left"', 'aria-label="Change"'].map(needle => html.indexOf(needle));
+  // The Task page (GY-3599): the why sentence, who acts next and the state sentence, the pipeline row,
+  // the screenshots, then under the Details tab what changed for the user, simplest, the requirements,
+  // Activity and the technical fold with the gate detail. No count, no pull request wording outside the control plane's own reasons.
+  const order = ['data-why="true"', 'class="status-sentence', 'Next:', 'aria-label="Pipeline"', 'aria-label="Screenshots"',
+    'aria-label="Details"', 'data-what-changed', 'data-simplest', 'aria-label="Requirements"', 'aria-label="Activity"', 'aria-label="Technical details"', 'aria-label="What is left"', 'aria-label="Change"'].map(needle => html.indexOf(needle));
   assert.ok(order.every(index => index >= 0), `every section is rendered: ${order}`);
-  assert.deepEqual([...order].sort((a, b) => a - b), order, 'why, simplest, the evidence, what changed, who acts next, Details, Activity, then the folded gate detail');
-  assert.match(html, /<h1 data-title="true" data-why="true"[^>]*>Owners taste a change from its page, not its pipeline\.<\/h1>/);
+  assert.deepEqual([...order].sort((a, b) => a - b), order, 'why, the state sentence, who acts next, the pipeline row, the screenshots, then under Details: what changed, simplest, requirements, Activity and the folded gate detail');
+  assert.match(html, /<p class="item-title-full" data-lead-sentence="true" data-why="true"[^>]*>Owners taste a change from its page, not its pipeline\.<\/p>/);
   assert.match(html, /data-what-changed="true"><strong>What changed:<\/strong> The item page opens on why, the evidence and who acts next\./);
   assert.equal((html.match(/class="next-line"/g) ?? []).length, 1, 'one who-acts-next line');
   assert.doesNotMatch(above, /\d+ things?/, 'no What is left count');
-  assert.doesNotMatch(above, /pull request/i, 'no pull request wording above the technical fold');
+  // GY-3599: the header links the pull request, once.
+  assert.equal((above.match(/aria-label="PR #\d+, open pull request/g) ?? []).length, 1, 'the header links the pull request once');
 
   // What is left keeps one plain line per unmet requirement, grouped by state and naming who clears it
   // (GY-171), now inside the collapsed Technical details and without its count. Checking folds review,
@@ -113,9 +114,9 @@ test('unit:item-page-sections — the plate leads with the why sentence, the evi
   for (const ac of item.criteria) assert.ok(requirements.includes(`<p>${escape(ac.text)}</p></details>`), `${ac.id}: full text behind its line`);
   // The criteria fold with the description under one closed Details (GY-2011 AC-3); inside it each criterion's full text folds again.
   assert.match(requirements, /^aria-label="Requirements"><h2>Requirements <small>/);
-  assert.match(html, /<details class="panel item-details-fold" aria-label="Details"><summary>Details<\/summary>[\s\S]*<section class="requirements" aria-label="Requirements">/);
+  assert.match(html, /<details class="panel item-details-fold" aria-label="Description and criteria"><summary>Description and criteria<\/summary>[\s\S]*<section class="requirements" aria-label="Requirements">/);
   // What a reader sees once Details is opened: each criterion's line, its full text still folded.
-  const shown = visibleWords(html.replace('<details class="panel item-details-fold"', '<details open class="panel item-details-fold"')).join(' ');
+  const shown = visibleWords(html.replaceAll(' hidden=""', '').replace('<details class="panel item-details-fold"', '<details open class="panel item-details-fold"')).join(' ');
   assert.match(shown, /AC-1 The item page below its plate folds its sections in a fixed order\. unit:item-page-sections pending/, 'one line: the id, the first sentence, capped');
   assert.doesNotMatch(shown, /A test renders a real-shaped item mid-review/, 'the rest waits for the expand');
   // A criterion whose every proof passed is marked met (GY-16 in the fixture: two of its three proofs passed).
@@ -126,18 +127,18 @@ test('unit:item-page-sections — the plate leads with the why sentence, the evi
   // The change: linked and described without pull request wording, inside the collapsed details.
   const change = html.slice(html.indexOf('aria-label="Change"'), html.indexOf('aria-label="Tests"'));
   assert.ok(html.indexOf('aria-label="Change"') > technical, 'the change is technical detail');
-  assert.match(change, /<dt>Link<\/dt><dd><a class="pr-open candidate-link" href="https:\/\/github\.com\/[^"]+\/pull\/42" target="_blank" rel="noopener noreferrer" aria-label="The change on GitHub for GY-171">Open on GitHub ↗<\/a>/);
+  // GY-3599: the pull request is linked once, in the header, not again here.
+  assert.match(above, /<a class="candidate-link" href="https:\/\/github\.com\/[^"]+\/pull\/42" aria-label="PR #42, open pull request for GY-171 in GitHub"/);
+  assert.doesNotMatch(change, /\/pull\/42/);
   assert.match(change, /<code class="sha" title="d{40}">d{8}<\/code>/);
   assert.match(change, /<dt>Changes<\/dt><dd>1 file<\/dd>/);
   assert.match(change, /<dt>Checks<\/dt><dd>test passed · typecheck passed<\/dd>/);
   assert.match(change, /<dt>Review<\/dt><dd>Waiting for approval<\/dd>/);
 
-  // Activity: the latest few events in plain words; the full history on expand.
+  // Activity: the full history on expand; the Lead tab lists its decisions, so no recent list repeats them (GY-3599).
   const activity = html.slice(html.indexOf('aria-label="Activity"'), technical);
-  assert.deepEqual([...activity.matchAll(/<li>([^<]+) <small>/g)].map(match => match[1]), ['Picked up by a builder', 'Released for work', 'Created']);
+  assert.doesNotMatch(activity, /activity-list/);
   assert.match(activity, /<details class="full-history"><summary>History \(3 events; routine GitHub checks and heartbeats left out\)<\/summary><section aria-label="Work history">/);
-  const many = Array.from({ length: 9 }, (_, i) => ({ seq: 9 - i, kind: 'github.observed', actor: 'github', created_at: at(-i * minute) }));
-  assert.equal(page(item, work, { events: many }).match(/<li>Mainworks checked GitHub <small>/g)?.length, 3, 'only the latest few above the fold');
 
   // No raw gate reason appears outside the collapsed technical section; inside it every one is kept.
   for (const gate of item.gates) for (const reason of gate.reasons) {
@@ -155,7 +156,8 @@ test('unit:item-page-technical-collapsed — gate internals, sessions with attac
   assert.equal(html.match(/<details[^>]*aria-label="Technical details"/g)?.length, 1);
   assert.match(html, /<details class="more-details" aria-label="Technical details"><summary>Technical details<\/summary>/);
   const technical = html.indexOf('<details class="more-details" aria-label="Technical details">');
-  const above = html.slice(0, technical), inside = html.slice(technical);
+  // GY-3599: the footer's two terminal commands follow it.
+  const above = html.slice(0, technical), inside = html.slice(technical, html.indexOf('<div class="task-commands'));
   assert.doesNotMatch(inside.slice(0, inside.indexOf('>') + 1), /\sopen/, 'collapsed');
   // Everything technical is inside it, and none of it is above it.
   const technicalParts = ['<h3>Gate decisions</h3>', '<h3>Sessions (1)</h3>', 'herdr pane attach w1V:p32M --workspace w1V', '<h3>Code review</h3>', 'Independent reviewer session',
@@ -168,7 +170,7 @@ test('unit:item-page-technical-collapsed — gate internals, sessions with attac
   const visible = visibleWords(inside).join(' ');
   assert.equal(visible, 'Technical details');
   // It is the last thing on the page: nothing technical follows it outside a collapsed section.
-  assert.ok(html.endsWith('</details></article>'));
+  assert.ok(html.slice(technical).replace(/<div class="task-commands[\s\S]*$/, '').endsWith('</details></div>'));
 
   // Overlaps on observed files: four overlapping items make one line naming each of them and the shared paths.
   const peers = ['GY-166', 'GY-167', 'GY-168', 'GY-169'].map((key, i) => ({ ...item, id: `peer-${i}`, key, observation: { ...item.observation!, files: i < 2 ? ['tests/b.test.ts'] : ['web/a.tsx'] }, sessions: [], agentRequests: [] }) as unknown as Work);

@@ -115,9 +115,16 @@
     },
     {
       "kind": "browser",
-      "name": "unfold Details, where the criteria fold (GY-2011)",
+      "name": "open Details, where an item's description and criteria are (GY-3599)",
       "action": "click",
       "text": "Details",
+      "exact": true
+    },
+    {
+      "kind": "browser",
+      "name": "unfold the description and criteria, folded inside Details (GY-2011)",
+      "action": "click",
+      "text": "Description and criteria",
       "exact": true
     },
     {

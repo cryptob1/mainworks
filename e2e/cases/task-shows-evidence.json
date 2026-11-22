@@ -1,0 +1,12 @@
+{
+  "id": "task-shows-evidence",
+  "title": "The Task page shows the evidence: pull request, diff, checks, where the time went and the Builder's live session",
+  "description": "A real control plane on isolated Postgres with a git fixture serves a task's trial step timings from the merge ledger (one file taking 14 of 19 minutes), its counts and slowest file so far while the trial runs, the install's checkout, its changed files with per-file counts and each file's diff, and the model its Builder's session reported beside the account's; a real merge trial on a fixture repository reports its counts so far as each test shard ends and keeps the slowest file in its verdict. A real browser on the built dashboard at 1280 and 390 px opens a task whose merge trial failed: the header shows title, state with time in state, the pull request link, the Builder's friendly name, the reported model with its mark, diff stats, one action, and the key and commit small, with one sentence why and one on what happens next; the pipeline row shows each stage's time, the total beside the median, the trial's counts and its slowest file; the tabs show checks with the failing output and the diff on click, the Builder's read-only live session and its saved output once ended, the Lead's decisions, and the details; the footer shows the two commands. A failed trial the Lead has sent back shows the task's real state, time in state and next step, with the failing counts as the why. A running trial shows its output, counts and slowest file so far. A change the control plane observed itself is never pushed, so the footer checks it out by its commit into a worktree of the install's checkout under /tmp instead of fetching a branch that does not exist. Typing into the live session sends nothing and no page scrolls sideways.",
+  "tags": ["dashboard", "task"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "trial timings, shard-end counts, changed files, file diff and the Builder's reported model from a real control plane", "run": "node --import tsx tests/helpers/run-tests.ts tests/task-shows-evidence.test.ts", "timeoutSeconds": 240 },
+    { "kind": "command", "name": "header, pipeline row, tabs, read-only live session and footer at 1280 and 390 px", "run": "npm run test:browser -- browser-tests/task-shows-evidence.spec.ts", "timeoutSeconds": 420 }
+  ]
+}

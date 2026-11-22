@@ -15,7 +15,7 @@ async function seed(url: string) {
     const item = await file(n, title);
     await fetch(`${url}/api/work/${item.id}/ready`, { method: 'POST', headers: { ...operator, 'Idempotency-Key': `ui-shell-ready-${n}` }, body: JSON.stringify({ reason: 'Released by the ui-shell case' }) });
   }
-  return file(3, 'Export costs as a spreadsheet'); // left in Backlog: its page's primary action is Release to ready
+  return file(3, 'Export costs as a spreadsheet'); // left in Backlog: its page's primary action is Release task
 }
 
 /** The shell as rendered: the title's element and style, the section heading style, the card and table classes, and what the first screen shows. The item page's primary fact sits under its plate heading, in Where it is now (GY-3392). */
@@ -69,8 +69,10 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
 
       await page.locator('[data-group-section="backlog"] > summary').click();
       await page.locator(`[data-row="${backlog.key}"]`).click();
-      // GY-3392: the page leads with the item's why sentence; the pipeline state answers below it.
-      await expect(page.getByRole('heading', { name: 'People finish the task faster.', level: 1 })).toBeVisible(settled);
+      // GY-3599: the page leads with the item's title; where it is now answers below it.
+      await expect(page.getByRole('heading', { name: 'Export costs as a spreadsheet', level: 1 })).toBeVisible(settled);
+      // Its cards with section headings are under the Details tab.
+      await page.locator('article.item-page').getByRole('tab', { name: 'Details' }).click();
       await page.evaluate(() => window.scrollTo(0, 0));
       const item = await shell(page, 'article.item-page section[aria-label="Activity"]');
 
@@ -85,7 +87,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
         expect(read.sideways, `${name} never scrolls sideways`).toBeLessThanOrEqual(0);
       }
       expect(work.action).toContain('New work item');
-      expect(item.action).toBe('Release to ready');
+      expect(item.action).toBe('Release task');
       expect(item.title, 'same title style').toEqual(work.title);
       expect(item.section, 'same section heading style').toEqual(work.section);
       expect(work.section).not.toBeNull();

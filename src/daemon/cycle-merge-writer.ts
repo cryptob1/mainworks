@@ -1,5 +1,6 @@
 import { trialOverloadFault } from '../merge-writer/trial-cpu.js';
 import { timedMergePorts, trialStepMedians } from './trial-timings.js';
+import type { TrialStepReport } from '../merge-writer/trial.js';
 import { mergeWriterKeptQueue, mergeWriterKeptRefusals, mergeWriterKeptReworks, mergeWriterKeptTimeouts, mergeWriterTrialTimeoutRefusals, mergeWriterKeptUnconfirmed, mergeWriterUnconfirmedReplays, serveRevertsKept, type PendingRework, type UnconfirmedRecord, type MergeWriterState, type RevertFlight } from './merge-writer-state.js';
 export { mergeWriterKeptQueue, mergeWriterKeptRefusals, mergeWriterKeptReworks, mergeWriterKeptTimeouts, mergeWriterTrialTimeoutRefusals, mergeWriterKeptUnconfirmed, mergeWriterUnconfirmedReplays, pendingReworkSchema, unconfirmedRecordSchema, mergeWriterStateSchema, emptyMergeWriterState, type PendingRework, type UnconfirmedRecord, type MergeWriterState, type RevertFlight } from './merge-writer-state.js';
 // Concern: the control-plane merge executor's cycle step (GY-1524) — reconcile open intents, pick the next head, run one merge beside the cycle and record what it did.
@@ -656,7 +657,8 @@ async function serveRevertAttempt(cycle: ServeRevertCycle, reads: MergeWriterRea
         flightsOf(state).add(entry);
         onStep = step => {
           if (writer.inFlight?.head !== revertSha) return;
-          writer.inFlight = { ...writer.inFlight, step, stepStartedAt: at() };
+          // GY-3599: the same step sent again carries only its output so far; it keeps its start.
+          if (step !== writer.inFlight.step) writer.inFlight = { ...writer.inFlight, step, stepStartedAt: at() };
           void cycle.effects.persist(state).catch(() => {});
         };
         void run().then(decided => {
@@ -760,14 +762,19 @@ async function startMergeFlight(cycle: Pick<Cycle, 'state' | 'effects' | 'now'>,
   // Write receipts belong to this watcher; the trial's attempt identity survives adoption.
   const recorder = attemptRecorder(writer, reads.record, previous ? randomUUID() : attempt, at);
   // Each step a trial reports is where its head is: on the in-flight entries master status reads, persisted at once, and on the item's ledger the pipeline and Work page read.
-  const onStep = (index: number, step: string) => {
+  // GY-3599: the same step sent again as each test shard ends carries what the trial printed so far and its counts so far, under the step's own start, so the Task page shows a running trial.
+  const onStep = (index: number, step: string, report?: TrialStepReport) => {
     // By key, not index: a stale entry may have been dropped from the list (GY-3148).
     const reporting = heads[index]!, place = writer.inFlights?.findIndex(candidate => candidate.key === reporting.key) ?? -1, position = writer.inFlights?.[place];
     if (!live.has(entry) || !position) return;
-    writer.inFlights![place] = { ...position, step, stepStartedAt: at() };
-    if (place === 0) nameFlight(state);
-    void effects.persist(state).catch(() => {});
-    void recorder(reporting, { kind: 'trial-step', head: position.head, step, at: at() }).catch(() => {});
+    // The same step sent again keeps its start; a new step takes now's, and is written even when the clock has not moved since.
+    const startedAt = step === position.step && position.stepStartedAt ? position.stepStartedAt : at();
+    if (step !== position.step || startedAt !== position.stepStartedAt) {
+      writer.inFlights![place] = { ...position, step, stepStartedAt: startedAt };
+      if (place === 0) nameFlight(state);
+      void effects.persist(state).catch(() => {});
+    }
+    void recorder(reporting, { kind: 'trial-step', head: position.head, step, at: startedAt, ...(report?.output ? { output: report.output.slice(-4000) } : {}), ...(report?.tests ? { tests: report.tests } : {}) }).catch(() => {});
   };
   // Trials running at once divide the host's cores among every slot, not only this flight's heads (GY-3182).
   void mergeHeads(timedMergePorts({ ...cancellableTrials(mergeFlightTrials(reads, state, () => effects.persist(state), options.adopted), entry.trials!), record: recorder }, writer, () => effects.persist(state)), heads, onStep)

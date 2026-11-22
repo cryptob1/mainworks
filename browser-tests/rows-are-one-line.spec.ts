@@ -128,6 +128,7 @@ test('e2e:rows-are-one-line — work rows stay one short line (<=110 chars, <=12
     // AC-1: the full description still appears on the item page (under Details).
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.locator(`[data-row="${noSummary.key}"]`).getByRole('button', { name: /open/ }).click();
+    await page.locator('article.item-page').getByRole('tab', { name: 'Details' }).click();
     const details = page.locator('article.item-page .item-details-fold');
     await details.locator('> summary').click();
     await expect(details).toContainText(descriptionTail, settled);

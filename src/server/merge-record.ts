@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { demand, type Evidence, type Principal, type Work } from '../model.js';
 import { endImplementationSessions } from '../model/sessions.js';
 import { evaluate } from '../model-boundary/gates.js';
-import { foldMergeLedger, previewVerdictSchema, trialFlakedSchema } from '../model-boundary/merge-ledger.js';
+import { foldMergeLedger, previewVerdictSchema, trialCountsSchema, trialFlakedSchema } from '../model-boundary/merge-ledger.js';
 import { readOnlyTrialBlocker, trialOverloadPrefix } from '../model/merge-queue.js';
 import { mergeLedgerKinds, mergeTrialKind, mergeTrialStepKind, type MergeLedgerState } from '../model/merge-ledger.js';
 import { settleDelivered } from '../model-boundary/actions.js';
@@ -15,7 +15,7 @@ import { save, eventWorkSql } from '../store.js';
 import { evaluateLandability } from '../model-boundary/landability.js';
 import { exactApproval } from '../model/review.js';
 import { decisionWork } from '../store/decision-read.js';
-import { gitRunnerFor, type GitRunner } from '../merge-writer/local-observation.js';
+import { checkoutRoot, gitRunnerFor, type GitRunner } from '../merge-writer/local-observation.js';
 import { firstParentHolds, trialAuthor } from '../merge-writer/trial.js';
 import { trialScreenshotBytesMax, trialScreenshotCasesMax } from '../merge-writer/e2e-trial.js';
 import { mergeCandidateObsolete, mergeRecordKinds, orphanRefusal, unpushedIntentReason, type MergeRecordEvent } from '../merge-writer/executor.js';
@@ -42,7 +42,8 @@ import { foldServeReverts, mergeServeRevertKind, mergeServeRevertSchema } from '
  */
 const sha = z.string().regex(/^[0-9a-f]{40}$/i).transform(value => value.toLowerCase());
 const instant = z.string().max(64).refine(value => Number.isFinite(Date.parse(value)), 'an ISO 8601 instant');
-const tests = z.object({ passed: z.number().int().min(0), failed: z.array(z.string().max(300)).max(100), files: z.number().int().min(0) }).strict();
+const tests = z.object({ passed: z.number().int().min(0), failed: z.array(z.string().max(300)).max(100), files: z.number().int().min(0),
+  /** GY-3599: the file that ran longest, for the Task page. */ slowest: z.object({ file: z.string().max(300), durationMs: z.number().int().min(0) }).strict().optional() }).strict();
 const trialPhase = z.enum(trialPhases), trialNoVerdictOutcome = z.enum(['timeout', 'cancelled', 'host-failure']);
 const trialPhaseDurations = z.object(Object.fromEntries(trialPhases.map(phase => [phase, z.number().min(0)])) as Record<TrialPhase, z.ZodNumber>).strict();
 const trialAttempts = z.array(z.object({ outcome: trialNoVerdictOutcome, phase: trialPhase, reason: z.string().max(1000), phases: trialPhaseDurations }).strict()).max(10);
@@ -70,8 +71,8 @@ export const mergeRecordBodySchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('pushed'), mergeSha: sha, pushedAt: instant }).strict(),
   z.object({ kind: z.literal('reconciled'), mergeSha: sha, observedTip: sha }).strict(),
   z.object({ kind: z.literal('refused'), head: sha, reason: z.string().min(1).max(2000) }).strict(),
-  // GY-2963: where the trial is while it runs — a step name and the instant it began, no state.
-  z.object({ kind: z.literal('trial-step'), head: sha, step: z.string().min(1).max(100), at: instant }).strict(),
+  // GY-2963: where the trial is while it runs — a step name and the instant it began, no state. GY-3599: what it printed so far, and its test counts so far.
+  z.object({ kind: z.literal('trial-step'), head: sha, step: z.string().min(1).max(100), at: instant, output: z.string().max(4000).optional(), tests: trialCountsSchema.optional() }).strict(),
 ]);
 export type MergeRecordBody = z.infer<typeof mergeRecordBodySchema>;
 /** The save reason a reconciliation delivers under; the ledger's `merge-writer.<kind>` saves carry every other step. */
@@ -84,8 +85,8 @@ export const unintendedShaRefusal = (key: string, mergeSha: string, intended: st
 export const otherHeadRefusal = (key: string, head: string, candidate: string | null) => `${key}'s submitted head is ${candidate ? candidate.slice(0, 12) : 'none'}, not ${head.slice(0, 12)}; the merge writer records only the candidate it merges`;
 
 /** The engine's git runner over the coordinator checkout, made on first use as the head observation makes it (engine.ts). */
-function gitRunner(engine: Engine): GitRunner {
-  if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd());
+export function gitRunner(engine: Engine): GitRunner {
+  if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(checkoutRoot());
   demand(engine.gitRunner, 'The control plane has no checkout to read the base branch from; a merge record needs the merge writer checkout', 503);
   return engine.gitRunner!;
 }
