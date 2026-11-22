@@ -28,7 +28,7 @@ test('integration:item-details — an item page opens on its plain summary and f
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.getByRole('heading', { name: 'Work', exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: /Signup API.*GY-10/ }).click();
+  await page.getByRole('link', { name: /Signup API.*GY-10/ }).click();
   const item = page.locator('article.item-page');
   await expect(item.locator('h1[data-plain-summary="true"]')).toHaveText('The signup API answers.');
   const details = item.locator('.item-details-fold');

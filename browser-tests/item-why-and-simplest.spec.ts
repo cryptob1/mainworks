@@ -57,7 +57,7 @@ test('e2e:item-why-and-simplest — the create box files both sentences, the ite
     await expect(page.locator(`[data-row="${older.key}"]`)).toBeVisible();
     await expect(page.locator(`[data-row="${older.key}"] [data-lead]`)).toHaveCount(0);
 
-    await page.locator(`[data-row="${created.key}"]`).getByRole('button', { name: /open/ }).click();
+    await page.locator(`[data-row="${created.key}"]`).getByRole('link', { name: /open/ }).click();
     await itemPage.locator('details.edit-menu > summary').click();
     await page.getByRole('button', { name: 'Revise requirements', exact: true }).click();
     const revise = page.getByRole('form', { name: 'Revise requirements' });
@@ -71,7 +71,7 @@ test('e2e:item-why-and-simplest — the create box files both sentences, the ite
     await expect(page.locator(`[data-row="${created.key}"] [data-lead]`)).toBeVisible(settled);
     await expect(page.locator(`[data-row="${created.key}"] [data-lead]`)).toHaveText(`Agents build what users need. ${simplest}`, settled);
 
-    await page.locator(`[data-row="${older.key}"]`).getByRole('button', { name: /open/ }).click();
+    await page.locator(`[data-row="${older.key}"]`).getByRole('link', { name: /open/ }).click();
     await expect(itemPage.locator('h1')).toHaveText('Older item', settled);
     await expect(itemPage.locator('h1[data-why="true"], [data-simplest]')).toHaveCount(0);
   } finally {

@@ -113,7 +113,7 @@ function page(work: Work[], board: Board | null, query = '') {
   return renderToStaticMarkup(createElement(WorkPage, dashboard));
 }
 /** GY-3600: the keys of the Work list's rows in GROUP, in page order. */
-const rendered = (html: string, group: OpenGroup) => [...html.matchAll(/data-row="([^"]+)" data-stuck="\w+" class="task-row group-([a-z-]+)"/g)].filter(match => match[2] === group).map(match => match[1]);
+const rendered = (html: string, group: OpenGroup) => [...html.matchAll(/data-row="([^"]+)" data-stuck="\w+" class="task-row group-([a-z-]+)[^"]*"/g)].filter(match => match[2] === group).map(match => match[1]);
 const filterCount = (html: string, filter: string) => Number(new RegExp(`data-filter="${filter}">[^<]*<span class="count">(\\d+)</span>`).exec(html)?.[1]);
 
 test('unit:dashboard-uses-board-api — the Work page renders the groups GET /api/board returns and derives none of its own', async () => {

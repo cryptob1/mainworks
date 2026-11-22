@@ -209,7 +209,7 @@ test('integration:dashboard-word-budget — the home page answers what needs you
     assert.ok(!text(page).includes(gone), `no ${gone}`);
   assert.doesNotMatch(text(page), /\bp50\b|\bp95\b/, 'no percentile microtext by default');
   // GY-3600: rows in order within their goal: stuck first, then moving, up next, backlog.
-  const order = ['group-blocked', 'group-moving', 'group-up-next', 'group-backlog'].map(group => page.indexOf(`class="task-row ${group}"`));
+  const order = ['group-blocked', 'group-moving', 'group-up-next', 'group-backlog'].map(group => page.indexOf(`class="task-row ${group}`));
   assert.ok(order.every(index => index > 0) && order.every((index, i) => i === 0 || index > order[i - 1]), `rows in order: ${order}`);
   assert.ok(page.indexOf('Move sessions to Postgres') < page.indexOf('Add dark mode to settings'), 'the stuck item is listed first');
   assert.match(text(page), /A fault blocks it; the master agent clears it/);

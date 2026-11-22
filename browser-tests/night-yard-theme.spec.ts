@@ -30,7 +30,7 @@ async function serve(page: Page, work: any[]) {
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible(live);
-  await expect(page.locator('.work-row').first()).toBeVisible();
+  await expect(page.locator('.task-row').first()).toBeVisible();
   return state;
 }
 
@@ -100,7 +100,7 @@ test('e2e:night-yard-theme — Night Yard serves by default with rain over grain
   expect(await grain(page)).toContain('svg');
   // The strip carries what is happening now; a builder's row gets its friendly name, and the Master page's title reads Master (GY-3307).
   await expect(page.locator('.activity-strip')).toContainText('agents working');
-  await expect(page.locator('[data-row="GY-14"] .row-who')).toContainText('Theo is running GY-14');
+  await expect(page.locator('[data-row="GY-14"] [data-col="builder"]')).toContainText('Theo');
   await page.keyboard.press('Control+k');
   await page.getByLabel('Search commands').fill('Master');
   await page.keyboard.press('Enter');
@@ -152,7 +152,7 @@ test('e2e:night-yard-theme — with reduced motion the rain, the glitch flicker 
   test.setTimeout(60_000);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const state = await serve(page, auditWork());
-  const glitch = page.locator('.work-row.glitch');
+  const glitch = page.locator('.task-row.glitch');
   await expect(glitch).toHaveCount(1);
   await expect(glitch).toHaveAttribute('data-row', 'GY-15');
   expect(await glitch.evaluate(element => getComputedStyle(element).animationName)).toBe('none');
@@ -173,7 +173,7 @@ test('e2e:night-yard-theme — with motion on a failed trial glitches and a ship
   test.setTimeout(60_000);
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   const state = await serve(page, auditWork());
-  const glitch = page.locator('.work-row.glitch');
+  const glitch = page.locator('.task-row.glitch');
   await expect(glitch).toHaveCount(1);
   expect(await glitch.evaluate(element => getComputedStyle(element).animationName)).toBe('gy-glitch');
   expect(await rain(page)).toBe('gy-rain');

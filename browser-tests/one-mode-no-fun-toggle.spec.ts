@@ -30,7 +30,7 @@ test('e2e:one-mode-no-fun-toggle — no Fun control on any page, a stored Fun pr
   // The stored 'off' from before changes nothing: the line, the names and the strip all show.
   await expect(page.locator('html')).not.toHaveAttribute('data-fun', /.*/);
   await expect(page.locator('[data-build-line]')).toBeVisible();
-  await expect(page.locator('[data-row="GY-14"] .row-who')).toContainText('is running GY-14');
+  await expect(page.locator('[data-row="GY-14"] [data-col="builder"] [data-agent]')).toBeVisible();
   await expect(page.locator('.activity-strip')).toContainText('agents working');
 
   const noFun = async () => {
@@ -39,7 +39,7 @@ test('e2e:one-mode-no-fun-toggle — no Fun control on any page, a stored Fun pr
   };
   await noFun();
   const menu = page.getByRole('navigation', { name: 'Primary' }).getByRole('button');
-  await expect(menu).toHaveText(['Work', 'Master', 'Workers', 'Shipped', 'Tests', 'Settings']);
+  await expect(menu).toHaveText(['Work', 'Master', 'Workers', 'Tests', 'Settings']);
 
   await menu.nth(1).click();
   await expect(page.getByRole('heading', { name: 'Master', exact: true, level: 1 })).toBeVisible();

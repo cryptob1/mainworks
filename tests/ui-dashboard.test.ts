@@ -47,7 +47,7 @@ function dashboard(overrides: Partial<Dashboard> = {}, role = 'admin'): Dashboar
 const home = (d = dashboard()) => markup(createElement(WorkPage, d));
 const itemPage = (key: string, d = dashboard()) => markup(createElement(WorkDetails, { ...d, item: find(key, d.work) }));
 /** The keys of the Work list's rows in GROUP (GY-3600), in page order. */
-const rowsOf = (page: string, group: string) => [...page.matchAll(/data-row="([^"]+)" data-stuck="\w+" class="task-row group-([a-z-]+)"/g)].filter(match => match[2] === group).map(match => match[1]);
+const rowsOf = (page: string, group: string) => [...page.matchAll(/data-row="([^"]+)" data-stuck="\w+" class="task-row group-([a-z-]+)[^"]*"/g)].filter(match => match[2] === group).map(match => match[1]);
 /** One row's markup, by item key. */
 const rowOf = (page: string, key: string) => { const at = page.indexOf(`data-row="${key}"`); return at < 0 ? '' : page.slice(at, page.indexOf('</tr>', at)); };
 const filterCount = (page: string, filter: string) => Number(new RegExp(`data-filter="${filter}">[^<]*<span class="count">(\\d+)</span>`).exec(page)?.[1]);

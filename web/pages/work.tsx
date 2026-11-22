@@ -11,7 +11,8 @@ import { CandidatePr } from '../candidate';
 import StatusAge from '../components/status-age';
 import Term from '../components/term';
 import { stepHeld } from '../../src/model/pr-steps';
-import { friendlyName } from '../fun';
+import { Agent, BuildLine, failedTrial } from '../fun';
+import { EmptyState } from '../components/page-layout';
 import type { Dashboard } from './dashboard';
 
 /** GY-3600: the Work list's filters, each a query parameter (`?filter=stuck`). */
@@ -33,11 +34,12 @@ interface Row { item: Work; group: Group; entry?: BoardItem; today: boolean }
 const minutes = (from: number, now: number) => formatDuration((now - from) / 60000);
 const plainWords = (text: string) => { const words = text.includes(' · ') ? text.slice(text.indexOf(' · ') + 3) : text; return words.charAt(0).toUpperCase() + words.slice(1); };
 
-function builder(item: Work, now: number): string {
+/** The Builder by its friendly name (the account id on hover) and the runtime it ran on; a dash before anyone claims it. */
+function Builder({ item, now }: { item: Work; now: number }) {
   const { owner } = assignment(item, now);
-  if (!owner) return '—';
+  if (!owner) return <>—</>;
   const named = item.lastAssignment?.owner === owner ? item.lastAssignment : undefined;
-  return `${named?.displayName ?? friendlyName(owner) ?? owner}${named?.runtime ? ` · ${named.runtime}` : ''}`;
+  return <>{named?.displayName ? <span className="agent" data-agent={owner} title={owner}>{named.displayName}</span> : <Agent id={owner}/>}{named?.runtime ? ` · ${named.runtime}` : ''}</>;
 }
 
 function median(values: number[]): number | null {
@@ -93,7 +95,7 @@ export default function WorkPage({ work, board, status, query, setQuery, setSele
     if (entry?.who === 'Nobody yet') return entry.does;
     return group === 'up-next' ? 'Waiting for a builder' : group === 'backlog' ? 'Not released yet' : plainWords(entry?.does ?? '');
   };
-  const table = (list: Row[]) => <table className="work-table">
+  const table = (list: Row[]) => <table className="sessions-table work-table">
     <thead><tr><th scope="col">State</th><th scope="col">Task</th><th scope="col">Now</th><th scope="col">Builder</th><th scope="col"><Term term="pull request" focusable={false}>PR</Term></th><th scope="col">In state</th></tr></thead>
     <tbody>{[...list].sort((a, b) => order[a.group] - order[b.group]).map(row => {
       const { item, group, entry } = row;
@@ -101,11 +103,11 @@ export default function WorkPage({ work, board, status, query, setQuery, setSele
       const state = group === 'blocked' ? 'Stuck' : group === 'needs-you' ? 'Needs you' : group === 'moving' ? stageWord[item.stage] ?? 'Moving' : group === 'up-next' ? 'Up next' : group === 'backlog' ? 'Backlog' : live ? 'Shipped' : 'Merged';
       const doing = doingNow(row);
       const since = group === 'shipped' ? mergedAt(item) : Date.parse(entry?.since ?? item.stageEnteredAt);
-      return <tr key={item.id} data-row={item.key} data-stuck={group === 'blocked'} className={`task-row group-${group}`}>
+      return <tr key={item.id} onClick={() => setSelected(item.id)} data-row={item.key} data-stuck={group === 'blocked'} className={`task-row group-${group}${failedTrial(item) ? ' glitch' : ''}${item.mergeLedger?.state === 'pushed' && item.candidate ? ' trial' : ''}`}>
         <td data-col="state">{state}</td>
-        <td data-col="task"><a href={`#${item.key}`} title={item.title} onClick={event => { event.preventDefault(); setSelected(item.id); }}>{item.title}</a></td>
+        <td data-col="task"><a className="card-open" href={`#${item.key}`} title={item.title} aria-label={`${item.title} — open ${item.key}`} onClick={event => { event.preventDefault(); event.stopPropagation(); setSelected(item.id); }}>{item.title}</a></td>
         <td data-col="now">{doing}</td>
-        <td data-col="builder">{builder(item, now)}</td>
+        <td data-col="builder"><Builder item={item} now={now}/></td>
         <td data-col="pr">{item.candidate ? <CandidatePr repository={status?.repository} candidate={item.candidate} workKey={item.key} observation={item.observation as never}/> : '—'}</td>
         {/* Moving and stuck rows carry the step's clock, marked overdue past the one threshold (GY-108); a head queued for its merge is never overdue for that wait. */}
         <td data-col="time">{timedGroups.has(group) ? <StatusAge held={{ ...stepHeld(item, now, null, release), ...(entry?.queue ? { overdue: false } : {}) }}/> : minutes(since, now)}</td>
@@ -115,11 +117,11 @@ export default function WorkPage({ work, board, status, query, setQuery, setSele
   const noGoal = shown.filter(({ item }) => !item.goal);
 
   return <>
-    <div className="page-heading"><div><h1>Work</h1><p className="page-fact" data-work-header>{board ? header : 'Reading the board…'}</p></div>
+    <div className="page-heading"><div><h1>Work</h1><p className="page-fact" data-work-header>{board ? header : 'Reading the board…'}</p><BuildLine/></div>
       <div className="page-actions"><input type="search" aria-label="Search work" placeholder="Search every task by title, key or PR" value={query} onChange={event => setQuery(event.target.value)}/>
-        {status?.actor?.role === 'admin' && <button type="button" onClick={() => setCreating(true)}>New task</button>}</div></div>
+        {status?.actor?.role === 'admin' && <button type="button" onClick={() => setCreating(true)}>＋ New work item</button>}</div></div>
     {(needs.length > 0 || caretaker.length > 0) && <section className="panel needs-you-strip" aria-label="Needs you">
-      <h2>Needs you <span className="count">{needs.length}</span>{needs.length > 3 && <button type="button" className="text-button push" onClick={() => setView('needs-you')}>Open all requests →</button>}</h2>
+      <h2>Needs you <span className="count">{needs.length}</span><button type="button" className="text-button push" onClick={() => setView('needs-you')}>Every request and answer →</button></h2>
       {needs.slice(0, 3).map(entry => <div key={entry.id} className="need" data-need={entry.key}>
         <span className="need-question" title={entry.does}>{entry.does}</span>
         <span className="muted">waiting {minutes(Date.parse(entry.since), now)}</span>
@@ -136,9 +138,10 @@ export default function WorkPage({ work, board, status, query, setQuery, setSele
       {table(shown.filter(({ item }) => item.goal === goal))}
     </section>; })}
     {noGoal.length > 0 && <details className="panel goal-group" data-goal="none" open={goals.length === 0}>
-      <summary>No goal <span className="count">{noGoal.length}</span></summary>
+      <summary><h2>No goal <span className="count">{noGoal.length}</span></h2></summary>
       {table(noGoal)}
     </details>}
-    {shown.length === 0 && <p className="muted">{needle ? 'No task matches.' : 'Nothing here right now.'}</p>}
+    {work.length === 0 ? <EmptyState title="The yard is quiet. File a goal and wake the crew." action={status?.actor?.role === 'admin' && <button type="button" onClick={() => setCreating(true)}>Create the first task</button>}>Create a task, say what must be true when it is done, and an agent will pick it up.</EmptyState>
+      : shown.length === 0 && <p className="muted">{needle ? 'No task matches.' : 'Nothing here right now.'}</p>}
   </>;
 }

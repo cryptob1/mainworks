@@ -22,7 +22,7 @@ test('e2e:master-worker-terminology — navigation, the Master heading and its a
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible();
 
   const menu = page.getByRole('navigation', { name: 'Primary' }).getByRole('button');
-  await expect(menu).toHaveText(['Work', 'Master', 'Workers', 'Shipped', 'Tests', 'Settings']);
+  await expect(menu).toHaveText(['Work', 'Master', 'Workers', 'Tests', 'Settings']);
 
   // The Master page: its heading, its tab row and its terminal region all say Master.
   await menu.nth(1).click();

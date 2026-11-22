@@ -15,6 +15,7 @@ import ReleasesView from '../releases';
 import TestsPage from './tests';
 import ProductPage from './product';
 import { DeliveryDefaults } from '../components/delivery-slices';
+import { WhereItRuns } from '../components/where-it-runs';
 import { requestedView } from '../../src/model/setup-checklist';
 
 /**
@@ -79,8 +80,8 @@ export const views: readonly View[] = [
   { id: 'agents', icon: '⛭', label: 'Agents', section: 'settings', visible: dashboard => ['admin', 'coordinator', 'reader', 'slice-lead'].includes(role(dashboard)), render: dashboard => <FleetPage api={dashboard.api} status={dashboard.status} observedAt={dashboard.observedAt} onOpenSetup={role(dashboard) === 'admin' ? () => dashboard.setView('setup') : undefined}/> },
   // The first-run checklist (GY-1419), for the admin who sets Graphyard up; the sign-in link `graphyard up` prints opens it.
   { id: 'setup', icon: '✔', label: 'Setup', section: 'settings', adminOnly: true, render: dashboard => <SetupPage status={dashboard.status} api={dashboard.api} setView={dashboard.setView}/> },
-  // The project's effective delivery defaults and declared applications (GY-1901), a Settings tab (GY-3483).
-  { id: 'delivery', icon: '⇉', label: 'Delivery', section: 'settings', visible: dashboard => ['admin', 'coordinator', 'reader', 'slice-lead'].includes(role(dashboard)), render: dashboard => <DeliveryDefaults status={dashboard.status}/> },
+  // The project's effective delivery defaults and declared applications (GY-1901), a Settings tab (GY-3483), with where the app runs (GY-3434).
+  { id: 'delivery', icon: '⇉', label: 'Delivery', section: 'settings', visible: dashboard => ['admin', 'coordinator', 'reader', 'slice-lead'].includes(role(dashboard)), render: dashboard => <><DeliveryDefaults status={dashboard.status}/><WhereItRuns status={dashboard.status} now={Number.isNaN(dashboard.observedAt) ? Date.now() : dashboard.observedAt}/></> },
   { id: 'automation', icon: '◇', label: 'Operator automation', section: 'settings', advanced: true, adminOnly: true, visible: dashboard => configured(dashboard.features.automation), render: dashboard => <AutomationPage operatorAgents={dashboard.operatorAgents} operatorAgentsError={dashboard.operatorAgentsError}/> },
   { id: 'guide', icon: '?', label: `How ${PRODUCT_NAME} works`, render: () => <GuidePage/> },
 ];
