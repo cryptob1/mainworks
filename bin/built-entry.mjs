@@ -3,7 +3,7 @@
 // (`node bin/built-entry.mjs`); bin/graphyard.mjs and the test helpers run one only while it is at
 // least as new as every file under src/, so a checkout never built, or edited since, runs from source.
 import { readdirSync, statSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -30,9 +30,9 @@ export async function buildEntries(root) {
   const { build } = await import('esbuild');
   const dist = join(root, 'dist');
   for (const name of builtEntries) {
-    const entry = join(root, 'src', `${name}.ts`);
-    await build({
-      entryPoints: [entry], outfile: join(dist, `${name}.mjs`), bundle: true, platform: 'node', format: 'esm',
+    const entry = join(root, 'src', `${name}.ts`), outfile = join(dist, `${name}.mjs`);
+    const { outputFiles } = await build({
+      entryPoints: [entry], outfile, write: false, bundle: true, platform: 'node', format: 'esm',
       target: 'node24', packages: 'external', logLevel: 'warning', absWorkingDir: root,
       banner: { js: 'const __bundleUrl = import.meta.url;' }, define: { 'import.meta.url': '__moduleUrl' },
       plugins: [{
@@ -45,6 +45,10 @@ export async function buildEntries(root) {
         },
       }],
     });
+    // Written beside and renamed over, so a launcher starting meanwhile never loads half a file.
+    await mkdir(dist, { recursive: true });
+    await writeFile(`${outfile}.${process.pid}.tmp`, outputFiles[0].contents);
+    await rename(`${outfile}.${process.pid}.tmp`, outfile);
   }
 }
 
