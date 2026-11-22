@@ -7,12 +7,17 @@ import { availableParallelism } from 'node:os';
 const args = process.argv.slice(2);
 const at = args.indexOf('--durations');
 const durations = at >= 0 ? args.splice(at, 2)[1] : undefined;
-const timeoutMs = Number(args.find(arg => arg.startsWith('--file-timeout=')).split('=')[1]);
+// GY-3610: a coordinator run names no bound unless it is a targeted re-run, and holds each new file while the CPU is hot.
+const timeoutMs = Number(args.find(arg => arg.startsWith('--file-timeout='))?.split('=')[1] ?? Infinity);
+const hwmon = args.find(arg => arg.startsWith('--hold-when-hot='))?.split('=')[1];
+const gate = hwmon ? (await import('./heat-hold.ts')).heatGate(() => import('../../src/merge-writer/trial-load.ts').then(load => load.cpuCelsius(hwmon)), {
+  onHold: celsius => console.log(`graphyard: test files wait: the CPU reads ${celsius}C, at the heat limit; they resume when it drops`),
+}) : async () => {};
 const breadth = Number(args.find(arg => arg.startsWith('--test-concurrency='))?.split('=')[1] ?? availableParallelism());
 // The caller's reporter flags pass through (the merge trial counts executed proofs from its TAP);
 // spec is added only when the caller names no reporter, since Node refuses a child whose reporters
 // and destinations do not pair up.
-const flags = args.filter(arg => arg.startsWith('-') && !/^--(?:file-timeout|test-concurrency)=/.test(arg));
+const flags = args.filter(arg => arg.startsWith('-') && !/^--(?:file-timeout|test-concurrency|hold-when-hot)=/.test(arg));
 const reporter = flags.some(flag => flag.startsWith('--test-reporter=')) ? [] : ['--test-reporter=spec'];
 const files = args.filter(arg => !arg.startsWith('-'));
 if (durations) writeFileSync(durations, '');
@@ -25,18 +30,20 @@ for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => {
 let next = 0;
 await Promise.all(Array.from({ length: Math.min(breadth, files.length) }, async () => {
   while (next < files.length) {
+    await gate();
+    if (next >= files.length) break;
     const file = files[next++], started = Date.now();
     // The bound is named to the file it bounds, so a test whose execution cannot fit it (the
     // slow-tick receipt's twenty sequential runs) defers to an unbounded run instead of dying at
     // the deadline.
     const child = spawn(process.execPath, ['--import', import.meta.resolve('tsx'), '--test', ...reporter, ...flags, file], {
-      detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GRAPHYARD_FILE_TIMEOUT_MS: String(timeoutMs) },
+      detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...(Number.isFinite(timeoutMs) ? { GRAPHYARD_FILE_TIMEOUT_MS: String(timeoutMs) } : {}) },
     });
     children.add(child);
     let output = '', timedOut = false;
     child.stdout.on('data', chunk => { output += chunk; });
     child.stderr.on('data', chunk => { output += chunk; });
-    const timer = setTimeout(() => { timedOut = true; kill(child); }, timeoutMs);
+    const timer = Number.isFinite(timeoutMs) ? setTimeout(() => { timedOut = true; kill(child); }, timeoutMs) : undefined;
     const code = await new Promise(resolve => {
       child.on('error', error => { output += `${error.message}\n`; });
       child.on('close', resolve);

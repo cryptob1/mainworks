@@ -534,11 +534,11 @@ export function gateSummary(record: GateRecord | null) {
   if (!record) return null;
   const rate = revertRate(record);
   return { verified: record.verified?.slice(0, 12) ?? null, verifiedAt: record.verifiedAt,
-    // GY-3444: a run in flight holds first claim on trial slots and pauses implementation launches until it settles.
+    // A run in flight holds first claim on trial slots; worker admission stays independent.
     inFlight: record.inFlight ? { tip: record.inFlight.tip.slice(0, 12), startedAt: record.inFlight.startedAt, step: record.inFlight.step ?? null,
       // GY-3474: what its current check is doing — waiting or its run's step — the detached run's own directory name, and the wait its bound leaves out.
       progress: record.inFlight.progress ?? null, run: record.inFlight.run ? basename(record.inFlight.run.directory) : null, waitedMs: record.inFlight.waitedMs ?? 0,
-      holds: 'first claim on trial slots; implementation launches paused until the gate settles' } : null,
+      holds: 'first claim on trial slots; implementation continues within heat and worker capacity limits' } : null,
     // GY-3141: the last settled run's outcome with its reason or failing check, beside the run in flight's current step.
     lastOutcome: record.lastOutcome ? { ...record.lastOutcome, tip: record.lastOutcome.tip ? record.lastOutcome.tip.slice(0, 12) : null } : null,
     held: record.held, revertRate: `${rate.reverted}/${rate.merges}`, diagnosticsAt: record.diagnosticsAt, catalogMs: measuredCatalogMs(record, Date.now()),
