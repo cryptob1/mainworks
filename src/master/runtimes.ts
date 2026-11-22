@@ -33,6 +33,7 @@ export interface AccountReading { loggedIn: boolean; usage: AccountUsage[]; note
  * - `home`: the login-home variable an account home is set on, and the runtime's own default home: the environment kinds.
  * - `usage`: reads an account home's login and provider quota; `sharedPlan` when its accounts share a Z.AI plan.
  * - `identity`: the login file whose provider ids name the subscription an account home is logged in to.
+ * - `model`: the model a run's output says it ran on (GY-3596).
  * - `state`: the XDG base directories (with their defaults under HOME) the runtime keeps its session state in, and its own directory in each (GY-3303).
  */
 export interface RuntimeAdapter {
@@ -53,6 +54,8 @@ export interface RuntimeAdapter {
   sharedPlan?: boolean;
   identity?: { file: string; ids: (login: any) => unknown[] };
   state?: { variables: Record<string, string>; directory: string };
+  /** GY-3596: the model a run reported on its own output, or null when it names none. */
+  model?: (output: string) => string | null;
 }
 
 /** The usage-limit messages the provider APIs themselves return, in a runtime's error output. */
@@ -135,6 +138,29 @@ export function accountHomeEnvironment(kind: string | null | undefined, home: st
   return kind === 'cursor' && home ? { XDG_CONFIG_HOME: home } : {};
 }
 
+const jsonRows = (output: string): any[] => output.split('\n').flatMap(line => { if (!/^\s*\{/.test(line)) return []; try { return [JSON.parse(line)]; } catch { return []; } });
+const named = (value: unknown) => typeof value === 'string' && value.trim() ? value.trim() : null;
+/** Claude Code: stream-json's `init` names the model; json's `result` counts tokens by model, the main one using the most. */
+function claudeModel(output: string) {
+  for (const row of jsonRows(output)) {
+    if (row?.type === 'system' && row.subtype === 'init' && named(row.model)) return named(row.model);
+    if (row?.type === 'result' && row.modelUsage && typeof row.modelUsage === 'object') {
+      const used = (entry: any) => Number(entry?.outputTokens) || 0;
+      const top = Object.entries<any>(row.modelUsage).sort((a, b) => used(b[1]) - used(a[1]))[0];
+      if (top) return top[0];
+    }
+  }
+  return null;
+}
+/** Codex: its run header's `model: gpt-5.1-codex` line, or a JSON record naming `model`. */
+const codexModel = (output: string) => /^model: *(\S+)\s*$/m.exec(output)?.[1] ?? jsonRows(output).map(row => named(row?.model) ?? named(row?.payload?.model) ?? named(row?.msg?.model)).find(Boolean) ?? null;
+/** OpenCode: the run banner `> build · glm-5.3`, agent then model. */
+const opencodeModel = (output: string) => /^[\s>@]*[\w-]+ · (\S+)\s*$/m.exec(output)?.[1] ?? null;
+/** Pi: each assistant `message_end` names its model; the last one counts. */
+const piModel = (output: string) => jsonRows(output).filter(row => row?.type === 'message_end' && row.message?.role === 'assistant').map(row => named(row.message.model)).filter(Boolean).at(-1) ?? null;
+/** The model `kind`'s run reported on `output`, or null when the runtime has no reader or the output names none. */
+export const reportedModel = (kind: string | null | undefined, output: string) => runtimeAdapter(kind)?.model?.(output) ?? null;
+
 // Per-runtime startup contracts that remove the approval and workspace-trust prompts a freshly
 // launched session blocks on. These are runtime CLI contracts, not Graphyard authority: a session
 // that never asks can still only act inside its own assigned worktree and its own credentials.
@@ -154,6 +180,7 @@ const builtInAdapters = {
     home: { variable: 'CLAUDE_CONFIG_DIR', default: home => resolve(home, '.claude') },
     usage: (environment, probe, { now }) => claudeAccount(environment, probe, now),
     identity: { file: '.claude.json', ids: login => [login?.oauthAccount?.accountUuid, login?.oauthAccount?.organizationUuid] },
+    model: claudeModel,
   },
   codex: {
     // `--json`: events on standard output, the last a `turn.completed` with the tokens the turn used (GY-3289).
@@ -169,6 +196,7 @@ const builtInAdapters = {
     home: { variable: 'CODEX_HOME', default: home => resolve(home, '.codex') },
     usage: (environment, probe) => codexAccount(environment, probe),
     identity: { file: 'auth.json', ids: login => [login?.tokens?.account_id] },
+    model: codexModel,
   },
   cursor: {
     headless: { program: 'cursor-agent', before: [], flags: ['-p', '--output-format', 'json'] },
@@ -202,6 +230,7 @@ const builtInAdapters = {
     zonelessBeijingResets: true,
     home: { variable: 'XDG_DATA_HOME', default: home => process.env.XDG_DATA_HOME ?? resolve(home, '.local/share') },
     usage: (environment, probe, { plan, now }) => opencodeAccount(environment, probe, { id: plan, now }),
+    model: opencodeModel,
     sharedPlan: true,
   },
   pi: {
@@ -214,6 +243,7 @@ const builtInAdapters = {
     // pi's 429 code 1310 names `2026-10-17 08:27:35` with no zone, in Beijing time (GY-3495).
     zonelessBeijingResets: true,
     usage: (environment, probe, { plan, now }) => opencodeAccount(environment, probe, { id: plan, now }),
+    model: piModel,
     sharedPlan: true,
   },
   gemini: {
