@@ -1,0 +1,15 @@
+{
+  "id": "bench-shown-in-status",
+  "title": "Master status shows the latest trial benchmark beside the median of the previous ten and raises an attention line on regression",
+  "description": "Seeds eleven stored benchmark results on the same file list with the eleventh 40% slower in wall time, then runs masterStatusReport and asserts the wall and CPU percentage changes and the attention line naming the step that grew most appear.",
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "master status shows the 40% regression beside the median and raises one attention line naming the step that grew most",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:bench-shown-in-status tests/bench-trial.test.ts",
+      "timeoutSeconds": 120
+    }
+  ]
+}
