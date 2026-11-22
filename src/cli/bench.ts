@@ -47,7 +47,7 @@ export const benchCommands = defineCommands([{
 
     if (compareRef) {
       const candidate = await benchTrial({ root, ref: compareRef, filesPath, print: () => {} });
-      const baseline = await benchTrial({ root, ref: 'main', filesPath, print: () => {} });
+      const baseline = await benchTrial({ root, filesPath, print: () => {} });
       const comparison = compareBenchResults(baseline, candidate);
       console.log(formatBenchComparison(comparison));
       console.log(JSON.stringify(comparison));

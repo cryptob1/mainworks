@@ -11,7 +11,7 @@ import { defaultChildRun, type ChildRun } from './child-runner.js';
 import { cpuStatTotals } from './daemon/cpu-pressure.js';
 import { deployRecordPath, readDeployRecord } from './deploy-watch.js';
 import { worktreeRoot } from './install/worktree-root.js';
-import { loadStoredMasterConfig } from './master.js';
+import { loadStoredMasterConfig } from './master/config.js';
 import { mergeQueue } from './merge-writer/executor.js';
 import { cpuCelsius } from './merge-writer/trial-load.js';
 import { runTrial, type RunTrialInput, type TrialRunMetrics } from './merge-writer/trial.js';
@@ -391,6 +391,7 @@ export function formatBenchComparison(comparison: BenchComparison): string {
 }
 
 const benchFlights = new WeakMap<DaemonState, Promise<void>>();
+const benchAttempts = new WeakMap<DaemonState, { at: number; build: string | null }>();
 
 /**
  * Loop step beside the merge writer and batch gate: runs the reference benchmark once after each
@@ -416,10 +417,15 @@ export function benchStep(cycle: {
   const trialQueued = mergeQueue(cycle.snapshot.work, ledger, cycle.now()).queue.length > 0
     || !!(cycle.state.mergeWriter.inFlight || cycle.state.mergeWriter.inFlights?.length);
   const currentBuild = readDeployRecord(deployRecordPath(root))?.tip ?? cycle.effects.loadedRelease?.commit ?? null;
+  const lastAttempt = benchAttempts.get(cycle.state);
+  if (lastAttempt && lastAttempt.build === currentBuild && cycle.now() - lastAttempt.at < benchIntervalMs) {
+    return null;
+  }
   const results = readBenchResults(benchResultsPath(root));
   const decision = benchDue({ results, currentBuild, now: cycle.now(), trialQueued, inFlight: benchFlights.has(cycle.state) });
   if (!decision.due) return null;
 
+  benchAttempts.set(cycle.state, { at: cycle.now(), build: currentBuild });
   cycle.log(`[graphyard-master] starting trial benchmark (${decision.reason})`);
   const flight = benchTrial({
     root,
