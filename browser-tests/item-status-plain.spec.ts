@@ -76,6 +76,8 @@ for (const width of [1280, 390]) {
     const article = page.locator('article.item-page');
     await expect(article.getByRole('heading', { level: 1 })).toHaveText('Rename the Lead page');
     await expect(article).toContainText('On hold by the master: Waits for the GY-3600 redesign to land.');
+    // Said once: the Next line never repeats the status sentence.
+    expect((await article.innerText()).split('On hold by the master').length - 1).toBe(1);
     expect(await bodyText(page)).not.toContain(master);
     await fits(page);
     const details = article.getByRole('tab', { name: 'Details' });
@@ -86,5 +88,11 @@ for (const width of [1280, 390]) {
       expect(await bodyText(page)).not.toContain(master);
       await fits(page);
     }
+
+    // The item waiting on another's files says so once too.
+    await article.getByRole('button', { name: '← Back' }).click();
+    await page.locator('[data-row="GY-203"] [data-col="task"] a').click();
+    await expect(article.getByRole('heading', { level: 1 })).toHaveText('Board rows name their builder');
+    expect((await article.innerText()).split('Starts after GY-204').length - 1).toBe(1);
   });
 }
