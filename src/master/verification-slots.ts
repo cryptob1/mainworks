@@ -284,8 +284,13 @@ async function tryTake(directory: string, slots: number, owner: SlotOwner, first
           released = true;
           const freed = `${path}.freed-${owner.pid}-${Date.now()}`;
           try {
-            renameSync(path, freed);
-            rmSync(freed, { recursive: true, force: true });
+            // Only remove the slot if it still holds our locked owner inode: releaseSettledVerificationSlots
+            // may have freed it early and another job may now own slot-N.
+            const opened = fstatSync(fd), current = statSync(join(path, 'owner.json'), { throwIfNoEntry: false });
+            if (current && opened.ino === current.ino && opened.dev === current.dev) {
+              renameSync(path, freed);
+              rmSync(freed, { recursive: true, force: true });
+            }
           } catch { /* already removed */ } finally { closeSync(fd); }
         } };
       } catch (error) {
