@@ -1,0 +1,15 @@
+{
+  "id": "ended-old-host-session",
+  "title": "A finished item's session left on a departed host stops counting as a worker",
+  "description": "A Done item still records its old attempt's session as running on a host that has left, beside one live leased worker on this host. One loop cycle records the old session finished with the reason, leaves the live worker running, and master status counts one worker.",
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "the loop closes the departed host's ended session and master status counts only the live worker",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/ended-old-host-session.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}
