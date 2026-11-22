@@ -1,0 +1,11 @@
+{
+  "id": "logo-is-the-works",
+  "title": "The Mainworks logo is a factory roof with one window lit",
+  "description": "The sign-in page opens in a browser; /favicon.svg holds the Mainworks artwork (its title and the roof path M12 50V24L26 34V24L40 34V24L54 34V50Z), and the mark beside the product name is drawn from that file with a non-zero size at 390 and 1280 px.",
+  "tags": ["dashboard", "brand"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "sign-in mark is the Mainworks logo at 390 and 1280 px", "run": "npm run test:browser -- browser-tests/logo-is-the-works.spec.ts", "timeoutSeconds": 300 }
+  ]
+}
