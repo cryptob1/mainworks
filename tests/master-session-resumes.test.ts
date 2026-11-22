@@ -159,3 +159,11 @@ test('integration:master-large-transcript-wake — a streaming read failure pres
   assert.equal(await captureConversation(conversation), 'Current question');
   assert.equal(await readFile(record, 'utf8'), await readFile(transcript, 'utf8'));
 });
+
+// GY-3633: the >2 GiB records above need a disk. A remote shard's /tmp and HOME are tmpfs counted
+// against its memory cap (the records were killed there) and its /var/tmp is read-only, so this file
+// names a local-only word and the trial keeps it on this machine, where the suite's tmpdir is on disk.
+test('unit:master-session-resumes — the >2 GiB record file never goes to a remote shard', async () => {
+  const { remoteableTestFile } = await import('../src/merge-writer/remote-shards.js');
+  assert.equal(remoteableTestFile(await readFile(new URL(import.meta.url), 'utf8')), false);
+});

@@ -47,6 +47,15 @@ export function runtimeReport(output: string): { reply: string | null; usage: { 
   return { reply: reply ?? (said.length ? said.join('\n') : null), usage: byModel.size ? [...byModel].map(([model, tokens]) => ({ model, tokens })) : null };
 }
 
+/** GY-3632: the runtime's own session id in what a one-task run printed: Claude's `session_id`, Codex's `thread_id`, OpenCode's `sessionID`. */
+export function runtimeSessionId(output: string): string | null {
+  for (const row of jsonLines(output)) {
+    const id = row?.session_id ?? row?.thread_id ?? row?.sessionID;
+    if (typeof id === 'string' && /^[\w-]{1,200}$/.test(id)) return id;
+  }
+  return null;
+}
+
 /**
  * The master session's tokens, read row by row from its runtime's own transcript and kept by day
  * and model. Claude Code repeats a message's usage on each of its rows, so a message counts once;
