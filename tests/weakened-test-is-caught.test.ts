@@ -169,7 +169,7 @@ test('e2e:weakened-test-is-caught — loosened assertion is classed sensitive, h
         services,
         { id: 'reviewer-1', role: 'reader' },
         work.key,
-        { event: 'APPROVE', body: `Head ${headSha} vs ${baseSha}. Looks good.`, sha: headSha, token },
+        { event: 'APPROVE', body: `Head ${headSha} vs ${baseSha}. Looks good.\nAC-1 met — add works.`, sha: headSha, token },
         'verdict-unruled',
       ),
     /tests\/math\.test\.ts:5/,
@@ -182,7 +182,7 @@ test('e2e:weakened-test-is-caught — loosened assertion is classed sensitive, h
         services,
         { id: 'reviewer-1', role: 'reader' },
         work.key,
-        { event: 'APPROVE', body: `Head ${headSha} vs ${baseSha}.\ntests/math.test.ts:5 — weakened: accepts any positive number`, sha: headSha, token },
+        { event: 'APPROVE', body: `Head ${headSha} vs ${baseSha}.\ntests/math.test.ts:5 — weakened: accepts any positive number\nAC-1 met — add works.`, sha: headSha, token },
         'verdict-weakened-approve',
       ),
     /weakened/i,
@@ -211,7 +211,7 @@ test('e2e:weakened-test-is-caught — loosened assertion is classed sensitive, h
     services,
     { id: 'reviewer-1', role: 'reader' },
     work.key,
-    { event: 'REQUEST_CHANGES', body: `Head ${headSha} vs ${baseSha}.\ntests/math.test.ts:5 — weakened\nBLOCKING: tests/math.test.ts:5 — assertion was loosened`, sha: headSha, token },
+    { event: 'REQUEST_CHANGES', body: `Head ${headSha} vs ${baseSha}.\ntests/math.test.ts:5 — weakened\nBLOCKING: tests/math.test.ts:5 — assertion was loosened\nAC-1 unmet — the add check was loosened.`, sha: headSha, token },
     'verdict-request-changes',
   );
   assert.equal((reqChanges as { state: string }).state, 'CHANGES_REQUESTED');

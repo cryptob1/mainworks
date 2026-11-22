@@ -421,7 +421,7 @@ test('integration:review-verdict-recorded-once — the verdict is appended to ob
   assert.equal((await stored(sensitive.id)).observation!.reviews.length, 1);
   const again = freshToken();
   assert.equal((await request(tokenOf(coordinator), `work/${sensitive.id}/review-launch`, launchBody(again))).status, 200, 'a relaunch registers a new token');
-  const second = await request(again, `work/${sensitive.id}/review-verdict`, verdict(again, 'REQUEST_CHANGES'));
+  const second = await request(again, `work/${sensitive.id}/review-verdict`, verdict(again, 'REQUEST_CHANGES', 'AC-1 unmet.\nBLOCKING: src/store/pools.ts:3 — the pool is never released\nResolved threads: none\nFollow-up threads: none\nOverridden threads: none'));
   assert.equal(second.status, 200, 'the new launch yields one verdict of its own');
   const twice = await request(tokenOf(coordinator), `work/${sensitive.id}/review-launch`, launchBody(freshToken()));
   assert.equal(twice.status, 200);
