@@ -78,7 +78,7 @@ test('e2e:pipeline-concurrent-merge — a build-passed head whose review gate ha
     // The same head is approved through the plane's review route: an independent reviewer's launch and verdict.
     const token = randomBytes(32).toString('hex');
     await post(coordinatorToken, `work/${item.id}/review-launch`, { reviewer: 'fixture-reviewer', head, baseTip: item.candidate!.baseSha, tokenHash: createHash('sha256').update(token, 'utf8').digest('hex'), expiresAt: new Date(Date.now() + 3_600_000).toISOString() }, randomUUID());
-    await post(token, `work/${item.id}/review-verdict`, { event: 'APPROVE', body: `Reviewed head ${head} against merge base ${item.candidate!.baseSha}. AC-1 met.`, sha: head, token }, randomUUID());
+    await post(token, `work/${item.id}/review-verdict`, { event: 'APPROVE', body: `Reviewed head ${head} against merge base ${item.candidate!.baseSha}. AC-1 met. AC-2 met.`, sha: head, token }, randomUUID());
     const approved = (await world.work()).find(entry => entry.key === item.key)!;
     assert.equal(approved.gates.find(gate => gate.name === 'review')!.passed, true, 'the approval passes the review gate for this head');
     // The landing flight reuses the kept trial: no second trial, one push, delivered.
