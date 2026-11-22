@@ -1,7 +1,7 @@
 // Concern: GY-3407 — the hosts Graphyard watches; merge trials send them test shards (GY-3412). A host lends
 // compute and nothing else: `graphyard host prepare` prints a one-time sudo script that creates the
 // unprivileged gy-compute user (not in the docker group) with linger and rootless Docker, and lets this
-// machine's key run only graphyard-host-shim (restrict,command=…: no shell, pty or forwarding). The shim
+// machine's key run only graphyard-host-shim-DIGEST (restrict,command=…: no shell, pty or forwarding). The shim
 // answers fixed verbs (src/host-shim.ts). `graphyard host add USER@HOST` refuses a key
 // that opens a plain shell, root and a docker-group user, then records the host in this machine's hosts
 // file — the one host list. Each loop cycle probes every host — cores, hottest CPU sensor, steal and the
@@ -16,7 +16,7 @@ import { defaultChildRun, type ChildRun } from './child-runner.js';
 import { configHome } from './install/secrets.js';
 import { cpuSensorNames } from './merge-writer/trial-load.js';
 import { cpuStatTotals, stealPercent } from './daemon/cpu-pressure.js';
-import { hostProbeScript, hostShimScript, missingTrialVerbs } from './host-shim.js';
+import { hostProbeScript, hostShimDigest, hostShimScript, missingTrialVerbs } from './host-shim.js';
 import { trialAppArmorProfilePath, trialAppArmorProfileText } from './merge-writer/trial-apparmor.js';
 import { shellQuote } from './install/transport.js';
 
@@ -38,8 +38,14 @@ export async function readHosts(file = hostsFile()): Promise<HostRecord[]> {
 }
 const writeHosts = async (file: string, hosts: HostRecord[]) => { await mkdir(dirname(file), { recursive: true }); await writeFile(file, JSON.stringify(hosts, null, 2) + '\n'); };
 
-/** The one-time script `host prepare` prints, for the host's owner to run with sudo. */
-export function hostPrepareScript(publicKey: string) {
+/**
+ * The one-time script `host prepare` prints, for the host's owner to run with sudo. GY-3688: one host
+ * serves several installs, so the helper is named by its digest, this machine's key is appended beside
+ * the others bound to that helper, and helpers no key names are removed.
+ */
+export function hostPrepareScript(publicKey: string, shim = { script: hostShimScript, digest: hostShimDigest }) {
+  const helper = `graphyard-host-shim-${shim.digest}`;
+  const [type, body] = publicKey.trim().split(/\s+/);
   return `#!/bin/sh
 # Run once on the host with: sudo sh prepare.sh
 # Creates ${hostUser}: no sudo, not in the docker group, its own rootless Docker. This machine's key
@@ -56,13 +62,25 @@ loginctl enable-linger "$user"
 if [ "$(cat /sys/module/apparmor/parameters/enabled 2>/dev/null)" = Y ]; then
   printf %s ${shellQuote(trialAppArmorProfileText)} > ${trialAppArmorProfilePath} && apparmor_parser -r -W ${trialAppArmorProfilePath}
 fi
-cat > /usr/local/bin/graphyard-host-shim <<'GRAPHYARD_SHIM'
-${hostShimScript}GRAPHYARD_SHIM
-chmod 755 /usr/local/bin/graphyard-host-shim
+cat > /usr/local/bin/${helper} <<'GRAPHYARD_SHIM'
+${shim.script}GRAPHYARD_SHIM
+chmod 755 /usr/local/bin/${helper}
 home=$(getent passwd "$user" | cut -d: -f6)
 install -d -m 700 -o "$user" -g "$user" "$home/.ssh"
-echo 'restrict,command="graphyard-host-shim" ${publicKey.trim()}' > "$home/.ssh/authorized_keys"
-chown "$user:$user" "$home/.ssh/authorized_keys"; chmod 600 "$home/.ssh/authorized_keys"
+# This machine's key, bound to its own helper, beside other installs' keys: only its own older line is replaced.
+keys="$home/.ssh/authorized_keys"
+line=${shellQuote(`restrict,command="${helper}" ${publicKey.trim()}`)}
+touch "$keys"
+if ! grep -qxF "$line" "$keys"; then
+  { grep -vF ${shellQuote(` ${type} ${body}`)} "$keys" || true; echo "$line"; } > "$keys.new"
+  mv "$keys.new" "$keys"
+fi
+chown "$user:$user" "$keys"; chmod 600 "$keys"
+# Helpers no key names are left from older releases: remove them.
+for helper in /usr/local/bin/graphyard-host-shim*; do
+  [ -e "$helper" ] || continue
+  grep -qF "command=\\"\${helper##*/}\\"" "$keys" || rm -f "$helper"
+done
 uid=$(id -u "$user")
 # Rootless Docker for $user (GY-3419): the host's own extras when both tools are installed, else the
 # static rootless extras for the host's reported Docker version plus a static slirp4netns fetched
@@ -119,7 +137,6 @@ AllowStreamLocalForwarding no
 X11Forwarding no
 PermitTunnel no
 PermitTTY no
-ForceCommand /usr/local/bin/graphyard-host-shim
 PidFile /run/graphyard-sshd.pid
 GRAPHYARD_SSHD
   "$sshd" -t -f /etc/ssh/sshd_graphyard_config

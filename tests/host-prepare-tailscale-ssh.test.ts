@@ -40,8 +40,7 @@ test(`${proof} — on a Tailscale SSH host the printed script runs an OpenSSH fo
   const desk = hosts.host('desk');
   const sshd = await readFile(join(desk, 'etc', 'ssh', 'sshd_graphyard_config'), 'utf8');
   for (const line of ['Port 2222', 'AllowUsers gy-compute', 'AuthenticationMethods publickey', 'PasswordAuthentication no', 'KbdInteractiveAuthentication no',
-    'PermitRootLogin no', 'AllowTcpForwarding no', 'AllowAgentForwarding no', 'AllowStreamLocalForwarding no', 'X11Forwarding no', 'PermitTunnel no', 'PermitTTY no',
-    `ForceCommand ${join(desk, 'usr-local-bin', 'graphyard-host-shim')}`]) assert.ok(sshd.split('\n').includes(line), line);
+    'PermitRootLogin no', 'AllowTcpForwarding no', 'AllowAgentForwarding no', 'AllowStreamLocalForwarding no', 'X11Forwarding no', 'PermitTunnel no', 'PermitTTY no']) assert.ok(sshd.split('\n').includes(line), line);
   assert.match(await readFile(join(desk, 'etc', 'systemd', 'system', 'graphyard-sshd.service'), 'utf8'), /^ExecStart=\S*sshd -D -f \S*\/etc\/ssh\/sshd_graphyard_config$/m);
   const log = await readFile(join(desk, 'log'), 'utf8');
   assert.match(log, /^sshd -t -f \S*sshd_graphyard_config$/m, 'the config is checked before it runs');
