@@ -173,6 +173,6 @@ test('e2e:gate-settles-fast — a gate with three failing checks, two with open 
   const recut = await runGate(ports, record);
   assert.equal(recut.outcome, 'verified', JSON.stringify(recut));
   assert.equal(record.verified, run('rev-parse', 'origin/main'));
-  assert.deepEqual((recut.outcome === 'verified' && recut.knownFlaky)?.map?.(flaky => flaky.item), ['GY-50', 'GY-51']);
+  assert.deepEqual(recut.outcome === 'verified' ? recut.knownFlaky?.map(flaky => flaky.item) : null, ['GY-50', 'GY-51']);
   assert.ok(clock - started < 45 * 60_000, `the gate settled in ${Math.round((clock - started) / 60_000)} minutes`);
 });
