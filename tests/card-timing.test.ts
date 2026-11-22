@@ -15,10 +15,9 @@ import { live } from '../browser-tests/ui-board.js';
 import { OVERDUE_MINUTES, formatDuration, statusDuration } from '../src/model/duration.js';
 import { phaseOf, phaseLabel, statusHeld, statusSince } from '../src/model/plain-status.js';
 import type { Dashboard } from '../web/pages/dashboard.js';
-import OverviewPage from '../web/pages/overview.js';
+import WorkPage from '../web/pages/work.js';
 import { boardFromStatus } from '../src/model/board.js';
 import WorkDetails from '../web/pages/work-details.js';
-import WorkCard from '../web/components/work-card.js';
 import { groupOf, timedGroups } from '../web/groups.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
@@ -42,7 +41,7 @@ const minute = 60_000;
 function dashboard(work: Work[], observedAt = NOW, overrides: Partial<Dashboard> = {}): Dashboard {
   const d: Dashboard = {
     token: 'fixture', work, status: fixtureStatus('admin'), error: '', connected: true, lastUpdated: '12:00:00', view: 'work', setView: noop,
-    filter: null, setFilter: noop, shippedFilter: null, setShippedFilter: noop, selected: null, setSelected: noop, creating: false, setCreating: noop, busy: false, setBusy: noop,
+    filter: null, setFilter: noop, selected: null, setSelected: noop, creating: false, setCreating: noop, busy: false, setBusy: noop,
     observedAt, jobs: [], query: '', setQuery: noop, operatorAgents: [], operatorAgentsError: null, features: {} as any,
     events: fixtureApi('events') as any[], editingRequirements: false, setEditingRequirements: noop,
     sessionEpoch: { current: 0 }, api: async (path: string) => fixtureApi(path, 'admin'),
@@ -51,12 +50,12 @@ function dashboard(work: Work[], observedAt = NOW, overrides: Partial<Dashboard>
   // The board GET /api/board serves over the same work (GY-200): the Work page renders its groups.
   return 'board' in overrides ? d : { ...d, board: boardFromStatus(d.work, d.observedAt, d.status) };
 }
-const homeView = (work: Work[], observedAt = NOW) => markup(createElement(OverviewPage as any, dashboard(work, observedAt)));
-/** A board column draws the same component the list draws; web/pages/overview.tsx maps one `card`. */
-const boardCard = (item: Work, observedAt = NOW) => markup(createElement(WorkCard as any, { item, now: observedAt, repository: 'fixture/repository', onOpen: noop }));
+const homeView = (work: Work[], observedAt = NOW) => markup(createElement(WorkPage as any, dashboard(work, observedAt)));
+/** One item alone as its Work list row (GY-3600). */
+const boardCard = (item: Work, observedAt = NOW) => homeView([item], observedAt);
 const itemView = (item: Work, work: Work[] = fixture, observedAt = NOW) => markup(createElement(WorkDetails as any, { ...dashboard(work, observedAt), item }));
 /** Every duration the markup draws, in order, as a reader sees it. */
-const ages = (html: string) => [...html.matchAll(/<span class="status-age(?: overdue)?"[^>]*>(.*?)<\/span>(?=\s*<\/div>|\s*<\/span>|\s*<h)/g)]
+const ages = (html: string) => [...html.matchAll(/<span class="status-age(?: overdue)?"[^>]*>(.*?)<\/span>(?=\s*<\/div>|\s*<\/span>|\s*<\/td>|\s*<h)/g)]
   .map(match => visibleWords(match[1]).join(' '));
 const overdueCount = (html: string) => (html.match(/class="status-age overdue"/g) ?? []).length;
 
@@ -126,9 +125,6 @@ test('unit:overdue-threshold-applied — twenty-nine minutes is not red, thirty-
       assert.equal(marked > 0, overdue, `${name}: ${minutes} minutes is ${overdue ? 'red' : 'not red'} — ${ages(html).join(' | ')}`);
     }
   }
-  // The card itself carries the same verdict, so a stalled item is legible from the list's shape.
-  assert.match(boardCard(held('GY-15', 31)), /class="work-row group-[\w-]+ tone-\w+ overdue"/);
-  assert.doesNotMatch(boardCard(held('GY-15', 29)), /class="work-row group-[\w-]+ tone-\w+ overdue"/);
   // The verdict is taken on the minutes the text renders, so nothing turns red while reading 30m.
   for (const seconds of [30 * 60, 30 * 60 + 59]) {
     const at = statusDuration(NOW - seconds * 1000, NOW);
@@ -139,7 +135,7 @@ test('unit:overdue-threshold-applied — twenty-nine minutes is not red, thirty-
 
   // And the value is configured once rather than repeated per view: no other source carries a
   // threshold of its own, and each view reaches the verdict through the one call.
-  const sources = ['src/model/duration.ts', 'src/model/plain-status.ts', 'web/components/status-age.tsx', 'web/components/work-card.tsx', 'web/pages/work-details.tsx', 'web/pages/overview.tsx'];
+  const sources = ['src/model/duration.ts', 'src/model/plain-status.ts', 'web/components/status-age.tsx', 'web/pages/work-details.tsx', 'web/pages/work.tsx'];
   const definitions: string[] = [];
   for (const path of sources) {
     const source = await read(path);
@@ -151,7 +147,7 @@ test('unit:overdue-threshold-applied — twenty-nine minutes is not red, thirty-
   }
   assert.deepEqual(definitions, ['src/model/duration.ts'], 'the threshold has one home');
   // Every view reaches the verdict through the one call.
-  for (const path of ['web/components/work-card.tsx', 'web/pages/work-details.tsx']) assert.match(await read(path), /stepHeld\(item, now, null, release\)/);
+  for (const path of ['web/pages/work.tsx', 'web/pages/work-details.tsx']) assert.match(await read(path), /stepHeld\(item, now, null, release\)/);
   assert.match(await read('web/components/status-age.tsx'), /held\.overdue/);
 });
 

@@ -8,15 +8,14 @@ import type { Work } from '../src/model.js';
 import { NOW, boardApi, boardStatus, boardWork } from '../browser-tests/ui-board.js';
 // @ts-expect-error Dependency-free fixture script.
 import { fixtureApi, visibleWords } from '../scripts/dashboard-fixture.mjs';
-import { boardFromStatus, classify, groupLabel, groupOf, groupWithin, groups, humanOnlyIds, nextActor, shippedCounts, timedGroups, type OpenGroup } from '../web/groups.js';
+import { boardFromStatus, classify, groupLabel, groupOf, groupWithin, groups, humanOnlyIds, mergedAt, nextActor, timedGroups } from '../web/groups.js';
 import { prSteps, stateIds } from '../src/model/pr-steps.js';
 import { noRelease } from '../src/model/release.js';
 import { jargon } from '../src/model/plain-status.js';
 import type { Dashboard } from '../web/pages/dashboard.js';
-import OverviewPage from '../web/pages/overview.js';
+import WorkPage, { workFilters } from '../web/pages/work.js';
 import WorkDetails from '../web/pages/work-details.js';
 import GuidePage from '../web/pages/guide.js';
-import WorkCard from '../web/components/work-card.js';
 import WorkersPage, { SessionPanel, roleWords, shortShas } from '../web/pages/workers.js';
 import { workersView } from '../web/workers-view.js';
 import { friendlyName } from '../web/fun.js';
@@ -36,7 +35,7 @@ function dashboard(overrides: Partial<Dashboard> = {}, role = 'admin'): Dashboar
   const work = overrides.work ?? board();
   const d: Dashboard = {
     token: 'fixture', work, status: boardStatus(role), error: '', connected: true, lastUpdated: '12:00:00', view: 'work', setView: noop, filter: null, setFilter: noop,
-    shippedFilter: null, setShippedFilter: noop,
+   
     selected: null, setSelected: noop, creating: false, setCreating: noop, busy: false, setBusy: noop, observedAt: NOW, jobs: [], query: '', setQuery: noop,
     operatorAgents: [], operatorAgentsError: null, features: { validation: null, releases: null, automation: null }, events: [], editingRequirements: false, setEditingRequirements: noop,
     sessionEpoch: { current: 0 }, api: async (path: string) => boardApi(path, role), refresh: async () => {},
@@ -45,16 +44,13 @@ function dashboard(overrides: Partial<Dashboard> = {}, role = 'admin'): Dashboar
   // The board GET /api/board serves over the same work (GY-200): the Work page renders its groups.
   return 'board' in overrides ? d : { ...d, board: boardFromStatus(d.work, d.observedAt, d.status) };
 }
-const home = (d = dashboard()) => markup(createElement(OverviewPage, d));
+const home = (d = dashboard()) => markup(createElement(WorkPage, d));
 const itemPage = (key: string, d = dashboard()) => markup(createElement(WorkDetails, { ...d, item: find(key, d.work) }));
-/** The rows a rendered group section holds, by item key. */
-function rowsOf(page: string, group: OpenGroup): string[] {
-  const start = page.indexOf(`data-group-section="${group}"`);
-  if (start < 0) return [];
-  const next = [page.indexOf('data-group-section="', start + 1), page.indexOf('aria-label="Shipped this week"', start)].filter(at => at > 0);
-  return [...page.slice(start, Math.min(...next)).matchAll(/data-row="([^"]+)"/g)].map(match => match[1]);
-}
-const tileCount = (page: string, group: OpenGroup) => Number(new RegExp(`data-tile="${group}"[^>]*>[\\s\\S]*?<strong>(\\d+)</strong>`).exec(page)?.[1]);
+/** The keys of the Work list's rows in GROUP (GY-3600), in page order. */
+const rowsOf = (page: string, group: string) => [...page.matchAll(/data-row="([^"]+)" data-stuck="\w+" class="task-row group-([a-z-]+)[^"]*"/g)].filter(match => match[2] === group).map(match => match[1]);
+/** One row's markup, by item key. */
+const rowOf = (page: string, key: string) => { const at = page.indexOf(`data-row="${key}"`); return at < 0 ? '' : page.slice(at, page.indexOf('</tr>', at)); };
+const filterCount = (page: string, filter: string) => Number(new RegExp(`data-filter="${filter}">[^<]*<span class="count">(\\d+)</span>`).exec(page)?.[1]);
 /** Every element of a rendered tree (the page's own elements, without expanding child components). */
 function elements(node: ReactNode): ReactElement<any>[] {
   if (Array.isArray(node)) return node.flatMap(elements);
@@ -65,7 +61,7 @@ function elements(node: ReactNode): ReactElement<any>[] {
 /** The item page's first screen: everything before "Technical details", without the closed Edit menu. */
 const firstScreen = (html: string) => html.slice(0, html.indexOf('<details class="more-details"')).replace(/<details class="edit-menu">[\s\S]*?<\/details>/, '');
 
-test('unit:ui-one-classification — every summary tile filters the groups the lists render, its count equals the cards in that group, and pressing it shows exactly those cards', () => {
+test('unit:ui-one-classification — every open item has one row under its board group; each filter\'s count equals the rows pressing it shows', () => {
   const work = board();
   const page = home();
   const { byGroup, open } = classify(work, NOW);
@@ -76,25 +72,27 @@ test('unit:ui-one-classification — every summary tile filters the groups the l
   assert.deepEqual(Object.fromEntries(groups.map(group => [group, byGroup[group].map(item => item.key).sort()])), {
     'needs-you': ['GY-20'], blocked: ['GY-17'], moving: ['GY-14', 'GY-15', 'GY-16', 'GY-21', 'GY-22'], 'up-next': ['GY-12', 'GY-13'], backlog: ['GY-11'],
   });
-  // Each tile's count is the number of cards its group renders, and they are the same cards.
-  for (const group of groups) {
-    assert.equal(tileCount(page, group), rowsOf(page, group).length, `${groupLabel[group]}: tile ${tileCount(page, group)} vs ${rowsOf(page, group).length} rows`);
-    assert.deepEqual(rowsOf(page, group).sort(), byGroup[group].map(item => item.key).sort(), groupLabel[group]);
-  }
-  assert.equal(groups.reduce((sum, group) => sum + tileCount(page, group), 0), open, 'the tiles add up to the open items');
-  // Pressing a tile sets the page's filter to that group, and the page then shows exactly its cards.
-  for (const group of groups) {
+  // Every open item has one row, under its board group, and each filter's count is the rows pressing it shows.
+  for (const group of groups) assert.deepEqual(rowsOf(page, group).sort(), byGroup[group].map(item => item.key).sort(), groupLabel[group]);
+  const today = new Date(NOW).setHours(0, 0, 0, 0);
+  const expected: Record<string, string[]> = {
+    'in-flight': [...byGroup['needs-you'], ...byGroup.blocked, ...byGroup.moving].map(item => item.key),
+    stuck: byGroup.blocked.map(item => item.key), 'up-next': byGroup['up-next'].map(item => item.key),
+    'shipped-today': work.filter(item => item.stage === 'done' && !item.closure && !!item.delivery?.mergedAt && mergedAt(item) >= today).map(item => item.key),
+  };
+  for (const filter of workFilters) {
     let chosen: string | null = null;
-    const tree = OverviewPage(dashboard({ setFilter: (value: any) => { chosen = value; } }));
-    const tile = elements(tree).find(element => element.props?.['data-tile'] === group);
-    assert.ok(tile, `a tile for ${group}`);
-    tile.props.onClick();
-    assert.equal(chosen, group, `pressing ${groupLabel[group]} filters to it`);
-    const filtered = home(dashboard({ filter: group }));
-    assert.deepEqual([...filtered.matchAll(/data-row="([^"]+)"/g)].map(match => match[1]).sort(), byGroup[group].map(item => item.key).sort(), `${groupLabel[group]} alone`);
-    assert.match(filtered, new RegExp(`data-tile="${group}"[^>]*aria-pressed="true"|aria-pressed="true"[^>]*data-tile="${group}"`));
-    // The tile row still counts every group, so the numbers never change under the reader.
-    for (const other of groups) assert.equal(tileCount(filtered, other), byGroup[other].length);
+    const tree = WorkPage(dashboard({ setFilter: (value: any) => { chosen = value; } }));
+    const button = elements(tree).find(element => element.props?.['data-filter'] === filter);
+    assert.ok(button, `a filter for ${filter}`);
+    button.props.onClick();
+    assert.equal(chosen, filter, `pressing ${filter} filters to it`);
+    const filtered = home(dashboard({ filter }));
+    assert.deepEqual([...filtered.matchAll(/data-row="([^"]+)"/g)].map(match => match[1]).sort(), expected[filter].sort(), `${filter} alone`);
+    assert.equal(filterCount(page, filter), expected[filter].length, `${filter} counts its rows`);
+    assert.match(filtered, new RegExp(`aria-pressed="true" data-filter="${filter}"`));
+    // The filter row still counts every filter, so the numbers never change under the reader.
+    for (const other of workFilters) assert.equal(filterCount(filtered, other), expected[other].length);
   }
   // Merged work is Done (GY-1979): it has left the board in every delivery state — the top bar's
   // release line carries the commit production serves, its health and the merged changes it does
@@ -118,17 +116,14 @@ test('unit:ui-one-classification — every summary tile filters the groups the l
   assert.equal(releasing.open, open, 'a merge waiting on its release adds no open item');
   const releasingPage = home(dashboard({ work: work.map(item => item.key === 'GY-18' ? awaiting : item) }));
   for (const group of groups) assert.ok(!rowsOf(releasingPage, group).includes('GY-18'), `${group}: no row for the merged item`);
-  // Shipped means live (GY-3452): the footer counts the week's merges the live commit contains,
-  // and the rest as going live; with no live commit named, none is claimed shipped.
-  const footer = (html: string) => /data-shipped="(\d+)"[^>]*>\d+ shipped<\/strong>, <span data-waiting="(\d+)"/.exec(html)!.slice(1).map(Number);
+  // Shipped means live (GY-3452): a merge today is a Shipped today row, Merged until the live commit contains it.
   const mergedToday = { ...awaiting, observation: { ...merged.observation!, mergedAt: new Date(NOW - hour).toISOString() }, delivery: { ...awaiting.delivery!, mergedAt: new Date(NOW - hour).toISOString() } } as Work;
   const pending = work.map(item => item.key === 'GY-18' ? mergedToday : item);
-  const weekMerges = shippedCounts(pending, null, NOW).waiting.length;
-  assert.ok(weekMerges >= 1);
-  assert.deepEqual(footer(home(dashboard({ work: pending }))), [0, weekMerges]);
-  const liveCommit = { commit: 'c'.repeat(40), waiting: ['GY-18'] };
-  assert.deepEqual(footer(home(dashboard({ work: pending, status: { ...dashboard().status, live: liveCommit } }))), [weekMerges - 1, 1]);
-  assert.ok(!rowsOf(home(dashboard({ work: pending })), 'moving').includes('GY-18'), 'the pending merge has no row; it is Done');
+  assert.deepEqual(rowsOf(home(dashboard({ work: pending })), 'shipped'), ['GY-18']);
+  assert.match(rowOf(home(dashboard({ work: pending })), 'GY-18'), /data-col="state">Merged</);
+  assert.match(rowOf(home(dashboard({ work: pending, status: { ...dashboard().status, live: { commit: 'c'.repeat(40), waiting: [] } } })), 'GY-18'), /data-col="state">Shipped</);
+  assert.match(rowOf(home(dashboard({ work: pending, status: { ...dashboard().status, live: { commit: 'c'.repeat(40), waiting: ['GY-18'] } } })), 'GY-18'), /data-col="state">Merged</);
+  assert.ok(!rowsOf(home(dashboard({ work: pending })), 'moving').includes('GY-18'), 'the pending merge has no open row; it is Done');
   // An item nothing is moving is Blocked on the Work page, and its own page carries the same badge.
   const stalled = work.map(item => item.key === 'GY-15' ? { ...item, nextAction: null, lease: null } as Work : item);
   assert.ok(classify(stalled, NOW).byGroup.blocked.some(item => item.key === 'GY-15'));
@@ -147,9 +142,10 @@ test('unit:ui-needs-you-and-timers — a human-only decision is listed once, und
   assert.ok(!rowsOf(page, 'blocked').includes('GY-20'), 'never also Blocked');
   assert.equal(page.split('data-row="GY-20"').length - 1, 1, 'listed once on the page');
   assert.doesNotMatch(page, /Stuck:/, 'nothing on the page is called Stuck any more');
-  const row = markup(createElement(WorkCard, { item: parked, now: NOW, onOpen: noop, group: 'needs-you' }));
-  assert.match(row, new RegExp(parked.humanRequest!.needed), 'the row names the one thing needed');
-  assert.equal((row.match(/<button[^>]*class="decide"[^>]*>Review request<\/button>/g) ?? []).length, 1, 'and the single action to take');
+  // The Needs you strip names the one thing needed, with the single action to take.
+  const need = page.slice(page.indexOf('data-need="GY-20"'), page.indexOf('</div>', page.indexOf('data-need="GY-20"')));
+  assert.ok(need.includes(parked.humanRequest!.needed), 'the strip names the one thing needed');
+  assert.equal((need.match(/<button[^>]*>Review request<\/button>/g) ?? []).length, 1, 'and the single action to take');
   // The item page answers it in place, from the same human-only rule table.
   assert.match(itemPage('GY-20'), /Answer and resume GY-20/);
   // No overdue timer on parked, backlog or not-yet-started work, however long it has waited.
@@ -158,13 +154,14 @@ test('unit:ui-needs-you-and-timers — a human-only decision is listed once, und
     const item = stale(find(key));
     const group = groupOf(item, NOW, humanOnlyIds([item], []))!;
     assert.ok(!timedGroups.has(group), `${key} (${group}) carries no clock`);
-    const html = markup(createElement(WorkCard, { item, now: NOW, onOpen: noop, group }));
+    const html = rowOf(home(dashboard({ work: board().map(entry => entry.key === key ? item : entry) })), key);
+    assert.ok(html, `${key} has a row`);
     assert.doesNotMatch(html, /overdue/, `${key} row`);
     const detail = itemPage(key, dashboard({ work: board().map(entry => entry.key === key ? item : entry) }));
     assert.doesNotMatch(firstScreen(detail), /overdue/, `${key} item page`);
   }
   // Moving work still carries its clock, red past the threshold.
-  assert.match(markup(createElement(WorkCard, { item: stale(find('GY-15')), now: NOW, onOpen: noop })), /overdue/);
+  assert.match(rowOf(home(dashboard({ work: board().map(entry => entry.key === 'GY-15' ? stale(entry) : entry) })), 'GY-15'), /overdue/);
 });
 
 test('unit:ui-item-first-screen — an item page says on its first screen what state it is in, why, which named role acts next, in plain words with no internal jargon and no pull request wording; the guide is under 300 words', () => {
@@ -264,13 +261,12 @@ test('unit:ui-pr-steps — every moving item shows the four states from its gate
   const shipped = prSteps(find('GY-18', work), NOW);
   assert.equal(shipped.current, 'done');
   assert.ok(shipped.steps.every(step => step.state === 'done'));
-  // The Work page row, the phone card (the same element, laid out as a card) and the item page draw the same states.
+  // The Work list row says the current state in plain words (GY-3600), and the item page draws the four states.
   for (const key of ['GY-14', 'GY-15', 'GY-16', 'GY-21', 'GY-22']) {
     const steps = prSteps(find(key, work), NOW);
-    const row = markup(createElement(WorkCard, { item: find(key, work), now: NOW, onOpen: noop }));
-    assert.equal((row.match(/data-step="/g) ?? []).length, 4, `${key} row shows the four states`);
-    assert.match(row, new RegExp(`data-step="${steps.current}" data-state="current"`));
-    assert.ok(row.includes(steps.label), `${key} row labels the current state`);
+    const row = rowOf(home(), key);
+    const words = steps.label.slice(steps.label.indexOf(' · ') + 3);
+    assert.ok(row.includes(words.charAt(0).toUpperCase() + words.slice(1)), `${key} row says ${words}: ${row}`);
     const detail = firstScreen(itemPage(key));
     // GY-3599: the item page shows the pipeline row, one stage current.
     assert.match(detail, /aria-label="Pipeline"/);

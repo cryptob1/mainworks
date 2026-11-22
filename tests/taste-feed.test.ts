@@ -1,18 +1,11 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { withDatabase } from './helpers/postgres.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { isDelivered, type Principal, type Work } from '../src/model.js';
-import OverviewPage from '../web/pages/overview.js';
-import type { Dashboard } from '../web/pages/dashboard.js';
-import { boardFromStatus } from '../src/model/board.js';
-// @ts-expect-error Dependency-free dashboard fixtures (scripts/dashboard-fixture.mjs).
-import { fixtureStatus } from '../scripts/dashboard-fixture.mjs';
 
 // The fixtures file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
@@ -57,18 +50,6 @@ async function delivered(title: string, why: string): Promise<Work> {
   return reload(created.id);
 }
 
-/** The Work page rendered over the snapshot the dashboard polls, as the browser draws it. */
-function page(work: Work[]) {
-  const noop = () => {};
-  const dashboard = { token: 'fixture', work, board: boardFromStatus(work, Date.now(), null), status: fixtureStatus('admin'), error: '', connected: true, lastUpdated: null, view: 'work', setView: noop,
-    filter: null, setFilter: noop, selected: null, setSelected: noop, creating: false, setCreating: noop, busy: false, setBusy: noop, observedAt: Date.now(), jobs: [], query: '', setQuery: noop,
-    operatorAgents: [], operatorAgentsError: null, features: {}, events: [], editingRequirements: false, setEditingRequirements: noop, sessionEpoch: { current: 0 }, api: async () => ({}),
-    refresh: async () => {}, action: async () => {}, setError: noop, signOut: noop } as unknown as Dashboard;
-  return renderToStaticMarkup(createElement(OverviewPage, dashboard));
-}
-/** The Taste section's cards, as `data-taste-card` marks them. */
-const cards = (html: string) => [...html.matchAll(/data-taste-card="([^"]+)"/g)].map(match => match[1]);
-
 before(async () => {
   store = await withDatabase('taste-feed'); await store.init();
   engine = new Engine(store, 300, repository);
@@ -78,19 +59,13 @@ before(async () => {
 });
 after(async () => { http?.close(); await store?.close(); });
 
-test('integration:taste-looks-good — a delivered item shows in Taste with its why and evidence, and the taste records without touching the delivery', async () => {
+test('integration:taste-looks-good — a delivered item’s snapshot summary carries its why, and the taste records without touching the delivery', async () => {
   const work = await delivered('A shipped thing', 'The delivery’s why sentence.');
   assert.ok(isDelivered(work));
   // The served snapshot carries the summary a delivery becomes, its why sentence beside the marker…
   const served = (await snapshot()).find(item => item.id === work.id)!;
   assert.equal((served as any).summary, true);
   assert.equal((served as any).plainSummary, 'The delivery’s why sentence.');
-  // …and the Work page shows its card with both, in the folded Taste section (the home screen keeps its word budget).
-  const html = page(await snapshot());
-  assert.match(html, /<details[^>]*class="panel taste-feed"[^>]*data-taste-section/);
-  assert.deepEqual(cards(html), [work.key]);
-  assert.match(html, /The delivery’s why sentence\./);
-  assert.match(html, /e2e:fixture<\/abbr> · 1 executed/);
   // Looks good records the taste.
   const tasted = await ok(operator, `work/${work.id}/taste`, { verdict: 'good' }) as Work;
   assert.equal(tasted.taste?.verdict, 'good');
@@ -102,10 +77,9 @@ test('integration:taste-looks-good — a delivered item shows in Taste with its 
   assert.equal(afterTaste.delivery?.mergedAt, work.delivery?.mergedAt);
   assert.ok(isDelivered(afterTaste));
   assert.equal((await store.pool.query('SELECT actor, kind FROM events WHERE work_id=$1 AND kind=\'taste\'', [work.id])).rows[0]?.actor, operator.id);
-  // The card leaves the feed: the snapshot's summary carries the taste and the page shows none.
+  // The snapshot's summary carries the taste.
   const servedAfter = (await snapshot()).find(item => item.id === work.id)!;
   assert.equal((servedAfter as any).taste?.verdict, 'good');
-  assert.deepEqual(cards(page(await snapshot())), []);
   // A taste is once.
   assert.equal((await call(operator, `work/${work.id}/taste`, { verdict: 'good' })).status, 409);
 });
@@ -138,7 +112,6 @@ test('integration:taste-send-back — the note files a follow-up whose reason it
   // And nothing waits: the follow-up sits in the backlog like any filed item.
   const board = await ok(operator, 'board');
   assert.ok(board.groups.backlog.some((entry: any) => entry.key === followUpKey));
-  assert.deepEqual(cards(page(await snapshot())), [], 'both deliveries are tasted, so the feed is empty');
 });
 
 test('integration:taste-refuses-what-has-not-shipped — Taste tastes delivered work only', async () => {

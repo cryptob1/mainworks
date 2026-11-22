@@ -9,17 +9,14 @@ import { defaultChoices, humanDecisionKinds, openHumanRequests } from '../src/mo
 import { humanRequestSchema } from '../src/model-boundary/human-request.js';
 import { parkInput } from '../src/cli/park-command.js';
 import type { Dashboard } from '../web/pages/dashboard.js';
-import OverviewPage from '../web/pages/overview.js';
+import WorkPage from '../web/pages/work.js';
 import HomePage from '../web/pages/home.js';
 import WorkDetails from '../web/pages/work-details.js';
 import HumanRequestsPage from '../web/pages/human-requests.js';
-import ShippedPage from '../web/pages/shipped.js';
-import NowPage from '../web/pages/now.js';
 import WorkersPage from '../web/pages/workers.js';
 import MasterPage from '../web/pages/master.js';
 import SetupPage from '../web/pages/setup.js';
 import TopBar, { MainTopBar } from '../web/components/top-bar.js';
-import WorkCard from '../web/components/work-card.js';
 import CreateWork from '../web/pages/create-work.js';
 
 const BANNED_BARE_LABELS = [
@@ -52,7 +49,7 @@ function makeDashboard(overrides: Partial<Dashboard> = {}): Dashboard {
   const status = overrides.status ?? boardStatus('admin');
   const d: Dashboard = {
     token: 'fixture', work, status, error: '', connected: true, lastUpdated: '12:00:00', view: 'work', setView: noop,
-    filter: null, setFilter: noop, shippedFilter: null, setShippedFilter: noop, selected: null, setSelected: noop,
+    filter: null, setFilter: noop, selected: null, setSelected: noop,
     creating: false, setCreating: noop, busy: false, setBusy: noop, observedAt: NOW, jobs: [], query: '', setQuery: noop,
     operatorAgents: [], operatorAgentsError: null, features: { validation: null, releases: null, automation: null },
     events: [], editingRequirements: false, setEditingRequirements: noop, sessionEpoch: { current: 0 },
@@ -97,14 +94,11 @@ test('unit:buttons-say-verb-and-object — no rendered page has a banned bare la
     ['MainTopBar', markup(createElement(MainTopBar, d))],
     ['TopBar', markup(createElement(TopBar, d))],
     ['HomePage', markup(createElement(HomePage, d))],
-    ['OverviewPage', markup(createElement(OverviewPage, d))],
+    ['WorkPage', markup(createElement(WorkPage, d))],
     ['HumanRequestsPage', markup(createElement(HumanRequestsPage, d))],
     ['WorkDetails (parked default)', markup(createElement(WorkDetails, { ...d, item: work.find(item => item.key === 'GY-20')! }))],
     ['WorkDetails (parked custom)', markup(createElement(WorkDetails, { ...d, item: customParked }))],
     ['WorkDetails (moving)', markup(createElement(WorkDetails, { ...d, item: work.find(item => item.key === 'GY-16')! }))],
-    ['WorkCard (needs-you)', markup(createElement(WorkCard, { item: work.find(item => item.key === 'GY-20')!, now: NOW, onOpen: noop, group: 'needs-you' }))],
-    ['ShippedPage', markup(createElement(ShippedPage, d))],
-    ['NowPage', markup(createElement(NowPage, d))],
     ['WorkersPage', markup(createElement(WorkersPage, d))],
     ['MasterPage', markup(createElement(MasterPage, d))],
     ['SetupPage', markup(createElement(SetupPage, { status: d.status, api: d.api, setView: noop }))],

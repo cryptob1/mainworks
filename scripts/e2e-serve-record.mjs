@@ -14,9 +14,10 @@ import { join } from 'node:path';
 const root = await readFile('.graphyard/e2e-serve.json', 'utf8').then(text => JSON.parse(text).delivery?.root ?? '.', () => '.');
 const file = join(root, '.graphyard', 'served.json'), [argument] = process.argv.slice(2);
 
+// A remote shard's checkout belongs to the host user, and a case's command step runs without the shard's git settings.
 const mainTip = () => {
   for (const ref of ['refs/remotes/origin/main', 'refs/heads/main', 'HEAD']) {
-    try { return execFileSync('git', ['-C', root, 'rev-parse', '--verify', ref], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { /* the ref is absent here */ }
+    try { return execFileSync('git', ['-c', 'safe.directory=*', '-C', root, 'rev-parse', '--verify', ref], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { /* the ref is absent here */ }
   }
   throw new Error(`${root} has no main commit`);
 };

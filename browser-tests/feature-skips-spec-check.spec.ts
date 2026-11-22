@@ -36,7 +36,7 @@ test('integration:feature-skips-spec-check — legacy feature reports have no da
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.getByRole('heading', { name: 'Work', exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: /Export flow.*GY-20/ }).click();
+  await page.getByRole('link', { name: /Export flow.*GY-20/ }).click();
   const panel = page.locator('section[aria-label="Spec check"]');
   await expect(panel).toHaveCount(0);
 });
@@ -49,7 +49,7 @@ test('integration:feature-skips-spec-check — bugs show no obsolete panel', asy
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.getByRole('heading', { name: 'Work', exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: /Export 500s.*GY-21/ }).click();
+  await page.getByRole('link', { name: /Export 500s.*GY-21/ }).click();
   await expect(page.locator('article.item-page [data-lead-sentence]')).toHaveText('The export button 500s.');
   await expect(page.locator('section[aria-label="Spec check"]')).toHaveCount(0);
 });

@@ -53,8 +53,9 @@ test('e2e:owner-relayed-answer — owner direction relayed by the master is reco
     await page.goto(`${url}/?sign-in`);
     await page.getByLabel('Access token').fill(token(owner));
     await page.getByRole('button', { name: 'Open control plane' }).click();
-    await page.getByRole('button', { name: /Needs you/ }).click();
-    await page.getByRole('button', { name: /Every request and answer/ }).click();
+    // GY-3600: with no request open there is no Needs you strip; every request and answer has its own address.
+    await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible();
+    await page.evaluate(() => { location.hash = 'needs-you'; });
     await expect(page.getByText('relayed by master from the owner: "Not yet"', { exact: true })).toBeVisible();
     await expect(page.getByText('relayed by master from the owner: "It printed cleanly"', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Reverse answer', exact: true }).click();
