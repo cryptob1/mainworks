@@ -26,6 +26,10 @@ export const countdown = (iso: string, now: number) => { const left = Date.parse
 export const whenText = (iso: string, now: number) => `${localTime(iso)} (${countdown(iso, now)})`;
 /** A day alone, e.g. "Oct 3". */
 export const monthDay = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+/** A clock time alone in the viewer's own time zone, e.g. "10:00 PM". */
+export const clockTime = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+/** When a held account is back, e.g. "back Nov 23 at 10:00 PM". */
+export const backAt = (iso: string) => `back ${monthDay(iso)} at ${clockTime(iso)}`;
 
 /** A provider limit in a raw failure: an HTTP 429, a rate or usage limit, a spent quota. */
 export const limitPattern = /\b429\b|rate.?limit|usage.?limit|quota|too many requests|resource.?exhausted/i;
@@ -101,7 +105,7 @@ export function accountStatus(account: FleetAccountView, fleet: Pick<FleetView, 
   return status('idle', `ready for ${account.roles.map(entry => entry.role).join(', ')}`);
 }
 
-export const roleLabels: Record<string, string> = { master: 'Master', worker: 'Workers', reviewer: 'Reviewers', producer: 'Producers', diagnostician: 'Diagnosticians' };
+export const roleLabels: Record<string, string> = { master: 'Master', worker: 'Workers', reviewer: 'Reviewers', producer: 'Producers', diagnostician: 'Diagnosticians', caretaker: 'Caretaker' };
 
 export interface RoleLaunch {
   role: string; canLaunch: boolean;
