@@ -61,14 +61,14 @@ export function fetchRefusalLine(repository: string, baseBranch: string, error: 
  * the failing step's for a case, the trial log's for the build or a test file); the trial is bounded
  * by `timeoutMs`, the gate's own clock, never the merge-trial deadline (GY-3142).
  */
-async function trialFailures(reads: MergeWriterReads, commit: string, checks: readonly string[], files: readonly string[], timeoutMs: number, trusted: () => string | null = () => null, skipFaults = false, signal?: AbortSignal): Promise<{ failed: string[]; details: Record<string, string>; outputs: Record<string, string[]> }> {
+async function trialFailures(reads: MergeWriterReads, commit: string, checks: readonly string[], files: readonly string[], timeoutMs: number, trusted: () => string | null = () => null, skipFaults = false, signal?: AbortSignal, onStep?: (step: string) => void): Promise<{ failed: string[]; details: Record<string, string>; outputs: Record<string, string[]> }> {
   const cases = checks.filter(check => check.startsWith('e2e:'));
   const tests = checks.includes('affected') ? files : checks.filter(check => check.startsWith('test:')).map(check => check.slice(5));
   const environments = await gateEnvironments(reads, commit, cases, trusted());
   const runCases = cases.filter(proof => !(proof in environments.unknown) && !environments.untrusted.includes(proof));
   const trial = (origins: Record<string, string>, skipped: readonly string[]) => {
     const proofs = runCases.filter(proof => !skipped.includes(proof));
-    return reads.trial(commit, tests, { key: gateKey, criteria: proofs.length ? [{ id: 'AC-1', text: 'The batch gate cases pass', proofs }] as Work['criteria'] : [], ...(Object.keys(origins).length ? { environments: origins } : {}) }, undefined, undefined, undefined, undefined, undefined, signal, timeoutMs);
+    return reads.trial(commit, tests, { key: gateKey, criteria: proofs.length ? [{ id: 'AC-1', text: 'The batch gate cases pass', proofs }] as Work['criteria'] : [], ...(Object.keys(origins).length ? { environments: origins } : {}) }, undefined, onStep, undefined, undefined, undefined, signal, timeoutMs);
   };
   // GY-3296: each named environment is provisioned around the one trial, its URL handed to its cases.
   // An environment wait or fault throws for the gate, which retries; the diagnostics (`skipFaults`)
@@ -213,7 +213,7 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
     core: async commit => {
       try { return [...new Set([featureMapCaseId, ...(JSON.parse(await git(['show', `${commit}:graphyard.json`])).gate?.core ?? [])])]; } catch { return [featureMapCaseId]; }
     },
-    run: (commit, checks, files, timeoutMs, signal) => trialChecks(reads, commit, checks, files, timeoutMs, trusted, false, signal),
+    run: (commit, checks, files, timeoutMs, signal, onStep) => trialChecks(reads, commit, checks, files, timeoutMs, trusted, false, signal, onStep),
     revert: async (landing, gated, check) => {
       // Merges may have landed while the gate ran: the revert goes onto main as it stands now.
       const tip = (await reads.fetch()).toLowerCase();

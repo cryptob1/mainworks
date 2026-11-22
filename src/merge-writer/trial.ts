@@ -27,7 +27,7 @@ import { cachedPasses, commitDependencies, dependencyKey, moduleFile, recordPass
 import { HostDroppedError, readShardHosts, shardSshSession, type ShardSshSession, runShardsOnHosts, realFreeCores, recordRemoteShardRun, remoteShardSession, shardHosts, splitLocalOnlyTests, trialImageHasBrowser, underHeatLimit, type HostReading, type PlacedHost } from './remote-shards.js';
 import { repositoryTrialImage, trialDockerfile, TrialRepositoryImageError } from './repository-trial-image.js';
 import { addressPoolsSpent, checkServiceVariables, dockerEnvironment, previewNetworkCount, startCheckServices, tcpAcceptProbe, type CheckServices } from '../compose-preview.js';
-import { diskFloorBytes, gateTrialKey, heatWaitSeconds, TrialHeatError, trialContainerFault, trialLoad, trialShardLanes, trialStartOwner } from './trial-load.js';
+import { diskFloorBytes, gateTrialKey, trialFileTimeoutMs, heatWaitSeconds, TrialHeatError, trialContainerFault, trialLoad, trialShardLanes, trialStartOwner } from './trial-load.js';
 import { nestedSandboxDenied, trialAppArmorFix } from './trial-apparmor.js';
 
 /** One git call in the coordinator's object store: the arguments after `git -C <root>`, the child's stdout. */
@@ -1476,7 +1476,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       const group = shards[index]!, entries: string[] = [];
       try {
         const list = join(checkout.directory, `tests-${index + 1}.txt`), records = join(checkout.directory, `tests-${index + 1}.jsonl`);
-        const argv = (list: string, records: string) => [...check.argv.slice(1), ...input.reporter?.args ?? [], '--files-from', list, '--durations', records, `--test-concurrency=${breadth}`, '--file-timeout=300000'];
+        const argv = (list: string, records: string) => [...check.argv.slice(1), ...input.reporter?.args ?? [], '--files-from', list, '--durations', records, `--test-concurrency=${breadth}`, `--file-timeout=${trialFileTimeoutMs}`];
         const shardAt = now();
         let tests: Ended, recordText: string;
         try {
