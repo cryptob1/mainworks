@@ -9,6 +9,7 @@ import { extname, isAbsolute, join } from 'node:path';
 import { z } from 'zod';
 import type { ChildRun } from './child-runner.js';
 import { blockingFindings, findingLocation } from './review-cap.js';
+import { validateAssertionRulings } from './model/changed-assertions.js';
 
 /** The file, in the session's GH_CONFIG_DIR, that binds a reviewer session to its launch. */
 export const reviewBindingFile = 'review-binding.json';
@@ -29,6 +30,8 @@ export const reviewBindingSchema = z.object({
   head: sha.optional(), baseTip: sha.optional(), verdictToken: verdictTokenSchema.optional(),
   /** A control-plane re-review (GY-1988): the earlier head this round deltas from, and the paths its findings named — the session's own launch context for the unchanged-code check. */
   previousHead: sha.optional(), earlierPaths: z.array(z.string().min(1).max(1000)).max(10).optional(),
+  /** GY-3635: removed or modified assertion lines in existing tests/cases that an APPROVE verdict must rule on. */
+  changedAssertions: z.array(z.object({ path: z.string().min(1).max(1000), line: z.number().int().positive(), before: z.string().max(1000), after: z.string().max(1000).optional() })).max(200).optional(),
 // Not strict (GY-2933): the loop's release writes the binding and the checkout's CLI reads it, so a field one version still writes and the other dropped is ignored, not refused.
 }).refine(binding => binding.mode !== 'control-plane' || (!!binding.head && !!binding.baseTip && !!binding.verdictToken), 'A control-plane binding carries head, baseTip and verdictToken')
   .refine(binding => binding.mode === 'control-plane' || (binding.head === undefined && binding.baseTip === undefined && binding.verdictToken === undefined), 'Only a control-plane binding carries head, baseTip or verdictToken')
@@ -156,6 +159,10 @@ export async function postReview(input: { event: string | undefined; body: strin
       const diff = await Promise.resolve().then(() => dependencies.run('git', ['diff', '-U0', bound.previousHead!, bound.head!])).then(String, (error: unknown) => refuse(`git diff -U0 ${bound.previousHead} ${bound.head} failed (${error instanceof Error ? error.message : String(error)}), so this change request cannot be checked against what changed since the earlier head; run git fetch in the checkout and post again`));
       const unchanged = unchangedCodeFindings(body, bound, diff);
       if (unchanged.length) refuse(`${unchanged.map(finding => `"${finding}"`).join('; ')} name${unchanged.length === 1 ? 's' : ''} code unchanged since the earlier head ${bound.previousHead} this round deltas from, and no earlier finding named ${unchanged.length === 1 ? 'its path' : 'their paths'}; this round judges only what changed: move it to a "Nit: PATH:LINE — FINDING" line, or name the acceptance criterion (AC-N) it leaves unmet`);
+    }
+    if (event === 'APPROVE' && bound.changedAssertions?.length) {
+      const assertionRefusal = validateAssertionRulings(body, bound.changedAssertions);
+      if (assertionRefusal) refuse(assertionRefusal);
     }
     const base = input.environment.GRAPHYARD_URL;
     if (!base) refuse('GRAPHYARD_URL is unset; a control-plane reviewer session is launched with the control plane\'s address');
