@@ -41,6 +41,8 @@ export interface RuntimeAdapter {
   recipe?: LaunchRecipe;
   /** `optional`: flags passed only when the installed runtime's `BEFORE --help` lists them (acceptedFlags). */
   headless?: { program?: string; before: string[]; flags: string[]; drop?: string[]; optional?: string[] };
+  /** GY-3632: the words that make the one-task form continue runtime session `session`, placed before the request. */
+  continue?: (session: string) => string[];
   request?: (reference: string) => string;
   role?: (reference: string) => string;
   screen?: RegExp;
@@ -166,6 +168,7 @@ const builtInAdapters = {
   claude: {
     // `--output-format json`: the run ends with one `result` object carrying its reply and the tokens it used by model (GY-3289).
     headless: { before: [], flags: ['-p', '--output-format', 'json'] },
+    continue: session => ['--resume', session],
     recipe: { args: ['--permission-mode', 'bypassPermissions'], environment: {}, equivalents: ['--dangerously-skip-permissions'], trust: trustClaudeFolder, verify: verifyClaudeTrust, prompts: 'tool-approval prompts on first use of each command class, and the folder-trust dialog in a folder it has not been trusted in',
       tradeoff: 'Claude Code stops classifying commands for this session and trusts its working directory without asking wherever that loads none of the repository\'s own Claude settings; everything the agent proposes runs without asking.' },
     request: reference => reference,
@@ -182,6 +185,7 @@ const builtInAdapters = {
   codex: {
     // `--json`: events on standard output, the last a `turn.completed` with the tokens the turn used (GY-3289).
     headless: { before: ['exec'], flags: ['--skip-git-repo-check', '--json'], drop: ['--ask-for-approval', '-a'] },
+    continue: session => ['resume', session],
     // No Codex flag skips its "Trust this folder?" dialog in a folder its config does not list, so
     // the folder is recorded trusted first (trustCodexFolder, GY-1306).
     recipe: { args: ['--ask-for-approval', 'never', '--sandbox', 'workspace-write'], environment: {}, equivalents: ['--dangerously-bypass-approvals-and-sandbox', '--yolo'], settable: ['--sandbox'], aliases: { '-a': '--ask-for-approval', '-s': '--sandbox' }, config: { flags: ['-c', '--config'], pins: { approval_policy: 'never' } }, trust: trustCodexFolder, verify: verifyCodexTrust, prompts: 'directory-trust and per-command approval prompts',
@@ -213,6 +217,7 @@ const builtInAdapters = {
     // account's XDG_DATA_HOME, so the run fell back to the free model and stopped at once. An
     // OpenCode without it rejects the flag, so it is passed only where `run --help` lists it (GY-3425).
     headless: { before: ['run'], flags: ['--format', 'json'], optional: ['--standalone'] },
+    continue: session => ['--session', session],
     // GY-3592: the interactive launch needs it too, or the pane runs on the service's login and its free model.
     recipe: { args: ['--standalone'], environment: { OPENCODE_PERMISSION: '{"edit":"allow","bash":"allow","webfetch":"allow"}' }, permits: { OPENCODE_PERMISSION: asksNothing }, prompts: 'edit, bash, and webfetch permission prompts',
       tradeoff: 'opencode edits files, runs shell commands, and fetches URLs without asking.' },
