@@ -7,13 +7,18 @@ import { classify, summarySentence } from '../groups';
 import { masterOwes } from './master';
 import HomeBrief from '../components/home-brief';
 import { HomeStatus } from '../components/home';
+import { hasMergedWork } from '../../src/model/first-run';
+import FirstRunPage from './first-run';
 
 /**
  * The Home place (GY-3598) answers "is it OK" (GY-3601): the status line and
  * incident cards first, then what needs you, what changed since this person last
  * looked, active goals and a box to the Lead (GY-3671), and the summary.
+ * An install with no merged work opens on the four-step first-run page instead (GY-3603).
  */
-export default function HomePage({ work, board, status, observedAt, api, setView, setSelected, setCreating }: Dashboard) {
+export default function HomePage(dashboard: Dashboard) {
+  if (!hasMergedWork(dashboard.work)) return <FirstRunPage {...dashboard}/>;
+  const { work, board, status, observedAt, api, setView, setSelected, setCreating } = dashboard;
   const now = Number.isNaN(observedAt) ? Date.now() : observedAt;
   const requests = [...(status?.humanOnly ?? openHumanOnly(work.map(item => ({ work: item })), now))]
     .sort((a, b) => b.waitedMs - a.waitedMs);

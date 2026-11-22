@@ -10,6 +10,7 @@ import type { BuildIdentity } from '../protocol-version.js';
 import type { ProductionWatch } from '../production-watch.js';
 import type { Principal } from '../model.js';
 import type { Responder } from '../closed-question.js';
+import type { RawOpenIssue } from '../model/first-run.js';
 
 /** Everything the assembled control plane owns, handed to every route. */
 export interface Services {
@@ -33,6 +34,8 @@ export interface Services {
   clock?: () => number;
   /** GY-3294: the port this install is published on, for team access (routes/team-access.ts). */
   teamAccess?: { port: string | null };
+  /** GY-3603: optional open-issues reader for tests/embedders; defaults to `gh api`. */
+  listOpenIssues?: (repository: string) => Promise<RawOpenIssue[]>;
 }
 
 /** The response was written by the handler itself (raw bytes, or a status other than 200). */

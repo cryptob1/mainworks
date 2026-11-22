@@ -377,7 +377,7 @@ export function humanSignIn(services: Services) {
  * ran with (the seeded proof-grant roster, deciding whether an over-limit roster warns or
  * refuses), the environment the limits are read from, the deployment watch, and the responder.
  */
-export interface ServerOptions { knownPrincipals?: readonly string[]; env?: NodeJS.ProcessEnv; production?: ProductionWatch | null; responder?: Responder | null; clock?: () => number }
+export interface ServerOptions { knownPrincipals?: readonly string[]; env?: NodeJS.ProcessEnv; production?: ProductionWatch | null; responder?: Responder | null; clock?: () => number; listOpenIssues?: Services['listOpenIssues'] }
 
 /** Wire the engine, its integrations and the principals into the shared services. */
 export function assembleServices(engine: Engine, credentials: Credential[], options: ServerOptions = {}): Services {
@@ -397,6 +397,7 @@ export function assembleServices(engine: Engine, credentials: Credential[], opti
   engine.principals = credentials.map(({ token, ...actor }) => actor);
   return { signinClaim: signinClaimFromEnv(env, credentials), engine, repository, principals, limits: delegationLimits.limits, delegationLimits, build: buildIdentity(env), production: options.production ?? null, validation, delivery, operatorAgents, agentRegistry: new AgentRegistry(engine.store), responder: options.responder !== undefined ? options.responder : responderFromEnv(env),
     ...(options.clock ? { clock: options.clock } : {}),
+    ...(options.listOpenIssues ? { listOpenIssues: options.listOpenIssues } : {}),
     // GY-3294: the port the dashboard is published on, which its tailnet address and invites name.
     teamAccess: { port: env.GRAPHYARD_LOCAL_VIEW_PORT || null } };
 }

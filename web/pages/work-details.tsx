@@ -204,7 +204,7 @@ export function PreviewPanel({ preview }: { preview: ItemPreview }) {
  * provider, next action, agent requests, evidence — is in one collapsed "Technical details" section
  * under Details, and policy changes are in the admin Edit menu.
  */
-export default function WorkDetails({ item, work, status, token, observedAt, jobs, events, busy, editingRequirements, setEditingRequirements, action, api, refresh, setSelected, setView, sessionEpoch, signOut }: Dashboard & { item: Work }) {
+export default function WorkDetails({ item, work, status, token, observedAt, jobs, events, busy, editingRequirements, setEditingRequirements, action, api, refresh, setSelected, setView, sessionEpoch, signOut, embedded, defaultTab }: Dashboard & { item: Work; embedded?: boolean; defaultTab?: typeof tabs[number] }) {
   const now = Number.isNaN(observedAt) ? Date.now() : observedAt;
   const plain = plainStatus(item, now);
   // The recorded blocker is written once, under Blocker as recorded (GY-1739): any other line that
@@ -229,12 +229,13 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
   // Needs you page renders: it is answered there, in this session, never on a command line.
   const waitingOnYou: HumanRequestRow[] = (status?.humanOnly ?? openHumanOnly([{ work: item }], now)).filter((row: HumanRequestRow) => row.id === item.id);
   const actions = item.actionQueue?.actions ?? [];
-  // Escape returns to the page the item was opened from, unless the reader is typing.
+  // Escape returns to the page the item was opened from, unless the reader is typing or this page is embedded in first run.
   useEffect(() => {
+    if (embedded) return;
     const keydown = (event: KeyboardEvent) => { if (event.key === 'Escape' && !(event.target as HTMLElement | null)?.closest?.('input, textarea, select, [role="dialog"]')) setSelected(null); };
     document.addEventListener('keydown', keydown);
     return () => document.removeEventListener('keydown', keydown);
-  }, [setSelected]);
+  }, [setSelected, embedded]);
   // The Work page's own classification of this item, so its badge is the tile that led here. A
   // merged item is off the board (Done, GY-1979) and its page still renders, badge Shipped.
   const group = groupWithin(item, work, now, status?.humanOnly, release);
@@ -273,7 +274,7 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
   const timings = useEvidence<TaskTimings>(api, `work/${encodeURIComponent(item.id)}/timings`, item.revision);
   const files = useEvidence<{ files: ChangedFile[] }>(api, item.candidate ? `work/${encodeURIComponent(item.id)}/diff` : null, item.candidate?.sha)?.files ?? (item.candidate ? null : []);
   const costs = useEvidence<CostSummary & { builder?: { model: string; accountModel: string | null; differs: boolean } | null }>(api, `costs?work=${encodeURIComponent(item.key)}`, item.revision);
-  const [tab, setTab] = useState<typeof tabs[number]>(tabs[0]);
+  const [tab, setTab] = useState<typeof tabs[number]>(defaultTab ?? tabs[0]);
   const trial = timings?.trial && timings.trial.head === item.candidate?.sha ? timings.trial : null;
   // The trial of this head failed when a refusal says so (a hold such as 'trial passed ahead of review' is not a failure, GY-1524) or a step of its verdict failed.
   const refusal = trialFailedGround(item) ? item.mergeLedger!.refusal!.reason : null;
@@ -301,7 +302,7 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
   const add = files?.reduce((sum, file) => sum + file.additions, 0), del = files?.reduce((sum, file) => sum + file.deletions, 0);
   const panel = (name: typeof tabs[number], content: React.ReactNode) => <div role="tabpanel" aria-label={name} className="task-panel" hidden={tab !== name}>{content}</div>;
   return <article className="item-page" aria-label={item.title}>
-    <button type="button" className="text-button back" autoFocus onClick={() => setSelected(null)}>← Back</button>
+    {!embedded && <button type="button" className="text-button back" autoFocus onClick={() => setSelected(null)}>← Back</button>}
     <div className="task-header">
       <div className="page-heading">
         <h1 data-title>{item.title}</h1>

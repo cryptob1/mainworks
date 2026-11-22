@@ -1,0 +1,11 @@
+{
+  "id": "first-run",
+  "title": "First run takes a new person from connecting a repository to a first merged PR in four steps",
+  "description": "A real browser on the built dashboard walks a seeded fresh install through steps 1 to 4 with a stub Builder account: step 1 repository connection, step 2 live model check failure and pass showing the registered model id, step 3 picking one of up to three small open issues to create a task with an e2e: proof criterion and dispatch it, step 4 showing the task's pipeline and live session, and when the stub Builder completes and merges it, the shipped toast with the time from start to merge and the switch to Home.",
+  "tags": ["dashboard"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "first-run four steps to first merged PR", "run": "npm run test:browser -- browser-tests/first-run.spec.ts", "timeoutSeconds": 420 }
+  ]
+}

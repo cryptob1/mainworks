@@ -34,6 +34,7 @@ export type Section = typeof sections[number]['id'];
 export const oldRouteRedirects: Record<string, string> = {
   master: 'lead',
   settings: 'agents',
+  start: 'home',
 };
 
 /**
