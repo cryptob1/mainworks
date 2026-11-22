@@ -15,7 +15,6 @@ import { useGlide } from '../glide';
 import { EmptyState } from '../components/page-layout';
 import { WhereItRuns } from '../components/where-it-runs';
 import { pipelineSentence, type PipelineTime } from '../../src/pipeline-speed';
-import { HomeBrief, HomeStatus } from '../components/home';
 
 /**
  * The Work page with its motion (GY-3272 AC-4b): on every render, a row that changed group is
@@ -27,11 +26,12 @@ export function WorkPage(dashboard: Dashboard) {
   return OverviewPage(dashboard);
 }
 
-/** GY-3527: one line on how long an item takes; a warning names the item to open. Merges an hour lead Home's status line (GY-3601). */
+/** GY-3527: the page's headline, merges an hour over the last 24 hours, and under it one line on how long an item takes; a warning names the item to open. */
 function Speed({ time, now, open }: { time?: PipelineTime | null; now: number; open: (id: string) => void }) {
   if (!time) return null;
   const line = pipelineSentence(time, now);
   return <div className="speed">
+    <p className="speed-figure" data-speed-figure>{line.figure}</p>
     <p className="speed-line" data-speed-line={line.warning ? 'warning' : 'calm'}>
       {line.text}{line.open && <> <button type="button" className="text-button" onClick={() => open(line.open!)}>Open →</button></>}
     </p>
@@ -78,12 +78,10 @@ export default function OverviewPage({ work, board, status, query, setQuery, set
   </section>;
   const admin = status?.actor?.role === 'admin';
   return <>
-    <HomeStatus work={work} status={status} now={now} setView={setView} setSelected={setSelected}/>
     <Speed time={status?.pipelineTime} now={now} open={setSelected}/>
     <div className="page-heading"><div><h1>Work</h1><p className="page-fact">{board ? summarySentence(counts) : 'Reading the board…'}</p><BuildLine/></div>
       <div className="page-actions"><label className="search"><input aria-label="Search work" placeholder="Search by key or title" value={query} onChange={e => setQuery(e.target.value)}/></label>
         {admin && <button type="button" onClick={() => setCreating(true)}>＋ New work item</button>}</div></div>
-    <HomeBrief work={work} status={status} now={now} api={api} setView={setView} setSelected={setSelected}/>
     {status?.jobs?.length > 0 && <div className="notice danger">{status.jobs.length} integration update(s) failed: {status.jobs[0].error}</div>}
     {work.length === 0 ? <>{section('needs-you', 'only you can decide these')}<EmptyState title="The yard is quiet. File a goal and wake the crew." action={admin && <button type="button" onClick={() => setCreating(true)}>Create the first work item</button>}>Create a work item, say what must be true when it is done, and an agent will pick it up.</EmptyState></> : <>
       <div role="group" aria-label="Filter by group" className="tiles">{groups.map(group => <button type="button" key={group} className={`tile group-${group}${only === group ? ' selected' : ''}${counts[group] === 0 ? ' empty-tile' : ''}`} aria-pressed={only === group} data-tile={group} onClick={() => setOnly(only === group ? null : group)}>

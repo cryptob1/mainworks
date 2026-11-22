@@ -50,8 +50,11 @@ async function visit(page: Page, first = false) {
     await page.goto('/?sign-in');
     await page.getByLabel('Access token').fill(token);
     await page.getByRole('button', { name: 'Open control plane' }).click();
+    await expect(page.locator('header.main-top-bar')).toBeVisible();
+    await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Home(\s+\d+)?$/ }).click();
   } else await page.reload();
-  await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible();
+  await expect(page).toHaveURL(/#home$/);
+  await expect(page.getByRole('heading', { name: 'Home', exact: true, level: 1 })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Since you last looked' })).toBeVisible();
 }
 const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
