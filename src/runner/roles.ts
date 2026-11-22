@@ -163,7 +163,7 @@ export function agySmoke(account: Pick<FleetLaunchAccount, 'name' | 'home' | 'fl
   rmSync(home, { recursive: true, force: true });
   mkdirSync(home);
   if (account.home) { mkdirSync(join(home, '.gemini')); symlinkSync(resolve(account.home), join(home, '.gemini', 'antigravity-cli')); }
-  const model = withModel(account.kind, [], account.fleet.contract, account.fleet.modelId);
+  const model = withModel('agy', [], account.fleet.contract, account.fleet.modelId);
   return new Promise<SmokeResult>(settle => {
     let output = '';
     const child = spawn(command, [...model, '--print', 'Reply with the single word OK.'], { cwd: options.cwd ?? home, env: { ...process.env, ...account.fleet.contract.environment, HOME: home }, stdio: ['ignore', 'pipe', 'pipe'] });
