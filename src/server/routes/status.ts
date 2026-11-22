@@ -1,3 +1,4 @@
+import { newestCaretakerReport } from './caretaker.js';
 import { pendingWorkerVerifications } from '../worker-verification-queue.js';
 import { readWorkReplay } from '../work-replay.js';
 import { z } from 'zod';
@@ -108,6 +109,8 @@ export const statusRoutes = defineRoutes('status', [
         hosts: loopRegistry(engine).live(observedAt)?.hosts ?? [],
         // GY-3438: every live agent session's CPU and memory use against its caps, for the Workers page.
         sessions: loopRegistry(engine).live(observedAt)?.sessions ?? [],
+        // GY-3593: the caretaker's newest report; Home shows its "needs the owner" lines under Needs you.
+        caretaker: actor.role === 'operator-agent' || actor.role === 'reporter' ? null : await newestCaretakerReport(engine.store.pool),
         // The installation facts the master and doctor raise as attention: capacity variables
         // that no longer cover the roster, what production serves against the base branch, and
         // the build/protocol the CLI checks before brokering a merge. Production names work
