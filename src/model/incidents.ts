@@ -31,7 +31,7 @@ export interface StatusSnapshot {
   app?: { deployedAt?: string | null } | null;
 }
 
-export type IncidentKind = 'release-check' | 'not-pushed' | 'accounts' | 'machine-away' | 'no-merge';
+export type IncidentKind = 'release-check' | 'not-pushed' | 'accounts' | 'machine-away' | 'no-merge' | 'repeated-failure';
 /** One card: what broke, the impact, what the team is doing, and the one action — none when it heals itself. */
 export interface Incident {
   kind: IncidentKind;
@@ -42,6 +42,99 @@ export interface Incident {
 }
 
 const minute = 60_000, hour = 60 * minute;
+/** GY-3626: three distinct items hitting the same normalised failure line within 30 minutes is one incident. */
+export const repeatedFailureWindowMs = 30 * minute;
+export const repeatedFailureThreshold = 3;
+export interface FailureEntry { item: string; reason: string; at: string }
+export interface RepeatedFailureGroup { line: string; count: number; items: string[] }
+
+const benignSessionOutcome = /^(?:superseded:|ended:|closed by the loop:|completed\b|done\b|passed\b|approved\b|merged\b|submitted\b|the .+ runtime on .+ (?:no longer reports|reports .+ as .+, so the session is over))/i;
+
+/** First non-empty line with item keys, UUIDs, temporary path segments, hex hashes and numbers removed. */
+export function normaliseFailureLine(reason: string): string {
+  const first = reason.split(/\r?\n/).map(line => line.trim()).find(Boolean) ?? '';
+  if (!first) return '';
+  return first
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '')
+    .replace(/(\/(?:private\/)?(?:var\/)?tmp)\/[^/\s:'")]+/g, '$1')
+    .replace(/(\/\.graphyard\/worktrees)\/[^/\s:'")]+/g, '$1')
+    .replace(/(\bworktrees)\/[^/\s:'")]+/g, '$1')
+    .replace(/\b[A-Z]{2,10}-\d+\b/g, '')
+    .replace(/\b0x[0-9a-f]+\b/gi, '')
+    .replace(/\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{4,40}\b/gi, '')
+    .replace(/\b[0-9a-f]{8,40}\b/gi, '')
+    .replace(/\b\d+(?:\.\d+)?\b/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200);
+}
+
+/** Group failure entries from distinct items within the 30-minute window and return each group of three or more. */
+export function groupRepeatedFailures(entries: readonly FailureEntry[], now: number, windowMs = repeatedFailureWindowMs): RepeatedFailureGroup[] {
+  const groups = new Map<string, { line: string; items: Set<string> }>();
+  for (const entry of entries) {
+    const at = Date.parse(entry.at);
+    if (!Number.isFinite(at) || now - at < -minute || now - at >= windowMs) continue;
+    const line = normaliseFailureLine(entry.reason);
+    if (!line) continue;
+    const key = line.toLowerCase();
+    const group = groups.get(key) ?? { line, items: new Set<string>() };
+    group.items.add(entry.item);
+    groups.set(key, group);
+  }
+  return [...groups.values()]
+    .filter(group => group.items.size >= repeatedFailureThreshold)
+    .map(group => ({ line: group.line, count: group.items.size, items: [...group.items].sort() }))
+    .sort((a, b) => b.count - a.count || a.line.localeCompare(b.line));
+}
+
+/** Failed session exits, trial failures and rework reasons carried on the work snapshot. */
+export function recentWorkFailures(work: readonly Work[]): FailureEntry[] {
+  const entries: FailureEntry[] = [];
+  for (const w of work) {
+    for (const session of w.sessions ?? []) {
+      const outcome = session.outcome?.trim();
+      if (session.state === 'finished' && outcome && !benignSessionOutcome.test(outcome))
+        entries.push({ item: w.key, reason: outcome, at: session.endedAt ?? session.updatedAt });
+    }
+    if (w.mergeLedger?.state === 'refused' && w.mergeLedger.refusal?.reason)
+      entries.push({ item: w.key, reason: w.mergeLedger.refusal.reason, at: w.mergeLedger.trialStep?.at ?? w.updatedAt ?? w.mergeLedger.intentAt ?? '' });
+    for (const rework of w.reworkHistory ?? [])
+      if (rework.reason) entries.push({ item: w.key, reason: rework.reason, at: rework.at });
+    if (w.lastRework?.reason)
+      entries.push({ item: w.key, reason: w.lastRework.reason, at: w.lastRework.at });
+  }
+  return entries;
+}
+
+/** Repeated-failure groups across the work snapshot within the last 30 minutes. */
+export const repeatedFailureGroups = (work: readonly Work[], now: number): RepeatedFailureGroup[] =>
+  groupRepeatedFailures(recentWorkFailures(work), now);
+
+/** An open item filed for this repeated failure, if any. */
+export function filedItemForFailure(work: readonly Work[], group: RepeatedFailureGroup): Work | null {
+  const needle = group.line.toLowerCase();
+  return work.find(w => {
+    if (w.stage === 'done' || w.closure || group.items.includes(w.key)) return false;
+    const title = w.title ?? '', description = w.description ?? '';
+    return title.toLowerCase().includes(needle)
+      || description.toLowerCase().includes(needle)
+      || normaliseFailureLine(title).toLowerCase().includes(needle)
+      || normaliseFailureLine(description).toLowerCase().includes(needle);
+  }) ?? null;
+}
+
+/** One master-status attention line per repeated-failure group. */
+export function repeatedFailureAttention(work: readonly Work[], now: number) {
+  return repeatedFailureGroups(work, now).map(group => {
+    const filed = filedItemForFailure(work, group);
+    return {
+      subject: 'repeated failure',
+      text: `${plural(group.count, 'item')} hit the same failure in 30 min (${group.items.join(', ')}): ${group.line} — ${filed ? `filed as ${filed.key}` : 'the caretaker is looking'}`,
+      next: filed ? `graphyard status ${filed.key}` : `Diagnose the shared fault (${group.items.join(', ')}) or file one hotfix item with graphyard master create FILE`,
+    };
+  });
+}
 /** "28 h" or "35 min". */
 export const span = (ms: number) => ms >= hour ? `${Math.floor(ms / hour)} h` : `${Math.max(1, Math.floor(ms / minute))} min`;
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -122,6 +215,18 @@ export function incidentsFromStatus(status: StatusSnapshot, work: Work[], now: n
     const since = Number.isFinite(started) ? Math.max(last, started) : last;
     if (Number.isFinite(since) && now - since >= 2 * hour) incidents.push({ kind: 'no-merge', broke: `Nothing has merged for ${span(now - since)}.`,
       impact: `${plural(flying.length, 'task')} in flight ${flying.length === 1 ? 'is' : 'are'} stuck.`, doing: 'Builders keep working.', action: { label: 'Ask the Lead', open: 'lead' } });
+  }
+
+  // 6. The same normalised failure across three or more distinct items within 30 minutes (GY-3626).
+  for (const group of repeatedFailureGroups(work, now)) {
+    const filed = filedItemForFailure(work, group);
+    incidents.push({
+      kind: 'repeated-failure',
+      broke: `Same failure across ${plural(group.count, 'item')}: “${group.line}”.`,
+      impact: `${plural(group.count, 'item')} hit this in the last 30 minutes.`,
+      doing: filed ? `Filed as ${filed.key} (“${filed.title}”).` : 'No item filed yet — the caretaker is looking.',
+      action: filed ? { label: 'Open the item', open: 'item', item: filed.id } : { label: 'Ask the Lead', open: 'lead' },
+    });
   }
   return incidents;
 }
