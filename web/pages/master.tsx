@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
 import type { Dashboard } from './dashboard';
 import { isClosed, type Work } from '../../src/model';
 import { blockerSince } from '../../src/model/work';
@@ -43,7 +43,14 @@ export function masterOwes(work: Work[], now: number) {
 }
 
 /** The status line's one reading of the Lead's session: what it is doing, and for how long. */
-export function leadStatus(session: { state: string; since?: string | null } | null, now: number): { words: string; age: string | null } {
+export function leadStatus(pane: { session: { state: string; since?: string | null } | null; mode: string; reason: string }, now: number): { words: string; age: string | null; state: string } {
+  const { session } = pane;
+  if (pane.mode === 'refused') return { words: pane.reason || 'Not available: sign in, and check the session still has a pane.', age: null, state: 'refused' };
+  const state = session?.state ?? null;
+  const read = leadWords(session, now);
+  return { ...read, state: state === null || state === 'reconnecting' ? 'connecting' : state };
+}
+function leadWords(session: { state: string; since?: string | null } | null, now: number): { words: string; age: string | null } {
   const state = session?.state ?? null;
   if (state === null || state === 'connecting' || state === 'reconnecting') return { words: 'Lead is connecting…', age: null };
   if (state === 'working') return { words: 'Lead is working', age: ageSince(session!.since, now) };
@@ -142,6 +149,14 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
   const refusalFor = (row: HumanRequestRow) => humanOnlyRefusal(row.rule, actor ?? {});
   /** A priority change any steerer may undo; a hold, a release or a role pause is the operator's alone. */
   const mayUndo = (entry: FeedDecision) => !entry.undo ? false : entry.undo.target === 'registry' || entry.undo.command !== 'priority' ? operator : maySteer;
+  const undoNote = 'Only the operator can undo a hold or a pause.';
+  /** A pasted screenshot goes to the Lead as an attachment, as pasting into the terminal does. */
+  const pasteImage = (event: ClipboardEvent) => {
+    const files = [...(event.clipboardData?.files ?? [])].filter(file => file.type.startsWith('image/'));
+    if (!files.length) return;
+    event.preventDefault();
+    terminal.current?.attach(files);
+  };
   const requests = [...(status?.humanOnly ?? openHumanOnly(work.map(item => ({ work: item })), now))].sort((a, b) => b.waitedMs - a.waitedMs);
   const incidents = Array.isArray(status?.production?.incidents) ? status.production.incidents : [];
   const entries = leadFeed({ typed, requests, ledger, registry, incidents: incidents as never, work });
@@ -159,7 +174,7 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
     else await api('agent-registry/roles', entry.undo.body);
     void load();
   };
-  const line = leadStatus(pane.session, now);
+  const line = leadStatus(pane, now);
   return <>
     <PageHeader title="Lead" fact="Steer the Lead and act on its cards."/>
     {stall && <p className="stall-alarm" role="alert">{stall}</p>}
@@ -192,7 +207,7 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
           onSession={(session, mode, reason) => setPane({ session, mode, reason })}/>
       </div>
       {activeTab === 'conversation' && <section className="lead-conversation" aria-label="Conversation with the Lead">
-        <p className="lead-status" role="status" data-lead-state={pane.session?.state ?? 'unknown'}>
+        <p className="lead-status" role="status" data-lead-state={line.state}>
           <span className="lead-dot" aria-hidden="true"/>
           {line.words}{line.age && <> · {line.age}</>}
         </p>
@@ -219,21 +234,20 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
                   <div className="lead-actions">
                     <button type="button" disabled={!maySteer || busy} title={!maySteer ? watchNote : undefined} onClick={() => prefill(`Why: ${entry.what}`)}>Ask why</button>
                     <button type="button" disabled={!maySteer || busy} title={!maySteer ? watchNote : undefined} onClick={() => prefill(`Do it differently: ${entry.what}`)}>Do it differently</button>
-                    {entry.undo && <button type="button" disabled={busy || !mayUndo(entry)} title={mayUndo(entry) ? undefined : watchNote} onClick={() => void undo(entry)}>Undo</button>}
+                    {entry.undo && <button type="button" disabled={busy || !mayUndo(entry)} title={mayUndo(entry) || !maySteer ? undefined : undoNote} onClick={() => void undo(entry)}>Undo</button>}
                   </div>
-                  {!maySteer && <p className="muted">{watchNote}</p>}
+                  {!maySteer ? <p className="muted">{watchNote}</p> : entry.undo && !mayUndo(entry) && <p className="muted">{undoNote}</p>}
                 </article>}
                 {entry.kind === 'incident' && <article className="lead-card incident">
                   <div className="lead-kind">Incident</div>
                   <p className="lead-what">{entry.incident.key} {entry.incident.status === 'failed' ? 'failed to deploy' : 'is not live yet'}</p>
                   <p className="lead-why">{entry.incident.reason}</p>
                   <p className="muted">The Lead keeps the release line moving; you are not needed.</p>
-                  <div className="lead-actions"><button type="button" disabled={!maySteer} title={!maySteer ? watchNote : undefined} onClick={() => setSelected(entry.incident.workId)}>Open the Task</button></div>
+                  <div className="lead-actions"><button type="button" onClick={() => setSelected(entry.incident.workId)}>Open the Task</button></div>
                 </article>}
                 {entry.kind === 'task' && <article className="lead-card task">
                   <div className="lead-kind">Filed</div>
-                  <p className="lead-what">{entry.item.title}</p>
-                  <div className="lead-actions"><button type="button" disabled={!maySteer} title={!maySteer ? watchNote : undefined} onClick={() => setSelected(entry.item.id)}>Open the Task</button></div>
+                  <p className="lead-what"><button type="button" className="text-button" onClick={() => setSelected(entry.item.id)}>{entry.item.title}</button></p>
                 </article>}
               </li>)}
               {entries.length === 0 && <li className="lead-entry lead-empty"><p className="muted">Nothing yet: message the Lead, or wait for its replies.</p></li>}
@@ -242,7 +256,7 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
               <button type="button" aria-label="Attach an image" title="Attach an image" onClick={() => fileInput.current?.click()}>＋</button>
               <input type="file" accept="image/png,image/jpeg" hidden ref={fileInput} onChange={event => { const file = event.target.files?.[0]; if (file) terminal.current?.attach([file]); event.target.value = ''; }}/>
               <label htmlFor="lead-message" className="sr-only">Message the Lead</label>
-              <input id="lead-message" ref={box} value={draft} onChange={event => setDraft(event.target.value)} placeholder="Tell the Lead what to do, or paste a screenshot"/>
+              <input id="lead-message" ref={box} value={draft} onChange={event => setDraft(event.target.value)} onPaste={pasteImage} placeholder="Tell the Lead what to do, or paste a screenshot"/>
               <button type="submit" disabled={!draft.trim() || pane.mode !== 'control'}>Send</button>
             </form> : <p className="lead-box lead-box-note muted">{watchNote}</p>}
             {maySteer && boxNote && <p className="lead-box-note muted" role="alert">{boxNote}</p>}

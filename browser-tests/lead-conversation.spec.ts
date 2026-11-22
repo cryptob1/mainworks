@@ -1,7 +1,7 @@
 import { test, expect, type Browser, type Page } from '@playwright/test';
 import { fork } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, rm, symlink } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import { signInDatabase } from '../tests/helpers/sign-in-database';
@@ -104,6 +104,9 @@ test('e2e:lead-conversation — the Lead is a conversation of messages and cards
     const watcherDecision = watcherPage.locator('.lead-card.decision').first();
     await expect(watcherDecision.getByRole('button', { name: 'Ask why' })).toBeDisabled();
     await expect(watcherDecision).toContainText('You are watching: people who can steer the Lead may message and act.');
+    // A Watch viewer still opens a filed task or an incident's Task, as the Goal order rail lets them.
+    await expect(watcherPage.locator('.lead-card.incident').getByRole('button', { name: 'Open the Task' })).toBeEnabled();
+    await expect(watcherPage.locator('.lead-card.task').first().locator('.lead-what').getByRole('button')).toBeEnabled();
     await watcherPage.getByRole('tab', { name: 'Live session' }).click();
     await expect(watcherPage.getByRole('status')).toContainText('View only', settled);
     await expect(watcherPage.locator('.xterm-rows')).toBeVisible(settled);
@@ -114,6 +117,11 @@ test('e2e:lead-conversation — the Lead is a conversation of messages and cards
     await expect(steerPage.locator('#lead-message')).toBeVisible(settled);
     await expect(steerPage.locator('.lead-card.approval').getByRole('button', { name: 'Approve 2 more seats' })).toBeDisabled();
     await expect(steerPage.locator('.lead-card.approval')).toContainText('Only the human operator answers a human-only request');
+    // A Steer maintainer sees why a pause's Undo is not theirs — never the Watch note.
+    const steerPause = steerPage.locator('.lead-card.decision').filter({ hasText: 'The worker role paused' });
+    await expect(steerPause.getByRole('button', { name: 'Undo' })).toBeDisabled();
+    await expect(steerPause).toContainText('Only the operator can undo a hold or a pause.');
+    await expect(steerPause).not.toContainText('You are watching');
     await steerPage.getByRole('tab', { name: 'Live session' }).click();
     await expect(steerPage.getByRole('status')).toContainText('You can type here', settled);
     await steerPage.close();
@@ -147,13 +155,21 @@ test('e2e:lead-conversation — the Lead is a conversation of messages and cards
 
     // The filed task card's title links to its Task page.
     const taskCard = conversation.locator('.lead-card.task').filter({ hasText: 'Fix the flaky release check' });
-    await taskCard.getByRole('button', { name: 'Open the Task' }).click();
+    await taskCard.locator('.lead-what').getByRole('button', { name: 'Fix the flaky release check' }).click();
     await expect(page.getByRole('heading', { name: /Fix the flaky release check/ })).toBeVisible(settled);
     await page.getByRole('button', { name: '← Back' }).click();
     await expect(conversation).toBeVisible(settled);
 
     // The message box sends by typing into the Lead pane, as people always have.
     await expect(page.getByRole('button', { name: 'Attach an image' })).toBeVisible();
+    // A screenshot pasted into the message box is attached to the Lead, not dropped.
+    await page.locator('#lead-message').evaluate(input => {
+      const data = new DataTransfer();
+      data.items.add(new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], 'shot.png', { type: 'image/png' }));
+      input.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+    });
+    const paneInput = async () => (await readFile(join(site, 'herdr.log'), 'utf8').catch(() => '')).split('\n').filter(Boolean).map(entry => JSON.parse(entry)).filter(entry => entry.command?.type === 'terminal.input').map(entry => entry.command.text as string).join('');
+    await expect.poll(paneInput, settled).toMatch(/\x1b\[200~[^\x1b]*master-inbox[^\x1b]*shot\.png\x1b\[201~/);
     await page.locator('#lead-message').fill(sentLine);
     await page.getByRole('button', { name: 'Send', exact: true }).click();
     await expect.poll(() => page.locator('#lead-message').inputValue(), { timeout: 15_000 }).toBe('');

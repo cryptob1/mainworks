@@ -76,3 +76,11 @@ test('unit:lead-feed — the side rail: goal order by priority, and who can stee
   assert.deepEqual(steerers([{ login: 'ana@example.com', role: 'maintainer' }, { login: 'bo@example.com', role: 'viewer' }], true), ['You', 'ana']);
   assert.deepEqual(steerers([], false), ['The operator']);
 });
+
+test('unit:lead-feed — the status line never says connecting when the terminal is refused', async () => {
+  const { leadStatus } = await import('../web/pages/master');
+  assert.deepEqual(leadStatus({ session: null, mode: 'refused', reason: 'Sign in to see the terminal.' }, start), { words: 'Sign in to see the terminal.', age: null, state: 'refused' });
+  assert.equal(leadStatus({ session: null, mode: 'connecting', reason: '' }, start).state, 'connecting');
+  const working = leadStatus({ session: { state: 'working', since: iso(start - 5 * minute) }, mode: 'control', reason: '' }, start);
+  assert.equal(working.words, 'Lead is working'); assert.equal(working.state, 'working'); assert.match(working.age ?? '', /5m/);
+});
