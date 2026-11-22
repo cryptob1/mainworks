@@ -47,8 +47,12 @@ test('unit:tests/agents-page-neutral-states.test.ts — a running master, an unc
   assert.deepEqual(statuses.filter(entry => chipTones[entry.status.chip] === 'bad').map(entry => entry.name), [], 'no account reads as an error');
   assert.equal(statuses.find(entry => entry.name === 'pi-a')!.status.label, 'Not configured');
 
-  assert.deepEqual(unconfiguredRoles(fleet), [{ role: 'producer', error: false }]);
+  assert.deepEqual(unconfiguredRoles(fleet), [{ role: 'producer', error: false }, { role: 'caretaker', error: false }]);
   const page = renderToStaticMarkup(createElement(FleetOverview, { fleet, now }));
   assert.ok(!page.includes('tone-bad') && !page.includes('notice danger') && !page.includes('role="alert"'), 'the page draws nothing in red');
   assert.ok(page.includes('Running since') && page.includes('Not configured: producer'));
+  // GY-3593: the caretaker never launches from local profiles; its Role summary row says the loop skips it.
+  assert.ok(page.includes('Not configured: producer — its sessions launch from local profiles'));
+  assert.ok(page.includes('<li data-role-launch="caretaker" title="Not configured: caretaker — run mainworks master registry role set caretaker ACCOUNT --reason REASON to name its account">Caretaker · not configured — the loop skips its health check</li>'));
+  assert.ok(!/caretaker[^<]*local profiles/.test(page), 'the caretaker is never said to launch from local profiles');
 });

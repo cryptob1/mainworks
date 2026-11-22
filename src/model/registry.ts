@@ -27,7 +27,8 @@ export interface QuotaDecision { state: QuotaObservation['state']; at: string }
 export interface FleetAccount extends FleetAccountInput { quota: ObservedQuota; quotaDecision?: QuotaDecision; smoke?: AccountSmoke | null; unjudged?: Partial<Record<FleetRoleName, UnjudgedRuns>> }
 
 /** The roles a configured registry is expected to name. Setup proposes every one of them, master included (GY-2939); an operator re-names any role's accounts. */
-export const fleetRoles = ['worker', 'reviewer', 'producer', 'master'] as const;
+// GY-3593: the caretaker keeps the install healthy on a schedule, apart from the master that builds.
+export const fleetRoles = ['worker', 'reviewer', 'producer', 'master', 'caretaker'] as const;
 export const registryRoles = fleetRoles;
 export type FleetRoleName = typeof registryRoles[number];
 /**

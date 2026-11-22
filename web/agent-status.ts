@@ -101,7 +101,7 @@ export function accountStatus(account: FleetAccountView, fleet: Pick<FleetView, 
   return status('idle', `ready for ${account.roles.map(entry => entry.role).join(', ')}`);
 }
 
-export const roleLabels: Record<string, string> = { master: 'Master', worker: 'Workers', reviewer: 'Reviewers', producer: 'Producers', diagnostician: 'Diagnosticians' };
+export const roleLabels: Record<string, string> = { master: 'Master', worker: 'Workers', reviewer: 'Reviewers', producer: 'Producers', diagnostician: 'Diagnosticians', caretaker: 'Caretaker' };
 
 export interface RoleLaunch {
   role: string; canLaunch: boolean;

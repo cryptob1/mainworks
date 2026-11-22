@@ -7,7 +7,7 @@ import { graphyardRepository } from '../scenarios.js';
 import { releaseNotesPath, releaseNote, appendReleaseNote } from '../release-notes.js';
 import { deployRecordPath, readDeployRecord } from '../deploy-watch.js';
 import { notCovered, servedPreviewCases } from '../merge-writer/served-previews.js';
-import { relandItemFor, revertMergeCommit, serveLandings, serveRangeCommits, trialAndPushRevert } from '../merge-writer/serve-revert.js';
+import { baseStillFails, relandItemFor, revertMergeCommit, serveLandings, serveRangeCommits, trialAndPushRevert } from '../merge-writer/serve-revert.js';
 import { gateTrialKey, trialStartOwner, trialStartWaiting } from '../merge-writer/trial-load.js';
 import { heavyTrial, trialShareAllowance, type MergeWriterReads } from './cycle-merge-writer.js';
 import { criterionProofs, e2eProofsOf, openFlakyItem } from '../merge-writer/executor.js';
@@ -214,20 +214,36 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
       try { return [...new Set([featureMapCaseId, ...(JSON.parse(await git(['show', `${commit}:graphyard.json`])).gate?.core ?? [])])]; } catch { return [featureMapCaseId]; }
     },
     run: (commit, checks, files, timeoutMs, signal, onStep) => trialChecks(reads, commit, checks, files, timeoutMs, trusted, false, signal, onStep),
-    revert: async (landing, gated, check) => {
+    without: async (commit, reverted) => {
+      let current = commit;
+      for (const entry of reverted) {
+        const applied = await revertMergeCommit(git, { mergeSha: entry.sha, before: entry.before, baseTip: current, subject: entry.subject });
+        if ('conflict' in applied) return null;
+        current = applied.revertSha;
+      }
+      return current;
+    },
+    revert: async (landing, gated, check, prior = []) => {
       // Merges may have landed while the gate ran: the revert goes onto main as it stands now.
       const tip = (await reads.fetch()).toLowerCase();
-      const revert = await revertMergeCommit(git, { mergeSha: landing.sha, before: landing.before, baseTip: tip, subject: landing.subject });
-      if ('conflict' in revert) return { held: `the revert of ${landing.item.key}'s merge ${landing.sha.slice(0, 12)} does not apply cleanly on ${tip.slice(0, 12)}: ${revert.conflict.slice(0, 20).join(', ')}` };
-      const files = lines(await git(['diff', '--name-only', tip, revert.revertSha]));
-      const pushed = await trialAndPushRevert(reads, { revertSha: revert.revertSha, files, baseTip: tip, culpritKey: landing.item.key, mergeSha: landing.sha });
+      let current = tip;
+      const all = [...prior, landing];
+      for (const entry of all) {
+        const revert = await revertMergeCommit(git, { mergeSha: entry.sha, before: entry.before, baseTip: current, subject: entry.subject });
+        if ('conflict' in revert) return { held: `the revert of ${entry.item.key}'s merge ${entry.sha.slice(0, 12)} does not apply cleanly on ${current.slice(0, 12)}: ${revert.conflict.slice(0, 20).join(', ')}` };
+        current = revert.revertSha;
+      }
+      const files = lines(await git(['diff', '--name-only', tip, current]));
+      const pushed = await trialAndPushRevert(reads, { revertSha: current, files, baseTip: tip, culpritKey: landing.item.key, mergeSha: landing.sha });
       if ('held' in pushed) return { held: pushed.held };
-      if ('retry' in pushed) return { retry: pushed.retry };
+      if ('retry' in pushed) return { retry: pushed.retry, ...(pushed.retry === baseStillFails ? { revertSha: current } : {}) };
       const failingCase = check.startsWith('e2e:') ? check.slice(4) : null;
-      const reland = relandItemFor(landing.item, { serve: gated, failingCase: failingCase ?? check, failingStep: null, failingReason: `the batch gate's check ${check} failed`, mergeSha: landing.sha, baseBranch: reads.baseBranch });
-      // A build or test failure names no case: the re-land carries the original criteria alone.
-      await reads.createWork?.(failingCase ? reland : { ...reland, criteria: landing.item.criteria.map(({ id, text, proofs }) => ({ id, text, proofs: [...proofs] })) }, `gate-reland:${landing.sha}`).catch(() => null);
-      return { revertSha: revert.revertSha };
+      for (const entry of all) {
+        const reland = relandItemFor(entry.item, { serve: gated, failingCase: failingCase ?? check, failingStep: null, failingReason: `the batch gate's check ${check} failed`, mergeSha: entry.sha, baseBranch: reads.baseBranch });
+        // A build or test failure names no case: the re-land carries the original criteria alone.
+        await reads.createWork?.(failingCase ? reland : { ...reland, criteria: entry.item.criteria.map(({ id, text, proofs }) => ({ id, text, proofs: [...proofs] })) }, `gate-reland:${entry.sha}`).catch(() => null);
+      }
+      return { revertSha: current };
     },
     file,
     flaky: check => openFlakyItem(work, check)?.key ?? null,

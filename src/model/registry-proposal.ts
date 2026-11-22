@@ -20,7 +20,7 @@ export const proposedRuntimes: readonly FleetRuntime[] = [
 ];
 
 /** Default concurrency a proposal gives each role; an operator changes it in the registry. */
-export const proposedConcurrency: Record<FleetRoleName, number> = { worker: 4, reviewer: 2, producer: 3, master: 1 };
+export const proposedConcurrency: Record<FleetRoleName, number> = { worker: 4, reviewer: 2, producer: 3, master: 1, caretaker: 1 };
 
 /** Pi runs workers and proof producers. */
 export const proposedRuntimeRoles: Partial<Record<string, readonly FleetRoleName[]>> = { pi: ['worker', 'producer'] };
