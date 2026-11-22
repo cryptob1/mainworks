@@ -350,7 +350,7 @@ export default function FleetPage({ api, status, observedAt, onOpenSetup }: Pick
     const version = ++request.current; setLoadError('');
     try {
       const [next, connect] = await Promise.all([api('agent-registry'), api('agent-registry/connect').catch(() => ({ connects: [] }))]);
-      if (version === request.current) { setFleet(next); setConnects(connect.connects ?? []); }
+      if (version === request.current) { setFleet(next && Array.isArray(next.accounts) ? next : null); setConnects(Array.isArray(connect?.connects) ? connect.connects : []); }
     } catch (error) { if (version === request.current) setLoadError((error as Error).message); }
   }, [api]);
   useEffect(() => { void load(); void api('agent-registry/connect/providers').then(about => setProviders(about.providers ?? [])).catch(() => {}); void api('agent-registry/connect/host-key').then(about => setHosts(about.hosts ?? [])).catch(() => {}); }, [api, load]);

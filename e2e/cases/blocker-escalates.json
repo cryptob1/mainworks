@@ -107,10 +107,10 @@
     },
     {
       "kind": "browser",
-      "name": "open the Master page",
+      "name": "open the Lead page",
       "action": "click",
-      "role": "button",
-      "text": "Master",
+      "role": "link",
+      "text": "Lead",
       "exact": false
     },
     {

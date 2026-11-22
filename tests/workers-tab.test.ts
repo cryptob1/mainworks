@@ -102,11 +102,11 @@ test('integration:workers-tab-lists-every-session — a top-level Workers tab li
   // Registered after Shipped; since GY-161 it is its own sidebar entry, so no tab row repeats it.
   const ids = views.map(view => view.id);
   assert.ok(ids.indexOf('workers') > ids.indexOf('shipped'), `registered after Shipped: ${ids.join(', ')}`);
-  assert.equal(views.find(view => view.id === 'workers')?.section, 'workers');
+  assert.equal(views.find(view => view.id === 'workers')?.section, 'settings');
   for (const role of ['admin', 'reader', 'worker', 'coordinator', 'operator-agent']) assert.ok(visibleViews({ ...dashboard([]), status: { actor: { role } } }).some(view => view.id === 'workers'), role);
   const tabs = [...renderToStaticMarkup(createElement(TopBar, { ...dashboard([]), view: 'workers' })).matchAll(/class="tab(?: active)?"[^>]*>(?:<abbr[^>]*>)?([^<]+)</g)].map(match => match[1]);
-  assert.deepEqual(tabs, ['Workers', 'Costs'], 'Workers offers no Master tab now that Master is a top-level entry (GY-3287); Costs sits beside it (GY-3297)');
-  assert.equal(views.find(view => view.id === 'master')?.section, 'master');
+  assert.ok(tabs.includes('Workers') && tabs.includes('Costs'), 'Workers and Costs sit together under Settings (GY-3598)');
+  assert.equal(views.find(view => view.id === 'lead')?.section, 'lead');
   assert.match(await read('web/pages/index.tsx'), /id: 'workers'.*label: 'Workers'/);
 
   const work = fixture();

@@ -32,7 +32,7 @@ test('e2e:owner-relayed-answer — owner direction relayed by the master is reco
     let work = await engine.execute(owner, 'create', null, { type: 'chore', title: 'Owner decides timing', criteria: [{ id: 'AC-1', text: 'The printer prints a receipt', proofs: ['human:receipt', 'e2e:fixture'] }] }, randomUUID());
     work = await engine.execute(owner, 'ready', work.id, {}, randomUUID());
     work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
-    await post(worker, `work/${work.id}/park`, { epoch: work.epoch, kind: 'goals-and-priorities', needed: 'Should this goal start now?', reason: 'The owner chooses timing', recommendation: 'Go ahead as asked', why: 'The implementation is ready.' });
+    await post(worker, `work/${work.id}/park`, { epoch: work.epoch, kind: 'goals-and-priorities', needed: 'Should this goal start now?', reason: 'The owner chooses timing', recommendation: 'Approve this plan', why: 'The implementation is ready.' });
     await assert.rejects(cli('answer', work.key, '--decline', 'Wait'), /--owner-said/);
     await cli('answer', work.key, '--owner-said', 'Not yet', '--decline', 'Wait');
     let saved = await read(`work/${work.id}`);

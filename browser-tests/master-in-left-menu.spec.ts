@@ -23,15 +23,16 @@ test('e2e:master-in-left-menu — Master is the second left-menu entry, opens th
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible(settled);
 
-  const menu = page.getByRole('navigation', { name: 'Primary' }).getByRole('button');
-  await expect(menu).toHaveText(['Work', 'Master', 'Workers', 'Shipped', 'Tests', 'Settings'], settled);
-  await menu.nth(1).click();
-  await expect(page.getByRole('heading', { name: 'Master', exact: true, level: 1 })).toBeVisible(settled);
-  await expect(page.getByRole('region', { name: 'Master terminal' })).toBeVisible(settled);
-  await expect(menu.nth(1)).toHaveAttribute('aria-current', 'page', settled);
-
-  // Workers is its own page again: no sub-page row offering Master beside it (Costs sits there since GY-3297).
+  const menu = page.getByRole('navigation', { name: 'Main' }).getByRole('link');
+  await expect(menu).toHaveText(['Home', 'Work', /^Lead/, 'Settings'], settled);
   await menu.nth(2).click();
+  await expect(page.getByRole('heading', { name: 'Lead', exact: true, level: 1 })).toBeVisible(settled);
+  await expect(page.getByRole('region', { name: 'Master terminal' })).toBeVisible(settled);
+  await expect(menu.nth(2)).toHaveAttribute('aria-current', 'page', settled);
+
+  // Workers sits under Settings; no sub-page row offering Master beside it.
+  await menu.nth(3).click();
+  await page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: 'Workers', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Workers', exact: true, level: 1 })).toBeVisible(settled);
   await expect(page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: /^Master$/ })).toHaveCount(0, settled);
 });

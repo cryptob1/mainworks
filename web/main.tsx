@@ -5,10 +5,9 @@ import { type Work } from '../src/model';
 import { isBoard, type Board, type OpenGroup } from './groups';
 import './style.css';
 import type { IntegrationJob } from '../src/coordination';
-import Sidebar from './components/sidebar';
 import type { Dashboard } from './pages/dashboard';
-import { primaryEntry, viewFor, views } from './pages';
-import TopBar from './components/top-bar';
+import { allRouteIds, oldRouteRedirects, resolveViewId, viewFor } from './pages';
+import TopBar, { MainTopBar } from './components/top-bar';
 import { useFeatures } from './features';
 import LoginPage, { HUMAN_SESSION_KEY, REJECTED_NOTICE, SIGN_IN_NEEDED, storedToken, wantsSignIn } from './pages/login';
 import WorkDetails, { useOpenedWork } from './pages/work-details';
@@ -28,7 +27,7 @@ applyTheme();
 boot();
 
 /**
- * The dashboard shell: session state, polling, the sidebar generated from the view
+ * The dashboard shell: session state, polling, the four-place top bar generated from the view
  * registry, and the page it selects — or the open work item's page. Pages live under web/pages/.
  */
 function App() {
@@ -56,7 +55,7 @@ function App() {
   const [error, setError] = useState('');
   const [connected, setConnected] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const [view, setView] = useState(() => initialView(views.map(page => page.id)));
+  const [view, setView] = useState(() => resolveViewId(initialView(allRouteIds)));
   const [filter, setFilter] = useState<OpenGroup | null>(null);
   const [shippedFilter, setShippedFilter] = useState<TrustKind | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -140,9 +139,20 @@ function App() {
     setShipped(fresh.at(-1)!);
   }, [work, status]);
   useEffect(() => { if (!shipped) return; const timer = setTimeout(() => setShipped(null), 8000); return () => clearTimeout(timer); }, [shipped]);
-  // Every page has an address (GY-3322): following a link to #costs opens Costs without a reload.
+  // Every page has an address (GY-3322, GY-3598): following a link to #costs opens Costs under Settings,
+  // and old routes like #master redirect to their new place (#lead).
   useEffect(() => {
-    const follow = () => { const page = requestedView(location.hash, views.map(entry => entry.id)).view; if (page) { setSelected(null); setView(page); } };
+    const follow = () => {
+      const page = requestedView(location.hash, allRouteIds).view;
+      if (page) {
+        const target = resolveViewId(page);
+        if (oldRouteRedirects[page] && page !== 'settings') {
+          history.replaceState(null, '', `${location.pathname}${location.search}#${target}`);
+        }
+        setSelected(null);
+        setView(target);
+      }
+    };
     addEventListener('hashchange', follow); return () => removeEventListener('hashchange', follow);
   }, []);
   // GY-3415: #GY-N is an item's address, so the link the master hands an owner opens that item with its Answer.
@@ -154,8 +164,8 @@ function App() {
   const { features, operatorAgents, operatorAgentsError } = useFeatures(token, !!status, api, status?.actor?.role === 'admin', work.some(w => w.scenarioRequirements?.length > 0));
   const dashboard: Dashboard = { token, work, board, status, error, connected, lastUpdated, view, setView, filter, setFilter, shippedFilter, setShippedFilter, selected, setSelected, creating, setCreating, busy, setBusy, observedAt, jobs, query, setQuery, operatorAgents, operatorAgentsError, features, events, editingRequirements, setEditingRequirements, sessionEpoch, api, refresh, action, setError, signOut };
   if (!status) return <LoginPage signingIn={signingIn} setSigningIn={setSigningIn} token={token} error={error} signOut={signOut} setError={setError} sessionEpoch={sessionEpoch} setToken={setToken} draftToken={draftToken} setDraftToken={setDraftToken} host={location.host} onVerified={firstLoad}/>;
-  // One page at a time: an open item replaces the page it was opened from, and "← Back" returns to it.
-  return <div className="shell"><Sidebar entries={views.map(entry => primaryEntry(dashboard, entry))} dashboard={dashboard}/>
+  // One page at a time: one Mainworks top bar across every page; an open item replaces the page it was opened from, and "← Back" returns to it.
+  return <div className="shell"><MainTopBar {...dashboard}/>
     <main className="main">{error && <div role="alert" className="notice danger">{error}{error === SIGN_IN_NEEDED && <> <button type="button" onClick={signOut}>Sign in</button></>}</div>}
       <TopBar {...dashboard} onPalette={() => setPalette(true)}/>{item ? <WorkDetails {...dashboard} item={item}/> : viewFor(view).render(dashboard)}</main>
     {creating && <CreateWork {...dashboard}/>}

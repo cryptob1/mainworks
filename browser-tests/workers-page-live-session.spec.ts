@@ -27,7 +27,8 @@ test('e2e:workers-page-live-session — one compact row per agent; opening it sh
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     await serveXterm(page);
     await page.goto(`${url}/#sign-in=${await signIn()}`);
-    await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Workers', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: 'Workers', exact: true }).click();
     const table = page.getByRole('table', { name: 'Agent sessions' });
     const rows = table.locator('tr[data-session]');
     await expect(rows).toHaveCount(9, settled);
@@ -86,15 +87,15 @@ test('e2e:workers-page-live-session — one compact row per agent; opening it sh
 
     // The master's row opens the Master page.
     await page.locator(`tr[data-session="${master}"]`).click();
-    await expect(page.getByRole('heading', { name: 'Master', exact: true })).toBeVisible(settled);
+    await expect(page.getByRole('heading', { name: 'Lead', exact: true })).toBeVisible(settled);
     await page.close();
 
     // On a phone each agent is one card, and the page does not scroll sideways.
     const phone = await browser.newPage({ viewport: { width: 390, height: 844 } });
     await serveXterm(phone);
     await phone.goto(`${url}/#sign-in=${await signIn()}`);
-    await phone.getByRole('button', { name: 'Menu' }).click();
-    await phone.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Workers', exact: true }).click();
+    await phone.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings', exact: true }).click();
+    await phone.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: 'Workers', exact: true }).click();
     const cards = phone.locator('tr[data-session]');
     await expect(cards).toHaveCount(9, settled);
     const phoneLayout = await phone.evaluate(() => ({
