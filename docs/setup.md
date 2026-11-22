@@ -17,7 +17,7 @@ The details the [README](../README.md) leaves out. `graphyard guide setup` print
 - `graphyard host remove USER@HOST` stops reading one; `graphyard host list` shows the one host list.
 - Accepted risk: a host can forge its own shard results, so add only machines you own. Remote shard runs read this same host list.
 - Each trial sends each test shard to another host with room under its heat limit, else this machine. There the shard gets a clone of the commit and runs with no network, under CPU, memory and process limits. A host that drops a shard hands it back: capacity, never a fault. `master status` → `remoteShards` shows each host.
-- Tests that name the database, Docker, nested confinement (bwrap, unshare, landlock, the hard-math benchmarks), a browser, npm exec or /var/tmp stay on this machine: a host's shard has none of them. Every other test file, loopback servers included, may run on a host.
+- Tests that name Docker, nested confinement (bwrap, unshare, landlock, the hard-math benchmarks), npm exec or /var/tmp stay on this machine: a host's shard has none of them. Every other test file, database, browser and loopback servers included, may run on a host.
 
 ## Onboarding a project
 
