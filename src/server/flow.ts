@@ -20,10 +20,10 @@ const sql = `SELECT work_id, kind, created_at,
 
 /**
  * Each item's attempts from its own document: the fleet serves a settled delivery as the work
- * index's summary, without its timeline. Only items open or merged within the read span are read.
+ * index's summary, without its timeline. Only items open, or written to within the read span, are read.
  */
 const attemptsSql = `SELECT w.id, w.document->'pipeline'->'attempts' AS attempts FROM work_items w JOIN work_index i ON i.id = w.id
-  WHERE NOT i.settled OR i.merged_at > $1`;
+  WHERE NOT i.settled OR i.merged_at > $1 OR w.id IN (SELECT work_id FROM events WHERE created_at > $1 AND work_id IS NOT NULL)`;
 type Attempts = Map<string, { claimedAt: string; endedAt: string | null; end?: string | null }[]>;
 
 /** The rows are read at most once a minute per database: every dashboard polls /api/status. */
