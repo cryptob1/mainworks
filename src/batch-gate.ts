@@ -36,6 +36,7 @@ import { formatAge } from './model/duration.js';
 import type { Work } from './model.js';
 import type { ServeLanding } from './merge-writer/serve-revert.js';
 import type { PreviewCaseRun } from './merge-writer/served-previews.js';
+import { trialFileTimeoutMs } from './merge-writer/trial-load.js';
 
 /** How long one gate may run before it counts as failed (gate timeout). */
 export const gateLimitMs = 45 * 60_000;
@@ -178,9 +179,10 @@ export interface GatePorts {
   /**
    * Runs checks on the commit in the private trial container — `build`, `e2e:<case>`, `affected`
    * (the selection over `files`) or `test:<file>` — and answers the failing ones, a failing
-   * affected test as `test:<file>`. The run is bounded by `timeoutMs`, what is left of the gate's own limit.
+   * affected test as `test:<file>`. The run is bounded by `timeoutMs`, what is left of the gate's own limit;
+   * `onStep` hears the trial's steps, `tests` among them, as the trial's own onStep does.
    */
-  run(commit: string, checks: readonly string[], files: readonly string[], timeoutMs: number, signal?: AbortSignal): Promise<string[]>;
+  run(commit: string, checks: readonly string[], files: readonly string[], timeoutMs: number, signal?: AbortSignal, onStep?: (step: string) => void): Promise<string[]>;
   /** GY-3444, GY-3474: whether the gate's own check waits to start now — for a host slot or its container's start: time the gate's bound does not count. */
   waiting?(): boolean;
   /** Reverts the landing from main through the serve-revert path (trial, leased push, re-land filed); answers the revert, why it is held, or a retry (main moved under the push). */
@@ -362,12 +364,18 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
   // A whole-catalog batch run measures the catalog's gate-run time, a timeout its elapsed time.
   const mainKey = stepKey(tip, checks), mainCached = mainKey in finished, mainStarted = ports.now();
   const measure = (ms: number) => { if (whole) record.gateRuns = [...record.gateRuns ?? [], { ms, at: at() }].slice(-gateRunsWindow); };
-  const run = (commit: string, runChecks: readonly string[], runFiles: readonly string[]) => {
+  // GY-3620: the rerun and the verified-commit probe run a few named test files, each bounded as a
+  // merge trial bounds a file (trialFileTimeoutMs from when its tests start, one per file): a file
+  // still running then stops, and the step's checks count as failed, so a hanging file settles the
+  // step under the rules below instead of running out the whole gate.
+  const run = (commit: string, runChecks: readonly string[], runFiles: readonly string[], perFile = false) => {
     const key = stepKey(commit, runChecks);
     if (key in finished) return Promise.resolve(finished[key]!); // a step the last loop finished
     const left = deadline() - ports.now();
     if (left <= 0) return Promise.reject(new GateTimeout());
-    let last = ports.now(), saved = last, timer: NodeJS.Timeout | undefined;
+    let last = ports.now(), saved = last, timer: NodeJS.Timeout | undefined, testsAt: number | null = null;
+    const fileBound = trialFileTimeoutMs * Math.max(1, runChecks.length);
+    const onStep = perFile ? (line: string) => { if (testsAt === null && line.startsWith('tests')) testsAt = ports.now(); } : undefined;
     const tick = () => {
       const now = ports.now();
       record.inFlight = { ...record.inFlight!, seenAt: new Date(now).toISOString(), ...(ports.waiting?.() ? { waitedMs: (record.inFlight!.waitedMs ?? 0) + now - last } : {}) };
@@ -378,7 +386,11 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
     // `stop`, however long its waits run. GY-3509: the trial's own clock is that same remaining time,
     // never a multiple of it, so no runner outlives the 90-minute ceiling.
     const stop = new AbortController();
-    return Promise.race([ports.run(commit, runChecks, runFiles, left, stop.signal), new Promise<never>((_, reject) => { timer = setInterval(() => { tick(); if (ports.now() > deadline()) { reject(new GateTimeout()); stop.abort(new GateTimeout()); } }, 1000); })])
+    return Promise.race([ports.run(commit, runChecks, runFiles, left, stop.signal, onStep), new Promise<string[]>((resolve, reject) => { timer = setInterval(() => {
+      tick();
+      if (ports.now() > deadline()) { reject(new GateTimeout()); stop.abort(new GateTimeout()); }
+      else if (testsAt !== null && ports.now() - testsAt > fileBound) { resolve([...runChecks]); stop.abort(new Error(`a test file ran past the ${minutes(trialFileTimeoutMs)}-minute per-file timeout`)); }
+    }, 1000); })])
       .then(async failed => {
         tick();
         if (ports.now() > deadline()) throw new GateTimeout();
@@ -398,7 +410,7 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
     if (failed.length) {
       // A failing check runs once more before anything is blamed: a pass is a flake, filed for an owner.
       await step(`re-running ${failed.join(', ')}`);
-      const again = await run(tip, failed, files);
+      const again = await run(tip, failed, files, true);
       flakes = failed.filter(check => !again.includes(check));
       for (const check of flakes) await fileFailure(ports, record, at(), { key: `flake:${check}`, title: `Flaky check on main: ${check}`, description: `The batch gate's check ${check} failed on ${tip.slice(0, 12)} and passed on its re-run. Make it deterministic.` });
       // The e2e cases that must pass outright (GY-3147): smoke, whatever gate.core names, and every
@@ -421,7 +433,7 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
         const featureMap = check === 'e2e:graphyard-feature-map';
         if (featureMap || check.startsWith('test:') || catalogOnly) {
           let failsThere = record.results[verified]?.[check];
-          if (failsThere === undefined) { await step(`probing ${check} on the verified commit`); failsThere = (await run(verified, [check], files)).includes(check); }
+          if (failsThere === undefined) { await step(`probing ${check} on the verified commit`); failsThere = (await run(verified, [check], files, true)).includes(check); }
           (record.results[verified] ??= {})[check] = failsThere;
           await ports.checkpoint?.(); // the probe's verdict is saved to the record before anything is filed (GY-3147)
           if (failsThere) {
