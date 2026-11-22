@@ -231,14 +231,15 @@ export async function runTests(options: RunOptions = {}): Promise<RunResult> {
   // The browser window is the dev server's port with a spare beside it, then one window above both
   // the run's shared Postgres cluster and the sentinel that holds the window (GY-3356); a Node
   // run's window is its shared cluster's own.
-  // GY-3611: the CLI and server the tests start run from dist/; build them once, before the first file, when missing or stale.
   const repository = fileURLToPath(new URL('../..', import.meta.url));
-  if (resolve(cwd) === resolve(repository) && !builtEntries.every(name => builtEntry(cwd, name))) await buildEntries(cwd);
   // The dashboard the browser-driving tests read is dist/ too, which no checkout carries (it is
   // ignored): a remote shard's fresh clone and a host that never ran the build would fail every
-  // page load, so the site is built once ahead of the files when it is missing.
+  // page load, so the site is built once ahead of the files when it is missing — and ahead of
+  // the entries, as in `npm run build`, because vite empties dist/ and would take them with it.
   if (resolve(cwd) === resolve(repository) && !existsSync(join(cwd, 'dist', 'index.html')))
     await buildDashboard(cwd);
+  // GY-3611: the CLI and server the tests start run from dist/; build them once, before the first file, when missing or stale.
+  if (resolve(cwd) === resolve(repository) && !builtEntries.every(name => builtEntry(cwd, name))) await buildEntries(cwd);
   const reservation = await reserveTestPorts(options.browser ? { first: defaultBrowserPort, span: 2 + testPortSpan, last: 65_000, ...options.ports } : { ...nestedFirst(), ...options.ports });
   let postgres: Awaited<ReturnType<typeof import('./postgres.js').startPostgres>> | undefined;
   try {
