@@ -1,0 +1,14 @@
+{
+  "id": "one-build-per-commit",
+  "title": "A merge trial builds its commit once, even when a failing test file reruns",
+  "description": "A real merge trial over a temporary Git repository whose build counts its runs: a test file that fails once is rerun on the same merge commit, and the trial records one build step for that commit, the rerun reusing it.",
+  "tags": ["delivery", "regression"],
+  "target": "any",
+  "required": false,
+  "steps": [{
+    "kind": "command",
+    "name": "a flaky file reruns on the merge commit without a second build",
+    "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:one-build-per-commit tests/one-build-per-commit.test.ts",
+    "timeoutSeconds": 300
+  }]
+}
