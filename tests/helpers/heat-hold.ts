@@ -7,14 +7,16 @@ import { cpuCelsius, heatReading, heatWindowMs, trialHotCelsius } from '../../sr
  */
 export function heatGate(read: () => Promise<number | null> = () => cpuCelsius(), options: { pollMs?: number; onHold?: (celsius: number) => void } = {}) {
   const samples: [number, number][] = [];
+  // One line per hold, however many lanes wait on it.
+  let told = false;
   return async () => {
-    for (let told = false; ;) {
+    for (;;) {
       const at = Date.now(), sample = await read();
       if (sample === null) return;
       while (samples.length && at - samples[0]![0] >= heatWindowMs) samples.shift();
       samples.push([at, sample]);
       const heat = heatReading(samples)!;
-      if (heat.celsius < trialHotCelsius) return;
+      if (heat.celsius < trialHotCelsius) { told = false; return; }
       if (!told) { told = true; options.onHold?.(heat.celsius); }
       await new Promise(done => setTimeout(done, options.pollMs ?? 5_000));
     }
