@@ -157,3 +157,10 @@ test('integration:master-large-transcript-wake — a streaming read failure pres
   assert.equal(await captureConversation(conversation), 'Current question');
   assert.equal(await readFile(record, 'utf8'), await readFile(transcript, 'utf8'));
 });
+
+test('unit:master-session-resumes — a remote shard, whose /tmp and HOME are both tmpfs, keeps the >2 GiB records on disk beside its checkout', async () => {
+  const { durableTestTmpdir } = await import('./helpers/run-tests.js');
+  const root = await temporaryDirectory('shard-run'), home = join(root, 'home'), run = join(root, 'run');
+  const onDisk = join(run, '.gy-tmp'), statfs = (path: string) => ({ type: path === onDisk ? 0 : 0x01021994 });
+  assert.equal(durableTestTmpdir('/tmp', home, statfs, join(run, 'repo')), onDisk);
+});
