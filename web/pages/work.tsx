@@ -95,7 +95,7 @@ export default function WorkPage({ work, board, status, query, setQuery, setSele
     if (entry?.who === 'Nobody yet') return entry.does;
     return group === 'up-next' ? 'Waiting for a builder' : group === 'backlog' ? 'Not released yet' : plainWords(entry?.does ?? '');
   };
-  const table = (list: Row[]) => <table className="work-table">
+  const table = (list: Row[]) => <table className="sessions-table work-table">
     <thead><tr><th scope="col">State</th><th scope="col">Task</th><th scope="col">Now</th><th scope="col">Builder</th><th scope="col"><Term term="pull request" focusable={false}>PR</Term></th><th scope="col">Time</th></tr></thead>
     <tbody>{[...list].sort((a, b) => order[a.group] - order[b.group]).map(row => {
       const { item, group, entry } = row;
