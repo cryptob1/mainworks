@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { rm } from 'node:fs/promises';
+import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { incidentsFromStatus, publicLinkOffLine } from '../src/model/incidents.js';
 import { tailnetOnlyGuidance } from '../src/server/routes/team-access.js';
@@ -55,5 +55,15 @@ test('e2e:public-link-is-opt-in — off, the loop never runs Funnel and invites 
     assert.equal((await install.call('/api/team-access')).body.public, true);
     assert.deepEqual(await incident(), []);
     assert.equal((await loopApi('/api/team-access/host')).publicLinkOff, null);
+
+    // Public for a while, then Funnel is lost: the link was last public until that loss, not when it first went public.
+    await new Promise(resolve => setTimeout(resolve, 1_100));
+    const lost = Date.now();
+    await writeFile(join(install.host, 'funnel-refused'), '');
+    await rm(join(install.host, 'funnel.json'), { force: true });
+    await install.sync(start + 4 * funnelRetryMs);
+    const again = (await loopApi('/api/team-access/host')).publicLinkOff;
+    assert.ok(again, 'the incident opens again');
+    assert.ok(Date.parse(again.lastPublic) >= lost - 50, `last public ${again.lastPublic} is the loss, after ${new Date(lost).toISOString()}`);
   } finally { await install.close(); }
 });

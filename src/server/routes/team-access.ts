@@ -55,7 +55,8 @@ export async function publicLinkOff(pool: Pool, now: Date): Promise<{ doing: str
   if (!report || report.public) return null;
   const invited = (await pool.query('SELECT EXISTS (SELECT 1 FROM team_members) OR EXISTS (SELECT 1 FROM team_invites WHERE expires_at > $1) AS invited', [now])).rows[0]?.invited;
   if (!invited) return null;
-  const last = (await pool.query(`SELECT created_at FROM events WHERE ${unownedFamilySql(prefix)} AND kind = $1 AND payload->>'public' = 'true' ORDER BY seq DESC LIMIT 1`, [`${prefix}host`])).rows[0]?.created_at as Date | undefined;
+  // Only changed reports are recorded, so the link stayed public until the first report after the latest public one.
+  const last = (await pool.query(`SELECT created_at FROM events WHERE ${unownedFamilySql(prefix)} AND kind = $1 AND seq > (SELECT seq FROM events WHERE ${unownedFamilySql(prefix)} AND kind = $1 AND payload->>'public' = 'true' ORDER BY seq DESC LIMIT 1) ORDER BY seq LIMIT 1`, [`${prefix}host`])).rows[0]?.created_at as Date | undefined;
   return { doing: report.doing ?? 'The loop cannot read Tailscale on this machine. Start Tailscale there.', lastPublic: last ? new Date(last).toISOString() : null };
 }
 
