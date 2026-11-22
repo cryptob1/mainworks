@@ -1,5 +1,84 @@
 // Concern: fold this account's observations and request a live check after a session signal.
 import type { AgentRegistry, FleetAccount, ObservedQuota, QuotaObservation } from './registry.js';
+import { parseResetTime } from './capacity.js';
+
+export interface ProbeFailure { reason: string; resetsAt: string | null; apiError: string | null }
+const probeFallbackReason = 'The live request failed';
+const probeMaxLength = 160;
+const jsonOpening = /\{\s*["']/;
+const cleanLine = (line: string) => line.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
+const sanitizePlain = (line: string): { text: string; tail: string } => {
+  const idx = line.search(jsonOpening);
+  if (idx >= 0) {
+    const end = line.lastIndexOf('}');
+    const embedded = end > idx ? extractJsonMessage(line.slice(idx, end + 1)) : extractJsonMessage(line.slice(idx));
+    if (embedded?.reason) return { text: embedded.reason, tail: end > idx ? line.slice(end + 1).trim() : '' };
+    const prefix = line.slice(0, idx).replace(/[:\s-]+$/, '').trim();
+    return { text: prefix, tail: '' };
+  }
+  return { text: line, tail: '' };
+};
+function extractFromObject(record: unknown): { reason: string | null; apiError: string | null; isFailure: boolean } | null {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return null;
+  const obj = record as Record<string, unknown>;
+  const err = obj.error && typeof obj.error === 'object' ? obj.error as Record<string, unknown> : null;
+  const errData = err?.data && typeof err.data === 'object' ? err.data as Record<string, unknown> : null;
+  const msg = obj.message && typeof obj.message === 'object' ? obj.message as Record<string, unknown> : null;
+  const apiError = typeof obj.api_error === 'string' && obj.api_error.trim() ? obj.api_error.trim() : null;
+  const isFailure = obj.is_error === true || obj.type === 'error' || obj.type === 'turn.failed' || !!apiError
+    || (obj.type === 'message_end' && typeof msg?.errorMessage === 'string' && !!msg.errorMessage.trim())
+    || (obj.type === 'auto_retry_end' && obj.success === false);
+  const candidates = [obj.result, err?.message, errData?.message, msg?.errorMessage, obj.finalError, obj.error, obj.message];
+  const raw = candidates.find((value): value is string => typeof value === 'string' && value.trim().length > 0) ?? null;
+  const reason = raw ? sanitizePlain(cleanLine(raw)).text : null;
+  return { reason: reason || null, apiError, isFailure };
+}
+function extractJsonMessage(text: string): { reason: string | null; apiError: string | null; isFailure: boolean } | null {
+  try { return extractFromObject(JSON.parse(text)); } catch { return null; }
+}
+/**
+ * GY-3591: one parser for every runtime's live probe failure. Parses result/error JSON once to take
+ * the provider's own sentence and reset time; falls back to the last non-empty line, cut at 160
+ * characters, and never returns '{' followed by a quote.
+ */
+export function parseProbeFailure(
+  output: string | null | undefined,
+  now: number | null = null,
+  parseReset: (text: string, now: number) => string | null = parseResetTime,
+): ProbeFailure {
+  const raw = typeof output === 'string' ? output : '';
+  const trimmed = raw.trim();
+  let reason: string | null = null;
+  let tail = '';
+  let apiError: string | null = null;
+  const whole = trimmed.startsWith('{') ? extractJsonMessage(trimmed) : null;
+  if (whole?.reason) {
+    reason = whole.reason;
+    apiError = whole.apiError;
+  } else {
+    const lines = raw.replace(/\r/g, '').split('\n').map(cleanLine).filter(Boolean);
+    let fallbackJson: { reason: string; apiError: string | null } | null = null;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const parsed = lines[i]!.startsWith('{') ? extractJsonMessage(lines[i]!) : null;
+      if (parsed?.reason) {
+        if (parsed.isFailure) { reason = parsed.reason; apiError = parsed.apiError; break; }
+        fallbackJson ??= { reason: parsed.reason, apiError: parsed.apiError };
+      }
+    }
+    if (!reason && fallbackJson) { reason = fallbackJson.reason; apiError = fallbackJson.apiError; }
+    if (!reason) {
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const cleaned = sanitizePlain(lines[i]!);
+        if (cleaned.text && !jsonOpening.test(cleaned.text)) { reason = cleaned.text; tail = cleaned.tail; break; }
+      }
+    }
+  }
+  const finalReason = (reason || probeFallbackReason).slice(0, probeMaxLength).trim() || probeFallbackReason;
+  // The reset time is read only against the caller's clock; without one there is no reset.
+  const stated = now === null ? null : parseReset(finalReason, now) ?? (tail ? parseReset(tail, now) : null);
+  const resetsAt = stated && Date.parse(stated) > now! ? stated : null;
+  return { reason: finalReason, resetsAt, apiError };
+}
 
 /** An instant as the owner reads it: `2026-11-18 15:00 UTC`. */
 export const utcClock = (iso: string) => `${iso.slice(0, 16).replace('T', ' ')} UTC`;
