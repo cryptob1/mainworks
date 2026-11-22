@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { defaultChildRun } from '../child-runner.js';
 import { postReview, ReviewPostRefusal, reviewPostExample } from '../review-post.js';
 import { reviewStandard } from '../review-prompt.js';
+import { extractChangedAssertions } from '../model/changed-assertions.js';
 import { readVerificationMaps } from '../verification-maps.js';
 import { cliPath, resolveWork, type CliContext } from './context.js';
 import { defineCommands } from './registry.js';
@@ -35,7 +36,8 @@ async function reviewSelf({ api, args }: CliContext) {
   const head = selfGit('rev-parse', 'HEAD');
   const base = selfGit('merge-base', 'HEAD', `refs/remotes/origin/${baseBranch}`);
   const maps = await readVerificationMaps(process.cwd(), baseBranch, defaultChildRun).catch(() => []);
-  const standard = reviewStandard({ key: work.key, head, base }, work.criteria, null, { maps, paths: selfGit('diff', '--name-only', base, head).split('\n').filter(Boolean) });
+  const changedAssertions = extractChangedAssertions(selfGit('diff', '--no-color', '--no-ext-diff', base, head));
+  const standard = reviewStandard({ key: work.key, head, base }, work.criteria, null, { maps, paths: selfGit('diff', '--name-only', base, head).split('\n').filter(Boolean) }, { changedAssertions });
   console.log('Judge your own diff exactly as the independent reviewer will; fix every finding you would mark BLOCKING before you run complete.');
   console.log(standard);
 }

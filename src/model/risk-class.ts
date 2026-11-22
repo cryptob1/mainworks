@@ -27,13 +27,102 @@ export const compiled = new WeakMap<RepositoryPolicy, CompiledRule[]>();
 export const reviewedBeforeMerge = (risk: RiskClass) => risk === 'sensitive';
 
 /** One file of a delta: its path and, for a rename, where it came from. */
-export interface DeltaFile { path: string; previousPath?: string }
+export interface DeltaFile {
+  path: string;
+  previousPath?: string;
+  status?: 'added' | 'modified' | 'removed' | 'renamed' | 'copied' | 'changed' | 'unchanged';
+  additions?: number;
+  deletions?: number;
+  baseSha?: string | null;
+  previousBaseSha?: string | null;
+  /** Whether a diff to graphyard.json touches its checks section (GY-3635). */
+  checksChanged?: boolean;
+}
 export interface RiskVerdict { risk: RiskClass; reasons: string[] }
 
 /** The reason for one sensitive path: the path and the rule it matched, so a reader can check both. */
 export const sensitiveReason = (path: string, rule: string) => `${path}: ${rule}`;
 /** The reason an unseen delta is sensitive. */
 export const unknownChangeReason = 'unknown change';
+
+/** GY-3635: paths whose edits can weaken the repository's own checks. */
+export const isTestSelectorPath = (path: string) => path === 'scripts/ci-tests.mjs';
+export const isTestHelperPath = (path: string) => path.startsWith('tests/helpers/');
+export const isE2eCasePath = (path: string) => path.startsWith('e2e/cases/') && path.endsWith('.json');
+export const isTestFilePath = (path: string) =>
+  !isTestHelperPath(path) && (
+    path.startsWith('tests/')
+    || path.startsWith('browser-tests/')
+    || /(?:^|\/)(?:tests?|__tests__|specs?)\//.test(path)
+    || /\.(?:test|spec)\.[^/]+$/.test(path)
+    || /_test\.[^/]+$/.test(path)
+  );
+
+const canonical = (value: unknown): string => {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).filter(([, v]) => v !== undefined).sort(([a], [b]) => a.localeCompare(b));
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+};
+
+/** Whether two versions of graphyard.json differ in their checks sections (delivery.mergeGate, checks, gate, risk, e2e). */
+export function graphyardChecksChanged(baseText: string | null, headText: string | null): boolean {
+  if (baseText === headText) return false;
+  const parse = (text: string | null): Record<string, unknown> | null => {
+    if (text === null) return {};
+    try {
+      const parsed = JSON.parse(text);
+      return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null;
+    } catch { return null; }
+  };
+  const before = parse(baseText), after = parse(headText);
+  if (!before || !after) return true;
+  const section = (doc: Record<string, unknown>) => ({
+    checks: doc.checks,
+    mergeGate: (doc.delivery as Record<string, unknown> | undefined)?.mergeGate,
+    gate: doc.gate,
+    risk: doc.risk,
+    e2e: doc.e2e,
+  });
+  return canonical(section(before)) !== canonical(section(after));
+}
+
+const existedOnBase = (file: DeltaFile) =>
+  file.status === 'modified'
+  || file.status === 'removed'
+  || file.status === 'renamed'
+  || file.status === 'changed'
+  || (!!file.previousPath && file.previousPath !== file.path)
+  || (typeof file.baseSha === 'string' && file.baseSha.length > 0)
+  || (file.deletions ?? 0) > 0;
+
+/**
+ * GY-3635: reasons for files that modify or remove existing checks — existing test files, existing
+ * e2e cases, scripts/ci-tests.mjs, tests/helpers/**, or graphyard.json's checks section.
+ * Adding new test files or new e2e cases yields no reason.
+ */
+export function checkIntegrityReasons(files: readonly DeltaFile[]): string[] {
+  const reasons: string[] = [];
+  for (const file of files) {
+    if (file.status === 'unchanged') continue;
+    const ends = file.previousPath && file.previousPath !== file.path ? [file.path, file.previousPath] : [file.path];
+    for (const path of ends) {
+      if (isTestSelectorPath(path)) { reasons.push(sensitiveReason(path, 'test selector')); continue; }
+      if (isTestHelperPath(path)) { reasons.push(sensitiveReason(path, 'test helper')); continue; }
+      if (path === 'graphyard.json') {
+        if (file.checksChanged === true || (file.checksChanged === undefined && existedOnBase(file))) {
+          reasons.push(sensitiveReason(path, 'trial checks'));
+        }
+        continue;
+      }
+      if (isE2eCasePath(path) && existedOnBase(file)) { reasons.push(sensitiveReason(path, 'existing e2e case')); continue; }
+      if (isTestFilePath(path) && existedOnBase(file)) { reasons.push(sensitiveReason(path, 'existing test')); }
+    }
+  }
+  return [...new Set(reasons)];
+}
 
 /** Both ends of each file: a rename out of a sensitive tree is a change to that tree whatever its destination. */
 export function deltaPaths(files: readonly DeltaFile[]): string[] {
