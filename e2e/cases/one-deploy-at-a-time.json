@@ -1,0 +1,13 @@
+{
+  "id": "one-deploy-at-a-time",
+  "title": "Two deploy watchers never undo each other",
+  "description": "Two watchers deploy the same newly verified commit to one control plane at once: one builds and restarts, the other skips the round, and the commit ends up served and stays served with no rollback.",
+  "target": "any",
+  "required": false,
+  "steps": [{
+    "kind": "command",
+    "name": "two watchers, one deploy",
+    "run": "node --import tsx tests/helpers/run-tests.ts tests/one-deploy-at-a-time.test.ts",
+    "timeoutSeconds": 600
+  }]
+}

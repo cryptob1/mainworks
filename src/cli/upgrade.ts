@@ -555,6 +555,8 @@ export async function watchPorts(input: { cliRoot: string; repoRoot: string; rep
     // GY-3347: the compose stack this install's control plane runs as, brought back up when its
     // health fails and the pass has nothing to deploy.
     ...(install.provider === 'compose' ? { stoppedPlane: stoppedPlanePorts(url, join(directory, 'compose'), input.run) } : {}),
+    // GY-3676: one deploy at a time for this install, whichever checkout a watcher runs from.
+    lockFile: join(directory, 'deploy', 'deploy.lock'),
   };
 }
 
