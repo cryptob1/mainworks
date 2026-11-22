@@ -72,6 +72,8 @@ export const standingStepFailures = (state: Pick<DaemonState, 'actions'>) =>
   Object.entries(state.actions).filter(([key, action]) => key.startsWith('step-failure:') && action.state === 'failed')
     .sort((a, b) => Date.parse(b[1].at) - Date.parse(a[1].at)).map(([, action]) => action.detail);
 /** The one timeout every step runs under. */
+/** GY-3605: how long the dispatch step waits the dispatcher's tick out; a slower tick runs on beside the cycle. */
+export const tickWaitMs = 10_000;
 export const stepTimeoutMs = (config: Pick<MasterConfig, 'run'>) => Math.max(60_000, config.run.intervalSeconds * 2_000);
 /** The key the master session's launch is handed to the launcher under. */
 export const masterLaunchKey = 'master:launch';
@@ -770,8 +772,12 @@ async function dispatchStep(cycle: Cycle) {
     if (recordStallAlarm(state, alarm, clock)) { cycle.log(`[graphyard-master] cycle ${state.cycle}: ${alarm ?? 'the stall alarm cleared'}`); await effects.persist(state); }
   }
   // A dispatch tick that fails (its state cannot be saved) still wakes the master.
-  try { await effects.dispatchTick?.(snapshot, cpuWaitingLine); }
-  finally { await masterSession(cycle, open); }
+  // GY-3605: the tick's session launches each have the launch bound — minutes, when a product review
+  // builds and serves its head first — so a tick still running after tickWaitMs runs on beside the
+  // cycle. The effect starts no second tick, and the next cycle's step joins the one running.
+  let timer: NodeJS.Timeout | undefined;
+  try { await Promise.race([effects.dispatchTick?.(snapshot, cpuWaitingLine), new Promise(resolve => { timer = setTimeout(resolve, tickWaitMs); })]); }
+  finally { clearTimeout(timer); await masterSession(cycle, open); }
 }
 
 /**

@@ -258,7 +258,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     checkoutTrust: registry => checkoutTrustRefusals(root, registry, current().hostId),
     setRuntime: (runtime, reason) => mutate('agent-registry/runtimes', { runtime, reason }, randomUUID()),
     // The reviewer and producer sessions the dispatcher owes, over the cycle's own snapshot; a tick
-    // still running past its step's timeout is not started twice. `held` (GY-3348) waits every launch
+    // still running after the step's wait for it (GY-3605) is not started twice. `held` (GY-3348) waits every launch
     // the tick would make while the host's CPU is saturated.
     dispatchTick: (snapshot, held) => ticking ??= (async () => {
       cursor ??= await readDispatchCursor(root, current());
