@@ -64,16 +64,16 @@ test('e2e:install-move-host — install move copies the database, files and cred
     await setupMaster(root, { url: source.url, token: tokens.master, cliPath: launcher, credentialDirectory: configHome, hostId: 'source-host', herdrWorkspace: 'workspace-graphyard' }, bound as typeof fetch);
     const release = join(root, '.graphyard', 'cli-releases', commit);
     git('worktree', 'add', '--detach', '--quiet', release, commit);
-    const config = JSON.parse(await readFile(join(root, '.graphyard/master.json'), 'utf8'));
+    const config = JSON.parse(await readFile(join(root, '.mainworks/master.json'), 'utf8'));
     const operatorCredential = join(masters, 'operator-agent.token'), workerCredential = join(scratch, 'workers', 'only-worker.token');
     await mkdir(join(scratch, 'workers'), { recursive: true, mode: 0o700 });
     await writeFile(operatorCredential, `operator-agent-${'a'.repeat(40)}`, { mode: 0o600 }); await writeFile(workerCredential, tokens.worker, { mode: 0o600 });
     // An operator token no master.json names: the credential directory carries it (the token the hand move missed).
     const otherOperatorToken = join(masters, 'another-install.token');
     await writeFile(otherOperatorToken, `another-${'n'.repeat(40)}`, { mode: 0o600 });
-    await atomicPrivateWrite(join(root, '.graphyard/master.json'), { ...config, operatorAgent: { id: 'master-agent', credentialFile: operatorCredential },
+    await atomicPrivateWrite(join(root, '.mainworks/master.json'), { ...config, operatorAgent: { id: 'master-agent', credentialFile: operatorCredential },
       workers: [{ name: 'only-worker', principal: 'worker', agentName: 'only-worker', mode: 'launch', kind: 'claude', credentialFile: workerCredential, agentArgs: [], approvals: 'auto', environment: {} }] });
-    await atomicPrivateWrite(join(root, '.graphyard/connection.json'), { url: source.url, cliPath: launcher, hostId: 'source-host' });
+    await atomicPrivateWrite(join(root, '.mainworks/connection.json'), { url: source.url, cliPath: launcher, hostId: 'source-host' });
     await source.ok('agent-registry/apply', { runtimes: proposedRuntimes.filter(runtime => runtime.name === 'claude'), models: [{ name: 'default', id: null }],
       accounts: [{ name: 'claude-a', runtime: 'claude', model: 'default', credential: { host: 'source-host', home: null } }], roles: [{ name: 'worker', accounts: ['claude-a'], concurrency: 1 }], reason: 'fixture' });
     const item = await source.ok('work', { title: 'Moves with the install', why: 'w', simplest: 's', type: 'chore', priority: 2, criteria: [{ id: 'AC-1', text: 'Moves', proofs: ['e2e:install-move-host'] }] });
@@ -97,7 +97,7 @@ test('e2e:install-move-host — install move copies the database, files and cred
     assert.deepEqual(plan.accounts, ['claude-a']); assert.deepEqual(plan.refusals, []); assert.equal(plan.applied, false);
     assert.equal(existsSync(target), false, 'the plan copies nothing');
     assert.equal((await source.ok('agent-registry/document', undefined, tokens.master)).accounts[0].credential.host, 'source-host', 'the plan re-points nothing');
-    assert.equal(JSON.parse(await readFile(join(root, '.graphyard/master.json'), 'utf8')).hostId, 'source-host');
+    assert.equal(JSON.parse(await readFile(join(root, '.mainworks/master.json'), 'utf8')).hostId, 'source-host');
 
     // Applied to a directory standing in for the target host.
     const docker = fakeTransport();
@@ -105,7 +105,7 @@ test('e2e:install-move-host — install move copies the database, files and cred
     assert.equal(moved.applied, true); assert.equal(running, null, 'the move stopped the install before copying');
     for (const file of plan.credentials) assert.equal((await stat(join(target, file))).mode & 0o777, 0o600, `${file} is on the target with mode 0600`);
     assert.equal((await stat(join(target, otherOperatorToken))).mode & 0o777, 0o600, 'the credential directory carries operator tokens master.json does not name');
-    for (const file of ['master.json', 'connection.json']) assert.equal(JSON.parse(await readFile(join(target, root, '.graphyard', file), 'utf8')).hostId, 'target-host', `${file} names the target host`);
+    for (const file of ['master.json', 'connection.json']) assert.equal(JSON.parse(await readFile(join(target, root, '.mainworks', file), 'utf8')).hostId, 'target-host', `${file} names the target host`);
     assert.ok(existsSync(join(target, data, 'PG_VERSION')), 'the database directory is on the target');
     // The main clone's .git (objects, refs, HEAD, config) moves with both worktree registrations, so Git on the target accepts the moved trees.
     const movedGit = join(target, repo, '.git');

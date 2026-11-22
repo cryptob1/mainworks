@@ -10,7 +10,7 @@ import { chmod, cp, lstat, mkdir, readdir, rmdir, readFile, rename, rm, stat, wr
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { spawn } from 'node:child_process';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { assertRepository, buildProposal, canonicalJson, collectScanInput, discover, localDirectory, removeDeliveryWorkflow, saveDiscovery, setupProposalSchema, type SetupProposal } from './onboarding.js';
@@ -303,7 +303,7 @@ export function setupDrift(applied: AppliedSetup | null, proposal: SetupProposal
 
 /** Non-mutating status of the local proposal and applied setup, for read-only commands. */
 export async function readSetupStatus(root: string) {
-  const directory = resolve(stateDir(root));
+  const directory = resolve(stateDir(root)), local = basename(directory);
   const read = async (name: string, schema: z.ZodType<any>) => {
     let value: any = null;
     try { value = JSON.parse(await readFile(resolve(directory, name), 'utf8')); } catch (error: any) { if (error.code !== 'ENOENT') return { error: 'unreadable' }; }
@@ -314,10 +314,10 @@ export async function readSetupStatus(root: string) {
   const drift = proposal.value && applied.value ? setupDrift(applied.value, proposal.value)
     : applied.value ? ['Applied setup record exists without a stored proposal; run init --scan'] : [];
   return {
-    proposal: proposal.value ? `.graphyard/${proposalFileName}` : null,
+    proposal: proposal.value ? `${local}/${proposalFileName}` : null,
     appliedAt: applied.value?.appliedAt ?? null,
     githubApp: applied.value?.artifacts.githubApp ?? null,
-    unreadable: [proposal.error && `.graphyard/${proposalFileName} ${proposal.error}`, applied.error && `.graphyard/${appliedFileName} ${applied.error}`].filter(Boolean),
+    unreadable: [proposal.error && `${local}/${proposalFileName} ${proposal.error}`, applied.error && `${local}/${appliedFileName} ${applied.error}`].filter(Boolean),
     drift,
     // GY-1859: what the host's loop unit runs against this CLI's code, so `doctor`'s
     // readiness checklist flags a unit on other code as one line naming both paths and the rerun.

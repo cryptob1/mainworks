@@ -424,10 +424,10 @@ test('unit:install-principal-roster — init --scan --apply without an install w
     const result = JSON.parse(stdout);
     assert.equal(result.principalsFile, null);
     assert.match(result.next, /graphyard install --apply/);
-    await assert.rejects(stat(join(fixture.root, '.graphyard/principals.json')), { code: 'ENOENT' });
-    const state = JSON.parse(await readFile(join(fixture.root, '.graphyard/repository-setup.json'), 'utf8'));
+    await assert.rejects(stat(join(fixture.root, '.mainworks/principals.json')), { code: 'ENOENT' });
+    const state = JSON.parse(await readFile(join(fixture.root, '.mainworks/repository-setup.json'), 'utf8'));
     assert.equal(state.artifacts.principals, null);
-    const proposal = JSON.parse(await readFile(join(fixture.root, '.graphyard/setup-proposal.json'), 'utf8'));
+    const proposal = JSON.parse(await readFile(join(fixture.root, '.mainworks/setup-proposal.json'), 'utf8'));
     for (const profile of proposal.profiles.workers) await assert.rejects(stat(profile.credentialFile), { code: 'ENOENT' });
   } finally { await fixture.cleanup(); }
 });

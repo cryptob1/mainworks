@@ -46,7 +46,7 @@ test('unit:deploy-unit-watches-main — install --plan lists graphyard-deploy.se
       const units = plan.actions.find(action => action.id === 'local.units');
       assert.ok(units, `the ${provider} plan lists the units`);
       assert.match(units.title, /graphyard-master\.service .*graphyard-deploy\.service \(upgrade --watch/);
-      assert.deepEqual(units.values?.map(value => value.value), ['graphyard-master-owner-project.service', 'graphyard-deploy-owner-project.service']);
+      assert.deepEqual(units.values?.map(value => value.value), ['mainworks-master-owner-project.service', 'mainworks-deploy-owner-project.service']);
     } finally { await fixture.cleanup(); }
   }
 

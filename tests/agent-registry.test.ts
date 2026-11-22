@@ -111,7 +111,7 @@ async function master(workers: { name: string; principal: string; kind: string; 
     const credentialFile = join(credentialDirectory, 'workers', `${entry.name}.token`); await writeFile(credentialFile, `${entry.name}-token-`.padEnd(40, 'x'), { mode: 0o600 });
     config.workers.push({ name: entry.name, principal: entry.principal, agentName: entry.name, mode: 'launch', kind: entry.kind, credentialFile, agentArgs: entry.agentArgs ?? [], approvals: 'auto', environment: {} });
   }
-  await atomicPrivateWrite(join(root, '.graphyard/master.json'), config);
+  await atomicPrivateWrite(join(root, '.mainworks/master.json'), config);
   return { root, credentialDirectory, config: await loadMasterConfig(root) };
 }
 /** Herdr for the reviewer launches below: the launch starts its runtime at once (GY-121). */
@@ -388,7 +388,7 @@ test('integration:registry-live-capacity — capacity is a registry change with 
 
   // One run: the executor's configuration is loaded once and never again, and its file is never written.
   const { root, config } = await master([{ name: 'worker-a', principal: 'implementer', kind: 'claude' }]);
-  const file = join(root, '.graphyard/master.json'), bytes = await readFile(file, 'utf8');
+  const file = join(root, '.mainworks/master.json'), bytes = await readFile(file, 'utf8');
   const next = async () => { const result = await dispatch(root, config, 'worker-a', probe); return { account: result.account!.environment, kind: result.account!.kind, skipped: result.account!.skipped, tab: result.run!.env }; };
   assert.equal((await next()).account, 'claude-a');
 

@@ -307,7 +307,8 @@ export async function ensureDeployCheckout(checkout: string, source: string, run
   if (origin) await git('-C', next, 'remote', 'add', 'origin', origin);
   if (linked) {
     // The release pointer publishCliRelease left beside the old checkout stays with the install.
-    if (existsSync(join(stateDir(checkout)))) await rename(join(stateDir(checkout)), join(stateDir(next)));
+    const state = stateDir(checkout);
+    if (existsSync(state)) await rename(state, join(next, basename(state)));
     await rm(checkout, { recursive: true, force: true });
     console.log(`Replaced the deploy checkout ${checkout}, a worktree of another checkout, with a standalone clone at ${await git('-C', next, 'rev-parse', 'HEAD')}`);
   }

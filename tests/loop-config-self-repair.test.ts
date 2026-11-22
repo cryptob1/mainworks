@@ -139,7 +139,7 @@ test('a config with 101 loop-minted profiles is repaired by the next cycle, whic
   const config = await loadMasterConfig(root);
   const first = config.workers[0]!, last = config.workers.at(-1)!;
   const overflow = { ...last, name: `${first.name}-${config.workers.length + 1}`, principal: `${first.principal}-${config.workers.length + 1}`, agentName: `${first.agentName}-${config.workers.length + 1}`, minted: true };
-  const file = join(root, '.graphyard/master.json');
+  const file = join(root, '.mainworks/master.json');
   await writeFile(file, JSON.stringify({ ...config, workers: [...config.workers, overflow] }, null, 2), { mode: 0o600 });
   assert.equal(JSON.parse(await readFile(file, 'utf8')).workers.length, MAX_WORKER_PROFILES + 1, 'the fixture holds 101 profiles');
   const said: string[] = [];

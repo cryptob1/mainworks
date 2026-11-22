@@ -26,12 +26,12 @@ test('e2e:init-scan-read-only — init --scan prints the proposal and leaves the
     assert.equal(scanned.wroteNothing, true);
     assert.equal(git('status', '--porcelain', '--ignored'), '');
     assert.deepEqual(await readFile(join(root, '.gitignore')), gitignore);
-    await assert.rejects(stat(join(root, '.graphyard')), { code: 'ENOENT' });
+    await assert.rejects(stat(join(root, '.mainworks')), { code: 'ENOENT' });
 
     const applied = await run(['init', '--scan', '--apply', '--url', 'https://graphyard.example']);
     assert.match(applied.proposal, /setup-proposal\.json$/);
-    assert.ok((await stat(join(root, '.graphyard/repository-setup.json'))).isFile());
+    assert.ok((await stat(join(root, '.mainworks/repository-setup.json'))).isFile());
     assert.match(await readFile(join(root, 'AGENTS.md'), 'utf8'), /Graphyard coordination/);
-    assert.match(await readFile(join(root, '.gitignore'), 'utf8'), /^\.graphyard\/$/m);
+    assert.match(await readFile(join(root, '.gitignore'), 'utf8'), /^\.mainworks\/$/m);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
