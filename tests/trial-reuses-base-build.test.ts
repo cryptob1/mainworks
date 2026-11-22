@@ -16,7 +16,6 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // against one base commit build that commit once — the second base pass records a reused build
 // under 2 s — and a base pass on a newer tip takes the old tip's tree back and builds the new tip once.
 
-const own = 'integration:tests/trial-reuses-base-build.test.ts';
 const proof = 'integration:trial-reuses-base-build';
 const identity = { GIT_AUTHOR_NAME: 'Someone', GIT_AUTHOR_EMAIL: 'someone@example.com', GIT_COMMITTER_NAME: 'Someone', GIT_COMMITTER_EMAIL: 'someone@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
 const gitIn = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
@@ -92,7 +91,7 @@ async function merge(repo: { root: string; base: string }, key: string, head: st
   return { outcome: await mergeOne(ports, work), trial: events.find(event => event.kind === 'trial') as TrialEvent | undefined, steps, timings };
 }
 
-test(`${own} — two trials on one base commit build the tip once, the second base pass recording a reused build under 2 s; a moved base takes the old tip's tree back and builds the new tip once`, { timeout: 300_000 }, async () => {
+test(`${proof} — two trials on one base commit build the tip once, the second base pass recording a reused build under 2 s; a moved base takes the old tip's tree back and builds the new tip once`, { timeout: 300_000 }, async () => {
   const repo = await repository();
   const headA = repo.head('a'), headB = repo.head('b');
 
@@ -136,7 +135,7 @@ test(`${own} — two trials on one base commit build the tip once, the second ba
   assert.equal(builds.filter(cwd => cwd === kept1).length, 1, 'and the old tip still exactly once');
 });
 
-test(`${own} — bare unbuilt kept directory is reclaimed when main moves, concurrent base pass does not mark locked kept tree built, and pnpm workspace populates kept tree with a full build`, { timeout: 300_000 }, async () => {
+test(`${proof} — bare unbuilt kept directory is reclaimed when main moves, concurrent base pass does not mark locked kept tree built, and pnpm workspace populates kept tree with a full build`, { timeout: 300_000 }, async () => {
   const sha = 'a'.repeat(40);
   assert.equal(keptBaseBuildSha(`graphyard-base-build-${sha}`), sha);
   assert.equal(keptBaseBuildSha(`graphyard-base-build-${sha}.built`), sha);
@@ -234,7 +233,7 @@ test(`${own} — bare unbuilt kept directory is reclaimed when main moves, concu
   assert.equal(pnpmBuildCalls.length, 1, 'second base pass for another workspace package reused the full kept build');
 });
 
-test(`${own} — a kept tree that took the warm dependency image keeps its node_modules after that image is evicted`, { timeout: 300_000 }, async () => {
+test(`${proof} — a kept tree that took the warm dependency image keeps its node_modules after that image is evicted`, { timeout: 300_000 }, async () => {
   const root = await temporaryDirectory('base-build-warm', tmpdir());
   const write = (path: string, content: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); };
   gitIn(root, 'init', '-q', '-b', 'main');
