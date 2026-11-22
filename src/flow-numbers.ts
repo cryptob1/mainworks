@@ -48,7 +48,9 @@ interface Visit { station: FlowStation; start: number; end: number; open: boolea
 
 /** The item's stays at each station, from the stage each whole-document row records; the test stage splits at its merge intent into queue and trial. */
 function visits(item: FlowItem, now: number): Visit[] {
-  const marks = [...item.events.filter(event => event.stage).map(event => ({ at: ms(event.at), stage: event.stage! })), { at: ms(item.stageEnteredAt), stage: item.stage }]
+  // The item's current stage holds from its stageEnteredAt on, whatever the rows after it record.
+  const entered = ms(item.stageEnteredAt);
+  const marks = [...item.events.filter(event => event.stage && ms(event.at) < entered).map(event => ({ at: ms(event.at), stage: event.stage! })), { at: entered, stage: item.stage }]
     .filter(mark => Number.isFinite(mark.at)).sort((a, b) => a.at - b.at);
   const intents = item.events.filter(event => event.kind === 'merge.intent').map(event => ms(event.at));
   const out: Visit[] = [];

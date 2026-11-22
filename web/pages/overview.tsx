@@ -14,7 +14,9 @@ import { BuildLine } from '../fun';
 import { useGlide } from '../glide';
 import { EmptyState } from '../components/page-layout';
 import { WhereItRuns } from '../components/where-it-runs';
-import { pipelineSentence, type PipelineTime } from '../../src/pipeline-speed';
+import { pipelineSentence, plainDuration, type PipelineTime } from '../../src/pipeline-speed';
+import { flowStations, percent, reworkCauses } from '../../src/flow-numbers';
+import type { Flow as FlowReport } from '../../src/server/flow';
 
 /**
  * The Work page with its motion (GY-3272 AC-4b): on every render, a row that changed group is
@@ -35,6 +37,30 @@ function Speed({ time, now, open }: { time?: PipelineTime | null; now: number; o
     <p className="speed-line" data-speed-line={line.warning ? 'warning' : 'calm'}>
       {line.text}{line.open && <> <button type="button" className="text-button" onClick={() => open(line.open!)}>Open →</button></>}
     </p>
+  </div>;
+}
+
+/** GY-3624: attempts an hour and first-pass yield over 24 hours, the slow-station line, and a fold with each station's wait and the rework causes. */
+function Flow({ flow }: { flow?: FlowReport | null }) {
+  if (!flow) return null;
+  const day = flow['24h'];
+  const wait = (minutes: number) => plainDuration(minutes);
+  return <div className="flow" data-flow>
+    <p className="flow-line"><span data-flow-attempts>{day.attemptsPerHour.toFixed(1)} attempts an hour</span> · <span data-flow-yield>{percent(day.firstPassYield)} first pass</span> (last 24 hours)</p>
+    {flow.attention && <p className="speed-line flow-attention" data-flow-attention>{flow.attention.text}</p>}
+    <details className="flow-details">
+      <summary>Flow details →</summary>
+      <table className="sessions-table compact-table flow-table" aria-label="Wait at each station, last 24 hours">
+        <thead><tr><th scope="col">Station</th><th scope="col">Median</th><th scope="col">Slowest tenth</th><th scope="col">Oldest</th></tr></thead>
+        <tbody>{flowStations.map(station => { const at = day.stations[station]; return <tr key={station} data-station={station}>
+          <th scope="row">{station[0].toUpperCase() + station.slice(1)}</th><td>{at ? wait(at.median) : '—'}</td><td>{at ? wait(at.p90) : '—'}</td><td>{at ? `${at.oldest.key} · ${wait(at.oldest.minutes)}` : '—'}</td></tr>; })}</tbody>
+      </table>
+      <table className="sessions-table compact-table flow-table" aria-label="Sent back, last 24 hours">
+        <thead><tr><th scope="col">Sent back by</th><th scope="col">Times</th></tr></thead>
+        <tbody>{reworkCauses.map(cause => <tr key={cause} data-cause={cause}><th scope="row">{cause[0].toUpperCase() + cause.slice(1)}</th><td>{day.rework[cause]}</td></tr>)}</tbody>
+      </table>
+      <p className="muted">Flaky trials {percent(day.flakyRate)} of {day.trials}. Reverted {percent(day.revertRate)} of {day.merges} merges.</p>
+    </details>
   </div>;
 }
 
@@ -76,6 +102,7 @@ export default function OverviewPage({ work, board, status, query, setQuery, set
   const admin = status?.actor?.role === 'admin';
   return <>
     <Speed time={status?.pipelineTime} now={now} open={setSelected}/>
+    <Flow flow={status?.flow}/>
     <div className="page-heading"><div><h1>Work</h1><p className="page-fact">{board ? summarySentence(counts) : 'Reading the board…'}</p><BuildLine/></div>
       <div className="page-actions"><label className="search"><input aria-label="Search work" placeholder="Search by key or title" value={query} onChange={e => setQuery(e.target.value)}/></label>
         {admin && <button type="button" onClick={() => setCreating(true)}>＋ New work item</button>}</div></div>

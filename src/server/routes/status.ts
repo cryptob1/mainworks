@@ -29,6 +29,7 @@ import { gateRecordPath, readGateRecord } from '../../batch-gate.js';
 import { boundedSnapshot, workDocument } from '../../store/bounded-snapshot.js';
 import { snapshotPage } from '../../store/paged-snapshot.js';
 import { pipelineItems, pipelineTime } from '../../pipeline-speed.js';
+import { readFlow } from '../flow.js';
 
 
 /** Control-plane status and the work reads every client polls. */
@@ -38,6 +39,11 @@ export const statusRoutes = defineRoutes('status', [
     demand(hours === 24 || hours === 72, 'Replay window must be 24 or 72 hours', 400);
     const replay = await readWorkReplay(services.engine.store.pool, hours);
     return { ...replay, items: operatorVisible(replay.items) };
+  } },
+  // GY-3624: the flow numbers alone, for master status.
+  { method: 'GET', path: '/api/flow', async handle({ services, operatorVisible }) {
+    const now = (await services.engine.store.pool.query('SELECT clock_timestamp() AS now')).rows[0].now as Date;
+    return readFlow(services.engine.store.pool, operatorVisible(await services.engine.store.fleet()), now.getTime());
   } },
   {
     method: 'GET', path: '/api/status',
@@ -87,6 +93,8 @@ export const statusRoutes = defineRoutes('status', [
       const released = new Map<string, number>((await engine.store.pool.query("SELECT work_id, min(created_at) AS at FROM events WHERE kind='ready' AND work_id = ANY($1::uuid[]) GROUP BY work_id", [timed.map(item => item.id)])).rows.map(row => [row.work_id, (row.at as Date).getTime()]));
       return { workerVerifications: pendingWorkerVerifications(services, actor, visibleWork), actor, humanOnly, app, delegation: delegationSnapshot(principals.map(p => p.actor), visibleWork, observedAt.getTime(), limits), repository: repository || null,
         baseBranch: process.env.GITHUB_BASE_BRANCH ?? 'main', starvedJobs, jobs, deploy, serving, live, pipelineTime: pipelineTime(timed, released, observedAt.getTime()),
+        // GY-3624: attempts and merges an hour, first-pass yield, wait per station, flaky rate and reverts for 6 hours, 24 hours and 7 days.
+        flow: await readFlow(engine.store.pool, visibleWork, observedAt.getTime()),
         // GY-3399: the week's batch-gate reverts beside the week's gates removed, each naming its items, for the header.
         thisWeek: servingRoot && actor.role !== 'operator-agent' ? await thisWeekReport(servingRoot, observedAt.getTime()) : null,
         // GY-3483: the checks running now, for the header — merge trials the merge writer has in flight
