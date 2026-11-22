@@ -1,0 +1,11 @@
+{
+  "id": "headroom-first",
+  "title": "A role tries accounts with room left before accounts near their allowance",
+  "description": "Three seeded worker accounts, one at 88% of its highest usage window and two with room left: five launches in a row land on the two with room, never refusing the hot one, and each session's selection reason, as master registry shows it, names 'room left' for the choice.",
+  "tags": ["accounts", "quota", "selection"],
+  "target": "any",
+  "required": true,
+  "steps": [
+    { "kind": "command", "name": "five launches land on the accounts with room left first", "run": "node --import tsx tests/helpers/run-tests.ts tests/headroom-first.test.ts", "timeoutSeconds": 300 }
+  ]
+}
