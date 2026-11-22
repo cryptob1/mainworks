@@ -9,13 +9,12 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { shardHosts, shardRepository } from './helpers/shard-hosts.js';
 
 // GY-3612: database and browser tests run on remote shards too (each shard container starts the shared
-// warm Postgres cluster and ships Chromium in the trial image). Only tests that need the Docker socket,
-// host-pinned confinement/benchmarks or the npm registry (npm_config_cache; a shard has no network,
-// GY-3604) stay local; when a host's image lacks the browser, browser test files stay local and the
-// reason is recorded once.
+// warm Postgres cluster and ships Chromium in the trial image). Only tests that need the Docker socket
+// or host-pinned confinement/benchmarks stay local; when a host's image lacks the browser, browser
+// test files stay local and the reason is recorded once.
 
-test('unit:only-docker-tests-stay-on-the-coordinator — postgres, withDatabase, playwright and chromium are remoteable; docker and npm-cache words stay local', async () => {
-  assert.equal(localOnlyTestPattern.source, 'docker|bwrap|unshare|landlock|hard-math|npm_config_cache');
+test('unit:only-docker-tests-stay-on-the-coordinator — postgres, withDatabase, playwright and chromium are remoteable; docker stays local', async () => {
+  assert.equal(localOnlyTestPattern.source, 'docker|bwrap|unshare|landlock|hard-math|npm exec|\\/var\\/tmp|npm_config_cache');
   for (const word of ['postgres', 'withDatabase', 'playwright', 'chromium']) {
     assert.equal(remoteableTestFile(`import { ${word} } from "./helper.js";\n`), true, `${word} is remoteable`);
   }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { Launcher, runCycle } from '../src/daemon/cycle.js';
+import { Launcher, runCycle, tickWaitMs } from '../src/daemon/cycle.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { daemonEffects, type DaemonEffects } from '../src/daemon/effects.js';
 import { masterConfigSchema } from '../src/master/profiles.js';
@@ -79,4 +79,30 @@ test('unit:loop-step-bounded — an unanswering agent registry costs the dispatc
     assert.ok(elapsed < 2 * delayMs, `the cycle waits on one registry bound, not two (${Math.round(elapsed)} ms)`);
     assert.ok(!lines.some(line => line.includes('the dispatch step failed')), lines.join('\n'));
   } finally { globalThis.fetch = original; }
+});
+
+// GY-3605: the dispatch step awaited the dispatcher's tick, whose session launches each have the
+// launch bound — minutes, when a product review builds and serves its head before its session
+// starts — so one such launch took the step past its 60 s timeout. The step now waits a tick out
+// for tickWaitMs only; a slower tick runs on beside the cycle.
+test('unit:loop-step-bounded — a dispatcher tick still launching a session runs beside the cycle: the dispatch step settles and the rest of the cycle goes on', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let ticks = 0, persisted = 0;
+  const effects: DaemonEffects = {
+    snapshot: async () => ({ work: [], now: '2030-04-02T12:00:00.000Z' }),
+    agents: () => [], credentials: async () => ({}), closeSession: () => {}, dispatch: async () => {}, persist: async () => { persisted++; },
+    dispatchTick: () => { ticks++; return new Promise(() => {}); },
+  };
+  const lines: string[] = [];
+  let done = false;
+  const cycle = runCycle(config, emptyDaemonState(config), effects, () => Date.parse('2030-04-02T12:00:00Z'), undefined, line => lines.push(line)).finally(() => { done = true; });
+  const settle = async () => { for (let turn = 0; turn < 50; turn++) await new Promise(resolve => setImmediate(resolve)); };
+  await settle();
+  assert.equal(ticks, 1, 'the tick started');
+  t.mock.timers.tick(tickWaitMs);
+  await settle();
+  assert.ok(done, 'the cycle ended once the tick had its wait, long before the step timeout');
+  await cycle;
+  assert.ok(!lines.some(line => line.includes('the dispatch step failed')), lines.join('\n'));
+  assert.ok(persisted > 0, 'the cycle persisted');
 });

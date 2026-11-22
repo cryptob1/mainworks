@@ -6,6 +6,6 @@
   "target": "any",
   "required": false,
   "steps": [
-    { "kind": "http", "name": "the served candidate answers ready", "method": "GET", "path": "/healthz?ready&strict", "status": 200, "expect": [{ "path": "healthy", "equals": true }] }
+    { "kind": "http", "name": "the served candidate answers ready", "method": "GET", "path": "/healthz?ready&strict", "status": 200, "expect": [{ "path": "healthy", "equals": true }, { "path": "ok", "equals": true }] }
   ]
 }
