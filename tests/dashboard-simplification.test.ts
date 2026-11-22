@@ -195,7 +195,7 @@ test('integration:dashboard-navigation — one top bar (Home, Work, Lead, Settin
 test('integration:dashboard-word-budget — the home page answers what needs you, what is blocked, what is moving and what shipped on one screen in at most 165 words', () => {
   const page = home();
   const count = words(page).length;
-  // Keep the existing budget: the new Master entry replaces the duplicate sidebar repository name.
+  // Keep the existing budget: the Lead entry replaces the duplicate sidebar repository name.
   assert.ok(count <= 165, `home renders ${count} words excluding item titles: ${text(page)}`);
   for (const gone of ['Delivery slices', 'NO LEAD ASSIGNED', 'ENGINEERING, IN VIEW', 'Every change has an owner', 'Explicit reasons, actionable next steps', 'No delivery requires', 'sessions retain goals', 'leads coordinate only', 'Ownership is explicit', 'Agent fleet'])
     assert.ok(!text(page).includes(gone), `no ${gone}`);

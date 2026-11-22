@@ -150,7 +150,7 @@ function App() {
       if (page) {
         const target = resolveViewId(page);
         if (oldRouteRedirects[page] && page !== 'settings') {
-          history.replaceState(null, '', `${location.pathname}${location.search}#${target}`);
+          history.replaceState(null, '', `${location.pathname}${location.search}#${target}${location.hash.startsWith(`#${page}/`) ? location.hash.slice(1 + page.length) : ''}`);
         }
         setSelected(null);
         setView(target);

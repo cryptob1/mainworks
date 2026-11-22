@@ -383,8 +383,47 @@ tr.spent-summary td{padding:6px var(--space-4)}tr.spent-summary button{all:unset
 .main:has(.master-tabs)>:not(.master-tabpanel){flex-shrink:0}
 .master-tabs{flex-shrink:0}
 .master-tabpanel{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;overflow:hidden}
-.master-tabpanel>.live-terminal{flex:1;min-height:0;height:auto}
+.master-tabpanel>.live-terminal,.master-tabpanel>.terminal-mount>.live-terminal{flex:1;min-height:0;height:auto}
+.master-tabpanel>.terminal-mount{flex:1;min-height:0;display:flex;flex-direction:column}
+/* Behind another tab the pane keeps its laid-out size, so showing it never resizes or rescrolls the terminal. */
+.master-tabpanel{position:relative}
+.master-tabpanel>.terminal-mount[hidden]{position:absolute;inset:0;visibility:hidden}
 .master-tabpanel>.typed-input,.master-tabpanel>.master-messages{flex:1;min-height:0;margin-top:0;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
+/* GY-3602: the Lead conversation — the page never scrolls; the feed scrolls inside its panel. */
+.lead-conversation{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+.lead-status{display:flex;align-items:center;gap:8px;margin:0 0 var(--space-3);font-size:var(--type-small);color:var(--text-2)}
+.lead-dot{width:8px;height:8px;border-radius:50%;background:var(--backlog);flex-shrink:0}
+.lead-status[data-lead-state='working'] .lead-dot{background:var(--shipped)}
+.lead-status[data-lead-state='idle'] .lead-dot,.lead-status[data-lead-state='absent'] .lead-dot{background:var(--needs-you)}
+.lead-status[data-lead-state='refused'] .lead-dot{background:var(--blocked)}
+.lead-body{flex:1;min-height:0;display:flex;gap:var(--space-4)}
+.lead-feed-col{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
+.lead-feed{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;margin:0;padding:0 0 var(--space-3);list-style:none;display:flex;flex-direction:column;gap:10px}
+.lead-entry{display:flex}
+.lead-entry[data-kind='message']{justify-content:flex-end}
+.lead-message{max-width:68%;background:color-mix(in srgb,var(--shipped) 16%,var(--bg));border-radius:12px 12px 3px 12px;padding:9px 13px;min-width:0}
+.lead-message p{margin:0;overflow-wrap:anywhere}
+.lead-name{display:block;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-bottom:3px}
+.lead-card{max-width:78%;border:1px solid var(--border);border-radius:12px;background:var(--raised);padding:13px 15px;display:flex;flex-direction:column;gap:7px;min-width:0}
+.lead-card.approval{border-color:color-mix(in srgb,var(--needs-you) 45%,var(--bg))}
+.lead-kind{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3)}
+.lead-card.approval .lead-kind{color:var(--needs-you)}
+.lead-card h3{margin:0;font-size:14px;line-height:1.5;overflow-wrap:anywhere}
+.lead-what{margin:0;font-size:14px;overflow-wrap:anywhere}
+.lead-why{margin:0;font-size:var(--type-small);color:var(--text-2);overflow-wrap:anywhere}
+.lead-actions{display:flex;flex-wrap:wrap;gap:8px}
+.lead-actions button{padding:8px 12px;font-size:12px}
+.lead-empty{justify-content:flex-start}
+.lead-box{display:flex;gap:8px;padding-top:var(--space-3);border-top:1px solid var(--border)}
+.lead-box input{flex:1;min-width:0}
+.lead-box button[type='submit']{white-space:nowrap}
+.lead-box-note{margin:0;padding-top:6px}
+.lead-rail{flex:0 0 240px;min-width:0;overflow-y:auto;display:flex;flex-direction:column;gap:var(--space-4);border-left:1px solid var(--border);padding-left:var(--space-4)}
+.lead-rail h3{margin:0 0 6px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3)}
+.lead-rail p{margin:0;font-size:var(--type-small)}
+.lead-rail ol{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px;font-size:var(--type-small)}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+@media(max-width:1000px){.lead-body{flex-direction:column}.lead-rail{flex:0 0 auto;border-left:0;border-top:1px solid var(--border);padding:var(--space-3) 0 0;flex-direction:row;flex-wrap:wrap;gap:var(--space-4)}.lead-rail ol{gap:2px}.lead-card{max-width:92%}.lead-message{max-width:88%}}
 @media(max-width:1000px){.main:has(.master-tabs){padding:var(--space-3) var(--space-5) 24px}}
 @media(max-width:650px){.shell:has(.master-tabs){display:flex;flex-direction:column;height:100dvh;overflow:hidden}.main:has(.master-tabs){flex:1;height:auto;min-height:0;padding:12px var(--space-4) 68px;gap:var(--space-2)}}
 /* GY-3345: threads with other installs' Masters, in the Messages tab; long words wrap, never widen the page. */

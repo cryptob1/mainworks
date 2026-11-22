@@ -78,7 +78,7 @@ async function fixture(visible = true) {
     /** The Needs you rows, the board the dashboard serves and the Master page, over this fixture's work. */
     dashboard: () => {
       const rows = openHumanOnly(work.map(item => ({ work: item })), now);
-      return { rows, board: buildBoard(work, now, rows), master: renderToStaticMarkup(createElement(MasterPage, { work, observedAt: now, token: '', api: async () => ({}), setSelected: () => {} })) };
+      return { rows, board: buildBoard(work, now, rows), master: renderToStaticMarkup(createElement(MasterPage, { work, observedAt: now, token: '', api: async () => ({}), setSelected: () => {}, action: async () => {}, busy: false })) };
     },
   };
 }
@@ -130,11 +130,11 @@ test('integration:blocker-escalates — a blocker with no recorded instant (a re
   assert.ok(dashboard.master.includes('GY-1'), 'the Master page still carries the blocker itself');
 });
 
-test('integration:blocker-escalates — unblocking clears the attention line, the Master page row and the blocker, and the item waits for a worker again', async () => {
+test('integration:blocker-escalates — unblocking clears the attention line, the Lead page row and the blocker, and the item waits for a worker again', async () => {
   const f = await fixture();
   await f.cycle();
   f.advance(35);
-  assert.ok(f.dashboard().master.includes('GY-1'), 'the Master page row stands before the unblock');
+  assert.ok(f.dashboard().master.includes('Blocked (1)'), 'the Lead page row stands before the unblock');
   // `graphyard master unblock GY-1 REASON` clears the blocker and its stamp in one write.
   f.work([{ ...blockedItem(), blocker: null, blockedAt: null, gates: [{ name: 'ready', passed: false, reasons: [] }] }]);
   f.restart();
@@ -143,7 +143,8 @@ test('integration:blocker-escalates — unblocking clears the attention line, th
   assert.equal(status.attention.find((entry: { subject?: string }) => entry.subject === 'GY-1'), undefined, 'the attention line is gone');
   const dashboard = f.dashboard();
   assert.deepEqual(dashboard.rows, [], 'Needs you stays clear of it');
-  assert.equal(dashboard.master.includes('GY-1'), false, 'the Master page row is gone');
+  // GY-1 stays listed as a goal in the conversation's side rail; the blocker row itself is gone.
+  assert.equal(dashboard.master.includes('Blocked'), false, 'the Lead page row is gone');
   assert.equal(dashboard.board.groups['up-next'].some(entry => entry.key === 'GY-1'), true, 'the item waits for a worker again');
   assert.equal(f.prompts.length, 1, 'no new prompt for a cleared blocker');
 });
