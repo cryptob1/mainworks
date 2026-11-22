@@ -174,9 +174,9 @@ test('e2e:caretaker-report-on-home — a caretaker pass makes a held account tha
   const dashboard = { token: 'test', work: snapshot.work, status, observedAt: Date.now(), query: '', setQuery: () => {}, setSelected: () => {}, setCreating: () => {}, setView: () => {},
     filter: null, setFilter: () => {}, action: async () => {}, busy: false, api: async () => ({}), board: boardFromStatus(snapshot.work, Date.now(), null) } as unknown as Dashboard;
   const home$ = renderToStaticMarkup(createElement(WorkPage, dashboard));
-  const needsYou = home$.slice(home$.indexOf('aria-label="Needs you"'));
-  assert.ok(home$.includes('aria-label="Needs you"'), 'Work has a Needs you strip');
-  assert.match(needsYou.slice(0, needsYou.indexOf('</section>')), /gpu-box is away: ssh: connect to host gpu-box port 22: Connection refused/, 'Home shows the away host under Needs you');
+  const lines = home$.slice(home$.indexOf('data-caretaker'));
+  assert.ok(home$.includes('data-caretaker'), 'Work carries the caretaker\'s lines for the owner');
+  assert.match(lines.slice(0, lines.indexOf('</ul>')), /gpu-box is away: ssh: connect to host gpu-box port 22: Connection refused/, 'Work shows the away host');
 
   // Its identity cannot release, close, rework or revise requirements, answer, change roles, or edit code.
   for (const [path, body] of [[`work/${item.id}/requirements`, { reason: 'r', criteria: [] }], [`work/${item.id}/release`, { reason: 'r' }], [`work/${item.id}/close`, { reason: 'r' }],

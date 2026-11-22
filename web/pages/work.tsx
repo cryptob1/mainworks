@@ -79,7 +79,7 @@ export default function WorkPage({ work, board, status, query, setQuery, setSele
   const header = `${counts['in-flight']} in flight · ${merges.toFixed(1)} merges an hour over 6 hours · ${reviewToLive === null ? 'nothing live in 24 hours' : `median ${formatDuration(reviewToLive / 60000)} from review to live`}`;
 
   const needs = board?.groups['needs-you'] ?? [];
-  // GY-3593: the caretaker's newest lines that need the owner sit in the same strip.
+  // GY-3593: the caretaker's newest lines that need the owner, in one notice under the Needs you strip.
   const caretaker: string[] = status?.caretaker?.needsOwner ?? [];
   const goals = [...new Set(shown.flatMap(({ item }) => item.goal ? [item.goal] : []))].sort((a, b) => a.localeCompare(b));
   const progress = (goal: string) => { const all = work.filter(item => item.goal === goal && !isClosed(item)); return { shipped: all.filter(item => item.stage === 'done').length, total: all.length }; };
@@ -120,15 +120,15 @@ export default function WorkPage({ work, board, status, query, setQuery, setSele
     <div className="page-heading"><div><h1>Work</h1><p className="page-fact" data-work-header>{board ? header : 'Reading the board…'}</p><BuildLine/></div>
       <div className="page-actions"><input type="search" aria-label="Search work" placeholder="Search every task by title, key or PR" value={query} onChange={event => setQuery(event.target.value)}/>
         {status?.actor?.role === 'admin' && <button type="button" onClick={() => setCreating(true)}>＋ New work item</button>}</div></div>
-    {(needs.length > 0 || caretaker.length > 0) && <section className="panel needs-you-strip" aria-label="Needs you">
+    {needs.length > 0 && <section className="panel needs-you-strip" aria-label="Needs you">
       <h2>Needs you <span className="count">{needs.length}</span><button type="button" className="text-button push" onClick={() => setView('needs-you')}>Every request and answer →</button></h2>
       {needs.slice(0, 3).map(entry => <div key={entry.id} className="need" data-need={entry.key}>
         <span className="need-question" title={entry.does}>{entry.does}</span>
         <span className="muted">waiting {minutes(Date.parse(entry.since), now)}</span>
         <button type="button" onClick={() => setSelected(entry.id)}>Review request</button>
       </div>)}
-      {caretaker.length > 0 && <ul className="caretaker-lines" data-caretaker>{caretaker.map(line => <li key={line}>{line}</li>)}</ul>}
     </section>}
+    {caretaker.length > 0 && <ul className="notice caretaker-lines" aria-label="The caretaker needs you" data-caretaker>{caretaker.map(line => <li key={line}>{line}</li>)}</ul>}
     <div role="group" aria-label="Filter work" className="work-filters">{workFilters.map(name => <button type="button" key={name} className={filter === name ? 'chip active' : 'chip'} aria-pressed={filter === name} data-filter={name} onClick={() => setFilter(filter === name ? null : name)}>
       {filterLabel[name]} <span className="count">{counts[name]}</span>
     </button>)}</div>
