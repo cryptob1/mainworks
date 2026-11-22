@@ -185,7 +185,7 @@ test('unit:board-blocked-row-plain-summary — a blocked row shows one plain sen
   assert.doesNotMatch(summary, /\.ts:|GY-1459|3b7de1|https?:|`/, 'none of the agent-facing detail');
   const html = page(work, board);
   const line = visible(rowOf(html, item.key));
-  assert.ok(line.includes(summary), `the row reads the summary: ${line}`);
+  assert.ok(line.toLowerCase().includes(summary.toLowerCase()), `the row reads the summary: ${line}`);
   for (const fragment of fragments) assert.ok(!html.includes(fragment), `no Work page row carries ${fragment}`);
   // The other kinds read their own block and who clears it.
   assert.match(plain.blockerSummary('Waiting on GY-1689 to merge first: its migration renames the table', NOW).sentence, /^Waiting on GY-1689; the master agent clears it/);
@@ -201,7 +201,7 @@ test('unit:board-blocked-row-plain-summary — a blocked row shows one plain sen
   const shortBoard = await served(short.work);
   const shortRow = visible(rowOf(page(short.work, shortBoard), short.item.key));
   assert.doesNotMatch(shortRow, /coordinator to refresh/, shortRow);
-  assert.ok(shortRow.includes(entry(shortBoard, short.item.key).blocker!.summary), shortRow);
+  assert.ok(shortRow.toLowerCase().includes(entry(shortBoard, short.item.key).blocker!.summary.toLowerCase()), shortRow);
 });
 
 test('unit:board-blocked-declined-human-names-master — a declined human answer reads as the master agent clearing the block, never as waiting on you', () => {

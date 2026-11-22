@@ -196,7 +196,8 @@ test('integration:dashboard-word-budget — the home page answers what needs you
   const page = home();
   const count = words(page).length;
   // Keep the existing budget: the Lead entry replaces the duplicate sidebar repository name.
-  assert.ok(count <= 165, `home renders ${count} words excluding item titles: ${text(page)}`);
+  // GY-3558: a blocked row names its state and age ('Blocked 26h:'), two words its criterion requires.
+  assert.ok(count <= 167, `home renders ${count} words excluding item titles: ${text(page)}`);
   for (const gone of ['Delivery slices', 'NO LEAD ASSIGNED', 'ENGINEERING, IN VIEW', 'Every change has an owner', 'Explicit reasons, actionable next steps', 'No delivery requires', 'sessions retain goals', 'leads coordinate only', 'Ownership is explicit', 'Agent fleet'])
     assert.ok(!text(page).includes(gone), `no ${gone}`);
   assert.doesNotMatch(text(page), /\bp50\b|\bp95\b/, 'no percentile microtext by default');
@@ -350,5 +351,5 @@ test('integration:work-page-density — an empty Needs you draws no strip, and t
   assert.ok(!page.includes('aria-label="Needs you"'), 'no empty Needs you strip');
   assert.match(text(page), /a fault blocks it; the master agent clears it/i, 'the stuck row says why');
   for (const item of byGroup.moving) assert.ok(page.includes(`data-row="${item.key}"`), item.key);
-  assert.ok(words(page).length <= 165, `home renders ${words(page).length} words excluding item titles: ${text(page)}`);
+  assert.ok(words(page).length <= 167, `home renders ${words(page).length} words excluding item titles: ${text(page)}`);
 });
