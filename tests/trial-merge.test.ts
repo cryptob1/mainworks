@@ -867,7 +867,7 @@ test('unit:trial-declared-policy-refusal — a head whose graphyard.json is malf
   const { declaredPreMerge } = await import('../src/merge-writer/trial.js');
   const policy = (check: Record<string, unknown>) => JSON.stringify({ delivery: { mergeGate: { preMerge: [{ check: 'test', command: 'npm test', source: 'script', reason: 'r', ...check }], perCandidate: [] } } });
   const refusal = (text: string) => { const declared = declaredPreMerge(text); return 'refusal' in declared ? declared.refusal : null; };
-  assert.match(refusal('{ not json')!, /mainworks\.json is not valid JSON/);
+  assert.match(refusal('{ not json')!, /graphyard\.json is not valid JSON/);
   assert.match(refusal(policy({ source: 'elsewhere' }))!, /preMerge is invalid: 0\.source/);
   assert.match(refusal(policy({ selection: { command: '   ', pattern: '.' } }))!, /empty selection command/);
   assert.match(refusal(policy({ selection: { command: 'node select.mjs', pattern: '(' } }))!, /no regular expression/);
