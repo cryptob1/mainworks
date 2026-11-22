@@ -381,12 +381,12 @@ async function keptBuildUses(entry: string, own: string | null = null): Promise<
  * the tree's directory and the `release` that gives it back, or null when no built tree is kept.
  */
 export async function holdKeptBuild(base: string, sha: string): Promise<{ tree: string; release(): Promise<void> } | null> {
-  const entry = keptBaseBuild(base, sha), use = `${entry}.use-${randomUUID()}`;
-  if (!existsSync(keptBaseBuildMarker(entry))) return null;
+  const entry = keptBaseBuild(base, sha), use = `${entry}.use-${randomUUID()}`, lock = `${entry}.lock`;
+  if (!existsSync(keptBaseBuildMarker(entry)) || (existsSync(lock) && await ownerLive(lock))) return null;
   await mkdir(use); await writeTempOwner(use);
   const release = async () => { await rm(use, { recursive: true, force: true }).catch(() => {}); await rm(tempOwnerMarker(use), { force: true }).catch(() => {}); };
   try {
-    if (!existsSync(keptBaseBuildMarker(entry))) throw new Error('taken back');
+    if (!existsSync(keptBaseBuildMarker(entry)) || (existsSync(lock) && await ownerLive(lock))) throw new Error('busy');
     return { tree: await realpath(entry), release };
   } catch { await release(); return null; }
 }
@@ -1113,8 +1113,14 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
   const keptSha = input.caches ? input.mergeSha.toLowerCase() : null;
   const keptEntry = keptSha ? keptBaseBuild(input.base, keptSha) : null;
   let kept: string | null = null, keptLock: string | null = null, keptUse: string | null = null, reused = false;
+  let e2eOverlay: string[] = [], needsExclusive = false;
   const dropOwned = async (directory: string) => { await rm(directory, { recursive: true, force: true }).catch(() => {}); await rm(tempOwnerMarker(directory), { force: true }).catch(() => {}); };
-  /** Takes the kept tree's build lock: one pass builds a commit, and a lock whose owner is gone (a killed pass) is taken back. */
+  const claimKeptUse = async () => {
+    keptUse = `${keptEntry}.use-${randomUUID()}`;
+    await mkdir(keptUse, { recursive: true }); await writeTempOwner(keptUse);
+  };
+  const releaseKeptUse = async () => { if (keptUse) await dropOwned(keptUse); keptUse = null; };
+  /** Takes the kept tree's build lock: one pass builds or mutates a commit, and a lock whose owner is gone (a killed pass) is taken back. */
   const takeKeptLock = async (): Promise<boolean> => {
     const lock = `${keptEntry}.lock`;
     try { await mkdir(lock); }
@@ -1136,13 +1142,14 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     await removeTree(tree === entry ? tree : dirname(tree)).catch(() => {});
     await rm(entry, { recursive: true, force: true }).catch(() => {});
   };
-  /** Whether the kept tree is built and still sits at its commit; with no other pass in it, it must be clean too — git's own word decides. */
+  /** Whether the kept tree is built, unlocked by any other pass, and clean at its commit — git's own word decides. */
   const keptTreeReady = async (): Promise<boolean> => {
     if (!existsSync(keptBaseBuildMarker(keptEntry!))) return false;
+    const lock = `${keptEntry!}.lock`;
+    if (keptLock !== lock && existsSync(lock) && await ownerLive(lock)) return false;
     try {
       const head = String(await run('git', ['-C', keptEntry!, 'rev-parse', 'HEAD'], { timeoutMs: remaining() })).trim().toLowerCase();
       if (head !== keptSha) return false;
-      if ((await keptBuildUses(keptEntry!, keptUse)).length) return true;
       return String(await run('git', ['-C', keptEntry!, 'status', '--porcelain'], { timeoutMs: remaining() })).trim() === '';
     } catch { return false; }
   };
@@ -1161,15 +1168,33 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       await dropOwned(`${entry}.lock`);
     }
   };
-  /** Runs this pass in its commit's kept tree: the built one, waited for while another pass builds it, else a fresh checkout this pass builds under the lock. */
+  /** Runs this pass in its commit's kept tree: the built one, waited for while another pass builds or mutates it, else a fresh checkout this pass builds under the lock. */
   const enterKeptTree = async (): Promise<void> => {
-    keptUse = `${keptEntry}.use-${randomUUID()}`;
-    await mkdir(keptUse, { recursive: true }); await writeTempOwner(keptUse);
+    e2eOverlay = input.e2eProofs?.length && input.e2eFrom
+      ? String(await run('git', ['-C', input.root, 'diff', '--name-only', '-z', input.mergeSha, input.e2eFrom, '--', 'e2e/', 'tests/'], { timeoutMs: remaining() })).split('\0').filter(Boolean)
+      : [];
+    needsExclusive = e2eOverlay.length > 0;
     await reclaimKeptTrees();
+    const lock = `${keptEntry!}.lock`;
     for (;;) {
-      if (await keptTreeReady()) { reused = true; break; }
+      if (!needsExclusive && existsSync(keptBaseBuildMarker(keptEntry!)) && !(existsSync(lock) && await ownerLive(lock))) {
+        await claimKeptUse();
+        if (await keptTreeReady()) { reused = true; break; }
+        await releaseKeptUse();
+      }
       if (await takeKeptLock()) {
-        if (await keptTreeReady()) { await releaseKeptLock(); reused = true; break; }
+        // Wait for any live passes already using the tree to finish before rebuilding or mutating it.
+        while ((await keptBuildUses(keptEntry!)).length) {
+          if (now() >= deadline) { await releaseKeptLock(); throw new TrialTimeoutError('install', Math.max(0, now() - startedAt), `waited for another pass to finish with ${keptSha!.slice(0, 12)}`); }
+          input.signal?.throwIfAborted();
+          await new Promise(next => setTimeout(next, 250));
+        }
+        await claimKeptUse();
+        if (await keptTreeReady()) {
+          if (!needsExclusive) await releaseKeptLock();
+          reused = true;
+          break;
+        }
         await takeBackKeptTree(keptEntry!);
         const near = await trialCheckoutRoot(input.checkoutRoots ?? trialCheckoutRoots(), input.minFreeBytes ?? defaultWorktreeRootMinFreeGb * 1e9, input.probe, input.checkoutRoots ? [] : undefined);
         if (near) await symlink(join(await mkdtemp(join(near, keptBuildPlacePrefix)), 'checkout'), keptEntry!);
@@ -1479,8 +1504,11 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     }
     // GY-3589: this pass reached the end of the commit's install and build, so the tree it leaves is
     // the built tree later passes on the same commit reuse (a failed step returned above), and a
-    // pass waiting on the build lock goes on.
-    if (kept && !reused) { await writeFile(keptBaseBuildMarker(keptEntry!), `${new Date().toISOString()}\n`).catch(() => {}); await releaseKeptLock(); }
+    // pass waiting on the build lock goes on (unless this pass still holds the lock for an e2eFrom overlay).
+    if (kept && !reused) {
+      await writeFile(keptBaseBuildMarker(keptEntry!), `${new Date().toISOString()}\n`).catch(() => {});
+      if (!needsExclusive) await releaseKeptLock();
+    }
   };
   const finishTests = async (...verdict: Parameters<typeof finish>) => {
     await input.countProofs?.({
@@ -1556,7 +1584,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       enter('tests');
       enterStep('tests: e2e');
       // Run the candidate's proof against the base application, including edited cases and assertion scripts.
-      const overlay = input.e2eFrom ? String(await run('git', ['-C', worktree, 'diff', '--name-only', '-z', input.mergeSha, input.e2eFrom, '--', 'e2e/', 'tests/'], { timeoutMs: remaining() })).split('\0').filter(Boolean) : [];
+      const overlay = keptEntry ? e2eOverlay : (input.e2eFrom ? String(await run('git', ['-C', worktree, 'diff', '--name-only', '-z', input.mergeSha, input.e2eFrom, '--', 'e2e/', 'tests/'], { timeoutMs: remaining() })).split('\0').filter(Boolean) : []);
       if (overlay.length) await run('git', ['-C', worktree, 'restore', '--source', input.e2eFrom!, '--staged', '--worktree', '--', ...overlay], { timeoutMs: remaining() });
       const cpuBefore = cpu.sample();
       const ran = await containerTrialE2e({
@@ -1564,8 +1592,9 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         networkWrapper: boundary, runDirectory: input.runDirectory,
         scratch: temporary ?? checkout.directory, budgetMs: remaining(), run, log: line => log.push(line),
       }).catch(async error => { throw await networkPoolFault(error, env) ?? error; }).finally(async () => {
-        // Restore both edited and added proof files before any later base checks.
-        if (overlay.length) await run('git', ['-C', worktree, 'restore', '--source', input.mergeSha, '--staged', '--worktree', '--', ...overlay], { timeoutMs: remaining() });
+        // Restore both edited and added proof files before any later base checks or concurrent passes.
+        try { if (overlay.length) await run('git', ['-C', worktree, 'restore', '--source', input.mergeSha, '--staged', '--worktree', '--', ...overlay], { timeoutMs: remaining() }); }
+        finally { if (needsExclusive) await releaseKeptLock(); }
       });
       const failures = ran.filter(entry => entry.failed);
       cpu.finish(stepLabel, cpuBefore, failures.length > 0 && failures.every(entry => /timed?\s*out|did not answer .* within \d+s|timeout/i.test(entry.failingStep ?? '')), line => log.push(line));
@@ -1857,7 +1886,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
   await (input.remove ?? removeSessionCheckout)(input.root, input.base, checkout.directory, input.run).catch(cause => { failures.push({ directory: checkout.directory, cause }); });
   // GY-3589: the kept built tree stays for the next pass on the same commit; this pass's lock and use go.
   await releaseKeptLock();
-  if (keptUse) await dropOwned(keptUse);
+  await releaseKeptUse();
   const failure = failures[0];
   if (failure) {
     const outcome = 'verdict' in settled ? `the trial itself answered build ${settled.verdict.build}, ${settled.verdict.tests.failed.length} failing test file(s)` : `the trial itself failed: ${settled.error instanceof Error ? settled.error.message : String(settled.error)}`;

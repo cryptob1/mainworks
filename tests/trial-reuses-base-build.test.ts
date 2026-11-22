@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
@@ -268,4 +268,68 @@ test(`${proof} — a kept tree that took the warm dependency image keeps its nod
   rmSync(join(root, '.git', 'graphyard-dependency-images'), { recursive: true, force: true });
   const reused = await pass(second);
   assert.deepEqual(reused.tests, passed, 'the reused kept tree still holds its node_modules');
+});
+
+test(`${proof} — a base pass with e2eFrom overlay holds exclusive access to the kept tree so a concurrent base pass never sees candidate files`, { timeout: 300_000 }, async () => {
+  const root = await temporaryDirectory('base-build-e2e-from', tmpdir());
+  const write = (path: string, content: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); };
+  gitIn(root, 'init', '-q', '-b', 'main');
+  write('package.json', JSON.stringify({ name: 'fixture', scripts: { build: 'true', test: 'node test.js' } }));
+  write('graphyard.json', JSON.stringify({ delivery: policy, e2e: { serve: { command: 'true', url: 'http://127.0.0.1:1', readySeconds: 1 } } }));
+  write('e2e/cases/demo.json', JSON.stringify({ id: 'demo', title: 'base', steps: [] }));
+  write('test.js', `const { existsSync, readFileSync } = require('node:fs');
+const title = JSON.parse(readFileSync('e2e/cases/demo.json', 'utf8')).title;
+const ok = title === 'base' && !existsSync('tests/candidate-only.test.ts');
+console.log((ok ? 'ok' : 'not ok') + ' 1 - base tree is clean (title=' + title + ')');
+process.exit(ok ? 0 : 1);
+`);
+  gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'base');
+  const base = gitIn(root, 'rev-parse', 'HEAD');
+  write('e2e/cases/demo.json', JSON.stringify({ id: 'demo', title: 'candidate', steps: [] }));
+  write('tests/candidate-only.test.ts', '// candidate only\n');
+  gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'candidate');
+  const head = gitIn(root, 'rev-parse', 'HEAD');
+  gitIn(root, 'checkout', '-q', '--detach', base);
+
+  const baseRoot = await temporaryDirectory('base-build-e2e-from-trials', tmpdir());
+  let buildCount = 0;
+  let overlayEntered!: () => void;
+  const overlayStarted = new Promise<void>(resolve => { overlayEntered = resolve; });
+  let releaseOverlay!: () => void;
+  const overlayGate = new Promise<void>(resolve => { releaseOverlay = resolve; });
+  const overlayRun: ChildRun = async (command, args, options) => {
+    if (command === 'npm' && args[0] === 'run' && args[1] === 'build') { buildCount++; return ''; }
+    if (command === 'node' && args[0] === '--import' && args[2]?.endsWith('run.mjs')) {
+      assert.equal(JSON.parse(readFileSync(join(options!.cwd!, 'e2e/cases/demo.json'), 'utf8')).title, 'candidate');
+      assert.ok(existsSync(join(options!.cwd!, 'tests/candidate-only.test.ts')));
+      overlayEntered();
+      await overlayGate;
+      const match = /writeFileSync\(([^,]+),/.exec(readFileSync(args[2], 'utf8'));
+      assert.ok(match, 'result path in e2e script');
+      writeFileSync(JSON.parse(match[1]!), JSON.stringify([{ proof: 'e2e:demo', case: 'demo', executed: 1, failed: 0 }]));
+      return '';
+    }
+    return run(command, args, options);
+  };
+
+  // Start the e2eFrom pass on base; once it has overlaid candidate files into the kept tree, start a second base pass.
+  const first = runTrialAttempt({
+    root, base: baseRoot, mergeSha: base, baseTip: base, changedFiles: ['e2e/cases/demo.json'],
+    e2eFrom: head, e2eProofs: ['e2e:demo'], timeoutMs: 60_000, caches: true, run: overlayRun, environment: { PATH: process.env.PATH! },
+  });
+  await overlayStarted;
+  let secondSettled = false;
+  const second = runTrialAttempt({
+    root, base: baseRoot, mergeSha: base, baseTip: base, changedFiles: ['test.js'],
+    timeoutMs: 60_000, caches: true, run: overlayRun, environment: { PATH: process.env.PATH! },
+  }).finally(() => { secondSettled = true; });
+  await new Promise(next => setTimeout(next, 600));
+  assert.equal(secondSettled, false, 'the second base pass must wait while e2eFrom holds the kept tree');
+  releaseOverlay();
+  const [firstVerdict, secondVerdict] = await Promise.all([first, second]);
+  assert.equal(firstVerdict.build, 'pass');
+  assert.deepEqual(firstVerdict.tests.failed, [], firstVerdict.logTail);
+  assert.equal(secondVerdict.build, 'pass');
+  assert.deepEqual(secondVerdict.tests.failed, [], secondVerdict.logTail);
+  assert.equal(buildCount, 1, 'base commit was built once across both passes');
 });
