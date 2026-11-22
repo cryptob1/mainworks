@@ -400,6 +400,13 @@ async function fetchedBaseTip(git: (args: string[]) => Promise<string>, baseBran
   return null;
 }
 
+async function hasTsTests(git: (args: string[]) => Promise<string>, head: string): Promise<boolean> {
+  try {
+    const out = await git(['ls-tree', '--name-only', head, 'tests/']);
+    return out.split('\n').some(line => /^tests\/[^/]+\.test\.ts$/.test(line.trim()));
+  } catch { return false; }
+}
+
 /**
  * GY-3638: fast local preflight before `complete` submits a head. Refuses in seconds what the
  * merge writer would refuse after review, the queue and trial start-up — reusing the executor's
@@ -440,22 +447,25 @@ export async function completePreflight(
     }
   }
 
-  // 2. Required unit/integration proof ids must appear in tests/*.test.ts on the head.
+  // 2. Required unit/integration proof ids must appear in tests/*.test.ts on the head
+  // (only for repositories that carry tests/*.test.ts; Go or custom-runner fixtures have none).
   if (criteria.length) {
-    const counts: Record<string, { executed: number; failed: number; skipped: number }> = {};
-    for (const criterion of criteria) {
-      if (criterion.bootstrap) continue;
-      for (const proof of criterion.proofs) {
-        if (/^e2e:/.test(proof)) counts[proof] = { executed: 1, failed: 0, skipped: 0 };
+    if (await hasTsTests(git, head)) {
+      const counts: Record<string, { executed: number; failed: number; skipped: number }> = {};
+      for (const criterion of criteria) {
+        if (criterion.bootstrap) continue;
+        for (const proof of criterion.proofs) {
+          if (/^e2e:/.test(proof)) counts[proof] = { executed: 1, failed: 0, skipped: 0 };
+        }
       }
+      const unitProofs = criterionProofs({ criteria: criteria.filter(entry => !entry.bootstrap) as any });
+      const found = await Promise.all(unitProofs.map(async proof => [proof, await proofTestFiles(run, root, head, [proof])] as const));
+      for (const [proof, files] of found) {
+        if (files.length) counts[proof] = { executed: 1, failed: 0, skipped: 0 };
+      }
+      const proofFailure = requiredProofFailure({ criteria: criteria as any }, { proofs: counts });
+      if (proofFailure) throw new Error(proofFailure);
     }
-    const unitProofs = criterionProofs({ criteria: criteria.filter(entry => !entry.bootstrap) as any });
-    const found = await Promise.all(unitProofs.map(async proof => [proof, await proofTestFiles(run, root, head, [proof])] as const));
-    for (const [proof, files] of found) {
-      if (files.length) counts[proof] = { executed: 1, failed: 0, skipped: 0 };
-    }
-    const proofFailure = requiredProofFailure({ criteria: criteria as any }, { proofs: counts });
-    if (proofFailure) throw new Error(proofFailure);
 
     // 3. Feature E2E case check via featureCaseFailure.
     if (work.type === 'feature' && e2eProofsOf({ criteria: criteria as any }).length) {
