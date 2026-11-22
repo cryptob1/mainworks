@@ -2,9 +2,9 @@
 import { spawn } from 'node:child_process';
 import { existsSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join } from 'node:path';
-import { builtEntry } from './built-entry.mjs';
+import { tmpdir } from 'node:os';
 const args = process.argv.slice(2);
 let root = fileURLToPath(new URL('../', import.meta.url));
 // GY-3214: the published npm package holds no source; it runs the release this host installed.
@@ -17,9 +17,13 @@ for (let attempt = 0; ; attempt++) {
   try { selected = realpathSync(join(root, '.graphyard', 'cli-current')); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
   // GY-3611: the built CLI while it is as new as the source, else the source through tsx.
-  const built = builtEntry(selected, 'cli');
+  // The check lives in the selected artifact, so a launcher copied alone or an older artifact runs from source.
+  const check = join(selected, 'bin', 'built-entry.mjs');
+  const built = existsSync(check) && (await import(pathToFileURL(check).href)).builtEntry(selected, 'cli');
   const entry = built ? [built] : ['--import', createRequire(join(selected, 'package.json')).resolve('tsx'), join(selected, 'src/cli.ts')];
-  child = spawn(process.execPath, [...entry, ...args], { stdio: 'inherit', env: { ...process.env, GRAPHYARD_LAUNCHER: '1' } });
+  // Node's compile cache spares the built CLI recompiling its one large file on every start.
+  const cache = built ? { NODE_COMPILE_CACHE: process.env.NODE_COMPILE_CACHE ?? join(tmpdir(), 'node-compile-cache') } : {};
+  child = spawn(process.execPath, [...entry, ...args], { stdio: 'inherit', env: { ...process.env, ...cache, GRAPHYARD_LAUNCHER: '1' } });
   const code = await new Promise(resolve => {
     child.on('error', error => { console.error(error.message); resolve(1); });
     child.on('exit', code => resolve(code ?? 1));

@@ -45,6 +45,6 @@ test('unit:cli-runs-from-the-built-file-when-fresh — bin/graphyard.mjs --help 
   assert.ok(builtEntry(source, 'cli'), 'the test runner built dist/cli.mjs before the first file');
   const built = execFileSync(process.execPath, [join(source, 'bin', 'graphyard.mjs'), '--help'], { encoding: 'utf8', cwd: source });
   const fromSource = execFileSync(process.execPath, ['--import', 'tsx', join(source, 'src', 'cli.ts'), '--help'], { encoding: 'utf8', cwd: source });
-  assert.match(built, /^Graphyard /);
+  assert.match(built, /^Usage: /m);
   assert.equal(built, fromSource);
 });

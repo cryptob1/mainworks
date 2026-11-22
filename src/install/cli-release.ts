@@ -71,13 +71,9 @@ export async function publishCliRelease(directory: string, source: string, commi
     if (!existsSync(join(root, 'bin', 'graphyard.mjs'))) continue;
     // Bring old launchers onto the pointer protocol without replacing their dependencies or code.
     if (root !== target) {
-      // GY-3611: the launcher imports bin/built-entry.mjs beside it, which an old root may lack.
-      for (const file of ['built-entry.mjs', 'graphyard.mjs']) {
-        if (!existsSync(join(target, 'bin', file))) continue;
-        const launcher = join(root, 'bin', file);
-        await copyFile(join(target, 'bin', file), `${launcher}.tmp`);
-        await rename(`${launcher}.tmp`, launcher);
-      }
+      const launcher = join(root, 'bin', 'graphyard.mjs');
+      await copyFile(join(target, 'bin', 'graphyard.mjs'), `${launcher}.tmp`);
+      await rename(`${launcher}.tmp`, launcher);
     }
     await mkdir(join(root, '.graphyard'), { recursive: true });
     const pointer = join(root, '.graphyard', 'cli-current');
