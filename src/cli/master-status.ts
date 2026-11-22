@@ -7,7 +7,7 @@ import type { Work } from '../model/work.js';
 import { type ChildRun, defaultChildRun } from '../child-runner.js';
 import { daemonSummary } from '../daemon/run.js';
 import { emptyMasterSession, masterSummary, readDaemonState } from '../daemon/state.js';
-import { standingStepFailures, workerGrowthKey, masterLaunchKey, masterLaunchBackoffAfter } from '../daemon/cycle.js';
+import { standingStepFailures, testQueueStatus, workerGrowthKey, masterLaunchKey, masterLaunchBackoffAfter } from '../daemon/cycle.js';
 import { fetchRefusalKey, gateStallKey } from '../daemon/cycle-batch-gate.js';
 import { cpuPerMergedItem, implementationWaiting } from '../daemon/cpu-pressure.js';
 import { heatReading } from '../merge-writer/trial-load.js';
@@ -258,6 +258,8 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     heavyDrain: drain,
     // GY-3447: who holds the host's heavy-job slots (trials, gates, whole suites, deploy builds) and the limit they share.
     heavyJobs: { limit: heavyJobLimit(heavyJobsDirectory()), holders: slotHolders(heavyJobsDirectory()) },
+    // GY-3694: heads waiting for or running a merge trial against twice the available trial slots (local heavy-job limit plus ready hosts).
+    testQueue: testQueueStatus(open, state?.mergeWriter, state?.hosts, now),
     // GY-3446: the temporary limits standing now, each with the time it reverts to the default; null once expired or never set.
     temporaryLimits: { trialCap: standing(master.run.trialCap), launchHotCelsius: standing(master.run.launchHotCelsius), hostHeavyJobs: strictCap ? { value: strictCap.limit, until: strictCap.until, by: strictCap.requestedBy } : null },
     // GY-3348: the host's CPU as the loop last read it — pressure (avg60) and steal percent, the
