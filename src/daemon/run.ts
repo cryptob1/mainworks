@@ -112,7 +112,7 @@ export interface DeployUnitProcess { unit: string; commit: string | null; busy: 
 
 /**
  * Reads the deploy unit beside this loop's unit from its cgroup: each process's command line, the
- * watch's being `upgrade --watch`; the process running `<root>/src/cli.ts` loaded the commit `root`
+ * watch's being `upgrade --watch`; the process running `<root>/src/cli.ts` (or `<root>/dist/cli.mjs`) loaded the commit `root`
  * holds. Any other process (git, npm, docker, install) is a deploy pass at work. Null outside systemd.
  */
 export function readDeployUnitProcess(read: (file: string) => string = file => readFileSync(file, 'utf8'), commitOf: (root: string) => string | null = cliCommit): DeployUnitProcess | null {
@@ -125,7 +125,7 @@ export function readDeployUnitProcess(read: (file: string) => string = file => r
       let args: string[];
       try { args = read(`/proc/${pid}/cmdline`).split('\0'); } catch { continue; }
       if (!(args.includes('upgrade') && args.includes('--watch'))) { busy = true; continue; }
-      const cli = args.find(arg => arg.endsWith('/src/cli.ts'));
+      const cli = args.find(arg => arg.endsWith('/src/cli.ts') || arg.endsWith('/dist/cli.mjs'));
       if (cli) commit = commitOf(dirname(dirname(cli)));
     }
     return { unit, commit, busy };
