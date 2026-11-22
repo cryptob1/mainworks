@@ -190,7 +190,7 @@ test('integration:control-plane-rework-ownership — a missing or unregistered s
         git(root, 'branch', '-D', branch);
       }
       const state = await runWorktree(root, item(root, candidate, head));
-      assert.match(state.failure ?? '', /registered start head of mainworks\/gy-1-1: /, 'the refusal names the branch');
+      assert.match(state.failure ?? '', /registered start head of graphyard\/gy-1-1: /, 'the refusal names the branch');
       assert.match(state.failure ?? '', /released as a workspace failure/, 'the claim was released, so the attempt costs nothing');
       assert.deepEqual(reserved(state), undefined, 'nothing was reserved');
       assert.deepEqual(released(state).length, 1, 'the claim alone was released');

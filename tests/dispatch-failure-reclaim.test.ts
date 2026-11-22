@@ -109,7 +109,7 @@ test('unit:worktree-failure-names-git-error — a failing git worktree add repor
   const plane = await controlPlane(item({ epoch: 3, live: true }));
   try {
     const refused = await run(process.execPath, [launcher, 'worktree', 'GY-7', '3'], { cwd: root, env: plane.env }).then(() => null, error => error as { stderr: string });
-    assert.match(refused!.stderr, /Git worktree creation failed: git worktree add .*GY-7-3 mainworks\/gy-7-3 failed \(exit \d+\): .*fatal: '.*GY-7-3' already exists/);
+    assert.match(refused!.stderr, /Git worktree creation failed: git worktree add .*GY-7-3 graphyard\/gy-7-3 failed \(exit \d+\): .*fatal: '.*GY-7-3' already exists/);
 
     // The launcher captures that stderr instead of passing it to its own terminal.
     const credential = join(credentials, 'worker.token'); await writeFile(credential, workerToken, { mode: 0o600 });

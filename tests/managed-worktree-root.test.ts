@@ -159,7 +159,7 @@ test('integration:managed-worktree-root — producer and reviewer checkouts are 
     assert.equal(dataDirectory({ XDG_DATA_HOME: '/account/home', TMPDIR: '/scratch' }), resolve(homedir(), '.local/share/graphyard'));
     assert.throws(() => dataDirectory({ GRAPHYARD_DATA_HOME: 'relative' }), /absolute path/);
     const fallback = defaultWorktreeRoot(root, 'owner/project', { GRAPHYARD_DATA_HOME: '/srv/graphyard' });
-    assert.match(fallback, /^\/srv\/mainworks\/worktrees\/project-[0-9a-f]{12}$/);
+    assert.match(fallback, /^\/srv\/graphyard\/worktrees\/project-[0-9a-f]{12}$/);
     assert.notEqual(fallback, defaultWorktreeRoot(join(scratch, 'second-clone'), 'owner/project', { GRAPHYARD_DATA_HOME: '/srv/graphyard' }), 'two clones never reclaim each other\'s checkouts');
     assert.equal(worktreeRoot(root, { repository: 'owner/project', run: {} }, { GRAPHYARD_DATA_HOME: '/srv/graphyard' }), fallback);
 

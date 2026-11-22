@@ -118,7 +118,7 @@ test('integration:change-number-allocated-once — a head submission allocates o
   const before = (await numbers()).length;
   await assert.rejects(engine.execute(worker, 'submit', w.id, { epoch: 1, head: 'f'.repeat(40) }, randomUUID()), (error: any) => {
     assert.equal(error.message, absentHeadRefusal('f'.repeat(40), 'graphyard/gy-3-1'));
-    assert.match(error.message, /refs\/heads\/mainworks\/gy-3-1 should hold it/); assert.equal(error.status, 422); return true;
+    assert.match(error.message, /refs\/heads\/graphyard\/gy-3-1 should hold it/); assert.equal(error.status, 422); return true;
   });
   assert.equal((await numbers()).length, before, 'an absent head allocates nothing');
   const key = randomUUID();
@@ -164,7 +164,7 @@ test('unit:local-observation-fields — observeHead builds the control-plane obs
   assert.equal(stale.candidate.baseSha, baseTip, 'the candidate is still bound to the base tip the diff was taken against');
   assert.ok(stale.files.includes('src/other.ts'));
   await assert.rejects(observeHead(runner, { head: 'a'.repeat(40), base: 'main', branch: 'graphyard/gy-9-1', author: 'implementer' }), (error: any) => {
-    assert.equal(error.message, absentHeadRefusal('a'.repeat(40), 'graphyard/gy-9-1')); assert.match(error.message, /refs\/heads\/mainworks\/gy-9-1/); assert.equal(error.status, 422); return true;
+    assert.equal(error.message, absentHeadRefusal('a'.repeat(40), 'graphyard/gy-9-1')); assert.match(error.message, /refs\/heads\/graphyard\/gy-9-1/); assert.equal(error.status, 422); return true;
   });
   // A runner whose git answers nothing useful refuses the same way, never with a raw git error.
   const silent: GitRunner = async () => ({ status: 128, stdout: '', stderr: 'fatal: not a git repository' });

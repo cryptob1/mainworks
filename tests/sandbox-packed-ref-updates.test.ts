@@ -45,9 +45,9 @@ function fixture(base: string) {
   run('pack-refs', '--all');
   const packed = readFileSync(join(root, '.git', 'packed-refs'), 'utf8');
   assert.match(packed, /refs\/heads\/main/, 'refs/heads/main is packed');
-  assert.match(packed, /refs\/heads\/mainworks\/gy-2967-1/, 'the assignment branch is packed');
-  assert.match(packed, /refs\/heads\/mainworks\/gy-2967-2/, 'the second branch is packed');
-  assert.match(packed, /refs\/heads\/mainworks\/gy-2967-gone/, 'the disposable branch is packed');
+  assert.match(packed, /refs\/heads\/graphyard\/gy-2967-1/, 'the assignment branch is packed');
+  assert.match(packed, /refs\/heads\/graphyard\/gy-2967-2/, 'the second branch is packed');
+  assert.match(packed, /refs\/heads\/graphyard\/gy-2967-gone/, 'the disposable branch is packed');
   const main = run('rev-parse', 'refs/heads/main');
   const otherTip = run('rev-parse', 'refs/heads/graphyard/gy-2967-2');
   prepareConfinedGitPaths(root);

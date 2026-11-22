@@ -219,7 +219,7 @@ test('e2e:clean-host-npx-up — a fresh account runs npx @cryptob1/graphyard up 
   assert.equal(dashboard.status, 200);
   const page = await dashboard.text();
   assert.match(page, /<title>[^<]*Mainworks/);
-  assert.doesNotMatch(page, /<title>[^<]*Mainworks/i);
+  assert.doesNotMatch(page, /<title>[^<]*Graphyard/i);
 
   // Setup filed the onboarding change as the install's first work item, and a later `npx @cryptob1/graphyard` runs the installed release.
   const onboarding = events.find(event => event.step === 'onboarding' && event.state === 'done');

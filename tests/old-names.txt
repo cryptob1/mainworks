@@ -88,3 +88,7 @@ pathname = '/graphyard'
 --server-name graphyard\b
 'graphyard-token'
 \[\\\\/\]graphyard-\(
+# Assertions that the old name is gone from what people read
+(doesNotMatch|not\.toContain(Text)?|!.*includes)\(.*Graphyard.*
+graphyard\\/
+graphyard\\.mjs

@@ -220,7 +220,7 @@ test('unit:review-prompt-control-plane — the control-plane prompt names head a
   assert.match(plane, /Open the review body by naming the head and the base you judged against, so the verdict itself records which commits were in scope/);
   assert.match(plane, new RegExp(`Read the change with: git diff ${B} ${H} \\(both commits are in this session's object store`));
   assert.match(plane, new RegExp(`git worktree add --detach /managed/review/GY-7/checkout ${H}`));
-  assert.match(plane, /node \/opt\/mainworks\/bin\/mainworks\.mjs review post --event APPROVE <<'EOF'/);
+  assert.match(plane, /node \/opt\/graphyard\/bin\/graphyard\.mjs review post --event APPROVE <<'EOF'/);
   assert.doesNotMatch(plane, /pull request #|gh pr diff|git fetch|reviewer credential that expires/);
   assert.match(plane, /names no pull request and runs no gh/);
   const postMerge = reviewPrompt(config, binding, undefined, undefined, [], undefined, undefined, null, null, null, { head: M, baseTip: B, postMerge: { mergeSha: M } });
