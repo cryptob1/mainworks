@@ -108,7 +108,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 800, height: 700 }
         expect.soft(cut, 'every row keeps its Who acts next and In step cells inside it').toEqual([]);
       }
 
-      await page.evaluate(() => { location.hash = 'master'; });
+      await page.evaluate(() => { location.hash = 'master/live'; });
       await expect(page.locator('.xterm-rows')).toContainText('screen of w1:master', settled);
       await page.locator('.xterm-screen').click();
       await expect(page.locator('.xterm-helper-textarea')).toBeFocused();

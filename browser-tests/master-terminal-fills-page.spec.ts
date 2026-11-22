@@ -1,4 +1,4 @@
-import { test, expect, type Browser } from '@playwright/test';
+import { test, expect, type Browser, type Page } from '@playwright/test';
 import { fork } from 'node:child_process';
 import { once } from 'node:events';
 import { readFile, symlink, writeFile } from 'node:fs/promises';
@@ -53,7 +53,8 @@ async function open(browser: Browser, url: string, width: 1280 | 390, viewer: 't
   });
   if (viewer === 'typing') {
     const { code } = await (await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string };
-    await page.goto(`${url}/#sign-in=${code}&master/live`);
+    await page.goto(`${url}/#sign-in=${code}&master`);
+    await openLiveSession(page);
   } else {
     await page.addInitScript(() => sessionStorage.setItem('graphyard-token', 'test-reader'));
     await page.goto(`${url}/#master/live`);
@@ -61,6 +62,13 @@ async function open(browser: Browser, url: string, width: 1280 | 390, viewer: 't
   await expect(page.getByRole('status')).toContainText(viewer === 'typing' ? 'You can type here' : 'View only', settled);
   return { page, close: () => context.close() };
 }
+
+
+/** The sign-in link opens the Lead page on its conversation; its live session is its own address. */
+const openLiveSession = async (page: Page) => {
+  await expect(page.getByRole('heading', { name: 'Lead', exact: true })).toBeVisible({ timeout: 15_000 });
+  await page.evaluate(() => { location.hash = '#master/live'; });
+};
 
 test('e2e:master-terminal-fills-page — the Lead live terminal fills the page on open, after navigating back and after a reconnect, for typing and read-only viewers at 1280 px and 390 px', async ({ browser }) => {
   test.setTimeout(240_000);

@@ -118,10 +118,11 @@ test('e2e:master-tabs — the Lead page has Conversation, Live session, History 
         await expect(historyTab).toHaveAttribute('aria-selected', 'false');
         await expect(messagesTab).toHaveCount(0);
 
-        // Conversation tab shows the status line, the message box and no terminal screen.
+        // Conversation tab shows the status line, the message box and no terminal screen:
+        // the terminal stays mounted behind the tabs (its stream feeds the status line) but is hidden.
         await expect(page.locator('.lead-status')).toBeVisible(settled);
         await expect(page.locator('#lead-message')).toBeVisible(settled);
-        await expect(page.locator('.xterm-rows')).toHaveCount(0);
+        await expect(page.locator('.terminal-host')).toBeHidden();
 
         // Keyboard navigation moves through the tablist.
         await conversationTab.focus();
@@ -129,20 +130,22 @@ test('e2e:master-tabs — the Lead page has Conversation, Live session, History 
         await expect(liveTab).toHaveAttribute('aria-selected', 'true');
         await expect(liveTab).toBeFocused();
         await expect(page.locator('.xterm-rows')).toContainText('screen of w1:master', settled);
-        await expect(page.locator('.lead-status')).toHaveCount(0);
+        await expect(page.locator('.lead-conversation')).toHaveCount(0);
+        // The pane takes focus on the Live session tab; the tablist is focused again to walk on.
+        await liveTab.focus();
         await page.keyboard.press('ArrowRight');
         await expect(historyTab).toHaveAttribute('aria-selected', 'true');
         await expect(historyTab).toBeFocused();
         await expect(page.locator('.typed-input')).toBeVisible(settled);
         await expect(page.locator('.typed-input')).toContainText('seeded command 300');
-        await expect(page.locator('.terminal-host')).toHaveCount(0);
+        await expect(page.locator('.terminal-host')).toBeHidden();
 
         // URL keeps the selected tab across reload.
         expect(page.url()).toContain('#master/history');
         await page.reload();
         await expect(page.getByRole('tab', { name: 'History' })).toHaveAttribute('aria-selected', 'true', settled);
         await expect(page.locator('.typed-input')).toContainText('seeded command 300', settled);
-        await expect(page.locator('.terminal-host')).toHaveCount(0);
+        await expect(page.locator('.terminal-host')).toBeHidden();
 
         // Shared link opens the same tab directly.
         const shared = await context.newPage();
@@ -215,7 +218,7 @@ test('e2e:master-tabs — the Lead page has Conversation, Live session, History 
         await expect(historyTab).toHaveAttribute('aria-selected', 'true');
         await expect(page.locator('.typed-input')).toContainText('seeded command 300', settled);
         await expect(page.locator('.typed-input')).toContainText('seeded command 001', settled);
-        await expect(page.locator('.terminal-host')).toHaveCount(0);
+        await expect(page.locator('.terminal-host')).toBeHidden();
         await assertNoDocumentScroll(page, `${label} History`);
 
         const panelMetrics = await page.locator('.typed-input').evaluate(el => ({
@@ -235,7 +238,7 @@ test('e2e:master-tabs — the Lead page has Conversation, Live session, History 
         await messagesTab.click();
         await expect(messagesTab).toHaveAttribute('aria-selected', 'true');
         await expect(page.getByRole('article', { name: 'Thread with install-a' })).toContainText(msgText, settled);
-        await expect(page.locator('.terminal-host')).toHaveCount(0);
+        await expect(page.locator('.terminal-host')).toBeHidden();
         await expect(page.locator('.typed-input')).toHaveCount(0);
         await assertNoDocumentScroll(page, `${label} Messages`);
       } finally {

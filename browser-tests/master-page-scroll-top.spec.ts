@@ -60,7 +60,9 @@ async function fixture(browser: Browser, width: 1280 | 390) {
     } });
   });
   const { code } = await (await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string };
-  await page.goto(`${url}/#sign-in=${code}&master/live`);
+  await page.goto(`${url}/#sign-in=${code}&master`);
+  await expect(page.getByRole('heading', { name: 'Lead', exact: true })).toBeVisible({ timeout: 15_000 });
+  await page.evaluate(() => { location.hash = '#master/live'; });
   await expect(page.locator('.xterm-rows')).toContainText('master TUI on w1:master', settled);
   return { page, stop: async () => {
     await context.close(); stopping.abort();

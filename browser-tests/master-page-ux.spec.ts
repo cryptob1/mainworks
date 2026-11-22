@@ -1,4 +1,4 @@
-import { test, expect, type Browser } from '@playwright/test';
+import { test, expect, type Browser, type Page } from '@playwright/test';
 import { fork } from 'node:child_process';
 import { once } from 'node:events';
 import { readFile, symlink, writeFile } from 'node:fs/promises';
@@ -46,7 +46,8 @@ async function fixture(browser: Browser, phone = false) {
       .observe(document, { subtree: true, attributes: true, attributeFilter: ['data-terminal'] });
   });
   const { code } = await (await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string };
-  await page.goto(`${url}/#sign-in=${code}&master/live`);
+  await page.goto(`${url}/#sign-in=${code}&master`);
+  await openLiveSession(page);
   const calls = async () => (await readFile(join(site, 'herdr.log'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
   const inputs = async () => (await calls()).filter(entry => entry.command?.type === 'terminal.input').map(entry => entry.command.text);
   await expect(page.locator('.xterm-rows')).toContainText('screen of w1:master', settled);
@@ -57,6 +58,13 @@ async function fixture(browser: Browser, phone = false) {
     process.env = original;
   } };
 }
+
+
+/** The sign-in link opens the Lead page on its conversation; its live session is its own address. */
+const openLiveSession = async (page: Page) => {
+  await expect(page.getByRole('heading', { name: 'Lead', exact: true })).toBeVisible({ timeout: 15_000 });
+  await page.evaluate(() => { location.hash = '#master/live'; });
+};
 
 test('e2e:master-page-ux — history, fitting, native input, clipboard, reconnect and pane changes', async ({ browser }) => {
   // Includes server startup, two reconnects and two pane changes under the parallel browser suite.
