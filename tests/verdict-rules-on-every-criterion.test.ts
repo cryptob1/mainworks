@@ -28,6 +28,8 @@ test('unit:verdict-rules-on-every-criterion — a verdict rules on every criteri
   // One with only a criterion id: accepted.
   assert.equal(verdictRefusal('REQUEST_CHANGES', 'AC-1 met.\nAC-2 unmet.\nBLOCKING: AC-2 — a broken baseline still fails the candidate', ids), null);
 
-  // An item without criteria asks for no rulings; a product verdict is judged by its own rules.
+  // An item without criteria asks for no rulings.
   assert.equal(verdictRefusal('APPROVE', 'Looks right.', []), null);
+  // A COMMENT records a blocker, not a verdict.
+  assert.equal(verdictRefusal('COMMENT', 'BLOCKED: git show failed', ids), null);
 });

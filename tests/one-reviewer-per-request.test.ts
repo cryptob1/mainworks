@@ -285,7 +285,7 @@ async function sessionProviderContract() {
   try {
     const token = randomBytes(32).toString('hex');
     await post('review-launch', coordinator.token, { reviewer: 'independent-session', head: H, baseTip: B, tokenHash: createHash('sha256').update(token).digest('hex'), expiresAt: new Date(Date.now() + 3600000).toISOString() });
-    await post('review-verdict', token, { event: 'APPROVE', body: 'The submitted change satisfies its criteria.', sha: H, token });
+    await post('review-verdict', token, { event: 'APPROVE', body: 'AC-1 met.', sha: H, token });
     const recorded = await store.workItem(item.id);
     assert.equal(recorded!.gates.find(gate => gate.name === 'review')!.passed, true);
     assert.equal(recorded!.observation!.reviews[0].source, 'control-plane');

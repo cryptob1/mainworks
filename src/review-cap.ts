@@ -70,9 +70,11 @@ const ruled = (id: string) => new RegExp(`\\b${id}\\b\\W*(?:is\\s+)?(?:not\\s+me
 /**
  * Why a code-review verdict is refused, or null when it stands (GY-3641): it must rule met or unmet on
  * every criterion id of the item, and a change request must carry a BLOCKING finding that names a
- * PATH:LINE or a criterion id. The reason says exactly what to add.
+ * PATH:LINE or a criterion id. The reason says exactly what to add. A COMMENT is no verdict.
  */
 export function verdictRefusal(event: string, body: string, criterionIds: readonly string[]): string | null {
+  // A COMMENT records a blocker the session could not judge past; it rules on nothing.
+  if (event === 'COMMENT') return null;
   const missing = criterionIds.filter(id => !body.split('\n').some(line => ruled(id).test(line)));
   if (missing.length) return `the verdict rules on no ${missing.join(', ')}; add one line per criterion: ${missing.map(id => `"${id} met — WHY" or "${id} unmet — WHY"`).join('; ')}`;
   if (event === 'REQUEST_CHANGES' && !blockingFindings(body).some(finding => findingLocation(finding) || /\bAC-\d+\b/.test(finding)))
