@@ -80,10 +80,8 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: '
     test.setTimeout(60_000);
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await signedIn(page);
-    // On a phone the sidebar folds behind Menu; Help is at its foot.
-    const menu = page.getByRole('button', { name: 'Menu', exact: true });
-    if (await menu.isVisible()) await menu.click();
-    await page.getByRole('button', { name: 'Help', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: 'Help', exact: true }).click();
     const docs = page.locator('article.guide');
     await expect(docs.getByRole('heading', { name: 'How Mainworks works', level: 1 })).toBeVisible();
     await expect(docs).toContainText('coding factory');

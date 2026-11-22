@@ -24,6 +24,7 @@ import { mergeGateSchema } from '../model-boundary/delivery-policy.js';
 import type { GateCheck } from '../model/delivery-policy.js';
 import { containerTrialE2e, trialContainerBoundary, trialContainerDependencies, trialImage } from './trial-container.js';
 import { cachedPasses, commitDependencies, dependencyKey, recordPasses, testResultKeys, warmDependencies } from './trial-caches.js';
+import { shellQuote } from '../shell-quote.js';
 import { HostDroppedError, readShardHosts, shardSshSession, type ShardSshSession, runShardsOnHosts, realFreeCores, recordRemoteShardRun, remoteShardSession, shardHosts, splitLocalOnlyTests, trialImageHasBrowser, underHeatLimit, type HostReading, type PlacedHost } from './remote-shards.js';
 import { repositoryTrialImage, trialDockerfile, TrialRepositoryImageError } from './repository-trial-image.js';
 import { addressPoolsSpent, checkServiceVariables, dockerEnvironment, previewNetworkCount, startCheckServices, tcpAcceptProbe, type CheckServices } from '../compose-preview.js';
@@ -1129,12 +1130,12 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       else {
         await discardKeptTree();
         worktree = kept!;
-        await run('git', ['-C', input.root, 'worktree', 'add', '--detach', worktree, input.mergeSha], { timeoutMs: remaining() });
+        await run('git', ['-C', input.root, 'worktree', 'add', '--detach', worktree, input.mergeSha], { timeoutMs: remaining(), ...(input.signal ? { signal: input.signal } : {}) });
       }
     } else {
       const near = await trialCheckoutRoot(input.checkoutRoots ?? trialCheckoutRoots(), input.minFreeBytes ?? defaultWorktreeRootMinFreeGb * 1e9, input.probe, input.checkoutRoots ? [] : undefined);
       if (near) { place = await mkdtemp(join(near, trialCheckoutPrefix)); await writeTempOwner(place); worktree = join(place, 'checkout'); }
-      await run('git', ['-C', input.root, 'worktree', 'add', '--detach', worktree, input.mergeSha], { timeoutMs: remaining() });
+      await run('git', ['-C', input.root, 'worktree', 'add', '--detach', worktree, input.mergeSha], { timeoutMs: remaining(), ...(input.signal ? { signal: input.signal } : {}) });
     }
   };
   // GY-3275: a repository that commits graphyard.trial.Dockerfile runs its trials in its own image,
@@ -1451,6 +1452,32 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       await started.close();
     }
   };
+  // GY-3645: a check with Compose services and no selection runs whole on the ready compute host with the most free CPU:
+  // the commit sent as a shard's is, the services started there, the command run on their network. With no host
+  // ready, or one that drops the check, null: the check runs on this machine as before, the reason in the log.
+  const onHost = async (check: RepositoryTrialCheck): Promise<Ended | null> => {
+    const here = (reason: string) => { log.push(`[remote] check ${check.check} runs on this machine: ${reason}`); return null; };
+    const hosts = input.remote?.hosts ?? await shardHosts();
+    if (!hosts.length) return here('no compute host is added');
+    const transport = shardSshSession(run);
+    const session = remoteShardSession({ root: input.root, sha: input.mergeSha, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport });
+    try {
+      const readings = (await (input.remote?.read ?? ((named, shared) => readShardHosts(named, run, cpu.cores(), shared)))(hosts, transport)).slice(1);
+      const host = readings.filter(reading => underHeatLimit(reading) && reading.compose).sort((a, b) => realFreeCores(b) - realFreeCores(a))[0];
+      if (!host) return here(`no host is ready (${readings.map(reading => `${reading.name}: ${reading.away ? reading.reason ?? 'away' : reading.compose ? 'too hot' : 'no Docker Compose plugin, see graphyard host prepare'}`).join('; ')})`);
+      enterStep(`tests: ${check.check} on ${host.name}`);
+      const probe = tcpAcceptProbe(check.services!.map(({ service, port }) => ({ host: service, port })), 120_000);
+      const ended = await session.check(host.name, { file: check.services![0]!.file, services: check.services!.map(({ service, port }) => ({ service, port })), cpus: Math.max(1, host.cores),
+        argv: ['/bin/sh', '-c', `${probe.map(shellQuote).join(' ')} && exec ${check.argv.map(shellQuote).join(' ')}`] });
+      for (const { step, ms } of ended.steps) input.onTiming?.(`${step}: ${check.check} on ${host.name}`, ms);
+      log.push(`[remote] check ${check.check} ran on ${host.name}: ${ended.steps.map(({ step, ms }) => `${step} ${stepSeconds(ms)}`).join(', ')}`, `$ [${host.name}] ${check.argv.join(' ')}\n${ended.out}`);
+      return { ok: ended.status === 0, out: ended.out, status: ended.status, signal: null, cause: undefined };
+    } catch (error) {
+      if (error instanceof HostDroppedError) return here(error.message);
+      if ((error as { timedOut?: boolean }).timedOut) throw new TrialTimeoutError('tests', Math.max(0, now() - startedAt), tail());
+      throw error;
+    } finally { await session.close(); }
+  };
   // GY-3526: a worker verification's tests on this machine run on one shared host slot; a merge trial already holds its own.
   const onThisMachine = input.localSlot ? (await import('../master/verification-slots.js')).sharedHeavyJob(input.localSlot, { strictOnly: true }) : <T>(part: () => Promise<T>) => part();
   const runChecks = async (checks: RepositoryTrialCheck[]): Promise<TrialRun> => {
@@ -1503,7 +1530,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       }
       files++;
       enterStep(`tests: ${check.check}`);
-      const ran = await withServices(check, () => onThisMachine(() => child('tests', check.argv[0]!, check.argv.slice(1))));
+      const ran = (check.services?.length ? await onHost(check) : null) ?? await withServices(check, () => onThisMachine(() => child('tests', check.argv[0]!, check.argv.slice(1))));
       if ('services' in ran) { failed.push(check.check); detail = { failingCase: ran.services }; runnerExit = null; break; }
       if (hostEnded(ran)) throw runnerFailure('tests', ran);
       if (!ran.ok) {

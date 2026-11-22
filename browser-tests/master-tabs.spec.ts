@@ -96,7 +96,7 @@ test('e2e:master-tabs — Master page has Terminal, History and Messages tabs in
     });
     const { code } = await post('test-human-operator', 'sign-in-links', {});
     await page.goto(`${url}/#sign-in=${code}&master`);
-    await expect(page.getByRole('heading', { name: 'Master', exact: true, level: 1 })).toBeVisible(settled);
+    await expect(page.getByRole('heading', { name: 'Lead', exact: true, level: 1 })).toBeVisible(settled);
     if (hash !== '#master') {
       await page.goto(`${url}/${hash}`);
     }
