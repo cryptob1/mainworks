@@ -1,6 +1,9 @@
 import { test, expect, type Page } from '@playwright/test';
 import { boardFromStatus } from '../src/model/board';
 
+// A loaded trial host renders the dashboard past the 5 s default wait (GY-3578).
+const settled = { timeout: 15_000 };
+
 // GY-3452: shipped means live. The top bar and the Work page's card read one count — the week's
 // merges the live commit contains — and the same waiting-to-go-live count for those it does not.
 const at = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
@@ -20,17 +23,17 @@ async function serve(page: Page, work: any[], live: { commit: string; waiting: s
   await page.goto('/?sign-in');
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
-  await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible(settled);
 }
 
 test('e2e:shipped-counts-agree — the top bar and the Work page card show the same shipped and waiting-to-go-live counts', async ({ page }) => {
   // Four merges this week; the live commit contains two of them, so two wait to go live.
   await serve(page, [merged('GY-1', 300), merged('GY-2', 200), merged('GY-3', 100), merged('GY-4', 50)], { commit: 'c'.repeat(40), waiting: ['GY-3', 'GY-4'] });
   const strip = page.locator('.shipped-strip'), card = page.getByLabel('Shipped this week');
-  await expect(strip).toHaveAttribute('data-shipped', '2');
-  await expect(strip).toHaveAttribute('data-waiting', '2');
-  await expect(strip).toContainText('2 shipped · 2 going live');
-  await expect(card.locator('[data-shipped]')).toHaveAttribute('data-shipped', '2');
-  await expect(card.locator('[data-waiting]')).toHaveAttribute('data-waiting', '2');
-  await expect(card).toContainText('2 shipped, 2 going live.');
+  await expect(strip).toHaveAttribute('data-shipped', '2', settled);
+  await expect(strip).toHaveAttribute('data-waiting', '2', settled);
+  await expect(strip).toContainText('2 shipped · 2 going live', settled);
+  await expect(card.locator('[data-shipped]')).toHaveAttribute('data-shipped', '2', settled);
+  await expect(card.locator('[data-waiting]')).toHaveAttribute('data-waiting', '2', settled);
+  await expect(card).toContainText('2 shipped, 2 going live.', settled);
 });
