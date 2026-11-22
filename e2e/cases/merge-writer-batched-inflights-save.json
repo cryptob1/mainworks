@@ -1,0 +1,15 @@
+{
+  "id": "merge-writer-batched-inflights-save",
+  "title": "More queued compatible heads than the parallel limit are trialled in batches and merged, and the merge writer's state saves every cycle",
+  "description": "Runs the real merge-writer step with every trial slot holding a batch of compatible heads, so more heads are in flight than the parallel limit: each head keeps its own in-flight entry, the loop state saves on every cycle with no too_big failure, and every head merges.",
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "batched heads beyond the parallel limit merge with no merge-writer step failure",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=merge-writer-batched-inflights-save tests/merge-writer-batched-inflights-save.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}
