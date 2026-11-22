@@ -17,7 +17,7 @@ const item = (key: string, title: string, extra: Record<string, unknown> = {}) =
 const merged = (key: string, title: string, mergedAt: string) => item(key, title, { stage: 'done', delivery: { mergedAt, mergeSha: key.replace(/\D/g, '').padStart(40, 'a') } });
 const status = { actor: { id: 'operator', role: 'admin', sessionKind: 'human' }, repository: 'fixture/repository', jobs: [], live: { commit: 'c'.repeat(40), waiting: [] } };
 
-async function plane(page: Page, state: { work: unknown[] }) {
+async function plane(page: Page, state: { work: unknown[]; actor?: unknown }) {
   const store = await withDatabase(`home_since_${randomUUID().slice(0, 8)}`);
   await store.init();
   const engine = new Engine(store, 120, 'fixture/repository');
@@ -29,7 +29,7 @@ async function plane(page: Page, state: { work: unknown[] }) {
     const { pathname, search } = new URL(route.request().url());
     const now = new Date().toISOString();
     if (pathname.endsWith('/home-visit') || pathname.endsWith('/master/messages')) return route.fetch({ url: url + pathname + search }).then(response => route.fulfill({ response }));
-    if (pathname.endsWith('/status')) return route.fulfill({ json: { ...status, now } });
+    if (pathname.endsWith('/status')) return route.fulfill({ json: { ...status, actor: state.actor ?? status.actor, now } });
     if (pathname.endsWith('/work-snapshot')) return route.fulfill({ json: { work: state.work, now } });
     if (pathname.endsWith('/board')) return route.fulfill({ json: boardFromStatus(state.work as never, Date.parse(now), null) });
     return route.fulfill({ json: [] });
@@ -54,7 +54,7 @@ const noSideScroll = (page: Page) => page.evaluate(() => document.documentElemen
 test('e2e:home-since-last-visit — the second visit counts exactly the merge in between, and the box tells the Lead', async ({ page }) => {
   test.setTimeout(120_000);
   const goal = 'Six merges an hour', other = item('GY-4', 'Batch trials', { stage: 'backlog', goal });
-  const state = { work: [{ ...merged('GY-1', 'Earlier change', at(hour)), goal }, item('GY-2', 'Rows are one line', { goal, lease: { owner: 'graphyard-claude-1', epoch: 1, expiresAt: at(-hour) } }), other] as unknown[] };
+  const state: { work: unknown[]; actor?: unknown } = { work: [{ ...merged('GY-1', 'Earlier change', at(hour)), goal }, item('GY-2', 'Rows are one line', { goal, lease: { owner: 'graphyard-claude-1', epoch: 1, expiresAt: at(-hour) } }), other] as unknown[] };
   const { messages, close } = await plane(page, state);
   try {
     await page.setViewportSize({ width: 1280, height: 900 });
@@ -83,6 +83,12 @@ test('e2e:home-since-last-visit — the second visit counts exactly the merge in
     await page.getByRole('form', { name: 'Tell the Lead' }).getByRole('button', { name: 'Send' }).click();
     await expect(page.getByRole('status')).toHaveText('Sent to the Lead.');
     expect((await messages()).map(m => m.text)).toEqual(['Prioritise the release check.']);
+
+    // A signed-in teammate, whom the message route refuses, is offered no box and no decision buttons.
+    state.actor = { id: 'teammate', role: 'reader', team: 'maintainer', sessionKind: 'human' };
+    await visit(page);
+    await expect(page.getByRole('form', { name: 'Tell the Lead' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Ask why' })).toHaveCount(0);
   } finally {
     await close();
   }

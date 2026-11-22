@@ -18,10 +18,12 @@ const decisions = (work: Work[], since: number) => [
 ].sort((a, b) => b.at.localeCompare(a.at));
 
 export default function HomeBrief({ work, status, now, api }: Props) {
-  const [since, setSince] = useState<number | null | undefined>(undefined);
+  const [since, setSince] = useState<number | null | undefined>(undefined), [failed, setFailed] = useState(false);
+  // Only the operator may message the Lead from here; a teammate steers from the Lead page.
+  const operator = status?.actor?.role === 'admin';
   const [draft, setDraft] = useState(''), [sent, setSent] = useState('');
   // One visit: the answer is when this person last looked, and now becomes their last look.
-  useEffect(() => { void api('home-visit').then(body => setSince(typeof body?.since === 'string' ? Date.parse(body.since) : null), () => setSince(null)); }, []);
+  useEffect(() => { void api('home-visit').then(body => setSince(typeof body?.since === 'string' ? Date.parse(body.since) : null), () => setFailed(true)); }, []);
   const waiting = typeof status?.live?.commit === 'string' && Array.isArray(status.live.waiting) ? new Set<string>(status.live.waiting) : null;
   const fresh = since ? work.filter(w => w.stage === 'done' && !w.closure && !!(w.delivery?.mergedAt ?? w.observation?.mergedAt) && mergedAt(w) > since) : [];
   const live = fresh.filter(w => waiting && !waiting.has(w.key)), releasing = fresh.filter(w => !waiting || waiting.has(w.key));
@@ -40,18 +42,19 @@ export default function HomeBrief({ work, status, now, api }: Props) {
       <h2>Since you last looked{since ? <small className="muted"> · {formatDuration((now - since) / 60000)} ago</small> : null}</h2>
       {since === null ? <p className="muted">This is your first look. Next time this shows what changed.</p> : <>
         <p data-since-counts>{live.length} went live · {releasing.length} in release · {plural(led.length, 'Lead decision')} · {plural(spend, 'spend approval')}</p>
-        {bullets.length > 0 && <ul>{bullets.map(b => <li key={b.text}>{b.text}{'decision' in b && <> <button type="button" className="text-button" onClick={() => setDraft(b.decision.ask)}>Ask why</button> · <button type="button" className="text-button" onClick={() => setDraft(b.decision.other)}>Do it differently</button></>}</li>)}</ul>}
+        {bullets.length > 0 && <ul>{bullets.map(b => <li key={b.text}>{b.text}{operator && 'decision' in b && <> <button type="button" className="text-button" onClick={() => setDraft(b.decision.ask)}>Ask why</button> · <button type="button" className="text-button" onClick={() => setDraft(b.decision.other)}>Do it differently</button></>}</li>)}</ul>}
       </>}
     </section>}
     {goals.length > 0 && <section className="panel goals" aria-label="Active goals"><h2>Active goals</h2>
       <ul>{goals.map(({ goal, shipped, total }) => <li key={goal} data-goal={goal}><strong>{goal}</strong> <span className="muted">{shipped} of {plural(total, 'task')} shipped</span></li>)}</ul>
     </section>}
     {building.length > 0 && <p className="building-now" data-building-now>Now: {building.slice(0, 3).map(t => t.title).join(', ')}{building.length > 3 && ` and ${building.length - 3} more`}</p>}
-    <form className="panel tell-lead" aria-label="Tell the Lead" onSubmit={event => { event.preventDefault(); if (draft.trim()) void send(); }}>
+    {failed && <p className="muted" role="alert">Could not load your last visit. Reload to try again.</p>}
+    {operator && <form className="panel tell-lead" aria-label="Tell the Lead" onSubmit={event => { event.preventDefault(); if (draft.trim()) void send(); }}>
       <label htmlFor="tell-lead">Tell the Lead</label>
       <div className="tell-lead-row"><textarea id="tell-lead" rows={2} value={draft} onChange={event => { setDraft(event.target.value); setSent(''); }} placeholder="What should the team do next?"/>
         <button type="submit" disabled={!draft.trim()}>Send</button></div>
       {sent && <p className="muted" role="status">{sent}</p>}
-    </form>
+    </form>}
   </>;
 }
