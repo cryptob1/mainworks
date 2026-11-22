@@ -7,11 +7,11 @@
 //   node --import tsx scripts/e2e-seed-needs-you-three-decisions.mjs
 //
 // Run from the checkout scripts/e2e-serve.mjs serves: it reads the database URL that serve wrote
-// to .graphyard/e2e-serve.json. Re-running refreshes all four stamps.
+// to .graphyard/e2e-serve-PORT.json. Re-running refreshes all four stamps.
 import { readFile } from 'node:fs/promises';
 import pg from 'pg';
 
-const { databaseUrl } = JSON.parse(await readFile('.graphyard/e2e-serve.json', 'utf8'));
+const { databaseUrl } = JSON.parse(await readFile(`.graphyard/e2e-serve-${new URL(process.env.TARGET_URL).port}.json`, 'utf8'));
 const minute = 60_000, now = Date.now();
 const filed = new Date(now - 3 * 60 * minute).toISOString();
 const blocker = 'the export test cannot reach the staging database: psql: error: connection refused (fix: grant the worker sandbox 127.0.0.1:5432)';
