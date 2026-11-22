@@ -25,8 +25,9 @@ import { DeliveryDefaults } from '../components/delivery-slices';
  */
 export const sections = [
   { id: 'work', icon: 'work', label: 'Work' },
-  // The master agent has its own entry so anyone looking for it finds it at once (GY-3287); it always reads Master (GY-3307).
-  { id: 'master', icon: 'master', label: 'Master' },
+  // The Lead (the master agent, renamed for people by GY-3602; the role stays 'master' in code until GY-3594)
+  // is the conversation you steer: its replies are cards you act on, with the terminal one click away.
+  { id: 'master', icon: 'master', label: 'Lead' },
   { id: 'workers', icon: 'workers', label: 'Workers' },
   { id: 'shipped', icon: 'shipped', label: 'Shipped' },
   { id: 'tests', icon: 'tests', label: 'Tests' },
@@ -65,8 +66,9 @@ export const views: readonly View[] = [
   { id: 'shipped', icon: '✓', label: 'Delivered', section: 'shipped', render: dashboard => <ShippedPage {...dashboard}/> },
   // Every agent session across every item (GY-116), its own sidebar entry (GY-161).
   { id: 'workers', icon: '⚙', label: 'Workers', section: 'workers', render: dashboard => <WorkersPage {...dashboard}/> },
-  // The master agent's live terminal (GY-3211), with the blockers it owes above it (GY-3394).
-  { id: 'master', icon: '▶', label: 'Master', section: 'master', render: dashboard => <MasterPage {...dashboard}/> },
+  // The Lead conversation (GY-3211, GY-3602): messages and actionable cards, with the live terminal
+  // one click away and the blockers the Lead owes above it (GY-3394).
+  { id: 'master', icon: '▶', label: 'Lead', section: 'master', render: dashboard => <MasterPage {...dashboard}/> },
   // What waits on a release, beside what shipped.
   { id: 'releases', icon: '⇈', label: 'Releases', section: 'shipped', visible: dashboard => configured(dashboard.features.releases), render: dashboard => <ReleasesView api={dashboard.api} work={dashboard.work}/> },
   // Every test case with its latest trusted result and history (GY-162). It is shown even before the
@@ -74,7 +76,7 @@ export const views: readonly View[] = [
   { id: 'tests', icon: '⚗', label: 'Tests', section: 'tests', visible: dashboard => role(dashboard) !== 'operator-agent', render: dashboard => <TestsPage api={dashboard.api} canEdit={role(dashboard) === 'admin'} setView={dashboard.setView} openItem={dashboard.setSelected}/> },
   // The library of test cases sits beside their results, under Tests (GY-3297).
   { id: 'scenarios', icon: '✓', label: 'Test cases', section: 'tests', render: dashboard => <ScenarioLibrary api={dashboard.api} canEdit={role(dashboard) === 'admin'}/> },
-  // The product brief, kept by the master in project memory and mirrored here read-only (GY-3274): what the product is for, beside the master that keeps it.
+  // The product brief, kept by the Lead in project memory and mirrored here read-only (GY-3274): what the product is for, beside the Lead that keeps it.
   { id: 'product', icon: '◎', label: 'Product', section: 'master', render: dashboard => <ProductPage api={dashboard.api}/> },
   // What the agents spent (GY-3289): tokens and cost from the price sheet, beside the sessions that spent them.
   { id: 'costs', icon: '$', label: 'Costs', section: 'workers', render: dashboard => <CostsPage api={dashboard.api} observedAt={dashboard.observedAt}/> },

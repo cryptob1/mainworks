@@ -1,0 +1,11 @@
+{
+  "id": "lead-conversation",
+  "title": "The Lead page opens on a conversation: messages and cards in time order, tabs for the live terminal, History and Messages, no page scroll",
+  "description": "A real browser signs in as the operator's admin human session, a Watch-role viewer and a Steer-role maintainer to a real control plane serving the built dashboard with a stub herdr Lead pane. The world seeds two typed messages, an open spend request with its own choices, a priority decision, a worker-role pause, a Lead message to a builder, a filed item and an open deployment incident. The conversation shows messages with their name and the cards in time order, newest at the bottom; a status line says what the Lead is doing and for how long; the message box with an attach-image button types into the pane as before; the side rail holds goal order, what waits on you and who can steer. The tabs are Conversation, Live session, History and Messages; the page never scrolls at 1280 and 390 px while the conversation scrolls inside its panel. Pressing an approval choice answers it in place as the signed-in person; a reversible decision's Undo calls the reversing command and a non-reversible one shows no Undo. The Watch viewer sees the conversation and live session, no message box, and disabled card buttons with the reason; the Steer maintainer can message and cannot approve spend.",
+  "tags": ["dashboard", "lead"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "read the Lead conversation, its cards and both roles at 1280 and 390 px", "run": "npm run test:browser -- browser-tests/lead-conversation.spec.ts", "timeoutSeconds": 420 }
+  ]
+}

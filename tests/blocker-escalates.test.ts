@@ -78,7 +78,7 @@ async function fixture(visible = true) {
     /** The Needs you rows, the board the dashboard serves and the Master page, over this fixture's work. */
     dashboard: () => {
       const rows = openHumanOnly(work.map(item => ({ work: item })), now);
-      return { rows, board: buildBoard(work, now, rows), master: renderToStaticMarkup(createElement(MasterPage, { work, observedAt: now, token: '', api: async () => ({}), setSelected: () => {} })) };
+      return { rows, board: buildBoard(work, now, rows), master: renderToStaticMarkup(createElement(MasterPage, { work, observedAt: now, token: '', api: async () => ({}), setSelected: () => {}, action: async () => {}, busy: false })) };
     },
   };
 }

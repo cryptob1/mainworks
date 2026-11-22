@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 
 const columns = 120, rows = 36;
-type Session = { account: string | null; runtime: string | null; pane: string | null; state: string };
+type Session = { account: string | null; runtime: string | null; pane: string | null; state: string; since?: string | null };
+
+export interface TerminalHandle {
+  /** One line as bracketed paste plus Enter, as typing it; false when this page cannot type. */
+  typeLine(text: string): boolean;
+  /** Upload files (an image to attach) and paste their saved path into the pane. */
+  attach(files: File[]): void;
+}
+const noHandle: TerminalHandle = { typeLine: () => false, attach: () => {} };
 
 // xterm.js loads from the CDN at a pinned exact version, checked by its hash, only on a page that
 // shows a terminal: never an npm dependency of the dashboard bundle.
@@ -52,13 +60,17 @@ const loadTerminal = () => loading ??= new Promise((done, fail) => {
  * the operator or an invited maintainer, on the master's pane — and says so in its first message; everyone else
  * watches. Unmounting closes the socket, which detaches without stopping the pane.
  */
-export default function LiveTerminal({ token, label }: { token: string; label: string }) {
+export default function LiveTerminal({ token, label, onSession, handle }: { token: string; label: string; onSession?: (session: Session | null, mode: string, reason: string) => void; handle?: (api: TerminalHandle | null) => void }) {
   const host = useRef<HTMLDivElement>(null);
   const section = useRef<HTMLElement>(null);
   const sendKey = useRef<(key: string) => void>(() => {});
+  const handleRef = useRef<TerminalHandle>(noHandle);
   const [state, setState] = useState('connecting');
   const [session, setSession] = useState<Session | null>(null);
   const [reason, setReason] = useState('');
+  const reported = useRef(onSession);
+  reported.current = onSession;
+  useEffect(() => { reported.current?.(session, state, reason); }, [session, state, reason]);
   useEffect(() => {
     setSession(null); setReason(''); setState('connecting');
     if (!token) { setReason('Sign in to see the terminal.'); setState('refused'); return; }
@@ -150,6 +162,12 @@ export default function LiveTerminal({ token, label }: { token: string; label: s
       const paste = (event: ClipboardEvent) => { event.preventDefault(); event.stopPropagation(); void deliver([...event.clipboardData?.files ?? []], event.clipboardData?.getData('text/plain') ?? ''); };
       const drop = (event: DragEvent) => { event.preventDefault(); void deliver([...event.dataTransfer?.files ?? []], ''); };
       const over = (event: DragEvent) => event.preventDefault();
+      // The page's message box (GY-3602): one line as a bracketed paste with Enter, and attached images.
+      handleRef.current = {
+        typeLine: line => { if (!writable) return false; input(`\x1b[200~${line.replace(/\x1b/g, '').replace(/\r?\n/g, ' ')}\x1b[201~`); input('\r'); terminal.focus(); return true; },
+        attach: files => { void deliver(files, ''); },
+      };
+      handle?.(handleRef.current);
       const readClipboard = async () => {
         try {
           const files: File[] = []; let pasted = '';
@@ -199,14 +217,14 @@ export default function LiveTerminal({ token, label }: { token: string; label: s
         clearTimeout(reconnect); observer.disconnect(); window.removeEventListener('resize', fit); document.removeEventListener('visibilitychange', visible);
         element.removeEventListener('paste', paste, true); element.removeEventListener('drop', drop); element.removeEventListener('dragover', over); element.removeEventListener('contextmenu', context);
         element.removeEventListener('touchstart', touchStart); element.removeEventListener('touchmove', touchMove);
-        typing.dispose(); socket.close(); terminal.dispose(); sendKey.current = () => {};
+        typing.dispose(); socket.close(); terminal.dispose(); sendKey.current = () => {}; handleRef.current = noHandle; handle?.(null);
       };
     }, () => { if (live) { setReason('xterm.js did not load. Reload to try again.'); setState('refused'); } });
     return () => { live = false; stop(); };
   }, [token]);
   return <section ref={section} className={`live-terminal${session?.state === 'working' ? ' working' : ''}`} aria-label={label} data-terminal={state}>
     <div className="terminal-info" role="status">
-      {session && <span className="terminal-session" title={`${session.runtime ?? 'Runtime unknown'} · ${session.pane ?? 'No pane'}`}>{session.state === 'absent' ? 'Master is restarting…' : `${session.state.charAt(0).toUpperCase()}${session.state.slice(1)} · ${session.account ?? 'Account unknown'}`}</span>}
+      {session && <span className="terminal-session" title={`${session.runtime ?? 'Runtime unknown'} · ${session.pane ?? 'No pane'}`}>{session.state === 'absent' ? 'Lead is restarting…' : `${session.state.charAt(0).toUpperCase()}${session.state.slice(1)} · ${session.account ?? 'Account unknown'}`}</span>}
       <span>{state === 'connecting' ? 'Connecting…' : state === 'reconnecting' ? 'Reconnecting…' : state === 'control' ? 'You can type here' : state === 'observe' ? 'View only' : reason}</span>
       {reason && state !== 'refused' && <span>{reason}</span>}
     </div>

@@ -6,7 +6,7 @@ import { useTheme, toggleTheme } from './theme';
 /**
  * Keyboard-first navigation (GY-3272): ⌘/Ctrl K opens the command palette (jump to any item,
  * open a page, file a goal, switch theme), j/k walk the Work rows and Enter opens the one under
- * the cursor, g w / g m / g s jump to Work, Master and Setup, and ? shows this sheet. The keys
+ * the cursor, g w / g m / g s jump to Work, Lead and Setup, and ? shows this sheet. The keys
  * stay out of the way: nothing fires while a dialog or a field has the focus.
  */
 
@@ -16,7 +16,7 @@ export const shortcuts: [keys: string, does: string][] = [
   ['j / k', 'Move through the Work rows'],
   ['Enter', 'Open the row under the cursor'],
   ['g w', 'Go to Work'],
-  ['g m', 'Go to Master'],
+  ['g m', 'Go to Lead'],
   ['g s', 'Go to Setup'],
   ['?', 'Show this sheet'],
   ['Esc', 'Close'],
@@ -31,7 +31,7 @@ function commandsOf(dashboard: Dashboard, theme: string): Command[] {
   return [
     ...dashboard.work.map(item => ({ key: item.key, title: item.title, hint: 'Open item', run: () => dashboard.setSelected(item.id) })),
     { key: 'g w', title: 'Work', hint: 'Go', run: () => go('work') },
-    { key: 'g m', title: 'Master', hint: 'Go', run: () => go('master') },
+    { key: 'g m', title: 'Lead', hint: 'Go', run: () => go('master') },
     ...(admin ? [{ key: 'g s', title: 'Setup', hint: 'Go', run: () => go('setup') }] : []),
     ...(admin ? [{ key: '', title: 'File a goal', hint: 'New work item', run: () => dashboard.setCreating(true) }] : []),
     { key: '', title: theme === 'night' ? 'Switch to Daylight' : 'Switch to Night Yard', hint: 'Theme', run: toggleTheme },
