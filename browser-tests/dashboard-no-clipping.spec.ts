@@ -82,17 +82,17 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 800, height: 700 }
       const { code } = await (await fetch(`${http.url}/api/sign-in-links`, { method: 'POST', headers: operator })).json() as { code: string };
       await page.goto(`${http.url}/#sign-in=${code}`);
       await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible(settled);
-      await expect(page.locator('.work-row').first()).toBeVisible(settled);
+      await expect(page.locator('[data-row]').first()).toBeVisible(settled);
       await expect(page.locator('.version-label')).toContainText('Mainworks 1a2b3c4', settled);
       await checkWithMenu(page, 'Work');
 
       if (viewport.width === 800) {
-        const cut = await page.locator('.work-row').evaluateAll(rows => rows.flatMap(row => {
+        const cut = await page.locator('[data-row]').evaluateAll(rows => rows.flatMap(row => {
           const outer = row.getBoundingClientRect();
-          return [...row.querySelectorAll('.row-who, .row-time')].filter(cell => { const box = cell.getBoundingClientRect(); return box.width > 0 && (box.left < outer.left - 1 || box.right > outer.right + 1 || box.top < outer.top - 1 || box.bottom > outer.bottom + 1); })
-            .map(cell => `${row.getAttribute('data-row')} ${cell.className}`);
+          return [...row.querySelectorAll('[data-col="builder"], [data-col="time"]')].filter(cell => { const box = cell.getBoundingClientRect(); return box.width > 0 && (box.left < outer.left - 1 || box.right > outer.right + 1 || box.top < outer.top - 1 || box.bottom > outer.bottom + 1); })
+            .map(cell => `${row.getAttribute('data-row')} ${cell.getAttribute('data-col')}`);
         }));
-        expect.soft(cut, 'every row keeps its Who acts next and In step cells inside it').toEqual([]);
+        expect.soft(cut, 'every row keeps its Builder and In state cells inside it').toEqual([]);
       }
 
       await page.evaluate(() => { location.hash = 'master/live'; });
@@ -126,7 +126,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 800, height: 700 }
       await expect(dialog).toBeHidden(settled);
 
       await page.evaluate(() => { location.hash = 'work'; });
-      await page.locator('.work-row .card-open').first().click();
+      await page.locator('[data-row] .card-open').first().click();
       await expect(page.getByRole('button', { name: /Back/ }).first()).toBeVisible(settled);
       await checkWithMenu(page, 'item page');
     } finally { await page.close(); await http.close(); await database.close(); }

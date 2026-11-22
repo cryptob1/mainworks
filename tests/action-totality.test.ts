@@ -17,7 +17,7 @@ import { accountOutcome, stallBoundMs, type AccountOutcome } from '../src/model/
 import { actionlessItems, stalledItems } from '../src/model-boundary/action-account.js';
 import { actionlessCards, stalledCards } from '../src/model/actionless.js';
 import type { Dashboard } from '../web/pages/dashboard.js';
-import OverviewPage from '../web/pages/overview.js';
+import WorkPage from '../web/pages/work.js';
 import { boardFromStatus } from '../src/model/board.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
@@ -289,11 +289,11 @@ test('unit:actionless-item-visible — an item with no action and nothing moving
     // The board GET /api/board serves over the same work (GY-200): the Work page renders its groups.
     board: boardFromStatus(computed, now.getTime(), null),
   } as unknown as Dashboard;
-  const markup = renderToStaticMarkup(createElement(OverviewPage, dashboard));
-  assert.match(markup, /Nothing is happening/);
-  assert.match(markup, /GY-MUTE/);
-  assert.match(markup, /reports a problem without saying what it is/, 'the page says what is missing');
-  assert.match(markup, /stuck at .{0,20}In review.{0,20} for 3h/, 'and how long it has held its gate');
-  const section = markup.slice(markup.indexOf('Nothing is happening'), markup.indexOf('</section>', markup.indexOf('Nothing is happening')));
-  for (const key of ['GY-DEP', 'GY-BUILD', 'GY-BACKLOG']) assert.equal(section.includes(key), false, `${key} is counted apart from the items nothing is moving`);
+  const markup = renderToStaticMarkup(createElement(WorkPage, dashboard));
+  // GY-3600: the Work list shows it as a stuck row saying what is missing, with how long it has held its state.
+  const row = (key: string) => markup.slice(markup.indexOf(`data-row="${key}"`), markup.indexOf('</tr>', markup.indexOf(`data-row="${key}"`)));
+  assert.match(row('GY-MUTE'), /data-stuck="true"/);
+  assert.match(row('GY-MUTE'), /Nothing is happening: .*reports a problem without saying what it is/, 'the page says what is missing');
+  assert.match(row('GY-MUTE'), /data-col="time">(<span[^>]*>)*(<span[^>]*>▲ <\/span>)?3h/, 'and how long it has held its gate');
+  for (const key of ['GY-DEP', 'GY-BUILD', 'GY-BACKLOG']) assert.match(row(key), /data-stuck="false"/, `${key} is counted apart from the items nothing is moving`);
 });

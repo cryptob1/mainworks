@@ -42,7 +42,7 @@ test('e2e:dashboard-live-new-item — an item filed through the CLI, and its sta
     const { code } = await (await fetch(http.url + '/api/sign-in-links', { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string };
     await page.goto('/#sign-in=' + code);
     await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
-    await expect(page.locator('[aria-label="Shipped this week"]')).toBeVisible();
+    await expect(page.locator('[data-filter="shipped-today"]')).toBeVisible();
     remote = true;
     await sleep(6_000);
 
@@ -55,17 +55,14 @@ test('e2e:dashboard-live-new-item — an item filed through the CLI, and its sta
     const filed = await cli('create', join(cwd, 'work.json'));
     const filedAt = Date.now();
 
-    // Work (the overview): the new row is on the board, in Backlog.
-    await expect(page.locator(`[data-row="${filed.key}"]`)).toHaveAttribute('data-group', 'backlog', live);
-    // Now: the operator's own items list it.
-    await page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: 'Now', exact: true }).click();
-    await expect(page.getByRole('table', { name: 'Your items' }).locator('tbody tr').filter({ hasText: filed.title })).toContainText('Backlog', { timeout: Math.max(1, 10_000 - (Date.now() - filedAt)) });
+    // Work: the new row is on the list, in Backlog, within ten seconds of filing.
+    const row = page.locator(`[data-row="${filed.key}"]`);
+    await expect(row).toHaveClass(/group-backlog/, { timeout: Math.max(1, 10_000 - (Date.now() - filedAt)) });
+    await expect(row.locator('[data-col="state"]')).toHaveText('Backlog');
 
     // A stage change of an existing item shows too: released for work, it leaves Backlog for Up next.
     await cli('ready', filed.key, 'Released by the dashboard-live-new-item case');
-    await expect(page.getByRole('table', { name: 'Your items' }).locator('tbody tr').filter({ hasText: filed.title }).locator('td').nth(1)).not.toHaveText('Backlog', live);
-    await page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: 'Work', exact: true }).click();
-    await expect(page.locator(`[data-row="${filed.key}"]`)).not.toHaveAttribute('data-group', 'backlog', live);
+    await expect(row).not.toHaveClass(/group-backlog/, live);
     expect(await page.evaluate(() => performance.getEntriesByType('navigation').length)).toBe(1);
   } finally { await http.close(); await database.close(); }
 });

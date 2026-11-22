@@ -78,8 +78,8 @@ export function ShortcutSheet({ onClose }: { onClose(): void }) {
 }
 
 /** The rows j/k walk, in the order the page draws them. */
-const rows = () => [...document.querySelectorAll<HTMLElement>('.work-row')].filter(row => row.getClientRects().length > 0);
-const clearCursor = () => document.querySelectorAll('.work-row.kb-cursor').forEach(row => row.classList.remove('kb-cursor'));
+const rows = () => [...document.querySelectorAll<HTMLElement>('[data-row]')].filter(row => row.getClientRects().length > 0);
+const clearCursor = () => document.querySelectorAll('[data-row].kb-cursor').forEach(row => row.classList.remove('kb-cursor'));
 
 /**
  * The latest dashboard and dialogs, so the key listener below — attached once, when the dashboard
@@ -108,8 +108,8 @@ if (typeof document !== 'undefined') document.addEventListener('keydown', (event
   if (event.key === 'j') { move(1); return; }
   if (event.key === 'k') { move(-1); return; }
   if (event.key === 'Enter') {
-    const row = document.querySelector<HTMLElement>('.work-row.kb-cursor');
-    if (row) { event.preventDefault(); (row.querySelector<HTMLElement>('.card-open') ?? row).click(); }
+    const row = document.querySelector<HTMLElement>('[data-row].kb-cursor');
+    if (row) { event.preventDefault(); (row.querySelector<HTMLElement>('[data-col="task"] a') ?? row).click(); }
     return;
   }
   if (event.key === 'Escape') { clearCursor(); return; }

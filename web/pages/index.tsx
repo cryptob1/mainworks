@@ -1,9 +1,7 @@
 import type { ReactNode } from 'react';
 import type { Dashboard } from './dashboard';
 import HomePage from './home';
-import { WorkPage } from './overview';
-import NowPage from './now';
-import ShippedPage from './shipped';
+import WorkPage, { workFilters, type WorkFilter } from './work';
 import HumanRequestsPage from './human-requests';
 import GuidePage from './guide';
 import AutomationPage from './automation';
@@ -17,6 +15,8 @@ import ReleasesView from '../releases';
 import TestsPage from './tests';
 import ProductPage from './product';
 import { DeliveryDefaults } from '../components/delivery-slices';
+import { WhereItRuns } from '../components/where-it-runs';
+import { requestedView } from '../../src/model/setup-checklist';
 
 /**
  * The four places (GY-3598): Home, Work, Lead, Settings. Every existing page lives under one of
@@ -61,9 +61,7 @@ const configured = (value: boolean | null | undefined) => value !== false;
 export const views: readonly View[] = [
   { id: 'home', icon: '⌂', label: 'Home', section: 'home', render: dashboard => <HomePage {...dashboard}/> },
   { id: 'work', icon: '▥', label: 'Work', section: 'work', render: dashboard => <WorkPage {...dashboard}/> },
-  { id: 'now', icon: '◷', label: 'Now', section: 'work', visible: dashboard => dashboard.status?.actor?.sessionKind === 'human', render: dashboard => <NowPage {...dashboard}/> },
   { id: 'needs-you', icon: '☝', label: 'Needs you', section: 'work', inlineOnly: true, render: dashboard => <HumanRequestsPage {...dashboard}/> },
-  { id: 'shipped', icon: '✓', label: 'Delivered', section: 'work', render: dashboard => <ShippedPage {...dashboard}/> },
   { id: 'releases', icon: '⇈', label: 'Releases', section: 'work', advanced: true, visible: dashboard => configured(dashboard.features.releases), render: dashboard => <ReleasesView api={dashboard.api} work={dashboard.work}/> },
   { id: 'tests', icon: '⚗', label: 'Tests', section: 'work', visible: dashboard => role(dashboard) !== 'operator-agent', render: dashboard => <TestsPage api={dashboard.api} canEdit={role(dashboard) === 'admin'} setView={dashboard.setView} openItem={dashboard.setSelected}/> },
   { id: 'scenarios', icon: '✓', label: 'Test cases', section: 'work', advanced: true, render: dashboard => <ScenarioLibrary api={dashboard.api} canEdit={role(dashboard) === 'admin'}/> },
@@ -73,7 +71,8 @@ export const views: readonly View[] = [
   { id: 'workers', icon: '⚙', label: 'Workers', section: 'settings', render: dashboard => <WorkersPage {...dashboard}/> },
   { id: 'costs', icon: '$', label: 'Costs', section: 'settings', render: dashboard => <CostsPage api={dashboard.api} observedAt={dashboard.observedAt}/> },
   { id: 'setup', icon: '✔', label: 'Setup', section: 'settings', adminOnly: true, render: dashboard => <SetupPage status={dashboard.status} api={dashboard.api} setView={dashboard.setView}/> },
-  { id: 'delivery', icon: '⇉', label: 'Delivery', section: 'settings', visible: dashboard => ['admin', 'coordinator', 'reader', 'slice-lead'].includes(role(dashboard)), render: dashboard => <DeliveryDefaults status={dashboard.status}/> },
+  // The project's effective delivery defaults and declared applications (GY-1901), with where the app runs (GY-3434).
+  { id: 'delivery', icon: '⇉', label: 'Delivery', section: 'settings', visible: dashboard => ['admin', 'coordinator', 'reader', 'slice-lead'].includes(role(dashboard)), render: dashboard => <><DeliveryDefaults status={dashboard.status}/><WhereItRuns status={dashboard.status} now={Number.isNaN(dashboard.observedAt) ? Date.now() : dashboard.observedAt}/></> },
   { id: 'guide', icon: '?', label: 'Help', section: 'settings', render: () => <GuidePage/> },
   { id: 'automation', icon: '◇', label: 'Operator automation', section: 'settings', advanced: true, adminOnly: true, visible: dashboard => configured(dashboard.features.automation), render: dashboard => <AutomationPage operatorAgents={dashboard.operatorAgents} operatorAgentsError={dashboard.operatorAgentsError}/> },
 ];
@@ -115,3 +114,13 @@ export const primaryEntries = (dashboard: Dashboard) => sections.map(section => 
 
 /** The page for a view id; old aliases resolve to their new place, unknown ids fall back to work. */
 export const viewFor = (id: string) => views.find(view => view.id === (oldRouteRedirects[id] ?? id)) ?? views.find(view => view.id === 'work')!;
+
+/** GY-3600: the removed Now and Shipped pages' routes open Work with the matching filter. */
+export const redirects: Readonly<Record<string, WorkFilter>> = { now: 'in-flight', shipped: 'shipped-today' };
+/** The page and Work filter an address asks for: `#page`, with the filter as `?filter=` (unknown values ignored); old aliases resolve to their new place. */
+export function route(hash: string, search: string): { view: string | null; filter: WorkFilter | null } {
+  const asked = requestedView(hash, [...allRouteIds, ...Object.keys(redirects)]).view;
+  if (asked && redirects[asked]) return { view: 'work', filter: redirects[asked] };
+  const page = asked ? oldRouteRedirects[asked] ?? asked : null, filter = new URLSearchParams(search).get('filter');
+  return { view: page, filter: page === 'work' && workFilters.includes(filter as WorkFilter) ? filter as WorkFilter : null };
+}
