@@ -27,8 +27,7 @@ async function shell(page: Page, card: string) {
     const title = document.querySelector('main h1');
     const heading = document.querySelector('main .page-heading');
     const action = [...document.querySelectorAll('main .page-heading .page-actions button, main .page-heading .page-actions a')].at(-1) ?? null;
-    const sidebar = document.querySelector('.sidebar')!.getBoundingClientRect();
-    const available = innerWidth - (sidebar.width < innerWidth ? sidebar.width : 0);
+    const available = innerWidth;
     const cardNode = document.querySelector(card);
     const fact = heading?.querySelector('.page-fact') ?? document.querySelector('.where-now .page-fact');
     return {

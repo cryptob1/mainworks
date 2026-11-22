@@ -67,7 +67,7 @@ const commands: [string, string][] = [
 ];
 
 /**
- * The Docs page, opened from Help at the foot of the sidebar (GY-3295): an introduction for an engineer
+ * The Docs page, opened from Help under Settings (GY-3295): an introduction for an engineer
  * who has never heard of Graphyard. Who decides what, one first item from setup to result, the delivery
  * flow and where each part runs as readable panels, then a folded FAQ and reference. The reference prints
  * `graphyard guide setup` and `graphyard guide infra` themselves, loaded once the page is open, so those

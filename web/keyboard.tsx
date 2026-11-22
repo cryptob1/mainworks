@@ -31,7 +31,7 @@ function commandsOf(dashboard: Dashboard, theme: string): Command[] {
   return [
     ...dashboard.work.map(item => ({ key: item.key, title: item.title, hint: 'Open item', run: () => dashboard.setSelected(item.id) })),
     { key: 'g w', title: 'Work', hint: 'Go', run: () => go('work') },
-    { key: 'g m', title: 'Master', hint: 'Go', run: () => go('master') },
+    { key: 'g m', title: 'Lead', hint: 'Go', run: () => go('lead') },
     ...(admin ? [{ key: 'g s', title: 'Setup', hint: 'Go', run: () => go('setup') }] : []),
     ...(admin ? [{ key: '', title: 'File a goal', hint: 'New work item', run: () => dashboard.setCreating(true) }] : []),
     { key: '', title: theme === 'night' ? 'Switch to Daylight' : 'Switch to Night Yard', hint: 'Theme', run: toggleTheme },
@@ -120,7 +120,7 @@ if (typeof document !== 'undefined') document.addEventListener('keydown', (event
   if (gAt && Date.now() - gAt < 2000) {
     gAt = 0;
     if (event.key === 'w') { event.preventDefault(); go('work'); }
-    if (event.key === 'm') { event.preventDefault(); go('master'); }
+    if (event.key === 'm') { event.preventDefault(); go('lead'); }
     if (event.key === 's' && status?.actor?.role === 'admin') { event.preventDefault(); go('setup'); }
   }
 });

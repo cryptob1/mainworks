@@ -29,9 +29,9 @@ async function tabNamesTheProject(page: Page, repository: string) {
   const title = `Mainworks · ${repository}`;
   await expect(page.locator('.top-bar .project-name')).toHaveText(repository, settled);
   await expect(page).toHaveTitle(title);
-  for (const entry of ['Workers', 'Work']) {
-    await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: entry, exact: true }).click();
-    await expect(page.getByRole('heading', { name: entry, level: 1 })).toBeVisible();
+  for (const [place, heading] of [['Settings', 'Agents'], ['Work', 'Work']] as const) {
+    await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: place, exact: true }).click();
+    await expect(page.getByRole('heading', { name: heading, level: 1 })).toBeVisible();
     await expect(page).toHaveTitle(title);
   }
   const item = 'Cut the documentation to a short set';

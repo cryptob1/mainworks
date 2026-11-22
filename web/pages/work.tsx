@@ -76,7 +76,7 @@ export default function WorkPage({ work, board, status, query, setQuery, setSele
     const live = releasedAt(item, release), started = Date.parse(item.pipeline?.submittedAt ?? item.candidate?.createdAt ?? '');
     return live !== null && now - live <= 24 * 3_600_000 && Number.isFinite(started) && live >= started ? [live - started] : [];
   }));
-  const header = `${counts['in-flight']} in flight · ${merges.toFixed(1)} merges an hour over 6 hours · ${reviewToLive === null ? 'nothing live in 24 hours' : `median ${formatDuration(reviewToLive / 60000)} from review to live`}`;
+  const header = `${counts['in-flight']} in flight · ${merges.toFixed(1)} merges/hour (6h) · ${reviewToLive === null ? 'nothing live (24h)' : `${formatDuration(reviewToLive / 60000)} median review to live`}`;
 
   const needs = board?.groups['needs-you'] ?? [];
   // GY-3593: the caretaker's newest lines that need the owner, in one notice under the Needs you strip.
