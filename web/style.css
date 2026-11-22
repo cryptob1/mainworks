@@ -23,7 +23,7 @@ html[data-theme='daylight']{
 /* Connection recovery must remain accessible on small screens. */
 @media(max-width:650px){.sidebar .sidebar-bottom{display:block;width:100%;margin-top:8px}.sidebar-bottom p{display:none}.sidebar-bottom .text-button{margin-left:12px}.sidebar{flex-wrap:wrap}}
 .history-scroll{max-height:320px;overflow:auto;overscroll-behavior:contain;margin:12px 0}.history-scroll:focus-visible{outline:2px solid var(--up-next);outline-offset:3px}.history-option{display:flex;align-items:center;gap:8px;margin:12px 0}.history-option input{width:auto}.history-scroll .timeline>div{flex-wrap:wrap;overflow-wrap:anywhere}
-.card-meta .assignment-label{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.card-meta .dot,.card-meta .push{flex-shrink:0}.card-meta .push{padding-left:8px}.assignment-details{overflow-wrap:anywhere}.card{cursor:pointer}.card-open{display:block;width:100%;margin:0;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left}.card-open:focus-visible{outline:2px solid var(--up-next);outline-offset:3px;border-radius:3px}.candidate-link{color:var(--up-next);-webkit-user-select:text;user-select:text}.candidate-link:hover{text-decoration:underline}.candidate-link:focus-visible{outline:2px solid var(--up-next);outline-offset:3px;border-radius:3px}.candidate-details{font-size:12px;overflow-wrap:anywhere}.candidate-details code{display:inline;margin:0;padding:2px 5px}.candidate-details a code{color:inherit;background:var(--border)}
+.card-meta .assignment-label{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.card-meta .dot,.card-meta .push{flex-shrink:0}.card-meta .push{padding-left:8px}.assignment-details{overflow-wrap:anywhere}.card{cursor:pointer}.card-open{display:block;width:100%;min-height:0;margin:0;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left}.card-open:focus-visible{outline:2px solid var(--up-next);outline-offset:3px;border-radius:3px}.candidate-link{color:var(--up-next);-webkit-user-select:text;user-select:text}.candidate-link:hover{text-decoration:underline}.candidate-link:focus-visible{outline:2px solid var(--up-next);outline-offset:3px;border-radius:3px}.candidate-details{font-size:12px;overflow-wrap:anywhere}.candidate-details code{display:inline;margin:0;padding:2px 5px}.candidate-details a code{color:inherit;background:var(--border)}
 img.mark{display:block;width:32px;height:36px;border:0;border-radius:0;object-fit:contain;flex-shrink:0}
 
 .identity{display:inline-block;border-radius:999px;padding:2px 7px;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.identity.ai{color:var(--moving);background:color-mix(in srgb,var(--moving) 25%,var(--bg));border:1px solid color-mix(in srgb,var(--moving) 48%,var(--bg))}.identity.human{color:var(--needs-you);background:color-mix(in srgb,var(--needs-you) 29%,var(--bg));border:1px solid color-mix(in srgb,var(--needs-you) 54%,var(--bg))}.identity.undeclared,.identity.none{color:var(--text);background:var(--border);border:1px solid var(--text-3)}.session{display:inline-flex;align-items:center;gap:5px;margin-right:14px;white-space:nowrap}.sidebar-bottom .identity{margin-left:4px}
@@ -63,6 +63,7 @@ abbr.term{text-decoration:underline dotted var(--text-2);text-underline-offset:3
 .top-bar{display:flex;flex-direction:column;justify-content:center;gap:var(--space-1);min-height:56px}.project-name{margin:0;color:var(--text);font-size:var(--type-sentence);font-weight:600;overflow-wrap:anywhere}
 /* GY-3273: the project's emblem beside the project name — the master's drawing or the default mark. */
 .project-emblem{width:20px;height:20px;margin-right:9px;border-radius:5px;vertical-align:-4px}
+.host-update-line{margin:0;font-size:var(--type-small);overflow-wrap:anywhere}
 .release-line,.week-line{margin:0;font-size:var(--type-small);color:var(--text-2);overflow-wrap:anywhere}.main>.page-heading,.main .page-heading{margin:18px 0 14px}.main .page-heading h1{font-size:28px}
 .stage-strip{margin-bottom:10px}.stage-strip .node{padding:8px 10px}.stage-strip .node strong{font-size:20px;margin:4px 0 0}
 .list-tools{margin:0 0 4px}
@@ -142,11 +143,14 @@ img.mark{width:26px;height:26px}
 .work-row:hover{background:var(--raised)}.group-needs-you .work-row{border-top-color:color-mix(in srgb,var(--needs-you) 25%,var(--bg))}
 .row-key{font-size:var(--type-small);color:var(--text-2)}
 .row-main{display:flex;flex-direction:column;gap:var(--space-1);min-width:0}
+.row-meta{display:flex;align-items:center;flex-wrap:wrap;gap:var(--space-2);min-width:0}
 .work-row h3{margin:0;font-size:var(--type-item);font-weight:500;line-height:1.4}
 .row-owner{font-size:var(--type-tiny);color:var(--text-3)}
 .row-sub,.work-row .status-line{margin:0;font-size:var(--type-small);line-height:1.5;color:var(--text-2);overflow-wrap:anywhere}
-.row-lead{margin:0;font-size:var(--type-small);line-height:1.5;color:var(--text-2);overflow-wrap:anywhere}
-.group-needs-you .row-sub{color:color-mix(in srgb,var(--needs-you) 70%,var(--text))}.group-blocked .row-sub{color:color-mix(in srgb,var(--blocked) 75%,var(--text))}
+.row-lead{margin:0;font-size:var(--type-small);line-height:1.5;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(min-width:1101px){.work-row:is(.group-needs-you,.group-up-next,.group-backlog){grid-template-columns:84px minmax(0,1fr) 170px 90px auto}.work-row:is(.group-needs-you,.group-up-next,.group-backlog) .row-steps{display:none}}
+.work-row .priority-control select{min-height:24px;padding:2px 6px}
+.group-needs-you .row-sub{font-size:var(--type-body);color:var(--text)}.group-blocked .row-sub{color:color-mix(in srgb,var(--blocked) 75%,var(--text))}
 .row-who,.row-time{font-size:var(--type-small);color:var(--text-2)}
 .decide{background:var(--needs-you);border-color:var(--needs-you);color:var(--on-accent)}
 .card-pr{font-family:var(--font-mono);font-size:var(--type-small)}
@@ -177,10 +181,6 @@ img.mark{width:26px;height:26px}
 .group-blocked .step-seg.current{background:var(--blocked)}
 .steps-label{font-size:var(--type-small);color:color-mix(in srgb,var(--moving) 75%,var(--text))}.group-blocked .steps-label{color:color-mix(in srgb,var(--blocked) 75%,var(--text))}
 @keyframes gy-pulse{0%,100%{opacity:1}50%{opacity:.35}}
-.steps-detail{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
-.step-seg-detail{display:flex;flex-direction:column;gap:var(--space-2);color:var(--text-2)}.step-seg-detail strong{display:flex;align-items:center;gap:6px;font-size:var(--type-body);font-weight:600;color:var(--text)}
-.step-seg-detail.current strong{color:color-mix(in srgb,var(--moving) 75%,var(--text))}.step-seg-detail.pending strong{color:var(--text-3)}.step-mark{font-size:12px}
-.step-seg-detail.done .step-mark{color:var(--shipped)}.step-note{font-size:var(--type-tiny)}
 /* The item page. */
 .item-page{display:flex;flex-direction:column;gap:var(--space-5)}
 .back{align-self:flex-start;color:var(--accent);font-size:var(--type-body)}
@@ -260,10 +260,10 @@ img.mark{width:26px;height:26px}
   .row-head{display:none}
   .panel.work-group{border:0;border-radius:0;overflow:visible;gap:var(--space-3);background:transparent}.panel.work-group>h2,.panel.work-group>summary{padding:0}
   .work-row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"key time" "main main" "steps steps" "who who" "decide decide";gap:var(--space-2);padding:var(--space-4);border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface)}
-  .group-needs-you .work-row{border-color:color-mix(in srgb,var(--needs-you) 45%,var(--bg));background:color-mix(in srgb,var(--needs-you) 6%,var(--bg))}
+  .group-needs-you .work-row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"key key" "main main" "who who" "time decide";border-color:color-mix(in srgb,var(--needs-you) 45%,var(--bg));background:color-mix(in srgb,var(--needs-you) 6%,var(--bg))}
   .row-key{grid-area:key;color:var(--group);font-size:var(--type-tiny)}.row-time{grid-area:time;text-align:right;font-size:var(--type-tiny)}.row-main{grid-area:main}.row-steps{grid-area:steps}.row-steps:empty{display:none}.row-who{grid-area:who;font-size:var(--type-tiny)}.row-who::before{content:'Next: '}.decide{grid-area:decide}
   .steps-track .step-seg{height:4px}
-  .steps-detail{grid-template-columns:repeat(4,minmax(0,1fr))}.time-legend{grid-template-columns:1fr}
+  .time-legend{grid-template-columns:1fr}
   .shipped-line{flex-wrap:wrap}
 }
 .panel>h2 .push{margin-left:auto;font-size:var(--type-small);font-weight:500;color:var(--accent)}
@@ -371,12 +371,64 @@ tr.spent-summary td{padding:6px var(--space-4)}tr.spent-summary button{all:unset
 @media(max-width:650px){.plan-header-content{flex-direction:column;align-items:flex-start;gap:6px}}
 .project-memory{margin-top:var(--space-4)}.project-memory .memory-content{display:grid;gap:var(--space-3);margin-top:var(--space-2)}.project-memory .memory-block h3{font-size:var(--type-small);color:var(--text-2);margin:0 0 var(--space-1)}.project-memory .memory-list{list-style:none;padding:0;margin:0;display:grid;gap:4px;font-size:var(--type-small)}
 
-/* The Master terminal uses the rest of the viewport, including on a phone. */
-.main:has(>.live-terminal){gap:var(--space-4)}
-/* GY-3345: threads with other installs' Masters, above the terminal; long words wrap, never widen the page. */
+/* GY-3587: the Master page is one viewport tall with overflow hidden; only the active tab's panel scrolls. */
+.shell:has(.master-tabs){height:100dvh;min-height:0;overflow:hidden}
+.shell:has(.master-tabs)>header.main-top-bar{flex-shrink:0}
+.main:has(.master-tabs){flex:1 1 auto;height:auto;min-height:0;overflow:hidden;gap:var(--space-1);padding:8px 40px 24px}
+/* The full-height Master page spends its height on the pane, not on the frame around it. */
+.main:has(.master-tabs) .top-bar{min-height:0;gap:2px}
+.main:has(.master-tabs) .tab{padding:5px var(--space-3)}
+.main:has(.master-tabs) .invite-button,.main:has(.master-tabs) .text-button,.main:has(.master-tabs) .palette-button{padding:3px 10px;min-height:0}
+.main:has(.master-tabs) .page-heading{margin:0}
+.main:has(.master-tabs)>:not(.master-tabpanel){flex-shrink:0}
+.master-tabs{flex-shrink:0}
+.master-tabpanel{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+.master-tabpanel>.live-terminal,.master-tabpanel>.terminal-mount>.live-terminal{flex:1;min-height:0;height:auto}
+.master-tabpanel>.terminal-mount{flex:1;min-height:0;display:flex;flex-direction:column}
+/* Behind another tab the pane keeps its laid-out size, so showing it never resizes or rescrolls the terminal. */
+.master-tabpanel{position:relative}
+.master-tabpanel>.terminal-mount[hidden]{position:absolute;inset:0;visibility:hidden}
+.master-tabpanel>.typed-input,.master-tabpanel>.master-messages{flex:1;min-height:0;margin-top:0;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
+/* GY-3602: the Lead conversation — the page never scrolls; the feed scrolls inside its panel. */
+.lead-conversation{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+.lead-status{display:flex;align-items:center;gap:8px;margin:0 0 var(--space-3);font-size:var(--type-small);color:var(--text-2)}
+.lead-dot{width:8px;height:8px;border-radius:50%;background:var(--backlog);flex-shrink:0}
+.lead-status[data-lead-state='working'] .lead-dot{background:var(--shipped)}
+.lead-status[data-lead-state='idle'] .lead-dot,.lead-status[data-lead-state='absent'] .lead-dot{background:var(--needs-you)}
+.lead-status[data-lead-state='refused'] .lead-dot{background:var(--blocked)}
+.lead-body{flex:1;min-height:0;display:flex;gap:var(--space-4)}
+.lead-feed-col{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
+.lead-feed{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;margin:0;padding:0 0 var(--space-3);list-style:none;display:flex;flex-direction:column;gap:10px}
+.lead-entry{display:flex}
+.lead-entry[data-kind='message']{justify-content:flex-end}
+.lead-message{max-width:68%;background:color-mix(in srgb,var(--shipped) 16%,var(--bg));border-radius:12px 12px 3px 12px;padding:9px 13px;min-width:0}
+.lead-message p{margin:0;overflow-wrap:anywhere}
+.lead-name{display:block;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-bottom:3px}
+.lead-card{max-width:78%;border:1px solid var(--border);border-radius:12px;background:var(--raised);padding:13px 15px;display:flex;flex-direction:column;gap:7px;min-width:0}
+.lead-card.approval{border-color:color-mix(in srgb,var(--needs-you) 45%,var(--bg))}
+.lead-kind{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3)}
+.lead-card.approval .lead-kind{color:var(--needs-you)}
+.lead-card h3{margin:0;font-size:14px;line-height:1.5;overflow-wrap:anywhere}
+.lead-what{margin:0;font-size:14px;overflow-wrap:anywhere}
+.lead-why{margin:0;font-size:var(--type-small);color:var(--text-2);overflow-wrap:anywhere}
+.lead-actions{display:flex;flex-wrap:wrap;gap:8px}
+.lead-actions button{padding:8px 12px;font-size:12px}
+.lead-empty{justify-content:flex-start}
+.lead-box{display:flex;gap:8px;padding-top:var(--space-3);border-top:1px solid var(--border)}
+.lead-box input{flex:1;min-width:0}
+.lead-box button[type='submit']{white-space:nowrap}
+.lead-box-note{margin:0;padding-top:6px}
+.lead-rail{flex:0 0 240px;min-width:0;overflow-y:auto;display:flex;flex-direction:column;gap:var(--space-4);border-left:1px solid var(--border);padding-left:var(--space-4)}
+.lead-rail h3{margin:0 0 6px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3)}
+.lead-rail p{margin:0;font-size:var(--type-small)}
+.lead-rail ol{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px;font-size:var(--type-small)}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+@media(max-width:1000px){.lead-body{flex-direction:column}.lead-rail{flex:0 0 auto;border-left:0;border-top:1px solid var(--border);padding:var(--space-3) 0 0;flex-direction:row;flex-wrap:wrap;gap:var(--space-4)}.lead-rail ol{gap:2px}.lead-card{max-width:92%}.lead-message{max-width:88%}}
+@media(max-width:1000px){.main:has(.master-tabs){padding:var(--space-3) var(--space-5) 24px}}
+@media(max-width:650px){.shell:has(.master-tabs){display:flex;flex-direction:column;height:100dvh;overflow:hidden}.main:has(.master-tabs){flex:1;height:auto;min-height:0;padding:12px var(--space-4) 68px;gap:var(--space-2)}}
+/* GY-3345: threads with other installs' Masters, in the Messages tab; long words wrap, never widen the page. */
 .stall-alarm{margin:0 0 var(--space-2);padding:var(--space-2) var(--space-3);border-left:3px solid var(--blocked);border-radius:var(--radius);background:var(--raised);color:var(--text);overflow-wrap:anywhere}
-/* GY-3481: messages with other installs, one closed fold below the terminal. */
-.master-messages{min-width:0;margin-top:8px}.master-messages summary{cursor:pointer;font-size:var(--type-small);color:var(--text-2)}.master-messages .master-thread{margin-top:8px}
+.master-messages{min-width:0;margin-top:8px}
 /* GY-3394: the blockers the Master owes — one row each, the item, its wait and the recorded blocker. */
 .master-owes{list-style:none;margin:0;padding:0}
 .master-owes li{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px}
@@ -430,12 +482,12 @@ html:not([data-theme='daylight']) body::before{content:'';position:fixed;inset:0
 /* Headings and new rows flicker in like a neon sign switching on (AC-4e): the animation runs when
    the element enters the page and never again — React keeps the nodes it already drew. */
 @keyframes gy-flicker-in{0%{opacity:0}16%{opacity:.85}22%{opacity:.15}34%{opacity:1}40%{opacity:.35}52%,100%{opacity:1}}
-html:not([data-theme='daylight']) :is(h1,h2,h3),html:not([data-theme='daylight']) .work-row{animation:gy-flicker-in .5s both}
+html:not([data-theme='daylight']) :is(h1,h2,h3),html:not([data-theme='daylight']) .task-row{animation:gy-flicker-in .5s both}
 /* An item in trial carries a light streak running along its row (AC-4c): one bright band sweeping
    on a transform, clipped to the row, touching nothing. */
-html:not([data-theme='daylight']) .work-row{position:relative}
-html:not([data-theme='daylight']) .work-row.trial{overflow:clip}
-html:not([data-theme='daylight']) .work-row.trial::after{content:'';position:absolute;top:0;bottom:0;left:-45%;width:35%;pointer-events:none;
+html:not([data-theme='daylight']) .task-row{position:relative}
+html:not([data-theme='daylight']) .task-row.trial{overflow:clip}
+html:not([data-theme='daylight']) .task-row.trial::after{content:'';position:absolute;top:0;bottom:0;left:-45%;width:35%;pointer-events:none;
   background:linear-gradient(105deg,transparent,color-mix(in srgb,var(--moving) 26%,transparent),transparent);
   animation:gy-streak 2.8s linear infinite}
 @keyframes gy-streak{to{transform:translateX(420%)}}
@@ -444,7 +496,7 @@ html:not([data-theme='daylight']) .work-row.trial::after{content:'';position:abs
 html:not([data-theme='daylight']) .build-line .typed{display:inline-block;animation:gy-type .6s steps(var(--chars),end) both}
 @keyframes gy-type{from{clip-path:inset(0 100% 0 0)}}
 /* Neon: the active navigation, the chosen tile and a hovered action glow softly. */
-html:not([data-theme='daylight']) .nav.active,html:not([data-theme='daylight']) .tab.active,html:not([data-theme='daylight']) .tile.selected,html:not([data-theme='daylight']) .work-row:hover{box-shadow:0 0 16px color-mix(in srgb,var(--accent) 20%,transparent)}
+html:not([data-theme='daylight']) .nav.active,html:not([data-theme='daylight']) .tab.active,html:not([data-theme='daylight']) .tile.selected,html:not([data-theme='daylight']) .task-row:hover{box-shadow:0 0 16px color-mix(in srgb,var(--accent) 20%,transparent)}
 /* A thin scanline veil over the Master terminal, and a scanning line running down it while the
    master is working (AC-4g) — transform only, over the pane, under the fingers. */
 html:not([data-theme='daylight']) .terminal-host{position:relative}
@@ -461,7 +513,7 @@ html:not([data-theme='daylight']) .live-terminal.working .terminal-host::before{
 .boot-readout{margin:0;min-height:3em;font-family:var(--font-mono);font-size:12px;line-height:1.8;color:var(--text-2)}
 /* A row whose trial failed flickers: chromatic jitter a few frames at a time, never under reduced motion. */
 @keyframes gy-glitch{0%,86%,100%{text-shadow:none;transform:none}88%{text-shadow:-2px 0 var(--needs-you),2px 0 var(--moving);transform:translateX(-1px)}92%{text-shadow:2px 0 var(--needs-you),-2px 0 var(--moving);transform:translateX(1px)}96%{text-shadow:none;transform:none}}
-html:not([data-theme='daylight']) .work-row.glitch{animation:gy-glitch 2.2s infinite}
+html:not([data-theme='daylight']) .task-row.glitch{animation:gy-glitch 2.2s infinite}
 /* A ship pulses neon while its toast is up. */
 @keyframes gy-neon{0%,100%{box-shadow:0 0 10px color-mix(in srgb,var(--shipped) 35%,transparent)}50%{box-shadow:0 0 26px color-mix(in srgb,var(--shipped) 80%,transparent)}}
 .toast.pulse{animation:gy-neon 1.6s ease-in-out infinite}
@@ -495,7 +547,7 @@ kbd{font-family:var(--font-mono);font-size:11px;color:var(--text);background:var
 .shortcuts li:last-child{border-bottom:0}
 .shortcuts kbd{white-space:nowrap}
 /* The row the keyboard cursor is on (GY-3272). */
-.work-row.kb-cursor{outline:2px solid var(--accent);outline-offset:-2px;background:var(--raised);box-shadow:0 0 18px color-mix(in srgb,var(--accent) 20%,transparent)}
+[data-row].kb-cursor{outline:2px solid var(--accent);outline-offset:-2px;background:var(--raised);box-shadow:0 0 18px color-mix(in srgb,var(--accent) 20%,transparent)}
 .product-section pre{white-space:pre-wrap;font:inherit;margin:0 0 var(--space-3,16px);max-width:720px;line-height:1.65}
 /* GY-3278 Tests rows: each proof's item and criterion; only a merged item's missing case file is an alarm. */
 .proof-item{margin-bottom:var(--space-2)}.proof-item a{display:block}.proof-criterion{display:block;color:var(--text-2)}
@@ -513,7 +565,7 @@ kbd{font-family:var(--font-mono);font-size:11px;color:var(--text);background:var
 /* GY-3310: the served build, part of the sidebar foot (GY-3479), pinned to the bottom-left corner; the sidebar keeps its strip clear, and the page's own bottom padding (never the shell's, which would make the document scroll) clears it in main.
    On a phone the folded foot shows only the label; the open menu shows it in the foot's own flow. */
 .version-label{position:fixed;left:0;bottom:0;z-index:5;padding:2px 8px;font-size:10px;line-height:14px;color:var(--text-3);background:var(--bg);font-family:var(--font-mono,monospace);pointer-events:none}@media(min-width:651px){.sidebar-inner{padding-bottom:calc(var(--space-5) + 18px)}}
-@media(max-width:650px){.sidebar:not(.open) .sidebar-bottom{display:contents}.sidebar:not(.open) .sidebar-bottom>:not(.version-label){display:none}.sidebar.open .version-label{position:static;padding:0}}
+@media(max-width:650px){.sidebar:not(.open) .sidebar-bottom{display:contents}.sidebar:not(.open) .sidebar-bottom>:not(.version-label){display:none}/* GY-3601: on a phone the label reads up the page's left gutter, so it never covers a control wherever the page flows. */.sidebar:not(.open) .version-label{writing-mode:vertical-rl;padding:6px 1px;line-height:12px}.sidebar.open .version-label{position:static;padding:0}}
 /* Figure tables (GY-3315, GY-3322): the shared table for numbers, right-aligned under their headers in tabular figures;
    it stays a table on a phone, where the detail columns fold away. Inside a card the table drops its own border. */
 .table-scroll{overflow-x:auto;max-width:100%}.panel .sessions-table{border:0}
@@ -524,3 +576,87 @@ kbd{font-family:var(--font-mono);font-size:11px;color:var(--text);background:var
 /* GY-3528: one short line per machine's load under the heavy-job budget. */
 .machine-load { list-style: none; margin: 0 0 0.75rem; padding: 0; }
 .machine-load li { overflow-wrap: anywhere; }
+.flow-attention{color:var(--blocked);font-weight:500}.flow-line{margin:var(--space-2) 0 0;font-size:var(--type-small);color:var(--text-2);overflow-wrap:anywhere}.flow-details{display:inline}.flow-details summary{display:inline;cursor:pointer;color:var(--accent)}.flow-details[open]{display:block}.flow-fold{margin:var(--space-2) 0 0}.flow-table{margin:var(--space-2) 0 0;max-width:100%}.flow-table td,.flow-table th{overflow-wrap:anywhere}
+/* GY-3599: the Task page — header facts, the pipeline row, the evidence tabs and the terminal commands. */
+.task-header{display:flex;flex-direction:column;gap:var(--space-2)}.task-header .page-heading{flex-wrap:wrap;align-items:center}.task-header h1{flex:1 1 320px;min-width:0;overflow-wrap:anywhere}
+.task-header .page-actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-3)}.task-header .item-meta{margin:0;gap:var(--space-2) var(--space-4)}.task-header [data-task-ids]{font-size:var(--type-tiny)}
+.task-pipeline p{margin:0;font-size:var(--type-small)}.task-pipeline ol{list-style:none;margin:var(--space-2) 0 0;padding:0;display:grid;grid-template-columns:1fr 1fr 1fr 2.4fr 1fr;gap:6px}
+.task-pipeline li{display:flex;flex-direction:column;gap:2px;min-width:0;padding-top:var(--space-2);border-top:4px solid var(--border);font-size:var(--type-small);color:var(--text-2);overflow-wrap:anywhere}
+.task-pipeline li strong{color:var(--text);font-size:var(--type-body)}.task-pipeline .stage-done{border-color:var(--shipped)}.task-pipeline .stage-current{border-color:var(--moving)}
+.task-pipeline .stage-failed{border-color:var(--blocked)}.task-pipeline .stage-failed strong,.task-pipeline .stage-failed .stage-note{color:var(--blocked)}.task-pipeline .stage-pending strong{color:var(--text-3)}
+.task-tabs{display:flex;flex-wrap:wrap;gap:var(--space-1);border-bottom:1px solid var(--border)}
+.task-tabs button{min-height:44px;padding:0 14px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--text-2);font-weight:500}
+.task-tabs button[aria-selected=true]{border-bottom-color:var(--accent);color:var(--text);font-weight:600}
+.task-panel{display:flex;flex-direction:column;gap:var(--space-5);min-width:0}.task-panel[hidden]{display:none}
+.task-evidence{display:flex;flex-wrap:wrap;gap:var(--space-5)}.task-checks{flex:1 1 320px;min-width:0}.task-diff{flex:1.3 1 400px;min-width:0}.task-checks p,.task-diff p{margin:0}
+.task-checks ul,.lead-decisions{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--space-2)}.task-checks li{display:flex;gap:var(--space-3);align-items:baseline}
+.check-name{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}.check-result,.check-time{font-size:var(--type-small);color:var(--text-2)}
+.check-passed>span:first-child{color:var(--shipped)}.check-running>span:first-child{color:var(--moving)}.check-failed>span:first-child,.check-failed .check-result{color:var(--blocked)}
+.diff-file{display:flex;gap:var(--space-3);width:100%;min-height:36px;align-items:center;padding:0;border:0;background:transparent;color:var(--text);font-family:var(--font-mono);font-size:var(--type-small);text-align:left}
+.diff-path{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}.diff-add{color:var(--shipped)}.diff-del{color:var(--blocked)}.diff-text{font-family:var(--font-mono)}
+.lead-decisions li{display:flex;flex-wrap:wrap;gap:var(--space-1) var(--space-3);align-items:baseline}.lead-decisions span{flex:1 1 240px;min-width:0;overflow-wrap:anywhere}
+.task-commands{display:flex;flex-direction:column;gap:var(--space-2);padding-top:var(--space-4);border-top:1px solid var(--border);font-size:var(--type-small)}.task-commands code{margin:0;font-size:var(--type-small);color:var(--text)}
+.item-page .where-now p{margin:0}.item-page .where-now{display:flex;flex-direction:column;gap:var(--space-2)}.task-header .item-title-full{margin:0}
+@media(max-width:650px){.task-header h1{flex:none}.task-pipeline ol{grid-template-columns:1fr}.task-pipeline li{flex-direction:row;flex-wrap:wrap;gap:var(--space-1) var(--space-3);align-items:baseline;border-top:0;border-left:4px solid var(--border);padding:2px 0 2px var(--space-3)}}
+/* GY-3598: Redesign 1 — Mainworks top bar, four places (Home, Work, Lead, Settings), Caretaker pill, Pause team, and 390 px bottom tab bar. */
+.shell{display:flex;flex-direction:column;min-height:100vh;background:var(--bg)}
+header.main-top-bar{height:auto;min-height:60px;display:flex;flex-wrap:wrap;align-items:center;gap:10px 20px;padding:12px 32px;border-bottom:1px solid var(--border);background:var(--bg);color:var(--text);font-size:var(--type-body)}
+.brand-link{display:inline-flex;align-items:center;gap:10px;color:var(--text);text-decoration:none;flex-shrink:0}
+.brand-mark{display:block;width:30px;height:30px;flex-shrink:0}
+.brand-name{font-size:20px;font-weight:600;letter-spacing:-.4px;color:var(--text)}
+.main-nav{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.nav-link{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;color:var(--text-2);font-weight:500;text-decoration:none;white-space:nowrap}
+.nav-link:hover{color:var(--text);background:var(--raised)}
+.nav-link.active{background:var(--raised);color:var(--text);font-weight:600}
+.nav-badge{padding:1px 7px;border-radius:999px;background:var(--blocked);color:var(--on-accent);font-size:12px;font-weight:600}
+.caretaker-pill{margin-left:auto;min-height:36px;display:inline-flex;align-items:center;gap:8px;padding:0 12px;border-radius:999px;border:1px solid var(--border);font-size:var(--type-small);text-decoration:none;white-space:nowrap;max-width:100%}
+.caretaker-pill.ok{color:var(--text-2);background:transparent}
+.caretaker-pill.faults{color:var(--blocked);border-color:color-mix(in srgb,var(--blocked) 55%,var(--border));background:color-mix(in srgb,var(--blocked) 12%,var(--bg));font-weight:600}
+.caretaker-dot{width:8px;height:8px;border-radius:50%;background:var(--blocked);flex-shrink:0}
+.pause-team-btn{min-height:40px;padding:0 16px;border-radius:10px;border:1px solid color-mix(in srgb,var(--blocked) 55%,var(--border));background:transparent;color:var(--blocked);font-weight:600;font-size:var(--type-body);white-space:nowrap}
+.pause-team-btn.paused{border-color:var(--accent);background:var(--accent);color:var(--on-accent)}
+.main{width:100%;margin:0 auto;padding:var(--space-5) 32px var(--space-6);display:flex;flex-direction:column;gap:var(--space-5);min-width:0}
+.home-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--space-3)}
+.home-summary-card{display:flex;flex-direction:column;gap:var(--space-2);padding:var(--space-3);border:1px solid var(--border);border-radius:var(--radius);background:var(--raised)}
+.home-summary-card p{margin:0;font-size:var(--type-small);color:var(--text-2)}
+@media(max-width:650px){
+  header.main-top-bar{padding:10px 14px;gap:8px 10px}
+  .brand-name{font-size:18px}
+  .caretaker-pill{margin-left:0;font-size:12px;padding:0 10px;min-height:32px}
+  .pause-team-btn{margin-left:auto;min-height:36px;padding:0 12px;font-size:13px}
+  .main-nav{position:fixed;bottom:0;left:0;right:0;z-index:30;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;border-top:1px solid var(--border);background:var(--bg)}
+  .main-nav .nav-link{min-height:56px;padding:0 4px;justify-content:center;border-radius:0;font-size:13px}
+  .main{padding:var(--space-4) 14px 80px}
+  .home-summary-grid{grid-template-columns:1fr}
+  .version-label{z-index:25;bottom:57px}
+}
+/* GY-3598: a test case's long ids, commands and paths wrap inside its card, so the Test-case library never scrolls sideways at 390 px. */
+.scenario-list{grid-template-columns:minmax(0,1fr)}.scenario-card,.scenario-columns>div{min-width:0;overflow-wrap:anywhere}.scenario-card code{white-space:normal;word-break:break-all}
+.caretaker-lines{list-style:none;padding:0;margin:0 0 var(--space-3);display:grid;gap:var(--space-2);font-size:var(--type-small)}
+/* GY-3601: Home's status line and incident cards. */
+.home-status-line{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin:18px 0 0;font-size:30px;font-weight:600;letter-spacing:-.6px;line-height:1.2;overflow-wrap:anywhere}
+.home-status-line span{font-weight:450;color:var(--text-2)}
+@media(max-width:650px){.home-status-line{font-size:28px;gap:2px 12px;margin-top:12px}}
+.state-moving{color:var(--shipped)}.state-idle{color:var(--text-2)}.state-slowed{color:var(--needs-you)}.state-stopped{color:var(--blocked)}
+.incidents{display:grid;gap:var(--space-2);margin-top:var(--space-3)}
+.incident p{margin:0 0 6px;overflow-wrap:anywhere}.incident-broke{font-size:var(--type-sentence);font-weight:600}
+/* GY-3600: Work is one list of tasks grouped by goal, with Needs you pinned on top. */
+.work-filters{display:flex;flex-wrap:wrap;gap:var(--space-2);margin:0 0 var(--space-4)}
+.needs-you-strip{border-color:color-mix(in srgb,var(--needs-you) 45%,var(--bg))}.needs-you-strip h2{display:flex;align-items:center}
+.need{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:var(--space-3);align-items:center;padding:8px 0;border-top:1px solid var(--border)}
+.need-question{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.need button{padding:7px 12px;font-size:var(--type-small)}
+.goal-group>summary{cursor:pointer}.goal-group>summary>h2{display:inline;margin:0}.goal-group>h2{margin-bottom:6px}
+.goal-progress{display:flex;align-items:center;gap:var(--space-2);margin:0 0 var(--space-3);font-size:var(--type-small)}.goal-progress progress{width:160px;max-width:40%;accent-color:var(--shipped)}
+.sessions-table.work-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:var(--type-small);color:var(--text)}
+.sessions-table.work-table th{text-align:left;font-weight:500;color:var(--text-3);padding:6px 8px}
+.sessions-table.work-table td{padding:8px;border-top:1px solid var(--border);vertical-align:top;overflow-wrap:anywhere}
+.sessions-table.work-table th:nth-child(1){width:92px}.sessions-table.work-table th:nth-child(2){width:32%}.sessions-table.work-table th:nth-child(4){width:130px}.sessions-table.work-table th:nth-child(5){width:84px}.sessions-table.work-table th:nth-child(6){width:120px}
+.sessions-table.work-table [data-col=task] a{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.sessions-table.work-table [data-col=state],.sessions-table.work-table [data-col=time]{color:var(--text-2)}
+.task-row{cursor:pointer}.task-row[data-stuck=true]{background:color-mix(in srgb,var(--blocked) 12%,transparent)}.task-row[data-stuck=true] [data-col=state]{color:var(--blocked)}
+@media(max-width:650px){.sessions-table.work-table thead{display:none}.sessions-table.work-table,.sessions-table.work-table tbody{display:block}
+  .sessions-table.work-table tr{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"state task time" "now now now" "builder builder pr";gap:2px var(--space-2);padding:8px 4px;border-top:1px solid var(--border)}
+  .sessions-table.work-table td{display:block;width:auto;padding:0;border:0;min-width:0}.sessions-table.work-table [data-col=state]{grid-area:state}.sessions-table.work-table [data-col=task]{grid-area:task}.sessions-table.work-table [data-col=time]{grid-area:time}
+  .sessions-table.work-table [data-col=now]{grid-area:now;color:var(--text-2)}.sessions-table.work-table [data-col=builder]{grid-area:builder;color:var(--text-2)}.sessions-table.work-table [data-col=pr]{grid-area:pr}
+  .sessions-table.work-table td::before{content:none}
+  .need{grid-template-columns:minmax(0,1fr) auto}.need button{grid-column:1/-1;justify-self:start}}

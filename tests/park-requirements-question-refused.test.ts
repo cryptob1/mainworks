@@ -145,10 +145,10 @@ test('unit:park-requirements-question-refused — the park endpoint refuses the 
 
   // Accepted under the same kind: product direction parks, ends the attempt, and reaches Needs you.
   const parkedWork = await claimed(2);
-  const parked = await request(token(worker), 'POST', `work/${parkedWork.id}/park`, { epoch: parkedWork.epoch, kind: 'goals-and-priorities', needed: 'Whether the legacy importer stays a goal this quarter', ask: 'Decide whether the importer stays a goal', reason: 'The item removes it when the answer is no', recommendation: 'Go ahead as asked', why: 'The roadmap is the operator\'s call.' });
+  const parked = await request(token(worker), 'POST', `work/${parkedWork.id}/park`, { epoch: parkedWork.epoch, kind: 'goals-and-priorities', needed: 'Whether the legacy importer stays a goal this quarter', ask: 'Decide whether the importer stays a goal', reason: 'The item removes it when the answer is no', recommendation: 'Approve this plan', why: 'The roadmap is the operator\'s call.' });
   assert.equal(parked.status, 200, JSON.stringify(parked.body));
   assert.equal(parked.body.humanRequest?.kind, 'goals-and-priorities');
-  assert.equal(parked.body.humanRequest?.recommendation, 'Go ahead as asked');
+  assert.equal(parked.body.humanRequest?.recommendation, 'Approve this plan');
   const afterPark = await reload(parkedWork.id);
   assert.equal(afterPark.humanRequest?.needed, 'Whether the legacy importer stays a goal this quarter');
   assert.equal(afterPark.lease, null, 'the park ends the attempt that asked');
@@ -157,6 +157,6 @@ test('unit:park-requirements-question-refused — the park endpoint refuses the 
   // The CLI leaves the refusal to the server too: a criterion-rewrite NEEDED is not the master's
   // owed action (that route is host-doable asks alone), so `park` is posted and the server refuses.
   const posted: string[] = [];
-  await routedParkCommand.run({ args: ['1', 'goals-and-priorities', 'Whether', 'AC-1', 'is', 'rewritten', '--ask', 'Decide which shape wins', '--recommend', 'Go ahead as asked', '--why', 'The item cannot pass either gate.', '--', 'the suite contradicts the criterion'], print: () => {}, api: async (path: string) => { posted.push(path); return {}; }, individualHostId: () => 'host' } as any, { id: 'w', key: 'GY-1', revision: 1 } as any);
+  await routedParkCommand.run({ args: ['1', 'goals-and-priorities', 'Whether', 'AC-1', 'is', 'rewritten', '--ask', 'Decide which shape wins', '--recommend', 'Approve this plan', '--why', 'The item cannot pass either gate.', '--', 'the suite contradicts the criterion'], print: () => {}, api: async (path: string) => { posted.push(path); return {}; }, individualHostId: () => 'host' } as any, { id: 'w', key: 'GY-1', revision: 1 } as any);
   assert.deepEqual(posted, ['work/w/park'], 'the CLI posts the park; the server names the agent route');
 });

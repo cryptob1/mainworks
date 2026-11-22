@@ -7,7 +7,7 @@ import { NOW, boardApi, boardStatus, boardWork, realDeliveredWork } from '../bro
 import { boardFromStatus, groupLabel, groups } from '../web/groups.js';
 import { prSteps, stateIds, stepSince, type StepTransition } from '../src/model/pr-steps.js';
 import TopBar, { ReleaseLine } from '../web/components/top-bar.js';
-import OverviewPage from '../web/pages/overview.js';
+import WorkPage from '../web/pages/work.js';
 import WorkDetails from '../web/pages/work-details.js';
 import type { Dashboard } from '../web/pages/dashboard.js';
 
@@ -31,7 +31,7 @@ function dashboard(work: Work[], overrides: Partial<Dashboard> = {}): Dashboard 
   return 'board' in overrides ? d : { ...d, board: boardFromStatus(d.work, d.observedAt, d.status) };
 }
 const home = (work: Work[] = board(), overrides: Partial<Dashboard> = {}) =>
-  renderToStaticMarkup(createElement('div', null, createElement(TopBar, dashboard(work, overrides)), createElement(OverviewPage, dashboard(work, overrides))));
+  renderToStaticMarkup(createElement('div', null, createElement(TopBar, dashboard(work, overrides)), createElement(WorkPage, dashboard(work, overrides))));
 const itemPage = (item: Work, work: Work[] = board()) => renderToStaticMarkup(createElement(WorkDetails, { ...dashboard(work), item }));
 /** A merged item whose policy asks for a post-deployment check that has not run: merged, not yet deployed. */
 const mergedUndeployed = () => {
@@ -50,7 +50,7 @@ test('unit:ui-four-states — prSteps returns exactly the four states Todo, Doin
   assert.equal(todo.current, 'todo');
   assert.deepEqual(segments(todo), 'current,pending,pending,pending');
   assert.equal(todo.label, 'Not started · waiting for a builder');
-  assert.equal(todo.who, 'Graphyard (assigns a builder)');
+  assert.equal(todo.who, 'Mainworks (assigns a builder)');
   // A recorded blocker holds an unstarted item off the workers: the row's why names the fault and
   // the master agent clears it (the blocked row reads that, not the state label).
   const blocked = prSteps(find('GY-17', work), NOW);
@@ -72,8 +72,8 @@ test('unit:ui-four-states — prSteps returns exactly the four states Todo, Doin
   assert.equal(checking.who, 'Automated checks');
   // Waiting for review, and already merging, are Checking too — one state, what it waits on differs.
   assert.equal(prSteps(find('GY-15', work), NOW).label, 'In review · waiting for the reviewer');
-  assert.equal(prSteps(find('GY-21', work), NOW).label, 'Merging · Graphyard is merging it');
-  assert.equal(prSteps(find('GY-21', work), NOW).who, 'Graphyard (automatic)');
+  assert.equal(prSteps(find('GY-21', work), NOW).label, 'Merging · Mainworks is merging it');
+  assert.equal(prSteps(find('GY-21', work), NOW).who, 'Mainworks (automatic)');
   // A requested rework says so in the Checking label; the hand-in stands until the merge.
   const changes = { ...find('GY-15', work), gates: find('GY-15', work).gates.map(gate => gate.name === 'review' ? { ...gate, passed: false, reasons: ['Outstanding change requests must be resolved through a new review'] } : gate) } as Work;
   assert.equal(prSteps(changes, NOW).current, 'checking');
@@ -113,19 +113,19 @@ test('unit:ui-four-states-board — the board API and the Work page list only To
   for (const merged of work.filter(item => item.stage === 'done')) {
     for (const group of groups) assert.ok(!served.groups[group].some(row => row.key === merged.key), `${merged.key} is absent from ${groupLabel[group]}`);
   }
-  // The Work page renders the same absence, and the merged item's page still renders — Done.
+  // The Work page renders the same absence from every open group (a merged item is a Shipped row at most), and the merged item's page still renders — Done.
   const page = home(work);
   for (const merged of work.filter(item => item.stage === 'done')) {
-    assert.ok(!page.includes(`data-row="${merged.key}"`), `${merged.key} has no Work row`);
+    assert.doesNotMatch(page, new RegExp(`data-row="${merged.key}" data-stuck="\\w+" class="task-row group-(?!shipped)`), `${merged.key} has no open Work row`);
     const detail = itemPage(merged, work);
     assert.match(detail, new RegExp(`<h1 data-title="true"[^>]*>${merged.title}</h1>`));
-    assert.match(detail, /aria-label="Item states"[\s\S]*?data-step="done"/, `${merged.key} shows the four states, Done last`);
+    assert.match(detail, /aria-label="Pipeline"[\s\S]*?data-stage="ship" data-state="done"/, `${merged.key} shows the pipeline row, Ship done`);
   }
-  // The tiles count the rows: no tile counts a merged item.
-  for (const group of groups) {
-    const tile = Number(new RegExp(`data-tile="${group}"[^>]*>[\\s\\S]*?<strong>(\\d+)</strong>`).exec(page)?.[1]);
-    assert.equal(tile, served.groups[group].length, groupLabel[group]);
-  }
+  // The filters count the rows: no open filter counts a merged item.
+  const count = (filter: string) => Number(new RegExp(`data-filter="${filter}">[^<]*<span class="count">(\\d+)</span>`).exec(page)?.[1]);
+  assert.equal(count('stuck'), served.groups.blocked.length);
+  assert.equal(count('up-next'), served.groups['up-next'].length);
+  assert.equal(count('in-flight'), served.groups['needs-you'].length + served.groups.blocked.length + served.groups.moving.length);
 
   // The one release line, from the release view the board already reads: the live commit and the
   // merged changes it does not carry yet, with ill health named only when there is some.

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { fork } from 'node:child_process';
 import { once } from 'node:events';
 import { rm, symlink } from 'node:fs/promises';
@@ -7,7 +7,14 @@ import { join, resolve } from 'node:path';
 import { signInDatabase } from '../tests/helpers/sign-in-database';
 import { serveXterm } from './xterm';
 
-test('e2e:master-page-terminal-refused — when the terminal cannot start, the Master page says the cause, not "Detached"', async ({ browser }) => {
+
+/** The sign-in link opens the Lead page on its conversation; its live session is its own address. */
+const openLiveSession = async (page: Page) => {
+  await expect(page.getByRole('heading', { name: 'Lead', exact: true })).toBeVisible({ timeout: 15_000 });
+  await page.evaluate(() => { location.hash = '#master/live'; });
+};
+
+test('e2e:master-page-terminal-refused — when the terminal cannot start, the Lead page says the cause, not "Detached"', async ({ browser }) => {
   // Its own database and server start cold inside the spec, and the whole suite runs beside it in
   // parallel, so like its siblings (master-page-ux, master-page-paste) it carries a budget that
   // load cannot eat; the refusal it asserts is unchanged.
@@ -25,6 +32,7 @@ test('e2e:master-page-terminal-refused — when the terminal cannot start, the M
     let connections = 0;
     page.on('websocket', () => connections++);
     await page.goto(`${url}/#sign-in=${code}&master`);
+    await openLiveSession(page);
     await expect(page.getByRole('status')).toContainText('herdr is not installed', { timeout: 25_000 });
     await expect(page.getByRole('status')).not.toContainText('Detached');
     // Longer than the maximum reconnect delay: a refusal must remain stable.
@@ -41,7 +49,7 @@ test('e2e:master-page-terminal-refused — when the terminal cannot start, the M
         }
       };
     });
-    await page.goto(`${url}/#master`);
+    await page.goto(`${url}/#master/live`);
     await page.reload();
     await expect(page.getByRole('status')).toContainText('Not available: sign in, and check the session still has a pane.', { timeout: 25_000 });
     const afterRefusal = connections;

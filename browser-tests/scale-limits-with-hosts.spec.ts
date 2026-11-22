@@ -43,8 +43,8 @@ async function openWorkers(page: Page, url: string) {
   const { code } = await signIn.json() as { code: string };
   await page.goto(`/#sign-in=${code}`);
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
-  if ((page.viewportSize()?.width ?? 1280) < 650) await page.getByRole('button', { name: 'Menu', exact: true }).click();
-  await page.locator('[data-nav="workers"]').click();
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: 'Workers', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Workers', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
 }
 

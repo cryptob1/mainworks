@@ -32,7 +32,7 @@ test('e2e:owner-relayed-answer — owner direction relayed by the master is reco
     let work = await engine.execute(owner, 'create', null, { type: 'chore', title: 'Owner decides timing', criteria: [{ id: 'AC-1', text: 'The printer prints a receipt', proofs: ['human:receipt', 'e2e:fixture'] }] }, randomUUID());
     work = await engine.execute(owner, 'ready', work.id, {}, randomUUID());
     work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
-    await post(worker, `work/${work.id}/park`, { epoch: work.epoch, kind: 'goals-and-priorities', needed: 'Should this goal start now?', reason: 'The owner chooses timing', recommendation: 'Go ahead as asked', why: 'The implementation is ready.' });
+    await post(worker, `work/${work.id}/park`, { epoch: work.epoch, kind: 'goals-and-priorities', needed: 'Should this goal start now?', reason: 'The owner chooses timing', recommendation: 'Approve this plan', why: 'The implementation is ready.' });
     await assert.rejects(cli('answer', work.key, '--decline', 'Wait'), /--owner-said/);
     await cli('answer', work.key, '--owner-said', 'Not yet', '--decline', 'Wait');
     let saved = await read(`work/${work.id}`);
@@ -53,8 +53,11 @@ test('e2e:owner-relayed-answer — owner direction relayed by the master is reco
     await page.goto(`${url}/?sign-in`);
     await page.getByLabel('Access token').fill(token(owner));
     await page.getByRole('button', { name: 'Open control plane' }).click();
-    await page.getByRole('button', { name: /Needs you/ }).click();
-    await page.getByRole('button', { name: /Every request and answer/ }).click();
+    // GY-3600: with no request open there is no Needs you strip; every request and answer has its own address.
+    // GY-3654: load that address rather than set location.hash — the page follows hash changes from an
+    // effect that may not have run yet when the Work heading first paints, and a missed change leaves it on Work.
+    await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible();
+    await page.goto(`${url}/#needs-you`);
     await expect(page.getByText('relayed by master from the owner: "Not yet"', { exact: true })).toBeVisible();
     await expect(page.getByText('relayed by master from the owner: "It printed cleanly"', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Reverse answer', exact: true }).click();
@@ -71,6 +74,8 @@ test('e2e:owner-relayed-answer — owner direction relayed by the master is reco
     assert.match(JSON.stringify(events[0].payload), /Not yet/);
     assert.match(JSON.stringify(events[1].payload), /It printed cleanly/);
     await page.getByRole('button', { name: /Owner decides timing/ }).first().click();
+    // The Task page keeps its full history on the Details tab (GY-3599).
+    await page.getByRole('tablist', { name: 'Task evidence' }).getByRole('tab', { name: 'Details' }).click();
     await page.locator('summary').filter({ hasText: /^History/ }).click();
     const history = page.getByRole('region', { name: 'History entries' });
     await expect(history).toContainText('relayed by master from the owner: "Not yet"');

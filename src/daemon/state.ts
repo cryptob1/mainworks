@@ -197,6 +197,8 @@ export const daemonStateSchema = z.object({
   /** The master session the loop launches, adopts, wakes and rotates (GY-898); see `masterSessionSchema`. */
   master: masterSessionSchema.default(() => emptyMasterSession()),
   personalMasters: z.record(z.string(), masterSessionSchema).default({}),
+  /** GY-3593: when the caretaker last started and its result line, which `master status` shows. */
+  caretaker: z.object({ at: z.string(), result: z.string().max(500) }).strict().nullable().default(null),
   /** The control plane the snapshot could not reach (GY-2966): since when, and on a compose install the loop's last `docker compose up -d` with the server's last exit and the free disk space; null while it answers. */
   controlPlane: z.object({ unreachableSince: z.string(), error: z.string().max(1000), restartedAt: z.string().nullable(), restart: z.string().max(1000).nullable(), exitReason: z.string().max(1000).nullable(), freeDisk: z.string().max(500).nullable() }).strict().nullable().default(null),
   /** A disk shortage the headroom step could not reclaim (GY-3122): while set, no new merge trial or worker starts; null with room above the floor. */
@@ -226,7 +228,7 @@ export const daemonStateSchema = z.object({
   sessions: z.array(z.object({ unit: z.string().max(200), name: z.string().max(200).optional(), at: z.string(), usec: z.number().min(0), cpu: z.number().min(0).nullable(), cpuShare: z.number().min(0),
     memory: z.number().min(0), memoryShare: z.number().min(0), overSince: z.string().nullable() }).strict()).default([]),
   /** GY-3407: every host as the last cycle read it — this machine first, then each added host (src/hosts.ts); an unanswering host reads away. */
-  hosts: z.array(z.object({ host: z.string().max(300), local: z.boolean().optional(), away: z.boolean(), reason: z.string().max(1000).optional(),
+  hosts: z.array(z.object({ host: z.string().max(300), local: z.boolean().optional(), at: z.string().optional(), away: z.boolean(), update: z.boolean().optional(), reason: z.string().max(1000).optional(),
     cores: z.number().nullable(), celsius: z.number().nullable(), steal: z.number().nullable(), runs: z.number().nullable(),
     stat: z.object({ total: z.number().min(0), steal: z.number().min(0) }).strict().nullable().optional() }).strict()).default([]),
   /** GY-3190: the UTC day being tallied, its counts so far, and the latest day's report. */
@@ -296,6 +298,8 @@ export function daemonStatePath(config: MasterConfig) {
 /** A file beside the loop's cursor, under the credential's private directory. */
 export const besideCursor = (config: Pick<MasterConfig, 'credentialFile'>, suffix: string) =>
   resolve(dirname(config.credentialFile), `${basename(config.credentialFile).replace(/\.token$/, '')}.${suffix}.json`);
+/** The file a master or caretaker writes to ask the loop to restart after its current cycle. */
+export const loopRestartRequestPath = (config: Pick<MasterConfig, 'credentialFile'>) => besideCursor(config, 'loop-restart');
 
 export async function readDaemonState(root: string, config: MasterConfig): Promise<DaemonState> {
   const file = daemonStatePath(config);

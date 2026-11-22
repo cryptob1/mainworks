@@ -36,7 +36,7 @@ export async function authenticate(services: Services, authorization: string | u
   const hash = createHash('sha256').update(token).digest();
   const configured = configuredCredential(services, hash);
   if (configured) await services.operatorAgents.assertConfiguredPrincipalSafe({ id: configured.actor.id, tokenHash: hash.toString('hex') }, { lease });
-  const actor = configured?.actor ?? await humanSignIn(services).authenticate(token) ?? await mintedWorker(services, token) ?? await mintedReporter(services, token) ?? await services.operatorAgents.authenticate(token) ?? await launchTokenActor(services, hash.toString('hex'));
+  const actor = configured?.actor ?? await humanSignIn(services).authenticate(token) ?? await mintedWorker(services, token) ?? await mintedReporter(services, token) ?? await mintedCaretaker(services, token) ?? await services.operatorAgents.authenticate(token) ?? await launchTokenActor(services, hash.toString('hex'));
   demand(actor, 'A valid Graphyard bearer token is required', 401);
   if (actor.role === 'operator-agent') demand(actor.scope?.repositories.includes(repository), 'Repository is outside operator-agent scope', 403);
   return actor;
@@ -80,6 +80,23 @@ async function mintedReporter(services: Services, token: string): Promise<Princi
   if (!token.startsWith('gyr_')) return null;
   const { rows } = await services.engine.store.pool.query('SELECT id FROM reporter_identities WHERE token_hash=$1', [digest(token)]);
   return rows[0] ? { id: rows[0].id, role: 'reporter' } : null;
+}
+
+/**
+ * GY-3593: the loop mints the install's caretaker identity before each caretaker run: its own
+ * principal, apart from the master's and the workers'. Minting again replaces its token.
+ */
+export async function mintCaretakerIdentity(services: Services, actor: Principal) {
+  demand(actor.role === 'coordinator' || actor.role === 'admin', 'Only the coordinator mints the caretaker identity', 403);
+  const id = 'caretaker', token = `gyk_${randomBytes(32).toString('base64url')}`;
+  await services.engine.store.pool.query(`INSERT INTO caretaker_identities (id, token_hash, minted_by, minted_at) VALUES ($1, $2, $3, now())
+    ON CONFLICT (id) DO UPDATE SET token_hash=EXCLUDED.token_hash, minted_by=EXCLUDED.minted_by, minted_at=EXCLUDED.minted_at`, [id, digest(token), actor.id]);
+  return { id, token };
+}
+async function mintedCaretaker(services: Services, token: string): Promise<Principal | null> {
+  if (!token.startsWith('gyk_')) return null;
+  const { rows } = await services.engine.store.pool.query('SELECT id FROM caretaker_identities WHERE token_hash=$1', [digest(token)]);
+  return rows[0] ? { id: rows[0].id, role: 'caretaker', sessionKind: 'ai' } : null;
 }
 
 /**

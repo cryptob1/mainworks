@@ -1,4 +1,4 @@
-import { humanDecisionKinds, recommendationIssues, type HumanChoice, type HumanDecisionKind } from '../model/human-request.js';
+import { genericChoiceIssues, humanDecisionKinds, recommendationIssues, type HumanChoice, type HumanDecisionKind } from '../model/human-request.js';
 import { shortAskIssues } from '../model/human-ask.js';
 import { workMutation, type CliCommand } from './registry.js';
 
@@ -52,7 +52,7 @@ export function parkInput(args: readonly string[]) {
   const { needed, choices, ask, steps, why, recommendation } = parkArgs(args.slice(2, separator < 0 ? args.length : separator));
   const reason = separator < 0 ? '' : args.slice(separator + 1).join(' ').trim();
   if (!Number.isInteger(epoch) || epoch < 1 || !humanDecisionKinds.includes(kind as HumanDecisionKind) || !needed || !ask || !reason) throw new Error(`Use park GY-N EPOCH KIND NEEDED... --ask ASK [--step STEP]... --recommend TEXT --why WHY [--choice LABEL]... -- REASON, where KIND is ${humanDecisionKinds.join(', ')}`);
-  const issues = [...recommendationIssues({ kind: kind as HumanDecisionKind, choices, recommendation, why }), ...shortAskIssues({ ask, steps, why })];
+  const issues = [...recommendationIssues({ kind: kind as HumanDecisionKind, choices, recommendation, why }), ...shortAskIssues({ ask, steps, why }), ...genericChoiceIssues(choices)];
   if (issues.length) throw new Error(`${issues.join('. ')}.`);
   return { epoch, kind: kind as HumanDecisionKind, needed, choices, ask, steps, why, recommendation, reason };
 }

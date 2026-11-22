@@ -13,7 +13,8 @@ import { isClosed, isDelivered, type Principal, type Work } from '../src/model.j
 import { nextAction } from '../src/model-boundary/next-action.js';
 import type { Services } from '../src/server/routes.js';
 import { plainStatus } from '../src/model/plain-status.js';
-import ShippedPage from '../web/pages/shipped.js';
+import WorkPage from '../web/pages/work.js';
+import { boardFromStatus } from '../src/model/board.js';
 import type { Dashboard } from '../web/pages/dashboard.js';
 
 // Every fixture item carries an E2E proof and declares the serve its trial needs.
@@ -76,10 +77,12 @@ test('integration:close-obsolete — a stuck item closed as obsolete is terminal
   const snapshot = await store.workSnapshot();
   assert.equal(plainStatus(closed, Date.now()).tone, 'shipped');
   assert.match(plainStatus(closed, Date.now()).sentence, /^Closed as obsolete: Auto-generated noise/);
-  // The dashboard: nothing under Shipped, one row in the closed history below it.
-  const page = renderToStaticMarkup(createElement(ShippedPage, { work: snapshot.work, status: null, observedAt: Date.parse(snapshot.now), setSelected: () => {} } as unknown as Dashboard));
-  assert.match(page, /Nothing has shipped yet/);
-  assert.match(page, new RegExp(`Closed without shipping <span class="count">1</span>.*${work.key}.*obsolete.*Auto-generated noise`));
+  // The Work list: no row for it, not even when searched by its key, and Shipped today counts nothing.
+  const observedAt = Date.parse(snapshot.now);
+  const page = (query: string) => renderToStaticMarkup(createElement(WorkPage, { work: snapshot.work, board: boardFromStatus(snapshot.work, observedAt, null), status: null, observedAt, query, filter: null,
+    setFilter: () => {}, setQuery: () => {}, setSelected: () => {}, setCreating: () => {}, setView: () => {} } as unknown as Dashboard));
+  for (const query of ['', work.key]) assert.ok(!page(query).includes(`data-row="${work.key}"`), `no row for ${query || 'the default view'}`);
+  assert.match(page(''), /data-filter="shipped-today">Shipped today <span class="count">0<\/span>/);
   assert.equal(nextAction(closed, snapshot.work, new Date()), null, 'nothing is owed on a closed item');
   assert.deepEqual(closed.actionQueue?.actions ?? [], []);
   // Closing is once: a closed item refuses a second closure and every lifecycle command.

@@ -28,9 +28,10 @@ test('integration:item-details — an item page opens on its plain summary and f
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.getByRole('heading', { name: 'Work', exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: /Signup API.*GY-10/ }).click();
+  await page.getByRole('link', { name: /Signup API.*GY-10/ }).click();
   const item = page.locator('article.item-page');
-  await expect(item.locator('h1[data-plain-summary="true"]')).toHaveText('The signup API answers.');
+  await expect(item.locator('[data-plain-summary="true"]')).toHaveText('The signup API answers.');
+  await item.getByRole('tab', { name: 'Details' }).click();
   const details = item.locator('.item-details-fold');
   await expect(details).toBeVisible();
   await expect(details).not.toHaveAttribute('open', '');
@@ -39,4 +40,6 @@ test('integration:item-details — an item page opens on its plain summary and f
   await expect(details).toHaveAttribute('open', '');
   await expect(details.locator('.item-description')).toHaveText('Full API detail.');
   await expect(details.getByRole('region', { name: 'Requirements' })).toContainText('API works');
+  // GY-3551: each criterion shows with its id, so an operator can follow each criterion's repair.
+  await expect(details.getByText('AC-1 · API works', { exact: true })).toBeVisible();
 });

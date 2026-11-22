@@ -12,6 +12,7 @@ import { Agent } from '../fun';
 import { EmptyState, PageHeader } from '../components/page-layout';
 import { overloadAlarm, overloaded } from '../../src/model/session-usage';
 import { budgetLine, machineLine, machineName } from '../../src/model/machine-load';
+import { formatAge } from '../../src/model/duration';
 import type { FleetAccountView } from '../../src/model/registry';
 import { localTime } from '../agent-status';
 
@@ -202,13 +203,14 @@ export function AccountAvailability({ accounts, now }: { accounts: FleetAccountV
   </ul></section>;
 }
 
-type HostRow = { host: string; local?: boolean; away: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; busy?: number | null; slots?: number };
+type HostRow = { host: string; local?: boolean; at?: string; away: boolean; update?: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; busy?: number | null; slots?: number };
 /**
  * GY-3407: the hosts the loop watches — this machine first, then each one added with
  * `graphyard host add USER@HOST` — as the loop read them this cycle. A host that does not answer
  * reads Away and is read again next cycle. Merge trials send test shards to added hosts (GY-3412), which the note says.
+ * GY-3517: each row is the latest probe, with how long ago it was read; one away only because its helper is too old says so.
  */
-function Hosts({ hosts }: { hosts: HostRow[] }) {
+function Hosts({ hosts, now }: { hosts: HostRow[]; now: number }) {
   if (!hosts.length) return null;
   const figure = (value: number | null, unit = '') => value === null ? '—' : `${Math.round(value)}${unit}`;
   // GY-3528: the heavy-job budget the ready machines share, then each machine's load, one short line each.
@@ -217,14 +219,15 @@ function Hosts({ hosts }: { hosts: HostRow[] }) {
     {slotted.length ? <p data-heavy-budget>{budgetLine(slotted)}</p> : null}
     <ul className="machine-load" aria-label="Machine load" data-machine-load>{hosts.map(host => <li key={host.host} data-machine={machineName(host.host)}>{machineLine({ ...host, name: host.host })}</li>)}</ul>
     <table className="sessions-table hosts" aria-label="Hosts" data-hosts>
-    <thead><tr><th scope="col">Host</th><th scope="col">Cores</th><th scope="col">Temperature</th><th scope="col">Steal</th><th scope="col">Runs now</th></tr></thead>
+    <thead><tr><th scope="col">Host</th><th scope="col">Cores</th><th scope="col">Temperature</th><th scope="col">Steal</th><th scope="col">Runs now</th><th scope="col">Read</th></tr></thead>
     <tbody>{hosts.map(host => <tr key={host.host} data-host={host.host} data-away={host.away || undefined}>
       <th scope="row" data-label="Host">{host.host}{host.local ? <span className="muted"> (this machine)</span> : null}</th>
-      {host.away ? <td data-label="State" colSpan={4}><span className="muted" title={host.reason}>Away: not answering, tried again each cycle</span></td> : <>
+      {host.away ? <td data-label="State" colSpan={4}><span className="muted" title={host.reason}>{host.update ? 'Away: needs an update, see the line at the top' : 'Away: not answering, tried again each cycle'}</span></td> : <>
         <td data-label="Cores">{figure(host.cores)}</td>
         <td data-label="Temperature">{figure(host.celsius, '°C')}</td>
         <td data-label="Steal">{figure(host.steal, '%')}</td>
         <td data-label="Runs now">{figure(host.runs)}</td></>}
+      <td data-label="Read">{host.at ? `${formatAge(host.at, now)} ago` : '—'}</td>
     </tr>)}</tbody>
   </table>{hosts.some(host => !host.local) ? <p className="muted" data-hosts-note>Merge trials send test shards to added hosts too; previews run on this machine.</p> : null}</section>;
 }
@@ -319,7 +322,7 @@ export default function WorkersPage({ work, observedAt, setSelected, setView, to
     <p className="muted workers-note">Building means an agent is writing the change; Rework, that it is making the requested changes; In review, someone else judges it; Proving runs the proofs; the Master runs the loop. An agent never reviews or approves its own work. A session not seen for {Math.round(sessionStaleThresholdMs / 60_000)} minutes reads Not seen, never as live.</p>
     <SessionUsage sessions={(status?.sessions ?? []) as SessionUsageRow[]} now={now}/>
     <AccountAvailability accounts={(status?.fleet as { accounts?: FleetAccountView[] } | null | undefined)?.accounts ?? []} now={now}/>
-    <Hosts hosts={status?.hosts ?? []}/>
+    <Hosts hosts={status?.hosts ?? []} now={now}/>
     <ProjectMemorySection memory={status?.projectMemory}/>
     {/* A watched run that ends moves here: the section opens to it, so its panel stays in view. */}
     <details className="panel finished-sessions" open={view.finished.some(row => row.id === open) || undefined}><summary>Ended <span className="count">{view.finished.length}</span></summary>

@@ -1,5 +1,5 @@
 import { defaultChildRun } from '../child-runner.js';
-import { directVerifications, runWorkerVerification, runningVerificationChildren } from '../merge-writer/worker-verification.js';
+import { runWorkerVerification, runningVerificationChildren } from '../merge-writer/worker-verification.js';
 import { runWorkerCheck } from '../merge-writer/worker-check.js';
 import { heavyJobsDirectory, readHeavyDrain, releaseSettledVerificationSlots } from '../master/verification-slots.js';
 import type { WorkerVerificationJob } from '../server/worker-verification-queue.js';
@@ -20,11 +20,10 @@ export async function moveBranchToHead(root: string, branch: string, head: strin
 
 /**
  * GY-3528 (GY-3533): which worker verification slots stay held — those whose item has a request in
- * flight here under a live worker lease, the loop's own re-verification of a finished head, or a
- * verification child still running. Every other is freed.
+ * flight here under a live worker lease, or a verification child still running. Every other is freed.
  */
-export const keepVerificationSlot = (inFlight: ReadonlyMap<string, number>, work: readonly Pick<Work, 'key' | 'lease'>[], children: ReadonlyMap<string, number> = runningVerificationChildren, direct: ReadonlyMap<string, number> = directVerifications) =>
-  (key: string) => (children.get(key) ?? 0) > 0 || direct.has(key) || (inFlight.get(key) ?? 0) > 0 && work.some(item => item.key === key && item.lease);
+export const keepVerificationSlot = (inFlight: ReadonlyMap<string, number>, work: readonly Pick<Work, 'key' | 'lease'>[], children: ReadonlyMap<string, number> = runningVerificationChildren) =>
+  (key: string) => (children.get(key) ?? 0) > 0 || (inFlight.get(key) ?? 0) > 0 && work.some(item => item.key === key && item.lease);
 
 /** Poll alongside the host loop; trials never hold up supervision or renewal. */
 export function workerVerificationPump(root: string, host: () => string,

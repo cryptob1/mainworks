@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '../src/model/product.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -12,7 +13,7 @@ import { actorRole, groups, roleOf, type Board, type OpenGroup } from '../src/mo
 import { statusRoutes } from '../src/server/routes/status.js';
 import { classify } from '../web/groups.js';
 import { releaseView } from '../src/model/release.js';
-import OverviewPage from '../web/pages/overview.js';
+import WorkPage from '../web/pages/work.js';
 import WorkDetails from '../web/pages/work-details.js';
 // A namespace import, so the proofs fail as test cases, not as a missing export, on a tree without GY-1739.
 import * as plain from '../src/model/plain-status.js';
@@ -109,24 +110,20 @@ function page(work: Work[], board: Board | null, query = '') {
     selected: null, setSelected: noop, creating: false, setCreating: noop, busy: false, setBusy: noop, observedAt: NOW, jobs: [], query, setQuery: noop, operatorAgents: [], operatorAgentsError: null,
     features: {}, events: [], editingRequirements: false, setEditingRequirements: noop, queue: [], sessionEpoch: { current: 0 }, api: async () => ({}),
     refresh: async () => {}, action: async () => {}, setError: noop, signOut: noop } as unknown as Dashboard;
-  return renderToStaticMarkup(createElement(OverviewPage, dashboard));
+  return renderToStaticMarkup(createElement(WorkPage, dashboard));
 }
-function rendered(html: string, group: OpenGroup): string[] {
-  const start = html.indexOf(`data-group-section="${group}"`);
-  if (start < 0) return [];
-  const next = [html.indexOf('data-group-section="', start + 1), html.indexOf('aria-label="Shipped this week"', start)].filter(index => index > 0);
-  return [...html.slice(start, Math.min(...next)).matchAll(/data-row="([^"]+)"/g)].map(match => match[1]);
-}
-const tile = (html: string, group: OpenGroup) => Number(new RegExp(`data-tile="${group}"[^>]*>[\\s\\S]*?<strong>(\\d+)</strong>`).exec(html)?.[1]);
+/** GY-3600: the keys of the Work list's rows in GROUP, in page order. */
+const rendered = (html: string, group: OpenGroup) => [...html.matchAll(/data-row="([^"]+)" data-stuck="\w+" class="task-row group-([a-z-]+)[^"]*"/g)].filter(match => match[2] === group).map(match => match[1]);
+const filterCount = (html: string, filter: string) => Number(new RegExp(`data-filter="${filter}">[^<]*<span class="count">(\\d+)</span>`).exec(html)?.[1]);
 
 test('unit:dashboard-uses-board-api — the Work page renders the groups GET /api/board returns and derives none of its own', async () => {
   const work = scenario();
   const board = await served(work);
   const html = page(work, board);
-  for (const group of groups) {
-    assert.deepEqual(rendered(html, group), board.groups[group].map(item => item.key), `the ${group} section lists the board's ${group} items in its order`);
-    assert.equal(tile(html, group), board.groups[group].length, `the ${group} tile counts the board's ${group} items`);
-  }
+  for (const group of groups) assert.deepEqual(rendered(html, group), board.groups[group].map(item => item.key), `the page lists the board's ${group} items in its order`);
+  assert.equal(filterCount(html, 'stuck'), board.groups.blocked.length, 'Stuck counts the board\'s blocked items');
+  assert.equal(filterCount(html, 'up-next'), board.groups['up-next'].length, 'Up next counts the board\'s up-next items');
+  assert.equal(filterCount(html, 'in-flight'), board.groups['needs-you'].length + board.groups.blocked.length + board.groups.moving.length);
 
   // A board that says otherwise wins: the page shows the server's answer, not one of its own.
   const moved = entry(board, 'GY-21');
@@ -138,15 +135,15 @@ test('unit:dashboard-uses-board-api — the Work page renders the groups GET /ap
 
   // Until the board is read, no group is drawn from the snapshot.
   const reading = page(work, null);
-  assert.equal(reading.includes('data-group-section='), false, 'no group before the board answers');
+  assert.equal(reading.includes('class="task-row group-'), false, 'no open row before the board answers');
   assert.match(reading, /Reading the board/);
 
   // The poll reads the board beside the snapshot and status, and the page carries no classifier.
   const read = (path: string) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
-  const [main, overview] = await Promise.all([read('web/main.tsx'), read('web/pages/overview.tsx')]);
+  const [main, overview] = await Promise.all([read('web/main.tsx'), read('web/pages/work.tsx')]);
   assert.match(main, /read\('board'\)/, 'the polling read fetches GET /api/board');
   assert.match(main, /api\('board'\)/, 'the refresh after an action fetches it too');
-  assert.doesNotMatch(overview, /\bclassify\(|\bgroupOf\(|humanOnlyIds\(/, 'the Work page derives no group itself');
+  assert.doesNotMatch(overview, /\bclassify\(|\bgroupOf\(|humanOnlyIds\(|boardFromStatus\(/, 'the Work page derives no group itself');
 });
 
 /**
@@ -351,7 +348,8 @@ const forwardsLabel = new Set(['string', 'who', 'steps.who']);
 test('manual:review-followups-triaged GY-469.2 (actor-role-covers-every-label): every `who` label nextActor, prSteps and waitsOn write — as `who:` in any quote, or the last argument of prSteps\' make() — names a role; any other `who` expression fails the scan; an unknown label reads as held, never the control plane (GY-469)', async () => {
   const labels = new Set<string>();
   const unscanned: string[] = [];
-  const take = (path: string, expression: string) => {
+  const take = (path: string, written: string) => {
+    const expression = written.replaceAll('${PRODUCT_NAME}', PRODUCT_NAME);
     const literal = /^(['"`])([^'"`]*)\1$/.exec(expression);
     if (literal && !(literal[1] === '`' && literal[2]!.includes('${'))) labels.add(literal[2]!);
     else if (!forwardsLabel.has(expression)) unscanned.push(`${path}: ${expression}`);

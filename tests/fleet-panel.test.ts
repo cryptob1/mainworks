@@ -171,17 +171,19 @@ test('unit:fleet-one-row-per-account — a fleet of single-account plans renders
   assert.match(unreported, /<td data-label="Usage"><span class="usage-not-reported" data-not-reported="true" title="usage not reported by Claude">—<\/span><\/td>/);
 });
 
-test('unit:fleet-why-no-duplication — an idle account\'s and a spent account\'s Why cells hold no role names and no reset time, and a working account\'s Why cell names its live work', () => {
+test('unit:fleet-why-no-duplication — an idle account\'s Why cell holds no role names, a spent account shows its plain sentence and back time, and a working account\'s Why cell names its live work', () => {
   const names = ['busy', 'idle', 'spent'];
   const fleet = declutterFleet(names, [{ name: 'worker', accounts: names, concurrency: 4 }, { name: 'reviewer', accounts: names, concurrency: 2 }], ['spent'],
     [['worker', 'busy', 'GY-1236'], ['reviewer', 'busy', 'GY-1315']]);
   const page = render(fleet);
   const reset = new Date(spentUntil);
-  for (const name of ['idle', 'spent']) {
-    const why = whyCell(accountRow(page, name));
-    assert.equal(why, '<span class="muted">—</span>', `${name}'s Why cell is empty: ${why}`);
-    for (const word of ['worker', 'reviewer', 'ready for', 'until', 'in 3d', reset.toLocaleString(undefined, { month: 'short', day: 'numeric' })]) assert.ok(!why.includes(word), `${name}'s Why repeats "${word}"`);
-  }
+  const idleWhy = whyCell(accountRow(page, 'idle'));
+  assert.equal(idleWhy, '<span class="muted">—</span>', `idle's Why cell is empty: ${idleWhy}`);
+  for (const word of ['worker', 'reviewer', 'ready for', 'until', 'in 3d']) assert.ok(!idleWhy.includes(word), `idle's Why repeats "${word}"`);
+  const spentWhy = whyCell(accountRow(page, 'spent'));
+  assert.ok(spentWhy.includes('weekly window spent'), `spent's Why shows its sentence: ${spentWhy}`);
+  assert.ok(spentWhy.includes(`back ${reset.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} at `), `spent's Why shows back day at time: ${spentWhy}`);
+  assert.ok(!/[{}"]/.test(spentWhy), `spent's Why has no JSON characters: ${spentWhy}`);
   // What the other cells already say is still on the row: its roles, and its Back time.
   assert.ok(accountRow(page, 'idle').includes('<td data-label="Roles">worker, reviewer</td>'));
   assert.ok(accountRow(page, 'spent').includes(`<time dateTime="${spentUntil}"`));
@@ -196,7 +198,7 @@ test('unit:fleet-launch-summary-compact — every role is one short row: ready o
   assert.ok(!blocked.includes('Cannot launch'));
   assert.match(blocked, /<li data-role-launch="master" data-can-launch="no" title="Master: Running since [^"]*">Master · running \(launch-a\)<\/li>/);
   assert.ok(blocked.includes('<li data-role-launch="worker" data-can-launch="yes" title="Workers: can launch now — next: launch-a now">Workers · ready (launch-a)</li>'), 'a ready role names its next account');
-  assert.equal(blocked.split('data-role-launch=').length - 1, 4, 'one row per role');
+  assert.equal(blocked.split('data-role-launch=').length - 1, 5, 'one row per role, plus the caretaker the registry does not configure yet (GY-3593)');
   const clear = render(declutterFleet(names, roles));
   assert.ok(!clear.includes('Cannot launch'), 'no Cannot launch text');
   assert.equal(clear.split('data-can-launch="no"').length - 1, 0);

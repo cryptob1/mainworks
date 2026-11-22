@@ -65,12 +65,12 @@ export function observationWakeDue(work: Work, wokenAt: string | null | undefine
 
 /** A rework the item needs: why, and the grounds it binds (head and ground), so one head is reworked once per ground. */
 export interface Rework { reason: string; binding: string }
-/** The longest rework reason the engine accepts (engine.ts `rework`). */
-export const reworkReasonMax = 2000;
+/** The longest rework reason the engine accepts (schemas.ts `rework`, matching `reworkBriefMax`). */
+export const reworkReasonMax = reworkBriefMax;
 /**
  * The rework one item needs right now, or null: a head nothing can carry forward — a base conflict,
- * a standing change request, a failed or unexercised proof, spent producers — goes back to a worker. Every blocking review finding reworks
- * the head once per submission, with no cap.
+ * a standing change request, a failed or unexercised proof, spent producers — goes back to a worker
+ * (up to the 3-refusal cap enforced by the dispatch loop, GY-3636).
  */
 export function neededRework(work: Work, exhausted: readonly ExhaustedProof[] = []): Rework | null {
   if (work.stage === 'done' || work.reworkRequested) return null;
@@ -80,11 +80,10 @@ export function neededRework(work: Work, exhausted: readonly ExhaustedProof[] = 
   if (sync) return { reason: `${work.key}: ${sync.reason}. The base moved: run sync ${work.key}, resolve, then complete ${work.key} EPOCH --head NEWSHA.`, binding: sync.binding };
   const verdict = standingVerdict(work);
   if (verdict) {
-    // The engine takes a rework reason of at most reworkReasonMax characters: a long verdict (a product
-    // review's findings may run to 64 KiB) is cut so the sentence around it still fits.
-    const tail = '. The verdict stands against the current head, so the item returns to a worker for the next round.', cut = '… (cut short; the whole verdict is on the item)';
+    // Bound to reworkReasonMax (reworkBriefMax = 4,000), never the old 2,000-character cut (GY-3636).
+    const tail = '. The verdict stands against the current head, so the item returns to a worker for the next round.';
     const room = reworkReasonMax - work.key.length - 2 - tail.length;
-    return { reason: `${work.key}: ${verdict.reason.length > room ? `${verdict.reason.slice(0, room - cut.length)}${cut}` : verdict.reason}${tail}`, binding: `${work.candidate!.sha}:verdict:${verdict.reviewer}` };
+    return { reason: `${work.key}: ${verdict.reason.length > room ? `${verdict.reason.slice(0, room - 1)}…` : verdict.reason}${tail}`, binding: `${work.candidate!.sha}:verdict:${verdict.reviewer}` };
   }
   return proofRework(work) ?? exhaustedProofRework(work, exhausted);
 }

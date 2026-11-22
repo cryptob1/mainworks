@@ -1,5 +1,6 @@
 import { trialOverloadFault } from '../merge-writer/trial-cpu.js';
 import { timedMergePorts, trialStepMedians } from './trial-timings.js';
+import type { TrialStepReport } from '../merge-writer/trial.js';
 import { mergeWriterKeptQueue, mergeWriterKeptRefusals, mergeWriterKeptReworks, mergeWriterKeptTimeouts, mergeWriterTrialTimeoutRefusals, mergeWriterKeptUnconfirmed, mergeWriterUnconfirmedReplays, serveRevertsKept, type PendingRework, type UnconfirmedRecord, type MergeWriterState, type RevertFlight } from './merge-writer-state.js';
 export { mergeWriterKeptQueue, mergeWriterKeptRefusals, mergeWriterKeptReworks, mergeWriterKeptTimeouts, mergeWriterTrialTimeoutRefusals, mergeWriterKeptUnconfirmed, mergeWriterUnconfirmedReplays, pendingReworkSchema, unconfirmedRecordSchema, mergeWriterStateSchema, emptyMergeWriterState, type PendingRework, type UnconfirmedRecord, type MergeWriterState, type RevertFlight } from './merge-writer-state.js';
 // Concern: the control-plane merge executor's cycle step (GY-1524) — reconcile open intents, pick the next head, run one merge beside the cycle and record what it did.
@@ -10,7 +11,7 @@ import { trialHeatFault, trialSlotCount } from '../merge-writer/trial-load.js';
 import { trialAffordableFiles } from '../merge-writer/trial.js';
 import type { ChildRun } from '../child-runner.js';
 import type { MasterConfig } from '../master/profiles.js';
-import type { Work } from '../model.js';
+import { exactApproval, carriedApproval, type Work } from '../model.js';
 import type { MergeLedgerState } from '../model/merge-ledger.js';
 import { mergeWriterTrialGround, trialFailurePrefix } from '../model/rework-ground.js';
 import { installIdFor } from '../install/types.js';
@@ -26,8 +27,8 @@ import { relandItemFor, relandTitle, runServeRevert, type RelandInput } from '..
 import { slotsDirectoryVariable, testMergeLabel, waitStep, withHeavyJob } from '../master/verification-slots.js';
 import { adoptTrialRun, finishedTrialRun, launchTrialRun, stopTrialRun, trialRunsDirectory, type TrialRunHandle, type TrialRunRequest } from '../merge-writer/trial-run.js';
 import { loadProjectDelivery } from '../model-boundary/project-applications.js';
-import { heldByBaseFailure, standingBaseFailure } from '../merge-writer/base-failure-hold.js';
-import { baseFailureHoldMs, baseFailurePrefix, isBaseRepair, isHotfix, criterionProofs, pushPassedTrial, mergeHeads, type HeadResult, e2eProofsOf, firstParentHolds, keyReusedRefusal, mergeRecordStatus, mergeQueue, previewRecordEvent, proofTestFiles, pushArgs, pushEnvironment, mergeWriterRemote, pushFailureWithStderr, reconcileIntents, runMergeTrial, staleLeaseRejection, trialAheadOfReviewPrefix, trialRefusalHeld, type MergePorts, type MergeRecordEvent, type MergeTrialRun } from '../merge-writer/executor.js';
+import { standingBaseFailure } from '../merge-writer/base-failure-hold.js';
+import { baseFailureHoldMs, baseFailurePrefix, isBaseRepair, isHotfix, criterionProofs, pushPassedTrial, mergeHeads, mergeBatches, type HeadResult, e2eProofsOf, firstParentHolds, keyReusedRefusal, mergeRecordStatus, mergeQueue, previewRecordEvent, proofTestFiles, pushArgs, pushEnvironment, mergeWriterRemote, pushFailureWithStderr, reconcileIntents, runMergeTrial, staleLeaseRejection, trialAheadOfReviewPrefix, trialRefusalHeld, type MergePorts, type MergeRecordEvent, type MergeTrialRun } from '../merge-writer/executor.js';
 import { graphyardVerifiedRef, publishedVersion } from '../release.js';
 import { message, storeAction, type DaemonState } from './state.js';
 import { cpuPressureHeld, trialCapNow } from './cpu-pressure.js';
@@ -151,7 +152,8 @@ export function mergeWriterReads(config: Pick<MasterConfig, 'baseBranch' | 'run'
       const proofs = criterionProofs(item);
       // Discovered inside each retried attempt (GY-1832), so a git grep that fails or times out is timed and retried like the trial's other reads.
       const discoverProofFiles = (runOptions: { timeoutMs?: number }) => proofTestFiles(run, root, mergeSha, proofs, runOptions);
-      return heavyTrial(item.key, onStep, signal, () => (options.trial ?? runMergeTrial)({ root, base: options.base, caches: true, mergeSha, changedFiles: files, proofs, e2eProofs: e2eProofsOf(item), proofFiles: [], discoverProofFiles, ...(item.environments ? { e2eOrigins: item.environments } : {}), key: item.key, reproduce: item.type !== 'chore', run, environment: options.environment, hidden, ...(baseTip ? { baseTip } : {}), ...(onStep ? { onStep } : {}), ...(onTiming ? { onTiming } : {}), ...(signal ? { signal } : {}),
+      const selectorApproved = 'observation' in item && (!!exactApproval(item as Work) || !!carriedApproval(item as Work));
+      return heavyTrial(item.key, onStep, signal, () => (options.trial ?? runMergeTrial)({ root, base: options.base, caches: true, mergeSha, changedFiles: files, proofs, e2eProofs: e2eProofsOf(item), proofFiles: [], discoverProofFiles, ...(item.environments ? { e2eOrigins: item.environments } : {}), key: item.key, reproduce: item.type !== 'chore', run, environment: options.environment, hidden, ...(baseTip ? { baseTip } : {}), ...(selectorApproved ? { selectorApproved: true } : {}), ...(onStep ? { onStep } : {}), ...(onTiming ? { onTiming } : {}), ...(signal ? { signal } : {}),
         ...trialShareAllowance(share, timeoutMs) }));
     },
     // GY-1902: an item citing a case bound to a declared static application is previewed from the coordinator checkout, its record written through the merge-record route.
@@ -187,10 +189,10 @@ export function mergeWriterReads(config: Pick<MasterConfig, 'baseBranch' | 'run'
 }
 
 /**
- * GY-3140, GY-3451: the due heads a recorded base failure holds out of trial, and that failure's
- * reason. The failure stands until main changes the failing tests or the files they select
- * (`standingBaseFailure`), so a merge that leaves main red frees nothing. A hotfix or base repair
- * item is the master's own base fix and is never held. Nothing is held when no base failure is
+ * GY-3140, GY-3451, GY-3563: the due heads a recorded base failure holds out of trial, and that
+ * failure's reason. While the failure stands (`standingBaseFailure`: until main changes the failing
+ * tests or the files they select) only hotfixes and base repairs are trialled, so the trial slots go
+ * to what turns main green; every other head waits. Nothing is held when no base failure is
  * recorded, the checkout cannot be read, or the reads carry no git.
  */
 async function baseFailureHolds(reads: MergeWriterReads, ledger: Readonly<Record<string, MergeLedgerState>>, due: readonly Work[]): Promise<{ held: Set<string>; reason: string }> {
@@ -199,8 +201,7 @@ async function baseFailureHolds(reads: MergeWriterReads, ledger: Readonly<Record
   try {
     const git = reads.git, tip = (await reads.fetch()).toLowerCase(), failure = await standingBaseFailure(args => git(args), ledger, tip);
     if (!failure) return none;
-    const heads = due.filter(work => !isHotfix(work) && !isBaseRepair(work)).map(work => ({ id: work.id, head: work.candidate!.sha.toLowerCase() }));
-    return { held: await heldByBaseFailure(args => git(args), tip, failure, heads), reason: failure.reason };
+    return { held: new Set(due.filter(work => !isHotfix(work) && !isBaseRepair(work)).map(work => work.id)), reason: failure.reason };
   } catch { return none; }
 }
 
@@ -212,12 +213,16 @@ interface Flight { key: string; id: string; head: string; startedAt: string; set
   /** GY-3099: the trials running now, each with the heads it carries and how to cancel it. */
   trials?: Set<RunningTrial>;
   /** GY-3182: every head this flight carries, and its id for the record keys. */
-  keys?: string[]; attempt?: string }
+  keys?: string[]; attempt?: string;
+  /** GY-3625: the trial slots the flight takes, one per batch of its heads (`mergeBatches`). */
+  slots?: number }
 interface RunningTrial { heads: { key: string; head: string }[]; controller: AbortController }
 /** GY-3182: every flight running beside the cycle; a free slot starts another without waiting for the rest to settle. */
 const flights = new WeakMap<DaemonState, Set<Flight>>();
 const flightsOf = (state: DaemonState) => { let live = flights.get(state); if (!live) flights.set(state, live = new Set()); return live; };
 const flying = (state: DaemonState) => (flights.get(state)?.size ?? 0) > 0;
+/** GY-3625: the trial slots the running flights take — one per batch, however many heads it carries — and the batch gate's. */
+const flightSlots = (state: DaemonState) => [...flights.get(state) ?? []].reduce((sum, flight) => sum + (flight.slots ?? flight.keys?.length ?? 1), 0);
 /** GY-3182: a serve revert waits for the flights running to settle, and while it waits no new flight starts. */
 const revertWaiting = new WeakSet<DaemonState>();
 /** GY-3182: the base reads and writes (fetch, merge, push) of every flight take one turn, so two flights never write the checkout's refs at once. */
@@ -657,7 +662,8 @@ async function serveRevertAttempt(cycle: ServeRevertCycle, reads: MergeWriterRea
         flightsOf(state).add(entry);
         onStep = step => {
           if (writer.inFlight?.head !== revertSha) return;
-          writer.inFlight = { ...writer.inFlight, step, stepStartedAt: at() };
+          // GY-3599: the same step sent again carries only its output so far; it keeps its start.
+          if (step !== writer.inFlight.step) writer.inFlight = { ...writer.inFlight, step, stepStartedAt: at() };
           void cycle.effects.persist(state).catch(() => {});
         };
         void run().then(decided => {
@@ -708,7 +714,7 @@ function awaitRun(state: DaemonState, handle: TrialRunHandle, ...watch: Paramete
 function mergeFlightTrials(reads: MergeWriterReads, state: DaemonState, persist: () => Promise<void>, adopted?: Map<string, TrialRunHandle>): MergePorts {
   const launch = reads.launchTrialRun;
   return { ...reads, adoptedTrial: key => adopted?.has(key) ?? false, trial: (mergeSha, files, item, baseTip, onStep, onTiming, heads, share, signal, timeoutMs) => heavyTrial(item.key, onStep, signal, async () => {
-    share = Math.max(1, busyTrialSlots(state));
+    share = Math.max(1, flightSlots(state) + batchGateBusySlots(state));
     const handle = adopted?.get(item.key);
     if (handle) {
       if (handle.mergeSha === mergeSha) return awaitRun(state, handle, onStep, onTiming, signal);
@@ -716,9 +722,10 @@ function mergeFlightTrials(reads: MergeWriterReads, state: DaemonState, persist:
     }
     if (!launch) return reads.trial(mergeSha, files, item, baseTip, onStep, onTiming, heads, share, signal, timeoutMs);
     await reads.ensureTrialImage?.();
+    const selectorApproved = 'observation' in item && (!!exactApproval(item as Work) || !!carriedApproval(item as Work));
     const launched = launch({ key: item.key, head: heads?.[0]?.head ?? mergeSha, mergeSha,
       baseTip: baseTip?.toLowerCase() ?? null, changedFiles: [...files], proofs: criterionProofs(item), e2eProofs: e2eProofsOf(item),
-      reproduce: item.type !== 'chore', cores: null, ...trialShareAllowance(share, timeoutMs, reads.cores), ...(share === 1 && reads.cores ? { cores: reads.cores } : {}) });
+      reproduce: item.type !== 'chore', cores: null, ...(selectorApproved ? { selectorApproved: true } : {}), ...trialShareAllowance(share, timeoutMs, reads.cores), ...(share === 1 && reads.cores ? { cores: reads.cores } : {}) });
     // The run's directory is persisted on the in-flight entry before its verdict can land, so a restart after it adopts the run.
     const entry = state.mergeWriter.inFlights?.find(candidate => candidate.key === item.key);
     if (entry) { entry.run = { directory: launched.directory, mergeSha }; await persist().catch(() => {}); }
@@ -742,7 +749,7 @@ async function startMergeFlight(cycle: Pick<Cycle, 'state' | 'effects' | 'now'>,
   const previous = carried.get(first.key);
   // GY-1852: the attempt id is on the persisted state before the attempt's first write; the flight is published only once it is, so a failed persist leaves nothing new in flight and a later cycle starts afresh.
   const attempt = previous?.attempt ?? (previous ? writer.inFlight?.attempt : undefined) ?? randomUUID(), live = flightsOf(state);
-  const entry: Flight = { key: first.key, id: first.id, head: first.candidate!.sha.toLowerCase(), startedAt: previous?.startedAt ?? at(), settled: null, trials: new Set(), keys: heads.map(work => work.key), attempt };
+  const entry: Flight = { key: first.key, id: first.id, head: first.candidate!.sha.toLowerCase(), startedAt: previous?.startedAt ?? at(), settled: null, trials: new Set(), keys: heads.map(work => work.key), attempt, slots: mergeBatches(heads).length };
   // Every head in flight, in queue order, its detached trial run with it (GY-3159): the flights already
   // running keep their entries (GY-3182), and this flight's heads join them. GY-2963: each head's first
   // step is its wait — the fetch, the trial merge and the intent record before the trial's checkout
@@ -761,14 +768,19 @@ async function startMergeFlight(cycle: Pick<Cycle, 'state' | 'effects' | 'now'>,
   // Write receipts belong to this watcher; the trial's attempt identity survives adoption.
   const recorder = attemptRecorder(writer, reads.record, previous ? randomUUID() : attempt, at);
   // Each step a trial reports is where its head is: on the in-flight entries master status reads, persisted at once, and on the item's ledger the pipeline and Work page read.
-  const onStep = (index: number, step: string) => {
+  // GY-3599: the same step sent again as each test shard ends carries what the trial printed so far and its counts so far, under the step's own start, so the Task page shows a running trial.
+  const onStep = (index: number, step: string, report?: TrialStepReport) => {
     // By key, not index: a stale entry may have been dropped from the list (GY-3148).
     const reporting = heads[index]!, place = writer.inFlights?.findIndex(candidate => candidate.key === reporting.key) ?? -1, position = writer.inFlights?.[place];
     if (!live.has(entry) || !position) return;
-    writer.inFlights![place] = { ...position, step, stepStartedAt: at() };
-    if (place === 0) nameFlight(state);
-    void effects.persist(state).catch(() => {});
-    void recorder(reporting, { kind: 'trial-step', head: position.head, step, at: at() }).catch(() => {});
+    // The same step sent again keeps its start; a new step takes now's, and is written even when the clock has not moved since.
+    const startedAt = step === position.step && position.stepStartedAt ? position.stepStartedAt : at();
+    if (step !== position.step || startedAt !== position.stepStartedAt) {
+      writer.inFlights![place] = { ...position, step, stepStartedAt: startedAt };
+      if (place === 0) nameFlight(state);
+      void effects.persist(state).catch(() => {});
+    }
+    void recorder(reporting, { kind: 'trial-step', head: position.head, step, at: startedAt, ...(report?.output ? { output: report.output.slice(-4000) } : {}), ...(report?.tests ? { tests: report.tests } : {}) }).catch(() => {});
   };
   // Trials running at once divide the host's cores among every slot, not only this flight's heads (GY-3182).
   void mergeHeads(timedMergePorts({ ...cancellableTrials(mergeFlightTrials(reads, state, () => effects.persist(state), options.adopted), entry.trials!), record: recorder }, writer, () => effects.persist(state)), heads, onStep)
@@ -1038,7 +1050,7 @@ export async function mergeWriterStep(cycle: Cycle) {
   const fullCap = Math.min(hostCap, standingLimit(cycle.config?.run.trialCap, cycle.now()) ?? Infinity);
   if (state.cpuPressure) state.cpuPressure.trialCap = { now: trialCapNow(state, fullCap), full: fullCap };
   const parallel = Math.min(trialCapNow(state, fullCap), trialCapNow(state, hostCap) - batchGateBusySlots(state));
-  const busy = new Set([...live].flatMap(flight => flight.keys ?? [flight.key]));
+  const busy = new Set([...live].flatMap(flight => flight.keys ?? [flight.key])), busySlots = flightSlots(state);
   // Pushing a completed trial takes no trial slot, even while every slot is occupied.
   if (![...live].some(flight => flight.revert) && !revertWaiting.has(state) && !writer.inFlight?.revert && !writer.unconfirmed?.length && !replayed) {
     const ledger = snapshotLedger(snapshot.work);
@@ -1058,7 +1070,7 @@ export async function mergeWriterStep(cycle: Cycle) {
   // GY-3437, GY-3501: pressure above the ceiling alone stops new trials; heat never does — the cap
   // still reads half, so status shows what returns once it cools, and the trial container guard
   // waits on its own limit once the flight launches.
-  if (busy.size < parallel && !cpuPressureHeld(state) && ![...live].some(flight => flight.revert) && !revertWaiting.has(state) && !writer.unconfirmed?.length
+  if (busySlots < parallel && !cpuPressureHeld(state) && ![...live].some(flight => flight.revert) && !revertWaiting.has(state) && !writer.unconfirmed?.length
     && !writer.inFlight?.revert && !replayed && !delivered) {
     const free = snapshot.work.filter(item => !busy.has(item.key) && !settledNow.has(item.key));
     const ledger = snapshotLedger(free);
@@ -1099,7 +1111,7 @@ export async function mergeWriterStep(cycle: Cycle) {
       const queue = mergeQueue(free.filter(item => !held.has(item.key)), ledger, now());
       // GY-3353: every head keeps its oldest-first place, a timed-out one included: moved behind each newer arrival, it never came round again.
       const ordered = queue.queue;
-      // GY-3140, GY-3451: while a base failure stands on main, a head that cannot repair it starts no trial: it is refused with the base failure at once and stays queued, shown waiting for a green base, and is trialled once main changes what fails.
+      // GY-3140, GY-3451, GY-3563: while a base failure stands on main, a head that is neither a hotfix nor a base repair starts no trial: it is refused with the base failure at once and stays queued, shown waiting for a green base, and is trialled once main changes what fails.
       const holding = await baseFailureHolds(reads, ledger, queue.due);
       const summary = ordered.slice(0, mergeWriterKeptQueue).map(entry => holding.held.has(entry.id) ? { ...entry, waiting: `a green ${reads.baseBranch}: ${holding.reason}`.slice(0, 500) } : entry);
       if (JSON.stringify(summary) !== JSON.stringify(writer.queue)) { writer.queue = summary; changed = true; }
@@ -1111,7 +1123,7 @@ export async function mergeWriterStep(cycle: Cycle) {
         if (prior?.state === 'refused' && prior.head === head && prior.refusal?.reason === holding.reason) continue;
         await record(work, { kind: 'refused', head, reason: holding.reason });
         performed.push(storeAction(state, `merge-writer-base-hold:${work.key}:${head}`, { kind: 'merge', work: work.key, principal: null, state: 'done', attempts: 1, epoch: null, cycle: state.cycle, at: at(),
-          detail: `Held ${work.key} head ${head} without a trial: ${reads.baseBranch} fails and the head touches neither the failing tests nor the files they select (${holding.reason.slice(0, 500)}); it waits for a green ${reads.baseBranch} and is trialled once ${reads.baseBranch} changes what fails` }));
+          detail: `Held ${work.key} head ${head} without a trial: ${reads.baseBranch} fails and the trial slots go to its hotfixes and base repairs (${holding.reason.slice(0, 500)}); it waits for a green ${reads.baseBranch} and is trialled once ${reads.baseBranch} changes what fails` }));
         changed = true;
       }
       const runnable = ordered.filter(entry => !holding.held.has(entry.id));
@@ -1122,9 +1134,9 @@ export async function mergeWriterStep(cycle: Cycle) {
       // CPU lowers `parallel` above instead (GY-3348, GY-3401).
       // GY-3304: nor while the host's heavy work is drained; the queue keeps every head and its gates.
       const due = next?.candidate && !state.diskHeadroom && !reads.drain?.() && (reads.admit?.() ?? true) ? next : null;
-      // GY-3120: the first `parallel` heads in queue order are trialled at once, each alone on the current tip; the flight is named by the first.
+      // GY-3120, GY-3625: the first `parallel` batches in queue order are trialled at once, each batch one trial on the current tip; the flight is named by the first head.
       // GY-3182: a new flight fills only the slots the running flights leave free.
-      const heads = runnable.map(entry => queue.due.find(work => work.id === entry.id)).filter((work): work is Work => !!work).slice(0, parallel - busy.size);
+      const heads = mergeBatches(runnable.map(entry => queue.due.find(work => work.id === entry.id)).filter((work): work is Work => !!work)).slice(0, parallel - busySlots).flat();
       if (due?.candidate && heads.length) await startMergeFlight(cycle, reads, heads);
     }
   }

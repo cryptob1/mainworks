@@ -44,7 +44,8 @@ export async function syncWork({ api, print }: CliContext, work: any) {
   // Rework keeps the branch across attempts, so the checkout identifies its epoch: any directory
   // inside the registered workspace is that checkout — a worker may sync from a subdirectory —
   // while a sibling attempt's worktree lies outside it and never answers for this one.
-  const workspace = work.workspaces.find((w: any) => w.branch === branch && (resolve(w.path) === cwd || cwd.startsWith(`${resolve(w.path)}${sep}`)));
+  // GY-3632: a rework reuses its Builder's path, so the latest attempt registered there answers for it.
+  const workspace = [...work.workspaces].sort((a: any, b: any) => b.epoch - a.epoch).find((w: any) => w.branch === branch && (resolve(w.path) === cwd || cwd.startsWith(`${resolve(w.path)}${sep}`)));
   if (!workspace) throw new Error(`Run sync from a workspace registered for ${work.key}; ${cwd} on ${branch} is not one`);
   // GY-3266: the requirements revision an operator recorded under this lease reaches the worker
   // here — every sync prints the revised criteria with what changed, and a completed merge also
@@ -142,7 +143,7 @@ export const workspaceCommands = defineCommands([
       // A write the worker's sandbox refused is recorded as that, naming the sandbox and the path,
       // so the item never presents as a ready-gate refusal or an unexplained lapse (GY-134).
       try { await syncWork(context, work); } catch (error) {
-        const failure = environmentFailure(error); const epoch = work.workspaces.find((w: any) => w.branch === quietBranch())?.epoch ?? work.lease?.epoch;
+        const failure = environmentFailure(error); const epoch = [...work.workspaces].reverse().find((w: any) => w.branch === quietBranch())?.epoch ?? work.lease?.epoch;
         if (!failure || epoch === undefined) throw error;
         const reason = environmentBlocker(`sync ${work.key}`, process.env.GRAPHYARD_HERDR_AGENT_KIND, failure);
         const partialWork = keepBlockedWork(work, epoch); await workMutation(context, work)('blocked', { epoch, reason, ...(partialWork ? { partialWork } : {}) });

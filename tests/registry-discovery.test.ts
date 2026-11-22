@@ -161,7 +161,7 @@ test('unit:registry-propose-names-master-role — a proposal over a host with th
     { read: async () => emptyRegistry(), write: async () => { throw new Error('a preview stores nothing'); } },
     { home, executables: () => false }) as any;
   const roles = Object.fromEntries(preview.proposal.roles.map((role: any) => [role.name, role]));
-  assert.deepEqual(Object.keys(roles), ['worker', 'reviewer', 'producer', 'master'], 'the proposal names the master role alongside the worker, reviewer and producer roles');
+  assert.deepEqual(Object.keys(roles), ['worker', 'reviewer', 'producer', 'master', 'caretaker'], 'the proposal names the master role alongside the worker, reviewer and producer roles');
   const named = ['claude-a', 'claude-b', 'claude-c'];
   assert.ok(named.every(name => roles.master.accounts.includes(name)), 'the master role names the logged-in environments');
   assert.equal(roles.master.concurrency, 1, 'one master session');

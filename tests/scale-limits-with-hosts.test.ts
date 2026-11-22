@@ -7,7 +7,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { acquireVerificationSlot, gateSlot, heavyJobBudget, heavyJobLimit, heldSlots, hostSlot, hostsWithSlots, readMachines, slotsDirectoryVariable, takeHostSlot, workerVerificationLabel, writeMachines, type HeldSlot, type Machine } from '../src/master/verification-slots.js';
 import { budgetLine, machineLine } from '../src/model/machine-load.js';
 import { workerVerificationPump } from '../src/daemon/worker-verification.js';
-import { directVerification, runningVerificationChildren } from '../src/merge-writer/worker-verification.js';
+import { runningVerificationChildren } from '../src/merge-writer/worker-verification.js';
 import { encodeLoopHosts, loopHosts } from '../src/model/loop-presence.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { masterConfigSchema } from '../src/master.js';
@@ -106,10 +106,10 @@ test('integration:scale-limits-with-hosts — a 24-core machine with ready hosts
   assert.ok(await takeHostSlot(directory, msi, 'test merge GY-4 shard 1'));
 });
 
-test('integration:scale-limits-with-hosts — a worker verification slot is freed within one loop cycle once its request finished, or its lease is gone; one with a running child, an active request or the loop\'s own re-verification is kept', { timeout: 120_000 }, async () => {
+test('integration:scale-limits-with-hosts — a worker verification slot is freed within one loop cycle once its request finished, or its lease is gone; one with a running child or an active request is kept', { timeout: 120_000 }, async () => {
   const scratch = await temporaryDirectory('verification-frees-slot'), directory = join(scratch, 'heavy-jobs'), root = join(scratch, 'repo');
   mkdirSync(directory);
-  writeFileSync(join(directory, 'limit'), '5\n');
+  writeFileSync(join(directory, 'limit'), '4\n');
   const previous = process.env[slotsDirectoryVariable];
   process.env[slotsDirectoryVariable] = directory;
   try {
@@ -136,15 +136,12 @@ test('integration:scale-limits-with-hosts — a worker verification slot is free
     const pump = workerVerificationPump(root, () => 'h', mutate, () => root, undefined, verify);
     await pump([]);
     await until(() => holding().includes(workerVerificationLabel('GY-1')), 'GY-1 holds its slot');
-    // GY-2 finished but its slot was left; GY-3 has a child running; GY-4 is the loop's own re-verification.
+    // GY-2 finished but its slot was left; GY-3 has a child running.
     await take('GY-2');
     await take('GY-3');
     runningVerificationChildren.set('GY-3', 1);
-    let finishGy4!: () => void;
-    const gy4 = directVerification('GY-4', async () => { await take('GY-4'); await new Promise<void>(done => { finishGy4 = done; }); });
-    await until(() => holding().includes(workerVerificationLabel('GY-4')), 'GY-4 holds its slot');
     await take('GY-5');
-    // A queued job waits behind the five held slots.
+    // A queued job waits behind the four held slots.
     let admitted = false;
     const queued = acquireVerificationSlot({ directory, label: 'merge trial GY-9', project: 'acme/other', pollMs: 5 }).then(slot => { admitted = true; return slot; });
     await sleep(100);
@@ -153,7 +150,7 @@ test('integration:scale-limits-with-hosts — a worker verification slot is free
     // One cycle with GY-1 under a live lease: only the finished GY-2 and the lease-less GY-5 are freed.
     const leased = { lease: { attemptId: 'a' } } as never;
     await pump([{ key: 'GY-1', ...leased as object } as never, { key: 'GY-5', lease: null } as never]);
-    assert.deepEqual(holding().filter(label => label.startsWith('worker')), ['GY-1', 'GY-3', 'GY-4'].map(workerVerificationLabel));
+    assert.deepEqual(holding().filter(label => label.startsWith('worker')), ['GY-1', 'GY-3'].map(workerVerificationLabel));
     const freed = await queued;
     assert.ok(admitted, 'a freed slot admits the queued job');
     freed.release();
@@ -161,11 +158,9 @@ test('integration:scale-limits-with-hosts — a worker verification slot is free
     // GY-1's lease goes while its request still runs, with no child: freed at the next cycle.
     await pump([{ key: 'GY-1', lease: null } as never]);
     assert.ok(!holding().includes(workerVerificationLabel('GY-1')));
-    // The child and the direct re-verification keep theirs until they settle.
-    assert.deepEqual(holding().filter(label => label.startsWith('worker')), ['GY-3', 'GY-4'].map(workerVerificationLabel));
+    // The child keeps its slot until it settles.
+    assert.deepEqual(holding().filter(label => label.startsWith('worker')), ['GY-3'].map(workerVerificationLabel));
     runningVerificationChildren.delete('GY-3');
-    finishGy4();
-    await gy4;
     await pump([]);
     assert.deepEqual(holding(), []);
     finishGy1();

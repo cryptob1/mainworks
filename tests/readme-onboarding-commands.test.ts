@@ -21,7 +21,7 @@ test('unit:readme-onboarding-commands — the Quick start uses commands and flag
     assert.ok(`${up}\n${all}`.includes(flag[0]), `help advertises ${flag[0]}`);
   }
   for (const command of ['master status', 'upgrade --plan', 'upgrade']) {
-    assert.ok(start.includes(`graphyard ${command}`));
+    assert.ok(start.includes(`mainworks ${command}`));
     assert.match(all, new RegExp(command === 'upgrade --plan' ? 'upgrade .*\\[--plan\\]' : command));
   }
   assert.match(start, /Setup link/);

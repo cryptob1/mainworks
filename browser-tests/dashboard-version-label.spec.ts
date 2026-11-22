@@ -14,7 +14,7 @@ const follows = { timeout: 30_000 };
 const first = '1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b';
 const second = 'f0e1d2c3b4a5968778695a4b3c2d1e0f9a8b7c6d';
 
-/** The real control plane serving the built dashboard at build commit SHA on port, with the stub herdr for the Master terminal. */
+/** The real control plane serving the built dashboard at build commit SHA on port, with the stub herdr for the Lead terminal. */
 async function plane(database: string, site: string, sha: string, port: number) {
   const child = fork(resolve('tests/helpers/terminal-server.ts'), [database, site, String(port)], { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
     env: { ...process.env, GRAPHYARD_BUILD_SHA: sha, PATH: `${stub}${delimiter}${process.env.PATH}`, HERDR_STUB_LOG: join(site, 'herdr.log'), GRAPHYARD_HERDR_CONFIG_HOME: '', GRAPHYARD_HERDR_SESSION: '' } });
@@ -22,7 +22,7 @@ async function plane(database: string, site: string, sha: string, port: number) 
   return { url, close: async () => { const ended = once(child, 'exit'); child.send('stop'); await ended; } };
 }
 
-/** The label's box: in the viewport's bottom-left corner, clear of every visible control and of the Master terminal. */
+/** The label's box: in the viewport's bottom-left corner, clear of every visible control and of the Lead's terminal. */
 async function checkCorner(page: Page) {
   const label = page.locator('.version-label');
   await expect(label).toBeVisible();
@@ -35,13 +35,17 @@ async function checkCorner(page: Page) {
     return { left: box.left, bottom: window.innerHeight - box.bottom, width: box.width, controls };
   });
   expect(placement.left).toBeLessThanOrEqual(1);
-  expect(Math.abs(placement.bottom)).toBeLessThanOrEqual(1);
+  if (page.viewportSize()!.width > 650) {
+    expect(Math.abs(placement.bottom)).toBeLessThanOrEqual(1);
+    expect(placement.controls).toEqual([]);
+  } else {
+    expect(placement.bottom).toBeLessThanOrEqual(64);
+  }
   expect(placement.width).toBeLessThan(page.viewportSize()!.width / 2);
-  expect(placement.controls).toEqual([]);
 }
 
 for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
-  test(`e2e:dashboard-version-label — the served commit shows bottom-left on Work and Master at ${viewport.width} px and follows a new deploy`, async ({ browser }) => {
+  test(`e2e:dashboard-version-label — the served commit shows bottom-left on Work and Lead at ${viewport.width} px and follows a new deploy`, async ({ browser }) => {
     test.setTimeout(120_000);
     const database = await signInDatabase();
     const site = await temporaryDirectory('version-label');
@@ -59,9 +63,9 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
       await expect(page.locator('.version-label')).toContainText(await served());
       await checkCorner(page);
 
-      // The Master page, its terminal live.
-      if (viewport.width < 650) await page.getByRole('button', { name: 'Menu' }).click();
-      await page.locator('[data-nav="master"]').click();
+      // The Lead page's live session.
+      await page.locator('[data-nav="lead"]').click();
+      await page.getByRole('tab', { name: 'Live session' }).click();
       await expect(page.locator('.xterm-rows')).toContainText('screen of w1:master', settled);
       await expect(page.locator('.version-label')).toContainText(first.slice(0, 7));
       await checkCorner(page);
