@@ -383,6 +383,7 @@ tr.spent-summary td{padding:6px var(--space-4)}tr.spent-summary button{all:unset
 .master-tabpanel{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;overflow:hidden}
 .master-tabpanel>.live-terminal,.master-tabpanel>.terminal-mount>.live-terminal{flex:1;min-height:0;height:auto}
 .master-tabpanel>.terminal-mount{flex:1;min-height:0;display:flex;flex-direction:column}
+.master-tabpanel>.terminal-mount[hidden]{display:none}
 .master-tabpanel>.typed-input,.master-tabpanel>.master-messages{flex:1;min-height:0;margin-top:0;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
 /* GY-3602: the Lead conversation — the page never scrolls; the feed scrolls inside its panel. */
 .lead-conversation{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;overflow:hidden}

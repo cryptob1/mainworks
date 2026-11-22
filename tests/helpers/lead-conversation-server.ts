@@ -54,10 +54,10 @@ await engine.execute(worker, 'claim', watchItem.id, {}, randomUUID());
 // operator, the open deployment incident, then (by their own instants) the filed items, the spend
 // approval, the priority decision, the pause, the Lead's message to a builder, and a typed message
 // from the maintainer.
-const insert = async (actor: string, kind: string, payload: unknown, at: number) =>
-  store.pool.query('INSERT INTO events(work_id,actor,kind,payload,created_at) VALUES($1,$2,$3,$4,$5)', [null, actor, kind, JSON.stringify(payload), iso(at)]);
+const insert = async (actor: string, kind: string, payload: unknown, at: number, workId: string | null = null) =>
+  store.pool.query('INSERT INTO events(work_id,actor,kind,payload,created_at) VALUES($1,$2,$3,$4,$5)', [workId, actor, kind, JSON.stringify(payload), iso(at)]);
 await insert('operator', terminalInputEvent, { pane: 'w1:master', line: 'Why has nothing gone live since this afternoon?' }, start - 90_000);
-await insert('graphyard', INCIDENT_EVENT, { incident: { id: randomUUID(), workId: fixItem.id, key: fixItem.key, mergeSha: 'f'.repeat(40), status: 'missing', provider: null, deploymentId: null, serving: 'leadconversationbuild', reason: `merged 2h ago and still not served: ${fixItem.key}'s change waits at Deploy`, since: iso(start - 60_000), at: iso(start - 60_000) } }, start - 60_000);
+await insert('graphyard', INCIDENT_EVENT, { incident: { id: randomUUID(), workId: fixItem.id, key: fixItem.key, mergeSha: 'f'.repeat(40), status: 'missing', provider: null, deploymentId: null, serving: 'leadconversationbuild', reason: `merged 2h ago and still not served: ${fixItem.key}'s change waits at Deploy`, since: iso(start - 60_000), at: iso(start - 60_000) } }, start - 60_000, fixItem.id);
 await requestHumanDecision(services, worker, watchItem.id, {
   epoch: 1, kind: 'money-or-accounts',
   reason: `Two builders idle while the release fix waits: ${fixItem.key} needs a second seat to land inside the hour`,
@@ -84,5 +84,8 @@ await watch.load();
 // The dashboard is served from ./dist, as an install serves it.
 process.chdir(site);
 const http = server(engine, credentials, { production: watch });
+// Upgraded connections survive closeAllConnections; a page still open must not hold the server open.
+const sockets = new Set<import('node:stream').Duplex>();
+http.on('upgrade', (request, socket) => { if (request.url?.startsWith('/api/terminal')) { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); } });
 http.listen(0, '127.0.0.1', () => process.send!({ url: `http://127.0.0.1:${(http.address() as { port: number }).port}`, items: { watch: watchItem.id, fix: fixItem.id, fixKey: fixItem.key } }));
-process.on('message', message => { if (message !== 'stop') return; http.closeAllConnections(); http.close(() => { void store.close().finally(() => process.exit(0)); }); });
+process.on('message', message => { if (message !== 'stop') return; console.log('[lead-conversation-server] stop received'); for (const socket of sockets) socket.destroy(); http.closeAllConnections(); http.close(() => { void store.close().finally(() => process.exit(0)); }); });

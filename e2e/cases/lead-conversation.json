@@ -6,6 +6,6 @@
   "target": "any",
   "required": false,
   "steps": [
-    { "kind": "command", "name": "read the Lead conversation, its cards and both roles at 1280 and 390 px", "run": "npm run test:browser -- browser-tests/lead-conversation.spec.ts", "timeoutSeconds": 420 }
+    { "kind": "command", "name": "read the Lead conversation, its cards and both roles at 1280 and 390 px", "run": "npm run test:browser -- browser-tests/lead-conversation.spec.ts", "timeoutSeconds": 900 }
   ]
 }

@@ -94,7 +94,8 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
   }, []);
   const load = () => {
     void api('typed-input').then(body => setTyped(body.typed ?? []), () => {});
-    void api(`events?kind=${ledgerKinds.join(',')}&payload=details&order=desc&limit=60&view=rows`).then(body => setLedger(body.events ?? []), () => {});
+    // `view=rows` answers with the bare event array (src/events-history.ts), not an envelope.
+    void api(`events?kind=${ledgerKinds.join(',')}&payload=details&order=desc&limit=60&view=rows`).then(body => setLedger(Array.isArray(body) ? body : []), () => {});
     void api('agent-registry/history?limit=60').then(body => setRegistry(Array.isArray(body) ? body : []), () => setRegistry([]));
     void api('team-access').then(body => setTeam(body.teammates ?? []), () => setTeam(null));
     return api('master/messages').then(body => { setMessages(body.messages ?? []); setMessagesLoaded(true); }, () => { setMessagesLoaded(true); });
