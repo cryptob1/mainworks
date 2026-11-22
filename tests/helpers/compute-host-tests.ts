@@ -4,7 +4,7 @@ import { availableParallelism, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defaultChildRun, type ChildRun } from '../../src/child-runner.js';
-import { readShardHosts, realFreeCores, remoteShardSession, runShardsOnHosts, shardHosts, shardSshSession, splitLocalOnlyTests, underHeatLimit, type HostReading, type PlacedHost, type ShardSshSession } from '../../src/merge-writer/remote-shards.js';
+import { HostDroppedError, readShardHosts, realFreeCores, remoteShardSession, runShardsOnHosts, shardHosts, shardSshSession, splitLocalOnlyTests, underHeatLimit, type HostReading, type PlacedHost, type ShardSshSession } from '../../src/merge-writer/remote-shards.js';
 import { trialImage } from '../../src/merge-writer/trial-container.js';
 
 // GY-3610: what `npm run test:affected` runs its selected files with. Workers' own test runs were the
@@ -61,13 +61,15 @@ export async function runOnComputeHosts(input: ComputeRunOptions): Promise<numbe
       // This machine takes no remote file (room 0): a shard every host turned away runs here after.
       const here: PlacedHost<string> = { name: 'here', room: 0, reading: { name: 'here', cores: 0, busy: 0, steal: 0, celsius: null, limit: Infinity, away: false } };
       const placement = await runShardsOnHosts({ count: shards.length, hosts: [here, ...ready], breadth: remoteBreadth, run: async (host, index) => {
-        const ended = await session!.run(host.remote!, index, shards[index]!, (list, records) => [...command, '--files-from', list, '--durations', records, `--test-concurrency=${remoteBreadth}`, '--file-timeout=300000'], remoteBreadth);
+        // Anything that keeps the shard off the host (no trial image here, a host that drops it) turns it away: it runs here instead.
+        const ended = await session!.run(host.remote!, index, shards[index]!, (list, records) => [...command, '--files-from', list, '--durations', records, `--test-concurrency=${remoteBreadth}`, '--file-timeout=300000'], remoteBreadth)
+          .catch(error => { throw error instanceof HostDroppedError ? error : new HostDroppedError(host.name, String((error as Error).message ?? error).slice(-300)); });
         print(`$ [${host.name}] shard ${index + 1}\n${ended.out}`);
         if (!ended.ok) failed = true;
         done.add(index);
       } });
       const left = shards.filter((_, index) => !done.has(index)).flat();
-      if (placement.dropped.length) print(`test:affected: ${placement.dropped.join(', ')} turned its shard away${left.length ? `; ${left.length} file(s) run here` : ''}\n`);
+      if (left.length) print(`test:affected: ${left.length} file(s) could not run on ${placement.dropped.join(', ') || 'a host'}; they run here\n`);
       if (left.length && await runHere(input.root, left, command, print) !== 0) failed = true;
     } finally { await session?.close(); }
     return (await local) !== 0 || failed ? 1 : 0;
