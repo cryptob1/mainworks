@@ -23,6 +23,7 @@ import { statusRoutes } from './routes/status.js';
 import { actionRoutes } from './routes/actions.js';
 import { workRoutes } from './routes/work.js';
 import { masterMessageRoutes, reporterScope } from './routes/reporter.js';
+import { caretakerRoutes, caretakerScope } from './routes/caretaker.js';
 import { staticRoutes } from './static.js';
 import { terminalUpgrade } from './terminal.js';
 export { principalSchema, type Credential } from './principals.js';
@@ -38,7 +39,7 @@ export const publicRoutes: readonly RouteModule[] = [healthRoutes, signinRoutes]
 export const apiRoutes: readonly RouteModule[] = [
   operatorAgentRoutes, teamAccessRoutes,
   { name: 'operator-agent-scope', routes: [operatorAgentRouteGuard] },
-  loopStateRoutes, agentRegistryRoutes, delegationRoutes, validationRoutes, deliveryRoutes, emblemRoutes, usageRoutes, scenarioRoutes, actionRoutes, statusRoutes, workRoutes, productBriefRoutes, masterMessageRoutes,
+  loopStateRoutes, agentRegistryRoutes, delegationRoutes, validationRoutes, deliveryRoutes, emblemRoutes, usageRoutes, scenarioRoutes, actionRoutes, statusRoutes, workRoutes, productBriefRoutes, masterMessageRoutes, caretakerRoutes,
 ];
 
 async function body(req: IncomingMessage, limit = 1_000_000) {
@@ -86,7 +87,7 @@ export function server(engine: Engine, credentials: Credential[], options: Serve
         const login = viaTailscale.has(req) && !String(req.headers.authorization ?? '').replace(/^Bearer\s*/, '') ? req.headers['tailscale-user-login'] : undefined;
         context.actor = typeof login === 'string' && login ? await tailscaleTeammate(services, login)
           : await authenticate(services, req.headers.authorization, services.repository, req.method, url.pathname, localRead(req));
-        if (await dispatch([laneProducerScope, reporterScope, ...apiRoutes])) return;
+        if (await dispatch([laneProducerScope, reporterScope, caretakerScope, ...apiRoutes])) return;
         return send(404, { error: 'Route not found' });
       }
       await dispatch([staticRoutes]);

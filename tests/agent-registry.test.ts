@@ -210,7 +210,7 @@ test('integration:agent-registry-model — the control plane stores runtimes wit
   await ok('agent-registry/roles', operator, { role: { name: 'reviewer', accounts: ['codex-a', 'claude-a'], concurrency: 1 }, reason: 'Review on a different model than the author' });
   await registryCommand({ hostId: HOST }, ['role', 'set', 'reviewer', '--concurrency', '2', '--reason', 'One more reviewer at a time'], cli);
   assert.deepEqual((await ok('agent-registry/document', coordinator) as Registry).roles.find(role => role.name === 'reviewer'), { name: 'reviewer', accounts: ['codex-a', 'claude-a'], concurrency: 2 }, 'the CLI changed the limit and kept the order');
-  for (const name of ['producer']) await ok('agent-registry/roles', operator, { role: { name, accounts: ['claude-a'], concurrency: 1 }, reason: `Configure ${name}` });
+  for (const name of ['producer', 'caretaker']) await ok('agent-registry/roles', operator, { role: { name, accounts: ['claude-a'], concurrency: 1 }, reason: `Configure ${name}` });
   // The master role (GY-898) is a capacity role like any other, but never more than one live session:
   // whatever the mutation asks, the stored concurrency is 1 (two masters break single-coordinator).
   await ok('agent-registry/roles', operator, { role: { name: 'master', accounts: ['claude-a'], concurrency: 4 }, reason: 'Configure the loop-launched master session' });
@@ -227,7 +227,7 @@ test('integration:agent-registry-model — the control plane stores runtimes wit
   assert.deepEqual(fleetRoles.filter(name => view.roles.some(role => role.role === name)), [...fleetRoles]);
   const claude = view.accounts.find(account => account.name === 'claude-a')!;
   assert.deepEqual([claude.runtime, claude.model, claude.modelId, claude.cost, claude.capability?.tier, claude.host, claude.home, claude.maxSessions], ['claude', 'opus', 'claude-opus-5', { inputPerMTok: 15, outputPerMTok: 75 }, 'frontier', HOST, claudeHome, 2]);
-  assert.deepEqual(claude.roles.map(entry => `${entry.role}:${entry.preference}/${entry.of}`), ['worker:1/3', 'reviewer:2/2', 'producer:1/1', 'master:1/1']);
+  assert.deepEqual(claude.roles.map(entry => `${entry.role}:${entry.preference}/${entry.of}`), ['worker:1/3', 'reviewer:2/2', 'producer:1/1', 'caretaker:1/1', 'master:1/1']);
   const aider = view.accounts.find(account => account.name === 'aider-a')!;
   assert.deepEqual([aider.quota, aider.resetsAt, aider.quotaSource, aider.eligible], ['exhausted', resetsAt, 'operator', false]); assert.match(aider.ineligible!, /aider-a quota is exhausted until/);
   assert.equal(view.runtimes.find(runtime => runtime.name === 'aider')!.launch.homeVariable, 'AIDER_HOME');
@@ -450,7 +450,7 @@ test('e2e:single-account-exhaustion-keeps-pipeline-running — worker, reviewer,
     const health = (await fleetRoleHealth(config, role, spent))!;
     assert.deepEqual([health.available, health.failover], [true, 'claude-two'], `${role}: the role is launchable through the fleet`);
   }
-  for (const [role, work] of [['reviewer', 'GY-3201'], ['producer', 'GY-3202'], ['master', undefined]] as const) {
+  for (const [role, work] of [['reviewer', 'GY-3201'], ['producer', 'GY-3202'], ['master', undefined], ['caretaker', undefined]] as const) {
     const chosen = await selectAccount(config, role, { name: `${role}-a` }, { ...spent, work });
     assert.equal(chosen.account!.name, 'claude-two', `${role} fails over`);
     assert.ok(chosen.account && 'fleet' in chosen.account);

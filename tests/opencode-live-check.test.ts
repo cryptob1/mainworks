@@ -74,7 +74,8 @@ test('unit:opencode-free-tier-refusal-is-not-exhaustion — a run whose banner n
   await banner('big-pickle');
   const wrong = await check(smoke);
   assert.equal(wrong.state, 'broken');
-  assert.match(wrong.reason ?? '', /plan model zai-coding-plan\/glm-5\.3 was not used/);
+  assert.equal(wrong.resetsAt, null);
+  assert.equal(wrong.reason, `ran on big-pickle, not ${modelId}`);
   await banner('glm-5.3');
   assert.equal((await check(smoke)).state, 'available', 'the account\'s own model in the banner passes');
 });
