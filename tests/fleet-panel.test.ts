@@ -196,7 +196,7 @@ test('unit:fleet-launch-summary-compact — every role is one short row: ready o
   assert.ok(!blocked.includes('Cannot launch'));
   assert.match(blocked, /<li data-role-launch="master" data-can-launch="no" title="Master: Running since [^"]*">Master · running \(launch-a\)<\/li>/);
   assert.ok(blocked.includes('<li data-role-launch="worker" data-can-launch="yes" title="Workers: can launch now — next: launch-a now">Workers · ready (launch-a)</li>'), 'a ready role names its next account');
-  assert.equal(blocked.split('data-role-launch=').length - 1, 4, 'one row per role');
+  assert.equal(blocked.split('data-role-launch=').length - 1, 5, 'one row per role, plus the caretaker the registry does not configure yet (GY-3593)');
   const clear = render(declutterFleet(names, roles));
   assert.ok(!clear.includes('Cannot launch'), 'no Cannot launch text');
   assert.equal(clear.split('data-can-launch="no"').length - 1, 0);

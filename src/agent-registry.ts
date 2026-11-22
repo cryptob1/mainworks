@@ -25,7 +25,7 @@ import { recordSessionModel, requestLimitNoticeCheck } from './model/account-quo
  */
 export const registryEventPrefix = 'agent-registry.';
 const configurators = ['admin', 'coordinator'] as const;
-const readers = ['admin', 'coordinator', 'reader', 'slice-lead'] as const;
+const readers = ['admin', 'coordinator', 'reader', 'slice-lead', 'caretaker'] as const;
 
 /** GY-3285's command, the only writer that set the worker role's concurrency per account before this marker existed. */
 const perAccountWorkerReason = 'master workers ';
@@ -160,7 +160,8 @@ export class AgentRegistry {
 
   /** One configuration change: validated, referentially whole, idempotent, appended with its reason. */
   async mutate(actor: Principal, kind: RegistryMutation, input: unknown, key: string) {
-    demand((configurators as readonly string[]).includes(actor.role), 'The agent registry is configured by admin and coordinator identities', 403);
+    // GY-3593: the caretaker corrects an account's quota mark, and changes nothing else in the registry.
+    demand((configurators as readonly string[]).includes(actor.role) || actor.role === 'caretaker' && kind === 'account.quota', 'The agent registry is configured by admin and coordinator identities', 403);
     demand(key && key.length <= 200, 'An Idempotency-Key is required', 400);
     demand(kind in registryMutationSchemas, `Unknown registry change ${kind}`, 404);
     const receiptInput = { kind, input };
