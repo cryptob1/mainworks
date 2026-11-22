@@ -84,7 +84,7 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
   });
 }
 
-for (const [hash, name] of [['#setup', 'Set up Mainworks'], ['#master', 'Master']] as const) test(`e2e:settings-navigation — the direct link ${hash} still opens its page`, async ({ page }) => {
+for (const [hash, name] of [['#setup', 'Set up Mainworks'], ['#master', 'Lead']] as const) test(`e2e:settings-navigation — the direct link ${hash} still opens its page`, async ({ page }) => {
   await open(page, 'admin', hash);
   await heading(page, name);
 });
