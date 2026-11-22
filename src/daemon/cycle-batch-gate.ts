@@ -342,13 +342,15 @@ export async function batchGateStep(cycle: Pick<Cycle, 'state' | 'effects' | 'sn
   // place of orphaning it. The diagnostics, and a check with named environments, trial in process.
   // Like every trial it is one heavy job of the host (GY-3290); its wait for that slot is a wait, not its own time.
   let heavyWait = false;
-  // GY-3449: the gate flight's lifetime; its end — any outcome, a throw, or the loop stopping — frees the slot its checks hold.
-  const ended = new AbortController();
+  // GY-3449, GY-3606: one gate run's lifetime; its end — any outcome, a throw, or the loop stopping — frees
+  // every slot its checks, reruns and verified-commit probes hold, and starts none of their tests after.
+  let ended = new AbortController();
   const trial: MergeWriterReads['trial'] = async (sha, files, item, base, step, timing, heads, _share, signal, timeout) => {
-    const share = Math.max(1, busyTrialSlots(cycle.state)), flight = gated.inFlight, proofs = criterionProofs(item);
+    const share = Math.max(1, busyTrialSlots(cycle.state)), flight = gated.inFlight, proofs = criterionProofs(item), run = ended.signal;
     const input = createHash('sha256').update(JSON.stringify([proofs, files])).digest('hex');
-    // The diagnostics trial another commit and take an ordinary slot; the gate's own check takes the reserved one (GY-3450).
-    if (flight?.tip !== sha) return reads.trial(sha, files, item, base, step, timing, heads, share, signal, timeout);
+    // The diagnostics (no signal) trial another commit and take an ordinary slot; so do the gate's probes and bisects, which
+    // stop with its run. The gate's own check takes the reserved one (GY-3450).
+    if (flight?.tip !== sha) return reads.trial(sha, files, item, base, step, timing, heads, share, signal && AbortSignal.any([signal, run]), timeout);
     // GY-3474: what the check is doing now — its wait, then its run's own steps — rides the record for status.
     const progress = (line: string) => {
       step?.(line);
@@ -363,14 +365,16 @@ export async function batchGateStep(cycle: Pick<Cycle, 'state' | 'effects' | 'sn
       if (watch) watch.started = true;
       progress('starting its check');
       return job();
-    }, ended.signal, true).finally(() => { heavyWait = false; });
+    }, run, true).finally(() => { heavyWait = false; });
     if (!reads.launchTrialRun || !reads.adoptTrialRun || item.environments) return heavy(() => reads.trial(sha, files, item, base, progress, timing, heads, share, signal, timeout));
     const launch = reads.launchTrialRun, adopt = reads.adoptTrialRun;
-    const run = flight.run?.commit === sha && flight.run.input === input ? flight.run : null;
+    const earlier = flight.run?.commit === sha && flight.run.input === input ? flight.run : null;
     return heavy(async () => {
-      const adopted = run ? await adopt({ key: gateKey, head: sha, mergeSha: sha, directory: run.directory }) : null;
+      const adopted = earlier ? await adopt({ key: gateKey, head: sha, mergeSha: sha, directory: earlier.directory }) : null;
       if (adopted) return adopted.trial(progress, timing, signal);
       await reads.ensureTrialImage?.();
+      // A run that settled while the image built launches nothing.
+      signal?.throwIfAborted(); run.throwIfAborted();
       const launched = launch({ key: gateKey, head: sha, mergeSha: sha, baseTip: null, changedFiles: [...files], proofs, e2eProofs: e2eProofsOf(item),
         reproduce: item.type !== 'chore', cores: null, ...trialShareAllowance(share, timeout, reads.cores) });
       gated.inFlight = { ...gated.inFlight!, run: { commit: sha, input, directory: launched.directory } };
@@ -424,7 +428,6 @@ export async function batchGateStep(cycle: Pick<Cycle, 'state' | 'effects' | 'sn
   // slot, and its trial containers start before queued merge trials (trialStartOrder).
   if (!live.gate) {
     const current = record;
-    gateRuns.set(cycle.state, ended);
     gateStarts.set(cycle.state, { since: cycle.now(), started: false });
     live.gate = (async () => {
       try {
@@ -436,7 +439,9 @@ export async function batchGateStep(cycle: Pick<Cycle, 'state' | 'effects' | 'sn
           // steps — is what the next loop adopts after a restart (GY-3135).
           const before = current.verified;
           const write = () => mergeGateRecord(file, latest => ({ ...current, ...diagnosticFields(latest, current) }));
-          const outcome = await runGate({ ...ports, checkpoint: write }, current);
+          ended = new AbortController();
+          gateRuns.set(cycle.state, ended);
+          const outcome = await runGate({ ...ports, checkpoint: write }, current).finally(() => ended.abort());
           // The diagnostics' fields and filings are theirs: a gate's write keeps what they recorded meanwhile.
           await write();
           if (outcome.outcome === 'verified' && before) {
