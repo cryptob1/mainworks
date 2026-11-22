@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '../src/model/product';
 import { useEffect, useState, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { type Work } from '../src/model';
@@ -120,7 +121,7 @@ function App() {
   // stands until that identity arrives — and returns on sign-out — so a tab is never untitled,
   // undefined, or a stale other project's name.
   const project = typeof status?.repository === 'string' && status.repository ? status.repository : null;
-  useEffect(() => { document.title = project ? `gh · ${project}` : 'Graphyard'; }, [project]);
+  useEffect(() => { document.title = project ? `${PRODUCT_NAME} · ${project}` : PRODUCT_NAME; }, [project]);
   useEffect(() => { setEvents([]); setEditingRequirements(false); window.scrollTo?.(0, 0); }, [selected, token]);
   // A read answered while the same item is still open is kept even when a work poll re-ran the effect meanwhile, so a later failed read never leaves history empty.
   const selectedRef = useRef(selected); selectedRef.current = selected;

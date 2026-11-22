@@ -1,0 +1,9 @@
+{
+  "id": "verification-reuse-and-keep",
+  "title": "A passed verification is reused, and a late one is kept",
+  "description": "Runs the real CLI verify, host verification pump and complete: verify then complete on the same head runs the proof files once, a repeat verify of that head is answered from the passed record, and a result arriving after its lease lapsed is recorded for its head unless a newer request replaced it.",
+  "tags": ["workers", "verification"],
+  "target": "any",
+  "required": false,
+  "steps": [{ "kind": "command", "name": "Verify, verify again and complete one head; keep a late result", "run": "node --import tsx tests/helpers/run-tests.ts tests/verification-reuse-and-keep.test.ts", "timeoutSeconds": 300 }]
+}
