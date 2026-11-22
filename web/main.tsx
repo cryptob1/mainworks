@@ -2,11 +2,12 @@ import { PRODUCT_NAME } from '../src/model/product';
 import { useEffect, useState, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { type Work } from '../src/model';
-import { isBoard, type Board, type OpenGroup } from './groups';
+import { isBoard, type Board } from './groups';
 import './style.css';
 import type { IntegrationJob } from '../src/coordination';
 import type { Dashboard } from './pages/dashboard';
-import { allRouteIds, oldRouteRedirects, resolveViewId, viewFor } from './pages';
+import { allRouteIds, oldRouteRedirects, redirects, resolveViewId, route, viewFor } from './pages';
+import type { WorkFilter } from './pages/work';
 import TopBar, { MainTopBar } from './components/top-bar';
 import { useFeatures } from './features';
 import LoginPage, { HUMAN_SESSION_KEY, REJECTED_NOTICE, SIGN_IN_NEEDED, storedToken, wantsSignIn } from './pages/login';
@@ -21,7 +22,6 @@ import { ShippedToast, finishedGoal } from './fun';
 import { applyTheme } from './theme';
 import { boot } from './boot';
 import KeyboardNav from './keyboard';
-import type { TrustKind } from './trust';
 
 applyTheme();
 boot();
@@ -55,9 +55,14 @@ function App() {
   const [error, setError] = useState('');
   const [connected, setConnected] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const [view, setView] = useState(() => resolveViewId(initialView(allRouteIds)));
-  const [filter, setFilter] = useState<OpenGroup | null>(null);
-  const [shippedFilter, setShippedFilter] = useState<TrustKind | null>(null);
+  // GY-3600: the address names the page and the Work filter; the old Now and Shipped routes open Work filtered.
+  const [view, setView] = useState(() => resolveViewId(initialView([...allRouteIds, ...Object.keys(redirects)])));
+  const [filter, keepFilter] = useState<WorkFilter | null>(() => route(location.hash || '#work', location.search).filter);
+  const setFilter = (next: WorkFilter | null) => {
+    const search = new URLSearchParams(location.search); if (next) search.set('filter', next); else search.delete('filter');
+    history.replaceState(null, '', `${location.pathname}${search.size ? `?${search}` : ''}#work`); keepFilter(next);
+  };
+  useEffect(() => { if (/^#(now|shipped)$/.test(location.hash)) setFilter(filter); }, []);
   const [selected, setSelected] = useState<string | null>(null);
   const [events, setEvents] = useState<any[]>([]);
   const [creating, setCreating] = useState(false);
@@ -143,7 +148,7 @@ function App() {
   // and old routes like #master redirect to their new place (#lead).
   useEffect(() => {
     const follow = () => {
-      const page = requestedView(location.hash, allRouteIds).view;
+      const page = requestedView(location.hash, [...allRouteIds, ...Object.keys(redirects)]).view;
       if (page) {
         const target = resolveViewId(page);
         if (oldRouteRedirects[page] && page !== 'settings') {
@@ -151,6 +156,7 @@ function App() {
         }
         setSelected(null);
         setView(target);
+        if (target === 'work') setFilter(route(location.hash, location.search).filter ?? (redirects[page] ?? null));
       }
     };
     addEventListener('hashchange', follow); return () => removeEventListener('hashchange', follow);
@@ -162,7 +168,7 @@ function App() {
   const item = useOpenedWork(work, selected, token, api, sessionEpoch, setError);
   async function action(id: string, command: string, data: unknown = {}) { const epoch = sessionEpoch.current; setBusy(true); try { await api(`work/${id}/${command}`, data); if (epoch !== sessionEpoch.current) return; await refresh(epoch); } catch (e) { if (epoch === sessionEpoch.current) setError((e as Error).message); } finally { if (epoch === sessionEpoch.current) setBusy(false); } }
   const { features, operatorAgents, operatorAgentsError } = useFeatures(token, !!status, api, status?.actor?.role === 'admin', work.some(w => w.scenarioRequirements?.length > 0));
-  const dashboard: Dashboard = { token, work, board, status, error, connected, lastUpdated, view, setView, filter, setFilter, shippedFilter, setShippedFilter, selected, setSelected, creating, setCreating, busy, setBusy, observedAt, jobs, query, setQuery, operatorAgents, operatorAgentsError, features, events, editingRequirements, setEditingRequirements, sessionEpoch, api, refresh, action, setError, signOut };
+  const dashboard: Dashboard = { token, work, board, status, error, connected, lastUpdated, view, setView, filter, setFilter, selected, setSelected, creating, setCreating, busy, setBusy, observedAt, jobs, query, setQuery, operatorAgents, operatorAgentsError, features, events, editingRequirements, setEditingRequirements, sessionEpoch, api, refresh, action, setError, signOut };
   if (!status) return <LoginPage signingIn={signingIn} setSigningIn={setSigningIn} token={token} error={error} signOut={signOut} setError={setError} sessionEpoch={sessionEpoch} setToken={setToken} draftToken={draftToken} setDraftToken={setDraftToken} host={location.host} onVerified={firstLoad}/>;
   // One page at a time: one Mainworks top bar across every page; an open item replaces the page it was opened from, and "← Back" returns to it.
   return <div className="shell"><MainTopBar {...dashboard}/>

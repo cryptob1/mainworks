@@ -59,6 +59,8 @@ async function openWork(page: Page, url: string) {
   await page.goto(`/#sign-in=${code}`);
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
 }
+/** GY-3600: the Where it runs card sits under Settings → Delivery, beside the declared applications. */
+const openDelivery = (page: Page) => page.evaluate(() => { location.hash = 'delivery'; });
 
 test('e2e:where-it-runs — Open app and the Where it runs card link to main\'s app.url with machine, serving commit, deploy time and the dashboard link', async ({ page, context }) => {
   test.setTimeout(90_000);
@@ -69,8 +71,9 @@ test('e2e:where-it-runs — Open app and the Where it runs card link to main\'s 
     await openWork(page, url);
     await expect(page.locator('.top-bar [data-open-app]')).toHaveAttribute('href', app, { timeout: 15_000 });
     await expect(page.locator('.top-bar [data-open-app]')).toHaveText(/Open app/);
+    await openDelivery(page);
     const card = page.getByRole('region', { name: 'Where it runs' });
-    await expect(card).toHaveAttribute('data-where-it-runs', 'declared');
+    await expect(card).toHaveAttribute('data-where-it-runs', 'declared', { timeout: 15_000 });
     await expect(card.locator('[data-app-link]')).toHaveAttribute('href', app);
     await expect(card.locator('[data-machine]')).toHaveText(hostname());
     await expect(card.locator('[data-commit]')).toHaveText(commit.slice(0, 8));
@@ -87,6 +90,7 @@ test('e2e:where-it-runs — with no app.url declared the card names the one sett
   const { url, close } = await plane(context, root);
   try {
     await openWork(page, url);
+    await openDelivery(page);
     const card = page.getByRole('region', { name: 'Where it runs' });
     await expect(card).toHaveAttribute('data-where-it-runs', 'missing', { timeout: 15_000 });
     await expect(card.locator('[data-app-missing]')).toContainText('"app": { "url"');
