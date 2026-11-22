@@ -371,12 +371,19 @@ tr.spent-summary td{padding:6px var(--space-4)}tr.spent-summary button{all:unset
 @media(max-width:650px){.plan-header-content{flex-direction:column;align-items:flex-start;gap:6px}}
 .project-memory{margin-top:var(--space-4)}.project-memory .memory-content{display:grid;gap:var(--space-3);margin-top:var(--space-2)}.project-memory .memory-block h3{font-size:var(--type-small);color:var(--text-2);margin:0 0 var(--space-1)}.project-memory .memory-list{list-style:none;padding:0;margin:0;display:grid;gap:4px;font-size:var(--type-small)}
 
-/* The Master terminal uses the rest of the viewport, including on a phone. */
-.main:has(>.live-terminal){gap:var(--space-4)}
-/* GY-3345: threads with other installs' Masters, above the terminal; long words wrap, never widen the page. */
+/* GY-3587: the Master page is one viewport tall with overflow hidden; only the active tab's panel scrolls. */
+.shell:has(.master-tabs){height:100dvh;min-height:0;overflow:hidden}
+.main:has(.master-tabs){height:100%;min-height:0;overflow:hidden;gap:var(--space-2);padding:var(--space-3) 40px 24px}
+.main:has(.master-tabs)>:not(.master-tabpanel){flex-shrink:0}
+.master-tabs{flex-shrink:0}
+.master-tabpanel{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+.master-tabpanel>.live-terminal{flex:1;min-height:0;height:auto}
+.master-tabpanel>.typed-input,.master-tabpanel>.master-messages{flex:1;min-height:0;margin-top:0;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
+@media(max-width:1000px){.main:has(.master-tabs){padding:var(--space-3) var(--space-5) 24px}}
+@media(max-width:650px){.shell:has(.master-tabs){display:flex;flex-direction:column;height:100dvh;overflow:hidden}.shell:has(.master-tabs)>.sidebar{flex-shrink:0}.main:has(.master-tabs){flex:1;height:auto;min-height:0;padding:12px var(--space-4) 24px;gap:var(--space-2)}}
+/* GY-3345: threads with other installs' Masters, in the Messages tab; long words wrap, never widen the page. */
 .stall-alarm{margin:0 0 var(--space-2);padding:var(--space-2) var(--space-3);border-left:3px solid var(--blocked);border-radius:var(--radius);background:var(--raised);color:var(--text);overflow-wrap:anywhere}
-/* GY-3481: messages with other installs, one closed fold below the terminal. */
-.master-messages{min-width:0;margin-top:8px}.master-messages summary{cursor:pointer;font-size:var(--type-small);color:var(--text-2)}.master-messages .master-thread{margin-top:8px}
+.master-messages{min-width:0;margin-top:8px}
 /* GY-3394: the blockers the Master owes — one row each, the item, its wait and the recorded blocker. */
 .master-owes{list-style:none;margin:0;padding:0}
 .master-owes li{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px}

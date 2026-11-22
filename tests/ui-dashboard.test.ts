@@ -168,7 +168,7 @@ test('unit:ui-needs-you-and-timers — a human-only decision is listed once, und
 });
 
 test('unit:ui-item-first-screen — an item page says on its first screen what state it is in, why, which named role acts next, in plain words with no internal jargon and no pull request wording; the guide is under 300 words', () => {
-  const roles = ['You', 'Builder agent', 'Reviewer agent', 'Prover agent', 'Automated checks', 'Graphyard (automatic)', 'Graphyard (assigns a builder)', 'Master agent', 'Nobody yet', 'Nobody — it is live', 'Nobody — it has merged'];
+  const roles = ['You', 'Builder agent', 'Reviewer agent', 'Prover agent', 'Automated checks', 'Mainworks (automatic)', 'Mainworks (assigns a builder)', 'Master agent', 'Nobody yet', 'Nobody — it is live', 'Nobody — it has merged'];
   const banned = [...jargon, 'session kind', 'epoch', 'lease', 'candidate', 'pull request'];
   for (const item of board()) {
     const screen = firstScreen(itemPage(item.key));
@@ -240,13 +240,13 @@ test('unit:ui-pr-steps — every moving item shows the four states from its gate
     // An obligation inherited from another change's deferred proof counts in the total and stays open until proven.
     ['proofs pending on an inherited obligation', withReasons(find('GY-16', work), { acceptance: ['Bootstrap obligation inherited from GY-9 AC-2: integration:contract needs trusted passing evidence, with executed > 0 and skipped = 0, for this candidate and policy'] }), 'checking', 'Testing · 3 of 4 proofs passed', 'Prover agent'],
     ['proofs no longer independent', withReasons(find('GY-16', work), { acceptance: [`Trusted ${find('GY-16', work).criteria[0].proofs[0]} evidence from producer-1 is no longer independent: producer-1 has since held an assignment on GY-16`] }), 'checking', 'Testing · 2 of 3 proofs passed', 'Prover agent'],
-    ['merging', find('GY-21', work), 'checking', 'Merging · Graphyard is merging it', 'Graphyard (automatic)'],
+    ['merging', find('GY-21', work), 'checking', 'Merging · Mainworks is merging it', 'Mainworks (automatic)'],
     // There is no Deploy state (GY-1979): a merge the release does not serve yet is Done, and the
     // top bar's release line carries the deployment.
     ['merged, not yet deployed', { ...find('GY-18', work), policy: { ...find('GY-18', work).policy, deploySmoke: true }, delivery: { ...find('GY-18', work).delivery!, deployment: undefined } } as Work, 'done', 'Done', 'Nobody — it has merged'],
     ['merged, deployment observed, smoke policy', { ...find('GY-18', work), policy: { ...find('GY-18', work).policy, deploySmoke: true } } as Work, 'done', 'Live', 'Nobody — it is live'],
     // A change request says so in the Checking label; the hand-in stands until the merge.
-    ['changes requested', withReasons(find('GY-15', work), { review: ['Outstanding change requests must be resolved through a new review'] }), 'checking', 'In review · sent back for changes, waiting for a builder', 'Graphyard (assigns a builder)'],
+    ['changes requested', withReasons(find('GY-15', work), { review: ['Outstanding change requests must be resolved through a new review'] }), 'checking', 'In review · sent back for changes, waiting for a builder', 'Mainworks (assigns a builder)'],
   ];
   // The CI Apps the test gate trusts, as status carries them.
   const trusted = noRelease;

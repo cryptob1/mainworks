@@ -63,7 +63,7 @@ function harness(work: Work[], hang: string) {
       return {};
     },
   };
-  const reads: MergeWriterReads = { ...ports, parallel: 3 };
+  const reads: MergeWriterReads = { ...ports, parallel: 3, cores: 8 };
   const state = emptyDaemonState(config);
   const effects = { mergeWriter: reads, persist: async () => {}, rework: async () => {} };
   let clock = start;

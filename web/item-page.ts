@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '../src/model/product';
 import { isClosed, type Gate, type Work } from '../src/model';
 import { humanRequestBlocker, parkedOnHuman } from '../src/model/human-request';
 import { fileConflicts } from '../src/coordination';
@@ -101,8 +102,8 @@ export function activityLabel(kind: string): string {
     rework: 'Sent back for changes', resolve: 'A decision was recorded', recover: 'Recovered after a builder stopped', claim: 'Picked up by a builder',
     rereview: 'Asked for a fresh review', mechanicalplan: 'A planned fix round was recorded for the review', heartbeat: 'The builder is still working', quarantine: 'A stopped builder was fenced off', launch: 'A session was started',
     settle: 'A builder’s attempt ended', autosettle: 'A builder’s attempt ended', release: 'A builder stopped working on it', workspace: 'The builder said where the code lives',
-    submit: 'Handed in', blocked: 'The builder reported it blocked', defer: 'The builder found its reading cannot exist yet and set it to wait', window: 'Set to wait until its reading can exist', dispatchblock: 'Graphyard stopped starting it after the same launch failure repeated',
-    resubmit: 'Graphyard handed in the finished head', queue: 'Finished; waiting for a verification slot',
+    submit: 'Handed in', blocked: 'The builder reported it blocked', defer: 'The builder found its reading cannot exist yet and set it to wait', window: 'Set to wait until its reading can exist', dispatchblock: `${PRODUCT_NAME} stopped starting it after the same launch failure repeated`,
+    resubmit: `${PRODUCT_NAME} handed in the finished head`, queue: 'Finished; waiting for a verification slot',
     taste: 'Tasted from the Work page',
     evidence: 'Proof recorded', deployment: 'Deployment recorded', reading: 'The loop recorded its reading', revoke: 'A proof was withdrawn', session: 'A session was recorded', request: 'An agent asked for a decision',
     repair: 'Asked to repair the branch', mergerefused: 'The merge kept being refused, so a fresh review or rework was asked for',
@@ -117,10 +118,10 @@ export function activityLabel(kind: string): string {
   };
   if (exact[kind]) return exact[kind];
   const prefix: [RegExp, string][] = [
-    [/^lease\./, 'A builder stopped working on it'], [/^github\./, 'Graphyard checked GitHub'], [/^review\./, 'Review updated'],
+    [/^lease\./, 'A builder stopped working on it'], [/^github\./, `${PRODUCT_NAME} checked GitHub`], [/^review\./, 'Review updated'],
     [/^evidence\./, 'Proof recorded'], [/^queue\./, 'Line to merge updated'], [/^merge\./, 'Merge step recorded'], [/^(branch|base)\./, 'Branch updated'],
     [/^(decision|escalation|closed-question|judgement|lead)\./, 'A decision was recorded'], [/^(requirements|policy)\./, 'Requirements changed'],
-    [/^(action|validation)\./, 'Graphyard ran a step'], [/^capacity\./, 'Agent capacity changed'],
+    [/^(action|validation)\./, `${PRODUCT_NAME} ran a step`], [/^capacity\./, 'Agent capacity changed'],
   ];
   return prefix.find(([pattern]) => pattern.test(kind))?.[1] ?? 'Updated';
 }

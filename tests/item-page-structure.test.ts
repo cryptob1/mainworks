@@ -102,7 +102,7 @@ test('unit:item-page-sections — the plate leads with the why sentence, the evi
     const gate = item.gates.find(entry => entry.name === name)!;
     for (const line of plainLines(gate, item, NOW)) assert.ok(groups[0].lines.includes(line), `${name}: ${line}`);
   }
-  assert.deepEqual(groups.flatMap(group => group.lines), ['Waiting for someone else to approve the latest code', 'The proof unit:item-page-sections has not passed yet', 'The proof unit:item-page-technical-collapsed has not passed yet', 'Graphyard is re-reading the latest code', 'The pull request conflicts with the main branch']);
+  assert.deepEqual(groups.flatMap(group => group.lines), ['Waiting for someone else to approve the latest code', 'The proof unit:item-page-sections has not passed yet', 'The proof unit:item-page-technical-collapsed has not passed yet', 'Mainworks is re-reading the latest code', 'The pull request conflicts with the main branch']);
   const left = html.slice(html.indexOf('aria-label="What is left"'), html.indexOf('aria-label="Change"'));
   assert.ok(html.indexOf('aria-label="What is left"') > technical, 'what is left is gate detail, inside Technical details');
   assert.match(left, /<section class="left-step" aria-label="Testing, review, merge state"><h3>Testing, review, merge <small>\u00b7 cleared by Reviewer agent<\/small><\/h3>/);
@@ -140,7 +140,7 @@ test('unit:item-page-sections — the plate leads with the why sentence, the evi
   assert.deepEqual([...activity.matchAll(/<li>([^<]+) <small>/g)].map(match => match[1]), ['Picked up by a builder', 'Released for work', 'Created']);
   assert.match(activity, /<details class="full-history"><summary>History \(3 events; routine GitHub checks and heartbeats left out\)<\/summary><section aria-label="Work history">/);
   const many = Array.from({ length: 9 }, (_, i) => ({ seq: 9 - i, kind: 'github.observed', actor: 'github', created_at: at(-i * minute) }));
-  assert.equal(page(item, work, { events: many }).match(/<li>Graphyard checked GitHub <small>/g)?.length, 3, 'only the latest few above the fold');
+  assert.equal(page(item, work, { events: many }).match(/<li>Mainworks checked GitHub <small>/g)?.length, 3, 'only the latest few above the fold');
 
   // No raw gate reason appears outside the collapsed technical section; inside it every one is kept.
   for (const gate of item.gates) for (const reason of gate.reasons) {
@@ -200,7 +200,7 @@ test('the Activity section reads the kinds the ledger records — command names 
     reading: true, revoke: true, session: true, request: true, hold: true, message: true, resubmit: true, taste: true };
   for (const command of Object.keys(commands)) assert.notEqual(activityLabel(command), 'Updated', `command ${command} has a plain label`);
   assert.deepEqual(['create', 'ready', 'claim', 'submit', 'rework', 'review.requested', 'merge.execution.committed', 'delivery.verified', 'human.requested', 'github.observed'].map(activityLabel),
-    ['Created', 'Released for work', 'Picked up by a builder', 'Handed in', 'Sent back for changes', 'Review requested', 'Merged', 'Live in production', 'Asked you for a decision', 'Graphyard checked GitHub']);
+    ['Created', 'Released for work', 'Picked up by a builder', 'Handed in', 'Sent back for changes', 'Review requested', 'Merged', 'Live in production', 'Asked you for a decision', 'Mainworks checked GitHub']);
   // The merge and the release serving it are two facts: the feed never shows two merges.
   assert.notEqual(activityLabel('delivery.verified'), activityLabel('merge.execution.committed'));
   assert.equal(activityLabel('something.unheard.of'), 'Updated');
@@ -243,7 +243,7 @@ test('What is left names who clears each state from the refusal itself: exhauste
   // plane computed from it names who moves the item — proofs first, a fresh reading, or an escalation — never the reviewer.
   const standstill = (kind: string) => ({ ...protection, gates: [...protection.gates.filter(entry => entry.name !== 'merge'), gate('merge', [])],
     nextAction: { kind, gate: 'review', refusal: 'Independent approval of the current commit is required', reason: 'standstill', llmRole: null } }) as unknown as Work;
-  assert.deepEqual(['dispatch', 'resync', 'attention', 'request-review'].map(kind => prSteps(standstill(kind), NOW).who), ['Prover agent', 'Graphyard (automatic)', 'Master agent', 'Reviewer agent']);
+  assert.deepEqual(['dispatch', 'resync', 'attention', 'request-review'].map(kind => prSteps(standstill(kind), NOW).who), ['Prover agent', 'Mainworks (automatic)', 'Master agent', 'Reviewer agent']);
   assert.deepEqual(whatIsLeft(standstill('dispatch'), NOW).map(group => [group.label, group.who]), [['Testing, review, merge', 'Prover agent']]);
   // A blocker recorded before the hand-in fails the ready gate: the item is Blocked, and only the
   // master agent clears it — the What is left group and Who acts next both say so.

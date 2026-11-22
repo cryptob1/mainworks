@@ -47,6 +47,8 @@ export async function cpuCelsius(hwmon = '/sys/class/hwmon'): Promise<number | n
   return chosen.length ? Math.max(...chosen.map(reading => reading.celsius)) : null;
 }
 
+/** The merge trial's per-file bound (`--file-timeout`): a test file still running after it fails. */
+export const trialFileTimeoutMs = 300_000;
 /** The batch gate's key in the trial, a proofless pseudo-item. */
 export const gateTrialKey = 'batch-gate';
 /** GY-3474: the owner a trial's container starts carry in their wait markers: the install and the commit it trials. */

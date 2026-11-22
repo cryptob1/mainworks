@@ -50,7 +50,7 @@ test('unit:ui-four-states — prSteps returns exactly the four states Todo, Doin
   assert.equal(todo.current, 'todo');
   assert.deepEqual(segments(todo), 'current,pending,pending,pending');
   assert.equal(todo.label, 'Not started · waiting for a builder');
-  assert.equal(todo.who, 'Graphyard (assigns a builder)');
+  assert.equal(todo.who, 'Mainworks (assigns a builder)');
   // A recorded blocker holds an unstarted item off the workers: the row's why names the fault and
   // the master agent clears it (the blocked row reads that, not the state label).
   const blocked = prSteps(find('GY-17', work), NOW);
@@ -72,8 +72,8 @@ test('unit:ui-four-states — prSteps returns exactly the four states Todo, Doin
   assert.equal(checking.who, 'Automated checks');
   // Waiting for review, and already merging, are Checking too — one state, what it waits on differs.
   assert.equal(prSteps(find('GY-15', work), NOW).label, 'In review · waiting for the reviewer');
-  assert.equal(prSteps(find('GY-21', work), NOW).label, 'Merging · Graphyard is merging it');
-  assert.equal(prSteps(find('GY-21', work), NOW).who, 'Graphyard (automatic)');
+  assert.equal(prSteps(find('GY-21', work), NOW).label, 'Merging · Mainworks is merging it');
+  assert.equal(prSteps(find('GY-21', work), NOW).who, 'Mainworks (automatic)');
   // A requested rework says so in the Checking label; the hand-in stands until the merge.
   const changes = { ...find('GY-15', work), gates: find('GY-15', work).gates.map(gate => gate.name === 'review' ? { ...gate, passed: false, reasons: ['Outstanding change requests must be resolved through a new review'] } : gate) } as Work;
   assert.equal(prSteps(changes, NOW).current, 'checking');
