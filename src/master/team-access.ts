@@ -7,14 +7,14 @@ import { applyTeamChange, machineDirectory, readMachine, readTailnet, servedUrl,
 import type { MasterConfig } from './profiles.js';
 
 interface HostWork { repository?: string; team?: TeamChange[]; applied: { team?: string | null } }
-export interface TeamAccessOptions { machineDir?: string; fetch?: typeof fetch }
+export interface TeamAccessOptions { machineDir?: string; fetch?: typeof fetch; now?: number }
 
 export async function syncTeamAccess(config: Pick<MasterConfig, 'url' | 'credentialFile'>, options: TeamAccessOptions = {}) {
   if (!config.url) return;
   const dir = options.machineDir ?? machineDirectory(), fetcher = options.fetch ?? fetch, request = { url: config.url, credentialFile: config.credentialFile };
   const work = await fleetRequest(request, 'team-access/host', { fetch: fetcher }) as HostWork;
   // GY-3480: the node and the address serving this install come from the tailscale CLI on every pass, not from what up once recorded.
-  const served = await servedUrl(new URL(config.url).port || '80'), url = served.url;
+  const served = await servedUrl(new URL(config.url).port || '80', options.now), url = served.url;
   // GY-3486: the owner's teammate changes go into the machine's roster, and this install is listed on it by its address.
   const saved = await readMachine(dir), before: MachineTeam = saved.team ?? { installs: {}, members: {} };
   let team = (work.team ?? []).reduce(applyTeamChange, before);
@@ -22,7 +22,7 @@ export async function syncTeamAccess(config: Pick<MasterConfig, 'url' | 'credent
   if (team !== before) await writeMachine(dir, { ...saved, team });
   const machine = { ...await readMachine(dir), ...await readTailnet() };
   await fleetRequest(request, 'team-access/host', { fetch: fetcher, body: {
-    dnsName: machine.dnsName ?? null, ip: machine.ip ?? null, url, public: served.public, team: machine.team ?? null,
+    dnsName: machine.dnsName ?? null, ip: machine.ip ?? null, url, public: served.public, doing: served.doing, team: machine.team ?? null,
     applied: { team: work.team?.at(-1)?.op ?? work.applied.team ?? null },
   } });
 }

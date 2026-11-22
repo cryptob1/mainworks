@@ -18,7 +18,7 @@ import { unownedFamilySql } from '../../store/tables/work.js';
  */
 const prefix = 'team-access.';
 type Row = { kind: string; payload: any };
-interface HostReport { dnsName: string | null; ip: string | null; url?: string | null; public?: boolean; team?: MachineTeam | null; applied: { team?: string | null } }
+interface HostReport { dnsName: string | null; ip: string | null; url?: string | null; public?: boolean; doing?: string | null; team?: MachineTeam | null; applied: { team?: string | null } }
 
 const configuredIds = (context: RouteContext) => context.services.principals.map(entry => entry.actor.id);
 const port = (context: RouteContext) => context.services.teamAccess?.port ?? String(context.req.socket.localPort ?? '');
@@ -37,6 +37,17 @@ async function fold(context: RouteContext) {
   return { report, pendingTeam, team: pendingTeam.reduce(applyTeamChange, report?.team ?? { installs: {}, members: {} }) };
 }
 
+/**
+ * GY-3690: while someone is invited (an unexpired invite or a teammate) and the host reports this
+ * install's link is not public, what the loop is doing about it; null otherwise. Home shows it as an
+ * incident and `master status` as one attention line.
+ */
+export async function publicLinkOff(pool: RouteContext['services']['engine']['store']['pool'], now: Date): Promise<{ doing: string } | null> {
+  const report = (await pool.query(`SELECT payload FROM events WHERE ${unownedFamilySql(prefix)} AND kind = $1 ORDER BY seq DESC LIMIT 1`, [`${prefix}host`])).rows[0]?.payload as HostReport | undefined;
+  if (!report || report.public) return null;
+  const invited = (await pool.query('SELECT EXISTS (SELECT 1 FROM team_members) OR EXISTS (SELECT 1 FROM team_invites WHERE expires_at > $1) AS invited', [now])).rows[0]?.invited;
+  return invited ? { doing: report.doing ?? 'The loop turns Funnel on every 10 minutes.' } : null;
+}
 /** GY-3514: the one line Invite shows when its link opens only on the tailnet. */
 export const funnelOffGuidance = 'This link opens only on your tailnet: turn on Funnel for this machine in the Tailscale admin console.';
 async function view(context: RouteContext) {
@@ -59,7 +70,7 @@ async function teammates(context: RouteContext, team: MachineTeam, url: string |
 const members = (report: HostReport | undefined) => new Map(report?.url ? Object.entries(report.team?.members ?? {}).filter(([, member]) => member.installs.includes(report.url!)).map(([login, member]) => [login, member.role]) : []);
 
 const hostReportSchema = z.object({
-  dnsName: z.string().max(300).nullable(), ip: z.string().max(100).nullable(), url: z.string().url().max(400).nullable().optional(), public: z.boolean().optional(),
+  dnsName: z.string().max(300).nullable(), ip: z.string().max(100).nullable(), url: z.string().url().max(400).nullable().optional(), public: z.boolean().optional(), doing: z.string().max(400).nullable().optional(),
   team: z.object({
     installs: z.record(z.string().max(400), z.object({ name: z.string().max(300) }).strict()),
     members: z.record(z.string().max(100), z.object({ role: z.enum(teamRoles), installs: z.array(z.string().max(400)).max(50) }).strict()),
@@ -76,7 +87,9 @@ export const teamAccessRoutes = defineRoutes('team-access', [
   { method: 'GET', path: '/api/team-access/host', handle: async context => {
     host(context);
     const state = await fold(context);
-    return { repository: context.services.repository, team: state.pendingTeam, applied: state.report?.applied ?? { team: null } };
+    return { repository: context.services.repository, team: state.pendingTeam, applied: state.report?.applied ?? { team: null },
+      // GY-3690: for master status's attention line.
+      publicLinkOff: await publicLinkOff(context.services.engine.store.pool, new Date()) };
   } },
   { method: 'POST', path: '/api/team-access/host', handle: async context => {
     host(context);

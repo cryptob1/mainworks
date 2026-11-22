@@ -1,7 +1,7 @@
 import type { Work } from './work.js';
 
 /**
- * GY-3601: Home's incidents, from five timers over the status snapshot `/api/status` already
+ * GY-3601: Home's incidents, from five timers (and the public link, GY-3690) over the status snapshot `/api/status` already
  * serves and the work snapshot beside it. None of them waits on an agent to report: each reads a
  * clock against a fact the control plane observes itself.
  */
@@ -29,9 +29,13 @@ export interface StatusSnapshot {
   hosts?: { host: string; away: boolean; at?: string; since?: string }[];
   /** When the live commit was deployed. */
   app?: { deployedAt?: string | null } | null;
+  /** GY-3690: what the loop does while someone is invited and the install's public link is off; null while it is on. */
+  publicLink?: { doing: string } | null;
 }
 
-export type IncidentKind = 'release-check' | 'not-pushed' | 'accounts' | 'machine-away' | 'no-merge';
+export type IncidentKind = 'release-check' | 'not-pushed' | 'accounts' | 'machine-away' | 'no-merge' | 'public-link';
+/** GY-3690: the incident's and `master status`'s attention line's words. */
+export const publicLinkOffLine = 'Invited people cannot open the dashboard: the public link is off';
 /** One card: what broke, the impact, what the team is doing, and the one action — none when it heals itself. */
 export interface Incident {
   kind: IncidentKind;
@@ -123,6 +127,8 @@ export function incidentsFromStatus(status: StatusSnapshot, work: Work[], now: n
     if (Number.isFinite(since) && now - since >= 2 * hour) incidents.push({ kind: 'no-merge', broke: `Nothing has merged for ${span(now - since)}.`,
       impact: `${plural(flying.length, 'task')} in flight ${flying.length === 1 ? 'is' : 'are'} stuck.`, doing: 'Builders keep working.', action: { label: 'Ask the Lead', open: 'lead' } });
   }
+  // 6. GY-3690: someone is invited but the install's public link is off.
+  if (status.publicLink) incidents.push({ kind: 'public-link', broke: `${publicLinkOffLine}.`, impact: 'People you invited see an error instead of the dashboard.', doing: status.publicLink.doing, action: null });
   return incidents;
 }
 

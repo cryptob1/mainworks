@@ -57,12 +57,21 @@ export async function readTailnet(): Promise<{ dnsName: string | null; ip: strin
 type ServeStatus = { TCP?: Record<string, { HTTPS?: boolean }>; Web?: Record<string, { Handlers?: Record<string, { Proxy?: string }> }>; AllowFunnel?: Record<string, boolean> };
 /** The public ports Tailscale Funnel accepts. */
 export const funnelPorts = ['443', '8443', '10000'];
+/** Whether a handler at ADDRESS proxies to this install's loopback PORT, or its serve socket on that port (GY-3486). */
+const servesInstall = (address: string, proxy: string | undefined, port: string) => {
+  try { if (new URL(proxy!).port === port) return true; } catch { /* not a URL */ }
+  return !!proxy?.startsWith('unix:') && address.slice(address.lastIndexOf(':') + 1) === port;
+};
 /**
- * GY-3514: the one command that puts this install on the public internet: Funnel on the first public
- * port nothing on this machine serves yet, proxying to this install's own loopback PORT and nothing else.
+ * GY-3514: the one command that puts this install on the public internet, proxying to this install's own
+ * loopback PORT and nothing else. GY-3690: a public port that already serves this install (tailnet-only) is
+ * reused, else the first one nothing on this machine serves; a port serving anything else is never touched.
  */
 export function funnelCommand(port: string, status: ServeStatus): string[] | null {
-  const free = funnelPorts.find(candidate => !status.TCP?.[candidate]);
+  const handlers = (candidate: string) => Object.entries(status.Web ?? {}).filter(([address]) => address.slice(address.lastIndexOf(':') + 1) === candidate)
+    .flatMap(([address, web]) => Object.values(web?.Handlers ?? {}).map(handler => servesInstall(address, handler?.Proxy, port)));
+  const ours = funnelPorts.find(candidate => status.TCP?.[candidate] && handlers(candidate).length > 0 && handlers(candidate).every(Boolean));
+  const free = ours ?? funnelPorts.find(candidate => !status.TCP?.[candidate]);
   return free ? ['tailscale', 'funnel', '--bg', `--https=${free}`, `http://127.0.0.1:${port}`] : null;
 }
 /**
@@ -71,26 +80,36 @@ export function funnelCommand(port: string, status: ServeStatus): string[] | nul
  * instead), from `tailscale serve status --json`. A Funnel address wins (`public`), then HTTPS; null when nothing serves it.
  */
 function mapped(status: ServeStatus, port: string): { url: string | null; public: boolean } {
-  const targets = (proxy?: string) => { try { return new URL(proxy!).port === port; } catch { return false; } };
-  // GY-3486: up serves the install's serve socket on its own port number once the server opened one.
-  const socketOnPort = (address: string, proxy?: string) => !!proxy?.startsWith('unix:') && address.slice(address.lastIndexOf(':') + 1) === port;
-  const urls = Object.entries(status.Web ?? {}).filter(([address, web]) => Object.values(web?.Handlers ?? {}).some(handler => targets(handler?.Proxy) || socketOnPort(address, handler?.Proxy))).map(([address]) => {
+  const urls = Object.entries(status.Web ?? {}).filter(([address, web]) => Object.values(web?.Handlers ?? {}).some(handler => servesInstall(address, handler?.Proxy, port))).map(([address]) => {
     const https = !!status.TCP?.[address.slice(address.lastIndexOf(':') + 1)]?.HTTPS;
     return { url: https ? `https://${address.replace(/:443$/, '')}` : `http://${address.replace(/:80$/, '')}`, public: https && !!status.AllowFunnel?.[address] };
   });
   return urls.find(entry => entry.public) ?? urls.find(entry => entry.url.startsWith('https:')) ?? urls[0] ?? { url: null, public: false };
 }
-const funnelTried = new Set<string>();
-/** The address that opens this install; the first time Funnel does not serve it, the loop turns Funnel on for it (`funnelCommand`). */
-export async function servedUrl(port: string): Promise<{ url: string | null; public: boolean }> {
+/** GY-3690: how often the loop runs the Funnel command while the link is not public. */
+export const funnelRetryMs = 10 * 60_000;
+const funnelTried = new Map<string, { at: number; error: string | null }>();
+/**
+ * The address that opens this install, checked every pass. GY-3690: while Funnel does not serve it, the
+ * loop turns Funnel on for it (`funnelCommand`) at most once per `funnelRetryMs`, and `doing` says what it does.
+ */
+export async function servedUrl(port: string, now = Date.now()): Promise<{ url: string | null; public: boolean; doing: string | null }> {
   const read = () => tailscaleJson(['serve', 'status', '--json']).then((status: ServeStatus | null) => status ?? {}, () => null);
   const status = await read();
-  if (!status) return { url: null, public: false };
+  if (!status) return { url: null, public: false, doing: null };
   const found = mapped(status, port), command = funnelCommand(port, status);
-  if (found.public || funnelTried.has(port) || !command) return found;
-  funnelTried.add(port);
-  await promisify(execFile)(command[0], command.slice(1), { timeout: 10_000 }).catch(() => null);
-  return mapped(await read() ?? status, port);
+  if (found.public) { funnelTried.delete(port); return { ...found, doing: null }; }
+  if (!command) return { ...found, doing: `Every public port (${funnelPorts.join(', ')}) serves something else, so the loop cannot turn Funnel on. Free one with tailscale funnel.` };
+  const last = funnelTried.get(port);
+  let result = found;
+  if (!last || now - last.at >= funnelRetryMs) {
+    const error = await promisify(execFile)(command[0], command.slice(1), { timeout: 10_000 }).then(() => null, (failure: any) => String(failure?.stderr || failure?.message || failure).trim().split('\n')[0]!.slice(0, 200));
+    funnelTried.set(port, { at: now, error });
+    result = mapped(await read() ?? status, port);
+    if (result.public) { funnelTried.delete(port); return { ...result, doing: null }; }
+  }
+  const at = command[3]!.slice('--https='.length), error = funnelTried.get(port)?.error;
+  return { ...result, doing: error ? `Turning Funnel on for port ${at} failed: ${error}. The loop retries every 10 minutes.` : `The loop turns Funnel on for port ${at} every 10 minutes.` };
 }
 
 export const missingTailnetGuidance = (port: string) => `Tailscale is not serving this machine's port ${port}, where this install runs, so nobody else can open it. Install Tailscale (https://tailscale.com/download), sign in, and rerun graphyard up.`;
