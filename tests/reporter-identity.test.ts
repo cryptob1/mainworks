@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { hostGitTrust } from './helpers/git-trust.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
@@ -58,7 +59,9 @@ test('e2e:reporter-identity — a reporter files an item and messages the Master
   const tokenFile = join(home, 'reporter.token');
   await writeFile(tokenFile, token(reporter), { mode: 0o600 });
   assert.throws(() => execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: home, stdio: 'ignore', env: { PATH: process.env.PATH, GIT_CEILING_DIRECTORIES: dirname(home) } }), 'the reporter directory is not a checkout');
-  const env = { PATH: process.env.PATH, HOME: home, TMPDIR: process.env.TMPDIR ?? '/tmp', GIT_CEILING_DIRECTORIES: dirname(home), GRAPHYARD_URL: url, GRAPHYARD_TOKEN_FILE: tokenFile };
+  // GY-3649: the host's git trust (GIT_CONFIG_* on a shard) rides along; it is the host's own
+  // configuration, not anything of this install, and without it the CLI cannot read its release.
+  const env = { PATH: process.env.PATH, HOME: home, TMPDIR: process.env.TMPDIR ?? '/tmp', GIT_CEILING_DIRECTORIES: dirname(home), GRAPHYARD_URL: url, GRAPHYARD_TOKEN_FILE: tokenFile, ...hostGitTrust() };
   const graphyard = async (...args: string[]) => JSON.parse((await exec(process.execPath, [cli, ...args], { cwd: home, env })).stdout);
   const refused = async (...args: string[]) => {
     const failure: any = await exec(process.execPath, [cli, ...args], { cwd: home, env }).then(() => null, error => error);
