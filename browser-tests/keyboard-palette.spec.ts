@@ -33,7 +33,7 @@ async function serve(page: Page) {
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible();
   // The keys walk rows, so the test waits for the board the way its reader does.
-  await expect(page.locator('.work-row').first()).toBeVisible();
+  await expect(page.locator('[data-row]').first()).toBeVisible();
   return state;
 }
 
@@ -81,13 +81,15 @@ test('e2e:keyboard-palette — Cmd/Ctrl+K opens the palette; an item key and Ent
 test('e2e:keyboard-palette — j/k move a cursor through the Work rows, Enter opens that row, and Esc clears the cursor', async ({ page }) => {
   test.setTimeout(60_000);
   await serve(page);
-  const cursor = page.locator('.work-row.kb-cursor');
-  // The board's first visible row is the one that needs the operator.
-  await page.keyboard.press('j');
-  await expect(cursor).toHaveAttribute('data-row', 'GY-20');
+  const cursor = page.locator('[data-row].kb-cursor');
+  // The list's first row is the stuck one (stuck sorts first, GY-3600), then the one that needs the operator.
   await page.keyboard.press('j');
   await expect(cursor).toHaveAttribute('data-row', 'GY-17');
+  await page.keyboard.press('j');
+  await expect(cursor).toHaveAttribute('data-row', 'GY-20');
   await page.keyboard.press('k');
+  await expect(cursor).toHaveAttribute('data-row', 'GY-17');
+  await page.keyboard.press('j');
   await expect(cursor).toHaveAttribute('data-row', 'GY-20');
   await page.keyboard.press('Enter');
   await expect(page.locator('article.item-page')).toContainText('Prove the one-command install on a real cloud host');

@@ -11,7 +11,7 @@ import { workersView } from '../web/workers-view.js';
 import { boardFromStatus, classify, groupMeaning, nextActor, upNextMeaning } from '../web/groups.js';
 import type { Dashboard } from '../web/pages/dashboard.js';
 import WorkersPage from '../web/pages/workers.js';
-import OverviewPage from '../web/pages/overview.js';
+import WorkPage from '../web/pages/work.js';
 import WorkDetails from '../web/pages/work-details.js';
 
 /**
@@ -54,7 +54,7 @@ function board(): Work[] {
 function dashboard(work: Work[], overrides: Partial<Dashboard> = {}): Dashboard {
   return {
     token: 'fixture', work, board: boardFromStatus(work, NOW, fixtureStatus('admin')), status: fixtureStatus('admin'), error: '', connected: true, lastUpdated: '12:00:00', view: 'work', setView: noop,
-    filter: null, setFilter: noop, shippedFilter: null, setShippedFilter: noop, selected: null, setSelected: noop, creating: false, setCreating: noop, busy: false, setBusy: noop,
+    filter: null, setFilter: noop, selected: null, setSelected: noop, creating: false, setCreating: noop, busy: false, setBusy: noop,
     observedAt: NOW, jobs: [], query: '', setQuery: noop, operatorAgents: [], operatorAgentsError: null, features: {} as any,
     events: fixtureApi('events') as any[], editingRequirements: false, setEditingRequirements: noop,
     sessionEpoch: { current: 0 }, api: async (path: string) => fixtureApi(path, 'admin'),
@@ -119,15 +119,12 @@ test('unit:ui-reads-session-state — Up next says what an item waits on: the de
   assert.equal(upNextMeaning(byGroup['up-next'], work, NOW), '1 waiting for a worker · 2 held', 'the tile counts what waits for a worker apart from what is held');
   assert.equal(upNextMeaning(byGroup['up-next'].filter(entry => entry.key !== 'GY-12'), work, NOW), 'Held behind other work', 'and never says a worker is what held items wait for');
 
-  const html = renderToStaticMarkup(createElement(OverviewPage as any, dashboard(work)));
-  const section = html.slice(html.indexOf('data-group-section="up-next"'));
-  const row = (key: string) => { const start = section.indexOf(`data-row="${key}"`); assert.ok(start >= 0, key); return visibleWords(section.slice(start, section.indexOf('</div>', section.indexOf('row-who', start)))).join(' '); };
+  const html = renderToStaticMarkup(createElement(WorkPage as any, dashboard(work)));
+  // GY-3600: each Up next row of the Work list says what it waits on.
+  const row = (key: string) => { const start = html.indexOf(`data-row="${key}"`); assert.ok(start >= 0, key); assert.match(html.slice(start, start + 100), /group-up-next/); return visibleWords(html.slice(start, html.indexOf('</tr>', start))).join(' '); };
   assert.match(row('GY-13'), /Waiting for GY-17 to ship first/);
   assert.match(row('GY-17'), /Waiting for GY-14 to release staging-db: an exclusive resource it needs/);
   for (const key of ['GY-13', 'GY-17']) assert.doesNotMatch(row(key), /Waiting for a worker|next free builder/);
-  const tile = html.slice(html.indexOf('data-tile="up-next"'), html.indexOf('</button>', html.indexOf('data-tile="up-next"')));
-  assert.match(tile, /<small>1 waiting for a worker · 2 held<\/small>/);
-  assert.doesNotMatch(tile, /<small>Waiting for a worker<\/small>/);
   // With nothing held, the tile says what it always said.
   assert.equal(upNextMeaning([item('GY-12')], work, NOW), groupMeaning['up-next']);
   assert.equal(groupMeaning['up-next'], 'Waiting for a worker');

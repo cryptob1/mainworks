@@ -29,6 +29,8 @@ export const createSchema = z.object({
   /** GY-3382: one sentence on how the item helps users, and one on why it is the simplest thing that works; the create route refuses an item without both, and items from before carry neither. */
   why: z.string().trim().min(1).max(300).optional(),
   simplest: z.string().trim().min(1).max(300).optional(),
+  /** GY-3600: the goal the task serves, in a few words; the Work list groups tasks under it. */
+  goal: z.string().trim().min(1).max(120).optional(),
   /** Held items stay in backlog, out of dispatch, until someone releases them (`ready`). */
   hold: z.boolean().optional(),
   type: z.enum(['feature', 'bug', 'chore']).default('feature'),

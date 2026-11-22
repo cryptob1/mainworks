@@ -33,7 +33,7 @@ async function shell(page: Page, card: string) {
     return {
       scrolled: scrollY,
       titleTag: title?.tagName, titleInHeading: !!title?.closest('.page-heading'), title: style(title),
-      section: style(cardNode?.querySelector(':scope > h2') ?? null), cardClass: cardNode?.classList.contains('panel') ?? false,
+      section: style(cardNode?.querySelector(':scope > h2, :scope > summary > h2') ?? null), cardClass: cardNode?.classList.contains('panel') ?? false,
       tables: [...document.querySelectorAll('main table')].map(table => table.className),
       firstScreen: { title: onFirstScreen(title), fact: onFirstScreen(fact), action: onFirstScreen(action) },
       action: action?.textContent?.trim() ?? null,
@@ -64,11 +64,11 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
       const { code } = await (await fetch(`${http.url}/api/sign-in-links`, { method: 'POST', headers: operator })).json() as { code: string };
       await page.goto('/#sign-in=' + code);
       await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible(settled);
-      await expect(page.locator('[data-group-section="up-next"]')).toBeVisible(settled);
-      const work = await shell(page, '[data-group-section="up-next"]');
+      // GY-3600: with no goal set, every task sits in the 'No goal' group, open.
+      await expect(page.locator('[data-goal="none"]')).toBeVisible(settled);
+      const work = await shell(page, '[data-goal="none"]');
 
-      await page.locator('[data-group-section="backlog"] > summary').click();
-      await page.locator(`[data-row="${backlog.key}"]`).click();
+      await page.locator(`[data-row="${backlog.key}"] .card-open`).click();
       // GY-3599: the page leads with the item's title; where it is now answers below it.
       await expect(page.getByRole('heading', { name: 'Export costs as a spreadsheet', level: 1 })).toBeVisible(settled);
       // Its cards with section headings are under the Details tab.

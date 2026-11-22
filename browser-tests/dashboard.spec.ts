@@ -29,10 +29,10 @@ async function fixture(page: Page, role = 'admin', extra: Record<string, unknown
 }
 // Opening a work item goes through the card's own selection control, a sibling of
 // the candidate links rather than a button wrapped around them.
-const cardSelect = (page: Page) => page.getByRole('button', { name: /Browser fixture.*GY-1/ });
+const cardSelect = (page: Page) => page.getByRole('link', { name: /Browser fixture.*GY-1/ });
 
 async function login(page: Page, value = 'browser-fixture') { await page.getByLabel('Access token').fill(value); await page.getByRole('button', { name: 'Open control plane' }).click(); }
-// The one navigation (GY-161): the sidebar holds Work, Master, Workers, Shipped, Tests and
+// The one navigation (GY-161): the sidebar holds Work, Master, Workers, Tests and
 // Settings; the other pages are sub-page links under one of them. On a phone the sidebar folds into
 // a Menu button. An open work item is a page of its own, left with "← Back".
 const workHeading = (page: Page) => page.getByRole('heading', { name: 'Work', exact: true, level: 1 });
@@ -43,16 +43,16 @@ async function sidebarEntry(page: Page, entry: string) {
     await mainNav.getByRole('link', { name: new RegExp(`^${entry}(\\s+\\d+)?$`) }).click();
   } else if (entry === 'Master') {
     await mainNav.getByRole('link', { name: /^Lead/ }).click();
-  } else if (entry === 'Shipped' || entry === 'Tests') {
+  } else if (entry === 'Tests') {
     await mainNav.getByRole('link', { name: 'Work', exact: true }).click();
-    await tabs.getByRole('button', { name: entry === 'Shipped' ? 'Delivered' : 'Tests', exact: true }).click();
+    await tabs.getByRole('button', { name: 'Tests', exact: true }).click();
   } else if (entry === 'Workers') {
     await mainNav.getByRole('link', { name: 'Settings', exact: true }).click();
     await tabs.getByRole('button', { name: 'Workers', exact: true }).click();
   }
 }
-async function openPage(page: Page, section: 'Shipped' | 'Tests' | 'Settings', tab: string) {
-  await sidebarEntry(page, section === 'Shipped' || section === 'Tests' ? 'Work' : 'Settings');
+async function openPage(page: Page, section: 'Work' | 'Tests' | 'Settings', tab: string) {
+  await sidebarEntry(page, section === 'Settings' ? 'Settings' : 'Work');
   const tabs = page.getByRole('navigation', { name: 'Pages in this section' });
   const advanced = tabs.locator('details.tabs-advanced');
   const btn = tabs.getByRole('button', { name: tab, exact: true });
@@ -64,7 +64,7 @@ const technicalDetails = async (page: Page) => { await itemPage(page).getByRole(
 const detailsTab = (page: Page) => itemPage(page).getByRole('tab', { name: 'Details' }).click();
 const fullHistory = async (page: Page) => { await detailsTab(page); await itemPage(page).locator('.full-history > summary').click(); };
 const editMenu = async (page: Page) => { await detailsTab(page); await itemPage(page).getByText('Edit', { exact: true }).click(); };
-const row = (page: Page, key: string) => page.locator(`.work-row[data-row="${key}"]`);
+const row = (page: Page, key: string) => page.locator(`[data-row="${key}"]`);
 
 for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: 'mobile', width: 390, height: 844 }]) {
   test(`dashboard durations use adaptive units with accessible text and no clipping on ${viewport.name}`, async ({ page }) => {
@@ -83,7 +83,7 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
     await page.goto('/?sign-in'); await login(page);
     // Every fixture item is handed in and waiting for review, so each is a Moving row with its
     // clock; the per-stage percentile strip went with the stage row (GY-161).
-    await expect(page.locator('[data-group-section="moving"] .work-row')).toHaveCount(5);
+    await expect(page.locator('.task-row.group-moving')).toHaveCount(5);
     await expect(page.locator('.node')).toHaveCount(0);
     // The adaptive units on the rows themselves, where the duration is read rather than hovered:
     // every one of these fixtures has held its status for a while, so each says so.
@@ -123,16 +123,13 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
     await expect(release).toHaveAttribute('data-healthy', 'true');
     await expect(release).toHaveAttribute('data-pending', '1');
     await expect(release).toHaveText('Live: a1b2c3d4 · 1 change not live yet');
-    // The four states, in order, over the Moving rows; each row shows its own current state.
-    await expect(page.locator('[data-group-section="moving"] .work-row')).toHaveCount(2);
-    await expect(page.locator('.step-name')).toHaveText(['Not started', 'Building', 'Testing, review, merge', 'Done']);
-    await expect(row(page, 'GY-3').locator('.step-seg[data-step="doing"][data-state="current"]')).toHaveCount(1);
-    await expect(row(page, 'GY-4').locator('.step-seg[data-step="checking"][data-state="current"]')).toHaveCount(1);
-    await expect(row(page, 'GY-4')).toContainText('In review ·');
-    // The todo item is not on the moving rows: it waits in Up next, off the step track.
-    await expect(row(page, 'GY-2').locator('.steps-track')).toHaveCount(0);
-    // Nothing clips at this width: the bar fits its row and the line wraps within the page.
-    const clipped = await page.locator('.steps-track, .release-line').evaluateAll(nodes => nodes.map(element => element.scrollWidth > element.clientWidth + 1));
+    // Each moving row names its state (GY-3600: the Work list's State column); the todo item waits in Up next.
+    await expect(page.locator('.task-row.group-moving')).toHaveCount(2);
+    await expect(row(page, 'GY-3').locator('[data-col="state"]')).toHaveText('Building');
+    await expect(row(page, 'GY-4').locator('[data-col="state"]')).toHaveText('In review');
+    await expect(row(page, 'GY-2')).toHaveClass(/group-up-next/);
+    // Nothing clips at this width: the line wraps within the page.
+    const clipped = await page.locator('.release-line').evaluateAll(nodes => nodes.map(element => element.scrollWidth > element.clientWidth + 1));
     expect(clipped).not.toContain(true);
   });
 }
@@ -193,37 +190,35 @@ test('every moving row carries how long it has held its status, in red past thir
   // Red is never the only cue: the word survives greyscale and a screen reader, the triangle
   // beside it is decoration and is hidden from assistive technology, and the row is marked.
   await expect(age('GY-21').locator('.overdue-mark')).toHaveAttribute('aria-hidden', 'true');
-  await expect(page.locator('.work-row.overdue')).toHaveCount(1);
-  await expect(page.locator('.work-row.overdue')).toContainText('Stopped moving');
+  await expect(page.locator('[data-row]:has(.status-age.overdue)')).toHaveCount(1);
+  await expect(page.locator('[data-row]:has(.status-age.overdue)')).toContainText('Stopped moving');
   // And so does the item page, from the same threshold. (The board view was removed by GY-161.)
-  await row(page, 'GY-21').click();
+  await row(page, 'GY-21').locator('.card-open').click();
   const drawer = itemPage(page, 'Stopped moving');
   await expect(drawer.locator('.status-age')).toContainText('31m overdue');
   expect(red(await drawer.locator('.status-age').evaluate(element => getComputedStyle(element).color))).toBe(true);
 });
 
-test('the work page shows one count row, the groups, each tile filtering to exactly its rows and nothing counted twice', async ({ page }) => {
+test('the work page shows one count row, the filters, each filtering to exactly its rows and nothing counted twice', async ({ page }) => {
   await fixture(page); await login(page);
   // The heading carries no count; the sidebar's Work entry carries no badge.
   await expect(workHeading(page)).toHaveText('Work');
   await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Work', exact: true })).toHaveText(/Work$/);
   await expect(page.getByRole('navigation', { name: 'Main' }).locator('a small')).toHaveCount(0);
   await expect(page.locator('.stage-strip')).toHaveCount(0);
-  const tiles = page.getByRole('group', { name: 'Filter by group' }).getByRole('button');
-  await expect(tiles).toHaveCount(5);
-  await expect(tiles.locator('.tile-label')).toHaveText(['Needs you', 'Blocked', 'Moving', 'Up next', 'Backlog']);
-  await expect(tiles.locator('strong')).toHaveText(['0', '0', '1', '0', '0']);
-  // Each count is its group's rows, and pressing a tile shows exactly those.
-  await expect(page.locator('.work-row')).toHaveCount(1);
-  await tiles.nth(2).click();
-  await expect(tiles.nth(2)).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('.work-row')).toHaveCount(1);
-  await expect(page.getByRole('heading', { name: 'Browser fixture' })).toBeVisible();
-  await tiles.nth(1).click();
-  await expect(page.locator('.work-row')).toHaveCount(0);
-  await expect(tiles.locator('strong')).toHaveText(['0', '0', '1', '0', '0']);
-  await page.getByRole('button', { name: 'Show every group' }).click();
-  await expect(page.locator('.work-row')).toHaveCount(1);
+  // GY-3600: one row of filters, each with its count; pressing one shows exactly its rows, pressing it again shows every task.
+  const filters = page.getByRole('group', { name: 'Filter work' }).getByRole('button');
+  await expect(filters).toHaveText(['In flight 1', 'Stuck 0', 'Up next 0', 'Shipped today 0']);
+  await expect(page.locator('[data-row]')).toHaveCount(1);
+  await filters.nth(0).click();
+  await expect(filters.nth(0)).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('[data-row]')).toHaveCount(1);
+  await expect(page.getByRole('link', { name: /Browser fixture/ })).toBeVisible();
+  await filters.nth(1).click();
+  await expect(page.locator('[data-row]')).toHaveCount(0);
+  await expect(filters).toHaveText(['In flight 1', 'Stuck 0', 'Up next 0', 'Shipped today 0']);
+  await filters.nth(1).click();
+  await expect(page.locator('[data-row]')).toHaveCount(1);
 });
 
 test('invalid login remains on login; whitespace is trimmed and loading never claims empty work', async ({ page }) => {
@@ -254,13 +249,13 @@ test('connection loss labels stale data, recovers, and revoked sessions clear th
   state.offline = true; await nextPoll(page);
   await expect(connection).toHaveText('Offline · retrying', settled);
   await expect(page.getByRole('alert')).toContainText('stale');
-  await expect(page.getByRole('heading', { name: 'Browser fixture' })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Browser fixture/ })).toBeVisible();
   state.offline = false; await nextPoll(page);
   await expect(connection).toHaveCount(0, settled);
   await expect(page.getByRole('alert')).toHaveCount(0);
   state.unauthorized = true; await nextPoll(page);
   await expect(page.getByLabel('Access token')).toBeVisible(settled);
-  await expect(page.getByRole('heading', { name: 'Browser fixture' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /Browser fixture/ })).toHaveCount(0);
 });
 
 test('mobile sign out is reachable and removes the session', async ({ page }) => {
@@ -298,12 +293,12 @@ test('both dialogs move, trap, and restore focus and close with Escape; an item 
 
 test('reader has no creation controls; graph filters and search still work', async ({ page }) => {
   await fixture(page, 'reader'); await login(page);
-  await expect(page.getByRole('heading', { name: 'Browser fixture' })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Browser fixture/ })).toBeVisible();
   await expect(page.getByRole('button', { name: '＋ New work item' })).toHaveCount(0);
   await page.getByLabel('Search work').fill('no matches');
-  await expect(page.getByRole('heading', { name: 'Browser fixture' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /Browser fixture/ })).toHaveCount(0);
   await page.getByLabel('Search work').fill('GY-1');
-  await expect(page.getByRole('heading', { name: 'Browser fixture' })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Browser fixture/ })).toBeVisible();
   await openPage(page, 'Tests', 'Test cases');
   await expect(page.getByRole('heading', { name: 'Test-case library' })).toBeVisible();
   await expect(page.getByRole('button', { name: '＋ New test case' })).toHaveCount(0);
@@ -383,7 +378,7 @@ test('a delayed post-create refresh cannot restore the signed-out session or lea
   rejectLogin();
   await expect(page.getByRole('alert')).toHaveText('That token was not accepted');
   await expect(page.getByLabel('Access token')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Browser fixture' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /Browser fixture/ })).toHaveCount(0);
   await expect(workHeading(page)).toHaveCount(0);
 });
 
@@ -447,12 +442,12 @@ test('history groups observation noise and bounds expanded rows without losing o
   const assigned={...work,lease:{owner:'worker-a',epoch:1,expiresAt:'2026-01-01T00:01:00Z'},lastAssignment:{owner:'worker-a',epoch:1,displayName,runtime}};
   await page.route('**/api/work-snapshot',route=>route.fulfill({json:{work:[assigned],now:'2026-01-01T00:00:00Z'}}));
   await login(page);
-  // The row names the role that acts next, never the agent's label, so a long label cannot overflow it.
-  const card=page.locator('.work-row').first();
+  // The row names its Builder (GY-3600); a long label wraps inside its cell rather than overflowing the row.
+  const card=page.locator('[data-row]').first();
   const bounds=await card.evaluate(e=>({card:e.clientWidth,content:e.scrollWidth}));
   expect(bounds.content).toBeLessThanOrEqual(bounds.card);
-  await expect(card).not.toContainText(displayName);
-  await card.click();await technicalDetails(page);const details=itemPage(page).locator('.assignment-details');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await card.locator('.card-open').click();await technicalDetails(page);const details=itemPage(page).locator('.assignment-details');
   await expect(details).toHaveText(identity);
   await expect(itemPage(page)).toContainText('Worker ID: worker-a');
   expect(await details.evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);
@@ -591,7 +586,7 @@ test('releases view labels verification precisely, shows membership and reports 
     reason: 'Incident', automatic: true, requestedBy: 'graphyard', requestedAt: '2026-01-01T00:00:00Z', repairWorkId: null, state: 'applied', verifiedAt: null, interval: null, history: [],
     operation: { id: 'op-12345678', registration: { id: 'rollback', revision: 1 }, principal: 'railway-rollback', epoch: 1, fencing: 'provider', claimedAt: '2026-01-01T00:00:10Z', precondition: { environment: 'production', generation: 2, expectedRunning: 'g', token: 't' }, outcome: 'applied', settledAt: '2026-01-01T00:00:40Z', providerOperationId: 'dep-9', detail: null, resolvedBy: null, evidence: null, reports: [] } };
   await page.route('**/api/delivery', route => route.fulfill(fail ? { status: 503, json: { error: 'Delivery state unavailable' } } : { json: { environments: [environment], releases: [release], rollbacks: [rollback], now: '2026-01-01T00:02:00Z' } }));
-  await login(page); await openPage(page, 'Shipped', 'Releases');
+  await login(page); await openPage(page, 'Work', 'Releases');
   await expect(page.getByRole('heading', { name: 'Releases', level: 1 })).toBeVisible();
   await expect(page.getByRole('alert')).toContainText('Delivery state unavailable');
   await expect(page.getByText('No release selected yet.')).toHaveCount(0);
@@ -668,7 +663,7 @@ test('the card selection control and the candidate PR link are sibling interacti
   // The link must not sit inside the selection control, and no card may claim the
   // button role around it: nested interactives can be hidden from assistive tech.
   expect(await cardLink.evaluate(e => e.closest('button, [role="button"]') !== null)).toBe(false);
-  expect(await page.locator('.work-row').first().evaluate(e => e.getAttribute('role'))).toBe(null);
+  expect(await page.locator('[data-row]').first().evaluate(e => e.getAttribute('role'))).toBe(null);
   expect(await nestedInteractives(page)).toEqual([]);
   await cardSelect(page).click();
   // The pull request link in the header and the commit link under Technical details nest in no button.
@@ -690,9 +685,7 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
     await select.focus(); await page.keyboard.press('Shift+Tab'); await page.keyboard.press('Tab');
     await expect(select).toBeFocused();
     expect(await outline(select)).toEqual(focusRing);
-    // The row's priority control is the next keyboard stop, before the PR link.
-    await page.keyboard.press('Tab');
-    await expect(page.getByRole('combobox', { name: 'Priority for GY-1' })).toBeFocused();
+    // The PR link is the row's next keyboard stop.
     await page.keyboard.press('Tab');
     await expect(cardLink).toBeFocused();
     expect(await outline(cardLink)).toEqual(focusRing);
@@ -729,7 +722,7 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
     expect(await page.evaluate(() => window.getSelection()?.toString())).toContain(shortSha);
     await page.mouse.up();
     await page.keyboard.press('Escape'); await expect(dialog).toHaveCount(0);
-    await expect(page.locator('.work-row').first()).toBeVisible();
+    await expect(page.locator('[data-row]').first()).toBeVisible();
     await select.focus(); await page.keyboard.press('Enter');
     await expect(itemPage(page)).toBeVisible();
     await expect(itemPage(page).getByText('Next:', { exact: true })).toBeVisible();
@@ -741,7 +734,7 @@ test('an unconfigured GitHub repository renders candidate references as non-link
   await page.route('**/api/status', route => route.fulfill({ json: { actor: { id: 'fixture', role: 'admin' }, github: false, reviewProviders: ['github'], repository: null, jobs: [] } }));
   await login(page);
   await expect(cardPrLink(page)).toHaveCount(0);
-  await expect(page.locator('.card-pr').getByText('PR #1', { exact: true })).toBeVisible();
+  await expect(page.locator('[data-col="pr"]').getByText('PR #1', { exact: true })).toBeVisible();
   await cardSelect(page).click();
   const dialog = itemPage(page);
   // With no repository there is nothing to link: the header names the pull request as text.
@@ -760,8 +753,8 @@ test('legacy abbreviated SHAs and invalid candidate references never become link
   for (const { candidate, shaText, prHref: expectedPr, commitHref: expectedCommit } of cases) {
     await page.route('**/api/work-snapshot', route => route.fulfill({ json: { work: [{ ...work, candidate }], now: '2026-01-01T00:00:00Z' } }));
     await login(page);
-    await expect(page.locator('.work-row').getByRole('link', { name: /open pull request/ })).toHaveCount(expectedPr ? 1 : 0);
-    if (expectedPr) await expect(page.locator('.work-row').getByRole('link', { name: /open pull request/ })).toHaveAttribute('href', expectedPr);
+    await expect(page.locator('[data-row]').getByRole('link', { name: /open pull request/ })).toHaveCount(expectedPr ? 1 : 0);
+    if (expectedPr) await expect(page.locator('[data-row]').getByRole('link', { name: /open pull request/ })).toHaveAttribute('href', expectedPr);
     await cardSelect(page).click();
     const dialog = itemPage(page);
     // The change's commit sits under Technical details; the header links the pull request when it can.
@@ -777,8 +770,8 @@ test('legacy abbreviated SHAs and invalid candidate references never become link
   }
   await page.route('**/api/work-snapshot', route => route.fulfill({ json: { work: [{ ...work, candidate: null }], now: '2026-01-01T00:00:00Z' } }));
   await login(page);
-  await expect(page.locator('.work-row').getByRole('link')).toHaveCount(0);
-  await expect(page.locator('.work-row .status-line')).toBeVisible();
+  await expect(page.locator('[data-row] [data-col="pr"]').getByRole('link')).toHaveCount(0);
+  await expect(page.locator('[data-row] [data-col="pr"]')).toBeVisible();
 });
 
 test('the Tests panel lists each criterion proof with its result from the merge trial, or not run yet without one (GY-2091)', async ({ page }) => {
