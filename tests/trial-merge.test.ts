@@ -275,6 +275,8 @@ test('integration:trial-hung-test-fails-fast — a hung file fails by name while
   assert.equal(testRuns, 1, result.logTail);
   assert.equal(result.build, 'pass');
   assert.deepEqual(result.tests, { passed: 1, failed: [hung], files: 2 });
+  // GY-3599: the hung file is the slowest, named for the Task page.
+  assert.equal(result.slowest?.file, hung);
   assert.equal(result.runnerExit, 1);
   assert.match(result.logTail, /hung\.test\.ts/);
   // The file bound ended the hung file, not the overall deadline (which would leave no verdict):

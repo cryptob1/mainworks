@@ -119,7 +119,7 @@ test('unit:ui-four-states-board — the board API and the Work page list only To
     assert.doesNotMatch(page, new RegExp(`data-row="${merged.key}" data-stuck="\\w+" class="task-row group-(?!shipped)`), `${merged.key} has no open Work row`);
     const detail = itemPage(merged, work);
     assert.match(detail, new RegExp(`<h1 data-title="true"[^>]*>${merged.title}</h1>`));
-    assert.match(detail, /aria-label="Item states"[\s\S]*?data-step="done"/, `${merged.key} shows the four states, Done last`);
+    assert.match(detail, /aria-label="Pipeline"[\s\S]*?data-stage="ship" data-state="done"/, `${merged.key} shows the pipeline row, Ship done`);
   }
   // The filters count the rows: no open filter counts a merged item.
   const count = (filter: string) => Number(new RegExp(`data-filter="${filter}">[^<]*<span class="count">(\\d+)</span>`).exec(page)?.[1]);

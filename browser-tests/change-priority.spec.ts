@@ -22,6 +22,7 @@ test('e2e:change-priority — the item page control persists and shows attribute
     // GY-3600: the Work list row opens the item; the priority control is on the item page.
     await page.locator(`[data-row="${item.key}"]`).getByRole('link', { name: /open/ }).click();
     const details = page.locator('article.item-page');
+    await details.getByRole('tab', { name: 'Details' }).click();
     const detailSelector = details.getByRole('combobox', { name: `Priority for ${item.key}` });
     await expect(detailSelector).toHaveValue('3', settled);
     await detailSelector.selectOption('0');
@@ -37,6 +38,7 @@ test('e2e:change-priority — the item page control persists and shows attribute
     await expect(history).toContainText('Priority changed from P0 to P2 from the dashboard', settled);
     await details.getByRole('button', { name: '← Back', exact: true }).click();
     await page.locator(`[data-row="${legacy.key}"]`).getByRole('link', { name: /open/ }).click();
+    await page.locator('article.item-page').getByRole('tab', { name: 'Details' }).click();
     await expect(page.getByRole('combobox', { name: `Priority for ${legacy.key}` })).toHaveValue('4', settled);
     await expect(page.locator('article.item-page option:checked')).toHaveText('P4 (existing)');
     expect((await f.store.workDocument(legacy.id))!.priority).toBe(4);

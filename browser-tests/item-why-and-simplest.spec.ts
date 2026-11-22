@@ -41,12 +41,13 @@ test('e2e:item-why-and-simplest — the create box files both sentences, the ite
     expect([created.why, created.simplest]).toEqual([why, simplest]);
 
     const itemPage = page.locator('article.item-page');
-    const heading = itemPage.locator('.page-heading');
-    // GY-3392: the why sentence is the plate's heading, the first thing on the page.
-    await expect(heading.locator('h1[data-why="true"]')).toHaveText(why, settled);
+    // GY-3599: the why sentence sits under the title; Simplest is under the Details tab.
+    const heading = itemPage;
+    await expect(heading.locator('[data-why="true"]')).toHaveText(why, settled);
+    await itemPage.getByRole('tab', { name: 'Details' }).click();
     await expect(heading.locator('[data-simplest]')).toHaveText(`Simplest: ${simplest}`);
     // Above the description and criteria, which fold under Details further down.
-    const leadTop = (await heading.locator('h1[data-why="true"]').boundingBox())!.y, detailsTop = (await itemPage.locator('.item-details-fold').boundingBox())!.y;
+    const leadTop = (await heading.locator('[data-why="true"]').boundingBox())!.y, detailsTop = (await itemPage.locator('.item-details-fold').boundingBox())!.y;
     expect(leadTop).toBeLessThan(detailsTop);
 
     await page.getByRole('button', { name: '← Back' }).click();
@@ -55,6 +56,7 @@ test('e2e:item-why-and-simplest — the create box files both sentences, the ite
     await expect(page.locator(`[data-row="${older.key}"]`)).toBeVisible();
 
     await page.locator(`[data-row="${created.key}"]`).getByRole('link', { name: /open/ }).click();
+    await itemPage.getByRole('tab', { name: 'Details' }).click();
     await itemPage.locator('details.edit-menu > summary').click();
     await page.getByRole('button', { name: 'Revise requirements', exact: true }).click();
     const revise = page.getByRole('form', { name: 'Revise requirements' });
@@ -62,13 +64,13 @@ test('e2e:item-why-and-simplest — the create box files both sentences, the ite
     await revise.getByLabel('Why it helps users').fill('Agents build what users need.');
     await revise.getByLabel('Reason for revision').fill('Sharper why');
     await revise.getByRole('button', { name: 'Save requirement revision' }).click();
-    await expect(heading.locator('h1[data-why="true"]')).toHaveText('Agents build what users need.', settled);
+    await expect(heading.locator('[data-why="true"]')).toHaveText('Agents build what users need.', settled);
     await expect(heading.locator('[data-simplest]')).toHaveText(`Simplest: ${simplest}`);
     await page.getByRole('button', { name: '← Back' }).click();
 
     await page.locator(`[data-row="${older.key}"]`).getByRole('link', { name: /open/ }).click();
     await expect(itemPage.locator('h1')).toHaveText('Older item', settled);
-    await expect(itemPage.locator('h1[data-why="true"], [data-simplest]')).toHaveCount(0);
+    await expect(itemPage.locator('[data-why="true"], [data-simplest]')).toHaveCount(0);
   } finally {
     // GY-3362: 'wait' hung to the test timeout when a dashboard poll was in flight at teardown; the handler
     // already tolerates a closed server.

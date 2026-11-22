@@ -12,7 +12,7 @@ import { readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { detachedLaunch, processIdentity, readRunMeta, runAlive, runContainment, runEnvironment, runFiles, signalRun, type RunMeta } from '../runner/pi.js';
-import { setTrialAttempts, TrialCancelledError, TrialTimeoutError, TrialRunnerError, type TrialNoVerdict } from './trial.js';
+import { setTrialAttempts, TrialCancelledError, TrialTimeoutError, TrialRunnerError, type TrialNoVerdict, type TrialStepReport } from './trial.js';
 import { harnessModules } from './trial-container.js';
 import { heldJobEnvironment } from '../master/verification-slots.js';
 import type { MergeTrialRun } from './executor.js';
@@ -42,7 +42,7 @@ export interface TrialRunHandle {
    * own error — a `TrialTimeoutError`, `TrialRunnerError`, `TrialCancelledError` or a host failure —
    * when it reached none. Aborting `signal` stops the run and rejects at once.
    */
-  trial(onStep?: (step: string) => void, onTiming?: (step: string, durationMs: number) => void, signal?: AbortSignal): Promise<MergeTrialRun>;
+  trial(onStep?: (step: string, report?: TrialStepReport) => void, onTiming?: (step: string, durationMs: number) => void, signal?: AbortSignal): Promise<MergeTrialRun>;
   /** Stops watching (a restart): the run keeps running and this process's promise stays pending. */
   detach(): void;
   /** Stops the run itself (a trial nobody will read): it is signalled, and its watcher rejects cancelled. */
@@ -195,7 +195,7 @@ const readExit = (directory: string): string | null => {
 function watchTrialRun(directory: string, meta: RunMeta, spec: Pick<TrialRunSpec, 'mergeSha'>, options: { pollMs?: number; fromStart: boolean; failure?: () => string | null }) {
   const files = trialRunFiles(directory);
   let timer: NodeJS.Timeout | null = null, settled = false, detached = false, replayed = options.fromStart, consumed = 0, lastStep = 'checkout';
-  let watched: { onStep?: (step: string) => void; onTiming?: (step: string, durationMs: number) => void } | null = null;
+  let watched: { onStep?: (step: string, report?: TrialStepReport) => void; onTiming?: (step: string, durationMs: number) => void } | null = null;
   let resolveResult!: (run: MergeTrialRun) => void, rejectResult!: (error: Error) => void;
   const result = new Promise<MergeTrialRun>((resolve, reject) => { resolveResult = resolve; rejectResult = reject; });
   result.catch(() => {}); // a watcher that outlives its awaiter (a detach) never warns
@@ -222,8 +222,8 @@ function watchTrialRun(directory: string, meta: RunMeta, spec: Pick<TrialRunSpec
     }
     for (const line of dispatch) {
       try {
-        const record = JSON.parse(line) as { step?: string; timing?: string; durationMs?: number };
-        if (record.step) { lastStep = record.step; watched?.onStep?.(record.step); }
+        const record = JSON.parse(line) as { step?: string; output?: string; tests?: TrialStepReport['tests']; timing?: string; durationMs?: number };
+        if (record.step) { lastStep = record.step; watched?.onStep?.(record.step, record.output !== undefined || record.tests !== undefined ? { output: record.output, tests: record.tests } : undefined); }
         else if (record.timing !== undefined && typeof record.durationMs === 'number') watched?.onTiming?.(record.timing, record.durationMs);
       } catch { /* a line being written is read whole next poll */ }
     }
@@ -248,7 +248,7 @@ function watchTrialRun(directory: string, meta: RunMeta, spec: Pick<TrialRunSpec
     }
   };
   return {
-    trial(onStep?: (step: string) => void, onTiming?: (step: string, durationMs: number) => void, signal?: AbortSignal): Promise<MergeTrialRun> {
+    trial(onStep?: (step: string, report?: TrialStepReport) => void, onTiming?: (step: string, durationMs: number) => void, signal?: AbortSignal): Promise<MergeTrialRun> {
       if (timer) return result; // one watcher per process
       watched = { onStep, onTiming };
       const abort = () => { if (settled || detached) return; const reason = signal!.reason instanceof Error ? signal!.reason.message : String(signal!.reason); stopRun(reason); settle(() => rejectResult(new TrialCancelledError(reason))); };

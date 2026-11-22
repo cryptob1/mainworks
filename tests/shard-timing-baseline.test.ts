@@ -66,6 +66,7 @@ test('unit:shard-timing-baseline e2e:shard-timing-baseline — a passing trial s
     const verdict = await runTrial({ root, base: await temporaryDirectory('shard-timing-base'), mergeSha: sha, changedFiles: files, timeoutMs: 90_000, cores, run, retries: 0, remote: { hosts: [] },
       memory: async () => null, environment: { PATH: process.env.PATH! }, onTiming: (step, durationMs) => { if (/^tests: shard \d+/.test(step)) shards.push(durationMs); } });
     assert.deepEqual(verdict.tests, { passed: files.length, failed: [], files: files.length }, verdict.logTail);
+    assert.ok(verdict.slowest && files.includes(verdict.slowest.file), 'the verdict names the file that ran longest');
     assert.equal(shards.length, lanes);
     return { slowest: Math.max(...shards), median: median(shards) };
   };
