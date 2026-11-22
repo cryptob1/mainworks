@@ -60,7 +60,7 @@ test('unit:flow-numbers — a first-time merge, a twice-reworked merge, an aband
 });
 
 test('unit:flow-numbers — a trial is flaky when the rerun passed or its own refusal finds the failure on the base; a head held for a red base flags no trial', () => {
-  const work = (id: string) => ({ id, key: id.toUpperCase(), title: id, stage: 'build', stageEnteredAt: at(5) } as const);
+  const work = (id: string) => ({ id, key: id.toUpperCase(), title: id, stage: 'build', stageEnteredAt: at(5), delivery: null, observation: null }) as any;
   const row = (work_id: string, kind: string, minutesAgo: number, fields: Record<string, unknown> = {}) => ({ work_id, kind, created_at: new Date(now - minutesAgo * 60_000), ...fields });
   const red = 'base failure: tests tests/x.test.ts fail on the base tip abc too';
   const items = flowItems([work('a'), work('b'), work('c')], [
