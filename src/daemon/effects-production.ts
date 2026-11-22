@@ -12,6 +12,7 @@ import { RefusedResponse } from '../model/refusal.js';
 import { sweepManagedCheckouts } from '../producer.js';
 import { fleetRequest } from '../fleet.js';
 import { growWorkerPool } from '../master/worker-pool.js';
+import { runCaretaker } from '../master/caretaker.js';
 import { endRegistrySlot, endRegistrySessionById, liveMasterSessions } from '../master/registry-slot.js';
 import { dispatchEffects } from '../dispatch/effects.js';
 import { dispatchReadTimeoutMs, readDispatchCursor, type DispatchCursor } from '../dispatch/cursor.js';
@@ -249,13 +250,15 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     },
     dispatch: (work, profile, _agents, snapshot, launch) => dispatchWork(root, work, profile, { allWork: snapshot.work, observedAt: snapshot.now, coordinatorRoot: deps.coordinatorRoot, headless: deps.headless, capacity: event => mutate(`work/${work.id}/capacity`, event, randomUUID()), ...launch }),
     registry: () => fleetRequest(current() as Parameters<typeof fleetRequest>[0], 'agent-registry/document'),
+    // GY-3593: the install's caretaker pass, every 30 minutes (daemon/caretaker.ts).
+    caretaker: () => runCaretaker(root, current(), { headless: deps.headless, coordinatorRoot: deps.coordinatorRoot }),
     growWorkers: (config, allowed) => growWorkerPool(root, config, allowed, id => fleetRequest(config as Parameters<typeof fleetRequest>[0], 'worker-identities', { body: { id } })),
     // GY-3225: the checkout's folder-trust refusals (an untrusted checkout carrying repository
     // Claude configuration), read from the registry document and this host's account configs.
     checkoutTrust: registry => checkoutTrustRefusals(root, registry, current().hostId),
     setRuntime: (runtime, reason) => mutate('agent-registry/runtimes', { runtime, reason }, randomUUID()),
     // The reviewer and producer sessions the dispatcher owes, over the cycle's own snapshot; a tick
-    // still running past its step's timeout is not started twice. `held` (GY-3348) waits every launch
+    // still running after the step's wait for it (GY-3605) is not started twice. `held` (GY-3348) waits every launch
     // the tick would make while the host's CPU is saturated.
     dispatchTick: (snapshot, held) => ticking ??= (async () => {
       cursor ??= await readDispatchCursor(root, current());

@@ -421,7 +421,7 @@ test('integration:review-verdict-recorded-once — the verdict is appended to ob
   assert.equal((await stored(sensitive.id)).observation!.reviews.length, 1);
   const again = freshToken();
   assert.equal((await request(tokenOf(coordinator), `work/${sensitive.id}/review-launch`, launchBody(again))).status, 200, 'a relaunch registers a new token');
-  const second = await request(again, `work/${sensitive.id}/review-verdict`, verdict(again, 'REQUEST_CHANGES'));
+  const second = await request(again, `work/${sensitive.id}/review-verdict`, verdict(again, 'REQUEST_CHANGES', 'AC-1 unmet.\nBLOCKING: src/store/pools.ts:3 — the pool is never released\nResolved threads: none\nFollow-up threads: none\nOverridden threads: none'));
   assert.equal(second.status, 200, 'the new launch yields one verdict of its own');
   const twice = await request(tokenOf(coordinator), `work/${sensitive.id}/review-launch`, launchBody(freshToken()));
   assert.equal(twice.status, 200);
@@ -456,7 +456,7 @@ test('integration:product-review-screenshots-served — review post uploads each
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP438AAAAQBAYDFKhhdAAAAAElFTkSuQmCC', 'base64');
   const shot = join(directory, 'settings-flow.png');
   writeFileSync(shot, png);
-  const findings = `Reviewed head ${H}.\nBLOCKING: settings — ${'the toggle hides where a reader looks; '.repeat(80)}\nScreenshot: ${shot}\nScreenshot: https://images.example/elsewhere.png`;
+  const findings = `Reviewed head ${H}.\nBLOCKING: settings — ${'the toggle hides where a reader looks; '.repeat(120)}\nScreenshot: ${shot}\nScreenshot: https://images.example/elsewhere.png`;
   const uploads = await screenshotUploads(findings);
   assert.deepEqual(uploads.map(upload => [upload.name, upload.mediaType]), [[shot, 'image/png']], 'a local file is uploaded; a link rides the body only');
   await assert.rejects(screenshotUploads('Screenshot: /nowhere/missing.png'), ReviewPostRefusal, 'a screenshot that cannot be read is refused before anything posts');
@@ -471,11 +471,12 @@ test('integration:product-review-screenshots-served — review post uploads each
   const served = await fetch(`${url}/api/work/${work.id}/product-review/screenshots/${encodeURIComponent(shot)}`, { headers: { Authorization: `Bearer ${tokenOf(admin)}` } });
   assert.deepEqual([served.status, served.headers.get('content-type')], [200, 'image/png']);
   assert.deepEqual(Buffer.from(await served.arrayBuffer()), png, 'the panel reads back exactly the image the reviewer saved');
-  // The findings run past the engine's 2,000-character rework reason, and the rework still lands.
+  // The findings run past reworkReasonMax (4,000), and the rework still lands without the old 2,000-char cut.
   const { neededRework, reworkReasonMax } = await import('../src/daemon/rework.js');
   const rework = neededRework(reviewed)!;
   assert.ok(rework.reason.length <= reworkReasonMax, `${rework.reason.length} characters`);
-  assert.match(rework.reason, /the whole verdict is on the item/);
+  assert.ok(rework.reason.length > 3000, `carries up to reworkReasonMax, got ${rework.reason.length}`);
+  assert.doesNotMatch(rework.reason, /cut short; the whole verdict is on the item/);
   const returned = await request(tokenOf(admin), `work/${work.id}/rework`, { reason: rework.reason, previousWorkerStopped: true, binding: rework.binding });
   assert.equal(returned.status, 200, JSON.stringify(returned.body));
   await rm(directory, { recursive: true, force: true });

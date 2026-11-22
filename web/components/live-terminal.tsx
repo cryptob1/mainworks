@@ -1,7 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 
 const columns = 120, rows = 36;
-type Session = { account: string | null; runtime: string | null; pane: string | null; state: string };
+type Session = { account: string | null; runtime: string | null; pane: string | null; state: string; since?: string | null };
+
+export interface TerminalHandle {
+  /** One line as bracketed paste plus Enter, as typing it; false when this page cannot type. */
+  typeLine(text: string): boolean;
+  /** Upload files (an image to attach) and paste their saved path into the pane, waiting out a
+   *  (re)connect; resolves false when this session cannot type into the pane. */
+  attach(files: File[]): Promise<boolean>;
+}
+const noHandle: TerminalHandle = { typeLine: () => false, attach: async () => false };
 
 // xterm.js loads from the CDN at a pinned exact version, checked by its hash, only on a page that
 // shows a terminal: never an npm dependency of the dashboard bundle.
@@ -52,13 +61,17 @@ const loadTerminal = () => loading ??= new Promise((done, fail) => {
  * the operator or an invited maintainer, on the master's pane — and says so in its first message; everyone else
  * watches. Unmounting closes the socket, which detaches without stopping the pane.
  */
-export default function LiveTerminal({ token, label }: { token: string; label: string }) {
+export default function LiveTerminal({ token, label, onSession, handle }: { token: string; label: string; onSession?: (session: Session | null, mode: string, reason: string) => void; handle?: (api: TerminalHandle | null) => void }) {
   const host = useRef<HTMLDivElement>(null);
   const section = useRef<HTMLElement>(null);
   const sendKey = useRef<(key: string) => void>(() => {});
+  const handleRef = useRef<TerminalHandle>(noHandle);
   const [state, setState] = useState('connecting');
   const [session, setSession] = useState<Session | null>(null);
   const [reason, setReason] = useState('');
+  const reported = useRef(onSession);
+  reported.current = onSession;
+  useEffect(() => { reported.current?.(session, state, reason); }, [session, state, reason]);
   useEffect(() => {
     setSession(null); setReason(''); setState('connecting');
     if (!token) { setReason('Sign in to see the terminal.'); setState('refused'); return; }
@@ -68,7 +81,10 @@ export default function LiveTerminal({ token, label }: { token: string; label: s
       const terminal = new Terminal({ cols: columns, rows, scrollback: 5000, convertEol: false, cursorBlink: true, fontSize: 13 });
       terminal.open(host.current!);
       let socket: WebSocket, reconnect: ReturnType<typeof setTimeout>, delay = 250;
-      let writable = false, doubted = false;
+      let writable = false, doubted = false, viewOnly = false, gone = false;
+      // Images attached while the pane (re)connects wait for it rather than being dropped.
+      let held: { files: File[]; done: (sent: boolean) => void }[] = [];
+      const release = (sent: boolean) => { const waiting = held; held = []; for (const { files, done } of waiting) { if (sent) void deliver(files, ''); done(sent); } };
       const send = (value: unknown) => { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value)); };
       const input = (data: string) => { if (writable) send({ type: 'input', data }); };
       sendKey.current = key => { input(key); terminal.focus(); };
@@ -79,21 +95,29 @@ export default function LiveTerminal({ token, label }: { token: string; label: s
         if (lines > 0 && terminal.buffer.active.viewportY + lines >= terminal.buffer.active.baseY) { terminal.scrollLines(-1); lines++; }
         terminal.scrollLines(lines);
       };
+      let cell = { w: 0, h: 0 }, resized = false;
       const fit = () => {
         if (!host.current || !section.current) return;
-        // The page below the section is its parent's bottom padding: the section takes the rest of
-        // the viewport, exactly, so the document never scrolls and the terminal is the one scrolling
-        // surface (GY-3308). It never drops into the bottom version-label strip (GY-3310).
-        const below = Math.max(parseFloat(getComputedStyle(section.current.parentElement!).paddingBottom) || 0, 30);
-        section.current.style.height = `calc(100dvh - ${section.current.getBoundingClientRect().top + below}px)`;
         const screen = host.current.querySelector('.xterm-screen')?.getBoundingClientRect();
         if (!screen?.width || !screen.height) return;
         // xterm 6's scrollbar overlays the text: the columns take the container's whole width (GY-3313),
-        // measured unrounded, since clientWidth rounds a fractional width up past the edge.
-        const box = host.current.getBoundingClientRect();
-        const cols = Math.max(10, Math.min(500, Math.floor(box.width / (screen.width / terminal.cols))));
-        const rows = Math.max(10, Math.min(500, Math.floor(box.height / (screen.height / terminal.rows))));
-        if (cols !== terminal.cols || rows !== terminal.rows) terminal.resize(cols, rows);
+        // measured unrounded, since clientWidth rounds a fractional width up past the edge. The width
+        // reads the fluid section, never the host, whose width is pinned to whole cells below.
+        const box = host.current.getBoundingClientRect(), fluid = section.current.getBoundingClientRect();
+        // The cell size is adopted only from a render that followed the last resize (or the first
+        // one), so the pair (screen, cols) is consistent; a late webfont load changes it and is
+        // picked up on the next settled render.
+        if (!resized) { cell = { w: screen.width / terminal.cols, h: screen.height / terminal.rows }; }
+        if (!cell.w || !cell.h) return;
+        // The half-pixel tolerance keeps the width snap below stable across the observer's own refits.
+        const cols = Math.max(10, Math.min(500, Math.floor((fluid.width + 0.5) / cell.w)));
+        const rows = Math.max(10, Math.min(500, Math.floor(box.height / cell.h)));
+        resized = cols !== terminal.cols || rows !== terminal.rows;
+        if (resized) terminal.resize(cols, rows);
+        // The host snaps to whole cells, so the drawing meets the container's right edge exactly on
+        // every width instead of leaving a fractional column (up to a whole cell) of empty host.
+        const snap = Math.round(cols * cell.w);
+        if (Math.abs(snap - box.width) >= 1) host.current.style.width = `${snap}px`;
         send({ type: 'resize', cols, rows });
       };
       const connect = () => {
@@ -108,14 +132,16 @@ export default function LiveTerminal({ token, label }: { token: string; label: s
           if (!live) return;
           if (typeof event.data === 'string') {
             const message = JSON.parse(event.data);
-            if (message.refused) { refused = true; writable = false; setReason(message.refused); setState('refused'); return; }
+            if (message.refused) { refused = gone = true; writable = false; release(false); setReason(message.refused); setState('refused'); return; }
             if (message.type === 'scrollback') { terminal.reset(); terminal.write(withoutAlternateScreen(message.data.replace(/\r?\n/g, '\r\n'))); return; }
             if (message.note) { setReason(message.note); return; }
             if (message.session) setSession(message.session);
             if (message.mode) {
-              writable = message.mode === 'control' && !!message.session?.pane; setState(message.mode); setReason(''); delay = 250;
+              writable = message.mode === 'control' && !!message.session?.pane; viewOnly = !writable; setState(message.mode); setReason(''); delay = 250;
+              release(writable);
               fit();
-              if (writable && message.type === 'hello') terminal.focus();
+              // The pane takes focus only when nothing else has it: a late hello never pulls focus off a tab or box.
+              if (writable && message.type === 'hello' && (!document.activeElement || document.activeElement === document.body)) terminal.focus();
             }
             return;
           }
@@ -133,7 +159,7 @@ export default function LiveTerminal({ token, label }: { token: string; label: s
               // A socket that failed while the network was down answers this check once it is back,
               // looking refused: one more attempt, on the network the check just reached, decides (GY-3368).
               if (!doubted) { doubted = true; connect(); return; }
-              setReason('Not available: sign in, and check the session still has a pane.'); setState('refused'); return;
+              setReason('Not available: sign in, and check the session still has a pane.'); gone = true; release(false); setState('refused'); return;
             }
           }
           setState('reconnecting');
@@ -155,6 +181,16 @@ export default function LiveTerminal({ token, label }: { token: string; label: s
       const paste = (event: ClipboardEvent) => { event.preventDefault(); event.stopPropagation(); void deliver([...event.clipboardData?.files ?? []], event.clipboardData?.getData('text/plain') ?? ''); };
       const drop = (event: DragEvent) => { event.preventDefault(); void deliver([...event.dataTransfer?.files ?? []], ''); };
       const over = (event: DragEvent) => event.preventDefault();
+      // The page's message box (GY-3602): one line as a bracketed paste with Enter, and attached images.
+      handleRef.current = {
+        typeLine: line => { if (!writable) return false; input(`\x1b[200~${line.replace(/\x1b/g, '').replace(/\r?\n/g, ' ')}\x1b[201~`); input('\r'); terminal.focus(); return true; },
+        attach: files => {
+          if (writable) { void deliver(files, ''); return Promise.resolve(true); }
+          if (viewOnly || gone) return Promise.resolve(false);
+          return new Promise(done => { held.push({ files, done }); });
+        },
+      };
+      handle?.(handleRef.current);
       const readClipboard = async () => {
         try {
           const files: File[] = []; let pasted = '';
@@ -195,23 +231,23 @@ export default function LiveTerminal({ token, label }: { token: string; label: s
       element.addEventListener('paste', paste, true); element.addEventListener('drop', drop); element.addEventListener('dragover', over); element.addEventListener('contextmenu', context);
       element.addEventListener('touchstart', touchStart, { passive: true }); element.addEventListener('touchmove', touchMove, { passive: false });
       const typing = terminal.onData(input);
-      const observer = new ResizeObserver(fit); observer.observe(host.current!);
+      const observer = new ResizeObserver(fit); observer.observe(section.current!);
       // Back on the page after another tab or app sized the pane, the pane is fitted to this page again (GY-3313).
       const visible = () => { if (document.visibilityState === 'visible') fit(); };
       window.addEventListener('resize', fit); document.addEventListener('visibilitychange', visible);
       fit(); connect();
       stop = () => {
-        clearTimeout(reconnect); observer.disconnect(); window.removeEventListener('resize', fit); document.removeEventListener('visibilitychange', visible);
+        release(false); clearTimeout(reconnect); observer.disconnect(); window.removeEventListener('resize', fit); document.removeEventListener('visibilitychange', visible);
         element.removeEventListener('paste', paste, true); element.removeEventListener('drop', drop); element.removeEventListener('dragover', over); element.removeEventListener('contextmenu', context);
         element.removeEventListener('touchstart', touchStart); element.removeEventListener('touchmove', touchMove);
-        typing.dispose(); socket.close(); terminal.dispose(); sendKey.current = () => {};
+        typing.dispose(); socket.close(); terminal.dispose(); sendKey.current = () => {}; handleRef.current = noHandle; handle?.(null);
       };
     }, () => { if (live) { setReason('xterm.js did not load. Reload to try again.'); setState('refused'); } });
     return () => { live = false; stop(); };
   }, [token]);
   return <section ref={section} className={`live-terminal${session?.state === 'working' ? ' working' : ''}`} aria-label={label} data-terminal={state}>
     <div className="terminal-info" role="status">
-      {session && <span className="terminal-session" title={`${session.runtime ?? 'Runtime unknown'} · ${session.pane ?? 'No pane'}`}>{session.state === 'absent' ? 'Master is restarting…' : `${session.state.charAt(0).toUpperCase()}${session.state.slice(1)} · ${session.account ?? 'Account unknown'}`}</span>}
+      {session && <span className="terminal-session" title={`${session.runtime ?? 'Runtime unknown'} · ${session.pane ?? 'No pane'}`}>{session.state === 'absent' ? 'Lead is restarting…' : `${session.state.charAt(0).toUpperCase()}${session.state.slice(1)} · ${session.account ?? 'Account unknown'}`}</span>}
       <span>{state === 'connecting' ? 'Connecting…' : state === 'reconnecting' ? 'Reconnecting…' : state === 'control' ? 'You can type here' : state === 'observe' ? 'View only' : reason}</span>
       {reason && state !== 'refused' && <span>{reason}</span>}
     </div>

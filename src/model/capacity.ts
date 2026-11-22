@@ -6,7 +6,7 @@ import type { partialWorkSchema, exhaustionReportSchema, capacityAccountSchema }
 /** Roles launched into session slots. */
 export const capacityRoles = ['worker', 'reviewer', 'producer'] as const;
 /** Every active role can exhaust provider quota. */
-export const quotaRoles = [...capacityRoles, 'master'] as const;
+export const quotaRoles = [...capacityRoles, 'master', 'caretaker'] as const;
 export type CapacityRole = typeof quotaRoles[number];
 
 /** What a session's own output says about its provider quota. */

@@ -16,6 +16,8 @@ import { guideCommands } from './guide.js';
 import { versionCommands } from './version.js';
 import { upgradeCommands } from './upgrade.js';
 import { hostCommands } from './hosts.js';
+import { benchCommands } from './bench.js';
+import { COMMAND_NAME, PRODUCT_NAME } from '../model/product.js';
 
 /**
  * Every command the launcher answers to, in help order. A feature adds its commands to
@@ -25,12 +27,13 @@ export const commands: readonly CliCommand[] = [
   ...installCommands, ...dbCommands, ...masterCommands, ...workCommands, ...admissionAuditCommands, ...policyCommands,
   ...deliveryCommands, ...scenarioCommands,
   ...operatorAgentCommands, ...leaseCommands, ...workspaceCommands,
-  ...reviewCommands, ...guideCommands, ...versionCommands, ...upgradeCommands, ...hostCommands,
+  ...reviewCommands, ...guideCommands, ...versionCommands, ...upgradeCommands, ...hostCommands, ...benchCommands,
 ];
 
 export function renderHelp() {
-  return `Graphyard 0.1 — distributed work, explicit proof
+  return `${PRODUCT_NAME} 0.1 — distributed work, explicit proof
 
+Usage: ${COMMAND_NAME} COMMAND (the graphyard command still works)
 Environment: GRAPHYARD_URL, GRAPHYARD_TOKEN (individual role-scoped credential)
 ${commands.flatMap(entry => entry.help).join('\n')}
 

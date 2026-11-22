@@ -31,9 +31,12 @@ const identity = {
 };
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
 const sharedCache = process.env.npm_config_cache || join(homedir(), '.npm');
-// The trial's children run here directly, not in the trial container, with the host's npm cache.
-const run: ChildRun = (command, args, { wrapper: _wrapper, ...options } = {}) =>
-  defaultChildRun(command, args, { ...options, ...(options.env ? { env: { ...options.env, npm_config_cache: sharedCache } } : {}) });
+// The trial's children run here directly, not in the trial container, with the host's npm cache and
+// a pnpm store beside it, both preferred over the registry: only a host's first run fetches pnpm and turbo.
+const hostCache = { npm_config_cache: sharedCache, npm_config_store_dir: join(sharedCache, 'pnpm-store'), npm_config_prefer_offline: 'true' };
+const runWith = (extra: Record<string, string> = {}): ChildRun => (command, args, { wrapper: _wrapper, ...options } = {}) =>
+  defaultChildRun(command, args, { ...options, ...(options.env ? { env: { ...options.env, ...hostCache, ...extra } } : {}) });
+const run = runWith();
 
 const build = `import { mkdirSync, writeFileSync } from 'node:fs';\nmkdirSync('dist', { recursive: true });\nwriteFileSync('dist/index.txt', 'built');\n`;
 const lockfile = `lockfileVersion: '9.0'
@@ -112,13 +115,13 @@ async function repository(root: string, change: Record<string, string>) {
   git(root, 'checkout', '-q', '--detach', base);
   return { base, head };
 }
-const trialOf = async (root: string, base: string, head: string, retries = 0) => {
+const trialOf = async (root: string, base: string, head: string, retries = 0, childRun = run) => {
   const merged = await trialMerge(async args => git(root, ...args), { head, baseTip: base });
   assert.ok('mergeSha' in merged);
   return runTrial({
     root, base: await temporaryDirectory('turbo-writable-cache-root', tmpdir()), mergeSha: merged.mergeSha, baseTip: base,
     changedFiles: git(root, 'diff', '--name-only', base, head).split('\n').filter(Boolean),
-    timeoutMs: 300_000, environment: { PATH: process.env.PATH! }, run, retries,
+    timeoutMs: 300_000, environment: { PATH: process.env.PATH! }, run: childRun, retries,
   });
 };
 
@@ -135,6 +138,18 @@ test('integration:turbo-writable-cache — a turbo workspace whose checkout root
     assert.match(trial.logTail, /turbo run build/);
     assert.equal(existsSync(join(root, '.turbo')), false, 'turbo wrote no cache into the read-only checkout');
   } finally { await chmod(root, 0o755); }
+});
+
+test('unit:turbo-writable-cache-pinned — once a host has fetched pnpm and turbo, the case builds again with the registry unreachable', async () => {
+  // GY-3665: each trial's pnpm store sat in its own fresh home, so every run fetched turbo from the
+  // registry and a slow fetch on a loaded host failed the case. The store now lives in the host's cache.
+  const root = await temporaryDirectory('turbo-writable-cache-offline', tmpdir());
+  const { base, head } = await repository(root, { 'apps/one/build.mjs': `// changed\n${build}` });
+  const warm = await trialOf(root, base, head);
+  assert.equal(warm.build, 'pass', warm.logTail);
+  const offline = await trialOf(root, base, head, 0, runWith({ npm_config_proxy: 'http://127.0.0.1:9/', npm_config_https_proxy: 'http://127.0.0.1:9/' }));
+  assert.equal(offline.build, 'pass', offline.logTail);
+  assert.match(offline.logTail, /turbo run build/);
 });
 
 test('integration:turbo-writable-cache — a read-only failure writing past the trial\'s granted directories is the containment refusing the candidate, a failed build like any other, never a host blocker', async () => {

@@ -27,7 +27,7 @@ test('unit:readme-and-walkthrough-only — docs/ holds only the walkthrough medi
   assert.ok(readme.includes(`](${gif})](${video})`), 'README embeds the walkthrough GIF linking to the MP4');
   const setup = readme.split('\n## Quick start\n')[1]?.split('\n## ')[0] ?? '';
   assert.match(setup, /graphyard(\.mjs)? up --repo OWNER\/NAME/);
-  for (const help of ['graphyard guide TOPIC', 'graphyard master guide']) assert.ok(readme.includes(help), `README points at ${help}`);
+  for (const help of ['mainworks guide TOPIC', 'mainworks master guide']) assert.ok(readme.includes(help), `README points at ${help}`);
   assert.deepEqual([...readme.matchAll(/\]\((docs\/[^)]*\.md)/g)].map(match => match[1]), ['docs/setup.md', 'docs/shared-server.md', 'docs/walkthrough.md'], 'README links only the setup guide, the shared-server guide and the walkthrough re-render page');
 
   const seconds = mp4Seconds(readFileSync(new URL(video, root)));

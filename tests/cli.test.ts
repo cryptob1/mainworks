@@ -51,7 +51,7 @@ test('installed CLI resolves its runtime from another repository and includes su
   const http = createServer((req, res) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({now:'2026-01-01T00:01:00Z',work:[{ id: 'rework', stage: 'build', ready: true, reworkRequested: true, submission: { pr: 1 }, dependencies: [], priority: 1 },{id:'active',stage:'build',ready:true,dependencies:[],priority:1,lease:{expiresAt:'2026-01-01T00:02:00Z'}},{id:'expired',stage:'build',ready:true,dependencies:[],priority:1,lease:{expiresAt:'2026-01-01T00:00:00Z'}},{id:'holding',key:'GY-H',stage:'build',ready:true,dependencies:[],priority:1,exclusiveResources:['staging'],lease:{expiresAt:'2026-01-01T00:02:00Z'}},{id:'shared',stage:'ready',ready:true,dependencies:[],priority:1,exclusiveResources:['staging']},{id:'unrelated',stage:'ready',ready:true,dependencies:[],priority:1,exclusiveResources:['other']}]})); });
   await new Promise<void>(r => http.listen(0, '127.0.0.1', r));
   try {
-    assert.match((await exec(process.execPath, [launcher, '--help'], { cwd })).stdout, /Graphyard 0.1/);
+    assert.match((await exec(process.execPath, [launcher, '--help'], { cwd })).stdout, /Mainworks 0.1/);
     const { stdout } = await exec(process.execPath, [launcher, 'next'], { cwd, env: { ...process.env, GRAPHYARD_TOKEN: 'test-only', GRAPHYARD_URL: `http://127.0.0.1:${(http.address() as any).port}` } });
     assert.deepEqual(JSON.parse(stdout).map((w:any)=>w.id), ['rework','expired','unrelated']);
   } finally { await new Promise<void>(r => http.close(() => r())); await rm(cwd, { recursive: true, force: true }); }

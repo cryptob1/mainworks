@@ -2,7 +2,6 @@
 import { randomUUID } from 'node:crypto';
 import { appendFile, chmod, copyFile, mkdir, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
 import { constants, createReadStream } from 'node:fs';
-import { createInterface } from 'node:readline';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -85,18 +84,20 @@ export function conversationEvents(kind: string, transcript: string): Conversati
   return jsonLines(transcript).flatMap(eventReader(kind));
 }
 
-/** Native JSONL is consumed one row at a time, including an unfinished last row. */
+/** Native JSONL is consumed one row at a time, including an unfinished last row. Bytes are split at
+ * newlines and only a line holding `{` is decoded, so megabytes of padding cost one scan (GY-3637). */
 async function* nativeRows(path: string) {
-  const stream = createReadStream(path, { encoding: 'utf8' });
-  const lines = createInterface({ input: stream, crlfDelay: Infinity });
-  // readline does not forward input errors to its async iterator.
-  stream.on('error', error => lines.close());
-  try {
-    for await (const line of lines) {
-      try { yield JSON.parse(line); } catch { /* Native writers can leave a partial row. */ }
+  const parse = (line: Buffer) => { if (line.includes(123)) try { return [JSON.parse(line.toString('utf8'))]; } catch { /* Native writers can leave a partial row. */ } return []; };
+  let rest: Buffer[] = [];
+  for await (const chunk of createReadStream(path, { highWaterMark: 1 << 20 }) as AsyncIterable<Buffer>) {
+    let start = 0;
+    for (let end = chunk.indexOf(10); end !== -1; start = end + 1, end = chunk.indexOf(10, start)) {
+      yield* parse(rest.length ? Buffer.concat([...rest, chunk.subarray(start, end)]) : chunk.subarray(start, end));
+      rest = [];
     }
-    if (stream.errored) throw stream.errored;
-  } finally { lines.close(); stream.destroy(); }
+    if (start < chunk.length) rest.push(chunk.subarray(start));
+  }
+  if (rest.length) yield* parse(Buffer.concat(rest));
 }
 
 async function* nativeEvents(kind: string, path: string) {
@@ -234,9 +235,12 @@ export async function adoptConversation(root: string, input: { runtime: string; 
   const launch = randomUUID(), origins = input.origins ?? masterInputs(root, launch);
   await mkdir(dirname(origins), { recursive: true, mode: 0o700 });
   const pending = new Set(input.prompts);
-  for await (const event of nativeEvents(input.runtime, found.transcript)) for (const prompt of pending) if (event.type === 'input' && event.text?.includes(prompt.text)) {
-    await appendFile(origins, JSON.stringify({ origin: prompt.origin, event: event.id }) + '\n', { mode: 0o600 });
-    pending.delete(prompt);
+  for await (const event of nativeEvents(input.runtime, found.transcript)) {
+    for (const prompt of pending) if (event.type === 'input' && event.text?.includes(prompt.text)) {
+      await appendFile(origins, JSON.stringify({ origin: prompt.origin, event: event.id }) + '\n', { mode: 0o600 });
+      pending.delete(prompt);
+    }
+    if (!pending.size) break;
   }
   const current: Conversation = { launch, runtime: input.runtime, account: input.account, ...found, origins, record: join(masterRecords(root), `${launch}.jsonl`), predecessor: null, supersededBy: null };
   await captureConversation(current);

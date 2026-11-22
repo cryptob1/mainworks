@@ -5,18 +5,19 @@
 //   node scripts/e2e-serve-record.mjs '{"commit":"main","url":...}'
 //
 // The record belongs in the control plane's serving root. Under scripts/e2e-serve.mjs that is the
-// delivery fixture's repository it names in .graphyard/e2e-serve.json, not the trial checkout;
+// delivery fixture's repository it names in .graphyard/e2e-serve-PORT.json (PORT: TARGET_URL's), not the trial checkout;
 // with no e2e serve the root is this checkout. A commit of "main" is that root's main tip.
 import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const root = await readFile('.graphyard/e2e-serve.json', 'utf8').then(text => JSON.parse(text).delivery?.root ?? '.', () => '.');
+const root = await readFile(`.graphyard/e2e-serve-${new URL(process.env.TARGET_URL ?? 'http://127.0.0.1:4391').port}.json`, 'utf8').then(text => JSON.parse(text).delivery?.root ?? '.', () => '.');
 const file = join(root, '.graphyard', 'served.json'), [argument] = process.argv.slice(2);
 
+// A remote shard's checkout belongs to the host user, and a case's command step runs without the shard's git settings.
 const mainTip = () => {
   for (const ref of ['refs/remotes/origin/main', 'refs/heads/main', 'HEAD']) {
-    try { return execFileSync('git', ['-C', root, 'rev-parse', '--verify', ref], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { /* the ref is absent here */ }
+    try { return execFileSync('git', ['-c', 'safe.directory=*', '-C', root, 'rev-parse', '--verify', ref], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { /* the ref is absent here */ }
   }
   throw new Error(`${root} has no main commit`);
 };

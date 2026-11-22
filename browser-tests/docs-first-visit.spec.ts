@@ -80,12 +80,10 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: '
     test.setTimeout(60_000);
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await signedIn(page);
-    // On a phone the sidebar folds behind Menu; Help is at its foot.
-    const menu = page.getByRole('button', { name: 'Menu', exact: true });
-    if (await menu.isVisible()) await menu.click();
-    await page.getByRole('button', { name: 'Help', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: 'Help', exact: true }).click();
     const docs = page.locator('article.guide');
-    await expect(docs.getByRole('heading', { name: 'How Graphyard works', level: 1 })).toBeVisible();
+    await expect(docs.getByRole('heading', { name: 'How Mainworks works', level: 1 })).toBeVisible();
     await expect(docs).toContainText('coding factory');
 
     // Every link on the page that stays on the page lands on something that exists.
@@ -102,8 +100,11 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: '
     const overview = docs.locator('#docs-overview');
     for (const role of ['You, the owner', 'The Master', 'The loop']) await expect(overview).toContainText(role);
     const journey = docs.locator('#docs-first-item ol');
-    await expect(journey.locator('li')).toHaveCount(8);
-    for (const step of ['npx @cryptob1/graphyard doctor', 'npx @cryptob1/graphyard up --repo OWNER/NAME', 'http://127.0.0.1:4310', 'New work item', 'Shipped', 'Taste', 'Looks good', 'Send back', 'Blocked', 'Needs you']) await expect(journey).toContainText(step);
+    await expect(journey.locator('li')).toHaveCount(7);
+    for (const step of ['npx @cryptob1/graphyard doctor', 'npx @cryptob1/graphyard up --repo OWNER/NAME', 'http://127.0.0.1:4310', 'New work item', 'goal', 'Shipped today', 'Stuck', 'Needs you']) await expect(journey).toContainText(step);
+    // GY-3600: Help teaches the Work list as it now is; nothing the change removed stays behind to mislead.
+    for (const gone of ['Taste', 'Looks good', 'Send back', 'trust strip', 'Blocked', 'Moving', 'work row']) await expect(docs).not.toContainText(gone);
+    await expect(docs.locator('#faq-taste')).toHaveCount(0);
 
     // By keyboard: the FAQ link, then Tab to the first question and open it with Enter.
     await contents.getByRole('link', { name: 'FAQ', exact: true }).focus();
@@ -119,9 +120,11 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: '
     // Concrete answers to what a new engineer asks first.
     const answers: [string, string[]][] = [
       ['faq-context', ['product brief', 'AGENTS.md', 'work item', 'committed work']],
-      ['faq-delivery', ['reviews it', 'proof', 'latest main', 'batch', 'reverts', 'rolls back']],
+      ['faq-filing', ['New work item', 'P0', 'P3', 'item’s page']],
+      ['faq-delivery', ['reviews it', 'proof', 'latest main', 'batch', 'reverts', 'rolls back', 'merges an hour', 'review to live']],
       ['faq-deploy', ['Railway', 'AWS', 'delivery.applications', 'versionUrl']],
-      ['faq-access', ['http://127.0.0.1:4310', 'first free port', '--port N', 'graphyard login', 'Invite someone', 'each install', 'http://HOST:PORT', 'signs them in once', 'any device']],
+      ['faq-app-url', ['Open app', 'Settings → Delivery', 'master status']],
+      ['faq-access', ['http://127.0.0.1:4310', 'first free port', '--port N', 'mainworks login', 'Invite someone', 'each install', 'http://HOST:PORT', 'signs them in once', 'any device']],
     ];
     for (const [id, says] of answers) {
       const faq = docs.locator(`#${id}`);

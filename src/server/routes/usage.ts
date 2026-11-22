@@ -1,14 +1,14 @@
 import { z } from 'zod';
 import { demand } from '../../model.js';
 import { defineRoutes, parseJson } from '../routes.js';
-import { readRegistry } from '../../agent-registry.js';
-import { costSummary, type UsageRow } from '../../model/token-costs.js';
+import { readRegistry, recordSessionModels } from '../../agent-registry.js';
+import { builderModel, costSummary, type UsageRow } from '../../model/token-costs.js';
 
 const tokens = z.number().int().min(0).max(1e13);
 const rowSchema = z.object({
   id: z.string().min(1).max(300), work: z.string().min(1).max(80).nullable(), role: z.enum(['worker', 'reviewer', 'producer', 'master']),
   account: z.string().max(80).nullable(), runtime: z.string().min(1).max(40), model: z.string().min(1).max(200).nullable(), reported: z.boolean(),
-  input: tokens, output: tokens, cacheRead: tokens, cacheWrite: tokens, at: z.string().datetime(),
+  input: tokens, output: tokens, cacheRead: tokens, cacheWrite: tokens, at: z.string().datetime(), ran: z.string().min(1).max(200).nullable().optional(),
 }).strict();
 
 /**
@@ -31,6 +31,9 @@ export const usageRoutes = defineRoutes('usage', [
           ON CONFLICT (id) DO UPDATE SET reported=EXCLUDED.reported, input_tokens=EXCLUDED.input_tokens, output_tokens=EXCLUDED.output_tokens, cache_read_tokens=EXCLUDED.cache_read_tokens, cache_write_tokens=EXCLUDED.cache_write_tokens, at=EXCLUDED.at`,
           [row.id, row.work, row.role, row.account, row.runtime, row.model ?? own?.id ?? own?.name ?? null, row.reported, row.input, row.output, row.cacheRead, row.cacheWrite, row.at]);
       }
+      // A finished session that ran a model other than its account's own marks the account broken (GY-3596).
+      const ran = rows.filter(row => row.account && row.ran);
+      if (ran.length) await services.engine.store.transaction((db, now) => recordSessionModels(db, actor, ran.map(row => ({ account: row.account!, ran: row.ran! })), now));
       return { recorded: rows.length };
     },
   },
@@ -43,7 +46,9 @@ export const usageRoutes = defineRoutes('usage', [
       const rows: UsageRow[] = read.rows.map(row => ({ id: row.id, work: row.work, role: row.role, account: row.account, runtime: row.runtime, model: row.model, reported: row.reported,
         input: Number(row.input_tokens), output: Number(row.output_tokens), cacheRead: Number(row.cache_read_tokens), cacheWrite: Number(row.cache_write_tokens), at: new Date(row.at).toISOString() }));
       const shipped = new Set<string>((await pool.query(`SELECT key FROM work_index WHERE stage = 'done' AND key = ANY($1::text[])`, [[...new Set(rows.flatMap(row => row.work ?? []))]])).rows.map(row => row.key));
-      return costSummary(rows, await readRegistry(pool), shipped, read.rows[0] ? new Date(read.rows[0].now).getTime() : Date.now(), days);
+      const registry = await readRegistry(pool);
+      // GY-3599: one item's costs also name the model its Builder's session reported.
+      return { ...costSummary(rows, registry, shipped, read.rows[0] ? new Date(read.rows[0].now).getTime() : Date.now(), days), ...(work ? { builder: builderModel(rows, registry) } : {}) };
     },
   },
 ]);

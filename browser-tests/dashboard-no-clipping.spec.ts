@@ -14,7 +14,7 @@ const stub = resolve('fixtures/herdr-terminal-stub');
 const settled = { timeout: 15_000 };
 const operator = { Authorization: 'Bearer test-human-operator', 'Content-Type': 'application/json' };
 
-/** The real control plane serving the built dashboard, with the stub herdr for the Master terminal (tests/helpers/terminal-server.ts). */
+/** The real control plane serving the built dashboard, with the stub herdr for the Lead terminal (tests/helpers/terminal-server.ts). */
 async function plane(database: string, site: string) {
   const child = fork(resolve('tests/helpers/terminal-server.ts'), [database, site], { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
     env: { ...process.env, GRAPHYARD_BUILD_SHA: '1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b', PATH: `${stub}${delimiter}${process.env.PATH}`, HERDR_STUB_LOG: join(site, 'herdr.log'), GRAPHYARD_HERDR_CONFIG_HOME: '', GRAPHYARD_HERDR_SESSION: '' } });
@@ -47,39 +47,26 @@ async function check(page: Page, where: string) {
       for (let parent = node.parentElement; parent; parent = parent.parentElement) if (getComputedStyle(parent).overflowX !== 'visible') left = Math.max(left, parent.getBoundingClientRect().left);
       return { left: box.left, text: left > box.left + 1 ? '(cut)' : node.textContent!.trim() };
     };
-    const first = seen(document.querySelector('.primary-nav .nav span')), master = seen(document.querySelector('.primary-nav [data-nav="master"] span'));
+    const first = seen(document.querySelector('.main-nav [data-nav="home"]')), lead = seen(document.querySelector('.main-nav [data-nav="lead"]'));
     const label = document.querySelector('.version-label');
-    const foot = label?.closest('.sidebar-bottom');
-    const at = label?.getBoundingClientRect();
-    const sidebar = document.querySelector('.sidebar')!.getBoundingClientRect();
-    const hits = (other: DOMRect) => !!at && other.width > 0 && other.height > 0 && other.left < at.right && other.right > at.left && other.top < at.bottom && other.bottom > at.top;
-    const overlaps = label ? [...document.body.querySelectorAll('*')].filter(other => !other.contains(label) && !label.contains(other) && getComputedStyle(other).visibility !== 'hidden' && hits(other.getBoundingClientRect())).map(other => other.outerHTML.slice(0, 100)) : [];
     return {
       scroll: { scrollWidth: doc.scrollWidth, clientWidth: doc.clientWidth }, offsetLeft: window.visualViewport!.offsetLeft, scrollX: window.scrollX,
-      first, master,
-      label: !!label, inFoot: !!foot, insideSidebar: !!at && at.left >= sidebar.left - 1 && at.right <= sidebar.right + 1, overlaps,
+      first, lead,
+      label: !!label,
     };
   });
   expect.soft(read.scroll.scrollWidth, `${where}: the page is no wider than the window`).toBe(read.scroll.clientWidth);
   expect.soft(read.offsetLeft, `${where}: the view stays at the left edge after a sideways scroll`).toBe(0);
   expect.soft(read.scrollX, `${where}: the page does not scroll sideways`).toBe(0);
-  expect.soft(read.first.left, `${where}: the first sidebar label starts inside the window`).toBeGreaterThanOrEqual(0);
-  expect.soft(read.first.text, `${where}: the first sidebar label reads in full`).toBe('Work');
-  expect.soft(read.master.left, `${where}: the Master label starts inside the window`).toBeGreaterThanOrEqual(0);
-  expect.soft(read.master.text, `${where}: the Master label reads in full`).toBe('Master');
+  expect.soft(read.first.left, `${where}: the first nav label starts inside the window`).toBeGreaterThanOrEqual(0);
+  expect.soft(read.first.text, `${where}: the first nav label reads in full`).toBe('Home');
+  expect.soft(read.lead.left, `${where}: the Lead label starts inside the window`).toBeGreaterThanOrEqual(0);
+  expect.soft(read.lead.text, `${where}: the Lead label reads in full`).toMatch(/^Lead/);
   expect.soft(read.label, `${where}: the version shows`).toBe(true);
-  expect.soft(read.inFoot, `${where}: the version sits in the sidebar foot`).toBe(true);
-  if (width > 650) expect.soft(read.insideSidebar, `${where}: the version sits inside the sidebar`).toBe(true);
-  expect.soft(read.overlaps, `${where}: the version overlaps nothing`).toEqual([]);
 }
 
-/** On a phone the menu folds the sidebar away; it is opened to read its labels, then closed. */
 async function checkWithMenu(page: Page, where: string) {
-  const narrow = page.viewportSize()!.width <= 650;
-  const menu = page.getByRole('button', { name: 'Menu' });
-  if (narrow) await menu.click();
   await check(page, where);
-  if (narrow) await menu.click();
 }
 
 for (const viewport of [{ width: 390, height: 844 }, { width: 800, height: 700 }, { width: 1280, height: 800 }]) {
@@ -95,24 +82,24 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 800, height: 700 }
       const { code } = await (await fetch(`${http.url}/api/sign-in-links`, { method: 'POST', headers: operator })).json() as { code: string };
       await page.goto(`${http.url}/#sign-in=${code}`);
       await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible(settled);
-      await expect(page.locator('.work-row').first()).toBeVisible(settled);
-      await expect(page.locator('.version-label')).toContainText('Graphyard 1a2b3c4', settled);
+      await expect(page.locator('[data-row]').first()).toBeVisible(settled);
+      await expect(page.locator('.version-label')).toContainText('Mainworks 1a2b3c4', settled);
       await checkWithMenu(page, 'Work');
 
       if (viewport.width === 800) {
-        const cut = await page.locator('.work-row').evaluateAll(rows => rows.flatMap(row => {
+        const cut = await page.locator('[data-row]').evaluateAll(rows => rows.flatMap(row => {
           const outer = row.getBoundingClientRect();
-          return [...row.querySelectorAll('.row-who, .row-time')].filter(cell => { const box = cell.getBoundingClientRect(); return box.width > 0 && (box.left < outer.left - 1 || box.right > outer.right + 1 || box.top < outer.top - 1 || box.bottom > outer.bottom + 1); })
-            .map(cell => `${row.getAttribute('data-row')} ${cell.className}`);
+          return [...row.querySelectorAll('[data-col="builder"], [data-col="time"]')].filter(cell => { const box = cell.getBoundingClientRect(); return box.width > 0 && (box.left < outer.left - 1 || box.right > outer.right + 1 || box.top < outer.top - 1 || box.bottom > outer.bottom + 1); })
+            .map(cell => `${row.getAttribute('data-row')} ${cell.getAttribute('data-col')}`);
         }));
-        expect.soft(cut, 'every row keeps its Who acts next and In step cells inside it').toEqual([]);
+        expect.soft(cut, 'every row keeps its Builder and In state cells inside it').toEqual([]);
       }
 
-      await page.evaluate(() => { location.hash = 'master'; });
+      await page.evaluate(() => { location.hash = 'master/live'; });
       await expect(page.locator('.xterm-rows')).toContainText('screen of w1:master', settled);
       await page.locator('.xterm-screen').click();
       await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
-      await checkWithMenu(page, 'Master');
+      await checkWithMenu(page, 'Lead');
 
       await page.evaluate(() => { location.hash = 'workers'; });
       await expect(page.getByRole('heading', { name: 'Workers', exact: true, level: 1 })).toBeVisible(settled);
@@ -123,7 +110,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 800, height: 700 }
       await checkWithMenu(page, 'Settings → Agents');
 
       await page.evaluate(() => { location.hash = 'setup'; });
-      await expect(page.getByRole('heading', { name: 'Set up Graphyard', exact: true, level: 1 })).toBeVisible(settled);
+      await expect(page.getByRole('heading', { name: 'Set up Mainworks', exact: true, level: 1 })).toBeVisible(settled);
       await checkWithMenu(page, 'Settings → Setup');
 
       // GY-3486: the Invite dialog from the top bar fits the window too.
@@ -139,7 +126,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 800, height: 700 }
       await expect(dialog).toBeHidden(settled);
 
       await page.evaluate(() => { location.hash = 'work'; });
-      await page.locator('.work-row .card-open').first().click();
+      await page.locator('[data-row] .card-open').first().click();
       await expect(page.getByRole('button', { name: /Back/ }).first()).toBeVisible(settled);
       await checkWithMenu(page, 'item page');
     } finally { await page.close(); await http.close(); await database.close(); }

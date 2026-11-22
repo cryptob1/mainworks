@@ -1,4 +1,4 @@
-import { test, expect, type Browser } from '@playwright/test';
+import { test, expect, type Browser, type Page } from '@playwright/test';
 import { fork } from 'node:child_process';
 import { once } from 'node:events';
 import { readFile, symlink, writeFile } from 'node:fs/promises';
@@ -54,15 +54,23 @@ async function open(browser: Browser, url: string, width: 1280 | 390, viewer: 't
   if (viewer === 'typing') {
     const { code } = await (await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string };
     await page.goto(`${url}/#sign-in=${code}&master`);
+    await openLiveSession(page);
   } else {
     await page.addInitScript(() => sessionStorage.setItem('graphyard-token', 'test-reader'));
-    await page.goto(`${url}/#master`);
+    await page.goto(`${url}/#master/live`);
   }
   await expect(page.getByRole('status')).toContainText(viewer === 'typing' ? 'You can type here' : 'View only', settled);
   return { page, close: () => context.close() };
 }
 
-test('e2e:master-terminal-fills-page — the Master terminal fills the page on open, after navigating back and after a reconnect, for typing and read-only viewers at 1280 px and 390 px', async ({ browser }) => {
+
+/** The sign-in link opens the Lead page on its conversation; its live session is its own address. */
+const openLiveSession = async (page: Page) => {
+  await expect(page.getByRole('heading', { name: 'Lead', exact: true })).toBeVisible({ timeout: 15_000 });
+  await page.evaluate(() => { location.hash = '#master/live'; });
+};
+
+test('e2e:master-terminal-fills-page — the Lead live terminal fills the page on open, after navigating back and after a reconnect, for typing and read-only viewers at 1280 px and 390 px', async ({ browser }) => {
   test.setTimeout(240_000);
   const f = await fixture();
   try {
@@ -71,13 +79,12 @@ test('e2e:master-terminal-fills-page — the Master terminal fills the page on o
       try {
         // First open.
         await fillsThePage(page);
-        // Away to Work and back to Master: the page mounts a new terminal.
-        const menu = page.getByRole('navigation', { name: 'Primary' });
-        if (width === 390) await page.getByRole('button', { name: 'Menu' }).click();
-        await menu.getByRole('button', { name: 'Work', exact: true }).click();
+        // Away to Work and back to Lead: the page mounts a new terminal.
+        const menu = page.getByRole('navigation', { name: 'Main' });
+        await menu.getByRole('link', { name: 'Work', exact: true }).click();
         await expect(page.locator('.terminal-host')).toHaveCount(0);
-        if (width === 390) await page.getByRole('button', { name: 'Menu' }).click();
-        await menu.getByRole('button', { name: 'Master', exact: true }).click();
+        await menu.getByRole('link', { name: /^Lead/ }).click();
+        await openLiveSession(page);
         await fillsThePage(page);
         // A reconnect: the server drops the socket and the page dials back in.
         f.child.send('drop-terminals');

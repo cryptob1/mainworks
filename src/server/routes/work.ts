@@ -26,6 +26,7 @@ async function installAddress(context: RouteContext) {
   return report?.url ?? `http://${context.req.headers.host}`;
 }
 import { hostRunLog } from '../terminal.js';
+import { readTaskDiff, readTaskTimings } from '../task-evidence.js';
 import { runTranscript } from '../../model/sessions.js';
 
 /** Whether a request is a lease command (store/pools.ts `leaseCommands`), which authenticates and runs on the lease pool (GY-558). */
@@ -168,6 +169,9 @@ export const workRoutes = defineRoutes('work', [
       return log;
     },
   },
+  // GY-3599: the Task page's evidence, open to any reader of the item — where the trial's time went, and the change's files and diffs.
+  { method: 'GET', path: /^\/api\/work\/([^/]+)\/timings$/, handle: ({ services }, [id]) => readTaskTimings(services, decodeURIComponent(id!)) },
+  { method: 'GET', path: /^\/api\/work\/([^/]+)\/diff$/, handle: ({ services, url }, [id]) => readTaskDiff(services, decodeURIComponent(id!), url.searchParams.get('path')) },
   // The merge writer's ledger (GY-1524): intent, trial, pushed, reconciled and refused, recorded by the
   // loop's coordinator identity only; a reconciliation delivers the item in the same transaction.
   {

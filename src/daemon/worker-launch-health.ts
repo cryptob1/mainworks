@@ -3,6 +3,7 @@ import type { Work } from '../model.js';
 import type { SessionHandle } from '../model/sessions.js';
 import type { CoordinationRounds } from '../server/work-view.js';
 import { resumeExitWindowMs } from '../master/session-resume.js';
+import { launchStartMs } from '../master/launch.js';
 import { redactString } from '../redaction.js';
 import type { Cycle } from './cycle.js';
 import { record } from './effects.js';
@@ -34,7 +35,11 @@ export async function workerLaunchHealth(cycle: Cycle, item: Work, session: Sess
   const screen = await Promise.resolve().then(() => effects.sessionScreen?.(session)).catch(() => null) ?? '';
   // A successful process exit can still be an abandoned assignment: the agent stopped on a
   // lease refusal. Do not forgive it for running longer or preserving a commit first.
-  if ((leaseMissing && end?.end !== 'released' && end?.end !== 'submitted') || /Lease missing, expired, or superseded/.test(screen)) {
+  // GY-3586: a run that ended inside its launch window was ended by its own dispatch, which read why
+  // and started the next account under the next epoch. The snapshot keeps only the newest attempt's
+  // end, so this one's is unknown here, not lost.
+  const endedAtLaunch = !end && !!session.endedAt && Date.parse(session.endedAt) - Date.parse(session.startedAt) < launchStartMs(config);
+  if ((leaseMissing && !endedAtLaunch && end?.end !== 'released' && end?.end !== 'submitted') || /Lease missing, expired, or superseded/.test(screen)) {
     const reason = `${item.key} epoch ${epoch}: ${leaseLossReason}`;
     await record(state, key, { kind: 'dispatch', work: item.key, principal: session.principal, epoch, state: 'failed', detail: reason,
       attempts: (previous?.attempts ?? 0) + 1, cycle: state.cycle }, clock, effects.persist);

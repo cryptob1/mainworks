@@ -23,11 +23,14 @@ import type { E2eStep } from './case.js';
  */
 export const keptOutputLines = 50;
 /** Host variables a step's process keeps: what a command needs to run at all, never a credential. */
-export const hostPassthrough = ['PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'LC_ALL', 'TERM', 'TMPDIR', 'TZ', 'DISPLAY', 'XDG_RUNTIME_DIR', 'PLAYWRIGHT_BROWSERS_PATH', 'CI'] as const;
+export const hostPassthrough = ['PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'LC_ALL', 'TERM', 'TMPDIR', 'TZ', 'DISPLAY', 'XDG_RUNTIME_DIR', 'PLAYWRIGHT_BROWSERS_PATH', 'CI', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0'] as const;
 
 /** The environment a step's process gets: the host basics, the target, what was live when one serves (GY-2985), and the case's secrets — none of the three overridable by a secret. */
 export function stepEnvironment(url: string, secrets: Record<string, string>, host: NodeJS.ProcessEnv = process.env, baselineUrl?: string): Record<string, string> {
   const env: Record<string, string> = {};
+  // The host basics include the GIT_CONFIG_* pairs (above) a remote shard's host shim hands the
+  // launcher: its safe.directory is why git in a command step trusts the checkout it runs in,
+  // which the container maps to another uid (src/host-shim.ts).
   for (const name of hostPassthrough) if (host[name] !== undefined) env[name] = host[name]!;
   return { ...env, ...secrets, ...(baselineUrl ? { BASELINE_URL: baselineUrl } : {}), TARGET_URL: url };
 }
@@ -172,7 +175,9 @@ export function redactValues<T>(value: T, secrets: Record<string, string>): T {
   return value;
 }
 
-export interface StepRecord { index: number; name: string; kind: 'command' | 'agent'; outcome: 'pass' | 'fail'; output: string[]; verdict?: string; screenshots?: string[] }
+export interface StepRecord { index: number; name: string; kind: 'command' | 'agent'; outcome: 'pass' | 'fail'; output: string[]; verdict?: string; screenshots?: string[];
+  /** GY-3641: a compare step whose baseline leg could not be driven: "not comparable: <the baseline's error>". */
+  comparison?: string }
 
 /** The verdict line agent-browser is told to end with: the last one wins, so its own reasoning never counts. */
 export function parseVerdict(output: string): { outcome: 'pass' | 'fail'; verdict: string | null; reason: string | null } {
@@ -297,16 +302,18 @@ async function agentLeg(step: Extract<E2eStep, { kind: 'agent' }>, base: string,
   return { transcript, screenshots, reason, verdict };
 }
 
-/** An agent step: open the page, hand agent-browser the goal, read its verdict, keep a screenshot, close the session. A compare step (GY-2985) with a baseline serving runs the same goal there too, then one judge call given both transcripts and screenshots answers `VERDICT: SAME|BETTER|WORSE - reason`; WORSE fails the case and names the reason. Without a baseline (the first serve) the step runs as today. */
+/** An agent step: open the page, hand agent-browser the goal, read its verdict, keep a screenshot, close the session. A compare step (GY-2985) with a baseline serving runs the same goal there too, then one judge call given both transcripts and screenshots answers `VERDICT: SAME|BETTER|WORSE - reason`; WORSE fails the case and names the reason. A baseline leg that cannot be driven makes the step not comparable (GY-3641): the candidate's own leg decides. Without a baseline (the first serve) the step runs as today. */
 export async function runAgentStep(step: Extract<E2eStep, { kind: 'agent' }>, context: GeneralStepContext): Promise<{ record: Omit<StepRecord, 'index' | 'name'>; reason: string | null }> {
   const deadline = Date.now() + step.timeoutSeconds * 1000;
   const ran = await agentLeg(step, context.url, context, context.session, deadline);
   let reason = ran.reason, verdict = ran.verdict;
   const screenshots = ran.screenshots;
-  if (!reason && step.compare && context.env.BASELINE_URL) {
+  let comparison: string | undefined;
+  if (step.compare && context.env.BASELINE_URL) {
     const baselineLeg = await agentLeg(step, context.env.BASELINE_URL, context, `${context.session}-baseline`, deadline);
-    if (baselineLeg.reason) reason = baselineLeg.reason;
-    else {
+    // GY-3641: a baseline that cannot be driven is not the candidate's fault: the step is not comparable, and the candidate's own leg decides.
+    if (baselineLeg.reason) comparison = `not comparable: ${redact(baselineLeg.reason, context.secrets)}`;
+    else if (!reason) {
       const input: CompareInput = {
         goal: step.goal, success: step.success,
         target: { url: new URL(step.path ?? '/', context.url).toString(), transcript: lastLines(redact(ran.transcript.join('\n'), context.secrets)), screenshots },
@@ -320,7 +327,7 @@ export async function runAgentStep(step: Extract<E2eStep, { kind: 'agent' }>, co
     }
   }
   const output = lastLines(redact(ran.transcript.join('\n'), context.secrets));
-  return { record: { kind: 'agent', outcome: reason ? 'fail' : 'pass', output, ...(verdict ? { verdict: redact(verdict, context.secrets) } : {}), screenshots }, reason: reason && redact(reason, context.secrets) };
+  return { record: { kind: 'agent', outcome: reason ? 'fail' : 'pass', output, ...(verdict ? { verdict: redact(verdict, context.secrets) } : {}), screenshots, ...(comparison ? { comparison } : {}) }, reason: reason && redact(reason, context.secrets) };
 }
 
 /** `e2e-secrets.<target>.env` under the install directory: written by the operator, mode 0600, never committed. */

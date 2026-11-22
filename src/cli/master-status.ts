@@ -27,10 +27,12 @@ import { attemptLabel, readAttemptLaunch, type AttemptLaunch } from '../master/s
 import { plainStage, waitingReason } from '../model/plain-stage.js';
 import { stalledDelivery, stalledDeliveryAction } from '../daemon/master-stalled-delivery.js';
 import { failureHeld, repeatedFailureCause } from '../daemon/repeated-failure.js';
+import { reworkCapCause, reworkCapHeld } from '../model/rework-ground.js';
 import { alertMinutesOf } from '../daemon/yard-alerts.js';
 import { stallAlarmKey } from '../daemon/stall-alarm.js';
 import { stoppedRoles, type StoppedRole } from '../master/stopped-roles.js';
 import { deliverySpeed, type MergedItem, type SpeedEvent } from '../pipeline-speed.js';
+import type { Flow } from '../server/flow.js';
 import { unspecifiedModel, type FleetView } from '../model/registry.js';
 import { observeApplications } from '../production-watch.js';
 import { appRelease } from '../app-url.js';
@@ -44,6 +46,7 @@ import { loadProjectDelivery, parseProjectDelivery } from '../model-boundary/pro
 import { backedOffProfiles, readDispatchCursor, type DispatchCursor } from '../dispatch/cursor.js';
 import { liveReviewRequest } from '../model/dispatch.js';
 import { allowanceSentence, allowanceWarning } from '../model/allowance.js';
+import { benchResultsPath, benchStatus, readBenchResults } from '../bench.js';
 
 /** GY-3105: an item's whole non-routine ledger, oldest first, paged by cursor to the end; null when any page cannot be read. */
 export async function itemLedger(masterApi: (path: string) => Promise<any>, id: string): Promise<SpeedEvent[] | null> {
@@ -178,7 +181,11 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     return item ? [{ subject: item.key, text: `${item.key}'s worker launch failed ${entry.failures} times with the same reason, so it is not relaunched until ${entry.until}: ${entry.reason}`,
       next: `Repair the cause the reason names; the loop launches ${item.key} again once its backoff ends` }] : [];
   });
-  const reworked = reworkAttention(open);
+  const reworkCaps = open.flatMap(item => {
+    const cap = reworkCapCause(item);
+    return cap ? [{ subject: item.key, text: cap.detail, next: `Revise requirements (graphyard master requirements ${item.key} FILE REASON), split (graphyard master create FILE), or park (graphyard master hold ${item.key} REASON)` }] : [];
+  });
+  const reworked = reworkAttention(open.filter(item => !reworkCapHeld(item)));
   // GY-3331: a product review that could not run, one line per item — the fault is the launch's
   // or the reviewer's own environment, retried on another eligible reviewer, never the worker's.
   const couldNotRunReviews = open.flatMap(item => {
@@ -219,13 +226,20 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   // GY-3450: a gate in flight whose checks have not started for five minutes, naming who holds the host's heavy-job slots.
   const gateStalled = state?.actions[gateStallKey]?.state === 'failed' ? [{ subject: 'the batch gate', text: state.actions[gateStallKey]!.detail, next: 'Free a host heavy-job slot (stop the stuck holder it names); the alarm clears once a gate check starts' }] : [];
   // GY-3438: a session using far more than its share of a saturated machine for five minutes raises the overload alarm, naming it.
+  // GY-3624: the flow numbers for 6 hours, 24 hours and 7 days, and one attention line when a station's slowest tenth waits over an hour.
+  const flow: Flow | null = unreachable ? null : await Promise.resolve().then(() => masterApi('flow')).catch(() => null);
+  const flowAttention = flow?.attention ? [flow.attention] : [];
   const overloadAttention = overloaded(state?.sessions ?? [], now).map(session => ({ subject: session.name ?? session.unit, text: `Overload: ${overloadAlarm(session, now)}`, next: 'The session is only held to its share, not stopped; see what it runs on the Workers page' }));
+  // GY-3634: the latest trial benchmark beside the median of the previous ten on the same file list, with one attention line on >25% wall regression.
+  const bench = benchStatus(readBenchResults(benchResultsPath(root)));
   return {
     // GY-3432: the stall alarm the loop raised, first, until a launch starts or the item is acted on.
     stallAlarm: state?.actions[stallAlarmKey]?.detail ?? null,
+    // GY-3593: when the caretaker last ran, and its result line.
+    caretaker: state?.caretaker ? `Last ran ${formatAge(Date.parse(state.caretaker.at), now)} ago: ${state.caretaker.result}` : 'Not run yet',
     // GY-3095: the pipeline has stopped where a role cannot launch; each line names the role, the refusal, how long it has lasted and the next command.
     // GY-3204: and each application whose versionUrl lags main or fails to answer.
-    attention: [...humanAttention, ...leaseLosses, ...blockerAttention, ...drained, ...growth, ...trialImageFault, ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now) : []), ...backedOff, ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...allowanceAttention(fleet, now), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(readRemoteShardRuns(root)), ...gateStalled, ...overloadAttention, ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
+    attention: [...humanAttention, ...reworkCaps, ...leaseLosses, ...blockerAttention, ...drained, ...growth, ...trialImageFault, ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now) : []), ...backedOff, ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...wrongModelAttention(fleet), ...allowanceAttention(fleet, now), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(readRemoteShardRuns(root)), ...gateStalled, ...overloadAttention, ...flowAttention, ...(bench?.attention ? [bench.attention] : []), ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
     // GY-3199: the control plane's own update record — the Graphyard commit this install runs, its
     // last check and last update, the step of a failed upgrade, and the staleness the daily
     // diagnostics reports (a check over a day old, or a verified commit first seen over a day ago
@@ -265,8 +279,11 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     delivery: stalled.length ? { state: 'stalled', reason: stalled.map(cause => cause.detail).join('\n'), nextAction: stalledDeliveryAction }
       : { state: state?.mergeWriter.inFlight ? 'validating' : 'no shared base failure', reason: null, nextAction: null },
     deliverySpeed: deliverySpeed(merged, open, now),
+    flow: flow ? { '6h': flow['6h'], '24h': flow['24h'], '7d': flow['7d'] } : null,
     // GY-3418: the host's busy CPU-seconds per merged item over the last 7 days, with the target: half the first measured day's figure.
     cpuPerMergedItem: cpuPerMergedItem(state?.cpuSeconds?.days ?? {}, mergedAt, now),
+    // GY-3634: the latest trial benchmark beside the median of the previous ten on the same file list.
+    bench: bench ? { latest: bench.latest, median: bench.median, wallChangePercent: bench.wallChangePercent, cpuChangePercent: bench.cpuChangePercent } : null,
     workerVerifications: snapshot.workerVerifications ?? [],
     items: open.map((item, index) => itemLine(item, now, launched[index])),
     ...(personalScopes > 0 ? { personalScopes: `${personalScopes} items in personal scopes` } : {}),
@@ -312,6 +329,9 @@ export const loggedOutAttention = (fleet: Pick<FleetView, 'accounts'> | null) =>
 export const accountAllowances = (fleet: Pick<FleetView, 'accounts'> | null, now: number) => (fleet?.accounts ?? []).map(account => `${account.name}: ${allowanceSentence(account.usage, now)}`);
 /** GY-3499: each account with live sessions past 80% of a window; the row goes once the window resets or a reading drops under 80%. */
 export const allowanceAttention = (fleet: Pick<FleetView, 'accounts'> | null, now: number) => (fleet?.accounts ?? []).flatMap(account => { const row = allowanceWarning(account, now); return row ? [row] : []; });
+/** GY-3596: each enabled account caught running a model other than its own, naming both. */
+export const wrongModelAttention = (fleet: Pick<FleetView, 'accounts'> | null) => (fleet?.accounts ?? []).filter(account => account.enabled && account.quota === 'broken' && account.reason?.startsWith('ran on ')).map(account =>
+  ({ subject: `account ${account.name}`, text: `${account.name} ${account.reason}; it takes no new session`, next: `Make ${account.name} run ${account.model}, or register the model it runs; its next live check, within 30 minutes, clears the hold` }));
 /** GY-3302: each enabled account serving a role whose model names no concrete id runs its runtime's default, perhaps a free model. */
 export const unspecifiedModelAttention = (fleet: Pick<FleetView, 'accounts'> | null) => (fleet?.accounts ?? []).filter(account => account.enabled && account.roles.length).flatMap(account => {
   const text = unspecifiedModel(account);

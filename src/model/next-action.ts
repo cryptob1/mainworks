@@ -190,6 +190,17 @@ export function computeAccount(work: Work, all: Work[], now: Date): Computed {
       // reviewNeed reads that observation, so ineligibility is decided before it is consulted.
       const ineligible = dispatchIneligibility(work);
       if (ineligible) return make('resync', `${key} cannot be reviewed yet: ${ineligible}`, resyncInputs(work), binding, failing.name, refusal);
+      // GY-3608: a review gate held by a missing or could-not-run product review (whose code review
+      // may already be approved) asks for that product review instead of stalling on attention.
+      // GY-3684: bind a product review's action to the head and policy revision, not the base tip,
+      // so a main move neither resets the request nor discards a review in flight.
+      if (/^Product review (?:of the current commit is required|could not run on )/.test(refusal)) {
+        const request = work.autoDispatch?.product ?? null;
+        const productBinding = `${failing.name}:${work.policyRevision}:${short(work.candidate?.sha)}:${refusal}`;
+        return make('request-review', `${key}: ${request?.reason ?? refusal}`,
+          { kind: 'request-review', provider: work.policy.reviewProvider ?? 'github', requestId: request?.id ?? null, pr: work.candidate!.pr, sha: work.candidate!.sha, baseSha: work.candidate!.baseSha, policyRevision: work.policyRevision },
+          productBinding, failing.name, refusal);
+      }
       const need = reviewNeed(work, all, now);
       // The last guard on the invariant this item exists to hold: a review request is opened only
       // while `needed`, so asking for a reviewer when it is false would hand an executor a row
