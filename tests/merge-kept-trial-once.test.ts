@@ -48,7 +48,7 @@ test('e2e:merge-kept-trial-once — a trial that passes ahead of review, settled
     // The same head is approved: it lands on the kept result.
     const token = randomBytes(32).toString('hex');
     await post(coordinatorToken, `work/${item.id}/review-launch`, { reviewer: 'fixture-reviewer', head, baseTip: item.candidate!.baseSha, tokenHash: createHash('sha256').update(token, 'utf8').digest('hex'), expiresAt: new Date(Date.now() + 3_600_000).toISOString() }, randomUUID());
-    await post(token, `work/${item.id}/review-verdict`, { event: 'APPROVE', body: `Reviewed head ${head} against merge base ${item.candidate!.baseSha}. AC-1 met.`, sha: head, token }, randomUUID());
+    await post(token, `work/${item.id}/review-verdict`, { event: 'APPROVE', body: `Reviewed head ${head} against merge base ${item.candidate!.baseSha}. AC-1 met. AC-2 met.`, sha: head, token }, randomUUID());
     await cycleUntil(loop, 'the approved head lands on its kept trial', async () => (await current()).stage === 'done');
     assert.equal((await current()).mergeLedger?.state, 'reconciled');
     assert.equal(world.trialLog.filter(entry => entry.key === item.key).length, 1, 'exactly one trial run for the head');

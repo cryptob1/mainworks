@@ -369,23 +369,26 @@ async function closeStep(cycle: Cycle) {
   const { config, state, effects, snapshot, clock } = cycle;
   for (const item of snapshot.work) if (item.stage === 'done') delete state.actions[earlyExitKey(item)];
   await Promise.all(snapshot.work.flatMap(item => (item.sessions ?? []).map(async session => {
-    if (session.host !== config.hostId) return;
+    // GY-3458: a session another host ran is judged by the item alone — its host may be gone and
+    // answer nothing — so an ended attempt's record is closed here, its pane left to that host.
+    const here = session.host === config.hostId;
+    if (!here && session.state !== 'running') return;
     const key = `close:${item.id}:${session.id}`;
     if (state.actions[key]?.state === 'done' || (session.state !== 'running' && item.stage === 'done')) return;
-    const failure = item.stage === 'done' ? null : await workerLaunchHealth(cycle, item, session);
+    const failure = item.stage === 'done' || !here ? null : await workerLaunchHealth(cycle, item, session);
     // A reporter-finished handle can still own a pane. Diagnose it before the same idempotent close.
     if (session.state !== 'running' && !failure) return;
     const reason = sessionEnded(item, session, clock) ?? (session.state !== 'running' ? failure : null);
     if (reason) {
       try {
-        if (session.pane) await Promise.resolve(effects.closeSession(session.pane)).catch(error => { if (!paneAlreadyGone(error)) throw error; });
-        if (session.pane) tallyLeftovers(state, 'panes');
-        await effects.recordSession?.(item, { id: session.id, kind: session.kind, principal: session.principal, runtime: session.runtime, host: session.host, subject: session.subject, state: 'finished', outcome: failure ?? `closed by the loop: ${reason}`.slice(0, 500) });
+        if (session.pane && here) await Promise.resolve(effects.closeSession(session.pane)).catch(error => { if (!paneAlreadyGone(error)) throw error; });
+        if (session.pane && here) tallyLeftovers(state, 'panes');
+        await effects.recordSession?.(item, { id: session.id, kind: session.kind, principal: session.principal, runtime: session.runtime, host: session.host, subject: session.subject, state: 'finished', outcome: (failure ?? `closed by the loop: ${reason}${here ? '' : ` (it ran on ${session.host})`}`).slice(0, 500) });
         await note(cycle, key, 'close', item.key, 'done', `Closed ${session.id}${session.pane ? ` (pane ${session.pane})` : ''}: ${failure ?? reason}`, session.principal);
       } catch (error) { await note(cycle, key, 'close', item.key, 'failed', `Could not close ${session.id}: ${message(error)}`, session.principal); }
       return;
     }
-    await attemptBoundStep(cycle, item, session);
+    if (here) await attemptBoundStep(cycle, item, session);
   })));
   await endForeignHostSessions(cycle);
   if (effects.reclaimLease) for (const item of snapshot.work) {

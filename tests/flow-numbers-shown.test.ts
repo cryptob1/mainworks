@@ -39,7 +39,7 @@ const api = async (path: string, body?: unknown) => {
 const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
 const attempt = (claimed: number, ended: number, end: string) => ({ epoch: 1, owner: 'worker', claimedAt: ago(claimed), endedAt: ago(ended), end });
 
-test('e2e:flow-numbers-shown — /api/status and master status read 75% first pass, the review wait and one attention line from the ledger', async () => {
+test('e2e:flow-numbers-shown — /api/flow and master status read 75% first pass, the review wait and one attention line from the ledger', async () => {
   const items = [];
   for (const n of [1, 2, 3, 4, 5]) {
     const item = await api('work', { title: `Change ${n}`, why: 'Flow is visible.', simplest: 'One line.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] });
@@ -60,7 +60,8 @@ test('e2e:flow-numbers-shown — /api/status and master status read 75% first pa
   // One waiting two hours in review.
   await set(items[4].id, { stage: 'review', stageEnteredAt: ago(120), ...timeline([attempt(180, 120, 'submitted')]) });
 
-  const { flow } = await api('status');
+  const flow = await api('flow');
+  assert.equal('flow' in await api('status'), false);
   const day = flow['24h'];
   assert.deepEqual({ attempts: day.attempts, merges: day.merges, firstPassYield: day.firstPassYield }, { attempts: 4, merges: 3, firstPassYield: 0.75 });
   assert.equal(day.rework['merge trial'], 1);
