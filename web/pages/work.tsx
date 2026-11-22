@@ -96,7 +96,7 @@ export default function WorkPage({ work, board, status, query, setQuery, setSele
     return group === 'up-next' ? 'Waiting for a builder' : group === 'backlog' ? 'Not released yet' : plainWords(entry?.does ?? '');
   };
   const table = (list: Row[]) => <table className="sessions-table work-table">
-    <thead><tr><th scope="col">State</th><th scope="col">Task</th><th scope="col">Now</th><th scope="col">Builder</th><th scope="col"><Term term="pull request" focusable={false}>PR</Term></th><th scope="col">In state</th></tr></thead>
+    <thead><tr><th scope="col">State</th><th scope="col">Task</th><th scope="col">Now</th><th scope="col">Builder</th><th scope="col"><Term term="pull request" focusable={false}>PR</Term></th><th scope="col">Time</th></tr></thead>
     <tbody>{[...list].sort((a, b) => order[a.group] - order[b.group]).map(row => {
       const { item, group, entry } = row;
       const live = group === 'shipped' && (liveWaiting ? !liveWaiting.has(item.key) : releasedAt(item, release) !== null);

@@ -294,6 +294,6 @@ test('unit:actionless-item-visible — an item with no action and nothing moving
   const row = (key: string) => markup.slice(markup.indexOf(`data-row="${key}"`), markup.indexOf('</tr>', markup.indexOf(`data-row="${key}"`)));
   assert.match(row('GY-MUTE'), /data-stuck="true"/);
   assert.match(row('GY-MUTE'), /Nothing is happening: .*reports a problem without saying what it is/, 'the page says what is missing');
-  assert.match(row('GY-MUTE'), /data-col="time">3h</, 'and how long it has held its gate');
+  assert.match(row('GY-MUTE'), /data-col="time">(<span[^>]*>)*(<span[^>]*>▲ <\/span>)?3h/, 'and how long it has held its gate');
   for (const key of ['GY-DEP', 'GY-BUILD', 'GY-BACKLOG']) assert.match(row(key), /data-stuck="false"/, `${key} is counted apart from the items nothing is moving`);
 });

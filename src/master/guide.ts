@@ -4,7 +4,7 @@ import { itemLeadRule } from '../review-prompt.js';
 /** The complete master operating loop; the CLI is its only home (GY-3109 removed the docs pages). */
 export const masterGuide = `# Master-agent operating mode
 
-${itemLeadRule}Create refuses an item without both (\`why\`, \`simplest\` in the create file); revise them with \`master requirements\`.
+${itemLeadRule}Create refuses an item without both (\`why\`, \`simplest\` in the create file); revise them with \`master requirements\`. Give each item the \`goal\` it serves, in a few words, so Work groups it under that goal.
 
 A newly filed item may have only a title and description. “Waiting on the master: writing the criteria” means write validated criteria and proofs with \`master requirements GY-N FILE REASON\` (including an e2e proof). Requirements leave it unreleased; the ordinary loop releases it under normal capacity, priority and dependency rules, then applies its dispatch prerequisites.
 

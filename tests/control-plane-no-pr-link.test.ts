@@ -80,8 +80,10 @@ test('unit:tests/control-plane-no-pr-link.test.ts — the candidate component li
 });
 
 test('unit:tests/control-plane-no-pr-link.test.ts — a shipped Work row links a control-plane item\'s merge commit, never a pull request', () => {
-  const page = (shipped: Work) => { const work = { ...shipped, delivery: { mergedAt: iso(-30 * minute), mergeSha, authorizationRevision: 1 } } as Work; return renderToStaticMarkup(createElement(WorkPage, { work: [work], board: null, status: { repository }, observedAt: NOW, query: work.key, filter: null,
-    setFilter: () => {}, setQuery: () => {}, setSelected: () => {}, setCreating: () => {}, setView: () => {} } as unknown as Dashboard)); };
+  const page = (shipped: Work) => { const work = { ...shipped, delivery: { mergedAt: iso(-30 * minute), mergeSha, authorizationRevision: 1 } } as Work; const html = renderToStaticMarkup(createElement(WorkPage, { work: [work], board: null, status: { repository }, observedAt: NOW, query: work.key, filter: null,
+    setFilter: () => {}, setQuery: () => {}, setSelected: () => {}, setCreating: () => {}, setView: () => {} } as unknown as Dashboard));
+    // The item's own row: the PR column heading's glossary definition names an example PR.
+    const at = html.indexOf(`data-row="${work.key}"`); assert.ok(at >= 0, 'the shipped row is found'); return html.slice(at, html.indexOf('</tr>', at)); };
   const shipped = page(item());
   assert.match(shipped, new RegExp(`href="${commit(mergeSha)}"`));
   assert.doesNotMatch(shipped, /\/pull\/|PR #\d/);
