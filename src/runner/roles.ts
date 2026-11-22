@@ -107,6 +107,17 @@ export function registryRunner(account: FleetLaunchAccount, extraArgs: string[] 
 const failureEvents = (output: string) => output.split('\n').flatMap(line => {
   try { const event = JSON.parse(line); return event && (event.type === 'error' || event.type === 'turn.failed' || event.is_error === true || !!event.api_error) ? [event] : []; } catch { return []; }
 });
+/** OpenCode's run banner, naming the agent and the model that answers: `build · big-pickle`. */
+const wrongModelBanner = /\b(?:build|plan) · (\S+)/;
+/**
+ * GY-3592: OpenCode did not run the account's plan model: its free-tier refusal, or a run banner naming
+ * another model, for a model with its own provider. The plan's allowance was never asked, so it is no limit.
+ */
+export function planModelUnused(output: string, modelId: string | null | undefined) {
+  if (!modelId || !/^(?!opencode\/)[^/]+\//.test(modelId)) return false;
+  const ran = wrongModelBanner.exec(output)?.[1];
+  return /\bfree usage limit reached\b|\bFreeUsageLimitError\b/i.test(output) || !!ran && ran !== modelId && ran !== modelId.split('/').pop();
+}
 /**
  * The one-prompt smoke test of a registry account (GY-446): its runtime, login home, key and model,
  * none of a role's policy. A key file that cannot be read fails the test with that reason.
@@ -119,12 +130,15 @@ export async function smokeRegistryAccount(account: FleetLaunchAccount, options:
   if (account.kind !== 'pi') {
     const env = runEnvironment(process.env, { ...launch.environment, ...key });
     try {
-      const args = [...launch.args, ...(account.fleet.contract.modelFlag && account.fleet.modelId ? [account.fleet.contract.modelFlag, account.fleet.modelId] : [])];
+      // GY-3592: `opencode run` takes --model though its contract names no flag (the TUI refuses it); unnamed, OpenCode answers on its free model.
+      const modelFlag = account.fleet.contract.modelFlag ?? (account.kind === 'opencode' ? '--model' : null);
+      const args = [...launch.args, ...(modelFlag && account.fleet.modelId ? [modelFlag, account.fleet.modelId] : [])];
       const [command, ...argv] = await headlessArgv({ kind: account.kind, args, contract: account.fleet.contract }, 'Reply with the single word OK.', env);
       const output = await runChild(options.command ?? command, [...(options.commandArgs ?? []), ...argv], { env, cwd: options.cwd ?? account.home ?? undefined, timeoutMs: options.timeoutMs ?? 120_000 });
       // Print-mode runtimes can report provider errors with exit zero (OpenCode).
       const failure = failureEvents(output).length > 0;
       const answered = /\bOK\b/i.test(output);
+      if (answered && !failure && planModelUnused(output, account.fleet.modelId)) return { ok: false, error: wrongModelBanner.exec(output)![0] };
       return { ok: answered && !failure, error: failure ? Object.values(key).reduce((text, secret) => text.replaceAll(secret, '[redacted]'), parseProbeFailure(output).reason) : answered ? null : 'The smoke request returned no answer' };
     } catch (error) {
       const message = error instanceof ChildProcessError ? [error.stdout, error.stderr].filter(Boolean).join('\n') || error.message : String(error);

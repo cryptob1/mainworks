@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { capabilityTiers, fleetRoles, groupAccountsByPlan, looksLikeSecret, quotaStates, unspecifiedModel, type FleetAccountView, type FleetView, type RolePolicy } from '../../src/model/registry';
 import { parseProbeFailure } from '../../src/model/account-quota';
 import { formatAge } from '../../src/model/duration';
+import { COMMAND_NAME } from '../../src/model/product';
 import { sealForHost } from '../seal';
 import type { Dashboard } from './dashboard';
 import { accountStatus, backAt, chipTones, countdown, launchFailure, localTime, monthDay, plainReason, roleLabels, roleLaunch, unconfiguredRoles, type AccountStatus, type RoleLaunch } from '../agent-status';
@@ -251,7 +252,7 @@ export function FleetOverview({ fleet, connects = [], now = Date.now(), onChange
   const running = fleet.sessions.filter(session => !session.endedAt);
   const byName = new Map(connects.filter(connect => connect.name).map(connect => [connect.name!, connect]));
   return <>
-    {!fleet.configured && <div className="notice">No role is configured yet, so sessions still launch from each host's local profiles. Connect an account below — or run <code>graphyard master registry propose --apply</code> on a host whose agent CLIs are logged in.</div>}
+    {!fleet.configured && <div className="notice">No role is configured yet, so sessions still launch from each host's local profiles. Connect an account below — or run <code>{COMMAND_NAME} master registry propose --apply</code> on a host whose agent CLIs are logged in.</div>}
     {/* A blocked role reads in its launch line and a role-less account in its chip; only a role missing from the registry has no other place. */}
     {(() => { const missing = unconfiguredRoles(fleet), master = missing.some(entry => entry.error), optional = missing.filter(entry => !entry.error).map(entry => entry.role);
       return <>{master && <div role="alert" className="notice danger">Not configured: master — the loop launches no master session until the role names an account.</div>}

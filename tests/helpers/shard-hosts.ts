@@ -1,7 +1,7 @@
 // GY-3412: hosts for remote shard runs. Every host runs the real graphyard-host-shim, exactly as
 // `graphyard host prepare` installs it, in its own home; only Docker is a stand-in, keeping its images
 // and containers in a state file, logging each call, and running a container's command in its working
-// directory — under `unshare -rn` (no network) when it was created with --network=none, and with a
+// directory — under `unshare -cn` (no network, nonroot as `--user 1000:0`) when it was created with --network=none, and with a
 // read-only root (bubblewrap) on a host whose Docker state holds a `read-only-root` file. This machine
 // has the same stand-in Docker. `ssh` here routes USER@NAME to the host named NAME (exit 255 while
 // NAME.down exists, as OpenSSH does for a host it cannot reach); `sshd` runs a real OpenSSH server.
@@ -69,7 +69,9 @@ elif command == 'rm':
 elif command == 'create':
     at = args.index('--entrypoint')
     env = dict(value.split('=', 1) for flag, value in zip(args, args[1:]) if flag == '--env')
-    workdir, isolate = args[args.index('--workdir') + 1], ['unshare', '-rn'] if '--network=none' in args else []
+    # Loopback needs a capability to come up; bubblewrap refuses to start holding one, so the ambient set is cleared before the command runs.
+    lo_up = "import ctypes, fcntl, os, socket, struct, sys; s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); fcntl.ioctl(s, 0x8914, struct.pack('16sH', b'lo', 1)); s.close(); ctypes.CDLL(None).prctl(47, 4, 0, 0, 0); os.execvp(sys.argv[1], sys.argv[1:])"
+    workdir, isolate = args[args.index('--workdir') + 1], ['unshare', '-cn', '--keep-caps', sys.executable, '-c', lo_up] if '--network=none' in args else []
     if os.path.exists(os.path.join(STATE, 'read-only-root')):
         # Docker's --read-only, for a host that asks: only the container's tmpfs and bind mounts are writable.
         isolate = ['bwrap', '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc'] + (['--unshare-net'] if isolate else [])

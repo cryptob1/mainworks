@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '../../src/model/product';
 import { useEffect, useState } from 'react';
 import { checklistGreen, paneServer, requestedView, setupChecklist, statusSupervised, type SetupItem } from '../../src/model/setup-checklist';
 import { whereLogs, type WhereThingsRun } from '../../src/model/where-things-run';
@@ -130,8 +131,8 @@ export function SetupView({ status, work, workUnread, now, onConnect }: { status
   const green = checklistGreen(items) && !open && !workUnread;
   const total = items.length + (onboarding ? 1 : 0), left = items.filter(entry => !entry.done).length + open;
   return <>
-    <PageHeader title="Set up Graphyard" fact={green ? 'Everything is ready.' : !left ? 'Checking whether the onboarding change has merged.' : `${left} of ${total} steps left.`}/>
-    {supervised && <p className="notice" data-supervised>An agent reviews each change and Graphyard merges it; no agent approves decisions on your behalf, so you answer each one.</p>}
+    <PageHeader title={`Set up ${PRODUCT_NAME}`} fact={green ? 'Everything is ready.' : !left ? 'Checking whether the onboarding change has merged.' : `${left} of ${total} steps left.`}/>
+    {supervised && <p className="notice" data-supervised>An agent reviews each change and {PRODUCT_NAME} merges it; no agent approves decisions on your behalf, so you answer each one.</p>}
     <PageSection title="Checklist" label="Setup checklist"><SetupChecklist items={items} onConnect={onConnect} onboarding={onboarding}/></PageSection>
     <PageSection title="Be told when the yard stops" label="Be told when the yard stops"><AlertsLine status={status}/></PageSection>
     <section className="panel" aria-label="Watch agents in a terminal"><MoreDetails summary="Watch agents in a terminal"><HerdrConnect watch={paneServer(status)}/></MoreDetails></section>

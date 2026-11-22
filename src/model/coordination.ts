@@ -3,6 +3,7 @@ import { currentEvidence } from './evidence.js';
 import { evidenceBindsCandidate } from './carry.js';
 import { grantsAuthorize, type ProofAuthority } from './proof.js';
 import { observationWindowHold, type Stage, type Work } from './work.js';
+import { PRODUCT_NAME } from './product.js';
 import { loopObservationProofs } from './loop-observation.js';
 import { pathScopesOverlap } from './documentation-glob.js';
 import { loopOwned } from './loop-owned.js';
@@ -194,14 +195,14 @@ export function diagnose(work: Work, all: Work[], now: number, jobs: Integration
   else if (job?.error) add('integration-error', job.error, `Automatic retry is scheduled at ${job.available_at}; inspect integration configuration if failures persist.`);
   if (work.submission && !work.observation) add('unobserved', 'Submitted PR has not been observed for the current requirements', 'Check the GitHub connection and reconciliation job; missing observation is not success.');
   if (work.submission && work.observation && now - Date.parse(work.observation.at) >= 120000) add('stale-observation', 'GitHub observation is older than two minutes', 'Restore provider connectivity; the gates read only what the last observation saw.');
-  if (work.submission && job && !job.error && Date.parse(job.available_at) < now - 120000 && (!job.locked_until || Date.parse(job.locked_until) <= now)) add('reconciliation-stalled', 'Integration work is overdue and has no active processor', 'Check that the Graphyard server and its reconciliation loop are running.');
+  if (work.submission && job && !job.error && Date.parse(job.available_at) < now - 120000 && (!job.locked_until || Date.parse(job.locked_until) <= now)) add('reconciliation-stalled', 'Integration work is overdue and has no active processor', `Check that the ${PRODUCT_NAME} server and its reconciliation loop are running.`);
   for (const ac of work.criteria) if (ac.bootstrap) add('bootstrap-deferred', `${ac.id} runs in bootstrap mode: ${ac.proofs.join(' + ')} is deferred because this change introduces the harness (${ac.bootstrap.reason})`,
     `Declared by ${ac.bootstrap.declaredBy} at ${ac.bootstrap.declaredAt}. Review, CI and every other criterion still gate this item; the deferred proof stays owed on ${ac.bootstrap.contractPaths.join(', ')}.`);
   for (const obligation of inheritedObligations(work, all)) add('bootstrap-obligation', `${obligation.proof} is inherited from ${obligation.key} ${obligation.criterionId} because this item's candidate touches ${obligation.contractPaths.join(', ')}`,
     'Produce trusted passing evidence for this proof; a bootstrap deferral cannot be renewed by the change that inherits it.');
   for (const proof of work.proofGaps ?? []) add('proof-authority-gap', `No principal is authorized to produce ${proof}`, 'Add the proof name to a producer principal\'s roster entry with `graphyard principal add ID --role producer --proof PATTERN`; the acceptance gate cannot be satisfied until someone can produce it.');
   const refreshing = pendingBaseRefresh(work), baseConflict = baseRefreshConflict(work);
-  if (baseConflict) add('base-conflict', baseConflict, `Graphyard cannot bring this head onto the base branch itself. Resolve the conflict on the pull-request branch and push; nothing carries across the resolution, so the item takes a fresh review and fresh proofs.`);
+  if (baseConflict) add('base-conflict', baseConflict, `${PRODUCT_NAME} cannot bring this head onto the base branch itself. Resolve the conflict on the pull-request branch and push; nothing carries across the resolution, so the item takes a fresh review and fresh proofs.`);
   else if (refreshing) add('base-behind', `Candidate ${work.candidate?.sha.slice(0, 12)} does not contain the base branch tip ${refreshing.baseTip.slice(0, 12)}; it stays bound to ${refreshing.boundBase.slice(0, 12)} while the control plane brings it onto the new tip`,
     'Nothing to run: the reconciliation job merges the base into this branch and decides what the review and each proof carry. No sync, no rework round, and no review or proof round is requested for the move.');
   // Behind but mergeable is not a wait: review and proofs are requested for the head as it stands
