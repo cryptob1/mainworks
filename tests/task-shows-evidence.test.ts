@@ -81,13 +81,15 @@ test('e2e:task-shows-evidence — the control plane serves a task\'s trial timin
     assert.equal((await call('operator', `${item}/timings`)).trial.output, null, 'no output before a group of tests ends');
     // A shard that ended sends the same step again under its own start, with its output and the counts so far: still one step, both shown while it runs.
     await record({ kind: 'trial-step', head, step: 'tests', at: at(2), output: `$ node --test (shard 1)\nnot ok 1 - ${slow}\n  a CPU sensor reads 96C`, tests: { passed: 11, failed: 1, files: 40, slowest: { file: slow, durationMs: 14 * minute } } });
+    // A later passing shard omits output so reports stay small; the running/failing output stays visible instead of wiping to null.
+    await record({ kind: 'trial-step', head, step: 'tests', at: at(2), tests: { passed: 21, failed: 1, files: 40, slowest: { file: slow, durationMs: 14 * minute } } });
     const running = (await call('operator', `${item}/timings`)).trial;
     assert.equal(running.finishedAt, null);
     assert.match(running.output, /not ok 1 - tests\/remote-shards\.test\.ts\n  a CPU sensor reads 96C$/);
     assert.deepEqual(running.steps.map((step: any) => [step.step, step.result]), [['checkout', 'passed'], ['build', 'passed'], ['tests', 'running']]);
     assert.equal(running.steps[0].durationMs, minute);
     assert.ok(running.steps[2].durationMs >= 17 * minute && running.steps[2].durationMs < 18 * minute);
-    assert.deepEqual([running.groups, running.slowest, running.soFar], [[{ name: 'tests', passed: 11, failed: 1, total: 40 }], { file: slow, durationMs: 14 * minute }, true]);
+    assert.deepEqual([running.groups, running.slowest, running.soFar], [[{ name: 'tests', passed: 21, failed: 1, total: 40 }], { file: slow, durationMs: 14 * minute }, true]);
 
     const slowest = slowestFile(`${JSON.stringify({ file: 'tests/quick.test.ts', durationMs: 900 })}\nnot a record\n${JSON.stringify({ file: slow, durationMs: 14 * minute })}`);
     assert.deepEqual(slowest, { file: slow, durationMs: 14 * minute });
@@ -146,7 +148,7 @@ test('e2e:task-shows-evidence — each test shard\'s end reports the trial\'s co
     if (command === 'node' && args.includes('--durations')) {
       const files = readFileSync(args[args.indexOf('--files-from') + 1]!, 'utf8').split('\n').filter(Boolean);
       writeFileSync(args[args.indexOf('--durations') + 1]!, `${files.map(file => JSON.stringify({ file, passed: file !== quick, durationMs: file === slow ? 14 * minute : 900 })).join('\n')}\n`);
-      return '';
+      return 'Authorization: Bearer super-secret-shard-token\n';
     }
     return defaultChildRun(command, args, options);
   }) as never;
@@ -157,6 +159,11 @@ test('e2e:task-shows-evidence — each test shard\'s end reports the trial\'s co
   assert.equal(counts.length, 2, 'each of the two shards reports its end');
   assert.equal(counts[0]!.passed + counts[0]!.failed, 1, 'the first report counts the one shard that has ended');
   assert.deepEqual(counts[1], { passed: 1, failed: 1, files: 2, slowest: { file: slow, durationMs: 14 * minute } });
-  assert.ok(reports.filter(([, report]) => report?.output).length >= 1, 'a shard\'s end still sends what it printed');
+  const outputs = reports.flatMap(([, report]) => report?.output ? [report.output] : []);
+  assert.ok(outputs.length >= 1, 'a shard\'s end still sends what it printed');
+  for (const output of outputs) {
+    assert.doesNotMatch(output, /super-secret-shard-token/, 'shard output masks credentials before leaving the trial');
+    assert.match(output, /\[redacted\]/);
+  }
   assert.deepEqual(verdict.tests, { passed: 1, failed: [quick], files: 2, slowest: { file: slow, durationMs: 14 * minute } });
 });

@@ -12,7 +12,7 @@ export interface TrialTimings {
   slowest: { file: string; durationMs: number } | null;
   /** The tests' counts and the slowest file are those of the shards that have ended so far, not a verdict's. */
   soFar: boolean;
-  /** What a running trial printed so far: its newest step's output, sent as each test shard ends; null once it reaches a verdict. */
+  /** What a running trial printed so far: the newest step report with output, sent as test shards end; null once it reaches a verdict. */
   output: string | null;
 }
 interface LedgerRow { kind: string; payload: any; created_at: string | Date }
@@ -43,5 +43,5 @@ export function trialTimings(rows: readonly LedgerRow[], now: number): TrialTimi
   return { head: intent.head, startedAt: intent.at, finishedAt: finished === null ? null : new Date(finished).toISOString(), durationMs: Math.max(0, (finished ?? now) - Date.parse(intent.at)), steps,
     groups: [...(counts?.files ? [{ name: 'tests', passed: counts.passed, failed: counts.failed, total: counts.files }] : []),
       ...(e2e.length ? [{ name: 'e2e', passed: e2e.filter(passedCase).length, failed: e2e.filter(entry => !passedCase(entry)).length, total: e2e.length }] : [])],
-    slowest: counts?.slowest ?? null, soFar: !verdict && !!counts, output: ended ? null : reports.at(-1)?.payload.output ?? null };
+    slowest: counts?.slowest ?? null, soFar: !verdict && !!counts, output: ended ? null : reports.findLast(row => row.payload.output)?.payload.output ?? null };
 }

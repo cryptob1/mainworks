@@ -30,6 +30,7 @@ import { repositoryTrialImage, trialDockerfile, TrialRepositoryImageError } from
 import { addressPoolsSpent, checkServiceVariables, dockerEnvironment, previewNetworkCount, startCheckServices, tcpAcceptProbe, type CheckServices } from '../compose-preview.js';
 import { diskFloorBytes, gateTrialKey, trialFileTimeoutMs, heatWaitSeconds, TrialHeatError, trialContainerFault, trialLoad, trialShardLanes, trialStartOwner } from './trial-load.js';
 import { nestedSandboxDenied, trialAppArmorFix } from './trial-apparmor.js';
+import { maskSecrets } from '../redaction.js';
 
 /** One git call in the coordinator's object store: the arguments after `git -C <root>`, the child's stdout. */
 export type TrialGit = (args: string[], env?: Record<string, string>) => Promise<string>;
@@ -1668,7 +1669,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         const shown = !outputShown || !tests.ok;
         outputShown = true;
         input.onStep?.(stepLabel, { tests: { passed: cached.size + ended.reduce((sum, shard) => sum + shard.passed.length, 0), failed: new Set(ended.flatMap(shard => shard.group.failed)).size, files: counted, ...(slowest ? { slowest } : {}) },
-          ...(shown ? { output: entries.join('\n').slice(-4000) } : {}) });
+          ...(shown ? { output: maskSecrets(entries.join('\n')).slice(-4000) } : {}) });
       } catch (error) {
         if (error instanceof HostDroppedError) { if (!dropped.has(error.host)) dropped.set(error.host, error); throw error; }
         log.push(...entries);
