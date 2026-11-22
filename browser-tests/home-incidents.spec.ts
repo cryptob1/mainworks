@@ -88,7 +88,8 @@ async function homeAt(page: Page, width: number) {
 
 test('e2e:home-incidents — the status line and both incident cards at 1280 and 390 px, and the second visit counts exactly the merge in between', async ({ page }) => {
   test.setTimeout(120_000);
-  const state = { work: [merged('GY-1', 'Earlier change', at(hour)), item('GY-2', 'Rows are one line', { lease: { owner: 'graphyard-claude-1', epoch: 1, expiresAt: at(-hour) } })] as unknown[] };
+  const goal = item('GY-4', 'Six merges an hour', { stage: 'backlog', dependencies: ['fixture-GY-1', 'fixture-GY-2'] });
+  const state = { work: [merged('GY-1', 'Earlier change', at(hour)), item('GY-2', 'Rows are one line', { lease: { owner: 'graphyard-claude-1', epoch: 1, expiresAt: at(-hour) } }), goal] as unknown[] };
   const close = await plane(page, state);
   try {
     await page.setViewportSize({ width: 1280, height: 900 });
@@ -98,7 +99,7 @@ test('e2e:home-incidents — the status line and both incident cards at 1280 and
 
     // One merge and one Lead decision land between the two visits.
     const [earlier, building] = state.work as Record<string, unknown>[];
-    state.work = [earlier, { ...building, lastRework: { reason: 'its trial failed on main', binding: null, at: new Date().toISOString() } }, merged('GY-3', 'Needs you leads with the question', new Date().toISOString())];
+    state.work = [earlier, { ...building, lastRework: { reason: 'its trial failed on main', binding: null, at: new Date().toISOString() } }, goal, merged('GY-3', 'Needs you leads with the question', new Date().toISOString())];
     await page.setViewportSize({ width: 1280, height: 900 });
     await visit(page);
     const brief = page.getByRole('region', { name: 'Since you last looked' });
@@ -111,7 +112,8 @@ test('e2e:home-incidents — the status line and both incident cards at 1280 and
     await expect(page.getByRole('textbox', { name: 'Tell the Lead' })).toHaveValue('Why did you send “Rows are one line” back?');
     await expect(brief).not.toContainText('Earlier change');
     // Active goals and what is being built now, and the box that tells the Lead.
-    await expect(page.getByRole('region', { name: 'Active goals' }).locator('[data-building-now]')).toHaveText('Now: Rows are one line');
+    await expect(page.getByRole('region', { name: 'Active goals' }).locator('[data-goal="GY-4"]')).toHaveText('Six merges an hour 1 of 2 tasks done');
+    await expect(page.locator('[data-building-now]')).toHaveText('Now: Rows are one line');
     await expect(page.getByRole('form', { name: 'Tell the Lead' }).getByRole('button', { name: 'Send' })).toBeVisible();
     for (const width of [1280, 390]) await homeAt(page, width);
   } finally {

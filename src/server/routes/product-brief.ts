@@ -17,9 +17,9 @@ export const productBriefRoutes = defineRoutes('product-brief', [
   } },
 ]);
 
-/** GY-3601: one visit to Home answers when this person last looked and records now as their last look. */
+/** GY-3601: opening Home reads when this person last looked and records now as their last look. */
 export const homeVisitRoutes = defineRoutes('home-visit', [
-  { method: 'POST', path: '/api/home-visit', async handle({ actor, services }) {
+  { method: 'GET', path: '/api/home-visit', async handle({ actor, services }) {
     const { rows } = await services.engine.store.pool.query(`WITH before AS (SELECT seen_at FROM home_visits WHERE principal = $1)
       INSERT INTO home_visits(principal, seen_at) VALUES ($1, clock_timestamp()) ON CONFLICT (principal) DO UPDATE SET seen_at = EXCLUDED.seen_at
       RETURNING (SELECT seen_at FROM before) AS since`, [actor.id]);

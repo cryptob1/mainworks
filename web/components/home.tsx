@@ -46,7 +46,7 @@ export function HomeBrief({ work, status, now, api }: HomeProps) {
   const [since, setSince] = useState<number | null | undefined>(undefined);
   const [draft, setDraft] = useState(''), [sent, setSent] = useState('');
   // One visit: the answer is when this person last looked, and now becomes their last look.
-  useEffect(() => { void api('home-visit', {}).then(body => setSince(typeof body?.since === 'string' ? Date.parse(body.since) : null), () => setSince(null)); }, []);
+  useEffect(() => { void api('home-visit').then(body => setSince(typeof body?.since === 'string' ? Date.parse(body.since) : null), () => setSince(null)); }, []);
   const waiting = typeof status?.live?.commit === 'string' && Array.isArray(status.live.waiting) ? new Set<string>(status.live.waiting) : null;
   const fresh = since ? work.filter(w => w.stage === 'done' && !w.closure && !!(w.delivery?.mergedAt ?? w.observation?.mergedAt) && mergedAt(w) > since) : [];
   const live = fresh.filter(w => waiting && !waiting.has(w.key)), releasing = fresh.filter(w => !waiting || waiting.has(w.key));
@@ -66,13 +66,13 @@ export function HomeBrief({ work, status, now, api }: HomeProps) {
         {bullets.length > 0 && <ul>{bullets.map(b => <li key={b.text}>{b.text}{'decision' in b && <> <button type="button" className="text-button" onClick={() => setDraft(b.decision.ask)}>Ask why</button> · <button type="button" className="text-button" onClick={() => setDraft(b.decision.other)}>Do it differently</button></>}</li>)}</ul>}
       </>}
     </section>}
-    <section className="panel goals" aria-label="Active goals"><h2>Active goals</h2>
-      {goals.length ? <ol>{goals.map(goal => {
+    {goals.length > 0 && <section className="panel goals" aria-label="Active goals"><h2>Active goals</h2>
+      <ol>{goals.map(goal => {
         const tasks = goal.dependencies.map(id => work.find(w => w.id === id)).filter((t): t is Work => !!t);
         return <li key={goal.id} data-goal={goal.key}><strong>{goal.title}</strong> <span className="muted">{tasks.filter(t => t.stage === 'done').length} of {plural(tasks.length, 'task')} done</span></li>;
-      })}</ol> : <p className="muted">No goal has tasks yet.</p>}
-      <p data-building-now>{building.length ? <>Now: {building.slice(0, 3).map(t => t.title).join(', ')}{building.length > 3 && ` and ${building.length - 3} more`}</> : 'Nothing is being built right now.'}</p>
-    </section>
+      })}</ol>
+    </section>}
+    {building.length > 0 && <p className="building-now" data-building-now>Now: {building.slice(0, 3).map(t => t.title).join(', ')}{building.length > 3 && ` and ${building.length - 3} more`}</p>}
     <form className="panel tell-lead" aria-label="Tell the Lead" onSubmit={event => { event.preventDefault(); if (draft.trim()) void send(); }}>
       <label htmlFor="tell-lead">Tell the Lead</label>
       <div className="tell-lead-row"><textarea id="tell-lead" rows={2} value={draft} onChange={event => { setDraft(event.target.value); setSent(''); }} placeholder="What should the team do next?"/>
