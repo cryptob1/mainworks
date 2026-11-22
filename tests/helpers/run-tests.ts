@@ -11,6 +11,7 @@ import { hostMemoryFloor, memoryRecoveryMarginBytes, readHostMemory } from '../.
 import { bytesPerSuiteFile, declareSlotFiles, heldVariable, othersDeclaredFiles, readStrictCap, sessionVerificationSlot, slotsDirectoryVariable } from '../../src/master/verification-slots.js';
 import { readTempOwner, tempOwnerGone, tempOwnerMarker } from '../../src/tmp-reclaim.js';
 import { stopServersUnder } from '../../src/postgres-stop.js';
+import { buildEntries, builtEntries, builtEntry } from '../../bin/built-entry.mjs';
 
 // The suite's own runner (GY-174): `npm test` and `npm run test:browser` start here, so a clean run
 // needs nothing the session has to know about the host.
@@ -217,6 +218,9 @@ export async function runTests(options: RunOptions = {}): Promise<RunResult> {
   // The browser window is the dev server's port with a spare beside it, then one window above both
   // the run's shared Postgres cluster and the sentinel that holds the window (GY-3356); a Node
   // run's window is its shared cluster's own.
+  // GY-3611: the CLI and server the tests start run from dist/; build them once, before the first file, when missing or stale.
+  const repository = fileURLToPath(new URL('../..', import.meta.url));
+  if (resolve(cwd) === resolve(repository) && !builtEntries.every(name => builtEntry(cwd, name))) await buildEntries(cwd);
   const reservation = await reserveTestPorts(options.browser ? { first: defaultBrowserPort, span: 2 + testPortSpan, last: 65_000, ...options.ports } : { ...nestedFirst(), ...options.ports });
   let postgres: Awaited<ReturnType<typeof import('./postgres.js').startPostgres>> | undefined;
   try {

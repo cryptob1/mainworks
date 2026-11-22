@@ -66,4 +66,4 @@ COPY src ./src
 COPY bin ./bin
 USER node
 EXPOSE 4310
-CMD ["npm", "start"]
+CMD ["node", "dist/server.mjs"]
