@@ -55,6 +55,8 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
     const { url, close } = await plane(context);
     try {
       await openWorkers(page, url);
+      // GY-3485: the hosts and budget sit in the closed Machine details fold.
+      await page.getByText('Machine details', { exact: true }).click();
       await expect(page.locator('[data-heavy-budget]')).toHaveText('13 heavy-job slots (this machine 4, vish-msi 4, omarchypc 5)', { timeout: 15_000 });
       await expect(page.locator('[data-machine-load]')).toHaveCount(0);
       const table = page.getByRole('table', { name: 'Hosts' });
