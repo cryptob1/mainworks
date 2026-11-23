@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { chmodSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,7 +12,6 @@ import { runCycle } from '../src/daemon/cycle.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
 import { emptyDaemonState, writeDaemonState } from '../src/daemon/state.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
-import * as remoteShards from '../src/merge-writer/remote-shards.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3745: one warm image is committed per trial image digest and lockfile, and nothing removed old
@@ -62,20 +61,21 @@ process.exit(0);
   return { run, warm };
 }
 
-/** The warm images running trials use (absent on the base tip, where nothing tracks them). */
-const inUse = (remoteShards as Record<string, unknown>).warmImagesInUse as Map<string, number> | undefined;
 
 test('integration:prune-local-warm-images — the leftovers sweep keeps the current digest\'s warm images, the two newest and one a running trial uses, and removes the rest', async () => {
   const docker = await stubDocker();
-  const running = `${old[3]}-none`;
-  inUse?.set(`graphyard-warm:${running}`, 1);
-  try {
-    const removed = await reclaimJobLeftovers(docker.run, { temporary: [], checkouts: [], verification: [] });
-    assert.deepEqual(docker.warm(), [`${old[0]}-${lock(1)}`, `${old[1]}-${lock(2)}`, running, `${current}-${lock(3)}`].sort(), 'only the kept warm images stay');
-    assert.deepEqual(removed.sort(), [`image graphyard-warm:${old[2]}-${lock(4)}`, `image graphyard-warm:${old[4]}-${lock(5)}`].sort());
-  } finally { inUse?.delete(`graphyard-warm:${running}`); }
+  // A running trial (this process) marks the warm image it uses; a killed one's marker names a process that is gone.
+  const warmInUse = await temporaryDirectory('warm-in-use'), running = `${old[3]}-none`, gone = spawnSync(process.execPath, ['-e', '']).pid;
+  writeFileSync(join(warmInUse, `${running}.${process.pid}.a1b2c3d4`), '');
+  writeFileSync(join(warmInUse, `${old[2]}-${lock(4)}.${gone}.e5f6a7b8`), '');
+  const roots = { temporary: [], checkouts: [], verification: [], warmInUse };
+  const removed = await reclaimJobLeftovers(docker.run, roots);
+  assert.deepEqual(docker.warm(), [`${old[0]}-${lock(1)}`, `${old[1]}-${lock(2)}`, running, `${current}-${lock(3)}`].sort(), 'only the kept warm images stay');
+  assert.deepEqual(removed.sort(), [`image graphyard-warm:${old[2]}-${lock(4)}`, `image graphyard-warm:${old[4]}-${lock(5)}`].sort());
+  assert.deepEqual(readdirSync(warmInUse), [`${running}.${process.pid}.a1b2c3d4`], 'the gone process\'s marker is dropped');
   // A second sweep, the trial ended: its warm image goes too; nothing else does.
-  assert.deepEqual(await reclaimJobLeftovers(docker.run, { temporary: [], checkouts: [], verification: [] }), [`image graphyard-warm:${running}`]);
+  rmSync(join(warmInUse, `${running}.${process.pid}.a1b2c3d4`));
+  assert.deepEqual(await reclaimJobLeftovers(docker.run, roots), [`image graphyard-warm:${running}`]);
   assert.deepEqual(docker.warm(), [`${old[0]}-${lock(1)}`, `${old[1]}-${lock(2)}`, `${current}-${lock(3)}`].sort());
 });
 
@@ -90,6 +90,7 @@ test('e2e:prune-local-warm-images — one loop reclaim leaves only the kept warm
     repository: 'owner/warm-images', baseBranch: 'main', hostId: 'coord-a', masterAgentName: 'graphyard-master-warm-images', workers: [],
     run: { diskFloorGb: 30, worktreeRoot: await temporaryDirectory('warm-images-wt-root') },
   }) as MasterConfig;
+  const warmInUse = await temporaryDirectory('warm-images-in-use');
   let clock = Date.parse('2030-05-01T00:00:00Z'), sweep = false;
   const effects: DaemonEffects = {
     snapshot: async () => ({ work: [], now: new Date(clock).toISOString() }),
@@ -98,7 +99,7 @@ test('e2e:prune-local-warm-images — one loop reclaim leaves only the kept warm
     diskVolumes: async () => [{ path: '/home', freeBytes: 90 * GB }],
     diskUseByKind: () => measureDiskUseByKind({ worktrees: [], trialRuns: [], cliReleases: [] }, docker.run),
     // The sweep is not yet due on the first cycle (it runs at most once an hour), then runs.
-    reclaimJobLeftovers: async () => sweep ? reclaimJobLeftovers(docker.run, { temporary: [], checkouts: [], verification: [] }) : [],
+    reclaimJobLeftovers: async () => sweep ? reclaimJobLeftovers(docker.run, { temporary: [], checkouts: [], verification: [], warmInUse }) : [],
   };
   const warmTotal = async () => ((await masterStatusReport(root, config, async () => { throw new TypeError('fetch failed'); }, async () => '')).diskHeadroom as { top: { kind: string; bytes: number }[] })
     .top.find(entry => entry.kind === 'images: graphyard-warm')?.bytes ?? 0;
