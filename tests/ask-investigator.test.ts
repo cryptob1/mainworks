@@ -12,7 +12,7 @@ import { masterPrompt } from '../src/master/harness.js';
 import { guideText } from '../src/guide.js';
 
 const cli = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
-const fields = { type: 'chore', priority: 3, why: 'w', simplest: 's', criteria: [{ id: 'AC-1', text: 'Asked', proofs: ['integration:ask-investigator'] }] };
+const fields = { type: 'chore', priority: 3, why: 'w', simplest: 's', criteria: [{ id: 'AC-1', text: 'Asked', proofs: ['e2e:create-work-item'] }] };
 
 // A stand-in runtime: records what it was given, tries to change its checkout, then answers as FAKE_MODE says.
 const fakeRuntime = `#!/usr/bin/env node
@@ -69,7 +69,7 @@ test('ask-investigator: one read-only headless session on the item head records 
     assert.deepEqual(note.details, { question: 'Where is the head named?', head: branch, summary: 'The readme names the branch head.', evidence: ['README.md:1'] });
     const after = await f.store.workDocument(item.id);
     assert.equal(after!.lease?.epoch, claimed.epoch, 'the worker keeps its lease');
-    assert.equal(after!.lease?.owner ?? after!.lease?.principal, claimed.lease?.owner ?? claimed.lease?.principal);
+    assert.equal(after!.lease?.owner, 'worker');
 
     // AC-2: the session cannot change its checkout or the repository, and the checkout is gone afterwards.
     assert.equal(seen.wrote, 'refused');
@@ -96,6 +96,6 @@ test('ask-investigator: one read-only headless session on the item head records 
     assert.equal(brief.split('/cli.mjs ask GY-7 QUESTION').length - 1, 1);
     const master = masterPrompt({ repository: 'owner/project', cliPath: '/cli.mjs' } as any);
     assert.equal(master.split('/cli.mjs ask GY-N QUESTION').length - 1, 1);
-    assert.match(guideText('claim'), /`ask GY-N QUESTION`/);
+    assert.match(guideText('runtimes'), /`ask GY-N QUESTION` runs one read-only/);
   } finally { await f.close(); }
 });

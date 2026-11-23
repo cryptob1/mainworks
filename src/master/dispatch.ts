@@ -536,6 +536,8 @@ export function workerPrompt(
   const standards = reviewStandards(work), criteria = criteriaListing(work.criteria, work.scenarioRequirements);
   return `Implement ${work.key}: ${work.title}. ${workerLeadSection(work)}Done when every criterion below holds on a commit on your assigned branch, submitted with node ${config.cliPath} complete ${work.key} ${epoch} --head as your last action; on lease loss stop at once (node ${config.cliPath} guide complete). `
     + `Run node ${config.cliPath} status ${work.key} before editing, and never weaken criteria. Write the bound proof first and see it fail without the change. `
+    // GY-3530: a throwaway read-only investigator answers a question on the item without spending this session's context.
+    + `To investigate without spending your context, run node ${config.cliPath} ask ${work.key} QUESTION; its answer is noted on the item. `
     + attemptBoundSection(config.run, work, epoch)
     + installed
     + (memoryDigest || '')
