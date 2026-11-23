@@ -112,7 +112,7 @@ test('integration:managed-worktree-root — producer and reviewer checkouts are 
     assert.equal((await readProducerLedger(root)).producers[0].checkout, produced.checkout, 'the session record owns the checkout');
     const produceStart = launchOf(produceCalls).args;
     assert.deepEqual(produceStart.slice(produceStart.indexOf('--add-dir'), -1), ['--add-dir', produced.checkout, '--add-dir', await sharedGitDirectory(root) ?? '', '--add-dir', join(await sharedGitDirectory(root) ?? '', 'objects'), '--add-dir', join(await sharedGitDirectory(root) ?? '', 'worktrees'), '--add-dir', hostHeavyJobsDirectory()], 'the common Git directory (GY-2977: packed-refs lock) and the narrow paths beside it');
-    assert.equal(launchOf(produceCalls).stem, join(produced.checkout, `.graphyard/launch/${produced.agentName}`), 'the request file lives in the session\'s own checkout');
+    assert.equal(launchOf(produceCalls).stem, join(produced.checkout, `.mainworks/launch/${produced.agentName}`), 'the request file lives in the session\'s own checkout');
     const producerText = promptOf(produceCalls);
     assert.ok(producerText.includes(`git worktree add --detach ${join(produced.checkout, 'checkout')} ${H}`));
     assert.ok(producerText.includes(join(produced.checkout, 'integration-managed-worktree-root.evidence.json')));
@@ -139,9 +139,9 @@ test('integration:managed-worktree-root — producer and reviewer checkouts are 
     // outside every worktree, the coordinator checkout included, with nothing checked out (a codex session's own empty .agents and .codex aside, GY-1717).
     for (const own of [produced.checkout, reviewed.checkout]) {
       await assertOutsideWorktrees(root, own, 'An ephemeral checkout');
-      assert.deepEqual(await readdir(own).then(entries => entries.filter(entry => !['.git', '.graphyard', '.agents', '.codex'].includes(entry))), [], `${own} has nothing checked out`);
+      assert.deepEqual(await readdir(own).then(entries => entries.filter(entry => !['.git', '.mainworks', '.agents', '.codex'].includes(entry))), [], `${own} has nothing checked out`);
     }
-    const assignment = join(root, '.graphyard/worktrees/GY-88-1');
+    const assignment = join(root, '.mainworks/worktrees/GY-88-1');
     git('worktree', 'add', '-q', '-b', 'graphyard/gy-88-1', assignment, 'HEAD');
     await occupy(git, produced.checkout);
     for (const inside of [join(root, 'proofs'), join(assignment, 'proofs'), join(produced.checkout, 'checkout', 'nested')]) {
@@ -197,7 +197,7 @@ test('integration:managed-worktree-root — producer and reviewer checkouts are 
     for (const own of [produced.checkout, reviewed.checkout]) {
       const wrapper = (await import('../src/master/confinement.js')).readOnlyMountWrapper({ coordinatorRoot: root, sessionDirectory: own });
       for (const alias of ['/tmp', '/var/tmp']) {
-        assert.ok(wrapper.some((word, index) => word === '--bind' && wrapper[index + 1] === join(own, '.graphyard', 'scratch') && wrapper[index + 2] === alias), 'temporary aliases bind only the allocated session scratch');
+        assert.ok(wrapper.some((word, index) => word === '--bind' && wrapper[index + 1] === join(own, '.mainworks', 'scratch') && wrapper[index + 2] === alias), 'temporary aliases bind only the allocated session scratch');
       }
     }
   } finally { await cleanup(); }
@@ -319,10 +319,10 @@ test('integration:worktree-root-preflight — setup refuses a tmpfs or a volume 
     await assert.rejects(setup({}, memory), (error: Error) => {
       assert.match(error.message, new RegExp(`The managed worktree root ${managed} is on a tmpfs`));
       assert.match(error.message, /held in memory and lost at the next boot/);
-      assert.match(error.message, /Set run\.worktreeRoot in \.graphyard\/master\.json \(or GRAPHYARD_DATA_HOME\) to a directory on durable storage/);
+      assert.match(error.message, /Set run\.worktreeRoot in \.mainworks\/master\.json \(or GRAPHYARD_DATA_HOME\) to a directory on durable storage/);
       return true;
     });
-    assert.equal(existsSync(join(root, '.graphyard/master.json')), false, 'a refused setup made no changes');
+    assert.equal(existsSync(join(root, '.mainworks/master.json')), false, 'a refused setup made no changes');
     assert.equal(existsSync(credentialDirectory), false);
 
     // Durable storage must also have the configured minimum free, and the minimum is configurable.
@@ -330,7 +330,7 @@ test('integration:worktree-root-preflight — setup refuses a tmpfs or a volume 
     assert.equal(worktreeRootBudgetBytes({ run: {} }), 10e9); assert.equal(worktreeRootBudgetBytes({ run: { worktreeRootBudgetGb: 3 } }), 3e9);
     await assert.rejects(setup({}, free(1.2e9)), /has 1\.2 GB free, below the required 2\.0 GB\. Free space on that volume, point run\.worktreeRoot at a larger one, or lower run\.worktreeRootMinFreeGb/);
     await assert.rejects(setup({ worktreeRootMinFreeGb: 40 }, free(30e9)), /has 30\.0 GB free, below the required 40\.0 GB/);
-    assert.equal(existsSync(join(root, '.graphyard/master.json')), false);
+    assert.equal(existsSync(join(root, '.mainworks/master.json')), false);
     const accepted = await setup({ worktreeRootMinFreeGb: 1 }, free(1.2e9));
     assert.deepEqual(accepted.worktreeRoot, { path: managed, freeBytes: 1.2e9, minFreeBytes: 1e9, configured: true });
     assert.equal(existsSync(managed), false, 'setup verifies the root without creating it');
@@ -376,7 +376,7 @@ test('integration:worktree-root-preflight — setup refuses a tmpfs or a volume 
     // A configuration that predates this check, or was edited onto a tmpfs, is said so too.
     const volatile = await managedRootStatus(root, config, sessions, { probe: memory, usage: async () => 0 });
     assert.match(volatile.attention[0].text, /is on a tmpfs: every proof and review checkout is held in memory/);
-    assert.match(volatile.attention[0].next, /Set run\.worktreeRoot in \.graphyard\/master\.json to an absolute path on durable storage/);
+    assert.match(volatile.attention[0].next, /Set run\.worktreeRoot in \.mainworks\/master\.json to an absolute path on durable storage/);
 
     // The real measurement of a real root, and a root that does not exist yet.
     const real = await inspectWorktreeRoot(managed, { minFreeBytes: 1, budgetBytes: 10e9 }, [owned.directory]);
@@ -396,7 +396,7 @@ test('unit:disk-exhaustion-message — a write that failed for want of room is r
   assert.match(reclaimAdvice, /^free space on the volume, then retry/);
   assert.equal(diskExhaustionMessage(quota), `the host's disk quota is exhausted (EDQUOT) at /data/worktrees/graphyard-proof-gy-88-aaaaaaa-0123abcd: ${reclaimAdvice}`);
   assert.equal(diskExhaustionMessage(full, '/data/worktrees'), `the volume is full (ENOSPC) at /data/worktrees: ${reclaimAdvice}`, 'a caller that knows the path names it');
-  assert.equal(diskExhaustionMessage(child, '/repo/.graphyard/worktrees/GY-88-1'), `the host's disk quota is exhausted (EDQUOT) at /repo/.graphyard/worktrees/GY-88-1: ${reclaimAdvice}`, 'a child command\'s output is the same condition');
+  assert.equal(diskExhaustionMessage(child, '/repo/.mainworks/worktrees/GY-88-1'), `the host's disk quota is exhausted (EDQUOT) at /repo/.mainworks/worktrees/GY-88-1: ${reclaimAdvice}`, 'a child command\'s output is the same condition');
   assert.equal(diskExhaustionMessage(Object.assign(new Error('rename failed'), { code: 'ENOSPC', dest: '/data/ledger.json' })), `the volume is full (ENOSPC) at /data/ledger.json: ${reclaimAdvice}`);
   assert.equal(diskExhaustionMessage(full), `the volume is full (ENOSPC): ${reclaimAdvice}`);
   assert.equal(diskExhaustionMessage(unrelated), null); assert.equal(diskExhaustion(unrelated), null);

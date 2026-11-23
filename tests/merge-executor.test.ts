@@ -243,9 +243,9 @@ test('unit:executor-push-leased-deploy-key-only — the push is `git push origin
   assert.equal(await reads.fetch(), tip);
   const fetch = git.calls.find(call => call.args.includes('fetch'))!;
   assert.deepEqual(fetch.args, ['-C', '/coordinator', 'fetch', '--no-tags', 'origin', 'main'], 'only the base is fetched: the head is already in the shared object store');
-  // The deploy key defaults to the install's, under ~/.config/graphyard/<install>/deploy-key, and `~/` is the home directory.
-  assert.deepEqual(mergeWriterSettings({}, 'owner-project', '/home/loop'), { deployKeyFile: '/home/loop/.config/graphyard/owner-project/deploy-key', parallel: defaultMergeWriterParallel });
-  assert.equal(defaultDeployKeyFile('owner-project', '/h'), '/h/.config/graphyard/owner-project/deploy-key');
+  // The deploy key defaults to the install's, under ~/.config/mainworks/ (or an existing ~/.config/graphyard/)<install>/deploy-key, and `~/` is the home directory.
+  assert.deepEqual(mergeWriterSettings({}, 'owner-project', '/home/loop'), { deployKeyFile: '/home/loop/.config/mainworks/owner-project/deploy-key', parallel: defaultMergeWriterParallel });
+  assert.equal(defaultDeployKeyFile('owner-project', '/h'), '/h/.config/mainworks/owner-project/deploy-key');
   assert.deepEqual(mergeWriterSettings({ mergeWriter: { deployKeyFile: '~/keys/deploy', parallel: 2 } }, 'owner-project', '/home/loop'), { deployKeyFile: '/home/loop/keys/deploy', parallel: 2 });
   assert.deepEqual(mergeWriterSettings({ mergeWriter: mergeWriterSettingsSchema.parse({ retrials: 11 }) }, 'owner-project', '/home/loop').parallel, defaultMergeWriterParallel, 'the retired retrials key still loads and is ignored');
   assert.throws(() => mergeWriterSettingsSchema.parse({ parallel: 7 }));
@@ -522,7 +522,7 @@ before(async () => {
   baseTip = git(checkout, 'rev-parse', 'refs/remotes/origin/main');
   // Each worker's branch is a linked worktree of the checkout: its commit lands in the shared object store, nothing is pushed (GY-1523).
   for (const [n, file] of [[1, 'src/app.ts'], [2, 'src/other.ts'], [3, 'src/third.ts'], [4, 'src/fourth.ts'], [5, 'src/fifth.ts'], [6, 'src/sixth.ts'], [7, 'src/seventh.ts']] as const) {
-    const worktree = join(checkout, '.graphyard', 'worktrees', `GY-${n}-1`);
+    const worktree = join(checkout, '.mainworks', 'worktrees', `GY-${n}-1`);
     git(checkout, 'worktree', 'add', '-q', '-b', `graphyard/gy-${n}-1`, worktree, baseTip);
     git(worktree, 'config', 'user.email', 't@example.com'); git(worktree, 'config', 'user.name', 'T');
     heads[n] = await commit(worktree, file, `export const value = ${n};\n`, `change ${n}`);
@@ -666,7 +666,7 @@ test('integration:executor-reconcile-after-crash — killed between the push and
 test('unit:superseded-intent-settles — an item resubmitted with a new head while its intent on the old head is open settles through the real merge-record route: the next cycle records the old intent refused, the queue unblocks, another head merges, and the new head is trialled; a superseded intent the base holds settles refused without delivering; a 409 is adopted at once, not replayed', async () => {
   // Fresh branches (8, 9, 10): the fixture's own 1-7 are reserved by the earlier tests.
   const branchHead = async (n: number, file: string) => {
-    const worktree = join(checkout, '.graphyard', 'worktrees', `GY-${n}-1`);
+    const worktree = join(checkout, '.mainworks', 'worktrees', `GY-${n}-1`);
     git(checkout, 'worktree', 'add', '-q', '-b', `graphyard/gy-${n}-1`, worktree, baseTip);
     git(worktree, 'config', 'user.email', 't@example.com'); git(worktree, 'config', 'user.name', 'T');
     return commit(worktree, file, `export const value${n} = ${n};\n`, `change ${n}`);
@@ -687,7 +687,7 @@ test('unit:superseded-intent-settles — an item resubmitted with a new head whi
     assert.ok(pulled.assigned, `rework of ${item.key} is claimable again: ${JSON.stringify(pulled.refused)}`);
     const epoch = pulled.assigned!.lease!.epoch;
     await engine.execute(worker, 'workspace', item.id, { epoch, host: 'test', path: `/tmp/exec-resub-${n}`, branch: `graphyard/gy-${n}-1` }, randomUUID());
-    const head = await commit(join(checkout, '.graphyard', 'worktrees', `GY-${n}-1`), `src/resub-${n}.ts`, `export const resub${n} = ${epoch};\n`, `resubmission of GY-${n}`);
+    const head = await commit(join(checkout, '.mainworks', 'worktrees', `GY-${n}-1`), `src/resub-${n}.ts`, `export const resub${n} = ${epoch};\n`, `resubmission of GY-${n}`);
     return engine.execute(worker, 'submit', item.id, { epoch, head }, randomUUID());
   };
   // The other item is filed first, so it leads the queue once the block lifts.
@@ -949,7 +949,7 @@ test(`${advanceBase ? 'integration:refused-intent-base-advance' : 'integration:r
       { id: 101, reviewer: 'independent-reviewer', sha: current.candidate!.sha, state: 'APPROVED', source: 'control-plane' },
     ] });
   };
-  const branch = join(checkout, '.graphyard', 'worktrees', `GY-${n}-1`);
+  const branch = join(checkout, '.mainworks', 'worktrees', `GY-${n}-1`);
   git(checkout, 'worktree', 'add', '-q', '-b', `graphyard/gy-${n}-1`, branch, baseTip);
   await commit(branch, 'tests/recovery.test.ts', "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\ntest('integration:recovery-fixture', () => assert.equal(2 + 2, 4));\n", 'recovery proof');
   if (advanceBase) await commit(branch, 'src/store/recovery.ts', 'export const repaired = true;\n', 'sensitive repair');
@@ -1031,7 +1031,7 @@ test(`${advanceBase ? 'integration:refused-intent-base-advance' : 'integration:r
   const actualTrial = trialsBefore[0]!.payload;
   // A real second-parent ancestor satisfies ordinary reconciliation, but cannot
   // establish that a refused flight landed on main's first-parent chain.
-  const sideNumber = n + 20, sideBranch = join(checkout, '.graphyard', 'worktrees', `GY-${sideNumber}-1`);
+  const sideNumber = n + 20, sideBranch = join(checkout, '.mainworks', 'worktrees', `GY-${sideNumber}-1`);
   git(checkout, 'worktree', 'add', '-q', '-b', `graphyard/gy-${sideNumber}-1`, sideBranch, originalBase);
   const sideSha = heads[sideNumber] = await commit(sideBranch, `src/side-parent-${n}.ts`, 'export const side = true;\n', 'side parent');
   const mainTip = git(checkout, 'rev-parse', 'refs/remotes/origin/main');
@@ -1122,7 +1122,7 @@ test(`${advanceBase ? 'integration:refused-intent-base-advance' : 'integration:r
     if (variant === 'policy') {
       // Canonical restart: an actual route 409 for the on-main recovery must leave
       // its original flight held while a second, eligible head still lands.
-      const nextNumber = n + 19, nextBranch = join(checkout, '.graphyard', 'worktrees', `GY-${nextNumber}-1`);
+      const nextNumber = n + 19, nextBranch = join(checkout, '.mainworks', 'worktrees', `GY-${nextNumber}-1`);
       git(checkout, 'worktree', 'add', '-q', '-b', `graphyard/gy-${nextNumber}-1`, nextBranch, containing);
       heads[nextNumber] = await commit(nextBranch, `src/after-recovery-${n}.ts`, 'export const next = true;\n', 'unrelated queued change');
       const next = await submittedItem(nextNumber);

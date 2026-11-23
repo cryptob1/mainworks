@@ -128,12 +128,13 @@ test('unit:tests/repository-trial-image.test.ts — a first build checks out the
   assert.equal(built, repositoryTrialImageTag(fixture.root, trialImage(), baseDockerfile));
   const build = calls.find(([command, first]) => command === 'docker' && first === 'build')!;
   assert.ok(build, 'the image is built');
-  assert.deepEqual(build.slice(2, 5), ['--build-arg', `GRAPHYARD_TRIAL_IMAGE=${trialImage()}`, '--file']);
-  assert.equal(build[6], '--tag');
-  assert.equal(build[7], built);
+  assert.deepEqual(build.slice(2, 5), ['--build-arg', `MAINWORKS_TRIAL_IMAGE=${trialImage()}`, '--build-arg']);
+  assert.deepEqual(build.slice(5, 7), [`GRAPHYARD_TRIAL_IMAGE=${trialImage()}`, '--file'], 'the Graphyard build arg is still passed');
+  assert.equal(build[8], '--tag');
+  assert.equal(build[9], built);
   const worktreeAdd = calls.find(([command, , , first, second]) => command === 'git' && first === 'worktree' && second === 'add');
   assert.ok(worktreeAdd, 'the build context is a worktree of the tip');
-  assert.equal(build[5], join(worktreeAdd![6]!, trialDockerfile), 'the Dockerfile is named inside the context worktree');
+  assert.equal(build[7], join(worktreeAdd![6]!, trialDockerfile), 'the Dockerfile is named inside the context worktree');
   assert.equal(worktreeAdd![7], fixture.tip, 'the context is the tip it was given');
   assert.equal(existsSync(worktreeAdd![6]!), false, 'the context worktree is removed after the build');
   assert.ok(calls.some(([command, , , first, second]) => command === 'git' && first === 'worktree' && second === 'remove'), 'the worktree is unregistered');

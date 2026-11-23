@@ -15,7 +15,7 @@ import { hostname } from 'node:os';
 // Time-bomb allowance (GY-1694): the 2026-10-05 submittedAt is a past verdict literal that reconcile records without comparing it to a clock; the gh stub's submitted_at and the item timestamps come from Date.now().
 
 // GY-1303, 2026-10-05: with the coordinator checkout mounted read-only, every reconcile pass failed
-// on the review-ledger lock .graphyard/reviews.json.lock (EROFS) after GY-1301 had moved only the
+// on the review-ledger lock .mainworks/reviews.json.lock (EROFS) after GY-1301 had moved only the
 // follow-up lock, and master status reported runtime.reviews unavailable for over an hour. The lock
 // is now taken under the managed data root, and a lock location that cannot be written degrades
 // to a lockless read-modify-write by the single writer the coordinator then is.
@@ -89,7 +89,7 @@ test('unit:review-ledger-lock-erofs-degrades — a read-only ledger lock locatio
       assert.equal(reasons.length, 1, `${at}/${code}: the pass says it ran lockless`);
       assert.match(reasons[0]!, new RegExp(`review ledger lock .*review-ledger.*${code}`));
     }
-    assert.equal(existsSync(join(root, '.graphyard', 'reviews.json.lock')), false, 'nothing is ever written beside the ledger');
+    assert.equal(existsSync(join(root, '.mainworks', 'reviews.json.lock')), false, 'nothing is ever written beside the ledger');
 
     // A reconcile pass that records a verdict saves it although its lock location is read-only.
     await launchReview(root, work(), 'claude-reviewer', [], new Date().toISOString(), { run: herdrRun, registerLaunch, probe: registryFixture(hostname(), ['claude'], ['reviewer']).probe });
@@ -114,12 +114,12 @@ test('unit:review-ledger-lock-erofs-degrades — a read-only ledger lock locatio
           const ledger = await readReviewLedger(root);
           // A read-only checkout no longer prevents saving a reconciled ledger.
           await updateReviewLedger(root, current => { current.reviews = ledger.reviews.map(record => ({ ...record, state: 'pending', verdict: undefined, closedAt: undefined })); }, { environment: { GRAPHYARD_DATA_HOME: dataHome } });
-          await chmod(join(root, '.graphyard'), 0o500);
+          await chmod(join(root, '.mainworks'), 0o500);
           try {
             const unsaved = await reconcileReviews(root, config, { run: herdrRun, observe: () => verdict() });
             assert.equal(unsaved.reviews[0]!.verdict?.state, 'APPROVED');
             assert.equal((await readReviewLedger(root)).reviews[0]!.verdict?.state, 'APPROVED');
-          } finally { await chmod(join(root, '.graphyard'), 0o700); }
+          } finally { await chmod(join(root, '.mainworks'), 0o700); }
         });
       } finally { await chmod(readOnlyHome, 0o700); await rm(readOnlyHome, { recursive: true, force: true }); }
     }
@@ -136,8 +136,8 @@ test('unit:review-ledger-lock-writable-root — the ledger lock is taken under t
     await updateReviewLedger(root, async () => { held = await lockFiles(); }, { environment });
     assert.equal(held.length, 1);
     assert.match(held[0]!, new RegExp(`^${dataHome}/review-ledger/[0-9a-f]{12}\\.lock$`));
-    assert.equal(existsSync(join(root, '.graphyard', 'reviews.json.lock')), false);
-    assert.equal(existsSync(join(root, '.graphyard', 'reviews.json')), false, 'the ledger lives in Postgres');
+    assert.equal(existsSync(join(root, '.mainworks', 'reviews.json.lock')), false);
+    assert.equal(existsSync(join(root, '.mainworks', 'reviews.json')), false, 'the ledger lives in Postgres');
     assert.deepEqual(await lockFiles(), [], 'released on completion');
     // Another checkout on the same host keeps its own lock.
     const other = await temporaryDirectory('ledger-lock-other');

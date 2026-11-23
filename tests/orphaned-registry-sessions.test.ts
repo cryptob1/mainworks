@@ -269,7 +269,7 @@ for (const postMerge of [false, true]) test(`integration:post-merge-review-slot-
   try {
     config.herdrWorkspace = 'w4G';
     config.url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-    const file = join(host.root, '.graphyard/master.json');
+    const file = join(host.root, '.mainworks/master.json');
     await writeFile(file, JSON.stringify(config), { mode: 0o600 });
     const done = requested(1), waiting = requested(2);
     done.key = postMerge ? 'GY-3007' : 'GY-3004';

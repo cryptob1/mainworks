@@ -202,7 +202,7 @@ test('e2e:clean-host-npx-up — a fresh account runs npx @cryptob1/graphyard up 
   assert.deepEqual(readdirSync(dirname(release)), [commit]);
   assert.equal(git(release, 'rev-parse', 'HEAD'), commit);
   assert.equal(git(release, 'config', '--get', 'remote.origin.url'), 'https://github.com/cryptob1/graphyard');
-  assert.equal(JSON.parse(readFileSync(join(repository, '.graphyard', 'master.json'), 'utf8')).cliPath, join(release, 'bin', 'graphyard.mjs'), 'the loop is recorded to run from the release tree, not from the npm cache');
+  assert.equal(JSON.parse(readFileSync(join(repository, '.mainworks', 'master.json'), 'utf8')).cliPath, join(release, 'bin', 'graphyard.mjs'), 'the loop is recorded to run from the release tree, not from the npm cache');
 
   // Both images were pulled by that commit from the registry; nothing was built on this host.
   assert.ok(images.pulls.includes(`cryptob1/graphyard:${commit}`) && images.pulls.includes(`cryptob1/graphyard-trial:${commit}`), images.pulls.join(', '));

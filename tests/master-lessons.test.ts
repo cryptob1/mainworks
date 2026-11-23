@@ -59,7 +59,7 @@ test('e2e:master-lessons — lesson add stores a lesson the next master launch p
     return { selected: true, reason: 'fixture account', skipped: [], session, account, runtime: fleetRuntime, model: registry.models[0], revision: 1 };
   } };
   const panes = new Map<string, { env: NodeJS.ProcessEnv; child?: ChildProcess }>();
-  const resultFile = (pane: string) => join(root, '.graphyard', `${pane}.result.json`);
+  const resultFile = (pane: string) => join(root, '.mainworks', `${pane}.result.json`);
   let paneId = 0;
   const stop = async () => { for (const pane of panes.values()) { const child = pane.child; if (child && child.exitCode === null) { child.stdin?.end(); await once(child, 'exit').catch(() => {}); } } };
   const run: ChildRun = async (_command, args) => {

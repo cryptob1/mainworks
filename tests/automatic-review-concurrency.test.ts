@@ -49,7 +49,7 @@ test('unit:automatic-reviews-run-in-parallel — with run.reviewerProfile set an
     const { profile } = selectReviewerProfile(config);
     assert.equal(profileConcurrency(profile!), automaticReviewerConcurrency);
     assert.equal(profileConcurrency(withReviewerDefaults(config).reviewers.find(entry => entry.name === 'spare-reviewer')!), 1);
-    assert.equal(JSON.parse(await readFile(join(host.root, '.graphyard/master.json'), 'utf8')).reviewers[0].concurrency, undefined, 'the default is read, never written into master.json');
+    assert.equal(JSON.parse(await readFile(join(host.root, '.mainworks/master.json'), 'utf8')).reviewers[0].concurrency, undefined, 'the default is read, never written into master.json');
 
     const items = [requested(1), requested(2), requested(3)];
     const tick = await runDispatchTick(config, emptyDispatchCursor(config), host.effects(() => items, () => config), Date.now);
@@ -177,7 +177,7 @@ test('unit:settled-reviewer-releases-name — a settled reviewer\'s pane Herdr k
 test('unit:automatic-reviews-run-in-parallel — loadMasterConfig applies the automatic reviewer default once at load, the loop\'s reload carries it, and a writer never stores it in master.json', async () => {
   const host = await fleet({ name: 'claude-reviewer', agentName: 'claude-reviewer', kind: 'claude' }, 'claude-reviewer');
   try {
-    const file = join(host.root, '.graphyard/master.json');
+    const file = join(host.root, '.mainworks/master.json');
     const loaded = await loadMasterConfig(host.root);
     // A reader that never calls withReviewerDefaults itself still counts the default.
     assert.equal(loaded.reviewers.find(entry => entry.name === 'claude-reviewer')!.concurrency, automaticReviewerConcurrency);

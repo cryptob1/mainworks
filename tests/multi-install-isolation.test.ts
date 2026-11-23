@@ -32,8 +32,8 @@ const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url))
 async function checkout(label: string, repository: string) {
   const root = await temporaryDirectory(label);
   execFileSync('git', ['init', '-q', root]);
-  await mkdir(join(root, '.graphyard'), { recursive: true });
-  await writeFile(join(root, '.graphyard/master.json'), JSON.stringify({ repository }));
+  await mkdir(join(root, '.mainworks'), { recursive: true });
+  await writeFile(join(root, '.mainworks/master.json'), JSON.stringify({ repository }));
   return root;
 }
 /** The host's user manager, shared by every install: it records each command and knows every instance any install enabled. */
@@ -65,14 +65,14 @@ test('unit:per-install-units — two installs on one host write, enable and rest
   const alpha = await checkout('install-alpha', 'cryptob1/graphyard');
   const beta = await checkout('install-beta', 'cryptob1/graphyard-game-pilot');
   const alphaUnits = perInstallUnits('cryptob1/graphyard'), betaUnits = perInstallUnits('cryptob1/graphyard-game-pilot');
-  assert.equal(alphaUnits.master, 'graphyard-master-cryptob1-graphyard.service');
-  assert.equal(betaUnits.executorTemplate, 'graphyard-executor-cryptob1-graphyard-game-pilot@.service');
+  assert.equal(alphaUnits.master, 'mainworks-master-cryptob1-graphyard.service');
+  assert.equal(betaUnits.executorTemplate, 'mainworks-executor-cryptob1-graphyard-game-pilot@.service');
 
   // The first install: its loop, under its own names, recorded beside its configuration.
   const alphaLoop = await installLoopSupervisor({ root: alpha, cliPath: launcher, repository: 'cryptob1/graphyard', intervalSeconds: 20 }, host.loopHost(home));
   assert.equal(alphaLoop.unit, alphaUnits.master);
   assert.equal(alphaLoop.unitPath, join(unitDirectory, alphaUnits.master));
-  assert.deepEqual(readInstallUnits(alpha), alphaUnits, 'the names are recorded in .graphyard/units.json');
+  assert.deepEqual(readInstallUnits(alpha), alphaUnits, 'the names are recorded in .mainworks/units.json');
   assert.equal(loopUnitOf(alpha), alphaUnits.master, 'every reader of the loop unit names the recorded one');
   const alphaFiles = { loop: await readFile(alphaLoop.unitPath!, 'utf8') };
 
@@ -169,7 +169,7 @@ test('unit:unit-names-fail-closed — with no units.json, a legacy-named unit th
 
 // ---- Herdr scope ------------------------------------------------------------------------------
 
-const worktree = '/repo/.graphyard/worktrees/GY-20-1';
+const worktree = '/repo/.mainworks/worktrees/GY-20-1';
 /** One Herdr server two installs share: identical names and worktree paths in workspace wA (ours) and wB (another install's). */
 function sharedHerdr() {
   const panes = new Map<string, { workspace: string; name?: string; cwd: string; agent: string | null }>([
@@ -218,16 +218,16 @@ test('unit:herdr-scope-per-install — the install\'s workspace scopes every inv
   // A live reload the loop refuses keeps its scope: an edit that moves the workspace together with a
   // setting the loop is bound to leaves every sweep in wA, and only an accepted reload moves it.
   const live = liveMasterConfig(root, await loadMasterConfig(root));
-  const stored = JSON.parse(await readFile(join(root, '.graphyard/master.json'), 'utf8'));
-  await writeFile(join(root, '.graphyard/master.json'), JSON.stringify({ ...stored, herdrWorkspace: 'wB', baseBranch: 'release' }));
+  const stored = JSON.parse(await readFile(join(root, '.mainworks/master.json'), 'utf8'));
+  await writeFile(join(root, '.mainworks/master.json'), JSON.stringify({ ...stored, herdrWorkspace: 'wB', baseBranch: 'release' }));
   const refused = await live.reload();
   assert.match(refused.refused ?? '', /baseBranch/);
   assert.equal(scope.herdrScope(), 'wA', 'a refused reload never moves the Herdr scope');
   assert.deepEqual((await listHerdrAgents(herdr.run)).map(agent => agent.pane_id), ['wA:p1', 'wA:p2']);
-  await writeFile(join(root, '.graphyard/master.json'), JSON.stringify({ ...stored, herdrWorkspace: 'wB' }));
+  await writeFile(join(root, '.mainworks/master.json'), JSON.stringify({ ...stored, herdrWorkspace: 'wB' }));
   assert.equal((await live.reload()).refused, null);
   assert.equal(scope.herdrScope(), 'wB', 'an accepted reload adopts the new workspace');
-  await writeFile(join(root, '.graphyard/master.json'), '{');
+  await writeFile(join(root, '.mainworks/master.json'), '{');
   assert.match((await live.reload()).refused ?? '', /could not be reloaded/);
   assert.equal(scope.herdrScope(), 'wB');
   scope.scopeHerdr(null);
@@ -255,23 +255,23 @@ test('unit:harness-own-units-only — the generated master harness allows restar
 
   // The pilot's master: its own loop, and nothing else.
   const pilotPlan = masterHarness(pilot, config('cryptob1/graphyard-game-pilot'), 'claude', { unitDirectory });
-  for (const verb of ['restart', 'start', 'stop', 'status', 'enable --now']) assert.equal(decide(pilotPlan, `systemctl --user ${verb} graphyard-master-cryptob1-graphyard-game-pilot.service`), 'allow', verb);
+  for (const verb of ['restart', 'start', 'stop', 'status', 'enable --now']) assert.equal(decide(pilotPlan, `systemctl --user ${verb} mainworks-master-cryptob1-graphyard-game-pilot.service`), 'allow', verb);
   for (const command of [
     'systemctl --user restart graphyard-master.service', 'systemctl --user restart graphyard-master', 'systemctl --user stop graphyard-master.service',
-    'systemctl --user restart graphyard-master-cryptob1-graphyard-game.service',
+    'systemctl --user restart mainworks-master-cryptob1-graphyard-game.service',
   ]) assert.equal(decide(pilotPlan, command), 'deny', command);
 
   // Production's master (the legacy alias): its own legacy unit, never the per-install units beside it.
   const productionPlan = masterHarness(production, config('cryptob1/graphyard'), 'claude', { unitDirectory });
   assert.equal(decide(productionPlan, 'systemctl --user restart graphyard-master.service'), 'allow');
-  for (const command of ['systemctl --user restart graphyard-master-cryptob1-graphyard-game-pilot.service', 'systemctl --user stop graphyard-master-cryptob1-graphyard-game.service'])
+  for (const command of ['systemctl --user restart mainworks-master-cryptob1-graphyard-game-pilot.service', 'systemctl --user stop mainworks-master-cryptob1-graphyard-game.service'])
     assert.equal(decide(productionPlan, command), 'deny', command);
 
   // A name that extends another install's (graphyard-game vs graphyard-game-pilot) never denies the longer one's own unit.
   const thirdPlan = masterHarness(third, config('cryptob1/graphyard-game'), 'claude', { unitDirectory });
-  assert.equal(decide(thirdPlan, 'systemctl --user restart graphyard-master-cryptob1-graphyard-game.service'), 'allow');
-  assert.equal(decide(thirdPlan, 'systemctl --user restart graphyard-master-cryptob1-graphyard-game-pilot.service'), 'deny');
-  assert.equal(decide(pilotPlan, 'systemctl --user restart graphyard-master-cryptob1-graphyard-game-pilot.service'), 'allow');
+  assert.equal(decide(thirdPlan, 'systemctl --user restart mainworks-master-cryptob1-graphyard-game.service'), 'allow');
+  assert.equal(decide(thirdPlan, 'systemctl --user restart mainworks-master-cryptob1-graphyard-game-pilot.service'), 'deny');
+  assert.equal(decide(pilotPlan, 'systemctl --user restart mainworks-master-cryptob1-graphyard-game-pilot.service'), 'allow');
 });
 
 test('unit:per-install-units — repositories whose names differ only in punctuation get distinct units, and a record that exists but cannot be read fails closed instead of claiming the legacy units', async () => {

@@ -130,7 +130,7 @@ test('unit:review-verdict-retired-ledger — stored bot plans and fresh reads lo
 const TOKEN = 'f'.repeat(64);
 const bindingOf = (fields: Partial<ReviewPostBinding> = {}): ReviewPostBinding => ({ repository: 'owner/project', key: 'GY-7', pr: 7, sha: H, baseSha: B, policyRevision: 1, criteriaOnly: true, ...fields });
 
-test('unit:review-post-control-plane-api — the binding gains mode, head, baseTip and verdictToken; in control-plane mode review post sends { event, body, sha: head, token } to the API as the token and never runs gh; the launch keeps only the token\'s sha256 in .graphyard/reviews.json', async () => {
+test('unit:review-post-control-plane-api — the binding gains mode, head, baseTip and verdictToken; in control-plane mode review post sends { event, body, sha: head, token } to the API as the token and never runs gh; the launch keeps only the token\'s sha256 in .mainworks/reviews.json', async () => {
   const parsed = reviewBindingSchema.parse(bindingOf({ mode: 'control-plane', head: H, baseTip: B, verdictToken: TOKEN }));
   assert.deepEqual([parsed.mode, parsed.head, parsed.baseTip, parsed.verdictToken], ['control-plane', H, B, TOKEN]);
   assert.throws(() => reviewBindingSchema.parse(bindingOf({ mode: 'control-plane' })), /head, baseTip and verdictToken/);
@@ -564,7 +564,7 @@ test('integration:control-plane-reviewer-profile-launch — without a reviewer A
 test('unit:review-verdict — a master config with no githubAppId launches a reviewer session for a submitted head, and its verdict is recorded with no App credential configured', async () => {
   const master = await reviewerMaster('review-no-app');
   try {
-    const file = join(master.root, '.graphyard', 'master.json');
+    const file = join(master.root, '.mainworks', 'master.json');
     const { githubAppId: _retired, ...config } = JSON.parse(await readFile(file, 'utf8'));
     await writeFile(file, JSON.stringify(config));
     const calls: string[][] = [];

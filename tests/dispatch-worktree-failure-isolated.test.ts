@@ -123,7 +123,7 @@ test('integration:dispatch-worktree-failure-isolated — git refuses the highest
   const broken = await readyItem('GY-9901', 0);
   await readyItem('GY-9902', 1);
   // Something already sits where GY-9901's worktree goes, so the real `git worktree add` refuses it.
-  const occupied = join(root, '.graphyard', 'worktrees', 'GY-9901-1');
+  const occupied = join(root, '.mainworks', 'worktrees', 'GY-9901-1');
   await mkdir(occupied, { recursive: true }); await writeFile(join(occupied, 'left-behind.txt'), 'x\n');
   const attempts = () => state.actions[`dispatch:${broken}:0`]?.attempts ?? 0;
 

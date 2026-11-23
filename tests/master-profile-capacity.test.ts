@@ -21,14 +21,14 @@ import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 
 // GY-3292: the loop's worker-pool growth (growWorkerPool, through saveWorkerProfile) wrote a 101st
-// profile into .graphyard/master.json whenever the registry allowed more workers than the file holds,
+// profile into .mainworks/master.json whenever the registry allowed more workers than the file holds,
 // which made every master command and loop cycle fail, and minted another identity each cycle.
 const coordinator: Principal = { id: 'graphyard-master', role: 'coordinator' };
 const worker: Principal = { id: 'worker-a', role: 'worker' };
 const token = (principal: Principal) => `${principal.id}-token-${'x'.repeat(32)}`;
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 let store: Store, http: ReturnType<typeof server>, root: string, url: string;
-const file = () => join(root, '.graphyard/master.json');
+const file = () => join(root, '.mainworks/master.json');
 const stored = async () => JSON.parse(await readFile(file(), 'utf8')) as { workers: { name: string; mode: string }[] };
 const minted = async () => Number((await store.pool.query('SELECT count(*) FROM worker_identities')).rows[0].count);
 

@@ -27,7 +27,7 @@ const releasePath = (installDir: string, sha: string) => join(installDir, 'deplo
 const releaseTree = async (installDir: string, sha: string) => {
   const tree = releasePath(installDir, sha);
   await mkdir(join(tree, 'bin'), { recursive: true });
-  await mkdir(join(tree, '.graphyard'), { recursive: true });
+  await mkdir(join(tree, '.mainworks'), { recursive: true });
   await writeFile(join(tree, 'bin', 'graphyard.mjs'), '#!/usr/bin/env node\n');
   return tree;
 };
@@ -38,8 +38,8 @@ test('unit:loop-unit-runs-current-release — the unit names the install\'s stab
   const configHome = join(home, 'graphyard'), installDir = join(configHome, 'owner-project');
   try {
     execFileSync('git', ['init', '-q', root]);
-    await mkdir(join(root, '.graphyard'), { recursive: true });
-    await writeFile(join(root, '.graphyard', 'master.json'), JSON.stringify({ repository }));
+    await mkdir(join(root, '.mainworks'), { recursive: true });
+    await writeFile(join(root, '.mainworks', 'master.json'), JSON.stringify({ repository }));
     const launched = join(root, 'launched.txt'), cliPath = join(root, 'cli.mjs');
     await writeFile(cliPath, `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(launched)}, process.argv.slice(2).join(' '));\n`);
     const config = { hostId: 'this-host', cliPath, repository, installDir, run: { intervalSeconds: 20 } } as unknown as MasterConfig;
@@ -63,7 +63,7 @@ test('unit:loop-unit-runs-current-release — the unit names the install\'s stab
     const input = { root, cliPath, repository, intervalSeconds: 20, execPath: '/usr/bin/node', installDir };
     const installed = await installLoopSupervisor(input, host);
     assert.equal(installed.wrote, 'created');
-    const unit = JSON.parse(await readFile(join(root, '.graphyard', 'units.json'), 'utf8')).master as string;
+    const unit = JSON.parse(await readFile(join(root, '.mainworks', 'units.json'), 'utf8')).master as string;
     const unitPath = join(home, '.config', 'systemd', 'user', unit);
     const unitText = await readFile(unitPath, 'utf8');
     assert.match(unitText, new RegExp(`^ExecStart=/usr/bin/node ${escape(installLauncherPath(installDir))} master run$`, 'm'), 'the unit names the install\'s one stable launcher');
@@ -98,8 +98,8 @@ test('unit:loop-unit-runs-current-release — the unit names the install\'s stab
     // With no systemd user manager at all there is no unit to go through: the detached loop stands.
     const bare = await temporaryDirectory('loop-unit-release-bare');
     execFileSync('git', ['init', '-q', bare]);
-    await mkdir(join(bare, '.graphyard'), { recursive: true });
-    await writeFile(join(bare, '.graphyard', 'master.json'), JSON.stringify({ repository }));
+    await mkdir(join(bare, '.mainworks'), { recursive: true });
+    await writeFile(join(bare, '.mainworks', 'master.json'), JSON.stringify({ repository }));
     const detachedCli = join(bare, 'cli.mjs'), detachedLaunched = join(bare, 'launched.txt');
     await writeFile(detachedCli, `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(detachedLaunched)}, process.argv.slice(2).join(' '));\n`);
     const none = manager({ reachable: false });

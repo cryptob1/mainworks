@@ -19,7 +19,7 @@ import { registryFixture } from './helpers/registry-fixture.js';
 test('e2e:dead-reviewer-relaunch — a review whose pane exited and whose registry session is gone is failed with its cause, its credential freed, and the next attempt launched on the next cycle', async () => {
   const host = await fleet({ name: 'claude-reviewer', agentName: 'claude-reviewer', kind: 'claude', concurrency: 1 }, 'claude-reviewer');
   try {
-    const file = join(host.root, '.graphyard/master.json'), stored = JSON.parse(await readFile(file, 'utf8'));
+    const file = join(host.root, '.mainworks/master.json'), stored = JSON.parse(await readFile(file, 'utf8'));
     stored.reviewers = stored.reviewers.filter((profile: { name: string }) => profile.name === 'claude-reviewer');
     await writeFile(file, JSON.stringify(stored, null, 2), { mode: 0o600 });
     const config = await loadMasterConfig(host.root);

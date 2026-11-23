@@ -102,7 +102,7 @@ console.log(JSON.stringify({ verdict: 'APPROVE', body: 'Reviewed head ${head} ag
       for (let attempt = 1; attempt <= count; attempt++) {
         const closedAt = Date.now() - (count - attempt + 1) * 60 * 60_000, requestedAt = closedAt - ranMs;
         ledger.reviews.push({ id: randomUUID(), key: work.key, pr: 7, sha: head, baseSha: base, policyRevision: 1, profile: 'reviewer', agentName: `independent-reviewer-${attempt}`, pane: null,
-          sessionDirectory: join(root, '.graphyard', 'gone-sessions', randomUUID()), requestedAt: new Date(requestedAt).toISOString(), tokenExpiresAt: new Date(requestedAt + 3_600_000).toISOString(),
+          sessionDirectory: join(root, '.mainworks', 'gone-sessions', randomUUID()), requestedAt: new Date(requestedAt).toISOString(), tokenExpiresAt: new Date(requestedAt + 3_600_000).toISOString(),
           state: 'failed', closedAt: new Date(closedAt).toISOString(), resolution, requestId: request.id, attempt, mode: 'control-plane' } as ReviewRecord);
       }
     });

@@ -141,7 +141,7 @@ test('unit:reinstall-fresh-database — up re-issues the coordinator and operato
   await stopLoop(); await startLoop();
   assert.equal(JSON.parse(await readFile(await cursor(), 'utf8')).cycle, 0, 'the old cursor never comes back');
   assert.ok(notes.some(text => /Re-issued the coordinator and operator-agent credentials for the fresh database; the loop started a fresh cursor; the old one \(cycle 16603\) is archived at \S+\.archived-/.test(text)), notes.join('\n'));
-  assert.equal(JSON.parse(await readFile(join(root, '.graphyard/up.json'), 'utf8')).reissue, null, 'the re-issue is done');
+  assert.equal(JSON.parse(await readFile(join(root, '.mainworks/up.json'), 'utf8')).reissue, null, 'the re-issue is done');
 
   // Accepted credentials change nothing: no install, no new credential, no archive, no restart.
   const settled = { calls: calls.length, operator: await credential(), agents: plane.agents.length };
@@ -169,7 +169,7 @@ test('unit:reinstall-fresh-database — up re-issues the coordinator and operato
 
   // With no admin credential, or a failed listing, the revoked identity's absence is unknown: nothing
   // is re-issued and up.json keeps its steps, so the run after the listing answers again still sees it listed.
-  const upState = async () => JSON.parse(await readFile(join(root, '.graphyard/up.json'), 'utf8'));
+  const upState = async () => JSON.parse(await readFile(join(root, '.mainworks/up.json'), 'utf8'));
   for (const [noAdmin, fails, why] of [[true, false, /admin credential is not on this machine/], [false, true, /GET \/api\/operator-agents failed/]] as const) {
     admin = !noAdmin; listingFails = fails;
     const blind: UpEvent[] = [], kept = { calls: calls.length, state: await upState() };

@@ -82,7 +82,7 @@ async function installation(runtimes?: { producer?: 'herdr' | 'pi' }) {
   // A registry Pi account runs its runtime's own `pi` (GY-3030): the same wrapper, under that name.
   const bin = join(scratch, 'bin'); await mkdir(bin);
   await writeFile(join(bin, 'pi'), await readFile(wrapper, 'utf8')); await chmod(join(bin, 'pi'), 0o755);
-  const file = join(root, '.graphyard/master.json'), config = JSON.parse(await readFile(file, 'utf8'));
+  const file = join(root, '.mainworks/master.json'), config = JSON.parse(await readFile(file, 'utf8'));
   if (runtimes) config.run = { ...config.run, runtimes, pi: { command: wrapper, model: 'zai/glm-5.3-flash' } };
   await writeFile(file, JSON.stringify(masterConfigSchema.parse(config), null, 2), { mode: 0o600 });
   const posted: { url: string; auth: string | null; body: any }[] = [];

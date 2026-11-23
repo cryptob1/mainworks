@@ -215,7 +215,7 @@ test('integration:master-config-reload — a running loop adopts master.json cha
   try {
     const initial = await loadMasterConfig(root);
     const live = liveMasterConfig(root, initial);
-    const file = join(root, '.graphyard/master.json');
+    const file = join(root, '.mainworks/master.json');
     const write = async (change: (config: any) => void) => { const config = JSON.parse(await readFile(file, 'utf8')); change(config); await writeFile(file, JSON.stringify(config, null, 2), { mode: 0o600 }); await chmod(file, 0o600); };
     assert.deepEqual((await live.reload()).changed, [], 'an unchanged file changes nothing');
     const credential = await token('producer-b');
@@ -245,8 +245,8 @@ test('integration:master-config-reload — a running loop adopts master.json cha
     const reloads = [
       { config: manual, changed: [], refused: null, at: iso(0) },
       { config: automatic, changed: ['herdrWorkspace'], refused: null, at: iso(1000) },
-      { config: automatic, changed: [], refused: '.graphyard/master.json changes url, which a running master loop is bound to; restart master run to adopt it', at: iso(2000) },
-      { config: automatic, changed: [], refused: '.graphyard/master.json changes url, which a running master loop is bound to; restart master run to adopt it', at: iso(3000) },
+      { config: automatic, changed: [], refused: '.mainworks/master.json changes url, which a running master loop is bound to; restart master run to adopt it', at: iso(2000) },
+      { config: automatic, changed: [], refused: '.mainworks/master.json changes url, which a running master loop is bound to; restart master run to adopt it', at: iso(3000) },
     ];
     const state = emptyDaemonState(manual);
     // Cycles are counted at the reload that opens each one, not per snapshot read.
@@ -284,7 +284,7 @@ test('integration:master-profile-management — producer profiles can be replace
     // Reviewer profiles: removing the automatic one clears the setting that named it.
     await saveReviewerProfile(root, { name: 'claude-reviewer', agentName: 'review-claude-1', kind: 'claude' });
     await saveReviewerProfile(root, { name: 'cursor-reviewer', agentName: 'review-cursor-1', kind: 'cursor' });
-    const file = join(root, '.graphyard/master.json'); const config = JSON.parse(await readFile(file, 'utf8')); config.run.reviewerProfile = 'claude-reviewer'; await writeFile(file, JSON.stringify(config), { mode: 0o600 });
+    const file = join(root, '.mainworks/master.json'); const config = JSON.parse(await readFile(file, 'utf8')); config.run.reviewerProfile = 'claude-reviewer'; await writeFile(file, JSON.stringify(config), { mode: 0o600 });
     const reviewer = await removeReviewerProfile(root, 'claude-reviewer');
     assert.deepEqual([reviewer.removed, reviewer.clearedAutomatic, reviewer.automatic], ['claude-reviewer', true, 'cursor-reviewer']);
     assert.equal((await loadMasterConfig(root)).run.reviewerProfile, undefined);
@@ -296,7 +296,7 @@ test('integration:master-profile-management — producer profiles can be replace
     const workspaces = (ids: string[]) => (_command: string, args: string[]) => { assert.deepEqual(args, ['workspace', 'list']); return JSON.stringify({ result: { workspaces: ids.map(id => ({ workspace_id: id })) } }); };
     assert.deepEqual(await herdrWorkspaceHealth(master, workspaces(['w1V', 'w3'])), { workspace: 'w1V', exists: true, reason: null });
     const gone = await herdrWorkspaceHealth(master, workspaces(['w3', 'w5']));
-    assert.equal(gone.exists, false); assert.match(gone.reason!, /Herdr workspace w1V configured in \.graphyard\/master\.json no longer exists \(Herdr lists w3, w5\)/);
+    assert.equal(gone.exists, false); assert.match(gone.reason!, /Herdr workspace w1V configured in \.mainworks\/master\.json no longer exists \(Herdr lists w3, w5\)/);
     assert.equal((await herdrWorkspaceHealth(master, () => { throw new Error('no socket'); })).exists, null, 'an unreadable Herdr leaves the workspace unverified, not missing');
     assert.equal((await herdrWorkspaceHealth({ herdrWorkspace: undefined })).exists, null);
     // The commands are part of the CLI and the guide.
@@ -324,7 +324,7 @@ test('integration:loop-missing-worktree — the loop survives a registered workt
       assert.equal((await readDispatchCursor(root, config)).ticks, 0);
       await assertOutsideWorktrees(root, credentials, 'Credential directory');
       // A target inside an existing worktree is still refused.
-      await assert.rejects(assertOutsideWorktrees(root, join(root, '.graphyard'), 'Credential directory'), /must be outside every worktree/);
+      await assert.rejects(assertOutsideWorktrees(root, join(root, '.mainworks'), 'Credential directory'), /must be outside every worktree/);
     } finally { await chmod(hiddenParent, 0o700); }
   } finally { await cleanup(); await rm(outside, { recursive: true, force: true }); }
   const unit = await readFile(new URL('../examples/master/graphyard-master.service', import.meta.url), 'utf8');
@@ -425,7 +425,7 @@ test('integration:role-scoped-harness-rules — worker, reviewer and producer se
     assert.ok(producerSettings.permissions.allow.includes(`Bash(node ${launcher} evidence:*)`));
     assert.ok(producerSettings.permissions.deny.includes('Bash(git push:*)'));
     // Each file lives under the ignored .graphyard directory, never in a worktree it is launched for.
-    for (const file of [workerFile, reviewerFile, producerFile]) assert.ok(file.startsWith(join(root, '.graphyard/harness/')));
+    for (const file of [workerFile, reviewerFile, producerFile]) assert.ok(file.startsWith(join(root, '.mainworks/harness/')));
     // A runtime that does not read Claude settings is launched with its profile arguments unchanged.
     await saveReviewerProfile(root, { name: 'cursor-reviewer', agentName: 'review-cursor-1', kind: 'cursor' });
     const ledger = await readReviewLedger(root); ledger.reviews = []; await saveReviewLedger(root, ledger);

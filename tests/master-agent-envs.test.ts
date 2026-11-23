@@ -113,7 +113,7 @@ async function token(directory: string, folder: string, name: string, value: str
 }
 async function configure(root: string, change: (config: any) => void) {
   const config = await loadMasterConfig(root); change(config);
-  await atomicPrivateWrite(join(root, '.graphyard/master.json'), config);
+  await atomicPrivateWrite(join(root, '.mainworks/master.json'), config);
   return loadMasterConfig(root);
 }
 function work(overrides: Partial<Work> = {}) {
@@ -423,7 +423,7 @@ test('integration:max-autonomy-permissions — every launched agent gets its run
     const workerTab = oc.runs[0]!.env;
     // GY-2959: the worker launch derives the repository-tree grant from the checkout it serves; the reviewer keeps the broad allow-all.
     const workerGrant = JSON.parse(workerTab.OPENCODE_PERMISSION).external_directory;
-    assert.equal(workerGrant[`${root}/**`], 'allow'); assert.equal(workerGrant[`${root}/.graphyard/**`], 'allow'); assert.equal(workerGrant['*'], 'deny');
+    assert.equal(workerGrant[`${root}/**`], 'allow'); assert.equal(workerGrant[`${root}/.mainworks/**`], 'allow'); assert.equal(workerGrant['*'], 'deny');
     assert.equal(workerTab.GRAPHYARD_TOKEN_FILE, credential);
     assert.equal(workerTab.GH_CONFIG_DIR, undefined); assert.equal(JSON.stringify(oc.runs).includes('worker-oc-token-'), false);
     await saveReviewerProfile(root, { name: 'review-oc', agentName: 'review-oc', kind: 'opencode', accounts: ['opencode-a'] });
@@ -446,13 +446,13 @@ test('integration:max-autonomy-permissions — every launched agent gets its run
     // the loop's systemd unit is exact, and no rule lets curl take arbitrary arguments.
     const plan = masterHarness(root, config, 'claude');
     const allow = plan.allow.map(entry => entry.rule), deny = plan.deny.map(entry => entry.rule);
-    for (const rule of ['Read(./.graphyard/master.json)', 'Bash(systemctl --user restart graphyard-master.service)', 'Bash(systemctl --user stop graphyard-master.service)', 'Bash(journalctl --user -u graphyard-master.service:*)', 'Bash(railway redeploy:*)', 'Bash(railway deployment:*)', 'Bash(gh run rerun:*)', 'Bash(gh workflow run deploy-smoke.yml:*)', `Bash(node ${config.cliPath} master:*)`]) assert.ok(allow.includes(rule), `${rule} is the master's own`);
+    for (const rule of ['Read(./.mainworks/master.json)', 'Bash(systemctl --user restart graphyard-master.service)', 'Bash(systemctl --user stop graphyard-master.service)', 'Bash(journalctl --user -u graphyard-master.service:*)', 'Bash(railway redeploy:*)', 'Bash(railway deployment:*)', 'Bash(gh run rerun:*)', 'Bash(gh workflow run deploy-smoke.yml:*)', `Bash(node ${config.cliPath} master:*)`]) assert.ok(allow.includes(rule), `${rule} is the master's own`);
     for (const entry of plan.allow) assert.ok(entry.why.length > 30, `${entry.rule} explains itself`);
     for (const rule of allow) assert.doesNotMatch(rule, /merge|access_tokens|reviews|graphql|\.pem|\.token|credential|cookies/i);
     for (const rule of allow.filter(rule => rule.includes('master.json'))) assert.match(rule, /^Read\(/, `${rule} must not write the master's configuration file; the owned fields go through master config`);
     for (const rule of allow.filter(rule => /(^|[( ])curl /.test(rule))) assert.ok(!/\*/.test(rule), `${rule} would let curl take arbitrary arguments`);
     for (const rule of allow.filter(rule => /systemctl --user (restart|start|stop)/.test(rule))) assert.match(rule, /graphyard-master\.service\)$/, `${rule} must name the loop's unit exactly`);
-    for (const rule of ['Bash(gh pr merge:*)', 'Bash(gh pr review:*)', 'Bash(gh api *pulls/*/merge*)', 'Bash(gh api *repos/*/merges*)', 'Bash(gh api graphql*mutation*)', 'Bash(git push:*)', 'Read(**/*.token)', 'Read(./.graphyard/connection.json)']) assert.ok(deny.includes(rule), `${rule} stays denied`);
+    for (const rule of ['Bash(gh pr merge:*)', 'Bash(gh pr review:*)', 'Bash(gh api *pulls/*/merge*)', 'Bash(gh api *repos/*/merges*)', 'Bash(gh api graphql*mutation*)', 'Bash(git push:*)', 'Read(**/*.token)', 'Read(./.mainworks/connection.json)']) assert.ok(deny.includes(rule), `${rule} stays denied`);
     assert.equal(new Set(allow).size, allow.length, 'no rule is listed twice');
     assert.match(masterHarness(root, config, 'codex').manual!, /--ask-for-approval never .*network_access=true/);
 
@@ -519,11 +519,11 @@ test('unit:opencode-launch-pregrants-repository-tree — an opencode worker laun
     await dispatchWork(root, ready(), { name: 'oc2', principal: 'worker-oc2', agentName: 'eng-oc2', mode: 'launch', kind: 'opencode', credentialFile: credential, agentArgs: [], approvals: 'auto', environment: {}, accounts: ['opencode-a2'] }, { allWork: [ready()], prepare: async () => ({ epoch: 1, path: join(root, 'assigned'), base: 'c'.repeat(40) }), release: async () => {}, headless: oc2.exec, probe: { cacheMs: 0, registry: homeRegistry([opencodeAccount], { worker: ['opencode-a2'] }) } as FleetProbe });
     const grant = JSON.parse(oc2.runs[0]!.env.OPENCODE_PERMISSION).external_directory;
     assert.equal(grant[`${root}/**`], 'allow', 'the repository tree is granted: a bisect worktree beside the assigned one never prompts');
-    assert.equal(grant[`${root}/.graphyard/**`], 'allow', 'the managed and bisect worktrees under .graphyard are granted beside it');
+    assert.equal(grant[`${root}/.mainworks/**`], 'allow', 'the managed and bisect worktrees under .graphyard are granted beside it');
     assert.equal(grant['*'], 'deny', 'everything outside the repository is denied, so no other prompt waits for a person');
     assert.match(workerPrompt({ cliPath: launcher, kind: 'opencode' }, { key: 'GY-68', title: 'Agent environments' }, { principal: 'worker-oc2' }, 1), /external-directory prompt/, 'the launch instruction names the external-directory prompt');
     // A registry account's launch contract carries the same derivation.
     const fleet = accountLaunch({ kind: 'opencode', approvals: 'auto', agentArgs: [], environment: {} }, { ...registryAccount('opencode', null), name: 'opencode-a2' }, { repositoryRoot: root });
-    assert.equal(JSON.parse(fleet.environment.OPENCODE_PERMISSION).external_directory[`${root}/.graphyard/**`], 'allow');
+    assert.equal(JSON.parse(fleet.environment.OPENCODE_PERMISSION).external_directory[`${root}/.mainworks/**`], 'allow');
   } finally { await cleanup(); await rm(join(environments, 'opencode-a2'), { recursive: true, force: true }); }
 });

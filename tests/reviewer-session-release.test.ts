@@ -97,7 +97,7 @@ async function closeCycle(root: string, config: MasterConfig, registry: ReturnTy
 test('unit:reviewer-session-release — a master config with no githubAppId launches a review, reads its control-plane verdict and releases its session', async () => {
   const host = await fleet({ name: 'review-a', agentName: 'review-a', kind: 'claude', concurrency: 4 }, 'review-a');
   try {
-    const file = join(host.root, '.graphyard', 'master.json');
+    const file = join(host.root, '.mainworks', 'master.json');
     const { githubAppId: _retired, ...stored } = JSON.parse(await readFile(file, 'utf8'));
     await writeFile(file, JSON.stringify(stored));
     const config = await loadMasterConfig(host.root);

@@ -44,7 +44,7 @@ test('Herdr setup validates identity, privately saves configuration, updates ins
     const text = await readFile(join(root, 'AGENTS.md'), 'utf8');
     assert.ok(text.startsWith('# Original instructions\n')); assert.doesNotMatch(text, new RegExp(secret));
     assert.equal(JSON.stringify(result).includes(secret), false); assert.equal(result.pluginConfigured, true);
-    assert.equal((await stat(join(root, '.graphyard/connection.json'))).mode & 0o777, 0o600);
+    assert.equal((await stat(join(root, '.mainworks/connection.json'))).mode & 0o777, 0o600);
     assert.equal((await stat(join(root, 'AGENTS.md'))).mode & 0o777, 0o600);
     assert.equal((await stat(join(config, 'config.json'))).mode & 0o777, 0o600);
     assert.deepEqual(calls.at(-1), ['plugin', 'enable', 'graphyard']);
@@ -59,7 +59,7 @@ test('privileged or rejected credentials cause no instruction, plugin, or creden
     const root = await repo(); let invoked = false;
     try {
       await assert.rejects(setupRepository(root, connection, { herdr: true, fetcher: async () => new Response(JSON.stringify({ actor: { role } }), { status: role === 'rejected' ? 401 : 200 }), runHerdr: () => { invoked = true; return ''; } }));
-      assert.equal(invoked, false); await assert.rejects(stat(join(root, 'AGENTS.md'))); await assert.rejects(stat(join(root, '.graphyard/connection.json')));
+      assert.equal(invoked, false); await assert.rejects(stat(join(root, 'AGENTS.md'))); await assert.rejects(stat(join(root, '.mainworks/connection.json')));
     } finally { await rm(root, { recursive: true, force: true }); }
   }
 });
@@ -70,7 +70,7 @@ test('setup does not follow an AGENTS.md symlink and refuses insecure credential
     await writeFile(target, 'Keep this intact'); await symlink(target, join(root, 'AGENTS.md'));
     await assert.rejects(setupRepository(root, connection, { fetcher }), /non-regular/);
     assert.equal(await readFile(target, 'utf8'), 'Keep this intact'); await rm(join(root, 'AGENTS.md'));
-    await setupRepository(root, connection, { fetcher }); await chmod(join(root, '.graphyard/connection.json'), 0o644);
+    await setupRepository(root, connection, { fetcher }); await chmod(join(root, '.mainworks/connection.json'), 0o644);
     await assert.rejects(loadConnection(root), /0600/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -82,7 +82,7 @@ test('linked worktrees inherit their primary checkout connection without copying
     await setupRepository(root, connection, { fetcher });
     const worktree = join(root, 'isolated'); execFileSync('git', ['worktree', 'add', '-b', 'assignment', worktree], { cwd: root, stdio: 'ignore' });
     assert.equal((await loadConnection(worktree))?.token, secret);
-    await assert.rejects(stat(join(worktree, '.graphyard/connection.json')));
+    await assert.rejects(stat(join(worktree, '.mainworks/connection.json')));
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -134,7 +134,7 @@ test('setup binds the checkout identity before saving credentials or changing He
     await assert.rejects(setupRepository(root,connection,{fetcher,herdr:true,runHerdr}),/Cannot verify/);
     execFileSync('git',['remote','add','origin','git@github.com:other/project.git'],{cwd:root});
     await assert.rejects(setupRepository(root,connection,{fetcher,herdr:true,runHerdr}),/different repositories/);
-    assert.equal(calls,0); await assert.rejects(stat(join(root,'.graphyard/connection.json'))); await assert.rejects(stat(join(root,'AGENTS.md')));
+    assert.equal(calls,0); await assert.rejects(stat(join(root,'.mainworks/connection.json'))); await assert.rejects(stat(join(root,'AGENTS.md')));
     for (const remote of ['https://github.com/owner/project.git','ssh://git@github.com/owner/project.git','ssh://git@ssh.github.com:443/owner/project.git']) {
       execFileSync('git',['remote','set-url','origin',remote],{cwd:root});
       assert.equal((await setupRepository(root,connection,{fetcher})).connected,true);
@@ -176,15 +176,15 @@ test('CLI init from a linked worktree shares credentials with siblings and repla
     execFileSync('git',['-c','user.name=Test','-c','user.email=test@localhost','commit','--allow-empty','-m','Initial'],{cwd:root,stdio:'ignore'});
     const first=join(root,'first'),sibling=join(root,'sibling');
     for(const [branch,path] of [['first',first],['sibling',sibling]])execFileSync('git',['worktree','add','-b',branch,path],{cwd:root,stdio:'ignore'});
-    await mkdir(join(first,'.graphyard'));
-    await writeFile(join(first,'.graphyard/connection.json'),JSON.stringify({...connection,url,hostId:'legacy-host'}),{mode:0o600});
+    await mkdir(join(first,'.mainworks'));
+    await writeFile(join(first,'.mainworks/connection.json'),JSON.stringify({...connection,url,hostId:'legacy-host'}),{mode:0o600});
     const result=JSON.parse(await runCli(first,['init','--url',url,'--host-id','shared-host','--token-stdin'],secret,{...env,GRAPHYARD_TOKEN:''}));
     assert.equal(result.connected,true);
     assert.equal((await loadConnection(first))?.hostId,'shared-host');
     assert.equal((await loadConnection(sibling))?.token,secret);
-    assert.equal((await stat(join(root,'.graphyard/connection.json'))).mode&0o777,0o600);
-    execFileSync('git',['check-ignore','--quiet','.graphyard/connection.json'],{cwd:root});
-    await assert.rejects(stat(join(sibling,'.graphyard/connection.json')));
+    assert.equal((await stat(join(root,'.mainworks/connection.json'))).mode&0o777,0o600);
+    execFileSync('git',['check-ignore','--quiet','.mainworks/connection.json'],{cwd:root});
+    await assert.rejects(stat(join(sibling,'.mainworks/connection.json')));
     assert.match(await readFile(join(first,'AGENTS.md'),'utf8'),/Graphyard coordination/);
     assert.equal(JSON.parse(await runCli(sibling,['doctor'],'',env)).connected,true);
     assert.equal(authorization,`Bearer ${secret}`);
@@ -195,15 +195,15 @@ test('empty explicit stdin and environment credentials refuse without replacing 
   const root=await repo();const env={...process.env};delete env.GRAPHYARD_TOKEN;delete env.GRAPHYARD_URL;delete env.GRAPHYARD_TOKEN_FILE;
   try {
     await setupRepository(root,connection,{fetcher});
-    const saved=await readFile(join(root,'.graphyard/connection.json'),'utf8'),instructions=await readFile(join(root,'AGENTS.md'),'utf8');
+    const saved=await readFile(join(root,'.mainworks/connection.json'),'utf8'),instructions=await readFile(join(root,'AGENTS.md'),'utf8');
     for(const input of ['', '  \n\t']) {
       await assert.rejects(runCli(root,['init','--token-stdin'],input,env),/nonempty worker credential/);
-      assert.equal(await readFile(join(root,'.graphyard/connection.json'),'utf8'),saved);
+      assert.equal(await readFile(join(root,'.mainworks/connection.json'),'utf8'),saved);
       assert.equal(await readFile(join(root,'AGENTS.md'),'utf8'),instructions);
     }
     for (const value of ['', '   ']) {
       await assert.rejects(runCli(root,['init'],'',{...env,GRAPHYARD_TOKEN:value}),/nonempty/);
-      assert.equal(await readFile(join(root,'.graphyard/connection.json'),'utf8'),saved);
+      assert.equal(await readFile(join(root,'.mainworks/connection.json'),'utf8'),saved);
       assert.equal(await readFile(join(root,'AGENTS.md'),'utf8'),instructions);
     }
   } finally {await rm(root,{recursive:true,force:true});}

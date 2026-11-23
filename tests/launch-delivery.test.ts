@@ -44,7 +44,7 @@ async function caught<T extends Error>(pending: Promise<unknown>, type: new (...
   assert.fail('nothing was thrown');
 }
 const producerVerify = async () => ({ actor: { id: 'proof-runner', role: 'producer', proofs: ['unit:*', 'integration:*'] } });
-const producerArgs = ['--permission-mode', 'bypassPermissions', '--setting-sources', 'user', '--settings', '/home/operator/code/project/.graphyard/harness/producer-claude-producer.json'];
+const producerArgs = ['--permission-mode', 'bypassPermissions', '--setting-sources', 'user', '--settings', '/home/operator/code/project/.mainworks/harness/producer-claude-producer.json'];
 
 function observation(candidate: { sha: string; baseSha: string }): Observation {
   return { candidate: { ...candidate, pr: 121, branch: 'graphyard/gy-121-1', author: 'implementer' }, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true,
@@ -117,7 +117,7 @@ class FakePane {
   bounds() { return { clock: () => this.now, wait: this.wait, timeoutMs: 30_000 }; }
 }
 const readyAtOnce = () => ({ agent: { agent: 'claude', agent_status: 'idle' }, screen: ' ▐▛███▛█   Claude Code v2.1.278\n❯ \n' });
-const echoLine = 'vish@host ~/code/project ❯ GY=/home/vish/code/project/.graphyard/launch/produce-a; claude --permission-mode bypassPermissions --setting-sources user --settings /home/vish/co';
+const echoLine = 'vish@host ~/code/project ❯ GY=/home/vish/code/project/.mainworks/launch/produce-a; claude --permission-mode bypassPermissions --setting-sources user --settings /home/vish/co';
 
 test('unit:launch-command-bounded — the typed launch command line is short and constant-size: the request and the role authorization are files in the session checkout (mode 0600) that the line references, so a 20 KB request types at most 512 bytes and reaches the runtime exactly', async () => {
   const directory = await temporaryDirectory('launch-checkout');
@@ -137,11 +137,11 @@ test('unit:launch-command-bounded — the typed launch command line is short and
     assert.equal(pane.calls.some(call => call[0] === 'agent' && call[1] === 'start'), false, 'nothing rides herdr agent start as an argument');
     assert.equal(pane.calls.some(call => call[0] === 'agent' && call[1] === 'prompt'), false, 'nothing is pasted');
     // The files: the exact text, private, inside the checkout, and the line binds their stem once.
-    assert.deepEqual(started.files, { stem: join(directory, '.graphyard/launch/produce-a'), role: join(directory, '.graphyard/launch/produce-a.role'), request: join(directory, '.graphyard/launch/produce-a.request') });
+    assert.deepEqual(started.files, { stem: join(directory, '.mainworks/launch/produce-a'), role: join(directory, '.mainworks/launch/produce-a.role'), request: join(directory, '.mainworks/launch/produce-a.request') });
     assert.equal(await readFile(started.files.request!, 'utf8'), request, 'the request file holds the exact text');
     assert.equal(await readFile(started.files.role!, 'utf8'), role);
     for (const file of [started.files.request!, started.files.role!]) assert.equal((await stat(file)).mode & 0o777, 0o600, `${file} is private`);
-    assert.equal((await stat(join(directory, '.graphyard/launch'))).mode & 0o777, 0o700);
+    assert.equal((await stat(join(directory, '.mainworks/launch'))).mode & 0o777, 0o700);
     assert.match(typed, /^GY='?[^;]+'?; claude --permission-mode bypassPermissions --setting-sources user --settings \S+ --append-system-prompt-file "\$GY\.role" "\$\(cat "\$GY\.request"\)"$/);
     // What the shell hands the runtime: the role file path behind its flag, the request as the positional prompt, verbatim.
     const expanded = expandTypedCommand(typed);
@@ -186,7 +186,7 @@ test('unit:launch-command-bounded — the typed launch command line is short and
     const sourcedWords = execFileSync('bash', ['-c', `claude() { printf '%s\\0' "$@"; }; ${sourced}`], { encoding: 'utf8' }).split('\0').slice(0, -1);
     assert.equal(positionalOf(sourcedWords), request); assert.ok(sourcedWords.includes(deep)); assert.equal(sourcedWords[sourcedWords.indexOf('--append-system-prompt-file') + 1], long.role);
     // Only a stem too long for even that line is refused before anything is typed, naming its length.
-    assert.throws(() => launchCommand('claude', producerArgs, { stem: join(directory, 'a'.repeat(500), '.graphyard/launch/produce-a'), role: 'x', request: 'y' }), /the launch command line is \d+ bytes, over the 512-byte bound/);
+    assert.throws(() => launchCommand('claude', producerArgs, { stem: join(directory, 'a'.repeat(500), '.mainworks/launch/produce-a'), role: 'x', request: 'y' }), /the launch command line is \d+ bytes, over the 512-byte bound/);
     // Words are quoted only when the shell needs it; a quote inside is escaped the POSIX way.
     assert.equal(launchCommand('codex', ['--model', 'o3', '-c', 'writable_roots=["/tmp/a b"]', "it's"], { stem: '/s', role: null, request: null }), `codex --model o3 -c 'writable_roots=["/tmp/a b"]' 'it'\\''s'`);
 
@@ -199,7 +199,7 @@ test('unit:launch-command-bounded — the typed launch command line is short and
       const launched = await launchProducer(root, item, dispatch, config.producers[0], [], new Date().toISOString(), { run: live.run, start: live.bounds(), probe: registryFixture(config.hostId!, ['claude'], ['producer']).probe });
       assert.ok(Buffer.byteLength(live.typed!) <= launchCommandLimit, `the producer launch typed ${Buffer.byteLength(live.typed!)} bytes`);
       const { agentName } = (await readProducerLedger(root)).producers[0];
-      const file = join(launched.checkout, `.graphyard/launch/${agentName}.request`);
+      const file = join(launched.checkout, `.mainworks/launch/${agentName}.request`);
       assert.equal(await readFile(file, 'utf8'), producerPrompt(config, { key: 'GY-121', pr: 121, sha: H, baseSha: B, policyRevision: 1, group: dispatch.group!, proofs: dispatch.proofs!, checkout: launched.checkout }, { principal: 'proof-runner' }), 'the request file inside the session checkout holds the producer\'s exact request');
       assert.equal(positionalOf(expandTypedCommand(live.typed!).args), await readFile(file, 'utf8'));
       assert.equal((await readProducerLedger(root)).producers[0].delivery, 'request');
@@ -212,11 +212,11 @@ test('unit:launch-command-bounded — the typed launch command line is short and
 test('unit:typed-runtime-reads-a-sourced-launch — a worker launch under a long checkout path sources its runtime words from STEM.launch, and typedRuntime reads the same runtime line a short path types', async () => {
   const directory = await temporaryDirectory('launch-long');
   try {
-    const args = (checkout: string) => ['--permission-mode', 'bypassPermissions', '--setting-sources', 'user', '--settings', join(checkout, '.graphyard/harness/worker-claude-worker.json')];
+    const args = (checkout: string) => ['--permission-mode', 'bypassPermissions', '--setting-sources', 'user', '--settings', join(checkout, '.mainworks/harness/worker-claude-worker.json')];
     const shape = / -- claude --permission-mode bypassPermissions --setting-sources user --settings \S+ --append-system-prompt-file "\$GY\.role" "\$\(cat "\$GY\.request"\)"$/;
     const prefix = (cli: string) => ['node', cli, 'watch', 'GY-69', '4', '--'];
     // The short line names only fixed short paths, so it stays under the bound whatever TMPDIR is; it writes no file.
-    const short = launchCommand('claude', args('/w'), { stem: '/w/.graphyard/launch/engineering-claude-1', role: '/w/r', request: '/w/q' }, prefix('/g.mjs'));
+    const short = launchCommand('claude', args('/w'), { stem: '/w/.mainworks/launch/engineering-claude-1', role: '/w/r', request: '/w/q' }, prefix('/g.mjs'));
     assert.match(short, shape); assert.equal(typedRuntime(short), short.replace(/^GY=\S+; /, ''));
     const checkout = join(directory, 'x'.repeat(200), 'assigned');
     const long = launchCommand('claude', args(checkout), writeLaunchFiles(checkout, 'engineering-claude-1', { role: 'r', request: 'Implement GY-69' }), prefix(launcher));
@@ -331,10 +331,10 @@ test('unit:cursor-launch-uses-agent — a cursor profile launches, logs in and s
   // cursor-agent reads its sign-in from `$XDG_CONFIG_HOME/cursor/auth.json`, on XDG_CONFIG_HOME
   // too (GY-3329); the operator's model flag kept, the no-approval recipe added, and the typed
   // command starting `agent`.
-  const launch = accountLaunch({ kind: 'cursor', approvals: 'auto', agentArgs: ['--model', 'gpt-5.4'], environment: {} }, { name: 'cursor-a', kind: 'cursor', home: '/home/operator/.graphyard/environments/cursor-a' });
+  const launch = accountLaunch({ kind: 'cursor', approvals: 'auto', agentArgs: ['--model', 'gpt-5.4'], environment: {} }, { name: 'cursor-a', kind: 'cursor', home: '/home/operator/.mainworks/environments/cursor-a' });
   assert.equal(launch.kind, 'cursor');
-  assert.equal(launch.environment.CURSOR_CONFIG_DIR, '/home/operator/.graphyard/environments/cursor-a');
-  assert.equal(launch.environment.XDG_CONFIG_HOME, '/home/operator/.graphyard/environments/cursor-a', 'the account home is the XDG config home the sign-in is read from');
+  assert.equal(launch.environment.CURSOR_CONFIG_DIR, '/home/operator/.mainworks/environments/cursor-a');
+  assert.equal(launch.environment.XDG_CONFIG_HOME, '/home/operator/.mainworks/environments/cursor-a', 'the account home is the XDG config home the sign-in is read from');
   assert.deepEqual(launch.args, ['--force', '--trust', '--model', 'gpt-5.4']);
   const directory = await temporaryDirectory('cursor-launch');
   try {
@@ -359,7 +359,7 @@ test('unit:cursor-launch-uses-agent — a cursor profile launches, logs in and s
 });
 
 /** The pane after `cursor-agent` refused to run and handed the terminal back, as Herdr read it on 2026-09-30. */
-const cursorCommand = 'GY=/w/.graphyard/launch/graphyard-cursor-1; cursor-agent --force --trust "$(cat "$GY.request")"';
+const cursorCommand = 'GY=/w/.mainworks/launch/graphyard-cursor-1; cursor-agent --force --trust "$(cat "$GY.request")"';
 const exitedScreen = [
   'vish@vishrog GY-976-1 ❯ previous output',
   `vish@vishrog GY-976-1 ❯ ${cursorCommand}`,
