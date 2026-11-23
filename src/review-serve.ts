@@ -11,6 +11,7 @@ import { detachedLaunch, processIdentity, readRunMeta, runAlive, runContainment,
 import type { E2eServe } from './model/repository-policy.js';
 import { ServeCommandError, serveTailLines } from './merge-writer/serve-head.js';
 import { stateDirectory } from './install/layout.js';
+import { freePort } from './serve-app.js';
 
 /** Where detached product-review serves keep their process meta and logs, beside headless-runs and trial-runs. */
 const reviewServesDirectory = (root: string) => resolve(stateDirectory(root), 'review-serves');
@@ -35,12 +36,17 @@ export async function startReviewServe(input: {
   containment?: RunContainment;
   spawn?: typeof spawn;
   log?: (line: string) => void;
+  /** GY-3751: the declared address, also probed: a command that binds it instead of `serve.url` is served there. */
+  declared?: string;
 }): Promise<{ url: string; directory: string }> {
   const { serve } = input;
+  const urls = [serve.url, ...(input.declared ? [input.declared] : [])];
   const startedAt = Date.now(), deadline = startedAt + serve.readySeconds * 1000;
   // An endpoint that answers before the command starts is another application's: its answers would not be the head's.
-  const occupied = await fetch(serve.url, { signal: AbortSignal.timeout(2_000) }).then(() => true, () => false);
-  if (occupied) throw new Error(`${serve.url} already answers before the serve command starts; another application holds it, so the head cannot be served there`);
+  for (const url of urls) {
+    const occupied = await fetch(url, { signal: AbortSignal.timeout(2_000) }).then(() => true, () => false);
+    if (occupied) throw new Error(`${url} already answers before the serve command starts; another application holds it, so the head cannot be served there`);
+  }
 
   const directory = join(reviewServesDirectory(input.root), input.id);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -87,11 +93,59 @@ export async function startReviewServe(input: {
       const afterExit = readExit();
       await fail(`the serve command ended${afterExit !== null ? ` (status ${afterExit})` : ''}: ${readOutput().slice(-5).join(' | ').slice(0, 500)}`);
     }
-    const answered = await fetch(serve.url, { signal: AbortSignal.timeout(2_000) }).then(response => response.ok, () => false);
-    if (answered) return { url: new URL(serve.url).origin, directory };
+    for (const url of urls) {
+      const answered = await fetch(url, { signal: AbortSignal.timeout(2_000) }).then(response => response.ok, () => false);
+      if (answered) return { url: new URL(url).origin, directory };
+    }
     if (Date.now() >= deadline) await fail(`the serve command did not answer ${serve.url} within ${serve.readySeconds}s`);
     await new Promise(accept => setTimeout(accept, 200));
   }
+}
+
+/** GY-3580: the declared serve addresses product reviews on this host are serving, or waiting their turn on, each with the last turn taken. */
+const serveTurns = new Map<string, Promise<void>>();
+/** The addresses a product review is serving a head on now: another product review launches once its address is free. */
+export const servedReviewAddresses = () => [...serveTurns.keys()];
+/** Waits until no earlier review serves on `url`, then holds it until the returned release is called. */
+async function serveTurn(url: string): Promise<() => void> {
+  const earlier = serveTurns.get(url) ?? Promise.resolve();
+  let release!: () => void;
+  const turn = earlier.then(() => new Promise<void>(resolve => { release = resolve; }));
+  serveTurns.set(url, turn);
+  void turn.then(() => { if (serveTurns.get(url) === turn) serveTurns.delete(url); });
+  await earlier;
+  return release;
+}
+/** GY-3751: per declared serve URL, whether its command serves on the port it is given (`own`) or binds the declared one (`declared`); unknown until a run finds out. */
+const servePorts = new Map<string, 'own' | 'declared'>();
+
+/**
+ * GY-3751: serves a product review's head without colliding with another run of the same project.
+ * The run gets a free port, given to the command as PORT, MAINWORKS_SERVE_PORT and
+ * GRAPHYARD_E2E_SERVE_PORT and probed in place of the declared URL's port. A command that binds the
+ * declared port anyway is served there, and that project's later runs wait their turn on it.
+ * Until a project's first run shows which it is, its runs start one at a time.
+ */
+export async function serveReviewHead(input: Parameters<typeof startReviewServe>[0]): Promise<{ url: string; directory: string; close(): Promise<void> }> {
+  const declared = input.serve.url;
+  const onOwnPort = async (probeDeclared: boolean) => {
+    const port = String(await freePort()), target = new URL(declared);
+    target.port = port;
+    return startReviewServe({ ...input, serve: { ...input.serve, url: target.href }, env: { ...input.env, PORT: port, MAINWORKS_SERVE_PORT: port, GRAPHYARD_E2E_SERVE_PORT: port }, ...(probeDeclared ? { declared } : {}) });
+  };
+  const held = (served: { url: string; directory: string }, release = () => {}) => ({ ...served, close: () => stopReviewServe(served.directory).finally(release) });
+  if (servePorts.get(declared) === 'own') return held(await onOwnPort(false));
+  const release = await serveTurn(declared);
+  try {
+    const known = servePorts.get(declared);
+    if (known === 'own') { release(); return held(await onOwnPort(false)); }
+    if (known === 'declared') return held(await startReviewServe(input), release);
+    const served = await onOwnPort(true);
+    const own = served.url !== new URL(declared).origin;
+    servePorts.set(declared, own ? 'own' : 'declared');
+    if (own) { release(); return held(served); }
+    return held(served, release);
+  } catch (error) { release(); throw error; }
 }
 
 /**

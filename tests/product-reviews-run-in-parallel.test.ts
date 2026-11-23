@@ -19,7 +19,7 @@ import { liveRun } from '../src/runner/registry.js';
 import type { HeadlessExec } from '../src/headless-session.js';
 
 // GY-3608 AC-1: two product reviews of different heads of a repository whose serve command honours
-// the port variable run at the same time, each serving on its own free port, and each reviewer is
+// the port variable (GY-3751: PORT) run at the same time, each serving on its own free port, and each reviewer is
 // given its own address.
 
 const coordinator: Principal = { id: 'graphyard-master', role: 'coordinator' };
@@ -51,7 +51,7 @@ before(async () => {
     e2e: { serve: { command: 'node serve-it.mjs', url: declaredUrl, readySeconds: 30 } },
   }, null, 2));
   const serveIt = (marker: string) => `import { createServer } from 'node:http';
-const port = Number(process.env.GRAPHYARD_E2E_SERVE_PORT) || ${declaredPort};
+const port = Number(process.env.PORT) || ${declaredPort};
 createServer((_request, response) => {
   response.writeHead(200, { 'content-type': 'text/html' });
   response.end(\`<h1>candidate-marker: ${marker} on \${port}</h1>\`);

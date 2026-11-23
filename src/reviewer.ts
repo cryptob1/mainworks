@@ -55,8 +55,7 @@ import { LauncherUnavailableError } from './master/config.js';
 import { resolveRepositoryPolicy } from './model-boundary/repository-policy.js';
 import { type E2eServe, policySections } from './model/repository-policy.js';
 import { servingReport } from './deploy-watch.js';
-import { startReviewServe, stopReviewServe } from './review-serve.js';
-import { freePort } from './serve-app.js';
+import { serveReviewHead, stopReviewServe } from './review-serve.js';
 import { runEnvironment } from './runner/pi.js';
 import { browserInstallCommand, browserToolName, provisionBrowserTool } from './browser-tool.js';
 import { endRegistrySessionById } from './master/registry-slot.js';
@@ -562,39 +561,6 @@ export async function recordCouldNotRunReview(config: Pick<MasterConfig, 'url' |
   const token = await readCredentialFile(config.credentialFile);
   const response = await fetch(`${config.url}/api/work/${encodeURIComponent(work.id)}/product-review`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': `product-could-not-run:${review.sha}:${createHash('sha256').update(review.reason).digest('hex').slice(0, 16)}` }, body: JSON.stringify({ reviewer: review.reviewer, sha: review.sha, baseSha: review.baseSha, verdict: 'could-not-run', findings: review.reason.slice(0, 65_536), screenshots: [] }), signal: AbortSignal.timeout(30_000) });
   if (!response.ok) throw new Error(`The control plane refused the could-not-run record for ${work.key} (${response.status})`);
-}
-/** GY-3580: the declared serve addresses product reviews on this host are serving, or waiting their turn on, each with the last turn taken. */
-const serveTurns = new Map<string, Promise<void>>();
-/** The addresses a product review is serving a head on now: another product review launches once its address is free. */
-export const servedReviewAddresses = () => [...serveTurns.keys()];
-/** Waits until no earlier review serves on `url`, then holds it until the returned release is called. */
-async function serveTurn(url: string): Promise<() => void> {
-  const earlier = serveTurns.get(url) ?? Promise.resolve();
-  let release!: () => void;
-  const turn = earlier.then(() => new Promise<void>(resolve => { release = resolve; }));
-  serveTurns.set(url, turn);
-  void turn.then(() => { if (serveTurns.get(url) === turn) serveTurns.delete(url); });
-  await earlier;
-  return release;
-}
-/** GY-3584 / GY-3608: environment variable a serve command reads its free port from. */
-export const servePortVariable = 'GRAPHYARD_E2E_SERVE_PORT';
-/**
- * GY-3608: whether `command` (or a script file it names in `worktree`) reads `GRAPHYARD_E2E_SERVE_PORT`.
- * Commands that honour it serve each product review on its own free port in parallel; commands that
- * cannot keep the GY-3580 take-turns lock on their declared URL.
- */
-async function serveHonoursPort(worktree: string, command: string): Promise<boolean> {
-  if (command.includes(servePortVariable)) return true;
-  for (const token of command.split(/\s+/)) {
-    const file = token.replace(/^['"]|['"]$/g, '');
-    if (!file || file.startsWith('-')) continue;
-    try {
-      const content = await readFile(resolve(worktree, file), 'utf8');
-      if (content.includes(servePortVariable)) return true;
-    } catch { /* not a file in the worktree */ }
-  }
-  return false;
 }
 /** GY-3331: the head's own e2e.serve declaration, read from the graphyard.json its commit holds; null when the head declares none (or its policy does not parse). */
 export async function headServeDeclaration(root: string, sha: string, run: ChildRun = defaultChildRun): Promise<E2eServe | null> {
@@ -1200,21 +1166,8 @@ export async function launchReview(root: string, work: Work, profileName: string
                   try { await git(build[0]!, build.slice(1), { cwd: checkout.worktree, env: runEnvironment(process.env), timeoutMs: 1_200_000 }); }
                   catch (error: any) { throw new Error(`${build.join(' ')} failed in the review checkout of ${binding.sha.slice(0, 12)}: ${`${error.stdout ?? ''}${error.stderr ?? ''}`.trim().slice(-1500) || error.message}`); }
                 }
-                if (await serveHonoursPort(checkout.worktree, declared.command)) {
-                  // GY-3608 / GY-3662: a serve command that honours GRAPHYARD_E2E_SERVE_PORT serves each product review on its own free port in its own detached unit.
-                  const port = await freePort();
-                  const target = new URL(declared.url);
-                  target.port = String(port);
-                  const served = await startReviewServe({ root, id, worktree: checkout.worktree, serve: { ...declared, url: target.href }, env: runEnvironment(process.env, { [servePortVariable]: String(port) }) });
-                  serving = { url: served.url, directory: served.directory, close: () => stopReviewServe(served.directory) };
-                } else {
-                  // GY-3580 / GY-3662: a review whose head serves on the address another review's head is serving waits its turn; the address frees when that session ends.
-                  const release = await serveTurn(declared.url);
-                  try {
-                    const served = await startReviewServe({ root, id, worktree: checkout.worktree, serve: declared, env: runEnvironment(process.env) });
-                    serving = { url: served.url, directory: served.directory, close: () => stopReviewServe(served.directory).finally(release) };
-                  } catch (error) { release(); throw error; }
-                }
+                // GY-3751: each review serves on its own free port; a command that binds the declared port takes turns on it.
+                serving = await serveReviewHead({ root, id, worktree: checkout.worktree, serve: declared, env: runEnvironment(process.env) });
               } else noApp = true;
             }
           }

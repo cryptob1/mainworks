@@ -34,7 +34,7 @@ The details the [README](../README.md) leaves out. `mainworks guide setup` print
 
 ## Onboarding a project
 
-- A project is onboarded when main's `graphyard.json` declares `e2e.serve` (starting the real app) and a `featureMap` (name, URL path or command, and traps: `"featureMap": [{"name":"Home","url":"/","traps":[]}]`).
+- Onboarded means main's `graphyard.json` declares `e2e.serve`, serving the real app on `$PORT` (`{"command":"PORT=${PORT:-3000} npm start","url":"http://127.0.0.1:3000/","readySeconds":60}`), plus a `featureMap` (name, path or command, traps: `[{"name":"Home","url":"/","traps":[]}]`).
 - Every batch check and deploy check runs the feature map. A missing serve, missing feature map or placeholder serve shows as a Master fault in `mainworks master status` and Setup; the Lead files work to add them.
 
 ## Your app's address and live deploys

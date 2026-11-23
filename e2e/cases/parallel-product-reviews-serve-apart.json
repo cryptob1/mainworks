@@ -1,0 +1,16 @@
+{
+  "id": "parallel-product-reviews-serve-apart",
+  "title": "Two product reviews of one project each get a served head",
+  "description": "A seeded project whose serve command reads PORT has two heads under product review at once. Each review's serve gets its own free port, both become ready, and each reviewer walks its own head; neither fails with 'already answers before the serve command starts'.",
+  "tags": ["dispatch"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "both product reviews receive a served head",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/product-reviews-run-in-parallel.test.ts",
+      "timeoutSeconds": 360
+    }
+  ]
+}
