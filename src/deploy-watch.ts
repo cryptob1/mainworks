@@ -79,7 +79,7 @@ export function readDeployHistory(root: string, repository?: string | null): Dep
     entries.push({ commit: current.tip.toLowerCase(), at: current.at, repository: current.repository ?? null });
   }
   const serve = readServeRecord(serveRecordPath(root));
-  const serveAt = serve?.started ?? serve?.at;
+  const serveAt = serve?.at;
   if (serve?.commit && /^[0-9a-f]{40}$/i.test(serve.commit) && serveAt && Number.isFinite(Date.parse(serveAt))) {
     entries.push({ commit: serve.commit.toLowerCase(), at: serveAt });
   }

@@ -71,7 +71,7 @@ async function writeServeRecord(file: string, record: Omit<ServeRecord, 'at'>) {
   await writeFile(`${file}.tmp`, `${JSON.stringify({ ...record, reason: cut(record.reason), check: record.check ? { ...record.check, reason: cut(record.check.reason) } : null, baseline: record.baseline ?? null, at }, null, 2)}\n`);
   await rename(`${file}.tmp`, file);
   if (record.commit && !record.failed) {
-    await appendFile(join(dirname(file), 'serve-history.jsonl'), `${JSON.stringify({ commit: record.commit, at: record.started ?? at })}\n`).catch(() => {});
+    await appendFile(join(dirname(file), 'serve-history.jsonl'), `${JSON.stringify({ commit: record.commit, at })}\n`).catch(() => {});
   }
 }
 
