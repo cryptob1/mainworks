@@ -97,7 +97,7 @@ for (const width of [1280, 390]) {
     // AC-2: each stage with this task's time in it, the total beside the median, the trial's counts and its slowest file.
     const pipeline = task.getByRole('region', { name: 'Pipeline' });
     await expect(pipeline.locator('[data-pipeline-total]')).toHaveText('This task 41 min so far · median 29 min');
-    await expect(pipeline.locator('[data-stage]')).toHaveText([/^Built\s*11 min$/, /^Reviewed\s*4 min$/, /^Queued\s*5 min$/, /^Merge trial\s*19 min/, /^Ship/]);
+    await expect(pipeline.locator('[data-stage]')).toHaveText([/^Built\s*11 min$/, /^Reviewed\s*4 min$/, /^Queued\s*5 min$/, /^Test merge\s*19 min/, /^Ship/]);
     const trial = pipeline.locator('[data-stage="trial"]');
     await expect(trial).toContainText('tests 39/40');
     await expect(trial).toContainText('e2e 2/2');
