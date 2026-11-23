@@ -1,5 +1,4 @@
 // Concern: the control-plane merge executor (GY-1524) — the queue, one merge's steps against the ledger, the leased deploy-key push and the reconcile of intents a crash left open.
-import { setting } from '../setting.js';
 import { dirname, join } from 'node:path';
 import type { Work } from '../model.js';
 import { batchLimit } from '../master/merge-writer-settings.js';
@@ -23,6 +22,7 @@ export { countProofCases };
 
 // ---- The queue (model/merge-queue.ts) ------------------------------------------------------------
 import { baseFailurePrefix, gate, keptTrialAheadOfReview, open, trialAheadOfReviewReason } from '../model/merge-queue.js';
+import { setting } from '../setting.js';
 export { baseFailureHoldMs, baseFailurePrefix, isBaseRepair, isHotfix, mergeQueue, nextToMerge, submittedAtOf, trialAheadOfReviewPrefix, trialAheadOfReviewReason, trialRefusalHeld, keptTrialAheadOfReview, type MergeQueue, type QueuedMerge } from '../model/merge-queue.js';
 
 /** Whether trial results still belong to this implementation and policy. */

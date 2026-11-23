@@ -1,4 +1,3 @@
-import { setting } from '../setting.js';
 import { execFileSync } from 'node:child_process';
 import { controlPlaneWeight } from '../session-share.js';
 import { fingerprint, Vault } from './secrets.js';
@@ -7,6 +6,7 @@ import { SERVER_PORT, type EnvValue, type PlanAction, type PreflightItem, type P
 import { checkoutRelease, publishedImages } from '../release.js';
 import { localAdapter } from './local.js';
 import { provisionTrialAppArmor, provisionTrialImage, trialAppArmorPlan, trialImagePlan } from './trial-image.js';
+import { setting } from '../setting.js';
 
 /** GY-3438: Docker's cpu_shares for the server and database: CPUWeight 1000 (controlPlaneWeight) under cgroup v2 (weight = 1 + (shares - 2) * 9999 / 262142), above every trial container's default. */
 export const composeCpuShares = Math.ceil((controlPlaneWeight - 1) * 262142 / 9999) + 2;

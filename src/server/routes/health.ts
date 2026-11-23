@@ -1,4 +1,3 @@
-import { setting } from '../../setting.js';
 import { releaseInfo, schemaVersion } from '../../release.js';
 import { planeVerdict, probeWrites, readDatabaseCapacity } from '../plane-health.js';
 import { defineRoutes, parseJson, type Services } from '../routes.js';
@@ -6,6 +5,7 @@ import { demand } from '../../model.js';
 import { humanSignIn } from '../auth.js';
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { setting } from '../../setting.js';
 
 /**
  * The plane's own health; no token required. Health names the release, schema generation and

@@ -1,9 +1,9 @@
-import { setting } from './setting.js';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { stateSourceKinds, untrustedSourceKinds, defaultClosedQuestionThreshold, type ClosedQuestion, type StatePart, type StateSource, type StateSourceKind } from './model/closed-question.js';
 import type { Work } from './model.js';
+import { setting } from './setting.js';
 
 // ---------------------------------------------------------------------------
 // The responder that answers closed questions (GY-109), and the state it is asked against.

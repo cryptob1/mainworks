@@ -1,4 +1,3 @@
-import { setting } from '../setting.js';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import { demand, operatorScopeIncludes, type Principal } from '../model.js';
@@ -20,6 +19,7 @@ import { launchTokenActor } from './review-verdict.js';
 import { signinClaimFromEnv } from './routes/signin.js';
 import { endTerminals } from './terminal.js';
 import { infraProviders } from '../infra-access.js';
+import { setting } from '../setting.js';
 
 /**
  * Resolve the bearer token to a principal: a configured credential first, then a human session a

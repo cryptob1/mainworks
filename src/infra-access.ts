@@ -2,12 +2,12 @@
 // confined master holds a credential that names them and nothing else. The control plane does each
 // repository or hosting call itself with the install's provider tokens (the install's .env), so the
 // session never holds a provider token, and every call is recorded as an `infra.action` event.
-import { setting } from './setting.js';
 import { execFile } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { setting } from './setting.js';
 
 export const infraActions = ['repo.create', 'repo.push', 'project.create', 'environment.create'] as const;
 export type InfraAction = typeof infraActions[number];
@@ -30,7 +30,7 @@ export const infraProviders = (env: NodeJS.ProcessEnv): InfraProviders => ({
 
 const missing = (name: string) => new Error(`Set ${name} in the install's .env and restart the server.`);
 const github = async (providers: InfraProviders, path: string, body: unknown) => {
-  if (!providers.githubToken) throw missing('MAINWORKS_INFRA_GITHUB_TOKEN');
+  if (!providers.githubToken) throw missing('GRAPHYARD_INFRA_GITHUB_TOKEN');
   return fetch(`${providers.githubApi}${path}`, { method: 'POST', headers: { Authorization: `Bearer ${providers.githubToken}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(30_000) });
 };
 
@@ -45,7 +45,7 @@ export async function createRepository(providers: InfraProviders, repository: st
 
 /** Push every branch and tag in BUNDLE to OWNER/NAME; the token rides in git's environment, never in a URL, an argument or a file. */
 export async function pushRepository(providers: InfraProviders, repository: string, bundle: Buffer) {
-  if (!providers.githubToken) throw missing('MAINWORKS_INFRA_GITHUB_TOKEN');
+  if (!providers.githubToken) throw missing('GRAPHYARD_INFRA_GITHUB_TOKEN');
   const dir = await mkdtemp(join(tmpdir(), 'graphyard-infra-push-'));
   try {
     const file = join(dir, 'push.bundle'), bare = join(dir, 'repo.git');
@@ -64,7 +64,7 @@ export async function pushRepository(providers: InfraProviders, repository: stri
 }
 
 const railway = async (providers: InfraProviders, query: string, variables: Record<string, unknown>) => {
-  if (!providers.railwayToken) throw missing('MAINWORKS_INFRA_RAILWAY_TOKEN');
+  if (!providers.railwayToken) throw missing('GRAPHYARD_INFRA_RAILWAY_TOKEN');
   const response = await fetch(providers.railwayApi, { method: 'POST', headers: { Authorization: `Bearer ${providers.railwayToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ query, variables }), signal: AbortSignal.timeout(30_000) });
   const body = await response.json().catch(() => ({})) as { data?: any; errors?: { message: string }[] };
   if (!response.ok || body.errors?.length || !body.data) throw new Error(`Railway refused: ${body.errors?.[0]?.message ?? response.status}`);

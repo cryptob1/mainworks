@@ -1,5 +1,4 @@
 // Concern: the Compose adapter of an item's local preview (GY-1903) — one isolated, bounded Compose project per preview, its pages published, and every container, volume and network removed after it.
-import { setting } from './setting.js';
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
@@ -7,6 +6,7 @@ import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { previewSiteByteLimit, previewSiteFileLimit, previewSitePathSchema, type PreviewSiteFile } from './project-previews.js';
 import { processPidNamespace, processStartTicks, tempOwnerGone, tempOwnerJudgeable, tmpReclaimMinAgeMs, type TempOwner } from './tmp-reclaim.js';
+import { setting } from './setting.js';
 
 // ---------------------------------------------------------------------------
 // A declared Compose application (project-applications.ts) is previewed as its own Compose project:

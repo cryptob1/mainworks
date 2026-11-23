@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { atomicPrivateWrite, loadStoredMasterConfig, masterConfigSchema, setupMaster } from '../src/master.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-1918: `master init` rebuilt .mainworks/master.json field by field and dropped every field its
+// GY-1918: `master init` rebuilt .graphyard/master.json field by field and dropped every field its
 // own list did not name — the operator-agent and approver identities `master autonomy --apply`
 // records among them — and `up`'s master-loop step reruns `master init` on every start, after
 // master-autonomy has run, so every rerun unprovisioned the identities and the loop's acceptance
@@ -17,7 +17,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const coordinatorToken = 'coordinator-token-'.padEnd(40, 'x');
 const rerunToken = 'rerun-token-'.padEnd(40, 'y');
-const config = (root: string) => join(root, '.mainworks/master.json');
+const config = (root: string) => join(root, '.graphyard/master.json');
 
 async function repository() {
   const root = await temporaryDirectory('master-init-keep');

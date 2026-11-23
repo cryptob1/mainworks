@@ -1,4 +1,3 @@
-import { setting } from '../setting.js';
 import { decisionWork } from '../store/decision-read.js';
 import { readReceipt, record } from '../store/mutations.js';
 import { stableJson } from '../model/stable-json.js';
@@ -12,6 +11,7 @@ import { observeBaseHold } from '../model/behind-base.js';
 import { workIdByRef } from '../store/locked-read.js';
 import type { Engine } from '../engine.js';
 import { recordDispatch } from './evaluate.js';
+import { setting } from '../setting.js';
 
 /**
  * Whether two readings of one item differ only in action-queue bookkeeping (GY-607). Claiming,

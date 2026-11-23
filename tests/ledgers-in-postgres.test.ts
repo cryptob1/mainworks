@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { withDatabase } from './helpers/postgres.js';
 import { fleet, requested } from './helpers/review-fleet.js';
 import { registryFixture } from './helpers/registry-fixture.js';
@@ -32,7 +32,7 @@ test('ledgers-in-postgres: first cycle migrates legacy files, resumes attempts a
   t.after(async () => { http.closeAllConnections(); await new Promise<void>(resolve => http.close(() => resolve())); await store.close(); });
   const host = await fleet({ name: 'claude-reviewer', agentName: 'reviewer', kind: 'claude', concurrency: 20 }, 'claude-reviewer');
   try {
-    const configFile = join(host.root, '.mainworks/master.json');
+    const configFile = join(host.root, '.graphyard/master.json');
     const stored = JSON.parse(await readFile(configFile, 'utf8'));
     stored.url = url;
     await writeFile(configFile, JSON.stringify(stored), { mode: 0o600 });
@@ -52,7 +52,6 @@ test('ledgers-in-postgres: first cycle migrates legacy files, resumes attempts a
       requestId: item.autoDispatch!.producers[0].id, attempt: 1, group: 'unit', proofs: ['unit:review'], profile: i === 200 ? 'producer' : 'legacy-producer', principal: 'proof-runner', agentName: `legacy-producer-${i}`, pane: null,
       requestedAt: i === 200 ? past : new Date(now).toISOString(), expiresAt: future, state: i === 200 ? 'failed' : 'pending', ...(i === 200 ? { closedAt: past } : {}) }));
     const reviewFile = join(host.root, '.graphyard/reviews.json'), producerFile = join(host.root, '.graphyard/producers.json');
-    await mkdir(dirname(reviewFile), { recursive: true });
     await writeFile(reviewFile, JSON.stringify({ version: 1, reviews }), { mode: 0o600 });
     await writeFile(producerFile, JSON.stringify({ version: 1, producers }), { mode: 0o600 });
     const cursor = emptyDispatchCursor(config);

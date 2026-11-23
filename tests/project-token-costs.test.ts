@@ -102,7 +102,7 @@ test('e2e:project-token-costs — the Costs section, the item page and master us
 
   // The loop's report, as its cycle makes it.
   await collectUsage(root, await loadMasterConfig(root), master, { now: Date.now() });
-  assert.deepEqual(await readdir(join(root, '.mainworks', 'usage-outbox')), [], 'a reported review run is not reported again');
+  assert.deepEqual(await readdir(join(root, '.graphyard', 'usage-outbox')), [], 'a reported review run is not reported again');
 
   const summary = await costs();
   const all = summary.windows.all;

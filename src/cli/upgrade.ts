@@ -1,7 +1,5 @@
 // `graphyard upgrade` (GY-1962): one command moves the CLI checkout, the server, the loop and
 // executors, and the managed repository's generated files to one dated release, in order.
-import { stateDir } from '../mainworks-names.js';
-import { setting } from '../setting.js';
 import { createRequire } from 'node:module';
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, readlinkSync, statSync } from 'node:fs';
@@ -27,6 +25,7 @@ import { loadMasterConfig } from '../master.js';
 import { cliReleasePath, activeCliRoot, prepareCliRelease, publishCliRelease } from '../install/cli-release.js';
 import { knownGoodState, pinKnownGood } from '../master/known-good.js';
 import { joinHostHeavyBudget, withHeavyJob } from '../master/verification-slots.js';
+import { setting } from '../setting.js';
 
 export type UpgradeStepId = 'checkout' | 'npm-ci' | 'backup' | 'redeploy' | 'restart' | 'refresh' | 'health';
 export interface UpgradeStep { id: UpgradeStepId; title: string; command: string }
@@ -308,8 +307,7 @@ export async function ensureDeployCheckout(checkout: string, source: string, run
   if (origin) await git('-C', next, 'remote', 'add', 'origin', origin);
   if (linked) {
     // The release pointer publishCliRelease left beside the old checkout stays with the install.
-    const state = stateDir(checkout);
-    if (existsSync(state)) await rename(state, join(next, basename(state)));
+    if (existsSync(join(checkout, '.graphyard'))) await rename(join(checkout, '.graphyard'), join(next, '.graphyard'));
     await rm(checkout, { recursive: true, force: true });
     console.log(`Replaced the deploy checkout ${checkout}, a worktree of another checkout, with a standalone clone at ${await git('-C', next, 'rev-parse', 'HEAD')}`);
   }
@@ -644,7 +642,7 @@ export const upgradeCommands = defineCommands([{
     const target = resolveTarget(cliRoot, to);
     const install = directory ? await readInstallRecord(directory) : null;
     const inputs: UpgradeInputs = { cliRoot, repoRoot, current, target, cliChanges: cliChangesOf(cliRoot), databaseSchema: await databaseSchemaOf(url), url, install,
-      backupFile: join(directory ?? join(stateDir(repoRoot)), 'backups', `before-${target.version}-${Date.now()}.json`) };
+      backupFile: join(directory ?? join(repoRoot, '.graphyard'), 'backups', `before-${target.version}-${Date.now()}.json`) };
     const plan = upgradePlan(inputs);
     console.log(renderPlan(plan));
     if (flags.includes('--plan')) return;
@@ -653,7 +651,7 @@ export const upgradeCommands = defineCommands([{
     // Every precondition a later step needs is checked before the record and the checkout move.
     if (!databaseUrl) throw new Error('Set DATABASE_URL to the Graphyard database so the upgrade can back it up before the server migrates it; nothing was changed');
     if (!url) throw new Error('Set GRAPHYARD_URL so the upgrade can read /healthz after the redeploy; nothing was changed');
-    const result = await runUpgrade(plan, liveEffects(inputs, join(stateDir(repoRoot), 'upgrade.json')));
+    const result = await runUpgrade(plan, liveEffects(inputs, join(repoRoot, '.graphyard', 'upgrade.json')));
     if (result.ok) { await migrateHerdr(repoRoot); console.log(`upgraded to ${target.version}`); return; }
     process.exitCode = 1;
     console.error(upgradeFailure(result));

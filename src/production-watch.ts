@@ -1,10 +1,10 @@
-import { setting } from './setting.js';
 import { randomUUID } from 'node:crypto';
 import type { Store } from './store.js';
 import type { Work } from './model.js';
 import type { BuildIdentity } from './protocol-version.js';
 import type { Application } from './model/project-applications.js';
 import { posix } from 'node:path';
+import { setting } from './setting.js';
 
 /**
  * Production deployment observation for the managed base branch.

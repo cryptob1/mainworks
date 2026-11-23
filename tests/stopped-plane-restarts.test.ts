@@ -43,7 +43,7 @@ test('unit:stopped-plane-restarts — with the plane down, no new tip and no dep
   const root = await temporaryDirectory('stopped-plane-watch');
   const composeDirectory = join(root, 'install', 'compose');
   const file = deployRecordPath(root);
-  await mkdir(join(root, '.mainworks'), { recursive: true });
+  await mkdir(join(root, '.graphyard'), { recursive: true });
   const resetRecord = async (tip: string) => writeFile(file, `${JSON.stringify({ tip, failed: null, reason: null, at: new Date().toISOString(), repository }, null, 2)}\n`);
 
   // A real health endpoint: it answers healthy exactly while the (stubbed) compose stack is up.
@@ -151,7 +151,7 @@ test('integration:stopped-plane-restarts — a loop started against an unreachab
   execFileSync('git', ['init', '-q'], { cwd: root });
   execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/owner/project.git'], { cwd: root });
   await writeFile(credentialFile, 'coordinator-token-'.padEnd(40, 'x'), { mode: 0o600 });
-  await mkdir(join(root, '.mainworks'), { recursive: true });
+  await mkdir(join(root, '.graphyard'), { recursive: true });
 
   // The plane this loop polls: a real HTTP server, held off the port until the loop has been
   // started against it unreachable.
@@ -173,7 +173,7 @@ test('integration:stopped-plane-restarts — a loop started against an unreachab
   await listen(plane);
   const port = portOf(plane), url = `http://127.0.0.1:${port}`;
   await close(plane);
-  await writeFile(join(root, '.mainworks', 'master.json'), JSON.stringify({
+  await writeFile(join(root, '.graphyard', 'master.json'), JSON.stringify({
     version: 1, url, credentialFile, cliPath: launcher, repository, baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a',
     masterAgentName: 'graphyard-master-project', autoMerge: true, workers: [], run: { intervalSeconds: 5, deploymentShaField: 'commit' },
   }), { mode: 0o600 });

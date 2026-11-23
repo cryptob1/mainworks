@@ -1,5 +1,4 @@
 // Concern: host verification slots — the per-host bound on concurrent full suites and type checks, and the PATH wrapper sessions run them through.
-import { setting } from '../setting.js';
 import { closeSync, fstatSync, openSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { ChildProcessError, inheritedVariables, runChild } from '../child-runner.js';
 import { dataDirectory } from '../install/worktree-root.js';
@@ -9,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { availableParallelism } from 'node:os';
 import { cpuCelsius, heatReading, heatWindowMs, trialHotCelsius } from '../merge-writer/trial-load.js';
 import { budgetLine, machineName } from '../model/machine-load.js';
+import { setting } from '../setting.js';
 
 /**
  * The host heavy-job budget (GY-612, GY-3290).

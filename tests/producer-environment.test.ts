@@ -121,7 +121,7 @@ async function installation(pi = false) {
   const credential = join(credentials, 'producer.token'); await writeFile(credential, 'producer-token-'.padEnd(40, 'x'), { mode: 0o600 });
   await saveProducerProfile(root, { name: 'producer-a', principal: 'proof-runner', agentName: 'produce-a', kind: 'codex', credentialFile: credential }, async () => ({ actor: { id: 'proof-runner', role: 'producer', proofs: ['unit:*', 'integration:*', 'manual:*'] } }));
   if (pi) {
-    const file = join(root, '.mainworks/master.json'), config = JSON.parse(await readFile(file, 'utf8'));
+    const file = join(root, '.graphyard/master.json'), config = JSON.parse(await readFile(file, 'utf8'));
     config.run = { ...config.run, runtimes: { producer: 'pi' }, pi: { command: '/bin/false', model: 'zai/glm-5.3-flash' } };
     await writeFile(file, JSON.stringify(masterConfigSchema.parse(config), null, 2), { mode: 0o600 });
   }

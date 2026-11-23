@@ -1,4 +1,3 @@
-import { setting } from '../../setting.js';
 import { decisionWork } from '../../store/decision-read.js';
 import { once } from '../../store/mutations.js';
 import { save, wakeJob } from '../../store.js';
@@ -19,6 +18,7 @@ import { authorizeOperatorCommand } from './shared.js';
 import type { Ctx } from './types.js';
 import { gitRunnerFor } from '../../merge-writer/local-observation.js';
 import { pathScope } from '../../model/documentation-glob.js';
+import { setting } from '../../setting.js';
 
 /** The commands whose work only a gate observes later: a submitted item is woken after any other. */
 const noWake = new Set<Command>(['heartbeat', 'release', 'claim', 'workspace', 'priority']);

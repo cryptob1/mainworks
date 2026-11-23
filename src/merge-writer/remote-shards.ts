@@ -3,7 +3,6 @@
 // once, places each shard on the host with the most real free CPU under its heat limit, and runs it
 // there through graphyard-host-shim (src/host-shim.ts), whose fixed verbs are all this machine's key
 // may run. A host that drops or turns away a shard has it re-queued on another host: capacity, never a fault.
-import { stateDir } from '../mainworks-names.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
@@ -328,7 +327,7 @@ export function remoteShardSession(input: { root: string; sha: string; image: st
 
 /** One trial's shard record, for master status: what ran them, wall time, shards run and run remotely, waits while a host idled, and each host's reading. */
 export interface RemoteShardRun { /** GY-3526: the worker verification that ran them; absent for a merge trial. */ label?: string; at: string; wallMs: number; shards: number; remote: number; queuedWhileIdle: number; host: string; celsius: number | null; hosts: { name: string; away: boolean; reason?: string; celsius: number | null; freeCores: number }[] }
-export const remoteShardRecordPath = (root: string) => join(stateDir(root), 'remote-shards.json');
+export const remoteShardRecordPath = (root: string) => join(root, '.graphyard', 'remote-shards.json');
 const keptRuns = 20;
 
 export async function recordRemoteShardRun(root: string, run: RemoteShardRun): Promise<void> {

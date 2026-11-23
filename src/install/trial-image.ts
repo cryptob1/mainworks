@@ -1,10 +1,10 @@
-import { setting } from '../setting.js';
 import { fileURLToPath } from 'node:url';
 import { publishedSourceImages, type AdapterContext } from './adapters.js';
 import type { PlanAction } from './types.js';
 import { pulledTrialImageFile, trialContainerImage, trialImage } from '../merge-writer/trial-container.js';
 import { localTransport, shellQuote } from './transport.js';
 import { appArmorEnabled, trialAppArmorLoadCommand, trialAppArmorProfile, trialAppArmorProfilePath, trialAppArmorProfileText } from '../merge-writer/trial-apparmor.js';
+import { setting } from '../setting.js';
 
 /** GY-3188: trial images build on Graphyard's own builder, so its cache is pruned without touching another project's. */
 export const trialBuilder = 'graphyard-trial';

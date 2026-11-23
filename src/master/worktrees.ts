@@ -1,4 +1,3 @@
-import { stateDir } from '../mainworks-names.js';
 import { writeFailure } from '../disk-space.js';
 // Concern: removing ended attempts' worktrees, managed checkouts and shared installs, and preparing assignment worktrees: the dispatch cycle's one shared base fetch.
 import { createHash } from 'node:crypto';
@@ -21,7 +20,7 @@ import { agentOwner, type AttentionItem } from './attention.js';
 /** The dependency trees a package manager recreates from the lockfile. */
 export const dependencyDirectories = ['node_modules'] as const;
 export const lockfiles = ['package-lock.json'] as const;
-export const worktreesDirectory = (root: string) => resolve(stateDir(root), 'worktrees');
+export const worktreesDirectory = (root: string) => resolve(root, '.graphyard/worktrees');
 export { failureText } from '../disk-space.js';
 
 /** Free space on the volume holding a path, as the kernel reports it to this user. */
@@ -79,7 +78,7 @@ export async function preservedWorkNote(root: string, key: string, run: ChildRun
 export function worktreeRootAttention(health: WorktreeRootHealth): AttentionItem[] {
   return worktreeRootConcerns(health).map(text => ({ subject: 'disk', text,
     ...agentOwner('master', health.volatile && !health.low && !health.overBudget
-      ? 'Set run.worktreeRoot in .mainworks/master.json to an absolute path on durable storage, outside every worktree; master run adopts it on its next cycle'
+      ? 'Set run.worktreeRoot in .graphyard/master.json to an absolute path on durable storage, outside every worktree; master run adopts it on its next cycle'
       : 'Raise run.worktreeRootBudgetGb or move run.worktreeRoot in .graphyard/master.json if the live sessions need more room; each settled session removes its own checkout') }));
 }
 

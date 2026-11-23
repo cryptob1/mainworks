@@ -30,7 +30,7 @@ const CLI_ROOT = '/install/graphyard', COMMIT = 'a'.repeat(40);
 /** The earlier checkout and the commit its loop still runs: what the step replaces. */
 const OLD_CHECKOUT = '/install/graphyard-pilot', OLD_COMMIT = 'b'.repeat(40);
 const REPOSITORY_ROOT = '/repo/acme-shop';
-const MASTER_UNIT = 'mainworks-master-acme-shop.service';
+const MASTER_UNIT = 'graphyard-master-acme-shop.service';
 const MASTER_UNIT_PATH = `/units/${MASTER_UNIT}`;
 const TOKEN = 'm'.repeat(40);
 const quote = (path: string) => path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

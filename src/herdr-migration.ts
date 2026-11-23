@@ -1,4 +1,3 @@
-import { stateDir } from './mainworks-names.js';
 import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -10,7 +9,7 @@ import { installDirectory } from './install/secrets.js';
 
 /** Up/upgrade switches launches immediately. The loop revisits only the remaining drain record. */
 export async function migrateHerdr(root: string, run: ChildRun = defaultChildRun, home = homedir()) {
-  const file = join(stateDir(root), 'master.json');
+  const file = join(root, '.graphyard/master.json');
   let config: any;
   try { config = JSON.parse(await readFile(file, 'utf8')); } catch (error: any) { if (error.code === 'ENOENT') return; throw error; }
   const instance: HerdrInstance | undefined = config.herdrInstance;
@@ -40,7 +39,7 @@ export async function migrateHerdr(root: string, run: ChildRun = defaultChildRun
   await rm(instance.configHome, { recursive: true, force: true });
   await run('systemctl', ['--user', 'daemon-reload']);
   // GY-3232: the install and up records forget the private server too, so nothing passes it again.
-  for (const record of [join(installDirectory(installId), 'install.json'), join(stateDir(root), 'up.json')]) {
+  for (const record of [join(installDirectory(installId), 'install.json'), join(root, '.graphyard/up.json')]) {
     let recorded: any;
     try { recorded = JSON.parse(await readFile(record, 'utf8')); } catch (error: any) { if (error.code === 'ENOENT') continue; throw error; }
     if (!('herdrInstance' in recorded)) continue;

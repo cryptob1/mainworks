@@ -1,7 +1,7 @@
-import { setting } from '../../setting.js';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { defineRoutes } from '../routes.js';
 import type { Credential } from '../principals.js';
+import { setting } from '../../setting.js';
 
 /** The ledger event that spends a sign-in claim: one per claim hash, ever. */
 export const signinClaimedEvent = 'signin.claimed';

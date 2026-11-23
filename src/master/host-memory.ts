@@ -1,5 +1,5 @@
-import { setting } from '../setting.js';
 import { readFile } from 'node:fs/promises';
+import { setting } from '../setting.js';
 
 /**
  * The host's memory (GY-612, GY-1832): what a merge trial's shards and the suite's runner may

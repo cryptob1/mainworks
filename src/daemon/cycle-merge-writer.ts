@@ -1,4 +1,3 @@
-import { setting } from '../setting.js';
 import { trialOverloadFault } from '../merge-writer/trial-cpu.js';
 import { timedMergePorts, trialStepMedians } from './trial-timings.js';
 import type { TrialStepReport } from '../merge-writer/trial.js';
@@ -38,6 +37,7 @@ import { reportTrialHostFault, reportTrialImageFault, reportTrialNetworkFault, r
 import { reworkReasonMax } from './rework.js';
 import type { Cycle } from './cycle.js';
 import { heavyJobsDirectory, readHeavyDrain, type HeavyDrain } from '../master/verification-slots.js';
+import { setting } from '../setting.js';
 
 /** The merge writer's ports (merge-writer/executor.ts). */
 export interface MergeWriterReads extends MergePorts {

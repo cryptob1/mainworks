@@ -31,8 +31,6 @@ test('unit:loop-restarts-stale-deploy-unit — the loop restarts the deploy unit
   files['/proc/12/cmdline'] = ['npm', 'ci'].join('\0');
   assert.equal(readDeployUnitProcess(read, commitOf)?.busy, true, 'a pass child (npm ci) means a deploy pass is in progress');
   assert.equal(readDeployUnitProcess(() => { throw new Error('no cgroup'); }), null);
-  const mainworks = (file: string) => read(file.replace('mainworks-master-o-p.service', 'graphyard-master.service').replace('mainworks-deploy-o-p.service', 'graphyard-deploy.service'));
-  assert.equal(readDeployUnitProcess(file => file === '/proc/self/cgroup' ? '0::/user.slice/user-1000.slice/user@1000.service/app.slice/mainworks-master-o-p.service\n' : mainworks(file), commitOf)?.unit, 'mainworks-deploy-o-p.service', 'a fresh install runs mainworks-* units');
 
   const root = await temporaryDirectory('stale-deploy-unit');
   await mkdir(join(root, '.graphyard'), { recursive: true });

@@ -14,10 +14,8 @@ for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => child?.kill
 // Resolve the complete artifact before loading it. Retained artifacts also keep lazy imports safe.
 for (let attempt = 0; ; attempt++) {
   let selected = root;
-  for (const state of ['.mainworks', '.graphyard']) {
-    try { selected = realpathSync(join(root, state, 'cli-current')); break; }
-    catch (error) { if (error.code !== 'ENOENT') throw error; }
-  }
+  try { selected = realpathSync(join(root, '.graphyard', 'cli-current')); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
   // GY-3611: the built CLI while it is as new as the source, else the source through tsx.
   // The check lives in the selected artifact, so a launcher copied alone or an older artifact runs from source.
   const check = join(selected, 'bin', 'built-entry.mjs');
@@ -25,7 +23,7 @@ for (let attempt = 0; ; attempt++) {
   const entry = built ? [built] : ['--import', createRequire(join(selected, 'package.json')).resolve('tsx'), join(selected, 'src/cli.ts')];
   // Node's compile cache spares the built CLI recompiling its one large file on every start.
   const cache = built ? { NODE_COMPILE_CACHE: process.env.NODE_COMPILE_CACHE ?? join(tmpdir(), 'node-compile-cache') } : {};
-  child = spawn(process.execPath, [...entry, ...args], { stdio: 'inherit', env: { ...process.env, ...cache, GRAPHYARD_LAUNCHER: '1' } });
+  child = spawn(process.execPath, [...entry, ...args], { stdio: 'inherit', env: { ...process.env, ...cache, GRAPHYARD_LAUNCHER: '1', MAINWORKS_LAUNCHER: '1' } });
   const code = await new Promise(resolve => {
     child.on('error', error => { console.error(error.message); resolve(1); });
     child.on('exit', code => resolve(code ?? 1));

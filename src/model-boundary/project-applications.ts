@@ -1,6 +1,6 @@
-import { setting } from '../setting.js';
 import { z } from 'zod';
 import { previewModes, maxCandidateChanges, boundCaseId, applicationProblems, declarationKeys, projectDeliveryVariable, type ProjectDelivery, effectiveDelivery } from '../model/project-applications.js';
+import { setting } from '../setting.js';
 // ---------------------------------------------------------------------------
 // What a managed repository declares about the applications its cases exercise, in graphyard.json's
 // `delivery` beside the merge gate: each application (a static site, a Compose project or a Node app), and

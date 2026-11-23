@@ -37,11 +37,10 @@ export function renderHelp() {
   return `${PRODUCT_NAME} 0.1 — distributed work, explicit proof
 
 Usage: ${COMMAND_NAME} COMMAND (the graphyard command still works)
-Environment: MAINWORKS_URL, MAINWORKS_TOKEN (individual role-scoped credential)
-The old graphyard names (GRAPHYARD_* settings, .graphyard/, ~/.config/graphyard/ and graphyard-* units) are still honoured.
+Environment: GRAPHYARD_URL, GRAPHYARD_TOKEN (individual role-scoped credential)
 ${commands.flatMap(entry => entry.help).join('\n')}
 
-Use MAINWORKS_REQUEST_ID to safely retry an identical command after a network timeout.
+Use GRAPHYARD_REQUEST_ID to safely retry an identical command after a network timeout.
 Never share an operator or producer credential with an implementation agent.`;
 }
 

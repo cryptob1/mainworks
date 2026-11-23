@@ -1,8 +1,8 @@
-import { setting } from '../setting.js';
 import type pg from 'pg';
 import { advisoryLocks } from './locks.js';
 import { routineSaveKinds } from './snapshot-delta.js';
 import { DELIVERY_EVENT_PREDICATE } from './tables/production.js';
+import { setting } from '../setting.js';
 
 /**
  * Ledger compaction (GY-979): routine rows past their retention window are deleted, a bounded

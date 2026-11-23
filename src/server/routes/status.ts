@@ -1,4 +1,3 @@
-import { setting } from '../../setting.js';
 import { newestCaretakerReport } from './caretaker.js';
 import { pendingWorkerVerifications } from '../worker-verification-queue.js';
 import { readWorkReplay } from '../work-replay.js';
@@ -34,6 +33,7 @@ import { pipelineItems, pipelineTime } from '../../pipeline-speed.js';
 import { releaseCheckSince } from '../../model/incidents.js';
 import { readFlow } from '../flow.js';
 import { publicLinkOff } from './team-access.js';
+import { setting } from '../../setting.js';
 
 
 /** Control-plane status and the work reads every client polls. */

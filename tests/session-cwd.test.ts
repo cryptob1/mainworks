@@ -51,7 +51,7 @@ async function installed() {
   const directory = await temporaryDirectory('session-cwd');
   const credentials = await temporaryDirectory('session-cwd-credentials');
   execFileSync('git', ['init', '-q', '-b', 'main', directory]);
-  await writeFile(join(directory, '.gitignore'), '.mainworks/\n');
+  await writeFile(join(directory, '.gitignore'), '.graphyard/\n');
   await mkdir(join(directory, 'src'), { recursive: true });
   await mkdir(join(directory, 'tests'), { recursive: true });
   await mkdir(join(directory, 'bin'), { recursive: true });
@@ -68,7 +68,7 @@ async function installed() {
   // worktrees/, so a reclaim pass never sweeps the neighbouring roots every other run left there.
   await mkdir(join(dataDirectory(), 'session-cwd'), { recursive: true });
   const managed = await temporaryDirectory('root', join(dataDirectory(), 'session-cwd'));
-  await atomicPrivateWrite(join(directory, '.mainworks/master.json'), { ...config, approver: { id: 'graphyard-approver-project', credentialFile: await token('approver') }, operatorAgent: { id: 'graphyard-operator-project', credentialFile: await token('operator') }, run: { ...config.run, worktreeRoot: managed } });
+  await atomicPrivateWrite(join(directory, '.graphyard/master.json'), { ...config, approver: { id: 'graphyard-approver-project', credentialFile: await token('approver') }, operatorAgent: { id: 'graphyard-operator-project', credentialFile: await token('operator') }, run: { ...config.run, worktreeRoot: managed } });
   git('add', '.');
   git('commit', '-q', '-m', 'base');
   const head = execFileSync('git', ['-C', directory, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
@@ -93,12 +93,12 @@ function herdr() {
   return { run, typed, tabs, pasted };
 }
 const paneCwd = (tab: string[]) => { const index = tab.indexOf('--cwd'); return index >= 0 ? tab[index + 1] : null; };
-/** The checkout the launch files were written in: the stem's path before its `.mainworks/launch/` segment. */
-const checkoutOfStem = (stem: string | null) => stem && stem.includes(`${sep}.mainworks${sep}launch${sep}`) ? stem.slice(0, stem.indexOf(`${sep}.mainworks${sep}launch${sep}`)) : null;
-/** Outside the coordinator checkout: another tree altogether, or Graphyard's own managed area under `.mainworks/`. */
+/** The checkout the launch files were written in: the stem's path before its `.graphyard/launch/` segment. */
+const checkoutOfStem = (stem: string | null) => stem && stem.includes(`${sep}.graphyard${sep}launch${sep}`) ? stem.slice(0, stem.indexOf(`${sep}.graphyard${sep}launch${sep}`)) : null;
+/** Outside the coordinator checkout: another tree altogether, or Graphyard's own managed area under `.graphyard/`. */
 const outsideCoordinator = (path: string, coordinatorRoot: string) => {
   const directory = resolve(path), base = resolve(coordinatorRoot);
-  return directory !== base && (!directory.startsWith(`${base}${sep}`) || directory.startsWith(`${base}${sep}.mainworks${sep}`));
+  return directory !== base && (!directory.startsWith(`${base}${sep}`) || directory.startsWith(`${base}${sep}.graphyard${sep}`));
 };
 
 /**

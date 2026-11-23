@@ -67,7 +67,7 @@ async function installation() {
   await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory: credentials, herdrWorkspace: 'workspace', run: { worktreeRoot: join(root, '..', 'worktrees') } }, coordinatorStatus, { probe: durable });
   const approverFile = join(credentials, 'approver.token');
   await writeFile(approverFile, approverToken, { mode: 0o600 });
-  const file = join(root, '.mainworks/master.json'), config = JSON.parse(await readFile(file, 'utf8'));
+  const file = join(root, '.graphyard/master.json'), config = JSON.parse(await readFile(file, 'utf8'));
   config.approver = { id: 'graphyard-approver-project', credentialFile: approverFile };
   // The local configuration names a Pi wrapper and model of its own: a role the registry defines never uses them.
   config.run = { ...config.run, runtimes: { approver: 'pi' }, pi: { command: 'pi-local-profile', model: 'local/profile-model' } };

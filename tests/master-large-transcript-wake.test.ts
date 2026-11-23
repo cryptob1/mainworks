@@ -88,12 +88,12 @@ for (const initialized of [false, true]) test(`integration:master-large-transcri
   await writeFile(original, bytes);
   await symlink(original, transcript);
   const origins = masterInputs(root, 'master');
-  await mkdir(join(root, '.mainworks/launch'), { recursive: true });
+  await mkdir(join(root, '.graphyard/launch'), { recursive: true });
   await writeFile(origins, JSON.stringify({ origin: 'launch', event: 'launch' }) + '\n');
   const adopt = () => adoptConversation(root, { runtime: 'claude', account: 'old-account', environment: { CLAUDE_CONFIG_DIR: home }, origins, prompts: [] });
   let state = emptyDaemonState(config);
   state.master = { ...state.master, agentName: 'master', account: 'old-account', runtime: 'claude', session: 'old-session', startedAt: new Date().toISOString(), continuity: initialized ? await adopt() : null };
-  const requestFile = join(root, '.mainworks/launch/master.request');
+  const requestFile = join(root, '.graphyard/launch/master.request');
   await writeFile(requestFile, 'Original operator goal');
   await writeFile(config.credentialFile, 'fixture-only-token'.repeat(3), { mode: 0o600 });
   const registry = createServer((_request, response) => response.end(JSON.stringify({ accounts: [{ name: 'old-account', runtime: 'claude', credential: { home } }],

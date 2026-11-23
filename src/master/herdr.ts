@@ -1,5 +1,4 @@
 // Concern: the Herdr runtime adapter — the instance every herdr call targets, workspace health, agent inventory, panes and tabs.
-import { setting } from '../setting.js';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, delimiter, dirname, join } from 'node:path';
@@ -7,6 +6,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { type ChildRun, type ChildRunOptions, defaultChildTimeoutMs, type BoundChildRun, childRunner, defaultChildRun } from '../child-runner.js';
 import type { MasterConfig } from './profiles.js';
 import { herdrConnectCommands } from '../herdr-connect.js';
+import { setting } from '../setting.js';
 
 /** A legacy private server retained only while its existing panes drain. */
 export interface HerdrInstance { configHome: string; session: string }
@@ -51,7 +51,7 @@ export function herdrInvocation(args: string[], instance: HerdrInstance | null =
     const { HERDR_SOCKET_PATH: _socket, GRAPHYARD_HERDR_CONFIG_HOME: _home, GRAPHYARD_HERDR_SESSION: _session, MAINWORKS_HERDR_CONFIG_HOME: _newHome, MAINWORKS_HERDR_SESSION: _newSession, ...env } = process.env;
     return { command, args, env: { ...env, ...(setting('HERDR_CONFIG_HOME') ? { XDG_CONFIG_HOME: join(homedir(), '.config') } : {}) } };
   }
-  const { HERDR_SOCKET_PATH: _socket, MAINWORKS_HERDR_CONFIG_HOME: _newHome, MAINWORKS_HERDR_SESSION: _newSession, ...env } = process.env;
+  const { HERDR_SOCKET_PATH: _socket, ...env } = process.env;
   return { command, args: ['--session', instance.session, ...args], env: { ...env, XDG_CONFIG_HOME: instance.configHome, [herdrInstanceEnv.configHome]: instance.configHome, [herdrInstanceEnv.session]: instance.session } };
 }
 /** Runs herdr ARGS through RUN (a ChildRun, or a synchronous stub) against INSTANCE. */
@@ -85,7 +85,7 @@ export async function herdrWorkspaceHealth(config: Pick<MasterConfig, 'herdrWork
   try { listed = await listHerdrWorkspaces(run); }
   catch { return { workspace: config.herdrWorkspace, exists: null, reason: 'Herdr could not list workspaces, so the configured workspace is unverified' }; }
   const exists = listed.includes(config.herdrWorkspace);
-  return { workspace: config.herdrWorkspace, exists, reason: exists ? null : `Herdr workspace ${config.herdrWorkspace} configured in .mainworks/master.json no longer exists (Herdr lists ${listed.join(', ') || 'none'}); every launch into it will refuse. Set herdrWorkspace to a live workspace, or rerun master init --herdr-workspace ID` };
+  return { workspace: config.herdrWorkspace, exists, reason: exists ? null : `Herdr workspace ${config.herdrWorkspace} configured in .graphyard/master.json no longer exists (Herdr lists ${listed.join(', ') || 'none'}); every launch into it will refuse. Set herdrWorkspace to a live workspace, or rerun master init --herdr-workspace ID` };
 }
 const listHerdrWorkspaces = async (run?: ChildRun): Promise<string[]> => {
   const result = await herdrJson(['workspace', 'list'], run);

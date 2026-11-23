@@ -186,7 +186,7 @@ test('e2e:clean-host-npx-up — a fresh account runs npx @cryptob1/graphyard up 
   const env = { HOME: home, PATH: tools.path, LANG: 'C.UTF-8', TMPDIR: process.env.TMPDIR ?? '/tmp', ...published };
 
   const graphyard = (...args: string[]) => run('npx', ['--yes', '@cryptob1/graphyard', ...args], { cwd: repository, env });
-  after(() => { for (const pid of [join(home, '.config', 'mainworks', 'owner-scratch', 'compose', 'server.pid')]) { try { process.kill(Number(readFileSync(pid, 'utf8'))); } catch { /* never started */ } } });
+  after(() => { for (const pid of [join(home, '.config', 'graphyard', 'owner-scratch', 'compose', 'server.pid')]) { try { process.kill(Number(readFileSync(pid, 'utf8'))); } catch { /* never started */ } } });
 
   // The README's one command, with the agent flags a session without a terminal passes.
   const up = await graphyard('up', '--repo', 'owner/scratch', '--agent', '--wait', '1');
@@ -198,11 +198,11 @@ test('e2e:clean-host-npx-up — a fresh account runs npx @cryptob1/graphyard up 
   assert.match(result.next, /Still waiting on An agent account that writes code/);
 
   // The code it runs is a Git clone of the upstream at the published commit, under the install — so the loop, upgrade and the deploy watch move it with Git.
-  const release = join(home, '.config', 'mainworks', 'owner-scratch', 'deploy', 'build', '.graphyard', 'cli-releases', commit);
+  const release = join(home, '.config', 'graphyard', 'owner-scratch', 'deploy', 'build', '.graphyard', 'cli-releases', commit);
   assert.deepEqual(readdirSync(dirname(release)), [commit]);
   assert.equal(git(release, 'rev-parse', 'HEAD'), commit);
   assert.equal(git(release, 'config', '--get', 'remote.origin.url'), 'https://github.com/cryptob1/graphyard');
-  assert.equal(JSON.parse(readFileSync(join(repository, '.mainworks', 'master.json'), 'utf8')).cliPath, join(release, 'bin', 'graphyard.mjs'), 'the loop is recorded to run from the release tree, not from the npm cache');
+  assert.equal(JSON.parse(readFileSync(join(repository, '.graphyard', 'master.json'), 'utf8')).cliPath, join(release, 'bin', 'graphyard.mjs'), 'the loop is recorded to run from the release tree, not from the npm cache');
 
   // Both images were pulled by that commit from the registry; nothing was built on this host.
   assert.ok(images.pulls.includes(`cryptob1/graphyard:${commit}`) && images.pulls.includes(`cryptob1/graphyard-trial:${commit}`), images.pulls.join(', '));

@@ -1,5 +1,5 @@
-import { setting } from './setting.js';
 import { once } from './store/mutations.js';
+import { setting } from './setting.js';
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { z } from 'zod';
@@ -81,7 +81,7 @@ export interface DelegationLimitDrift { variable: DelegationLimitVariable; deplo
 export function delegationLimitDrift(principals: Roster, env: Record<string, string | undefined> = {}): DelegationLimitDrift[] {
   const drift: DelegationLimitDrift[] = [];
   const check = (variable: DelegationLimitVariable, count: number, noun: string) => {
-    const deployed = setting(variable.slice('GRAPHYARD_'.length), env) ?? null;
+    const deployed = setting(variable, env) ?? null;
     const limit = deployed === null ? limitDefaults[variable] : Number(deployed);
     if (Number.isInteger(limit) && limit > 0 && count > limit) drift.push({ variable, deployed, required: String(count), principals: count,
       reason: deployed === null
@@ -101,9 +101,8 @@ export function delegationLimitDrift(principals: Roster, env: Record<string, str
  */
 export function delegationLimits(env: NodeJS.ProcessEnv = process.env, principals: Roster = []): DelegationLimits {
   const integer = (name: DelegationLimitVariable, derived: number) => {
-    const set = setting(name.slice('GRAPHYARD_'.length), env);
-    if (set === undefined) return Math.max(limitDefaults[name], derived);
-    const value = Number(set); demand(Number.isInteger(value) && value > 0, `${name} must be a positive integer`, 500); return value;
+    if (setting(name, env) === undefined) return Math.max(limitDefaults[name], derived);
+    const value = Number(setting(name, env)); demand(Number.isInteger(value) && value > 0, `${name} must be a positive integer`, 500); return value;
   };
   const result = { maxLeads: integer('GRAPHYARD_MAX_SLICE_LEADS', countLeads(principals)), minReviewers: integer('GRAPHYARD_MIN_REVIEWERS', 0), maxReviewers: integer('GRAPHYARD_MAX_REVIEWERS', countProducers(principals)) };
   demand(result.minReviewers <= result.maxReviewers, 'Reviewer minimum cannot exceed maximum', 500);

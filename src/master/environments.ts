@@ -1,5 +1,3 @@
-import { stateDir } from '../mainworks-names.js';
-import { setting } from '../setting.js';
 import { PRODUCT_NAME } from '../model/product.js';
 import { registryToolsArgs } from '../registry-tools.js';
 export { registryToolsArgs } from '../registry-tools.js';
@@ -28,6 +26,7 @@ export { describeObservedExhaustion, providerIdentity } from './account-identity
 // The per-provider login and quota probes live in ./environment-quota.ts, reached through each runtime's adapter.
 import type { PlanReading } from './environment-quota.js';
 import { accountHomeEnvironment, runtimeAdapter, withModel, type AccountReading } from './runtimes.js';
+import { setting } from '../setting.js';
 
 /** Where agent environments live: one directory per account, named <agent>-<letter>. */
 export function agentEnvironmentRoot(input?: string) {
@@ -331,7 +330,7 @@ export const openCodeAllowAll = { '*': 'allow', edit: 'allow', bash: 'allow', we
  * person. The explicit `.graphyard` entry keeps the grant readable beside the tree's, whichever
  * glob rules a runtime applies to dot-directories.
  */
-export const openCodeRepositoryGrant = (root: string) => ({ [`${root}/**`]: 'allow', [`${stateDir(root)}/**`]: 'allow', '*': 'deny' });
+export const openCodeRepositoryGrant = (root: string) => ({ [`${root}/**`]: 'allow', [`${root}/.graphyard/**`]: 'allow', '*': 'deny' });
 /**
  * An operator's own OpenCode permission document that asks nothing (the recipe's `permits`) is laid
  * over the allow-all rather than replacing it: a key it leaves out (`external_directory`,
@@ -593,7 +592,7 @@ export async function setupAgentEnvironments(root: string, input: { directory?: 
     if (next.reviewers.length > 1 && !next.run.reviewerProfile) next.run.reviewerProfile = next.reviewers[0].name;
   }
   const parsed = masterConfigSchema.parse(next);
-  if (input.apply) await atomicPrivateWrite(resolve(stateDir(root), 'master.json'), parsed);
+  if (input.apply) await atomicPrivateWrite(resolve(root, '.graphyard/master.json'), parsed);
   const report = health.map(entry => ({ environment: entry.name, kind: entry.kind, home: entry.home, variable: entry.variable, loggedIn: entry.loggedIn, quota: entry.quota, usage: entry.usage, healthy: entry.healthy, reason: entry.reason, note: entry.note, login: entry.login }));
   const loggedOut = report.filter(entry => !entry.loggedIn);
   return { directory, applied: !!input.apply, environments: report, created, prepared, profiles: changes, skipped,

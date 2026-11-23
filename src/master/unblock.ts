@@ -1,7 +1,7 @@
 // Concern: `master unblock` clearing a blocker, retried when the item's revision moved under it.
-import { setting } from '../setting.js';
 import { randomUUID } from 'node:crypto';
 import type { Work } from '../model.js';
+import { setting } from '../setting.js';
 
 /** How many times `master unblock` writes before a stale-revision refusal is reported (GY-1103). */
 export const unblockAttempts = 3;

@@ -33,9 +33,9 @@ const fakeMuse = [
 
 test('e2e:muse-writable-session-state — a confined Muse worker and reviewer lock and persist their session under the account\'s XDG data directory (default, explicit, account home), while unrelated host directories stay unwritable and another account unreadable', async () => {
   const checkout = dirname(dirname(fileURLToPath(import.meta.url)));
-  mkdirSync(join(checkout, '.mainworks'), { recursive: true });
+  mkdirSync(join(checkout, '.graphyard'), { recursive: true });
   // The fixture HOME lives in this checkout, not the host's tmpdir, which the sandbox replaces.
-  const home = await temporaryDirectory('muse-session-home', join(checkout, '.mainworks'));
+  const home = await temporaryDirectory('muse-session-home', join(checkout, '.graphyard'));
   const saved = { HOME: process.env.HOME, XDG_DATA_HOME: process.env.XDG_DATA_HOME, XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME };
   process.env.HOME = home;
   delete process.env.XDG_DATA_HOME; delete process.env.XDG_CONFIG_HOME;
@@ -43,9 +43,9 @@ test('e2e:muse-writable-session-state — a confined Muse worker and reviewer lo
     const root = join(home, 'code', 'project');
     const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, '-c', 'user.name=T', '-c', 'user.email=t@t', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     mkdirSync(root, { recursive: true });
-    writeFileSync(join(root, '.gitignore'), '.mainworks/\n');
+    writeFileSync(join(root, '.gitignore'), '.graphyard/\n');
     git(root, 'init', '-q', '-b', 'main'); git(root, 'add', '.'); git(root, 'commit', '-qm', 'seed');
-    const worktree = join(root, '.mainworks', 'worktrees', 'gy-1-1'), reviewCheckout = join(home, 'managed', 'review-gy-1');
+    const worktree = join(root, '.graphyard', 'worktrees', 'gy-1-1'), reviewCheckout = join(home, 'managed', 'review-gy-1');
     mkdirSync(dirname(worktree), { recursive: true });
     git(root, 'worktree', 'add', '-q', '-b', 'graphyard/gy-1-1', worktree, 'main');
     mkdirSync(reviewCheckout, { recursive: true });

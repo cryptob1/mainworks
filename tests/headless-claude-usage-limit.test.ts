@@ -55,7 +55,7 @@ for (const [shape, printed, key] of [['quota line', zaiQuota, 'GY-9671'], ['quot
 });
 
 test('e2e:headless-claude-usage-limit — a headless opencode reviewer on a spent Z.AI plan is held until its reset and the review runs on the next account', async () => {
-  const scratch = await temporaryDirectory('opencode-review', join(workers.root, '.mainworks'));
+  const scratch = await temporaryDirectory('opencode-review', join(workers.root, '.graphyard'));
   const [spentBin, nextBin, directory] = [join(scratch, 'spent'), join(scratch, 'next'), join(scratch, 'checkout')];
   for (const path of [spentBin, nextBin, directory]) await mkdir(path, { recursive: true });
   // The reviewer said something before the error: that text reply must not hide the quota line.

@@ -32,7 +32,7 @@ test('master-only commands ignore an unrelated unavailable worker token file', a
   const cwd = await temporaryDirectory('master-lazy-token');
   try {
     await exec('git', ['init', '-q'], { cwd });
-    await mkdir(join(cwd, '.mainworks')); await writeFile(join(cwd, '.mainworks/connection.json'), '{broken', { mode: 0o644 });
+    await mkdir(join(cwd, '.graphyard')); await writeFile(join(cwd, '.graphyard/connection.json'), '{broken', { mode: 0o644 });
     const result = await exec(process.execPath, [launcher, 'master', 'guide'], { cwd, env: { ...process.env, GRAPHYARD_TOKEN_FILE: join(cwd, 'removed-worker.token'), GRAPHYARD_HOST_ID: '   ' } });
     assert.match(result.stdout, /Master-agent operating mode/);
   } finally { await rm(cwd, { recursive: true, force: true }); }
@@ -272,12 +272,12 @@ test('macOS foreground Herdr supervision refuses before launch without durable c
     await assert.rejects(exec(process.execPath,[launcher,'worktree','GY-1','1'],{cwd,env}),/Cannot verify/);
     await exec('git',['remote','add','origin','git@github.com:other/project.git'],{cwd});
     await assert.rejects(exec(process.execPath,[launcher,'worktree','GY-1','1'],{cwd,env}),/different repositories/);
-    assert.equal(reservations,0);await assert.rejects(stat(join(cwd,'.mainworks/worktrees/GY-1-1')));
+    assert.equal(reservations,0);await assert.rejects(stat(join(cwd,'.graphyard/worktrees/GY-1-1')));
     await assert.rejects(exec('git',['show-ref','--verify','refs/heads/graphyard/gy-1-1'],{cwd}));
     await exec('git',['remote','set-url','origin','ssh://git@github.com/owner/project.git'],{cwd});
     const created=await exec(process.execPath,[launcher,'worktree','GY-1','1'],{cwd,env});
-    assert.equal(JSON.parse(created.stdout).path,join(cwd,'.mainworks/worktrees/GY-1-1'),'worktree stdout remains machine-readable JSON');
-    assert.equal(reservations,1);assert.ok((await stat(join(cwd,'.mainworks/worktrees/GY-1-1'))).isDirectory());
+    assert.equal(JSON.parse(created.stdout).path,join(cwd,'.graphyard/worktrees/GY-1-1'),'worktree stdout remains machine-readable JSON');
+    assert.equal(reservations,1);assert.ok((await stat(join(cwd,'.graphyard/worktrees/GY-1-1'))).isDirectory());
   } finally {await new Promise<void>(r=>http.close(()=>r()));await rm(cwd,{recursive:true,force:true});}
  });
 
@@ -317,8 +317,8 @@ test('rework worktree reopens the exact observed PR branch while preserving its 
   await new Promise<void>(r=>http.listen(0,'127.0.0.1',r));const url=`http://127.0.0.1:${(http.address() as any).port}`;
   const env:NodeJS.ProcessEnv={...process.env,GRAPHYARD_URL:url,GRAPHYARD_TOKEN:'fixture',GRAPHYARD_HOST_ID:'machine-a'};delete env.GRAPHYARD_CLI;
   try {
-    await exec('git',['init','-q'],{cwd});await mkdir(join(cwd,'.mainworks'));
-    await writeFile(join(cwd,'.mainworks/connection.json'),JSON.stringify({url,token:'fixture'.padEnd(40,'x'),hostId:'machine-a',cliPath:'/removed/graphyard/bin/graphyard.mjs'}),{mode:0o600});
+    await exec('git',['init','-q'],{cwd});await mkdir(join(cwd,'.graphyard'));
+    await writeFile(join(cwd,'.graphyard/connection.json'),JSON.stringify({url,token:'fixture'.padEnd(40,'x'),hostId:'machine-a',cliPath:'/removed/graphyard/bin/graphyard.mjs'}),{mode:0o600});
     const commands=async (settings:NodeJS.ProcessEnv)=>JSON.parse((await exec(process.execPath,[launcher,'handoff','GY-1'],{cwd,env:settings})).stdout).commands.join(' ');
     assert.ok((await commands(env)).includes(launcher));
     const override=join(cwd,'active.mjs');await writeFile(override,'// fixture launcher');
@@ -352,8 +352,8 @@ test('master run executes the durable loop as a supervised process and master st
     await exec('git', ['init', '-q'], { cwd: root });
     await exec('git', ['remote', 'add', 'origin', 'https://github.com/owner/project.git'], { cwd: root });
     await writeFile(credentialFile, 'coordinator-token-'.padEnd(40, 'x'), { mode: 0o600 });
-    await mkdir(join(root, '.mainworks'));
-    await writeFile(join(root, '.mainworks/master.json'), JSON.stringify({ version: 1, url, credentialFile, cliPath: launcher, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', autoMerge: true, workers: [], run: { intervalSeconds: 5, deploymentShaField: 'commit' } }), { mode: 0o600 });
+    await mkdir(join(root, '.graphyard'));
+    await writeFile(join(root, '.graphyard/master.json'), JSON.stringify({ version: 1, url, credentialFile, cliPath: launcher, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', autoMerge: true, workers: [], run: { intervalSeconds: 5, deploymentShaField: 'commit' } }), { mode: 0o600 });
     const env = { ...process.env, GRAPHYARD_URL: url, GRAPHYARD_TOKEN: undefined, GRAPHYARD_TOKEN_FILE: undefined };
 
     const first = JSON.parse((await exec(process.execPath, [launcher, 'master', 'run', '--once'], { cwd: root, env })).stdout);

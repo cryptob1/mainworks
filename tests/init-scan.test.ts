@@ -143,19 +143,19 @@ test('init --scan writes only an ignored proposal and covers every required area
     assert.ok(proposal.githubApp && proposal.githubApp.repository === 'owner/repo');
     const saved = await saveProposal(root, proposal);
     assert.equal((await stat(saved.file)).mode & 0o777, 0o600);
-    assert.equal(execFileSync('git', ['check-ignore', '.mainworks/setup-proposal.json'], { cwd: root, encoding: 'utf8' }).trim(), '.mainworks/setup-proposal.json');
-    assert.match(await readFile(join(root, '.gitignore'), 'utf8'), /\.mainworks\/\n$/);
+    assert.equal(execFileSync('git', ['check-ignore', '.graphyard/setup-proposal.json'], { cwd: root, encoding: 'utf8' }).trim(), '.graphyard/setup-proposal.json');
+    assert.match(await readFile(join(root, '.gitignore'), 'utf8'), /\.graphyard\/\n$/);
     await assert.rejects(stat(join(root, 'AGENTS.md')));
-    await assert.rejects(stat(join(root, '.mainworks/connection.json')));
-    await assert.rejects(stat(join(root, '.mainworks/principals.json')));
-    await assert.rejects(stat(join(root, '.mainworks/profiles')));
-    await assert.rejects(stat(join(root, '.mainworks/repository-setup.json')));
+    await assert.rejects(stat(join(root, '.graphyard/connection.json')));
+    await assert.rejects(stat(join(root, '.graphyard/principals.json')));
+    await assert.rejects(stat(join(root, '.graphyard/profiles')));
+    await assert.rejects(stat(join(root, '.graphyard/repository-setup.json')));
     const loaded = await loadProposal(root);
     assert.deepEqual(loaded!.proposal, proposal);
     assert.deepEqual(await loadAppliedSetup(root), null);
     assert.deepEqual(setupDrift(await loadAppliedSetup(root), proposal), []);
     const status = await readSetupStatus(root);
-    assert.equal(status.proposal, '.mainworks/setup-proposal.json');
+    assert.equal(status.proposal, '.graphyard/setup-proposal.json');
     assert.equal(status.appliedAt, null);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -173,12 +173,12 @@ test('applying a reviewed proposal writes onboarding files without a roster and 
     assert.equal(first.githubApp, null, 'no GitHub App is registered (GY-2010)');
     assert.ok(first.applied.some(entry => /AGENTS.md/.test(entry)));
     assert.match(await readFile(join(root, 'AGENTS.md'), 'utf8'), /Graphyard coordination/);
-    const principalsFile = join(root, '.mainworks/principals.json');
+    const principalsFile = join(root, '.graphyard/principals.json');
     await assert.rejects(stat(principalsFile), { code: 'ENOENT' });
     assert.equal(first.principalsFile, null);
-    const profile = JSON.parse(await readFile(join(root, '.mainworks/profiles/codex-primary.json'), 'utf8'));
+    const profile = JSON.parse(await readFile(join(root, '.graphyard/profiles/codex-primary.json'), 'utf8'));
     assert.equal(workerProfileSchema.parse(profile).principal, 'worker-1');
-    assert.equal(JSON.parse(await readFile(join(root, '.mainworks/profiles/reviewer.json'), 'utf8')).provider, 'github');
+    assert.equal(JSON.parse(await readFile(join(root, '.graphyard/profiles/reviewer.json'), 'utf8')).provider, 'github');
     const applied = await loadAppliedSetup(root);
     assert.equal(applied!.proposalDigest, proposalDigest(proposal));
     assert.equal(applied!.artifacts.githubApp, null);
@@ -190,10 +190,10 @@ test('applying a reviewed proposal writes onboarding files without a roster and 
     await assert.rejects(stat(principalsFile), { code: 'ENOENT' });
 
     const tampered = { ...profile, agentArgs: ['--operator-tuned'] };
-    await writeFile(join(root, '.mainworks/profiles/codex-primary.json'), JSON.stringify(tampered, null, 2), { mode: 0o600 });
+    await writeFile(join(root, '.graphyard/profiles/codex-primary.json'), JSON.stringify(tampered, null, 2), { mode: 0o600 });
     const third = await applyProposal(root, proposal, dependencies);
     assert.ok(third.drift.some(entry => /codex-primary/.test(entry)));
-    assert.deepEqual(JSON.parse(await readFile(join(root, '.mainworks/profiles/codex-primary.json'), 'utf8')).agentArgs, ['--operator-tuned']);
+    assert.deepEqual(JSON.parse(await readFile(join(root, '.graphyard/profiles/codex-primary.json'), 'utf8')).agentArgs, ['--operator-tuned']);
 
     await addFile(root, '.github/workflows/audit.yml', 'on:\n  pull_request:\njobs:\n  audit:\n    runs-on: ubuntu-latest\n');
     const rescan = await scanProposal(root, { url: 'https://graphyard.example', runtimes: ['codex'] });
@@ -350,16 +350,16 @@ test('CLI init --scan applies nothing without --apply, and --scan --apply applie
     assert.equal(scanned.proposal.stack.name, 'node');
     assert.deepEqual(scanned.proposal.profiles.workers.map((worker: any) => worker.kind), availableRuntimes(process.env.PATH).slice(0, 2));
     await assert.rejects(stat(join(root, 'AGENTS.md')));
-    await assert.rejects(stat(join(root, '.mainworks')));
+    await assert.rejects(stat(join(root, '.graphyard')));
 
-    await mkdir(join(root, '.mainworks'), { mode: 0o700 });
+    await mkdir(join(root, '.graphyard'), { mode: 0o700 });
     // A pull-request-era saved App registration is neither read nor revived (GY-2010).
-    await writeFile(join(root, '.mainworks/github-app.json'), JSON.stringify({ appId: 99, slug: 'graphyard-owner-repo', repository: 'owner/repo', privateKey: 'test-only', webhookSecret: 'test-only', installationId: 7 }), { mode: 0o600 });
+    await writeFile(join(root, '.graphyard/github-app.json'), JSON.stringify({ appId: 99, slug: 'graphyard-owner-repo', repository: 'owner/repo', privateKey: 'test-only', webhookSecret: 'test-only', installationId: 7 }), { mode: 0o600 });
     const applied = JSON.parse(await runCli(root, ['init', '--scan', '--apply', '--url', 'https://graphyard.example'], env));
     assert.equal(applied.githubApp, null);
     assert.match(applied.next, /Run graphyard install --apply/);
     assert.match(await readFile(join(root, 'AGENTS.md'), 'utf8'), /Graphyard coordination/);
-    await assert.rejects(stat(join(root, '.mainworks/principals.json')), { code: 'ENOENT' });
+    await assert.rejects(stat(join(root, '.graphyard/principals.json')), { code: 'ENOENT' });
 
     await addFile(root, 'compose.yaml', 'services:\n  db:\n    image: postgres:16\n');
     const afterChange = JSON.parse(await runCli(root, ['init', '--scan'], env));

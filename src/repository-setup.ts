@@ -1,4 +1,3 @@
-import { stateDir } from './mainworks-names.js';
 import { installDirectory } from './install/secrets.js';
 import { installIdFor } from './install/types.js';
 import { knownGoodDirectory, knownGoodState } from './master/known-good.js';
@@ -10,7 +9,7 @@ import { chmod, cp, lstat, mkdir, readdir, rmdir, readFile, rename, rm, stat, wr
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { spawn } from 'node:child_process';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { assertRepository, buildProposal, canonicalJson, collectScanInput, discover, localDirectory, removeDeliveryWorkflow, saveDiscovery, setupProposalSchema, type SetupProposal } from './onboarding.js';
@@ -47,7 +46,7 @@ export async function loadConnection(cwd: string): Promise<Connection | null> {
   try { roots = connectionRoots(cwd); } catch { return null; }
   for (const root of roots) {
     try {
-      const file = resolve(stateDir(root), 'connection.json'); const info = await lstat(file);
+      const file = resolve(root, '.graphyard/connection.json'); const info = await lstat(file);
       if (!info.isFile() || info.mode & 0o077) throw new Error('Connection credentials must be a regular file with mode 0600');
       const connection = connectionSchema.parse(JSON.parse(await readFile(file, 'utf8')));
       connection.url = serverOrigin(connection.url); return connection;
@@ -286,7 +285,7 @@ export type AppliedSetup = z.infer<typeof appliedStateSchema>;
 
 /** Reads the applied record without creating .graphyard/ or touching .gitignore, so a scan writes nothing. */
 export async function loadAppliedSetup(root: string): Promise<AppliedSetup | null> {
-  const file = resolve(stateDir(root), appliedFileName);
+  const file = resolve(root, '.graphyard', appliedFileName);
   try {
     if (!(await lstat(file)).isFile()) throw new Error('The applied setup record must be a regular file');
     return appliedStateSchema.parse(JSON.parse(await readFile(file, 'utf8')));
@@ -303,7 +302,7 @@ export function setupDrift(applied: AppliedSetup | null, proposal: SetupProposal
 
 /** Non-mutating status of the local proposal and applied setup, for read-only commands. */
 export async function readSetupStatus(root: string) {
-  const directory = resolve(stateDir(root)), local = basename(directory);
+  const directory = resolve(root, '.graphyard');
   const read = async (name: string, schema: z.ZodType<any>) => {
     let value: any = null;
     try { value = JSON.parse(await readFile(resolve(directory, name), 'utf8')); } catch (error: any) { if (error.code !== 'ENOENT') return { error: 'unreadable' }; }
@@ -314,10 +313,10 @@ export async function readSetupStatus(root: string) {
   const drift = proposal.value && applied.value ? setupDrift(applied.value, proposal.value)
     : applied.value ? ['Applied setup record exists without a stored proposal; run init --scan'] : [];
   return {
-    proposal: proposal.value ? `${local}/${proposalFileName}` : null,
+    proposal: proposal.value ? `.graphyard/${proposalFileName}` : null,
     appliedAt: applied.value?.appliedAt ?? null,
     githubApp: applied.value?.artifacts.githubApp ?? null,
-    unreadable: [proposal.error && `${local}/${proposalFileName} ${proposal.error}`, applied.error && `${local}/${appliedFileName} ${applied.error}`].filter(Boolean),
+    unreadable: [proposal.error && `.graphyard/${proposalFileName} ${proposal.error}`, applied.error && `.graphyard/${appliedFileName} ${applied.error}`].filter(Boolean),
     drift,
     // GY-1859: what the host's loop unit runs against this CLI's code, so `doctor`'s
     // readiness checklist flags a unit on other code as one line naming both paths and the rerun.
@@ -525,7 +524,7 @@ export async function liftLoopPins(root: string, options: { installDir?: string 
 
 /** Remove the retired launcher pointer on every up, including an already current install. */
 export async function removeHeldCliPin(root: string): Promise<void> {
-  await rm(join(stateDir(root), 'held-cli.json'), { force: true });
+  await rm(join(root, '.graphyard', 'held-cli.json'), { force: true });
 }
 
 /**

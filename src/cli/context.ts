@@ -1,4 +1,3 @@
-import { setting } from '../setting.js';
 import { realpath, stat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
@@ -12,6 +11,7 @@ import { cliRelease, recordedCommit, releaseIdentityPath } from '../release.js';
 import { shellQuote } from '../shell-quote.js';
 import { cliCommit } from '../protocol-version.js';
 import { verificationRequest } from './verification-request.js';
+import { setting } from '../setting.js';
 
 /** How long one CLI request waits (2026-09-27: the full work snapshot reached 19 MB and ~31 s, so a 30 s bound failed every read of it, including workers' sync and complete; GY-864 bounds those reads). */
 export const cliRequestTimeoutMs = 120_000;

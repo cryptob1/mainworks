@@ -41,7 +41,7 @@ test('unit:verify-base-exercise-followups — the base tree lives in the worktre
   const record = await verifyWorkingTree({ key: 'GY-1', criteria: [{ id: 'AC-1', proofs: ['unit:sum-preserved'] }] }, root);
   assert.equal(record.ran[0].exercise?.result, 'pass', 'the base run was made');
   // The scratch tree was under .graphyard/verify and is gone; only the record remains.
-  assert.deepEqual(readdirSync(join(root, '.mainworks', 'verify')), ['GY-1.json']);
+  assert.deepEqual(readdirSync(join(root, '.graphyard', 'verify')), ['GY-1.json']);
 
   // No base to measure from: recorded, not dropped.
   const unresolved = await verifyWorkingTree({ key: 'GY-1', criteria: [{ id: 'AC-1', proofs: ['unit:sum-preserved'] }] }, root, undefined, { baseBranch: 'absent' });
@@ -54,7 +54,7 @@ test('unit:verify-base-exercise-followups — the base tree lives in the worktre
   // A base tree with nowhere to go yields its reason, not null.
   const blocked = await guard();
   const base = git(blocked, 'rev-parse', 'refs/remotes/origin/main');
-  await writeFile(join(blocked, '.mainworks'), 'not a directory');
+  await writeFile(join(blocked, '.graphyard'), 'not a directory');
   const broken = await baseTree(blocked, base);
   assert.equal(broken?.tree, null);
   assert.match(broken?.reason ?? '', /no scratch directory for the base tree/);

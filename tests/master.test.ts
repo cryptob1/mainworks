@@ -48,24 +48,24 @@ test('master init verifies a coordinator and repository before writing private l
     const result = await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory, herdrWorkspace: 'workspace-graphyard' }, coordinatorStatus as typeof fetch);
     assert.equal(result.role, 'coordinator');
     assert.deepEqual(result.attention, []); assert.match(result.next, /^Run graphyard master environments --apply .* then graphyard master start/);
-    assert.equal((await stat(join(root, '.mainworks/master.json'))).mode & 0o777, 0o600);
-    assert.equal(execFileSync('git', ['check-ignore', '.mainworks/master.json'], { cwd: root, encoding: 'utf8' }).trim(), '.mainworks/master.json');
+    assert.equal((await stat(join(root, '.graphyard/master.json'))).mode & 0o777, 0o600);
+    assert.equal(execFileSync('git', ['check-ignore', '.graphyard/master.json'], { cwd: root, encoding: 'utf8' }).trim(), '.graphyard/master.json');
     const agents = await readFile(join(root, 'AGENTS.md'), 'utf8');
     assert.match(agents, /## Graphyard coordination/); assert.doesNotMatch(agents, /Graphyard master agent|graphyard-master -->/, 'master init writes the worker block only');
     const master = await loadMasterConfig(root); assert.equal(await readFile(master.credentialFile, 'utf8'), coordinatorToken); assert.equal(master.baseBranch, 'main'); assert.equal(master.herdrWorkspace, 'workspace-graphyard'); assert.equal(master.credentialFile.startsWith(`${root}/`), false);
-    assert.equal((await readFile(join(root, '.mainworks/master.json'), 'utf8')).includes(coordinatorToken), false);
+    assert.equal((await readFile(join(root, '.graphyard/master.json'), 'utf8')).includes(coordinatorToken), false);
     const workerConnection = JSON.stringify({ url: 'https://graphyard.example', token: workerToken, cliPath: launcher, hostId: 'machine-a' });
-    await writeFile(join(root, '.mainworks/connection.json'), workerConnection, { mode: 0o600 });
+    await writeFile(join(root, '.graphyard/connection.json'), workerConnection, { mode: 0o600 });
     await assert.rejects(setupMaster(root, { url: 'https://other.example', token: coordinatorToken, cliPath: launcher, credentialDirectory }, coordinatorStatus as typeof fetch), /another Graphyard server/);
     await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory, herdrWorkspace: 'workspace-graphyard' }, coordinatorStatus as typeof fetch);
-    assert.equal(await readFile(join(root, '.mainworks/connection.json'), 'utf8'), workerConnection, 'master setup must not replace a worker connection');
+    assert.equal(await readFile(join(root, '.graphyard/connection.json'), 'utf8'), workerConnection, 'master setup must not replace a worker connection');
     await assert.rejects(setupMaster(root, { url: 'https://graphyard.example', token: workerToken, cliPath: launcher, credentialDirectory }, (async () => new Response(JSON.stringify({ actor: { id: 'worker', role: 'worker' }, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234 }))) as typeof fetch), /coordinator credential/);
     await assert.rejects(setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory }, (async () => new Response(JSON.stringify({ actor: { id: 'master', role: 'coordinator' }, repository: null, baseBranch: 'main', githubAppId: 1234 }))) as typeof fetch), /bound to a GitHub repository/);
     const linkedConfig = join(credentialDirectory, 'linked-inside'); await symlink(root, linkedConfig, 'dir');
     await assert.rejects(setupMaster(root, { url: 'https://graphyard.example', token: `${coordinatorToken}-symlink`, cliPath: launcher, credentialDirectory: linkedConfig }, coordinatorStatus as typeof fetch), /outside every worktree/);
     assert.deepEqual(await readdir(join(root, 'masters')), [], 'canonical-path refusal occurs before credential bytes are written');
     const localCredential = join(root, 'coordinator.token'); await writeFile(localCredential, coordinatorToken, { mode: 0o600 });
-    await writeFile(join(root, '.mainworks/master.json'), JSON.stringify({ ...master, credentialFile: localCredential }), { mode: 0o600 });
+    await writeFile(join(root, '.graphyard/master.json'), JSON.stringify({ ...master, credentialFile: localCredential }), { mode: 0o600 });
     await assert.rejects(loadMasterConfig(root), /outside the repository/);
   } finally { await rm(root, { recursive: true, force: true }); await rm(credentialDirectory, { recursive: true, force: true }); }
 });
@@ -197,7 +197,7 @@ test('master start creates a visible non-focused coordinator session with no cre
     // start; since GY-121 the shell reads it from the request file the typed line references.
     assert.deepEqual(calls[1].slice(0, 3), ['pane', 'run', 'pane-master']);
     const master = expandTypedCommand(calls[1][3]);
-    assert.equal(master.kind, 'codex'); assert.equal(master.stem, join(root, '.mainworks/launch', (await loadMasterConfig(root)).masterAgentName)); assert.match(master.args.at(-1)!, /dedicated Graphyard master agent/); assert.equal(result.delivery, 'request');
+    assert.equal(master.kind, 'codex'); assert.equal(master.stem, join(root, '.graphyard/launch', (await loadMasterConfig(root)).masterAgentName)); assert.match(master.args.at(-1)!, /dedicated Graphyard master agent/); assert.equal(result.delivery, 'request');
     assert.equal(calls.some(call => call[0] === 'agent' && call[1] === 'prompt'), false, 'nothing is pasted into the master session');
     assert.equal(JSON.stringify(calls).includes(coordinatorToken), false);
     await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory }, coordinatorStatus as typeof fetch);

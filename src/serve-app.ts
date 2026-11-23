@@ -14,7 +14,6 @@
 // reason to stop serving or roll back. The previously served build keeps serving on a free port of
 // its own as BASELINE_URL, so a compare case judges a new build against what was live (GY-2985).
 // A repository that declares no node application is untouched.
-import { stateDir } from './mainworks-names.js';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
@@ -59,7 +58,7 @@ export interface ServeBaseline { commit: string; url: string; pid: number | null
 export interface ServeRecord { commit: string | null; url: string | null; failed: string | null; reason: string | null; pid?: number | null; started?: string | null; check?: ServeCheck | null; baseline?: ServeBaseline | null; at: string }
 /** The serve process a restart left running. */
 export interface ServeProcess { pid: number | null; started: string | null }
-export const serveRecordPath = (root: string) => join(stateDir(root), 'served.json');
+export const serveRecordPath = (root: string) => join(root, '.graphyard', 'served.json');
 export function readServeRecord(file: string): ServeRecord | null {
   if (!existsSync(file)) return null;
   try { return JSON.parse(readFileSync(file, 'utf8')) as ServeRecord; } catch { return null; }
@@ -221,9 +220,9 @@ export async function watchServe(file: string, ports: ServePorts, options: { int
 }
 
 /** The install's own serve checkout: a detached worktree of the managed root under its local .graphyard — never the coordinator's or a worker's checkout. Its ports live beside the deploy watch's own (src/cli/upgrade.ts), the one file allowed to reach the remote. */
-export const serveCheckoutPath = (root: string) => join(stateDir(root), 'serve-checkout');
+export const serveCheckoutPath = (root: string) => join(root, '.graphyard', 'serve-checkout');
 /** The baseline checkout (GY-2985): a second detached worktree holding the previously served build, which keeps serving on the port beside the served one. */
-export const serveBaselineCheckoutPath = (root: string) => join(stateDir(root), 'serve-checkout-baseline');
+export const serveBaselineCheckoutPath = (root: string) => join(root, '.graphyard', 'serve-checkout-baseline');
 
 /**
  * GY-3207: the environment the serve checkout's install, build and serve commands run under: the host's, with the Node major the checkout declares first on PATH.

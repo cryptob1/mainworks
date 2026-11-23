@@ -1,4 +1,3 @@
-import { stateDir } from './mainworks-names.js';
 import { loopStateClient, migrateLoopFile, ledgerSnapshot, saveLedger } from './loop-state.js';
 import { atomicPrivateWrite, readCredentialFile } from './private-file.js';
 import { writeFailure } from './disk-space.js';
@@ -346,7 +345,7 @@ export async function saveReviewerProfile(root: string, profileInput: unknown) {
   const config = await loadStoredMasterConfig(root);
   if (config.reviewers.some(item => item.name === profile.name || item.agentName === profile.agentName)) throw new Error('Reviewer profile name and agent name must be unique');
   if (config.workers.some(item => item.agentName === profile.agentName)) throw new Error('A worker profile already uses that Herdr agent name');
-  await atomicPrivateWrite(resolve(stateDir(root), 'master.json'), { ...config, reviewers: [...config.reviewers, profile] });
+  await atomicPrivateWrite(resolve(root, '.graphyard/master.json'), { ...config, reviewers: [...config.reviewers, profile] });
   const launch = agentLaunchPlan(profile.kind, profile.approvals, profile.agentArgs, profile.environment);
   return { added: profile.name, agentName: profile.agentName, kind: profile.kind, reviewers: config.reviewers.length + 1, launch };
 }
@@ -359,7 +358,7 @@ export async function removeReviewerProfile(root: string, name: string) {
   const reviewers = config.reviewers.filter(item => item.name !== name);
   const clearedAutomatic = config.run.reviewerProfile === name;
   const run = { ...config.run }; if (clearedAutomatic) delete run.reviewerProfile;
-  await atomicPrivateWrite(resolve(stateDir(root), 'master.json'), { ...config, reviewers, run });
+  await atomicPrivateWrite(resolve(root, '.graphyard/master.json'), { ...config, reviewers, run });
   return { removed: name, agentName: removed.agentName, reviewers: reviewers.length, clearedAutomatic,
     automatic: run.reviewerProfile ?? (reviewers.length === 1 ? reviewers[0].name : null),
     next: reviewers.length ? 'master run adopts the change on its next tick' : 'No reviewer profile remains; review requests wait until one is added with master reviewer add' };

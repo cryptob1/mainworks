@@ -1,4 +1,3 @@
-import { setting } from '../setting.js';
 import { rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -11,6 +10,7 @@ import { defineCommands } from './registry.js';
 import { readSecretFromStdin } from './context.js';
 import { moveInstall } from '../install/move.js';
 import { upCommand } from '../up.js'; import { runDoctor } from './install-doctor.js';
+import { setting } from '../setting.js';
 
 /** GY-2009: install registers no GitHub App, so `up --reuse-app` would reuse nothing; it is refused rather than silently ignored. */
 export const upAppReuseRefusal = 'graphyard up --reuse-app is refused: install registers no GitHub App and the merge writer\'s deploy key is its only GitHub access (GY-2009); rerun without --reuse-app';

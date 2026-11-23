@@ -1,4 +1,3 @@
-import { setting } from '../setting.js';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { caretakerRequestsFile, type CaretakerRequest } from '../master/caretaker-prompt.js';
 import { registryCommand } from './master-registry.js';
@@ -11,6 +10,7 @@ import { handoff } from '../repository-setup.js';
 import { eventHistoryLimits, parseEventHistoryFlags } from '../events-history.js';
 import { defineCommands } from './registry.js';
 import { withRisk } from '../model-boundary/risk-class.js';
+import { setting } from '../setting.js';
 
 /** Reading work: control-plane status, the ledger, diagnosis, creation and history. */
 export const workCommands = defineCommands([

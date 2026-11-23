@@ -1,10 +1,10 @@
 // Concern: the merge writer's local observation (GY-1523) — a submitted head read from the coordinator's own object store, never from GitHub.
-import { setting } from '../setting.js';
 import { execFile } from 'node:child_process';
 import { demand, type Observation } from '../model.js';
 import type {} from '../model/gates.js'; // Observation.source
 import { graphyardChecksChanged } from '../model/risk-class.js';
 import { parseLocalScopeDiff } from '../sync.js';
+import { setting } from '../setting.js';
 
 /** What one git invocation returned; a non-zero exit is an answer here, never a throw. */
 export interface GitResult { status: number | null; stdout: string; stderr: string }

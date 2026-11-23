@@ -134,7 +134,7 @@ appendFileSync(process.env.GRAPHYARD_TEST_REDEPLOY_LOG, JSON.stringify({ args: p
       assert.equal(readDeployRecord(file)?.tip, b, 'the new tip is recorded as served');
       assert.equal(readDeployRecord(file)?.reason, null, 'deployment succeeded without falling through schema-aware failure handling');
       assert.equal(head(checkout), a, 'the watched checkout retains its original source');
-      assert.equal(await realpath(join(checkout, '.mainworks/cli-current')), build, 'the ready CLI is published after health');
+      assert.equal(await realpath(join(checkout, '.graphyard/cli-current')), build, 'the ready CLI is published after health');
       assert.equal(await ports.head(), b, 'deployment reads the published CLI commit');
       assert.ok(existsSync(join(build, '.git')), 'the build worktree exists under the install directory');
       assert.equal(head(build), b, 'the build worktree holds the deployed commit');

@@ -1,4 +1,3 @@
-import { stateDir } from '../mainworks-names.js';
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { availableParallelism } from 'node:os';
@@ -88,7 +87,7 @@ export function detachRuns() {
 
 // ---- The registry on disk -------------------------------------------------------------------------
 
-export const runsDirectory = (root: string) => resolve(stateDir(root), 'runs');
+export const runsDirectory = (root: string) => resolve(root, '.graphyard', 'runs');
 export const runOwnerSchema = z.object({
   version: z.literal(1), name: z.string().min(1).max(200), role: z.enum(['producer']), work: z.string().min(1).max(200), subject: z.string().min(1).max(200),
   /** What the role needs to apply the run's result after a restart: never a credential, only where to read one. */

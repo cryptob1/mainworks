@@ -1,5 +1,4 @@
 import { underTestRunner } from '../runtime-environment.js';
-import { stateDir } from '../mainworks-names.js';
 // Concern: the systemd unit names one installation owns on a host (GY-1441).
 //
 // A host may run several installations side by side — a production coordinator and a pilot from a
@@ -21,16 +20,14 @@ import { z } from 'zod';
 export const legacyLoopUnit = 'graphyard-master.service';
 export const legacyExecutorTemplate = 'graphyard-executor@.service';
 /** Where an install records the units it owns; local and ignored, like every file under `.graphyard/`. */
-export const installUnitsFile = '.mainworks/units.json';
-/** Where ROOT records its units: under its state directory (`.mainworks`, or an existing install's `.graphyard`). */
-export const unitsFileOf = (root: string) => join(stateDir(root), 'units.json');
+export const installUnitsFile = '.graphyard/units.json';
 
 const recordSchema = z.object({
   version: z.literal(1),
   /** The install slug the names derive from; null for the legacy alias. */
   slug: z.string().regex(/^[a-z0-9][a-z0-9-]*$/).max(80).nullable(),
-  master: z.string().regex(/^(?:graphyard|mainworks)-master[A-Za-z0-9@._-]*\.service$/),
-  executorTemplate: z.string().regex(/^(?:graphyard|mainworks)-executor[A-Za-z0-9._-]*@\.service$/),
+  master: z.string().regex(/^graphyard-master[A-Za-z0-9@._-]*\.service$/),
+  executorTemplate: z.string().regex(/^graphyard-executor[A-Za-z0-9._-]*@\.service$/),
   /** True when the install kept the pre-GY-1441 names because its units already ran this checkout. */
   alias: z.boolean(),
 }).strict();
@@ -50,15 +47,15 @@ export function installSlug(repository: string) {
   const hash = createHash('sha256').update(repository.toLowerCase()).digest('hex').slice(0, 8);
   return `${plain.slice(0, 71).replace(/-+$/, '')}-${hash}`;
 }
-/** The names a new install of REPOSITORY writes: `mainworks-master-OWNER-NAME.service` and its executor template. */
+/** The names a new install of REPOSITORY writes: `graphyard-master-OWNER-NAME.service` and its executor template. */
 export function perInstallUnits(repository: string): InstallUnits {
   const slug = installSlug(repository);
-  return { version: 1, slug, master: `mainworks-master-${slug}.service`, executorTemplate: `mainworks-executor-${slug}@.service`, alias: false };
+  return { version: 1, slug, master: `graphyard-master-${slug}.service`, executorTemplate: `graphyard-executor-${slug}@.service`, alias: false };
 }
 export const legacyInstallUnits: InstallUnits = { version: 1, slug: null, master: legacyLoopUnit, executorTemplate: legacyExecutorTemplate, alias: true };
 
 /** The install's deploy unit (GY-2877), named beside its loop unit: `graphyard-deploy.service` for the legacy alias, `graphyard-deploy-OWNER-NAME.service` otherwise. */
-export const deployUnitOf = (units: Pick<InstallUnits, 'master'>) => units.master.replace(/^(graphyard|mainworks)-master/, '$1-deploy');
+export const deployUnitOf = (units: Pick<InstallUnits, 'master'>) => units.master.replace(/^graphyard-master/, 'graphyard-deploy');
 
 /** The command that records an install's own units in its checkout: `master init` resolves and writes them. */
 export const initialiseUnitsCommand = 'graphyard master init';
@@ -82,7 +79,7 @@ export function legacyUnitFiles(unitDirectory = userUnitDirectory()): LegacyUnit
 }
 
 /**
- * GY-3519: every install checkout registered as a master loop unit on this host (`mainworks-master*.service` or `graphyard-master*.service`).
+ * GY-3519: every install checkout registered as a master loop unit on this host (`graphyard-master*.service`).
  * Under the test runner only a directory under the system temporary directory is read, so tests never touch the operator's units.
  */
 export function hostInstallCheckouts(unitDirectory = userUnitDirectory(), home = homedir()): string[] {
@@ -92,7 +89,7 @@ export function hostInstallCheckouts(unitDirectory = userUnitDirectory(), home =
   try { entries = readdirSync(unitDirectory); } catch { return []; }
   const seen = new Set<string>(), checkouts: string[] = [];
   for (const name of entries) {
-    if (!/^(?:graphyard|mainworks)-master[A-Za-z0-9@._-]*\.service$/.test(name)) continue;
+    if (!/^graphyard-master[A-Za-z0-9@._-]*\.service$/.test(name)) continue;
     let text: string;
     try { text = readFileSync(join(unitDirectory, name), 'utf8'); } catch { continue; }
     const directory = unitCheckout(text, home).workingDirectory;
@@ -140,7 +137,7 @@ export function parseInstallUnits(text: string | null, where: string, absent: ()
 const absent = (error: unknown) => (error as NodeJS.ErrnoException)?.code === 'ENOENT';
 /** The units an install recorded, read synchronously by every reader; with no record, the legacy alias only when it is ROOT's own. */
 export function readInstallUnits(root: string, unitDirectory = userUnitDirectory(), home = homedir()): InstallUnits {
-  const file = unitsFileOf(root);
+  const file = resolve(root, installUnitsFile);
   let text: string | null;
   try { text = readFileSync(file, 'utf8'); } catch (error) { if (!absent(error)) throw error; text = null; }
   return parseInstallUnits(text, file, () => unrecordedInstallUnits(root, legacyUnitFiles(unitDirectory), home));
@@ -240,7 +237,7 @@ export function proposedInstallUnits(root: string, repository: string, unitDirec
  * never collide with the first.
  */
 export async function resolveInstallUnits(root: string, repository: string, unitDirectory: string, home = homedir()): Promise<InstallUnits> {
-  const file = unitsFileOf(root);
+  const file = resolve(root, installUnitsFile);
   let text: string | null;
   try { text = await readFile(file, 'utf8'); } catch (error) { if (!absent(error)) throw error; text = null; }
   if (text !== null) return parseInstallUnits(text, file, () => legacyInstallUnits);
@@ -248,7 +245,7 @@ export async function resolveInstallUnits(root: string, repository: string, unit
 }
 /** Writes `units` as the record ROOT keeps (installUnitsFile), atomically; the caller has decided they are ROOT's. */
 export async function recordInstallUnits(root: string, units: InstallUnits): Promise<InstallUnits> {
-  const file = unitsFileOf(root);
+  const file = resolve(root, installUnitsFile);
   await mkdir(dirname(file), { recursive: true });
   const temporary = `${file}.${randomUUID()}.tmp`;
   await writeFile(temporary, `${JSON.stringify(units, null, 2)}\n`, { mode: 0o600, flag: 'wx' });

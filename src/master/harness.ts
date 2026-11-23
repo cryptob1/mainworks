@@ -1,7 +1,5 @@
 export { humanOnlyDecisions } from '../model/human-request.js';
 // Concern: session and worker harness permissions, and starting the master session.
-import { setting } from '../setting.js';
-import { stateDir } from '../mainworks-names.js';
 import { itemLeadBrief } from '../review-prompt.js';
 import { lstat, mkdir } from 'node:fs/promises';
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
@@ -11,7 +9,7 @@ import { type ChildRun, defaultChildRun } from '../child-runner.js';
 import { nameForLaunch } from '../session-name.js';
 import { launchAuthorization } from '../repository-setup.js';
 import { type HarnessPlan, type HarnessRule, repositoryClaudeConfig, writeHarnessPermissions, masterHarnessPlan, harnessDecision, claudeRuleProblem, bashRuleMatches } from '../harness.js';
-import { foreignUnitText, initialiseUnitsCommand, userUnitDirectory, installUnitsFile, unitsFileOf, type InstallUnits, LegacyUnitRefusal, legacyLoopUnit, perInstallUnits, proposedInstallUnits, readInstallUnits, recordInstallUnits, resolveInstallUnits, unitCheckout } from '../install/units.js';
+import { foreignUnitText, initialiseUnitsCommand, userUnitDirectory, installUnitsFile, type InstallUnits, LegacyUnitRefusal, legacyLoopUnit, perInstallUnits, proposedInstallUnits, readInstallUnits, recordInstallUnits, resolveInstallUnits, unitCheckout } from '../install/units.js';
 import type { Work } from '../model.js';
 import type { MasterConfig, WorkerProfile } from './profiles.js';
 import { coordinatorCheckoutRoot, promotionCommand, runtimeLoginHomes, workerConfinementRefusal } from './profiles.js';
@@ -27,6 +25,7 @@ import type { PreparedWorker } from './dispatch.js';
 import { worktreeRoot } from '../install/worktree-root.js';
 import { graphyardRepository } from '../scenarios.js';
 import { hostHeavyJobsDirectory, slotsDirectoryVariable, verificationEnvironment } from './verification-slots.js';
+import { setting } from '../setting.js';
 
 /**
  * The master's harness rules cover everything the master owns, not only the coordination loop:
@@ -41,9 +40,8 @@ function withMasterOwnedRules(plan: HarnessPlan, config: MasterConfig, root: str
   if (plan.harness !== 'claude') return plan;
   const workflows = [config.run.proofWorkflow, config.run.smokeWorkflow].filter((name): name is string => !!name);
   const units = installUnitRules(root, unitDirectory);
-  const state = basename(stateDir(root));
   const owned: HarnessRule[] = [
-    { rule: `Read(./${state}/master.json)`, why: 'Read the master configuration the loop runs from: profiles, agent environments, run settings. It holds paths to credentials, never their values. Changing it goes through master config, which writes only the fields the master owns.' },
+    { rule: 'Read(./.graphyard/master.json)', why: 'Read the master configuration the loop runs from: profiles, agent environments, run settings. It holds paths to credentials, never their values. Changing it goes through master config, which writes only the fields the master owns.' },
     ...units.allow,
     // Railway deploys each application from git on its own; Graphyard observes each app's versionUrl.
     { rule: 'Bash(railway status:*)', why: 'Railway deploys from git and Graphyard observes each app\'s versionUrl: read which release a service serves when master status names it lagging or failed.' },
@@ -81,12 +79,12 @@ export function installUnitRules(root: string, unitDirectory: string): { allow: 
     { rule: `Bash(journalctl --user -u ${master}:*)`, why: 'Read the loop\'s launch, failover and refusal log; the unit is pinned to the loop\'s own.' },
   ];
   const why = 'Another Graphyard installation on this host owns this unit; restarting, stopping or enabling it would disrupt that install\'s loop (GY-1441).';
-  const shapes = units.alias ? ['graphyard-master-*', 'mainworks-master-*'] : [`${legacyLoopUnit}*`, 'graphyard-master', ...(units.master.startsWith('mainworks-') ? ['graphyard-master-*'] : ['mainworks-master-*'])];
+  const shapes = units.alias ? ['graphyard-master-*'] : [`${legacyLoopUnit}*`, 'graphyard-master'];
   const others: string[] = [];
   try {
     for (const name of readdirSync(unitDirectory)) {
       if (name === master) continue;
-      if (/^(?:graphyard|mainworks)-master[A-Za-z0-9._-]*\.service$/.test(name)) others.push(name, `${name} *`, name.replace(/\.service$/, ''));
+      if (/^graphyard-master[A-Za-z0-9._-]*\.service$/.test(name)) others.push(name, `${name} *`, name.replace(/\.service$/, ''));
     }
   } catch { /* no unit directory: only the structural shapes apply */ }
   const own = allow.map(entry => /^Bash\((.*)\)$/.exec(entry.rule)![1].replace(/:\*$/, ''));
@@ -114,9 +112,6 @@ export function sessionHarnessPlan(input: SessionHarnessInput): HarnessPlan {
   const cli = `node ${input.cliPath}`;
   const secrets: HarnessRule[] = [
     ...[...new Set(input.credentialDirectories)].sort().map(directory => ({ rule: `Read(/${directory}/**)`, why: 'Graphyard credentials live here; the session uses its own through the CLI and never reads their bytes.' })),
-    { rule: 'Read(./.mainworks/connection.json)', why: 'Holds an individual Mainworks credential.' },
-    { rule: 'Read(./.mainworks/credentials.json)', why: 'Holds local principal credentials.' },
-    { rule: 'Read(./.mainworks/github-app.json)', why: 'Holds the control-plane App private key.' },
     { rule: 'Read(./.graphyard/connection.json)', why: 'Holds an individual Graphyard credential.' },
     { rule: 'Read(./.graphyard/credentials.json)', why: 'Holds local principal credentials.' },
     { rule: 'Read(./.graphyard/github-app.json)', why: 'Holds the control-plane App private key.' },
@@ -185,7 +180,7 @@ export function sessionHarnessPlan(input: SessionHarnessInput): HarnessPlan {
 }
 
 /** Where a session's role file lives: beside the ledgers, ignored by Git, never inside a worktree it is launched for. */
-export const sessionHarnessFile = (root: string, role: SessionRole, profile: string) => resolve(stateDir(root), 'harness', `${role}-${profile}.json`);
+export const sessionHarnessFile = (root: string, role: SessionRole, profile: string) => resolve(root, '.graphyard/harness', `${role}-${profile}.json`);
 async function repositoryCarriesClaudeSettings(root: string) {
   for (const name of ['settings.json', 'settings.local.json']) {
     try { await lstat(resolve(root, '.claude', name)); return true; } catch (error: any) { if (error.code !== 'ENOENT') throw error; }
@@ -315,8 +310,8 @@ export function autonomyPlan(config: MasterConfig) {
 
 /** Rules every master session gets on top of its loop rules: it cannot borrow another identity. */
 const autonomyDeny = (credentialHome: string): HarnessRule[] => [
-  { rule: 'Bash(*MAINWORKS_TOKEN_FILE=*)', why: 'The master acts only as its own identities; pointing a command at a worker\'s or producer\'s credential file would let it borrow another identity.' },
   { rule: 'Bash(*GRAPHYARD_TOKEN_FILE=*)', why: 'The master acts only as its own identities; pointing a command at a worker\'s or producer\'s credential file would let it borrow another identity.' },
+  { rule: 'Bash(*MAINWORKS_TOKEN_FILE=*)', why: 'The master acts only as its own identities; pointing a command at a worker\'s or producer\'s credential file would let it borrow another identity.' },
   { rule: `Edit(//${credentialHome}/**)`, why: 'Agent credentials are issued by onboarding and rotated through the API, never edited in place.' },
 ];
 /** Thrown when the checkout a harness apply resolved is not one it may apply against (GY-1662); `unit` is the unit file to update, when one names the right checkout elsewhere. */
@@ -361,7 +356,7 @@ function launchedCheckout(text: string, root: string, home: string): string | nu
  */
 export async function recordServingUnits(root: string, repository: string, options: { servingUnit?: string | null; unitDirectory?: string; home?: string } = {}): Promise<InstallUnits | null> {
   const unitDirectory = options.unitDirectory ?? userUnitDirectory(), home = options.home ?? homedir();
-  if (!options.servingUnit || existsSync(unitsFileOf(root))) return null;
+  if (!options.servingUnit || existsSync(resolve(root, installUnitsFile))) return null;
   let text: string;
   try { text = readFileSync(resolve(unitDirectory, options.servingUnit), 'utf8'); } catch { return null; }
   if (foreignUnitText(text, root, home) ?? launchedCheckout(text, root, home)) return null;
@@ -381,7 +376,7 @@ export function harnessApplyCheckout(root: string, options: { servingUnit?: stri
     throw new HarnessCheckoutRefusal(root, error.unitPath, `The harness contract was not applied: ${root} records no units (${installUnitsFile} is absent) and the legacy unit ${error.unitPath} runs another checkout (${error.checkout}). Run ${initialiseUnitsCommand} in ${root} to record its own units, or update ${error.unitPath} if ${root} is the checkout it should run`);
   }
   // The legacy alias readInstallUnits falls back to is no proof ROOT is this install's checkout: with no serving unit detected, a separate launcher checkout would pass and receive the managed repository's plan.
-  if (!existsSync(unitsFileOf(root))) throw new HarnessCheckoutRefusal(root, null, `The harness contract was not applied: ${root} records no units (${installUnitsFile} is absent), so it is not established that it is this install's checkout. Run ${initialiseUnitsCommand} in ${root} to record its own units`);
+  if (!existsSync(resolve(root, installUnitsFile))) throw new HarnessCheckoutRefusal(root, null, `The harness contract was not applied: ${root} records no units (${installUnitsFile} is absent), so it is not established that it is this install's checkout. Run ${initialiseUnitsCommand} in ${root} to record its own units`);
   if (options.servingUnit) {
     const path = resolve(unitDirectory, options.servingUnit);
     // Only an absent unit file names no checkout; one that exists but cannot be read cannot show it runs ROOT, so it is refused.
@@ -494,8 +489,8 @@ export function workerHarnessPlan(input: { cliPath: string; branch: string; base
     { rule: 'Bash(git rebase:*)', why: 'sync merges the base branch; a rebase would re-resolve files already merged.' },
     { rule: 'Bash(gh pr merge:*)', why: 'Workers never merge; the control plane\'s merge gate decides.' },
     { rule: 'Bash(gh pr review:*)', why: 'Workers never review their own work.' },
-    { rule: 'Bash(*MAINWORKS_TOKEN_FILE=*)', why: 'A worker acts only as its own principal.' },
     { rule: 'Bash(*GRAPHYARD_TOKEN_FILE=*)', why: 'A worker acts only as its own principal.' },
+    { rule: 'Bash(*MAINWORKS_TOKEN_FILE=*)', why: 'A worker acts only as its own principal.' },
     { rule: `Read(//${input.credentialHome}/**)`, why: 'Credentials are used through the CLI, never read into a transcript.' },
     { rule: 'Read(**/*.token)', why: 'Token files are never read into a session transcript.' },
   ];

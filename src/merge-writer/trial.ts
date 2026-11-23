@@ -1,5 +1,3 @@
-import { stateDir } from '../mainworks-names.js';
-import { setting } from '../setting.js';
 import { trialCpuMonitor, trialOverloadFault, type TrialCpuReading } from './trial-cpu.js';
 // Concern: the merge writer's trial merge — the exact merge commit of a head onto main, and its build and affected tests in a credential-free checkout.
 import { randomUUID } from 'node:crypto';
@@ -33,6 +31,7 @@ import { addressPoolsSpent, checkServiceVariables, dockerEnvironment, previewNet
 import { diskFloorBytes, gateTrialKey, trialFileTimeoutMs, heatWaitSeconds, TrialHeatError, trialContainerFault, trialLoad, trialShardLanes, trialStartOwner } from './trial-load.js';
 import { nestedSandboxDenied, trialAppArmorFix } from './trial-apparmor.js';
 import { maskSecrets } from '../redaction.js';
+import { setting } from '../setting.js';
 
 /** One git call in the coordinator's object store: the arguments after `git -C <root>`, the child's stdout. */
 export type TrialGit = (args: string[], env?: Record<string, string>) => Promise<string>;
@@ -247,7 +246,7 @@ export const trialTemporaryRoot = (sessionDirectory: string, roots: readonly str
 export function trialTemporaryRootReport(root: string, { roots = trialTemporaryRoots(), exists = existsSync, volatile = volatileFilesystem,
   size = path => { try { const info = statfsSync(path); return Number(info.blocks) * Number(info.bsize); } catch { return null; } } }: {
   roots?: readonly string[]; exists?: (path: string) => boolean; volatile?: (path: string) => string | null; size?: (path: string) => number | null } = {}) {
-  const floor = diskFloorBytes({ run: (() => { try { return JSON.parse(readFileSync(join(stateDir(root), 'master.json'), 'utf8')).run ?? {}; } catch { return {}; } })() });
+  const floor = diskFloorBytes({ run: (() => { try { return JSON.parse(readFileSync(join(root, '.graphyard', 'master.json'), 'utf8')).run ?? {}; } catch { return {}; } })() });
   const chosen = trialTemporaryRoot('the trial session directory', roots, exists, volatile);
   const skipped = roots.filter(path => exists(path) && volatile(path)).map(path => `${path} is a ${volatile(path)}, so trials do not use it`);
   const bytes = exists(chosen) ? size(chosen) : null;
@@ -537,7 +536,7 @@ export function shardTestFiles(files: readonly string[], lanes: number, duration
   return shards.map(shard => shard.files).filter(shard => shard.length);
 }
 /** Where a passing trial saves its per-file durations (GY-3542): beside the install's other local state, never in a checkout. */
-export const refreshedDurationsPath = (root: string, path: string) => join(stateDir(root), basename(path));
+export const refreshedDurationsPath = (root: string, path: string) => join(root, '.graphyard', basename(path));
 const durationsIn = (text: string): Record<string, number> => { try { const files = (JSON.parse(text) as { files?: unknown } | null)?.files; return files && typeof files === 'object' ? files as Record<string, number> : {}; } catch { return {}; } };
 /** The timings a trial plans its shards from: the base commit's baseline when selectorApproved is false (GY-3635) or the merge's own baseline in its checkout when approved, under what passing trials on this install measured since; `{}` when neither exists. */
 const checkoutDurations = async (worktree: string, root: string, path?: string, options?: { baseTip?: string; selectorApproved?: boolean; run?: ChildRun }): Promise<Record<string, number>> => {
@@ -1739,7 +1738,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     for (const pool of [{ files: split.remoteable, lanes: trialShardLanes(cores) + remoteLanes, local: false }, { files: split.localOnly, lanes: trialShardLanes(cores), local: true }])
       for (const group of input.groupSize === undefined ? shardTestFiles(pool.files, pool.lanes, durations) : groupTestFiles(pool.files, input.groupSize)) { shards.push(group); pinned.push(pool.local); }
     const slots = await import('../master/verification-slots.js');
-    const slotsDirectory = setting(slots.slotsDirectoryVariable);
+    const slotsDirectory = process.env[slots.slotsDirectoryVariable];
     const { lanes, breadth } = trialShardBreadth(cores, shards.length, await trialAffordableFiles(input.memory));
     input.onTiming?.(`tests: ${lanes} lanes, breadth ${breadth}`, 0);
     const settledShards: ({ group: TrialGroup; entries: string[]; unattributed: TrialRunnerError | null; passed: string[]; records: string } | undefined)[] = [];
@@ -1760,7 +1759,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         try {
           if (remote) {
             // GY-3528: a shard placed on a host takes a slot on that host's share, never this machine's; a spent share tries another host until one frees.
-            const held = slotsDirectory ? await slots.takeHostSlot(slotsDirectory, remote, `${slots.testMergeLabel(input.key ?? input.mergeSha.slice(0, 12))} shard ${index + 1}`, setting(slots.projectVariable)) : null;
+            const held = slotsDirectory ? await slots.takeHostSlot(slotsDirectory, remote, `${slots.testMergeLabel(input.key ?? input.mergeSha.slice(0, 12))} shard ${index + 1}`, process.env[slots.projectVariable]) : null;
             if (slotsDirectory && !held) throw new HostBusyError(remote);
             const ended = await session!.run(remote, index, group, (list, records) => [check.argv[0]!, ...argv(list, records)], breadth).finally(() => held?.release());
             entries.push(`$ [${remote}] ${check.argv.join(' ')} (shard ${index + 1})\n${ended.out}`);

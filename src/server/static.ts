@@ -1,4 +1,3 @@
-import { setting } from '../setting.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
@@ -9,6 +8,7 @@ import { readEmblem } from '../model/emblem.js';
 import { save } from '../store.js';
 import { lockedWork } from '../store/locked-read.js';
 import type { Services } from './routes.js';
+import { setting } from '../setting.js';
 
 const plain = (res: ServerResponse, status: number, text: string) => { res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end(`${text}\n`); return Sent; };
 

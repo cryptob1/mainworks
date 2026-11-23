@@ -1,6 +1,5 @@
 // Concern: `graphyard watch`'s worker supervision — the systemd scope a session runs in, process-tree
 // signalling, lease renewal through control-plane restarts, the headless run log and surrender.
-import { setting } from './setting.js';
 import { execFileSync, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { appendFileSync, readdirSync, readFileSync } from 'node:fs';
@@ -9,6 +8,7 @@ import { maskSecrets } from './redaction.js';
 import { sessionScopeProperties } from './session-share.js';
 import { setTimeout as delay } from 'node:timers/promises';
 import { unknownWorkCode } from './model/refusal.js';
+import { setting } from './setting.js';
 
 interface Renewal { lease: { epoch: number; expiresAt: string } | null; updatedAt: string }
 

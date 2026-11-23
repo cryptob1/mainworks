@@ -1,5 +1,4 @@
 // Concern: the authenticated master session every `graphyard master` subcommand after init runs in.
-import { setting } from '../../setting.js';
 import { sessionName } from '../../session-name.js';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +7,7 @@ import { readCredentialFile } from '../../private-file.js';
 import { cliCommit } from '../../protocol-version.js';
 import { executorHostHeader } from '../../model/registry.js';
 import type { CliContext } from '../context.js';
+import { setting } from '../../setting.js';
 
 /** What a subcommand group returns when the id is not one of its own, so the next group is asked. */
 export const unhandled = Symbol('unhandled master subcommand');

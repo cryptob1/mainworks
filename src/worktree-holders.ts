@@ -1,4 +1,3 @@
-import { stateDir } from './mainworks-names.js';
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -100,7 +99,7 @@ function statusLines(path: string, ignored: boolean, trackedOnly = false) {
  * so it asks without `dirty`.
  */
 export function holderRefusals(root: string, holders: BranchHolder[], work: Pick<Work, 'key' | 'lease'>, now: number, options: { dirty: boolean }): string[] {
-  const sessions = resolve(stateDir(root), 'worktrees');
+  const sessions = resolve(root, '.graphyard/worktrees');
   const refusals: string[] = [];
   const live = (holder: BranchHolder) => !!work.lease && work.lease.epoch === holder.epoch && Date.parse(work.lease.expiresAt) > now;
   for (const holder of holders) {

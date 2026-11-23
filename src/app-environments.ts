@@ -3,7 +3,6 @@
 // built-in environment, today's serve or application preview in the trial; every other name is a
 // graphyard.json e2e.environments entry. The trusted loop alone runs a lifecycle command, from the
 // gate's pinned trusted base commit, with the install's secrets; candidate code never does.
-import { stateDir } from './mainworks-names.js';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
@@ -16,7 +15,7 @@ export type AppEnvironment = z.infer<typeof appEnvironmentSchema>;
 export const localEnvironment = 'local';
 /** The install's lifecycle secrets, mode 0600 under `~/.config/graphyard/<install>/`, handed only to lifecycle commands. */
 export const environmentSecretsFile = 'app-environments.env';
-export const environmentStatePath = (root: string) => join(stateDir(root), 'app-environments.json');
+export const environmentStatePath = (root: string) => join(root, '.graphyard', 'app-environments.json');
 
 /** An instance the loop provisioned and has not yet torn down: it counts against its environment's limit until `down` succeeds. */
 export interface EnvironmentInstance { environment: string; runId: string; instance: string; commit: string; url: string; loop: string; at: string }
@@ -100,7 +99,7 @@ export function environmentLifecycle(options: { stateFile: string; secretsFile: 
   };
   const at = () => new Date(now()).toISOString();
   const variables = (secrets: Record<string, string>, extra: Record<string, string>) =>
-    ({ PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: process.env.HOME ?? '/', LANG: 'C.UTF-8', ...secrets, ...extra, ...Object.fromEntries(Object.entries(extra).map(([name, value]) => [name.replace(/^GRAPHYARD_/, 'MAINWORKS_'), value])) });
+    ({ PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: process.env.HOME ?? '/', LANG: 'C.UTF-8', ...secrets, ...extra });
   const recordRun = (environment: string, run: EnvironmentRun) => update(state => { state.runs[environment] = run; });
 
   async function down(name: string, definition: AppEnvironment, cwd: string, secrets: Record<string, string>, instance: Pick<EnvironmentInstance, 'runId' | 'instance' | 'commit'>) {
@@ -195,7 +194,7 @@ export function trustedCheckout(git: (args: string[], env?: Record<string, strin
   return checkouts.get(key)!;
 }
 async function checkOut(git: (args: string[], env?: Record<string, string>) => Promise<string>, root: string, base: string): Promise<string> {
-  const parent = join(stateDir(root), 'app-environment-bases'), directory = join(parent, base);
+  const parent = join(root, '.graphyard', 'app-environment-bases'), directory = join(parent, base);
   if (existsSync(join(directory, '.graphyard-ready'))) return directory;
   await rm(parent, { recursive: true, force: true });
   await mkdir(directory, { recursive: true });

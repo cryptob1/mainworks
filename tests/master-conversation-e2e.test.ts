@@ -45,7 +45,7 @@ async function fixture() {
     return { selected: true, reason: 'fixture account', skipped: [], session, account, runtime, model: registry.models[0], revision: 1 };
   } };
   const panes = new Map<string, { env: NodeJS.ProcessEnv; child?: ChildProcessWithoutNullStreams; next?: () => Promise<void>; output: string; error: string }>();
-  const resultFile = (pane: string) => join(root, '.mainworks', `${pane}.result.json`);
+  const resultFile = (pane: string) => join(root, '.graphyard', `${pane}.result.json`);
   const run: ChildRun = async (_command, args) => {
     const json = (result: unknown) => JSON.stringify({ result });
     if (args[0] === 'tab' && args[1] === 'create') {

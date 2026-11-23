@@ -1,4 +1,3 @@
-import { setting } from '../../setting.js';
 import { defineScenario, recordCaseRun, scenarios, trackedCases } from '../../scenarios.js';
 import { runHistory } from '../../test-runs.js';
 import { caseDirectory } from '../../e2e/case.js';
@@ -7,6 +6,7 @@ import { gitRunnerFor } from '../../merge-writer/local-observation.js';
 import { defineRoutes, parseJson } from '../routes.js';
 import { gateRecordPath, readGateRecord } from '../../batch-gate.js';
 import { environmentRows } from '../../app-environments.js';
+import { setting } from '../../setting.js';
 
 /** The case ids with a file under e2e/cases/ on the base branch the checkout serves, or null with no checkout to read (GY-3278). */
 async function mainCases(engine: Engine): Promise<Set<string> | null> {

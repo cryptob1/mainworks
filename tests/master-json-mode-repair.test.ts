@@ -19,7 +19,7 @@ test('master.json at 0644 is repaired to 0600 by the loop config load and master
   execFileSync('git', ['init', '-q', root]); execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/owner/project.git'], { cwd: root });
   // An unreachable server: `master status` reports it rather than failing, so only the config read decides.
   await setupMaster(root, { url: 'http://127.0.0.1:9', token: 'coordinator-token-'.padEnd(40, 'x'), cliPath: join(source, 'bin/graphyard.mjs'), credentialDirectory: credentials, herdrWorkspace: 'wE' }, coordinator as typeof fetch);
-  const file = join(root, '.mainworks/master.json');
+  const file = join(root, '.graphyard/master.json');
 
   await chmod(file, 0o644);
   const logged: string[] = [], original = console.error;
@@ -35,7 +35,7 @@ test('master.json at 0644 is repaired to 0600 by the loop config load and master
   assert.equal(await mode(file), 0o600);
   assert.equal(status.stderr.split('\n').filter(line => line.includes('set it to 0600')).length, 1, status.stderr);
 
-  const target = join(root, '.mainworks/master.target.json');
+  const target = join(root, '.graphyard/master.target.json');
   await rename(file, target); await symlink(target, file);
   await assert.rejects(loadMasterConfig(root), /must be a regular file owned by this user/);
 });

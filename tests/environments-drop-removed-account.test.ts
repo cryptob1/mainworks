@@ -40,7 +40,7 @@ test('e2e:environments-drop-removed-account — environments --apply drops a rem
     await registryCommand({ hostId: 'host-1' }, ['account', 'remove', 'a', '--reason', 'retired'], api);
 
     const applied = await setupAgentEnvironments(root, { apply: true, verify: async () => ({}), registry: () => api.read('agent-registry/document') });
-    const config = JSON.parse(await readFile(join(root, '.mainworks/master.json'), 'utf8'));
+    const config = JSON.parse(await readFile(join(root, '.graphyard/master.json'), 'utf8'));
     assert.deepEqual(config.reviewers.map((profile: any) => [profile.name, profile.accounts]), [['review-pair', ['b']]], 'the first profile names only b; the second is gone');
     assert.deepEqual(applied.profiles.map(change => [change.profile, change.action, change.accounts, change.dropped]),
       [['review-pair', 'accounts', ['b'], ['a']], ['review-solo', 'removed', [], ['a']]], 'the apply output lists both changes');

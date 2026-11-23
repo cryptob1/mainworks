@@ -1,5 +1,3 @@
-import { stateDir } from '../mainworks-names.js';
-import { setting } from '../setting.js';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { loadMasterConfig, loadStoredMasterConfig, setupMaster } from '../master.js';
@@ -7,6 +5,7 @@ import { atomicPrivateWrite } from '../private-file.js';
 import { recordedMasterUrl } from '../master/config.js';
 import { initialFleetProposal } from './master-registry.js';
 import { readSecretFromStdin, type CliContext } from './context.js';
+import { setting } from '../setting.js';
 
 /**
  * `master init`: install the operating mode and, in the coordinator checkout, the loop's
@@ -27,7 +26,7 @@ export async function masterInit(context: CliContext, root: string) {
     if (!response.ok || !(await response.json()).principals?.some((person: any) => person.id === values.for && person.sessionKind === 'human')) throw new Error('--for must name a person principal (sessionKind: human)');
     // Register another dispatch scope on the existing loop, preserving its identities and supervisor.
     config.people = [...new Set([...(config.people ?? []), values.for])];
-    await atomicPrivateWrite(resolve(stateDir(root), 'master.json'), config);
+    await atomicPrivateWrite(resolve(root, '.graphyard/master.json'), config);
     return print({ person: values.for, people: config.people, loop: 'shared' });
   }
   const run = { ...(values.interval ? { intervalSeconds: Number(values.interval) } : {}), ...(values['proof-workflow'] ? { proofWorkflow: values['proof-workflow'] } : {}), ...(values['deployment-url'] ? { deploymentUrl: values['deployment-url'] } : {}), ...(values['deployment-sha-field'] ? { deploymentShaField: values['deployment-sha-field'] } : {}), ...(values['smoke-workflow'] ? { smokeWorkflow: values['smoke-workflow'] } : {}),

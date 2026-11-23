@@ -52,7 +52,7 @@ test('unit:tests/merge-writer-token.test.ts — exactly one of deployKeyFile, to
   const home = await temporaryDirectory('merge-token-home');
   assert.ok(mergeWriterSettings({}, 'owner-project', home).deployKeyFile, 'no token file: the deploy key');
   const tokenFile = defaultMergeTokenFile('owner-project', home);
-  mkdirSync(join(home, '.config', 'mainworks', 'owner-project'), { recursive: true });
+  mkdirSync(join(home, '.config', 'graphyard', 'owner-project'), { recursive: true });
   writeFileSync(tokenFile, TOKEN);
   assert.deepEqual(mergeWriterSettings({}, 'owner-project', home), { tokenFile, parallel: defaultMergeWriterParallel }, 'the install\'s stored token is the credential');
 });

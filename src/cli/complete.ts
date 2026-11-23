@@ -1,5 +1,3 @@
-import { stateDir } from '../mainworks-names.js';
-import { setting } from '../setting.js';
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -18,6 +16,7 @@ import { trialTimeoutMinutes } from '../master/merge-writer-settings.js';
 import { workerFastGates, workerFastGatesPresent } from '../master/worker-fast-gates.js';
 import { criterionProofs, e2eProofsOf, featureCaseFailure, proofTestFiles, requiredProofFailure, trialFailureReason } from '../merge-writer/executor.js';
 import { trialHomeVariables, trialTemporaryMode, trialTemporaryVariables } from '../merge-writer/trial.js';
+import { setting } from '../setting.js';
 
 /**
  * A submission is observed on GitHub before it is accepted, so while the control plane's GitHub
@@ -273,7 +272,7 @@ export function rerunFailingCases(output: string, files: readonly string[]): Rer
  */
 export async function rerunBaseFiles(root: string, base: string, files: readonly string[], run: ChildRun = defaultChildRun, deadline = Date.now() + rerunBound.ms): Promise<{ ok: boolean; output: string } | null> {
   let scratch: string;
-  try { await mkdir(join(stateDir(root), 'verify'), { recursive: true }); scratch = await mkdtemp(join(stateDir(root), 'verify', 'rerun-')); } catch { return null; }
+  try { await mkdir(join(root, '.graphyard', 'verify'), { recursive: true }); scratch = await mkdtemp(join(root, '.graphyard', 'verify', 'rerun-')); } catch { return null; }
   const tree = join(scratch, 'tree');
   try {
     await mkdir(tree);

@@ -1,5 +1,4 @@
 // Concern: workspace commands — sync with the base branch tip, and the supervised worker watch under lease.
-import { setting } from '../setting.js';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { readFile, realpath, writeFile } from 'node:fs/promises';
@@ -16,6 +15,7 @@ import { defineCommands, workMutation } from './registry.js';
 import { keepBlockedWork } from './lease.js';
 import { agentsRenderers, agentsTemplateSources, localGeneratedManifest, regenerateGenerated } from './workspace-generated.js';
 import { createWorktree, restoreBranchWork } from './workspace-worktree.js';
+import { setting } from '../setting.js';
 
 export { installUnderLease };
 
@@ -185,7 +185,7 @@ export const workspaceCommands = defineCommands([
       if (!workspace || workspace.host !== hostId || await realpath(process.cwd()) !== await realpath(workspace.path)) throw new Error('Run watch from the assigned workspace on its registered host');
       const workerStatus = await setupApi('status'); if (workerStatus.actor?.role !== 'worker') throw new Error('watch requires a worker credential; never pass operator or producer credentials to implementation processes');
       const watchToken = await context.individualToken();
-      // Under both names, so a MAINWORKS_* value this shell carried never shadows the worker's own.
+      // Under both names, so a MAINWORKS_* value this shell carried never shadows the worker's own (GY-3573).
       const own = { URL: base, TOKEN: watchToken, CLI: await context.activeCliPath(), HOST_ID: hostId };
       for (const [name, value] of Object.entries(own)) process.env[`GRAPHYARD_${name}`] = process.env[`MAINWORKS_${name}`] = value;
       // `complete` ends the lease, so the renewal after a submission is refused by design: say

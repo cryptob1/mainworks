@@ -26,7 +26,7 @@ const at = '2026-09-25T18:00:00.000Z';
 const clock = Date.parse(at);
 const pane = 'w1V:pGY';
 /** The launch command as the pane echoes it while the shell is typing or running it. */
-const command = 'GY=/home/vish/code/project/.mainworks/launch/eng-oc; opencode --prompt "$(cat "$GY.request")"';
+const command = 'GY=/home/vish/code/project/.graphyard/launch/eng-oc; opencode --prompt "$(cat "$GY.request")"';
 const echoLine = `vish@host ~/code/project ❯ ${command}`;
 
 /** A Herdr pane whose answer at each moment comes from a timeline, on a virtual clock. */
@@ -128,7 +128,7 @@ async function installed() {
   const credential = join(credentials, 'worker.token');
   await writeFile(credential, 'worker-token-'.padEnd(40, 'x'), { mode: 0o600 });
   const config = await loadMasterConfig(root);
-  await atomicPrivateWrite(join(root, '.mainworks/master.json'), { ...config,
+  await atomicPrivateWrite(join(root, '.graphyard/master.json'), { ...config,
     environments: [{ name: 'opencode-a', kind: 'opencode', home: opencodeHome }, { name: 'claude-b', kind: 'claude', home: claudeHome }] });
   const master = await loadMasterConfig(root);
   const profile: WorkerProfile = { name: 'opencode-primary', principal: 'graphyard-worker-1', agentName: 'eng-fallback', mode: 'launch', kind: 'opencode', credentialFile: credential, agentArgs: [], approvals: 'auto', environment: {}, accounts: ['opencode-a', 'claude-b'] };

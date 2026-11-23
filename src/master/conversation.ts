@@ -1,5 +1,4 @@
 // Native master conversations and their full, read-only handoff records. No summaries.
-import { stateDir } from '../mainworks-names.js';
 import { randomUUID } from 'node:crypto';
 import { appendFile, chmod, copyFile, mkdir, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
 import { constants, createReadStream } from 'node:fs';
@@ -20,8 +19,8 @@ export const conversationSchema = z.object({
 export type Conversation = z.infer<typeof conversationSchema>;
 export const continuitySchema = z.object({ current: conversationSchema, predecessor: conversationSchema.nullable() }).strict();
 export type Continuity = z.infer<typeof continuitySchema>;
-export const masterRecords = (root: string) => resolve(stateDir(root), 'master-records');
-export const masterInputs = (root: string, launch: string) => resolve(stateDir(root), 'launch', `${launch}.inputs.jsonl`);
+export const masterRecords = (root: string) => resolve(root, '.graphyard/master-records');
+export const masterInputs = (root: string, launch: string) => resolve(root, '.graphyard/launch', `${launch}.inputs.jsonl`);
 
 /** Supported native formats, rather than silently launching a master that cannot continue. */
 export function assertConversationRuntime(kind: string): asserts kind is 'claude' | 'codex' {

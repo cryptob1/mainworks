@@ -59,7 +59,7 @@ export async function fleet(reviewer: Record<string, unknown>, automatic: string
   await saveReviewerProfile(root, { agentArgs: ['--setting-sources', 'user'], ...reviewer });
   await saveReviewerProfile(root, { name: 'spare-reviewer', agentName: 'review-spare', kind: 'claude' });
   if (automatic) {
-    const file = join(root, '.mainworks/master.json');
+    const file = join(root, '.graphyard/master.json');
     const current = JSON.parse(await readFile(file, 'utf8'));
     current.run.reviewerProfile = automatic;
     await writeFile(file, JSON.stringify(current, null, 2), { mode: 0o600 });

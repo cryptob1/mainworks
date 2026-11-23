@@ -1,6 +1,5 @@
 import { delegationLimitDrift, delegationLimitVariables, delegationLimits, validateDelegationPrincipals, type DelegationLimitDrift, type DelegationLimits } from '../delegation.js';
 import type { Principal } from '../model.js';
-import { setting } from '../setting.js';
 
 /** The limits in force, the deployed variables, and every way they fail to cover the roster. */
 export interface DelegationLimitReport { limits: DelegationLimits; deployed: Record<string, string | null>; drift: DelegationLimitDrift[]; attention: string[] }
@@ -15,5 +14,5 @@ export function assembleDelegationLimits(credentials: (Principal & { token?: str
   const limits = delegationLimits(env, credentials);
   const roster = validateDelegationPrincipals(credentials, limits, known);
   const drift = delegationLimitDrift(credentials, env);
-  return { limits, deployed: Object.fromEntries(delegationLimitVariables.map(name => [name, setting(name, env) ?? null])), drift, attention: [...roster.attention, ...drift.map(entry => entry.reason)] };
+  return { limits, deployed: Object.fromEntries(delegationLimitVariables.map(name => [name, env[name] ?? null])), drift, attention: [...roster.attention, ...drift.map(entry => entry.reason)] };
 }

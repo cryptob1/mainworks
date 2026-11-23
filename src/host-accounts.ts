@@ -1,11 +1,11 @@
 // Host-level account state shared by every install using the same login home: locked live
 // session records for concurrency, and the latest real request with its next check time.
-import { setting } from './setting.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { closeSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { ChildProcessError, runChild } from './child-runner.js';
+import { setting } from './setting.js';
 
 /** Where the host's account records live; `GRAPHYARD_HOST_ACCOUNTS` moves it (the test runner isolates it from the real home). */
 export const hostAccountsVariable = 'GRAPHYARD_HOST_ACCOUNTS';

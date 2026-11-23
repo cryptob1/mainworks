@@ -1,4 +1,3 @@
-import { setting } from '../setting.js';
 import { once } from 'node:events';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -14,6 +13,7 @@ import { generatedFilesVariable } from '../install/generated-files.js';
 import { pruneReceipts, receiptPruneIntervalMs } from '../store/receipts.js';
 import { compactLedger, configuredLedgerRetentionMs, ledgerCompactionIntervalMs } from '../store/compaction.js';
 import { processControlPlaneJob } from './control-plane-observation.js';
+import { setting } from '../setting.js';
 
 /** Overrides for tests that start the process entry in-process; the deployment reads PORT and HOST. */
 export interface MainOptions { port?: number; host?: string }

@@ -250,10 +250,10 @@ test('unit:restart-leaves-runs a confined run keeps its scope and its shell outs
   // Every production headless run is confined (GY-888). The confinement masks the user bus and
   // systemd runtime directory, so a systemd-run inside it could never start a scope; and it binds
   // the coordinator checkout read-only, so a shell inside it could not write the run's output and
-  // exit to `.mainworks/runs/`. Only Pi is confined, inside the run's shell.
+  // exit to `.graphyard/runs/`. Only Pi is confined, inside the run's shell.
   const base = await temporaryDirectory('headless-scope');
   try {
-    const root = join(base, 'coordinator'), cwd = join(root, '.mainworks', 'worktrees', 'GY-1-1'), runs = runsDirectory(root);
+    const root = join(base, 'coordinator'), cwd = join(root, '.graphyard', 'worktrees', 'GY-1-1'), runs = runsDirectory(root);
     await mkdir(cwd, { recursive: true });
     const spawned: { command: string; args: readonly string[] }[] = [];
     const runner = piRunner({ command: 'pi', containment: 'systemd', spawn: capturingSpawn(spawned), confine: runConfinement({ coordinatorRoot: root, bwrap: 'bwrap' }), pollMs: 20 });
@@ -270,7 +270,7 @@ test('unit:restart-leaves-runs a confined run keeps its scope and its shell outs
     const script = args[separator + 3];
     assert.match(script, /'bwrap' '--unshare-pid' .*'--ro-bind' '[^']*coordinator' .*'--' '\/usr\/bin\/python3' '-I' '-S' '-c' .*'--' "\$0" "\$@"/s, 'the mount and socket confinement wrap Pi alone, the coordinator read-only');
     assert.ok(script.includes(`'${cwd}'`), 'the run\'s own checkout is re-exposed');
-    assert.match(script, /"\$@" <\/dev\/null >'[^']*\.mainworks\/runs\/[^']*\/stdout\.jsonl'/, 'the shell, outside the confinement, writes the output under the coordinator checkout');
+    assert.match(script, /"\$@" <\/dev\/null >'[^']*\.graphyard\/runs\/[^']*\/stdout\.jsonl'/, 'the shell, outside the confinement, writes the output under the coordinator checkout');
     // A run without its own scope is its shell, with the same confinement inside it.
     spawned.length = 0;
     const plain = piRunner({ command: 'pi', containment: 'setsid', spawn: capturingSpawn(spawned), confine: runConfinement({ coordinatorRoot: root, bwrap: 'bwrap' }), pollMs: 20 })
@@ -293,7 +293,7 @@ test('unit:headless-run-survives-restart a confined run whose directory lies und
   const { root, cleanup } = await fixture();
   try {
     // The loop's real layout: the coordinator checkout, a managed worktree and the run registry inside it.
-    const cwd = join(root, '.mainworks', 'worktrees', 'GY-1-1'), release = join(root, 'release');
+    const cwd = join(root, '.graphyard', 'worktrees', 'GY-1-1'), release = join(root, 'release');
     await mkdir(cwd, { recursive: true });
     const verdict = evidence('run-c');
     await writeFile(join(root, 'scenario-c.json'), JSON.stringify({ release, verdict }));
@@ -344,7 +344,7 @@ test('unit:restart-leaves-runs a scratch run writes under the loop\'s checkout, 
     // Its output lies under the checkout it reads, which an over-quota /tmp does not reach.
     const spawned: { command: string; args: readonly string[]; detached?: boolean }[] = [];
     const run = piRunner({ command: 'pi', spawn: capturingSpawn(spawned), pollMs: 20, exitGraceMs: 1_000 }).start('Triage it', { tool: graphyardTools.evidence, validate: value => value, timeoutMs: 60_000, cwd: root });
-    assert.match(spawned[0].args[1], new RegExp(`>'${join(root, '.mainworks', 'scratch-runs')}/[^']+/stdout\\.jsonl'`));
+    assert.match(spawned[0].args[1], new RegExp(`>'${join(root, '.graphyard', 'scratch-runs')}/[^']+/stdout\\.jsonl'`));
     // Its bound holds without a watcher: coreutils' timeout past the watcher's own bound.
     // Nothing in it ignores TERM around its wait (GY-1432): only the instant it signals its own group.
     assert.ok(spawned[0].args[1].includes(`sleep ${61 + scratchBoundMarginSeconds} & nap=$!; wait "$nap"; trap '' TERM; kill -TERM -$$; trap 'exit 0' TERM; for grace in 1 2 3 4 5; do kill -0 $$ 2>/dev/null || exit 0; sleep 1; done; kill -KILL -$$ ) & watchdog=$!; `), spawned[0].args[1]);

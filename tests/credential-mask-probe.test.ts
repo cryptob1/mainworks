@@ -25,7 +25,7 @@ function fixture(base: string) {
   git('init', '-q', '-b', 'main');
   git('commit', '-q', '--allow-empty', '-m', 'base');
   git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
-  const worktree = join(root, '.mainworks', 'worktrees', 'GY-1-1');
+  const worktree = join(root, '.graphyard', 'worktrees', 'GY-1-1');
   mkdirSync(dirname(worktree), { recursive: true });
   git('worktree', 'add', '-q', '-b', 'graphyard/gy-1-1', worktree);
   prepareConfinedGitPaths(root);
@@ -55,7 +55,7 @@ test('unit:tests/credential-mask-probe.test.ts — a sandbox that can still read
     const session = { coordinatorRoot: f.root, sessionDirectory: f.worktree, credentialMask: mask };
 
     // The words: a masked directory becomes an empty unreadable one, a masked file an unreadable empty file.
-    const words = readOnlyMountWrapper({ ...session, bwrap: 'bwrap', secretsBus: null }), blank = join(f.worktree, '.mainworks', 'masked');
+    const words = readOnlyMountWrapper({ ...session, bwrap: 'bwrap', secretsBus: null }), blank = join(f.worktree, '.graphyard', 'masked');
     const after = (flag: string, path: string) => words.some((word, index) => word === path && words[index - 1] === flag);
     assert.ok(words.some((word, index) => word === join(f.home, '.ssh') && words[index - 1] === '--tmpfs' && words[index - 2] === '0111' && words[index - 3] === '--perms'), 'the SSH directory is an unreadable empty directory');
     assert.ok(after('--tmpfs', otherAccount) && !after('--tmpfs', ownAccount), 'another account\'s home is masked, the session\'s own is not');
@@ -108,7 +108,7 @@ test('unit:tests/credential-mask-probe.test.ts — a worker dispatch whose sandb
     const profile = { name: 'worker', principal: 'worker', agentName: 'worker', mode: 'launch' as const, kind: 'claude' as const, credentialFile, agentArgs: [], approvals: 'auto' as const, environment: {} };
     config.workers = [profile];
     config.confinement = { maskPaths: [leaked] };
-    writeFileSync(join(f.root, '.mainworks/master.json'), JSON.stringify(config));
+    writeFileSync(join(f.root, '.graphyard/master.json'), JSON.stringify(config));
     const now = new Date().toISOString();
     await cycleBaseTip(f.root, config.baseBranch, now, async () => f.git('rev-parse', 'HEAD'));
     const item = { id: 'work-1', key: 'GY-1', title: 'Bootstrap', type: 'bug', description: '', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'Specified work', proofs: ['e2e:fixture'] }],

@@ -1,5 +1,4 @@
 // Concern: GY-3335 — the loop's own submission of a finished head a blocked worker named.
-import { setting } from '../../setting.js';
 import { readReceipt } from '../../store/mutations.js';
 import { demand, type Work } from '../../model.js';
 import { allocateChangeNumber } from '../../merge-writer/change-numbers.js';
@@ -9,6 +8,7 @@ import { observeBaseHold } from '../../model/behind-base.js';
 import { workIdByRef } from '../../store/locked-read.js';
 import { beginAttempt, recordSubmission } from '../../pipeline-speed.js';
 import type { Ctx, Prepare } from './types.js';
+import { setting } from '../../setting.js';
 
 /**
  * GY-3335: the loop resubmits, as the item's next attempt, the finished head a worker named in a

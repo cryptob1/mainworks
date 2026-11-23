@@ -1,4 +1,3 @@
-import { setting } from '../setting.js';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync } from 'node:fs';
@@ -7,6 +6,7 @@ import { hostMemoryVariable } from '../master/host-memory.js';
 import { homedir } from 'node:os';
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { setting } from '../setting.js';
 
 /**
  * What a clean test run needs from the host, done by the tooling rather than remembered by the

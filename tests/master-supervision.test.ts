@@ -192,7 +192,7 @@ test('unit:unsupervised-host-stated — a host that can have no supervisor is to
     assert.equal(attention.next, observed.instruction);
 
     // And setup still completes: the configuration it wrote is the whole point of running it.
-    assert.match(await readFile(join(root, '.mainworks/master.json'), 'utf8'), /"repository": "owner\/project"/);
+    assert.match(await readFile(join(root, '.graphyard/master.json'), 'utf8'), /"repository": "owner\/project"/);
   } finally { await rm(root, { recursive: true, force: true }); await rm(credentialDirectory, { recursive: true, force: true }); }
 });
 
@@ -304,7 +304,7 @@ test('integration:supervisor-install-explicit-only — the unit is written only 
     assert.equal(refusedByName.attention.length, 1);
     assert.ok(refusedByName.attention[0].includes(refusedByName.supervisor!.refused!) && refusedByName.attention[0].includes(refusedByName.supervisor!.instruction!), refusedByName.attention[0]);
     assert.ok(refusedByName.next.startsWith(`${refusedByName.attention[0]}.`), `next states the refusal first: ${refusedByName.next}`);
-    assert.match(await readFile(join(root, '.mainworks/master.json'), 'utf8'), /"repository": "owner\/project"/, 'the configuration was still written');
+    assert.match(await readFile(join(root, '.graphyard/master.json'), 'utf8'), /"repository": "owner\/project"/, 'the configuration was still written');
 
     // 3. The installer's own refusals, against a host that declares its own temporary directory so
     //    the rest of this scratch space counts as durable for it.
@@ -312,7 +312,7 @@ test('integration:supervisor-install-explicit-only — the unit is written only 
     const coordinator = join(scratch, 'coordinator');
     const unit = (checkout: string, cliPath = launcher, intervalSeconds = 20) => ({ root: checkout, cliPath, repository: 'owner/project', intervalSeconds });
     const stub = (states: Parameters<typeof hostStub>[0] = {}) => { const host = hostStub(states); return { calls: host.calls, host: { ...host.host, home, temporaryDirectories: [volatile] } }; };
-    const configured = async (checkout: string) => { await mkdir(join(checkout, '.mainworks'), { recursive: true }); await writeFile(join(checkout, '.mainworks/master.json'), '{}\n'); return checkout; };
+    const configured = async (checkout: string) => { await mkdir(join(checkout, '.graphyard'), { recursive: true }); await writeFile(join(checkout, '.graphyard/master.json'), '{}\n'); return checkout; };
     const refusal = async (input: ReturnType<typeof unit>, expected: RegExp, options?: { replace?: boolean }) => {
       const host = stub();
       const result = await installLoopSupervisor(input, host.host, options);
@@ -324,7 +324,7 @@ test('integration:supervisor-install-explicit-only — the unit is written only 
     };
     await refusal(unit(await configured(join(volatile, 'checkout'))), /under the temporary directory/);
     await refusal(unit(join(scratch, 'unconfigured')), /not the configured coordinator checkout/);
-    await refusal(unit(await configured(join(scratch, 'durable', '.mainworks', 'worktrees', 'GY-1-1'))), /assignment worktree or session checkout/);
+    await refusal(unit(await configured(join(scratch, 'durable', '.graphyard', 'worktrees', 'GY-1-1'))), /assignment worktree or session checkout/);
     await refusal(unit('relative/checkout'), /absolute path/);
     assert.equal(await fileState(join(home, '.config/systemd/user', loopUnit)), null, 'none of them wrote the unit');
 
@@ -438,8 +438,8 @@ test('unit:alignment-installs-missing-deploy-unit — the loop\'s alignment writ
   const home = await temporaryDirectory('supervision-home');
   const root = join(home, 'coordinator');
   try {
-    await mkdir(join(root, '.mainworks'), { recursive: true });
-    await writeFile(join(root, '.mainworks/master.json'), '{}\n');
+    await mkdir(join(root, '.graphyard'), { recursive: true });
+    await writeFile(join(root, '.graphyard/master.json'), '{}\n');
     const input = { root, cliPath: launcher, repository: 'owner/project', intervalSeconds: 20 };
     const stub = () => { const host = hostStub(); return { calls: host.calls, host: { ...host.host, home } }; };
     // An install from before GY-2877: the loop unit as the running configuration wants it, no deploy unit.

@@ -1,4 +1,3 @@
-import { setting } from '../setting.js';
 import { appendEvidence } from '../model-boundary/append-evidence.js';
 import { recordDispatch } from '../engine/evaluate.js';
 import { once, receipt } from '../store/mutations.js';
@@ -12,6 +11,7 @@ import { save } from '../store.js';
 import type { Services } from './routes.js';
 import { decisionWork } from '../store/decision-read.js';
 import { gitRunnerFor } from '../merge-writer/local-observation.js';
+import { setting } from '../setting.js';
 
 /**
  * Judging a closed-question proof (GY-109). The control plane binds the state the declaration

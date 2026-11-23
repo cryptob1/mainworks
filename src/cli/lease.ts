@@ -1,4 +1,3 @@
-import { setting } from '../setting.js';
 import { readFile } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -6,6 +5,7 @@ import { defineCommands, workMutation } from './registry.js';
 import { verifyCommand } from './verify.js';
 import { checkCommand } from './check.js';
 import { completeCommand } from './complete.js';
+import { setting } from '../setting.js';
 
 /**
  * Keeps what a blocked attempt had not committed (GY-1008), run from its own worktree: when the

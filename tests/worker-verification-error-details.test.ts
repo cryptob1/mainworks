@@ -82,7 +82,7 @@ test('e2e:worker-verification-error-details — forced runner failure surfaces e
   await writeFile(join(checkout, 'README.md'), '# Fixture\n'); git(checkout, 'add', 'README.md'); git(checkout, 'commit', '-q', '-m', 'base');
   git(checkout, 'push', '-q', 'origin', 'HEAD:main'); git(checkout, 'fetch', '-q', 'origin');
   git(checkout, 'worktree', 'add', '-q', '-b', 'graphyard/gy-1-1', worktree);
-  await writeFile(join(checkout, '.git', 'info', 'exclude'), '.graphyard/\n.mainworks/\n');
+  await writeFile(join(checkout, '.git', 'info', 'exclude'), '.graphyard/\n');
   await mkdir(join(worktree, 'src'), { recursive: true });
   await writeFile(join(worktree, 'src', 'feature.ts'), 'export const fixed = true;\n'); git(worktree, 'add', 'src/feature.ts'); git(worktree, 'commit', '-q', '-m', 'change');
   const head = git(worktree, 'rev-parse', 'HEAD');
