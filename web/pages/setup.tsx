@@ -45,7 +45,7 @@ function ItemAction({ item, onConnect }: { item: SetupItem; onConnect: () => voi
  */
 function OnboardingStep({ wait }: { wait: OnboardingWait }) {
   return <li data-setup-item="onboarding" data-done={wait.merged ? 'yes' : 'no'} data-waiting-for={wait.waitingFor.join(' ')} aria-current={wait.merged ? undefined : 'step'}>
-    <strong>{wait.merged ? '✓ ' : '○ '}Onboarding change</strong> <span className={wait.merged ? 'green' : 'amber'}>{wait.merged ? 'Done' : wait.closed ? 'Needs you' : 'In progress'}</span>
+    <strong>{wait.merged ? '✓ ' : '○ '}Onboarding change</strong>
     <p>{wait.line}</p>
   </li>;
 }
@@ -53,7 +53,7 @@ function OnboardingStep({ wait }: { wait: OnboardingWait }) {
 export function SetupChecklist({ items, onConnect, onboarding }: { items: SetupItem[]; onConnect: () => void; onboarding?: OnboardingWait | null }) {
   return <ol className="setup-checklist" aria-label="First-run checklist">
     {items.map(item => <li key={item.id} data-setup-item={item.id} data-done={item.done ? 'yes' : 'no'}>
-      <strong>{item.done ? '✓ ' : '○ '}{item.title}</strong> <span className={item.done ? 'green' : 'amber'}>{item.done ? 'Done' : item.human ? 'Needs you' : 'In progress'}</span>
+      <strong>{item.done ? '✓ ' : '○ '}{item.title}</strong>
       <p>{item.line}</p>
       <ItemAction item={item} onConnect={onConnect}/>
     </li>)}
