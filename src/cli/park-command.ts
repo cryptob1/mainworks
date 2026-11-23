@@ -64,7 +64,7 @@ const askFlags: readonly string[] = ['--ask', '--step', '--why', '--recommend'];
  * and `--`. `--ask`, `--why`, `--recommend` and each `--step` take the next word as their text; each
  * choice flag takes the next word as its label, and the choices become buttons in that order.
  */
-export function parkArgs(words: readonly string[]) {
+function parkArgs(words: readonly string[]) {
   const needed: string[] = [], choices: HumanChoice[] = [], steps: string[] = [];
   let ask: string | undefined, why: string | undefined, recommendation: string | undefined;
   for (let index = 0; index < words.length; index++) {

@@ -23,7 +23,7 @@ export function parseFailedTests(log: string): string[] {
 }
 
 /** One candidate a base failure blocks: its item, the head the check failed on, and the failed job. */
-export interface BlockedCandidate { key: string; id: string; sha: string; jobId: number | null; url: string | null }
+interface BlockedCandidate { key: string; id: string; sha: string; jobId: number | null; url: string | null }
 /** A standing base failure, one per failing test and base head: what the loop raised and what it did once the base passed. */
 export interface BaseFailure {
   test: string; check: string; baseSha: string; jobId: number | null; url: string | null; raisedAt: string;
@@ -33,8 +33,8 @@ export interface BaseFailure {
   /** When the base head's run of the check passed again, and on which commit. */
   cleared: { at: string; baseSha: string; jobId: number | null } | null;
 }
-export const short = (sha: string) => sha.slice(0, 12);
-export const runOf = (failure: Pick<BaseFailure, 'jobId' | 'url'>) => failure.url ?? (failure.jobId !== null ? `job ${failure.jobId}` : 'an unnamed run');
+const short = (sha: string) => sha.slice(0, 12);
+const runOf = (failure: Pick<BaseFailure, 'jobId' | 'url'>) => failure.url ?? (failure.jobId !== null ? `job ${failure.jobId}` : 'an unnamed run');
 
 /**
  * The P0 item a base failure files, as the master's operator-agent identity: the test, the base

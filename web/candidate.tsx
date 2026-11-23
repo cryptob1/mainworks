@@ -31,14 +31,14 @@ export function CandidatePr({ repository, candidate, workKey, observation }: { r
     : <span>PR #{pr}</span>;
 }
 
-export { shaChars, shortShas };
+export {  shortShas };
 /**
  * A commit SHA as the dashboard shows it: its first eight characters are the text itself (GY-168:
  * never the whole SHA clipped by the stylesheet), and the whole SHA is its title and, where there
  * is a repository, the commit link — so hovering or following it gives the exact commit. Anything
  * that is not a commit SHA is shown as it is.
  */
-export function ShortSha({ sha }: { sha: string }) {
+function ShortSha({ sha }: { sha: string }) {
   if (!/^[0-9a-f]{9,64}$/i.test(sha)) return <code>{sha}</code>;
   return <code className="sha" title={sha}>{sha.slice(0, shaChars)}</code>;
 }

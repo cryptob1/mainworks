@@ -17,7 +17,7 @@ const plain = (res: ServerResponse, status: number, text: string) => { res.write
  * name routed to this same server, such as `https://previews.example.com`. Null when unset or not an
  * http(s) origin.
  */
-export function previewOrigin(environment: NodeJS.ProcessEnv = process.env): URL | null {
+function previewOrigin(environment: NodeJS.ProcessEnv = process.env): URL | null {
   const value = setting('PREVIEW_ORIGIN', environment)?.trim();
   if (!value) return null;
   try { const origin = new URL(value); return /^https?:$/.test(origin.protocol) && origin.pathname === '/' && !origin.search ? origin : null; } catch { return null; }

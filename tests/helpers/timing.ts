@@ -8,17 +8,17 @@ import { appendFileSync } from 'node:fs';
 // failure with its measurement against its budget, never as an unqualified red check.
 
 /** Where a run appends one JSON line per timing assertion; unset, nothing is written. */
-export const timingRecordVariable = 'GRAPHYARD_TIMING_RECORD';
+const timingRecordVariable = 'GRAPHYARD_TIMING_RECORD';
 
 /** The 1-based nearest-rank position of the `fraction` percentile among `count` sorted samples. */
-export function percentileRank(count: number, fraction: number) {
+function percentileRank(count: number, fraction: number) {
   assert.ok(Number.isInteger(count) && count > 0, 'a percentile needs at least one sample');
   assert.ok(fraction > 0 && fraction <= 1, 'a percentile fraction lies in (0, 1]');
   return Math.ceil(count * fraction);
 }
 
 /** How many observations sit above the reported percentile: the outliers it takes to move it. */
-export const observationsAbove = (count: number, fraction: number) => count - percentileRank(count, fraction);
+const observationsAbove = (count: number, fraction: number) => count - percentileRank(count, fraction);
 
 /**
  * The smallest sample count at which `above` observations sit above the `fraction` percentile.
@@ -32,7 +32,7 @@ export function minimumSamples(fraction: number, above: number) {
 }
 
 /** The nearest-rank percentile: the order statistic at `percentileRank`, never an interpolation. */
-export function percentile(samples: readonly number[], fraction: number) {
+function percentile(samples: readonly number[], fraction: number) {
   return [...samples].sort((a, b) => a - b)[percentileRank(samples.length, fraction) - 1];
 }
 
@@ -73,14 +73,14 @@ export interface TimingMeasurement {
 }
 
 /** Marks a failure as a timing-dependent assertion, in the message and for `instanceof`. */
-export const timingFailureMarker = '[timing-dependent]';
-export class TimingAssertionError extends assert.AssertionError {
+const timingFailureMarker = '[timing-dependent]';
+class TimingAssertionError extends assert.AssertionError {
   constructor(readonly measurement: TimingMeasurement) {
     super({ message: describeTiming(measurement), actual: measurement.measuredMs, expected: measurement.budgetMs, operator: measurement.comparison });
   }
 }
 
-export function describeTiming(m: Pick<TimingMeasurement, 'name' | 'statistic' | 'measuredMs' | 'budgetMs' | 'comparison' | 'samples' | 'warmupDiscarded' | 'passed'>) {
+function describeTiming(m: Pick<TimingMeasurement, 'name' | 'statistic' | 'measuredMs' | 'budgetMs' | 'comparison' | 'samples' | 'warmupDiscarded' | 'passed'>) {
   const over = m.passed ? 'within' : 'over';
   return `${timingFailureMarker} ${m.name}: ${m.statistic} measured ${Math.round(m.measuredMs)}ms, ${over} its budget of ${m.comparison} ${m.budgetMs}ms (${m.samples} sample${m.samples === 1 ? '' : 's'}, ${m.warmupDiscarded} warmup discarded)`;
 }
@@ -101,7 +101,7 @@ export function measureTiming(input: { name: string; test: string; statistic: st
 }
 
 /** Append the measurement to the run's timing record, when the run keeps one. */
-export function recordTiming(measurement: TimingMeasurement, file = process.env[timingRecordVariable]) {
+function recordTiming(measurement: TimingMeasurement, file = process.env[timingRecordVariable]) {
   // One short line per append: concurrent test processes interleave whole lines, never bytes.
   if (file) appendFileSync(file, `${JSON.stringify(measurement)}\n`);
   return measurement;
@@ -121,8 +121,6 @@ export function assertTiming(input: Parameters<typeof measureTiming>[0], file?: 
   if (!measurement.passed && !tolerated) throw new TimingAssertionError(measurement);
   return measurement;
 }
-/** Whether a recorded measurement failed its assertion: over budget and not let through by the slack. */
-export const failedTiming = (m: Pick<TimingMeasurement, 'passed' | 'toleratedBySlack'>) => !m.passed && m.toleratedBySlack === undefined;
 
 /**
  * How far a shared CI runner may run past a timing budget before the assertion fails:
@@ -130,17 +128,12 @@ export const failedTiming = (m: Pick<TimingMeasurement, 'passed' | 'toleratedByS
  * budget). On 2026-10-01 a 100-item cycle measured 20 072 ms against a 20 000 ms budget on a
  * loaded runner and failed main's CI, and such misses ejected good candidates from the merge queue.
  */
-export const timingSlackVariable = 'GRAPHYARD_TIMING_SLACK';
-export function timingSlack(env: Record<string, string | undefined> = process.env) {
+const timingSlackVariable = 'GRAPHYARD_TIMING_SLACK';
+function timingSlack(env: Record<string, string | undefined> = process.env) {
   const value = Number(env[timingSlackVariable]);
   return Number.isFinite(value) && value >= 1 ? value : 1;
 }
 /** Whether an over-budget upper-bound measurement still sits inside the run's slack. */
-export function withinSlack(m: Pick<TimingMeasurement, 'measuredMs' | 'budgetMs' | 'comparison'>, slack = timingSlack()) {
+function withinSlack(m: Pick<TimingMeasurement, 'measuredMs' | 'budgetMs' | 'comparison'>, slack = timingSlack()) {
   return m.comparison === '<=' && m.measuredMs <= m.budgetMs * slack;
-}
-
-/** Read a timing record back; a missing file is a run that made no timing assertion. */
-export function parseTimingRecord(text: string): TimingMeasurement[] {
-  return text.split('\n').filter(line => line.trim()).map(line => JSON.parse(line) as TimingMeasurement);
 }

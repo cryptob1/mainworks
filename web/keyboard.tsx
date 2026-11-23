@@ -11,7 +11,7 @@ import { useTheme, toggleTheme } from './theme';
  */
 
 /** The one list the sheet shows and the palette's Go commands name. */
-export const shortcuts: [keys: string, does: string][] = [
+const shortcuts: [keys: string, does: string][] = [
   ['⌘/Ctrl K', 'Command palette'],
   ['j / k', 'Move through the Work rows'],
   ['Enter', 'Open the row under the cursor'],
@@ -45,7 +45,7 @@ function Choice({ command, chosen, onChoose }: { command: Command; chosen: boole
   </li>;
 }
 
-export function CommandPalette({ dashboard, onClose }: { dashboard: Dashboard; onClose(): void }) {
+function CommandPalette({ dashboard, onClose }: { dashboard: Dashboard; onClose(): void }) {
   const [query, setQuery] = useState('');
   const [chosen, setChosen] = useState(0);
   const theme = useTheme();
@@ -69,7 +69,7 @@ export function CommandPalette({ dashboard, onClose }: { dashboard: Dashboard; o
 }
 
 /** The ? sheet: every shortcut on one small dialog. */
-export function ShortcutSheet({ onClose }: { onClose(): void }) {
+function ShortcutSheet({ onClose }: { onClose(): void }) {
   return <Dialog onClose={onClose}><section className="modal shortcuts" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
     <button className="close" aria-label="Close shortcuts" onClick={onClose}>×</button>
     <h2>Keyboard shortcuts</h2>

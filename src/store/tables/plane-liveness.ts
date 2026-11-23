@@ -11,7 +11,7 @@ import { defineTable } from '../tables.js';
  * ordinary pass overwrites the row and appends nothing. A cache, like executor presence: a lost
  * row only delays stall detection by one gap.
  */
-export const planeLiveness = defineTable({
+const planeLiveness = defineTable({
   name: 'plane_liveness', orderBy: 'id', cache: true,
   ddl: `CREATE TABLE IF NOT EXISTS plane_liveness (
   id boolean PRIMARY KEY DEFAULT true CHECK (id), tick_at timestamptz NOT NULL

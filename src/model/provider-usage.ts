@@ -10,7 +10,7 @@
 export const supportedProviderPlans = ['claude', 'codex', 'zai', 'cursor', 'muse', 'antigravity'] as const;
 export type ProviderPlanKind = typeof supportedProviderPlans[number];
 
-export const providerPlanLabels: Record<ProviderPlanKind, string> = {
+const providerPlanLabels: Record<ProviderPlanKind, string> = {
   claude: 'Claude',
   codex: 'Codex',
   zai: 'Z.AI',
@@ -42,14 +42,14 @@ export interface ProviderUsageAdapter {
   getUsage(response?: unknown): ProviderUsageResult;
 }
 
-export const windowName = (minutes: number): string =>
+const windowName = (minutes: number): string =>
   minutes >= 1440 && minutes % 1440 === 0
     ? `${minutes / 1440}d`
     : minutes >= 60 && minutes % 60 === 0
     ? `${minutes / 60}h`
     : `${minutes}m`;
 
-export function notReportedUsage(provider: string): ProviderUsageResult {
+function notReportedUsage(provider: string): ProviderUsageResult {
   return {
     reported: false,
     status: 'not-reported',
@@ -330,7 +330,7 @@ export const providerUsageAdapters: Record<ProviderPlanKind, ProviderUsageAdapte
  * In-memory plan usage cache. Bounded cadence, never exposes secret keys.
  */
 const planUsageCache = new Map<string, { at: number; usage: ProviderUsageResult }>();
-export const DEFAULT_USAGE_CACHE_MS = 60_000;
+const DEFAULT_USAGE_CACHE_MS = 60_000;
 
 export function getCachedPlanUsage(planId: string, now: number, maxAgeMs = DEFAULT_USAGE_CACHE_MS): ProviderUsageResult | null {
   const cached = planUsageCache.get(planId);
@@ -348,7 +348,7 @@ export function clearPlanUsageCache(): void {
   planUsageCache.clear();
 }
 
-export function detectPlanKind(text: string, runtime = '', model = ''): ProviderPlanKind {
+function detectPlanKind(text: string, runtime = '', model = ''): ProviderPlanKind {
   const lower = `${text} ${runtime} ${model}`.toLowerCase();
   if (lower.includes('claude') || lower.includes('anthropic')) return 'claude';
   if (lower.includes('codex') || lower.includes('openai') || lower.includes('chatgpt')) return 'codex';

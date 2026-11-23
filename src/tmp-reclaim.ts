@@ -114,7 +114,7 @@ export const argumentPath = (argument: string) => argument.match(/^(?:--[\w-]+=|
  * already split the arguments; a path inside a longer argument such as a shell command is taken up
  * to its first space, which can only name a shorter path and so keeps more, never less.
  */
-export const namedPaths = (commandLine: string): string[] => commandLine.split('\0').flatMap(argument => {
+const namedPaths = (commandLine: string): string[] => commandLine.split('\0').flatMap(argument => {
   const whole = argumentPath(argument);
   return [...whole ? [whole] : [], ...argument.match(/(?<![\w.~:/-])\/[^\s'"`=:,;)]+/g) ?? []];
 }).map(path => path.replace(/\/+$/, '')).filter((path, index, all) => path.length > 1 && all.indexOf(path) === index);

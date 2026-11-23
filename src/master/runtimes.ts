@@ -121,7 +121,7 @@ async function opencodeCommand(home: string, args: string[]) {
 export const opencodeAuthList = (home: string) => opencodeCommand(home, ['auth', 'list']);
 export const opencodeModels = (home: string) => opencodeCommand(home, ['models']);
 /** GY-3329: where cursor-agent keeps its sign-in on a host with no desktop keyring: `$XDG_CONFIG_HOME/cursor/auth.json`. */
-export const cursorSignInFile = 'cursor/auth.json';
+const cursorSignInFile = 'cursor/auth.json';
 /** GY-3414: the file cursor-agent records its login in, under `CURSOR_CONFIG_DIR`: its `authInfo` names the signed-in user. */
 export const cursorLoginFile = 'cli-config.json';
 /** Cursor is logged in when cli-config.json in the account home names a signed-in user, or a keyring-less sign-in sits at `cursor/auth.json` (GY-3329). It exposes no quota. */
@@ -309,8 +309,13 @@ export function withModel(kind: string, args: readonly string[], contract: { mod
   const flag = contract?.modelFlag ?? runtimeAdapter(kind)?.modelFlag;
   if (!flag) return [...args];
   const kept = args.filter((arg, index) => arg !== flag && !arg.startsWith(`${flag}=`) && args[index - 1] !== flag);
-  return modelId ? [...kept, flag, modelId] : kept;
+  return modelId ? [...kept, ...(kind === 'pi' ? piModelArgs(modelId) : [flag, modelId])] : kept;
 }
+/** GY-3721: Pi takes a registry id `zai/glm-5.3` as `--provider zai --model glm-5.3`, the words its connect smoke authenticates with. */
+export const piModelArgs = (modelId: string) => {
+  const at = modelId.indexOf('/');
+  return at > 0 ? ['--provider', modelId.slice(0, at), '--model', modelId.slice(at + 1)] : ['--model', modelId];
+};
 /** The adapter for `kind`, or undefined for a kind Graphyard knows nothing of. */
 /** The remedy for a session stuck on its runtime's first-run screen, or null when the screen is not one. */
 export const runtimeAdapter = (kind: string | null | undefined): RuntimeAdapter | undefined => kind ? adapters.get(kind) : undefined;

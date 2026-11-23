@@ -78,7 +78,7 @@ async function run(context: RouteContext, providers: ReturnType<typeof infraProv
 }
 
 /** What was done with infra credentials, newest first: who, what and when. */
-export async function infraLog(context: RouteContext) {
+async function infraLog(context: RouteContext) {
   return (await rows(context, 'action')).map(row => ({ who: row.actor, at: new Date(row.at).toISOString(), action: row.payload.action as string, target: row.payload.target as string, outcome: row.payload.outcome as string, detail: row.payload.detail as string }));
 }
 

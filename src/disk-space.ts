@@ -17,7 +17,7 @@ export function diskExhaustion(error: unknown): string | null {
 }
 export const reclaimAdvice = 'free space on the volume, then retry; the master loop removes each assignment worktree once its attempt ends';
 /** The path a failed write was aimed at: the one the caller names, or the one the system call reported. */
-export function exhaustedPath(error: unknown, path?: string): string | null {
+function exhaustedPath(error: unknown, path?: string): string | null {
   const reported = (error as { path?: unknown; dest?: unknown } | null);
   return path ?? (typeof reported?.path === 'string' ? reported.path : typeof reported?.dest === 'string' ? reported.dest : null);
 }

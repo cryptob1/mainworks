@@ -25,7 +25,7 @@ import { retryDeadlocks } from './store/migration-locks.js';
  * A backup is sensitive. It holds private validation artifacts, evidence and hashed
  * credentials; keep it where the database itself is allowed to be.
  */
-export const backupFormat = 'graphyard-backup-v1';
+const backupFormat = 'graphyard-backup-v1';
 const tableName = z.enum([...ledgerTables, ...retiredTables]);
 export const backupSchema = z.object({
   format: z.literal(backupFormat),

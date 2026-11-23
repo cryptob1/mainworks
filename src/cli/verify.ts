@@ -4,7 +4,7 @@ import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } 
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { defaultChildRun } from '../child-runner.js';
-import { countByRunner, countProofCases, proofTitle } from '../proof-runner.js';
+import { countByRunner, countProofCases } from '../proof-runner.js';
 import { mechanicalProof } from '../model/dispatch.js';
 import type { CliCommand } from './registry.js';
 import { abnormalTestExit, isolatedTestEnvironment, reserveTestPorts, testPortEnvironment, type ReserveOptions } from './test-isolation.js';
@@ -30,7 +30,7 @@ export interface ProofRun { proof: string; criteria: string[]; result: 'pass' | 
  * still passes against the base cannot fail there, so verify finds that misbinding before
  * submission instead of a producer finding it after a full validation cycle.
  */
-export interface BaseExercise {
+interface BaseExercise {
   base: string | null; executed: number; reverted: string[];
   /**
    * GY-1240: `indeterminate` is a base run that was not made or could not be judged — no base to
@@ -54,8 +54,8 @@ export interface VerifyRecord { key: string; head: string; clean: boolean; at: s
 type Criterion = { id: string; proofs: string[]; bootstrap?: unknown };
 
 const git = (root: string, args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-export { countProofCases, proofTitle };
-export const recordPath = (root: string, key: string) => join(stateDirectory(root), 'verify', `${key}.json`);
+export { countProofCases,  };
+const recordPath = (root: string, key: string) => join(stateDirectory(root), 'verify', `${key}.json`);
 
 /** Which of the item's proofs a worker can run here, and why each of the rest is outstanding. */
 export function classifyProofs(criteria: Criterion[]): { runnable: { proof: string; criteria: string[] }[]; outstanding: Outstanding[] } {

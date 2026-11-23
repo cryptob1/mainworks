@@ -33,7 +33,7 @@ export interface AttentionItem extends AttentionOwner { subject: string; text: s
   /** Until when the loop is itself carrying what the line names (GY-1315): shown in master status. */
   inMotionUntil?: string }
 export const agentOwner = (role: 'master' | 'reviewer' | 'control plane', next: string): AttentionOwner => ({ role, human: false, humanOnly: null, next });
-export const humanOwner = (humanOnly: typeof humanOnlyDecisions[number], next: string): AttentionOwner => ({ role: 'human', human: true, humanOnly, next });
+const humanOwner = (humanOnly: typeof humanOnlyDecisions[number], next: string): AttentionOwner => ({ role: 'human', human: true, humanOnly, next });
 /** The sources of installation attention. */
 export const installationSources = ['delegation-limits', 'production'] as const;
 /** The owner of one installation attention line, by the source that raised it. */
@@ -43,7 +43,7 @@ export function installationOwner(source: typeof installationSources[number], te
   return agentOwner('master', 'Fix the failing deployment of the base branch, which production tracks, with the configured provider');
 }
 /** Why a work item raises attention. */
-export const workAttentionCauses = ['human-request', 'session', 'proof-gap', 'reviewer-exhausted', 'launch-review', 'launch-producer',
+const workAttentionCauses = ['human-request', 'session', 'proof-gap', 'reviewer-exhausted', 'launch-review', 'launch-producer',
   'stalled-step', 'base-conflict', 'merged-reverted', 'hold-overdue', 'merge-base-dismissed', 'merge-refused', 'gate'] as const;
 export type WorkAttentionCause = typeof workAttentionCauses[number];
 /**
@@ -119,7 +119,7 @@ export function controlPlaneAttention(status: ControlPlaneStatus | undefined) {
     build: status?.build ? { commit: status.build.commit ?? null, protocol: status.build.protocol ?? null } : null, production };
 }
 /** The attention line for an observation job starved of observations: the item and the path its last run took. */
-export function starvedJobText(job: NonNullable<ControlPlaneStatus['starvedJobs']>[number]) {
+function starvedJobText(job: NonNullable<ControlPlaneStatus['starvedJobs']>[number]) {
   const path = job.error ? `last refusal: ${job.error}` : job.deferred_reason ? `last reschedule: ${job.deferred_reason}` : 'no reason recorded, so the job loop fails before the observation';
   return `${job.key}'s observation job has finished ${job.unobserved} times in a row without saving an observation; ${path}`;
 }
@@ -128,7 +128,7 @@ export function starvedJobText(job: NonNullable<ControlPlaneStatus['starvedJobs'
  * reason when the provider reported one. There is no branch-ahead computation: comparisons are
  * gone, so the summary says what the watch cannot tell when it says nothing.
  */
-export function productionSummary(report: Partial<ProductionReport>) {
+function productionSummary(report: Partial<ProductionReport>) {
   const incidents = (report.incidents ?? []).map(incident => ({ key: incident.key, mergeSha: incident.mergeSha, status: incident.status, reason: incident.reason, deploymentId: incident.deploymentId ?? null, since: incident.since }));
   return { provider: report.provider ?? null, observedAt: report.observedAt ?? null, serving: report.serving ?? null, running: report.running ?? null, summary: report.aheadError ?? 'production lag is unknown',
     latestDeployment: report.latest ? { id: report.latest.id, status: report.latest.providerStatus, commit: report.latest.commit, createdAt: report.latest.createdAt, url: report.latest.url ?? null } : null,

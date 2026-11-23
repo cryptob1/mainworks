@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, readlinkSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { gateTrialKey } from '../merge-writer/trial-load.js';
 
-export type JobKind = 'builder session' | 'builder test run' | 'merge trial' | 'batch gate' | 'review' | 'other';
+type JobKind = 'builder session' | 'builder test run' | 'merge trial' | 'batch gate' | 'review' | 'other';
 export interface LocalJob { item: string | null; kind: JobKind; name?: string; cores: number }
 interface Process { ticks: number; cwd: string; command: string }
 interface Sample { at: number; processes: Map<string, Process> }
@@ -29,7 +29,7 @@ function readProcesses(proc: string): Map<string, Process> {
 }
 
 /** A process's job: a builder worktree, or a review or trial checkout (a trial container mounts its checkout at the same path), else other by command. */
-export function classify(cwd: string, command: string): Omit<LocalJob, 'cores'> {
+function classify(cwd: string, command: string): Omit<LocalJob, 'cores'> {
   const builder = /\/worktrees\/([A-Z][A-Z0-9]*-\d+)-\d+(?:\/|$)/.exec(cwd);
   if (builder) return { item: builder[1]!, kind: testRun.test(command) ? 'builder test run' : 'builder session' };
   const checkout = /\/graphyard-(review|trial|proof|approval)-([a-z0-9-]+?)-[0-9a-f]{7}-[0-9a-f]{8}(?:\/|$)/.exec(cwd);

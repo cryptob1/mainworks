@@ -34,7 +34,7 @@ export function ProductView({ brief, error, loading, retry }: { brief: ProductBr
 }
 
 /** The brief's Markdown as headings, bullet lists and paragraphs (GY-3560): the master's own text, never HTML. */
-export function briefBlocks(markdown: string): ReactNode[] {
+function briefBlocks(markdown: string): ReactNode[] {
   const blocks: ReactNode[] = [];
   let list: string[] = [], text: string[] = [];
   const flush = () => {

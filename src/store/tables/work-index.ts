@@ -71,9 +71,9 @@ $work_index$;
 CREATE OR REPLACE FUNCTION graphyard_work_index_sync() RETURNS trigger LANGUAGE plpgsql AS $work_index$
 BEGIN PERFORM graphyard_index_work(NEW.id, NEW.number, NEW.document); RETURN NULL; END $work_index$;`;
 /** Changes whenever the projection does, so the migration knows to rebuild every row. */
-export const workIndexDigest = `work-index sha256:${createHash('sha256').update(projection).digest('hex')}`;
+const workIndexDigest = `work-index sha256:${createHash('sha256').update(projection).digest('hex')}`;
 
-export const workIndex = defineTable({
+const workIndex = defineTable({
   name: 'work_index', orderBy: 'id', cache: true,
   ddl: `CREATE TABLE IF NOT EXISTS work_index (
   id uuid PRIMARY KEY REFERENCES work_items(id) ON DELETE CASCADE, number bigint NOT NULL,

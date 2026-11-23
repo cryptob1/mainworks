@@ -19,7 +19,7 @@ import { hostShimScript } from '../../src/host-shim.js';
 const executable = async (path: string, text: string) => { await writeFile(path, text); await chmod(path, 0o755); };
 
 /** A Docker CLI keeping its state under `state`. */
-export const dockerStandIn = (state: string) => `#!/usr/bin/python3
+const dockerStandIn = (state: string) => `#!/usr/bin/python3
 import fcntl, hashlib, json, os, subprocess, sys
 STATE = ${JSON.stringify(state)}
 args = sys.argv[1:]
@@ -172,7 +172,7 @@ const identity = { GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@exampl
 export const git = (root: string, ...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
 
 /** A repository whose test runner runs the files its list names, writes one record per file (a file named `fails` fails), and prints the checkout's commit count. */
-export const shardRunner = `import { readFileSync, appendFileSync } from 'node:fs';
+const shardRunner = `import { readFileSync, appendFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 const at = name => process.argv[process.argv.indexOf(name) + 1];
 const files = readFileSync(at('--files-from'), 'utf8').split('\\n').filter(Boolean);

@@ -97,7 +97,7 @@ const scanInteresting: RegExp[] = [
   /^\.nojekyll$/, /^CNAME$/, /^index\.html$/, /^\.env\.example$/, /^pytest\.ini$/, /^conftest\.py$/,
   /^\.github\/workflows\/[^/]+\.ya?ml$/, /^graphyard\.json$/, /^e2e\/cases\/[^/]+\.json$/,
 ];
-export const scanLimits = { files: 5000, depth: 6, bytes: 262_144 };
+const scanLimits = { files: 5000, depth: 6, bytes: 262_144 };
 
 /** Read-only bounded walk that keeps only paths and whitelisted manifest/config text. Never executes repository code. */
 export async function collectScanInput(root: string): Promise<ScanInput> {
@@ -219,9 +219,9 @@ export function workflowCheckNames(input: ScanInput, options: { onlyPullRequest?
  * It is Graphyard's output like the candidate workflows, so a rescan never reads it back as the
  * repository's own CI: the repository still has none, and the apply renders it unchanged.
  */
-export const deliveryWorkflowFile = '.github/workflows/graphyard-delivery.yml';
+const deliveryWorkflowFile = '.github/workflows/graphyard-delivery.yml';
 /** The job of the delivery workflow a pull request is gated on: it passes only when build and test both passed. */
-export const deliveryGateJob = 'graphyard-gate';
+const deliveryGateJob = 'graphyard-gate';
 
 /**
  * Whether the scan found no CI of the repository's own: no workflow of its own runs on pull requests.
@@ -256,7 +256,7 @@ export async function removeDeliveryWorkflow(root: string, base = originBase(roo
  * gate job, which fails unless both passed, so one check name gates a pull request whatever the
  * stack later adds. Superseded pull-request runs are cancelled; runs on the base never are.
  */
-export function renderDeliveryWorkflow(stack: Pick<StackDetection, 'name' | 'frameworks' | 'commands'>, base = 'main'): { path: string; content: string } {
+function renderDeliveryWorkflow(stack: Pick<StackDetection, 'name' | 'frameworks' | 'commands'>, base = 'main'): { path: string; content: string } {
   const has = (check: string) => stack.commands.some(command => command.check === check);
   const setup = stack.name === 'node'
     ? `      - uses: actions/setup-node@v4
@@ -308,7 +308,7 @@ ${job('build', build)}${job('test', testCommand)}  ${deliveryGateJob}:
 ` };
 }
 
-export type DeployTarget = 'railway' | 'vercel' | 'fly' | 'github-pages' | 'container-registry' | 'none';
+type DeployTarget = 'railway' | 'vercel' | 'fly' | 'github-pages' | 'container-registry' | 'none';
 
 export interface DeployDetection { target: DeployTarget; evidence: string[]; verification: string; proofName: string }
 
@@ -382,7 +382,7 @@ const checkLike = /^(?:build|typecheck|type-check|lint|test|check|e2e|integratio
  * split is shown for confirmation before it is applied, so the operator moves a check in one
  * edit of graphyard.json rather than discovering a slow gate later.
  */
-export function classifyChecks(input: ScanInput, stack: StackDetection = detectStack(input)): { preMerge: GateCheck[]; perCandidate: GateCheck[] } {
+function classifyChecks(input: ScanInput, stack: StackDetection = detectStack(input)): { preMerge: GateCheck[]; perCandidate: GateCheck[] } {
   const preMerge: GateCheck[] = [], perCandidate: GateCheck[] = [];
   const known = (check: string) => [...preMerge, ...perCandidate].some(entry => entry.check === check);
   const place = (check: string, command: string | null, source: GateCheck['source']) => {
@@ -416,7 +416,7 @@ export function classifyChecks(input: ScanInput, stack: StackDetection = detectS
  * pytest) would never report. Long suites with a command stay per candidate, where the candidate
  * workflow runs them; under per-pr no workflow would run them on a pull request, so none is required.
  */
-export function deliveryWorkflowGate(classified: MergeGate, mode: DeliveryMode): MergeGate {
+function deliveryWorkflowGate(classified: MergeGate, mode: DeliveryMode): MergeGate {
   return {
     preMerge: [{ check: deliveryGateJob, command: null, source: 'workflow', reason: `Graphyard's generated delivery workflow (${deliveryWorkflowFile}): passes only when its build and test jobs passed` }],
     perCandidate: mode === 'per-pr' ? [] : classified.perCandidate.filter(entry => entry.command),
@@ -485,8 +485,7 @@ export function describeMergeGate(policy: DeliveryPolicy): string[] {
   ];
 }
 
-export const agentRuntimes = ['claude', 'codex', 'gemini', 'opencode', 'copilot', 'cursor', 'qwen', 'amp', 'grok', 'kimi', 'kiro', 'droid', 'cline', 'devin', 'hermes', 'kilo', 'qodercli', 'maki', 'agy', 'omp', 'mastracode', 'pi'] as const;
-export type AgentRuntime = (typeof agentRuntimes)[number];
+const agentRuntimes = ['claude', 'codex', 'gemini', 'opencode', 'copilot', 'cursor', 'qwen', 'amp', 'grok', 'kimi', 'kiro', 'droid', 'cline', 'devin', 'hermes', 'kilo', 'qodercli', 'maki', 'agy', 'omp', 'mastracode', 'pi'] as const;
 
 /** Runtimes present on this machine, probed without executing anything. */
 export function availableRuntimes(searchPath: string | undefined = process.env.PATH, check: (candidate: string) => boolean = candidate => {
@@ -500,7 +499,7 @@ export function availableRuntimes(searchPath: string | undefined = process.env.P
   return found;
 }
 
-export const proposedWorkerProfileSchema = z.object({
+const proposedWorkerProfileSchema = z.object({
   name: z.string().trim().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/),
   principal: z.string().trim().min(1).max(200),
   agentName: sessionNameField,

@@ -19,26 +19,26 @@ export interface RegistryRow { seq: string; at: string; actor: string; kind: str
 /** An open deployment incident as the production watch reports it (src/production-watch.ts). */
 export interface FeedIncident { id: string; workId: string; key: string; status: 'failed' | 'missing'; reason: string; since: string }
 
-export interface FeedMessage { kind: 'message'; at: number; who: string; text: string }
-export interface FeedApproval { kind: 'approval'; at: number; row: HumanRequestRow }
+interface FeedMessage { kind: 'message'; at: number; who: string; text: string }
+interface FeedApproval { kind: 'approval'; at: number; row: HumanRequestRow }
 /** What a decision's Undo runs: a work command the signed-in person may post, or a registry write. */
-export type Undo =
+type Undo =
   | { target: 'work'; workId: string; command: string; data: Record<string, unknown> }
   | { target: 'registry'; body: Record<string, unknown> };
 export interface FeedDecision { kind: 'decision'; at: number; what: string; why: string | null; undo: Undo | null }
-export interface FeedIncidentCard { kind: 'incident'; at: number; incident: FeedIncident }
-export interface FeedTask { kind: 'task'; at: number; item: { id: string; key: string; title: string } }
+interface FeedIncidentCard { kind: 'incident'; at: number; incident: FeedIncident }
+interface FeedTask { kind: 'task'; at: number; item: { id: string; key: string; title: string } }
 export type LeadEntry = FeedMessage | FeedApproval | FeedDecision | FeedIncidentCard | FeedTask;
 
 /** How many entries the conversation keeps: the newest this many, whatever kinds they are. */
-export const leadFeedLimit = 80;
+const leadFeedLimit = 80;
 
 const iso = (value: string) => { const at = Date.parse(value); return Number.isFinite(at) ? at : null; };
 const text = (value: unknown) => typeof value === 'string' ? value : null;
 const number = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? value : null;
 
 /** The ledger kinds that read as the Lead's decisions; every other row is not a reply. */
-export const decisionKinds = ['priority', 'hold', 'rework', 'unblock', 'requirements', 'message'] as const;
+const decisionKinds = ['priority', 'hold', 'rework', 'unblock', 'requirements', 'message'] as const;
 /** Every ledger kind the conversation reads: the decisions above, and the filings. */
 export const ledgerKinds = [...decisionKinds, 'create'] as const;
 
@@ -94,7 +94,7 @@ export function pausesFrom(rows: readonly RegistryRow[], limit = leadFeedLimit):
 }
 
 /** One ledger row as a filed-task card, or null: the newest filing of an item the board still lists. */
-export function taskFrom(row: LedgerRow, work: readonly Work[]): FeedTask | null {
+function taskFrom(row: LedgerRow, work: readonly Work[]): FeedTask | null {
   const at = iso(row.created_at);
   if (row.kind !== 'create' || at === null || !row.work_id) return null;
   const item = work.find(entry => entry.id === row.work_id);

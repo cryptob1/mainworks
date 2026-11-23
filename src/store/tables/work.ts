@@ -4,7 +4,7 @@ import { eventsImmutableDdl } from '../compaction.js';
 import { DELIVERY_EVENT_PREDICATE } from './production.js';
 
 /** Work aggregates, their immutable history, and the durable integration jobs behind them. */
-export const workItems = defineTable({
+const workItems = defineTable({
   name: 'work_items', orderBy: 'number', serial: 'number',
   ddl: `CREATE TABLE IF NOT EXISTS work_items (
   id uuid PRIMARY KEY, number bigserial UNIQUE, document jsonb NOT NULL
@@ -26,7 +26,7 @@ WHERE document ?| ARRAY[
   'lane', 'speedTarget', 'mechanicalPlan', 'mechanicalAnswered'
 ] OR document->>'blocker' LIKE 'Scope request refused%';`,
 });
-export const events = defineTable({
+const events = defineTable({
   name: 'events', orderBy: 'seq', serial: 'seq',
   ddl: `CREATE TABLE IF NOT EXISTS events (
   seq bigserial PRIMARY KEY, work_id uuid REFERENCES work_items(id),
@@ -68,11 +68,11 @@ ${eventsImmutableDdl}`,
 export const unownedFamilySql = (prefix: string, alias = 'events') =>
   `${alias}.work_id IS NULL AND split_part(${alias}.kind,'.',1) = '${prefix.slice(0, -1)}'`;
 /** Where the next ledger compaction batch starts (store/compaction.ts): a lost row only restarts the pass. */
-export const ledgerCompactionCursor = defineTable({
+const ledgerCompactionCursor = defineTable({
   name: 'ledger_compaction_cursor', orderBy: 'id', cache: true,
   ddl: `CREATE TABLE IF NOT EXISTS ledger_compaction_cursor (id boolean PRIMARY KEY DEFAULT true CHECK (id), seq bigint NOT NULL);`,
 });
-export const receipts = defineTable({
+const receipts = defineTable({
   name: 'receipts', orderBy: 'actor,key',
   ddl: `CREATE TABLE IF NOT EXISTS receipts (
   actor text NOT NULL, key text NOT NULL, fingerprint text NOT NULL, result jsonb NOT NULL,
@@ -82,7 +82,7 @@ export const receipts = defineTable({
 ALTER TABLE receipts ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
 CREATE INDEX IF NOT EXISTS receipts_created ON receipts(created_at);`,
 });
-export const jobs = defineTable({
+const jobs = defineTable({
   name: 'jobs', orderBy: 'work_id',
   ddl: `CREATE TABLE IF NOT EXISTS jobs (
   work_id uuid PRIMARY KEY REFERENCES work_items(id), available_at timestamptz NOT NULL DEFAULT now(),

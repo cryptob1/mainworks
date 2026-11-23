@@ -5,9 +5,9 @@ import { mergeWriterTrialGround } from './model/rework-ground.js';
 export const flowWindows = { '6h': 6, '24h': 24, '7d': 168 } as const;
 export type FlowWindow = keyof typeof flowWindows;
 export const flowStations = ['ready', 'build', 'review', 'test queue', 'merge trial', 'acceptance', 'merge'] as const;
-export type FlowStation = typeof flowStations[number];
+type FlowStation = typeof flowStations[number];
 export const reworkCauses = ['review', 'product review', 'merge trial', 'acceptance', 'base moved', 'red base'] as const;
-export type ReworkCause = typeof reworkCauses[number];
+type ReworkCause = typeof reworkCauses[number];
 
 /**
  * One ledger row as the flow reads it: a row carrying the item's whole document names its `stage`;
@@ -21,7 +21,7 @@ export interface FlowItem {
   attempts: { claimedAt: string; endedAt: string | null; end: string | null }[];
   events: FlowEvent[];
 }
-export interface StationWait { median: number; p90: number; samples: number; oldest: { key: string; title: string; minutes: number; waiting: boolean } }
+interface StationWait { median: number; p90: number; samples: number; oldest: { key: string; title: string; minutes: number; waiting: boolean } }
 export interface FlowNumbers {
   hours: number; attempts: number; attemptsPerHour: number; merges: number; mergesPerHour: number;
   /** Attempts merged with no rework request ÷ attempts ended; null when none ended. */
@@ -33,7 +33,7 @@ export interface FlowNumbers {
 }
 
 /** Which station sent the head back, read from the rework's reason and the ground it binds. */
-export function reworkCause(reason: string, binding: string | null | undefined): ReworkCause {
+function reworkCause(reason: string, binding: string | null | undefined): ReworkCause {
   const ground = binding ?? '';
   if (/:conflict$|:sync:/.test(ground) || /merge conflicts in|The base moved/.test(reason)) return 'base moved';
   if (/base failure|on the base tip too/i.test(reason)) return 'red base';

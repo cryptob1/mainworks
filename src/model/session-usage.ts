@@ -6,7 +6,7 @@ export const saturatedPressure = 50;
 /** A session uses far more than its share from this many times it. */
 export const overloadFactor = 2;
 /** A session over its share of a saturated machine this long raises the overload alarm. */
-export const overloadMs = 5 * 60_000;
+const overloadMs = 5 * 60_000;
 
 export interface SessionUsage { unit: string; name?: string; at: string; usec: number; cpu: number | null; cpuShare: number; memory: number; memoryShare: number; overSince: string | null }
 

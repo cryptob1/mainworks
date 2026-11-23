@@ -74,7 +74,7 @@ export const mergeRecordBodySchema = z.discriminatedUnion('kind', [
   // GY-2963: where the trial is while it runs — a step name and the instant it began, no state. GY-3599: what it printed so far, and its test counts so far.
   z.object({ kind: z.literal('trial-step'), head: sha, step: z.string().min(1).max(100), at: instant, output: z.string().max(4000).optional(), tests: trialCountsSchema.optional() }).strict(),
 ]);
-export type MergeRecordBody = z.infer<typeof mergeRecordBodySchema>;
+type MergeRecordBody = z.infer<typeof mergeRecordBodySchema>;
 /** The save reason a reconciliation delivers under; the ledger's `merge-writer.<kind>` saves carry every other step. */
 export const deliveredReason = 'merge-writer.delivered';
 /** The refusal of a reconciliation naming a merge commit the base branch does not hold. */

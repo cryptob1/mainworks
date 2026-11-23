@@ -5,15 +5,6 @@ import { join } from 'node:path';
 import { setting } from './setting.js';
 import { stateDirectory } from './install/layout.js';
 
-/**
- * `package.json`'s version. It is no longer the release: every candidate production promotes is
- * tagged with a date version (GY-1959), and that tag is what the CLI, `/healthz` and the install
- * defaults report. It stays exported for builds that still stamp it.
- */
-export const packageVersion = (() => {
-  try { return String(JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version ?? '0.0.0'); } catch { return '0.0.0'; }
-})();
-
 /** A date version: YYYY.M.D for a day's first promotion, YYYY.M.D.N for the next ones. */
 export const datedVersionPattern = /^(\d{4})\.([1-9]\d?)\.([1-9]\d?)(?:\.([1-9]\d*))?$/;
 /** Graphyard's own base branch: every install follows its tip, whatever base branch the managed repository uses. */
@@ -127,7 +118,7 @@ export const releaseInfo = () => {
   return { version: (stamped ?? cliRelease()).version, revision: stamped?.revision ?? (setting('BUILD_REVISION') || 'unknown') };
 };
 
-export { schemaGenerations, schemaVersion } from './store/schema-lineage.js';
+export {  schemaVersion } from './store/schema-lineage.js';
 
 /** One commit, one npm version, using the commit's own UTC date. */
 export function publishedVersion(commit: string, committedAt: Date) {

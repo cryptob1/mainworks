@@ -67,15 +67,15 @@ export const launchRecipe = (kind: string | null | undefined): LaunchRecipe | un
  * stubbed launch starts no runtime, and the operator's own config is never the suite's to edit.
  */
 export interface FolderTrust { file: string; directory: string; written: boolean }
-export const claudeConfigFile = (environment: Record<string, string> = {}) => {
+const claudeConfigFile = (environment: Record<string, string> = {}) => {
   const home = environment.CLAUDE_CONFIG_DIR ?? process.env.CLAUDE_CONFIG_DIR;
   return home ? resolve(home, '.claude.json') : resolve(homedir(), '.claude.json');
 };
 const canonicalPath = (path: string) => { try { return realpathSync(path); } catch { return resolve(path); } };
 const ancestors = (path: string) => { const chain = [path]; while (dirname(chain[chain.length - 1]) !== chain[chain.length - 1]) chain.push(dirname(chain[chain.length - 1])); return chain; };
 /** Whether a Claude Code launch loads the repository's checked-in settings: it does unless `--setting-sources` leaves `project` out. */
-export const repositorySettingSources = ['project'] as const;
-export function loadsRepositorySettings(args: string[]) {
+const repositorySettingSources = ['project'] as const;
+function loadsRepositorySettings(args: string[]) {
   const named: string[][] = [];
   for (let index = 0; index < args.length; index++) {
     const [flag, inline] = args[index].split(/=(.*)/s);
@@ -94,7 +94,7 @@ export async function repositoryClaudeConfig(folder: string, environment: Record
   }
   return null;
 }
-export const claudeTrustLockStaleMs = 30_000;
+const claudeTrustLockStaleMs = 30_000;
 async function withConfigLock<T>(file: string, body: () => Promise<T>, waitMs = 10_000): Promise<T> {
   const lock = `${file}.graphyard.lock`, deadline = Date.now() + waitMs;
   await mkdir(dirname(file), { recursive: true, mode: 0o700 });
@@ -259,7 +259,7 @@ export function checkoutTrustLine(refusals: readonly CheckoutTrustRefusal[]): st
  * rewritten (a second table would make the whole config unreadable to Codex) and refuses it too.
  * Records of Graphyard checkouts that no longer exist are dropped as trustAgyFolder drops them.
  */
-export const codexConfigFile = (environment: Record<string, string> = {}) => {
+const codexConfigFile = (environment: Record<string, string> = {}) => {
   const home = environment.CODEX_HOME ?? process.env.CODEX_HOME;
   return home ? resolve(home, 'config.toml') : resolve(environment.HOME ?? homedir(), '.codex', 'config.toml');
 };
@@ -293,8 +293,8 @@ export function codexProjects(text: string): CodexProject[] {
  * by name rather than starting a session whose every command fails. Under the test runner only a
  * folder in a temporary directory is touched.
  */
-export const codexProtectedPaths = ['.agents', '.codex'] as const;
-export async function createCodexProtectedPaths(folder: string) {
+const codexProtectedPaths = ['.agents', '.codex'] as const;
+async function createCodexProtectedPaths(folder: string) {
   if (underTestRunner() && !temporaryDirectories().some(temporary => `${folder}${sep}`.startsWith(`${temporary}${sep}`))) return [];
   if (!(await stat(folder).then(entry => entry.isDirectory(), () => false))) return [];
   const created: string[] = [], linked: string[] = [];
@@ -436,7 +436,7 @@ export class LaunchRefusedError extends Error { constructor(readonly kind: strin
  */
 export const requestPlaceholder = '{request}';
 export interface RegisteredLaunch { args: string[]; headlessArgs?: string[]; environment?: Record<string, string>; homeVariable?: string | null }
-export const registryContractRefusal = (kind: string) => `${PRODUCT_NAME} refuses to launch the ${kind} runtime: its agent-registry launch contract registers no arguments or environment, so nothing suppresses its own approval or trust prompts and the session would wait for a human. Register the flags that start ${kind} without approvals with graphyard master registry runtime set NAME --kind ${kind} --arg=FLAG --reason REASON.`;
+const registryContractRefusal = (kind: string) => `${PRODUCT_NAME} refuses to launch the ${kind} runtime: its agent-registry launch contract registers no arguments or environment, so nothing suppresses its own approval or trust prompts and the session would wait for a human. Register the flags that start ${kind} without approvals with graphyard master registry runtime set NAME --kind ${kind} --arg=FLAG --reason REASON.`;
 export function assertLaunchable(kind: string, registered: RegisteredLaunch | null = null) {
   if (launchRecipe(kind)) return;
   if (!registered) throw new LaunchRefusedError(kind);
@@ -448,7 +448,7 @@ export function assertLaunchable(kind: string, registered: RegisteredLaunch | nu
  * on a human (GY-184), so such a profile is refused before launch, naming the runtime and the fix;
  * the mode is still read so an existing master.json loads and says why it cannot launch.
  */
-export const approvalOptOutRefusal = (kind: string) => `${PRODUCT_NAME} refuses to launch the ${kind} runtime with approvals "prompt": the session would wait at its own approval prompts for a human in the session tab, and every launched session must run without asking. Set "approvals": "auto" on this profile.`;
+const approvalOptOutRefusal = (kind: string) => `${PRODUCT_NAME} refuses to launch the ${kind} runtime with approvals "prompt": the session would wait at its own approval prompts for a human in the session tab, and every launched session must run without asking. Set "approvals": "auto" on this profile.`;
 export function assertNoApprovalOptOut(kind: string, approvals: ApprovalMode = 'auto') {
   if (approvals === 'prompt') throw new LaunchRefusedError(kind, approvalOptOutRefusal(kind));
 }

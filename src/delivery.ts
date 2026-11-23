@@ -16,26 +16,25 @@ const revision = z.number().int().positive();
 const generation = z.number().int().min(0);
 const ref = z.object({ id: name, revision }).strict();
 /** One entry per service with its exact artifact digest: what a release deploys and verifies (GY-1844). */
-export const manifestSchema = z.array(z.object({ service: name, digest }).strict()).min(1).max(30).refine(a => new Set(a.map(x => x.service)).size === a.length, 'Services must be unique');
-export type Manifest = z.infer<typeof manifestSchema>;
+const manifestSchema = z.array(z.object({ service: name, digest }).strict()).min(1).max(30).refine(a => new Set(a.map(x => x.service)).size === a.length, 'Services must be unique');
 /** A promoter acts through its registration and the lease epoch it currently holds. */
 const delegateSchema = z.object({ registration: ref, epoch: revision }).strict();
-export const buildSchema = z.object({ registration: ref, sourceSha: sha, buildInputsDigest: digest, artifacts: manifestSchema, provenanceUrl: z.url().max(2000) }).strict();
-export type ReleaseBuild = z.infer<typeof buildSchema> & { id: string; producer: string; at: string; repository: string; environment: { id: string; revision: number } };
+const buildSchema = z.object({ registration: ref, sourceSha: sha, buildInputsDigest: digest, artifacts: manifestSchema, provenanceUrl: z.url().max(2000) }).strict();
+type ReleaseBuild = z.infer<typeof buildSchema> & { id: string; producer: string; at: string; repository: string; environment: { id: string; revision: number } };
 const memberSchema = z.object({ workId: z.uuid(), mergeSha: sha, included: z.boolean(), note: z.string().trim().min(1).max(500).optional() }).strict();
-export const releaseSchema = z.object({ id: name, expectedRevision: generation, environment: ref, sourceSha: sha, buildId: z.uuid(), manifest: manifestSchema,
+const releaseSchema = z.object({ id: name, expectedRevision: generation, environment: ref, sourceSha: sha, buildId: z.uuid(), manifest: manifestSchema,
   members: z.array(memberSchema).max(100).refine(m => new Set(m.map(x => x.workId)).size === m.length, 'Members must be unique'), delegate: delegateSchema.optional() }).strict();
-export type ReleaseMember = z.infer<typeof memberSchema> & { key: string };
+type ReleaseMember = z.infer<typeof memberSchema> & { key: string };
 export type Release = Omit<z.infer<typeof releaseSchema>, 'expectedRevision' | 'delegate' | 'members'> & { revision: number; manifestHash: string; members: ReleaseMember[]; createdAt: string; createdBy: string };
-export const approvalSchema = z.object({ release: ref, environment: ref }).strict();
+const approvalSchema = z.object({ release: ref, environment: ref }).strict();
 export type ReleaseApproval = { id: string; releaseId: string; releaseRevision: number; environment: { id: string; revision: number }; manifestHash: string; buildId: string; policyRevision: number; approvedBy: string; at: string };
-export const selectSchema = z.object({ environment: ref, release: ref, expectedGeneration: generation, approvalId: z.uuid().optional(), delegate: delegateSchema.optional() }).strict();
-export const leaseSchema = z.object({ registration: ref, epoch: revision.optional() }).strict();
-export const measurements = ['provider', 'host-attestation', 'self-report', 'unknown'] as const;
+const selectSchema = z.object({ environment: ref, release: ref, expectedGeneration: generation, approvalId: z.uuid().optional(), delegate: delegateSchema.optional() }).strict();
+const leaseSchema = z.object({ registration: ref, epoch: revision.optional() }).strict();
+const measurements = ['provider', 'host-attestation', 'self-report', 'unknown'] as const;
 const instanceSchema = z.object({ instance: name, digest: digest.nullable(), measurement: z.enum(measurements), healthy: z.boolean() }).strict();
 const serviceSnapshotSchema = z.object({ service: name, complete: z.boolean(), instances: z.array(instanceSchema).max(100).refine(i => new Set(i.map(x => x.instance)).size === i.length, 'Instances must be unique'),
   deployment: z.object({ id: z.string().min(1).max(200), status: z.enum(['success', 'failed', 'building', 'unknown']), deployedAt: z.iso.datetime().nullable() }).strict().optional() }).strict();
-export const observationSchema = z.object({ registration: ref, epoch: revision, environment: ref, expectedGeneration: generation, snapshotId: z.string().min(1).max(200),
+const observationSchema = z.object({ registration: ref, epoch: revision, environment: ref, expectedGeneration: generation, snapshotId: z.string().min(1).max(200),
   observedAt: z.iso.datetime(), validFrom: z.iso.datetime(), validTo: z.iso.datetime(),
   services: z.array(serviceSnapshotSchema).min(1).max(30).refine(s => new Set(s.map(x => x.service)).size === s.length, 'Services must be unique') }).strict()
   .refine(o => Date.parse(o.validFrom) <= Date.parse(o.observedAt) && Date.parse(o.observedAt) <= Date.parse(o.validTo), 'observedAt must lie within [validFrom, validTo]');
@@ -50,17 +49,18 @@ const candidateArtifact = z.string().regex(/^(sha256:[0-9a-f]{64}|tree:[0-9a-f]{
 export const shaObservationSchema = z.object({ environment: ref, sha: z.string().regex(/^[0-9a-f]{40}$/i), services: z.array(name).min(1).max(30).refine(s => new Set(s).size === s.length, 'Services must be unique'), observedAt: z.iso.datetime(), after: z.object({ mergedAt: z.string().max(40), id: z.uuid() }).strict().optional(),
   /** GY-1906: the release record and artifact the producer read production running, when it reports them, so an exact candidate's selection is verified against them. */
   release: name.optional(), artifact: candidateArtifact.optional() }).strict();
-export type ShaObservation = Omit<z.infer<typeof shaObservationSchema>, 'after'> & { id: string; observer: string; receivedAt: string };
+type ShaObservation = Omit<z.infer<typeof shaObservationSchema>, 'after'> & { id: string; observer: string; receivedAt: string };
 /** Whether `descendant` contains `ancestor` by ancestry; null when it cannot be told. */
 export type Containment = (ancestor: string, descendant: string) => Promise<boolean | null>;
 /** The page one sha observation reads delivered items awaiting a deployment record in, newest merge first; it reads every page. */
-export const shaObservationScan = 200;
+const shaObservationScan = 200;
 /** One sha observation request's bound: at most this many distinct provider comparisons and delivered items; `next` continues past it. */
-export type ShaObservationResult = { id: string; environment: string; sha: string; observedAt: string; duplicate: boolean; receivedAt: string; deployed: string[]; awaiting: { key: string; reason: string }[]; complete: boolean; next: { mergedAt: string; id: string } | null; providerError?: string };
-export const shaObservationComparisons = 50, shaObservationCandidates = 1000;
+type ShaObservationResult = { id: string; environment: string; sha: string; observedAt: string; duplicate: boolean; receivedAt: string; deployed: string[]; awaiting: { key: string; reason: string }[]; complete: boolean; next: { mergedAt: string; id: string } | null; providerError?: string };
+const shaObservationComparisons = 50;
+const shaObservationCandidates = 1000;
 const unrecordedDelivery = `document->>'stage'='done' AND jsonb_typeof(document->'delivery')='object' AND document->'delivery'->'deployment' IS NULL AND (document->'closure' IS NULL OR document->'closure'='null'::jsonb)`;
 export type ServiceState = 'matched' | 'mismatched' | 'unknown' | 'unhealthy' | 'incomplete';
-export type DeploymentObservation = ObservationInput & { id: string; observer: string; generation: number; authoritative: boolean; rejection: string[]; receivedAt: string; states: Record<string, ServiceState> };
+type DeploymentObservation = ObservationInput & { id: string; observer: string; generation: number; authoritative: boolean; rejection: string[]; receivedAt: string; states: Record<string, ServiceState> };
 const notificationSchema = z.object({ environment: name, provider: z.string().trim().min(1).max(60), payload: z.unknown().optional() }).strict();
 /**
  * GY-1906: what production was independently observed running — the release record, its source and
@@ -72,13 +72,13 @@ export interface ObservedIdentity { environment: string; releaseId: string | nul
 /** When a reading counts from: its observation, never later than the plane received it. */
 const identityAt = (identity: ObservedIdentity) => Math.min(Date.parse(identity.observedAt), Date.parse(identity.receivedAt ?? identity.observedAt));
 /** The event every changed reading of an environment's live identity appends. */
-export const identityObservedKind = 'delivery.identity-observed';
+const identityObservedKind = 'delivery.identity-observed';
 /** The newest identity is the latest counted (`identityAt`); insertion order only breaks ties. */
 const identityNewest = `LEAST((payload->>'observedAt')::timestamptz, COALESCE(payload->>'receivedAt', payload->>'observedAt')::timestamptz) DESC, seq DESC`;
-export type VerificationStatus = 'unselected' | 'unobserved' | 'incomplete' | 'unknown' | 'mismatched' | 'unhealthy' | 'no-common-interval' | 'stale' | 'verified' | 'degraded';
+type VerificationStatus = 'unselected' | 'unobserved' | 'incomplete' | 'unknown' | 'mismatched' | 'unhealthy' | 'no-common-interval' | 'stale' | 'verified' | 'degraded';
 export interface Interval { from: string; to: string }
-export interface ReleaseSelection { generation: number; releaseId: string; releaseRevision: number; policyRevision: number; selectedAt: string; selectedBy: string; outcome: 'selected' | 'verified' | 'skipped'; verifiedAt?: string; interval?: Interval; supersededAt?: string }
-export interface Incident { id: string; generation: number; releaseId: string; releaseRevision: number; at: string; observationId: string; reasons: string[] }
+interface ReleaseSelection { generation: number; releaseId: string; releaseRevision: number; policyRevision: number; selectedAt: string; selectedBy: string; outcome: 'selected' | 'verified' | 'skipped'; verifiedAt?: string; interval?: Interval; supersededAt?: string }
+interface Incident { id: string; generation: number; releaseId: string; releaseRevision: number; at: string; observationId: string; reasons: string[] }
 /**
  * D4 rollback. A rollback is a selection of a previously verified release plus one external
  * operation with a durable identity. It is requested, claimed by a registered executor,
@@ -86,8 +86,8 @@ export interface Incident { id: string; generation: number; releaseId: string; r
  * and the environment verifies — `applied` is the provider's word, `verified` is Graphyard's.
  */
 export type RollbackState = 'requested' | 'in-flight' | 'applied' | 'failed' | 'unknown' | 'verified' | 'cancelled' | 'superseded';
-export interface RollbackReport { at: string; actor: string; outcome: 'applied' | 'failed' | 'unknown'; providerOperationId: string | null; detail: string | null; authoritative: boolean; reasons: string[] }
-export interface RollbackOperation {
+interface RollbackReport { at: string; actor: string; outcome: 'applied' | 'failed' | 'unknown'; providerOperationId: string | null; detail: string | null; authoritative: boolean; reasons: string[] }
+interface RollbackOperation {
   id: string; registration: { id: string; revision: number }; principal: string; epoch: number; fencing: RollbackFencing; claimedAt: string;
   /** What the provider write must be conditioned on: the manifest that should still be running, and the generation this operation acts for. */
   precondition: { environment: string; generation: number; expectedRunning: string; token: string };
@@ -102,10 +102,10 @@ export interface RollbackRequest {
   state: RollbackState; operation: RollbackOperation | null; verifiedAt: string | null; interval: Interval | null;
   history: { at: string; state: RollbackState; actor: string; note: string }[];
 }
-export const rollbackSchema = z.object({ environment: ref, target: ref, expectedGeneration: generation, reason: z.string().trim().min(1).max(2000), repairWorkId: z.uuid().optional(), delegate: delegateSchema.optional() }).strict();
-export const rollbackClaimSchema = z.object({ rollbackId: z.uuid(), registration: ref, epoch: revision }).strict();
-export const rollbackSettleSchema = z.object({ rollbackId: z.uuid(), operationId: z.uuid(), registration: ref, epoch: revision, outcome: z.enum(['applied', 'failed', 'unknown']), providerOperationId: z.string().trim().min(1).max(200).optional(), detail: z.string().trim().max(2000).optional() }).strict();
-export const rollbackResolveSchema = z.object({ rollbackId: z.uuid(), operationId: z.uuid().optional(), outcome: z.enum(['applied', 'failed', 'cancelled']), reason: z.string().trim().min(1).max(2000), evidence: z.url().max(2000).optional() }).strict();
+const rollbackSchema = z.object({ environment: ref, target: ref, expectedGeneration: generation, reason: z.string().trim().min(1).max(2000), repairWorkId: z.uuid().optional(), delegate: delegateSchema.optional() }).strict();
+const rollbackClaimSchema = z.object({ rollbackId: z.uuid(), registration: ref, epoch: revision }).strict();
+const rollbackSettleSchema = z.object({ rollbackId: z.uuid(), operationId: z.uuid(), registration: ref, epoch: revision, outcome: z.enum(['applied', 'failed', 'unknown']), providerOperationId: z.string().trim().min(1).max(200).optional(), detail: z.string().trim().max(2000).optional() }).strict();
+const rollbackResolveSchema = z.object({ rollbackId: z.uuid(), operationId: z.uuid().optional(), outcome: z.enum(['applied', 'failed', 'cancelled']), reason: z.string().trim().min(1).max(2000), evidence: z.url().max(2000).optional() }).strict();
 export interface EnvironmentDelivery {
   environmentId: string; generation: number;
   /** In `status()`, the environment's id again, with `source` naming the persisted release-backed selection. */
@@ -128,7 +128,10 @@ const same = isDeepStrictEqual;
 // Canonical: jsonb reorders object keys, so hash ordered tuples rather than stored objects.
 // This is the content address src/attribution.ts matches observed targets against.
 const manifestHash = digestHash;
-export const historyLimit = 100, incidentLimit = 100, segmentLimit = 200, leaseMs = 60_000;
+const historyLimit = 100;
+const incidentLimit = 100;
+const segmentLimit = 200;
+const leaseMs = 60_000;
 
 /** Union of intervals: merge every pair that overlaps or touches, keep the newest when bounded. */
 const ms = Date.parse;
@@ -176,7 +179,7 @@ export function serviceState(snapshot: z.infer<typeof serviceSnapshotSchema>, ex
 }
 
 /** Apply one authoritative observation of the current generation to the environment's coverage. */
-export function fold(state: EnvironmentDelivery, observation: DeploymentObservation, manifest: Record<string, string>) {
+function fold(state: EnvironmentDelivery, observation: DeploymentObservation, manifest: Record<string, string>) {
   if (!observation.authoritative || observation.generation !== state.generation) return;
   for (const snapshot of observation.services) {
     if (!manifest[snapshot.service]) continue;

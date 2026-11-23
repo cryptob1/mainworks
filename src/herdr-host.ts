@@ -88,7 +88,7 @@ async function herdrAt(deps: HerdrHostDeps, binary: string, args: string[], inst
   const call = herdrInvocation(args, instance);
   return deps.exec(binary, call.args, { ...(call.env ? { env: call.env } : {}), timeoutMs: 30_000 }).catch(error => ({ code: 1, stdout: '', stderr: String(error?.message ?? error) }));
 }
-export async function herdrServerRunning(deps: HerdrHostDeps, binary: string, instance: HerdrInstance | null) {
+async function herdrServerRunning(deps: HerdrHostDeps, binary: string, instance: HerdrInstance | null) {
   const status = await herdrAt(deps, binary, ['status', 'server'], instance);
   return status.code === 0 && /^status:\s*running\s*$/m.test(status.stdout);
 }
@@ -125,7 +125,7 @@ export async function ensureHerdrServer(deps: HerdrHostDeps, binary: string, ins
  * user; lingering that cannot be established is a named failure, never a unit reported to survive a
  * reboot it would not.
  */
-export async function ensureLinger(deps: Pick<HerdrHostDeps, 'exec' | 'user'>) {
+async function ensureLinger(deps: Pick<HerdrHostDeps, 'exec' | 'user'>) {
   const lingering = async () => (await deps.exec('loginctl', ['show-user', deps.user, '--property=Linger', '--value']).catch(() => null))?.stdout.trim() === 'yes';
   if (await lingering()) return;
   const result = await deps.exec('loginctl', ['enable-linger', deps.user]).catch(error => ({ code: 1, stdout: '', stderr: String(error?.message ?? error) }));

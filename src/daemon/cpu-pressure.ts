@@ -27,13 +27,13 @@ import { sessionTestBudget } from '../runner/registry.js';
 import { overloadAlarm, overloaded, readSessionUsage } from '../session-share.js';
 
 /** The one constant, no setting: while 'some avg60' reads above this, no new worker, reviewer or trial starts. */
-export const cpuPressureCeiling = 85;
+const cpuPressureCeiling = 85;
 /** GY-3416: the trial guard's own heat limit — the trial cap halves from 5C under it; a launch reads it no longer (GY-3501). */
-export const launchHotCelsius = trialHotCelsius;
+const launchHotCelsius = trialHotCelsius;
 /** GY-3401, GY-3416: from 5C under the limit the trial cap halves. */
 export const trialHalfCelsius = trialHotCelsius - 5;
 
-export { heatWindowMs };
+;
 
 /** GY-3446: the trial heat limit now — a temporary `launchHotCelsius` the master set while it stands, else the default. */
 const hotLimit = (state: Pick<DaemonState, 'cpuPressure'>) => state.cpuPressure?.hotCelsius ?? launchHotCelsius;
@@ -46,9 +46,8 @@ export function cpuWaiting(state: Pick<DaemonState, 'cpuPressure'>): string | nu
 }
 export const cpuPressureHeld = (state: Pick<DaemonState, 'cpuPressure'>) => cpuWaiting(state) !== null;
 /** GY-3501: the implementation hold is the launch hold — heat never holds a worker on its own. */
-export const implementationWaiting = cpuWaiting;
 /** GY-3401, GY-3416: whether the hottest CPU sensor sits at the trial halving limit. */
-export const cpuHot = (state: Pick<DaemonState, 'cpuPressure'>) => (state.cpuPressure?.celsius ?? -Infinity) >= hotLimit(state) - (launchHotCelsius - trialHalfCelsius);
+const cpuHot = (state: Pick<DaemonState, 'cpuPressure'>) => (state.cpuPressure?.celsius ?? -Infinity) >= hotLimit(state) - (launchHotCelsius - trialHalfCelsius);
 /**
  * GY-3501: whether the heat waits that remain may go — the trial container guard and the heavy
  * checks read the sensor against the same limit. Pressure alone holds launches; the sensor holds
@@ -69,7 +68,7 @@ export function trialCapNow(state: Pick<DaemonState, 'cpuPressure'>, full: numbe
 export { cpuCelsius } from '../merge-writer/trial-load.js';
 
 /** 'some avg60' of /proc/pressure/cpu: the kernel's own average of the time some task waited for a CPU. */
-export function pressureAvg60(text: string): number | null {
+function pressureAvg60(text: string): number | null {
   const value = Number(/^some\b[^\n]*\bavg60=([0-9]+(?:\.[0-9]+)?)/m.exec(text)?.[1]);
   return Number.isFinite(value) && value >= 0 ? Math.min(value, 100) : null;
 }
@@ -91,7 +90,7 @@ const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
  * day of `now`. The first day measured stays as the baseline; of the rest only the last eight are
  * kept. A counter that went backwards (a reboot) or a reading without idle adds nothing.
  */
-export function tallyCpuSeconds(days: Record<string, number>, previous: { total: number; steal: number; idle?: number } | null, current: { total: number; steal: number; idle: number } | null, now: number) {
+function tallyCpuSeconds(days: Record<string, number>, previous: { total: number; steal: number; idle?: number } | null, current: { total: number; steal: number; idle: number } | null, now: number) {
   if (!previous || previous.idle === undefined || !current) return;
   const busy = (current.total - current.idle - current.steal) - (previous.total - previous.idle - previous.steal);
   if (!(busy >= 0) || current.total < previous.total) return;

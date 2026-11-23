@@ -13,7 +13,7 @@ import { overloadFactor, saturatedPressure, type SessionUsage } from './model/se
 export * from './model/session-usage.js';
 
 /** A session's share is never under this many cores. */
-export const minimumShareCores = 2;
+const minimumShareCores = 2;
 /** Every session's CPUWeight and IOWeight: equal, systemd's default. */
 export const sessionWeight = 100;
 /** The loop, its master, the server and the database: ten sessions' weight, so they answer under full load. */

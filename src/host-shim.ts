@@ -38,7 +38,7 @@ export const hostProbeScript = [
 ].join('\n');
 
 /** The warm image a host runs shards in: the trial image's digest and the lockfile's hash (`none` without one). */
-export const warmImagePattern = /^graphyard-warm:[0-9a-f]{12}-(?:[0-9a-f]{12}|none)$/;
+const warmImagePattern = /^graphyard-warm:[0-9a-f]{12}-(?:[0-9a-f]{12}|none)$/;
 
 /** GY-3405: no agent session runs longer on a host; Graphyard ends every session well before. */
 const sessionHours = 8;

@@ -32,7 +32,7 @@ export const readOnlyTrialBlocker = 'Read-only file system';
 export const trialOverloadPrefix = 'Trial-host overload:';
 
 /** One queued control-plane candidate, highest priority first, oldest on ties. */
-export interface QueuedMerge { key: string; id: string; head: string; submittedAt: string; waitingMs: number; priority: number }
+interface QueuedMerge { key: string; id: string; head: string; submittedAt: string; waitingMs: number; priority: number }
 export interface MergeQueue {
   /** The candidate the writer merges next, or null: nothing is due, or an open intent blocks the queue. */
   next: Work | null;

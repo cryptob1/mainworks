@@ -1,7 +1,7 @@
 import { chmod, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-export const fakeNode = { ID: 'nFAKE123CNTRL', DNSName: 'yard.tail-test.ts.net.', TailscaleIPs: ['100.64.0.7', 'fd7a::7'], Online: true };
+const fakeNode = { ID: 'nFAKE123CNTRL', DNSName: 'yard.tail-test.ts.net.', TailscaleIPs: ['100.64.0.7', 'fd7a::7'], Online: true };
 
 /**
  * A fake `tailscale` in DIR/bin, the only thing stubbed: `status --json` answers SELF, and the serve

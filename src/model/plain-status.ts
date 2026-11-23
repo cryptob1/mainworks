@@ -7,7 +7,7 @@ import { formatAge, statusDuration, type StatusDuration } from './duration.js';
 import { humanRequestBlocker } from './human-request.js';
 // GY-3280: the escalation clock of a recorded blocker (model/work.ts `blockedAt`), re-exported
 // beside the blocker's own plain sentences — the one blocker concern readers import.
-export { blockerSince } from './work.js';
+;
 import { deliveryOutcome, shortShas } from './format.js';
 import { isFilingRefusal } from './user-facing.js';
 
@@ -20,13 +20,13 @@ import { isFilingRefusal } from './user-facing.js';
 export const jargon = ['epoch', 'lease', 'candidate', 'policy revision', 'producer', 'attestation', 'trusted evidence'] as const;
 
 /** Where an item is, in the order work moves. Delivered work is `shipped`. */
-export const phases = ['not-started', 'needs-worker', 'building', 'review', 'checks', 'proof', 'merging', 'shipped'] as const;
+const phases = ['not-started', 'needs-worker', 'building', 'review', 'checks', 'proof', 'merging', 'shipped'] as const;
 export type Phase = typeof phases[number];
 export const phaseLabel: Record<Phase, string> = {
   'not-started': 'Not started', 'needs-worker': 'Needs a worker', building: 'Being built', review: 'In review',
   checks: 'Automated checks', proof: 'Proving it works', merging: 'Merging', shipped: 'Shipped',
 };
-export type Tone = 'stuck' | 'waiting' | 'working' | 'shipped';
+type Tone = 'stuck' | 'waiting' | 'working' | 'shipped';
 export interface PlainStatus { sentence: string; tone: Tone; phase: Phase; who: string | null; blocking: string | null
   /**
    * GY-1845: the item's outcome once it has merged — the production state from `deliveryOutcome`,
@@ -102,7 +102,7 @@ const itemWait = /\b(?:[Ww]ait(?:s|ing)?\s+(?:on|for)|[Dd]epends\s+on|[Bb]locked
  * (`not before X`, `window opens … X`), never every timestamp in the text — a recorded retry or
  * observation time is not the deadline. A reason naming several reads as its latest.
  */
-export function notBeforeInstants(text: string): number[] {
+function notBeforeInstants(text: string): number[] {
   let from = 0;
   return [...text.matchAll(instant)].flatMap(m => {
     // The words since the previous instant and the last clause break, at most 48 characters back.
@@ -154,7 +154,7 @@ const stepWords: Record<string, string> = {
  * has been trying. The reason itself stays out: it is written for an operator reading
  * `master status`, in vocabulary this page keeps out of its copy.
  */
-export function stalledStep(work: Work, now: number): string | null {
+function stalledStep(work: Work, now: number): string | null {
   const stalled = (work.actionQueue?.actions ?? []).flatMap(row => row.stall ? [{ row, stall: row.stall }] : []);
   if (!stalled.length) return null;
   const worst = stalled.sort((a, b) => Date.parse(a.stall.since) - Date.parse(b.stall.since))[0];

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { secretName, isAbsolute, launchEnvironmentValueLimit, capabilityTiers, quotaStates, registryRoles, type AgentRegistry, type RegistryMutation, type FleetAccount, type FleetRuntime, upsert, demandRegistry, registryLimits, type FleetModel, type FleetAccountInput, unobservedQuota, type FleetRole, roleRuntimeRefusal } from '../model/registry.js';
+import { secretName, isAbsolute, launchEnvironmentValueLimit, capabilityTiers, quotaStates, fleetRoles, type AgentRegistry, type RegistryMutation, type FleetAccount, type FleetRuntime, upsert, demandRegistry, registryLimits, type FleetModel, type FleetAccountInput, unobservedQuota, type FleetRole, roleRuntimeRefusal } from '../model/registry.js';
 import { notSecret, secretPaths } from '../model/registry-keys.js';
 import { accountKeySchema, smokeObservationSchema } from './registry-keys.js';
 /**
@@ -69,7 +69,7 @@ export const modelSchema = z.object({
     asOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'A price is as of a day, YYYY-MM-DD').optional() }).strict().prefault({}),
   capability: z.object({ tier: z.enum(capabilityTiers).default('strong'), contextTokens: z.number().int().min(1000).max(100_000_000).nullable().default(null), notes: text(300).optional() }).strict().prefault({}),
 }).strict();
-export const usageSchema = z.object({ window: text(40), percent: z.number().min(0).max(1000), resetsAt: z.string().datetime().nullable(),
+const usageSchema = z.object({ window: text(40), percent: z.number().min(0).max(1000), resetsAt: z.string().datetime().nullable(),
   /** When a window carried past a failed usage read was last read (GY-3494). */
   readAt: z.string().datetime().optional(),
   /** GY-3497: the provider's own limit list named this window (Claude's `limits[]`), so the provider enforces it and a reading at its ceiling holds. */
@@ -137,7 +137,7 @@ export const rolePolicySchema = z.object({
   model: entryName.nullable().default(null),
 }).strict();
 export const roleSchema = z.object({
-  name: z.enum(registryRoles), // Active assignments only; the ledger retains historical roles.
+  name: z.enum(fleetRoles), // Active assignments only; the ledger retains historical roles.
   /** Eligible accounts, most preferred first. */
   accounts: z.array(entryName).max(50).refine(list => new Set(list).size === list.length, 'A role lists each account once'),
   /** How many sessions of this role may run at once; 0 pauses the role. */
@@ -156,13 +156,13 @@ export const registryMutationSchemas = {
   'account.remove': z.object({ name: entryName, reason }).strict(),
   'account.quota': z.object({ name: entryName, quota: quotaObservationSchema, reason }).strict(),
   'role.set': z.object({ role: roleSchema, reason }).strict(),
-  'role.remove': z.object({ name: z.enum(registryRoles), reason }).strict(),
+  'role.remove': z.object({ name: z.enum(fleetRoles), reason }).strict(),
   /** A whole proposal at once, in dependency order: what setup discovers and an operator accepts. */
-  apply: z.object({ runtimes: z.array(runtimeSchema).max(50).default([]), models: z.array(modelSchema).max(100).default([]), accounts: z.array(accountSchema).max(200).default([]), roles: z.array(roleSchema).max(registryRoles.length).default([]), reason }).strict(),
+  apply: z.object({ runtimes: z.array(runtimeSchema).max(50).default([]), models: z.array(modelSchema).max(100).default([]), accounts: z.array(accountSchema).max(200).default([]), roles: z.array(roleSchema).max(fleetRoles.length).default([]), reason }).strict(),
 } as const;
 
 export const selectionRequestSchema = z.object({
-  role: z.enum(registryRoles),
+  role: z.enum(fleetRoles),
   host: hostName,
   work: z.string().trim().min(1).max(40).nullable().default(null),
   principal: z.string().trim().min(1).max(200).nullable().default(null),

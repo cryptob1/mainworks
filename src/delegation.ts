@@ -51,7 +51,7 @@ const countLeads = (principals: Roster) => principals.filter(p => p.role === 'sl
 type Roster = readonly Pick<Principal, 'id' | 'role' | 'grants' | 'proofs' | 'deploymentProviders'>[];
 // A reviewer slot is held only by a producer whose roster entry carries proof patterns (GY-1879): a
 // lane-only producer and a producer configured with no proofs hold none.
-export const proofProducer = (p: Pick<Principal, 'role' | 'proofs'>) => p.role === 'producer' && !!p.proofs?.length;
+const proofProducer = (p: Pick<Principal, 'role' | 'proofs'>) => p.role === 'producer' && !!p.proofs?.length;
 const countProducers = (principals: Roster) => principals.filter(proofProducer).length;
 
 /**

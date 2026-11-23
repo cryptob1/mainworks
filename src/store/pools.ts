@@ -15,7 +15,7 @@ export async function reserve(pool: pg.Pool) {
 }
 
 /** How long `closePool` waits for a pool's connections to close before it gives up on the stragglers. */
-export const poolCloseBoundMs = 5_000;
+const poolCloseBoundMs = 5_000;
 
 const openClients = new WeakMap<pg.Pool, Set<pg.PoolClient>>();
 
@@ -43,7 +43,7 @@ export function trackedPool<P extends pg.Pool>(pool: P, log: (message: string) =
 }
 
 /** How long the server waits between attempts to reach a database that is not yet accepting connections, at most. */
-export const databaseWaitMaxMs = 5_000;
+const databaseWaitMaxMs = 5_000;
 /**
  * Resolve once the database answers a query (GY-2966). A database still starting or recovering —
  * the 2026-10-27 crash left Postgres in recovery for twenty minutes — is waited for with backoff,

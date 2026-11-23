@@ -9,7 +9,7 @@ import type { PaneServer } from './setup-checklist.js';
  * when something is mergeable, so the window spans many cycles; past it the report is the presence
  * report it always was, never a loop inferred from nothing.
  */
-export const loopMergerLiveMs = 3_600_000;
+const loopMergerLiveMs = 3_600_000;
 /** The master loop that merges on this installation, as the report needs it: live, and named. */
 export interface ReportedLoopMerger { live: boolean; name: string }
 
@@ -37,7 +37,7 @@ export interface LoopHost { host: string; local?: boolean; at?: string; away: bo
  * the rule `daemonSummary` applies to the loop's own cursor. The dispatcher beside the cycle reads
  * every few seconds, so a long cycle does not lapse it.
  */
-export const loopPresenceLiveMs = (intervalSeconds: number) => Math.max(3 * intervalSeconds * 1000, 120_000);
+const loopPresenceLiveMs = (intervalSeconds: number) => Math.max(3 * intervalSeconds * 1000, 120_000);
 
 /** The loop as the control plane last saw it read, in memory beside the engine. */
 export class LoopRegistry {
@@ -109,7 +109,6 @@ export function loopCheckoutTrust(header: string | string[] | undefined): string
  * `setup.workerGrowth` and the dashboard's Needs you shows it until the loop grows the pool.
  */
 export const loopWorkerGrowthHeader = 'X-Graphyard-Loop-Worker-Growth';
-export const loopWorkerGrowth = loopCheckoutTrust;
 
 /**
  * The header on the loop's coordination reads naming the standing repeated step failure
@@ -119,9 +118,6 @@ export const loopWorkerGrowth = loopCheckoutTrust;
  * item while it stands — an alert that needs no master session.
  */
 export const loopStepFailureHeader = 'X-Graphyard-Loop-Step-Failure';
-export const encodeLoopStepFailure = encodeLoopCheckoutTrust;
-/** The standing repeated step-failure line a loop read names, or null when it names none, `off`, or one that does not parse. */
-export const loopStepFailure = loopCheckoutTrust;
 /**
  * The header on the loop's coordination reads naming the standing fetch refusal (GY-3336): the
  * remote refuses the base branch's fetch and the loop backs off, URI-encoded, or `off` while none
@@ -129,10 +125,8 @@ export const loopStepFailure = loopCheckoutTrust;
  * item while it stands, quoting the remote's refusal and the fix.
  */
 export const loopFetchRefusalHeader = 'X-Graphyard-Loop-Fetch-Refusal';
-export const loopFetchRefusal = loopCheckoutTrust;
 /** GY-3432: the stall alarm the loop raised, URI-encoded, or `off`; /api/status serves it as `setup.stallAlarm` for the Master page. */
 export const loopStallAlarmHeader = 'X-Graphyard-Loop-Stall-Alarm';
-export const loopStallAlarm = loopCheckoutTrust;
 
 /**
  * The header on the loop's coordination reads naming the host's CPU (GY-3348): 'some avg60' from
@@ -175,7 +169,7 @@ export async function reportedLoopMerger(registry: LoopRegistry, query: (text: s
  * from a `daemon-` merge instance — the instance only the durable loop mints (`daemonExecutor`),
  * inside the window. A range read on the `(kind, created_at)` index.
  */
-export async function ledgerLoopMerger(query: (text: string, values: unknown[]) => Promise<{ rows: any[] }>, now: Date, liveMs = loopMergerLiveMs): Promise<ReportedLoopMerger | null> {
+async function ledgerLoopMerger(query: (text: string, values: unknown[]) => Promise<{ rows: any[] }>, now: Date, liveMs = loopMergerLiveMs): Promise<ReportedLoopMerger | null> {
   const [latest] = (await query("SELECT payload->'details'->>'requestedBy' AS by, created_at FROM events WHERE kind='merge.enqueue.requested' AND created_at > $1 AND payload->'details'->>'requestedBy' LIKE '%#daemon-%' ORDER BY created_at DESC LIMIT 1",
     [new Date(now.getTime() - liveMs)])).rows;
   return latest ? { live: true, name: `the master loop (${String(latest.by).split('#')[0]}, last merge request ${new Date(latest.created_at).toISOString()})` } : null;

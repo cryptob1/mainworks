@@ -32,7 +32,7 @@ export interface ReclaimedHolder extends BranchHolder { action: string }
 
 const git = (args: string[], cwd?: string) => spawnSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 /** A failed git command as one line: its arguments and what git wrote to stderr. */
-export const gitFailure = (args: string[], result: { stderr?: string | null; stdout?: string | null; status: number | null; error?: Error }) =>
+const gitFailure = (args: string[], result: { stderr?: string | null; stdout?: string | null; status: number | null; error?: Error }) =>
   `git ${args.join(' ')} failed${result.status !== null ? ` (exit ${result.status})` : ''}: ${(result.stderr || result.stdout || result.error?.message || 'no output').trim().replace(/\s*\n\s*/g, ' / ')}`;
 /** Runs git, throwing with git's own stderr when it fails. */
 export function gitOrThrow(args: string[], cwd?: string) {
@@ -80,7 +80,7 @@ export function branchHolders(root: string, branch: string, except: string, keyO
 }
 
 /** The item key and epoch a session worktree's directory name (`GY-N-EPOCH`) says it belongs to. */
-export function sessionOf(path: string): { key: string | null; epoch: number | null } {
+function sessionOf(path: string): { key: string | null; epoch: number | null } {
   const match = /^([A-Z][A-Z0-9]*-\d+)-(\d+)$/.exec(basename(path));
   return match ? { key: match[1], epoch: Number(match[2]) } : { key: null, epoch: null };
 }

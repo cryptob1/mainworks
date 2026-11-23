@@ -90,13 +90,13 @@ const hostUpgrade = async (services: Services, req: IncomingMessage, socket: Dup
 };
 
 /** How long the item page waits on the host for one log chunk. */
-export const hostLogTimeoutMs = 10_000;
+const hostLogTimeoutMs = 10_000;
 /**
  * One bounded chunk of a headless worker run's log, read by the loop on the host where the run
  * lives (GY-3259): the server never reads a host path. Null when the run is unknown there; a throw
  * when no host supervisor is connected or it does not answer in time.
  */
-export const hostLogRequest = (request: object, noun: string, did: string): Promise<unknown> => {
+const hostLogRequest = (request: object, noun: string, did: string): Promise<unknown> => {
   const bridge = host;
   if (!bridge?.socket.writable) return Promise.reject(Object.assign(new Error(`The host supervisor is not connected, so ${noun} cannot be ${did} right now`), { status: 503 }));
   const id = randomUUID();

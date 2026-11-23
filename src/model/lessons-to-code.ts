@@ -9,8 +9,8 @@ import type { removedGateSchema } from '../model-boundary/project-memory.js';
 import { masterLessons, type MemoryNote, type ProjectMemory } from './project-memory.js';
 
 export type RemovedGate = z.infer<typeof removedGateSchema>;
-export const weekMs = 7 * 24 * 3_600_000;
-export const retainedRemovedGates = 100;
+const weekMs = 7 * 24 * 3_600_000;
+const retainedRemovedGates = 100;
 
 /** The enforceable lessons that have no item yet. */
 export const lessonsToFile = (memory: ProjectMemory) => masterLessons(memory).filter(lesson => lesson.enforceable && !lesson.filedAs);
@@ -40,11 +40,11 @@ export function removeDeliveredLessons(memory: ProjectMemory, work: readonly Wor
 }
 
 /** The gates removed in the seven days before `now`, newest first. */
-export const gatesRemovedThisWeek = (memory: Pick<ProjectMemory, 'removedGates'> | null | undefined, now: number) =>
+const gatesRemovedThisWeek = (memory: Pick<ProjectMemory, 'removedGates'> | null | undefined, now: number) =>
   (memory?.removedGates ?? []).filter(entry => now - Date.parse(entry.at) < weekMs).reverse();
 
 /** The batch gate's reverts in the seven days before `now`, newest first. */
-export const revertsThisWeek = (record: { reverts?: { item: string; at: string }[] } | null | undefined, now: number) =>
+const revertsThisWeek = (record: { reverts?: { item: string; at: string }[] } | null | undefined, now: number) =>
   (record?.reverts ?? []).filter(entry => now - Date.parse(entry.at) < weekMs).reverse();
 
 /** What master status and the dashboard header show: the week's reverts beside the week's removed gates, each naming its items. */
