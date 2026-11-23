@@ -1,6 +1,7 @@
 import { sessionScopeProperties } from '../session-share.js';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { confinedRuntimeArgs } from '../worker-sandbox.js';
+import { piModelArgs } from '../master/runtimes.js';
 import { randomUUID } from 'node:crypto';
 import { closeSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -38,7 +39,7 @@ export const defaultPiModel = 'zai/glm-5.3-flash';
  */
 export function piArgs(prompt: string, options: { model: string; extension?: string; args?: string[] }) {
   return ['--mode', 'json', '--no-session', '--no-extensions', '--extension', options.extension ?? piExtensionPath,
-    '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--no-approve', '--model', options.model, ...(options.args ?? []), '--', prompt];
+    '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--no-approve', ...piModelArgs(options.model), ...(options.args ?? []), '--', prompt];
 }
 
 /** Inherited variables a run never sees: the loop's own Graphyard and Herdr identity. What a run may hold is passed in `env`. */
@@ -494,7 +495,7 @@ export function piSmoke(configured: { command: string; model: string; args?: str
     let child: ChildProcess;
     try {
       child = (configured.spawn ?? spawn)(configured.command, [...(configured.commandArgs ?? []), '--mode', 'json', '--no-session', '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--no-approve',
-        '--no-tools', '--model', configured.model, ...(configured.args ?? []), '--', 'Reply with the single word OK.'], { cwd: options.cwd, env: runEnvironment(process.env, configured.environment), stdio: ['ignore', 'pipe', 'pipe'] });
+        '--no-tools', ...piModelArgs(configured.model), ...(configured.args ?? []), '--', 'Reply with the single word OK.'], { cwd: options.cwd, env: runEnvironment(process.env, configured.environment), stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (error) { finish({ ok: false, error: `${configured.command} could not be started: ${error instanceof Error ? error.message : String(error)}` }); return; }
     const bound = setTimeout(() => { child.kill('SIGKILL'); finish({ ok: false, error: `${configured.command} gave no answer within ${Math.round((options.timeoutMs ?? 120_000) / 1000)}s` }); }, options.timeoutMs ?? 120_000);
     bound.unref();
