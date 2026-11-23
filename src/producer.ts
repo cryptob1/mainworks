@@ -117,8 +117,8 @@ export async function producerSecretsPrefix(directory: string, env: Record<strin
  * group, one principal whose evidence the control plane trusts by its grants and never by what
  * the session says. The session holds the producer's own credential file (a path in its
  * environment, never a value on a command line), works in a detached worktree it creates in the
- * session directory Graphyard allocated for it under the managed worktree root — on durable
- * storage, outside every Graphyard worktree, removed when the session resolves — and submits
+ * session directory Mainworks allocated for it under the managed worktree root — on durable
+ * storage, outside every Mainworks worktree, removed when the session resolves — and submits
  * each proof with the exact head, base and policy revision it was launched for. The ledger here
  * records launch, completion and outcome per session, which is what `master status` reports as
  * running per candidate and since when.
@@ -258,7 +258,7 @@ export function sessionRetry(records: { requestId?: string; state: string; reque
 // launched for anything else would submit evidence the gates cannot bind.
 function assertProducerCandidate(work: Work, request: DispatchRequest, observedAt: string) {
   const now = Date.parse(observedAt);
-  if (!Number.isFinite(now)) throw new Error('A producer launch requires a valid Graphyard snapshot clock');
+  if (!Number.isFinite(now)) throw new Error('A producer launch requires a valid Mainworks snapshot clock');
   if (request.kind !== 'producer' || !request.group || !request.proofs?.length) throw new Error(`${work.key} request ${request.id} is not a producer request`);
   const live = work.autoDispatch?.producers.find(entry => entry.id === request.id);
   if (!live || live.state !== 'requested') throw new Error(`${work.key} no longer requests a producer for ${request.group} proofs on ${request.sha.slice(0, 12)}`);
@@ -357,25 +357,25 @@ export function piProducerPrompt(config: { repository: string; cliPath?: string 
   return producerRequest(config, binding, principal, criteria, checkout, memory, toolEvidenceSubmit(binding));
 }
 
-/** How a CLI producer session submits each proof: an evidence file passed to `graphyard evidence`. */
+/** How a CLI producer session submits each proof: an evidence file passed to `mainworks evidence`. */
 export const cliEvidenceSubmit = (cliPath: string, key: string, directory: string, proof: string) =>
   `Write each proof's evidence JSON at ${resolve(directory, `${proof.replace(/[^a-zA-Z0-9]+/g, '-')}.evidence.json`)} (node ${cliPath} guide proof names the fields) and submit it with node ${cliPath} evidence ${key} FILE. `;
-/** How a headless producer submits each proof: its graphyard_submit_evidence tool, which Graphyard submits as the producer principal. */
+/** How a headless producer submits each proof: its graphyard_submit_evidence tool, which Mainworks submits as the producer principal. */
 export const toolEvidenceSubmit = (binding: Pick<ProducerBinding, 'sha' | 'baseSha' | 'policyRevision'>) =>
   `Submit each proof with the graphyard_submit_evidence tool: proof, sha "${binding.sha}", baseSha "${binding.baseSha}", policyRevision ${binding.policyRevision}, result, executed, skipped, and exercise {criterion, behaviour, result, executed} from the stripped run. `;
 
 /**
  * The one producer request every runtime receives (GY-3492): only `submit`, how the session hands
- * Graphyard its evidence, differs between a CLI session and a headless one.
+ * Mainworks its evidence, differs between a CLI session and a headless one.
  */
 export function producerRequest(config: { repository: string; cliPath?: string }, binding: Pick<ProducerBinding, 'key' | 'pr' | 'sha' | 'baseSha' | 'policyRevision' | 'proofs'>,
   principal: string | undefined, criteria: { id: string; text: string; proofs: string[] }[], checkout: { directory: string; worktree: string }, memory: ProjectMemory | null | undefined, submit: string) {
   const cli = config.cliPath ?? 'graphyard', { key, sha } = binding, worktree = checkout.worktree, stripped = resolve(checkout.directory, 'exercise');
   const attached = criteria.filter(criterion => criterion.proofs.some(proof => binding.proofs.includes(proof)));
-  return `You are an independent Graphyard proof producer for ${config.repository}${principal ? `, principal ${principal}` : ''}. Produce trusted evidence for work item ${key} (pull request #${binding.pr}) at head ${sha} on base ${binding.baseSha}, policy revision ${binding.policyRevision}: ${binding.proofs.join(', ')}. `
+  return `You are an independent Mainworks proof producer for ${config.repository}${principal ? `, principal ${principal}` : ''}. Produce trusted evidence for work item ${key} (pull request #${binding.pr}) at head ${sha} on base ${binding.baseSha}, policy revision ${binding.policyRevision}: ${binding.proofs.join(', ')}. `
     + (projectMemoryDigest(memory, 'producer', { baseSha: binding.baseSha }) || '')
     + (attached.length ? `The criteria these proofs establish: ${attached.map(criterion => `${criterion.id} (${criterion.proofs.filter(proof => binding.proofs.includes(proof)).join(', ')}): ${criterion.text}`).join(' ')} ` : '')
-    + `Your Graphyard credential is the file named by GRAPHYARD_TOKEN_FILE, for node ${cli} only; never print, copy, cat, or echo it or any other credential, or read .graphyard/connection.json, .graphyard/credentials.json, .env or ~/.config. `
+    + `Your Mainworks credential is the file named by GRAPHYARD_TOKEN_FILE, for node ${cli} only; never print, copy, cat, or echo it or any other credential, or read .graphyard/connection.json, .graphyard/credentials.json, .env or ~/.config. `
     + liveInstallGuidance(binding.proofs, checkout.directory, key, sha)
     + `Work only in a detached worktree at the allocated path, never under a temporary directory: git fetch --no-write-fetch-head origin ${sha} && git worktree add --detach ${worktree} ${sha}. `
     + `Build there and run each proof's tests and the criteria from node ${cli} status ${key}, with GRAPHYARD_* and HERDR_* unset and a free GRAPHYARD_TEST_PORT; node ${cli} guide proof names the runner, the title rule and the manual: judging. `
@@ -532,7 +532,7 @@ export async function launchProducer(root: string, work: Work, request: Dispatch
  * The unit proof producer on the headless runner (GY-169). The same request, binding, profile and
  * principal as a Herdr session, and the same ledger record, but no pane: the run is registered
  * under the session name, each proof comes back as a validated graphyard_submit_evidence call, and
- * the loop submits it as the producer principal on the route `graphyard evidence` uses, so the
+ * the loop submits it as the producer principal on the route `mainworks evidence` uses, so the
  * server trusts it by the producer's grants and the exercise rule exactly as it does today. When
  * the run ends its record is kept on the session record, and reconciliation settles it as usual.
  */

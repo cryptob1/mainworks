@@ -61,7 +61,7 @@ test('e2e:install-move-host — install move copies the database, files and cred
     const commit = execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
     git('worktree', 'add', '--detach', '--quiet', root, commit);
     const bound = async () => new Response(JSON.stringify({ actor: { id: 'master', role: 'coordinator' }, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234 }));
-    await setupMaster(root, { url: source.url, token: tokens.master, cliPath: launcher, credentialDirectory: configHome, hostId: 'source-host', herdrWorkspace: 'workspace-graphyard' }, bound as typeof fetch);
+    await setupMaster(root, { url: source.url, token: tokens.master, cliPath: launcher, credentialDirectory: configHome, hostId: 'source-host', herdrWorkspace: 'workspace-mainworks' }, bound as typeof fetch);
     const release = join(root, '.graphyard', 'cli-releases', commit);
     git('worktree', 'add', '--detach', '--quiet', release, commit);
     const config = JSON.parse(await readFile(join(root, '.graphyard/master.json'), 'utf8'));
@@ -93,7 +93,7 @@ test('e2e:install-move-host — install move copies the database, files and cred
     assert.ok(plan.files.includes(root) && plan.files.includes(directory) && plan.files.includes(masters), 'the checkout, the install directory and the credential directory are listed');
     assert.deepEqual(plan.credentials, [config.credentialFile, operatorCredential, workerCredential].sort());
     assert.deepEqual(plan.worktrees, [join(repo, '.git')], 'the main clone the checkout and its CLI release are worktrees of');
-    assert.match(plan.trialImage.command!, /'--tag' 'graphyard-trial:local'/);
+    assert.match(plan.trialImage.command!, /'--tag' 'mainworks-trial:local'/);
     assert.deepEqual(plan.accounts, ['claude-a']); assert.deepEqual(plan.refusals, []); assert.equal(plan.applied, false);
     assert.equal(existsSync(target), false, 'the plan copies nothing');
     assert.equal((await source.ok('agent-registry/document', undefined, tokens.master)).accounts[0].credential.host, 'source-host', 'the plan re-points nothing');
@@ -113,7 +113,7 @@ test('e2e:install-move-host — install move copies the database, files and cred
     assert.equal(execFileSync('git', ['--git-dir', movedGit, 'rev-parse', `${commit}^{commit}`], { encoding: 'utf8' }).trim(), commit, 'the moved .git holds the objects');
     assert.equal(execFileSync('git', ['--git-dir', movedGit, 'remote', 'get-url', 'origin'], { encoding: 'utf8' }).trim(), 'https://github.com/owner/project.git', 'the moved .git holds the config');
     const commands = docker.commands.map(recorded => [recorded.program, ...recorded.args].join(' '));
-    assert.ok(commands.some(line => line.startsWith('docker buildx build ') && line.includes('--tag graphyard-trial:local ') && line.endsWith(join(target, root))), `the trial image is built from the copied checkout:\n${commands.join('\n')}`);
+    assert.ok(commands.some(line => line.startsWith('docker buildx build ') && line.includes('--tag mainworks-trial:local ') && line.endsWith(join(target, root))), `the trial image is built from the copied checkout:\n${commands.join('\n')}`);
 
     // The target's control plane has the database contents, every account on the target host, and none refused for it.
     running = await controlPlane(join(target, data), ports.base);

@@ -227,7 +227,7 @@ test(`e2e:confined-master-main-herdr — a fixture install migrated from its pri
       return shellAnswers(args) ?? JSON.stringify({ result: {} });
     };
     const launched = await launchSession({ name: config.masterAgentName, kind: process.execPath, args: [sessionScript, '{request}'],
-      text: 'Run the recovery steps the migration left this install owing.', workspace: migrated.herdrWorkspace, label: 'Graphyard master · owner/project',
+      text: 'Run the recovery steps the migration left this install owing.', workspace: migrated.herdrWorkspace, label: 'Mainworks master · owner/project',
       environment: { GRAPHYARD_MASTER: '1', ...paneEnvironment }, run,
       onPane: () => undefined,
       start: { directory: root, cwd: root, coordinatorRoot: root, environment: paneEnvironment, confinement: 'master', timeoutMs: 240_000,

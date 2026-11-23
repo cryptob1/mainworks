@@ -162,7 +162,7 @@ test('e2e:claude-limit-list — a stub usage answer with a weekly 40% and a Fabl
     smoke: async () => ({ ok: true, error: null }), opencodeAuth: null, opencodeModels: null }, document.accounts, 'claude-opus-5')).quota;
   await call(coordinator, 'agent-registry/observe', { host: HOST, observations: [{ account: account.name, quota }] });
 
-  // `graphyard master registry` as the operator runs it.
+  // `mainworks master registry` as the operator runs it.
   const view = await registryCommand({ hostId: HOST }, [], { read: path => call(coordinator, path), write: path => { throw new Error(`no write expected: ${path}`); } }) as FleetView;
   const held = view.accounts.find(entry => entry.name === 'claude-fable')!;
   assert.equal(held.quota, 'exhausted');

@@ -23,7 +23,7 @@ export async function claudeAccount(environment: ProbedHome, probe: EnvironmentP
   const oauth = (await readJsonFile(resolve(environment.home, '.credentials.json')))?.claudeAiOauth;
   if (!oauth || typeof oauth !== 'object' || !(oauth.accessToken || oauth.refreshToken)) {
     const settings = await readJsonFile(resolve(environment.home, 'settings.json'));
-    if (typeof settings?.env?.ANTHROPIC_API_KEY === 'string' && settings.env.ANTHROPIC_API_KEY) return { loggedIn: true, usage: [], note: 'an API-key account: the provider exposes no usage Graphyard can read' };
+    if (typeof settings?.env?.ANTHROPIC_API_KEY === 'string' && settings.env.ANTHROPIC_API_KEY) return { loggedIn: true, usage: [], note: 'an API-key account: the provider exposes no usage Mainworks can read' };
     return { loggedIn: false, usage: [], note: null };
   }
   if (probe.quota === false) return { loggedIn: true, usage: [], note: 'quota not read' };
@@ -125,7 +125,7 @@ export async function zaiAccount(environment: ProbedHome, probe: EnvironmentProb
       return { loggedIn, usage: [], note: loggedIn ? 'quota not read' : null };
     }
     if (!hasZaiKey) {
-      return { loggedIn, usage: [], note: 'OpenCode exposes no provider quota Graphyard can read; its providers report their own limits in the session' };
+      return { loggedIn, usage: [], note: 'OpenCode exposes no provider quota Mainworks can read; its providers report their own limits in the session' };
     }
   }
   // Accounts on one shared plan read one quota: a fresh plan reading answers without another call

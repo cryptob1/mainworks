@@ -153,7 +153,7 @@ export function repeatedFailureAttention(work: readonly Work[], now: number) {
     return {
       subject: 'repeated failure',
       text: `${plural(group.count, 'item')} hit the same failure (${group.items.join(', ')}): ${group.line} — ${filed ? `filed as ${filed.key}` : 'the caretaker is looking'}`,
-      next: filed ? `graphyard status ${filed.key}` : `Diagnose the shared fault (${group.items.join(', ')}) or file one hotfix item with graphyard master create FILE`,
+      next: filed ? `mainworks status ${filed.key}` : `Diagnose the shared fault (${group.items.join(', ')}) or file one hotfix item with mainworks master create FILE`,
     };
   });
 }

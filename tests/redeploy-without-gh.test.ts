@@ -66,7 +66,7 @@ test('integration:redeploy-without-gh — redeploying an existing install succee
       root: initial.root, configHome: initial.configHome, installed: true,
       extraResponses: [GH_FAILING],
     });
-    const args = redeployArguments(record, 'graphyard-local:abcdef123456');
+    const args = redeployArguments(record, 'mainworks-local:abcdef123456');
     const planSession = await prepareInstall(redeploy.root, installRequestFromArgs([...args.slice(0, -1), '--plan']).request, redeploy.deps, 'plan');
     const plan = await buildPlan(planSession);
     assert.ok(plan.preflight.every(item => item.ok), `redeploy --plan preflight passed without gh: ${JSON.stringify(plan.preflight.filter(item => !item.ok))}`);
@@ -163,7 +163,7 @@ test('e2e:redeploy-without-gh — a newly verified commit reaches the control pl
           root: initial.root, configHome: initial.configHome, installed: true,
           extraResponses: [GH_FAILING],
         });
-        const args = redeployArguments(record, `graphyard-local:${commit.slice(0, 12)}`);
+        const args = redeployArguments(record, `mainworks-local:${commit.slice(0, 12)}`);
         const liveDeps = { ...redeploy.deps, fetch };
         // Restart the real control plane stamped with the new commit when the adapter deploys.
         const basePrepare = await prepareInstall(redeploy.root, installRequestFromArgs(args).request, liveDeps, 'apply');

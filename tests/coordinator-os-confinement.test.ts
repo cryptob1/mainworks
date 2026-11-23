@@ -31,7 +31,7 @@ function coordinatorFixture(base: string) {
   writeFileSync(join(root, 'src', 'loop.ts'), 'export const loop = 1;\n');
   run('init', '-b', 'main');
   run('config', 'user.email', 'graphyard@localhost');
-  run('config', 'user.name', 'Graphyard');
+  run('config', 'user.name', 'Mainworks');
   run('add', '.');
   run('commit', '-m', 'coordinator');
   const worktree = join(root, '.graphyard', 'worktrees', 'session');
@@ -49,7 +49,7 @@ function linkedWorktreeCoordinatorFixture(base: string) {
   writeFileSync(join(main, 'src', 'loop.ts'), 'export const loop = 1;\n');
   execFileSync('git', ['init', '-b', 'main', main], { stdio: 'ignore' });
   seed('config', 'user.email', 'graphyard@localhost');
-  seed('config', 'user.name', 'Graphyard');
+  seed('config', 'user.name', 'Mainworks');
   seed('add', '.');
   seed('commit', '-m', 'main');
   const root = join(base, 'coordinator');
@@ -209,8 +209,8 @@ test('unit:linked-worktree-coordinator-confined — a coordinator that is itself
     assert.equal(checkoutWorktreeAdminDirectory(root), join(gitDir, 'worktrees', 'coordinator'), 'the coordinator worktree admin resolves under the common Git directory');
     assert.equal(sessionGitAdminDirectory(worktree, root), join(gitDir, 'worktrees', 'session'), 'the session still pins its own worktree admin under the common worktrees area');
     // prepareConfinedGitPaths prepared the real common Git directory, not a path under the pointer file.
-    assert.ok(existsSync(join(gitDir, 'refs', 'heads', 'graphyard')), 'the graphyard branch namespace is prepared under the common Git directory');
-    assert.ok(existsSync(join(gitDir, 'logs', 'refs', 'heads', 'graphyard')), 'the graphyard reflog namespace is prepared under the common Git directory');
+    assert.ok(existsSync(join(gitDir, 'refs', 'heads', 'graphyard')), 'the mainworks branch namespace is prepared under the common Git directory');
+    assert.ok(existsSync(join(gitDir, 'logs', 'refs', 'heads', 'graphyard')), 'the mainworks reflog namespace is prepared under the common Git directory');
     assert.ok(existsSync(join(gitDir, 'worktrees', 'coordinator', 'FETCH_HEAD')), 'FETCH_HEAD is prepared in the coordinator worktree admin');
     const build = (kind: string, args: string[], sessionDirectory: string = worktree) =>
       coordinatorConfinement({ kind, args, coordinatorRoot: root, sessionDirectory, platform: 'linux', mountNamespaceWorks: true, bwrap: 'bwrap' });
@@ -222,9 +222,9 @@ test('unit:linked-worktree-coordinator-confined — a coordinator that is itself
     const gitIdx = wrapper.indexOf(gitDir);
     assert.ok(gitIdx > rootIdx && wrapper[gitIdx - 1] === '--bind' && wrapper[gitIdx + 1] === gitDir, 'the common Git directory outside the checkout is re-exposed writable after it, so ref transactions can take the packed-refs lock (GY-2967)');
     const headsIdx = wrapper.indexOf(join(gitDir, 'refs', 'heads'));
-    assert.ok(headsIdx > gitIdx && wrapper[headsIdx - 1] === '--ro-bind', 'the refs outside the graphyard namespace are re-bound read-only inside it');
+    assert.ok(headsIdx > gitIdx && wrapper[headsIdx - 1] === '--ro-bind', 'the refs outside the mainworks namespace are re-bound read-only inside it');
     assert.ok(wrapper.includes(join(gitDir, 'objects')), 'the shared object store is re-exposed writable');
-    assert.ok(wrapper.includes(join(gitDir, 'refs', 'heads', 'graphyard')), 'the shared graphyard branch namespace is re-exposed writable');
+    assert.ok(wrapper.includes(join(gitDir, 'refs', 'heads', 'graphyard')), 'the shared mainworks branch namespace is re-exposed writable');
     assert.ok(wrapper.includes(join(gitDir, 'worktrees', 'session')), 'the session pins its own worktree admin directory');
     const worktreesIdx = wrapper.indexOf(join(gitDir, 'worktrees'));
     assert.ok(worktreesIdx > gitIdx && wrapper[worktreesIdx - 1] === '--ro-bind', 'the shared worktrees area stays read-only inside the writable git directory');
@@ -250,7 +250,7 @@ test('unit:linked-worktree-coordinator-confined — a coordinator that is itself
     assert.equal(run.status, 0, `the confined shell ran successfully: ${run.stderr}`);
     assert.ok(run.stdout.includes('WRITE-BLOCKED'), 'the linked-worktree checkout is unwritable');
     assert.ok(run.stdout.includes('COMMIT-BLOCKED'), 'git commit in the linked-worktree checkout is blocked');
-    assert.ok(run.stdout.includes('REF-BLOCKED'), 'a ref outside the shared graphyard namespace is unwritable');
+    assert.ok(run.stdout.includes('REF-BLOCKED'), 'a ref outside the shared mainworks namespace is unwritable');
     assert.ok(run.stdout.includes('SESSION-WROTE'), 'the session worktree still takes its writes');
     assert.ok(!run.stdout.includes('WRITE-ALLOWED') && !run.stdout.includes('COMMIT-ALLOWED') && !run.stdout.includes('REF-ALLOWED'), 'no probe escapes');
   } finally {
@@ -404,7 +404,7 @@ test('unit:keyring-endpoint-unheld-reported — a launch that binds an endpoint 
     // The launcher logs it for a session whose wrapper binds the endpoint, and for no other.
     const bound = { mechanism: 'read-only-mount' as const, wrapper: ['bwrap', '--ro-bind', realpathSync(endpoint), '/run/user/1/bus', '--'], detail: '' };
     const warning = await keyringEndpointWarning('gy-approver', bound, show('ActiveState=inactive\n'), endpoint, new Map());
-    assert.ok(warning && warning.startsWith('graphyard: gy-approver: ') && warning.endsWith(`migrate: ${secretsBusMigration}`), 'a session given the unheld endpoint is logged with the migration');
+    assert.ok(warning && warning.startsWith('mainworks: gy-approver: ') && warning.endsWith(`migrate: ${secretsBusMigration}`), 'a session given the unheld endpoint is logged with the migration');
     assert.equal(await keyringEndpointWarning('gy-approver', bound, show(`ActiveState=active\nListen=${endpoint} (Stream)\n`), endpoint, new Map()), null, 'a held endpoint logs nothing');
     assert.equal(await keyringEndpointWarning('gy-worker', { ...bound, wrapper: ['bwrap', '--ro-bind', '/dev/null', '/run/user/1/bus', '--'] }, show('ActiveState=inactive\n'), endpoint, new Map()), null, 'a session with its own credential is never given the endpoint');
     assert.equal(await keyringEndpointWarning('gy-codex', { mechanism: 'runtime-sandbox', wrapper: [], detail: '' }, show('ActiveState=inactive\n'), endpoint, new Map()), null, 'a runtime sandbox binds no endpoint');
@@ -470,7 +470,7 @@ test('unit:keyring-endpoint-judged-once — an unmigrated endpoint socket is pro
     server = createServer();
     await new Promise<void>(done => server.listen(endpoint, done));
     const fresh = await keyringEndpointWarning('gy-d', bound(), unheld, endpoint, verdicts);
-    assert.ok(fresh && fresh.startsWith('graphyard: gy-d: '), 'a new socket at the path is judged and reported again');
+    assert.ok(fresh && fresh.startsWith('mainworks: gy-d: '), 'a new socket at the path is judged and reported again');
     assert.equal(probes, 2);
     let held = 0;
     await new Promise<void>(done => server.close(() => done()));
@@ -489,7 +489,7 @@ test('unit:keyring-endpoint-judged-once — an unmigrated endpoint socket is pro
     assert.equal(await keyringEndpointWarning('gy-h', bound(), () => { asked++; return ''; }, endpoint, verdicts), null, 'nor does an unreadable answer');
     assert.equal(asked, 2, 'and neither is remembered, so each launch asks again');
     const later = await keyringEndpointWarning('gy-i', bound(), unheld, endpoint, verdicts);
-    assert.ok(later && later.startsWith('graphyard: gy-i: ') && later.endsWith(`migrate: ${secretsBusMigration}`), 'the user manager answering later reports the unmigrated endpoint');
+    assert.ok(later && later.startsWith('mainworks: gy-i: ') && later.endsWith(`migrate: ${secretsBusMigration}`), 'the user manager answering later reports the unmigrated endpoint');
     assert.equal(probes, 3);
     assert.equal(await keyringEndpointWarning('gy-j', bound(), unheld, endpoint, verdicts), null, 'and that judged verdict is kept');
     assert.equal(probes, 3);
@@ -502,7 +502,7 @@ test('unit:keyring-endpoint-judged-once — an unmigrated endpoint socket is pro
       keyringEndpointWarning('gy-l', bound(), unheld, endpoint, verdicts),
     ]);
     assert.equal(raced[0], null, 'the unjudged probe logs nothing');
-    assert.ok(raced[1] && raced[1].startsWith('graphyard: gy-l: '), 'the launch that awaited it probes again and reports the unmigrated endpoint');
+    assert.ok(raced[1] && raced[1].startsWith('mainworks: gy-l: '), 'the launch that awaited it probes again and reports the unmigrated endpoint');
     assert.equal(probes, 4);
     // Every replaced incarnation leaves nothing behind: one entry per endpoint path (follow-up 13).
     assert.equal(verdicts.size, 1, 'only the latest socket\'s verdict is kept for the endpoint');
@@ -513,7 +513,7 @@ test('unit:keyring-endpoint-judged-once — an unmigrated endpoint socket is pro
     await new Promise<void>(done => server.listen(endpoint, done));
     assert.equal(await keyringEndpointWarning('gy-m', bound(), unheld, endpoint, verdicts, Promise.resolve(false)), null, 'a failed launch logs nothing');
     const next = await keyringEndpointWarning('gy-n', bound(), unheld, endpoint, verdicts);
-    assert.ok(next && next.startsWith('graphyard: gy-n: '), 'the next launch reports the endpoint instead');
+    assert.ok(next && next.startsWith('mainworks: gy-n: '), 'the next launch reports the endpoint instead');
     assert.equal(probes, 6);
     assert.equal(verdicts.size, 1);
     // When the launch that started a shared probe fails, a racing launch that succeeds reports
@@ -526,7 +526,7 @@ test('unit:keyring-endpoint-judged-once — an unmigrated endpoint socket is pro
       keyringEndpointWarning('gy-p', bound(), unheld, endpoint, verdicts, Promise.resolve(true)),
     ]);
     assert.equal(racing[0], null, 'the failed launch that started the probe logs nothing');
-    assert.ok(racing[1] && racing[1].startsWith('graphyard: gy-p: '), 'the racing launch that succeeded reports the unmigrated endpoint');
+    assert.ok(racing[1] && racing[1].startsWith('mainworks: gy-p: '), 'the racing launch that succeeded reports the unmigrated endpoint');
     assert.equal(probes, 7, 'and they shared one probe');
     assert.equal(await keyringEndpointWarning('gy-q', bound(), unheld, endpoint, verdicts), null, 'a later launch on that socket repeats nothing');
     assert.equal(probes, 7);
@@ -542,7 +542,7 @@ test('unit:keyring-endpoint-judged-once — an unmigrated endpoint socket is pro
     assert.deepEqual(allFailed, [null, null], 'all failed launches log nothing');
     assert.equal(probes, 8, 'sharing one probe');
     const recovered = await keyringEndpointWarning('gy-t', bound(), unheld, endpoint, verdicts);
-    assert.ok(recovered && recovered.startsWith('graphyard: gy-t: '), 'the next launch after all failed racing launches probes again and reports');
+    assert.ok(recovered && recovered.startsWith('mainworks: gy-t: '), 'the next launch after all failed racing launches probes again and reports');
     assert.equal(probes, 9);
     assert.equal(verdicts.size, 1);
   } finally {
@@ -564,19 +564,19 @@ test('unit:keyring-probe-off-launch-path — a launch never waits on the keyring
     assert.equal(launched.started.state, 'started', 'the runtime start is observed while the probe is still asking');
     assert.deepEqual(probing, ['gy-approver'], 'the probe was started for the launch');
     assert.ok(!logged.some(line => line.includes('keyring endpoint')), 'nothing about the endpoint is logged before the probe answers');
-    answer('graphyard: gy-approver: The keyring endpoint /run/user/1/graphyard-secrets-bus is a socket graphyard-secrets-bus.socket does not hold');
+    answer('mainworks: gy-approver: The keyring endpoint /run/user/1/graphyard-secrets-bus is a socket graphyard-secrets-bus.socket does not hold');
     await new Promise(done => setImmediate(done));
-    assert.ok(logged.some(line => line.startsWith('graphyard: gy-approver: The keyring endpoint')), 'the probe\'s line is logged once it answers');
+    assert.ok(logged.some(line => line.startsWith('mainworks: gy-approver: The keyring endpoint')), 'the probe\'s line is logged once it answers');
     // A launch whose runtime never starts tells the probe so, and nothing is logged under the failed
     // session's name (follow-up 12).
     const outcomes: Promise<boolean>[] = [];
-    const failing = (session: string, _bound: unknown, started: Promise<boolean>) => { outcomes.push(started); return started.then(ok => ok ? `graphyard: ${session}: The keyring endpoint` : null); };
+    const failing = (session: string, _bound: unknown, started: Promise<boolean>) => { outcomes.push(started); return started.then(ok => ok ? `mainworks: ${session}: The keyring endpoint` : null); };
     const dead = (_command: string, args: string[]) => { if (args[0] === 'pane' && args[1] === 'run') return ''; throw new Error('herdr: pane gone'); };
     await assert.rejects(startAgentSession('gy-failed', 'pi', 'pane-2', [], 'Judge the candidate', dead, { directory: base, confinement: false, keyringWarning: failing, timeoutMs: 50, log: line => logged.push(line) }));
     assert.equal(outcomes.length, 1);
     assert.equal(await outcomes[0], false, 'the probe learns the launch failed');
     await new Promise(done => setImmediate(done));
-    assert.ok(!logged.some(line => line.startsWith('graphyard: gy-failed: The keyring endpoint')), 'and logs nothing under the failed session\'s name');
+    assert.ok(!logged.some(line => line.startsWith('mainworks: gy-failed: The keyring endpoint')), 'and logs nothing under the failed session\'s name');
   } finally {
     rmSync(base, { recursive: true, force: true });
   }

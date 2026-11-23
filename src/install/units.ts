@@ -61,7 +61,7 @@ export const legacyInstallUnits: InstallUnits = { version: 1, slug: null, master
 export const deployUnitOf = (units: Pick<InstallUnits, 'master'>) => units.master.replace(/^(graphyard|mainworks)-master/, '$1-deploy');
 
 /** The command that records an install's own units in its checkout: `master init` resolves and writes them. */
-export const initialiseUnitsCommand = 'graphyard master init';
+export const initialiseUnitsCommand = 'mainworks master init';
 /** A legacy-named unit file beside the install: where it is, and its text (null when it is not installed). */
 export interface LegacyUnitFile { path: string; text: string | null }
 /** The host's user unit directory: where every install's user units, legacy-named ones included, live. */
@@ -224,7 +224,7 @@ export function foreignUnitText(text: string, root: string, home = homedir()): s
 export class ForeignUnitRefusal extends Error {
   override readonly name = 'ForeignUnitRefusal';
   constructor(readonly unitPath: string, readonly checkout: string, root: string) {
-    super(`${unitPath} runs another installation (${checkout}), not this checkout (${root}); Graphyard never overwrites or restarts another install's unit`);
+    super(`${unitPath} runs another installation (${checkout}), not this checkout (${root}); Mainworks never overwrites or restarts another install's unit`);
   }
 }
 

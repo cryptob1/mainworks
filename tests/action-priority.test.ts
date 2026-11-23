@@ -30,13 +30,13 @@ const probe = (overrides: Partial<Work> = {}): Work => ({
 test('unit:human-needed-actions-visible — an item whose only action is escalate is recorded as needing a person, listed on the human-facing page from the moment it is computed, and counted apart from the rows executors are taking', () => {
   const now = new Date(Date.parse(at) + 30_000);
   // The one refusal no executor step answers: branch protection nobody has verified.
-  const refusal = 'Required Graphyard check and merge-queue branch protection have not been verified';
+  const refusal = 'Required Mainworks check and merge-queue branch protection have not been verified';
   const owedItem = probe({ gates: [{ name: 'merge', passed: false, reasons: [refusal] }] } as Partial<Work>);
   const computed = nextAction(owedItem, [owedItem], new Date(at))!;
   assert.equal(computed.kind, 'attention');
   assert.equal(actionJudgment.attention, 'in-step');
   assert.ok(!executorRunnableKinds.includes('attention'), 'no executor may hold a handler for it, so no executor will ever claim the row');
-  assert.deepEqual(computed.needsHuman, { decision: `resolving ${owedItem.key}'s refusal`, resolve: `graphyard diagnose ${owedItem.key} — ${refusal}` });
+  assert.deepEqual(computed.needsHuman, { decision: `resolving ${owedItem.key}'s refusal`, resolve: `mainworks diagnose ${owedItem.key} — ${refusal}` });
   assert.deepEqual(humanNeeded(computed), computed.needsHuman, 'what the action records is what the rule says');
 
   // Beside it, a row an executor is simply yet to take.

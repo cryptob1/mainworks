@@ -13,7 +13,7 @@ import { accountHomeEnvironment, withModel } from '../master/runtimes.js';
 import type { FleetLaunchAccount } from '../fleet.js';
 import { registryToolsArgs } from '../registry-tools.js';
 import { claimRunWatch, liveRun, runsDirectory, superviseRun, writeRunOwner, type Applied } from './registry.js';
-import { evidencePayloadSchema, graphyardTools, piRuntimeSchema, type EvidencePayload } from './payloads.js';
+import { evidencePayloadSchema, mainworksTools, piRuntimeSchema, type EvidencePayload } from './payloads.js';
 import { runRecord, type RunOptions, type RunRecord, type RunResult, type Runner } from './types.js';
 import { parseProbeFailure } from '../model/account-quota.js';
 
@@ -158,7 +158,7 @@ export async function smokeRegistryAccount(account: FleetLaunchAccount, options:
  */
 export function agySmoke(account: Pick<FleetLaunchAccount, 'name' | 'home' | 'fleet'>, options: { cwd?: string; timeoutMs?: number; command?: string } = {}): Promise<SmokeResult> {
   const timeoutMs = options.timeoutMs ?? 120_000, command = options.command ?? account.fleet.contract.kind;
-  const home = join(tmpdir(), `graphyard-agy-smoke-${account.name.replace(/[^A-Za-z0-9._-]/g, '_')}`);
+  const home = join(tmpdir(), `mainworks-agy-smoke-${account.name.replace(/[^A-Za-z0-9._-]/g, '_')}`);
   rmSync(home, { recursive: true, force: true });
   mkdirSync(home);
   if (account.home) { mkdirSync(join(home, '.gemini')); symlinkSync(resolve(account.home), join(home, '.gemini', 'antigravity-cli')); }
@@ -215,11 +215,11 @@ async function post(url: string, token: string, path: string, body: unknown, fet
   const response = await fetcher(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
     body: JSON.stringify(body), signal: AbortSignal.timeout(30_000) });
   const result = await response.json().catch(() => ({})) as any;
-  if (!response.ok) throw new Error(`Graphyard refused ${path} (${response.status}): ${result?.error ?? JSON.stringify(result)}`);
+  if (!response.ok) throw new Error(`Mainworks refused ${path} (${response.status}): ${result?.error ?? JSON.stringify(result)}`);
   return result;
 }
 
-/** One proof's result, submitted as the producer principal on the route `graphyard evidence` uses. */
+/** One proof's result, submitted as the producer principal on the route `mainworks evidence` uses. */
 export async function submitEvidence(url: string, token: string, work: { id: string }, payload: EvidencePayload, environment: string, fetcher: typeof fetch = fetch): Promise<Applied> {
   const subject = `proof ${payload.proof}`;
   try {
@@ -230,7 +230,7 @@ export async function submitEvidence(url: string, token: string, work: { id: str
 
 /** The producer's run options: each submission must be one of its proofs on its exact binding. */
 export const producerRunOptions = (cwd: string, binding: { sha: string; baseSha: string; policyRevision: number; proofs: string[] }, env: Record<string, string>, timeoutMs: number): RunOptions<EvidencePayload> => ({
-  cwd, env: { ...env, GRAPHYARD_PI_ROLE: 'producer' }, tool: graphyardTools.evidence, timeoutMs,
+  cwd, env: { ...env, GRAPHYARD_PI_ROLE: 'producer' }, tool: mainworksTools.evidence, timeoutMs,
   validate: payload => {
     const parsed = evidencePayloadSchema.parse(payload);
     if (!binding.proofs.includes(parsed.proof)) throw new Error(`${parsed.proof} is not a proof of this request (${binding.proofs.join(', ')})`);
@@ -241,7 +241,7 @@ export const producerRunOptions = (cwd: string, binding: { sha: string; baseSha:
 });
 
 /**
- * The one definition of a live-install proof (GY-1170): a manual proof that installs Graphyard
+ * The one definition of a live-install proof (GY-1170): a manual proof that installs Mainworks
  * onto a real Hetzner server. The match is keyed to Hetzner and fails closed (GY-1204): only
  * manual:host-install-live, the host install that provisions a Hetzner server, and a
  * `manual:…install…-live` name carrying a `hetzner` segment (manual:install-hetzner-live) count.

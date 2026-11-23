@@ -5,14 +5,14 @@ import { guideTopics } from '../src/guide.js';
 import { masterConfigSchema } from '../src/master.js';
 
 // GY-3249: a red trial caused by the trial host (its network, disk, or a tool its image lacks) is a
-// Graphyard fault; the master is told so, and told never to change the managed repository around it.
+// Mainworks fault; the master is told so, and told never to change the managed repository around it.
 
 const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',
   repository: 'owner/game', baseBranch: 'main', hostId: 'machine-a', masterAgentName: 'graphyard-master-game', workers: [] });
 
 test('unit:tests/master-upstream-rule.test.ts — the master prompt names trial-host faults (network, disk, missing trial-image tool) as upstream faults and forbids changing the managed repository around them', () => {
   const prompt = masterPrompt(config);
-  assert.match(prompt, /A Graphyard fault \([^)]*trial-host failure: network, disk, missing trial-image tool\) goes to master\.json's upstream or master status/);
+  assert.match(prompt, /A Mainworks fault \([^)]*trial-host failure: network, disk, missing trial-image tool\) goes to master\.json's upstream or master status/);
   assert.match(prompt, /never file it in owner\/game or change owner\/game to work around it\./);
 });
 

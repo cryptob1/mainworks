@@ -12,7 +12,7 @@ import { pinnedInstall, proposedRuntimes, repinRuntime, type FleetAccount } from
 
 // GY-3592: OpenCode 2.x keeps one background service per OS user, and every call without
 // --standalone attaches to it whatever XDG_DATA_HOME says: the account's login is ignored and the
-// service's free model answers. Every command Graphyard builds runs on a private server instead.
+// service's free model answers. Every command Mainworks builds runs on a private server instead.
 const scratch = await temporaryDirectory('opencode-standalone'), calls = join(scratch, 'calls');
 await writeFile(join(scratch, 'opencode'), `#!/bin/sh
 for a in "$@"; do [ "$a" = --help ] && { echo '  --standalone    Run with a private server instead of the background service'; exit 0; }; done

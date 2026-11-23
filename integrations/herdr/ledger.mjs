@@ -8,7 +8,7 @@ const url = config.url || process.env.GRAPHYARD_URL;
 const token = config.token || process.env.GRAPHYARD_TOKEN;
 const hostId = config.hostId ?? process.env.GRAPHYARD_HOST_ID;
 const cliPath = config.cliPath || process.env.GRAPHYARD_CLI;
-if (!url || !token) { console.error('Configure Graphyard URL and an individual worker/reader token in the Herdr plugin config.json.'); process.exit(1); }
+if (!url || !token) { console.error('Configure Mainworks URL and an individual worker/reader token in the Herdr plugin config.json.'); process.exit(1); }
 // Treat server content as text, never terminal control sequences.
 const clean = value => String(value).replace(/[\x00-\x1f\x7f-\x9f]/g, ' ');
 async function request(path, data) {
@@ -24,7 +24,7 @@ const ownership = (w, now) => {
   return owner ? `${active ? '' : 'Last: '}${identity?.displayName ?? owner}${identity?.runtime ? ` · ${identity.runtime}` : ''}` : 'unassigned';
 };
 const rl = createInterface({ input: process.stdin, output: process.stdout });
-console.log('GRAPHYARD · Herdr work ledger\nCommands: list, show GY-N, claim GY-N, handoff GY-N, heartbeat GY-N EPOCH, release GY-N EPOCH, quit\nClaiming reserves work; it does not launch an agent or start automatic heartbeats.');
+console.log('MAINWORKS · Herdr work ledger\nCommands: list, show GY-N, claim GY-N, handoff GY-N, heartbeat GY-N EPOCH, release GY-N EPOCH, quit\nClaiming reserves work; it does not launch an agent or start automatic heartbeats.');
 async function list() {
   const { work: rows, now } = await request('work-snapshot');
   const observedAt = Date.parse(now);
@@ -35,7 +35,7 @@ async function list() {
 try {
   await list();
   for (;;) {
-    const [command, key, epoch] = (await rl.question('\ngraphyard > ')).trim().split(/\s+/);
+    const [command, key, epoch] = (await rl.question('\nmainworks > ')).trim().split(/\s+/);
     if (command === 'quit') break;
     try {
       if (command === 'list' || !command) { await list(); continue; }

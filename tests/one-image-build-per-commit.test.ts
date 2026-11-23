@@ -57,13 +57,13 @@ test('integration:one-image-build-per-commit — two installs on one host deploy
   process.env.GRAPHYARD_VERSION = '2026.11.23'; process.env.GRAPHYARD_BUILD_REVISION = to;
   try {
     const host = dockerHost(), log: string[] = [];
-    const graphyard = await install(host, log, 'graphyard', from, to), huck = await install(host, log, 'huck', from, to);
-    const outcomes = await Promise.all([graphyard, huck].map(one => deployOnce(one.file, one.ports, one.log)));
+    const mainworks = await install(host, log, 'mainworks', from, to), huck = await install(host, log, 'huck', from, to);
+    const outcomes = await Promise.all([mainworks, huck].map(one => deployOnce(one.file, one.ports, one.log)));
     assert.deepEqual(host.builds, [`graphyard-local:${to.slice(0, 12)}`], 'one image build for the commit');
     assert.deepEqual(outcomes, ['deployed', 'deployed'], log.join('\n'));
-    assert.equal(graphyard.state.serving, to);
+    assert.equal(mainworks.state.serving, to);
     assert.equal(huck.state.serving, to);
-    assert.equal(readDeployRecord(graphyard.file)?.tip, to);
+    assert.equal(readDeployRecord(mainworks.file)?.tip, to);
     assert.equal(readDeployRecord(huck.file)?.tip, to);
 
     // A commit whose image does not exist is built as today.

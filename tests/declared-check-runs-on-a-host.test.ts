@@ -26,7 +26,7 @@ import { dockerCalls, dockerCreates, shardHosts, shardRepository, type ShardHost
 // Docker is a stand-in (helpers/shard-hosts.ts): its `compose up` starts a real TCP listener for the service.
 
 const proof = 'integration:declared-check-runs-on-a-host';
-const image = 'graphyard-trial:declared-check', target = 'gy-compute@box';
+const image = 'mainworks-trial:declared-check', target = 'gy-compute@box';
 let hosts: ShardHostsFixture, repository: { root: string; sha: string }, port: number, ran: string, fails: string;
 const previous = process.env.GRAPHYARD_TRIAL_IMAGE;
 const freePort = () => new Promise<number>(resolve => { const server = createServer().listen(0, '127.0.0.1', () => { const { port } = server.address() as { port: number }; server.close(() => resolve(port)); }); });
@@ -88,7 +88,7 @@ test(`${proof} — the check's Postgres service starts on the host, the script p
   assert.ok(lines[0]!.cwd.startsWith(join(hosts.home('box'), '.graphyard', 'runs', 'trial-')), `the script ran in the host's run directory: ${lines[0]!.cwd}`);
   assert.deepEqual({ host: lines[0]!.host, port: lines[0]!.port }, { host: 'postgres', port }, 'with the service\'s variables');
   const [create] = await dockerCreates(state());
-  assert.match(create!.join(' '), /--network=container:graphyard-check-\w+\.postgres /, 'on the services\' network');
+  assert.match(create!.join(' '), /--network=container:mainworks-check-\w+\.postgres /, 'on the services\' network');
 
   assert.deepEqual(localCheck, [], 'the script did not run on this machine');
   assert.deepEqual(started, [], 'and no services started here');

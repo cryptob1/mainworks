@@ -71,7 +71,7 @@ async function installation() {
   const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   git('init', '-q', '-b', 'main'); git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   await writeFile(join(root, 'README.md'), 'pi account key\n');
-  git('add', 'README.md'); git('-c', 'user.name=Graphyard', '-c', 'user.email=graphyard@example.test', 'commit', '-q', '-m', 'initial');
+  git('add', 'README.md'); git('-c', 'user.name=Mainworks', '-c', 'user.email=graphyard@example.test', 'commit', '-q', '-m', 'initial');
   await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory: credentials, herdrWorkspace: 'workspace', run: { worktreeRoot: join(root, '..', 'worktrees') } }, coordinatorStatus, { probe: durable });
   return { root, credentials, config: await loadMasterConfig(root) };
 }
@@ -79,7 +79,7 @@ async function installation() {
 /**
  * A stand-in `pi` on PATH, as the real one behaves: with no ZAI_API_KEY it prints Pi's own error and
  * exits 1. With one it answers the smoke prompt. It records
- * every start — its home and the key it saw — in the test's own record, outside every Graphyard log.
+ * every start — its home and the key it saw — in the test's own record, outside every Mainworks log.
  */
 async function fakePi() {
   const bin = join(scratch, `bin-${crypto.randomUUID().slice(0, 8)}`), record = join(bin, 'launched.jsonl');

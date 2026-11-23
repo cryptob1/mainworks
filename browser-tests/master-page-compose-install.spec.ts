@@ -35,7 +35,7 @@ test('e2e:master-page-compose-install — a server with no herdr streams the mas
   // the server fork, sign-in and terminal handshake follow it; like every database-booting spec it carries
   // a budget that load cannot eat.
   test.setTimeout(90_000);
-  const site = await mkdtemp(join(tmpdir(), 'graphyard-compose-terminal-'));
+  const site = await mkdtemp(join(tmpdir(), 'mainworks-compose-terminal-'));
   process.env.PATH = `${stub}${delimiter}${process.env.PATH}`; process.env.HERDR_STUB_LOG = join(site, 'herdr.log');
   process.env.GRAPHYARD_HERDR_CONFIG_HOME = ''; process.env.GRAPHYARD_HERDR_SESSION = '';
   const server = await containerServer(site), stopping = new AbortController();

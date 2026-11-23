@@ -108,7 +108,7 @@ function effects(config: MasterConfig, herdr: { agents: HerdrAgent[] }, reading:
   return { daemon, seen };
 }
 
-/** `graphyard master status` over this fixture's snapshot and daemon state, as the CLI reads it. */
+/** `mainworks master status` over this fixture's snapshot and daemon state, as the CLI reads it. */
 async function status(config: MasterConfig, state: DaemonState) {
   await writeFile(daemonStatePath(config), JSON.stringify(state));
   const root = await temporaryDirectory('heat-never-holds-status');
@@ -198,7 +198,7 @@ test(`${proof} — the trial container guard still waits on its own heat limit u
   await writeFile(join(dir, 'name'), 'coretemp\n');
   await writeFile(join(dir, 'temp1_input'), '95000\n');
   await writeFile(join(dir, 'temp1_crit'), '105000\n');
-  const [program, ...words] = trialContainerLaunch({ image: 'graphyard-trial:local', mounts: [[base, '/scratch', false]], network: 'none',
+  const [program, ...words] = trialContainerLaunch({ image: 'mainworks-trial:local', mounts: [[base, '/scratch', false]], network: 'none',
     load: { slots: join(base, 'slots'), cap: 2, order: trialStartOrder.merge, hotCelsius: trialHotCelsius, floorBytes: 30e9, hwmon: hwmonRoot, pressureBoundSeconds: 600 } });
   const child: ChildProcess = spawn(program!, [...words, 'true'], { cwd: base, env: { PATH: `${bin}:/usr/bin:/bin` }, stdio: ['ignore', 'ignore', 'pipe'] });
   let said = '';

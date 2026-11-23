@@ -20,11 +20,11 @@ const releaseProbeTimeoutMs = 5_000;
 const commitPattern = /^[0-9a-f]{40}$/i;
 
 /** The refusal a CLI and a server at different releases name: both releases, and the remedy (GY-1960). */
-export const versionSkewMessage = (cliRelease: string, serverRelease: string) => `CLI ${cliRelease} and server ${serverRelease} differ: run graphyard upgrade`;
+export const versionSkewMessage = (cliRelease: string, serverRelease: string) => `CLI ${cliRelease} and server ${serverRelease} differ: run mainworks upgrade`;
 
 /**
  * The commands a working attempt runs under its lease (GY-2978). A deploy moves the CLI checkout
- * before the server on installs watched at an older Graphyard, and every other command refuses a
+ * before the server on installs watched at an older Mainworks, and every other command refuses a
  * commit difference by name; these proceed instead with a one-line warning, because the wire
  * protocol is checked by the server's own request validation, so a stopped heartbeat, claim,
  * complete, blocked or defer loses an attempt to nothing but the skew.
@@ -61,7 +61,7 @@ export function releaseSkew(cli: ReleaseIdentity, server: { version?: unknown; c
   return !cli.released && cli.unreadable ? cli.unreadable : versionSkewMessage(cli.version, serverVersion);
 }
 
-/** This CLI's own release: the same release `graphyard version` reports and /healthz serves (src/release.ts cliRelease), so both sides compare like with like. Its commit is the checkout this file runs from — Git's reading, else the commit every checkout move records (GY-3569), never an older revision. */
+/** This CLI's own release: the same release `mainworks version` reports and /healthz serves (src/release.ts cliRelease), so both sides compare like with like. Its commit is the checkout this file runs from — Git's reading, else the commit every checkout move records (GY-3569), never an older revision. */
 const thisRelease = (): ReleaseIdentity => {
   const release = cliRelease(), root = resolve(fileURLToPath(new URL('../..', import.meta.url)));
   const commit = cliCommit(root) ?? recordedCommit(root) ?? (commitPattern.test(release.revision) ? release.revision.toLowerCase() : null);
@@ -90,7 +90,7 @@ export interface CliContext {
   command: string; id: string | undefined; args: string[];
   /** Every argument after the command word, for commands that parse their own flags. */
   rest: string[];
-  /** The Graphyard origin this invocation talks to. */
+  /** The Mainworks origin this invocation talks to. */
   base: string;
   /** The repository's connection file, or null for commands that must never read it. */
   connection: Connection | null;
@@ -114,7 +114,7 @@ export const cliPath = fileURLToPath(new URL('../../bin/graphyard.mjs', import.m
  */
 export async function createContext(command: string, id: string | undefined, args: string[], readsConnection: boolean): Promise<CliContext> {
   let connection: Connection = null;
-  if (readsConnection) try { connection = await loadConnection(process.cwd()); } catch { console.error('Invalid or insecure Graphyard connection file. Inspect local configuration; credential values are omitted.'); process.exit(1); }
+  if (readsConnection) try { connection = await loadConnection(process.cwd()); } catch { console.error('Invalid or insecure Mainworks connection file. Inspect local configuration; credential values are omitted.'); process.exit(1); }
   const base = setting('URL') ?? connection?.url ?? 'http://127.0.0.1:4310';
   let savedToken: string | undefined;
   try { if (connection && new URL(base).origin === connection.url) savedToken = connection.token; } catch { /* request validation reports an invalid URL */ }
@@ -196,7 +196,7 @@ export async function createContext(command: string, id: string | undefined, arg
         const path = await realpath(resolve(selected));
         if (!(await stat(path)).isFile()) throw new Error();
         return path;
-      } catch { throw new Error('The active Graphyard CLI launcher is unavailable; select an existing launcher'); }
+      } catch { throw new Error('The active Mainworks CLI launcher is unavailable; select an existing launcher'); }
     },
     // GY-866: a session started in its own checkout is handed the coordinator's root by its launch.
     repositoryRoot: () => setting('REPOSITORY_ROOT')?.trim() ? resolve(setting('REPOSITORY_ROOT')!) : execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim(),

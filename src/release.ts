@@ -7,19 +7,21 @@ import { stateDirectory } from './install/layout.js';
 
 /** A date version: YYYY.M.D for a day's first promotion, YYYY.M.D.N for the next ones. */
 export const datedVersionPattern = /^(\d{4})\.([1-9]\d?)\.([1-9]\d?)(?:\.([1-9]\d*))?$/;
-/** Graphyard's own base branch: every install follows its tip, whatever base branch the managed repository uses. */
-export const graphyardBaseBranch = 'main';
+/** Mainworks's own base branch: every install follows its tip, whatever base branch the managed repository uses. */
+export const mainworksBaseBranch = 'main';
+/** Compatibility export for the archived predecessor deploy watcher (tests/fixtures/deploy-predecessor/upgrade.ts.txt). */
+export const graphyardBaseBranch = mainworksBaseBranch;
 export const imageRepository = 'ghcr.io/cryptob1/graphyard';
 /**
- * GY-3199: Graphyard's canonical upstream — the URL every install's deploy watch fetches the
+ * GY-3199: Mainworks's canonical upstream — the URL every install's deploy watch fetches the
  * latest batch-gate-verified commit from, a constant in the code and never an install's own origin
  * (which may be a fork or a mirror), over the host's existing git access.
  */
-export const graphyardUpstreamUrl = 'https://github.com/cryptob1/graphyard';
-/** GY-3199: the ref Graphyard's own batch gate moves to its latest verified commit, which every install's watch reads. */
-export const graphyardVerifiedRef = 'refs/graphyard/verified';
+export const mainworksUpstreamUrl = 'https://github.com/cryptob1/graphyard';
+/** GY-3199: the ref Mainworks's own batch gate moves to its latest verified commit, which every install's watch reads. */
+export const mainworksVerifiedRef = 'refs/graphyard/verified';
 /**
- * GY-3214: the images Graphyard's batch gate publishes for each commit it verifies, which an
+ * GY-3214: the images Mainworks's batch gate publishes for each commit it verifies, which an
  * install pulls instead of building. GRAPHYARD_IMAGE_REGISTRY names another registry (a mirror).
  */
 export const publishedImages = (commit: string, env: NodeJS.ProcessEnv = process.env) => {
@@ -82,7 +84,7 @@ export function stampedRelease(env: NodeJS.ProcessEnv, revisionOf: () => string)
   return { version, revision: stamped && stamped !== 'unknown' ? stamped : revisionOf(), released };
 }
 
-/** The Graphyard installation this code runs from. */
+/** The Mainworks installation this code runs from. */
 export const installationRoot = fileURLToPath(new URL('..', import.meta.url));
 /**
  * GY-3317: the commit a CLI release tree recorded when it was created (bin/cli-release.mjs). A
@@ -103,14 +105,14 @@ export const recordCommit = (root: string, commit: string) => {
 let ownCheckout: Release | undefined;
 const checkout = () => ownCheckout ??= checkoutRelease(installationRoot, recordedCommit(installationRoot) || setting('BUILD_REVISION') || 'unknown');
 /**
- * This process's release, which `graphyard version`, `/healthz` and the install defaults all report:
+ * This process's release, which `mainworks version`, `/healthz` and the install defaults all report:
  * the build's stamp when it has one, else the checkout's dated tag or `unreleased <sha>` (read once).
  */
 export const cliRelease = (): Release => stampedRelease(process.env, () => checkout().revision) ?? checkout();
 
 /**
  * The version and revision this process is running, as `/healthz` and `/api/status` report it: the
- * release `graphyard version` names, with only a build-stamped revision, since a checkout's HEAD may
+ * release `mainworks version` names, with only a build-stamped revision, since a checkout's HEAD may
  * not be the code it serves (its served commit is `/healthz` `commit`).
  */
 export const releaseInfo = () => {

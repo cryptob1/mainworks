@@ -24,7 +24,7 @@ export async function fleetCommand(session: MasterSession): Promise<unknown> {
   if (id === 'worker' && args[0] === 'add' && args[1]) return print(await saveWorkerProfile(root, JSON.parse(await readFile(args[1], 'utf8')), credential => masterApi('status', credential)));
   if (id === 'producer') return print(await producerCommand(root, args, credential => masterApi('status', credential)));
   if (id === 'config') {
-    // GY-3446: hostHeavyJobs is the host-wide strict cap every Graphyard install here shares, kept beside the heavy-job slots, not in master.json.
+    // GY-3446: hostHeavyJobs is the host-wide strict cap every Mainworks install here shares, kept beside the heavy-job slots, not in master.json.
     const { hostHeavyJobs, ...settings } = masterSettingsFromArgs(args);
     const saved = Object.keys(settings).length || hostHeavyJobs === undefined ? await saveMasterSettings(root, settings) : {};
     if (hostHeavyJobs === 'auto') {

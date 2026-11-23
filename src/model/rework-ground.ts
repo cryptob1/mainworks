@@ -86,6 +86,6 @@ export function reworkCapCause(work: Pick<Work, 'id' | 'key' | 'stage' | 'rework
   const listed = refusals.map((entry, index) => `(${index + 1}) Attempt ${entry.attempt} (${reworkStation(entry)}): ${oneLineSummary(entry.reason, attemptSummaryMax)}`).join('; ');
   return {
     key: `rework-cap:${work.id}`,
-    detail: `${work.key}: ${reworkCapLabel(work)}; no further attempt is launched automatically. Refusals: ${listed}. Decide one of: revise the requirements (graphyard master requirements ${work.key} FILE REASON), split into smaller items (graphyard master create FILE and close ${work.key}), or park with a summary (graphyard master hold ${work.key} REASON or graphyard master close ${work.key} REASON).`,
+    detail: `${work.key}: ${reworkCapLabel(work)}; no further attempt is launched automatically. Refusals: ${listed}. Decide one of: revise the requirements (mainworks master requirements ${work.key} FILE REASON), split into smaller items (mainworks master create FILE and close ${work.key}), or park with a summary (mainworks master hold ${work.key} REASON or mainworks master close ${work.key} REASON).`,
   };
 }

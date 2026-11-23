@@ -10,7 +10,7 @@ import { HumanSignIn, signInSessionTtlMs } from '../src/server/auth.js';
 import { signInDatabase } from './helpers/sign-in-database.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-2171: `graphyard login` with no options and no GRAPHYARD_TOKEN_FILE finds the operator credential
+// GY-2171: `mainworks login` with no options and no GRAPHYARD_TOKEN_FILE finds the operator credential
 // the install recorded under the config home, and the human session its link opens lasts until 90 days unused.
 
 // Mints a link with no credential named, against a stub server, and returns the credential it sent and what it printed.
@@ -45,7 +45,7 @@ async function checkout(upJson?: object) {
   return root;
 }
 
-test('unit:login-no-options graphyard login with no options signs in with the install\'s recorded operator credential and links to the tailnet address', async () => {
+test('unit:login-no-options mainworks login with no options signs in with the install\'s recorded operator credential and links to the tailnet address', async () => {
   const root = await checkout({ version: 1, repository: 'acme/widget', provider: 'local', completed: [], noHerdr: true, goal: null, tailnetUrl: 'http://host.tailnet.ts.net:4310' });
   const home = await temporaryDirectory('login-config');
   const install = join(home, 'acme-widget'), token = 'operator-admin-credential-0123456789abcdef';
@@ -62,7 +62,7 @@ test('unit:login-no-options graphyard login with no options signs in with the in
 // A self-contained host (src/install/host.ts) writes the tokens to /home/graphyard/.config/graphyard/<install>/tokens/
 // and no install.json, and its environment sets GRAPHYARD_CONFIG_HOME to <install> itself.
 for (const [layout, configHomeOf] of [['GRAPHYARD_CONFIG_HOME at <install>', (home: string) => join(home, 'acme-widget')], ['the default config home', (home: string) => home]] as const) {
-  test(`unit:login-no-options on a self-contained host (${layout}) graphyard login finds the operator credential the host install wrote`, async () => {
+  test(`unit:login-no-options on a self-contained host (${layout}) mainworks login finds the operator credential the host install wrote`, async () => {
     const root = await checkout(), home = await temporaryDirectory('login-host-config');
     const token = 'host-operator-credential-0123456789abcdef';
     await mkdir(join(home, 'acme-widget/tokens'), { recursive: true });
@@ -100,7 +100,7 @@ test('unit:signin-session-renews-on-use — a session used within 90 days stays 
   } finally { await database.close(); }
 });
 
-test('unit:open-command — graphyard open opens the one-time link in the default browser, and prints it when no opener runs', async () => {
+test('unit:open-command — mainworks open opens the one-time link in the default browser, and prints it when no opener runs', async () => {
   const root = await checkout(), home = await temporaryDirectory('open-config'), bin = await temporaryDirectory('open-bin'), seen = join(bin, 'opened');
   for (const opener of ['xdg-open', 'open']) { await writeFile(join(bin, opener), `#!/bin/sh\nprintf '%s' "$1" > '${seen}'\n`); await chmod(join(bin, opener), 0o755); }
   const env = { GRAPHYARD_TOKEN: 'operator-admin-credential-0123456789abcdef' };

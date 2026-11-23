@@ -1,4 +1,4 @@
-// Concern: `graphyard guide TOPIC` — the procedure a launched session loads on demand (GY-2972).
+// Concern: `mainworks guide TOPIC` — the procedure a launched session loads on demand (GY-2972).
 // Each topic's text lives in its own file under src/guide/<topic>.ts so items that edit different
 // topics never conflict (GY-3708).
 import { COMMAND_NAME, PRODUCT_NAME } from './model/product.js';

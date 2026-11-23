@@ -26,7 +26,7 @@ export interface SessionScope { unit: string; usec: number; memory: number; memo
 
 const read = (path: string) => { try { return readFileSync(path, 'utf8').trim(); } catch { return null; } };
 
-/** Every Graphyard scope under `slice` that carries a MemoryHigh: the live agent sessions (trials carry none). */
+/** Every Mainworks scope under `slice` that carries a MemoryHigh: the live agent sessions (trials carry none). */
 export function sessionScopes(slice = sessionSlice()): SessionScope[] {
   let names: string[];
   try { names = readdirSync(slice).filter(name => name.startsWith('graphyard-') && name.endsWith('.scope')); } catch { return []; }

@@ -20,4 +20,4 @@ export function assignment(work: Pick<Work, 'lease' | 'lastAssignment' | 'worksp
  * that change. The release carrying it still wakes the item's observation job ahead of the polled
  * backlog (GY-1286), as it did when the reading was what the next dispatch waited on.
  */
-export const submittedBranchMoved = 'Submitted PR branch changed; wait for Graphyard to observe its current head before creating the rework workspace';
+export const submittedBranchMoved = 'Submitted PR branch changed; wait for Mainworks to observe its current head before creating the rework workspace';

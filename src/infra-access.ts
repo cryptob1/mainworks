@@ -46,7 +46,7 @@ export async function createRepository(providers: InfraProviders, repository: st
 /** Push every branch and tag in BUNDLE to OWNER/NAME; the token rides in git's environment, never in a URL, an argument or a file. */
 export async function pushRepository(providers: InfraProviders, repository: string, bundle: Buffer) {
   if (!providers.githubToken) throw missing('GRAPHYARD_INFRA_GITHUB_TOKEN');
-  const dir = await mkdtemp(join(tmpdir(), 'graphyard-infra-push-'));
+  const dir = await mkdtemp(join(tmpdir(), 'mainworks-infra-push-'));
   try {
     const file = join(dir, 'push.bundle'), bare = join(dir, 'repo.git');
     await writeFile(file, bundle);

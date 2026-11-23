@@ -12,7 +12,7 @@ const curls = async (dir: string) => (await readFile(join(dir, 'log'), 'utf8')).
 
 test(`${proof} — with the rootless tools installed and no ~/.graphyard, the printed script completes and prints Ready; with them missing it still downloads them`, async () => {
   const fixture = await fakeHosts('host-prepare-tools-present', [{ name: 'box' }, { name: 'bare', rootlessExtrasMissing: true }]);
-  assert.match(fixture.prepareOutput('box'), /Ready\. On the Graphyard machine run: graphyard host add gy-compute@box\s*$/);
+  assert.match(fixture.prepareOutput('box'), /Ready\. On the Mainworks machine run: mainworks host add gy-compute@box\s*$/);
   assert.equal((await curls(fixture.host('box'))).length, 0, 'nothing is downloaded when the tools are installed');
   assert.match(fixture.prepareOutput('bare'), /Ready\./);
   assert.equal((await curls(fixture.host('bare'))).length, 3, 'the rootless extras, slirp4netns and its checksums are downloaded');

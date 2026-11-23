@@ -8,7 +8,7 @@ export interface RuntimeDescriptor { kind: string; program: string; credentials:
 
 /**
  * A detection table, not an authority: a runtime counts as usable only when its launcher is
- * on PATH and it already holds its own provider login. Graphyard never stores agent logins,
+ * on PATH and it already holds its own provider login. Mainworks never stores agent logins,
  * so an unlisted runtime is added by hand with `master worker add`.
  */
 export const knownRuntimes: RuntimeDescriptor[] = [
@@ -70,8 +70,8 @@ export interface HerdrState { available: boolean; version: string | null; reason
 
 export async function detectHerdr(transport: Transport): Promise<HerdrState> {
   const located = await locate(transport, 'herdr');
-  if (located.code !== 0 || !located.stdout.trim()) return { available: false, version: null, reason: 'herdr is not on PATH; Graphyard runs without it and workers start from the CLI' };
+  if (located.code !== 0 || !located.stdout.trim()) return { available: false, version: null, reason: 'herdr is not on PATH; Mainworks runs without it and workers start from the CLI' };
   const probe = herdrViaEnv(['--version'], null);
   const version = await transport.exec(probe.command, probe.args, { allowFailure: true, timeout: 30_000 }).catch(() => ({ stdout: '', stderr: '', code: 1 }));
-  return { available: true, version: version.code === 0 ? version.stdout.trim().split('\n')[0] ?? null : null, reason: 'herdr is available; repository setup links and enables the Graphyard plugin' };
+  return { available: true, version: version.code === 0 ? version.stdout.trim().split('\n')[0] ?? null : null, reason: 'herdr is available; repository setup links and enables the Mainworks plugin' };
 }

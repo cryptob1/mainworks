@@ -8,7 +8,7 @@ import { createWorktree } from '../src/cli/workspace-worktree.js';
 import type { CliContext } from '../src/cli/context.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-2017: a control-plane rework workspace starts from the head Graphyard registered at the last
+// GY-2017: a control-plane rework workspace starts from the head Mainworks registered at the last
 // submission, read from the shared object store. It needs no pull-request observation and runs no
 // fetch or push of the worker branch — origin may lack the branch or hold a stale one from the
 // legacy flow, and only the merge writer pushes. The fake remote here serves the base branch

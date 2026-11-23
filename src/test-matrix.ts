@@ -6,7 +6,7 @@ type Queryable = { query: (text: string, values?: unknown[]) => Promise<{ rows: 
 /**
  * The Tests page's environment matrix (GY-3278 AC-3): where each E2E case ran, in delivery order.
  * Trial is the merge trial's run of the candidate (and any other trusted run of a candidate), Main
- * the batch gate on main, Served a `graphyard e2e run` against the release this install serves, and
+ * the batch gate on main, Served a `mainworks e2e run` against the release this install serves, and
  * Nightly the daily full run of the catalog on the verified commit. Every cell comes from a record
  * the control plane already keeps: the run ledger, and the batch gate's record in the checkout.
  */

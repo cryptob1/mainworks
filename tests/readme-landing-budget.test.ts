@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 const root = new URL('..', import.meta.url);
 const read = (path: string) => readFileSync(new URL(path, root), 'utf8');
 const moved = [
-  'on an AppArmor host up loads the `graphyard-trial` profile with sudo',
+  'on an AppArmor host up loads the `mainworks-trial` profile with sudo',
   'Workers and reviewers run headless, logged per item (`mainworks guide runtimes`)',
   'Where a SAML organization or org policy blocks deploy keys, `--push-auth gh` pushes with your gh login instead of a deploy key',
   'Setup invites or revokes viewers and maintainers',

@@ -137,7 +137,7 @@ export async function checkAgentEnvironment(environment: ProbedEnvironment, prob
   const cacheKey = `${environment.name}\0${environment.home}\0${ceiling}\0${probe.quota !== false}`, cached = healthCache.get(cacheKey);
   if (cached && now - cached.at >= 0 && now - cached.at < (probe.cacheMs ?? 30_000)) return cached.health;
 
-  const account: AccountReading = adapter?.usage ? await adapter.usage(environment, probe, { plan: planId, now }) : { loggedIn: false, usage: [], note: `Graphyard reads no login of the ${environment.kind} runtime` };
+  const account: AccountReading = adapter?.usage ? await adapter.usage(environment, probe, { plan: planId, now }) : { loggedIn: false, usage: [], note: `Mainworks reads no login of the ${environment.kind} runtime` };
 
   if (account.loggedIn && planId && !account.shared) {
     // A reading taken from the plan cache is not re-stamped, so the cache still expires. A provider
@@ -335,7 +335,7 @@ export const openCodeRepositoryGrant = (root: string) => ({ [`${root}/**`]: 'all
 /**
  * An operator's own OpenCode permission document that asks nothing (the recipe's `permits`) is laid
  * over the allow-all rather than replacing it: a key it leaves out (`external_directory`,
- * `doom_loop`, …) keeps Graphyard's `allow` — or, when the repository root is known, the
+ * `doom_loop`, …) keeps Mainworks's `allow` — or, when the repository root is known, the
  * repository-tree grant — instead of falling back to OpenCode's default, which asks.
  */
 function openCodePermission(operator: string | undefined, repositoryRoot?: string) {
@@ -537,7 +537,7 @@ export async function setupAgentEnvironments(root: string, input: { directory?: 
     next.producers.forEach((profile, index) => migrate('producer', profile, index));
     next.reviewers.forEach((profile, index) => migrate('reviewer', profile, index));
     // Worker and producer credentials are per install (GY-1885): they are read only from the
-    // directory `graphyard install` manages for this repository, so a second install on one host
+    // directory `mainworks install` manages for this repository, so a second install on one host
     // never scans — and never refuses — another install's token folder. A master configured with
     // no install of its own (no install.json) keeps reading beside its coordinator credential, as
     // it always has; an install record that exists but cannot be read fails here, never falling
@@ -561,7 +561,7 @@ export async function setupAgentEnvironments(root: string, input: { directory?: 
       return found;
     };
     const profileNameOf = (value: string) => value.replace(/[^a-zA-Z0-9._-]/g, '-').replace(/^[^a-zA-Z0-9]+/, '').slice(0, 80) || 'agent';
-    // A profile name is Graphyard's own label, in its own syntax; the session name onboarding
+    // A profile name is Mainworks's own label, in its own syntax; the session name onboarding
     // generates beside it is what Herdr is asked to launch, so it is built inside the runtime's
     // naming rules (GY-101) rather than taken from the label and refused at the first launch.
     const agentNameOf = (name: string) => sessionName(name);

@@ -12,9 +12,9 @@ import { setting } from '../setting.js';
 
 const relativePath = (what: string) => z.string().trim().min(1).max(300)
   .refine(path => !path.startsWith('/') && !path.split('/').some(segment => segment === '..') && !/[\s\u0000-\u001f]/.test(path), `${what} is a repository-relative path without .. segments or whitespace`);
-/** Where the deployed application answers the commit it serves (JSON `commit` or `sha`, or plain text); Graphyard only reads it. */
+/** Where the deployed application answers the commit it serves (JSON `commit` or `sha`, or plain text); Mainworks only reads it. */
 const versionUrl = z.string().trim().url().max(500).refine(url => /^https?:/.test(url), 'A versionUrl is an http or https URL').optional();
-/** Where the application, wherever Graphyard serves it, answers the commit it serves (JSON `commit`, `revision`, `sha` or `version`, or plain text): a path on its own origin, read by an e2e run against it before /healthz. */
+/** Where the application, wherever Mainworks serves it, answers the commit it serves (JSON `commit`, `revision`, `sha` or `version`, or plain text): a path on its own origin, read by an e2e run against it before /healthz. */
 const versionPath = z.string().trim().max(300).regex(/^\/(?!\/)[^?#\s]*$/, "A versionPath is a path starting with '/', without a query").optional();
 const applicationId = z.string().trim().regex(/^[a-z0-9][a-z0-9-]{0,39}$/, 'An application id is 1-40 lowercase letters, digits or hyphens, starting with a letter or digit');
 
@@ -22,9 +22,9 @@ const applicationId = z.string().trim().regex(/^[a-z0-9][a-z0-9-]{0,39}$/, 'An a
 const staticApplicationSchema = z.object({ id: applicationId, kind: z.literal('static'), directory: relativePath('A static application directory'), build: z.string().trim().min(1).max(500).nullable().default(null), versionUrl, versionPath }).strict();
 /** A Compose project: its file, the service that answers HTTP and that service's container port. */
 const composeApplicationSchema = z.object({ id: applicationId, kind: z.literal('compose'), file: relativePath('A Compose file'), service: z.string().trim().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/, 'A Compose service name'), port: z.number().int().min(1).max(65535), versionUrl, versionPath }).strict();
-/** A Node application (GY-3201): its directory, the command that builds it there (null: none) and the command that starts it there, listening on the PORT Graphyard assigns; the repository's install runs at its root first. */
+/** A Node application (GY-3201): its directory, the command that builds it there (null: none) and the command that starts it there, listening on the PORT Mainworks assigns; the repository's install runs at its root first. */
 export const nodeApplicationSchema = z.object({ id: applicationId, kind: z.literal('node'), directory: relativePath('A node application directory'), build: z.string().trim().min(1).max(500).nullable().default(null), start: z.string().trim().min(1).max(500), versionUrl, versionPath }).strict();
-/** A service deployed elsewhere (a Go service on Railway, say) that Graphyard only observes (GY-3459): its directory and the versionUrl it answers; never previewed. Declared without a kind. */
+/** A service deployed elsewhere (a Go service on Railway, say) that Mainworks only observes (GY-3459): its directory and the versionUrl it answers; never previewed. Declared without a kind. */
 const externalApplicationSchema = z.object({ id: applicationId, kind: z.literal('external'), directory: relativePath('An application directory'), versionUrl: versionUrl.unwrap() }).strict();
 export const applicationSchema = z.preprocess(
   value => value && typeof value === 'object' && !Array.isArray(value) && !('kind' in value) ? { ...value, kind: 'external' } : value,

@@ -27,7 +27,7 @@ function servedGate(repository: string | null | undefined) {
  * The versioned E2E test-case registry, and its run history (GY-162): every case with its latest
  * result, and one case's runs paged by sequence. Trusted evidence runs are written only by the
  * evidence command and the validation collector; the one run route appends an operator's
- * `graphyard e2e run` of a repository case (GY-1351) to the revision it measured. The summary reads
+ * `mainworks e2e run` of a repository case (GY-1351) to the revision it measured. The summary reads
  * at most `historyWindow` runs per case, and older runs page. Operator agents are refused here by
  * the route guard, as they are for the registry itself.
  */

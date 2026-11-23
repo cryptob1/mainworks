@@ -67,7 +67,7 @@ export function runningSessions(all: Work[], now: Date) {
 /** Every open record not shown running — recorded open, but not seen working or idle lately — longest unseen first. */
 
 /**
- * The one session state (GY-172): what the loop observes of every Graphyard-launched session it
+ * The one session state (GY-172): what the loop observes of every Mainworks-launched session it
  * can see, on every dispatch tick, and writes to the handle as `observed` and `observedAt`.
  *
  * Liveness had no single owner. The loop read the runtime, the server read `updatedAt`, the dashboard

@@ -411,7 +411,7 @@ test('unit:runtime-exit-at-start-fails-fast — a runtime that exits back to the
     await assert.rejects(startAgentSession('graphyard-cursor-1', 'cursor', 'w1V:pC1', ['--force', '--trust'], 'Implement GY-976', run, { directory, confinement: false, ...launched.bounds, log: line => lines.push(line) }),
       (caught: unknown) => caught instanceof SessionStartError && caught.startCase === 'exited' && caught.waitedMs === 0);
     assert.match(typed, /; agent --force --trust /);
-    assert.deepEqual(lines, ['graphyard: graphyard-cursor-1 (cursor) in pane w1V:pC1: start failed after 0.0 s (exited; bound 60 s)']);
+    assert.deepEqual(lines, ['mainworks: graphyard-cursor-1 (cursor) in pane w1V:pC1: start failed after 0.0 s (exited; bound 60 s)']);
   } finally { await rm(directory, { recursive: true, force: true }); }
 
   // A runtime still running in the foreground, printing below its command, is not an exit, nor is

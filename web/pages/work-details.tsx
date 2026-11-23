@@ -376,7 +376,7 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
         {item.candidate ? <dl className="facts">
           <div><dt><Term term="commit" focusable={false}>Commit</Term></dt><dd className="candidate-details"><CandidateSha repository={status?.repository} sha={item.candidate.sha} workKey={item.key}/></dd></div>
           {item.observation?.files && <div><dt>Changes</dt><dd>{item.observation.files.length} {item.observation.files.length === 1 ? 'file' : 'files'}</dd></div>}
-          <div><dt>Risk</dt><dd className="risk-details">{risk.risk}{risk.reasons.length ? <small> · {risk.reasons.join(' · ')}</small> : <small> · no sensitive path in the merge delta</small>}</dd>{risk.estimated && <dd className="risk-estimate"><small>Read here by the generic default rules; the gates use this repository's <code>graphyard.json</code> policy (<code>graphyard work {item.key}</code>).</small></dd>}</div>
+          <div><dt>Risk</dt><dd className="risk-details">{risk.risk}{risk.reasons.length ? <small> · {risk.reasons.join(' · ')}</small> : <small> · no sensitive path in the merge delta</small>}</dd>{risk.estimated && <dd className="risk-estimate"><small>Read here by the generic default rules; the gates use this repository's <code>graphyard.json</code> policy (<code>mainworks work {item.key}</code>).</small></dd>}</div>
           <div><dt>Checks</dt><dd>{checks.length ? checks.map(check => `${check.name} ${check.state}`).join(' · ') : 'none required'}</dd></div>
           <div><dt>Review</dt><dd>{!item.policy.review ? 'not required' : review}</dd></div>
         </dl> : <p className="muted">No change submitted yet.</p>}

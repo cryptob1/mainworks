@@ -12,7 +12,7 @@ export type CapacityRole = typeof quotaRoles[number];
 /** What a session's own output says about its provider quota. */
 export interface ExhaustionSignal {
   reason: string;
-  /** Reset instant, or null when the notice names no time Graphyard can read. */
+  /** Reset instant, or null when the notice names no time Mainworks can read. */
   resetsAt: string | null;
 }
 

@@ -7,7 +7,7 @@ import { buildProposal } from '../src/onboarding.js';
 
 const example = JSON.parse(await readFile('examples/setup-proposal.json', 'utf8'));
 const connected = { url: 'https://graphyard.example.test', reachable: true, role: 'admin' };
-const applied = { proposal: '.graphyard/setup-proposal.json', appliedAt: '2026-09-18T10:00:00.000Z', githubApp: { appId: 1, slug: 'graphyard-orders' }, drift: [], unreadable: [] };
+const applied = { proposal: '.graphyard/setup-proposal.json', appliedAt: '2026-09-18T10:00:00.000Z', githubApp: { appId: 1, slug: 'mainworks-orders' }, drift: [], unreadable: [] };
 
 test('a fully configured through-merge repository is ready, and every missing item names its recovery', () => {
   const ready = readinessChecklist('through-merge', { repository: 'owner/orders-api', server: connected, setup: applied, proposal: example });
@@ -32,7 +32,7 @@ test('a missing credential role is reported with direct recovery', () => {
   const role = worker.items.find(i => i.id === 'credential-role')!;
   assert.equal(role.status, 'missing'); assert.match(role.recovery!, /operator \(admin\) credential/);
   const drifted = readinessChecklist('through-merge', { repository: 'owner/orders-api', server: connected, setup: { ...applied, drift: ['stack changed'] }, proposal: example });
-  assert.match(drifted.items.find(i => i.id === 'setup-proposal')!.recovery!, /Rerun `graphyard init --scan`/);
+  assert.match(drifted.items.find(i => i.id === 'setup-proposal')!.recovery!, /Rerun `mainworks init --scan`/);
   const unreadable = readinessChecklist('through-merge', { repository: 'owner/orders-api', server: connected, setup: { ...applied, unreadable: ['.graphyard/setup-proposal.json invalid'] }, proposal: example });
   assert.equal(unreadable.items.find(i => i.id === 'setup-proposal')!.status, 'missing');
 });

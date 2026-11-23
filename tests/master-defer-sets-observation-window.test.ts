@@ -15,7 +15,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
-// GY-1740 AC-1: `graphyard master defer GY-N NOT-BEFORE REASON` holds an unleased post-deploy follow-up on its
+// GY-1740 AC-1: `mainworks master defer GY-N NOT-BEFORE REASON` holds an unleased post-deploy follow-up on its
 // observation window and clears its recorded blocker in one write, recorded under the operator agent's name.
 
 const day = 86_400_000, repository = 'owner/master-defer';

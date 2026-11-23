@@ -4,7 +4,7 @@ import { demand, type Principal } from './model.js';
 import type { Store } from './store.js';
 
 /**
- * GY-1529: `graphyard master recover` repins the known-good coordinator and records the move on the
+ * GY-1529: `mainworks master recover` repins the known-good coordinator and records the move on the
  * append-only ledger as `policy.coordinator.recovered` {from, to, reason} (no work item), with an
  * admin credential only.
  */

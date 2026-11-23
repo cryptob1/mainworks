@@ -12,7 +12,7 @@ import type { LoopCodeReading } from '../src/repository-setup.js';
  * GY-1859: setup never accepts a running loop on other code. Each test is named for the proof it
  * produces: unit:up-replaces-loop-on-other-code and unit:doctor-flags-loop-on-other-code.
  *
- * `graphyard up`'s master-loop step reads what the install's loop unit runs against
+ * `mainworks up`'s master-loop step reads what the install's loop unit runs against
  * the CLI running the command, rewrites a unit on other code to this CLI and restarts it, and is
  * green only once the restarted loop reports this CLI's commit. `doctor`'s readiness checklist
  * flags the same mismatch as one line naming both paths and the rerun. The host is simulated:
@@ -132,7 +132,7 @@ test('unit:up-replaces-loop-on-other-code — the master-loop step rewrites a lo
   // green: the rewrite runs (master init --replace-supervisor, with the master credential), the
   // unit restart that rewrite performed is not asked
   // for twice, and the step is green only once the loop reports this CLI's commit.
-  const replacedRoot = await resumedRoot('graphyard-up-loop-replaced');
+  const replacedRoot = await resumedRoot('mainworks-up-loop-replaced');
   const replaced = world([reading(), reading({ loopCommit: COMMIT, loopStale: null })]);
   const replacedEvents: UpEvent[] = [];
   const replacedRun = await runUp(request(), dependencies(replacedRoot, replacedEvents, replaced));
@@ -155,7 +155,7 @@ test('unit:up-replaces-loop-on-other-code — the master-loop step rewrites a lo
     cursor: JSON.stringify({ release: { commit: OLD_COMMIT, dirty: false } }), canonical: path => path,
   });
   assert.equal(judged.loopReplace, 'unit', 'a unit on another checkout is rewritten');
-  const judgedRoot = await resumedRoot('graphyard-up-loop-judged');
+  const judgedRoot = await resumedRoot('mainworks-up-loop-judged');
   const judgedWorld = world([reading({ loopStale: judged.loopStale, loopReplace: judged.loopReplace }), cleanReading()]);
   const judgedEvents: UpEvent[] = [];
   const judgedRun = await runUp(request(), dependencies(judgedRoot, judgedEvents, judgedWorld));
@@ -166,7 +166,7 @@ test('unit:up-replaces-loop-on-other-code — the master-loop step rewrites a lo
   // A loop whose unit already names this CLI but whose cursor records another commit: the unit is
   // right, so it is not rewritten; the step restarts the loop itself and waits for the commit the
   // restarted loop reports.
-  const staleCommitRoot = await resumedRoot('graphyard-up-loop-commit');
+  const staleCommitRoot = await resumedRoot('mainworks-up-loop-commit');
   const staleCommit = world(
     [reading({ loop: { unit: MASTER_UNIT, path: MASTER_UNIT_PATH, checkout: CLI_ROOT }, loopReplace: 'restart', loopStale: `${MASTER_UNIT_PATH} runs ${OLD_COMMIT.slice(0, 12)}, not this checkout's ${COMMIT.slice(0, 12)}` }),
       cleanReading()]);
@@ -176,14 +176,14 @@ test('unit:up-replaces-loop-on-other-code — the master-loop step rewrites a lo
   assert.equal(named(staleCommit, ['master', 'restart']).length, 1, 'the loop on another commit is restarted onto this one');
 
   // A loop already on this CLI's commit: nothing is rewritten and nothing is restarted.
-  const currentRoot = await resumedRoot('graphyard-up-loop-current');
+  const currentRoot = await resumedRoot('mainworks-up-loop-current');
   const current = world([cleanReading()]);
   const currentRun = await runUp(request(), dependencies(currentRoot, [], current));
   assert.equal(currentRun.exitCode, 0, currentRun.next);
   assert.deepEqual(current.calls, [], 'a loop on this commit is neither rewritten nor restarted');
 
   // The checklist not yet green still starts the loop, as before this check existed.
-  const freshLoopRoot = await resumedRoot('graphyard-up-loop-fresh');
+  const freshLoopRoot = await resumedRoot('mainworks-up-loop-fresh');
   const fresh = world([cleanReading()], { loopRunning: false });
   const freshRun = await runUp(request(), dependencies(freshLoopRoot, [], fresh));
   assert.equal(freshRun.exitCode, 0, freshRun.next);
@@ -192,7 +192,7 @@ test('unit:up-replaces-loop-on-other-code — the master-loop step rewrites a lo
 
   // No master credential is recorded: the rewrite is refused as a machine prerequisite naming the
   // command that fixes it, and nothing runs.
-  const noTokenRoot = await resumedRoot('graphyard-up-loop-notoken');
+  const noTokenRoot = await resumedRoot('mainworks-up-loop-notoken');
   const noToken = world([reading()]);
   const noTokenRun = await runUp(request(), { ...dependencies(noTokenRoot, [], noToken), masterToken: async () => null });
   assert.equal(noTokenRun.exitCode, 2, noTokenRun.next);
@@ -200,7 +200,7 @@ test('unit:up-replaces-loop-on-other-code — the master-loop step rewrites a lo
   assert.deepEqual(noToken.calls, [], 'nothing is rewritten without the credential to do it');
 
   // The loop never reports this CLI's commit: the step fails naming both, instead of going green.
-  const neverRoot = await resumedRoot('graphyard-up-loop-never');
+  const neverRoot = await resumedRoot('mainworks-up-loop-never');
   const never = world([reading()]);
   const neverRun = await runUp(request(), dependencies(neverRoot, [], never));
   assert.equal(neverRun.exitCode, 1, neverRun.next);
@@ -223,8 +223,8 @@ async function pinnedReplacement() {
   const { access } = await import('node:fs/promises');
   const units: InstallUnits = perInstallUnits('acme/shop');
   const attempt = async (lift: boolean) => {
-    const base = await temporaryDirectory(`graphyard-up-loop-pinned-${lift ? 'lifted' : 'kept'}`);
-    const root = await resumedRoot(`graphyard-up-loop-pinned-root-${lift}`), installDir = join(base, 'install'), unitDirectory = join(base, 'units'), home = join(base, 'home');
+    const base = await temporaryDirectory(`mainworks-up-loop-pinned-${lift ? 'lifted' : 'kept'}`);
+    const root = await resumedRoot(`mainworks-up-loop-pinned-root-${lift}`), installDir = join(base, 'install'), unitDirectory = join(base, 'units'), home = join(base, 'home');
     const cliPath = join(base, 'cli', 'bin', 'graphyard.mjs'), snapshot = join(root, '.graphyard', 'held-cli', OLD_COMMIT.slice(0, 12));
     for (const directory of [join(installDir, 'coordinator'), unitDirectory, home, join(snapshot, 'src'), join(root, '.graphyard')]) await mkdir(directory, { recursive: true });
     await writeFile(join(installDir, 'coordinator', 'state.json'), JSON.stringify({ sha: OLD_COMMIT, pinnedAt: 'an earlier promotion', previous: null }));
@@ -268,14 +268,14 @@ async function pinnedReplacement() {
   assert.ok(lifted.events.some(event => event.kind === 'note' && event.text.includes(`at ${COMMIT.slice(0, 12)}`)), 'and the commit the loop now reports');
 }
 
-test('unit:up-rewrites-self-managed-loop-on-the-managed-checkout — when Graphyard manages itself, a loop whose ExecStart starts the managed checkout\'s launcher is rewritten onto this CLI, never only restarted, and goes green on this CLI\'s commit', async () => {
+test('unit:up-rewrites-self-managed-loop-on-the-managed-checkout — when Mainworks manages itself, a loop whose ExecStart starts the managed checkout\'s launcher is rewritten onto this CLI, never only restarted, and goes green on this CLI\'s commit', async () => {
   const { runUp } = await up();
   const { readLoopCode } = await repositorySetup();
   const { loopUnitText } = await import('../src/install/loop-unit.js');
   const units: InstallUnits = perInstallUnits('acme/shop');
-  const base = await temporaryDirectory('graphyard-up-loop-self-managed');
+  const base = await temporaryDirectory('mainworks-up-loop-self-managed');
   // The managed checkout B (this repository, at the older commit) and this CLI's checkout A at COMMIT.
-  const root = await resumedRoot('graphyard-up-loop-self-managed-root'), unitDirectory = join(base, 'units'), home = join(base, 'home'), installDir = join(base, 'install');
+  const root = await resumedRoot('mainworks-up-loop-self-managed-root'), unitDirectory = join(base, 'units'), home = join(base, 'home'), installDir = join(base, 'install');
   const cliPath = join(base, 'cli', 'bin', 'graphyard.mjs'), managedPath = join(root, 'bin', 'graphyard.mjs');
   for (const directory of [unitDirectory, home, installDir]) await mkdir(directory, { recursive: true });
   const unitFile = join(unitDirectory, units.master);
@@ -317,7 +317,7 @@ test('unit:up-reopens-a-recorded-master-loop-step — a rerun whose up.json alre
   // The install this item exists for: an earlier run recorded master-loop done while its loop kept
   // serving the pilot checkout. The rerun re-opens the recorded step, replaces the unit, and is
   // green once the restarted loop reports this CLI's commit — never a skip past the same false green.
-  const recordedStaleRoot = await recordedRoot('graphyard-up-loop-recorded-stale');
+  const recordedStaleRoot = await recordedRoot('mainworks-up-loop-recorded-stale');
   const recordedStale = world([reading(), reading(), reading({ loopCommit: COMMIT, loopStale: null })]);
   const recordedEvents: UpEvent[] = [];
   const recordedRun = await runUp(request(), dependencies(recordedStaleRoot, recordedEvents, recordedStale));
@@ -330,7 +330,7 @@ test('unit:up-reopens-a-recorded-master-loop-step — a rerun whose up.json alre
   assert.ok(recorded.completed.includes('master-loop'), 'the re-opened step is recorded done again once it is green');
 
   // The same recorded run with the units on this checkout: the step stands recorded and nothing runs.
-  const settledRoot = await recordedRoot('graphyard-up-loop-recorded-settled');
+  const settledRoot = await recordedRoot('mainworks-up-loop-recorded-settled');
   const settled = world([cleanReading()]);
   const settledRun = await runUp(request(), dependencies(settledRoot, [], settled));
   assert.equal(settledRun.exitCode, 0, settledRun.next);
@@ -339,7 +339,7 @@ test('unit:up-reopens-a-recorded-master-loop-step — a rerun whose up.json alre
   // A reading that failed proves nothing either way: the recorded step is re-opened and fails naming
   // why, never left green on code nobody read, and nothing is rewritten or restarted on it.
   const failedReading = () => reading({ loop: null, loopCommit: null, loopStale: null, error: 'units.json is corrupt' });
-  const unreadableRoot = await recordedRoot('graphyard-up-loop-recorded-unreadable');
+  const unreadableRoot = await recordedRoot('mainworks-up-loop-recorded-unreadable');
   const unreadable = world([failedReading()]);
   const unreadableRun = await runUp(request(), dependencies(unreadableRoot, [], unreadable));
   assert.equal(unreadableRun.exitCode, 1, unreadableRun.next);
@@ -349,7 +349,7 @@ test('unit:up-reopens-a-recorded-master-loop-step — a rerun whose up.json alre
   assert.ok(!reopened.completed.includes('master-loop'), 'the step a failed reading re-opened is not recorded done');
 
   // An unfinished step whose first reading failed fails the same way instead of restarting past it.
-  const freshRoot = await resumedRoot('graphyard-up-loop-fresh-unreadable');
+  const freshRoot = await resumedRoot('mainworks-up-loop-fresh-unreadable');
   const fresh = world([failedReading()], { loopRunning: false });
   const freshRun = await runUp(request(), dependencies(freshRoot, [], fresh));
   assert.equal(freshRun.exitCode, 1, freshRun.next);
@@ -366,18 +366,18 @@ test('unit:up-waits-for-the-loop-own-commit — the post-restart wait goes green
   });
 
   // The restarted loop's reading cannot be taken at all: the wait keeps polling, then fails saying so.
-  const nulled = await deadline('graphyard-up-loop-wait-null', null);
+  const nulled = await deadline('mainworks-up-loop-wait-null', null);
   assert.equal(nulled.run.exitCode, 1, nulled.run.next);
   assert.match(nulled.run.next, /could not be read again/);
 
   // The reading succeeds but the restarted loop's cursor records no commit yet: not proof, so the
   // wait polls to a failure naming the missing report, never a green on silence.
-  const silent = await deadline('graphyard-up-loop-wait-silent', reading({ loop: { unit: MASTER_UNIT, path: MASTER_UNIT_PATH, checkout: CLI_ROOT }, loopCommit: null, loopStale: null }));
+  const silent = await deadline('mainworks-up-loop-wait-silent', reading({ loop: { unit: MASTER_UNIT, path: MASTER_UNIT_PATH, checkout: CLI_ROOT }, loopCommit: null, loopStale: null }));
   assert.equal(silent.run.exitCode, 1, silent.run.next);
   assert.match(silent.run.next, /its cursor records no commit/);
 
   // The reading keeps failing: the failure names why, rather than reading the step as green.
-  const failing = await deadline('graphyard-up-loop-wait-error', reading({ error: 'units.json is corrupt', loopStale: null }));
+  const failing = await deadline('mainworks-up-loop-wait-error', reading({ error: 'units.json is corrupt', loopStale: null }));
   assert.equal(failing.run.exitCode, 1, failing.run.next);
   assert.match(failing.run.next, /read failed again: units\.json is corrupt/);
 });
@@ -390,7 +390,7 @@ test('unit:doctor-flags-loop-on-other-code — the reading judges the units agai
 
   // A simulated host: the managed checkout, its master configuration, a unit directory whose loop
   // unit still names the pilot checkout, and the pilot commit on the cursor.
-  const base = await temporaryDirectory('graphyard-doctor-loop-code');
+  const base = await temporaryDirectory('mainworks-doctor-loop-code');
   const configHome = process.env.GRAPHYARD_CONFIG_HOME;
   process.env.GRAPHYARD_CONFIG_HOME = join(base, 'config');
   try {
@@ -453,11 +453,11 @@ test('unit:doctor-flags-loop-on-other-code — the reading judges the units agai
     const loopCode = facts(foreign).items.find(item => item.id === 'loop-code')!;
     assert.equal(loopCode.status, 'missing');
     assert.match(loopCode.detail, new RegExp(`${quote(MASTER_UNIT)} starts the CLI in ${quote(pilot)}`), 'the line names the unit still on the old code');
-    assert.match(loopCode.recovery ?? '', /rerun graphyard up --repo acme\/shop --agent/, 'the rerun that fixes it is named');
+    assert.match(loopCode.recovery ?? '', /rerun mainworks up --repo acme\/shop --agent/, 'the rerun that fixes it is named');
     assert.equal(facts(cleanReading()).items.find(item => item.id === 'loop-code')!.status, 'ready');
     const unknown = facts(null).items.find(item => item.id === 'loop-code')!;
     assert.equal(unknown.status, 'unknown', 'an unreadable host is never ready');
-    assert.match(unknown.recovery ?? '', /rerun graphyard up/);
+    assert.match(unknown.recovery ?? '', /rerun mainworks up/);
     const unreadable = facts(reading({ error: 'units.json is corrupt' })).items.find(item => item.id === 'loop-code')!;
     assert.equal(unreadable.status, 'unknown', 'a reading that failed is unknown, never ready');
     assert.match(unreadable.detail, /units\.json is corrupt/);
@@ -481,7 +481,7 @@ test('unit:doctor-loop-code-pinned-snapshot — a loop unit starting the install
   // A simulated host whose install was upgraded past GY-2877: the loop unit starts the pinned
   // coordinator snapshot under the install directory (the deploy unit pins it), not this CLI's
   // checkout — the healthy shape every install now runs, which the path check used to call foreign.
-  const base = await temporaryDirectory('graphyard-doctor-loop-pinned-snapshot');
+  const base = await temporaryDirectory('mainworks-doctor-loop-pinned-snapshot');
   const configHome = process.env.GRAPHYARD_CONFIG_HOME;
   process.env.GRAPHYARD_CONFIG_HOME = join(base, 'config');
   try {
@@ -539,7 +539,7 @@ test('unit:doctor-loop-code-pinned-snapshot — a loop unit starting the install
 
 test('unit:doctor-loop-code-setup-line — setupFromZero carries the loop-code line: one FAIL naming both paths and the rerun, a PASS once the units run this checkout, a FAIL for an unreadable record, and no line while no unit of this install stands', async () => {
   const { setupFromZeroChecks, setupLine } = await import('../src/setup-from-zero.js');
-  const root = await temporaryDirectory('graphyard-doctor-setup-line');
+  const root = await temporaryDirectory('mainworks-doctor-setup-line');
   const checks = (code: LoopCodeReading | null) => setupFromZeroChecks({ root, status: null, environments: join(root, 'none'), loopCode: code });
 
   // A loop on other code: one FAIL line naming both paths, this checkout, and the
@@ -547,8 +547,8 @@ test('unit:doctor-loop-code-setup-line — setupFromZero carries the loop-code l
   const failing = (await checks(reading())).find(check => check.id === 'loop-code');
   assert.equal(failing?.status, 'fail');
   assert.match(failing.detail, new RegExp(`${quote(MASTER_UNIT_PATH)} starts the CLI in ${quote(OLD_CHECKOUT)}`), 'the line names the loop unit and its old checkout');
-  assert.match(failing.detail, /rerun graphyard up --repo acme\/shop --agent from this checkout/, 'the rerun that fixes it is named');
-  assert.equal(failing.step, 'rerun graphyard up --agent from this checkout');
+  assert.match(failing.detail, /rerun mainworks up --repo acme\/shop --agent from this checkout/, 'the rerun that fixes it is named');
+  assert.equal(failing.step, 'rerun mainworks up --agent from this checkout');
   assert.match(setupLine(failing), /^FAIL loop-code: .* \(fix: .+\)$/);
 
   assert.equal((await checks(cleanReading())).find(check => check.id === 'loop-code')?.status, 'pass', 'units on this checkout pass');
@@ -567,7 +567,7 @@ test('unit:up-rejected-reading-never-green — a loop-code reading that was reje
   // The host session failed before any unit was read (preparing the install, reaching the host).
   const rejecting = (w: UpWorld) => async (): Promise<LoopCodeReading | null> => { w.calls.push({ args: ['loop-code'] }); throw new Error('ssh: connect to host acme-host port 22: Connection refused'); };
   for (const [label, rootOf] of [['recorded', recordedRoot], ['unfinished', resumedRoot]] as const) {
-    const root = await rootOf(`graphyard-up-loop-rejected-${label}`);
+    const root = await rootOf(`mainworks-up-loop-rejected-${label}`);
     const w = world([cleanReading()]);
     const events: UpEvent[] = [];
     const run = await runUp(request(), { ...dependencies(root, events, w), loopCode: rejecting(w) });
@@ -578,13 +578,13 @@ test('unit:up-rejected-reading-never-green — a loop-code reading that was reje
     assert.ok(!state.completed.includes('master-loop'), `${label}: the step is not recorded done on a rejected reading`);
   }
   // An empty answer judged nothing either.
-  const emptyRoot = await recordedRoot('graphyard-up-loop-empty-recorded');
+  const emptyRoot = await recordedRoot('mainworks-up-loop-empty-recorded');
   const empty = world([null]);
   const emptyRun = await runUp(request(), dependencies(emptyRoot, [], empty));
   assert.equal(emptyRun.exitCode, 1, emptyRun.next);
   assert.match(emptyRun.next, /could not be read: no reading came back/);
   // With no reader at all, the recorded step stands as an earlier run left it.
-  const noReaderRoot = await recordedRoot('graphyard-up-loop-no-reader');
+  const noReaderRoot = await recordedRoot('mainworks-up-loop-no-reader');
   const noReader = world([cleanReading()]);
   const noReaderRun = await runUp(request(), { ...dependencies(noReaderRoot, [], noReader), loopCode: undefined });
   assert.equal(noReaderRun.exitCode, 0, noReaderRun.next);
@@ -593,7 +593,7 @@ test('unit:up-rejected-reading-never-green — a loop-code reading that was reje
 
 test('unit:up-validates-the-checkout-it-installs — the clean-checkout preflight judges this CLI\'s checkout, the one the loop is rewritten onto, never the obsolete checkout master.json still records', async () => {
   const { upDependencies } = await up();
-  const base = await temporaryDirectory('graphyard-up-cli-checkout');
+  const base = await temporaryDirectory('mainworks-up-cli-checkout');
   const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   const checkout = async (name: string) => {
     const root = join(base, name);
@@ -604,7 +604,7 @@ test('unit:up-validates-the-checkout-it-installs — the clean-checkout prefligh
     git(root, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'cli');
     return root;
   };
-  const a = await checkout('graphyard-a'), b = await checkout('graphyard-b');
+  const a = await checkout('mainworks-a'), b = await checkout('mainworks-b');
   const dirty = (root: string) => writeFile(join(root, 'bin', 'graphyard.mjs'), '// uncommitted\n');
   const repository = join(base, 'repository');
   await mkdir(join(repository, '.graphyard'), { recursive: true });

@@ -56,7 +56,7 @@ test('unit:flow-numbers — a first-time merge, a twice-reworked merge, an aband
   assert.deepEqual(flow.stations.merge && { median: flow.stations.merge.median, samples: flow.stations.merge.samples }, { median: 10, samples: 3 });
   const attention = flowAttention(flow);
   assert.equal(attention!.text, 'Review is slow: the slowest tenth waited 2 h over the last 6 hours. Oldest: GY-5 Waiting, 2 h.');
-  assert.equal(attention!.next, 'graphyard status GY-5');
+  assert.equal(attention!.next, 'mainworks status GY-5');
 });
 
 test('unit:flow-numbers — a trial is flaky when the rerun passed or its own refusal finds the failure on the base; a head held for a red base flags no trial', () => {

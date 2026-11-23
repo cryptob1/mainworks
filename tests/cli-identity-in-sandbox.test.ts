@@ -31,7 +31,7 @@ test('integration:cli-identity-in-sandbox — after an in-place upgrade, a CLI t
   const url = `http://127.0.0.1:${(server.address() as any).port}`;
   const base = await temporaryDirectory('cli-identity-sandbox');
   try {
-    // A Graphyard source checkout and a release worktree named for, and stamped with, its old commit.
+    // A Mainworks source checkout and a release worktree named for, and stamped with, its old commit.
     const source = join(base, 'graphyard');
     await mkdir(source, { recursive: true });
     for (const entry of ['src', 'bin', 'package.json']) await cp(join(repository, entry), join(source, entry), { recursive: true });
@@ -70,7 +70,7 @@ test('integration:cli-identity-in-sandbox — after an in-place upgrade, a CLI t
     assert.equal(status.code, 0, `status succeeds inside the sandbox after the upgrade: ${status.stderr}`);
     assert.equal(JSON.parse(status.stdout).key, 'GY-1');
     const complete = await cli('complete', 'GY-1', '1', '--head');
-    assert.doesNotMatch(complete.stderr, /differ: run graphyard upgrade/, `complete meets no version refusal: ${complete.stderr}`);
+    assert.doesNotMatch(complete.stderr, /differ: run mainworks upgrade/, `complete meets no version refusal: ${complete.stderr}`);
   } finally {
     await close(server);
     await rm(base, { recursive: true, force: true });

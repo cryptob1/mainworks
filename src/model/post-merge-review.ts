@@ -149,7 +149,7 @@ export function wholeFindings(rest: string, read: readonly string[], cut = 2000)
  * The follow-up item one BLOCKING finding of a post-merge review files (AC-4): a bug at priority 1,
  * its origin naming the delivered item and its merge commit, reviewed like any item. The delivered
  * item itself is never reopened. It reuses the delivered item's E2E cases beside the finding's unit
- * proof (GY-3037), so other repositories run their own cases; legacy Graphyard items with no E2E
+ * proof (GY-3037), so other repositories run their own cases; legacy Mainworks items with no E2E
  * proof use create-work-item.
  */
 export function postMergeFollowUp(delivered: Pick<Work, 'key' | 'title' | 'policy'> & Partial<Pick<Work, 'criteria'>>, mergeSha: string, finding: PostMergeFinding, index: number) {

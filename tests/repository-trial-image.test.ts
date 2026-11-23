@@ -85,12 +85,12 @@ const confinedWrappers = (wrappers: readonly (readonly string[])[]) => wrappers.
 const runsIn = (wrapper: readonly string[], image: string) => nested || wrapper.some(word => word.includes(`"image":"${image}"`));
 
 test('unit:tests/repository-trial-image.test.ts — the image tag keys on the Dockerfile, the base image and the repository: an edit changes it, two repositories never share one', () => {
-  const tag = repositoryTrialImageTag('/repos/a', 'graphyard-trial:local', 'FROM one\n');
-  assert.match(tag, /^graphyard-trial-repo:[0-9a-f]{24}$/);
-  assert.equal(tag, repositoryTrialImageTag('/repos/a', 'graphyard-trial:local', 'FROM one\n'));
-  assert.notEqual(tag, repositoryTrialImageTag('/repos/a', 'graphyard-trial:local', 'FROM two\n'));
+  const tag = repositoryTrialImageTag('/repos/a', 'mainworks-trial:local', 'FROM one\n');
+  assert.match(tag, /^mainworks-trial-repo:[0-9a-f]{24}$/);
+  assert.equal(tag, repositoryTrialImageTag('/repos/a', 'mainworks-trial:local', 'FROM one\n'));
+  assert.notEqual(tag, repositoryTrialImageTag('/repos/a', 'mainworks-trial:local', 'FROM two\n'));
   assert.notEqual(tag, repositoryTrialImageTag('/repos/a', 'published:1', 'FROM one\n'));
-  assert.notEqual(tag, repositoryTrialImageTag('/repos/b', 'graphyard-trial:local', 'FROM one\n'));
+  assert.notEqual(tag, repositoryTrialImageTag('/repos/b', 'mainworks-trial:local', 'FROM one\n'));
 });
 
 test('unit:tests/repository-trial-image.test.ts — a repository without the file answers null and no docker is called; one with the file reuses a built image without building again', { timeout: 60_000 }, async () => {

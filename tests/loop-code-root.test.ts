@@ -20,7 +20,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // derives the observation's stamp from it, and nothing reads the wall clock.
 const now = 1_790_000_000_000;
 const at = new Date(now).toISOString();
-const git = (root: string, ...args: string[]) => execFileSync('git', ['-C', root, '-c', 'user.name=Graphyard', '-c', 'user.email=graphyard@example.com', ...args], { encoding: 'utf8' }).trim();
+const git = (root: string, ...args: string[]) => execFileSync('git', ['-C', root, '-c', 'user.name=Mainworks', '-c', 'user.email=graphyard@example.com', ...args], { encoding: 'utf8' }).trim();
 /** The real child runner the production wiring gets: every git command runs for real, in a fixture. */
 const run = (command: string, args: string[]) => execFileSync(command, args, { encoding: 'utf8' });
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
@@ -29,7 +29,7 @@ const config = (cliPath: string): MasterConfig => masterConfigSchema.parse({ ver
   repository: 'owner/managed', baseBranch: 'main', githubAppId: 1234, hostId: 'host-a', masterAgentName: 'graphyard-master-managed', autoMerge: true, mergeMethod: 'merge', workers: [] });
 
 /**
- * A separate Graphyard checkout with an origin of its own: `main` holds `tip` (one loaded-code
+ * A separate Mainworks checkout with an origin of its own: `main` holds `tip` (one loaded-code
  * commit past `loaded`), and the checkout stands clean and detached at `loaded`, one move behind
  * the tip — what a loop runs between its own alignments. The managed repository can be cloned from
  * `origin` at its own commit, sharing this history (AC-1's fork-or-second-checkout shape).

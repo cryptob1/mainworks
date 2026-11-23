@@ -1,7 +1,7 @@
 {
   "id": "ask-investigator",
   "title": "A master asks a read-only investigator about an item and the answer appears on the item",
-  "description": "Seeds an item with a branch head, runs `graphyard ask GY-N QUESTION` as the master against a stand-in runtime, and asserts the item's history shows the summary and file:line evidence; unparseable output and the time bound each record one failure line instead.",
+  "description": "Seeds an item with a branch head, runs `mainworks ask GY-N QUESTION` as the master against a stand-in runtime, and asserts the item's history shows the summary and file:line evidence; unparseable output and the time bound each record one failure line instead.",
   "tags": ["cli", "master", "history"],
   "target": "any",
   "required": false,

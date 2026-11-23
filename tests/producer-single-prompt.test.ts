@@ -24,7 +24,7 @@ test('e2e:producer-single-prompt — AC-1: both runtimes render one builder; onl
     const { binding, cli: viaCli, pi } = render(proofs);
     assert.equal(viaCli, producerRequest({ repository: 'owner/project', cliPath: cli }, binding, 'producer-1', [], checkout, null, cliSubmit(binding)));
     assert.equal(pi, producerRequest({ repository: 'owner/project', cliPath: cli }, binding, 'producer-1', criteria, checkout, null, toolEvidenceSubmit(binding)));
-    const criteriaSentence = /The criteria these proofs establish: .*? (?=Your Graphyard credential)/;
+    const criteriaSentence = /The criteria these proofs establish: .*? (?=Your Mainworks credential)/;
     assert.ok(viaCli.includes(cliSubmit(binding)) && !viaCli.includes('graphyard_submit_evidence'));
     assert.ok(pi.includes(toolEvidenceSubmit(binding)) && !pi.includes(` evidence ${binding.key} FILE`));
     assert.equal(viaCli.replace(cliSubmit(binding), '<submit>'), pi.replace(criteriaSentence, '').replace(toolEvidenceSubmit(binding), '<submit>'), 'everything but the submit instruction (and the criteria data) is the same text');
@@ -42,7 +42,7 @@ test('e2e:producer-single-prompt — AC-2: each output is at most 450 words besi
     for (const [runtime, prompt] of [['cli', viaCli], ['pi', pi]] as const) {
       const rest = prompt.split(binding.proofs.join(', ')).join(' ').replace(criteria[0].text, ' ').split(/\s+/).filter(word => word && !word.includes('/'));
       assert.ok(rest.length <= 450, `${runtime} ${proofs[0]}: ${rest.length} words`);
-      assert.ok(prompt.includes('Your Graphyard credential is the file named by GRAPHYARD_TOKEN_FILE') && prompt.includes('never print, copy, cat, or echo it or any other credential'), `${runtime}: the credential rule`);
+      assert.ok(prompt.includes('Your Mainworks credential is the file named by GRAPHYARD_TOKEN_FILE') && prompt.includes('never print, copy, cat, or echo it or any other credential'), `${runtime}: the credential rule`);
       assert.ok(prompt.includes('run it again with the behaviour removed'), `${runtime}: the exercise rule`);
       assert.equal(prompt.includes('HCLOUD_TOKEN and HETZNER_SPEND_CAP_USD_MONTHLY are available in your environment'), proofs[0] === 'manual:host-install-live', `${runtime}: live-install guidance only for a live-install proof`);
     }

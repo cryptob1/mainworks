@@ -16,7 +16,7 @@ import { grantWorkerPaths, runtimeSandboxes, workerPaths, writablePaths } from '
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const addedDirectories = (args: string[], cwd: string) => args.flatMap((arg, index) => arg === '--add-dir' ? [join(cwd, args[index + 1])] : []);
 
-/** A coordinator checkout laid out like a Graphyard installation, with one managed assignment worktree. */
+/** A coordinator checkout laid out like a Mainworks installation, with one managed assignment worktree. */
 async function coordinatorFixture() {
   const root = await temporaryDirectory('checkout-guard');
   const credentials = join(root, 'credentials');

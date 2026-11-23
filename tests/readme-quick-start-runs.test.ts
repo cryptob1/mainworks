@@ -28,7 +28,7 @@ function quickStartScript(lines: string[]) {
 test('e2e:readme-quick-start-runs — the Quick start clones, installs, builds and runs up from the checkout, and labels npx as available once published', { timeout: 900_000 }, () => {
   const [checkout, published] = blocks;
   assert.ok(checkout && published, 'the Quick start has a checkout block and a published block');
-  assert.deepEqual(checkout.lines, [`git clone ${url} && cd mainworks`, 'npm ci', 'npm run build', 'node bin/graphyard.mjs up --repo OWNER/NAME']);
+  assert.deepEqual(checkout.lines, [`git clone ${url} && cd mainworks`, 'npm ci', 'npm run build', 'node bin/mainworks.mjs up --repo OWNER/NAME']);
   assert.deepEqual(published.lines, ['npx @cryptob1/graphyard up --repo OWNER/NAME']);
   assert.match(start.slice(0, published.at), /Once published to npm:\s*$/, 'the npx line is labelled as available once published');
 
@@ -48,6 +48,6 @@ test('unit:readme-quick-start-runs-pinned — the Quick start checks out on a co
     const machine = { GIT_TEST_ASSUME_DIFFERENT_OWNER: '1', GIT_CONFIG_COUNT: '2', GIT_CONFIG_KEY_0: 'safe.directory', GIT_CONFIG_VALUE_0: root, GIT_CONFIG_KEY_1: 'safe.directory', GIT_CONFIG_VALUE_1: join(scratch, 'mainworks'), GIT_ALLOW_PROTOCOL: 'https' };
     const script = `${quickStartScript([blocks[0]!.lines[0]!])}\ncat package.json`;
     const output = execFileSync('sh', ['-ec', script], { cwd: scratch, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...machine } });
-    assert.match(output, /"name": "@cryptob1\/graphyard"/, 'the checkout holds this repository');
+    assert.match(output, /"name": "mainworks"/, 'the checkout holds this repository');
   } finally { rmSync(scratch, { recursive: true, force: true }); }
 });

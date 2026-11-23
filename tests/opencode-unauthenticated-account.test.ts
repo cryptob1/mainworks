@@ -69,7 +69,7 @@ async function installation() {
   const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   git('init', '-q', '-b', 'main'); git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   await writeFile(join(root, 'README.md'), 'opencode login\n');
-  git('add', 'README.md'); git('-c', 'user.name=Graphyard', '-c', 'user.email=graphyard@example.test', 'commit', '-q', '-m', 'initial');
+  git('add', 'README.md'); git('-c', 'user.name=Mainworks', '-c', 'user.email=graphyard@example.test', 'commit', '-q', '-m', 'initial');
   await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory: credentials, herdrWorkspace: 'workspace', run: { worktreeRoot: join(scratch, 'worktrees') } }, coordinatorStatus, { probe: durable });
   return { root, config: await loadMasterConfig(root) };
 }

@@ -14,7 +14,7 @@ import { workFixture } from './work-fixture.js';
 /**
  * GY-3413: one ready item whose every worker launch fails with the same reason on whichever of two
  * runtimes the loop picks, each launch claiming the next epoch, as GY-3406's stale record did.
- * `cycle(ms)` runs the loop `ms` after 2030-01-01T00:00:00Z; `status(ms)` is `graphyard master status` then.
+ * `cycle(ms)` runs the loop `ms` after 2030-01-01T00:00:00Z; `status(ms)` is `mainworks master status` then.
  */
 export async function launchFailureFixture() {
   const t0 = Date.parse('2030-01-01T00:00:00Z'), iso = (ms: number) => new Date(t0 + ms).toISOString();

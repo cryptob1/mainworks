@@ -68,7 +68,7 @@ async function fixture(visible = true) {
     restart: () => { state = daemonStateSchema.parse(JSON.parse(JSON.stringify(state))); },
     advance: (minutes: number) => { now += minutes * minute; },
     cycle: () => runCycle(config, state, effects, () => now),
-    /** `graphyard master status` over this fixture's work and daemon state. */
+    /** `mainworks master status` over this fixture's work and daemon state. */
     status: async () => {
       await writeFile(daemonStatePath(config), JSON.stringify(state));
       const root = await temporaryDirectory('blocker-escalates-status');
@@ -93,7 +93,7 @@ test('integration:blocker-escalates — one cycle after the blocker: an attentio
   assert.ok(line, `master status carries the blocker as attention: ${JSON.stringify(status.attention)}`);
   assert.match(line.text, /GY-1's blocker has waited 1m/);
   assert.ok(line.text.includes(blocker), 'the attention line names the blocker');
-  assert.match(line.next, /graphyard master unblock GY-1 REASON/);
+  assert.match(line.next, /mainworks master unblock GY-1 REASON/);
   assert.doesNotMatch(line.next, /Needs you/, 'the attention line no longer promises a Needs you escalation');
   // Unchanged, the blocker prompts nobody again and the attention line stands as it was.
   f.restart();
@@ -135,7 +135,7 @@ test('integration:blocker-escalates — unblocking clears the attention line, th
   await f.cycle();
   f.advance(35);
   assert.ok(f.dashboard().master.includes('Blocked (1)'), 'the Lead page row stands before the unblock');
-  // `graphyard master unblock GY-1 REASON` clears the blocker and its stamp in one write.
+  // `mainworks master unblock GY-1 REASON` clears the blocker and its stamp in one write.
   f.work([{ ...blockedItem(), blocker: null, blockedAt: null, gates: [{ name: 'ready', passed: false, reasons: [] }] }]);
   f.restart();
   await f.cycle();

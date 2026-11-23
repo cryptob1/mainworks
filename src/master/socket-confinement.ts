@@ -33,7 +33,7 @@ try:
     checked(libc.syscall(446, rules_fd, 0))
     os.close(rules_fd)
 except Exception as error:
-    sys.exit('Graphyard socket confinement failed; no command started: ' + str(error))
+    sys.exit('Mainworks socket confinement failed; no command started: ' + str(error))
 command = sys.argv[2:]
 if command[0] == '--':
     command = command[1:]

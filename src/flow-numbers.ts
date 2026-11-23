@@ -135,7 +135,7 @@ export function flowAttention(flow: FlowNumbers): { subject: string; text: strin
   const { oldest } = slow.wait;
   return { subject: slow.station,
     text: `${capital(slow.station)} is slow: the slowest tenth waited ${plainDuration(slow.wait.p90)} over the last ${windowWords(flow.hours)}. ${oldest.waiting ? 'Oldest' : 'Longest'}: ${oldest.key} ${oldest.title}, ${plainDuration(oldest.minutes)}.`,
-    next: `graphyard status ${oldest.key}` };
+    next: `mainworks status ${oldest.key}` };
 }
 
 /** "75%", or a dash when nothing ended. */

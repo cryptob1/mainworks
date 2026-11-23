@@ -25,7 +25,7 @@ test('Compose bound E2E uses trusted orchestration and private-root case command
   await writeFile(join(home, 'sentinel'), 'protected');
   const environment = { ...trialEnvironment(), ...trialHomeVariables(scratch), PATH: '/usr/local/bin:/usr/bin:/bin' };
   const compose = (extra = {}) => JSON.stringify({ services: { api: {
-    image: 'graphyard-trial:local', command: ['node', '/nested/service/serve.mjs'],
+    image: 'mainworks-trial:local', command: ['node', '/nested/service/serve.mjs'],
     volumes: ['./serve.mjs:/nested/service/serve.mjs:ro', './content:/nested/content:ro'], secrets: ['fixture'], configs: [{ source: 'inline', target: '/nested/config' }], ...extra,
   } }, secrets: { fixture: { file: './content/body.json' } }, configs: { inline: { content: 'fixture config' } } });
   await mkdir(join(worktree, 'content'));

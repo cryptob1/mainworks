@@ -1,11 +1,11 @@
-// Concern: GY-3405 — an agent session on an added host. A host that `graphyard host sessions` opened to
+// Concern: GY-3405 — an agent session on an added host. A host that `mainworks host sessions` opened to
 // sessions takes worker sessions of the runtimes its image holds. The session's commit goes to the host
 // as a merge trial's does (its mirror, the warm image), and the shim's `run-session` runs the runtime there
 // in a container with the checkout mounted at the worktree's own path. The account login is handed over
 // for that one session: it travels on the SSH channel's stdin into the container, which writes it into an
 // in-memory tmpfs at the login home's own path, so no file of it is ever written to the host's disk; the
 // tmpfs goes with the container. A login the provider refreshed during the session comes back the same
-// way and is written here. The session's `graphyard` calls are relayed to this machine over the same
+// way and is written here. The session's `mainworks` calls are relayed to this machine over the same
 // channel and run here in the worktree. The worktree here mirrors the host's checkout while the session
 // runs (its commits and, uncommitted, its changed files), so the loop's attempt bound sees its progress,
 // a stop keeps its uncommitted work as a local session's, and `complete` submits a head held here. A host that drops ends the SSH channel, so the
@@ -26,15 +26,15 @@ import { trialImage } from './merge-writer/trial-container.js';
 export const remoteRuntimes = ['codex'];
 /** The files of a login home that hold its sign-in and settings: what is handed over, and handed back when changed. */
 export const loginFiles = ['.credentials.json', '.claude.json', 'settings.json', 'auth.json', 'config.toml', 'opencode/auth.json', 'cursor/auth.json', 'cli-config.json'];
-const sessionDirectory = '/tmp/graphyard-session';
-const marker = '\u001egraphyard-';
+const sessionDirectory = '/tmp/mainworks-session';
+const marker = '\u001emainworks-';
 /** How often the session's checkout state is sent here while it runs. */
 const syncSeconds = 5;
 
 /**
  * Runs inside the container as its first process: writes the handed-over files (the login, the
  * relay) into their tmpfs homes and runs the runtime with its stderr passed through here, so each
- * frame is a line of its own. Every few seconds, before each relayed `graphyard` call and when the
+ * frame is a line of its own. Every few seconds, before each relayed `mainworks` call and when the
  * runtime ends, it sends the checkout's state as a `work` frame: its HEAD and, when files changed,
  * a snapshot commit of them, bundled since the session's start. This machine's worktree mirrors
  * it, so the loop sees the session's progress and keeps its uncommitted work as it would a local
@@ -76,7 +76,7 @@ def write(data):
 def say(kind, text):
     global unfinished
     with lock:
-        write((b'\n' if unfinished else b'') + ('\x1egraphyard-' + kind + ' ' + text + '\n').encode())
+        write((b'\n' if unfinished else b'') + ('\x1emainworks-' + kind + ' ' + text + '\n').encode())
         unfinished = False
 def sync():
     # A state that cannot be read now is sent at the next tick; the relayed call it precedes still goes.
@@ -92,7 +92,7 @@ def send():
             return
         index = os.path.join(session, 'index')
         shutil.copyfile(out('rev-parse', '--path-format=absolute', '--git-path', 'index'), index)
-        env = dict(os.environ, GIT_INDEX_FILE=index, GIT_AUTHOR_NAME='Graphyard', GIT_AUTHOR_EMAIL='graphyard@localhost', GIT_COMMITTER_NAME='Graphyard', GIT_COMMITTER_EMAIL='graphyard@localhost')
+        env = dict(os.environ, GIT_INDEX_FILE=index, GIT_AUTHOR_NAME='Mainworks', GIT_AUTHOR_EMAIL='mainworks@localhost', GIT_COMMITTER_NAME='Mainworks', GIT_COMMITTER_EMAIL='mainworks@localhost')
         # The helper links the warm image's node_modules into the checkout: a symlink no node_modules/ rule ignores, never the session's work.
         git('add', '-A', '--', '.', ':(exclude)node_modules', env=env)
         tree = out('write-tree', env=env)
@@ -170,7 +170,7 @@ say('login', json.dumps(back))
 sys.exit(code)
 `;
 
-/** The `graphyard` the session calls, at the CLI's own path: each call goes to this machine, after the checkout's state, and its answer comes back. */
+/** The `mainworks` the session calls, at the CLI's own path: each call goes to this machine, after the checkout's state, and its answer comes back. */
 export const sessionRelay = `import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 const session = ${JSON.stringify(sessionDirectory)}, id = randomUUID();
@@ -185,7 +185,7 @@ export interface RemoteSession {
   target: string; worktree: string;
   /** Login homes whose sign-in files are handed over: each becomes an in-memory home at the same path there. */
   homes: string[];
-  /** This machine's CLI, which the relayed calls run; the session's `graphyard` at the same path is the relay. */
+  /** This machine's CLI, which the relayed calls run; the session's `mainworks` at the same path is the relay. */
   cli: string;
   argv: string[]; env: Record<string, string>;
   /** This machine's confinement words for the session, which every relayed call runs under, as a local worker's calls do. */
@@ -204,7 +204,7 @@ export async function runRemoteSession(input: RemoteSession): Promise<number> {
   const root = dirname(await git('rev-parse', '--path-format=absolute', '--git-common-dir'));
   const transport = shardSshSession(run);
   const shards = remoteShardSession({ root, sha, image: input.image ?? trialImage(), run, deadline: Date.now() + 24 * 3600_000, transport });
-  const scratch = await mkdtemp(join(tmpdir(), 'graphyard-session-'));
+  const scratch = await mkdtemp(join(tmpdir(), 'mainworks-session-'));
   try {
     let runName: string;
     try { runName = await shards.ready(input.target); }
@@ -217,7 +217,7 @@ export async function runRemoteSession(input: RemoteSession): Promise<number> {
     const identity = { ...(name ? { GIT_AUTHOR_NAME: name, GIT_COMMITTER_NAME: name } : {}), ...(email ? { GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_EMAIL: email } : {}) };
     const request = {
       argv: ['python3', '-I', '-c', sessionBoot, basename(input.argv[0]!), ...input.argv.slice(1)],
-      env: { ...identity, ...input.env, HOME: '/tmp/graphyard-home', GRAPHYARD_CLI: input.cli, GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'safe.directory', GIT_CONFIG_VALUE_0: '*' },
+      env: { ...identity, ...input.env, HOME: '/tmp/mainworks-home', GRAPHYARD_CLI: input.cli, GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'safe.directory', GIT_CONFIG_VALUE_0: '*' },
       cwd: input.worktree, homes: [...new Set([...input.homes, dirname(input.cli)])],
     };
     /** Make the worktree what the session's checkout is: its HEAD, with the snapshot's changes uncommitted on top, as a local session's would be. */
@@ -256,7 +256,7 @@ export async function runRemoteSession(input: RemoteSession): Promise<number> {
             rmSync(bundle, { force: true });
           }
           reply = { ...ran, commits: back };
-        } catch (error) { reply.stderr = `graphyard relay: ${error instanceof Error ? error.message : String(error)}\n`; }
+        } catch (error) { reply.stderr = `mainworks relay: ${error instanceof Error ? error.message : String(error)}\n`; }
         child.stdin.write(`${JSON.stringify({ id, ...reply })}\n`);
       };
       createInterface({ input: child.stderr }).on('line', line => {
@@ -266,7 +266,7 @@ export async function runRemoteSession(input: RemoteSession): Promise<number> {
           if (kind === 'call') await call(body);
           else if (kind === 'work') await mirror(body);
           else if (kind === 'login') for (const [path, text] of Object.entries(JSON.parse(body) as Record<string, string>)) if (login.includes(path)) writeFileSync(path, Buffer.from(text, 'base64'), { mode: 0o600 });
-        }).catch(error => { errors.write(`graphyard relay: ${error instanceof Error ? error.message : String(error)}\n`); });
+        }).catch(error => { errors.write(`mainworks relay: ${error instanceof Error ? error.message : String(error)}\n`); });
       });
       child.on('close', status => { void queue.then(() => resolve(status ?? droppedExit)); });
     }));

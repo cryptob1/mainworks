@@ -43,7 +43,7 @@ test('detectors classify stacks, deploy targets, CI checks, and candidate-bound 
   assert.deepEqual(node.testLayout, ['tests/']);
   const nodeDeploy = detectDeploy(scan(nodeRailway), node);
   assert.equal(nodeDeploy.target, 'railway');
-  assert.match(nodeDeploy.verification, /Railway deploys each application from git on its own; Graphyard deploys nothing there/);
+  assert.match(nodeDeploy.verification, /Railway deploys each application from git on its own; Mainworks deploys nothing there/);
   assert.match(nodeDeploy.verification, /versionUrl/);
   const nodeProposal = buildProposal(scan(nodeRailway), { repository: 'owner/orders-api', runtimes: ['codex'] });
   assert.deepEqual(nodeProposal.checks, ['test', 'typecheck', 'build']);
@@ -172,7 +172,7 @@ test('applying a reviewed proposal writes onboarding files without a roster and 
     const first = await applyProposal(root, proposal, dependencies);
     assert.equal(first.githubApp, null, 'no GitHub App is registered (GY-2010)');
     assert.ok(first.applied.some(entry => /AGENTS.md/.test(entry)));
-    assert.match(await readFile(join(root, 'AGENTS.md'), 'utf8'), /Graphyard coordination/);
+    assert.match(await readFile(join(root, 'AGENTS.md'), 'utf8'), /Mainworks coordination/);
     const principalsFile = join(root, '.graphyard/principals.json');
     await assert.rejects(stat(principalsFile), { code: 'ENOENT' });
     assert.equal(first.principalsFile, null);
@@ -357,8 +357,8 @@ test('CLI init --scan applies nothing without --apply, and --scan --apply applie
     await writeFile(join(root, '.graphyard/github-app.json'), JSON.stringify({ appId: 99, slug: 'graphyard-owner-repo', repository: 'owner/repo', privateKey: 'test-only', webhookSecret: 'test-only', installationId: 7 }), { mode: 0o600 });
     const applied = JSON.parse(await runCli(root, ['init', '--scan', '--apply', '--url', 'https://graphyard.example'], env));
     assert.equal(applied.githubApp, null);
-    assert.match(applied.next, /Run graphyard install --apply/);
-    assert.match(await readFile(join(root, 'AGENTS.md'), 'utf8'), /Graphyard coordination/);
+    assert.match(applied.next, /Run mainworks install --apply/);
+    assert.match(await readFile(join(root, 'AGENTS.md'), 'utf8'), /Mainworks coordination/);
     await assert.rejects(stat(join(root, '.graphyard/principals.json')), { code: 'ENOENT' });
 
     await addFile(root, 'compose.yaml', 'services:\n  db:\n    image: postgres:16\n');
@@ -379,7 +379,7 @@ test('CLI init --scan applies nothing without --apply, and --scan --apply applie
     assert.equal(byId['github-app'], undefined, 'doctor asks for no GitHub App: the deploy key is the install\'s only remote credential (GY-2010)');
     assert.ok(status.readiness.items.every((item: any) => item.status === 'ready' || typeof item.recovery === 'string'));
     // While the control plane itself fails, next names the setup-from-zero step that installs it (GY-1412).
-    assert.match(status.next, /^FAIL control-plane: not reachable: .*\(fix: run graphyard up/);
+    assert.match(status.next, /^FAIL control-plane: not reachable: .*\(fix: run mainworks up/);
     const preview = JSON.parse(await runCli(root, ['doctor', '--profile', 'preview-validation'], env));
     assert.equal(preview.readiness.items.find((item: any) => item.id === 'runner-registration'), undefined, 'the retired validation runner needs no registration');
     assert.equal(preview.readiness.items.find((item: any) => item.id === 'e2e-suite').status, 'missing');

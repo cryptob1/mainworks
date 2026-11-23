@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-2035 rework: the rework workspace starts from the submission head Graphyard registered in the
+// GY-2035 rework: the rework workspace starts from the submission head Mainworks registered in the
 // shared object store — the branch's own tip once a requirements revision cleared the candidate —
 // and the worker branch is never fetched or pushed. AC-1: a rework workspace for an item whose
 // local branch head equals the submitted candidate starts with no git fetch or push, whatever

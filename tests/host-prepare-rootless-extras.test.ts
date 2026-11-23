@@ -5,7 +5,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fakeHosts } from './helpers/fake-hosts.js';
 
-// GY-3419: `graphyard host prepare` no longer requires dockerd-rootless-setuptool.sh to be
+// GY-3419: `mainworks host prepare` no longer requires dockerd-rootless-setuptool.sh to be
 // installed. On a host lacking it and slirp4netns, the script it prints fetches the static Docker
 // rootless extras matching the reported Docker version and a static slirp4netns into gy-compute's
 // home, verifies them, and runs those; when the tools are present — or its own fetched copy is —
@@ -37,7 +37,7 @@ test(`${proof} — on a host without dockerd-rootless-setuptool.sh and slirp4net
   assert.match(lines.find(line => line.startsWith('sudo '))!, new RegExp(`sudo -u gy-compute XDG_RUNTIME_DIR=/run/user/1001 [^\\n]*PATH=[^\\n]*docker-rootless-extras:[^\\n]*gy-compute/\\.graphyard/rootless/docker-rootless-extras/dockerd-rootless-setuptool\\.sh install`));
   assert.match(lines.join('\n'), /dockerd-rootless-setuptool\.sh install for gy-compute at \/run\/user\/1001\/docker\.sock/, 'the fetched setuptool ran the install');
   await stat(join(fixture.host('bare'), 'run', 'user', '1001', 'docker.sock'));
-  assert.match(fixture.prepareOutput('bare'), /Ready\. On the Graphyard machine run: graphyard host add gy-compute@bare\s*$/);
+  assert.match(fixture.prepareOutput('bare'), /Ready\. On the Mainworks machine run: mainworks host add gy-compute@bare\s*$/);
 });
 
 test(`${proof} — with its fetched copy already in the home the script downloads nothing; a host with both tools installed never downloads`, async () => {
@@ -45,7 +45,7 @@ test(`${proof} — with its fetched copy already in the home the script download
   const before = (await logLines(fixture)).filter(line => line.startsWith('curl ')).length;
   assert.equal(before, 3);
   const again = await fixture.prepare('bare');
-  assert.match(again, /Ready\. On the Graphyard machine run: graphyard host add gy-compute@bare\s*$/);
+  assert.match(again, /Ready\. On the Mainworks machine run: mainworks host add gy-compute@bare\s*$/);
   assert.equal((await logLines(fixture)).filter(line => line.startsWith('curl ')).length, 3, 'the second run downloaded nothing');
   // Both tools installed (the stand-ins every default fixture host carries): no curl stand-in is even reached.
   const installed = await fakeHosts('host-prepare-rootless-installed', [{ name: 'box' }]);

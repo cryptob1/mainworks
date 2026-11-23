@@ -9,7 +9,7 @@ import type { HeadlessExec } from '../../src/headless-session.js';
 import { readReviewBinding } from '../../src/review-post.js';
 import { reviewedDeliveries } from './receipt-schema.js';
 import { masterRunSchema } from '../../src/master/profiles.js';
-/** Controlled executors test the runner and real Graphyard gates; never model/agent evidence. */
+/** Controlled executors test the runner and real Mainworks gates; never model/agent evidence. */
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

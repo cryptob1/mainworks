@@ -1,7 +1,7 @@
 {
   "id": "project-tab-title",
-  "title": "The browser tab names the project: gh · OWNER/REPO for the install, Graphyard before the identity loads",
-  "description": "A real browser opens the served dashboard of two distinct configured project identities. Each document title is gh · OWNER/REPO for that install and stays so through navigation (Workers, Work, an item's page, Back) and reload; before the identity loads, and after sign-out, the title is the plain Graphyard fallback, never undefined and never a stale other project.",
+  "title": "The browser tab names the project: gh · OWNER/REPO for the install, Mainworks before the identity loads",
+  "description": "A real browser opens the served dashboard of two distinct configured project identities. Each document title is gh · OWNER/REPO for that install and stays so through navigation (Workers, Work, an item's page, Back) and reload; before the identity loads, and after sign-out, the title is the plain Mainworks fallback, never undefined and never a stale other project.",
   "tags": [
     "dashboard"
   ],

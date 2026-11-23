@@ -153,7 +153,7 @@ test('integration:typed-next-action — the control plane names one typed action
   // way: the refusal itself says to resolve it and push, and that the approval and proofs bound to
   // this head do not survive the resolution. A re-read cannot produce that head, so the item owes
   // a new one — otherwise the row completes, waits ten minutes, reopens and repeats forever.
-  const conflict = `Candidate ${head.slice(0, 12)} cannot be brought onto base branch tip ${sha40('ef').slice(0, 12)} without resolving a conflict, which is content nobody reviewed or proved: merge conflict in src/loop.ts. Run graphyard sync ${item.key}, resolve it and push; the approval and proofs bound to ${head.slice(0, 12)} do not survive the resolution.`;
+  const conflict = `Candidate ${head.slice(0, 12)} cannot be brought onto base branch tip ${sha40('ef').slice(0, 12)} without resolving a conflict, which is content nobody reviewed or proved: merge conflict in src/loop.ts. Run mainworks sync ${item.key}, resolve it and push; the approval and proofs bound to ${head.slice(0, 12)} do not survive the resolution.`;
   const conflicted = { ...structuredClone(await reload(item)), lease: null,
     baseRefresh: { from: { sha: head, baseSha: base }, base: sha40('ef'), baseTree: sha40('7e'), policyRevision: 1, at: new Date().toISOString(), head: null, conflict, carry: null } } as unknown as Work;
   Object.assign(conflicted, evaluate(conflicted, [conflicted], new Date()));
@@ -162,7 +162,7 @@ test('integration:typed-next-action — the control plane names one typed action
   assert.equal(conflictAction.refusal, conflict);
   assert.equal(conflictAction.kind, 'request-rework', 'a conflict the control plane cannot resolve needs a new head, not a re-read');
   assert.equal(refusalAction(conflicted, 'build', conflict, undefined, new Date()), 'request-rework');
-  assert.match((conflictAction.inputs as any).detail, new RegExp(`Run graphyard sync ${item.key}, resolve it and push`), 'and the detail carries the instruction the worker follows');
+  assert.match((conflictAction.inputs as any).detail, new RegExp(`Run mainworks sync ${item.key}, resolve it and push`), 'and the detail carries the instruction the worker follows');
 
   // Session review opens a request its launcher can answer.
   const reviewable = await reload(item);
@@ -207,7 +207,7 @@ test('integration:typed-next-action — the control plane names one typed action
     { ...all[0], gates: [{ name: 'build', passed: false, reasons: ['Candidate conflicts with the base branch', 'Mechanical proof unit:priority failed on this head', 'Worker has not submitted implementation for this attempt'] }] } as Work,
     { ...all[0], gates: [{ name: 'test', passed: false, reasons: ['Required check typecheck has not passed on this head'] }] } as Work,
     { ...all[0], gates: [{ name: 'review', passed: false, reasons: ['Outstanding change requests must be resolved through a new review'] }] } as Work,
-    { ...all[0], gates: [{ name: 'merge', passed: false, reasons: ['Required Graphyard check and merge-queue branch protection have not been verified'] }] } as Work,
+    { ...all[0], gates: [{ name: 'merge', passed: false, reasons: ['Required Mainworks check and merge-queue branch protection have not been verified'] }] } as Work,
     { ...all[0], gates: [{ name: 'acceptance', passed: false, reasons: [`Trusted ${PROOF} evidence from agent-a is no longer independent: agent-a has since held an assignment on GY-1`] }] } as Work,
   ];
   const seen = new Map<string, NextActionKind>();
@@ -353,7 +353,7 @@ test('integration:worker-pull-model — a free worker asks the control plane for
   const measuredP90 = rank(latencies, 90);
   assert.equal(latencies.length, 10);
   assert.ok(measuredP90 <= 4 * pollMs, `p90 ready-to-claim ${measuredP90}ms is within a few ${pollMs}ms polls`);
-  // The same loop at the interval Graphyard ships: one interval, plus the service time just
+  // The same loop at the interval Mainworks ships: one interval, plus the service time just
   // measured above it. Both are inside the two-minute bound the criterion sets.
   const serviceMs = Math.max(0, measuredP90 - pollMs);
   assert.ok(workerPullIntervalMs <= 120_000, `the published poll interval ${workerPullIntervalMs}ms is inside the two-minute bound`);
@@ -413,7 +413,7 @@ test('integration:typed-agent-requests — an agent that needs something records
   blocked = await engine.execute(worker, 'request', blocked.id, { type: 'blocker', epoch: blocked.epoch, reason: 'the deployment provider is refusing every token' }, randomUUID());
   const blocker = openAgentRequests(blocked, new Date())[0];
   assert.equal(blocker.decider.kind, 'follow-up');
-  assert.match(blocker.decider.command!, /graphyard master create — a follow-up item naming GY-\d+/);
+  assert.match(blocker.decider.command!, /mainworks master create — a follow-up item naming GY-\d+/);
   assert.equal(blocked.blocker, 'the deployment provider is refusing every token');
   assert.equal(blocked.lease, null);
   // A note is a record, not a hand-off: it keeps the lease and asks nobody for anything.
@@ -763,7 +763,7 @@ test('integration:typed-next-action — the gate evaluator and the action comput
   const own = nextAction(both, [both, dependency], new Date(at));
   assert.equal(own!.kind, 'attention', 'the filing refusal is this item\'s own');
   assert.match(own!.refusal!, /owes an end-to-end proof/);
-  assert.match(own!.needsHuman!.resolve!, /graphyard master requirements GY-2/);
+  assert.match(own!.needsHuman!.resolve!, /mainworks master requirements GY-2/);
 });
 
 test('unit:board-api — unused reads return 404 and still require authentication', async () => {

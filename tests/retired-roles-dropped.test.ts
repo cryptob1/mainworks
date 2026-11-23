@@ -34,8 +34,8 @@ test('e2e:retired-roles-dropped — legacy registry migrates once on a successfu
   assert.deepEqual(Object.keys(proposedConcurrency), [...fleetRoles]);
   assert.ok(Object.values(proposedRuntimeRoles).flat().every(role => fleetRoles.includes(role!)));
   const pi = await import('../integrations/pi/index.js');
-  for (const role of [...retired, 'research', 'decomposition', 'triage']) assert.deepEqual(pi.graphyardTools(role), []);
-  assert.deepEqual(pi.graphyardTools('producer').map(tool => tool.name), ['graphyard_submit_evidence']);
+  for (const role of [...retired, 'research', 'decomposition', 'triage']) assert.deepEqual(pi.mainworksTools(role), []);
+  assert.deepEqual(pi.mainworksTools('producer').map(tool => tool.name), ['graphyard_submit_evidence']);
   const payloads = await import('../src/runner/payloads.js'), settings = await import('../src/master/merge-writer-settings.js');
   assert.equal('diagnosticianSettings' in payloads, false); assert.equal('candidateSettingsSchema' in settings, false);
   // The legacy document predates the caretaker role (GY-3593), so it configures every role but that one.

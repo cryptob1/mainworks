@@ -19,7 +19,7 @@ const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd,
 const listen = (server: Server) => new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
 const close = (server: Server) => new Promise<void>(resolve => server.close(() => resolve()));
 
-/** Host A: a Graphyard source checkout, a CLI release worktree of it under the install directory, and a managed checkout connected to `url`. */
+/** Host A: a Mainworks source checkout, a CLI release worktree of it under the install directory, and a managed checkout connected to `url`. */
 async function hostA(root: string, url: string) {
   const source = join(root, 'graphyard');
   await mkdir(source, { recursive: true });
@@ -94,7 +94,7 @@ test('e2e:cli-identity-after-move — a CLI release copied to another host passe
     served = { version: `unreleased ${newer.slice(0, 12)}`, commit: newer };
     const older = await status();
     assert.notEqual(older.code, 0, 'a CLI older than the server is refused');
-    assert.match(older.stderr, new RegExp(`CLI commit ${commit} and server commit ${newer} differ: run graphyard upgrade`));
+    assert.match(older.stderr, new RegExp(`CLI commit ${commit} and server commit ${newer} differ: run mainworks upgrade`));
   } finally {
     await close(server);
     await rm(base, { recursive: true, force: true });

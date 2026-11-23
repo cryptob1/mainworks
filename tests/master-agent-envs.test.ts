@@ -104,7 +104,7 @@ async function repository() {
 }
 async function master(options: { reviewer?: boolean } = {}) {
   const root = await repository(), credentialDirectory = await temporaryDirectory('agent-envs-credentials');
-  const setup = await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory, herdrWorkspace: 'workspace-graphyard' }, coordinatorStatus as typeof fetch);
+  const setup = await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory, herdrWorkspace: 'workspace-mainworks' }, coordinatorStatus as typeof fetch);
   return { root, credentialDirectory, setup, cleanup: async () => { await rm(root, { recursive: true, force: true }); await rm(credentialDirectory, { recursive: true, force: true }); } };
 }
 async function token(directory: string, folder: string, name: string, value: string) {
@@ -431,7 +431,7 @@ test('integration:max-autonomy-permissions — every launched agent gets its run
     let reviewTab: Record<string, string> = {};
     await launchReview(root, work(), 'review-oc', [], new Date().toISOString(), { headless: (command, args, options) => { reviewTab = options.env; return pendingHeadless(command, args, options); }, run: herdr(reviewCalls), registerLaunch: async () => ({ launch: 'fixture-launch' }), probe: { cacheMs: 0, registry: homeRegistry([opencodeAccount], { reviewer: ['opencode-a'] }) } });
     assert.equal(JSON.parse(reviewTab.OPENCODE_PERMISSION)['*'], 'allow'); assert.equal(reviewTab.GH_CONFIG_DIR, undefined, 'the host posts the answer; the model receives no callback credential');
-    assert.equal(reviewTab.GRAPHYARD_TOKEN_FILE, undefined, 'a reviewer still holds no Graphyard credential');
+    assert.equal(reviewTab.GRAPHYARD_TOKEN_FILE, undefined, 'a reviewer still holds no Mainworks credential');
 
     // The master itself launches with its broadest mode, on its own request (GY-93).
     const masterCalls: string[][] = [];
@@ -439,7 +439,7 @@ test('integration:max-autonomy-permissions — every launched agent gets its run
     const start = expandTypedCommand(masterCalls.find(args => args[0] === 'pane' && args[1] === 'run')![3]);
     assert.equal(start.kind, 'codex'); assert.deepEqual(start.args.slice(0, 4), ['--ask-for-approval', 'never', '--sandbox', 'workspace-write']);
     assert.ok(start.args.includes('sandbox_workspace_write.network_access=true') && start.args.includes(join(credentialDirectory, 'masters')));
-    assert.deepEqual(masterCalls.map(args => args[1]), ['create', 'run', 'get', 'read', 'process-info', 'rename'], 'typed, seen ready with no consent prompt on screen and foreground inspected (GY-130), named; nothing pasted'); assert.match(start.args.at(-1)!, /dedicated Graphyard master agent/);
+    assert.deepEqual(masterCalls.map(args => args[1]), ['create', 'run', 'get', 'read', 'process-info', 'rename'], 'typed, seen ready with no consent prompt on screen and foreground inspected (GY-130), named; nothing pasted'); assert.match(start.args.at(-1)!, /dedicated Mainworks master agent/);
 
     // The master harness covers everything the master owns, and still no merge path or credential
     // read: master.json is read, never edited — its owned settings change through `master config` —

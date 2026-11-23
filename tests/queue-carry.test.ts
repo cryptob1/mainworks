@@ -19,10 +19,10 @@ function input(overrides: Partial<CarryInput> = {}): CarryInput {
     app: 'graphyard', ...overrides };
 }
 const states = (carry: ReturnType<typeof decideCarry>) => [carry.approval.carried, ...carry.evidence.map(entry => entry.carried)];
-/** The base refresh that brought approved head H on B onto base P as Graphyard-authored TIP, with its carry decision. */
+/** The base refresh that brought approved head H on B onto base P as Mainworks-authored TIP, with its carry decision. */
 const refreshed = (carry: ReturnType<typeof decideCarry>): BaseRefresh => ({ from: { sha: H, baseSha: B }, base: P, baseTree: sha40('7e'), policyRevision: 1, at, head: TIP, conflict: null, merge: authored(), carry });
 
-test('unit:queue-authored-tip-carry — approval and scope-disjoint evidence carry to a Graphyard-authored two-parent tip over the approved head and a validated predecessor', () => {
+test('unit:queue-authored-tip-carry — approval and scope-disjoint evidence carry to a Mainworks-authored two-parent tip over the approved head and a validated predecessor', () => {
   const carry = decideCarry(input());
   assert.equal(carry.approval.carried, true);
   assert.deepEqual({ ...carry.approval, reason: undefined }, { carried: true, provider: 'github', reviewer: 'reviewer[bot]', sha: H, reviewId: 900, originalSha: H, reason: undefined });
@@ -47,11 +47,11 @@ test('unit:queue-authored-tip-carry — every refusal case requires fresh review
     assert.match(carry.approval.reason, pattern); for (const entry of carry.evidence) assert.match(entry.reason, pattern);
     assert.match(carryRefusal(input(overrides))!, pattern);
   };
-  refused({ merge: null }, /was not produced by Graphyard's merge of the approved head/);
-  refused({ merge: authored({ from: sha40('a9') }) }, /was not produced by Graphyard's merge of the approved head/);
-  refused({ merge: authored({ parents: [H, P, sha40('e1')] }) }, /carries commits Graphyard did not produce/);
+  refused({ merge: null }, /was not produced by Mainworks's merge of the approved head/);
+  refused({ merge: authored({ from: sha40('a9') }) }, /was not produced by Mainworks's merge of the approved head/);
+  refused({ merge: authored({ parents: [H, P, sha40('e1')] }) }, /carries commits Mainworks did not produce/);
   refused({ merge: authored({ parents: [sha40('a9'), P] }) }, /rather than exactly the approved head/);
-  refused({ merge: authored({ parents: [H] }) }, /carries commits Graphyard did not produce/);
+  refused({ merge: authored({ parents: [H] }) }, /carries commits Mainworks did not produce/);
   refused({ merge: authored({ authoredByApp: false, author: 'worker' }) }, /authored by worker, not by the graphyard App/);
   refused({ merge: authored({ conflicts: true }) }, /needed conflict resolution/);
   refused({ predecessor: { key: 'GY-1', validated: false } }, /predecessor GY-1 is not fully validated/);
@@ -89,7 +89,7 @@ test('unit:queue-real-base-tip — the review launcher refuses a candidate behin
   assert.equal(assertReviewCandidate(mergeable, at).sha, H, 'a mergeable head behind the base is reviewed');
   const observation = { candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: false, conflicting: true, protected: true, files: [], scopeFiles: [], at, prState: 'open', draft: false, baseTip: sha40('b2'), baseTree: sha40('7b'), baseTipContained: false } as Observation;
   const work = { key: 'GY-7', policy: { checks: [], review: true }, submission: { epoch: 1, pr: 7 }, candidate, observation, reworkRequested: false, ready: true, dependencies: [], workspaces: [], criteria: [], evidence: [], gates: [], violations: [], scenarioRequirements: [] } as unknown as Work;
-  assert.throws(() => assertReviewCandidate(work, at), new RegExp(`GY-7 candidate ${H.slice(0, 12)} does not contain the base branch tip ${sha40('b2').slice(0, 12)}; .* Run graphyard sync GY-7`));
+  assert.throws(() => assertReviewCandidate(work, at), new RegExp(`GY-7 candidate ${H.slice(0, 12)} does not contain the base branch tip ${sha40('b2').slice(0, 12)}; .* Run mainworks sync GY-7`));
   const behind = diagnose(work, [work], Date.parse(at)).find(entry => entry.kind === 'base-behind')!;
   assert.match(behind.message, new RegExp(`does not contain the base branch tip ${sha40('b2').slice(0, 12)}`));
   // Bringing the head onto the moved tip is the control plane's work now, not a worker sync round.

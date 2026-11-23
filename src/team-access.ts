@@ -1,6 +1,6 @@
 // GY-3294: team access across the installs on one Tailscale machine.
 //
-// One machine runs many Graphyard installs, one port each, all served on the tailnet by
+// One machine runs many Mainworks installs, one port each, all served on the tailnet by
 // `tailscale serve --bg --http=PORT` (up.ts). The machine's Tailscale facts live in one host-owned
 // directory (`~/.config/graphyard/machine`) that only the host reads: `up` records the node there and
 // each install's master loop (master/team-access.ts) keeps the machine's teammate roster in it.
@@ -113,4 +113,4 @@ export async function servedUrl(port: string, now = Date.now(), allowFunnel = tr
   return { ...result, doing: error ? `Turning Funnel on for port ${at} failed: ${error}. The loop retries every 10 minutes.` : `The loop turns Funnel on for port ${at} every 10 minutes.` };
 }
 
-export const missingTailnetGuidance = (port: string) => `Tailscale is not serving this machine's port ${port}, where this install runs, so nobody else can open it. Install Tailscale (https://tailscale.com/download), sign in, and rerun graphyard up.`;
+export const missingTailnetGuidance = (port: string) => `Tailscale is not serving this machine's port ${port}, where this install runs, so nobody else can open it. Install Tailscale (https://tailscale.com/download), sign in, and rerun mainworks up.`;

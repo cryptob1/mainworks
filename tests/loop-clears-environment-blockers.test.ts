@@ -88,10 +88,10 @@ test(`${proof} — each environment cause is cleared by the loop within two cycl
   const host = { slotsFree: false, celsius: 99 as number | null, cliCommit: 'a'.repeat(40), serverCommit: 'b'.repeat(40), writable: new Set<string>() };
   const { effects } = world(host);
   const items = {
-    slot: await blocked('Slot', 'complete failed: graphyard: worker verification waits for a host heavy-job slot and timed out after 30 minutes'),
+    slot: await blocked('Slot', 'complete failed: mainworks: worker verification waits for a host heavy-job slot and timed out after 30 minutes'),
     heat: await blocked('Heat', 'complete could not start: the CPU is too hot (96C at a 85C limit); launches waiting'),
     timeout: await blocked('Timeout', 'the host verification timed out after 1800s on the trial host'),
-    commit: await blocked('Commit', `CLI commit ${'a'.repeat(40)} and server commit ${'b'.repeat(40)} differ: run graphyard upgrade`),
+    commit: await blocked('Commit', `CLI commit ${'a'.repeat(40)} and server commit ${'b'.repeat(40)} differ: run mainworks upgrade`),
     writable: await blocked('Writable', 'git commit failed: EROFS: read-only file system, open \'/srv/worktrees/GY-9-1/.git/index.lock\''),
     person: await blocked('Person', 'the staging credential expired; the owner must issue a new token'),
     code: await blocked('Code', 'tests failed: AssertionError: expected 2 to equal 3 in tests/export.test.ts; the host verification timed out on retry'),

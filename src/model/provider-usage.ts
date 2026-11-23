@@ -78,7 +78,7 @@ export function claudeLimitWindows(body: any): UsageWindow[] {
     return window ? [{ window, percent: entry.percent, resetsAt, limitList: true as const }] : [];
   });
 }
-/** The extra-usage line a spend-enabled answer shows (GY-3497): `extra usage on: $3.21 of $10.00 used`, from the answer's minor units. Read-only: Graphyard never changes spending. */
+/** The extra-usage line a spend-enabled answer shows (GY-3497): `extra usage on: $3.21 of $10.00 used`, from the answer's minor units. Read-only: Mainworks never changes spending. */
 export function claudeSpendLine(spend: any): string | null {
   return spend?.enabled === true && typeof spend.used === 'number' && typeof spend.limit === 'number'
     ? `extra usage on: $${(spend.used / 100).toFixed(2)} of $${(spend.limit / 100).toFixed(2)} used` : null;

@@ -24,6 +24,6 @@ test('e2e:readme-prerequisites — doctor under an older Node prints a FAIL line
   execFileSync('git', ['init', root], { stdio: 'ignore' });
   const doctor = (nodeVersion: string) => setupFromZeroChecks({ root, env: {}, status: null, environments: join(root, 'agents'), loopCode: null, systemctl: () => '', platform: 'linux', sandbox: () => null, nodeVersion })
     .then(checks => setupLine(checks.find(check => check.id === 'node')!));
-  assert.match(await doctor(`${major - 2}.11.0`), new RegExp(`^FAIL node: Node ${major - 2}\\.11\\.0; Graphyard needs Node ${major} or newer \\(fix: install Node ${major} or newer`));
+  assert.match(await doctor(`${major - 2}.11.0`), new RegExp(`^FAIL node: Node ${major - 2}\\.11\\.0; Mainworks needs Node ${major} or newer \\(fix: install Node ${major} or newer`));
   assert.match(await doctor(`${major}.1.0`), /^PASS node:/);
 });

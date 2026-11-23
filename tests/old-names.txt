@@ -1,0 +1,122 @@
+# GY-3594: the only places the old product name may stay.
+# Mainworks was Graphyard. Installs created before the rename still use the names below:
+# settings, paths, units, images, identities, refs, headers and database names they already hold.
+# One JavaScript regular expression per line; a line of a tracked file may say the old name only
+# inside a match of one of these. tests/no-old-name.test.ts enforces it.
+
+# Settings live installs set
+GRAPHYARD_[A-Z0-9_]*
+# Compose projects and bot logins named for an install of this repository
+\bgraphyard-cryptob1-graphyard\b
+# Files and directories installs and managed repositories hold
+\.graphyard\b
+\bgraphyard\.json\b
+\bgraphyard\.trial\.Dockerfile\b
+# The old command and the host scripts installs run by path
+\bgraphyard(-verify|-pull|-executor)?\.mjs\b
+\bbin/graphyard\b
+["']?graphyard["']?: ["']\./bin/
+# Config, data and checkout directories
+\bconfig/graphyard\b
+'\.config', 'graphyard'
+'share'\)?, 'graphyard'
+\bshare/graphyard\b
+/(srv|run|var/lib|var/tmp|opt|home|install|code|removed|nonexistent)/graphyard\b
+/etc/graphyard-trial\b
+/opt/graphyard-[\w-]+
+\bsshd_graphyard_config\b
+# Units, scopes, containers, volumes and checkouts named on live hosts
+\bgraphyard-(master|deploy|local-|secrets-bus|host-shim|herdr|executor|sshd|serve|watch|run|warm|proof|review|preview|producer|data|\$\{)
+# Agent identities registered in live control planes
+\bgraphyard-(claude|codex|cursor|opencode|gemini|pi|worker|reviewer|operator|approver|merge-writer|coordinator|test|owner)\b[\w-]*
+# Work branches and refs
+\bgraphyard/
+\b(refs/heads|refs/remotes/origin|refs)/graphyard\b
+'heads', 'graphyard'
+# The actor, database user, Herdr plugin and protocol names stored or registered under the old name
+'graphyard'
+"graphyard"
+\bgraphyard@
+POSTGRES_(USER|PASSWORD|DB): graphyard\b
+-U graphyard\b
+//graphyard:
+:\d+/graphyard\b
+graphyard\\\.(json|mjs)
+<!-- /?graphyard(-master)? -->
+# HTTP headers clients and loops already send
+\b[Xx]-[Gg]raphyard-[\w-]+
+# Database objects and agent tool names
+\bgraphyard_[a-z_]+
+# The repository, its published package and images, and install ids derived from it
+\bcryptob1[/-]graphyard[\w-]*
+@cryptob1/graphyard\b
+\bghcr\.io/cryptob1/graphyard\b
+# Managed-block markers in generated files
+\bGRAPHYARD-WRITTEN\b
+\bVERIFIED-GRAPHYARD-MAIN\b
+# Keys and labels stored in published packages, backups, Docker labels, browser storage and database settings
+\bgraphyard(Commit|Upstream|Version)\b
+\bgraphyard-[\w-]+-v\d+\b
+\bgraphyard\.[a-zA-Z][\w.]*
+graphyard connect-account v1
+\bgraphyard-(backups|preserved|gate|e2e|feature-map|OWNER-NAME|INSTALL)\b
+_graphyard-data\b
+'graphyard-'
+trialAppArmorProfile = 'graphyard-trial'
+# Files, checks and jobs managed repositories and branch protection already name
+\.github/workflows/graphyard-[\w-]+\.yml
+Graphyard / merge
+# Published images on GHCR
+\}/graphyard(-trial)?:
+# Code that finds both the old and the new name
+graphyard\|mainworks
+legacyTrialContainerImage = 'graphyard-trial:local'
+# Regular expressions that match the old names above
+\^graphyard(\\/|-|\\\.json)
+\|graphyard\|
+graphyard-no-docker
+POSTGRES_(USER|DB)=graphyard
+--username=graphyard
+\bgraphyard-[\w-]+-(server|db)-1\b
+# The old command, where the docs say it still works
+[Tt]he (old )?\\?`?graphyard\\?`? command
+# Image tags installs built before the rename
+\bgraphyard-(local|trial):[\w.$-]+
+# The same names escaped inside regular expressions, and the database name in connection strings
+@cryptob1\\/graphyard\b
+\\/(opt|bin)\\/graphyard\b
+@[^/\s]+/graphyard\b
+pathname = '/graphyard'
+--server-name graphyard\b
+'graphyard-token'
+\[\\\\/\]graphyard-\(
+# Assertions that the old name is gone from what people read
+(doesNotMatch|not\.toContain(Text)?|!.*includes)\(.*[Gg]raphyard.*
+/graphyard\.\*still work
+# A test fixture whose content is a rename sweep from the old name
+const graphyardSymbol_\$\{i\} = "graphyard-value-
+graphyard\\/
+graphyard\\.mjs
+graphyard\\\.(example|json|mjs)
+ghcr\\\.io\\/cryptob1\\/graphyard
+the graphyard App
+\bgraphyard\[bot\]
+cryptob1/Graphyard
+\[trial, 'graphyard-trial'\]
+mirror/graphyard:
+\bgraphyard-(acme-app|cryptob1|fixture-status|gy-\d+-)
+DATABASE graphyard\b
+# Recorded historical files: a predecessor release's source and captured runs, kept byte for byte
+path tests/fixtures/deploy-predecessor/
+\bgraphyardBaseBranch\b
+path tests/fixtures/gy-1557-stalled-gate.json
+path tests/fixtures/gy-1907-slow-tick-receipt/
+\.config\[/\]graphyard
+graphyard\\\.trial\\\.Dockerfile
+--base-branch graphyard\b
+graphyard\\\.fun\b
+graphyard-(delivery|release-candidate)\.yml
+\\\/graphyard-\(review\|trial\|proof\|approval\)
+\bgraphyard-trial-[a-z0-9-]+-[0-9a-f]{7}-[0-9a-f]{8}\b
+\(GRAPHYARD\|MAINWORKS\)_
+\bgraphyard-\*

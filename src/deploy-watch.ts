@@ -11,7 +11,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type { GitRunner } from './merge-writer/local-observation.js';
 import { serveRecordPath, readServeRecord, type ServeCheck } from './serve-app.js';
 import { servedVerified } from './batch-gate.js';
-import { graphyardRepository } from './scenarios.js';
+import { mainworksRepository } from './scenarios.js';
 import { servedCommit } from './production-watch.js';
 import type { Work } from './model/work.js';
 import { stateDirectory } from './install/layout.js';
@@ -90,17 +90,17 @@ export function readDeployHistory(root: string, repository?: string | null): Dep
 
 /**
  * The control plane's own update record (GY-3199), beside the deploy record but never standing in
- * for it: the Graphyard commit this install's server, loop and CLI run, when the watch last
+ * for it: the Mainworks commit this install's server, loop and CLI run, when the watch last
  * checked for a verified commit, when it last moved the control plane, and the step of the last
  * failed upgrade. The deploy record stays the managed repository's serving and rollback state;
  * this is the control plane's update clock, which master status and the daily diagnostics read.
  */
 export interface ControlPlaneRecord {
-  /** The Graphyard commit the control plane runs; null before the first pass learned one. */
+  /** The Mainworks commit the control plane runs; null before the first pass learned one. */
   commit: string | null;
   /** When the watch last completed a check for a verified commit. */
   checkedAt: string | null;
-  /** When the control plane last moved to a new Graphyard commit. */
+  /** When the control plane last moved to a new Mainworks commit. */
   updatedAt: string | null;
   /** The latest verified commit the check has seen, and when this install first saw it: the ref carries no publication time, so the first sighting is the staleness clock. */
   verified: string | null;
@@ -139,7 +139,7 @@ export function controlPlaneStaleLines(record: ControlPlaneRecord | null, now: n
   const checked = record.checkedAt ? age(record.checkedAt) : null;
   const seen = record.verifiedSeenAt ? age(record.verifiedSeenAt) : null;
   return [
-    ...(checked !== null && checked > controlPlaneStaleAfterMs ? [`the last check for a verified Graphyard commit is ${Math.round(checked / 3_600_000)} hours old (over 24 hours)`] : []),
+    ...(checked !== null && checked > controlPlaneStaleAfterMs ? [`the last check for a verified Mainworks commit is ${Math.round(checked / 3_600_000)} hours old (over 24 hours)`] : []),
     ...(record.verified && record.commit !== record.verified && seen !== null && seen > controlPlaneStaleAfterMs
       ? [`the control plane still runs ${record.commit?.slice(0, 12) ?? 'no recorded commit'} while the verified commit ${record.verified.slice(0, 12)} was first seen ${Math.round(seen / 3_600_000)} hours ago (over 24 hours)`]
       : []),
@@ -161,10 +161,10 @@ export interface DeployWatchPorts {
   /** Fetches origin and answers the base branch's tip. */
   fetch(): Promise<string>;
   /**
-   * GY-3199: the latest batch-gate-verified Graphyard commit as `refs/graphyard/verified` on
-   * Graphyard's canonical upstream names it — a constant in the code, fetched with the host's
+   * GY-3199: the latest batch-gate-verified Mainworks commit as `refs/graphyard/verified` on
+   * Mainworks's canonical upstream names it — a constant in the code, fetched with the host's
    * existing git access; null when the ref resolves to nothing. An install that does not gate
-   * Graphyard itself serves only this commit, never the fetched main tip. Absent, the watch
+   * Mainworks itself serves only this commit, never the fetched main tip. Absent, the watch
    * deploys the fetched tip as before.
    */
   verifiedUpstream?(): Promise<string | null>;
@@ -248,23 +248,23 @@ async function recoverStoppedPlane(record: DeployRecord, ports: StoppedPlanePort
   let reason = 'unknown failure';
   for (let attempt = 1; attempt <= stoppedPlaneAttempts; attempt++) {
     try {
-      log(`[graphyard-deploy] /healthz fails for the serving ${tip.slice(0, 12)}; bringing the stack up (attempt ${attempt} of ${stoppedPlaneAttempts})`);
+      log(`[mainworks-deploy] /healthz fails for the serving ${tip.slice(0, 12)}; bringing the stack up (attempt ${attempt} of ${stoppedPlaneAttempts})`);
       try { await ports.up(); } catch (error) {
         const text = message(error);
         if (!networkMissing(text)) throw error;
-        log(`[graphyard-deploy] the stack's Docker network is gone; recreating the containers: ${text}`);
+        log(`[mainworks-deploy] the stack's Docker network is gone; recreating the containers: ${text}`);
         await ports.recreate();
       }
       await waitHealthy();
       await write({ tip, failed: null, reason: null, verified: record.verified });
-      log(`[graphyard-deploy] the stack is up again at ${tip.slice(0, 12)}`);
+      log(`[mainworks-deploy] the stack is up again at ${tip.slice(0, 12)}`);
       return true;
     } catch (error) { reason = message(error); }
     if (attempt < stoppedPlaneAttempts) await delay(stoppedPlaneRetryMs * 2 ** (attempt - 1));
   }
   const plain = `the stopped control plane was not brought back up at ${tip.slice(0, 12)} in ${stoppedPlaneAttempts} attempts: ${reason}`;
   await write({ tip, failed: tip, reason: plain, verified: record.verified });
-  log(`[graphyard-deploy] ${plain}`);
+  log(`[mainworks-deploy] ${plain}`);
   return true;
 }
 
@@ -286,7 +286,7 @@ const message = (error: unknown) => error instanceof Error ? error.message : Str
  * succeeds; a new base tip is deployed in its place.
  *
  * GY-3199: an install that does not gate this checkout's repository — every install for another
- * repository — serves only the commit Graphyard's own gate publishes at refs/graphyard/verified on
+ * repository — serves only the commit Mainworks's own gate publishes at refs/graphyard/verified on
  * its canonical upstream, never a fetched main tip the gate has not verified. Every pass writes
  * the control plane's own record
  * (.graphyard/control-plane.json: the commit it runs, last check, last update, last failed step),
@@ -295,7 +295,7 @@ const message = (error: unknown) => error instanceof Error ? error.message : Str
 export async function deployOnce(file: string, ports: DeployWatchPorts, log: (line: string) => void = line => console.error(line), owner: string | null = null): Promise<'unchanged' | 'deployed' | 'rolled-back' | 'kept' | 'restoring'> {
   // GY-3676: one deploy at a time per control plane; a watcher that finds the lock held does nothing this round.
   const lock = ports.lockFile ?? join(dirname(file), 'deploy.lock');
-  if (!await takeLock(lock)) { log(`[graphyard-deploy] another deploy holds ${lock}; skipping this round`); return 'unchanged'; }
+  if (!await takeLock(lock)) { log(`[mainworks-deploy] another deploy holds ${lock}; skipping this round`); return 'unchanged'; }
   try { return await deployPass(file, ports, log, owner); } finally { await rm(lock, { force: true }); }
 }
 
@@ -303,7 +303,7 @@ async function deployPass(file: string, ports: DeployWatchPorts, log: (line: str
   // GY-3119: once the loop's batch gate names this repository, only its latest verified commit serves, never the fetched main tip.
   const fetched = await ports.fetch();
   const verified = servedVerified(join(dirname(file), 'main-gate.json'), owner);
-  const followsUpstream = !verified && !!ports.verifiedUpstream && owner?.toLowerCase() === graphyardRepository;
+  const followsUpstream = !verified && !!ports.verifiedUpstream && owner?.toLowerCase() === mainworksRepository;
   const upstream = followsUpstream ? await ports.verifiedUpstream!() : null;
   const gated = verified ?? upstream;
   const tip = verified ?? (followsUpstream ? upstream : fetched) as string | null;
@@ -327,17 +327,17 @@ async function deployPass(file: string, ports: DeployWatchPorts, log: (line: str
   };
   const run = async (commit: string) => {
     for (const step of steps) {
-      log(`[graphyard-deploy] ${step} ${commit.slice(0, 12)}`);
+      log(`[mainworks-deploy] ${step} ${commit.slice(0, 12)}`);
       try { await ports[step](commit); } catch (error) {
         // GY-3676: a restart that failed while the commit already serves healthy (another deploy restarted it) is no failure.
-        if (step === 'restart' && await ports.health(commit).then(() => true, () => false)) { log(`[graphyard-deploy] restart failed but ${commit.slice(0, 12)} already serves healthy: ${message(error)}`); continue; }
+        if (step === 'restart' && await ports.health(commit).then(() => true, () => false)) { log(`[mainworks-deploy] restart failed but ${commit.slice(0, 12)} already serves healthy: ${message(error)}`); continue; }
         throw Object.assign(new Error(`${step} failed: ${message(error)}`), { step });
       }
     }
   };
   const restore = async (previous: string, failed: string, reason: string, attempts: number) => {
     try { await run(previous); } catch (error) {
-      log(`[graphyard-deploy] the rollback to ${previous.slice(0, 12)} failed (attempt ${attempts}): ${message(error)}`);
+      log(`[mainworks-deploy] the rollback to ${previous.slice(0, 12)} failed (attempt ${attempts}): ${message(error)}`);
       await write({ tip: null, failed, restore: previous, attempts, reason: `${reason}; the rollback to ${previous.slice(0, 12)} failed (attempt ${attempts} of ${rollbackAttempts}): ${message(error)}` });
       return 'restoring' as const;
     }
@@ -376,7 +376,7 @@ async function deployPass(file: string, ports: DeployWatchPorts, log: (line: str
   if (await ports.serves?.(tip).catch(() => false)) {
     await write({ tip, failed: null, reason: null, verified: gated === tip });
     await noteControl({ commit: tip, failedStep: null, failedReason: null, failedAt: null });
-    log(`[graphyard-deploy] ${tip.slice(0, 12)} already serves healthy; recorded as serving`);
+    log(`[mainworks-deploy] ${tip.slice(0, 12)} already serves healthy; recorded as serving`);
     return 'unchanged';
   }
   const before = await ports.database().catch(() => null);
@@ -384,7 +384,7 @@ async function deployPass(file: string, ports: DeployWatchPorts, log: (line: str
     await run(tip);
     await write({ tip, failed: null, reason: null, verified: gated === tip });
     await noteControl({ commit: tip, updatedAt: new Date().toISOString(), failedStep: null, failedReason: null, failedAt: null });
-    log(`[graphyard-deploy] serving ${tip.slice(0, 12)}`);
+    log(`[mainworks-deploy] serving ${tip.slice(0, 12)}`);
     await ports.prune(previous ? [tip, previous] : [tip]);
     return 'deployed';
   } catch (error) {
@@ -404,16 +404,16 @@ async function deployPass(file: string, ports: DeployWatchPorts, log: (line: str
       const ceiling = supported ?? before, reached = after ?? migrates;
       if (ceiling === null || reached === null || reached > ceiling) {
         const why = after !== null && before !== null && after > before ? `it migrated the database from generation ${before} to ${after}` : `the database may be at generation ${reached ?? 'unknown'}, past the ${ceiling ?? 'unknown'} the previous tip supports`;
-        log(`[graphyard-deploy] ${tip.slice(0, 12)} ${reason}; kept: ${why}, which the previous tip would refuse`);
-        await ports.pin(tip).catch(failed => log(`[graphyard-deploy] the pin of ${tip.slice(0, 12)} failed: ${message(failed)}`));
+        log(`[mainworks-deploy] ${tip.slice(0, 12)} ${reason}; kept: ${why}, which the previous tip would refuse`);
+        await ports.pin(tip).catch(failed => log(`[mainworks-deploy] the pin of ${tip.slice(0, 12)} failed: ${message(failed)}`));
         // The server serves the kept tip, so the CLI checkout follows it too, best-effort like the pin.
-        await ports.checkout(tip).catch(failed => log(`[graphyard-deploy] the checkout of ${tip.slice(0, 12)} failed: ${message(failed)}`));
+        await ports.checkout(tip).catch(failed => log(`[mainworks-deploy] the checkout of ${tip.slice(0, 12)} failed: ${message(failed)}`));
         await write({ tip, failed: null, reason: `${reason}; kept because ${why}` });
         await noteControl({ commit: tip, updatedAt: new Date().toISOString(), failedStep: null, failedReason: null, failedAt: null });
         return 'kept';
       }
     }
-    log(`[graphyard-deploy] ${tip.slice(0, 12)} ${reason}; rolling back to ${previous.slice(0, 12)}`);
+    log(`[mainworks-deploy] ${tip.slice(0, 12)} ${reason}; rolling back to ${previous.slice(0, 12)}`);
     const outcome = await restore(previous, tip, reason, 1);
     await failedControl();
     return outcome;
@@ -430,7 +430,7 @@ export async function watchMain(file: string, ports: DeployWatchPorts, options: 
   const log = options.log ?? (line => console.error(line));
   for (;;) {
     let served: Awaited<ReturnType<typeof deployOnce>> | undefined;
-    try { served = await deployOnce(file, ports, log, options.repository ?? null); } catch (error) { log(`[graphyard-deploy] the pass failed and runs again: ${error instanceof Error ? error.message : String(error)}`); }
+    try { served = await deployOnce(file, ports, log, options.repository ?? null); } catch (error) { log(`[mainworks-deploy] the pass failed and runs again: ${error instanceof Error ? error.message : String(error)}`); }
     if ((served === 'deployed' || served === 'kept') && options.handover) await options.handover(readDeployRecord(file)?.tip ?? '');
     if (options.once || options.signal?.aborted) return;
     try { await delay(options.intervalMs, undefined, { signal: options.signal }); } catch { return; }
@@ -445,7 +445,7 @@ export async function watchMain(file: string, ports: DeployWatchPorts, options: 
 export const releaseHandover = (running: () => string | null, stop: () => void) => async (tip: string) => {
   if (!tip || running() === tip) return;
   stop();
-  throw Object.assign(new Error(`[graphyard-deploy] the watch hands itself over to ${tip.slice(0, 12)}: it serves code this process is not running, and the restart loads it`), { releaseHandover: true });
+  throw Object.assign(new Error(`[mainworks-deploy] the watch hands itself over to ${tip.slice(0, 12)}: it serves code this process is not running, and the restart loads it`), { releaseHandover: true });
 };
 
 /** The managed repository's serving, as the dashboard header reads it (GY-2964). */

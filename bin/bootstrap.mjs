@@ -1,6 +1,6 @@
-// GY-3214: `npx @cryptob1/graphyard …` on a host with no Graphyard checkout. The published package is this
-// launcher alone; the code it runs is a Git checkout of Graphyard's upstream at the commit the
-// package was published from, under the install's own directory, so the loop, `graphyard upgrade`
+// GY-3214: `npx @cryptob1/graphyard …` on a host with no Mainworks checkout. The published package is this
+// launcher alone; the code it runs is a Git checkout of Mainworks's upstream at the commit the
+// package was published from, under the install's own directory, so the loop, `mainworks upgrade`
 // and the deploy watch move it with Git like any other install.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, realpathSync, symlinkSync } from 'node:fs';
@@ -24,7 +24,7 @@ export async function releaseRoot(packageRoot, args) {
   const current = currentCliPath(directory);
   if (existsSync(join(current, 'bin', 'graphyard.mjs'))) return realpathSync(current);
   const { graphyardCommit: commit, graphyardUpstream: upstream } = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'));
-  console.error(`[graphyard] Fetching Graphyard ${commit.slice(0, 12)} into ${directory} (a few minutes, once)`);
+  console.error(`[mainworks] Fetching Mainworks ${commit.slice(0, 12)} into ${directory} (a few minutes, once)`);
   const run = (command, words, options = {}) => {
     // The children's output goes to stderr: stdout is the command's own (up --json).
     if (spawnSync(command, words, { cwd: options.cwd, stdio: ['ignore', 2, 2] }).status !== 0) throw new Error(`${command} ${words.join(' ')} failed`);

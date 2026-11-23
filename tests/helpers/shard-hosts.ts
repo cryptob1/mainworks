@@ -1,5 +1,5 @@
 // GY-3412: hosts for remote shard runs. Every host runs the real graphyard-host-shim, exactly as
-// `graphyard host prepare` installs it, in its own home; only Docker is a stand-in, keeping its images
+// `mainworks host prepare` installs it, in its own home; only Docker is a stand-in, keeping its images
 // and containers in a state file, logging each call, and running a container's command in its working
 // directory — under `unshare -cn` (no network, nonroot as `--user 1000:0`) when it was created with --network=none, and with a
 // read-only root (bubblewrap) on a host whose Docker state holds a `read-only-root` file. This machine
@@ -217,7 +217,7 @@ const freePort = () => new Promise<number>((resolve, reject) => { const server =
 
 /**
  * A real OpenSSH server on 127.0.0.1 for this user, whose only key may run the shim with `home` as the
- * host's own folder and `hostBin` (its Docker) first on PATH (restrict,command=…, as `graphyard host prepare` writes it), and an `ssh` on `bin`
+ * host's own folder and `hostBin` (its Docker) first on PATH (restrict,command=…, as `mainworks host prepare` writes it), and an `ssh` on `bin`
  * that reaches it as USER@127.0.0.1 with that key. `kill` drops the host mid-run.
  */
 export async function sshdHost(root: string, shim: string, home: string, hostBin: string, bin: string) {

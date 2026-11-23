@@ -4,7 +4,7 @@ import { z } from 'zod';
 // ---- Session names a runtime will accept ----------------------------------------------------
 /*
  * Herdr names a session with at most 32 characters, starting with a lowercase letter and using
- * only lowercase letters, digits, '-' and '_'. Every name Graphyard generates — worker, reviewer,
+ * only lowercase letters, digits, '-' and '_'. Every name Mainworks generates — worker, reviewer,
  * producer, approver, master, escalation handler — is a name it will hand to that runtime, so it
  * is built inside those bounds and checked where it is constructed rather than discovered at the
  * launch, after a pane has been allocated (GY-101). `sessionName` composes one: the parts, joined

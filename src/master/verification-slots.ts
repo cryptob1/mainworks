@@ -15,8 +15,8 @@ import { busiestLocalJobs, forgetLocalJobs, localJobsText, type LocalJob } from 
  * The host heavy-job budget (GY-612, GY-3290).
  *
  * On 26 September 2026 a 62 GB host ran fourteen full suites and five `tsc --noEmit` runs at once;
- * on 13 November a 24-core host shared by several Graphyard projects sat at load 50–86 and local
- * verification timed out, because each project bounded only its own runs. Every Graphyard project
+ * on 13 November a 24-core host shared by several Mainworks projects sat at load 50–86 and local
+ * verification timed out, because each project bounded only its own runs. Every Mainworks project
  * of one user on one host now shares one budget: a heavy job — a merge, gate or diagnostic trial, a
  * session's whole suite, a preview build, a deploy build — takes one slot first, and at most `limit`
  * (this machine's share of the budget, GY-3528) ordinary jobs run at once, plus one reserved
@@ -44,7 +44,7 @@ import { busiestLocalJobs, forgetLocalJobs, localJobsText, type LocalJob } from 
 export const slotsDirectoryVariable = 'GRAPHYARD_VERIFICATION_SLOTS_DIR', projectVariable = 'GRAPHYARD_HEAVY_JOB_PROJECT', heldVariable = 'GRAPHYARD_VERIFICATION_SLOT_HELD';
 /** How many heavy jobs a host runs at once unless its `limit` file says otherwise. */
 export const defaultHeavyJobs = 2;
-/** The one lock directory every Graphyard project of this user shares: under the data directory, outside every repository. */
+/** The one lock directory every Mainworks project of this user shares: under the data directory, outside every repository. */
 export const hostHeavyJobsDirectory = (environment: NodeJS.ProcessEnv = process.env) => resolve(dataDirectory(environment), 'heavy-jobs');
 /** The lock directory this process uses: the one it joined (`joinHostHeavyBudget`), else the host's. */
 export const heavyJobsDirectory = (environment: NodeJS.ProcessEnv = process.env) => setting(slotsDirectoryVariable, environment) ?? hostHeavyJobsDirectory(environment);
@@ -186,7 +186,7 @@ export function resumeHeavyDrain(directory: string): HeavyDrain | null {
 }
 /**
  * GY-3446: a temporary host-wide strict cap, set with `master config hostHeavyJobs=N until=TIME` when
- * another project on the host asks every Graphyard install to back off. Until it expires the limit is
+ * another project on the host asks every Mainworks install to back off. Until it expires the limit is
  * at most N for every install, the gate/deploy reservation counts inside it, a session's selected test
  * runs and host worker verification and checks take a slot too (GY-3447 exempts them otherwise), and
  * no new job starts while the CPU reads 85C or more. Running jobs are never stopped, and a job's own
@@ -214,7 +214,7 @@ export function setStrictCap(directory: string, set: { value: number; until: str
   return cap;
 }
 
-export const heavyDrainLine = (drain: HeavyDrain) => `Heavy work is drained since ${drain.at} by ${drain.requestedBy}: ${drain.reason}. Running jobs finish and batch gates and deploys go on; new merge trials, declared checks, worker verification and session suites wait until graphyard master resume.`;
+export const heavyDrainLine = (drain: HeavyDrain) => `Heavy work is drained since ${drain.at} by ${drain.requestedBy}: ${drain.reason}. Running jobs finish and batch gates and deploys go on; new merge trials, declared checks, worker verification and session suites wait until mainworks master resume.`;
 
 // flock locks the inherited open file description; this process retains its fd after
 // the short-lived utility exits. The kernel releases it on death, across PID namespaces.
@@ -384,7 +384,7 @@ const holderText = (entry: { slot: number; owner: SlotOwner | null }) => entry.o
 export function waitLine(options: Pick<AcquireOptions, 'directory' | 'slots' | 'label'>) {
   const holders = heldSlots(options.directory).filter(entry => entry.slot < declarationSlot)
     .map(entry => `${holderText(entry)}${entry.owner ? ` [pid ${entry.owner.pid}, ${entry.owner.cwd}]` : ''}`);
-  return `graphyard: ${options.label} waits for a host heavy-job slot: every Graphyard project on this host shares ${options.slots ?? heavyJobLimit(options.directory)} at once`
+  return `mainworks: ${options.label} waits for a host heavy-job slot: every Mainworks project on this host shares ${options.slots ?? heavyJobLimit(options.directory)} at once`
     + `${holders.length ? `, held by ${holders.join('; ')}` : ''}. It starts when one frees (${join(options.directory, 'limit')} sets the limit).`;
 }
 /** GY-3396: a test merge's heavy job, by its item key (or the batch gate's), in the words the Work page shows. */
@@ -462,7 +462,7 @@ export async function acquireVerificationSlot(options: AcquireOptions): Promise<
       if (options.signal?.aborted) throw options.signal.reason;
       const drain = options.drainable ? readHeavyDrain(options.directory) : null;
       if (drain) {
-        if (!drained) { drained = true; options.onWait?.(`graphyard: ${options.label} waits: ${heavyDrainLine(drain)}`); }
+        if (!drained) { drained = true; options.onWait?.(`mainworks: ${options.label} waits: ${heavyDrainLine(drain)}`); }
         await new Promise(done => setTimeout(done, pollMs));
         continue;
       }
@@ -472,7 +472,7 @@ export async function acquireVerificationSlot(options: AcquireOptions): Promise<
       if (sample !== null) { while (samples.length && at - samples[0]![0] >= heatWindowMs) samples.shift(); samples.push([at, sample]); }
       const heat = sample === null ? null : heatReading(samples);
       if (heat && heat.celsius >= trialHotCelsius) {
-        if (!heated) { heated = true; options.onWait?.(`graphyard: ${options.label} waits: the host's strict heavy-job cap (until ${strict!.until}) starts nothing while the CPU ${heat.mean === null ? 'reads' : 'averages'} ${heat.celsius}C, ${trialHotCelsius}C or more`); }
+        if (!heated) { heated = true; options.onWait?.(`mainworks: ${options.label} waits: the host's strict heavy-job cap (until ${strict!.until}) starts nothing while the CPU ${heat.mean === null ? 'reads' : 'averages'} ${heat.celsius}C, ${trialHotCelsius}C or more`); }
         await new Promise(done => setTimeout(done, pollMs));
         continue;
       }
@@ -484,7 +484,7 @@ export async function acquireVerificationSlot(options: AcquireOptions): Promise<
       const project = options.project ?? '', holderProjects = holders.map(entry => entry.owner?.project ?? '');
       if (ticket && !blocked && holderProjects.includes(project)) {
         const next = queuedProjects(options.directory).find(other => other !== project && !holderProjects.includes(other));
-        if (next !== undefined) { blocked = true; options.onWait?.(`graphyard: ${options.label} waiting: ${next} holds none and is next`); }
+        if (next !== undefined) { blocked = true; options.onWait?.(`mainworks: ${options.label} waiting: ${next} holds none and is next`); }
       }
       if (free > 0 && (!ticket || admitted(waiters, holderProjects, free).includes(ticket.name))) {
         const held = await tryTake(options.directory, limit, owner, options.firstSlot);
@@ -501,10 +501,10 @@ export async function acquireVerificationSlot(options: AcquireOptions): Promise<
 }
 
 const reportUnusable = (label: string, directory: string, error: unknown) =>
-  process.stderr.write(`graphyard: ${label} runs outside the host heavy-job budget: ${directory} cannot be used (${error instanceof Error ? error.message : String(error)})\n`);
+  process.stderr.write(`mainworks: ${label} runs outside the host heavy-job budget: ${directory} cannot be used (${error instanceof Error ? error.message : String(error)})\n`);
 
 /**
- * Take a slot for `label` when this process runs in a Graphyard session and holds none yet, or
+ * Take a slot for `label` when this process runs in a Mainworks session and holds none yet, or
  * null. The returned slot is released on exit too. A lock directory that cannot be written (a
  * sandbox that does not grant it) is reported and the run goes ahead unbounded rather than failing.
  */
@@ -565,7 +565,7 @@ export function sharedHeavyJob(label: string, options: Parameters<typeof withHea
 /**
  * Whether a command is a heavy job: a package manager's whole `test` script, no files or arguments
  * selecting part of it (GY-3447: builds, type checks and selected tests run at once; any test script under a strict cap). A checkout that
- * carries Graphyard's own runner (tests/helpers/run-tests.ts) is left to it: the runner takes the slot.
+ * carries Mainworks's own runner (tests/helpers/run-tests.ts) is left to it: the runner takes the slot.
  */
 export function heavyCommand(command: string, args: string[], cwd = process.cwd(), strict = false) {
   if (command !== 'npm' && command !== 'pnpm') return false;

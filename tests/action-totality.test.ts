@@ -169,7 +169,7 @@ test('integration:action-mapping-total-over-states — every refusal the engine 
     { name: 'nothing submitted', work: { ...unproven, submission: null, candidate: null, observation: null, workspaces: [] } as Work },
     { name: 'submitted but unobserved', work: { ...unproven, candidate: null, observation: null } as Work },
     { name: 'base refresh conflicted', work: { ...unproven, baseRefresh: { from: { sha: head, baseSha: base }, base, baseTree: sha40('7e'), policyRevision: unproven.policyRevision, at: now.toISOString(), head: null,
-      conflict: `Candidate ${head.slice(0, 12)} cannot be brought onto base branch tip ${base.slice(0, 12)} without resolving a conflict, which is content nobody reviewed or proved: merge conflict. Run graphyard sync ${unproven.key}, resolve it and push; the approval and proofs bound to ${head.slice(0, 12)} do not survive the resolution.` } } as Work },
+      conflict: `Candidate ${head.slice(0, 12)} cannot be brought onto base branch tip ${base.slice(0, 12)} without resolving a conflict, which is content nobody reviewed or proved: merge conflict. Run mainworks sync ${unproven.key}, resolve it and push; the approval and proofs bound to ${head.slice(0, 12)} do not survive the resolution.` } } as Work },
     { name: 'diff never compared', work: { ...unproven, observation: { ...unproven.observation!, scopeFiles: undefined } } as Work },
     { name: 'out of scope against the bound base', work: { ...unproven, observation: { ...unproven.observation!, scopeFiles: [scopeFile] } } as Work },
     { name: 'would revert work on the commit it lands on', work: { ...unproven, observation: { ...unproven.observation!, scopeFiles: [], landing: { base: sha40('cc'), files: [landingFile] } } } as Work },

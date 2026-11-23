@@ -105,7 +105,7 @@ test(`${proof} — the commit's own Compose file runs: its services start, the c
   const result = shim(`run-check ${run}`, request({ argv: ['/bin/sh', '-c', 'echo "db at $GRAPHYARD_SERVICE_DB_HOST:$GRAPHYARD_SERVICE_DB_PORT"; exit 7'] }));
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^db at db:5432$/m);
-  assert.match(result.stdout, /\ngraphyard-check services \d+\ngraphyard-check command \d+\ngraphyard-check teardown \d+\ngraphyard-check exit 7\n$/, 'the command\'s exit code and each step\'s time');
+  assert.match(result.stdout, /\nmainworks-check services \d+\nmainworks-check command \d+\nmainworks-check teardown \d+\nmainworks-check exit 7\n$/, 'the command\'s exit code and each step\'s time');
   assert.deepEqual(dockerCalls(hosts.state('box')).filter(call => call.startsWith('compose')), ['compose up db', 'compose down']);
 });
 

@@ -55,7 +55,7 @@ export const frameworkReportFormats: Record<string, { format: ReportFormat; via:
 const all: CompletionProfile[] = [...completionProfiles];
 /** What an `unknown` item depends on, so it still names the next action. */
 const scanFirst = {
-  proposal: 'Run `graphyard init --scan` in the repository clone first; this item is judged from the stored proposal',
+  proposal: 'Run `mainworks init --scan` in the repository clone first; this item is judged from the stored proposal',
   server: 'Resolve the control-plane connection first; this item is judged from the server\'s answer',
 };
 const beyondMerge: CompletionProfile[] = ['preview-validation', 'production-verification'];
@@ -69,13 +69,13 @@ export function readinessChecklist(profile: CompletionProfile, facts: ReadinessF
   item({ id: 'repository', title: 'Repository is a GitHub remote', profiles: all,
     status: repository ? 'ready' : facts.repository === undefined ? 'unknown' : 'missing',
     detail: repository ? `origin resolves to ${repository}` : 'origin does not resolve to a GitHub repository',
-    recovery: repository ? null : 'Run inside a clone whose origin remote is the GitHub repository Graphyard manages, for example `git remote add origin git@github.com:OWNER/REPO.git`' });
+    recovery: repository ? null : 'Run inside a clone whose origin remote is the GitHub repository Mainworks manages, for example `git remote add origin git@github.com:OWNER/REPO.git`' });
 
   const server = facts.server ?? null;
   item({ id: 'server', title: 'Control plane reachable with an individual credential', profiles: all,
     status: server === null ? 'unknown' : server.reachable ? 'ready' : 'missing',
     detail: server === null ? 'no connection was attempted' : server.reachable ? `${server.url} answered as role ${server.role ?? 'unknown'}` : `${server.url}: ${server.failure ?? 'not reachable'}`,
-    recovery: server?.reachable ? null : 'Set GRAPHYARD_URL and GRAPHYARD_TOKEN to your own role-scoped credential (never a shared one); `graphyard init --url SERVER --token-stdin` stores them for this clone' });
+    recovery: server?.reachable ? null : 'Set GRAPHYARD_URL and GRAPHYARD_TOKEN to your own role-scoped credential (never a shared one); `mainworks init --url SERVER --token-stdin` stores them for this clone' });
   item({ id: 'credential-role', title: 'Credential can perform setup', profiles: all,
     status: !server?.reachable ? 'unknown' : ['admin', 'coordinator'].includes(server.role ?? '') ? 'ready' : 'missing',
     detail: !server?.reachable ? 'depends on the control plane' : `credential role is ${server.role ?? 'unknown'}`,
@@ -85,7 +85,7 @@ export function readinessChecklist(profile: CompletionProfile, facts: ReadinessF
   item({ id: 'setup-proposal', title: 'Delivery workflow proposed, reviewed and applied', profiles: all,
     status: setup === null ? 'unknown' : setup.unreadable.length ? 'missing' : setup.appliedAt && !setup.drift.length ? 'ready' : 'missing',
     detail: setup === null ? 'local setup state was not read' : setup.unreadable.length ? `unreadable: ${setup.unreadable.join(', ')}` : setup.appliedAt ? (setup.drift.length ? `applied ${setup.appliedAt}; drift: ${setup.drift.join('; ')}` : `applied ${setup.appliedAt}`) : setup.proposal ? `${setup.proposal} is stored but not applied` : 'no proposal stored',
-    recovery: setup === null ? 'Run `graphyard doctor` inside the repository clone' : setup.unreadable.length ? 'Delete or repair the unreadable file under .graphyard/, then rerun `graphyard init --scan`' : setup.appliedAt && !setup.drift.length ? null : setup.proposal ? (setup.drift.length ? 'Rerun `graphyard init --scan`, review the refreshed proposal it prints, then `graphyard init --scan --apply --url SERVER_URL`' : 'Run `graphyard init --scan --apply --url SERVER_URL`') : 'Run `graphyard init --scan`, review the proposal it prints, then apply it with `graphyard init --scan --apply --url SERVER_URL`' });
+    recovery: setup === null ? 'Run `mainworks doctor` inside the repository clone' : setup.unreadable.length ? 'Delete or repair the unreadable file under .graphyard/, then rerun `mainworks init --scan`' : setup.appliedAt && !setup.drift.length ? null : setup.proposal ? (setup.drift.length ? 'Rerun `mainworks init --scan`, review the refreshed proposal it prints, then `mainworks init --scan --apply --url SERVER_URL`' : 'Run `mainworks init --scan --apply --url SERVER_URL`') : 'Run `mainworks init --scan`, review the proposal it prints, then apply it with `mainworks init --scan --apply --url SERVER_URL`' });
 
   // GY-2010: the control plane is the only merge writer and holds no GitHub App, so the App, its
   // permissions and the main guard's revert approver are not required; they pass in the same words the Setup checklist uses.
@@ -98,7 +98,7 @@ export function readinessChecklist(profile: CompletionProfile, facts: ReadinessF
   const loopCode = setup && 'loopCode' in setup ? setup.loopCode ?? null : null;
   const loopCodeRead = !!setup && 'loopCode' in setup;
   const loopCodeStale = loopCode?.loopStale ?? null;
-  const rerunUp = `rerun graphyard up${loopCode?.repository ? ` --repo ${loopCode.repository}` : ''} --agent from this checkout: its master-loop step rewrites the units to it and restarts them`;
+  const rerunUp = `rerun mainworks up${loopCode?.repository ? ` --repo ${loopCode.repository}` : ''} --agent from this checkout: its master-loop step rewrites the units to it and restarts them`;
   if (loopCodeRead) item({ id: 'loop-code', title: 'The coordinator runs this checkout', profiles: all,
     status: !loopCode ? 'unknown' : loopCode.error ? 'unknown' : loopCodeStale ? 'missing' : 'ready',
     detail: !loopCode ? 'the units this install runs were not read' : loopCode.error ? `the units this install records are unreadable: ${loopCode.error}`
@@ -117,13 +117,13 @@ export function readinessChecklist(profile: CompletionProfile, facts: ReadinessF
   item({ id: 'e2e-suite', title: 'Playwright end-to-end suite', profiles: beyondMerge,
     status: proposal === null ? 'unknown' : e2e.includes('@playwright/test') ? 'ready' : 'missing',
     detail: proposal === null ? 'no proposal to read' : e2e.includes('@playwright/test') ? '@playwright/test is declared' : e2e.length ? `${e2e.join(', ')} is not a supported end-to-end runner` : 'no end-to-end framework was detected',
-    recovery: proposal === null ? scanFirst.proposal : e2e.includes('@playwright/test') ? null : 'Add repository e2e cases and configure e2e.serve in graphyard.json; graphyard e2e run executes those cases against the served application' });
+    recovery: proposal === null ? scanFirst.proposal : e2e.includes('@playwright/test') ? null : 'Add repository e2e cases and configure e2e.serve in graphyard.json; mainworks e2e run executes those cases against the served application' });
 
   const workers = proposal?.profiles.workers.length ?? null;
   item({ id: 'worker-profiles', title: 'At least one worker profile with its own credential', profiles: all,
     status: workers === null ? 'unknown' : workers > 0 ? 'ready' : 'missing',
     detail: workers === null ? 'no proposal to read' : `${workers} worker profile(s) proposed`,
-    recovery: workers === null ? scanFirst.proposal : workers > 0 ? null : 'Install an agent CLI (claude, codex, gemini, opencode, ...) on the machine that runs workers, then rerun `graphyard init --scan --apply`; a machine without a runtime gets no worker credential' });
+    recovery: workers === null ? scanFirst.proposal : workers > 0 ? null : 'Install an agent CLI (claude, codex, gemini, opencode, ...) on the machine that runs workers, then rerun `mainworks init --scan --apply`; a machine without a runtime gets no worker credential' });
   item({ id: 'reviewer', title: 'Independent review provider selected', profiles: all,
     status: proposal === null ? 'unknown' : proposal.profiles.reviewer.provider ? 'ready' : 'missing',
     detail: proposal === null ? 'no proposal to read' : `review provider: ${proposal.profiles.reviewer.provider}`,

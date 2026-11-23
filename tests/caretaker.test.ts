@@ -72,7 +72,7 @@ test('unit:caretaker-runs-once-per-interval — one run starts per 30 minutes, n
 });
 
 test('unit:caretaker-checklist-is-complete — the one prompt file holds all six checks and names only permitted commands', () => {
-  const prompt = caretakerPrompt('graphyard');
+  const prompt = caretakerPrompt('mainworks');
   const checks = [/held or broken account gets a live request/, /provider's own sentence as the reason/, /compute host is ready, or the reason it is away is recorded/,
     /verified a commit within the last 6 hours, or its last outcome is named/, /no item is ready or in a stage with no actor for over 30 minutes/,
     /served build is within 10 merged items of main/, /merges per hour over the last 6 and 24 hours/];
@@ -80,7 +80,7 @@ test('unit:caretaker-checklist-is-complete — the one prompt file holds all six
   assert.equal(caretakerChecks.length, 6);
   for (let index = 1; index <= 6; index++) assert.match(prompt, new RegExp(`^\\(${index}\\) `, 'm'), `check ${index} is numbered`);
   assert.match(prompt, /no open item already names the fault/, 'it looks for an open item before filing one');
-  const named = [...prompt.matchAll(/graphyard ((?:[a-z]+ ?)+)/g)].map(match => match[1]!.trim());
+  const named = [...prompt.matchAll(/mainworks ((?:[a-z]+ ?)+)/g)].map(match => match[1]!.trim());
   assert.ok(named.length >= 8);
   const allowed = [...caretakerCommands, ...caretakerReads];
   for (const command of named) assert.ok(allowed.some(entry => command === entry || command.startsWith(`${entry} `)), `${command} is a permitted command`);

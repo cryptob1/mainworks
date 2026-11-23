@@ -152,7 +152,7 @@ export function workerSlotWait(reason: string): boolean {
   if (!entries.length) return false;
   let busyLaunchProfiles = 0;
   for (const [, , r] of entries) {
-    if (r === 'Existing sessions are observed only; Graphyard will not inject new work into an unsupervised process') continue;
+    if (r === 'Existing sessions are observed only; Mainworks will not inject new work into an unsupervised process') continue;
     const statusMatch = r.match(/^(\S+ )?agent \S+ is (\S+?)(?:[;,]? .*)?$/);
     if (statusMatch && !terminatedAgentStates.has(statusMatch[2])) {
       busyLaunchProfiles++;
@@ -176,11 +176,11 @@ export function handoffWaitBound(reason: string): number | null {
 }
 
 /**
- * The wording of a failure of a call to the Graphyard control plane itself: the blocker probe's record, the launch refused
- * for an unreadable merge writer or rework decisions, the agent registry, a refused Graphyard request. A timeout or 5xx
+ * The wording of a failure of a call to the Mainworks control plane itself: the blocker probe's record, the launch refused
+ * for an unreadable merge writer or rework decisions, the agent registry, a refused Mainworks request. A timeout or 5xx
  * without it (the deployment endpoint, GitHub) is another service's and stays a fault.
  */
-const controlPlaneCall = /\b(?:Could not record|Could not close|merge writer could not be read|rework decisions of \S+ could not be read|agent registry|control plane|Graphyard refused)\b/i;
+const controlPlaneCall = /\b(?:Could not record|Could not close|merge writer could not be read|rework decisions of \S+ could not be read|agent registry|control plane|Mainworks refused)\b/i;
 
 /**
  * Whether a failure reason is a wait, not a fault (GY-1758): a dispatch refused because the item is
@@ -193,4 +193,4 @@ export const waitReason = (reason: string | null | undefined) => !!reason && (re
  * A refusal the server answered carries its status in the text; what makes it plane-wide is its body alone, because the
  * status beside an `error` field of the server's own (`Operator-agent authorization is unavailable`) is that item's.
  */
-const refusedDetail = (reason: string) => reason.match(/Graphyard refused \S+ \(\d{3}\): (.*)$/s)?.[1] ?? reason;
+const refusedDetail = (reason: string) => reason.match(/Mainworks refused \S+ \(\d{3}\): (.*)$/s)?.[1] ?? reason;

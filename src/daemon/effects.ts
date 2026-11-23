@@ -14,7 +14,7 @@ import type { ProfileAccountHealth } from '../master/environments.js';
 import type { CheckoutTrustFleet, CheckoutTrustRefusal } from '../harness.js';
 import type { MasterSessionEffects } from '../master/master-session.js';
 import type { MasterMessage } from './master-stalled-delivery.js';
-import { type DaemonAction, type DaemonState, type LeftoverDisk, type LoopRelease, storeAction } from './state.js';
+import { type DaemonState, type LeftoverDisk, type LoopRelease, record } from './state.js';
 import type { MergeWriterReads } from './cycle-merge-writer.js';
 import type { AdoptedRun } from './run-adoption.js';
 import type { ComposeServer } from './compose-recovery.js';
@@ -93,9 +93,9 @@ export interface DaemonEffects {
    * items are reclaimed.
    */
   attemptWorktrees?: () => Promise<{ path: string; changedAt: number }[]>;
-  /** The free space of each volume Graphyard writes (GY-3122). Absent, no headroom is kept. */
+  /** The free space of each volume Mainworks writes (GY-3122). Absent, no headroom is kept. */
   diskVolumes?: () => Promise<{ path: string; freeBytes: number | null }[]>;
-  /** Reclaims Graphyard's own leftovers when free space is below the floor (GY-3122): what it removed, by name. */
+  /** Reclaims Mainworks's own leftovers when free space is below the floor (GY-3122): what it removed, by name. */
   reclaimDisk?: () => Promise<string[]>;
   /**
    * GY-3348: the host's CPU reading — the text of /proc/pressure/cpu and /proc/stat, or null where
@@ -126,7 +126,7 @@ export interface DaemonEffects {
   environmentReadings?: () => Promise<Omit<EnvironmentReadings, 'heatClear'>>;
   /** GY-3553: clears a blocker whose environment cause is gone, as the operator agent. */
   unblock?: (work: Work, reason: string) => Promise<unknown>;
-  /** The disk Graphyard's leftovers hold, read once a day for the leftovers report (GY-3190). */
+  /** The disk Mainworks's leftovers hold, read once a day for the leftovers report (GY-3190). */
   leftoverDisk?: () => Promise<LeftoverDisk>;
   /** GY-3691: the disk the working copies (attempt worktrees and the managed worktree root) take, or null when unreadable. */
   worktreeDisk?: () => Promise<number | null>;
@@ -198,12 +198,7 @@ export interface DaemonEffects {
   persist: (state: DaemonState) => Promise<void>;
 }
 
-/** Put an action on the cursor, through storeAction, which bounds it. */
-export async function record(state: DaemonState, key: string, action: Omit<DaemonAction, 'at' | 'epoch'> & { at?: string; epoch?: number | null }, now: number, persist: DaemonEffects['persist']) {
-  const entry = storeAction(state, key, { epoch: null, ...action, at: action.at ?? new Date(now).toISOString() });
-  await persist(state);
-  return entry;
-}
+export { record };
 
 // The production wiring lives in ./effects-production.ts.
 export { daemonEffects } from './effects-production.js';

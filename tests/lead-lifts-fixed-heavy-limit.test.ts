@@ -54,7 +54,7 @@ test('e2e:verification-uses-remote-hosts — master status names a fixed limit f
   process.env[slotsDirectoryVariable] = directory;
   try {
     machines(false);
-    assert.deepEqual(await attention(), [{ subject: 'heavy-job budget', text: `The heavy-job budget is fixed at 3 by ${join(directory, 'limit')}; without it the ready machines give 13.`, next: 'graphyard master config hostHeavyJobs=auto' }]);
+    assert.deepEqual(await attention(), [{ subject: 'heavy-job budget', text: `The heavy-job budget is fixed at 3 by ${join(directory, 'limit')}; without it the ready machines give 13.`, next: 'mainworks master config hostHeavyJobs=auto' }]);
     machines(true);
     assert.deepEqual(await attention(), [], 'with no compute host ready the file hides nothing');
     machines(false);

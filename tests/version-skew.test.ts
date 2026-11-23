@@ -1,6 +1,6 @@
 // GY-1960: version skew is named, not a 400. A CLI whose release differs from the server's reads
 // the release /healthz serves once per invocation and refuses by name — both releases and
-// `graphyard upgrade` — instead of sending a request the server's schemas answer as a bare 400
+// `mainworks upgrade` — instead of sending a request the server's schemas answer as a bare 400
 // Invalid input; an Invalid input answer that arrives anyway (the server moved between the read
 // and the request) is reported as that same skew message. Equal versions, and a server that names
 // no release at all, behave exactly as before. The same item makes the local state files
@@ -58,7 +58,7 @@ test('unit:version-skew — the comparison rules: a server that names no release
   assert.equal(releaseSkew(unreleased, { version: '0.1.0', commit: 'main' }), null, 'a ref is not a commit, so nothing compares and nothing refuses');
 });
 
-test('unit:version-skew — a CLI whose release differs from the server refuses naming both releases and graphyard upgrade, and sends no request', async () => {
+test('unit:version-skew — a CLI whose release differs from the server refuses naming both releases and mainworks upgrade, and sends no request', async () => {
   const cwd = await gitRepository('version-skew-refusal');
   const requests: string[] = [];
   const server = createServer((request, response) => {
@@ -71,7 +71,7 @@ test('unit:version-skew — a CLI whose release differs from the server refuses 
   await listen(server);
   try {
     const failure = await exec(process.execPath, [launcher, 'status', 'GY-1'], { cwd, env: { ...process.env, GRAPHYARD_VERSION: '1.4.2', GRAPHYARD_TOKEN: 'test-only', GRAPHYARD_URL: origin(server) } }).then(() => null, (error: any) => error);
-    assert.match(failure?.stderr, /CLI 1\.4\.2 and server 2\.0\.0 differ: run graphyard upgrade/);
+    assert.match(failure?.stderr, /CLI 1\.4\.2 and server 2\.0\.0 differ: run mainworks upgrade/);
     assert.deepEqual(requests, Array(4).fill('/healthz'), 'the initial probe and three bounded retries send no API request');
   } finally { await close(server); }
 });
@@ -111,7 +111,7 @@ test('unit:version-skew — an unreleased build compares commits: another commit
   delete env.GRAPHYARD_VERSION; // an unreleased build: no stamped release, so the commit is what it compares
   try {
     const behind = await exec(process.execPath, [launcher, 'status', 'GY-1'], { cwd, env }).then(() => null, (error: any) => error);
-    assert.match(behind?.stderr, new RegExp(`CLI commit ${head} and server commit ${servingCommit} differ: run graphyard upgrade`));
+    assert.match(behind?.stderr, new RegExp(`CLI commit ${head} and server commit ${servingCommit} differ: run mainworks upgrade`));
     assert.deepEqual(requests, Array(4).fill('/healthz'), 'three handover retries still refuse the mismatch before any API request');
     requests.length = 0;
     servingCommit = head;
@@ -150,7 +150,7 @@ test('unit:version-skew — an unstamped CLI on a dated checkout takes its relea
     requests.length = 0;
     servingVersion = '2026.10.18';
     const behind = await exec(process.execPath, [launcher, 'status', 'GY-1'], { cwd, env }).then(() => null, (error: any) => error);
-    assert.match(behind?.stderr, /CLI 2026\.10\.17 and server 2026\.10\.18 differ: run graphyard upgrade/);
+    assert.match(behind?.stderr, /CLI 2026\.10\.17 and server 2026\.10\.18 differ: run mainworks upgrade/);
     assert.deepEqual(requests, Array(4).fill('/healthz'), 'the initial probe and three bounded retries send no API request');
   } finally { await close(server); }
 });
@@ -177,13 +177,13 @@ test('unit:version-skew — an Invalid input answer from a server at a different
     process.env.GRAPHYARD_VERSION = '1.0.0';
     // The gate's own read could not name a release, the request met Invalid input, and the re-read names the other version: the skew, by its name.
     const unreadable = await createContext('status', 'GY-1', [], false);
-    await assert.rejects(unreadable.api('work/GY-1'), /CLI 1\.0\.0 and server 9\.9\.0 differ: run graphyard upgrade/);
+    await assert.rejects(unreadable.api('work/GY-1'), /CLI 1\.0\.0 and server 9\.9\.0 differ: run mainworks upgrade/);
     // The gate read this CLI's own release, the server moved to another before the request, and its Invalid input is reported as that move.
     const upgraded = await createContext('status', 'GY-1', [], false);
-    await assert.rejects(upgraded.api('work/GY-1'), /CLI 1\.0\.0 and server 9\.9\.0 differ: run graphyard upgrade/);
+    await assert.rejects(upgraded.api('work/GY-1'), /CLI 1\.0\.0 and server 9\.9\.0 differ: run mainworks upgrade/);
     // A same-version server's Invalid input is the validation answer it always was.
     const same = await createContext('status', 'GY-1', [], false);
-    await assert.rejects(same.api('work/GY-1'), (error: any) => { assert.equal(error.status, 400); assert.match(error.message, /Invalid input/); assert.doesNotMatch(error.message, /differ: run graphyard upgrade/); return true; });
+    await assert.rejects(same.api('work/GY-1'), (error: any) => { assert.equal(error.status, 400); assert.match(error.message, /Invalid input/); assert.doesNotMatch(error.message, /differ: run mainworks upgrade/); return true; });
   } finally {
     await close(server);
     if (savedUrl === undefined) delete process.env.GRAPHYARD_URL; else process.env.GRAPHYARD_URL = savedUrl;

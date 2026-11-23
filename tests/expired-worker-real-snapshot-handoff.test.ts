@@ -86,7 +86,7 @@ test('integration:expired-worker-real-snapshot-handoff — a supervisor-ended un
   const worktree = join(install, '.graphyard', 'worktrees', `${filed.key.toLowerCase()}-1`);
   git(['init', '-q', '-b', 'main']);
   git(['config', 'user.email', 'fixture@graphyard.invalid']);
-  git(['config', 'user.name', 'Graphyard Fixture']);
+  git(['config', 'user.name', 'Mainworks Fixture']);
   await writeFile(join(install, 'README.md'), 'shared base\n');
   git(['add', '.']);
   git(['commit', '-q', '-m', 'base']);

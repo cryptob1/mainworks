@@ -44,7 +44,7 @@ const samlRefusal = () => Object.assign(
   new Error("Command failed: git fetch --no-tags origin main\nfatal: Could not read from remote repository."),
   { stderr: "ERROR: The 'InspectHOA' organization has enabled or enforced SAML SSO. Your SSH key is not authorized for this organization. Visit https://github.com/settings/ssh to authorize.\nfatal: Could not read from remote repository.\nPlease make sure you have the correct access rights\nand the repository exists.\n" });
 
-/** A bare origin holding one main commit — a repository Graphyard has never gated, with no e2e/cases — and its coordinator checkout. */
+/** A bare origin holding one main commit — a repository Mainworks has never gated, with no e2e/cases — and its coordinator checkout. */
 async function freshRepository(label: string, files: Record<string, string> = { 'graphyard.json': '{}\n', 'package.json': '{"name":"lumina-investor"}\n' }) {
   const base = await temporaryDirectory(label);
   const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');

@@ -16,7 +16,7 @@ import { dockerCreates, git, killTrees, shardHosts, shardRepository, type ShardH
 // container's --tmpfs is a real in-memory mount (bubblewrap) and nothing else it writes outside the
 // mounted checkout reaches a disk. The runtime is a stand-in `codex` committed in the repository: it
 // reads its account's login at the login home's own path, commits work derived from it, refreshes
-// the login, and calls `graphyard complete` with a line of its own stderr left unfinished, which the
+// the login, and calls `mainworks complete` with a line of its own stderr left unfinished, which the
 // relay still runs here.
 
 const proof = 'integration:remote-session-login';
@@ -117,7 +117,7 @@ test(`${proof} — a session on an added host uses its account, no login file is
   const [call] = (await readFile(calls, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
   assert.deepEqual(call.argv, ['complete', 'GY-1', '1', '--head']);
   assert.equal(call.head, head, 'complete ran here on the session\'s own head');
-  const create = (await dockerCreates(hosts.state('sessionhost'))).find(words => words.some(word => word.startsWith('graphyard-session-')))!;
+  const create = (await dockerCreates(hosts.state('sessionhost'))).find(words => words.some(word => word.startsWith('mainworks-session-')))!;
   assert.equal(create[create.indexOf('--log-driver') + 1], 'none', 'Docker keeps no log of what the session says, the login handed back among it');
   assert.ok(create.includes('--memory'), 'the session runs under a memory limit');
   assert.equal(create[create.indexOf('--entrypoint') + 1], '/usr/bin/timeout', 'the session stops at its deadline on its own');
@@ -145,7 +145,7 @@ test(`${proof} — a host that drops ends the session, and its supervisor releas
     assert.equal(released.length, 1, 'the supervisor released the lease once');
     assert.deepEqual(filesHolding(token), [], 'the dropped host holds no login');
     assert.match(git(worktree, 'status', '--porcelain'), /progress\.txt/, 'the session\'s uncommitted work is in this worktree, kept for the successor');
-    const containers = () => Object.keys(JSON.parse(readFileSync(join(hosts.state('sessionhost'), 'state.json'), 'utf8')).containers).filter(name => name.startsWith('graphyard-session-'));
+    const containers = () => Object.keys(JSON.parse(readFileSync(join(hosts.state('sessionhost'), 'state.json'), 'utf8')).containers).filter(name => name.startsWith('mainworks-session-'));
     for (let tries = 0; tries < 100 && containers().length; tries++) await new Promise(resolve => setTimeout(resolve, 100));
     assert.deepEqual(containers(), [], 'the session container is removed though its launch was killed');
   } finally { process.chdir(cwd); }

@@ -81,7 +81,7 @@ test('e2e:project-token-costs — the Costs section, the item page and master us
   await stub('claude', [{ type: 'result', subtype: 'success', is_error: false, result: verdict, usage: { input_tokens: 100_000, output_tokens: 50_000 },
     modelUsage: { 'claude-opus-5-5': { inputTokens: 100_000, outputTokens: 50_000, cacheReadInputTokens: 1_000_000, cacheCreationInputTokens: 200_000, costUSD: 9 } } }]);
   await stub('muse', ['Done: no usage line, as Muse prints none.']);
-  // The worker's supervisor here only keeps the run log, as `graphyard watch` does around the runtime.
+  // The worker's supervisor here only keeps the run log, as `mainworks watch` does around the runtime.
   const supervisor = join(scratch, 'log-supervisor.mjs');
   await writeFile(supervisor, `import { spawn } from 'node:child_process';\nimport { runLogLines } from ${JSON.stringify(fileURLToPath(new URL('../src/session-watch.ts', import.meta.url)))};\nconst [command, ...args] = process.argv.slice(3);\nconst child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });\nfor (const stream of ['stdout', 'stderr']) runLogLines(child[stream], stream, process.env.GRAPHYARD_RUN_LOG);\nchild.on('close', code => process.exit(code ?? 1));\n`);
   const environment = { PATH: `${bin}:/usr/bin:/bin`, CODEX_HOME: await temporaryDirectory('codex-home', scratch), CLAUDE_CONFIG_DIR: await temporaryDirectory('claude-home', scratch) };

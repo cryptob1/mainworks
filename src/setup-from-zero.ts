@@ -28,24 +28,24 @@ import { setting } from './setting.js';
 import { stateDirectory } from './install/layout.js';
 
 /**
- * The prerequisites that `graphyard doctor` can check from this machine (GY-1352).
+ * The prerequisites that `mainworks doctor` can check from this machine (GY-1352).
  * Each is a named pass/fail line naming the command that fixes it, so an
- * agent setting Graphyard up from nothing reads the next step off doctor's output instead of guessing.
+ * agent setting Mainworks up from nothing reads the next step off doctor's output instead of guessing.
  */
 export const setupSteps = {
-  install: 'run graphyard up from this checkout',
-  environments: 'run graphyard up and connect agent accounts at the Setup link it prints',
+  install: 'run mainworks up from this checkout',
+  environments: 'run mainworks up and connect agent accounts at the Setup link it prints',
   sandbox: 'install bubblewrap: sudo apt install bubblewrap (Debian/Ubuntu) or sudo pacman -S bubblewrap (Arch)',
   herdr: `install Herdr as the README's Herdr prerequisite says: ${herdrInstaller}`,
   kernel: 'boot Linux 7.0 or later, which offers Landlock ABI 9 (Ubuntu 26.04: sudo apt install linux-image-oem-7.3, then reboot)',
   trialAppArmor: trialAppArmorFix,
-  loopCode: 'rerun graphyard up --agent from this checkout',
-  unitOverrides: 'remove the conflicting systemd drop-in this line names, then rerun graphyard up',
-  loopUnitRelease: 'run graphyard master init --token-stdin --replace-supervisor from this checkout so the unit starts the release this install serves',
-  loopLock: 'run graphyard master restart on that host: it restarts the loop through its unit, or stops the unit before a detached one, so a single loop remains',
-  deploySource: 'restart this install\'s deploy unit (graphyard upgrade --watch), which replaces the worktree with a standalone clone at the same commit',
+  loopCode: 'rerun mainworks up --agent from this checkout',
+  unitOverrides: 'remove the conflicting systemd drop-in this line names, then rerun mainworks up',
+  loopUnitRelease: 'run mainworks master init --token-stdin --replace-supervisor from this checkout so the unit starts the release this install serves',
+  loopLock: 'run mainworks master restart on that host: it restarts the loop through its unit, or stops the unit before a detached one, so a single loop remains',
+  deploySource: 'restart this install\'s deploy unit (mainworks upgrade --watch), which replaces the worktree with a standalone clone at the same commit',
   node: `install Node ${MINIMUM_NODE_MAJOR} or newer (the README prerequisites give the command for your distribution), then rerun doctor with it`,
-  serve: 'restart this install\'s deploy unit so it checks main out, builds and serves it again (graphyard upgrade --watch)',
+  serve: 'restart this install\'s deploy unit so it checks main out, builds and serves it again (mainworks upgrade --watch)',
 } as const;
 
 export interface SetupCheck { id: string; status: 'pass' | 'fail'; detail: string; step: string }
@@ -209,7 +209,7 @@ async function loopCodeCheck(root: string, injected: LoopCodeReading | null | un
   if (code.error) return check('fail', `the units this install records are unreadable: ${code.error}`);
   if (!code.loop) return null;
   const stale = code.loopStale;
-  if (stale) return check('fail', `${stale}: rerun graphyard up${code.repository ? ` --repo ${code.repository}` : ''} --agent from this checkout (${code.cli.root}); its master-loop step rewrites the units to it and restarts them`);
+  if (stale) return check('fail', `${stale}: rerun mainworks up${code.repository ? ` --repo ${code.repository}` : ''} --agent from this checkout (${code.cli.root}); its master-loop step rewrites the units to it and restarts them`);
   return check('pass', `the loop${code.loop ? ` (${code.loop.unit} at ${code.loop.path})` : ''}${code.loopCommit ? ` at ${code.loopCommit.slice(0, 12)}` : ''} runs this checkout (${code.cli.root})`);
 }
 
@@ -250,14 +250,14 @@ const readableUnitDirectory = (directory: string) => {
 /** The launcher a loop unit's ExecStart names, worded by systemd's own quoting rules, null when it names none. */
 const unitLauncher = (text: string, home: string): string | null => {
   const start = unitCheckout(text, home).execStart;
-  return start ? systemdCommandLineWords(start).find(part => /(?:bin\/graphyard\.mjs|dist\/cli\.js)$/.test(part)) ?? null : null;
+  return start ? systemdCommandLineWords(start).find(part => /(?:bin\/(?:graphyard|mainworks)\.mjs|dist\/cli\.js)$/.test(part)) ?? null : null;
 };
 
 /**
  * GY-3337: the loop unit's release line. The unit's ExecStart must resolve to the release this
  * install serves — never a release that has gone stale, never another install's launcher. One FAIL
  * names the unit and the init that rewrites it; a healthy unit records one PASS. A checkout
- * recording no units, a host holding no unit file, or a unit naming no Graphyard launcher records
+ * recording no units, a host holding no unit file, or a unit naming no Mainworks launcher records
  * no line: those are other lines' facts (loop-code, unit-overrides).
  */
 async function loopUnitReleaseChecks(root: string, env: NodeJS.ProcessEnv): Promise<SetupCheck[]> {
@@ -345,7 +345,7 @@ export async function setupFromZeroChecks(input: SetupFromZeroInput): Promise<Se
   lines.push({ id: 'control-plane', status: status ? 'pass' : 'fail', step: setupSteps.install,
     detail: status ? `answered as role ${status.actor?.role ?? 'unknown'}` : `${input.reachable ? `reachable, credential ${credential}` : 'not reachable'}: ${input.failure ?? 'no answer'}` });
   const node = input.nodeVersion ?? process.versions.node;
-  lines.push({ id: 'node', status: Number(node.split('.')[0]) >= MINIMUM_NODE_MAJOR ? 'pass' : 'fail', step: setupSteps.node, detail: `Node ${node}; Graphyard needs Node ${MINIMUM_NODE_MAJOR} or newer` });
+  lines.push({ id: 'node', status: Number(node.split('.')[0]) >= MINIMUM_NODE_MAJOR ? 'pass' : 'fail', step: setupSteps.node, detail: `Node ${node}; Mainworks needs Node ${MINIMUM_NODE_MAJOR} or newer` });
   lines.push(await credentialsCheck(input.root, env, input.masterCredential));
   lines.push(...await environmentChecks(input.environments));
   lines.push(await sandboxCheck(input.root, input.sandbox ?? bubblewrapProbe));

@@ -33,8 +33,8 @@ const iso = (ms: number) => new Date(ms).toISOString();
 // before GY-1684's merge plus 7 days; the 24-hour one before the release was first observed serving
 // GY-1700 plus 24 hours — "24-hour" and "24h" named no window the filer recognised.
 const gy1700 = delivered({ id: 'e03bc94f-82f4-481d-a443-4b4e6abe9eb6', key: 'GY-1700', criteria: [
-  { id: 'AC-2', text: 'A 24-hour window of live GitHub activity on cryptob1/graphyard shows zero failed webhook deliveries (no 5xx, no connection failures) in the App\'s advanced delivery log at github.com/settings/apps/graphyard-cryptob1-graphyard/advanced.', proofs: ['manual:post-deploy/webhook-deliveries-clean-24h'] },
-  { id: 'AC-3', text: 'The github-budget attention row in graphyard master status clears when a delivery arrives and does not re-fire during 24h of live repository activity while at least one pull request is open.', proofs: ['manual:post-deploy/github-budget-attention-row-clears'] }],
+  { id: 'AC-2', text: 'A 24-hour window of live GitHub activity on cryptob1/graphyard shows zero failed webhook deliveries (no 5xx, no connection failures) in the App\'s advanced delivery log at github.com/settings/apps/mainworks-cryptob1-graphyard/advanced.', proofs: ['manual:post-deploy/webhook-deliveries-clean-24h'] },
+  { id: 'AC-3', text: 'The github-budget attention row in mainworks master status clears when a delivery arrives and does not re-fire during 24h of live repository activity while at least one pull request is open.', proofs: ['manual:post-deploy/github-budget-attention-row-clears'] }],
   delivery: { mergeSha: 'a14965e4ad9ad52069ce7dc0c5d5aabdbf4f8b43', mergedAt: '2026-10-11T15:08:24Z', evidenceAsOf: '2026-10-11T15:08:24Z', authorizationRevision: 1 } as never });
 
 test('unit:criterion-window-hours — an hour-denominated window is read like a day-denominated one: "over 24 hours" and "within 24 hours" give notBefore 24 hours after the merge, or after the release was first observed serving', () => {

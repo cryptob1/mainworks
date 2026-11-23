@@ -92,7 +92,7 @@ test(`${proof} — the shim's probe reads a host's cores, load, steal and hottes
 });
 
 test(`${proof} — in a trial, a host's shard that dies without a verdict is re-queued on this machine with no fault, its log tail kept in the trial log`, { timeout: 120_000 }, async () => {
-  const image = 'graphyard-trial:remote-fixture';
+  const image = 'mainworks-trial:remote-fixture';
   const hosts = await shardHosts('remote-placement-trial', ['box'], { [image]: `sha256:${'cd34'.repeat(16)}` });
   const files = ['tests/a.test.ts', 'tests/b.test.ts', 'tests/c.test.ts', 'tests/d.test.ts'];
   // On the host every shard dies before it records a verdict; here the same files pass.

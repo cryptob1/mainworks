@@ -14,14 +14,14 @@ const loopMergerLiveMs = 3_600_000;
 export interface ReportedLoopMerger { live: boolean; name: string }
 
 /**
- * The header on the master loop's coordination reads (`graphyard master run`): its cycle interval
+ * The header on the master loop's coordination reads (`mainworks master run`): its cycle interval
  * in whole seconds. Only a coordinator's read counts; the loop is the one coordinator that sends it.
  */
 export const loopPresenceHeader = 'X-Graphyard-Loop-Interval';
 /**
  * The header beside it naming who reviews and merges on this installation (GY-1501): the loop's
  * master.json `supervision`, so the dashboard's Setup checklist judges a supervised install as
- * `graphyard up` does. A read without it (an older loop) names none.
+ * `mainworks up` does. A read without it (an older loop) names none.
  */
 export const loopSupervisionHeader = 'X-Graphyard-Loop-Supervision';
 export type LoopSupervision = 'supervised' | 'autonomous';

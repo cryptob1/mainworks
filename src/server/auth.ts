@@ -39,7 +39,7 @@ export async function authenticate(services: Services, authorization: string | u
   const configured = configuredCredential(services, hash);
   if (configured) await services.operatorAgents.assertConfiguredPrincipalSafe({ id: configured.actor.id, tokenHash: hash.toString('hex') }, { lease });
   const actor = configured?.actor ?? await humanSignIn(services).authenticate(token) ?? await mintedWorker(services, token) ?? await mintedReporter(services, token) ?? await mintedCaretaker(services, token) ?? await services.operatorAgents.authenticate(token) ?? await launchTokenActor(services, hash.toString('hex'));
-  demand(actor, 'A valid Graphyard bearer token is required', 401);
+  demand(actor, 'A valid Mainworks bearer token is required', 401);
   if (actor.role === 'operator-agent') demand(actor.scope?.repositories.includes(repository), 'Repository is outside operator-agent scope', 403);
   return actor;
 }
@@ -214,7 +214,7 @@ const laneProducerRouteGuard: Route = {
 export const laneProducerScope: RouteModule = { name: 'lane-producer-scope', routes: [laneProducerRouteGuard] };
 
 /**
- * The human operator signs into the dashboard without handling a token (GY-738). `graphyard login`,
+ * The human operator signs into the dashboard without handling a token (GY-738). `mainworks login`,
  * run with the operator's own admin credential, asks for a one-time link; opening it in a browser
  * redeems it for a short-lived session bound to that principal and declared human, so the
  * decisions only a human may make are answered in that browser with one click. A link is single

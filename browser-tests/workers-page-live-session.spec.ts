@@ -18,7 +18,7 @@ const settled = { timeout: 15_000 };
 test('e2e:workers-page-live-session — one compact row per agent; opening it shows the run\'s live output, read-only; the master\'s row opens the Master page', async ({ browser }) => {
   test.setTimeout(120_000);
   const database = await signInDatabase();
-  const site = await mkdtemp(join(tmpdir(), 'graphyard-workers-page-'));
+  const site = await mkdtemp(join(tmpdir(), 'mainworks-workers-page-'));
   await symlink(resolve('.graphyard/browser-dist'), join(site, 'dist'));
   const child = fork(resolve('tests/helpers/workers-page-server.ts'), [database.url, site], { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
   const [{ url, first, session, master }] = await once(child, 'message') as [{ url: string; first: string; session: string; master: string }];

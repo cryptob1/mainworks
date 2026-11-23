@@ -1,17 +1,17 @@
 import { fileURLToPath } from 'node:url';
 import { publishedSourceImages, type AdapterContext } from './adapters.js';
 import type { PlanAction } from './types.js';
-import { pulledTrialImageFile, trialContainerImage, trialImage } from '../merge-writer/trial-container.js';
+import { legacyTrialContainerImage, pulledTrialImageFile, trialContainerImage, trialImage } from '../merge-writer/trial-container.js';
 import { localTransport, shellQuote } from './transport.js';
 import { appArmorEnabled, trialAppArmorLoadCommand, trialAppArmorProfile, trialAppArmorProfilePath, trialAppArmorProfileText } from '../merge-writer/trial-apparmor.js';
 import { setting } from '../setting.js';
 import { timedPull } from './image-pulls.js';
 
-/** GY-3188: trial images build on Graphyard's own builder, so its cache is pruned without touching another project's. */
-export const trialBuilder = 'graphyard-trial';
+/** GY-3188: trial images build on Mainworks's own builder, so its cache is pruned without touching another project's. */
+export const trialBuilder = 'mainworks-trial';
 const trialBuilderCreateArgs = ['buildx', 'create', '--name', trialBuilder, '--driver', 'docker-container'];
 export const trialImageBuildArgs = (root: string) => ['buildx', 'build', '--builder', trialBuilder, '--load', '--target', 'trial', '--tag', trialContainerImage, root];
-/** `published` (GY-3214) is the trial image Graphyard published for the source checkout's commit, null for a tree no published image holds. */
+/** `published` (GY-3214) is the trial image Mainworks published for the source checkout's commit, null for a tree no published image holds. */
 export const trialImagePlan = (ctx: Pick<AdapterContext, 'sourceRoot'>, published: string | null): PlanAction => ({
   id: 'provider.trial-image', target: 'provider', state: 'update',
   title: published ? `Pull the private-root merge-trial image ${published}, or build it here when it is not published (Docker is required for trials)` : 'Build the private-root merge-trial image (Docker is required for trials)',
@@ -57,6 +57,10 @@ export function ensureTrialImage(root = fileURLToPath(new URL('../..', import.me
   return provisioning ??= (async () => {
     const transport = localTransport(), image = trialImage(root);
     if ((await transport.exec('docker', ['image', 'inspect', image], { allowFailure: true })).code === 0) return;
+    // GY-3594: a host from before the rename holds the same image under its old name.
+    if (image === trialContainerImage
+      && (await transport.exec('docker', ['image', 'inspect', legacyTrialContainerImage], { allowFailure: true })).code === 0
+      && (await transport.exec('docker', ['tag', legacyTrialContainerImage, image], { allowFailure: true })).code === 0) return;
     try { await provisionTrialImage({ sourceRoot: root, transport }, publishedSourceImages(root)?.trial ?? null); }
     catch (error) { throw new Error(`${trialImageMissingPrefix}${image} is missing on this host and could not be provisioned: ${error instanceof Error ? error.message : String(error)}`); }
   })().finally(() => { provisioning = null; });

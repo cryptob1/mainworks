@@ -16,7 +16,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // records beside it (the coordinator credential, the merge writer's deploy key, an upstream
 // credential, the per-install `confinement.maskPaths` list), and re-exposes only the session's
 // own token file and runtime login home. The worker's own work keeps working: its token is
-// readable, its runtime login is writable, and git status, git commit, `graphyard sync` and the
+// readable, its runtime login is writable, and git status, git commit, `mainworks sync` and the
 // repository's test command succeed in its worktree.
 
 const coordinatorSecret = 'coordinator-secret-'.padEnd(48, 'x');
@@ -33,7 +33,7 @@ function fixture(base: string, beside: string) {
   writeFileSync(join(root, 'src', 'loop.ts'), 'export const loop = 1;\n');
   run('init', '-b', 'main');
   run('config', 'user.email', 'graphyard@localhost');
-  run('config', 'user.name', 'Graphyard');
+  run('config', 'user.name', 'Mainworks');
   run('add', '.');
   run('commit', '-m', 'coordinator');
   const worktree = join(root, '.graphyard', 'worktrees', 'gy-1856-1');
@@ -195,7 +195,7 @@ test('integration:worker-credential-paths-denied — under the actual worker con
   } finally { rmSync(base, { recursive: true, force: true }); rmSync(beside, { recursive: true, force: true }); }
 });
 
-test('integration:worker-own-credentials-work — under the same confinement the worker\'s own runtime login and token are readable, and git status, git commit, graphyard sync and the repository\'s test command succeed in its worktree', async () => {
+test('integration:worker-own-credentials-work — under the same confinement the worker\'s own runtime login and token are readable, and git status, git commit, mainworks sync and the repository\'s test command succeed in its worktree', async () => {
   const base = await temporaryDirectory('credential mask own work'), beside = await temporaryDirectory('credential mask own work beside');
   try {
     const f = fixture(base, beside);
@@ -224,7 +224,7 @@ test('integration:worker-own-credentials-work — under the same confinement the
       // The worktree's own work: status, a change, a commit.
       'git -C "$1" status --porcelain >/dev/null && echo GIT-STATUS-OK || echo GIT-STATUS-FAILED',
       'printf \'worker change\\n\' > "$1/src/worker.ts" && git -C "$1" add src/worker.ts && git -C "$1" commit -qm "the worker change" && echo GIT-COMMIT-OK || echo GIT-COMMIT-FAILED',
-      // graphyard sync: merges the shared base tip and commits, inside the confinement. The driver
+      // mainworks sync: merges the shared base tip and commits, inside the confinement. The driver
       // runs from this checkout, whose node_modules carry tsx; everything it writes goes to the
       // worktree and its admin directory.
       'cd "$5" || exit 9',
@@ -243,7 +243,7 @@ test('integration:worker-own-credentials-work — under the same confinement the
     assert.ok(!/npm error/.test(output), `npm test failed: ${output.slice(-600)}`);
     const syncs = [...run.stdout.matchAll(/^WORKER-SYNC (.*)$/gm)].map(match => JSON.parse(match[1]));
     assert.equal(syncs.length, 1, `the sync reported once: ${output.slice(0, 400)}`);
-    assert.equal(syncs[0].ok, true, `graphyard sync succeeds: ${JSON.stringify(syncs[0])}`);
+    assert.equal(syncs[0].ok, true, `mainworks sync succeeds: ${JSON.stringify(syncs[0])}`);
     assert.equal(syncs[0].merged, true, 'the sync merged the base tip');
     assert.ok(existsSync(join(f.worktree, 'docs', 'advance.md')), 'the base tip landed in the worktree');
     for (const marker of ['OWN-TOKEN-DENIED', 'LOGIN-DENIED', 'LOGIN-NOTWRITABLE', 'GIT-STATUS-FAILED', 'GIT-COMMIT-FAILED', 'SYNC-FAILED', 'TEST-COMMAND-FAILED', 'Read-only file system'])

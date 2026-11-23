@@ -99,12 +99,12 @@ export function topCauseLine(state: DaemonState, queued: Work[]): string {
 
 /** One short line (GY-3101): what stopped, since when, and the top cause line. */
 export function yardAlertText(repository: string, since: number, now: number, queued: Work[], cause: string) {
-  return `Graphyard ${repository}: the yard stopped — no worker launch and no merge for ${formatAge(since, now)} (since ${new Date(since).toISOString()}), while ${queued.length} item(s) wait to start or merge (${queued.map(item => item.key).slice(0, 5).join(', ')}). Cause: ${cause}`;
+  return `Mainworks ${repository}: the yard stopped — no worker launch and no merge for ${formatAge(since, now)} (since ${new Date(since).toISOString()}), while ${queued.length} item(s) wait to start or merge (${queued.map(item => item.key).slice(0, 5).join(', ')}). Cause: ${cause}`;
 }
 
 /** The one all-clear (GY-3101), sent when work moves again after an alert. */
 const yardAllClearText = (repository: string, since: string, now: number) =>
-  `Graphyard ${repository}: the yard is moving again — work started or merged after ${formatAge(since, now)} stopped (since ${since})`;
+  `Mainworks ${repository}: the yard is moving again — work started or merged after ${formatAge(since, now)} stopped (since ${since})`;
 
 /**
  * The alert step (GY-3101), run by the cycle's persist step on the install's own loop: with

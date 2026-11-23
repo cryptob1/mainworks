@@ -49,7 +49,7 @@ const serveJs = [
   '}).listen(port, "127.0.0.1");',
 ].join('\n');
 /** The node application graphyard.json declares (GY-3201): built and started at the root, on the PORT the pass gives it. */
-const graphyardJson = JSON.stringify({ e2e: { serve: { command: 'node serve.js', url: 'http://127.0.0.1:43911/', readySeconds: 30 } }, featureMap: [{ name: 'Home', url: '/', traps: [] }], delivery: { mode: 'local', applications: [{ id: 'app', kind: 'node', directory: '.', build: 'node build.js', start: 'node serve.js' }] } });
+const mainworksJson = JSON.stringify({ e2e: { serve: { command: 'node serve.js', url: 'http://127.0.0.1:43911/', readySeconds: 30 } }, featureMap: [{ name: 'Home', url: '/', traps: [] }], delivery: { mode: 'local', applications: [{ id: 'app', kind: 'node', directory: '.', build: 'node build.js', start: 'node serve.js' }] } });
 
 /** A minimal npm package and its lockfile, so the fixture's install is the npm ci a real app runs. */
 const packageJson = JSON.stringify({ name: 'fixture-served', version: '1.0.0', private: true }) + '\n';
@@ -64,7 +64,7 @@ async function managedRepository(label: string) {
   const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), root = join(base, 'checkout');
   git(base, 'init', '-q', '--bare', '-b', 'main', origin);
   git(base, 'clone', '-q', origin, pusher);
-  await push(pusher, { 'package.json': packageJson, 'package-lock.json': packageLock, 'build.js': buildJs, 'serve.js': serveJs, 'e2e/cases/served-case-home.json': caseFile('served-case-home', '/'), 'e2e/cases/served-case-ready.json': caseFile('served-case-ready', '/ready'), 'graphyard.json': graphyardJson }, 'the app and its required cases');
+  await push(pusher, { 'package.json': packageJson, 'package-lock.json': packageLock, 'build.js': buildJs, 'serve.js': serveJs, 'e2e/cases/served-case-home.json': caseFile('served-case-home', '/'), 'e2e/cases/served-case-ready.json': caseFile('served-case-ready', '/ready'), 'graphyard.json': mainworksJson }, 'the app and its required cases');
   git(base, 'clone', '-q', origin, root);
   return { root, pusher, push };
 }

@@ -140,7 +140,7 @@ test('e2e:trial-network-cleanup — the leftovers sweep removes a preview-trial 
   const run: ChildRun = (command, args, options = {}) => defaultChildRun(command, args, { ...options, env: { ...process.env, PATH: docker.path } });
   const removed = await reclaimJobLeftovers(run, { temporary: [], checkouts: [], verification: [] });
   assert.deepEqual(removed, ['network graphyard-preview-trial-services-gy-19-45301c6f_default']);
-  assert.deepEqual(Object.keys(docker.read().networks).sort(), ['graphyard-preview-trial-e2e-web-0a1b2c3d_default', 'hello-huck_default'], 'a network in use and one not Graphyard\'s stay');
+  assert.deepEqual(Object.keys(docker.read().networks).sort(), ['graphyard-preview-trial-e2e-web-0a1b2c3d_default', 'hello-huck_default'], 'a network in use and one not Mainworks\'s stay');
 
   const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',
     repository: 'owner/project', baseBranch: 'main', hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [] });
@@ -149,7 +149,7 @@ test('e2e:trial-network-cleanup — the leftovers sweep removes a preview-trial 
     snapshot: async () => ({ work: [], now: new Date(clock).toISOString() }),
     agents: () => [], credentials: async () => ({}), closeSession: () => {}, dispatch: async () => {}, persist: async () => {}, dispatchTick: async () => {}, recordSession: async () => {},
     // One sweep removes them; the next finds nothing left.
-    reclaimJobLeftovers: async () => swept ? [] : (swept = true, [...removed, 'container graphyard-trial-a']),
+    reclaimJobLeftovers: async () => swept ? [] : (swept = true, [...removed, 'container mainworks-trial-a']),
     leftoverDisk: async () => ({ trialRuns: null, worktrees: null, trialCheckouts: null, trialImages: null, buildCache: null }),
   };
   const state = emptyDaemonState(config);
@@ -230,7 +230,7 @@ test('e2e:trial-network-cleanup — a trial whose network Docker refuses for spe
   const lines: string[] = [];
   const cycle = { state: emptyDaemonState(config), effects: {} as DaemonEffects, clock: Date.now(), log: (line: string) => lines.push(line), config };
   for (let pass = 0; pass < 3; pass++) await reportTrialNetworkFault(cycle, '30');
-  const attention = lines.filter(line => /attention failed: Graphyard fault: merge trials cannot create a Docker network/.test(line));
+  const attention = lines.filter(line => /attention failed: Mainworks fault: merge trials cannot create a Docker network/.test(line));
   assert.equal(attention.length, 1, 'one attention line across cycles');
-  assert.match(attention[0]!, /30 Graphyard preview networks/, 'it names the leaked network count');
+  assert.match(attention[0]!, /30 Mainworks preview networks/, 'it names the leaked network count');
 });

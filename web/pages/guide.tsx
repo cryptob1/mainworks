@@ -15,7 +15,7 @@ const flow: [string, string][] = [
   ['Deploy and verify', 'Verified in batches; a failing batch reverts its culprit. Main deploys.'],
 ];
 
-/** Where each part runs: the same parts `graphyard guide infra` lists, in two panels instead of one wiring diagram. */
+/** Where each part runs: the same parts `mainworks guide infra` lists, in two panels instead of one wiring diagram. */
 const host: [string, string, string][] = [
   ['The loop', 'graphyard-master-OWNER-NAME.service', 'Hands out work, tests, merges.'],
   ['Deploy watch', 'graphyard-deploy-OWNER-NAME.service', 'Deploys and rolls back.'],
@@ -68,9 +68,9 @@ const commands: [string, string][] = [
 
 /**
  * The Docs page, opened from Help under Settings (GY-3295): an introduction for an engineer
- * who has never heard of Graphyard. Who decides what, one first item from setup to result, the delivery
+ * who has never heard of Mainworks. Who decides what, one first item from setup to result, the delivery
  * flow and where each part runs as readable panels, then a folded FAQ and reference. The reference prints
- * `graphyard guide setup` and `graphyard guide infra` themselves, loaded once the page is open, so those
+ * `mainworks guide setup` and `mainworks guide infra` themselves, loaded once the page is open, so those
  * procedures keep one source.
  */
 export default function GuidePage() {

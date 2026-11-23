@@ -206,7 +206,7 @@ export function AccountAvailability({ accounts, now }: { accounts: FleetAccountV
 type HostRow = { host: string; local?: boolean; at?: string; away: boolean; update?: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; busy?: number | null; slots?: number; fallback?: { reason: string; at: string } };
 /**
  * GY-3407: the hosts the loop watches — this machine first, then each one added with
- * `graphyard host add USER@HOST` — as the loop read them this cycle. A host that does not answer
+ * `mainworks host add USER@HOST` — as the loop read them this cycle. A host that does not answer
  * reads Away and is read again next cycle. Merge trials send test shards to added hosts (GY-3412).
  * GY-3517: each row is the latest probe, with how long ago it was read; one away only because its helper is too old says so.
  */

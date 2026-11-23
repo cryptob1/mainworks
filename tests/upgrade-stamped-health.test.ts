@@ -125,7 +125,7 @@ process.stdout.write(JSON.stringify(calls));
   return servedHealth(port);
 }
 
-test('unit:upgrade-serves-stamped-release — graphyard upgrade of an installed compose release redeploys an image whose /healthz reports the upgraded-to version and commit, not unreleased unknown', async () => {
+test('unit:upgrade-serves-stamped-release — mainworks upgrade of an installed compose release redeploys an image whose /healthz reports the upgraded-to version and commit, not unreleased unknown', async () => {
   const { root: cliRoot, previous, candidate } = await cliCheckout();
   const port = await freePort();
   const workdir = await temporaryDirectory('upgrade-stamped-install');
@@ -143,7 +143,7 @@ test('unit:upgrade-serves-stamped-release — graphyard upgrade of an installed 
     const plan = upgradePlan(inputs);
     const live = liveEffects(inputs, join(workdir, 'upgrade.json'));
     let upgraded: { version: string; commit: string | null } | null = null;
-    // checkout and the strict /healthz check run as graphyard upgrade runs them, and the redeploy
+    // checkout and the strict /healthz check run as mainworks upgrade runs them, and the redeploy
     // runs the checked-out CLI's compose install into the same workdir. The rest needs a network,
     // a GitHub repository or a host supervisor, and none of it changes what /healthz serves.
     const result = await runUpgrade(plan, {
@@ -163,7 +163,7 @@ test('unit:upgrade-serves-stamped-release — graphyard upgrade of an installed 
     assert.deepEqual(result, { ok: true, steps: plan.steps.map(step => step.id) });
     assert.equal(checkoutRelease(cliRoot).revision, candidate);
     assert.notDeepEqual(upgraded, installed);
-    assert.deepEqual(upgraded, { version, commit: candidate }, `after graphyard upgrade --to ${version} the compose install's /healthz reports ${JSON.stringify(upgraded)}`);
+    assert.deepEqual(upgraded, { version, commit: candidate }, `after mainworks upgrade --to ${version} the compose install's /healthz reports ${JSON.stringify(upgraded)}`);
     assert.deepEqual(docker.builds.at(-1)!.slice(0, 5), ['build', '--build-arg', `GRAPHYARD_VERSION=${version}`, '--build-arg', `GRAPHYARD_BUILD_REVISION=${candidate}`]);
   } finally { await docker.stop(); }
 

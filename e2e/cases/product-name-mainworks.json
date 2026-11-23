@@ -1,7 +1,7 @@
 {
   "id": "product-name-mainworks",
   "title": "The product is called Mainworks wherever a person reads its name",
-  "description": "A real browser opens the sign-in page, the home page and an invite link: the visible text and the tab title say Mainworks and never Graphyard. Both command names, mainworks and graphyard, run the same CLI: --help and guide exit 0 with Mainworks help text and mainworks usage lines.",
+  "description": "A real browser opens the sign-in page, the home page and an invite link: the visible text and the tab title say Mainworks and never Mainworks. Both command names, mainworks and mainworks, run the same CLI: --help and guide exit 0 with Mainworks help text and mainworks usage lines.",
   "tags": ["dashboard", "cli"],
   "target": "any",
   "required": false,

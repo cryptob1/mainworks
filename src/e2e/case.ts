@@ -6,7 +6,7 @@ import { z } from 'zod';
  * The end-to-end case repository (GY-1351). A case is a JSON file under `e2e/cases/`, reviewed like
  * code: an id, a title, tags, a target (`uat`: it runs against UAT before every release; `any`: on
  * demand only), whether it is `required` (only a required case can block a release, GY-1378; the
- * default is optional) and ordered steps against the HTTP API and the dashboard. `graphyard e2e sync`
+ * default is optional) and ordered steps against the HTTP API and the dashboard. `mainworks e2e sync`
  * registers each case as a revision of the scenario of the same id (src/scenarios.ts), so editing a
  * case publishes a new immutable revision and `e2e:ID` proofs keep pinning the revision they named.
  *

@@ -8,7 +8,7 @@ import { masterStatusReport } from '../src/cli/master-status.js';
 import type { MasterConfig } from '../src/master.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-3204: Railway deploys each application from git on its own; Graphyard only reads each app's
+// GY-3204: Railway deploys each application from git on its own; Mainworks only reads each app's
 // versionUrl and, against main in the managed checkout, reports it current, lagging or failed in
 // master status, with an attention line for each lagging or failed app.
 

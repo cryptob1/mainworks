@@ -427,15 +427,15 @@ export function benchStep(cycle: {
   if (!decision.due) return null;
 
   benchAttempts.set(cycle.state, { at: cycle.now(), build: currentBuild });
-  cycle.log(`[graphyard-master] starting trial benchmark (${decision.reason})`);
+  cycle.log(`[mainworks-master] starting trial benchmark (${decision.reason})`);
   const flight = benchTrial({
     root,
     build: currentBuild,
     print: () => {},
   }).then(result => {
-    cycle.log(`[graphyard-master] trial benchmark ${result.outcome}: ${result.wallSeconds}s wall, ${result.cpuSeconds}s CPU on ${result.commit.slice(0, 12)}`);
+    cycle.log(`[mainworks-master] trial benchmark ${result.outcome}: ${result.wallSeconds}s wall, ${result.cpuSeconds}s CPU on ${result.commit.slice(0, 12)}`);
   }, error => {
-    cycle.log(`[graphyard-master] trial benchmark failed: ${error instanceof Error ? error.message : String(error)}`);
+    cycle.log(`[mainworks-master] trial benchmark failed: ${error instanceof Error ? error.message : String(error)}`);
   }).finally(() => {
     benchFlights.delete(cycle.state);
   });

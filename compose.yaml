@@ -6,7 +6,7 @@
 #   GRAPHYARD_IMAGE=ghcr.io/cryptob1/graphyard:2026.10.17 docker compose --profile full up -d
 services:
   trial-image:
-    image: graphyard-trial:local
+    image: mainworks-trial:local
     build: { context: ., target: trial }
     profiles: ["trial-image"]
     command: ["true"]

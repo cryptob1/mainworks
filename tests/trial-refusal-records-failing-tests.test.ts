@@ -37,7 +37,7 @@ test('unit:trial-refusal-records-failing-tests node test failures name their cas
   assert.doesNotMatch(reason, /hunter2/);
   const refusal = { kind: 'merge', reason };
   // Two runs of the same failure whose tails differ by run noise still read as the same failure.
-  const again = trialFailureReason({ run: { build: 'pass', tests: { passed: 1, failed: ['tests/merge-ledger.test.ts'], files: 2 }, logTail: `${nodeTap}\n/var/tmp/graphyard-trial-QwErTy/x` } })!;
+  const again = trialFailureReason({ run: { build: 'pass', tests: { passed: 1, failed: ['tests/merge-ledger.test.ts'], files: 2 }, logTail: `${nodeTap}\n/var/tmp/mainworks-trial-QwErTy/x` } })!;
   assert.equal(failureSignature('trial', again), failureSignature('trial', reason));
   assert.deepEqual(trialFailureTests(refusal), ['tests/merge-ledger.test.ts'], 'a test path printed in the log tail is no failing file');
   // A case the reason already names is not repeated.

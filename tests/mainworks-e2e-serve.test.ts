@@ -23,7 +23,7 @@ const freePort = () => new Promise<number>((accept, reject) => {
   const server = createServer().once('error', reject).listen(0, '127.0.0.1', () => { const { port } = server.address() as { port: number }; server.close(() => accept(port)); });
 });
 
-// GY-2969: Graphyard's own graphyard.json declares e2e.serve, so its user-facing items can carry
+// GY-2969: Mainworks's own graphyard.json declares e2e.serve, so its user-facing items can carry
 // e2e: proofs. AC-1: the declared command serves this head's control plane and create-work-item
 // passes against it; stopping it removes its database directory. AC-2: create accepts a feature
 // carrying e2e:create-work-item under this head's policy.
@@ -31,7 +31,7 @@ const freePort = () => new Promise<number>((accept, reject) => {
 const checkout = process.cwd();
 const policy = checkoutRepositoryPolicy(checkout);
 
-test('unit:graphyard-repo-serves-its-head-for-e2e — the declared serve command passes core product and delivery cases, and stopping it removes its database directory', { timeout: 240_000 }, async t => {
+test('unit:mainworks-repo-serves-its-head-for-e2e — the declared serve command passes core product and delivery cases, and stopping it removes its database directory', { timeout: 240_000 }, async t => {
   const serve = policy.e2e.serve;
   assert.ok(serve, 'graphyard.json declares e2e.serve');
   const scratch = await temporaryDirectory('e2e-serve');
@@ -153,7 +153,7 @@ before(async () => {
 });
 after(async () => { setRepositoryPolicy(defaultRepositoryPolicy); if (store) await store.close(); });
 
-test('unit:graphyard-feature-with-e2e-proof-accepted — create accepts a feature for cryptob1/graphyard whose criterion carries e2e:create-work-item under this head’s policy', async () => {
+test('unit:mainworks-feature-with-e2e-proof-accepted — create accepts a feature for cryptob1/graphyard whose criterion carries e2e:create-work-item under this head’s policy', async () => {
   setRepositoryPolicy(policy);
   await defineScenario(store, operator, { id: 'create-work-item', title: 'An operator creates a work item and finds it in the work list', purpose: 'An operator creates a work item',
     steps: ['POST /api/work', 'GET /api/work'], expected: ['the item is listed'], environment: 'any', runner: 'graphyard-e2e', testPath: 'e2e/cases/create-work-item.json' }, randomUUID());

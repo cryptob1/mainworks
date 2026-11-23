@@ -36,12 +36,12 @@ export async function recordedMasterUrl(root: string): Promise<string | null> {
 async function readMasterConfig(root: string): Promise<MasterConfig> {
   const file = resolve(stateDirectory(root), 'master.json');
   // A checkout no install or master init has configured names the step that writes it (GY-1352), not a bare lstat ENOENT.
-  const info = await lstat(file).catch((error: any) => { throw error?.code === 'ENOENT' ? Object.assign(new Error(`${file} does not exist: run graphyard install --apply, or graphyard master init --token-stdin, in this checkout first`), { code: 'ENOENT' }) : error; });
+  const info = await lstat(file).catch((error: any) => { throw error?.code === 'ENOENT' ? Object.assign(new Error(`${file} does not exist: run mainworks install --apply, or mainworks master init --token-stdin, in this checkout first`), { code: 'ENOENT' }) : error; });
   if (!info.isFile() || info.uid !== process.getuid?.()) throw new Error(`${file} must be a regular file owned by this user`);
   // GY-3349: the loop and CLI own this file, so a mode an operator's save widened is repaired, not refused.
   if (info.mode & 0o077) {
     await chmod(file, 0o600);
-    console.error(`[graphyard] ${file} had mode 0${(info.mode & 0o777).toString(8)}; set it to 0600`);
+    console.error(`[mainworks] ${file} had mode 0${(info.mode & 0o777).toString(8)}; set it to 0600`);
   }
   const stored = JSON.parse(await readFile(file, 'utf8'));
   const parsed = masterConfigSchema.safeParse(stored);
@@ -76,7 +76,7 @@ async function repairGrownWorkers(file: string, raw: unknown, error: z.ZodError)
     const next = masterConfigSchema.safeParse(attempt);
     if (next.success) {
       await atomicPrivateWrite(file, next.data);
-      console.error(`[graphyard] ${file} did not load (${error.issues[0]?.message ?? 'it did not parse'}); removed the loop-grown worker profile${removed.length === 1 ? '' : 's'} ${removed.join(', ')} and the config loads again`);
+      console.error(`[mainworks] ${file} did not load (${error.issues[0]?.message ?? 'it did not parse'}); removed the loop-grown worker profile${removed.length === 1 ? '' : 's'} ${removed.join(', ')} and the config loads again`);
       return next.data;
     }
     // The loop's own newest minted profile; with none left to remove, GY-3292's pre-cap growth is
@@ -100,7 +100,7 @@ export async function loadStoredMasterConfig(root: string): Promise<MasterConfig
   const config = await readMasterConfig(root);
   await externalCredential(root, config.credentialFile, 'Master');
   if (!isAbsolute(config.cliPath)) throw new LauncherUnavailableError('Master CLI path must be absolute');
-  try { if (!(await lstat(config.cliPath)).isFile()) throw new Error(); } catch { throw new LauncherUnavailableError('Configured Graphyard CLI launcher is unavailable: restore the deploy checkout it names, or set cliPath with graphyard master setup'); }
+  try { if (!(await lstat(config.cliPath)).isFile()) throw new Error(); } catch { throw new LauncherUnavailableError('Configured Mainworks CLI launcher is unavailable: restore the deploy checkout it names, or set cliPath with mainworks master setup'); }
   // Every new launch and sweep uses this install's workspace on the main server.
   applyHerdrConfig(config);
   return config;
@@ -159,13 +159,13 @@ export async function setupMaster(root: string, input: { url: string; token: str
   replaceSupervisor?: boolean }, fetcher: typeof fetch = fetch, dependencies: { probe?: FilesystemProbe; supervisorHost?: LoopSupervisorHost } = {}) {
   const url = serverOrigin(input.url); const token = input.token.trim();
   const workerConnection = await loadConnection(root);
-  if (workerConnection && workerConnection.url !== url) throw new Error('Worker connection uses another Graphyard server; migrate the repository connection before master setup');
+  if (workerConnection && workerConnection.url !== url) throw new Error('Worker connection uses another Mainworks server; migrate the repository connection before master setup');
   if (token.length < 32) throw new Error('Master initialization requires a coordinator credential over stdin');
   const detected = await discover(root);
   let response: Response;
   try { response = await fetcher(`${url}/api/status`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) }); }
-  catch { throw new Error('Cannot reach Graphyard; master setup made no changes'); }
-  if (!response.ok) throw new Error(`Graphyard rejected the coordinator credential (${response.status}); master setup made no changes`);
+  catch { throw new Error('Cannot reach Mainworks; master setup made no changes'); }
+  if (!response.ok) throw new Error(`Mainworks rejected the coordinator credential (${response.status}); master setup made no changes`);
   const status = await response.json();
   if (status.actor?.role !== 'coordinator') throw new Error('Master setup requires a coordinator credential; worker, operator, producer, and reader credentials are not suitable');
   if (typeof status.repository !== 'string' || !status.repository) throw new Error('Master setup requires the control plane to be bound to a GitHub repository');
@@ -176,7 +176,7 @@ export async function setupMaster(root: string, input: { url: string; token: str
   assertRepository(detected.repository, status.repository);
   if (!detected.repository) throw new Error('Master setup requires a recognized GitHub origin');
   const cliPath = resolve(input.cliPath);
-  try { if (!(await lstat(cliPath)).isFile()) throw new Error(); } catch { throw new Error('Master setup requires an existing Graphyard CLI launcher'); }
+  try { if (!(await lstat(cliPath)).isFile()) throw new Error(); } catch { throw new Error('Master setup requires an existing Mainworks CLI launcher'); }
   let previous: MasterConfig | undefined;
   try { previous = await readMasterConfig(root); } catch (error: any) { if (error.code !== 'ENOENT' && !/ENOENT/.test(error.message)) throw error; }
   if (previous && (previous.url !== url || previous.repository.toLowerCase() !== detected.repository.toLowerCase())) throw new Error('Existing master configuration belongs to another server or repository');
@@ -244,8 +244,8 @@ export async function setupMaster(root: string, input: { url: string; token: str
   // Capacity drift and production lag each name their own remedy.
   const remedy = delegationLimits?.drift.length ? `Set ${delegationLimits.drift.map(entry => `${entry.variable}=${entry.required}`).join(' ')} on the deployment`
     : production?.incidents.length ? `Deploy main: ${production.attention[0] ?? production.incidents[0].reason}` : null;
-  const profiles = 'graphyard master environments --apply to generate worker, reviewer and producer profiles from the logged-in agent accounts';
-  const start = `run ${profiles}, then graphyard master start codex (or another supported agent kind)`;
+  const profiles = 'mainworks master environments --apply to generate worker, reviewer and producer profiles from the logged-in agent accounts';
+  const start = `run ${profiles}, then mainworks master start codex (or another supported agent kind)`;
   // Which agent accounts this machine has, and which are logged in; quota is read by master environments.
   const environmentDirectory = agentEnvironmentRoot();
   const environments = await Promise.all((await discoverAgentEnvironments(environmentDirectory).catch(() => [] as AgentEnvironment[])).map(async environment => {
@@ -258,7 +258,7 @@ export async function setupMaster(root: string, input: { url: string; token: str
     // What setup installed for the loop, in the words of the commands it ran.
     supervisor: supervisor ? { supported: supervisor.supported, unit: supervisor.unit, unitPath: supervisor.unitPath, installed: supervisor.installed, enabled: supervisor.enabled,
       active: supervisor.active, linger: supervisor.linger, state: supervisor.wrote, refused: supervisor.refused, performed: supervisor.performed, reason: supervisor.reason, instruction: supervisor.instruction } : null,
-    next: `${supervision.length ? `${supervision[0]}. Then ${remedy ? `${remedy}, then ${start}` : start}` : remedy ? `${remedy}, then ${start}` : start[0].toUpperCase() + start.slice(1)}; give the master its agent identities once with graphyard master autonomy --admin-token-stdin --apply` };
+    next: `${supervision.length ? `${supervision[0]}. Then ${remedy ? `${remedy}, then ${start}` : start}` : remedy ? `${remedy}, then ${start}` : start[0].toUpperCase() + start.slice(1)}; give the master its agent identities once with mainworks master autonomy --admin-token-stdin --apply` };
 }
 
 export async function saveWorkerProfile(root: string, profileInput: unknown, verify: (token: string) => Promise<any>) {

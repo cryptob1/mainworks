@@ -68,7 +68,7 @@ test('integration:generated-files-setup — the documented command prints the va
     assert.deepEqual(parseGeneratedFiles(listed), JSON.parse(run(['--manifest'])).generated, 'the --list form and the manifest JSON declare the same files');
     assert.equal(generatedFilesAssignment(fixture)?.line, 'GRAPHYARD_GENERATED_FILES=docs/index.md,docs/list.md');
   } finally { await rm(fixture, { recursive: true, force: true }); }
-  // Graphyard's own repository generates no documentation, so its installer sets nothing (GY-3109).
+  // Mainworks's own repository generates no documentation, so its installer sets nothing (GY-3109).
   assert.equal(generatedFilesAssignment(repository), null);
 });
 
@@ -113,14 +113,14 @@ test('integration:generated-files-setup — init --scan --apply reports the deri
     const proposal = await scanProposal(declared, { url: 'https://graphyard.example', runtimes: [] });
     const result = await applyProposal(declared, proposal, dependencies);
     assert.equal(result.generatedFiles, 'GRAPHYARD_GENERATED_FILES=docs/index.md,docs/list.md');
-    assert.match(result.next, /Run graphyard install --apply/);
+    assert.match(result.next, /Run mainworks install --apply/);
   } finally { await rm(declared, { recursive: true, force: true }); }
   const undeclared = await fixtureRepo(ordersApi);
   try {
     const proposal = await scanProposal(undeclared, { url: 'https://graphyard.example', runtimes: [] });
     const result = await applyProposal(undeclared, proposal, dependencies);
     assert.equal(result.generatedFiles, null);
-    assert.match(result.next, /Run graphyard install --apply/);
+    assert.match(result.next, /Run mainworks install --apply/);
   } finally { await rm(undeclared, { recursive: true, force: true }); }
 });
 

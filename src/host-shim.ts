@@ -1,5 +1,5 @@
 // Concern: GY-3412 — graphyard-host-shim, the only command this machine's SSH key may run on a host
-// (authorized_keys restrict,command=…, written by `graphyard host prepare`). It runs as the host's
+// (authorized_keys restrict,command=…, written by `mainworks host prepare`). It runs as the host's
 // unprivileged gy-compute user with rootless Docker and answers fixed verbs with validated arguments:
 //   probe                          the shim's own digest and verbs (GY-3517), then cores, load, CPU steal, sensors and running trial containers
 //   receive-pack REPO SHA          a git pack on stdin into the per-repo mirror ~/.graphyard/mirrors/REPO.git
@@ -18,7 +18,7 @@
 //                                  each home an in-memory tmpfs; the rest of stdin (the login) goes straight into the container;
 //                                  no Docker log, a memory limit, a deadline, and a guardian that removes the container
 // Anything else is refused. As in a local trial, containers may start nested sandboxes (seccomp and system
-// paths unconfined, the graphyard-trial AppArmor profile where Docker uses AppArmor; GY-3549), and never
+// paths unconfined, the mainworks-trial AppArmor profile where Docker uses AppArmor; GY-3549), and never
 // get the Docker socket, so a shard, which has no network either, reaches no private address, the tailnet or the host.
 // A check's Compose project may reach no host path outside its run directory, nor any host namespace, device or capability.
 import { createHash } from 'node:crypto';
@@ -34,13 +34,13 @@ export const hostProbeScript = [
   'echo "load $(cut -d " " -f 1 /proc/loadavg)"',
   'head -n 1 /proc/stat',
   'for d in /sys/class/hwmon/hwmon*; do n=$(cat "$d/name" 2>/dev/null); for t in "$d"/temp*_input; do [ -r "$t" ] && echo "temp $n $(cat "$t")"; done; done',
-  'echo "runs $(docker ps -q --filter name=^graphyard-trial- | wc -l)"',
+  'echo "runs $(docker ps -q --filter name=^mainworks-trial- | wc -l)"',
 ].join('\n');
 
 /** The warm image a host runs shards in: the trial image's digest and the lockfile's hash (`none` without one). */
 const warmImagePattern = /^graphyard-warm:[0-9a-f]{12}-(?:[0-9a-f]{12}|none)$/;
 
-/** GY-3405: no agent session runs longer on a host; Graphyard ends every session well before. */
+/** GY-3405: no agent session runs longer on a host; Mainworks ends every session well before. */
 const sessionHours = 8;
 /**
  * GY-3517: the verbs this shim speaks, each with a revision. Bump a verb's revision when a release
@@ -61,7 +61,7 @@ export const missingTrialVerbs = (probe: { shim: string | null; verbs: string[] 
 
 const shimDigestSlot = '@GRAPHYARD_SHIM_DIGEST@';
 const shimTemplate = `#!/bin/sh
-# graphyard-host-shim: the only command Graphyard's SSH key may run here (graphyard host prepare).
+# graphyard-host-shim: the only command Mainworks's SSH key may run here (mainworks host prepare).
 refuse() { echo "graphyard-host-shim refuses: $SSH_ORIGINAL_COMMAND" >&2; exit 1; }
 [ $# -eq 0 ] || { [ $# -eq 2 ] && [ "$1" = --home ]; } || refuse
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
@@ -175,7 +175,7 @@ elif verb == 'run-session':
     run = os.path.join(runs, args[0])
     if not os.path.isdir(run):
         sys.exit('graphyard-host-shim: no run ' + args[0])
-    name = 'graphyard-session-' + args[0][len('trial-'):]
+    name = 'mainworks-session-' + args[0][len('trial-'):]
     # The network is the default one: the session reaches its model provider and the control plane. Only the checkout is mounted; the root is
     # read-only, as a trial's is, and every home and /tmp is memory.
     # No log driver: the login handed back on stderr never reaches the host's disk. Half the host's memory at most.
@@ -216,7 +216,7 @@ elif verb == 'run-session':
     sys.exit(code)
 else:
     run = os.path.join(runs, args[0])
-    project = 'graphyard-check-' + args[0][6:].lower()
+    project = 'mainworks-check-' + args[0][6:].lower()
     # A request names its files or Compose file, command, CPUs and deadline only: one asking for anything else (a mount, an image, a network) is refused.
     if verb in ('run-shard', 'run-check'):
         try:
@@ -340,7 +340,7 @@ else:
                 os.remove(os.path.join(run, 'compose-project'))
             steps.append('teardown %d' % ((time.time() - at) * 1000))
         # The command's own exit travels as a line: this verb exits 0 whenever the command ran.
-        print('\\n' + '\\n'.join('graphyard-check ' + step for step in steps) + '\\ngraphyard-check exit %d' % status)
+        print('\\n' + '\\n'.join('mainworks-check ' + step for step in steps) + '\\nmainworks-check exit %d' % status)
 GRAPHYARD_VERBS
 )" "$@" ;;
   *) refuse ;;

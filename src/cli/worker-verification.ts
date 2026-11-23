@@ -29,7 +29,7 @@ export async function requestWorkerVerification(context: CliContext, work: any, 
     if (reading) return;
     reading = true;
     const { lines } = await context.api(`work/${work.id}/worker-verification`).catch(() => ({ lines: [] as string[] }));
-    for (const line of (lines as string[]).slice(shown)) console.error(`graphyard trial container: ${line}`);
+    for (const line of (lines as string[]).slice(shown)) console.error(`mainworks trial container: ${line}`);
     shown = Math.max(shown, lines.length);
     reading = false;
   };

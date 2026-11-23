@@ -16,7 +16,7 @@ import { pruneDaemonState } from '../src/daemon/state.js';
 
 const clock = Date.parse('2030-01-01T00:00:00Z');
 
-test('integration:close-dead-worktree-panes — an exited Graphyard pane in a removed worktree closes within a cycle; the master, foreign and running panes stay open', async () => {
+test('integration:close-dead-worktree-panes — an exited Mainworks pane in a removed worktree closes within a cycle; the master, foreign and running panes stay open', async () => {
   const directory = await temporaryDirectory('dead-panes');
   const credentialFile = join(directory, 'coordinator.token');
   await writeFile(credentialFile, 'coordinator-token-'.padEnd(40, 'x'), { mode: 0o600 });

@@ -29,7 +29,7 @@ async function namesMainworks(page: Page) {
   expect(await page.title()).not.toContain('Graphyard');
 }
 
-test('e2e:product-name-mainworks — sign-in, home and an invite link say Mainworks, never Graphyard', async ({ page }) => {
+test('e2e:product-name-mainworks — sign-in, home and an invite link say Mainworks, never Mainworks', async ({ page }) => {
   test.setTimeout(90_000);
   await serve(page);
   await page.goto('/?sign-in#work');

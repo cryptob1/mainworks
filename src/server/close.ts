@@ -19,7 +19,7 @@ import { setting } from '../setting.js';
 type Db = pg.PoolClient;
 
 /**
- * Close a work item that will never be delivered (`graphyard master close`): a duplicate, work a
+ * Close a work item that will never be delivered (`mainworks master close`): a duplicate, work a
  * delivered change already superseded, or work nobody wants any more. One transaction under the
  * coordination lock moves the item to the terminal stage with a `closure` record, cancels every
  * open review and producer request, withdraws an open human-only request so the Needs-you page

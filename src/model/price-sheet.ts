@@ -1,4 +1,4 @@
-// Concern: the prices Graphyard seeds its price sheet with (GY-3289). The registry's models are the
+// Concern: the prices Mainworks seeds its price sheet with (GY-3289). The registry's models are the
 // sheet; `master registry model seed` writes these onto it, and the master checks them monthly
 // against the providers' public price pages with `master registry model set`.
 // US dollars per million tokens: [id, provider, input, output, cache read, cache write (null: none charged), as of].

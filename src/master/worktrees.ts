@@ -86,7 +86,7 @@ export function worktreeRootAttention(health: WorktreeRootHealth): AttentionItem
 /**
  * Allocate one session's directory under the managed worktree root. The root is verified on every
  * launch, not only at setup — a volume fills, and a configuration is edited — and the allocated
- * directory is held to the same rule as every other path Graphyard owns: outside every worktree.
+ * directory is held to the same rule as every other path Mainworks owns: outside every worktree.
  */
 export async function allocateManagedCheckout(root: string, config: MasterConfig, kind: CheckoutKind, key: string, sha: string, id: string, probe?: FilesystemProbe): Promise<SessionCheckout> {
   const base = worktreeRoot(root, config);

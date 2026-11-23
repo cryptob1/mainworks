@@ -8,8 +8,8 @@ import { deployRecordPath, readDeployRecord, watchMain, type DeployWatchPorts } 
 import { defaultChildRun } from '../src/child-runner.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-2982: every install follows Graphyard's own main, whatever base branch the managed repository uses,
-// and graphyard upgrade without --to moves to that main tip; the stable channel is gone.
+// GY-2982: every install follows Mainworks's own main, whatever base branch the managed repository uses,
+// and mainworks upgrade without --to moves to that main tip; the stable channel is gone.
 
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
@@ -27,19 +27,19 @@ async function origin(base: string, name: string, branch: string) {
   return { bare, pusher, commit };
 }
 
-test('unit:deploy-watch-follows-graphyard-main — with a managed repository on trunk, the deploy watch fetches the Graphyard checkout\'s origin/main and deploys its new tip', async () => {
-  const base = await temporaryDirectory('graphyard-main-follow');
-  const graphyard = await origin(base, 'graphyard', 'main');
-  const a = await graphyard.commit('A');
+test('unit:deploy-watch-follows-mainworks-main — with a managed repository on trunk, the deploy watch fetches the Mainworks checkout\'s origin/main and deploys its new tip', async () => {
+  const base = await temporaryDirectory('mainworks-main-follow');
+  const mainworks = await origin(base, 'graphyard', 'main');
+  const a = await mainworks.commit('A');
   const checkout = join(base, 'cli');
-  git(base, 'clone', '-q', graphyard.bare, checkout);
+  git(base, 'clone', '-q', mainworks.bare, checkout);
   git(checkout, 'checkout', '-q', '--detach', a);
-  // The managed repository's base branch is trunk, a branch Graphyard's origin does not have.
+  // The managed repository's base branch is trunk, a branch Mainworks's origin does not have.
   const managed = await origin(base, 'managed', 'trunk');
   await managed.commit('app');
   const repoRoot = join(base, 'managed');
   git(base, 'clone', '-q', '-b', 'trunk', managed.bare, repoRoot);
-  const b = await graphyard.commit('B');
+  const b = await mainworks.commit('B');
 
   const deployed: string[] = [];
   const ports: DeployWatchPorts = {
@@ -49,22 +49,22 @@ test('unit:deploy-watch-follows-graphyard-main — with a managed repository on 
   };
   const file = deployRecordPath(repoRoot);
   await watchMain(file, ports, { intervalMs: 1000, once: true, log: () => {} });
-  assert.equal(git(checkout, 'rev-parse', 'refs/remotes/origin/main'), b, 'the fetch read Graphyard\'s origin/main');
-  assert.deepEqual(deployed, [b], 'the new Graphyard main tip was deployed');
+  assert.equal(git(checkout, 'rev-parse', 'refs/remotes/origin/main'), b, 'the fetch read Mainworks\'s origin/main');
+  assert.deepEqual(deployed, [b], 'the new Mainworks main tip was deployed');
   assert.equal(readDeployRecord(file)?.tip, b);
   assert.equal(git(checkout, 'rev-parse', 'HEAD'), b);
 });
 
 test('unit:upgrade-defaults-to-main — upgrade --plan with no --to targets the fetched origin/main tip, not a stable tag; --to VERSION still resolves the dated tag; no stable channel remains', async () => {
   const base = await temporaryDirectory('upgrade-defaults-main');
-  const graphyard = await origin(base, 'graphyard', 'main');
+  const mainworks = await origin(base, 'graphyard', 'main');
   const release = (generations: number) => `export const schemaGenerations: readonly (string | null)[] = [\n  ${Array(generations + 1).fill('null').join(', ')},\n];\n`;
-  const dated = await graphyard.commit('dated', { 'src/release.ts': release(4) });
-  git(graphyard.pusher, 'tag', '2026.10.18'); git(graphyard.pusher, 'tag', 'stable');
-  git(graphyard.pusher, 'push', '-q', 'origin', '--tags');
-  const tip = await graphyard.commit('tip', { 'src/release.ts': release(5) });
+  const dated = await mainworks.commit('dated', { 'src/release.ts': release(4) });
+  git(mainworks.pusher, 'tag', '2026.10.18'); git(mainworks.pusher, 'tag', 'stable');
+  git(mainworks.pusher, 'push', '-q', 'origin', '--tags');
+  const tip = await mainworks.commit('tip', { 'src/release.ts': release(5) });
   const cli = join(base, 'cli');
-  git(base, 'clone', '-q', graphyard.bare, cli);
+  git(base, 'clone', '-q', mainworks.bare, cli);
   git(cli, 'checkout', '-q', '--detach', dated);
 
   const target = resolveTarget(cli);

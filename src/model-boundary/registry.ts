@@ -20,7 +20,7 @@ const hostName = z.string().trim().min(1).max(200).refine(value => !/[\u0000-\u0
 const text = (max: number) => z.string().trim().min(1).max(max).refine(value => !/[\u0000-\u001f\u007f]/.test(value), 'Control characters are not allowed');
 
 const launchEnvironment = z.record(
-  z.string().regex(/^[A-Z_][A-Z0-9_]*$/).refine(name => !/^(GRAPHYARD|MAINWORKS)_/.test(name), 'GRAPHYARD_ variables are owned by the launcher').refine(name => !secretName.test(name), 'A launch contract never carries a secret; the credential lives in the runtime login the account references'),
+  z.string().regex(/^[A-Z_][A-Z0-9_]*$/).refine(name => !/^(GRAPHYARD_|MAINWORKS_)/.test(name), 'GRAPHYARD_ variables are owned by the launcher').refine(name => !secretName.test(name), 'A launch contract never carries a secret; the credential lives in the runtime login the account references'),
   z.string().min(1).refine(value => !/[\u0000-\u001f\u007f]/.test(value), 'Environment values cannot contain control characters').refine(notSecret, 'That value looks like a credential; the registry stores references, never secrets'),
 ).default({}).superRefine((values, context) => {
   // GY-3276: a value past the limit is a host problem to fix (a PATH that long), so the refusal
@@ -35,7 +35,7 @@ const launchEnvironment = z.record(
  * `homeVariable` the variable that points the CLI at one account's login home, `modelFlag` the
  * argument that selects the account's model, `login` the command an operator runs to log an
  * account in (`{home}` stands for the account's home), and `loginFile` a path inside the home
- * whose presence means the account is logged in, for runtimes Graphyard has no richer probe for.
+ * whose presence means the account is logged in, for runtimes Mainworks has no richer probe for.
  */
 export const launchContractSchema = z.object({
   kind: entryName,
@@ -44,7 +44,7 @@ export const launchContractSchema = z.object({
   headlessArgs: z.array(z.string().max(1000).refine(notSecret, 'Arguments must not contain credentials')).max(30)
     .refine(args => args.filter(arg => arg === '{request}').length === 1, 'headlessArgs must contain exactly one {request} argument').optional(),
   environment: launchEnvironment,
-  homeVariable: z.string().regex(/^[A-Z_][A-Z0-9_]*$/).refine(name => !/^(GRAPHYARD|MAINWORKS)_/.test(name), 'GRAPHYARD_ variables are owned by the launcher').nullable().default(null),
+  homeVariable: z.string().regex(/^[A-Z_][A-Z0-9_]*$/).refine(name => !/^(GRAPHYARD_|MAINWORKS_)/.test(name), 'GRAPHYARD_ variables are owned by the launcher').nullable().default(null),
   modelFlag: z.string().regex(/^--?[a-zA-Z][a-zA-Z0-9-]*$/).nullable().default(null),
   login: z.string().trim().min(1).max(500).refine(notSecret, 'A login command names how to log in, never the credential').nullable().default(null),
   loginFile: z.string().trim().min(1).max(200).refine(value => !isAbsolute(value) && !value.split('/').includes('..'), 'loginFile is a path inside the account home').nullable().default(null),
@@ -83,7 +83,7 @@ export const quotaObservationSchema = z.object({
   reason: text(500).nullable().default(null),
   /**
    * The provider login behind the account (GY-1573): its runtime kind and a digest of the provider's own
-   * account and organization ids, read from the login home. Matching identities are diagnostic only; each login is checked separately; null when the login names none Graphyard can read, absent when a
+   * account and organization ids, read from the login home. Matching identities are diagnostic only; each login is checked separately; null when the login names none Mainworks can read, absent when a
    * probe could not read the login file just now and the identity last read stands.
    */
   identity: z.string().regex(/^[a-z][a-z0-9-]{0,39}:[0-9a-f]{16,64}$/, 'A provider identity is a runtime kind and a hex digest').nullable().optional(),
@@ -174,7 +174,7 @@ export const selectionRequestSchema = z.object({
   /** What the executor just observed about the accounts that live on its host. */
   observations: z.array(z.object({ account: entryName, quota: quotaObservationSchema, smoke: smokeObservationSchema.optional() }).strict()).max(200).default([]),
   /**
-   * GY-3333: the live sessions other Graphyard installs on this host hold on accounts that live
+   * GY-3333: the live sessions other Mainworks installs on this host hold on accounts that live
    * there, read from the host-level records beside each login home. Every install counts them
    * toward the account's own session limit, so one login home serves at most its `maxSessions`
    * sessions across every install on the host.

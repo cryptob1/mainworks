@@ -1,6 +1,6 @@
-// `graphyard review post` (GY-1492): the reviewer session's one way to post its verdict. The head
+// `mainworks review post` (GY-1492): the reviewer session's one way to post its verdict. The head
 // guard is checked here against the launch's own binding before exactly one verdict is posted. The
-// command needs no Graphyard credential: the launch binds a one-time verdict token (GY-1525), and
+// command needs no Mainworks credential: the launch binds a one-time verdict token (GY-1525), and
 // the command sends the verdict to `POST /api/work/:id/review-verdict` as that token; the server
 // records it on the item's observation (server/review-verdict.ts).
 import { randomUUID } from 'node:crypto';
@@ -50,7 +50,7 @@ export async function writeReviewBinding(directory: string, binding: ReviewPostB
 export async function readReviewBinding(directory: string): Promise<ReviewPostBinding> {
   let text: string;
   try { text = await readFile(join(directory, reviewBindingFile), 'utf8'); }
-  catch { throw new ReviewPostRefusal(`GH_CONFIG_DIR (${directory}) holds no ${reviewBindingFile}: review post runs only in a reviewer session Graphyard launched`); }
+  catch { throw new ReviewPostRefusal(`GH_CONFIG_DIR (${directory}) holds no ${reviewBindingFile}: review post runs only in a reviewer session Mainworks launched`); }
   try { return reviewBindingSchema.parse(JSON.parse(text)); }
   catch { throw new ReviewPostRefusal(`${reviewBindingFile} in GH_CONFIG_DIR is not a valid review binding`); }
 }
@@ -143,7 +143,7 @@ export async function postReview(input: { event: string | undefined; body: strin
   let binding: ReviewPostBinding | null = null;
   const refuse = (reason: string): never => { throw new ReviewPostRefusal(`Review not posted: ${reason}.\nPost it like this:\n${reviewPostExample(input.cliPath, event ?? 'APPROVE')}`); };
   const directory = input.environment.GH_CONFIG_DIR;
-  if (!directory) refuse('GH_CONFIG_DIR is unset; review post runs only in a reviewer session Graphyard launched');
+  if (!directory) refuse('GH_CONFIG_DIR is unset; review post runs only in a reviewer session Mainworks launched');
   try { binding = await readReviewBinding(directory!); } catch (error) { refuse((error as Error).message); }
   if (!event) refuse(`--event must be one of ${reviewEvents.join(', ')}`);
   const bound = binding!;
@@ -180,6 +180,6 @@ export async function postReview(input: { event: string | undefined; body: strin
     if (!response.ok) refuse(`the control plane refused the verdict (${response.status}): ${answer?.error ?? 'no reason given'}`);
     return { reviewId: answer.reviewId ?? null, event: event!, key: bound.key, pr: bound.pr, sha: bound.head!, recorded: 'control-plane' as const };
   }
-  // A pull-request-era binding (no mode) posts nothing: Graphyard reads and writes no remote review.
-  return refuse('this binding is a pull-request-era GitHub binding, and Graphyard no longer posts GitHub reviews; the loop launches the review again against the control plane');
+  // A pull-request-era binding (no mode) posts nothing: Mainworks reads and writes no remote review.
+  return refuse('this binding is a pull-request-era GitHub binding, and Mainworks no longer posts GitHub reviews; the loop launches the review again against the control plane');
 }

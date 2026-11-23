@@ -9,7 +9,7 @@ import { promisify } from 'node:util';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { setting } from '../src/setting.js';
 
-// GY-3573: Graphyard is now Mainworks. Every setting reads MAINWORKS_X before GRAPHYARD_X through one helper.
+// GY-3573: every setting reads MAINWORKS_X before GRAPHYARD_X through one helper.
 
 const exec = promisify(execFile);
 const repository = fileURLToPath(new URL('..', import.meta.url));
@@ -30,7 +30,7 @@ test('e2e:mainworks-settings-fallback — only MAINWORKS_URL and only GRAPHYARD_
   await listen(server);
   const url = `http://127.0.0.1:${(server.address() as any).port}`;
   const base = await temporaryDirectory('mainworks-settings');
-  const clean = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^(GRAPHYARD|MAINWORKS)_/.test(name)));
+  const clean = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^(GRAPHYARD_|MAINWORKS_)/.test(name)));
   const outside = join(base, 'outside'), home = join(base, 'home');
   await mkdir(outside); await mkdir(home);
   const status = (cwd: string, env: Record<string, string>) =>

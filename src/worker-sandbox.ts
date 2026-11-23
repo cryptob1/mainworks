@@ -5,7 +5,7 @@ import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 /**
  * What a worker session must be able to write, and how each runtime's sandbox is made to allow it.
  *
- * A worker edits its worktree, commits, runs `graphyard sync` (a `git fetch` writes FETCH_HEAD, a
+ * A worker edits its worktree, commits, runs `mainworks sync` (a `git fetch` writes FETCH_HEAD, a
  * merge writes the index and MERGE_HEAD) and pushes. A linked worktree keeps that state outside
  * itself: its own administrative directory is `<common>/.git/worktrees/<name>`, and objects and
  * refs live in the common Git directory. Codex's workspace-write sandbox protects every `.git` it
@@ -88,7 +88,7 @@ const flagValue = (args: string[], ...flags: string[]) => {
   return value as string | null;
 };
 const flagValues = (args: string[], ...flags: string[]) => args.flatMap((arg, index) => flags.includes(arg) && index + 1 < args.length ? [args[index + 1]] : flags.flatMap(flag => arg.startsWith(`${flag}=`) ? [arg.slice(flag.length + 1)] : []));
-const probeProfile = 'graphyard-launch-probe';
+const probeProfile = 'mainworks-launch-probe';
 
 export const runtimeSandboxes: Record<string, RuntimeSandbox> = {
   // Pi has no filesystem sandbox of its own (GY-1746): it runs under the coordinator's read-only-mount

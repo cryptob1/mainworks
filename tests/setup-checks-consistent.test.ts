@@ -78,11 +78,11 @@ test('unit:setup-checks-consistent — a reachable plane with no credential is r
     assert.ok(!/GitHub App|reviewer App|GRAPHYARD_RELEASE_TOKEN|reviewpolicy|github-setup/.test(`${check.step} ${check.detail}`), check.detail);
   }
   const readiness = (first: string) => ({ next: 'Set GRAPHYARD_URL and GRAPHYARD_TOKEN …', items: [{ id: 'repository', status: first === 'repository' ? 'missing' : 'ready' }, { id: 'server', status: 'missing' }] });
-  assert.match(setupNext(readiness('server'), checks), /^FAIL control-plane: reachable, credential missing: .*\(fix: run graphyard up/);
+  assert.match(setupNext(readiness('server'), checks), /^FAIL control-plane: reachable, credential missing: .*\(fix: run mainworks up/);
   assert.equal(setupNext(readiness('repository'), checks), 'Set GRAPHYARD_URL and GRAPHYARD_TOKEN …', 'an earlier step keeps its own recovery');
 });
 
-test('unit:setup-checks-consistent — graphyard doctor against a live plane without a credential says reachable and names step 3', async () => {
+test('unit:setup-checks-consistent — mainworks doctor against a live plane without a credential says reachable and names step 3', async () => {
   const root = await repository({ 'package.json': JSON.stringify({ scripts: { test: 'node --test' } }) });
   const server = createServer((request, response) => {
     response.writeHead(request.url === '/healthz' ? 200 : 401, { 'Content-Type': 'application/json' });

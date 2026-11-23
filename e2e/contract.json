@@ -84,7 +84,7 @@
       "criteria": [
         "A change needing the static site gets a preview that serves the site with the change visible on it",
         "A change needing the Compose-backed application gets a preview that serves the running application against its own database",
-        "Both previews are served by Graphyard locally — the item names the local runner — with no Railway preview environment and no GitHub Actions workflow involved"
+        "Both previews are served by Mainworks locally — the item names the local runner — with no Railway preview environment and no GitHub Actions workflow involved"
       ],
       "cases": [
         "previews-for-declared-apps"

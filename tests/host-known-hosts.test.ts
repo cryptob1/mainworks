@@ -99,7 +99,7 @@ test('unit:host-add-records-key-in-machine-folder — host add, host list probes
 
     const verb = args.at(-1) ?? '';
     if (verb === 'probe') return probeAnswer;
-    if (verb === 'echo graphyard-plain-shell') throw Object.assign(new Error('unknown verb'), { status: 1, stderr: 'unknown verb\n' });
+    if (verb === 'echo mainworks-plain-shell') throw Object.assign(new Error('unknown verb'), { status: 1, stderr: 'unknown verb\n' });
     if (verb === 'true') throw Object.assign(new Error('Permission denied'), { status: 255, stderr: 'Permission denied\n' });
     return '';
   };

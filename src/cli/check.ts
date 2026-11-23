@@ -14,7 +14,7 @@ async function requestWorkerCheck(context: Pick<CliContext, 'api' | 'repositoryR
 const branchItem = (root: string) => {
   const branch = execFileSync('git', ['branch', '--show-current'], { cwd: root, encoding: 'utf8' }).trim();
   const key = /^graphyard\/([a-z]+-\d+)-\d+$/i.exec(branch)?.[1];
-  if (!key) throw new Error(`Name the item: graphyard check NAME GY-N (branch ${branch || '(detached)'} names none)`);
+  if (!key) throw new Error(`Name the item: mainworks check NAME GY-N (branch ${branch || '(detached)'} names none)`);
   return key.toUpperCase();
 };
 
@@ -27,7 +27,7 @@ export const checkCommand: CliCommand = {
     '                                the item of the assigned graphyard/<key>-<epoch> branch',
   ],
   run: async context => {
-    if (!context.id) throw new Error('Usage: graphyard check NAME [GY-N]');
+    if (!context.id) throw new Error('Usage: mainworks check NAME [GY-N]');
     const work = await resolveWork(context.api, context.args[0] ?? branchItem(context.repositoryRoot()));
     const result = await requestWorkerCheck(context, work, context.id);
     console.log(result.output.trimEnd());

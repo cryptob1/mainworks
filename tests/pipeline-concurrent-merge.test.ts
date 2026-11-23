@@ -57,7 +57,7 @@ test('e2e:pipeline-concurrent-merge — a build-passed head whose review gate ha
     const post = async (token: string, path: string, body: unknown, key: string) => {
       const response = await fetch(`${world.url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(body) });
       const text = await response.text();
-      if (!response.ok) throw new Error(`Graphyard refused ${path} (${response.status}): ${text}`);
+      if (!response.ok) throw new Error(`Mainworks refused ${path} (${response.status}): ${text}`);
       return JSON.parse(text);
     };
     // A sensitive delta (the generic policy's Dockerfile rule): its review gate holds until an exact approval of this head.

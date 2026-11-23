@@ -16,7 +16,7 @@ import { appArmorEnabled, trialAppArmorProfile } from './trial-apparmor.js';
 import { setting } from '../setting.js';
 import { stateDirectory } from '../install/layout.js';
 
-export const trialContainerImage = 'graphyard-trial:local';
+export const trialContainerImage = 'mainworks-trial:local', legacyTrialContainerImage = 'graphyard-trial:local';
 /** GY-3214: where an install names the published trial image it pulled for the release tree at `root`. */
 export const pulledTrialImageFile = (root: string) => join(stateDirectory(root), 'trial-image');
 /** The image trials run: GRAPHYARD_TRIAL_IMAGE, else the published image the install pulled for this release, else the one built on this host. */
@@ -24,7 +24,7 @@ export function trialImage(root = fileURLToPath(new URL('../..', import.meta.url
   if (setting('TRIAL_IMAGE')) return setting('TRIAL_IMAGE')!;
   try { return readFileSync(pulledTrialImageFile(root), 'utf8').trim() || trialContainerImage; } catch { return trialContainerImage; }
 }
-export const trialHarness = '/graphyard-harness';
+export const trialHarness = '/mainworks-harness';
 const sourceRoot = fileURLToPath(new URL('../../', import.meta.url));
 /** The module tree the running code resolves its imports from (tsx among them): what a detached child of this code runs with. */
 export const harnessModules = dirname(dirname(fileURLToPath(import.meta.resolve('tsx/package.json'))));
@@ -34,9 +34,9 @@ export const harnessModules = dirname(dirname(fileURLToPath(import.meta.resolve(
 export const trialLauncher = String.raw`
 import fcntl, glob, json, math, os, select, signal, subprocess, sys, time, uuid
 spec = json.loads(sys.argv[1])
-container_name = 'graphyard-trial-' + uuid.uuid4().hex
+container_name = 'mainworks-trial-' + uuid.uuid4().hex
 if os.getuid() == 0:
-    sys.exit('Graphyard trials require a nonroot launcher')
+    sys.exit('Mainworks trials require a nonroot launcher')
 ${trialAdmission}
 # The slot's fd passes to the guardian, so the slot is held until the container is removed.
 slot = admit() if load else None
@@ -106,7 +106,7 @@ finally:
         pass
 `;
 
-/** The Docker launcher's words: commands run after them in a fresh `graphyard-trial-` container, stopped at `deadline` (epoch ms) when one is given, started once `load` admits it (GY-3189), under the trial AppArmor profile on an AppArmor host (GY-3339). */
+/** The Docker launcher's words: commands run after them in a fresh `mainworks-trial-` container, stopped at `deadline` (epoch ms) when one is given, started once `load` admits it (GY-3189), under the trial AppArmor profile on an AppArmor host (GY-3339). */
 export const trialContainerLaunch = (spec: { image: string; mounts: [string, string, boolean][]; network: string; deadline?: number; load?: TrialLoad }) =>
   ['/usr/bin/python3', '-I', '-S', '-c', trialLauncher, JSON.stringify({ ...spec, apparmor: appArmorEnabled() ? trialAppArmorProfile : null })];
 

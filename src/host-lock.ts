@@ -23,7 +23,7 @@ export const imageLock = 'graphyard-local-images';
 
 /** GY-3710: runs `work` holding the host-wide lock `name` (under /tmp, whatever an install's TMPDIR), waiting while another process or install holds it. */
 export async function withHostLock<T>(name: string, work: () => Promise<T>): Promise<T> {
-  const lock = join('/tmp', 'graphyard-locks', `${name.replace(/[^\w.-]/g, '_')}.lock`);
+  const lock = join('/tmp', 'mainworks-locks', `${name.replace(/[^\w.-]/g, '_')}.lock`);
   while (!await takeLock(lock)) await delay(1000);
   try { return await work(); } finally { await rm(lock, { force: true }); }
 }

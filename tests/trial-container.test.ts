@@ -16,7 +16,7 @@ test('integration:worker-host-filesystem-isolation integration:worker-control-so
   const allocation = join(base, 'allocation'), home = join(base, 'home'), other = join(base, 'project');
   for (const path of [allocation, home, other]) { await mkdir(path); await writeFile(join(path, 'sentinel'), 'protected'); }
   const socket = join(home, 'executor.sock');
-  const abstract = '\0graphyard-outer-trial-' + process.pid;
+  const abstract = '\0mainworks-outer-trial-' + process.pid;
   let reached = 0;
   const servers = [createServer(connection => { reached++; connection.end(); }), createServer(connection => { reached++; connection.end(); })];
   await Promise.all(servers.map((server, index) => new Promise<void>(resolve => server.listen(index ? abstract : socket, resolve))));
@@ -72,10 +72,10 @@ test('integration:worker-host-filesystem-isolation — a real nested trial prese
   await writeFile(join(modules, 'fixture.cjs'), 'module.exports = "installed dependency";');
   await symlink(modules, linked);
   await symlink(modules, externalAlias);
-  const output = await defaultChildRun('node', ['--import', '/graphyard-harness/node_modules/tsx/dist/loader.mjs', '--input-type=module', '-e', `
+  const output = await defaultChildRun('node', ['--import', '/mainworks-harness/node_modules/tsx/dist/loader.mjs', '--input-type=module', '-e', `
     import assert from 'node:assert/strict';
     import { spawnSync } from 'node:child_process';
-    import { trialContainerWords } from '/graphyard-harness/src/merge-writer/trial-container.ts';
+    import { trialContainerWords } from '/mainworks-harness/src/merge-writer/trial-container.ts';
     const wrapper = trialContainerWords(${JSON.stringify([allocation, checkout])}, ${JSON.stringify([linked, externalAlias])});
     assert.equal(wrapper[0], 'bwrap', 'exercise the real nested private-root backend');
     // Reproduce the old composition first, retaining the exact child diagnostic.
@@ -92,8 +92,8 @@ test('integration:worker-host-filesystem-isolation — a real nested trial prese
         assert.equal(require(path + '/fixture.cjs'), 'installed dependency');
         assert.throws(() => fs.writeFileSync(path + '/forbidden', 'bad'), { code: 'EROFS' });
       }
-      assert.ok(fs.existsSync('/graphyard-harness/node_modules/tsx/package.json'));
-      assert.throws(() => fs.writeFileSync('/graphyard-harness/src/forbidden', 'bad'), { code: 'EROFS' });
+      assert.ok(fs.existsSync('/mainworks-harness/node_modules/tsx/package.json'));
+      assert.throws(() => fs.writeFileSync('/mainworks-harness/src/forbidden', 'bad'), { code: 'EROFS' });
       assert.throws(() => fs.writeFileSync('/outside', 'bad'), { code: 'EROFS' });
       fs.writeFileSync('edit', 'allowed');
       fs.writeFileSync(${JSON.stringify(join(allocation, 'profile'))}, 'private');
@@ -190,7 +190,7 @@ test('integration:worker-home-deletion-regression — closing an E2E session rem
 test('integration:worker-home-deletion-regression — real Chromium launches and renders inside the private-root trial image', { timeout: 60_000 }, async () => {
   const allocation = await temporaryDirectory('browser-trial', process.cwd());
   const output = await defaultChildRun('node', ['--input-type=module', '-e', `
-    import { chromium } from '/graphyard-harness/node_modules/playwright/index.mjs';
+    import { chromium } from '/mainworks-harness/node_modules/playwright/index.mjs';
     import assert from 'node:assert/strict';
     const browser = await chromium.launch({ headless: true });
     try {

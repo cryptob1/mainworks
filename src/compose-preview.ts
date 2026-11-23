@@ -394,7 +394,7 @@ export async function removeComposeProject(project: string, options: { docker?: 
 const lines = (text: string) => text.split('\n').map(line => line.trim()).filter(Boolean);
 /** GY-3316: Docker's refusal of a new network once leaked networks have spent its address pools. */
 export const addressPoolsSpent = 'all predefined address pools have been fully subnetted';
-/** GY-3316: how many Graphyard preview networks the daemon holds; null when it cannot be read. */
+/** GY-3316: how many Mainworks preview networks the daemon holds; null when it cannot be read. */
 export async function previewNetworkCount(env: Record<string, string>, docker: Docker = defaultDocker): Promise<number | null> {
   try { return lines(await docker(['network', 'ls', '--format', '{{.Name}}', '--filter', `name=${composeProjectPrefix}`], { env, timeoutMs: 30_000 })).filter(name => name.startsWith(composeProjectPrefix)).length; }
   catch { return null; }
@@ -415,7 +415,7 @@ export async function composeLeftovers(project: string, options: { docker?: Dock
  * The restart recovery (GY-1903): every preview Compose project on the daemon whose owner process is
  * gone — or one this reader cannot judge and older than `tmpReclaimMinAgeMs` — removed with its
  * volumes and networks. A project whose owner still runs is left serving, and one naming no owner is
- * not known to be Graphyard's, so it is left alone (GY-3291). Answers the removed projects.
+ * not known to be Mainworks's, so it is left alone (GY-3291). Answers the removed projects.
  * GY-3679: it also removes the images previews built more than `composeImageKeepHours` ago that no container uses.
  */
 export async function sweepComposePreviews(options: { docker?: Docker; env?: Record<string, string>; procRoot?: string; now?: () => number } = {}): Promise<string[]> {

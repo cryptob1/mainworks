@@ -18,7 +18,7 @@ import { projectDelivery } from '../../model-boundary/project-applications.js';
 import { repositoryPolicy } from '../../model-boundary/repository-policy.js';
 import { productionEnvironmentFromEnv } from '../../production-environment.js';
 import { liveRelease, managedDeploy, readDeployHistory, repositoryToplevel, servingReport } from '../../deploy-watch.js';
-import { graphyardRepository } from '../../scenarios.js';
+import { mainworksRepository } from '../../scenarios.js';
 import { gitRunnerFor } from '../../merge-writer/local-observation.js';
 import { boardFromStatus } from '../../model/board.js';
 import { resolve } from 'node:path';
@@ -74,12 +74,12 @@ export const statusRoutes = defineRoutes('status', [
       const humanOnly = openHumanOnly(await humanOnlySubjects(services, visibleWork), observedAt.getTime());
       const loop = await reportedLoopMerger(loopRegistry(engine), (text, values) => engine.store.pool.query(text, values), observedAt);
       // The managed repository's own serving (GY-2964), for every install managing a repository other
-      // than Graphyard's own: what the deploy record naming it serves and how far the base branch the
+      // than Mainworks's own: what the deploy record naming it serves and how far the base branch the
       // shared checkout holds is ahead. This process's build and the production watch observe the
       // control plane's own code, never another repository's release, so its header reads from here;
-      // an install managing Graphyard itself keeps the production watch's release line.
+      // an install managing Mainworks itself keeps the production watch's release line.
       const runner = engine.gitRunner === undefined ? engine.gitRunner = gitRunnerFor(setting('REPOSITORY_ROOT') ?? process.cwd()) : engine.gitRunner;
-      const deploy = repository && repository.toLowerCase() !== graphyardRepository
+      const deploy = repository && repository.toLowerCase() !== mainworksRepository
         ? await managedDeploy(repository, engine.baseBranch, setting('REPOSITORY_ROOT'), runner)
         : null;
       // Master status's serving block over the API (GY-2976): what the deploy record naming this
@@ -133,7 +133,7 @@ export const statusRoutes = defineRoutes('status', [
         fleet: ['admin', 'coordinator', 'reader', 'slice-lead'].includes(actor.role) ? await services.agentRegistry.snapshot(executorHost(url, req)) : null,
         // Delivery defaults, applications and case bindings (GY-1901).
         project: projectDelivery(),
-        // The first-run facts the Setup page and `graphyard up` read beside the App and the fleet (GY-1419):
+        // The first-run facts the Setup page and `mainworks up` read beside the App and the fleet (GY-1419):
         // whether a master loop is live, and who reviews and merges as the live loop names it (GY-1501):
         // `supervised` drops the reviewer App and reviewing account from the Setup checklist.
         setup: { loop: !!loop?.live, supervision: loopRegistry(engine).live(observedAt)?.supervision ?? null,

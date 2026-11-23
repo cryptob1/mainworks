@@ -1,9 +1,9 @@
-// Concern: cursor action keys, and reconciling pending actions against Graphyard after a restart.
+// Concern: cursor action keys, and reconciling pending actions against Mainworks after a restart.
 import type { Work } from '../model.js';
 import { storeAction, type DaemonAction, type DaemonActionKind, type DaemonState } from './state.js';
 
 /**
- * A daemon killed mid-action leaves a `started` cursor entry. Graphyard, not the cursor, decides
+ * A daemon killed mid-action leaves a `started` cursor entry. Mainworks, not the cursor, decides
  * what actually happened: an assignment that landed is closed as done, one that did not is released
  * for a fresh attempt. Neither outcome repeats an action that already took effect.
  *
@@ -17,7 +17,7 @@ export function reconcilePendingActions(state: DaemonState, work: Work[], now: n
   for (const [key, action] of Object.entries(state.actions)) {
     if (action.state !== 'started') continue;
     // A base refresh is the control plane's own work, not an effect this loop invoked, so there is
-    // nothing interrupted to reconcile: the cycle resolves the same entry from Graphyard's record
+    // nothing interrupted to reconcile: the cycle resolves the same entry from Mainworks's record
     // of what the merge did, or leaves it open while the reconciliation job has not run yet.
     if (action.kind === 'refresh') continue;
     const item = work.find(candidate => candidate.key === action.work || candidate.id === action.work);
@@ -26,15 +26,15 @@ export function reconcilePendingActions(state: DaemonState, work: Work[], now: n
     if (action.kind === 'dispatch') {
       // A cursor written before attempt epochs were recorded can fall back only to a submission the
       // current attempt owns; one kept across rework says nothing about the attempt just dispatched.
-      const landed = owned ? 'Graphyard shows the assignment landed before the restart'
-        : action.epoch !== null && item && item.epoch > action.epoch ? `Graphyard advanced the attempt past epoch ${action.epoch}, so the assignment landed before the restart`
+      const landed = owned ? 'Mainworks shows the assignment landed before the restart'
+        : action.epoch !== null && item && item.epoch > action.epoch ? `Mainworks advanced the attempt past epoch ${action.epoch}, so the assignment landed before the restart`
           : action.epoch === null && item?.submission && !item.reworkRequested ? 'the current attempt is already submitted, so the assignment landed before the restart'
             : null;
       next.state = landed ? 'done' : 'failed';
       next.detail = landed ? `Resumed: ${landed}` : 'Resumed: no assignment landed, so the item stays eligible for a fresh dispatch';
     } else if (action.kind === 'merge') {
       next.state = item?.observation?.merged || item?.stage === 'done' ? 'done' : 'failed';
-      next.detail = next.state === 'done' ? 'Resumed: Graphyard observed the merge' : 'Resumed: no merge was observed; the guarded merge may be attempted again';
+      next.detail = next.state === 'done' ? 'Resumed: Mainworks observed the merge' : 'Resumed: no merge was observed; the guarded merge may be attempted again';
       // The guarded merge only asks GitHub to merge one exact head, so asking again is safe: a
       // restart that interrupted it is a retry, never a merge fault (GY-1087: GY-999 counted at a
       // restart and merged on the retry twelve minutes later).
@@ -45,7 +45,7 @@ export function reconcilePendingActions(state: DaemonState, work: Work[], now: n
       // reviewer or producer session already ended is no longer pending, so nothing repeats.
       const ended = action.epoch !== null && !!item && (!item.lease || item.lease.epoch !== action.epoch);
       next.state = ended ? 'done' : 'failed';
-      next.detail = ended ? `Resumed: Graphyard shows attempt ${action.epoch} ended, so the item is re-queued` : 'Resumed: the failover was interrupted; the session is read again on this cycle';
+      next.detail = ended ? `Resumed: Mainworks shows attempt ${action.epoch} ended, so the item is re-queued` : 'Resumed: the failover was interrupted; the session is read again on this cycle';
     } else if (action.kind === 'judgement') {
       // A rework the restart interrupted is decided again from the snapshot: one that applied left the item reworked.
       next.state = 'failed';

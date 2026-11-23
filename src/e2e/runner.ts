@@ -23,7 +23,7 @@ import { importedEvidenceArtifacts, type EvidenceArtifact } from '../model/evide
  *
  * A case's `command` and `agent` steps (GY-1536, src/e2e/steps.ts) run under their own timeout in
  * the checkout `root` names, with `TARGET_URL` and the case's declared secrets — read from the
- * install's `e2e-secrets.<target>.env` before the case runs — and nothing else Graphyard holds.
+ * install's `e2e-secrets.<target>.env` before the case runs — and nothing else Mainworks holds.
  */
 const defaultStepTimeoutMs = 30_000;
 
@@ -477,7 +477,7 @@ const pendingNote = '; recorded pending: its outcome has no delivered item yet, 
 /**
  * Append each attempt of each case as a run of the scenario revision it is registered as, so a
  * flaky case's failed attempt stays beside its pass. A case whose file no registered revision
- * matches is not recorded — `graphyard e2e sync` registers it — and the report says so; an unrun
+ * matches is not recorded — `mainworks e2e sync` registers it — and the report says so; an unrun
  * case has nothing to record. Recording never changes a case's outcome.
  */
 export async function recordRuns(api: Api, cases: readonly CaseFile[], report: E2eReport) {
@@ -488,7 +488,7 @@ export async function recordRuns(api: Api, cases: readonly CaseFile[], report: E
     if (outcome.verdict === 'unrun') continue;
     const entry = cases.find(candidate => candidate.definition.id === outcome.id)!;
     const revision = registeredRevision(registry, scenarioDefinition(entry));
-    if (revision === null) { outcome.recorded = { error: `no registered revision matches ${entry.file}; run graphyard e2e sync` }; continue; }
+    if (revision === null) { outcome.recorded = { error: `no registered revision matches ${entry.file}; run mainworks e2e sync` }; continue; }
     // A report written before attempts were kept carries only the last attempt.
     const attempts = outcome.attemptResults?.length ? outcome.attemptResults : [{ attempt: outcome.attempts, outcome: outcome.outcome ?? 'fail', durationMs: outcome.durationMs, executed: outcome.executed, failingStep: outcome.failingStep }];
     try {

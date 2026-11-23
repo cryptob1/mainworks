@@ -11,7 +11,7 @@ const durations = at >= 0 ? args.splice(at, 2)[1] : undefined;
 const timeoutMs = Number(args.find(arg => arg.startsWith('--file-timeout='))?.split('=')[1] ?? Infinity);
 const hwmon = args.find(arg => arg.startsWith('--hold-when-hot='))?.split('=')[1];
 const gate = hwmon ? (await import('./heat-hold.ts')).heatGate(() => import('../../src/merge-writer/trial-load.ts').then(load => load.cpuCelsius(hwmon)), {
-  onHold: celsius => console.log(`graphyard: test files wait: the CPU reads ${celsius}C, at the heat limit; they resume when it drops`),
+  onHold: celsius => console.log(`mainworks: test files wait: the CPU reads ${celsius}C, at the heat limit; they resume when it drops`),
 }) : async () => {};
 const breadth = Number(args.find(arg => arg.startsWith('--test-concurrency='))?.split('=')[1] ?? availableParallelism());
 // The caller's reporter flags pass through (the merge trial counts executed proofs from its TAP);

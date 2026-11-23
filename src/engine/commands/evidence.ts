@@ -18,7 +18,7 @@ export async function run(c: Ctx) {
   const attest = actor.role === 'operator-agent';
   demand(attest || actor.role === 'producer' || actor.role === 'worker' || actor.role === 'admin', 'Evidence submission is not permitted', 403);
   demand(!(actor.role === 'worker' && attestedProof(data.proof)),
-    `A manual: proof is the master's attestation, never a worker's record: graphyard master attest ${work.key} ${data.proof} REASON`, 403);
+    `A manual: proof is the master's attestation, never a worker's record: mainworks master attest ${work.key} ${data.proof} REASON`, 403);
   // Workers may still record their own untrusted assertions; every identity
   // that could mint trust must be independent of the implementation and the lead.
   const dependent = actor.role === 'worker' ? null : producerIndependenceRefusal(actor, work, engine.principals);
@@ -28,12 +28,12 @@ export async function run(c: Ctx) {
   const trusted = attest || authorizedForProof(actor, data.proof);
   if (data.proof === deploySmokeProof) {
     // Post-deployment proof is a trust boundary with no untrusted tier: it is accepted only
-    // from a producer granted the proof, only once Graphyard has observed the deployment,
+    // from a producer granted the proof, only once Mainworks has observed the deployment,
     // and only bound to that observed serving commit and this item's merge commit.
     demand(trusted, `${deploySmokeProof} evidence is accepted only from a producer authorized for that proof`, 403);
     demand(deploySmokeRequired(work.policy), `Work policy does not require ${deploySmokeProof}`);
     demand(work.stage === 'done' && !!work.delivery, `${deploySmokeProof} evidence is accepted only after delivery`);
-    demand(!!work.delivery!.deployment, 'Graphyard has not observed a deployment covering this delivery');
+    demand(!!work.delivery!.deployment, 'Mainworks has not observed a deployment covering this delivery');
     demand(data.sha === work.delivery!.deployment!.sha && data.baseSha === work.delivery!.mergeSha,
       `${deploySmokeProof} evidence must name the observed deployed commit ${work.delivery!.deployment!.sha} as sha and merge commit ${work.delivery!.mergeSha} as baseSha`);
     demand(data.policyRevision === work.policyRevision, 'Policy revision does not match this delivery');

@@ -16,7 +16,7 @@ import { shardHosts, shardRepository, type ShardHostsFixture } from './helpers/s
 // gate waited behind it. Its shards go to ready hosts as a merge trial's do, with the same
 // local-only split, and it holds a slot only while one of its shards runs on this machine.
 
-const image = 'graphyard-trial:verification-remote';
+const image = 'mainworks-trial:verification-remote';
 const plain = Array.from({ length: 10 }, (_, index) => `tests/plain-${index}.test.ts`);
 const docker = Array.from({ length: 2 }, (_, index) => `tests/uses-docker-${index}.test.ts`);
 let hosts: ShardHostsFixture, slots: string, answers: string, go: string, files: string[] = [];
@@ -55,7 +55,7 @@ const run: ChildRun = async (command, args, options) => {
   return defaultChildRun(command, args, { ...options, env });
 };
 
-/** A worker's `graphyard check test` over `selected`, on this machine and both fake hosts; this machine reads busy, each host eight free cores. */
+/** A worker's `mainworks check test` over `selected`, on this machine and both fake hosts; this machine reads busy, each host eight free cores. */
 async function verification(label: string, selected: string[]) {
   files = selected;
   await rm(answers, { force: true });

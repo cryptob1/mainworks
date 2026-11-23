@@ -75,7 +75,7 @@ export async function keyringEndpointWarning(name: string, confinement: Coordina
     // The first launch inside each window that succeeds records the skip, so a missing warning leaves a trace (GY-1226).
     if (!skipped || waiting.noted) return null;
     waiting.noted = true;
-    const line = `graphyard: ${name}: keyring endpoint ${endpoint} not checked: the systemd user manager did not answer its last probe, so launches skip the check for ${Math.ceil((waiting.retryAt - backoff!.now()) / 1000)} s more (window ${Math.round(waiting.delayMs / 1000)} s); the first launch after that asks again and reports an unmigrated endpoint`;
+    const line = `mainworks: ${name}: keyring endpoint ${endpoint} not checked: the systemd user manager did not answer its last probe, so launches skip the check for ${Math.ceil((waiting.retryAt - backoff!.now()) / 1000)} s more (window ${Math.round(waiting.delayMs / 1000)} s); the first launch after that asks again and reports an unmigrated endpoint`;
     if (await started.catch(() => false)) skipped(line); else waiting.noted = false;
     return null;
   }
@@ -105,7 +105,7 @@ export async function keyringEndpointWarning(name: string, confinement: Coordina
       try { ok = await sessionStarted; } catch { ok = false; }
       if (ok && !reported) {
         reported = true;
-        return `graphyard: ${sessionName}: ${problem}`;
+        return `mainworks: ${sessionName}: ${problem}`;
       }
       return null;
     } finally {

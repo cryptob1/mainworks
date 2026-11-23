@@ -4,8 +4,8 @@ import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
 // GY-3262: the README is a 250-word landing page; the full prerequisite checks and fixes,
-// and the publishing account setup, moved into `graphyard guide setup` and
-// `graphyard guide publishing`, which the README names.
+// and the publishing account setup, moved into `mainworks guide setup` and
+// `mainworks guide publishing`, which the README names.
 const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
 const cli = new URL('../src/cli.ts', import.meta.url);
 const guide = (topic: string) => execFileSync(process.execPath, ['--import', 'tsx', cli.pathname, 'guide', topic], { encoding: 'utf8' });
@@ -35,8 +35,8 @@ test('unit:readme-guide-details — guide publishing prints the publishing accou
   const publishing = guide('publishing');
   for (const detail of [
     'vYYYY.M.D-<sha12>', 'GitHub Actions', '@cryptob1/graphyard', 'npm OIDC provenance',
-    'both GHCR images (`graphyard`, `graphyard-trial`)', 'GITHUB_TOKEN', 'the host holds no publish token',
-    'Publishing runs apart from merge and deploy', "npm's latest version", 'graphyard master status',
+    'both GHCR images (`mainworks`, `mainworks-trial`)', 'GITHUB_TOKEN', 'the host holds no publish token',
+    'Publishing runs apart from merge and deploy', "npm's latest version", 'mainworks master status',
     'placeholder `0.0.0`', 'npm publish --access public', 'Trusted Publisher', 'cryptob1/graphyard',
     'workflow **publish.yml**', 'grant **cryptob1/graphyard** Actions write access',
   ]) assert.ok(publishing.includes(detail), `guide publishing carries ${detail}`);

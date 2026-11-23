@@ -56,8 +56,8 @@ export const schemaGenerationDigest = (code: SchemaCode = currentSchemaCode()) =
 
 /** The refusal of a release under a database a newer generation migrated: it names both generations and both releases. */
 const newerSchema = (recorded: { version: number; release?: string | null }, code: SchemaCode = currentSchemaCode()) => new Error(
-  `Database schema generation ${recorded.version} (migrated by Graphyard ${recorded.release ?? 'unknown'}) is newer than this release supports (generation ${code.generation}, Graphyard ${code.release}); `
-  + `startup refuses instead of re-applying its older table definitions — upgrade to Graphyard ${recorded.release ?? 'the release that migrated it'} or newer, or restore a backup taken at generation ${code.generation} or earlier`);
+  `Database schema generation ${recorded.version} (migrated by Mainworks ${recorded.release ?? 'unknown'}) is newer than this release supports (generation ${code.generation}, Mainworks ${code.release}); `
+  + `startup refuses instead of re-applying its older table definitions — upgrade to Mainworks ${recorded.release ?? 'the release that migrated it'} or newer, or restore a backup taken at generation ${code.generation} or earlier`);
 
 /** What the recorded generation says about the migration that ran; `tables` null before per-table digests were recorded. */
 export interface RecordedMigration { version: number; release?: string | null; migration: string | null; prelude: string | null; tables: Record<string, string> | null }
@@ -231,7 +231,7 @@ export async function runStartupMigration(pool: Pool, options: { lockTimeoutMs?:
     }
   };
   try {
-    await guard.query('SET application_name = \'graphyard migration watchdog\'');
+    await guard.query('SET application_name = \'mainworks migration watchdog\'');
     await guard.query('SET statement_timeout = 5000');
     const pid = Number((await db.query('SELECT pg_backend_pid() AS pid')).rows[0].pid);
     const arm = () => {

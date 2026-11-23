@@ -18,7 +18,7 @@ import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/rep
 // Every filed fixture owes an E2E proof and the serve declaration its trial needs.
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
-// GY-1103: `graphyard master unblock` read the item, then wrote with the revision it read; an
+// GY-1103: `mainworks master unblock` read the item, then wrote with the revision it read; an
 // observation or heartbeat landing in between refused the write with 'Task revision changed'
 // and the operator reran it by hand. The CLI now reloads and retries while the same blocker
 // stands, and reports a cleared or changed blocker instead. Each test drives the race against a

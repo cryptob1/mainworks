@@ -21,7 +21,7 @@ Prerequisites: Linux 7.0+ with Landlock ABI 9+ (`uname -r`; Ubuntu 26.04: `linux
 git clone https://github.com/cryptob1/mainworks.git && cd mainworks
 npm ci
 npm run build
-node bin/graphyard.mjs up --repo OWNER/NAME
+node bin/mainworks.mjs up --repo OWNER/NAME
 ```
 
 Settings are `MAINWORKS_*` (`MAINWORKS_URL`). The `graphyard` command and `GRAPHYARD_*` settings still work.

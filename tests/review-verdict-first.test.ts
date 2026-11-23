@@ -32,7 +32,7 @@ const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
 const once = (text: string, piece: string) => text.split(piece).length - 1;
 
 const productVerdicts = 'APPROVE (ship as is), REQUEST_CHANGES (each as BLOCKING: SCREEN OR FLOW - FINDING), REJECT (should not ship), COULD_NOT_RUN (you could not open the app: GRAPHYARD_URL unset, no browser, unreachable; no worker can fix that, so it is never a change request)';
-const envFailurePhrase = 'GRAPHYARD_URL unset, no Graphyard CLI, no browser tool, or an app you cannot reach';
+const envFailurePhrase = 'GRAPHYARD_URL unset, no Mainworks CLI, no browser tool, or an app you cannot reach';
 const noWeakenPhrase = 'Never weaken a requirement to let it pass, and never hold a change that meets its criteria over a FOLLOW-UP';
 
 test('e2e:review-verdict-first AC-1 — product review opens with the verdict choices once and names the unreachable-environment list once, headless and interactive alike', () => {

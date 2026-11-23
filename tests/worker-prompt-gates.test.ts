@@ -56,7 +56,7 @@ test('unit:worker-request-names-fast-gates — the request names the fast mechan
   assert.equal(render(true, null, []), request, 'empty verification maps add nothing');
   // An input that adds sections adds the section once, never a second copy.
   const withSections = workerPrompt(
-    { cliPath: cli, repository: 'owner/graphyard', fastGates: true },
+    { cliPath: cli, repository: 'owner/mainworks', fastGates: true },
     { key: 'GY-1', title: 'Fast gates', description: 'Touches src/master/dispatch.ts.' },
     { principal: 'graphyard-test-1' }, 2,
     { shared: [{ name: 'node_modules', source: '/opt/graphyard/node_modules', how: 'reachable' }] },
@@ -70,7 +70,7 @@ test('unit:worker-request-names-fast-gates — the request names the fast mechan
   assert.equal(other, request.replace(workerFastGatesSentence, ''), "another repository's request differs only by the gates sentence");
   assert.ok(!other.includes('fast gates') && gatesIn(other).length === 0 && other.includes(sync), "another repository's request names no gate and still syncs");
   assert.equal(render(), other, 'a request whose launcher said nothing of the gates renders as before');
-  assert.equal(workerPrompt({ cliPath: cli, repository: 'owner/graphyard' }, { key: 'GY-1', title: 'Fast gates' }, { principal: 'graphyard-test-1' }, 1), other, 'the repository name alone adds nothing: the gates are an input the launcher reads from its checkout');
+  assert.equal(workerPrompt({ cliPath: cli, repository: 'owner/mainworks' }, { key: 'GY-1', title: 'Fast gates' }, { principal: 'graphyard-test-1' }, 1), other, 'the repository name alone adds nothing: the gates are an input the launcher reads from its checkout');
 });
 
 test('unit:worker-prompt-names-review-self — every worker request names review self with the item key and the configured CLI, before the autonomous-session line (GY-1987)', () => {
@@ -90,7 +90,7 @@ test('unit:worker-prompt-names-review-self — every worker request names review
   // An item with everything attached — criteria and a description — carries
   // the same instruction, naming its own key.
   const full = workerPrompt(
-    { cliPath: cli, repository: 'owner/graphyard', fastGates: true },
+    { cliPath: cli, repository: 'owner/mainworks', fastGates: true },
     { key: 'GY-2', title: 'Anything', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }], description: 'Anything at all.' },
     { principal: 'graphyard-test-1' }, 3,
   );

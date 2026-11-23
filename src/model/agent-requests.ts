@@ -51,7 +51,7 @@ export interface AgentRequest {
 export function deciderFor(key: string, request: Pick<AgentRequest, 'type' | 'humanDecision'>): Decider {
   if (request.humanDecision) return { kind: 'human', who: `the human operator (${request.humanDecision.replace(/-/g, ' ')})`, command: null };
   switch (request.type) {
-    case 'blocker': return { kind: 'follow-up', who: 'a tracked follow-up work item', command: `graphyard master create — a follow-up item naming ${key} and the external cause` };
+    case 'blocker': return { kind: 'follow-up', who: 'a tracked follow-up work item', command: `mainworks master create — a follow-up item naming ${key} and the external cause` };
     case 'note': return { kind: 'rule', who: 'nobody; a note is recorded, not decided', command: null };
   }
 }

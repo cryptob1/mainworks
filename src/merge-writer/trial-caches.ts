@@ -17,7 +17,7 @@ const sha = (text: string) => createHash('sha256').update(text).digest('hex').sl
 export const dependencyKey = (image: string, lockfile: string) => sha(`${image}\0${lockfile}`);
 
 /** Where the committed dependency images live in the cache root (the repository's git directory, never the worktree root a trial must leave empty). */
-export const dependencyImagesDirectory = (cacheRoot: string) => resolve(cacheRoot, 'graphyard-dependency-images');
+export const dependencyImagesDirectory = (cacheRoot: string) => resolve(cacheRoot, 'mainworks-dependency-images');
 /** How many dependency images stay: a lockfile change commits a new one and the oldest goes. */
 const keptDependencyImages = 3;
 

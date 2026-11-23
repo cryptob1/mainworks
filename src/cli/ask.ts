@@ -48,7 +48,7 @@ export const askCommands = defineCommands([{
     const kind = setting('ASK_RUNTIME') ?? 'claude', bound = Number(setting('ASK_TIMEOUT_SECONDS') ?? 600);
     if (!readOnlyArgs[kind]) throw new Error(`GRAPHYARD_ASK_RUNTIME must be one of ${Object.keys(readOnlyArgs).join(', ')}`);
     const request = `You are a read-only investigator on a copy of ${work.key} (${work.title}) at ${head}. Read the files here to answer one question; change nothing. Question: ${question}\nEnd with one JSON object: {"summary": "the plain answer in at most five sentences", "evidence": ["path/file.ts:LINE"]}.`;
-    const checkout = mkdtempSync(join(tmpdir(), 'graphyard-ask-'));
+    const checkout = mkdtempSync(join(tmpdir(), 'mainworks-ask-'));
     let note: Note;
     try {
       execFileSync('tar', ['-x', '-C', checkout], { input: execFileSync('git', ['archive', head], { maxBuffer: 1 << 30 }) });

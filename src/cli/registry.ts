@@ -9,7 +9,7 @@ import type { CliContext } from './context.js';
 export interface CliCommand {
   /** The first argv word this entry answers to. */
   name: string;
-  /** Help lines exactly as `graphyard help` prints them, in registry order. */
+  /** Help lines exactly as `mainworks help` prints them, in registry order. */
   help: string[];
   /**
    * `work` commands name an existing work item as their first positional. The dispatcher

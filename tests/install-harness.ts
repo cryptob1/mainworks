@@ -11,7 +11,7 @@ import { ensureDeployKey } from '../src/install/deploy-key.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 export const REPOSITORY = 'owner/project';
-/** The Graphyard source every harness install builds from: this checkout, never the managed repository, at a fixed commit. */
+/** The Mainworks source every harness install builds from: this checkout, never the managed repository, at a fixed commit. */
 const GRAPHYARD_SOURCE = fileURLToPath(new URL('..', import.meta.url));
 const GRAPHYARD_SOURCE_SHA = 'c'.repeat(40);
 
@@ -81,7 +81,7 @@ export interface HarnessOptions {
   /** GET /api/status's body, or a function answering it per request. */
   statusBody?: unknown;
   healthy?: boolean;
-  /** The commit /healthz reports; the pinned Graphyard source's by default. */
+  /** The commit /healthz reports; the pinned Mainworks source's by default. */
   servedCommit?: string | null;
   repository?: string;
   /** Reuse a previous harness's checkout and credential home to exercise a re-run. */

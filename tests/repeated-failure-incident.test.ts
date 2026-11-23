@@ -55,8 +55,8 @@ test('unit:repeated-failure-is-one-incident — groups three distinct items with
 
 test('unit:repeated-failure-is-one-incident — removes item keys, hashes, temp path parts and numbers, and clears after 30 minutes', () => {
   assert.equal(
-    normaliseFailureLine('GY-3626 failed at /tmp/graphyard-trial-a1b2c3/src/foo.ts:42 (exit 1)\nstack trace'),
-    normaliseFailureLine('GY-9999 failed at /tmp/graphyard-trial-d4e5f6/src/foo.ts:98 (exit 2)\nother trace'),
+    normaliseFailureLine('GY-3626 failed at /tmp/mainworks-trial-a1b2c3/src/foo.ts:42 (exit 1)\nstack trace'),
+    normaliseFailureLine('GY-9999 failed at /tmp/mainworks-trial-d4e5f6/src/foo.ts:98 (exit 2)\nother trace'),
   );
   assert.equal(
     normaliseFailureLine('Error in /home/vish/code/.graphyard/worktrees/GY-10-1/src/a.ts:12'),

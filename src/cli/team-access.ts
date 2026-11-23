@@ -11,7 +11,7 @@ export const teamAccessCommands = defineCommands([{
     '                                Funnel) on, who did and when; the loop runs Funnel only while on',
   ],
   async run(context) {
-    if (context.id !== 'status') throw new Error('Usage: graphyard team-access status [--json]');
+    if (context.id !== 'status') throw new Error('Usage: mainworks team-access status [--json]');
     const setting = await context.api('team-access/public-link');
     console.log(context.args.includes('--json') ? JSON.stringify(setting, null, 2) : renderPublicLink(setting));
   },

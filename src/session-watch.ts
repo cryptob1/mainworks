@@ -1,4 +1,4 @@
-// Concern: `graphyard watch`'s worker supervision — the systemd scope a session runs in, process-tree
+// Concern: `mainworks watch`'s worker supervision — the systemd scope a session runs in, process-tree
 // signalling, lease renewal through control-plane restarts, the headless run log and surrender.
 import { execFileSync, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -216,7 +216,7 @@ export async function throughRestart<T>(call: () => Promise<T>, until: number, o
     catch (error) {
       const wait = Math.min((options.retryMs ?? 1000) * 2 ** attempt, options.retryMaxMs ?? 10_000, until - performance.now());
       if (!transientControlPlaneFailure(error) || wait <= 0) throw error;
-      console.error(`Graphyard control plane is unavailable (${(error instanceof Error ? error.message : String(error)).slice(0, 300)}); retrying in ${Math.round(wait)} ms.`);
+      console.error(`Mainworks control plane is unavailable (${(error instanceof Error ? error.message : String(error)).slice(0, 300)}); retrying in ${Math.round(wait)} ms.`);
       await delay(wait);
     }
   }
@@ -237,7 +237,7 @@ export function restartTolerantApi(api: ControlPlaneApi, until: () => number, op
  * setting up (GY-1033). \`supervise\` itself never prints it: it lives here, beside the supervisor the
  * line announces, only so tests can import it without loading the CLI command table.
  */
-export const setupLine = (subject: string, epoch: number) => `graphyard: starting supervision of ${subject} epoch ${epoch}`;
+export const setupLine = (subject: string, epoch: number) => `mainworks: starting supervision of ${subject} epoch ${epoch}`;
 // The deadline uses elapsed local time and server-reported duration, not synchronized clocks.
 export async function supervise(command: string, args: string[], epoch: number, renew: () => Promise<Renewal>, options: { intervalMs?: number; graceMs?: number; safetyMarginMs?: number; retryMs?: number; retryMaxMs?: number; startupWindowMs?: number; attemptBoundMs?: number; detached?: boolean; containment?: Containment; platform?: NodeJS.Platform; session?: SupervisedSession;
   /** GY-3259: the headless run log the agent's output is appended to, one redacted JSON line per output line with its time and stream. */ log?: string } = {}) {
@@ -300,7 +300,7 @@ export async function supervise(command: string, args: string[], epoch: number, 
       }
       catch (error) {
         const reason = error instanceof Error ? error.message.slice(0, 300) : String(error);
-        if (definiteRenewalRefusal(error)) { console.error(`Graphyard refused the lease renewal: ${reason}`); return 'refused'; }
+        if (definiteRenewalRefusal(error)) { console.error(`Mainworks refused the lease renewal: ${reason}`); return 'refused'; }
         // The bound closed on a request that never answered: the in-flight beat is superseded, so a
         // response landing now cannot move the deadline of an attempt that was given up on.
         if ((error as { unanswered?: boolean }).unanswered === true) attempts++;
@@ -309,15 +309,15 @@ export async function supervise(command: string, args: string[], epoch: number, 
         const grace = renewalGraceMs(error);
         if (grace !== null && started + grace > deadline) {
           deadline = started + grace; extended();
-          console.error(`Graphyard recorded the failed renewal server-side; the lease is kept for ${Math.round(grace / 1000)}s more while renewal is retried.`);
+          console.error(`Mainworks recorded the failed renewal server-side; the lease is kept for ${Math.round(grace / 1000)}s more while renewal is retried.`);
         }
         const window = deadline - margin() - performance.now();
         const wait = Math.min(retryMs * 2 ** attempt, retryMaxMs, window);
         if (wait <= 0) {
-          console.error(`Graphyard lease renewal is still failing (${reason}); retries stop ${Math.round(margin())} ms before the lease expires and the worker stops only if the lease actually expires.`);
+          console.error(`Mainworks lease renewal is still failing (${reason}); retries stop ${Math.round(margin())} ms before the lease expires and the worker stops only if the lease actually expires.`);
           return 'lapsing';
         }
-        console.error(`Graphyard lease renewal failed transiently (${reason}); retrying in ${Math.round(wait)} ms with ${Math.round((deadline - performance.now()) / 1000)}s of lease left.`);
+        console.error(`Mainworks lease renewal failed transiently (${reason}); retrying in ${Math.round(wait)} ms with ${Math.round((deadline - performance.now()) / 1000)}s of lease left.`);
         await delay(wait);
         if (stopped()) return 'stopped';
         const cause = orphaned();
@@ -406,7 +406,7 @@ export async function supervise(command: string, args: string[], epoch: number, 
     const surrenderAssignment = async (cause: string) => {
       if (!surrender) return;
       try { await surrender(cause); }
-      catch (error) { console.error(`Graphyard could not release the lease after the worker session ended: ${error instanceof Error ? error.message : String(error)}`); }
+      catch (error) { console.error(`Mainworks could not release the lease after the worker session ended: ${error instanceof Error ? error.message : String(error)}`); }
     };
     /**
      * An agent that exited, or a supervisor told to stop, before the lease said so (GY-1506): the
@@ -439,7 +439,7 @@ export async function supervise(command: string, args: string[], epoch: number, 
           pending = true;
           const surrenderOrphaned = async (cause: string) => {
             clearInterval(timer);
-            console.error(`Graphyard worker supervision has nothing left to supervise: ${cause}. Releasing the lease and stopping.`);
+            console.error(`Mainworks worker supervision has nothing left to supervise: ${cause}. Releasing the lease and stopping.`);
             await surrenderAssignment(cause);
             stop(1);
           };
@@ -449,9 +449,9 @@ export async function supervise(command: string, args: string[], epoch: number, 
             const renewal = await renewWithRetry(() => stopping, orphaned, () => { if (!stopping) armDeadline(); });
             if (typeof renewal === 'object') await surrenderOrphaned(renewal.orphaned);
             else if (renewal === 'renewed') { if (!stopping) armDeadline(); }
-            else if (renewal === 'refused') { console.error('Graphyard lease cannot be renewed. Stopping worker.'); stop(1); }
+            else if (renewal === 'refused') { console.error('Mainworks lease cannot be renewed. Stopping worker.'); stop(1); }
           }
-          catch { console.error('Graphyard lease cannot be renewed. Stopping worker.'); stop(1); }
+          catch { console.error('Mainworks lease cannot be renewed. Stopping worker.'); stop(1); }
           finally { pending = false; }
         // A lease shorter than 75 s is renewed every third of it, so it never lapses between beats (GY-3715).
         }, options.intervalMs ?? Math.min(25_000, granted / 3));

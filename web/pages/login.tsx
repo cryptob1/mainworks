@@ -33,7 +33,7 @@ export const storedToken = () => sessionStorage.getItem(HUMAN_SESSION_KEY) ?? lo
 export const SIGN_IN_NEEDED = 'Sign in to do that.';
 /** The sign-in form opens at once for `/?sign-in` and for a sign-in or claim link; otherwise the dashboard first tries the local viewer. */
 export const wantsSignIn = () => new URLSearchParams(location.search).has('sign-in') || !!signInCode(location.hash) || !!claimFromHash(location.hash);
-/** The operator's line: run the command (a click copies it) on the Graphyard host. */
+/** The operator's line: run the command (a click copies it) on the Mainworks host. */
 function SignInCommand() {
   return <p className="login-help">Operator? Run <code className="login-command" title="Click to copy" onClick={() => void navigator.clipboard?.writeText(SIGN_IN_COMMAND).catch(() => {})}>{SIGN_IN_COMMAND}</code> on the {PRODUCT_NAME} host, or {COMMAND_NAME} login to print a link to open elsewhere.</p>;
 }

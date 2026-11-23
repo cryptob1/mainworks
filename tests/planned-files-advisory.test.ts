@@ -55,7 +55,7 @@ const update = (id: string, patch: Record<string, unknown>) => store.pool.query(
 const profile = (name: string, principal: string): WorkerProfile =>
   ({ name, principal, agentName: `agent-${name}`, mode: 'launch', kind: 'claude', credentialFile: `/srv/credentials/${name}.token`, agentArgs: [], approvals: 'auto', environment: {} } as WorkerProfile);
 const snapshotRead = async () => (await fetch(`${url}/api/work-snapshot`, { headers: { Authorization: `Bearer ${token(coordinator.id)}`, [coordinationViewHeader]: 'coordination' } })).json() as Promise<{ work: Work[]; now: string }>;
-/** `graphyard master status` over this fixture's snapshot and the loop's state, as the CLI reads it. */
+/** `mainworks master status` over this fixture's snapshot and the loop's state, as the CLI reads it. */
 async function masterStatus(config: MasterConfig, state: DaemonState, panes: HerdrAgent[]) {
   await writeFile(daemonStatePath(config), JSON.stringify(state));
   const root = await temporaryDirectory('planned-files-advisory-status');
@@ -143,5 +143,5 @@ test('integration:planned-files-advisory — overlapping planned or observed fil
   await cycle();
   assert.ok(!claims.includes(waiting.key), 'the item waits for the resource');
   const lines = log.filter(line => line.includes(waiting.key));
-  assert.deepEqual(lines.map(line => line.replace(/cycle \d+: /, '')), [`[graphyard-master] ${waiting.key} waits: exclusive resource staging is held by ${holder.key}`], 'one log line names the item, the resource and the holder');
+  assert.deepEqual(lines.map(line => line.replace(/cycle \d+: /, '')), [`[mainworks-master] ${waiting.key} waits: exclusive resource staging is held by ${holder.key}`], 'one log line names the item, the resource and the holder');
 });

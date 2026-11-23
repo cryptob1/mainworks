@@ -13,10 +13,10 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
  * error — the command, its exit code and the last lines of its stderr — in install --apply's failed
  * step line, not as a bare refusal. A plugin linked but disabled names itself.
  */
-test('e2e:herdr-setup-error-detail — a stub herdr that exits 1 printing "plugin graphyard is disabled" puts that text and the exit code in install --apply\'s failed Herdr step line', { timeout: 120_000 }, async () => {
+test('e2e:herdr-setup-error-detail — a stub herdr that exits 1 printing "plugin mainworks is disabled" puts that text and the exit code in install --apply\'s failed Herdr step line', { timeout: 120_000 }, async () => {
   // The stub herdr the setup step finds on PATH: every invocation fails the same way.
   const bin = await temporaryDirectory('herdr-stub');
-  await writeFile(join(bin, 'herdr'), `#!/bin/sh\necho 'plugin graphyard is disabled' >&2\nexit 1\n`, { mode: 0o755 });
+  await writeFile(join(bin, 'herdr'), `#!/bin/sh\necho 'plugin mainworks is disabled' >&2\nexit 1\n`, { mode: 0o755 });
   const wasPath = process.env.PATH;
   process.env.PATH = `${bin}:${wasPath}`;
 
@@ -31,7 +31,7 @@ test('e2e:herdr-setup-error-detail — a stub herdr that exits 1 printing "plugi
     const answer = actor ? { actor: { id: actor.id, role: actor.role }, repository: REPOSITORY, ...(actor.role === 'coordinator' ? { baseBranch: 'main' } : {}) } : null;
     response.statusCode = actor ? 200 : 401;
     response.setHeader('Content-Type', 'application/json');
-    response.end(JSON.stringify(answer ?? { error: 'A valid Graphyard bearer token is required' }));
+    response.end(JSON.stringify(answer ?? { error: 'A valid Mainworks bearer token is required' }));
   });
   await new Promise<void>(accept => plane.listen(0, '127.0.0.1', accept));
   const port = (plane.address() as { port: number }).port;
@@ -50,7 +50,7 @@ test('e2e:herdr-setup-error-detail — a stub herdr that exits 1 printing "plugi
     const line = summary.profiles.repository.detail;
     assert.equal(summary.profiles.repository.connected, false, 'the repository step failed');
     assert.match(line, /herdr plugin --help exited 1\b/, `the step line names the Herdr command and its exit code: ${line}`);
-    assert.ok(line.includes('plugin graphyard is disabled'), `the step line carries Herdr's own error: ${line}`);
+    assert.ok(line.includes('plugin mainworks is disabled'), `the step line carries Herdr's own error: ${line}`);
   } finally {
     process.env.PATH = wasPath;
     await new Promise<void>(accept => plane.close(() => accept()));

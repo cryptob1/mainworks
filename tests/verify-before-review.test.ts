@@ -121,7 +121,7 @@ async function stubControlPlane(work: any, root: string) {
   return { url: `http://127.0.0.1:${address.port}`, submitted, close: () => new Promise(resolve => server.close(resolve)) };
 }
 const cli = async (cwd: string, url: string, ...args: string[]) => {
-  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^(GRAPHYARD|HERDR)_/.test(name)));
+  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^(GRAPHYARD_|MAINWORKS_|HERDR_)/.test(name)));
   try { const { stdout } = await run(process.execPath, [launcher, ...args], { cwd, env: { ...env, GRAPHYARD_URL: url, GRAPHYARD_TOKEN: 'worker-token' }, maxBuffer: 16 * 1024 * 1024 }); return { code: 0, output: JSON.parse(stdout) }; }
   catch (error: any) { return { code: error.code as number, output: error.stdout?.trim() ? JSON.parse(error.stdout) : { error: error.stderr } }; }
 };
@@ -129,7 +129,7 @@ const passing = (title: string) => `test(${JSON.stringify(title)}, () => {});\n`
 const failing = (title: string) => `test(${JSON.stringify(title)}, () => { throw new Error('criterion not met'); });\n`;
 const suite = (...cases: string[]) => `import { test } from 'node:test';\n${cases.join('')}`;
 
-test('integration:worker-self-verifies — graphyard verify runs exactly the automatable proofs the item\'s criteria name against the working tree, names the manual ones as outstanding, and complete reports what ran and its outcome', async () => {
+test('integration:worker-self-verifies — mainworks verify runs exactly the automatable proofs the item\'s criteria name against the working tree, names the manual ones as outstanding, and complete reports what ran and its outcome', async () => {
   const work = { id: randomUUID(), key: 'GY-7', criteria: [
     { id: 'AC-1', text: 'Parses', proofs: ['unit:vbr-parse', 'manual:vbr-docs'] },
     { id: 'AC-2', text: 'Flows', proofs: ['integration:vbr-flow'] },

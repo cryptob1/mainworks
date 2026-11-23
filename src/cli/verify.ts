@@ -11,7 +11,7 @@ import { abnormalTestExit, isolatedTestEnvironment, reserveTestPorts, testPortEn
 import { stateDirectory } from '../install/layout.js';
 
 /**
- * `graphyard verify GY-N`: the worker's own mechanical check before `complete` (GY-115).
+ * `mainworks verify GY-N`: the worker's own mechanical check before `complete` (GY-115).
  *
  * It runs exactly the unit and integration proofs the item's criteria name, against the working
  * tree as it stands, and names every other proof — manual, e2e, or deferred by a bootstrap
@@ -79,7 +79,7 @@ export function classifyProofs(criteria: Criterion[]): { runnable: { proof: stri
 
 /** Every test file in the tree — tracked or new — whose source names the proof. */
 async function proofFiles(root: string, proof: string) {
-  const files = git(root, ['ls-files', '--cached', '--others', '--exclude-standard']).split('\n').filter(file => /\.test\.(ts|mts|js|mjs|cjs)$/.test(file) && !graphyardState(file));
+  const files = git(root, ['ls-files', '--cached', '--others', '--exclude-standard']).split('\n').filter(file => /\.test\.(ts|mts|js|mjs|cjs)$/.test(file) && !mainworksState(file));
   const named: string[] = [];
   for (const file of files) { try { if ((await readFile(join(root, file), 'utf8')).includes(proof)) named.push(file); } catch { /* deleted in the working tree */ } }
   return named;
@@ -118,8 +118,8 @@ export async function runProof(root: string, proof: string, files: string[], por
  * They are what a proof is, not what it proves.
  */
 export const testSide = (file: string) => /(^|\/)(tests?|__tests__|fixtures?)\//.test(file) || /\.test\.(ts|mts|js|mjs|cjs)$/.test(file);
-/** Graphyard's own state in a worktree (records, the base scratch tree): never part of the change. */
-const graphyardState = (file: string) => file.startsWith('.graphyard/') || file.startsWith('.mainworks/');
+/** Mainworks's own state in a worktree (records, the base scratch tree): never part of the change. */
+const mainworksState = (file: string) => file.startsWith('.graphyard/') || file.startsWith('.mainworks/');
 
 /** The commit the change is measured from: the merge base of HEAD with the base branch's remote tip, or null when it cannot be resolved here. */
 export function changeBase(root: string, baseBranch = 'main') {
@@ -131,7 +131,7 @@ function changedFiles(root: string, base: string) {
   const diff = git(root, ['diff', '--name-status', '--no-renames', base]).split('\n').filter(Boolean)
     .map(line => ({ status: line[0], path: line.slice(line.indexOf('\t') + 1) }));
   const untracked = git(root, ['ls-files', '--others', '--exclude-standard']).split('\n').filter(Boolean).map(path => ({ status: 'A', path }));
-  return [...diff, ...untracked].filter(change => !graphyardState(change.path));
+  return [...diff, ...untracked].filter(change => !mainworksState(change.path));
 }
 
 /**
@@ -249,12 +249,12 @@ export async function written(root: string, record: VerifyRecord) {
 export async function selfVerification(root: string, key: string) {
   let record: VerifyRecord;
   try { record = JSON.parse(await readFile(recordPath(root, key), 'utf8')); } catch {
-    return { state: 'not-run' as const, reason: `graphyard verify ${key} has no saved result in this worktree`, ran: [], outstanding: [] };
+    return { state: 'not-run' as const, reason: `mainworks verify ${key} has no saved result in this worktree`, ran: [], outstanding: [] };
   }
   const head = git(root, ['rev-parse', 'HEAD']);
   const summary = { ran: record.ran.map(({ proof, criteria, result, executed, failed, skipped, abnormal, leftToCi, unexercised, preserved, exercise }) => ({ proof, criteria, result, executed, failed, skipped, ...(abnormal ? { abnormal } : {}), ...(leftToCi ? { leftToCi } : {}), ...(unexercised ? { unexercised } : {}), ...(preserved ? { preserved } : {}), ...(exercise?.result === 'indeterminate' ? { exerciseIndeterminate: exercise.reason } : {}) })),
     outstanding: record.outstanding.map(({ proof, criteria, reason }) => ({ proof, criteria, reason })), verifiedAt: record.at };
-  if (record.head !== head) return { state: 'stale' as const, reason: `verified ${record.head.slice(0, 12)}, not HEAD ${head.slice(0, 12)}; run graphyard verify ${key} again`, ...summary };
+  if (record.head !== head) return { state: 'stale' as const, reason: `verified ${record.head.slice(0, 12)}, not HEAD ${head.slice(0, 12)}; run mainworks verify ${key} again`, ...summary };
   const failing = record.ran.filter(entry => entry.result !== 'pass' && !leftToCiRun(entry));
   const unexercised = record.ran.filter(entry => entry.unexercised);
   const deferred = record.ran.filter(entry => entry.result !== 'pass' && leftToCiRun(entry));

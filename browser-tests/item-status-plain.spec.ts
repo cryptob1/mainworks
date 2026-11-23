@@ -22,7 +22,7 @@ function tasks(now: number) {
     item(204, 'Board groups sort by age', { stage: 'build', stageEnteredAt: at(-20 * minute), exclusiveResources: [file],
       lease: { owner: 'worker-a', epoch: 1, expiresAt: at(hour) }, lastAssignment: { owner: 'worker-a', epoch: 1, displayName: 'Juniper', runtime: 'Claude' } }),
     item(205, 'Rename the Lead page', { stage: 'build', stageEnteredAt: at(-30 * minute), hold: true, heldBy: master,
-      holdReason: 'Waits for the GY-3600 redesign to land. Then release it with graphyard ready GY-205.' }),
+      holdReason: 'Waits for the GY-3600 redesign to land. Then release it with mainworks ready GY-205.' }),
   ];
 }
 

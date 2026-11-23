@@ -157,7 +157,7 @@ test('integration:sensitive-review-executor — with no eligible reviewer master
   assert.equal(rest.length, 0);
   assert.equal(line?.subject, 'GY-15', JSON.stringify(result));
   assert.match(line.text, /GY-15's review of [0-9a-f]{12} has no reviewer: .*(claude-a|cursor-a)/);
-  assert.match(line.next, /log it in.*master registry role set reviewer.*graphyard master review GY-15/);
+  assert.match(line.next, /log it in.*master registry role set reviewer.*mainworks master review GY-15/);
 
   // The account logs in: master review GY-15 launches the request on the independent provider.
   await configure({ claude: true, cursor: true });

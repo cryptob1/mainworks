@@ -41,7 +41,7 @@ beside the sidebar.
   Setup checklist", "Connect an account"); section headings are a different style from Work's.
 - Setup: the fact ("3 of 3 steps left") is small grey text; the checklist is a plain numbered list with a
   primary button per step, so three buttons compete; no cards.
-- Help (How Graphyard works): a 920 px column leaves a third of the wide page empty; its own table and
+- Help (How Mainworks works): a 920 px column leaves a third of the wide page empty; its own table and
   card styles (`.guide-table`, `.guide-card`).
 - Delivery: no page title at all, only a tiny breadcrumb above a rule; its sections already use `.panel`.
 - Needs you, Releases and Operator automation show only with matching data or configuration and were not
@@ -50,7 +50,7 @@ beside the sidebar.
 ## Applied in GY-3322
 
 Every page the router lists (Work, Now, Needs you, Shipped, Workers, Master, Releases, Tests, Test cases,
-Product, Costs, Agents, Setup, Operator automation, How Graphyard works, Delivery) opens by its address
+Product, Costs, Agents, Setup, Operator automation, How Mainworks works, Delivery) opens by its address
 (`#costs`) and is built from `PageHeader` (title, primary fact, actions top right), `PageSection` (card and
 section heading) and `EmptyState`. Breadcrumbs, eyebrows, `.section-title`, `.master-heading`, `.guide-table`,
 `.guide-lead`, `.cost-table`, `.flow-data`, `.compact-table`, the old dashed `.empty` and the scenario card's own

@@ -17,7 +17,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 
 // GY-134: a Codex worker could not write its worktree's own Git admin directory, so the mandatory
-// `graphyard sync` failed at `git fetch` and the item presented as a ready-gate refusal.
+// `mainworks sync` failed at `git fetch` and the item presented as a ready-gate refusal.
 
 const exec = promisify(execFile);
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
@@ -26,7 +26,7 @@ const workerToken = 'worker-token-'.padEnd(40, 'x');
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const codexInstalled = spawnSync('codex', ['--version'], { stdio: 'ignore' }).status === 0;
 
-/** A repository laid out like a Graphyard checkout: an origin, the main clone, and a managed linked worktree. */
+/** A repository laid out like a Mainworks checkout: an origin, the main clone, and a managed linked worktree. */
 async function linkedWorktree(name = 'GY-1-1') {
   const root = await realpath(await temporaryDirectory('sandbox'));
   const origin = join(root, 'origin.git'), main = join(root, 'repo');
@@ -88,7 +88,7 @@ test('unit:worker-sandbox-grants-git-admin-dir — every runtime that takes a sa
 function codexLikeSandbox(calls: string[][]): SandboxExec {
   return (command, args, options) => {
     calls.push([command, ...args]);
-    assert.equal(command, 'codex'); assert.deepEqual(args.slice(0, 4), ['sandbox', '-P', 'graphyard-launch-probe', '-C']);
+    assert.equal(command, 'codex'); assert.deepEqual(args.slice(0, 4), ['sandbox', '-P', 'mainworks-launch-probe', '-C']);
     const policy = /filesystem=\{(.*)\}$/.exec(args[args.indexOf('-c') + 1])![1];
     const writable = [...policy.matchAll(/"([^"]+)"="write"/g)].map(match => match[1] === ':workspace_roots' ? options.cwd : match[1]);
     // Only a root holding a `.git` of its own is protected; a granted path inside the Git directory holds none.

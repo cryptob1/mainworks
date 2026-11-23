@@ -12,16 +12,16 @@ import { registryFixture } from './helpers/registry-fixture.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// Huck's service WorkingDirectory is huck-graphyard while ExecStart loads a CLI release
+// Huck's service WorkingDirectory is huck-mainworks while ExecStart loads a CLI release
 // in cryptob1-graphyard/deploy/build: these are separate repositories. The old worker
-// default confined that CLI checkout. Graphyard's self-hosted layout shares its Git store.
+// default confined that CLI checkout. Mainworks's self-hosted layout shares its Git store.
 for (const layout of ['huck', 'self-hosted', 'relative-pointer', 'symlink', 'linked-coordinator']) {
   test(`integration:sandbox-worktree-admin-layout — ${layout} commits only in its own admin directory`, async () => {
     const base = await temporaryDirectory('sandbox-admin-layout');
     const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
     try {
       const repo = join(base, 'repository');
-      mkdirSync(repo); git(repo, 'init', '-b', 'graphyard-main');
+      mkdirSync(repo); git(repo, 'init', '-b', 'mainworks-main');
       git(repo, 'config', 'user.name', 'Fixture'); git(repo, 'config', 'user.email', 'fixture@example.com');
       git(repo, 'commit', '--allow-empty', '-m', 'base');
       let root = repo;
@@ -59,10 +59,10 @@ for (const layout of ['huck', 'self-hosted', 'relative-pointer', 'symlink', 'lin
 test('integration:sandbox-worktree-admin-layout — production dispatch confines the served repository, not its separate CLI release', async () => {
   const base = await temporaryDirectory('sandbox-served-repository');
   try {
-    const root = join(base, 'huck-graphyard'), cliRoot = join(base, 'cli-release');
+    const root = join(base, 'huck-mainworks'), cliRoot = join(base, 'cli-release');
     mkdirSync(root); mkdirSync(cliRoot);
     const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-    git('init', '-b', 'graphyard-main');
+    git('init', '-b', 'mainworks-main');
     git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.com');
     git('commit', '--allow-empty', '-m', 'base');
     git('remote', 'add', 'origin', 'https://github.com/hello-huck/huck.git');
@@ -75,7 +75,7 @@ test('integration:sandbox-worktree-admin-layout — production dispatch confines
     writeFileSync(cli, `const action = process.argv[2]; console.log(JSON.stringify(action === 'claim' ? ${JSON.stringify({ ...item, epoch: 26, lease: { owner: 'worker' } })} : action === 'worktree' ? ${JSON.stringify({ path: own })} : {}));`);
     const credentials = await temporaryDirectory('credentials', base);
     await setupMaster(root, { url: 'https://graphyard.example', token: 'coordinator-token-'.padEnd(40, 'x'), cliPath: cli, credentialDirectory: credentials },
-      (async () => new Response(JSON.stringify({ actor: { id: 'master', role: 'coordinator' }, repository: 'hello-huck/huck', baseBranch: 'graphyard-main' }))) as typeof fetch);
+      (async () => new Response(JSON.stringify({ actor: { id: 'master', role: 'coordinator' }, repository: 'hello-huck/huck', baseBranch: 'mainworks-main' }))) as typeof fetch);
     const config = await loadMasterConfig(root), credentialFile = join(credentials, 'worker.token');
     writeFileSync(credentialFile, 'worker-token-'.padEnd(40, 'x'), { mode: 0o600 });
     const profile = { name: 'worker', principal: 'worker', agentName: 'worker', mode: 'launch' as const, kind: 'claude' as const, credentialFile, agentArgs: [], approvals: 'auto' as const, environment: {} };

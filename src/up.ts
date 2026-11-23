@@ -39,7 +39,7 @@ import { chooseInstallLayout, stateDirectory } from './install/layout.js';
 export { readInstallLoopCode } from './loop-code.js';
 
 /**
- * `graphyard up` (GY-1419): every machine step of a first installation, in order — preflight,
+ * `mainworks up` (GY-1419): every machine step of a first installation, in order — preflight,
  * control plane, host supervisor and Herdr, the merge writer's deploy key, the master's agent
  * identities (GY-1479), onboarding, agent accounts, harness, master loop — and a wait on the
  * first-run checklist (src/model/setup-checklist.ts) wherever a person must act.
@@ -78,7 +78,7 @@ export interface UpRequest {
   /** The control plane's loopback port, passed to install; omitted, install picks a free one from 4310 or keeps the recorded one. */
   port?: number;
   provider: string;
-  /** The non-interactive agent path (`graphyard up --agent`). */
+  /** The non-interactive agent path (`mainworks up --agent`). */
   agent: boolean;
   /** The agent runtime the master and harness are set up for. */
   master: string;
@@ -104,7 +104,7 @@ export type UpEvent =
   | { kind: 'step'; step: UpStep; state: 'start' | 'done' | 'skipped' | 'waiting'; detail?: string }
   /**
    * GY-1641: a started step that did not finish: the outcome of every step-start that has no done.
-   * ARGV is the failed child's arguments (a graphyard command, or the git command a step ran
+   * ARGV is the failed child's arguments (a mainworks command, or the git command a step ran
    * directly, GY-3221) and STDERR its first stderr line (both redacted), null when the step failed
    * without a child; EXITCODE is up's own (upExitCodes).
    */
@@ -121,7 +121,7 @@ export type Handoff = (sentence: string, link: { url?: string | null; code?: str
 export interface UpDependencies {
   root: string;
   /**
-   * Runs one graphyard command; stderr lines go to onLine as they arrive, and its tail comes back as stderr (GY-1509),
+   * Runs one mainworks command; stderr lines go to onLine as they arrive, and its tail comes back as stderr (GY-1509),
    * its first non-empty stderr line as firstStderr, kept even when the tail has scrolled past it (GY-1641).
    */
   cli(args: string[], options?: { stdin?: string; env?: Record<string, string>; onLine?: (line: string) => void; signal?: AbortSignal }): Promise<{ code: number; stdout: string; stderr?: string; firstStderr?: string }>;
@@ -240,7 +240,7 @@ export interface UpDependencies {
   machineWaitMs?: number;
 }
 
-/** What `graphyard up` asks of Herdr on this host (GY-1511); each step is idempotent and fails only with a HerdrSetupFailure. */
+/** What `mainworks up` asks of Herdr on this host (GY-1511); each step is idempotent and fails only with a HerdrSetupFailure. */
 export interface UpHerdr {
   /** The herdr binary, installed with Herdr's own installer when missing. */
   binary(): Promise<{ binary: string; installed: boolean }>;
@@ -250,7 +250,7 @@ export interface UpHerdr {
   record(workspace: string | null): Promise<void>;
   /** This install's main-server binding and whether Herdr reports the shared plugin enabled. */
   plugin(): Promise<{ url: string; enabled: boolean } | null>;
-  /** Enables the shared graphyard plugin. */
+  /** Enables the shared mainworks plugin. */
   enable(): Promise<void>;
 }
 
@@ -371,7 +371,7 @@ export function tailnetShare(server: string, tailnet: Tailnet | null, socket: st
   return { command: ['tailscale', 'serve', '--bg', `--http=${port}`, socket ? `unix:${socket}` : `http://127.0.0.1:${port}`], url: `http://${host}${port === '80' ? '' : `:${port}`}` };
 }
 /** GY-3294: the one instruction a host without a running Tailscale gets; up carries on locally. */
-export const tailscaleMissingNote = 'Tailscale is not running here, so this install stays on this machine. To share it: install Tailscale (https://tailscale.com/download), sign in, and rerun graphyard up.';
+export const tailscaleMissingNote = 'Tailscale is not running here, so this install stays on this machine. To share it: install Tailscale (https://tailscale.com/download), sign in, and rerun mainworks up.';
 /** Runs the serve command tailnetShare names. Bounded: a serve waiting on a tailnet permission is reported, never waited on (GY-1477). */
 export async function applyTailnetCommand(command: string[]): Promise<{ ok: boolean; detail?: string }> {
   try { execFileSync(command[0], command.slice(1), { encoding: 'utf8', timeout: 30_000, stdio: ['ignore', 'pipe', 'pipe'] }); return { ok: true }; }
@@ -392,7 +392,7 @@ export function childTail(result: { stdout: string; stderr?: string }, lines = c
 /** A failed step's message: the command that exited, then its own last output lines. */
 const childFailure = (step: string, args: string[], result: { code: number; stdout: string; stderr?: string }, more = '') => {
   const tail = childTail(result);
-  return `${step}: graphyard ${args[0]}${args[1] && !args[1].startsWith('-') ? ` ${args[1]}` : ''} exited ${result.code}${more}${tail ? `; its last output:\n${tail}` : ''}`;
+  return `${step}: mainworks ${args[0]}${args[1] && !args[1].startsWith('-') ? ` ${args[1]}` : ''} exited ${result.code}${more}${tail ? `; its last output:\n${tail}` : ''}`;
 };
 const redactLine = (line: string) => redactString(line).replace(/#(sign-in|claim)=[^\s"']+/g, '#$1=[redacted]');
 /** GY-1641: the first non-empty line a failed child wrote to stderr, redacted as childTail redacts; null when it wrote none. */
@@ -482,17 +482,17 @@ async function provisioned(root: string) {
   return (await Promise.all(identities.map(identity => readFile(identity.credentialFile, 'utf8').then(text => text.trim().length >= 32, () => false)))).every(Boolean);
 }
 
-/** GY-3221: Graphyard's own branch namespace: onboarding's `graphyard/onboarding` and worker branches `graphyard/gy-N-EPOCH` live under it. */
+/** GY-3221: Mainworks's own branch namespace: onboarding's `graphyard/onboarding` and worker branches `graphyard/gy-N-EPOCH` live under it. */
 export const branchNamespace = 'graphyard';
 /**
- * GY-3221: why BRANCH cannot be up's base branch, or null when it can: it is Graphyard's own
+ * GY-3221: why BRANCH cannot be up's base branch, or null when it can: it is Mainworks's own
  * branch namespace or inside it, and GitHub refuses to create `graphyard/…` refs beside a ref
- * named `graphyard` ("cannot lock ref"), so the onboarding push and every worker branch would
+ * named `mainworks` ("cannot lock ref"), so the onboarding push and every worker branch would
  * fail mid-run. `up` refuses it in preflight, before any step runs, naming the namespace.
  */
 export function baseBranchNamespaceRefusal(branch: string): string | null {
   return branch === branchNamespace || branch.startsWith(`${branchNamespace}/`)
-    ? `--base-branch ${branch} is Graphyard's own branch namespace: ${onboardingBranch} and the worker branches (${branchNamespace}/gy-N-EPOCH) live under ${branchNamespace}/, and GitHub refuses to create those refs beside it, so the onboarding push and every worker branch would fail. Run graphyard up again with a base branch outside ${branchNamespace}/` : null;
+    ? `--base-branch ${branch} is Mainworks's own branch namespace: ${onboardingBranch} and the worker branches (${branchNamespace}/gy-N-EPOCH) live under ${branchNamespace}/, and GitHub refuses to create those refs beside it, so the onboarding push and every worker branch would fail. Run mainworks up again with a base branch outside ${branchNamespace}/` : null;
 }
 
 export async function runUp(request: UpRequest, deps: UpDependencies): Promise<UpResult> {
@@ -592,7 +592,7 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
     prompts++;
     deps.emit({ kind: 'waiting', setupUrl: url, waitingFor: ids, sentence: signIn
       ? `Open ${url} to sign in to the Setup page and follow the checklist (the link works once, within 10 minutes); this command carries on as each step turns green.`
-      : `Open ${url}, sign in with the link graphyard login prints, and follow the checklist; this command carries on as each step turns green.` });
+      : `Open ${url}, sign in with the link mainworks login prints, and follow the checklist; this command carries on as each step turns green.` });
   };
   /** QUIETPOLLS: polls a machine step may still be settling, before a person is asked. */
   const waitGreen = async (ids: SetupItemId[], human: boolean, whilePending?: (pending: SetupItemId[], polls: number) => Promise<void>, quietPolls = 0) => {
@@ -603,7 +603,7 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
       if (!pending.length) return;
       if (human && polls >= quietPolls) await announce(pending);
       if (whilePending) await whilePending(pending, polls);
-      if (deps.now() >= deadline) throw new UpStop(`Still waiting on ${pending.map(id => items.find(item => item.id === id)!.title).join(', ')}; rerun graphyard up${request.agent ? ' --agent' : ''} to resume`, human ? upExitCodes.waiting : upExitCodes.failed);
+      if (deps.now() >= deadline) throw new UpStop(`Still waiting on ${pending.map(id => items.find(item => item.id === id)!.title).join(', ')}; rerun mainworks up${request.agent ? ' --agent' : ''} to resume`, human ? upExitCodes.waiting : upExitCodes.failed);
       await deps.sleep(pollMs);
     }
   };
@@ -624,7 +624,7 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
   // unless the merge writer pushes with a piped token (GY-3220) or the gh login (GY-3269).
   const installArgs = (mode: '--plan' | '--apply') => ['install', '--provider', request.provider, '--repo', request.repository, ...(request.baseBranch ? ['--base-branch', request.baseBranch] : []), ...(request.port ? ['--port', String(request.port)] : []), mode, ...(state.noHerdr ? ['--no-herdr'] : []), ...(request.mergeToken ? ['--merge-token-stdin'] : []), ...(request.pushAuth ? ['--push-auth', 'gh'] : [])];
   const installInput = request.mergeToken ? { stdin: request.mergeToken } : {};
-  const rerun = () => `graphyard up --repo ${request.repository} --provider ${request.provider}${request.baseBranch ? ` --base-branch '${request.baseBranch}'` : ''}${request.port ? ` --port ${request.port}` : ''}${request.pushAuth ? ' --push-auth gh' : ''}${request.agent ? ' --agent' : ''}`;
+  const rerun = () => `mainworks up --repo ${request.repository} --provider ${request.provider}${request.baseBranch ? ` --base-branch '${request.baseBranch}'` : ''}${request.port ? ` --port ${request.port}` : ''}${request.pushAuth ? ' --push-auth gh' : ''}${request.agent ? ' --agent' : ''}`;
   /** GY-1552: create OWNER/NAME with the operator's gh login when it does not exist yet. */
   const ensureRepository = async () => {
     if (!deps.gh || !deps.git) throw new UpStop('preflight: control-plane merger needs gh and git on this machine to create the repository when it is missing', upExitCodes.prerequisite);
@@ -654,7 +654,7 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
   };
 
   try {
-    // GY-3221: a base branch in Graphyard's own branch namespace is refused before anything runs:
+    // GY-3221: a base branch in Mainworks's own branch namespace is refused before anything runs:
     // GitHub cannot hold the onboarding and worker refs beside it, so the run would fail mid-way.
     // Checked outside the resumable steps, so a rerun naming the namespace is refused whatever an
     // earlier run already completed.
@@ -667,7 +667,7 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
     // found here, before anything is installed, rather than as a loop that never cycles.
     const cleanCli = async (name: UpStep) => {
       const checkout = await deps.cliCheckout?.();
-      if (checkout?.dirty.length) throw new UpStop(`${name}: the Graphyard CLI checkout the master loop runs from (${checkout.root}) holds uncommitted work, and the loop refuses to start from it: ${checkout.dirty.slice(0, 20).join(', ')}${checkout.dirty.length > 20 ? ` and ${checkout.dirty.length - 20} more` : ''}. Commit or discard these paths, then rerun ${rerun()}; nothing further was installed.`, upExitCodes.prerequisite);
+      if (checkout?.dirty.length) throw new UpStop(`${name}: the Mainworks CLI checkout the master loop runs from (${checkout.root}) holds uncommitted work, and the loop refuses to start from it: ${checkout.dirty.slice(0, 20).join(', ')}${checkout.dirty.length > 20 ? ` and ${checkout.dirty.length - 20} more` : ''}. Commit or discard these paths, then rerun ${rerun()}; nothing further was installed.`, upExitCodes.prerequisite);
     };
 
     // Checked on every run, outside the resumable step: a checkout dirtied since an earlier run's
@@ -707,7 +707,7 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
       const plan = parseJson(planned);
       await rememberSignIn(deps.root, state, planned);
       const failed: { name: string; detail?: string; fix?: string }[] = (plan?.preflight ?? []).filter((check: any) => check && check.ok === false);
-      if (failed.length) throw new UpStop(`Preflight needs a person on this machine: ${failed.map(check => `${check.name}: ${check.detail ?? 'failed'}${check.fix ? ` (fix: ${check.fix})` : ''}`).join('; ')}. Fix it, then rerun graphyard up.`, upExitCodes.prerequisite);
+      if (failed.length) throw new UpStop(`Preflight needs a person on this machine: ${failed.map(check => `${check.name}: ${check.detail ?? 'failed'}${check.fix ? ` (fix: ${check.fix})` : ''}`).join('; ')}. Fix it, then rerun mainworks up.`, upExitCodes.prerequisite);
       return `${(plan?.preflight ?? []).length} checks passed`;
     });
 
@@ -745,7 +745,7 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
       const listed = answers.filter(answer => answer.status === 401 && answer.listed === true).map(answer => answer.identity);
       const unknown = answers.filter(answer => answer.status === 401 && answer.listed === null).map(answer => answer.identity);
       if (listed.length) deps.emit({ kind: 'note', text: `The control plane refused the recorded ${listed.join(', ')} credential${listed.length > 1 ? 's' : ''} (401) but still lists the identit${listed.length > 1 ? 'ies' : 'y'}: its database is not fresh (a revoked or rotated identity), so nothing is re-issued; restore it through the operator-agent API or choose another identity in .graphyard/master.json.` });
-      else if (unknown.length) deps.emit({ kind: 'note', text: `The control plane refused the recorded ${unknown.join(', ')} credential${unknown.length > 1 ? 's' : ''} (401), but its operator-agent listing could not be read (${admin ? 'GET /api/operator-agents failed' : "the operator's admin credential is not on this machine"}), so nothing confirms a fresh database and nothing is re-issued; rerun graphyard up once the listing answers.` });
+      else if (unknown.length) deps.emit({ kind: 'note', text: `The control plane refused the recorded ${unknown.join(', ')} credential${unknown.length > 1 ? 's' : ''} (401), but its operator-agent listing could not be read (${admin ? 'GET /api/operator-agents failed' : "the operator's admin credential is not on this machine"}), so nothing confirms a fresh database and nothing is re-issued; rerun mainworks up once the listing answers.` });
       else if (refused.length) {
         state.reissue = refused;
         state.completed = state.completed.filter(name => !reissueSteps.includes(name));
@@ -776,19 +776,19 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
       };
       let wrong = await unbound();
       if (wrong && wrong !== disabled && installedBefore) {
-        deps.emit({ kind: 'note', text: `Herdr's graphyard plugin is ${wrong}, not this install's server; running the install again to link it` });
+        deps.emit({ kind: 'note', text: `Herdr's mainworks plugin is ${wrong}, not this install's server; running the install again to link it` });
         state.completed = state.completed.filter(name => name !== 'control-plane'); await writeState(deps.root, state);
         await controlPlane();
         wrong = await unbound();
       }
       let refused: HerdrSetupFailure | null = null;
       if (wrong === disabled) {
-        deps.emit({ kind: 'note', text: `Herdr's graphyard plugin is ${disabled}; enabling it` });
+        deps.emit({ kind: 'note', text: `Herdr's mainworks plugin is ${disabled}; enabling it` });
         try { await herdrHost.enable(); wrong = await unbound(); } catch (error) { if (!(error instanceof HerdrSetupFailure)) throw error; refused = error; }
       }
       if (refused) await leaveHerdrOut(refused);
-      else if (wrong === disabled) await leaveHerdrOut(new HerdrSetupFailure('plugin', `the graphyard plugin${where} is bound to ${server} but Herdr still reports it disabled after enabling it`));
-      else if (wrong) await leaveHerdrOut(new HerdrSetupFailure('plugin', `the graphyard plugin${where} is ${wrong} after the install linked it, not to ${server ?? 'this install\'s server'}`));
+      else if (wrong === disabled) await leaveHerdrOut(new HerdrSetupFailure('plugin', `the mainworks plugin${where} is bound to ${server} but Herdr still reports it disabled after enabling it`));
+      else if (wrong) await leaveHerdrOut(new HerdrSetupFailure('plugin', `the mainworks plugin${where} is ${wrong} after the install linked it, not to ${server ?? 'this install\'s server'}`));
     }
     // Persist the workspace after setup creates master.json, and drain any legacy private server.
     if (herdrHost && !state.noHerdr) await herdrHost.record(herdrWorkspace);
@@ -837,7 +837,7 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
       // An install whose operator already ran the command keeps those identities; the admin credential only refreshes them.
       // A re-issue (GY-1851) never keeps the files the fresh database refused.
       if (!admin && !state.reissue?.length && await provisioned(deps.root)) return 'the master\'s operator-agent identity was already provisioned';
-      if (!admin) throw new UpStop(`master-autonomy: the operator's admin credential is not on this machine${state.operatorTokenFile ? ` (${state.operatorTokenFile} is unreadable)` : ''}, so the master's agent identities cannot be provisioned; pipe it to graphyard master autonomy --admin-token-stdin --apply here, then rerun ${rerun()}`, upExitCodes.prerequisite);
+      if (!admin) throw new UpStop(`master-autonomy: the operator's admin credential is not on this machine${state.operatorTokenFile ? ` (${state.operatorTokenFile} is unreadable)` : ''}, so the master's agent identities cannot be provisioned; pipe it to mainworks master autonomy --admin-token-stdin --apply here, then rerun ${rerun()}`, upExitCodes.prerequisite);
       await run('master-autonomy', ['master', 'autonomy', '--admin-token-stdin', '--apply', '--harness', request.master], { stdin: admin });
       return 'the master creates, releases and unblocks work with its own operator-agent identity';
     });
@@ -871,7 +871,7 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
         const stderr = String(error?.stderr ?? '').trim();
         const argv = Array.isArray(error?.argv) && error.argv.every((word: unknown) => typeof word === 'string') ? (error.argv as string[]).map(redactLine) : null;
         const said = stderr ? redactLine(stderr.split('\n').map(line => line.trim()).filter(Boolean).slice(-3).join(' ').slice(0, 300)) : String(error?.message ?? error).split('\n')[0].slice(0, 400);
-        const message = `onboarding: publishing the onboarding files failed: ${said}; rerun graphyard up to retry`;
+        const message = `onboarding: publishing the onboarding files failed: ${said}; rerun mainworks up to retry`;
         throw argv ? new ChildStop(message, upExitCodes.failed, argv, childFirstStderr({ stderr })) : new UpStop(message, upExitCodes.failed, childFirstStderr({ stderr }));
       });
       const carried = [...workflows, ...firstCase].length ? `onboarding files with ${[...workflows, ...firstCase].join(', ')}` : 'onboarding files (no delivery workflow was written)';
@@ -880,7 +880,7 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
       // the checks run and it merges under the normal gates; nothing waits on a person.
       if (!state.onboardingWork) {
         if (!state.onboardingRequest) { state.onboardingRequest = randomUUID(); await writeState(deps.root, state); }
-        const filed = await (deps.fileOnboarding?.(published.commit, state.operatorTokenFile ?? null, state.onboardingRequest) ?? Promise.resolve(null)).catch((error: any) => { throw new UpStop(`onboarding: filing ${published.commit.slice(0, 12)} as a work item failed: ${String(error?.message ?? error).split('\n')[0].slice(0, 400)}; rerun graphyard up to retry`, upExitCodes.failed); });
+        const filed = await (deps.fileOnboarding?.(published.commit, state.operatorTokenFile ?? null, state.onboardingRequest) ?? Promise.resolve(null)).catch((error: any) => { throw new UpStop(`onboarding: filing ${published.commit.slice(0, 12)} as a work item failed: ${String(error?.message ?? error).split('\n')[0].slice(0, 400)}; rerun mainworks up to retry`, upExitCodes.failed); });
         state.onboardingWork = filed?.key ?? null;
       }
       // Without the item there is no head to observe and no loop to merge the change, so setup
@@ -914,8 +914,8 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
       if (!(counts?.loggedIn > 0)) return report ?? null;
       const directory = deps.installDirectory?.() ?? installDirectory(installIdFor(request.repository));
       // Only an absent record means no install here; one that cannot be read or validated stops the run naming it.
-      const settled = await settleWorkerCredentials(directory).catch((error: any) => { throw new UpStop(`accounts: this install's record in ${directory} cannot be read: ${String(error?.message ?? error).split('\n')[0].slice(0, 400)}; rerun graphyard install --repo ${request.repository}${request.pushAuth ? ' --push-auth gh' : ''} --apply to rewrite it, then ${rerun()}`, upExitCodes.failed); });
-      if (settled.missing.length) throw new UpStop(`accounts: ${settled.issued.length ? `issued ${settled.issued.join(', ')}, but ` : ''}this install's worker credentials are missing (${settled.missing.join(', ')}), and none can be regenerated here: the plane accepts only the tokens it was deployed with. Rerun graphyard install --repo ${request.repository}${request.pushAuth ? ' --push-auth gh' : ''} --apply to reissue them, then ${rerun()}`, upExitCodes.failed);
+      const settled = await settleWorkerCredentials(directory).catch((error: any) => { throw new UpStop(`accounts: this install's record in ${directory} cannot be read: ${String(error?.message ?? error).split('\n')[0].slice(0, 400)}; rerun mainworks install --repo ${request.repository}${request.pushAuth ? ' --push-auth gh' : ''} --apply to rewrite it, then ${rerun()}`, upExitCodes.failed); });
+      if (settled.missing.length) throw new UpStop(`accounts: ${settled.issued.length ? `issued ${settled.issued.join(', ')}, but ` : ''}this install's worker credentials are missing (${settled.missing.join(', ')}), and none can be regenerated here: the plane accepts only the tokens it was deployed with. Rerun mainworks install --repo ${request.repository}${request.pushAuth ? ' --push-auth gh' : ''} --apply to reissue them, then ${rerun()}`, upExitCodes.failed);
       if (!settled.issued.length) return report ?? null;
       deps.emit({ kind: 'note', text: `accounts: issued this install's worker credentials (${settled.issued.join(', ')}), so the profiles write makes a worker profile from each.` });
       // The settle just made every configured worker present, so this write issues nothing more.
@@ -964,7 +964,7 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
       // GY-3225: the checkout's own Claude configuration, untrusted in a registered Claude
       // account's config, refuses every launch of that account and the loop holds them, so setup
       // stops here once — naming each account home and both remedies — rather than starting a loop
-      // that cannot launch. Graphyard never records that trust itself.
+      // that cannot launch. Mainworks never records that trust itself.
       const refusals = await deps.checkoutTrust?.(deps.root).catch(() => []) ?? [];
       if (refusals.length) throw new UpStop(`harness: ${checkoutTrustLine(refusals)}. Fix that, then rerun ${rerun()}`, upExitCodes.prerequisite);
       return applied;
@@ -1011,11 +1011,11 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
       // exact commit below.
       if (loopStale && deps.liftLoopPins) {
         const lifted = await deps.liftLoopPins().catch(error => { throw new UpStop(`master-loop: ${loopStale}, and lifting the pin that holds it there failed: ${String(error?.message ?? error).split('\n')[0]}; rerun ${rerun()}`, upExitCodes.failed); });
-        if (lifted.length) deps.emit({ kind: 'note', text: `master-loop: lifted ${lifted.join(' and ')}, so the unit starts this CLI instead; graphyard master recover --to SHA pins a release again.` });
+        if (lifted.length) deps.emit({ kind: 'note', text: `master-loop: lifted ${lifted.join(' and ')}, so the unit starts this CLI instead; mainworks master recover --to SHA pins a release again.` });
       }
       if (loopStale && rewriteLoop) {
         const token = await deps.masterToken();
-        if (!token) throw new UpStop(`master-loop: ${loopStale}, and no master credential is recorded here to rewrite the unit; run graphyard master init --token-stdin --replace-supervisor from this checkout, then rerun ${rerun()}`, upExitCodes.prerequisite);
+        if (!token) throw new UpStop(`master-loop: ${loopStale}, and no master credential is recorded here to rewrite the unit; run mainworks master init --token-stdin --replace-supervisor from this checkout, then rerun ${rerun()}`, upExitCodes.prerequisite);
         const init = parseJson(await run('master-loop', ['master', 'init', '--token-stdin', '--replace-supervisor'], { stdin: token }));
         rewrote = typeof init?.supervisor?.state === 'string' ? init.supervisor.state : null;
         if (rewrote === 'refused') throw new UpStop(`master-loop: the loop unit was not rewritten: ${String(init?.supervisor?.refused ?? 'the install refused it')}; rerun ${rerun()} once that is fixed`, upExitCodes.failed);
@@ -1077,7 +1077,7 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
         if (work) {
           onboarding = onboardingWait(work, deps.now());
           if (onboarding.waitingFor.join() !== shown) { shown = onboarding.waitingFor.join(); deps.emit({ kind: 'onboarding', wait: onboarding }); }
-          if (onboarding.closed) throw new UpStop(`onboarding: ${onboarding.key} was closed without merging, so the base branch lacks Graphyard's delivery workflows; publish them again, then rerun ${rerun()}`, upExitCodes.failed);
+          if (onboarding.closed) throw new UpStop(`onboarding: ${onboarding.key} was closed without merging, so the base branch lacks Mainworks's delivery workflows; publish them again, then rerun ${rerun()}`, upExitCodes.failed);
           if (onboarding.merged) break;
         }
         if (deps.now() >= deadline) {
@@ -1092,7 +1092,7 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
       if (onboarding) onboarding = { ...onboarding, waitingFor: [], merged: true };
     }
     // GY-1477: setup ends with the one sign-in link itself (minted with the operator's credential, a host
-    // install's from its redeemed claim), on the reachable address, so nobody runs graphyard login afterwards.
+    // install's from its redeemed claim), on the reachable address, so nobody runs mainworks login afterwards.
     const base = await linkBase();
     const minted = base ? await mint() : null;
     signIn = minted && base ? setupAddress(base, signInAt(minted, base)) : null;
@@ -1109,7 +1109,7 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
 }
 
 /**
- * The `graphyard up` command: a run whose omitted --repo and --provider come from .graphyard/up.json,
+ * The `mainworks up` command: a run whose omitted --repo and --provider come from .graphyard/up.json,
  * and whose children a SIGINT or SIGTERM reaches (GY-1466).
  */
 export async function upCommand(root: string, cliPath: () => Promise<string>, args: string[]): Promise<UpResult> {
@@ -1155,23 +1155,23 @@ export function recordedUp(root: string): { repository: string; provider: string
   } catch (error: any) { if (error.code === 'ENOENT' || error instanceof SyntaxError) return null; throw error; }
 }
 
-/** The options `graphyard up` parses (GY-1510). */
+/** The options `mainworks up` parses (GY-1510). */
 export const upOptions = { 'merge-token-stdin': { type: 'boolean' }, 'push-auth': { type: 'string' }, 'base-branch': { type: 'string' }, port: { type: 'string' }, repo: { type: 'string' }, provider: { type: 'string' }, agent: { type: 'boolean' }, json: { type: 'boolean' }, master: { type: 'string' }, wait: { type: 'string' }, local: { type: 'boolean' }, url: { type: 'string' } } as const;
 
 /**
- * `graphyard up`'s flags. With a run RECORDED in this checkout, an omitted --repo or --provider is
+ * `mainworks up`'s flags. With a run RECORDED in this checkout, an omitted --repo or --provider is
  * the recorded one, and one that differs is refused, naming both: its steps say nothing about it.
  */
 export function upRequestFromArgs(args: string[], recorded: { repository: string; provider: string } | null = null): UpRequest {
   const { values } = parseArgs({ args, options: upOptions, allowPositionals: false });
   // --local is --provider local (GY-1500): the control plane on embedded Postgres on this machine, no Docker.
-  if (values.local && values.provider !== undefined && values.provider !== 'local') throw new Error(`graphyard up --local means --provider local; it cannot be combined with --provider ${values.provider}`);
+  if (values.local && values.provider !== undefined && values.provider !== 'local') throw new Error(`mainworks up --local means --provider local; it cannot be combined with --provider ${values.provider}`);
   const provider = values.local ? 'local' : values.provider;
   for (const [flag, given, kept] of [['--repo', values.repo, recorded?.repository], ['--provider', provider, recorded?.provider]] as const) {
-    if (given !== undefined && kept !== undefined && given !== kept) throw new Error(`graphyard up ${flag} ${given} conflicts with ${kept}, which the run recorded in .graphyard/up.json resumes; omit ${flag} (or pass ${kept}) to resume it, or remove .graphyard/up.json to start over for ${given}`);
+    if (given !== undefined && kept !== undefined && given !== kept) throw new Error(`mainworks up ${flag} ${given} conflicts with ${kept}, which the run recorded in .graphyard/up.json resumes; omit ${flag} (or pass ${kept}) to resume it, or remove .graphyard/up.json to start over for ${given}`);
   }
   const repository = values.repo ?? recorded?.repository;
-  if (!repository || !/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new Error('Use graphyard up --repo OWNER/NAME [--provider compose|local | --local] [--agent]');
+  if (!repository || !/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new Error('Use mainworks up --repo OWNER/NAME [--provider compose|local | --local] [--agent]');
   const minutes = values.wait === undefined ? null : Number(values.wait);
   if (minutes !== null && (!Number.isSafeInteger(minutes) || minutes < 1 || minutes > 1_440)) throw new Error('Use --wait with whole minutes from 1 to 1440');
   const port = values.port === undefined ? null : Number(values.port);
@@ -1187,7 +1187,7 @@ export function upRequestFromArgs(args: string[], recorded: { repository: string
     ...(values['base-branch'] ? { baseBranch: values['base-branch'] } : {}), ...(port !== null ? { port } : {}), ...(minutes !== null ? { waitMs: minutes * 60_000 } : {}), ...(url ? { url } : {}), ...(values['merge-token-stdin'] ? { mergeToken: '' } : {}), ...(pushAuth ? { pushAuth: 'gh' as const } : {}) };
 }
 
-/** A one-time dashboard sign-in address minted with the operator's admin credential, TOKEN or the one in FILE (as `graphyard login` mints it). */
+/** A one-time dashboard sign-in address minted with the operator's admin credential, TOKEN or the one in FILE (as `mainworks login` mints it). */
 export async function mintSignIn(server: string, file: string | null, fetcher: typeof fetch = fetch, token = ''): Promise<string | null> {
   if (!token && file) { try { token = (await readFile(file, 'utf8')).trim(); } catch { return null; } }
   if (token.length < 32) return null;
@@ -1217,11 +1217,11 @@ export { onboardingBranch };
 /** The onboarding files every apply writes; a publish without one refuses (GY-1480). */
 export const onboardingRequiredFiles = ['AGENTS.md', 'graphyard.json'] as const;
 /**
- * GY-3221: the identity Graphyard's own commits are authored under, so onboarding commits need no
+ * GY-3221: the identity Mainworks's own commits are authored under, so onboarding commits need no
  * host git identity: the environment names the author and committer for `git commit-tree`, and a
  * host with no global user.name/user.email commits all the same.
  */
-export const graphyardGitIdentity = { GIT_AUTHOR_NAME: 'Graphyard', GIT_AUTHOR_EMAIL: 'graphyard@localhost', GIT_COMMITTER_NAME: 'Graphyard', GIT_COMMITTER_EMAIL: 'graphyard@localhost' } as const;
+export const mainworksGitIdentity = { GIT_AUTHOR_NAME: 'Mainworks', GIT_AUTHOR_EMAIL: 'graphyard@localhost', GIT_COMMITTER_NAME: 'Mainworks', GIT_COMMITTER_EMAIL: 'graphyard@localhost' } as const;
 
 /**
  * Publish the onboarding files as one commit on the base branch's tip, on `graphyard/onboarding`.
@@ -1230,7 +1230,7 @@ export const graphyardGitIdentity = { GIT_AUTHOR_NAME: 'Graphyard', GIT_AUTHOR_E
  * commit is submitted by head sha (GY-2938) and the control plane reads it from this checkout's own
  * object store. The commit is dated from the base tip, so a rerun over the same files publishes the
  * identical commit and pushes nothing new; when the base branch already holds them, nothing is
- * published. Authored under Graphyard's own identity (GY-3221), so no host git identity is needed.
+ * published. Authored under Mainworks's own identity (GY-3221), so no host git identity is needed.
  * The push uses the install's own push credential — the deploy key, the stored token or the
  * operator's gh login, whichever the merge writer pushes with (GY-3276) — never the caller's own.
  */
@@ -1244,7 +1244,7 @@ export async function publishOnboarding(root: string, repository: string, run: (
   // GY-1480: every file the publish means to carry must be on disk; one that is not is refused by
   // name, never skipped, so the change never claims a file it does not hold.
   const missing = [...onboardingRequiredFiles, ...workflows].filter(file => !existsSync(resolve(root, file)));
-  if (missing.length) throw new Error(`publishOnboarding refuses: ${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} missing from ${root}; rerun graphyard init --scan --apply, then graphyard up`);
+  if (missing.length) throw new Error(`publishOnboarding refuses: ${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} missing from ${root}; rerun mainworks init --scan --apply, then mainworks up`);
   const installId = installIdFor(repository);
   const record = await readInstallRecord(installDirectory(installId)).catch(() => null);
   // GY-3276: the onboarding branch goes out with the install's own push credential — the same one
@@ -1267,9 +1267,9 @@ export async function publishOnboarding(root: string, repository: string, run: (
     const tree = child('git', ['write-tree'], env).trim();
     if (tree === child('git', ['rev-parse', `${baseCommit}^{tree}`]).trim()) return null;
     // Dated from the base tip, so the same files above the same tip always yield this one commit.
-    const dated = { ...env, ...graphyardGitIdentity,
+    const dated = { ...env, ...mainworksGitIdentity,
       GIT_AUTHOR_DATE: child('git', ['show', '-s', '--format=%cI', baseCommit]), GIT_COMMITTER_DATE: child('git', ['show', '-s', '--format=%cI', baseCommit]) };
-    const commit = child('git', ['commit-tree', tree, '-p', baseCommit, '-m', 'Add Graphyard onboarding: coordination instructions, configuration and delivery workflows'], dated).trim();
+    const commit = child('git', ['commit-tree', tree, '-p', baseCommit, '-m', 'Add Mainworks onboarding: coordination instructions, configuration and delivery workflows'], dated).trim();
     // The branch is this command's own: an earlier, interrupted publish is replaced, never merged into.
     child('git', ['push', '--force', remote, `${commit}:refs/heads/${onboardingBranch}`], credentialEnvironment);
     return { commit };
@@ -1422,7 +1422,7 @@ export function upDependencies(root: string, cliPath: string, request: UpRequest
   };
 }
 
-/** Herdr on this host for `graphyard up` (GY-1511), through master/herdr.ts. */
+/** Herdr on this host for `mainworks up` (GY-1511), through master/herdr.ts. */
 export function upHerdr(root: string, repository: string, deps: HerdrHostDeps = hostHerdrDeps()): UpHerdr {
   return {
     binary: () => ensureHerdrBinary(deps),
@@ -1438,7 +1438,7 @@ export function upHerdr(root: string, repository: string, deps: HerdrHostDeps = 
     },
     enable: async () => {
       try { herdrSync(['plugin', 'enable', 'graphyard'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30_000 }, null); }
-      catch (error: any) { throw new HerdrSetupFailure('plugin', `herdr plugin enable graphyard exited ${error?.status ?? 'abnormally'}: ${`${error?.stderr ?? ''}`.trim().split('\n').slice(-3).join(' ').slice(0, 300) || error?.message || 'no output'}`); }
+      catch (error: any) { throw new HerdrSetupFailure('plugin', `herdr plugin enable mainworks exited ${error?.status ?? 'abnormally'}: ${`${error?.stderr ?? ''}`.trim().split('\n').slice(-3).join(' ').slice(0, 300) || error?.message || 'no output'}`); }
     },
   };
 }

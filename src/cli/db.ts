@@ -7,7 +7,7 @@ import { defineCommands } from './registry.js';
 /**
  * Server-side maintenance over DATABASE_URL, never over the HTTP API: these commands run
  * where the database is reachable (the control-plane container or its host) and need no
- * Graphyard credential, so they never read the repository connection file. A backup is as
+ * Mainworks credential, so they never read the repository connection file. A backup is as
  * sensitive as the database itself.
  */
 export const dbCommands = defineCommands([
@@ -24,7 +24,7 @@ export const dbCommands = defineCommands([
     async run(context) {
       const { id, args, print } = context;
       const url = process.env.DATABASE_URL;
-      if (!url) throw new Error('Set DATABASE_URL to the Graphyard database; db commands run on the control-plane host, not through the API');
+      if (!url) throw new Error('Set DATABASE_URL to the Mainworks database; db commands run on the control-plane host, not through the API');
       const store = new Store(url);
       try {
         if (id === 'migrate') { await store.init(); return print({ migrated: true, schema: await store.schema(), release: releaseInfo() }); }

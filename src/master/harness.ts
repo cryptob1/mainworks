@@ -23,7 +23,7 @@ import { type RequestDelivery, launchSession } from './launch.js';
 import { type HerdrAgent, herdrSessionPaths, stopCreatedHerdrTab } from './herdr.js';
 import type { PreparedWorker } from './dispatch.js';
 import { worktreeRoot } from '../install/worktree-root.js';
-import { graphyardRepository } from '../scenarios.js';
+import { mainworksRepository } from '../scenarios.js';
 import { hostHeavyJobsDirectory, slotsDirectoryVariable, verificationEnvironment } from './verification-slots.js';
 import { setting } from '../setting.js';
 import { stateDirectory } from '../install/layout.js';
@@ -37,16 +37,16 @@ import { stateDirectory } from '../install/layout.js';
  * verdict, evidence, or a credential; the enforced boundaries are unchanged.
  */
 function withMasterOwnedRules(plan: HarnessPlan, config: MasterConfig, root: string, unitDirectory: string): HarnessPlan {
-  if (plan.harness === 'codex') return { ...plan, manual: `${plan.manual}# The master's own commands reach GitHub, Graphyard, the deployment and its private state beside\n# its credential, so start it with its broadest approval mode (master start codex adds these):\n#   --ask-for-approval never --sandbox workspace-write -c sandbox_workspace_write.network_access=true --add-dir ${JSON.stringify(dirname(config.credentialFile))}\n` };
+  if (plan.harness === 'codex') return { ...plan, manual: `${plan.manual}# The master's own commands reach GitHub, Mainworks, the deployment and its private state beside\n# its credential, so start it with its broadest approval mode (master start codex adds these):\n#   --ask-for-approval never --sandbox workspace-write -c sandbox_workspace_write.network_access=true --add-dir ${JSON.stringify(dirname(config.credentialFile))}\n` };
   if (plan.harness !== 'claude') return plan;
   const workflows = [config.run.proofWorkflow, config.run.smokeWorkflow].filter((name): name is string => !!name);
   const units = installUnitRules(root, unitDirectory);
   const owned: HarnessRule[] = [
     { rule: 'Read(./.graphyard/master.json)', why: 'Read the master configuration the loop runs from: profiles, agent environments, run settings. It holds paths to credentials, never their values. Changing it goes through master config, which writes only the fields the master owns.' },
     ...units.allow,
-    // Railway deploys each application from git on its own; Graphyard observes each app's versionUrl.
-    { rule: 'Bash(railway status:*)', why: 'Railway deploys from git and Graphyard observes each app\'s versionUrl: read which release a service serves when master status names it lagging or failed.' },
-    { rule: 'Bash(railway logs:*)', why: 'Read a service\'s deploy logs when its versionUrl does not answer main: Railway builds from git, Graphyard only observes.' },
+    // Railway deploys each application from git on its own; Mainworks observes each app's versionUrl.
+    { rule: 'Bash(railway status:*)', why: 'Railway deploys from git and Mainworks observes each app\'s versionUrl: read which release a service serves when master status names it lagging or failed.' },
+    { rule: 'Bash(railway logs:*)', why: 'Read a service\'s deploy logs when its versionUrl does not answer main: Railway builds from git, Mainworks only observes.' },
     { rule: 'Bash(railway deployment:*)', why: 'List a service\'s deployments and their commits when its versionUrl lags main.' },
     { rule: 'Bash(railway redeploy:*)', why: 'Redeploy a service\'s current release after an infrastructure failure; Railway builds only what the base branch already holds.' },
     { rule: 'Bash(gh run list:*)', why: 'Find the CI and workflow runs of a candidate or delivery.' },
@@ -61,9 +61,9 @@ function withMasterOwnedRules(plan: HarnessPlan, config: MasterConfig, root: str
 
 /**
  * The master's unit rules (GY-1441): every systemctl command it may run names this install's own
- * loop unit exactly, and every other Graphyard unit on the host is denied, so a master started from
+ * loop unit exactly, and every other Mainworks unit on the host is denied, so a master started from
  * a second install can never restart another install's loop. A glob cannot say "every
- * graphyard-* unit but mine", so the denies are the shapes that can never be this install's (the
+ * mainworks-* unit but mine", so the denies are the shapes that can never be this install's (the
  * legacy names for a per-install unit, the per-install names for a legacy alias) plus every other
  * install's unit found installed beside it; a deny that would match one of the install's own
  * commands is dropped, since in Claude Code a deny beats the allow.
@@ -79,7 +79,7 @@ function installUnitRules(root: string, unitDirectory: string): { allow: Harness
     { rule: 'Bash(systemctl --user daemon-reload)', why: 'Reload the loop\'s user unit after it is edited.' },
     { rule: `Bash(journalctl --user -u ${master}:*)`, why: 'Read the loop\'s launch, failover and refusal log; the unit is pinned to the loop\'s own.' },
   ];
-  const why = 'Another Graphyard installation on this host owns this unit; restarting, stopping or enabling it would disrupt that install\'s loop (GY-1441).';
+  const why = 'Another Mainworks installation on this host owns this unit; restarting, stopping or enabling it would disrupt that install\'s loop (GY-1441).';
   const shapes = units.alias ? ['graphyard-master-*'] : [`${legacyLoopUnit}*`, 'graphyard-master'];
   const others: string[] = [];
   try {
@@ -106,18 +106,18 @@ function installUnitRules(root: string, unitDirectory: string): { allow: Harness
  */
 export type SessionRole = 'worker' | 'reviewer' | 'producer';
 export interface SessionHarnessInput { role: SessionRole; kind: string | undefined; cliPath: string; repository: string; baseBranch: string; credentialHome: string; credentialDirectories: string[]; branch?: string; pr?: number;
-  /** The detached checkout Graphyard allocated for a reviewer session under the managed worktree root. */
+  /** The detached checkout Mainworks allocated for a reviewer session under the managed worktree root. */
   checkout?: string }
 export function sessionHarnessPlan(input: SessionHarnessInput): HarnessPlan {
   if (input.kind !== 'claude') return { harness: input.kind ?? 'unknown', file: null, allow: [], deny: [], manual: null, note: `${input.kind ?? 'This runtime'} does not load the repository's Claude Code settings, so it inherits no master rule; its own approval configuration applies.` };
   const cli = `node ${input.cliPath}`;
   const secrets: HarnessRule[] = [
-    ...[...new Set(input.credentialDirectories)].sort().map(directory => ({ rule: `Read(/${directory}/**)`, why: 'Graphyard credentials live here; the session uses its own through the CLI and never reads their bytes.' })),
-    { rule: 'Read(./.graphyard/connection.json)', why: 'Holds an individual Graphyard credential.' },
+    ...[...new Set(input.credentialDirectories)].sort().map(directory => ({ rule: `Read(/${directory}/**)`, why: 'Mainworks credentials live here; the session uses its own through the CLI and never reads their bytes.' })),
+    { rule: 'Read(./.graphyard/connection.json)', why: 'Holds an individual Mainworks credential.' },
     { rule: 'Read(./.graphyard/credentials.json)', why: 'Holds local principal credentials.' },
     { rule: 'Read(./.graphyard/github-app.json)', why: 'Holds the control-plane App private key.' },
     // GY-3711: a fresh install keeps the same files in .mainworks.
-    { rule: 'Read(./.mainworks/connection.json)', why: 'Holds an individual Graphyard credential.' },
+    { rule: 'Read(./.mainworks/connection.json)', why: 'Holds an individual Mainworks credential.' },
     { rule: 'Read(./.mainworks/credentials.json)', why: 'Holds local principal credentials.' },
     { rule: 'Read(./.mainworks/github-app.json)', why: 'Holds the control-plane App private key.' },
     { rule: 'Read(**/*.pem)', why: 'App private keys are never read into a session transcript.' },
@@ -161,9 +161,9 @@ export function sessionHarnessPlan(input: SessionHarnessInput): HarnessPlan {
       // mergeability and the thread lines before its one POST; a raw review call is denied below.
       { rule: `Bash(${cli} review post:*)`, why: 'Post the one verdict this session was launched for, checked against its launch binding; the master itself is denied every review call.' },
       // Surrounding code is read from a detached checkout under the managed worktree root, which
-      // Graphyard allocates for the session and removes when it ends.
+      // Mainworks allocates for the session and removes when it ends.
       ...(input.checkout ? [{ rule: 'Bash(git fetch:*)', why: 'Fetch the exact head under review.' },
-        { rule: `Bash(git worktree add --detach ${input.checkout}:*)`, why: 'Check the exact head out, read-only, in the checkout Graphyard allocated for this session.' }] : []),
+        { rule: `Bash(git worktree add --detach ${input.checkout}:*)`, why: 'Check the exact head out, read-only, in the checkout Mainworks allocated for this session.' }] : []),
     ];
     deny = [...reviewerSecrets, ...noPush,
       { rule: `Bash(${cli} evidence:*)`, why: 'A reviewer never submits evidence.' },
@@ -236,8 +236,8 @@ export async function prepareSessionHarness(root: string, config: MasterConfig, 
  * started by the loop carries the same request plus the handover the loop composes from
  * control-plane truth (master-session.ts masterRequest), so both paths start the same session.
  */
-/** GY-3233: the master's rule for a fault in Graphyard itself, on an install for another repository; guide master states it too. */
-export const upstreamRule = (repository: string) => `A Graphyard fault (stuck upgrade, stalled loop step, sandbox, launch or trial-host failure: network, disk, missing trial-image tool) goes to master.json's upstream or master status; never file it in ${repository} or change ${repository} to work around it.`;
+/** GY-3233: the master's rule for a fault in Mainworks itself, on an install for another repository; guide master states it too. */
+export const upstreamRule = (repository: string) => `A Mainworks fault (stuck upgrade, stalled loop step, sandbox, launch or trial-host failure: network, disk, missing trial-image tool) goes to master.json's upstream or master status; never file it in ${repository} or change ${repository} to work around it.`;
 /** GY-3521: the mission every master starts from, identical for every project and runtime. */
 export const masterMission = 'Mission: build world-class software. Be creative and innovative: look for the better way, not just the next ticket. Push hard to resolve every problem yourself (run the command, choose the model, fix the fault) before involving the owner.';
 export function masterPrompt(config: MasterConfig): string {
@@ -247,16 +247,16 @@ export function masterPrompt(config: MasterConfig): string {
   // GY-3274: the master owns the product's success — it learns the problem
   // and the users before acting, keeps the product brief, ranks work by its success signals and
   // re-checks those signals after each deploy; the owner's stated mission and priorities override that ranking.
-  const founder = `You are the dedicated Graphyard master agent for ${config.repository}, responsible for the product succeeding: learn the problem and users first (repository, docs, the running app, owner messages, item history), write and revise the product brief, turn it into goals and work items ranked by impact on its success signals, re-check them after each deploy, and record lessons; the owner's stated mission and priorities override that ranking.`;
+  const founder = `You are the dedicated Mainworks master agent for ${config.repository}, responsible for the product succeeding: learn the problem and users first (repository, docs, the running app, owner messages, item history), write and revise the product brief, turn it into goals and work items ranked by impact on its success signals, re-check them after each deploy, and record lessons; the owner's stated mission and priorities override that ranking.`;
   // GY-3491: the rest of the master's rules live once, in master guide.
-  return `${masterMission} ${founder} ${itemLeadBrief.trim()}${config.forPerson ? ` Work only items whose human owner is ${config.forPerson}.` : ' Skip owned items.'} Never implement, claim worker leases, review, approve or submit evidence, weaken requirements, or bypass gates. Run node ${config.cliPath} master status, then node ${config.cliPath} master guide. Investigate with node ${config.cliPath} ask GY-N QUESTION. Act without asking: only goals and priorities, spending money or opening third-party accounts, and issuing credentials to people belong to the human. ${config.repository.toLowerCase() === graphyardRepository ? '' : `${upstreamRule(config.repository)} `}${supervised ? supervisedInstruction : `Every decision is yours to apply at once with your own identity.${config.operatorAgent ? '' : ` Your operator-agent identity is not provisioned yet; report that onboarding must run master autonomy --admin-token-stdin --apply.`}`}`;
+  return `${masterMission} ${founder} ${itemLeadBrief.trim()}${config.forPerson ? ` Work only items whose human owner is ${config.forPerson}.` : ' Skip owned items.'} Never implement, claim worker leases, review, approve or submit evidence, weaken requirements, or bypass gates. Run node ${config.cliPath} master status, then node ${config.cliPath} master guide. Investigate with node ${config.cliPath} ask GY-N QUESTION. Act without asking: only goals and priorities, spending money or opening third-party accounts, and issuing credentials to people belong to the human. ${config.repository.toLowerCase() === mainworksRepository ? '' : `${upstreamRule(config.repository)} `}${supervised ? supervisedInstruction : `Every decision is yours to apply at once with your own identity.${config.operatorAgent ? '' : ` Your operator-agent identity is not provisioned yet; report that onboarding must run master autonomy --admin-token-stdin --apply.`}`}`;
 }
 
 export async function startMaster(root: string, kind: WorkerProfile['kind'], agentArgs: string[], agents: HerdrAgent[], run?: ChildRun) {
   if (!kind) throw new Error('Choose a supported master agent kind');
   const config = await loadMasterConfig(root);
   const memory = await readProjectMemory(root).catch(() => null);
-  const masterRetry = `graphyard master start ${kind}, once masterAgentName in .graphyard/master.json is a name Herdr can launch`;
+  const masterRetry = `mainworks master start ${kind}, once masterAgentName in .graphyard/master.json is a name Herdr can launch`;
   const name = nameForLaunch(masterRetry, () => config.masterAgentName);
   if (agents.some(agent => agent.name === name)) throw new Error(`Master agent ${name} is already visible in Herdr; the loop supervises the live master session (master status, daemon.master) — close it there or in Herdr before starting another`);
   // Installation, not operator memory: the harness the master runs under learns the master's own
@@ -287,7 +287,7 @@ export async function startMaster(root: string, kind: WorkerProfile['kind'], age
     // The master is confined like every other launched session (GY-1658): its configuration,
     // administration and browser-flow commands run from the coordinator root with the checkout
     // read-only, its managed .graphyard state writable; a host that cannot confine it refuses.
-    ({ delivery } = await launchSession({ name, kind, args: launch.args, text: masterPrompt(config) + masterBriefSection(memory) + masterLessonsSection(memory), workspace: config.herdrWorkspace, label: `Graphyard master · ${config.repository}`, environment: { GRAPHYARD_MASTER: '1', ...launch.environment }, run, onPane: (nextPane, nextTab) => { pane = nextPane; tabId = nextTab; }, start: { directory: root, confirm: 'follow', retry: masterRetry, environment: launch.environment, confinement: 'master', masterStateDirectory: dirname(config.credentialFile), stateDirectories, credentialMask: masterCredentialMask(config, runtimeLoginHomes(launch.environment, null, launch.kind)), herdrPaths: herdrSessionPaths(config) } }));
+    ({ delivery } = await launchSession({ name, kind, args: launch.args, text: masterPrompt(config) + masterBriefSection(memory) + masterLessonsSection(memory), workspace: config.herdrWorkspace, label: `Mainworks master · ${config.repository}`, environment: { GRAPHYARD_MASTER: '1', ...launch.environment }, run, onPane: (nextPane, nextTab) => { pane = nextPane; tabId = nextTab; }, start: { directory: root, confirm: 'follow', retry: masterRetry, environment: launch.environment, confinement: 'master', masterStateDirectory: dirname(config.credentialFile), stateDirectories, credentialMask: masterCredentialMask(config, runtimeLoginHomes(launch.environment, null, launch.kind)), herdrPaths: herdrSessionPaths(config) } }));
   } catch (error) {
     const malformedTab = (error as any)?.herdrTab as string | undefined;
     if (pane || tabId || malformedTab) try { await stopCreatedHerdrTab(pane, tabId ?? malformedTab, run); }
@@ -308,7 +308,7 @@ export function autonomyPlan(config: MasterConfig) {
   const directory = dirname(config.credentialFile), stem = basename(config.credentialFile, '.token');
   const scope = { repositories: [config.repository], workItems: ['*'] };
   return {
-    operatorAgent: { id: config.operatorAgent?.id ?? `graphyard-master-${name}-operator`.slice(0, 100), displayName: `Graphyard master for ${config.repository}`.slice(0, 100), capabilities: [...masterOperatorCapabilities], scope,
+    operatorAgent: { id: config.operatorAgent?.id ?? `graphyard-master-${name}-operator`.slice(0, 100), displayName: `Mainworks master for ${config.repository}`.slice(0, 100), capabilities: [...masterOperatorCapabilities], scope,
       credentialFile: config.operatorAgent?.credentialFile ?? resolve(directory, `${stem}-operator.token`), role: 'Applies every decision the master makes (create, release, unblock, requirements, rework, close, attest) under its own name' },
   };
 }
@@ -367,7 +367,7 @@ export function workerHarnessPlan(input: { cliPath: string; branch: string; base
   // --head` — so its harness allows no `gh pr` command.
   const allow: HarnessRule[] = [
     ...['status', 'sync', 'restore-branch', 'complete', 'blocked', 'heartbeat', 'events', 'diagnose'].map(command => ({ rule: `Bash(${cli} ${command}:*)`, why: `The worker's own ${command} command on its claimed item; the server checks the lease epoch.` })),
-    { rule: `Bash(git push origin ${input.branch})`, why: 'Push the assigned branch; Graphyard observes it as the candidate head.' },
+    { rule: `Bash(git push origin ${input.branch})`, why: 'Push the assigned branch; Mainworks observes it as the candidate head.' },
     { rule: `Bash(git push -u origin ${input.branch})`, why: 'Publish the assigned branch the first time.' },
     { rule: `Bash(git push origin HEAD:${input.branch})`, why: 'Push the current head to the assigned branch.' },
     { rule: 'Bash(git fetch origin)', why: 'Read the remote tips restore-branch and sync compare against.' },
@@ -446,15 +446,15 @@ export function blockerCommands(text: string) {
 }
 export interface UnrunnableRemedy { key: string; epoch: number; command: string; role: 'worker'; rule: string; why: string; deniedBy: { role: string; rule: string }[]; text: string }
 /**
- * A blocker whose remedy no session Graphyard launches may run is a defect of Graphyard, not a
- * wait on a human shell (GY-128): Graphyard authorized work that none of its own sessions can
+ * A blocker whose remedy no session Mainworks launches may run is a defect of Mainworks, not a
+ * wait on a human shell (GY-128): Mainworks authorized work that none of its own sessions can
  * carry out. Every command a blocker names is judged against each launched role's harness —
  * the item's worker on its assigned branch, reviewer, producer and master — and reported when
  * every one of them denies it, naming the command, the role that would need it (the worker that
  * raised the blocker) and the rule in that role's harness that denies it.
  */
 export function unrunnableRemedies(work: Work[], input: { cliPath: string; baseBranch: string; repository?: string; workerKinds?: string[] }): UnrunnableRemedy[] {
-  const shared = { cliPath: input.cliPath, repository: input.repository ?? 'OWNER/REPOSITORY', baseBranch: input.baseBranch, credentialHome: '/graphyard-credentials', credentialDirectories: [] as string[] };
+  const shared = { cliPath: input.cliPath, repository: input.repository ?? 'OWNER/REPOSITORY', baseBranch: input.baseBranch, credentialHome: '/mainworks-credentials', credentialDirectories: [] as string[] };
   const others = [
     { role: 'reviewer', plan: sessionHarnessPlan({ ...shared, role: 'reviewer', kind: 'claude' }) },
     { role: 'producer', plan: sessionHarnessPlan({ ...shared, role: 'producer', kind: 'claude' }) },
@@ -475,7 +475,7 @@ export function unrunnableRemedies(work: Work[], input: { cliPath: string; baseB
       if (deniedBy.some(entry => entry.judged.decision !== 'deny')) return [];
       return [{ key: item.key, epoch, command, role: 'worker' as const, rule: own.rule!.rule, why: own.rule!.why,
         deniedBy: deniedBy.map(entry => ({ role: entry.role, rule: entry.judged.rule!.rule })),
-        text: `${item.key}'s blocker names \`${command}\`, which no session Graphyard launches may run: the worker that needs it is denied by its harness rule ${own.rule!.rule} (${own.rule!.why}), and ${deniedBy.map(entry => `the ${entry.role} by ${entry.judged.rule!.rule}`).join(', ')}. This is a Graphyard defect, not a wait on a human shell` }];
+        text: `${item.key}'s blocker names \`${command}\`, which no session Mainworks launches may run: the worker that needs it is denied by its harness rule ${own.rule!.rule} (${own.rule!.why}), and ${deniedBy.map(entry => `the ${entry.role} by ${entry.judged.rule!.rule}`).join(', ')}. This is a Mainworks defect, not a wait on a human shell` }];
     });
   });
 }

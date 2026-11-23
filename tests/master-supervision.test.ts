@@ -212,8 +212,8 @@ test('integration:runtime-calls-bounded — a hung agent runtime fails its step,
     await assert.rejects(listHerdrAgents(bounded), (error: ChildProcessError) =>
       error.timedOut === true, 'the call is killed at its bound rather than waited on');
     assert.ok(Date.now() - started < 30_000, 'and it returns in the order of its bound, not of the runtime');
-    // The step fails; Herdr is reported unavailable and Graphyard work state stays authoritative.
-    assert.deepEqual(await observeHerdrAgents(bounded), { agents: [], available: false, reason: 'Herdr session health is unavailable; Graphyard work state remains authoritative' });
+    // The step fails; Herdr is reported unavailable and Mainworks work state stays authoritative.
+    assert.deepEqual(await observeHerdrAgents(bounded), { agents: [], available: false, reason: 'Herdr session health is unavailable; Mainworks work state remains authoritative' });
 
     const credential = join(directory, 'coordinator.token');
     await writeFile(credential, coordinatorToken, { mode: 0o600 });

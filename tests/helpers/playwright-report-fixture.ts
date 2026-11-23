@@ -5,7 +5,7 @@ import type { Reporter, FullConfig, Suite, TestCase, TestResult, FullResult, Tes
 
 const identifier = (test: TestCase) => createHash('sha256').update(test.id).digest('hex');
 /** External graphyard-playwright-v1 report producer fixture; not a packaged runner. */
-export default class GraphyardReporter implements Reporter {
+export default class MainworksReporter implements Reporter {
   private declared: { id: string; expected: TestCase['expectedStatus']; location: { file: string; line: number; column: number } }[] = [];
   private executions: { id: string; status: TestResult['status']; retry: number }[] = [];
   private steps: { test: string; sequence: number; durationMs: number; failed: boolean }[] = [];
@@ -34,7 +34,7 @@ export default class GraphyardReporter implements Reporter {
   onError() { this.errors++; }
   onEnd(result: FullResult) {
     const path = process.env.GRAPHYARD_REPORT_FILE;
-    if (!path) throw new Error('Graphyard reporter output was not configured');
+    if (!path) throw new Error('Mainworks reporter output was not configured');
     writeFileSync(path, JSON.stringify({ format: 'graphyard-playwright-v1', declared: this.declared, executions: this.executions, steps: this.steps, errors: this.errors, overflow: this.overflow, status: result.status }), { flag: 'wx', mode: 0o640 });
   }
 }

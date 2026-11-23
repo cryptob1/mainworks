@@ -1,4 +1,4 @@
-// Concern: `graphyard master run` — wiring the durable loop to its effects.
+// Concern: `mainworks master run` — wiring the durable loop to its effects.
 import { insideMasterConfinement } from '../../master/confinement.js';
 import { parseArgs } from 'node:util';
 import { liveMasterConfig } from '../../master.js';
@@ -47,7 +47,7 @@ export async function loopCommand(session: MasterSession): Promise<unknown> {
       if (coordinator.actor.role !== 'coordinator') throw new Error('The durable master loop requires a coordinator credential; operator, producer, and worker credentials are refused');
       assertProtocol(coordinator);
     }
-    // GY-3290: everything heavy this loop runs or launches shares the host's budget with every other Graphyard project here.
+    // GY-3290: everything heavy this loop runs or launches shares the host's budget with every other Mainworks project here.
     joinHostHeavyBudget(master.repository);
     const state = await readDaemonState(root, master);
     // The deploy unit pins new tips while this loop still runs from its own pin; it keeps the one recorded here.
@@ -91,9 +91,9 @@ export async function loopCommand(session: MasterSession): Promise<unknown> {
     const connects = values.once ? undefined : setInterval(() => {
       if (connecting || !current().url || !current().hostId) return;
       connecting = true;
-      processConnectAccounts(current(), { checkouts: [root] }).catch(error => console.error(`[graphyard-master] connect-account worker: ${error instanceof Error ? error.message : String(error)}`))
+      processConnectAccounts(current(), { checkouts: [root] }).catch(error => console.error(`[mainworks-master] connect-account worker: ${error instanceof Error ? error.message : String(error)}`))
         // GY-3294: and carries Setup's team access to this machine's shared record and back (a server without the routes answers 404).
-        .then(() => syncTeamAccess(current())).catch(error => { if (error?.status !== 404) console.error(`[graphyard-master] team access: ${error instanceof Error ? error.message : String(error)}`); })
+        .then(() => syncTeamAccess(current())).catch(error => { if (error?.status !== 404) console.error(`[mainworks-master] team access: ${error instanceof Error ? error.message : String(error)}`); })
         .finally(() => { connecting = false; });
     }, 15_000);
     connects?.unref?.();
@@ -102,7 +102,7 @@ export async function loopCommand(session: MasterSession): Promise<unknown> {
     const issues = values.once ? undefined : setInterval(function report() {
       reportOpenIssues(master.repository, body => masterMutation('first-run/issues', body))
         .then(wanted => { if (!wanted) clearInterval(issues); })
-        .catch(error => console.error(`[graphyard-master] first-run issues: ${error instanceof Error ? error.message : String(error)}`));
+        .catch(error => console.error(`[mainworks-master] first-run issues: ${error instanceof Error ? error.message : String(error)}`));
       return report;
     }(), 600_000);
     issues?.unref?.();

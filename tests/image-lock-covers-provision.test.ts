@@ -34,7 +34,7 @@ function dockerHost(tags: string[]) {
     async putFile() {},
   };
   const run = async (program: string, args: string[]) => {
-    if (program === 'docker' && args[0] === 'image' && args[1] === 'ls') return [...images].filter(tag => tag.startsWith('graphyard-local:')).map(tag => tag.split(':')[1]).join('\n');
+    if (program === 'docker' && args[0] === 'image' && args[1] === 'ls') return [...images].filter(tag => tag.startsWith('mainworks-local:')).map(tag => tag.split(':')[1]).join('\n');
     if (program === 'docker' && args[0] === 'image' && args[1] === 'rm') { if (building) removedDuringBuild = true; images.delete(args[2]!); events.push(`rm ${args[2]}`); }
     return '';
   };
@@ -48,7 +48,7 @@ async function install(host: ReturnType<typeof dockerHost>, name: string, from: 
     fetch: async () => to, head: async () => from,
     build: async () => {},
     restart: async commit => {
-      const image = `graphyard-local:${commit.slice(0, 12)}`;
+      const image = `mainworks-local:${commit.slice(0, 12)}`;
       await composeAdapter.provision({ sourceRoot: directory, image, transport: host.transport } as unknown as AdapterContext, {} as never);
       if (!host.images.has(image)) throw new Error(`${image} is missing`);
       state.serving = commit;
@@ -61,7 +61,7 @@ async function install(host: ReturnType<typeof dockerHost>, name: string, from: 
   return { file: join(directory, '.graphyard', 'deploy.json'), ports, state, log, deploy: () => deployOnce(join(directory, '.graphyard', 'deploy.json'), ports, line => log.push(line)) };
 }
 
-const local = (sha: string) => `graphyard-local:${sha.slice(0, 12)}`;
+const local = (sha: string) => `mainworks-local:${sha.slice(0, 12)}`;
 
 test('integration:image-lock-covers-provision — a deploy whose image exists provisions without building while another install removes old images; a deploy that builds holds the image lock against old-image removal', async () => {
   const old = randomBytes(20).toString('hex'), from = randomBytes(20).toString('hex'), to = randomBytes(20).toString('hex'), other = randomBytes(20).toString('hex');
@@ -76,13 +76,13 @@ test('integration:image-lock-covers-provision — a deploy whose image exists pr
     assert.ok(built.includes(local(to)), 'huck built the commit image');
 
     // Ours deploys the same commit while Huck's watch removes old images: no build, no rollback.
-    const graphyard = await install(host, 'graphyard', from, to);
-    const deploying = graphyard.deploy();
+    const mainworks = await install(host, 'mainworks', from, to);
+    const deploying = mainworks.deploy();
     await delay(50);
     await pruneImages(host.run, [to], () => {});
-    assert.equal(await deploying, 'deployed', graphyard.log.join('\n'));
+    assert.equal(await deploying, 'deployed', mainworks.log.join('\n'));
     assert.deepEqual(host.builds, built, 'provisioning an existing image builds nothing');
-    assert.equal(graphyard.state.serving, to);
+    assert.equal(mainworks.state.serving, to);
     assert.equal(huck.state.serving, to);
 
     // A commit without an image is built once, and old-image removal waits for that build.

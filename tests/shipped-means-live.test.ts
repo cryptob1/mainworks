@@ -13,7 +13,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3452: shipped means live. Of the week's merges, only those the live commit contains are
 // shipped; the rest are waiting to go live. An install that deploys elsewhere (lumina-investor on
-// Railway) declares app.healthUrl in graphyard.json; Graphyard reads the live commit from it.
+// Railway) declares app.healthUrl in graphyard.json; Mainworks reads the live commit from it.
 
 test('integration:shipped-means-live — shipped counts only merges the live commit contains; app.healthUrl names that commit, and merges it contains become shipped', async () => {
   const root = await temporaryDirectory('shipped-live');

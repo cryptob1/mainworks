@@ -1,7 +1,7 @@
 // The worker's supported sync, as an integration test runs it inside the worker confinement
 // (tests/worker-cherry-pick-cleanup.test.ts): `syncWork` against the worktree named in
 // WORKER_TREE, with the control-plane reads stubbed, so the test exercises the real git flow the
-// `graphyard sync` command runs — including the merge it is refused and the recovery it performs.
+// `mainworks sync` command runs — including the merge it is refused and the recovery it performs.
 import { syncWork } from '../../src/cli/workspace.js';
 
 const tree = process.env.WORKER_TREE, key = process.env.WORKER_KEY;

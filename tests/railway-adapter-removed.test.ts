@@ -10,7 +10,7 @@ import { guideText } from '../src/guide.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3204: the schema-only Railway adapter is gone. Railway deploys each app from git on its own and
-// Graphyard observes each app's versionUrl; what older files committed or stored still parses.
+// Mainworks observes each app's versionUrl; what older files committed or stored still parses.
 
 const oldDelivery = { mode: 'release-candidate', mergeGate: { preMerge: [], perCandidate: [] }, candidateSchedule: null, deploy: { adapter: 'railway', project: 'huck', uat: null, production: null } };
 const files = { 'package.json': JSON.stringify({ name: 'huck', scripts: { test: 'node --test' } }), 'railway.json': '{}', 'graphyard.json': JSON.stringify({ delivery: oldDelivery }) };
@@ -37,10 +37,10 @@ test('unit:tests/railway-adapter-removed.test.ts — an old install record holdi
   assert.equal(record?.release, undefined);
 });
 
-test('unit:tests/railway-adapter-removed.test.ts — onboarding, the example proposal and the guide say Railway deploys from git while Graphyard observes each versionUrl', async () => {
+test('unit:tests/railway-adapter-removed.test.ts — onboarding, the example proposal and the guide say Railway deploys from git while Mainworks observes each versionUrl', async () => {
   const stack = detectStack(scan), deploy = detectDeploy(scan, stack);
   assert.equal(deploy.target, 'railway', 'onboarding still detects Railway');
-  assert.match(deploy.verification, /^Railway deploys each application from git on its own; Graphyard deploys nothing there\. Declare each app's versionUrl/);
+  assert.match(deploy.verification, /^Railway deploys each application from git on its own; Mainworks deploys nothing there\. Declare each app's versionUrl/);
   const example = JSON.parse(await readFile(new URL('../examples/setup-proposal.json', import.meta.url), 'utf8'));
   assert.equal(example.deploy.verification, deploy.verification);
   assert.match(guideText('master'), /Railway deploys each application from git on its own; Mainworks deploys nothing there and uses no Railway credential for it\. It observes each app's versionUrl/);

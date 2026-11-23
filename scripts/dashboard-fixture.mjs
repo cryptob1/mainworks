@@ -15,7 +15,7 @@ const at = offset => new Date(NOW + offset).toISOString();
 const sha = seed => seed.repeat(40).slice(0, 40);
 const base = sha('b');
 
-const blocked = (reason, n = 1) => ({ ready: [], build: ['Worker has not submitted implementation for this attempt', 'Pull request has not been independently observed', 'No workspace registered'], review: ['Independent approval of the current commit is required'], test: ['Required CI check test has not passed on the current candidate', 'Required CI check typecheck has not passed on the current candidate'], merge: ['GitHub observation missing or older than two minutes', 'Required Graphyard check and merge-queue branch protection have not been verified', 'Pull request is not mergeable against the current base'], ...reason, _n: n });
+const blocked = (reason, n = 1) => ({ ready: [], build: ['Worker has not submitted implementation for this attempt', 'Pull request has not been independently observed', 'No workspace registered'], review: ['Independent approval of the current commit is required'], test: ['Required CI check test has not passed on the current candidate', 'Required CI check typecheck has not passed on the current candidate'], merge: ['GitHub observation missing or older than two minutes', 'Required Mainworks check and merge-queue branch protection have not been verified', 'Pull request is not mergeable against the current base'], ...reason, _n: n });
 const proofReason = (ac, proof) => `${ac}: ${proof} needs trusted passing evidence, with executed > 0 and skipped = 0, for this candidate and policy`;
 function gates(reasons, criteria) {
   const acceptance = reasons.acceptance ?? (criteria ?? []).flatMap(c => c.proofs.map(p => proofReason(c.id, p)));
@@ -182,8 +182,8 @@ async function main() {
   await page.getByRole('button', { name: /Settings/ }).click();
   await page.waitForLoadState('networkidle');
   await shot('07-settings');
-  await page.getByRole('button', { name: 'How Graphyard works' }).click();
-  await shot('08-how-graphyard-works');
+  await page.getByRole('button', { name: 'How Mainworks works' }).click();
+  await shot('08-how-mainworks-works');
   await page.getByRole('button', { name: /Work/ }).first().click();
   await page.getByRole('button', { name: '＋ New work item' }).click();
   await shot('09-create-form', '[role=dialog]');

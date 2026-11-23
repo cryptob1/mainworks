@@ -23,7 +23,7 @@ import { currentSchemaCode, runStartupMigration, schemaGenerationDigest, type Sc
 export const warmUser = 'graphyard', warmPassword = 'testing-only';
 /** The migrated database each warm cluster holds, for `CREATE DATABASE ... TEMPLATE`. */
 export const templateDatabase = 'graphyard_template';
-const prefix = 'graphyard-postgres-template-';
+const prefix = 'mainworks-postgres-template-';
 const staleMs = 3_600_000;
 
 function run(program: string, args: string[]) {

@@ -74,13 +74,13 @@ test('e2e:status-names-stopped-role — a role with no usable account, or refuse
   assert.equal(held.refusal, 'role master is at its concurrency limit (1 of 1 live: codex-master)');
   assert.equal(held.lasted, '2h 30m');
   assert.equal(held.since, iso(clock - minutes(150)));
-  assert.match(held.next, /graphyard master registry session end SESSION_ID --reason REASON/);
+  assert.match(held.next, /mainworks master registry session end SESSION_ID --reason REASON/);
   assert.match(held.text, /^Stopped: role master cannot launch — role master is at its concurrency limit .* \(refused for 2h 30m, since 2026-11-05T00:00:00\.000Z\)\. Next: /);
 
   const spent = byRole.reviewer;
   assert.match(spent.refusal, /^no eligible account for reviewer: codex-review quota is exhausted/);
   assert.equal(spent.lasted, '2h 30m');
-  assert.match(spent.next, /graphyard master registry role set reviewer ACCOUNT\[,ACCOUNT…\] --reason REASON, or wait for the first quota reset at 2026-11-05T21:00:00Z/);
+  assert.match(spent.next, /mainworks master registry role set reviewer ACCOUNT\[,ACCOUNT…\] --reason REASON, or wait for the first quota reset at 2026-11-05T21:00:00Z/);
 
   // Within one cycle a held slot is a launch in flight, not a stop; a role with no usable account is stopped at once, even before any refusal is recorded.
   const fresh = await report(master, registry({ master: 10_000, reviewer: 10_000 }));

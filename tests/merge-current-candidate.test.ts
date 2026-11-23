@@ -85,11 +85,11 @@ test('unit:declared', () => assert.ok(!(fs.existsSync('change-0.txt') && fs.exis
       const fixtureRun: ChildRun = async (command, args, options) => {
         if (command === 'git' && args.includes('push')) pushes++;
         if (!existsSync('/etc/graphyard-trial') && options?.wrapper?.length) {
-          if (args.includes('/graphyard-harness/node_modules/tsx/dist/loader.mjs')) {
+          if (args.includes('/mainworks-harness/node_modules/tsx/dist/loader.mjs')) {
             const script = args.at(-1)!;
             const harness = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '');
-            await writeFile(script, (await readFile(script, 'utf8')).replaceAll('/graphyard-harness', harness));
-            args = args.map(arg => arg === '/graphyard-harness/node_modules/tsx/dist/loader.mjs' ? fileURLToPath(new URL(import.meta.resolve('tsx'))) : arg);
+            await writeFile(script, (await readFile(script, 'utf8')).replaceAll('/mainworks-harness', harness));
+            args = args.map(arg => arg === '/mainworks-harness/node_modules/tsx/dist/loader.mjs' ? fileURLToPath(new URL(import.meta.resolve('tsx'))) : arg);
           }
           return defaultChildRun(command, args, { ...options, wrapper: [] });
         }

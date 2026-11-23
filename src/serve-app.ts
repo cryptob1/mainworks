@@ -135,7 +135,7 @@ export async function serveOnce(file: string, ports: ServePorts, log: (line: str
   const answerTimeoutMs = options.answerTimeoutMs ?? serveAnswerTimeoutMs;
   const tip = await ports.fetch();
   let declaration: ServeDeclaration | null = null;
-  try { declaration = await ports.declaration(); } catch (error) { log(`[graphyard-serve] ${message(error)}`); }
+  try { declaration = await ports.declaration(); } catch (error) { log(`[mainworks-serve] ${message(error)}`); }
   if (!declaration) return 'absent';
   const record = readServeRecord(file);
   // The port is chosen once, free, and kept in the record, so the URL stays the same across deploys and reboots.
@@ -150,11 +150,11 @@ export async function serveOnce(file: string, ports: ServePorts, log: (line: str
       servedByRestart(ports, port, url, served);
       // The same commit serves again, so the verdict its cases earned still stands, and the baseline it was judged against keeps serving.
       await writeServeRecord(file, { commit: tip, url, failed: null, reason: null, pid: served.pid, started: served.started, check: record?.check ?? null, baseline: record?.baseline ?? null });
-      log(`[graphyard-serve] ${tip.slice(0, 12)} serves again at ${url}`);
+      log(`[mainworks-serve] ${tip.slice(0, 12)} serves again at ${url}`);
       return 'restarted';
     } catch (error) {
       const reason = message(error);
-      log(`[graphyard-serve] serving ${tip.slice(0, 12)} again failed: ${reason}`);
+      log(`[mainworks-serve] serving ${tip.slice(0, 12)} again failed: ${reason}`);
       await writeServeRecord(file, { commit: null, url, failed: tip, reason, pid: served?.pid ?? null, started: served?.started ?? null, check: null, baseline: record?.baseline ?? null });
       return 'failed';
     }
@@ -166,7 +166,7 @@ export async function serveOnce(file: string, ports: ServePorts, log: (line: str
     await ports.build(declaration);
   } catch (error) {
     const reason = message(error);
-    log(`[graphyard-serve] the build of ${tip.slice(0, 12)} failed, so ${(record?.commit ?? 'nothing').slice(0, 12)} keeps serving: ${reason}`);
+    log(`[mainworks-serve] the build of ${tip.slice(0, 12)} failed, so ${(record?.commit ?? 'nothing').slice(0, 12)} keeps serving: ${reason}`);
     await writeServeRecord(file, { commit: record?.commit ?? null, url: record?.url ?? url, failed: tip, reason, pid: record?.pid ?? null, started: record?.started ?? null, check: record?.check ?? null, baseline: record?.baseline ?? null });
     return 'failed';
   }
@@ -189,10 +189,10 @@ export async function serveOnce(file: string, ports: ServePorts, log: (line: str
         const started = await ports.baseline(candidate, declaration, baselinePort);
         if (!(await waitAnswer(baselineUrl, answerTimeoutMs))) throw new Error(`the baseline serve did not answer ${baselineUrl} within ${Math.round(answerTimeoutMs / 1000)}s`);
         baseline = { commit: candidate, url: baselineUrl, pid: started.pid, started: started.started };
-      } catch (error) { log(`[graphyard-serve] the baseline serve of ${candidate.slice(0, 12)} failed: ${message(error)}`); }
+      } catch (error) { log(`[mainworks-serve] the baseline serve of ${candidate.slice(0, 12)} failed: ${message(error)}`); }
     }
     await writeServeRecord(file, { commit: tip, url, failed: null, reason: null, pid: served.pid, started: served.started, check: null, baseline });
-    log(`[graphyard-serve] serving ${tip.slice(0, 12)} at ${url}`);
+    log(`[mainworks-serve] serving ${tip.slice(0, 12)} at ${url}`);
     // A served commit is live-verified (GY-2983): its own required cases run against the URL it
     // serves, and the verdict is recorded for that exact commit. A case that fails is the release
     // health the master acts on — the commit keeps serving, and the next pass waits for the next tip.
@@ -200,15 +200,15 @@ export async function serveOnce(file: string, ports: ServePorts, log: (line: str
       try {
         const check = await ports.check(url, baseline?.url ?? null);
         await writeServeRecord(file, { commit: tip, url, failed: null, reason: null, pid: served.pid, started: served.started, check, baseline });
-        log(`[graphyard-serve] ${tip.slice(0, 12)} ${check.verified ? 'is verified: every required case passed' : `fails its required case ${check.case}: ${check.step}`}`);
+        log(`[mainworks-serve] ${tip.slice(0, 12)} ${check.verified ? 'is verified: every required case passed' : `fails its required case ${check.case}: ${check.step}`}`);
       } catch (error) {
-        log(`[graphyard-serve] the required cases of ${tip.slice(0, 12)} could not run against ${url}: ${message(error)}`);
+        log(`[mainworks-serve] the required cases of ${tip.slice(0, 12)} could not run against ${url}: ${message(error)}`);
       }
     }
     return 'served';
   } catch (error) {
     const reason = message(error);
-    log(`[graphyard-serve] ${reason}, so nothing serves`);
+    log(`[mainworks-serve] ${reason}, so nothing serves`);
     await writeServeRecord(file, { commit: null, url, failed: tip, reason, pid: served?.pid ?? null, started: served?.started ?? null, check: null, baseline });
     return 'failed';
   }
@@ -218,7 +218,7 @@ export async function serveOnce(file: string, ports: ServePorts, log: (line: str
 export async function watchServe(file: string, ports: ServePorts, options: { intervalMs: number; once?: boolean; signal?: AbortSignal; log?: (line: string) => void }) {
   const log = options.log ?? (line => console.error(line));
   for (;;) {
-    try { await serveOnce(file, ports, log); } catch (error) { log(`[graphyard-serve] the pass failed and runs again: ${message(error)}`); }
+    try { await serveOnce(file, ports, log); } catch (error) { log(`[mainworks-serve] the pass failed and runs again: ${message(error)}`); }
     if (options.once || options.signal?.aborted) return;
     try { await delay(options.intervalMs, undefined, { signal: options.signal }); } catch { return; }
   }

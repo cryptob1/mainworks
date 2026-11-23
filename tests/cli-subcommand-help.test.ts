@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { commands } from '../src/cli/index.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-3172: `graphyard login --help` used to run login and mint a real single-use admin sign-in
+// GY-3172: `mainworks login --help` used to run login and mint a real single-use admin sign-in
 // link. The launcher answers a subcommand's help flag itself, so neither command runs.
 
 const exec = promisify(execFile);

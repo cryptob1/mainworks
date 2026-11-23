@@ -1,6 +1,6 @@
 # Setup guide
 
-The details the [README](../README.md) leaves out. `mainworks guide setup` prints every prerequisite check and fix; `mainworks doctor` verifies a host. The `graphyard` command and `GRAPHYARD_*` settings still work.
+The details the [README](../README.md) leaves out. `mainworks guide setup` prints every prerequisite check and fix; `mainworks doctor` verifies a host. The `mainworks` command and `GRAPHYARD_*` settings still work.
 
 ## First run
 
@@ -11,7 +11,7 @@ The details the [README](../README.md) leaves out. `mainworks guide setup` print
 
 ## Host
 
-- Docker and Compose: on an AppArmor host up loads the `graphyard-trial` profile with sudo. Merge trials need Docker and Compose even for `--local`.
+- Docker and Compose: on an AppArmor host up loads the `mainworks-trial` profile with sudo. Merge trials need Docker and Compose even for `--local`.
 - Fair sharing: each worker, reviewer and producer session gets equal CPU and disk weight and a memory share (host memory in proportion to cores divided by live sessions, never under two cores). A lone session may use the whole machine. The loop, master, server and database weigh more so they answer under load. `mainworks master status` → `sessionUsage` and Settings → Workers show use beside share; the overload alarm fires only when saturated and over twice its share for five minutes.
 
 ## Compute machines

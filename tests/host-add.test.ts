@@ -12,7 +12,7 @@ import type { Store } from '../src/store.js';
 import { encodeLoopHosts, loopHostsHeader, loopPresenceHeader, loopSupervisionHeader } from '../src/model/loop-presence.js';
 import { coordinationViewHeader } from '../src/server/work-view.js';
 
-// GY-3407: `graphyard host add USER@HOST` checks the host's rootless Docker through its shim and
+// GY-3407: `mainworks host add USER@HOST` checks the host's rootless Docker through its shim and
 // records it; a host without Docker or one SSH cannot reach is refused with a plain reason; `host
 // remove` removes it; and the probe only reads, so nothing lands on the host (tests/helpers/fake-hosts.ts).
 
@@ -41,7 +41,7 @@ test(`${proof} — host add records a Docker-over-SSH host and writes nothing on
   assert.deepEqual(await recorded(), ['gy-compute@box']);
   assert.deepEqual((await readdir(hosts.home('box'))).sort(), ['.graphyard', '.ssh', 'bin'], 'the probe only reads: the home holds what prepare left, nothing more');
 
-  await assert.rejects(main(['host', 'add', 'gy-compute@bare']), /gy-compute@bare was not added: gy-compute@bare answers but its Docker does not: run graphyard host prepare/);
+  await assert.rejects(main(['host', 'add', 'gy-compute@bare']), /gy-compute@bare was not added: gy-compute@bare answers but its Docker does not: run mainworks host prepare/);
   await assert.rejects(main(['host', 'add', 'gy-compute@gone']), /gy-compute@gone was not added: gy-compute@gone is unreachable over SSH: ssh: connect to host gone port 22: Connection refused/);
   await assert.rejects(main(['host', 'add', 'not a host']), /Name the host as USER@HOST/);
   assert.deepEqual(await recorded(), ['gy-compute@box'], 'a refused host is never recorded');

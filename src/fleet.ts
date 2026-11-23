@@ -158,7 +158,7 @@ const builtinProbe = (runtime: FleetRuntime): EnvironmentKind | null =>
   : (environmentKinds as readonly string[]).includes(runtime.launch.kind) ? runtime.launch.kind as EnvironmentKind
   : null;
 /**
- * What this host can see of one account's login: Graphyard's own probe for the runtimes it can
+ * What this host can see of one account's login: Mainworks's own probe for the runtimes it can
  * read a login and a quota from, the contract's login file for any other runtime, and nothing
  * (unknown, which is launchable) when the account names no home.
  */
@@ -401,7 +401,7 @@ export function pinRuntime(runtime: FleetRuntime, install: (program: string) => 
 /**
  * The agent CLIs already logged in on this host: every isolated environment under the agent
  * environment directory, each runtime's own default login home, and the executables of proposed
- * runtimes that keep their login somewhere Graphyard does not read (reported, never assumed).
+ * runtimes that keep their login somewhere Mainworks does not read (reported, never assumed).
  */
 export async function discoverHostLogins(options: { directory?: string; home?: string; probe?: EnvironmentProbe; executables?: (name: string) => boolean } = {}): Promise<HostLogin[]> {
   // Discovery answers "what is logged in right now": never a cached look, and never the provider.
@@ -421,7 +421,7 @@ export async function discoverHostLogins(options: { directory?: string; home?: s
     // A default home nobody logged in to is not an account; an isolated environment is kept either way.
     if (health.loggedIn) found.push({ name, runtime: kind, home: location, loggedIn: true, quota: health.quota, reason: health.reason, login: null, source: 'default-home' });
   }
-  // A runtime Graphyard has no probe of its own for (Pi) keeps each login in an `<runtime>-<letter>`
+  // A runtime Mainworks has no probe of its own for (Pi) keeps each login in an `<runtime>-<letter>`
   // environment too; its readiness is only whether the contract's login file exists.
   for (const location of await runtimeEnvironments(agentEnvironmentRoot(options.directory))) {
     const loggedIn = await access(resolve(location.home, location.runtime.launch.loginFile!)).then(() => true, () => false);
@@ -463,7 +463,7 @@ const loginAlreadyFound = async (found: HostLogin[], kind: EnvironmentKind, loca
   return false;
 };
 
-/** Environment directories of the proposed runtimes Graphyard has no probe of its own for: `pi`, `pi-a`, `pi-b`. */
+/** Environment directories of the proposed runtimes Mainworks has no probe of its own for: `pi`, `pi-a`, `pi-b`. */
 async function runtimeEnvironments(directory: string) {
   const runtimes = proposedRuntimes.filter(runtime => !(environmentKinds as readonly string[]).includes(runtime.name) && runtime.launch.homeVariable && runtime.launch.loginFile);
   let entries: string[];

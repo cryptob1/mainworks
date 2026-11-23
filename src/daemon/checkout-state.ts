@@ -24,13 +24,13 @@ const sameCheckout = (left: string, right: string) => {
  * The checkout the loop's loaded code comes from and its self-upgrade acts on: the one the running
  * CLI comes from — the directory above the configured launcher's `bin/` — never the managed
  * repository's root, whose HEAD names the managed project, not the code this process loaded (GY-1899).
- * For Graphyard's own install the two are one directory and nothing changes; a loop configured with
+ * For Mainworks's own install the two are one directory and nothing changes; a loop configured with
  * no CLI launcher could only ever have loaded the repository root, so that stands in. Under the test
  * runner only a checkout under the temporary directories is judged (`checkoutGuardApplies`, the
  * guard's own gate): a launcher a test passes from the checkout the suite itself runs from never
  * moves a test's upgrade off the root the test injected. That gate alone no longer holds the suite
  * out (GY-2018): the merge writer's trial runs this suite from a checkout under a temporary
- * directory, which the gate judged, so every fixture config's launcher — the bare `graphyard` one,
+ * directory, which the gate judged, so every fixture config's launcher — the bare `mainworks` one,
  * whose double dirname is the process's working directory — resolved to the suite's own tree and
  * eight proofs failed on the base tip itself. Wherever the suite stands, its own checkout is never
  * a judged one; `suite` names it so a test can hold a trial-shaped checkout to the same rule.

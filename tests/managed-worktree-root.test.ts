@@ -63,7 +63,7 @@ async function installation(run: Partial<MasterRun> = {}) {
   const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   git('init', '-q', '-b', 'main'); git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   await writeFile(join(root, 'README.md'), 'managed worktree root\n');
-  git('add', 'README.md'); git('-c', 'user.name=Graphyard', '-c', 'user.email=graphyard@example.test', 'commit', '-q', '-m', 'initial');
+  git('add', 'README.md'); git('-c', 'user.name=Mainworks', '-c', 'user.email=graphyard@example.test', 'commit', '-q', '-m', 'initial');
   await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory, herdrWorkspace: 'workspace', run: { worktreeRoot: managed, ...run } }, coordinatorStatus, { probe: durable });
   await saveReviewerProfile(root, { name: 'reviewer-a', agentName: 'review-a', kind: 'codex' });
   const credential = join(credentialDirectory, 'producer.token'); await writeFile(credential, 'producer-token-'.padEnd(40, 'x'), { mode: 0o600 });
@@ -271,7 +271,7 @@ test('integration:ephemeral-checkout-reclaim — every checkout is removed when 
 
     assert.deepEqual(await readdir(managed).catch(() => []), [], 'every resolved or failed launch is gone from the root');
 
-    // A pending session keeps its checkout, and only a Graphyard session directory is ever removed.
+    // A pending session keeps its checkout, and only a Mainworks session directory is ever removed.
     const live = await produce('GY-111');
     await assert.rejects(removeSessionCheckout(root, managed, join(managed, 'operator-notes')), /Refusing to remove/);
     await assert.rejects(removeSessionCheckout(root, managed, dirname(managed)), /Refusing to remove/);
@@ -295,7 +295,7 @@ test('integration:ephemeral-checkout-reclaim — every checkout is removed when 
 });
 
 test('integration:ephemeral-checkout-reclaim — a managed checkout no live session owns is removed past its grace: one a dead session or a failed settlement left', async () => {
-  const base = await temporaryDirectory('graphyard-unowned-');
+  const base = await temporaryDirectory('mainworks-unowned-');
   const orphan = await allocateSessionCheckout(base, 'trial', 'GY-1', H, randomUUID());
   const owned = await allocateSessionCheckout(base, 'proof', 'GY-2', H, randomUUID());
   const young = await allocateSessionCheckout(base, 'review', 'GY-3', H, randomUUID());
@@ -343,8 +343,8 @@ test('integration:worktree-root-preflight — setup refuses a tmpfs or a volume 
     assert.equal(measured.probed, scratch); assert.equal(typeof measured.freeBytes, 'number');
     assert.equal(existsSync(join(scratch, 'not')), false);
     if (process.platform === 'linux' && existsSync('/dev/shm')) {
-      const shared = await probeFilesystem('/dev/shm/graphyard-worktrees');
-      if (shared.volatile) await assert.rejects(verifyWorktreeRoot('/dev/shm/graphyard-worktrees', { minFreeBytes: 1 }), /is on a (tmpfs|ramfs) \(\/dev\/shm\)/);
+      const shared = await probeFilesystem('/dev/shm/mainworks-worktrees');
+      if (shared.volatile) await assert.rejects(verifyWorktreeRoot('/dev/shm/mainworks-worktrees', { minFreeBytes: 1 }), /is on a (tmpfs|ramfs) \(\/dev\/shm\)/);
     }
     await assert.rejects(verifyWorktreeRoot('relative/root', { minFreeBytes: 1, probe: durable }), /absolute path/);
     assert.deepEqual(await verifyWorktreeRoot(managed, { minFreeBytes: 2e9, probe: free(null as any) }), { path: managed, probed: managed, freeBytes: null, minFreeBytes: 2e9 }, 'a volume that cannot be measured is not refused for it');
@@ -521,7 +521,7 @@ test('unit:host-verification-slots — heavy verification runs started by a sess
  */
 async function fiveRunsTwoSlots(scratch: string, environment: Record<string, string>, log: string) {
   const runs = 5, gate = join(scratch, 'gate'), stderrs: string[] = Array(runs).fill('');
-  const waitPattern = /waits for a host heavy-job slot: every Graphyard project on this host shares 2 at once, held by npm test \(owner\/project\) \[pid \d+/;
+  const waitPattern = /waits for a host heavy-job slot: every Mainworks project on this host shares 2 at once, held by npm test \(owner\/project\) \[pid \d+/;
   const finished = Promise.all(Array.from({ length: runs }, (_, index) => new Promise<{ code: number | null; stderr: string }>(done => {
     const child = spawn('npm', ['test'], { cwd: scratch, env: { ...process.env, ...environment, RUN_LOG: log, RUN_GATE: gate }, stdio: ['ignore', 'ignore', 'pipe'] });
     child.stderr.on('data', chunk => { stderrs[index] += chunk; });

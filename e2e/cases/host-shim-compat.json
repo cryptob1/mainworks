@@ -1,7 +1,7 @@
 {
   "id": "host-shim-compat",
   "title": "A release that changes the host helper keeps compute machines whose helper still runs a trial, and names the ones that need an update",
-  "description": "Two added compute machines read through their graphyard-host-shim as the loop reads them: one on another release's helper that still speaks every verb a trial uses stays ready; one whose helper lacks a verb's current revision reads away. The dashboard's top bar shows one line, 'Compute machines need an update: <names>', with the one command, graphyard host prepare; Needs you holds it as the owner's item. Once the machine's helper is updated, the loop's next probe clears both. Host state in master status is each host's latest probe with when it was read, never the last trial's away reason. No horizontal scroll at 1280 px and 390 px.",
+  "description": "Two added compute machines read through their graphyard-host-shim as the loop reads them: one on another release's helper that still speaks every verb a trial uses stays ready; one whose helper lacks a verb's current revision reads away. The dashboard's top bar shows one line, 'Compute machines need an update: <names>', with the one command, mainworks host prepare; Needs you holds it as the owner's item. Once the machine's helper is updated, the loop's next probe clears both. Host state in master status is each host's latest probe with when it was read, never the last trial's away reason. No horizontal scroll at 1280 px and 390 px.",
   "tags": ["dashboard", "hosts", "trial"],
   "target": "any",
   "required": false,

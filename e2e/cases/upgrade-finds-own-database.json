@@ -1,6 +1,6 @@
 {
   "id": "upgrade-finds-own-database",
-  "title": "graphyard upgrade finds the install's own database without DATABASE_URL",
+  "title": "mainworks upgrade finds the install's own database without DATABASE_URL",
   "description": "A clean local install — its server on its own recorded Postgres cluster — upgrades to a newer commit with no DATABASE_URL in the environment: the upgrade reads the database from the install's recorded deploy settings, takes the pre-upgrade backup there, redeploys, and /healthz reports the new commit.",
   "tags": ["deployment", "regression"],
   "target": "any",

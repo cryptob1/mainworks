@@ -39,7 +39,7 @@ test('unit:loop-restarts-stopped-compose-server — over 2 minutes unreachable, 
     const line = [command, ...args].join(' ');
     commands.push({ line, cwd: options?.cwd });
     if (line.startsWith('docker compose ps')) return '{"Service":"server","State":"exited","Status":"Exited (1) 3 minutes ago"}\n';
-    if (line.startsWith('docker compose logs')) return 'Graphyard listening on port 4310\nError: Connection terminated unexpectedly\n';
+    if (line.startsWith('docker compose logs')) return 'Mainworks listening on port 4310\nError: Connection terminated unexpectedly\n';
     if (line.startsWith('docker info')) return '/var/lib/docker\n';
     if (line.startsWith('df')) return 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/nvme0n1p2 976762584 975713944 1048576 100% /\n';
     return '';

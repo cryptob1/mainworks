@@ -11,7 +11,7 @@ import { renderVersion, versionReport } from '../src/cli/version.js';
 import { healthRoutes } from '../src/server/routes/health.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-1959: `graphyard version` names the CLI's release (the dated tag on its commit, else
+// GY-1959: `mainworks version` names the CLI's release (the dated tag on its commit, else
 // `unreleased <sha>`) and the connected server's, which /healthz reports the same way.
 const launcher = resolve('bin/graphyard.mjs');
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', ...args], { cwd, encoding: 'utf8' }).trim();
@@ -75,7 +75,7 @@ test('unit:version-command — an image without .git is the release its build st
   const saved = { version: process.env.GRAPHYARD_VERSION, revision: process.env.GRAPHYARD_BUILD_REVISION };
   try {
     process.env.GRAPHYARD_VERSION = '2026.10.17.1'; process.env.GRAPHYARD_BUILD_REVISION = 'a'.repeat(40);
-    assert.deepEqual(cliRelease(), dated, 'graphyard version reports the stamp');
+    assert.deepEqual(cliRelease(), dated, 'mainworks version reports the stamp');
     assert.deepEqual(releaseInfo(), { version: dated!.version, revision: dated!.revision }, '/healthz reports the same release');
   } finally {
     for (const [name, value] of [['GRAPHYARD_VERSION', saved.version], ['GRAPHYARD_BUILD_REVISION', saved.revision]] as const) if (value === undefined) delete process.env[name]; else process.env[name] = value;
@@ -97,7 +97,7 @@ test('unit:version-command — the report names the CLI release and commit, and 
   assert.match(renderVersion(down), /server  https:\/\/plane\.example unreachable: connection refused/);
 });
 
-test('unit:version-command — graphyard version prints the CLI release and the connected server\'s', async () => {
+test('unit:version-command — mainworks version prints the CLI release and the connected server\'s', async () => {
   const server = createServer((request, response) => {
     response.setHeader('content-type', 'application/json');
     response.end(request.url === '/healthz' ? JSON.stringify({ ok: true, version: '2026.10.17', commit: 'd'.repeat(40) }) : '{}');

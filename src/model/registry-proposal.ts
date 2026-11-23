@@ -1,7 +1,7 @@
 import type { FleetRoleName, FleetRuntime } from './registry.js';
 
 /**
- * The launch contracts setup proposes for the agent CLIs Graphyard knows how to start unattended.
+ * The launch contracts setup proposes for the agent CLIs Mainworks knows how to start unattended.
  * They are proposals only: a registry stores its own copy, an operator edits it there, and a
  * runtime added later needs no entry here. Approval flags themselves stay with the harness
  * (src/harness.ts); `args` holds what a runtime needs beyond them.

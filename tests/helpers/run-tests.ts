@@ -20,7 +20,7 @@ import { buildEntries, builtEntries, builtEntry } from '../../bin/built-entry.mj
 //   node --import tsx tests/helpers/run-tests.ts --browser [ARGS...]  the Playwright suite
 //   node --import tsx tests/helpers/run-tests.ts --typecheck          tsc --noEmit (npm run typecheck)
 //
-// Started from a Graphyard session, a whole suite first takes a host verification slot
+// Started from a Mainworks session, a whole suite first takes a host verification slot
 // (src/master/verification-slots.ts, GY-612), waiting while every slot on the host is held; a type
 // check and a run of selected files take none (GY-3447). The
 // Node suite then runs at the breadth the host's memory affords (GY-1821): the files in flight
@@ -43,14 +43,14 @@ import { buildEntries, builtEntries, builtEntry } from '../../bin/built-entry.mj
 // run holds until it exits, and GRAPHYARD_BROWSER_PORT the dev server's port. Two runs on one host —
 // two worktrees, or a worker beside a producer — therefore never share a database or a server.
 //
-// Before and after the suite it runs, the runner removes the `<tmpdir>/graphyard-*` directories
+// Before and after the suite it runs, the runner removes the `<tmpdir>/mainworks-*` directories
 // whose owner marker names a process that is gone (GY-421), so a killed run stops leaking its
 // embedded-Postgres data dirs; one a live run owns, or one with no marker, is never touched.
 
 /** A run's scratch root (GY-3691): `gy` and mkdtemp's six characters, short so socket paths under it stay inside the 107-byte bound. */
 const runScratchName = /^gy[A-Za-z0-9]{6}$/;
 
-/** One runner sweep over `tmpRoot` (the host's tmpdir by default): its `graphyard-*` leftovers whose owner is gone. */
+/** One runner sweep over `tmpRoot` (the host's tmpdir by default): its `mainworks-*` leftovers whose owner is gone. */
 export async function sweepLeftoverTempDirectories(tmpRoot = tmpdir()) {
   const removed: string[] = [];
   for (const name of await readdir(tmpRoot).catch(() => [] as string[])) {
@@ -64,7 +64,7 @@ export async function sweepLeftoverTempDirectories(tmpRoot = tmpdir()) {
 /** statfs's type for a memory-backed filesystem (TMPFS_MAGIC). */
 const tmpfsType = 0x01021994;
 /**
- * The tmpdir the suite runs under when the caller's is a tmpfs (GY-2001), else null. Graphyard
+ * The tmpdir the suite runs under when the caller's is a tmpfs (GY-2001), else null. Mainworks
  * refuses a managed checkout on a tmpfs, so every test that makes one under the tmpdir failed on a
  * host whose /tmp is memory-backed, the merge writer's trials included; CI's /tmp is on disk. The
  * replacement is short (socket paths built under it have a length bound), on disk, outside any
@@ -104,7 +104,7 @@ export function suiteBreadth({ budgetBytes, otherFiles, cpus, perFileBytes = byt
 }
 
 /**
- * GY-3401: a Graphyard session's run never goes past the session's share of the host's test
+ * GY-3401: a Mainworks session's run never goes past the session's share of the host's test
  * parallelism (VITEST_MAX_WORKERS, set at its launch from the cores and the sessions running), so
  * sessions already running stop fanning one file out per core on a hot host.
  */

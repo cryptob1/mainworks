@@ -8,7 +8,7 @@ import { availableParallelism, homedir } from 'node:os';
 import { join } from 'node:path';
 import { stateDirectory } from '../install/layout.js';
 
-/** The free space every volume Graphyard writes keeps, when master.json sets no `run.diskFloorGb`. */
+/** The free space every volume Mainworks writes keeps, when master.json sets no `run.diskFloorGb`. */
 export const defaultDiskFloorGb = 30;
 export const diskFloorBytes = (config: { run: { diskFloorGb?: number } }) => (config.run.diskFloorGb ?? defaultDiskFloorGb) * 1e9;
 
@@ -78,7 +78,7 @@ export async function trialLoad(root: string, who: keyof typeof trialStartOrder,
 }
 const trialSlots = (home = homedir()) => join(home, '.gy', 'trial-slots');
 
-const launcherLine = 'graphyard trial container: ', waitingLine = `${launcherLine}waiting`, startingLine = `${launcherLine}starting`;
+const launcherLine = 'mainworks trial container: ', waitingLine = `${launcherLine}waiting`, startingLine = `${launcherLine}starting`;
 /** GY-3535: the line a launcher prints when a heat wait ends, followed by its seconds. */
 const heatLine = `${waitingLine}: a CPU sensor held this start `;
 /** GY-3535: the seconds every container start in `output` waited for the CPU to cool, summed. */

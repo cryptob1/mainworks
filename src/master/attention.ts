@@ -38,7 +38,7 @@ const humanOwner = (humanOnly: typeof humanOnlyDecisions[number], next: string):
 export const installationSources = ['delegation-limits', 'production'] as const;
 /** The owner of one installation attention line, by the source that raised it. */
 export function installationOwner(source: typeof installationSources[number], text: string): AttentionOwner {
-  if (source === 'delegation-limits') { const assignment = /Set (\S+=\S+)/.exec(text)?.[1]; return agentOwner('master', assignment ? `Set ${assignment} on the deployment (Railway: railway variables --set ${assignment} --service graphyard), then redeploy` : 'Set the named capacity variable on the deployment, then redeploy'); }
+  if (source === 'delegation-limits') { const assignment = /Set (\S+=\S+)/.exec(text)?.[1]; return agentOwner('master', assignment ? `Set ${assignment} on the deployment (Railway: railway variables --set ${assignment} --service mainworks), then redeploy` : 'Set the named capacity variable on the deployment, then redeploy'); }
   // The failing deployment is on the base branch production deploys; the fix is its redeploy.
   return agentOwner('master', 'Fix the failing deployment of the base branch, which production tracks, with the configured provider');
 }
@@ -54,7 +54,7 @@ export function workAttentionOwner(work: Work, cause: WorkAttentionCause, now = 
   const key = work.key;
   if (cause === 'merge-refused') return agentOwner('master', `Nothing to run by hand: the integration job asks GitHub again on every observation of ${key}; fix what GitHub names (branch protection, the App's pull request permission, a moved head) and the next observation clears it`);
   if (cause === 'merge-base-dismissed') return agentOwner('master', missingBaseAncestry(work)
-    ? `Nothing to run: the loop requests a fresh review of ${key}'s head; graphyard master status shows the new verdict`
+    ? `Nothing to run: the loop requests a fresh review of ${key}'s head; mainworks master status shows the new verdict`
     : `Nothing to run: the approval is restored on the unchanged head`);
   // The one attention item no agent may clear: the three human decisions, answered by the human.
   if (cause === 'human-request') {
@@ -66,9 +66,9 @@ export function workAttentionOwner(work: Work, cause: WorkAttentionCause, now = 
   // item naming this one, its files and the merge that removed them; the delivery waits for it.
   if (cause === 'merged-reverted') {
     const reverted = work.observation!.revertedDelivery!;
-    return agentOwner('master', `graphyard master create FILE for a follow-up item that restores ${reverted.files.map(file => file.path).join(', ')} to the base branch as ${key} shipped them${reverted.removedBy ? `, naming merge ${reverted.removedBy.mergeSha?.slice(0, 12) ?? `of pull request #${reverted.removedBy.pr}`}${reverted.removedBy.key ? ` of ${reverted.removedBy.key}` : ''} as what removed them` : ''}; request no merge decision for ${key} until the base branch holds its content — a reconciliation now would record a delivery for work that is not there`);
+    return agentOwner('master', `mainworks master create FILE for a follow-up item that restores ${reverted.files.map(file => file.path).join(', ')} to the base branch as ${key} shipped them${reverted.removedBy ? `, naming merge ${reverted.removedBy.mergeSha?.slice(0, 12) ?? `of pull request #${reverted.removedBy.pr}`}${reverted.removedBy.key ? ` of ${reverted.removedBy.key}` : ''} as what removed them` : ''}; request no merge decision for ${key} until the base branch holds its content — a reconciliation now would record a delivery for work that is not there`);
   }
-  // Graphyard absorbs a moved base itself; a conflict is the one case it cannot, so the candidate
+  // Mainworks absorbs a moved base itself; a conflict is the one case it cannot, so the candidate
   // goes back to a worker for a fresh attempt rather than waiting for a refresh that cannot land.
   // On a system-driven item that rework is the loop's own round (GY-1389), which refuses a hand request:
   // the owner names the loop's step and the bound it is due by, never a command the CLI refuses (GY-1434).
@@ -76,29 +76,29 @@ export function workAttentionOwner(work: Work, cause: WorkAttentionCause, now = 
     const due = conflictReworkDue(work, now);
     const bound = due ? ` (due at ${due.dueAt}, ${conflictReworkBoundMs / 60_000} minutes after the conflict was first recorded at ${due.since})` : '';
     return cause === 'stalled-step'
-      ? agentOwner('master', `graphyard master rework ${key} REASON returns it now; check the loop is cycling (master status names its liveness), since its rework step left the conflict rework unapplied${bound}`)
+      ? agentOwner('master', `mainworks master rework ${key} REASON returns it now; check the loop is cycling (master status names its liveness), since its rework step left the conflict rework unapplied${bound}`)
       : agentOwner('control plane', `Nothing to run by hand: the loop's rework step returns ${key} to a worker itself${bound}; past that bound master status names the step as stalled`);
   }
-  if (cause === 'base-conflict') return agentOwner('master', `graphyard master rework ${key} REASON`);
+  if (cause === 'base-conflict') return agentOwner('master', `mainworks master rework ${key} REASON`);
   // A system-driven item is never pushed by hand (GY-175): the owner text names the loop step, not a command the CLI refuses.
   const driven = work.systemDriven === true;
-  if (cause === 'session') return agentOwner('master', `herdr agent list to inspect the session; once the lease lapses, ${driven ? `the loop's dispatcher launches ${key} again` : `graphyard master dispatch ${key} PROFILE`}`);
-  if (cause === 'proof-gap') return agentOwner('master', `graphyard principal add PRODUCER --role producer --proof ${(work.proofGaps ?? [])[0] ?? 'PROOF'}`);
-  const reviewNext = driven ? `the loop relaunches the review on its own; graphyard master review ${key} only once the loop has stopped relaunching its request` : `graphyard master review ${key}`;
-  if (cause === 'reviewer-exhausted') return agentOwner('master', `graphyard master reviewer add FILE with a profile on another provider, then ${reviewNext}`);
+  if (cause === 'session') return agentOwner('master', `herdr agent list to inspect the session; once the lease lapses, ${driven ? `the loop's dispatcher launches ${key} again` : `mainworks master dispatch ${key} PROFILE`}`);
+  if (cause === 'proof-gap') return agentOwner('master', `mainworks principal add PRODUCER --role producer --proof ${(work.proofGaps ?? [])[0] ?? 'PROOF'}`);
+  const reviewNext = driven ? `the loop relaunches the review on its own; mainworks master review ${key} only once the loop has stopped relaunching its request` : `mainworks master review ${key}`;
+  if (cause === 'reviewer-exhausted') return agentOwner('master', `mainworks master reviewer add FILE with a profile on another provider, then ${reviewNext}`);
   if (cause === 'launch-review') return agentOwner('master', `Fix the refusal reason, then ${reviewNext}`);
-  if (cause === 'launch-producer') return agentOwner('master', 'Fix the refusal reason (graphyard master producer add FILE for a missing profile); the loop relaunches the producer on its own');
+  if (cause === 'launch-producer') return agentOwner('master', 'Fix the refusal reason (mainworks master producer add FILE for a missing profile); the loop relaunches the producer on its own');
   // A required command the worker's sandbox refused is the launcher's to fix, never the item's (GY-134).
-  if (environmentBlocked(work.blocker)) return agentOwner('master', `Grant ${blockedPath(work.blocker!) ?? 'the refused path'} to the worker's sandbox, then graphyard master unblock ${key} REASON and dispatch it again`);
+  if (environmentBlocked(work.blocker)) return agentOwner('master', `Grant ${blockedPath(work.blocker!) ?? 'the refused path'} to the worker's sandbox, then mainworks master unblock ${key} REASON and dispatch it again`);
   // The owner follows the refusal the row shows: the first failing gate, then a bare blocker.
   const first = work.gates.find(gate => !gate.passed);
   const manual = first?.name === 'acceptance' ? /(manual:[\w./-]+)/.exec(first.reasons.join(' '))?.[1] : undefined;
-  if (manual && driven && automatableProof(work, manual)) return agentOwner('control plane', `The loop's producer session produces ${manual} on the exact head; once the loop stops relaunching its request, graphyard master attest ${key} ${manual} REASON`);
-  if (manual) return agentOwner('master', `graphyard master attest ${key} ${manual} REASON`);
-  if (first?.name === 'review') return agentOwner('reviewer', driven ? `The reviewer session judges it; ${reviewNext}` : `The reviewer session judges it; graphyard master review ${key} relaunches a refused review`);
+  if (manual && driven && automatableProof(work, manual)) return agentOwner('control plane', `The loop's producer session produces ${manual} on the exact head; once the loop stops relaunching its request, mainworks master attest ${key} ${manual} REASON`);
+  if (manual) return agentOwner('master', `mainworks master attest ${key} ${manual} REASON`);
+  if (first?.name === 'review') return agentOwner('reviewer', driven ? `The reviewer session judges it; ${reviewNext}` : `The reviewer session judges it; mainworks master review ${key} relaunches a refused review`);
   if (first?.name === 'merge' && work.stage === 'merge') return agentOwner('master', `Nothing to run by hand: GitHub merges ${key} once its merge gate passes`);
-  if (work.blocker) return agentOwner('master', `Clear the cause, then graphyard master unblock ${key} REASON; a cause that needs money, a third-party account or a person's credential goes to the human`);
-  return agentOwner('master', `graphyard diagnose ${key}`);
+  if (work.blocker) return agentOwner('master', `Clear the cause, then mainworks master unblock ${key} REASON; a cause that needs money, a third-party account or a person's credential goes to the human`);
+  return agentOwner('master', `mainworks diagnose ${key}`);
 }
 /**
  * Attention that belongs to the installation rather than to a work item: a
@@ -110,7 +110,7 @@ export function controlPlaneAttention(status: ControlPlaneStatus | undefined) {
   const raise = (source: Parameters<typeof installationOwner>[0], text: string) => items.push({ subject: 'installation', text, ...installationOwner(source, text) });
   for (const text of status?.delegationLimits?.attention ?? []) raise('delegation-limits', text);
   // A job that keeps finishing without an observation holds the merge queue behind its item (GY-506).
-  for (const job of status?.starvedJobs ?? []) { const text = starvedJobText(job); items.push({ subject: job.key, text, ...agentOwner('master', `graphyard diagnose ${job.key}: the recorded reason names what keeps the observation from being saved; the next saved observation clears this`) }); }
+  for (const job of status?.starvedJobs ?? []) { const text = starvedJobText(job); items.push({ subject: job.key, text, ...agentOwner('master', `mainworks diagnose ${job.key}: the recorded reason names what keeps the observation from being saved; the next saved observation clears this`) }); }
   const production = status?.production ? productionSummary(status.production) : null;
   for (const text of production?.attention ?? []) raise('production', text);
   const attention = items.map(item => item.text);
@@ -140,9 +140,9 @@ function productionSummary(report: Partial<ProductionReport>) {
 export function applicationAttention(applications: ApplicationRelease[]) {
   return applications.filter(app => app.state === 'lagging' || app.state === 'failed').map(app => ({ subject: `application ${app.id}`,
     text: app.state === 'lagging' ? `Application ${app.id} lags main: ${app.reason}` : `Application ${app.id}'s versionUrl failed: ${app.reason}`,
-    next: `Check the ${app.id} deploy on its host (Railway deploys it from git); Graphyard only reads its versionUrl` }));
+    next: `Check the ${app.id} deploy on its host (Railway deploys it from git); Mainworks only reads its versionUrl` }));
 }
 
 /** A rework carries the reviewer's reason onto an attention line until a new head answers it. */
 export const reworkAttention = (items: readonly Pick<Work, 'key' | 'reworkRequested' | 'lastRework'>[]) => items.filter(item => item.reworkRequested && item.lastRework?.reason)
-  .map(item => ({ subject: item.key, text: `Sent back for rework: ${item.lastRework!.reason}`, next: `graphyard status ${item.key}; the next worker's request carries this reason` }));
+  .map(item => ({ subject: item.key, text: `Sent back for rework: ${item.lastRework!.reason}`, next: `mainworks status ${item.key}; the next worker's request carries this reason` }));

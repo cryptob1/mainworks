@@ -61,7 +61,7 @@ test('unit:ready-gate-applies-filing-rules — the item dispatches once master r
   const action = nextAction(refused, [refused], now);
   assert.equal(action?.kind, 'attention', 'the loop dispatches nothing while the filing refusal stands');
   assert.match(action?.refusal ?? '', /owes an end-to-end proof/);
-  assert.match(action?.needsHuman?.resolve ?? '', /graphyard master requirements GY-9901/, 'the attention names the command that answers it');
+  assert.match(action?.needsHuman?.resolve ?? '', /mainworks master requirements GY-9901/, 'the attention names the command that answers it');
 
   const fixed = item({ criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:home-shows-change'] }] });
   assert.equal(readyGate(fixed).passed, true, 'with the criterion added, the ready gate passes');

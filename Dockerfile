@@ -1,11 +1,11 @@
-# The Graphyard control-plane image.
+# The Mainworks control-plane image.
 #
-# Graphyard's batch gate publishes it for each commit it verifies as ghcr.io/cryptob1/graphyard:<sha>
+# Mainworks's batch gate publishes it for each commit it verifies as ghcr.io/cryptob1/graphyard:<sha>
 # (src/publish-verified.ts), which an install pulls; an install of an unpublished commit builds it
 # itself. The version and the Git revision are stamped into the image so a running deployment
 # reports which release it serves at /healthz; the same values are OCI labels on the image itself.
 #
-#   docker build --build-arg GRAPHYARD_VERSION=0.1.0 --build-arg GRAPHYARD_BUILD_REVISION=$(git rev-parse HEAD) -t graphyard:0.1.0 .
+#   docker build --build-arg GRAPHYARD_VERSION=0.1.0 --build-arg GRAPHYARD_BUILD_REVISION=$(git rev-parse HEAD) -t mainworks:0.1.0 .
 ARG GRAPHYARD_VERSION=0.0.0-dev
 ARG GRAPHYARD_BUILD_REVISION=unknown
 
@@ -56,7 +56,7 @@ ENV NODE_ENV=production
 ENV GRAPHYARD_VERSION=${GRAPHYARD_VERSION}
 ENV GRAPHYARD_BUILD_REVISION=${GRAPHYARD_BUILD_REVISION}
 ENV GRAPHYARD_BUILD_SHA=${GRAPHYARD_BUILD_SHA}
-LABEL org.opencontainers.image.title="Graphyard" \
+LABEL org.opencontainers.image.title="Mainworks" \
       org.opencontainers.image.description="Evidence-backed coordination for distributed software agents" \
       org.opencontainers.image.version="${GRAPHYARD_VERSION}" \
       org.opencontainers.image.revision="${GRAPHYARD_BUILD_REVISION}" \

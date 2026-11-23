@@ -6,7 +6,7 @@ import type { FleetLaunchAccount } from '../src/fleet.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3338: agy's hourly smoke test failed for over an hour with "mkdir
-// /tmp/graphyard-agy-smoke-*/.gemini/antigravity-cli: file exists" — the harness's scratch home,
+// /tmp/mainworks-agy-smoke-*/.gemini/antigravity-cli: file exists" — the harness's scratch home,
 // not the account. Each smoke test now starts from a clean home of its own and removes it after.
 
 delete process.env.AGY_CONFIG_DIR;
@@ -27,9 +27,9 @@ test('e2e:smoke-test-clean-home — two smoke tests of one account in a row both
   process.env.TMPDIR = tmp;
   try {
     // An interrupted earlier test of this account left its smoke home behind, with the config directory agy made in it.
-    mkdirSync(join(tmp, 'graphyard-agy-smoke-agy-1', '.gemini', 'antigravity-cli'), { recursive: true });
+    mkdirSync(join(tmp, 'mainworks-agy-smoke-agy-1', '.gemini', 'antigravity-cli'), { recursive: true });
     assert.deepEqual(await agySmoke(account, { timeoutMs: 10_000 }), { ok: true, error: null });
     assert.deepEqual(await agySmoke(account, { timeoutMs: 10_000 }), { ok: true, error: null });
-    assert.deepEqual(readdirSync(tmp).filter(name => name.startsWith('graphyard-agy-smoke-')), [], 'no smoke home remains');
+    assert.deepEqual(readdirSync(tmp).filter(name => name.startsWith('mainworks-agy-smoke-')), [], 'no smoke home remains');
   } finally { if (previous === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = previous; }
 });

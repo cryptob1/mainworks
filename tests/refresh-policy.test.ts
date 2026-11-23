@@ -52,7 +52,7 @@ function evaluated(item: Work, all: Work[]): Work {
 }
 const gate = (item: Work, name: string) => item.gates.find(entry => entry.name === name)!;
 
-// GitHub delivery is the only delivery (GY-1235): no candidate enters a Graphyard merge queue, so
+// GitHub delivery is the only delivery (GY-1235): no candidate enters a Mainworks merge queue, so
 // nothing is republished as a speculative tip; GitHub merges each passing head on its own protection.
 test('unit:refresh-only-head-and-conflicts — main moving under three candidates rebuilds only the conflicting one; the clean ones keep their head, CI, review, proofs and stage', () => {
   // Before the merge: one candidate passes every gate; two others are in review on main.

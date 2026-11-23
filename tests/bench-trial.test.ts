@@ -142,7 +142,7 @@ test('integration:bench-trial-reports — runs reference trial on fixture repo, 
   const resultsFile = benchResultsPath(repo.root);
   let printed = '';
 
-  // Also verify checked-in bench/trial-files.txt exists in Graphyard repo with ~200 files.
+  // Also verify checked-in bench/trial-files.txt exists in Mainworks repo with ~200 files.
   const checkedInPath = join(import.meta.dirname, '..', 'bench', 'trial-files.txt');
   assert.ok(existsSync(checkedInPath), 'bench/trial-files.txt must be checked in');
   const checkedInFiles = readFileSync(checkedInPath, 'utf8').split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));

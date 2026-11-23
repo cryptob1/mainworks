@@ -133,7 +133,7 @@ test('e2e:trial-network-fault-not-red — the external host is read from resolve
 const config = (repository: string, upstream = false) => masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',
   repository, baseBranch: 'main', hostId: 'machine-a', masterAgentName: 'graphyard-master-game', workers: [], ...(upstream ? { upstream: { url: 'https://upstream.example', credentialFile: '/outside/upstream.token' } } : {}) });
 
-test('e2e:trial-network-fault-not-red — a non-Graphyard install files the trial-host fault upstream once per host, or raises one attention line; never into the managed repository', async () => {
+test('e2e:trial-network-fault-not-red — a non-Mainworks install files the trial-host fault upstream once per host, or raises one attention line; never into the managed repository', async () => {
   const local: string[] = [], filed: { key: string; title: string }[] = [], lines: string[] = [];
   const mergeWriter = { createWork: async (_input: unknown, key: string) => { local.push(key); return { key: 'GY-1' }; } } as unknown as MergeWriterReads;
   const fileUpstream: DaemonEffects['fileUpstream'] = async (input, key) => { filed.push({ key, title: input.title }); return { key: 'GY-900' }; };
@@ -144,6 +144,6 @@ test('e2e:trial-network-fault-not-red — a non-Graphyard install files the tria
   const without = { ...withUpstream, state: emptyDaemonState(config('owner/game')), effects: { mergeWriter } as unknown as DaemonEffects, config: config('owner/game') };
   lines.length = 0;
   for (let cycle = 0; cycle < 3; cycle++) await reportTrialHostFault(without, host);
-  assert.equal(lines.filter(line => /attention failed: Graphyard fault: merge trials cannot fetch from/.test(line)).length, 1, 'one attention line across cycles');
+  assert.equal(lines.filter(line => /attention failed: Mainworks fault: merge trials cannot fetch from/.test(line)).length, 1, 'one attention line across cycles');
   assert.deepEqual(local, [], 'nothing is filed into owner/game');
 });

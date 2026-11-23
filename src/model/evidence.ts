@@ -11,7 +11,7 @@ export interface EvidenceArtifact {
   expiresAt?: string; availability: ArtifactAvailability;
   /** Public location. External locations are never treated as trusted proof. */
   url?: string;
-  /** Authenticated Graphyard route components; never contains a bearer credential. */
+  /** Authenticated Mainworks route components; never contains a bearer credential. */
   reference?: { requestId: string; artifactId: string };
 }
 export interface Evidence {
@@ -22,7 +22,7 @@ export interface Evidence {
   scenarioRevision?: number; environment?: string;
   /**
    * The paths this proof depends on, in the bounded path scope syntax (`pathScope`), declared by
-   * the producer. The merge queue carries the record onto a Graphyard-authored tip only when this
+   * the producer. The merge queue carries the record onto a Mainworks-authored tip only when this
    * scope is disjoint from what the predecessor changed; an undeclared scope is never carried.
    */
   scopeFiles?: string[];
@@ -127,7 +127,7 @@ export function answerCounts(work: Pick<Work, 'producerProofs'>, evidence: Evide
 }
 
 // Shared by gates and human-facing proof previews. A record binds the candidate exactly, or
-// carried across a Graphyard-authored tip (see carry.ts); nothing else applies.
+// carried across a Mainworks-authored tip (see carry.ts); nothing else applies.
 export function currentEvidence(work: Work, proof: string, now: Date): Evidence | undefined {
   const scenario = work.scenarioRequirements?.find(s => s.proof === proof);
   const validation = work.validation?.[proof];

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
 // GY-3712: the docs follow the code — README and the CLI guide name the Mainworks settings and
-// paths, with one line saying the Graphyard names are still honoured.
+// paths, with one line saying the legacy names are still honoured.
 const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
 // README embeds the "Where things run" diagram, so its paths count as README text.
 const diagram = readFileSync(new URL('../docs/diagrams/where-things-run.svg', import.meta.url), 'utf8');
@@ -18,7 +18,7 @@ const notSettings = /GRAPHYARD_(COMMIT|INSTANCE|RUN_ID|TRIAL_IMAGE)\b/g;
 function checkOne(name: string, text: string) {
   const lines = text.split('\n').filter((line) => line.includes('GRAPHYARD_') && line.replace(notSettings, '').includes('GRAPHYARD_'));
   assert.ok(lines.length <= 1, `${name} names GRAPHYARD_* on one line only, got:\n${lines.join('\n')}`);
-  for (const line of lines) assert.match(line, honoured, `${name}'s one GRAPHYARD_ line says the Graphyard names still work`);
+  for (const line of lines) assert.match(line, honoured, `${name}'s one GRAPHYARD_ line says the legacy names still work`);
   for (const old of [/~\/\.config\/graphyard\//, /(^|[^\w/])\.graphyard\b/]) assert.doesNotMatch(text, old, `${name} names the Mainworks path, not ${old}`);
 }
 

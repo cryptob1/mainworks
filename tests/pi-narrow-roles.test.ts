@@ -20,7 +20,7 @@ import { workFixture } from './helpers/work-fixture.js';
 // GY-169 AC-3, proof integration:pi-narrow-roles. The master config selects the runtime of each
 // narrow role; with `pi` the unit proof producer runs through the headless runner
 // on a fake Pi — a wrapper command, configured exactly as `pi-a` would be, that loads the real
-// Graphyard extension and makes the tool calls its scenario names the way Pi does, emitting Pi's
+// Mainworks extension and makes the tool calls its scenario names the way Pi does, emitting Pi's
 // JSONL — and what the run submitted is applied through the control-plane routes with the role's
 // own credential. Without the setting it launches in Herdr as today.
 
@@ -70,7 +70,7 @@ async function installation(runtimes?: { producer?: 'herdr' | 'pi' }) {
   const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   git('init', '-q', '-b', 'main'); git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   await writeFile(join(root, 'README.md'), 'narrow roles\n');
-  git('add', 'README.md'); git('-c', 'user.name=Graphyard', '-c', 'user.email=graphyard@example.test', 'commit', '-q', '-m', 'initial');
+  git('add', 'README.md'); git('-c', 'user.name=Mainworks', '-c', 'user.email=graphyard@example.test', 'commit', '-q', '-m', 'initial');
   await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory: credentials, herdrWorkspace: 'workspace', run: { worktreeRoot: managed } }, coordinatorStatus, { probe: durable });
   const producerFile = join(credentials, 'producer.token');
   await writeFile(producerFile, producerToken, { mode: 0o600 });
@@ -95,7 +95,7 @@ function work(key: string, group: string, proofs: string[], overrides: Partial<W
   const candidate = { sha: H, baseSha: B, pr: 169, branch: `graphyard/${key.toLowerCase()}-1`, author: 'implementer' };
   const request = { id: `request-${key}-${group}`, kind: 'producer', sha: H, baseSha: B, policyRevision: 4, pr: 169, group, proofs, state: 'requested', requestedAt: new Date().toISOString(), reason: 'r' };
   return workFixture({ key, title: 'Narrow roles', priority: 1,
-    criteria: [{ id: 'AC-2', text: 'Typed tools', proofs: ['unit:pi-graphyard-tools'] }, { id: 'AC-5', text: 'Guard', proofs: ['unit:pi-destructive-guard'] }, { id: 'AC-3', text: 'Roles', proofs: ['integration:pi-narrow-roles'] }],
+    criteria: [{ id: 'AC-2', text: 'Typed tools', proofs: ['unit:pi-mainworks-tools'] }, { id: 'AC-5', text: 'Guard', proofs: ['unit:pi-destructive-guard'] }, { id: 'AC-3', text: 'Roles', proofs: ['integration:pi-narrow-roles'] }],
     stage: 'review', revision: 3, policyRevision: 4, epoch: 1, candidate, submission: { epoch: 1, pr: 169 }, gates: [], implementers: ['implementer'],
     observation: { at: new Date().toISOString(), candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true, files: [], scopeFiles: [] },
     autoDispatch: { review: null, producers: [request], history: [] } as never, ...overrides });
@@ -127,7 +127,7 @@ test('integration:pi-narrow-roles with pi selected the unit proof producer runs 
   const { root, scenario, posted, fetcher, bin, cleanup } = await installation({ producer: 'pi' });
   const path = process.env.PATH; process.env.PATH = `${bin}:${path}`;
   try {
-    const proofs = ['unit:pi-graphyard-tools', 'unit:pi-destructive-guard'];
+    const proofs = ['unit:pi-mainworks-tools', 'unit:pi-destructive-guard'];
     const item = work('GY-89', 'unit', proofs);
     await writeFile(scenario, JSON.stringify({ calls: [
       { tool: 'bash', input: { command: 'rm -rf "$WORKTREE"/node_modules' } },
@@ -150,7 +150,7 @@ test('integration:pi-narrow-roles with pi selected the unit proof producer runs 
     const { environment, ...submitted } = posted[0].body;
     assert.deepEqual(submitted, evidence(proofs[0]), 'the validated payload, unchanged');
     assert.equal(environment, 'pi default on pi-fixture', 'the run names the registry account it ran on');
-    assert.ok(run.events.some((event: any) => event.kind === 'tool-end' && event.tool === 'bash' && event.error && /Graphyard refused this command/.test(event.text)), 'the destructive-command guard ran in the session');
+    assert.ok(run.events.some((event: any) => event.kind === 'tool-end' && event.tool === 'bash' && event.error && /Mainworks refused this command/.test(event.text)), 'the destructive-command guard ran in the session');
     const launch = JSON.parse(await readFile(`${scenario}.launched`, 'utf8'));
     assert.equal(launch.role, 'producer');
     assert.equal(launch.cwd, launched.checkout, 'the run works in the session directory allocated for it');
@@ -178,7 +178,7 @@ test('integration:pi-narrow-roles without the setting, and for non-unit proof gr
     await writeFile(scenario, JSON.stringify({ calls: [] }));
     const config = await loadMasterConfig(root);
     assert.equal(config.run.runtimes, undefined);
-    const item = work('GY-90', 'unit', ['unit:pi-graphyard-tools']);
+    const item = work('GY-90', 'unit', ['unit:pi-mainworks-tools']);
     const calls: string[][] = [];
     const launched = await launchProducer(root, item, requestOf(item), config.producers[0], [], new Date().toISOString(), { run: herdr(calls), filesystem: durable, probe: registryFixture(config.hostId!, ['codex'], ['producer']).probe }) as any;
     assert.equal(launched.pane, 'pane-1', 'a Herdr pane was created');

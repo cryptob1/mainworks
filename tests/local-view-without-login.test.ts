@@ -38,7 +38,7 @@ test('integration:local-view-without-login — local reads need no session; fore
     assert.equal((await localRequest(`http://127.0.0.1:${publishedPort}`, '/api/board')).status, 401, 'undeclared publication cannot bypass the socket boundary');
     for (const port of [listenerPort, publishedPort]) {
       if (port === publishedPort) {
-        const bundle = composeBundle({ workdir: '/fixture', installId: 'test', image: 'graphyard:test', port } as AdapterContext, []);
+        const bundle = composeBundle({ workdir: '/fixture', installId: 'test', image: 'mainworks:test', port } as AdapterContext, []);
         const compose = bundle.find(file => file.path.endsWith('/compose.yaml'))!.content;
         assert.ok(compose.includes(`ports: ["127.0.0.1:${port}:4310"]`));
         const configuredPort = /GRAPHYARD_LOCAL_VIEW_PORT: "(\d+)"/.exec(compose)![1];

@@ -5,10 +5,10 @@ import type { Work } from './work.js';
 import { docsSignoffProof } from './docs-signoff.js';
 
 /**
- * Binding carry across a Graphyard-authored merge of the base into a candidate (a base refresh).
+ * Binding carry across a Mainworks-authored merge of the base into a candidate (a base refresh).
  *
  * A review and every trusted proof bind to one exact commit. When the control plane replaces an
- * approved, proven head H with a tip H' that Graphyard itself produced — a two-parent merge of H
+ * approved, proven head H with a tip H' that Mainworks itself produced — a two-parent merge of H
  * and the commit H' will land on, authored by the control-plane App, with no conflict resolved —
  * the two commits are provably the same reviewed content plus already-validated history. Only
  * then is a binding carried. The review judges whether the change is right and the proofs what it
@@ -25,7 +25,7 @@ import { docsSignoffProof } from './docs-signoff.js';
  * a worker, a producer, or a reviewer.
  */
 
-/** What Graphyard's merge produced when it published a tip, as GitHub reports the commit. */
+/** What Mainworks's merge produced when it published a tip, as GitHub reports the commit. */
 export interface TipMerge {
   /** The head the tip replaced: the commit every carried binding was made against. */
   from: string;
@@ -35,7 +35,7 @@ export interface TipMerge {
   author: string | null;
   /** The author is the control-plane App's own bot identity. */
   authoredByApp: boolean;
-  /** The merge needed a conflict resolved; Graphyard's provider merge never does, and a resolved merge is never carried. */
+  /** The merge needed a conflict resolved; Mainworks's provider merge never does, and a resolved merge is never carried. */
   conflicts: boolean;
   /** Paths changed between the replaced head's bound base and the predicted base, or null when GitHub could not list them completely. */
   baseChanges: string[] | null;
@@ -102,10 +102,10 @@ const list = (paths: string[]) => paths.length > 6 ? `${paths.slice(0, 6).join('
 /** The one reason that refuses every binding at once, or null when the tip qualifies for per-binding decisions. */
 export function carryRefusal(input: Pick<CarryInput, 'from' | 'to' | 'merge' | 'predecessor' | 'app'>): string | null {
   const { from, to, merge, predecessor } = input;
-  if (!merge || merge.from !== from.sha) return `tip ${short(to.sha)} was not produced by Graphyard's merge of the approved head ${short(from.sha)}`;
+  if (!merge || merge.from !== from.sha) return `tip ${short(to.sha)} was not produced by Mainworks's merge of the approved head ${short(from.sha)}`;
   const expected = new Set([from.sha, to.baseSha]);
   const parents = new Set(merge.parents);
-  if (parents.size !== expected.size || [...expected].some(sha => !parents.has(sha))) return `tip ${short(to.sha)} has parents ${merge.parents.map(short).join(', ') || 'none'} rather than exactly the approved head ${short(from.sha)} and its predicted base ${short(to.baseSha)}, so it carries commits Graphyard did not produce`;
+  if (parents.size !== expected.size || [...expected].some(sha => !parents.has(sha))) return `tip ${short(to.sha)} has parents ${merge.parents.map(short).join(', ') || 'none'} rather than exactly the approved head ${short(from.sha)} and its predicted base ${short(to.baseSha)}, so it carries commits Mainworks did not produce`;
   if (!merge.authoredByApp) return `tip ${short(to.sha)} was authored by ${merge.author ?? 'an unknown identity'}, not by the ${input.app} App`;
   if (merge.conflicts) return `tip ${short(to.sha)} needed conflict resolution, which is new content nobody reviewed or proved`;
   if (!predecessor.validated) return predecessor.key ? `predecessor ${predecessor.key} is not fully validated on tip ${short(to.baseSha)}` : `the predicted base ${short(to.baseSha)} is not validated`;
@@ -130,7 +130,7 @@ export function decideCarry(input: CarryInput): QueueCarry {
     const id = short(diff!.reviewed!);
     const ground: CarryGround = { rule: 'diff unchanged', patchId: diff!.reviewed, tipPatchId: diff!.tip };
     const approval: CarriedApproval | RequiredApproval = !input.approval ? { carried: false, reason: `no approval was bound to the replaced head ${short(from.sha)}` }
-      : { ...input.approval, carried: true, originalSha: input.approval.sha, reason: `${approvedBy(input.approval)} carried to Graphyard-authored tip ${short(to.sha)}: diff unchanged (patch-id ${id}) across ${who}'s changes` };
+      : { ...input.approval, carried: true, originalSha: input.approval.sha, reason: `${approvedBy(input.approval)} carried to Mainworks-authored tip ${short(to.sha)}: diff unchanged (patch-id ${id}) across ${who}'s changes` };
     const evidence = input.proofs.map(({ proof, evidence }): CarriedProof => !evidence ? { proof, carried: false, reason: `no trusted evidence was bound to the replaced head ${short(from.sha)}` }
       : { proof, carried: true, evidenceId: evidence.id, producer: evidence.producer, reason: `evidence ${evidence.id} from ${evidence.producer} carried to ${short(to.sha)}: diff unchanged (patch-id ${id}) across ${who}'s changes` });
     return { ...base, approval, evidence, ground };
@@ -140,7 +140,7 @@ export function decideCarry(input: CarryInput): QueueCarry {
   const reviewedTouched = input.reviewedFiles.filter(path => changed.includes(path));
   const approval: CarriedApproval | RequiredApproval = !input.approval ? { carried: false, reason: `no approval was bound to the replaced head ${short(from.sha)}` }
     : reviewedTouched.length ? { carried: false, reason: `${who} changed reviewed files ${list(reviewedTouched)}; a fresh independent approval of ${short(to.sha)} is required` }
-    : { ...input.approval, carried: true, originalSha: input.approval.sha, reason: `${approvedBy(input.approval)} carried to Graphyard-authored tip ${short(to.sha)}: ${who} changed none of the ${input.reviewedFiles.length} reviewed files` };
+    : { ...input.approval, carried: true, originalSha: input.approval.sha, reason: `${approvedBy(input.approval)} carried to Mainworks-authored tip ${short(to.sha)}: ${who} changed none of the ${input.reviewedFiles.length} reviewed files` };
   const evidence = input.proofs.map(({ proof, evidence }): CarriedProof => {
     if (!evidence) return { proof, carried: false, reason: `no trusted evidence was bound to the replaced head ${short(from.sha)}` };
     // A predicted base that changed nothing relative to the bound base leaves the tested tree
@@ -176,7 +176,7 @@ export function currentCarry(work: CarryBearer): QueueCarry | null {
 }
 /**
  * True when a trusted evidence record binds the current candidate: exactly, or carried across a
- * Graphyard-authored commit. The decision names the exact record it carried, which is what lets a
+ * Mainworks-authored commit. The decision names the exact record it carried, which is what lets a
  * record carried more than once — across two base refreshes — still be the one the latest
  * decision names.
  */
@@ -200,7 +200,7 @@ export function carriedApproval(work: Work): CarriedApproval | null {
 }
 /**
  * The identity behind the approval the review gate currently accepts: the exact one, or the one
- * already carried onto this candidate. A second Graphyard-authored commit over the same reviewed
+ * already carried onto this candidate. A second Mainworks-authored commit over the same reviewed
  * head decides from this, so a candidate the control plane refreshed twice does not lose its
  * review to the second refresh. The identity keeps the commit it actually approved.
  */

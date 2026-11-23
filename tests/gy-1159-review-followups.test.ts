@@ -40,7 +40,7 @@ test('manual:review-followups-triaged GY-1159.5: OpenCode accounts configured fo
   const health = await checkAgentEnvironment(nonZaiEnv as any, { fetch: mockFetch });
   assert.equal(health.loggedIn, true, 'account with auth.json/key file is recognized as logged in');
   assert.equal(fetchCalls.length, 0, 'mockFetch to api.z.ai must NEVER be called for non-Z.AI plan');
-  assert.ok(health.note?.includes('OpenCode exposes no provider quota Graphyard can read'), 'note indicates provider reports limits in session');
+  assert.ok(health.note?.includes('OpenCode exposes no provider quota Mainworks can read'), 'note indicates provider reports limits in session');
 
   // Case B: OpenCode environment with keyVariable 'OPENROUTER_API_KEY'
   const nonZaiEnvVar = {

@@ -34,7 +34,7 @@ export class Vault {
  * A roster entry (GY-1879): a planned principal with the lane grants it holds — each names one
  * lane the server checks by name (`external-runs:import` for POST /api/validation/import,
  * `delivery:observe-sha` for POST /api/delivery/observe-sha, GY-1912) and is
- * never a proof pattern — and, for one `graphyard principal add` registered, `source`, which every
+ * never a proof pattern — and, for one `mainworks principal add` registered, `source`, which every
  * later apply keeps; the installer's own entries carry none.
  */
 export interface RosterPrincipal extends PlannedPrincipal { grants?: PrincipalGrant[]; source?: 'principal' }
@@ -164,14 +164,14 @@ export function principalsVariable(principals: RosterPrincipal[], tokens: Map<st
 export function principalRecords(principals: RosterPrincipal[], tokens: Map<string, string>) {
   return principals.map(principal => ({ ...principalFields(principal), ...(principal.source ? { source: principal.source } : {}), fingerprint: fingerprint(tokens.get(principal.id)!) }));
 }
-/** The roster install.json records, as principals: what an apply reconciles with and `graphyard principal` edits. */
+/** The roster install.json records, as principals: what an apply reconciles with and `mainworks principal` edits. */
 export function recordedRoster(record: Pick<InstallRecord, 'principals'> | null): RosterPrincipal[] {
   return (record?.principals ?? []).map(entry => ({ ...principalFields(entry), ...(entry.source ? { source: entry.source } : {}) }));
 }
 
 /**
  * The roster an apply deploys (GY-1879): the planner's principals, then every recorded principal
- * `graphyard principal add` registered — with its role, kind, grants and, through its token file,
+ * `mainworks principal add` registered — with its role, kind, grants and, through its token file,
  * its credential — and, under observation-only, which plans no worker or producer, the ones an
  * earlier apply registered. An apply reconciles the roster and revokes nothing it did not plan;
  * only a full apply's own plan (`--workers`, `--producer-proof`) retires the installer's entries.
@@ -180,7 +180,7 @@ export function reconcileRoster(planned: RosterPrincipal[], recorded: RosterPrin
   // A registered entry whose id the plan now produces is refused, never replaced: its holder's token
   // would carry the planned role and proofs, widening a lane credential into authority nobody granted.
   const collision = recorded.find(entry => entry.source === 'principal' && planned.some(principal => principal.id === entry.id));
-  if (collision) throw new Error(`${collision.id} is registered by graphyard principal add as ${collision.role}${collision.grants?.length ? ` with grants ${collision.grants.join(', ')}` : ''}, and this apply plans its own ${planned.find(principal => principal.id === collision.id)!.role} under the same id; nothing was written. Run graphyard principal remove ${collision.id} first, or apply without the option that plans it`);
+  if (collision) throw new Error(`${collision.id} is registered by mainworks principal add as ${collision.role}${collision.grants?.length ? ` with grants ${collision.grants.join(', ')}` : ''}, and this apply plans its own ${planned.find(principal => principal.id === collision.id)!.role} under the same id; nothing was written. Run mainworks principal remove ${collision.id} first, or apply without the option that plans it`);
   const kept = recorded.filter(entry => !planned.some(principal => principal.id === entry.id) && (entry.source === 'principal' || !!options.observeOnly));
   return [...planned, ...kept];
 }
@@ -189,7 +189,7 @@ const principalIdPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/;
 /** Proof patterns `principal add --proof` accepts: the same lanes the installer seeds with `--producer-proof`. */
 const proofPattern = /^(unit|integration|e2e|manual):[A-Za-z0-9._*:/-]+$/;
 /**
- * One `graphyard principal add` entry, judged as `plannedPrincipals` judges the planner's: a
+ * One `mainworks principal add` entry, judged as `plannedPrincipals` judges the planner's: a
  * producer is created only with an explicit lane grant (`--grant`) or proof seed (`--proof`), since
  * an ungranted producer would be a standing credential with no lane; a grant names a producer lane
  * and a proof seed names proof authority, held by a producer, an admin or (for readings) a coordinator.
@@ -225,12 +225,12 @@ export async function importPrincipalToken(directory: string, principal: string,
   const text = (await readFile(source, 'utf8')).trim();
   if (text.length < 32) throw new Error(`${source} does not contain a usable credential`);
   if (/[\r\n\0]/.test(text)) throw new Error(`${source} must be a single-line credential`);
-  if (recorded && fingerprint(text) !== recorded) throw new Error(`${source} is not the credential install.json records for ${principal} (fingerprint ${recorded}), which the deployment serves; nothing was written. Import the matching credential, or run graphyard principal remove ${principal} and add it again`);
+  if (recorded && fingerprint(text) !== recorded) throw new Error(`${source} is not the credential install.json records for ${principal} (fingerprint ${recorded}), which the deployment serves; nothing was written. Import the matching credential, or run mainworks principal remove ${principal} and add it again`);
   const dest = tokenFile(directory, principal);
   try {
     const standing = (await readFile(dest, 'utf8')).trim();
     if (standing === text) return { path: dest, created: false };
-    if (standing) throw new Error(`${dest} already holds a different credential for ${principal}; nothing was written. Import that credential instead, or run graphyard principal remove ${principal} and add it again with --token-file ${source}`);
+    if (standing) throw new Error(`${dest} already holds a different credential for ${principal}; nothing was written. Import that credential instead, or run mainworks principal remove ${principal} and add it again with --token-file ${source}`);
   } catch (error: any) { if (error.code !== 'ENOENT') throw error; }
   await mkdir(resolve(directory, 'tokens'), { recursive: true, mode: 0o700 });
   await atomicPrivate(dest, `${text}\n`);
@@ -238,7 +238,7 @@ export async function importPrincipalToken(directory: string, principal: string,
 }
 const installersOwn = (roster: RosterPrincipal[], id: string) => {
   const existing = roster.find(principal => principal.id === id);
-  if (existing && existing.source !== 'principal') throw new Error(`${id} is one of the installer's own principals; change it with graphyard install --apply (--workers, --producer-proof), not graphyard principal`);
+  if (existing && existing.source !== 'principal') throw new Error(`${id} is one of the installer's own principals; change it with mainworks install --apply (--workers, --producer-proof), not mainworks principal`);
   return existing;
 };
 /** `roster` with `entry` added or replaced by id; `changed` is false when the roster already held exactly it. */

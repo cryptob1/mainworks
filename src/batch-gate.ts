@@ -2,7 +2,7 @@
 // before anything serves it. The loop cuts a batch from the main tip whenever merges landed since
 // the last verified commit and no gate is in flight, and gates the tip in the private trial
 // container (never the served instance): the build, the bound E2E cases of every item in the batch,
-// the core cases graphyard.json names in gate.core (Graphyard's: create-work-item and the deploy
+// the core cases graphyard.json names in gate.core (Mainworks's: create-work-item and the deploy
 // smoke, the `smoke` case: the built candidate serves and answers healthy), and the tests the
 // affected selection picks for the changed files — the whole E2E catalog in place of the subset
 // only when its measured gate-run time fits half the 45-minute limit (GY-3144). A passing gate records the tip as
@@ -105,7 +105,7 @@ export interface GateRecord {
   /** The current batch's recuts after a revert and its timeouts; cleared when a gate passes. */
   attempt: { recuts: number; timeouts: number };
   /**
-   * GY-3199: the commit last published at `refs/graphyard/verified` on Graphyard's own repository,
+   * GY-3199: the commit last published at `refs/graphyard/verified` on Mainworks's own repository,
    * which every install's deploy watch reads. Optional only for records an older loop wrote; the
    * gate publishes each newly verified commit, and a loop that adopted a record whose publication
    * never landed catches it up.
@@ -202,9 +202,9 @@ export interface GatePorts {
   /** GY-3431: the key of the open "Flaky check on main" item for `check`, or null when none is open. */
   flaky?(check: string): string | null;
   /**
-   * GY-3199: publishes `commit` at `refs/graphyard/verified` on Graphyard's own repository through
+   * GY-3199: publishes `commit` at `refs/graphyard/verified` on Mainworks's own repository through
    * the merge writer's deploy key, where every install's deploy watch reads it. Absent on an
-   * install that does not gate Graphyard itself; a publish that fails never undoes the
+   * install that does not gate Mainworks itself; a publish that fails never undoes the
    * verification — it is one gate note, caught up on a later cycle.
    */
   publish?(commit: string): Promise<void>;

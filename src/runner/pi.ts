@@ -15,7 +15,7 @@ import { stateDirectory } from '../install/layout.js';
 /**
  * The Pi implementation of the runner (GY-169). It launches `pi --mode json` in the given
  * worktree through the given environment wrapper (`pi-a`, `pi-b`: each sets PI_CODING_AGENT_DIR
- * and reads its provider key at run time) and model, with the Graphyard extension
+ * and reads its provider key at run time) and model, with the Mainworks extension
  * (integrations/pi) as its only extension, and reads Pi's JSONL event stream. There is no
  * terminal: stdin is closed, so nothing can wait on a person, and JSON mode exits once the prompt
  * is settled.
@@ -26,13 +26,13 @@ import { stateDirectory } from '../install/layout.js';
  * restarted process adopts it from the run registry (registry.ts adoptRuns).
  */
 
-/** The Graphyard Pi extension this checkout ships. */
+/** The Mainworks Pi extension this checkout ships. */
 const piExtensionPath = fileURLToPath(new URL('../../integrations/pi/index.ts', import.meta.url));
 export const defaultPiModel = 'zai/glm-5.3-flash';
 
 /**
  * Pi's non-interactive launch. JSON mode processes the prompt and exits; no session file is kept;
- * only the Graphyard extension loads (discovery is off), and the worktree's own project resources
+ * only the Mainworks extension loads (discovery is off), and the worktree's own project resources
  * — a candidate's `.pi/` extensions, skills, prompt templates, AGENTS.md — are ignored, so the code
  * under judgement cannot load code into its judge. The prompt follows `--` so it is never read as
  * an option.
@@ -42,7 +42,7 @@ export function piArgs(prompt: string, options: { model: string; extension?: str
     '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--no-approve', ...piModelArgs(options.model), ...(options.args ?? []), '--', prompt];
 }
 
-/** Inherited variables a run never sees: the loop's own Graphyard and Herdr identity. What a run may hold is passed in `env`. */
+/** Inherited variables a run never sees: the loop's own Mainworks and Herdr identity. What a run may hold is passed in `env`. */
 export function runEnvironment(base: NodeJS.ProcessEnv, extra: Record<string, string> = {}) {
   const env: Record<string, string> = {};
   for (const [name, value] of Object.entries(base)) if (value !== undefined && !/^(GRAPHYARD_|MAINWORKS_|HERDR_)/.test(name)) env[name] = value;
@@ -147,7 +147,7 @@ export function runContainment(input: { cgroup?: string | null; systemd?: () => 
   });
   if (reachable()) return 'systemd';
   const log = input.log ?? (line => { if (!fallbackLogged) { fallbackLogged = true; process.stderr.write(`${line}\n`); } });
-  log(`graphyard: headless runs started from ${service} get no transient scope (no systemd user manager answers), so a stop or restart of ${service} still ends them`);
+  log(`mainworks: headless runs started from ${service} get no transient scope (no systemd user manager answers), so a stop or restart of ${service} still ends them`);
   return 'setsid';
 }
 

@@ -13,11 +13,11 @@ import { dockerCreates, shardHosts, shardRepository, type ShardHostsFixture } fr
 
 // GY-3476 AC-1: a merge trial with one added host whose installed graphyard-host-shim is older than this
 // release (its probe prints another digest and, GY-3517, lacks a verb the trial uses). That host gets no shard, every shard runs here with the
-// one-host verdict, and master status names the host away — "older than this release: run graphyard
+// one-host verdict, and master status names the host away — "older than this release: run mainworks
 // host prepare" — with an attention line. With this release's shim the same host takes shards again.
 
 const proof = 'e2e:host-shim-outdated';
-const image = 'graphyard-trial:shim-outdated';
+const image = 'mainworks-trial:shim-outdated';
 const target = 'gy-compute@stale';
 const files = Array.from({ length: 6 }, (_, index) => `tests/plain-${index}.test.ts`);
 let hosts: ShardHostsFixture, repository: { root: string; sha: string }, answers: string;
@@ -71,13 +71,13 @@ test(`${proof} — a host whose shim reports another digest takes no shard, read
   const runs = readRemoteShardRuns(repository.root);
   const host = remoteShardSummary(runs)!.hosts.find(entry => entry.name === target)!;
   assert.equal(host.state, 'away');
-  assert.match(host.reason ?? '', /older than this release: run graphyard host prepare/);
+  assert.match(host.reason ?? '', /older than this release: run mainworks host prepare/);
   // GY-3517: the attention line follows the loop's latest probe of the host.
   const probes = async () => { const file = join(hosts.root, 'hosts.json'); await writeFile(file, JSON.stringify([{ target, addedAt: 'x' }])); return readHostReadings([], { file, run }); };
   const attention = outdatedShimAttention(await probes());
   assert.equal(attention.length, 1);
   assert.match(attention[0]!.text, new RegExp(`^${target}`));
-  assert.match(attention[0]!.next, /graphyard host prepare/);
+  assert.match(attention[0]!.next, /mainworks host prepare/);
 
   // With this release's shim the same host takes shards.
   await writeFile(hosts.shim, hostShimScript);

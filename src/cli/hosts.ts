@@ -37,7 +37,7 @@ export const hostCommands = defineCommands([{
       const separator = context.args.indexOf('--'), flags = context.args.slice(1, separator);
       const values = (flag: string) => flags.flatMap((word, index) => word === flag && flags[index + 1] ? [flags[index + 1]!] : []);
       const cli = values('--cli')[0];
-      if (separator < 0 || !cli || !context.args[separator + 1]) throw new Error('Usage: graphyard host session USER@HOST [--home DIR]... [--env NAME]... --cli PATH -- COMMAND ARGS');
+      if (separator < 0 || !cli || !context.args[separator + 1]) throw new Error('Usage: mainworks host session USER@HOST [--home DIR]... [--env NAME]... --cli PATH -- COMMAND ARGS');
       const env = Object.fromEntries(values('--env').flatMap(name => process.env[name] === undefined ? [] : [[name, process.env[name]!]]));
       const confine = values('--confine')[0];
       process.exitCode = await runRemoteSession({ target, worktree: process.cwd(), homes: values('--home'), cli, argv: context.args.slice(separator + 1), env, confine: confine ? JSON.parse(confine) as string[] : [] });
@@ -49,7 +49,7 @@ export const hostCommands = defineCommands([{
         const problem = host.sessions ? await sessionHelperProblem(host.target) : null;
         return `${host.target}  added ${host.addedAt}${host.sessions ? (problem ? `, set to ${host.sessions} sessions but takes none: ${problem}` : `, takes ${host.sessions} sessions`) : ''}`;
       }));
-      console.log(hosts.length ? lines.join('\n') : 'No host added: this machine runs all work. Prepare one with graphyard host prepare, then graphyard host add gy-compute@HOST.');
-    } else throw new Error('Usage: graphyard host prepare | host add USER@HOST[:PORT] | host add ALIAS | host sessions USER@HOST N | host remove USER@HOST | host list');
+      console.log(hosts.length ? lines.join('\n') : 'No host added: this machine runs all work. Prepare one with mainworks host prepare, then mainworks host add gy-compute@HOST.');
+    } else throw new Error('Usage: mainworks host prepare | host add USER@HOST[:PORT] | host add ALIAS | host sessions USER@HOST N | host remove USER@HOST | host list');
   },
 }]);

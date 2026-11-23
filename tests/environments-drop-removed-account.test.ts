@@ -20,7 +20,7 @@ test('e2e:environments-drop-removed-account — environments --apply drops a rem
     execFileSync('git', ['init', '-q', root]);
     execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/owner/project.git'], { cwd: root });
     const status = async () => new Response(JSON.stringify({ actor: { id: 'master', role: 'coordinator' }, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234 }));
-    await setupMaster(root, { url: 'https://graphyard.example', token: 'coordinator-token-'.padEnd(40, 'x'), cliPath: fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url)), credentialDirectory: credentials, herdrWorkspace: 'workspace-graphyard' }, status as typeof fetch);
+    await setupMaster(root, { url: 'https://graphyard.example', token: 'coordinator-token-'.padEnd(40, 'x'), cliPath: fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url)), credentialDirectory: credentials, herdrWorkspace: 'workspace-mainworks' }, status as typeof fetch);
     await saveReviewerProfile(root, { name: 'review-pair', agentName: 'review-pair', kind: 'claude', accounts: ['a', 'b'] });
     await saveReviewerProfile(root, { name: 'review-solo', agentName: 'review-solo', kind: 'claude', accounts: ['a'] });
 

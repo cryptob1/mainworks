@@ -97,7 +97,7 @@ test(`${proof} — a parked item waits on its request, holds no slot, is listed 
   const asks = report.attention.filter(entry => entry.text.includes('Which goal ships first?'));
   assert.equal(asks.length, 1, 'the request is listed once');
   assert.match(asks[0].text, /^GY-A waits on you \(overdue\) for 2h/);
-  assert.equal(asks[0].next, 'graphyard answer GY-A req-1 ANSWER');
+  assert.equal(asks[0].next, 'mainworks answer GY-A req-1 ANSWER');
   assert.ok(!report.attention.some(entry => entry.subject === 'GY-B' || entry.subject === 'GY-C'));
 
   // Answering makes A dispatchable at once.

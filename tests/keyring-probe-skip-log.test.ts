@@ -32,7 +32,7 @@ test('unit:keyring-probe-skip-logged — a launch skipped inside a backoff windo
     clock = 10_000;
     assert.equal(await launch('gy-skipped'), null, 'the skipped launch still returns null');
     assert.equal(lines.length, 1);
-    assert.ok(lines[0].startsWith(`graphyard: gy-skipped: keyring endpoint ${realpathSync(endpoint)} not checked`), lines[0]);
+    assert.ok(lines[0].startsWith(`mainworks: gy-skipped: keyring endpoint ${realpathSync(endpoint)} not checked`), lines[0]);
     assert.match(lines[0], /skip the check for 20 s more \(window 30 s\)/);
 
     clock = 15_000;
@@ -44,7 +44,7 @@ test('unit:keyring-probe-skip-logged — a launch skipped inside a backoff windo
     clock = 31_000;
     assert.equal(await launch('gy-next-window'), null);
     assert.equal(lines.length, 2, 'the next window records its skip again');
-    assert.match(lines[1], /^graphyard: gy-next-window: .*for 59 s more \(window 60 s\)/);
+    assert.match(lines[1], /^mainworks: gy-next-window: .*for 59 s more \(window 60 s\)/);
 
     // A caller that passes no `skipped` keeps the silent contract.
     assert.equal(await keyringEndpointWarning('gy-silent', bound, unreachable, endpoint, verdicts, Promise.resolve(true), backoff), null);

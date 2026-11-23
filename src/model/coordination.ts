@@ -200,7 +200,7 @@ export function diagnose(work: Work, all: Work[], now: number, jobs: Integration
     `Declared by ${ac.bootstrap.declaredBy} at ${ac.bootstrap.declaredAt}. Review, CI and every other criterion still gate this item; the deferred proof stays owed on ${ac.bootstrap.contractPaths.join(', ')}.`);
   for (const obligation of inheritedObligations(work, all)) add('bootstrap-obligation', `${obligation.proof} is inherited from ${obligation.key} ${obligation.criterionId} because this item's candidate touches ${obligation.contractPaths.join(', ')}`,
     'Produce trusted passing evidence for this proof; a bootstrap deferral cannot be renewed by the change that inherits it.');
-  for (const proof of work.proofGaps ?? []) add('proof-authority-gap', `No principal is authorized to produce ${proof}`, 'Add the proof name to a producer principal\'s roster entry with `graphyard principal add ID --role producer --proof PATTERN`; the acceptance gate cannot be satisfied until someone can produce it.');
+  for (const proof of work.proofGaps ?? []) add('proof-authority-gap', `No principal is authorized to produce ${proof}`, 'Add the proof name to a producer principal\'s roster entry with `mainworks principal add ID --role producer --proof PATTERN`; the acceptance gate cannot be satisfied until someone can produce it.');
   const refreshing = pendingBaseRefresh(work), baseConflict = baseRefreshConflict(work);
   if (baseConflict) add('base-conflict', baseConflict, `${PRODUCT_NAME} cannot bring this head onto the base branch itself. Resolve the conflict on the pull-request branch and push; nothing carries across the resolution, so the item takes a fresh review and fresh proofs.`);
   else if (refreshing) add('base-behind', `Candidate ${work.candidate?.sha.slice(0, 12)} does not contain the base branch tip ${refreshing.baseTip.slice(0, 12)}; it stays bound to ${refreshing.boundBase.slice(0, 12)} while the control plane brings it onto the new tip`,
@@ -209,7 +209,7 @@ export function diagnose(work: Work, all: Work[], now: number, jobs: Integration
   // and GitHub integrates it with the base when it merges (GY-191). Only a head that does
   // not merge cleanly is withheld, and that one needs a sync.
   else if (work.submission && behindBaseHold(work)) add('base-behind', `Candidate ${work.candidate?.sha.slice(0, 12)} does not contain the base branch tip ${work.observation?.baseTip?.slice(0, 12) ?? ''} and GitHub does not report it mergeable`,
-    `No review is requested for it until it merges cleanly: the loop requests a sync rework for ${work.key}, or run graphyard sync ${work.key} and push.`);
+    `No review is requested for it until it merges cleanly: the loop requests a sync rework for ${work.key}, or run mainworks sync ${work.key} and push.`);
   // What the control plane's last base refresh kept and what it re-required, each with its reason.
   const refreshCarry = currentBaseRefreshCarry(work);
   if (refreshCarry) {

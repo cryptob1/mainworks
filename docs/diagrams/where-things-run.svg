@@ -86,7 +86,7 @@
 
   <rect class="box" x="356" y="250" width="264" height="100" rx="10"/>
   <text class="t-title" x="368" y="270">Merge trials (fallback)</text>
-  <text class="t-sub" x="368" y="287">graphyard-trial-… — runs local-only tests</text>
+  <text class="t-sub" x="368" y="287">mainworks-trial-… — runs local-only tests</text>
   <text class="t-sub" x="368" y="302">and fallback shards when compute machines</text>
   <text class="t-sub" x="368" y="317">are full, plus declared compose services</text>
 

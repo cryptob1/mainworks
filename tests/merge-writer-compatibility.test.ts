@@ -35,7 +35,7 @@ setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocki
 // `now` of evaluate(); new Date() only stamps documents the Postgres half writes and reads back.
 
 // GY-2010. The pull-request-era GitHub API client is gone: App credentials, webhooks, caches and
-// the request budget. Gates, status and the merge writer read Graphyard's own records. An item
+// the request budget. Gates, status and the merge writer read Mainworks's own records. An item
 // stored with PR observations still loads; progression is the merge writer's trial and push.
 
 const root = new URL('../', import.meta.url);
@@ -59,7 +59,7 @@ test('unit:legacy-review-and-webhook-routes — legacy reviews cancel without Gi
   assert.deepEqual(calls.filter(call => call.startsWith('gh ')), [], 'the reconcile pass ran no gh command');
   // The pull-request inventory that read them is no command any more.
   const { commands } = await import('../src/cli/index.js');
-  assert.equal(commands.some(command => command.name === 'onboard'), false, 'graphyard onboard is not registered');
+  assert.equal(commands.some(command => command.name === 'onboard'), false, 'mainworks onboard is not registered');
 
   // The live control plane registers no GitHub webhook module: a delivery is refused like any unauthenticated API call, and the paths are unknown to an authenticated caller.
   for (const path of ['github/webhook', 'github/installation']) {
@@ -161,7 +161,7 @@ test('unit:pr-era-history-loads — a work item whose history carries pull-reque
     await save(db, stored, 'github', 'github.observed', now);
   });
 
-  // It loads, with every pull-request-era field intact, and evaluates on Graphyard's records alone.
+  // It loads, with every pull-request-era field intact, and evaluates on Mainworks's records alone.
   const loaded = await store.workItem(work.id) as Work & Record<string, any>;
   assert.equal(loaded.candidate?.pr, 2010, 'the PR number loads');
   assert.equal(loaded.observation?.prState, 'open');

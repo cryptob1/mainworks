@@ -116,7 +116,7 @@ test('integration:scoped-infra-access — the confined master creates and pushes
     assert.ok(graph.every(call => call.auth === `Bearer ${railwayToken}`));
 
     // The credential is never written to Git or logs: not in the pushed or working repository's history, the ignored
-    // credential file stays out of Git (here and in Graphyard's own checkout), and no output, server log or ledger row carries it.
+    // credential file stays out of Git (here and in Mainworks's own checkout), and no output, server log or ledger row carries it.
     const secret = credential.token as string;
     for (const repo of [pushed, install.checkout]) assert.ok(!execFileSync('git', ['-C', repo, 'log', '--all', '-p'], { encoding: 'utf8' }).includes(secret));
     assert.equal(install.git('status', '--porcelain').trim(), '', 'nothing to commit: .graphyard is ignored');
@@ -141,7 +141,7 @@ test('integration:scoped-infra-access — the credential is refused for any othe
       assert.equal(refused.stderr.trim(), refusal, `${args.join(' ')} reads the one refusal line`);
     }
     assert.equal(install.providers.calls.length, 0, 'no provider was called for a name outside the credential');
-    // A credential not issued here is refused as well, and a credential is no Graphyard identity.
+    // A credential not issued here is refused as well, and a credential is no Mainworks identity.
     const forged = await fetch(`${install.base}/api/infra/act`, { method: 'POST', headers: { Authorization: 'Bearer gyi_forged', 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'repo.create', repository: 'acme/new-app' }) });
     assert.equal(forged.status, 401);
     const credential = JSON.parse(await readFile(join(install.checkout, '.graphyard', 'infra-credential'), 'utf8')).token;

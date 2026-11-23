@@ -30,7 +30,7 @@ const cleanReading = (): LoopCodeReading => ({
 
 /** The onboarding item as the control plane answers it: first in build, then done. */
 const building = {
-  key: 'GY-1', title: 'Add Graphyard onboarding', stage: 'build', createdAt: '2026-01-01T00:00:00Z', closure: null,
+  key: 'GY-1', title: 'Add Mainworks onboarding', stage: 'build', createdAt: '2026-01-01T00:00:00Z', closure: null,
   workspaces: [{ epoch: 1, branch: 'graphyard/onboarding' }],
   gates: [
     { name: 'build', passed: true, reasons: [] },

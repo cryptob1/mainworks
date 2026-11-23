@@ -356,7 +356,7 @@ export type HeadlessWorkerRecord = z.infer<typeof workerRecordSchema>;
 export interface HeadlessWorker extends HeadlessAccountLaunch {
   /** The profile's agent name the run is listed under while it lasts, beside the role's other sessions. */
   name: string; work: string; subject: string; epoch: number; principal: string; account: string | null;
-  /** The worktree the attempt was assigned; `supervisor` the `graphyard watch KEY EPOCH --` words that hold its lease. */
+  /** The worktree the attempt was assigned; `supervisor` the `mainworks watch KEY EPOCH --` words that hold its lease. */
   directory: string; supervisor: string[]; coordinatorRoot?: string; prompt: string;
   root: string; exec: HeadlessExec; cores?: number;
   /** GY-3632: the runtime session this run continues; its request is then `prompt` alone, the session's next message. */
@@ -365,14 +365,14 @@ export interface HeadlessWorker extends HeadlessAccountLaunch {
   timeoutMs: number;
   /** How long the start is watched; `workerStartupMs` by default. */
   startupMs?: number;
-  /** GY-3405: the added host the session runs on, and the `graphyard host session … --` words that run it there in place of this machine's confinement. */
+  /** GY-3405: the added host the session runs on, and the `mainworks host session … --` words that run it there in place of this machine's confinement. */
   remote?: { host: string; words: string[] };
   /** Hears a run that outlived its startup observation end, with what it printed, once its process has ended. */
   settle?: (ended: { output: string; ok: boolean }) => Promise<unknown>;
 }
 
 /**
- * Start one worker run: its runtime's one-task form under `graphyard watch`, which claims nothing
+ * Start one worker run: its runtime's one-task form under `mainworks watch`, which claims nothing
  * itself but heartbeats the lease the launcher claimed under the worker's own identity, stops the
  * runtime the moment that lease is lost and releases it when the runtime exits without `complete`.
  * The run is watched for `workerStartupMs`; one that ended in that time is returned with what it
@@ -388,7 +388,7 @@ export async function startHeadlessWorker(input: HeadlessWorker): Promise<{ id: 
   const request = input.session ? input.prompt : launch.request;
   const stdin = headlessPromptInput(launch.kind, request, launch.contract);
   const promptFile = writePromptFile(launch.kind, request, directory, launch.contract);
-  // GY-3405: on a host the container confines the runtime; its relayed `graphyard` calls run here under this machine's confinement, as a local worker's do.
+  // GY-3405: on a host the container confines the runtime; its relayed `mainworks` calls run here under this machine's confinement, as a local worker's do.
   // A prompt too long for argv (on stdin or in a file here) keeps the session on this machine: the host's runtime has neither.
   const remote = input.remote && stdin === undefined && !promptFile ? (launch.wrapper.length ? [...input.remote.words.slice(0, -1), '--confine', JSON.stringify(launch.wrapper), '--'] : input.remote.words) : undefined;
   const record: HeadlessWorkerRecord = { id, name: input.name, work: input.work, epoch: input.epoch, principal: input.principal, account: input.account, kind: launch.kind, subject: input.subject.slice(0, 300), startedAt: new Date().toISOString(), ...(remote && input.remote ? { host: input.remote.host } : {}) };

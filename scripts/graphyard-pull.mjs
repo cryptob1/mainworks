@@ -68,7 +68,7 @@ export async function pullOnce(ask, options = {}) {
     try { return await ask(key); }
     catch (error) {
       if (!noAnswer(error) || attempt >= attempts) throw error;
-      log(`[graphyard-worker] pull attempt ${attempt} did not answer (${error.message}); retrying under the same key`);
+      log(`[mainworks-worker] pull attempt ${attempt} did not answer (${error.message}); retrying under the same key`);
       // A refused connection comes back at once, so the retries wait a little rather than
       // spending the whole logical pull in the same instant the control plane was unreachable.
       if (backoffMs) await delay(attempt * backoffMs);
@@ -103,7 +103,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   // reports the failure to its caller.
   const pull = async () => {
     try { return await pullOnce(ask, { log }); }
-    catch (error) { if (!options.watch) throw error; log(`[graphyard-worker] pull failed: ${error.message}`); return { assigned: null, offered: 0, refused: [{ key: '-', reason: error.message }] }; }
+    catch (error) { if (!options.watch) throw error; log(`[mainworks-worker] pull failed: ${error.message}`); return { assigned: null, offered: 0, refused: [{ key: '-', reason: error.message }] }; }
   };
   try {
     const result = await runWorkerPull(pull, { intervalMs: workerPullIntervalMs, once: !options.watch, signal: stopping.signal, log });

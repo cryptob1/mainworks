@@ -14,14 +14,14 @@ import type { MasterConfig } from '../src/master.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import type { Work } from '../src/model.js';
 import { publishedVersion } from '../src/release.js';
-import { graphyardRepository } from '../src/scenarios.js';
+import { mainworksRepository } from '../src/scenarios.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const identity = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
 const git = (cwd: string, args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', env: identity, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
-/** Graphyard's own coordinator checkout over a scratch origin, a trial that always passes, and `merge()` to land one more item on main. */
-async function gateFixture(repository = graphyardRepository) {
+/** Mainworks's own coordinator checkout over a scratch origin, a trial that always passes, and `merge()` to land one more item on main. */
+async function gateFixture(repository = mainworksRepository) {
   const base = await temporaryDirectory('publish-verified-gate');
   const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
   git(base, ['init', '-q', '--bare', '-b', 'main', origin]);
@@ -85,7 +85,7 @@ test('unit:tests/publish-tag.test.ts — a verified deploy pushes exactly one ve
   await f.deploy(commit, { reason: 'health failed; kept because schema changed' }); await f.gate();
   assert.equal(pushes().length, 0, 'a kept unhealthy deployment must not publish');
   await f.deploy(commit, { repository: 'owner/other' }); await f.gate();
-  assert.equal(pushes().length, 0, 'another repository is not Graphyard deployment evidence');
+  assert.equal(pushes().length, 0, 'another repository is not Mainworks deployment evidence');
   await f.deploy(commit); f.restart(); await f.gate();
   const tag = `v${publishedVersion(commit, new Date(Number(git(f.coordinator, ['show', '-s', '--format=%ct', commit])) * 1000))}`;
   assert.equal(pushes().length, 1);
@@ -112,7 +112,7 @@ test('unit:tests/publish-tag.test.ts — a successful deploy remains eligible wh
     build: async () => { steps.push('build'); }, restart: async () => { steps.push('restart'); },
     health: async () => { steps.push('health'); }, checkout: async () => { steps.push('checkout'); }, pin: async () => { steps.push('pin'); },
     prune: async () => {}, schema: async () => 1, database: async () => 1,
-  }, () => {}, graphyardRepository), 'deployed');
+  }, () => {}, mainworksRepository), 'deployed');
   assert.deepEqual(steps, ['build', 'restart', 'health', 'checkout', 'pin']);
   // Simulate a gate that finished while deploy was completing and before its next observation.
   const later = await f.merge();
@@ -124,7 +124,7 @@ test('unit:tests/publish-tag.test.ts — a successful deploy remains eligible wh
   assert.ok(pushes[0]!.args.at(-1)!.startsWith(`${commit}:refs/tags/v`));
 });
 
-test('unit:tests/publish-tag.test.ts — other installations never push Graphyard release tags', async () => {
+test('unit:tests/publish-tag.test.ts — other installations never push Mainworks release tags', async () => {
   const f = await gateFixture('owner/project');
   await f.gate(); const commit = await f.merge(); await f.gate(); await f.deploy(commit); await f.gate();
   assert.equal(f.calls.filter(call => call.args.includes('push')).length, 0);
@@ -147,7 +147,7 @@ test('unit:tests/publish-tag.test.ts — the release workflow is tag-only, uses 
   const files = execFileSync('git', ['ls-files', 'src'], { encoding: 'utf8' }).trim().split('\n');
   for (const file of files) assert.doesNotMatch(readFileSync(file, 'utf8'), /publishTokenFiles|npm-token|ghcr-token/, file);
   assert.doesNotMatch(readFileSync('src/daemon/cycle-merge-writer.ts', 'utf8'), /publishVerified/);
-  assert.doesNotMatch(readFileSync('src/daemon/cycle-batch-gate.ts', 'utf8'), /publishVerified|Publishing Graphyard for npx/);
+  assert.doesNotMatch(readFileSync('src/daemon/cycle-batch-gate.ts', 'utf8'), /publishVerified|Publishing Mainworks for npx/);
 });
 
 test('unit:tests/publish-tag.test.ts — status shows npm latest beside the control plane commit even when managing another repository', async () => {
@@ -160,7 +160,7 @@ test('unit:tests/publish-tag.test.ts — status shows npm latest beside the cont
   });
   assert.equal(report.controlPlaneUpdate!.commit, commit.slice(0, 12));
   assert.equal(report.controlPlaneUpdate!.publishedVersion, version);
-  assert.equal(report.serving.commit, null, 'Graphyard release is not the managed project release');
+  assert.equal(report.serving.commit, null, 'Mainworks release is not the managed project release');
   assert.equal(await npmPublishedVersion(async () => { throw new Error('E404'); }), 'not published');
   assert.equal(await npmPublishedVersion(async () => { throw new Error('offline'); }), 'unavailable');
 });

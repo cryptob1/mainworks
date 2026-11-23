@@ -3,8 +3,7 @@
 import { gateRecordPath, readGateRecord } from '../batch-gate.js';
 import type { Work } from '../model.js';
 import type { Cycle } from './cycle.js';
-import { record } from './effects.js';
-import { message } from './state.js';
+import { message, record } from './state.js';
 
 const short = (sha: string) => sha.slice(0, 12);
 
@@ -23,11 +22,11 @@ export async function postAlert(fetcher: typeof fetch, url: string, text: string
 
 /** The deployed message: the served commit, then one line per newly served item — key, title and merge commit. */
 const deployedText = (repository: string, served: string, items: readonly Pick<Work, 'key' | 'title' | 'delivery'>[]) =>
-  [`Graphyard ${repository}: deployed ${short(served)}`, ...items.map(item => `${item.key} ${item.title} (${short(item.delivery!.mergeSha)})`)].join('\n');
+  [`Mainworks ${repository}: deployed ${short(served)}`, ...items.map(item => `${item.key} ${item.title} (${short(item.delivery!.mergeSha)})`)].join('\n');
 
 /** The UAT-failed message: the candidate, the commit that stays served, and the failed cases in one short line. */
 const uatFailedText = (repository: string, candidate: string, served: string | null, failed: readonly string[]) =>
-  `Graphyard ${repository}: UAT failed on candidate ${short(candidate)}; ${served ? `${short(served)} stays served` : 'nothing is served'}. Failed: ${failed.join(', ')}`;
+  `Mainworks ${repository}: UAT failed on candidate ${short(candidate)}; ${served ? `${short(served)} stays served` : 'nothing is served'}. Failed: ${failed.join(', ')}`;
 
 /**
  * GY-3529: with `run.alertUrl` set, one message when the declared serve or the deploy watch serves a commit it had not

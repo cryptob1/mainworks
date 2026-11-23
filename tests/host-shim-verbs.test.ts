@@ -10,13 +10,13 @@ import { hostShimDigest } from '../src/host-shim.js';
 import { remoteShardSession } from '../src/merge-writer/remote-shards.js';
 import { dockerCreates, shardHosts, shardRepository, type ShardHostsFixture } from './helpers/shard-hosts.js';
 
-// GY-3412 AC-6: Graphyard uses a host's compute and can reach nothing else. This machine's key runs only
+// GY-3412 AC-6: Mainworks uses a host's compute and can reach nothing else. This machine's key runs only
 // graphyard-host-shim as the unprivileged gy-compute user; the shim answers its fixed verbs with
 // validated arguments and refuses everything else; a shard container runs without the network, under
 // CPU, memory and process limits and only its run directory; seccomp and system paths are unconfined for nested sandboxes (GY-3549).
 
 const proof = 'integration:host-shim-verbs';
-const image = 'graphyard-trial:shim-fixture';
+const image = 'mainworks-trial:shim-fixture';
 let hosts: ShardHostsFixture;
 before(async () => {
   hosts = await shardHosts('host-shim-verbs', ['box'], { [image]: `sha256:${'ef56'.repeat(16)}` });
@@ -38,7 +38,7 @@ test(`${proof} — host prepare installs the shim as the only command of this ma
 });
 
 test(`${proof} — a plain shell command, another user's files, docker run with the root filesystem and any malformed verb are refused`, () => {
-  for (const command of ['', 'sh', 'bash -i', 'echo graphyard-plain-shell', 'cat /home/vish/.ssh/id_ed25519', 'ls /root', 'docker run -v /:/host alpine cat /host/etc/shadow',
+  for (const command of ['', 'sh', 'bash -i', 'echo mainworks-plain-shell', 'cat /home/vish/.ssh/id_ed25519', 'ls /root', 'docker run -v /:/host alpine cat /host/etc/shadow',
     'probe; sh', 'probe  x', 'receive-pack ../../etc 0123456789abcdef0123456789abcdef01234567', 'receive-pack repo $(id)', 'receive-image alpine:latest',
     'prepare-run repo 0123456789abcdef0123456789abcdef01234567 alpine', 'run-shard ../../.ssh 1', 'run-shard trial-abcdef 0', 'fetch-records trial-abcdef/../.. 1', 'clean /', 'clean trial-abcdef extra']) {
     const result = shim(command);
@@ -90,7 +90,7 @@ socket.on('error', error => done(error.code)); socket.on('timeout', () => done('
 // GY-3456: the production refusal named this exact valid command. Keep the installed script's
 // dispatch and warm-image validation exercised together, without opening any extra verb/image.
 test('integration:remote-ssh-confined — the prepared shim accepts the reported prepare-run warm-image command', () => {
-  const result = shim('prepare-run 4a46888f-graphyard b14b433253349f3fa4dd97f9893b49f9622c7d33 graphyard-warm:98f889ed5f9e-961b8cf1ad0e');
+  const result = shim('prepare-run 4a46888f-mainworks b14b433253349f3fa4dd97f9893b49f9622c7d33 graphyard-warm:98f889ed5f9e-961b8cf1ad0e');
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^need-pack -/);
 });

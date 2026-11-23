@@ -19,13 +19,13 @@ const source = fileURLToPath(new URL('..', import.meta.url));
 const dbFile = 'tests/work-replay.test.ts';
 
 const nonTemplatePostgresDirs = async (root: string) =>
-  (await readdir(root).catch(() => [] as string[])).filter(name => name.startsWith('graphyard-postgres-') && !name.startsWith('graphyard-postgres-template-') && !name.endsWith('.owner'));
+  (await readdir(root).catch(() => [] as string[])).filter(name => name.startsWith('mainworks-postgres-') && !name.startsWith('mainworks-postgres-template-') && !name.endsWith('.owner'));
 
 test('integration:database-tests-run-on-a-remote-shard — a real withDatabase test file passes on the remote host and leaves no Postgres process or data directory behind', { timeout: 300_000 }, async () => {
   const dbSource = readFileSync(join(source, dbFile), 'utf8');
   assert.equal(remoteableTestFile(dbSource), true, `${dbFile} is remoteable`);
 
-  const image = 'graphyard-trial:db-remote-shard';
+  const image = 'mainworks-trial:db-remote-shard';
   const hosts = await shardHosts('db-remote-shard', ['box'], { [image]: `sha256:${'db12'.repeat(16)}` });
   const shardTmp = await temporaryDirectory('db-remote-shard-tmp');
   const repository = await shardRepository('db-remote-shard-repo', [], {
@@ -90,5 +90,5 @@ test('integration:database-tests-run-on-a-remote-shard — a real withDatabase t
 
   assert.deepEqual(liveServersUnder(shardTmp), [], 'no Postgres process left behind');
   assert.deepEqual(await nonTemplatePostgresDirs(shardTmp), [], 'no Postgres data directory left behind');
-  assert.ok((await readdir(shardTmp)).some(name => name.startsWith('graphyard-postgres-template-')), 'the remote shard built/used the shared pre-migrated Postgres template');
+  assert.ok((await readdir(shardTmp)).some(name => name.startsWith('mainworks-postgres-template-')), 'the remote shard built/used the shared pre-migrated Postgres template');
 });

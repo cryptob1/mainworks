@@ -119,7 +119,7 @@ const bridgedStream = (bridge: NonNullable<typeof host>, request: StreamRequest,
 /**
  * `GET /api/terminal?cols=C&rows=R` upgraded to a WebSocket. A browser cannot set an
  * Authorization header on a WebSocket, so the dashboard's token rides as the second subprotocol
- * (`graphyard, TOKEN`); a request without a valid one is refused before the upgrade. The pane is
+ * (`mainworks, TOKEN`); a request without a valid one is refused before the upgrade. The pane is
  * always the master's, as the loop last named it (GY-3259: workers run headless, and their output
  * is the item page's run log). A human admin gets Herdr's writable `terminal session control`
  * stream (taking over), anyone else a read-only view whose input is never forwarded. Frames go out as binary
@@ -127,7 +127,7 @@ const bridgedStream = (bridge: NonNullable<typeof host>, request: StreamRequest,
  * resize sizing the pane to its page (GY-3313). Each typed line is recorded in
  * history under the human who typed it. Closing the page releases the stream; the pane runs on.
  * These are the streams Herdr documents for bridges: unlike `herdr terminal attach TERMINAL_ID`,
- * they take the pane ids Graphyard records and speak newline-delimited JSON over pipes, so the
+ * they take the pane ids Mainworks records and speak newline-delimited JSON over pipes, so the
  * server needs no PTY and no native module.
  */
 export async function terminalUpgrade(services: Services, req: IncomingMessage, socket: Duplex) {
@@ -178,7 +178,7 @@ export async function terminalUpgrade(services: Services, req: IncomingMessage, 
   const command = herdr.send;
   open.add(close);
 
-  const record = (line: string) => services.engine.store.pool.query('INSERT INTO events(work_id,actor,kind,payload) VALUES(NULL,$1,$2,$3)', [actor.id, terminalInputEvent, JSON.stringify({ pane: activePane, line })]).catch(error => console.error(`[graphyard] terminal input not recorded: ${error}`));
+  const record = (line: string) => services.engine.store.pool.query('INSERT INTO events(work_id,actor,kind,payload) VALUES(NULL,$1,$2,$3)', [actor.id, terminalInputEvent, JSON.stringify({ pane: activePane, line })]).catch(error => console.error(`[mainworks] terminal input not recorded: ${error}`));
   // A pasted or dropped file is saved on the master's host and its path typed into the pane as a bracketed paste.
   const upload = async (name: string, data: Buffer) => {
     if (data.length > maxUploadBytes) return void socket.write(text({ note: 'Not pasted: files are limited to 20 MB' }));

@@ -8,7 +8,7 @@ import { coordinatorCheckoutRefusal, readCoordinatorCheckout } from '../src/mast
 import { readRelease } from '../src/protocol-version.js';
 import type { UpRequest } from '../src/up.js';
 
-// GY-3271: the managed `<!-- graphyard -->` block of AGENTS.md is Graphyard's own writing — its
+// GY-3271: the managed `<!-- graphyard -->` block of AGENTS.md is Mainworks's own writing — its
 // refresh rewrites the committed block (GY-2240) — so a checkout whose only change lies inside it
 // is clean to `up`'s preflight, to the loop's checkout refusal and to the release the loop records;
 // a change outside the block still stops with the same dirty-checkout refusal as before.
@@ -21,13 +21,13 @@ const agentsFile = (block: string) => `# Working here
 Hand-written guidance the block never rewrites.
 
 <!-- graphyard -->
-## Graphyard coordination
+## Mainworks coordination
 
 ${block}
 <!-- /graphyard -->
 `;
-const committedBlock = 'This repository uses Graphyard; topics: claim, sync, complete.';
-const rewrittenBlock = 'This repository uses Graphyard; topics: claim, sync, complete, park, blocked.';
+const committedBlock = 'This repository uses Mainworks; topics: claim, sync, complete.';
+const rewrittenBlock = 'This repository uses Mainworks; topics: claim, sync, complete, park, blocked.';
 
 test('unit:up-ignores-managed-block-dirty — a CLI checkout whose only change is inside AGENTS.md\'s managed block passes the dirty-checkout check; a change outside it still stops', async () => {
   const { upDependencies } = await up();
@@ -62,7 +62,7 @@ test('unit:up-ignores-managed-block-dirty — a CLI checkout whose only change i
 
   // A change outside the block — even the only one — stops with today's refusal.
   await execFileSync('git', ['-C', checkout, 'checkout', '--', 'src/loop.ts'], { stdio: 'ignore' });
-  await writeFile(join(checkout, 'AGENTS.md'), `# Working here, edited by hand\n\nHand-written guidance the block never rewrites.\n\n<!-- graphyard -->\n## Graphyard coordination\n\n${rewrittenBlock}\n<!-- /graphyard -->\n`);
+  await writeFile(join(checkout, 'AGENTS.md'), `# Working here, edited by hand\n\nHand-written guidance the block never rewrites.\n\n<!-- graphyard -->\n## Mainworks coordination\n\n${rewrittenBlock}\n<!-- /graphyard -->\n`);
   assert.deepEqual(await cliCheckout(), { root: checkout, dirty: ['AGENTS.md'] }, 'a change outside the block still stops up');
   assert.match(coordinatorCheckoutRefusal(await readCoordinatorCheckout(checkout), 'the master loop')!, /holds uncommitted work/, 'the loop is still refused');
   assert.equal(readRelease(checkout).dirty, true, 'the loop still records a dirty release');

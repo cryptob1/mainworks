@@ -25,7 +25,7 @@ function fixture(base: string) {
   writeFileSync(join(root, 'shared.txt'), 'base\n');
   run('init', '-b', 'main');
   run('config', 'user.email', 'graphyard@localhost');
-  run('config', 'user.name', 'Graphyard');
+  run('config', 'user.name', 'Mainworks');
   run('add', '.');
   run('commit', '-m', 'coordinator');
   const worktree = join(root, '.graphyard', 'worktrees', 'gy-2950-1');

@@ -40,7 +40,7 @@ const serveJs = [
   '}).listen(port, "127.0.0.1");',
 ].join('\n');
 /** The node application graphyard.json declares (GY-3201): built and started at the root, on the PORT the pass gives it. */
-const graphyardJson = JSON.stringify({ delivery: { mode: 'local', applications: [{ id: 'app', kind: 'node', directory: '.', build: 'node build.js', start: 'node serve.js' }] } });
+const mainworksJson = JSON.stringify({ delivery: { mode: 'local', applications: [{ id: 'app', kind: 'node', directory: '.', build: 'node build.js', start: 'node serve.js' }] } });
 const packageJson = JSON.stringify({ name: 'fixture-foreign-port', version: '1.0.0', private: true }) + '\n';
 const packageLock = `${JSON.stringify({ name: 'fixture-foreign-port', version: '1.0.0', lockfileVersion: 3, requires: true, packages: { '': { name: 'fixture-foreign-port', version: '1.0.0', license: 'ISC' } } }, null, 2)}\n`;
 /** The required case the foreign holder would pass: GET / expecting 200 is exactly what it answers. */
@@ -54,7 +54,7 @@ test('integration:serve-refuses-foreign-port-holder — a serve that cannot bind
   git(base, 'clone', '-q', origin, pusher);
   const files: Record<string, string> = {
     'package.json': packageJson, 'package-lock.json': packageLock, 'build.js': buildJs, 'serve.js': serveJs,
-    'e2e/cases/served-case-home.json': caseFile, 'graphyard.json': graphyardJson,
+    'e2e/cases/served-case-home.json': caseFile, 'graphyard.json': mainworksJson,
   };
   for (const [name, text] of Object.entries(files)) { await mkdir(join(pusher, name, '..'), { recursive: true }); await writeFile(join(pusher, name), text); }
   git(pusher, 'add', '.'); git(pusher, 'commit', '-q', '-m', 'the app'); git(pusher, 'push', '-q', 'origin', 'HEAD:main');

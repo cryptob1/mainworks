@@ -18,7 +18,7 @@ import type { E2eStep } from './case.js';
  *   with; the screenshot it takes afterwards is recorded by path.
  *
  * A step's process holds `TARGET_URL`, the case's declared secrets and the host basics a process
- * needs (PATH, HOME, locale, temp), and nothing else Graphyard holds: no worker, reviewer, GitHub
+ * needs (PATH, HOME, locale, temp), and nothing else Mainworks holds: no worker, reviewer, GitHub
  * or deploy credential. Every secret value is redacted from what is recorded.
  */
 const keptOutputLines = 50;

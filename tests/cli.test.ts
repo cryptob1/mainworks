@@ -23,7 +23,7 @@ test('HTTP 408 and 429 remain ambiguous while known coordination refusals are de
   for (const status of [408, 429]) assert.equal(isConfirmedCoordinationRefusal(status, { error: 'ambiguous proxy response' }), false);
   assert.equal(isConfirmedCoordinationRefusal(409, { error: 'lease expired' }), true);
   assert.equal(isConfirmedCoordinationRefusal(409, { error: { code: 'lease_conflict', message: 'lease expired' } }), true);
-  assert.equal(isConfirmedCoordinationRefusal(400, { message: 'not a Graphyard refusal' }), false);
+  assert.equal(isConfirmedCoordinationRefusal(400, { message: 'not a Mainworks refusal' }), false);
   assert.equal(isConfirmedCoordinationRefusal(409, { error: { message: 'proxy-generated body' } }), false);
   assert.equal(isConfirmedCoordinationRefusal(429, { error: { code: 'rate_limited', message: 'try later' } }), false);
 });
@@ -106,7 +106,7 @@ test('watch refuses the wrong workspace and uses a fresh heartbeat key despite c
   } finally { await new Promise<void>(r => http.close(() => r())); await rm(cwd, { recursive: true, force: true }); }
 });
 
-test('implementation subprocesses do not inherit Graphyard server credentials', async () => {
+test('implementation subprocesses do not inherit Mainworks server credentials', async () => {
   const previous = process.env.GRAPHYARD_PRINCIPALS;
   process.env.GRAPHYARD_PRINCIPALS = 'test-only-server-credential';
   try {

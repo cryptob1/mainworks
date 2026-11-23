@@ -165,7 +165,7 @@ export function unexercisedFindings(work: Work, now: Date, sha: string | undefin
   if (!sha) return [];
   const findings = new Map<string, UnexercisedFinding>();
   for (const entry of work.evidence ?? []) {
-    // GY-875: a record carried onto the current candidate by a Graphyard-authored base refresh is
+    // GY-875: a record carried onto the current candidate by a Mainworks-authored base refresh is
     // bound to it exactly as an exact-sha record is (evidenceBindsCandidate), so a carried
     // unexercised manual record holds the candidate only while attestationDecision can see it and
     // request the wait the hold names. Carry binds

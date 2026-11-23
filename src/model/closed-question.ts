@@ -9,7 +9,7 @@ import type { Work } from './work.js';
 // that spent forty minutes reading the repository to answer a yes-or-no question. A criterion may
 // instead declare that its proof is answerable as a closed question: the question, the closed set
 // of answers offered, which answer means the proof passes, and the state it is asked against.
-// Graphyard binds that state to the exact candidate, hashes it, asks the configured responder,
+// Mainworks binds that state to the exact candidate, hashes it, asks the configured responder,
 // and records the answer — with its probability and the threshold applied — as evidence any
 // reader can re-run and disagree with.
 //
@@ -73,7 +73,7 @@ export function closedQuestionRefusal(work: Work, proof: string): string | null 
   if (!declared) return `${work.key} declares no closed question for ${proof}; it is proven by its ordinary path`;
   if (!work.criteria.some(criterion => criterion.id === declared.criterion && criterion.proofs.includes(proof))) return `${declared.criterion} of ${work.key} does not require ${proof}`;
   if (reservedForAttestation(work, proof))
-    return `${proof} is established only by the master's attestation, which an answer never satisfies: graphyard master attest ${work.key} ${proof} REASON`;
+    return `${proof} is established only by the master's attestation, which an answer never satisfies: mainworks master attest ${work.key} ${proof} REASON`;
   if (work.humanRequest && !work.humanRequest.answer)
     return `${work.key} waits on a human-only decision (${work.humanRequest.kind}); an answer never stands in for one, and only the human's answer resumes the item`;
   return null;

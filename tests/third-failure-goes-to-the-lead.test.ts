@@ -28,7 +28,7 @@ test(`${proof} — three refusals of any cause (excluding base-moved conflicts) 
   engine.operatorAuthorizer = async (_db, _now, actor) => actor;
 
   const master: Principal = { id: 'graphyard-master-project-operator', role: 'operator-agent', scope: { repositories: ['owner/project'], workItems: ['*'] } };
-  const builder: Principal = { id: 'graphyard-stub-builder', role: 'worker' };
+  const builder: Principal = { id: 'mainworks-stub-builder', role: 'worker' };
 
   let work = await engine.execute(master, 'create', null, {
     reason: 'fixture',

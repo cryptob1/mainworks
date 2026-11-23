@@ -12,7 +12,7 @@ export const trialAppArmorProfilePath = `/etc/apparmor.d/${trialAppArmorProfile}
 export const trialAppArmorProfileText = `abi <abi/4.0>,
 include <tunables/global>
 
-# Graphyard merge-trial containers: the container is the boundary (read-only root, no capabilities,
+# Mainworks merge-trial containers: the container is the boundary (read-only root, no capabilities,
 # no new privileges); its tests start nested sandboxes, which need mounts and a user namespace.
 profile ${trialAppArmorProfile} flags=(unconfined) {
   userns,
@@ -25,6 +25,6 @@ export function appArmorEnabled(file = setting('APPARMOR_ENABLED_FILE') || '/sys
 /** The commands that install and load the trial profile, as one shell line. */
 export const trialAppArmorLoadCommand = `printf %s ${shellQuote(trialAppArmorProfileText)} | sudo tee ${trialAppArmorProfilePath} >/dev/null && sudo apparmor_parser -r -W ${trialAppArmorProfilePath}`;
 /** The fix doctor and a sandbox trial-host fault name. */
-export const trialAppArmorFix = `rerun graphyard up, which writes the ${trialAppArmorProfile} AppArmor profile to ${trialAppArmorProfilePath} and loads it (sudo apparmor_parser -r -W ${trialAppArmorProfilePath})`;
+export const trialAppArmorFix = `rerun mainworks up, which writes the ${trialAppArmorProfile} AppArmor profile to ${trialAppArmorProfilePath} and loads it (sudo apparmor_parser -r -W ${trialAppArmorProfilePath})`;
 /** What a nested sandbox prints when AppArmor denies it inside a trial container. */
 export const nestedSandboxDenied = /bwrap: (?:Failed to make \/ slave|setting up uid map): Permission denied/;
