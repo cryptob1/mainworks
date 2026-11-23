@@ -1,4 +1,4 @@
-// GY-3573: Graphyard is now Mainworks; every setting is read under the new name first. No Node imports, so the web bundle can use it.
+// GY-3573: every setting is read under MAINWORKS_ first, then GRAPHYARD_. No Node imports, so the web bundle can use it.
 /**
  * The one helper every setting goes through: MAINWORKS_<NAME>, else GRAPHYARD_<NAME> (NAME may carry the GRAPHYARD_ prefix). It only reads;
  * the environment is never rewritten, so child processes inherit it as it is.

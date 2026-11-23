@@ -36,7 +36,7 @@ export function isolatedTestEnvironment(environment: NodeJS.ProcessEnv = process
   const kept = Object.entries(environment).filter((entry): entry is [string, string] => {
     const [name, value] = entry;
     if (value === undefined || name === 'NODE_TEST_CONTEXT') return false;
-    return !/^(GRAPHYARD|MAINWORKS|HERDR)_/.test(name) || (passedTestControls as readonly string[]).includes(name.replace(/^MAINWORKS_/, 'GRAPHYARD_'));
+    return !/^(GRAPHYARD_|MAINWORKS_|HERDR_)/.test(name) || (passedTestControls as readonly string[]).includes(name.replace(/^MAINWORKS_/, 'GRAPHYARD_'));
   });
   return { ...Object.fromEntries(kept), ...set };
 }
