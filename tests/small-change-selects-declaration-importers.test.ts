@@ -128,3 +128,35 @@ test('unit:small-change-selects-declaration-importers — the bound proof file a
     assert.deepEqual(readTestSelections(base).map(({ selected, reachable }) => ({ selected, reachable })), [{ selected: 1, reachable: 7 }], 'the trial records both counts for master status');
   } finally { await rm(base, { recursive: true, force: true }); }
 });
+
+test('unit:small-change-selects-declaration-importers — a rerun of a failing file neither narrows nor counts as a trial', async () => {
+  const { runMergeTrial } = await import('../src/merge-writer/executor.js');
+  const { readFileSync } = await import('node:fs');
+  const base = await temporaryDirectory('declaration-importers-trial');
+  const envs: Record<string, string | undefined>[] = [];
+  let runs = 0;
+  const run = async (command: string, args: string[], options?: { env?: Record<string, string | undefined> }) => {
+    if (command === 'git' && args.includes('worktree') && args.includes('add')) {
+      const worktree = args[args.indexOf('--detach') + 1]!;
+      await mkdir(join(worktree, 'scripts'), { recursive: true });
+      await writeFile(join(worktree, 'graphyard.json'), readFileSync(new URL('../graphyard.json', import.meta.url), 'utf8'));
+    }
+    if (command === 'node' && args[0] === 'scripts/ci-tests.mjs') { envs.push(options?.env ?? {}); return 'affected: selected 1 of 7 reachable: the change is confined to function bodies or non-exported code of 1 file(s)\ntests/widen.test.ts\n'; }
+    if (command === 'node' && args.includes('tests/helpers/run-tests.ts')) {
+      const group = (await (await import('node:fs/promises')).readFile(args[args.indexOf('--files-from') + 1]!, 'utf8')).split('\n').filter(Boolean);
+      // tests/widen.test.ts fails once, then passes its rerun.
+      const flaked = group.includes('tests/widen.test.ts') && !runs++;
+      const tap = ['TAP version 13', ...group.map((file, at) => `${flaked && file === 'tests/widen.test.ts' ? 'not ok' : 'ok'} ${at + 1} - ${file}`), `1..${group.length}`, ''].join('\n');
+      if (flaked) throw Object.assign(new Error('tests failed'), { status: 1, stdout: tap });
+      return tap;
+    }
+    return '';
+  };
+  try {
+    await runMergeTrial({ root: base, base, mergeSha: 'a'.repeat(40), baseTip: 'b'.repeat(40), changedFiles: ['src/common.ts'], proofs: ['unit:widen-proof'], proofFiles: ['tests/proof.test.ts'], timeoutMs: 60_000, key: 'GY-1', temporaryRoots: [await temporaryDirectory('declaration-importers-tmp')], checkoutRoots: [], run: run as never, remove: async () => {}, cores: 2 });
+    assert.ok(envs.length > 1, 'the failing file was rerun');
+    assert.deepEqual(envs.map(env => env.GRAPHYARD_SELECTION_IMPORTERS), ['1', ...envs.slice(1).map(() => undefined)], 'only the trial itself narrows');
+    const { readTestSelections } = await import('../src/merge-writer/test-selection.js');
+    assert.equal(readTestSelections(base).length, 1, 'a rerun records no selection share');
+  } finally { await rm(base, { recursive: true, force: true }); }
+});

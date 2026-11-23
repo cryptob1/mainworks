@@ -798,6 +798,8 @@ export interface RunTrialInput {
   /** GY-3418: keep the dependency image and test-result caches in the repository's git directory (the detached merge trial and batch gate do); absent, a trial caches nothing. */
   caches?: boolean;
   key?: string;
+  /** GY-3750: a rerun of failing files or of proofs on the base tip, which neither narrows its selection nor counts as a trial's. */
+  rerun?: boolean;
   run?: ChildRun;
   /** Add criterion files to a declared selector's output before sharding. */
   selectFiles?: (files: string[], timeoutMs: number) => Promise<string[]>;
@@ -1685,15 +1687,16 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       }
     }
     let selection: Ended;
+    // GY-3750: an item's trial narrows a body-only change to the importers of what it reaches; the batch gate and reruns keep today's selection.
+    const narrow = input.key !== gateTrialKey && !input.rerun;
     try {
-      // GY-3750: an item's trial narrows a body-only change to the importers of what it reaches; the batch gate keeps the sweep.
-      selection = await child('selection', selector[0]!, [...selector.slice(1), ...input.changedFiles], input.baseTip ? { env: { ...env, GRAPHYARD_SELECTION_BASE: input.baseTip, ...(input.key === gateTrialKey ? {} : { GRAPHYARD_SELECTION_IMPORTERS: '1' }) } } : {});
+      selection = await child('selection', selector[0]!, [...selector.slice(1), ...input.changedFiles], input.baseTip ? { env: { ...env, GRAPHYARD_SELECTION_BASE: input.baseTip, ...(narrow ? { GRAPHYARD_SELECTION_IMPORTERS: '1' } : {}) } } : {});
     } finally {
       if (restoreSelector) await restoreSelector().catch(() => {});
     }
     if (hostEnded(selection)) throw runnerFailure('selection', selection);
     if (!selection.ok) return result({ passed: 0, failed: [strategy.command], files: 0 });
-    const counts = input.key === gateTrialKey ? null : selectionCounts(selection.out.split('\n')[0] ?? '');
+    const counts = narrow ? selectionCounts(selection.out.split('\n')[0] ?? '') : null;
     if (counts) await recordTestSelection(input.root, counts).catch(() => {});
     const pattern = new RegExp(strategy.pattern);
     let selected = selection.out.split('\n').map(line => line.trim()).filter(line => pattern.test(line));
