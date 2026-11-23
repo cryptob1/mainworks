@@ -14,7 +14,8 @@ import { heatReading } from '../merge-writer/trial-load.js';
 import { overloadAlarm, overloaded, sessionFigures } from '../session-share.js';
 import { profileHealth, repeatedLaunchFailures } from '../daemon/sessions.js';
 import { workersAllowed } from '../master/worker-pool.js';
-import { heavyDrainLine, heavyJobLimit, heavyJobsDirectory, readHeavyDrain, readStrictCap, slotHolders } from '../master/verification-slots.js';
+import { heavyDrainLine, heavyJobBudget, heavyJobLimit, heavyJobsDirectory, readHeavyDrain, readMachines, readStrictCap, slotHolders } from '../master/verification-slots.js';
+import { budgetLine, machineLine } from '../model/machine-load.js';
 import { standingLimit } from '../master/profiles.js';
 import { attemptBoundSummary } from '../master/attempt-bound.js';
 import { mergeWriterSummary, trialImageKey } from '../daemon/cycle-merge-writer.js';
@@ -261,7 +262,8 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     diskHeadroom: state?.diskHeadroom ?? null,
     heavyDrain: drain,
     // GY-3447: who holds the host's heavy-job slots (trials, gates, whole suites, deploy builds) and the limit they share.
-    heavyJobs: { limit: heavyJobLimit(heavyJobsDirectory()), holders: slotHolders(heavyJobsDirectory()) },
+    // GY-3528: the budget across this machine and every ready host, and each machine's load, one line each.
+    heavyJobs: { limit: heavyJobLimit(heavyJobsDirectory()), budget: budgetLine(heavyJobBudget(heavyJobsDirectory()).machines), machines: (readMachines(heavyJobsDirectory()) ?? []).map(machineLine), holders: slotHolders(heavyJobsDirectory()) },
     // GY-3446: the temporary limits standing now, each with the time it reverts to the default; null once expired or never set.
     temporaryLimits: { trialCap: standing(master.run.trialCap), launchHotCelsius: standing(master.run.launchHotCelsius), hostHeavyJobs: strictCap ? { value: strictCap.limit, until: strictCap.until, by: strictCap.requestedBy } : null },
     // GY-3348: the host's CPU as the loop last read it — pressure (avg60) and steal percent, the
@@ -276,7 +278,8 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     // GY-3438: every live agent session with its CPU and memory use beside its fair share, as the loop last read its cgroup.
     sessionUsage: (state?.sessions ?? []).map(session => ({ session: session.name ?? session.unit, use: sessionFigures(session), overSince: session.overSince })),
     // GY-3190: the latest daily report of what the loop's sweeps stopped or removed, and the disk Graphyard's leftovers hold.
-    leftovers: state?.leftovers.report ?? null,
+    // GY-3691: with the working copies' disk use as the loop last read it.
+    leftovers: state && (state.leftovers.report || state.leftovers.worktreeDisk) ? { ...state.leftovers.report, worktreeDisk: state.leftovers.worktreeDisk } : null,
     loop: loop ? { state: loop.liveness.state, detail: loop.liveness.detail, cycle: loop.cycle, steps: loop.metrics?.steps ?? null } : { state: 'absent', detail: 'The loop cursor cannot be read' },
     // The loop's own master session (GY-2949): working / idle / `limited until T` while the account hold stands / absent.
     masterSession: { ...masterSummary(session ?? emptyMasterSession(), now, masterAgent, masterScreen), screenError },
