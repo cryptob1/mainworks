@@ -9,7 +9,8 @@ import { homedir } from 'node:os';
 import { z } from 'zod';
 import { defaultChildRun } from '../child-runner.js';
 import { sessionName } from '../session-name.js';
-import { launchPlan, assertNoApprovalOptOut, LaunchRefusedError } from '../harness.js';
+import { launchPlan, assertNoApprovalOptOut, LaunchRefusedError, trustClaudeFolder, trustCodexFolder } from '../harness.js';
+import { hostInstallCheckouts } from '../install/units.js';
 import { type CapacityRole, type CapacityAccount, capacityRetryAt, quotaRoles } from '../model/capacity.js';
 import { type FleetClient, type FleetLaunchAccount, type FleetProbe, accountCheckIntervalMs, checkAccountLive, nextLiveCheck, observeAccount, selectFleetSession, fleetRoleHealth, httpFleetClient } from '../fleet.js';
 import { type AgentEnvironment, agentEnvironmentSchema, type EnvironmentKind, environmentKinds, environmentVariable, type MasterConfig, masterConfigSchema, producerProfileSchema, reviewerProfileSchema, workerProfileSchema } from './profiles.js';
@@ -24,11 +25,13 @@ import { getCachedPlanUsage, setCachedPlanUsage } from '../provider-usage.js';
 export { describeObservedExhaustion, providerIdentity } from './account-identity.js';
 // The per-provider login and quota probes live in ./environment-quota.ts, reached through each runtime's adapter.
 import type { PlanReading } from './environment-quota.js';
-import { accountHomeEnvironment, runtimeAdapter, type AccountReading } from './runtimes.js';
+import { accountHomeEnvironment, runtimeAdapter, withModel, type AccountReading } from './runtimes.js';
+import { setting } from '../setting.js';
+import { stateDirectory } from '../install/layout.js';
 
 /** Where agent environments live: one directory per account, named <agent>-<letter>. */
 export function agentEnvironmentRoot(input?: string) {
-  return resolve(input ?? process.env.GRAPHYARD_AGENT_ENVIRONMENTS ?? resolve(homedir(), '.coding_agents'));
+  return resolve(input ?? setting('AGENT_ENVIRONMENTS') ?? resolve(homedir(), '.coding_agents'));
 }
 const environmentDirectory = /^(claude|codex|opencode|cursor)(?:-([a-z0-9][a-z0-9_-]{0,30}))?$/;
 export async function discoverAgentEnvironments(directory = agentEnvironmentRoot()): Promise<AgentEnvironment[]> {
@@ -44,32 +47,48 @@ export async function discoverAgentEnvironments(directory = agentEnvironmentRoot
   }
   return found.sort((a, b) => a.name.localeCompare(b.name));
 }
-/** A new, empty environment for an agent CLI: the next free <agent>-<letter> directory, mode 0700. */
-export async function createAgentEnvironment(directory: string, kind: EnvironmentKind, existing: AgentEnvironment[]) {
+/** A new, empty environment for an agent CLI: the next free <agent>-<letter> directory, mode 0700, pre-trusted for every install checkout on the host (GY-3519). */
+export async function createAgentEnvironment(directory: string, kind: EnvironmentKind, existing: AgentEnvironment[], checkouts: readonly string[] = []) {
   const taken = new Set(existing.map(environment => environment.name));
   const letter = [...'abcdefghijklmnopqrstuvwxyz'].find(candidate => !taken.has(`${kind}-${candidate}`));
   if (!letter) throw new Error(`Every ${kind}-<letter> environment name is taken under ${directory}`);
   const home = resolve(directory, `${kind}-${letter}`);
   await mkdir(home, { recursive: true, mode: 0o700 });
-  return agentEnvironmentSchema.parse({ name: `${kind}-${letter}`, kind, home });
+  const environment = agentEnvironmentSchema.parse({ name: `${kind}-${letter}`, kind, home });
+  await prepareAgentEnvironment(environment, checkouts);
+  return environment;
 }
 /**
- * The one runtime setting a fresh environment needs before an unattended launch: Claude Code asks
- * once per config home to confirm the bypass-permissions mode every launch requests, and that
- * confirmation would hold a new session at a dialog nobody is watching.
+ * The runtime settings a fresh or newly logged-in environment needs before an unattended launch:
+ * Claude Code's bypass-permissions confirmation, plus folder trust for every install checkout on
+ * the host (GY-3519) so a failover never lands on a trust prompt.
  */
-export async function prepareAgentEnvironment(environment: AgentEnvironment) {
-  if (environment.kind !== 'claude') return [] as string[];
-  const file = resolve(environment.home, 'settings.json');
-  let settings: Record<string, unknown> = {};
-  try {
-    const parsed = JSON.parse(await readFile(file, 'utf8'));
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(`${file} is not a JSON object; resolve it before preparing the environment`);
-    settings = parsed;
-  } catch (error: any) { if (error.code !== 'ENOENT') throw error; }
-  if (settings.skipDangerousModePermissionPrompt === true) return [];
-  await atomicPrivateText(file, `${JSON.stringify({ ...settings, skipDangerousModePermissionPrompt: true }, null, 2)}\n`);
-  return [`${file}: skipDangerousModePermissionPrompt`];
+export async function prepareAgentEnvironment(environment: AgentEnvironment, extraCheckouts: readonly string[] = []) {
+  const changes: string[] = [];
+  if (environment.kind === 'claude') {
+    const file = resolve(environment.home, 'settings.json');
+    let settings: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse(await readFile(file, 'utf8'));
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(`${file} is not a JSON object; resolve it before preparing the environment`);
+      settings = parsed;
+    } catch (error: any) { if (error.code !== 'ENOENT') throw error; }
+    if (settings.skipDangerousModePermissionPrompt !== true) {
+      await atomicPrivateText(file, `${JSON.stringify({ ...settings, skipDangerousModePermissionPrompt: true }, null, 2)}\n`);
+      changes.push(`${file}: skipDangerousModePermissionPrompt`);
+    }
+  }
+  const checkouts = [...new Set([...hostInstallCheckouts(), ...extraCheckouts.filter(path => existsSync(path))])];
+  for (const checkout of checkouts) {
+    if (environment.kind === 'claude') {
+      const trust = await trustClaudeFolder(checkout, { CLAUDE_CONFIG_DIR: environment.home }, ['--setting-sources', 'user']);
+      if (trust.written) changes.push(`${trust.file}: trust ${trust.directory}`);
+    } else if (environment.kind === 'codex') {
+      const trust = await trustCodexFolder(checkout, { CODEX_HOME: environment.home });
+      if (trust.written) changes.push(`${trust.file}: trust ${trust.directory}`);
+    }
+  }
+  return changes;
 }
 
 export function loginCommand(environment: AgentEnvironment) {
@@ -80,7 +99,7 @@ export function loginCommand(environment: AgentEnvironment) {
     opencode: `XDG_DATA_HOME=${home} opencode auth login`, cursor: `CURSOR_CONFIG_DIR=${home} XDG_CONFIG_HOME=${home} agent login` }[environment.kind];
 }
 
-export interface AccountUsage { window: string; percent: number; resetsAt: string | null }
+export interface AccountUsage { window: string; percent: number; resetsAt: string | null; /** GY-3497: the provider's own limit list named this window, so the provider enforces it and a reading at its ceiling holds. */ limitList?: true }
 export interface EnvironmentHealth {
   name: string; kind: EnvironmentKind; home: string; variable: string; checkedAt: string;
   loggedIn: boolean; quota: 'available' | 'exhausted' | 'unknown'; usage: AccountUsage[];
@@ -90,6 +109,8 @@ export interface EnvironmentHealth {
   identity?: string | null;
   /** GY-3516: the fingerprint of the key the probe read the quota with; never the key. */
   key?: string;
+  /** GY-3497: the extra-usage line the provider's answer gave when spend is enabled (`extra usage on: $3.21 of $10.00 used`); shown, never changed. */
+  spend?: string;
 }
 export interface EnvironmentProbe {
   fetch?: typeof fetch; now?: () => number; ceilingPercent?: number; timeoutMs?: number; cacheMs?: number;
@@ -143,7 +164,7 @@ export async function checkAgentEnvironment(environment: ProbedEnvironment, prob
     : exhausted ? `${environment.name} quota is exhausted (${(spent.length ? spent : account.usage).map(usage => `${usage.window} window at ${usage.percent}%${usage.resetsAt ? ` until ${usage.resetsAt}` : ''}`).join(', ')}; ceiling ${ceiling}%)` : null;
   const health: EnvironmentHealth = { name: environment.name, kind: environment.kind, home: environment.home, variable: environmentVariable[environment.kind], checkedAt: new Date(now).toISOString(),
     loggedIn: account.loggedIn, quota, usage: account.usage, healthy: !reason, reason, note: account.note, login: account.loggedIn ? null : loginCommand(environment),
-    identity: account.loggedIn ? await providerIdentity(environment.kind, environment.home) : null, ...account.key ? { key: account.key } : {} };
+    identity: account.loggedIn ? await providerIdentity(environment.kind, environment.home) : null, ...account.key ? { key: account.key } : {}, ...account.spend ? { spend: account.spend } : {} };
   healthCache.set(cacheKey, { at: now, health });
   return health;
 }
@@ -310,7 +331,7 @@ export const openCodeAllowAll = { '*': 'allow', edit: 'allow', bash: 'allow', we
  * person. The explicit `.graphyard` entry keeps the grant readable beside the tree's, whichever
  * glob rules a runtime applies to dot-directories.
  */
-export const openCodeRepositoryGrant = (root: string) => ({ [`${root}/**`]: 'allow', [`${root}/.graphyard/**`]: 'allow', '*': 'deny' });
+export const openCodeRepositoryGrant = (root: string) => ({ [`${root}/**`]: 'allow', [`${stateDirectory(root)}/**`]: 'allow', '*': 'deny' });
 /**
  * An operator's own OpenCode permission document that asks nothing (the recipe's `permits`) is laid
  * over the allow-all rather than replacing it: a key it leaves out (`external_directory`,
@@ -340,8 +361,7 @@ export function registryLaunchArgs(account: FleetLaunchAccount, headless = false
   const { contract, policy, modelId } = account.fleet, args = [...(headless && contract.headlessArgs ? [] : contract.args), ...(policy?.args ?? [])];
   // OpenCode's interactive TUI refuses --model (only `run` takes it), so its model rides in
   // OPENCODE_CONFIG_CONTENT instead (GY-3118), whatever flag a stored runtime still names.
-  const model = contract.kind !== 'opencode' && contract.modelFlag && modelId && !args.includes(contract.modelFlag) ? [contract.modelFlag, modelId] : [];
-  return [...args, ...model, ...registryToolsArgs(account)];
+  return [...withModel(contract.kind, args, contract, contract.kind === 'opencode' ? null : modelId), ...registryToolsArgs(account)];
 }
 
 /**
@@ -461,10 +481,10 @@ export async function setupAgentEnvironments(root: string, input: { directory?: 
   const created: string[] = [];
   for (const kind of input.create ?? []) {
     if (!input.apply) { created.push(`${kind} (a new ${kind}-<letter> directory under ${directory}; rerun with --apply)`); continue; }
-    const environment = await createAgentEnvironment(directory, kind, discovered);
+    const environment = await createAgentEnvironment(directory, kind, discovered, [root]);
     discovered.push(environment); created.push(environment.name);
   }
-  const prepared = input.apply ? (await Promise.all(discovered.map(environment => prepareAgentEnvironment(environment)))).flat() : [];
+  const prepared = input.apply ? (await Promise.all(discovered.map(environment => prepareAgentEnvironment(environment, [root])))).flat() : [];
   const probe = { ...input.probe, ceilingPercent: input.probe?.ceilingPercent ?? config.run.quotaCeilingPercent };
   const health = await Promise.all(discovered.map(environment => checkAgentEnvironment(environment, probe)));
   const loggedIn = discovered.filter((_, index) => health[index].loggedIn);
@@ -573,7 +593,7 @@ export async function setupAgentEnvironments(root: string, input: { directory?: 
     if (next.reviewers.length > 1 && !next.run.reviewerProfile) next.run.reviewerProfile = next.reviewers[0].name;
   }
   const parsed = masterConfigSchema.parse(next);
-  if (input.apply) await atomicPrivateWrite(resolve(root, '.graphyard/master.json'), parsed);
+  if (input.apply) await atomicPrivateWrite(resolve(stateDirectory(root), 'master.json'), parsed);
   const report = health.map(entry => ({ environment: entry.name, kind: entry.kind, home: entry.home, variable: entry.variable, loggedIn: entry.loggedIn, quota: entry.quota, usage: entry.usage, healthy: entry.healthy, reason: entry.reason, note: entry.note, login: entry.login }));
   const loggedOut = report.filter(entry => !entry.loggedIn);
   return { directory, applied: !!input.apply, environments: report, created, prepared, profiles: changes, skipped,

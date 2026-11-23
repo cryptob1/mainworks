@@ -1,0 +1,16 @@
+{
+  "id": "headless-prompt-file-fallback",
+  "title": "Headless runtimes without a stdin form take a large prompt from a 0600 file",
+  "description": "Headless pi, cursor and muse sessions with a prompt over the inline limit receive a short pointer prompt on argv naming a 0600 file holding the full prompt, stdin runtimes and small prompts behave as today, and a review of a very large diff on pi posts a verdict.",
+  "tags": ["review"],
+  "target": "any",
+  "required": true,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "prompt file fallback: integration and pi review proofs",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/headless-prompt-file-fallback.test.ts",
+      "timeoutSeconds": 600
+    }
+  ]
+}

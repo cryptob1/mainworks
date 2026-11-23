@@ -1,0 +1,11 @@
+{
+  "id": "limit-warning",
+  "title": "Each account says what is left in one plain sentence, and the master is warned past 80% of a window",
+  "description": "From each provider's own usage shapes (Claude's 5-hour and weekly windows, Codex's rate limits, Z.ai's quota limits), master registry and master status say per account one sentence such as 'about 24% of this week left, back Sun 22 Nov 05:00', or 'allowance not reported' with no reading, never a window code. An account with live sessions and a window at or above 80% gets one master status attention row, '<account> has used 82% of its 5-hour allowance; it is back at 09:20', with the next step 'the loop tries other accounts first'; the row clears by itself when the window resets or a newer reading drops under 80%, and no work item is filed.",
+  "tags": ["accounts", "quota", "status"],
+  "target": "any",
+  "required": true,
+  "steps": [
+    { "kind": "command", "name": "each account's allowance reads as one sentence and the 80% row appears and clears", "run": "node --import tsx tests/helpers/run-tests.ts tests/limit-warning.test.ts", "timeoutSeconds": 300 }
+  ]
+}

@@ -283,7 +283,6 @@ img.mark{width:26px;height:26px}
 .health,.health.live{display:inline-flex;align-items:center;gap:6px;color:var(--text-2);font-size:var(--type-small)}.health-dot{width:8px;height:8px;border-radius:50%;border:1.5px solid var(--text-2);flex-shrink:0}
 .health.live{color:var(--shipped)}.health.live .health-dot{background:var(--shipped);border-color:var(--shipped)}
 .health.stale{color:var(--needs-you)}.health.stale .health-dot{border-color:var(--needs-you)}
-.workers-note{margin:var(--space-3) 0}
 .availability{list-style:none;margin:0;padding:0;font-size:12px}.availability li{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:var(--space-2) 0;border-bottom:1px solid var(--border);color:var(--text-2)}.availability li[data-state=held]{color:var(--needs-you)}.availability li[data-state=broken]{color:var(--blocked)}
 /* GY-3314: the Workers table is one compact line per agent — the name, the item with its title
    truncated in place, a state of at most three words, the age — never taller than 44 px, with
@@ -548,7 +547,7 @@ kbd{font-family:var(--font-mono);font-size:11px;color:var(--text);background:var
 .shortcuts kbd{white-space:nowrap}
 /* The row the keyboard cursor is on (GY-3272). */
 [data-row].kb-cursor{outline:2px solid var(--accent);outline-offset:-2px;background:var(--raised);box-shadow:0 0 18px color-mix(in srgb,var(--accent) 20%,transparent)}
-.product-section pre{white-space:pre-wrap;font:inherit;margin:0 0 var(--space-3,16px);max-width:720px;line-height:1.65}
+.product-brief :is(p,ul,h2,h3){margin:0;max-width:720px;line-height:1.65}
 /* GY-3278 Tests rows: each proof's item and criterion; only a merged item's missing case file is an alarm. */
 .proof-item{margin-bottom:var(--space-2)}.proof-item a{display:block}.proof-criterion{display:block;color:var(--text-2)}
 .case-alarm{display:block;color:var(--blocked);font-weight:500}.case-pending{display:block;color:var(--text-2);font-size:var(--type-small)}
@@ -630,6 +629,9 @@ header.main-top-bar{height:auto;min-height:60px;display:flex;flex-wrap:wrap;alig
 /* GY-3598: a test case's long ids, commands and paths wrap inside its card, so the Test-case library never scrolls sideways at 390 px. */
 .scenario-list{grid-template-columns:minmax(0,1fr)}.scenario-card,.scenario-columns>div{min-width:0;overflow-wrap:anywhere}.scenario-card code{white-space:normal;word-break:break-all}
 .caretaker-lines{list-style:none;padding:0;margin:0 0 var(--space-3);display:grid;gap:var(--space-2);font-size:var(--type-small)}
+/* GY-3671: Home's since you last looked, active goals and the box to the Lead. */
+.since-looked ul{margin:var(--space-2) 0 0;padding-left:18px}.since-looked li{overflow-wrap:anywhere}.goals ul{margin:0;padding-left:20px}.goals li{overflow-wrap:anywhere}
+.tell-lead label{display:block;font-weight:600;margin-bottom:6px}.tell-lead-row{display:flex;gap:var(--space-2);align-items:flex-end}.tell-lead textarea{flex:1;min-width:0}
 /* GY-3601: Home's status line and incident cards. */
 .home-status-line{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin:18px 0 0;font-size:30px;font-weight:600;letter-spacing:-.6px;line-height:1.2;overflow-wrap:anywhere}
 .home-status-line span{font-weight:450;color:var(--text-2)}
@@ -657,3 +659,27 @@ header.main-top-bar{height:auto;min-height:60px;display:flex;flex-wrap:wrap;alig
   .sessions-table.work-table [data-col=now]{grid-area:now;color:var(--text-2)}.sessions-table.work-table [data-col=builder]{grid-area:builder;color:var(--text-2)}.sessions-table.work-table [data-col=pr]{grid-area:pr}
   .sessions-table.work-table td::before{content:none}
   .need{grid-template-columns:minmax(0,1fr) auto}.need button{grid-column:1/-1;justify-self:start}}
+/* GY-3603: First-run four-step onboarding page matching the Start prototype. */
+.first-run{display:flex;flex-wrap:wrap;gap:var(--space-6);align-items:flex-start}
+.first-run-steps{flex:1 1 240px;max-width:280px;list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;min-width:0}
+.first-run-step{padding:12px 14px;border-radius:10px;color:var(--text-2);overflow-wrap:anywhere}
+.first-run-step.step-current{background:var(--surface);color:var(--text);font-weight:600}
+.first-run-tick{color:var(--shipped)}
+.first-run-step-detail{font-size:var(--type-small);color:var(--text-3);margin-top:2px;font-weight:400;overflow-wrap:anywhere}
+.first-run-body{flex:3 1 480px;min-width:0;display:flex;flex-direction:column;gap:var(--space-4)}
+.first-run-lead{margin:0;font-size:var(--type-sentence);color:var(--text-2);overflow-wrap:anywhere}
+.first-run-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.first-run-cta{min-height:48px;padding:0 22px;border-radius:12px;font-weight:600}
+.first-run-secondary{min-height:48px;padding:0 18px;border-radius:12px;background:var(--surface);border:1px solid var(--border);color:var(--text);font-weight:500}
+.first-run-terminal{padding:12px 14px;border-radius:10px;background:var(--surface);font-size:var(--type-small);color:var(--text-2);overflow-wrap:anywhere}
+.first-run-builder-card .facts{margin:0 0 var(--space-3)}
+.first-run-issues{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.first-run-issues li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border-radius:10px;background:var(--surface);overflow-wrap:anywhere}
+.first-run-issues li>span{min-width:0}.first-run-issues button{flex:none;min-height:40px}
+.first-run-typed{display:flex;flex-direction:column;gap:10px;align-items:flex-start}.first-run-typed label{width:100%}.first-run-typed textarea{width:100%;box-sizing:border-box}
+@media(max-width:650px){.first-run{gap:var(--space-4)}.first-run-steps{max-width:none;flex-basis:100%}.first-run-body{flex-basis:100%}}
+/* GY-3559: the Tests chips are one row that scrolls sideways inside itself; a raw step wraps; Show more sits under the list. */
+.case-filters{flex-wrap:nowrap;overflow-x:auto}.case-filters>*{flex:none}
+.raw-steps pre{white-space:pre-wrap;overflow-wrap:anywhere}
+.show-more{display:block;margin:var(--space-3) auto}
+.infra-actions{list-style:none;margin:0;padding:0;display:grid;gap:4px}.infra-actions li{font-size:var(--type-small);overflow-wrap:anywhere;min-width:0}.infra-actions time{color:var(--text-3);font-size:11px}

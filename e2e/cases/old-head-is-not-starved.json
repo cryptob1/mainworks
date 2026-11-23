@@ -1,0 +1,15 @@
+{
+  "id": "old-head-is-not-starved",
+  "title": "An old head is not starved by newer work of higher priority",
+  "description": "Seeds one priority 2 head, then a steady stream of priority 1 heads, with a stub trial of one slot: the merge queue ages the old head one level per hour it waited, so it is trialled within 70 minutes of simulated time.",
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "the priority 2 head is trialled within 70 simulated minutes",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:old-head-is-not-starved tests/merge-queue-ages.test.ts",
+      "timeoutSeconds": 120
+    }
+  ]
+}

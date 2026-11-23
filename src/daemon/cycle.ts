@@ -39,7 +39,10 @@ import { attemptBoundMs, attemptCeilingMs, boundMinutes } from '../master/attemp
 import { backedOffAccounts, canaryOffer, canaryVerdict, profileHealth, recordLaunchFailure } from './sessions.js';
 import { pinnedInstall, repinRuntime, type AgentRegistry, type CanaryOffer } from '../model/registry.js';
 import { type DaemonEffects, record } from './effects.js';
-import { mergeWriterStep } from './cycle-merge-writer.js';
+import { mergeWriterStep, snapshotLedger } from './cycle-merge-writer.js';
+import type { MergeWriterState } from './merge-writer-state.js';
+import { awaitsMerge } from '../model/merge-queue.js';
+import { heavyJobLimit, heavyJobsDirectory } from '../master/verification-slots.js';
 import { batchGateStep } from './cycle-batch-gate.js';
 import { benchStep } from '../bench.js';
 import { lessonsToCode } from './lessons-to-code.js';
@@ -52,8 +55,10 @@ import { cpuPressureStep, cpuWaiting, heatClear, implementationWaiting, sessionU
 import { causeCleared, environmentCause } from './environment-blockers.js';
 import { leftoversStep, tallyLeftovers } from './leftovers.js';
 import { yardAlertStep } from './yard-alerts.js';
+import { deliveryAlertStep } from './delivery-alerts.js';
 import { recordStallAlarm, stallAlarm } from './stall-alarm.js';
 import { controlPlaneStep } from './control-plane.js';
+import { reworkWorktreePath } from '../cli/workspace-worktree.js';
 
 /** How many session launches the launcher runs at once when master.json sets no `run.launchConcurrency` (GY-616). */
 export const defaultLaunchConcurrency = 3;
@@ -79,6 +84,7 @@ export const tickWaitMs = 10_000;
 export const stepTimeoutMs = (config: Pick<MasterConfig, 'run'>) => Math.max(60_000, config.run.intervalSeconds * 2_000);
 /** The key the master session's launch is handed to the launcher under. */
 export const masterLaunchKey = 'master:launch';
+const masterFailoverKey = 'master:failover';
 /**
  * GY-3336: how many consecutive failures of the master session's launch — the same error each
  * time, the runtime's binary missing or its trust prompt unanswerable — before the loop stops
@@ -87,6 +93,13 @@ export const masterLaunchKey = 'master:launch';
 export const masterLaunchBackoffAfter = 3;
 /** How long the loop waits before retrying the master launch after its `attempts`-th same-way failure: one minute doubling, capped at fifteen. */
 export const masterLaunchRetryMs = (attempts: number) => Math.min(60_000 * 2 ** Math.max(0, attempts - masterLaunchBackoffAfter), 15 * 60_000);
+/** GY-3519: two identical launch failures for the master on one account mark that account unusable for an hour and move to the next. */
+export const masterAccountFailoverAfter = 2;
+export const masterAccountHoldMs = 3_600_000;
+const masterLaunchFailureReason = (error: unknown) =>
+  normalizeFailureReason(message(error).replace(/\bin pane\s+\S+/g, 'in pane'));
+const activeUnusableAccounts = (master: DaemonState['master'], now: number) =>
+  Object.fromEntries(Object.entries(master.unusableAccounts ?? {}).filter(([, entry]) => Date.parse(entry.until) > now));
 
 /**
  * The session launcher beside the cycle (GY-616): a launch creates a Herdr pane and registers a
@@ -251,6 +264,8 @@ export async function runCycle(config: MasterConfig, state: DaemonState, effects
     state.projectMemory = await syncProjectMemory({ existing: state.projectMemory, work: read.snapshot.work, now: clock });
     // GY-3101: the stalled-yard alert, beside the persist it survives: the loop tells the operator directly when queued work can neither start nor merge.
     if (!config.forPerson) await yardAlertStep(cycle);
+    // GY-3529: newly served items and a failed release candidate, each announced once.
+    if (!config.forPerson) await deliveryAlertStep(cycle);
     // GY-3199, GY-3233: the control plane's own faults — a stuck upgrade, a stalled step — reported upstream once, and the daily staleness line.
     if (!config.forPerson) await controlPlaneStep(cycle, stalled);
     if (!config.forPerson) await leftoversStep(state, clock, effects.leftoverDisk, log);
@@ -297,14 +312,13 @@ function reconciledAttempt(item: Work, hostId: string): Pick<NonNullable<Work['l
   return space ? { owner: space.owner, epoch: end.epoch } : null;
 }
 
-/** How long a done item's worktree with uncommitted files is kept after its last attempt ended. */
-const finishedWorktreeKeepMs = 24 * 60 * 60 * 1000;
-
 /** The ended attempts' worktrees on this host: no live lease and no running session holds their epoch. */
 export function endedAttemptWorktrees(work: Work[], hostId: string, now: number) {
   return work.flatMap(item => (item.workspaces ?? []).filter(space => space.host === hostId
     // GY-3632: a rework that reused the path owns it now.
     && !(item.workspaces ?? []).some(later => later.epoch > space.epoch && later.host === hostId && later.path === space.path)
+    // GY-3689: an open submitted item's rework reuses its latest worktree on this host (reworkWorktreePath); removing it races that launch.
+    && !(item.stage !== 'done' && item.submission && reworkWorktreePath(item, space.branch, hostId) === space.path)
     && !(item.lease && item.lease.epoch === space.epoch && Date.parse(item.lease.expiresAt) > now)
     && !(item.sessions ?? []).some(handle => handle.kind === 'implementation' && handle.state === 'running' && (handle.epoch ?? Number(/:(\d+)$/.exec(handle.id)?.[1])) === space.epoch))
     .map(space => ({ item, space })));
@@ -352,7 +366,7 @@ function removeBeside(cycle: Cycle, key: string, work: string, path: string, for
   const { state, effects } = cycle;
   cycle.launcher.submit(key, [], async sink => {
     const outcome = (detail: string, result: DaemonAction['state']) => record(state, key, { kind: 'reclaim', work, principal: null, state: result, detail, attempts: (state.actions[key]?.attempts ?? 0) + 1, cycle: state.cycle }, cycle.now(), effects.persist);
-    try { if (await effects.removeWorktree!(path, force)) { tallyLeftovers(state, 'worktrees'); sink.push(await outcome(done, 'done')); } }
+    try { if (await effects.removeWorktree!(path, force)) { tallyLeftovers(state, 'worktrees'); if (state.leftovers.worktreeDisk) state.leftovers.worktreeDisk.stale = true; sink.push(await outcome(done, 'done')); } }
     catch (error) { sink.push(await outcome(`${failed}: ${message(error)}`, 'failed')); }
   });
 }
@@ -413,31 +427,42 @@ async function closeStep(cycle: Cycle) {
     }
     catch (error) { await note(cycle, key, 'reclaim', item.key, 'failed', `${item.key}: the lapsed lease could not be reconciled: ${message(error)}`, ended.owner); }
   }
-  // GY-3191: Git keeps a tree its attempt left uncommitted files in; once the item is done and a day
-  // has passed since its last attempt ended, nothing will resume that work, so the removal is forced.
+  // GY-3191: Git keeps a tree its attempt left uncommitted files in. GY-3691: once the item is done,
+  // or a later attempt holds it, nothing will resume that work, so the removal is forced at once.
   if (effects.removeWorktree) for (const { item, space } of endedAttemptWorktrees(snapshot.work, config.hostId, clock)) {
-    const endedAt = Date.parse((item as Work & CoordinationRounds).attemptEnd?.endedAt ?? item.updatedAt);
-    const force = item.stage === 'done' && clock - endedAt > finishedWorktreeKeepMs;
+    const force = item.stage === 'done' || space.epoch < item.epoch;
     const key = `worktree:${item.id}:${space.epoch}${force ? ':forced' : ''}`;
     // GY-3226: a failed removal is tried again on the next cycles, up to three attempts per key.
     const prior = state.actions[key];
     if (prior && (prior.state === 'done' || prior.attempts >= 3)) continue;
     removeBeside(cycle, key, item.key, space.path, force, `Removed ${item.key} epoch ${space.epoch}'s worktree ${space.path}: its attempt ended`, `Could not remove ${item.key} epoch ${space.epoch}'s worktree ${space.path}`);
   }
-  // GY-3341: a settled delivery's worktree never reaches this loop's snapshot again (the coordination
-  // view the loop polls reads open items and what they reference), so the disk names the leftovers:
-  // every `GY-N-EPOCH` tree still standing a day after it last changed, for an item the snapshot no
-  // longer holds, is removed — nothing of a settled delivery will resume in it. A tree the snapshot's
-  // own items own (an open item, or one they reference) is the document pass's alone, and a young
-  // tree is never touched: the snapshot may simply predate the item that just claimed it.
+  // GY-3341: a settled delivery's worktree never reaches this loop's snapshot as a document again (the
+  // coordination view the loop polls reads open items whole, settled ones as summaries), so the disk
+  // names the leftovers: every `GY-N-EPOCH` tree of an item the snapshot holds as done with no
+  // workspace record, or does not hold at all, is removed within the cycle (GY-3691) — nothing of a
+  // settled delivery will resume in it. Every open item is in the snapshot, so a tree it does not
+  // hold that predates the snapshot belongs to no open item; a younger tree waits for the next cycle.
   if (effects.removeWorktree && effects.attemptWorktrees) for (const leftover of await effects.attemptWorktrees()) {
     const named = /^(GY-\d+)-(\d+)$/i.exec(basename(leftover.path));
-    if (!named || clock - leftover.changedAt <= finishedWorktreeKeepMs) continue;
-    if (snapshot.work.some(item => item.key.toUpperCase() === named[1].toUpperCase())) continue;
+    if (!named) continue;
+    const held = snapshot.work.find(item => item.key.toUpperCase() === named[1].toUpperCase());
+    if (held ? held.stage !== 'done' || held.workspaces?.length : leftover.changedAt >= clock) continue;
     const key = `worktree:${named[1].toLowerCase()}-${named[2]}:forced`;
     const prior = state.actions[key];
     if (prior && (prior.state === 'done' || prior.attempts >= 3)) continue;
-    removeBeside(cycle, key, named[1].toUpperCase(), leftover.path, true, `Removed the worktree ${leftover.path} of settled ${named[1].toUpperCase()} epoch ${named[2]}: it last changed ${Math.round((clock - leftover.changedAt) / 3_600_000)} hour(s) ago and nothing will resume in it`, `Could not remove the worktree ${leftover.path} of settled ${named[1].toUpperCase()}`);
+    removeBeside(cycle, key, named[1].toUpperCase(), leftover.path, true, `Removed the worktree ${leftover.path} of settled ${named[1].toUpperCase()} epoch ${named[2]}: nothing will resume in it`, `Could not remove the worktree ${leftover.path} of settled ${named[1].toUpperCase()}`);
+  }
+  // GY-3691: the working copies' disk use, read beside the cycle when missing, an hour old, or after a removal.
+  const reading = state.leftovers.worktreeDisk;
+  if (effects.worktreeDisk && (!reading || reading.stale || clock - Date.parse(reading.at) > 3_600_000)) {
+    if (reading) reading.stale = false;
+    cycle.launcher.submit('leftovers:worktree-disk', [], async () => {
+      const bytes = await effects.worktreeDisk!();
+      if (bytes === null) return;
+      state.leftovers.worktreeDisk = { bytes, at: new Date(cycle.now()).toISOString(), stale: !!state.leftovers.worktreeDisk?.stale };
+      await effects.persist(state);
+    });
   }
   // GY-2944: a review or proof session whose dispatch request is answered, whose item has left
   // the stage it was launched for, or whose pane Herdr no longer reports is over — and so is the
@@ -477,7 +502,7 @@ async function closeStep(cycle: Cycle) {
     const cwd = (agent.cwd ?? '').replace(/ \(deleted\)$/, '');
     const pane = agent.pane_id;
     if (!pane || attemptedPanes.has(pane) || masters.has(pane) || live.has(pane) || agent.agent_status === 'working') continue;
-    if (!cwd.includes('/.graphyard/worktrees/') && !managedRoots.some(root => cwd.startsWith(root + sep))) continue;
+    if (!/\/\.(graphyard|mainworks)\/worktrees\//.test(cwd) && !managedRoots.some(root => cwd.startsWith(root + sep))) continue;
     const gone = !existsSync(cwd), exited = !agent.agent || endedRuntimeStates.includes(agent.agent_status ?? '');
     const due = () => ended.has(pane) || (gone && exited && launched.has(pane));
     // Finished sessions disappear from coordination, and old launch actions are pruned.
@@ -791,43 +816,106 @@ async function dispatchStep(cycle: Cycle) {
 }
 
 /**
- * The loop keeps the pipeline full itself (GY-2991): while fewer items occupy it — claimed,
- * submitted, in review or merge, or released and not yet done — than its concurrency (the workers
- * the registry worker role allows, `workersAllowed`), it releases the backlog item with the highest priority, oldest first
- * on ties, whose dependencies are all done, recording the release decision under the loop's own
- * identity with the reason. A parked item — any standing blocker — never releases, nor an
- * owner-held or loop-owned item, whose release the control plane refuses, nor one sharing an
- * exclusive resource with an item in flight or released (`resourceConflicts`). Items the master wants
- * held are parked, not left in backlog, so backlog means "work this next"; `master release` stays
- * for an out-of-order pull. Each release takes its response's document, so the same cycle's
- * dispatch offers the item.
+ * GY-3694: available merge-trial slots — the host's local heavy-job limit plus ready remote hosts.
+ */
+export function availableTrialSlots(hosts: readonly { local?: boolean; away: boolean }[] = [], localLimit = heavyJobLimit(heavyJobsDirectory())): number {
+  return localLimit + hosts.filter(host => !host.local && !host.away).length;
+}
+
+/**
+ * GY-3694: heads waiting for or running a merge trial, deduplicated across the live snapshot and
+ * the merge writer's cursor state (excluding items already done or returned for rework).
+ */
+export function testQueueCount(work: readonly Work[], mergeWriter: Pick<MergeWriterState, 'queue' | 'inFlight' | 'inFlights'> | null | undefined, now: number): number {
+  const byKey = new Map(work.map(item => [item.key, item]));
+  const active = (key: string) => {
+    const item = byKey.get(key);
+    return !item || (item.stage !== 'done' && !item.reworkRequested);
+  };
+  const ledger = snapshotLedger(work);
+  const keys = new Set<string>();
+  for (const item of work) if (awaitsMerge(item, ledger, now)) keys.add(item.key);
+  const flying = mergeWriter?.inFlights ?? (mergeWriter?.inFlight && !mergeWriter.inFlight.revert ? [mergeWriter.inFlight] : []);
+  for (const entry of flying) if (active(entry.key)) keys.add(entry.key);
+  for (const entry of mergeWriter?.queue ?? []) if (active(entry.key)) keys.add(entry.key);
+  return keys.size;
+}
+
+/** GY-3694: current test-queue count beside its limit (twice the available trial slots). */
+export function testQueueStatus(
+  work: readonly Work[],
+  mergeWriter: Pick<MergeWriterState, 'queue' | 'inFlight' | 'inFlights'> | null | undefined,
+  hosts: readonly { local?: boolean; away: boolean }[] = [],
+  now: number = Date.now(),
+  localLimit: number = heavyJobLimit(heavyJobsDirectory()),
+) {
+  const slots = availableTrialSlots(hosts, localLimit);
+  return { count: testQueueCount(work, mergeWriter, now), limit: slots * 2, slots };
+}
+
+function anythingInTestOrMerge(work: readonly Work[], mergeWriter: Pick<MergeWriterState, 'queue' | 'inFlight' | 'inFlights'> | null | undefined, now: number, excludeId: string): boolean {
+  const ledger = snapshotLedger(work);
+  if (work.some(item => item.id !== excludeId && item.stage !== 'done'
+    && (item.stage === 'test' || item.stage === 'acceptance' || item.stage === 'merge' || awaitsMerge(item, ledger, now)))) return true;
+  const byKey = new Map(work.map(item => [item.key, item]));
+  const active = (key: string) => {
+    const item = byKey.get(key);
+    return item ? item.id !== excludeId && item.stage !== 'done' && !item.reworkRequested : true;
+  };
+  const flying = mergeWriter?.inFlights ?? (mergeWriter?.inFlight && !mergeWriter.inFlight.revert ? [mergeWriter.inFlight] : []);
+  return flying.some(entry => active(entry.key)) || (mergeWriter?.queue ?? []).some(entry => active(entry.key));
+}
+
+/**
+ * The loop keeps the pipeline full itself (GY-2991, GY-3694): while fewer items occupy it than its
+ * worker concurrency (`workersAllowed`) AND heads waiting for or running a merge trial are fewer
+ * than twice the available trial slots (local heavy-job limit plus ready hosts), it releases the
+ * backlog item with the highest priority, oldest first on ties, whose dependencies are all done.
+ * A yard repair (GY-3102) still releases past both limits. An item marked `landsAlone` releases
+ * only when no other item is in test, acceptance or merge, and while it is in flight nothing else
+ * is released.
  */
 async function releaseBacklog(cycle: Cycle, allowed: number) {
-  const { config, effects, snapshot, clock } = cycle;
-  let slots = allowed - snapshot.work.filter(item => inPipeline(item, snapshot.work, clock)).length;
+  const { config, state, effects, snapshot, clock } = cycle;
+  let pipelineRoom = allowed - snapshot.work.filter(item => inPipeline(item, snapshot.work, clock)).length;
+  const queue = testQueueStatus(snapshot.work, state.mergeWriter, state.hosts, clock);
+  let queued = queue.count, queueRoom = queue.limit - queued;
+  let landsAloneInFlight = snapshot.work.some(item => item.landsAlone && inPipeline(item, snapshot.work, clock));
   const identity = config.operatorAgent ? { id: config.operatorAgent.id, role: 'operator-agent' as const } : undefined;
   const candidates = snapshot.work
     .filter(item => item.criteria.length > 0 && item.stage !== 'done' && !item.ready && !item.hold && !item.blocker && !loopOwnedRefusal(item) && !ownerHoldRefusal(item, identity)
       && item.dependencies.every(dep => snapshot.work.find(entry => entry.id === dep)?.stage === 'done'))
     .sort((a, b) => Number(!!b.yardRepair) - Number(!!a.yardRepair) || a.priority - b.priority || Date.parse(a.createdAt) - Date.parse(b.createdAt));
   for (const item of candidates) {
-    // A yard repair (GY-3102) is released past the pipeline cap.
-    if (slots <= 0 && !item.yardRepair) continue;
+    // A yard repair (GY-3102) is released past both caps; ordinary items wait for room and any lands-alone item in flight.
+    if (!item.yardRepair) {
+      if (landsAloneInFlight) continue;
+      if (pipelineRoom <= 0 || queueRoom <= 0) continue;
+      if (item.landsAlone && anythingInTestOrMerge(snapshot.work, state.mergeWriter, clock, item.id)) continue;
+    }
     // An item sharing an exclusive resource with one in flight or released waits until that one lands.
     if (resourceConflicts(item, snapshot.work, clock).length || snapshot.work.some(other => other.id !== item.id && other.stage !== 'done' && other.ready && sharedResources(item, other).length)) continue;
     const key = `release:${item.id}:${item.revision}`, filled = snapshot.work.filter(entry => inPipeline(entry, snapshot.work, clock)).length;
     try {
-      const overCap = !!item.yardRepair && slots <= 0;
+      const overCap = !!item.yardRepair && (pipelineRoom <= 0 || queueRoom <= 0 || landsAloneInFlight);
+      const governing = queueRoom <= pipelineRoom
+        ? `test-queue limit (${queued} of ${queue.limit} queued)`
+        : `worker-concurrency limit (${filled} of ${allowed} in flight)`;
       const reason = overCap
-        ? `${item.key} is a yard repair, so the loop releases it past the pipeline cap: ${filled} item(s) in flight of concurrency ${allowed} and every dependency of ${item.key} is done`
-        : `The loop keeps the pipeline full: ${filled} item(s) in flight of concurrency ${allowed}, every dependency of ${item.key} is done, and backlog means work this next`;
+        ? `${item.key} is a yard repair, so the loop releases it past the pipeline cap: ${filled} item(s) in flight of concurrency ${allowed}, ${queued} head(s) in the test queue of limit ${queue.limit}, and every dependency of ${item.key} is done`
+        : `The loop keeps the pipeline full under the ${governing}: ${filled} item(s) in flight of concurrency ${allowed}, ${queued} head(s) in the test queue of limit ${queue.limit}${item.landsAlone ? ', lands alone with nothing else in test or merge' : ''}, and every dependency of ${item.key} is done`;
       const released = await effects.release!(item, reason) as Work | undefined;
       const index = snapshot.work.findIndex(entry => entry.id === item.id);
       if (index >= 0 && released && typeof released === 'object' && 'ready' in released) snapshot.work[index] = released;
-      if (!item.yardRepair) slots -= 1;
+      if (!item.yardRepair) {
+        pipelineRoom -= 1;
+        queueRoom -= 1;
+        queued += 1;
+        if (item.landsAlone) landsAloneInFlight = true;
+      }
       await note(cycle, key, 'judgement', item.key, 'done', overCap
-        ? `Released yard repair ${item.key} past the pipeline cap: ${filled} item(s) in flight of concurrency ${allowed} and every dependency is done`
-        : `Released ${item.key} to keep the pipeline full: ${filled} item(s) in flight of concurrency ${allowed} and every dependency is done`, config.operatorAgent?.id ?? null);
+        ? `Released yard repair ${item.key} past the pipeline cap: ${filled}/${allowed} in flight, ${queued}/${queue.limit} test queue, and every dependency is done`
+        : `Released ${item.key} to keep the pipeline full under the ${governing}: ${filled}/${allowed} in flight, ${queue.limit - queueRoom}/${queue.limit} test queue, and every dependency is done`, config.operatorAgent?.id ?? null);
     }
     catch (error) { await note(cycle, key, 'judgement', item.key, 'failed', `Could not release ${item.key} from backlog: ${message(error)}`, config.operatorAgent?.id ?? null); }
   }
@@ -1072,32 +1160,83 @@ function submitMasterLaunch(cycle: Cycle, open: Work[], recoveryError?: string, 
   const standing = state.actions[launchKey];
   if (standing?.state === 'failed' && standing.attempts >= masterLaunchBackoffAfter && cycle.now() - Date.parse(standing.at) < masterLaunchRetryMs(standing.attempts)) return;
   if (launcher.busy(launchKey)) return;
+  const failoverKey = config.forPerson ? `${masterFailoverKey}:${config.forPerson}` : masterFailoverKey;
   launcher.submit(launchKey, [], async sink => {
-    try {
-      await endPreviousMasterSessions(cycle, closedPane);
-      const causes = [...masterCauses(open, state.actions, state.failureRuns), ...(await sessions.pendingCauses?.(open) ?? [])];
-      const { recoveryFailures, ...oldMaster } = state.master;
-      const failures = recoveryError ? [...recoveryFailures, { at: new Date(cycle.now()).toISOString(), error: recoveryError, master: oldMaster }] : recoveryFailures;
-      const previous = recoveryError ? null : state.master.continuity;
-      const recoveryHandoff = recoveryError ? `Previous native history is unreadable and has NOT been recovered. Recovery error: ${recoveryError}. Its history and original session provenance are retained in master.recoveryFailures; retry recovery from those references when readable. Continue current authoritative work without waiting for human approval.` : '';
-      const launched = await sessions.launch([masterHandover({ work: open, cliPath: config.cliPath }), ...(recoveryError ? [recoveryHandoff] : []), ...(causes.some(cause => !cause.quiet) ? [masterCausePrompt(causes.filter(cause => !cause.quiet))] : [])].join('\n'), previous);
-      const at = new Date(cycle.now()).toISOString();
-      state.master = { ...emptyMasterSession(), ...launched, continuity: launched.continuity ?? previous, recoveryFailures: failures, startedAt: at,
-        subjects: Object.fromEntries(causes.map(cause => [cause.key, cause.digest])),
-        lastWake: causes.length ? { at, causes: causes.map(cause => cause.key).slice(0, 20), heartbeat: false } : null };
-      sink.push(await record(state, launchKey, { kind: 'session', work: null, principal: null, state: 'done', detail: `Launched the master session ${launched.agentName} in pane ${launched.pane}`, attempts: 1, cycle: state.cycle }, cycle.now(), effects.persist));
-    } catch (error) {
-      // GY-3336: only a run of the same failure counts toward the backoff; a new error starts the
-      // count over. Both detail forms end with the error's own words, whatever prefixes the loop wrote.
-      const reason = normalizeFailureReason(message(error));
-      const prior = state.actions[launchKey];
-      const same = !!reason && prior?.state === 'failed' && normalizeFailureReason(prior.detail).endsWith(reason);
-      const attempts = same ? (prior.attempts ?? 0) + 1 : 1;
-      const retried = new Date(cycle.now() + masterLaunchRetryMs(Math.max(attempts, masterLaunchBackoffAfter))).toISOString();
-      const detail = attempts >= masterLaunchBackoffAfter
-        ? `The master session's launch failed the same way ${attempts} times, so the loop backs off and retries it at ${retried} instead of opening a pane each cycle: ${message(error)}`
-        : `The master session could not be launched; the next cycle tries again: ${message(error)}`;
-      sink.push(await record(state, launchKey, { kind: 'session', work: null, principal: null, state: 'failed', detail: detail.slice(0, actionDetailMax), attempts, cycle: state.cycle }, cycle.now(), effects.persist));
+    let pendingFailover: { account: string; count: number; error: unknown; detail: string } | null = null;
+    let clearedHolds = false;
+    for (;;) {
+      const unusable = activeUnusableAccounts(state.master, cycle.now());
+      state.master.unusableAccounts = unusable;
+      const exclude = Object.keys(unusable);
+      try {
+        await endPreviousMasterSessions(cycle, closedPane);
+        const causes = [...masterCauses(open, state.actions, state.failureRuns), ...(await sessions.pendingCauses?.(open) ?? [])];
+        const { recoveryFailures, ...oldMaster } = state.master;
+        const failures = recoveryError ? [...recoveryFailures, { at: new Date(cycle.now()).toISOString(), error: recoveryError, master: oldMaster }] : recoveryFailures;
+        const previous = recoveryError ? null : state.master.continuity;
+        const recoveryHandoff = recoveryError ? `Previous native history is unreadable and has NOT been recovered. Recovery error: ${recoveryError}. Its history and original session provenance are retained in master.recoveryFailures; retry recovery from those references when readable. Continue current authoritative work without waiting for human approval.` : '';
+        const launched = await sessions.launch([masterHandover({ work: open, cliPath: config.cliPath }), ...(recoveryError ? [recoveryHandoff] : []), ...(causes.some(cause => !cause.quiet) ? [masterCausePrompt(causes.filter(cause => !cause.quiet))] : [])].join('\n'), previous, exclude.length ? { exclude } : undefined);
+        const at = new Date(cycle.now()).toISOString();
+        state.master = { ...emptyMasterSession(), ...launched, continuity: launched.continuity ?? previous, recoveryFailures: failures, startedAt: at,
+          unusableAccounts: activeUnusableAccounts(state.master, cycle.now()),
+          subjects: Object.fromEntries(causes.map(cause => [cause.key, cause.digest])),
+          lastWake: causes.length ? { at, causes: causes.map(cause => cause.key).slice(0, 20), heartbeat: false } : null };
+        if (pendingFailover) {
+          sink.push(await record(state, failoverKey, { kind: 'failover', work: null, principal: null, state: 'done', detail: pendingFailover.detail, attempts: pendingFailover.count, cycle: state.cycle }, cycle.now(), effects.persist));
+        }
+        sink.push(await record(state, launchKey, { kind: 'session', work: null, principal: null, state: 'done', detail: `Launched the master session ${launched.agentName} in pane ${launched.pane}`, attempts: 1, cycle: state.cycle }, cycle.now(), effects.persist));
+        return;
+      } catch (error) {
+        const exhausted = exclude.length > 0 && (error as { accountsExhausted?: unknown })?.accountsExhausted === true && !capacityRefusal(error);
+        if (exhausted) {
+          // GY-3519: never hold every eligible account for an hour; when no other account can run,
+          // lift the local holds and fall back to the existing launch backoff.
+          state.master.unusableAccounts = {};
+          if (!pendingFailover && !clearedHolds) {
+            clearedHolds = true;
+            continue;
+          }
+        }
+        let reportError = error;
+        if (exhausted && pendingFailover) {
+          reportError = pendingFailover.error;
+          pendingFailover = null;
+        } else {
+          if (pendingFailover) {
+            sink.push(await record(state, failoverKey, { kind: 'failover', work: null, principal: null, state: 'done', detail: pendingFailover.detail, attempts: pendingFailover.count, cycle: state.cycle }, cycle.now(), effects.persist));
+            pendingFailover = null;
+          }
+          const reason = masterLaunchFailureReason(error);
+          const failedAccount = typeof (error as { account?: unknown })?.account === 'string' && (error as { account: string }).account ? (error as { account: string }).account : null;
+          if (failedAccount && reason && !exclude.includes(failedAccount)) {
+            const priorFailure = state.master.launchFailures?.[failedAccount];
+            const count = priorFailure?.reason === reason ? priorFailure.count + 1 : 1;
+            const at = new Date(cycle.now()).toISOString();
+            if (count >= masterAccountFailoverAfter && !clearedHolds) {
+              state.master.unusableAccounts = { ...unusable, [failedAccount]: { until: new Date(cycle.now() + masterAccountHoldMs).toISOString(), reason: reason.slice(0, 500) } };
+              const rest = { ...(state.master.launchFailures ?? {}) };
+              delete rest[failedAccount];
+              state.master.launchFailures = rest;
+              const summary = `Skipped ${failedAccount} for the master for 1 hour after ${count} identical launch failures (${message(error)}); trying the next account.`;
+              pendingFailover = { account: failedAccount, count, error, detail: summary.replace(/\s+/g, ' ').slice(0, actionDetailMax) };
+              continue;
+            }
+            state.master.launchFailures = { ...(state.master.launchFailures ?? {}), [failedAccount]: { reason: reason.slice(0, 500), count, at } };
+          }
+        }
+        // GY-3336: only a run of the same failure counts toward the backoff; a new error starts the
+        // count over. Both detail forms end with the error's own words, whatever prefixes the loop wrote.
+        const reportReason = masterLaunchFailureReason(reportError);
+        const prior = state.actions[launchKey];
+        const same = !!reportReason && prior?.state === 'failed' && normalizeFailureReason(prior.detail.replace(/\bin pane\s+\S+/g, 'in pane')).endsWith(reportReason);
+        const attempts = same ? (prior.attempts ?? 0) + 1 : 1;
+        const retried = new Date(cycle.now() + masterLaunchRetryMs(Math.max(attempts, masterLaunchBackoffAfter))).toISOString();
+        const detail = attempts >= masterLaunchBackoffAfter
+          ? `The master session's launch failed the same way ${attempts} times, so the loop backs off and retries it at ${retried} instead of opening a pane each cycle: ${message(reportError)}`
+          : `The master session could not be launched; the next cycle tries again: ${message(reportError)}`;
+        sink.push(await record(state, launchKey, { kind: 'session', work: null, principal: null, state: 'failed', detail: detail.slice(0, actionDetailMax), attempts, cycle: state.cycle }, cycle.now(), effects.persist));
+        return;
+      }
     }
   });
 }

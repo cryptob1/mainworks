@@ -43,6 +43,7 @@ import { namedPaths } from '../model/documentation-glob.js';
 import { appliedReworkBrief, reworkBriefSection, type AppliedRework } from './rework-brief.js';
 import { workerFastGatesPresent, workerFastGatesSentence } from './worker-fast-gates.js';
 import { attemptBoundMs, attemptCeilingMs } from './attempt-bound.js';
+import { stateDirectory } from '../install/layout.js';
 
 /** The launcher's own runner: the CLI as a child, and git. `stdio` is honoured for the streams a child may inherit; the rest is captured. */
 type WorkerCommand = (command: string, args: string[], options?: { cwd?: string; env?: NodeJS.ProcessEnv; stdio?: ('ignore' | 'pipe' | 'inherit')[] }) => string | Buffer | Promise<string | Buffer>;
@@ -256,7 +257,7 @@ export async function dispatchWork(root: string, work: Work, profile: WorkerProf
     }
     // History supports status; it never grants or reserves a slot.
     const at = new Date().toISOString();
-    await mkdir(resolve(root, '.graphyard/dispatch'), { recursive: true }).catch(() => {});
+    await mkdir(resolve(stateDirectory(root), 'dispatch'), { recursive: true }).catch(() => {});
     await writeFile(dispatchedFile(root, work.key), JSON.stringify({ epoch: result.epoch, at, runtime: launch.kind ?? null, account: chosen.account?.name ?? null, run: result.run, path: result.path,
       ...(result.resumedFrom ? { resumedFrom: result.resumedFrom } : {}), ...(fresh ? { fresh } : {}) }), { mode: 0o600 }).catch(() => {});
     // The dispatch record names the runtime and account the session runs on, the preference
@@ -540,8 +541,8 @@ export function workerPrompt(
   const installed = dependencies?.shared.length ? `The assigned worktree needs no dependency install: ${dependencies.shared.map(entry => `${entry.name} ${entry.how === 'reachable' ? 'already resolves to' : 'is shared with'} the install at ${entry.source}`).join(', ')}, for this exact lockfile. Do not install dependencies again unless you change the lockfile. ` : '';
   const memoryDigest = projectMemoryDigest(memory, 'worker', { baseSha: baseSha ?? undefined });
   const standards = reviewStandards(work), criteria = criteriaListing(work.criteria, work.scenarioRequirements);
-  return `Implement ${work.key}: ${work.title}. ${workerLeadSection(work)}Done when every criterion below holds on a commit on your assigned branch, submitted with node ${config.cliPath} complete ${work.key} ${epoch} --head as your last action; on lease loss stop at once (node ${config.cliPath} guide complete). `
-    + `Run node ${config.cliPath} status ${work.key} before editing, and never weaken criteria. Write the bound proof first and see it fail without the change. `
+  return `Implement ${work.key}: ${work.title}. ${workerLeadSection(work)}Done when every criterion below holds on a commit on your assigned branch, submitted with node ${config.cliPath} complete ${work.key} ${epoch} --head as your last action; on lease loss, stop (node ${config.cliPath} guide complete). `
+    + `Run node ${config.cliPath} status ${work.key} before editing, node ${config.cliPath} ask ${work.key} QUESTION to investigate, and never weaken criteria. Write the bound proof first and see it fail without the change. `
     + attemptBoundSection(config.run, work, epoch)
     + installed
     + (memoryDigest || '')
@@ -561,7 +562,7 @@ export function workerPrompt(
     + (work.messages?.some(message => !message.acknowledged) ? `Unread messages from the master (your next sync ${work.key} acknowledges them): ${work.messages.filter(message => !message.acknowledged).map(message => `[${message.at} ${message.by}] ${message.text}`).join(' ')} ` : '')
     // GY-1726: a follow-up whose reading cannot exist yet waits for it rather than escalating.
     + (work.criteria?.some(criterion => criterion.proofs.some(servingReleaseProof)) ? `If the observation this item owes cannot exist yet (its window has not elapsed on the serving release), do not record a blocker: defer it with node ${config.cliPath} defer ${work.key} ${epoch} NOT-BEFORE REASON (NOT-BEFORE is the ISO instant the reading can first exist, at most 30 days away), which ends your lease and holds dispatch until then, then stop. ` : '')
-    + `Park a decision only a human may make (${humanOnlyDecisions.join('; ')}) with node ${config.cliPath} park ${work.key} ${epoch} and stop; guide park names the fields. `
+    + `Park a human-only decision (${humanOnlyDecisions.join('; ')}) with node ${config.cliPath} park ${work.key} ${epoch} and stop; guide park names the fields. `
     // GY-3166: the criteria the reviewers judge; review self prints the rest of their standards.
     + (work.criteria?.length ? `Criteria: ${criteria.listed}. ${criteria.proofs ? `Proof bindings: ${criteria.proofs}. ${featureCaseRule}` : ''}` : '')
     // GY-3489: the one pre-submit list; GY-1987: review self judges the diff by the reviewer's standard, so a blocking finding costs a push, not a review round.
@@ -600,6 +601,8 @@ function resumedAttempt(work: Partial<Pick<Work, 'capacity' | 'humanRequests'>>)
 function workerEnvironment(config: MasterConfig, profile: WorkerProfile) {
   const env: NodeJS.ProcessEnv = { ...process.env, GRAPHYARD_URL: config.url, GRAPHYARD_TOKEN_FILE: profile.credentialFile, GRAPHYARD_HOST_ID: config.hostId };
   delete env.GRAPHYARD_TOKEN; delete env.GRAPHYARD_MASTER_TOKEN; delete env.GRAPHYARD_REQUEST_ID;
+  // The worker's copy drops the master's credentials and request id, and any MAINWORKS_* name that would shadow the worker's own settings.
+  for (const name of ['TOKEN', 'MASTER_TOKEN', 'REQUEST_ID', 'URL', 'TOKEN_FILE', 'HOST_ID']) delete env[`MAINWORKS_${name}`];
   return env;
 }
 // A worker launch runs the Graphyard CLI to claim and to build the assigned worktree, which on a

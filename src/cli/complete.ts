@@ -16,6 +16,8 @@ import { trialTimeoutMinutes } from '../master/merge-writer-settings.js';
 import { workerFastGates, workerFastGatesPresent } from '../master/worker-fast-gates.js';
 import { criterionProofs, e2eProofsOf, featureCaseFailure, proofTestFiles, requiredProofFailure, trialFailureReason } from '../merge-writer/executor.js';
 import { trialHomeVariables, trialTemporaryMode, trialTemporaryVariables } from '../merge-writer/trial.js';
+import { setting } from '../setting.js';
+import { stateDirectory } from '../install/layout.js';
 
 /**
  * A submission is observed on GitHub before it is accepted, so while the control plane's GitHub
@@ -271,7 +273,7 @@ export function rerunFailingCases(output: string, files: readonly string[]): Rer
  */
 export async function rerunBaseFiles(root: string, base: string, files: readonly string[], run: ChildRun = defaultChildRun, deadline = Date.now() + rerunBound.ms): Promise<{ ok: boolean; output: string } | null> {
   let scratch: string;
-  try { await mkdir(join(root, '.graphyard', 'verify'), { recursive: true }); scratch = await mkdtemp(join(root, '.graphyard', 'verify', 'rerun-')); } catch { return null; }
+  try { await mkdir(join(stateDirectory(root), 'verify'), { recursive: true }); scratch = await mkdtemp(join(stateDirectory(root), 'verify', 'rerun-')); } catch { return null; }
   const tree = join(scratch, 'tree');
   try {
     await mkdir(tree);
@@ -528,7 +530,7 @@ export const completeCommand: CliCommand = {
     completeArgs(context.args);
     await checkoutRoot(context, `graphyard complete ${work.key}`);
     const root = context.repositoryRoot();
-    const body = completionBody(context.args, () => worktreeHead(root)), requestId = process.env.GRAPHYARD_REQUEST_ID ?? `complete:${work.id}:${body.epoch}:${body.head}`;
+    const body = completionBody(context.args, () => worktreeHead(root)), requestId = setting('REQUEST_ID') ?? `complete:${work.id}:${body.epoch}:${body.head}`;
     await completePreflight(root, work, body.head);
     let verification: Awaited<ReturnType<typeof selfVerification>> | { state: 'unavailable'; reason: string };
     try { verification = await selfVerification(root, work.key); } catch (error: any) { verification = { state: 'unavailable', reason: `the worktree could not be read: ${error.message}` }; }

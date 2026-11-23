@@ -101,6 +101,8 @@ export interface Observation {
   protected: boolean; files: string[]; at: string;
   /** The candidate diff compared against its bound base; see regression-guard.ts. */
   scopeFiles?: ScopeFile[];
+  /** sha256 of the documentation files this head changes, with their blobs (GY-3716, model/docs-signoff.ts). */
+  docsDigest?: string;
   /** The same judgement against the commit the candidate would land on, and the unlanded work its head carries; see model/landing-check.ts. */
   landing?: LandingCheck;
   revertedDelivery?: RevertedDelivery; // a merged change whose content the base branch does not hold; see model/landing-check.ts
@@ -211,6 +213,8 @@ export interface Work extends Create {
   repair?: 'merge-path';
   /** A yard repair (GY-3102): released past the pipeline cap, dispatched first, merged first. */
   yardRepair?: boolean;
+  /** GY-3694: released only when no other item is in test, acceptance or merge, and while it is in flight nothing else is released. */
+  landsAlone?: boolean;
   repairLane?: Record<string, unknown> | null;
   /**
    * Independently observed production delivery, one record per environment: the first

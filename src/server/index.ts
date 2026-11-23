@@ -7,16 +7,18 @@ import { Next, Sent, matchRoute, requestFailure, type RouteContext, type RouteMo
 import { assembleServices, authenticate, configuredActor, tailscaleTeammate, confinedLaneProducer, laneProducerScope, localRead, operatorAgentRouteGuard, operatorVisible, type ServerOptions } from './auth.js';
 import { type Credential } from './principals.js';
 import { loopStateRoutes } from './routes/loop-state.js';
-import { productBriefRoutes } from './routes/product-brief.js';
+import { homeVisitRoutes, productBriefRoutes } from './routes/product-brief.js';
 import { healthRoutes } from './routes/health.js';
 import { signinRoutes } from './routes/signin.js';
 import { operatorAgentRoutes } from './routes/operator-agents.js';
 import { teamAccessRoutes } from './routes/team-access.js';
+import { infraActRoutes, infraRoutes } from './routes/infra.js';
 import { agentRegistryRoutes } from './routes/agent-registry.js';
 import { delegationRoutes } from './routes/delegation.js';
 import { validationRoutes } from './routes/validation.js';
 import { deliveryRoutes } from './routes/delivery.js';
 import { emblemRoutes } from './routes/emblem.js';
+import { firstRunRoutes } from './routes/first-run.js';
 import { usageRoutes } from './routes/usage.js';
 import { scenarioRoutes } from './routes/scenarios.js';
 import { statusRoutes } from './routes/status.js';
@@ -31,15 +33,15 @@ export type { ServerOptions } from './auth.js';
 export { assembleServices } from './auth.js';
 
 /** Routes that answer without a bearer token. */
-export const publicRoutes: readonly RouteModule[] = [healthRoutes, signinRoutes];
+export const publicRoutes: readonly RouteModule[] = [healthRoutes, signinRoutes, infraActRoutes];
 /**
  * Every authenticated `/api/` route, in matching order. A resource adds its module here;
  * modules ahead of the operator-agent guard authorize their callers themselves.
  */
 export const apiRoutes: readonly RouteModule[] = [
-  operatorAgentRoutes, teamAccessRoutes,
+  operatorAgentRoutes, teamAccessRoutes, infraRoutes,
   { name: 'operator-agent-scope', routes: [operatorAgentRouteGuard] },
-  loopStateRoutes, agentRegistryRoutes, delegationRoutes, validationRoutes, deliveryRoutes, emblemRoutes, usageRoutes, scenarioRoutes, actionRoutes, statusRoutes, workRoutes, productBriefRoutes, masterMessageRoutes, caretakerRoutes,
+  loopStateRoutes, agentRegistryRoutes, delegationRoutes, validationRoutes, deliveryRoutes, emblemRoutes, usageRoutes, scenarioRoutes, actionRoutes, statusRoutes, workRoutes, productBriefRoutes, homeVisitRoutes, masterMessageRoutes, caretakerRoutes, firstRunRoutes,
 ];
 
 async function body(req: IncomingMessage, limit = 1_000_000) {

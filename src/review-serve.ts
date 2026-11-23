@@ -10,9 +10,10 @@ import { join, resolve } from 'node:path';
 import { detachedLaunch, processIdentity, readRunMeta, runAlive, runContainment, runFiles, signalRun, type RunContainment, type RunMeta } from './runner/pi.js';
 import type { E2eServe } from './model/repository-policy.js';
 import { ServeCommandError, serveTailLines } from './merge-writer/serve-head.js';
+import { stateDirectory } from './install/layout.js';
 
 /** Where detached product-review serves keep their process meta and logs, beside headless-runs and trial-runs. */
-export const reviewServesDirectory = (root: string) => resolve(root, '.graphyard', 'review-serves');
+export const reviewServesDirectory = (root: string) => resolve(stateDirectory(root), 'review-serves');
 
 /** Self-bound watchdog for a detached review serve: well past the 1-hour review token so no live review is cut short, while bounding any abandoned serve. */
 export const reviewServeBoundSeconds = 90 * 60;

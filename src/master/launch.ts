@@ -2,7 +2,7 @@
 import { PRODUCT_NAME } from '../model/product.js';
 import { createHash } from 'node:crypto';
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, realpathSync, writeFileSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { heavyJobsDirectory, slotsDirectoryVariable } from './verification-slots.js';
 import { confinedRuntimeArgs } from '../worker-sandbox.js';
@@ -17,6 +17,8 @@ import type { PartialWork } from '../model/capacity.js';
 import { type ConsentPrompt, consentAnswers, detectConsentPrompt, ownCheckoutTrustAnswer, screenDialog, settingsWarning, type ConsentAnswer, sameConsentPrompt } from '../consent-prompt.js';
 import { assertIsolatableHostControlEndpoints } from './confinement.js';
 import { dataDirectory } from '../install/worktree-root.js';
+import { configHome } from '../install/secrets.js';
+import { hostKnownHostsFile, hostsFile } from '../hosts.js';
 import { bwrapOnPath, masterConfinementVariable, confinementRefusalText, coordinatorConfinement, coordinatorConfinementRefusal, mountNamespaceProbeResult, readOnlyMountWrapper, assertCredentialsMasked, type CoordinatorConfinement, type ConfinementInput, type CredentialMask, type MaskProbe } from './confinement.js';
 import { runtimeLoginHomes, checkoutGitDirectory, checkoutGitProblem, checkoutWorktreeAdminDirectory, coordinatorCheckoutRoot } from './profiles.js';
 import type { MasterRun } from './profiles.js';
@@ -24,6 +26,8 @@ import { createdHerdrTab, type HerdrAgent, herdrCall, herdrJson, herdrRun, stopC
 import { herdrErrorText, nameRefusedByRuntime, sessionWords, type PromptDelivery } from './prompt-delivery.js';
 import { keyringEndpointWarning, keyringProbeBackoff } from './launch-keyring.js';
 import { masterRecords } from './conversation.js';
+import { setting } from '../setting.js';
+import { stateDirectory } from '../install/layout.js';
 // Prompt delivery moved to prompt-delivery.ts (GY-1863) with the screen a stalled delivery is
 // judged by; the names below are the one address every existing import has always had.
 export { promptAttempts, promptAcceptMs, promptRetryPauseMs, noticeSettleMs, PromptNotAcceptedError, herdrErrorCode, herdrErrorText, nameRefusedByRuntime, deliverPrompt, readSessionScreen, sessionWords, type PromptDelivery } from './prompt-delivery.js';
@@ -84,7 +88,7 @@ export const launchDelivery = (kind: string | undefined, args: string[] = []): R
 export const requestContractRefusal = (kind: string) => `${PRODUCT_NAME} refuses to launch the ${kind} runtime: it has no way to take the session's first request on its command line, and a launched session's instruction is never pasted into it. Register where ${kind} takes its first prompt with graphyard master registry runtime set NAME --kind ${kind} --arg=${requestPlaceholder} (or --arg=FLAG --arg=${requestPlaceholder}) --reason REASON.`;
 /** The most bytes a launch command line may hold: the runtime, its flags and two file paths, never the request. */
 export const launchCommandLimit = 512;
-export const launchDirectory = (directory: string) => resolve(directory, '.graphyard/launch');
+export const launchDirectory = (directory: string) => resolve(stateDirectory(directory), 'launch');
 /** The session's launch files: `stem` is `DIR/.graphyard/launch/NAME`, and each file present is `STEM.role` or `STEM.request` (and `STEM.launch`, the runtime's words, for a line that would exceed the bound). */
 export interface LaunchFiles { stem: string; role: string | null; request: string | null }
 /** A word for the pane's shell: bare when it needs no quoting, single-quoted otherwise. */
@@ -140,7 +144,7 @@ export const launcherCoordinatorRoot = (argv1: string | undefined = process.argv
   if (!argv1 || testRunner || !cliEntry(argv1)) return null;
   // GY-1790: an entry the restart started from the held snapshot is handed the checkout it serves
   // in the environment; confinement guards that checkout, not the snapshot's own tree.
-  const handed = process.env.GRAPHYARD_CHECKOUT_ROOT?.trim();
+  const handed = setting('CHECKOUT_ROOT')?.trim();
   const root = handed || coordinatorCheckoutRoot(resolve(argv1));
   return root && root !== '/' ? root : null;
 };
@@ -148,7 +152,7 @@ export const launcherCoordinatorRoot = (argv1: string | undefined = process.argv
 export const launcherRootUndetermined = (argv1: string | undefined = process.argv[1], testRunner: boolean = underTestRunner()): string | null => {
   if (!argv1 || testRunner || !cliEntry(argv1)) return null;
   // GY-1790: a snapshot entry is handed its checkout in the environment, so its root is determined.
-  if (process.env.GRAPHYARD_CHECKOUT_ROOT?.trim()) return null;
+  if (setting('CHECKOUT_ROOT')?.trim()) return null;
   const root = coordinatorCheckoutRoot(resolve(argv1));
   return root && root !== '/' ? null : `this launcher's coordinator checkout could not be derived from its entry ${argv1}`;
 };
@@ -189,7 +193,7 @@ export async function masterSessionConfinement(kind: string, root: string, probe
   prepareConfinedGitPaths(root);
   // The master's dispatches add worktrees: the shared worktrees area is re-exposed only where it exists.
   if (existsSync(checkoutGitDirectory(root))) mkdirSync(join(checkoutGitDirectory(root), 'worktrees'), { recursive: true });
-  const managed = join(resolve(root), '.graphyard');
+  const managed = stateDirectory(resolve(root));
   mkdirSync(managed, { recursive: true, mode: 0o700 });
   // GY-3237: the Herdr socket and config the install records now — the main server after a
   // GY-3212 migration, a private instance while it drains — so `herdr agent list` and
@@ -198,8 +202,13 @@ export async function masterSessionConfinement(kind: string, root: string, probe
   const ledgerLocks = join(dataDirectory(), 'review-ledger');
   // GY-3445: and the host-wide heavy-jobs folder, whose drain record `master drain` and `master resume` write.
   const heavyJobs = heavyJobsDirectory();
-  for (const path of [ledgerLocks, heavyJobs]) mkdirSync(path, { recursive: true });
-  const [bwrap, ...words] = readOnlyMountWrapper({ coordinatorRoot: root, sessionDirectory: root, bwrap: probe.bwrap ?? undefined, writable: [managed, ledgerLocks, heavyJobs, ...writable], drainWritable: true, environment, ...(credentialMask ? { credentialMask } : {}), ...(herdrPaths?.length ? { herdrPaths } : {}) });
+  // GY-3698: the machine's compute known-hosts and host list files, so `host add` works from the confined master while the rest of machine/ stays hidden.
+  const config = configHome(environment && setting('CONFIG_HOME', environment));
+  const knownHosts = hostKnownHostsFile(config), hosts = hostsFile(config);
+  for (const path of [ledgerLocks, heavyJobs, dirname(knownHosts)]) mkdirSync(path, { recursive: true });
+  if (!existsSync(knownHosts)) writeFileSync(knownHosts, '', { mode: 0o600 });
+  if (!existsSync(hosts)) writeFileSync(hosts, '[]\n', { mode: 0o600 });
+  const [bwrap, ...words] = readOnlyMountWrapper({ coordinatorRoot: root, sessionDirectory: root, bwrap: probe.bwrap ?? undefined, writable: [managed, ledgerLocks, heavyJobs, knownHosts, hosts, ...writable], drainWritable: true, environment, ...(credentialMask ? { credentialMask } : {}), ...(herdrPaths?.length ? { herdrPaths } : {}) });
   const records = masterRecords(root);
   mkdirSync(records, { recursive: true, mode: 0o700 });
   // Mount options precede the socket-confinement command inside bubblewrap.
@@ -207,7 +216,7 @@ export async function masterSessionConfinement(kind: string, root: string, probe
   // GY-3237: the session's HOME is a scratch home, so the host's data directory is named outright:
   // the checkouts its `master review` allocates land in the host's managed worktree root, where
   // the Herdr pane the host starts for the reviewer finds them.
-  const wrapper = [bwrap, '--setenv', masterConfinementVariable, 'master', '--setenv', 'GRAPHYARD_DATA_HOME', dataDirectory(), ...words.slice(0, command), '--ro-bind', records, records, ...words.slice(command)];
+  const wrapper = [bwrap, '--setenv', masterConfinementVariable, 'master', '--setenv', 'GRAPHYARD_DATA_HOME', dataDirectory(), '--setenv', 'GRAPHYARD_CONFIG_HOME', config, ...words.slice(0, command), '--ro-bind', records, records, ...words.slice(command)];
   await assertCredentialsMasked(wrapper, { coordinatorRoot: root, sessionDirectory: root, credentialMask });
   const reexposed = wrapper.filter((word, index) => index > 0 && wrapper[index - 1] === '--bind');
   return { mechanism: 'read-only-mount', wrapper, detail: `the coordinator checkout at ${resolve(root)} is bind-mounted read-only for the master session in a bubblewrap namespace whose /proc shows only its own processes and whose host systemd and bus sockets are hidden; only ${reexposed.join(', ')} are re-exposed writable, so no command it runs, nor any host process it could ask to start, can patch the checkout's tracked files` };
@@ -236,7 +245,7 @@ export async function sessionConfinement(kind: string, args: readonly string[], 
     return null;
   }
   const workspaceRoot = resolve(options.cwd ?? options.directory), allocated = resolve(options.directory);
-  const input: ConfinementInput = { kind, args, environment: options.environment, coordinatorRoot: root, writable: [...(options.writable ?? []), ...(options.environment?.[slotsDirectoryVariable] ? [options.environment[slotsDirectoryVariable]] : [])], sessionDirectory: workspaceRoot, ...(allocated === workspaceRoot ? {} : { allocatedDirectory: allocated }), ...(options.ownGitHubCredential ? { ownGitHubCredential: true } : {}), ...(options.secretsBus === null ? { secretsBus: null } : {}), ...(options.credentialMask ? { credentialMask: options.credentialMask } : {}), ...(options.maskProbe !== undefined ? { maskProbe: options.maskProbe } : {}) };
+  const input: ConfinementInput = { kind, args, environment: options.environment, coordinatorRoot: root, writable: [...(options.writable ?? []), ...(options.environment && setting(slotsDirectoryVariable, options.environment) ? [setting(slotsDirectoryVariable, options.environment)!] : [])], sessionDirectory: workspaceRoot, ...(allocated === workspaceRoot ? {} : { allocatedDirectory: allocated }), ...(options.ownGitHubCredential ? { ownGitHubCredential: true } : {}), ...(options.secretsBus === null ? { secretsBus: null } : {}), ...(options.credentialMask ? { credentialMask: options.credentialMask } : {}), ...(options.maskProbe !== undefined ? { maskProbe: options.maskProbe } : {}) };
   const refusal = await coordinatorConfinementRefusal(input);
   if (refusal) throw new Error(refusal);
   prepareConfinedGitPaths(root);

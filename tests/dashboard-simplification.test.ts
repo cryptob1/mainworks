@@ -163,17 +163,19 @@ test('integration:dashboard-navigation — one top bar (Home, Work, Lead, Settin
   assert.deepEqual(tabs(dashboard(), 'home'), [], 'Home alone draws no tab row');
 
   // Admin-only pages are hidden from reader and worker sessions, even when configured.
-  const configured = { validation: true, releases: true, automation: true };
+  const configured = { validation: true, releases: true, automation: true, scenarios: true };
   assert.deepEqual(tabs(dashboard({}, 'reader', configured), 'agents'), ['Agents', 'Workers', 'Costs', 'Delivery', 'Help'], 'a reader sees Agents, Workers, Costs, Delivery and Help, not Setup');
   for (const role of ['reader', 'worker']) assert.ok(!visibleViews(dashboard({}, role, configured)).some(view => view.adminOnly), role);
   // A feature with nothing configured is hidden, not rendered as an empty explainer; an unknown one stays.
   const probed = await probeFeatures(async path => path === 'operator-agents' ? [] : { environments: [], releases: [], requests: [], candidates: [] }, true, false);
-  assert.deepEqual(probed.features, { releases: false, validation: false, automation: false });
+  assert.deepEqual(probed.features, { releases: false, validation: false, automation: false, scenarios: false });
+  assert.ok(!tabs(dashboard({}, 'reader', probed.features), 'work').includes('Test cases'), 'an empty test-case library is no tab for a reader');
+  assert.ok(tabs(dashboard({}, 'admin', probed.features), 'work').includes('Test cases'), 'the admin who fills it keeps the tab');
   const none = dashboard({}, 'admin', probed.features);
   assert.ok(!tabs(none, 'work').includes('Releases'), 'Releases hidden when unconfigured');
   assert.deepEqual(tabs(none, 'agents'), ['Agents', 'Workers', 'Costs', 'Setup', 'Delivery', 'Help'], 'no Advanced fold while automation is unconfigured');
   const failing = await probeFeatures(async () => { throw new Error('unavailable'); }, true, false);
-  assert.deepEqual(failing.features, { releases: null, validation: false, automation: null }, 'an outage never hides a page');
+  assert.deepEqual(failing.features, { releases: null, validation: false, automation: null, scenarios: null }, 'an outage never hides a page');
   // An outage and an empty registry mean opposite things, so the page never reports one as the other.
   assert.equal(probed.operatorAgentsError, null);
   assert.equal(failing.operatorAgentsError, 'unavailable');
@@ -196,7 +198,8 @@ test('integration:dashboard-word-budget — the home page answers what needs you
   const page = home();
   const count = words(page).length;
   // Keep the existing budget: the Lead entry replaces the duplicate sidebar repository name.
-  assert.ok(count <= 165, `home renders ${count} words excluding item titles: ${text(page)}`);
+  // GY-3558: a blocked row names its state and age ('Blocked 26h:'), two words its criterion requires.
+  assert.ok(count <= 167, `home renders ${count} words excluding item titles: ${text(page)}`);
   for (const gone of ['Delivery slices', 'NO LEAD ASSIGNED', 'ENGINEERING, IN VIEW', 'Every change has an owner', 'Explicit reasons, actionable next steps', 'No delivery requires', 'sessions retain goals', 'leads coordinate only', 'Ownership is explicit', 'Agent fleet'])
     assert.ok(!text(page).includes(gone), `no ${gone}`);
   assert.doesNotMatch(text(page), /\bp50\b|\bp95\b/, 'no percentile microtext by default');
@@ -204,7 +207,7 @@ test('integration:dashboard-word-budget — the home page answers what needs you
   const order = ['group-blocked', 'group-moving', 'group-up-next', 'group-backlog'].map(group => page.indexOf(`class="task-row ${group}`));
   assert.ok(order.every(index => index > 0) && order.every((index, i) => i === 0 || index > order[i - 1]), `rows in order: ${order}`);
   assert.ok(page.indexOf('Move sessions to Postgres') < page.indexOf('Add dark mode to settings'), 'the stuck item is listed first');
-  assert.match(text(page), /A fault blocks it; the master agent clears it/);
+  assert.match(text(page), /a fault blocks it; the master agent clears it/i);
 });
 
 test('integration:item-view-structure — state, who acts next and why on the plate; the steps; each criterion once; edits in an admin menu; at most 250 words', () => {
@@ -348,7 +351,7 @@ test('integration:work-page-density — an empty Needs you draws no strip, and t
   const { byGroup } = classify(work, NOW);
   assert.equal(byGroup['needs-you'].length, 0);
   assert.ok(!page.includes('aria-label="Needs you"'), 'no empty Needs you strip');
-  assert.match(text(page), /A fault blocks it; the master agent clears it/, 'the stuck row says why');
+  assert.match(text(page), /a fault blocks it; the master agent clears it/i, 'the stuck row says why');
   for (const item of byGroup.moving) assert.ok(page.includes(`data-row="${item.key}"`), item.key);
-  assert.ok(words(page).length <= 165, `home renders ${words(page).length} words excluding item titles: ${text(page)}`);
+  assert.ok(words(page).length <= 167, `home renders ${words(page).length} words excluding item titles: ${text(page)}`);
 });

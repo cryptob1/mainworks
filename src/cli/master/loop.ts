@@ -18,13 +18,15 @@ import { unhandled, type MasterSession } from './session.js';
 import { exitWhenStopped, recordingLockRefusal } from '../../master/loop-restart.js';
 import { processConnectAccounts } from '../../master/connect-accounts.js';
 import { syncTeamAccess } from '../../master/team-access.js';
+import { reportOpenIssues } from '../../master/first-run-issues.js';
 import { recordRunningPin } from '../../master/known-good.js';
 import { installDirectory } from '../../install/secrets.js';
 import { installIdFor } from '../../install/types.js';
 import { terminalSessionReader } from '../../master/terminal-session.js';
 import { bridgeTerminals } from '../../master/terminal-bridge.js';
 import { alertMinutesOf } from '../../daemon/yard-alerts.js';
-import { joinHostHeavyBudget } from '../../master/verification-slots.js';
+import { heavyJobBudget, heavyJobsDirectory, hostsWithSlots, joinHostHeavyBudget } from '../../master/verification-slots.js';
+import { lastHostFallbacks } from '../../merge-writer/trial-run.js';
 
 /** The Herdr server the loop names on each read (GY-1511): the instance its herdr calls target, its host, whether it last answered, and the master's pane (GY-3211). */
 export const loopHerdrReport = (host: string | null, master: string | null = null) => encodeLoopPanes({ configHome: herdrTarget()?.configHome ?? null, session: herdrTarget()?.session ?? null, host, running: herdrServerSeen(), master });
@@ -66,7 +68,13 @@ export async function loopCommand(session: MasterSession): Promise<unknown> {
     // GY-3348: and names the host's CPU ('some avg60' and steal percent), for the Workers page's two figures; GY-3416: and its launches-waiting word.
     const where = await loopWhereReport(root, master);
     const stepFailureLine = (failure: Parameters<typeof encodeLoopStepFailure>[0] | undefined) => failure ? encodeLoopStepFailure(failure) : 'off';
-    const coordinationSnapshot = (timeoutMs?: number) => masterApi('work-snapshot', masterToken, timeoutMs, { [coordinationViewHeader]: 'coordination', [loopPresenceHeader]: String(loopInterval()), [loopSupervisionHeader]: current().supervision ?? 'autonomous', [loopPanesHeader]: loopHerdrReport(current().hostId, state.master.pane), [loopAlertsHeader]: current().run.alertUrl ? String(alertMinutesOf(current().run)) : 'off', [loopCheckoutTrustHeader]: state.actions[checkoutTrustKey]?.state === 'failed' ? encodeLoopCheckoutTrust(state.actions[checkoutTrustKey]!.detail) : 'off', [loopWorkerGrowthHeader]: state.actions[workerGrowthKey]?.state === 'failed' ? encodeLoopCheckoutTrust(state.actions[workerGrowthKey]!.detail) : 'off', [loopStepFailureHeader]: stepFailureLine(standingStepFailures(state)[0]), [loopFetchRefusalHeader]: state.actions[fetchRefusalKey]?.state === 'failed' ? encodeLoopCheckoutTrust(state.actions[fetchRefusalKey]!.detail) : 'off', [loopStallAlarmHeader]: state.actions[stallAlarmKey] ? encodeLoopCheckoutTrust(state.actions[stallAlarmKey]!.detail) : 'off', ...(where ? { [loopWhereHeader]: encodeLoopWhere(where) } : {}), [loopCpuHeader]: state.cpuPressure ? encodeLoopCpu({ avg60: state.cpuPressure.avg60, steal: state.cpuPressure.steal, celsius: state.cpuPressure.celsius, testBudget: state.cpuPressure.testBudget, trialCap: state.cpuPressure.trialCap, waiting: cpuWaiting(state) !== null }) : 'off', [loopHostsHeader]: state.hosts.length ? encodeLoopHosts(state.hosts) : 'off', [loopSessionsHeader]: state.sessions.length ? encodeLoopSessions(state.sessions) : 'off' });
+    // GY-3407, GY-3528: the hosts the loop read, with their heavy-job slots; GY-3704: and each one's last check fallback, for the Workers page.
+    const hostsHeader = () => {
+      if (!state.hosts.length) return 'off';
+      const fallbacks = lastHostFallbacks(root);
+      return encodeLoopHosts(hostsWithSlots(state.hosts, heavyJobBudget(heavyJobsDirectory())).map(host => ({ ...host, fallback: fallbacks.get(host.host) })));
+    };
+    const coordinationSnapshot = (timeoutMs?: number) => masterApi('work-snapshot', masterToken, timeoutMs, { [coordinationViewHeader]: 'coordination', [loopPresenceHeader]: String(loopInterval()), [loopSupervisionHeader]: current().supervision ?? 'autonomous', [loopPanesHeader]: loopHerdrReport(current().hostId, state.master.pane), [loopAlertsHeader]: current().run.alertUrl ? String(alertMinutesOf(current().run)) : 'off', [loopCheckoutTrustHeader]: state.actions[checkoutTrustKey]?.state === 'failed' ? encodeLoopCheckoutTrust(state.actions[checkoutTrustKey]!.detail) : 'off', [loopWorkerGrowthHeader]: state.actions[workerGrowthKey]?.state === 'failed' ? encodeLoopCheckoutTrust(state.actions[workerGrowthKey]!.detail) : 'off', [loopStepFailureHeader]: stepFailureLine(standingStepFailures(state)[0]), [loopFetchRefusalHeader]: state.actions[fetchRefusalKey]?.state === 'failed' ? encodeLoopCheckoutTrust(state.actions[fetchRefusalKey]!.detail) : 'off', [loopStallAlarmHeader]: state.actions[stallAlarmKey] ? encodeLoopCheckoutTrust(state.actions[stallAlarmKey]!.detail) : 'off', ...(where ? { [loopWhereHeader]: encodeLoopWhere(where) } : {}), [loopCpuHeader]: state.cpuPressure ? encodeLoopCpu({ avg60: state.cpuPressure.avg60, steal: state.cpuPressure.steal, celsius: state.cpuPressure.celsius, testBudget: state.cpuPressure.testBudget, trialCap: state.cpuPressure.trialCap, waiting: cpuWaiting(state) !== null }) : 'off', [loopHostsHeader]: hostsHeader(), [loopSessionsHeader]: state.sessions.length ? encodeLoopSessions(state.sessions) : 'off' });
     const effects = daemonEffects(root, current, { snapshot: retriedSnapshot(() => coordinationSnapshot()), sessionHistory: async work => (await masterApi(`work/${work.id}`, masterToken)).sessions ?? [], mutate: masterMutation,
       messages: async () => (await masterApi('master/messages', masterToken)).messages ?? [] });
     // GY-1603: a stopped loop's process exits within its unit's stop bound, whatever handle is left open.
@@ -83,13 +91,22 @@ export async function loopCommand(session: MasterSession): Promise<unknown> {
     const connects = values.once ? undefined : setInterval(() => {
       if (connecting || !current().url || !current().hostId) return;
       connecting = true;
-      processConnectAccounts(current()).catch(error => console.error(`[graphyard-master] connect-account worker: ${error instanceof Error ? error.message : String(error)}`))
+      processConnectAccounts(current(), { checkouts: [root] }).catch(error => console.error(`[graphyard-master] connect-account worker: ${error instanceof Error ? error.message : String(error)}`))
         // GY-3294: and carries Setup's team access to this machine's shared record and back (a server without the routes answers 404).
         .then(() => syncTeamAccess(current())).catch(error => { if (error?.status !== 404) console.error(`[graphyard-master] team access: ${error instanceof Error ? error.message : String(error)}`); })
         .finally(() => { connecting = false; });
     }, 15_000);
     connects?.unref?.();
     stopping.signal.addEventListener('abort', () => clearInterval(connects));
+    // GY-3709: until something merges, the loop reports the repository's open issues for the first-run page's step 3.
+    const issues = values.once ? undefined : setInterval(function report() {
+      reportOpenIssues(master.repository, body => masterMutation('first-run/issues', body))
+        .then(wanted => { if (!wanted) clearInterval(issues); })
+        .catch(error => console.error(`[graphyard-master] first-run issues: ${error instanceof Error ? error.message : String(error)}`));
+      return report;
+    }(), 600_000);
+    issues?.unref?.();
+    stopping.signal.addEventListener('abort', () => clearInterval(issues));
     // GY-3241: and streams the Master page's terminal for a server (a compose container) that has no Herdr of its own,
     // and the headless worker run logs this host holds for the item page (GY-3259).
     if (!values.once && current().url) bridgeTerminals(current().url!, masterToken, stopping.signal, undefined, terminalSessionReader(current), root);

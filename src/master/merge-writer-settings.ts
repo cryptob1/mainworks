@@ -4,6 +4,7 @@ import { availableParallelism, homedir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { configHome } from '../install/secrets.js';
+import { defaultConfigHome } from '../install/layout.js';
 
 /** How long one merge-writer trial (build plus the affected tests) may run before it is killed; a timeout is no verdict. */
 export const trialTimeoutMinutes = 20;
@@ -16,9 +17,9 @@ export const maxMergeWriterParallel = 6;
 export const batchLimit = 4;
 export const defaultMergeWriterParallel = Math.min(maxMergeWriterParallel, Math.max(1, Math.floor(availableParallelism() / 2)));
 /** The install's deploy key by default: `<config home>/<install>/deploy-key` (`~/.config/graphyard`, or GRAPHYARD_CONFIG_HOME), the one credential the push child sees. */
-export const defaultDeployKeyFile = (installId: string, home?: string) => join(home === undefined ? configHome() : join(home, '.config', 'graphyard'), installId, 'deploy-key');
+export const defaultDeployKeyFile = (installId: string, home?: string) => join(home === undefined ? configHome() : defaultConfigHome(home), installId, 'deploy-key');
 /** The install's fine-grained token by default, for organizations that disable deploy keys: `<config home>/<install>/merge-writer.token` (GY-3220). */
-export const defaultMergeTokenFile = (installId: string, home?: string) => join(home === undefined ? configHome() : join(home, '.config', 'graphyard'), installId, 'merge-writer.token');
+export const defaultMergeTokenFile = (installId: string, home?: string) => join(home === undefined ? configHome() : defaultConfigHome(home), installId, 'merge-writer.token');
 
 /**
  * `run.mergeWriter` in .graphyard/master.json: the control-plane merge executor's credential — the

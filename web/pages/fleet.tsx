@@ -107,6 +107,7 @@ export function AccountCard({ account, connect, onChangeRoles, now = Date.now() 
     {!account.modelId && <p className="amber" data-default-model>{unspecifiedModel(account)}</p>}
     <p>Roles: {account.roles.length ? account.roles.map(entry => `${entry.role} (${entry.preference} of ${entry.of})`).join(', ') : 'none'} · Live sessions: {live}{live ? ` — ${account.liveSessions.map(session => `${session.role}${session.work ? ` on ${session.work}` : ''} since ${when(session.since)}`).join('; ')}` : ''}{account.maxSessions !== null ? ` (limit ${account.maxSessions})` : ''}{onChangeRoles && <> <button data-change-roles={account.name} onClick={() => onChangeRoles(account.name)}>change</button></>}</p>
     <p>Quota: {account.quota}{account.usage.length ? ` — ${usageText(account.usage)}` : ''} · Resets: {account.resetUnknown ? `unknown (held until ${when(account.resetsAt)})` : when(account.resetsAt)} · Login: {account.loggedIn === null ? 'not observed' : account.loggedIn ? 'logged in' : 'logged out'} · Observed {when(account.observedAt)}{account.quotaSource === 'operator' ? ' (marked by an operator)' : ''} <span className={`probe ${probe.tone}`} data-probe={probe.tone}>{probe.text}</span></p>
+    {account.spend && <p data-spend="extra-usage">{account.spend}</p>}
     {connect?.placement && <p className="muted">Joined by default: {connect.placement.join(', ')}</p>}
     <p className="muted">Capability: {account.capability?.tier ?? 'unknown'}{account.capability?.contextTokens ? ` · ${account.capability.contextTokens.toLocaleString()} token context` : ''} · {cost(account)} · Credential by reference: {account.home ?? 'the runtime\'s own default login'} on {account.host}{account.enabled ? '' : ' · disabled'}</p>
   </div>;
@@ -273,24 +274,25 @@ export function FleetOverview({ fleet, connects = [], now = Date.now(), onChange
         <tbody>{[...running].reverse().map(session => <tr key={session.id} data-session={session.id}>{[session.role, session.work ?? '—', session.account, session.runtime, session.model, session.host, when(session.selectedAt)].map((cell, index) => <td key={runningColumns[index]} data-label={runningColumns[index]}>{cell}</td>)}</tr>)}</tbody></table>}
       {!running.length && <p>No session launched from the registry is running.</p>}
     </PageSection>
-    {/* Each role's launch verdict reads above; its preference order and launch policy are one click away (GY-1325). */}
-    <MoreDetails summary="Roles">
-      <PageSection title="Roles" count={fleet.roles.length}>
-        {fleet.roles.map(role => <div className="criterion" key={role.role} data-role={role.role}><strong className={role.blocked ? 'amber' : undefined}>{role.role} · {role.live} of {role.limit ?? role.concurrency} running · next: {role.next ?? 'none'}</strong><p>Preference order: {role.accounts.join(' → ') || 'no account'}</p><p>Launch policy: {policyText(role.policy)}</p>{role.blocked && <p className="amber">{role.blocked}</p>}</div>)}
-        {!fleet.roles.length && <p>No role is configured.</p>}
-      </PageSection>
-    </MoreDetails>
-    <MoreDetails summary="Runtimes">
-      <PageSection title="Runtimes" count={fleet.runtimes.length}>
-        {fleet.runtimes.map(runtime => <div className="criterion" key={runtime.name} data-runtime={runtime.name}><strong>{runtime.name}{runtime.description ? ` · ${runtime.description}` : ''}</strong><p>Launch contract: <code>{[runtime.launch.kind, ...runtime.launch.args].join(' ')}</code> · account home in <code>{runtime.launch.homeVariable ?? 'the default login'}</code> · model flag <code>{runtime.launch.modelFlag ?? 'none'}</code> · tools flag <code>{runtime.launch.toolsFlag ?? 'none'}</code></p>{runtime.launch.login && <p className="muted">Log in with: <code>{runtime.launch.login}</code></p>}</div>)}
-        {!fleet.runtimes.length && <p>No runtime is registered.</p>}
-      </PageSection>
-      <PageSection title="Recent selections" count={fleet.sessions.length}>
-        {[...fleet.sessions].reverse().slice(0, 15).map(session => <div className="criterion" key={session.id}><strong>{when(session.selectedAt)} · {session.role} → {session.account}{session.work ? ` · ${session.work}` : ''}{session.endedAt ? ' · ended' : ' · live'}</strong><p>{session.reason}</p>{session.endReason && <p className="muted">Ended: {session.endReason}</p>}</div>)}
-        {fleet.refusals.slice(-5).reverse().map(refusal => <div className="criterion" key={`${refusal.at}${refusal.role}`}><strong className="amber">{when(refusal.at)} · {refusal.role}{refusal.work ? ` · ${refusal.work}` : ''} · nothing launched</strong><p>{refusal.reason}</p></div>)}
-        {!fleet.sessions.length && !fleet.refusals.length && <p>No session has been selected from the registry yet.</p>}
-      </PageSection>
-    </MoreDetails>
+  </>;
+}
+
+/** Each role's preference order and launch policy, each runtime's launch contract and the recent selections, inside Agents → Advanced (GY-1325, GY-3560). */
+export function FleetReference({ fleet }: { fleet: FleetView }) {
+  return <>
+    <PageSection title="Roles" count={fleet.roles.length}>
+      {fleet.roles.map(role => <div className="criterion" key={role.role} data-role={role.role}><strong className={role.blocked ? 'amber' : undefined}>{role.role} · {role.live} of {role.limit ?? role.concurrency} running · next: {role.next ?? 'none'}</strong><p>Preference order: {role.accounts.join(' → ') || 'no account'}</p><p>Launch policy: {policyText(role.policy)}</p>{role.blocked && <p className="amber">{role.blocked}</p>}</div>)}
+      {!fleet.roles.length && <p>No role is configured.</p>}
+    </PageSection>
+    <PageSection title="Runtimes" count={fleet.runtimes.length}>
+      {fleet.runtimes.map(runtime => <div className="criterion" key={runtime.name} data-runtime={runtime.name}><strong>{runtime.name}{runtime.description ? ` · ${runtime.description}` : ''}</strong><p>Launch contract: <code>{[runtime.launch.kind, ...runtime.launch.args].join(' ')}</code> · account home in <code>{runtime.launch.homeVariable ?? 'the default login'}</code> · model flag <code>{runtime.launch.modelFlag ?? 'none'}</code> · tools flag <code>{runtime.launch.toolsFlag ?? 'none'}</code></p>{runtime.launch.login && <p className="muted">Log in with: <code>{runtime.launch.login}</code></p>}</div>)}
+      {!fleet.runtimes.length && <p>No runtime is registered.</p>}
+    </PageSection>
+    <PageSection title="Recent selections" count={fleet.sessions.length}>
+      {[...fleet.sessions].reverse().slice(0, 15).map(session => <div className="criterion" key={session.id}><strong>{when(session.selectedAt)} · {session.role} → {session.account}{session.work ? ` · ${session.work}` : ''}{session.endedAt ? ' · ended' : ' · live'}</strong><p>{session.reason}</p>{session.endReason && <p className="muted">Ended: {session.endReason}</p>}</div>)}
+      {fleet.refusals.slice(-5).reverse().map(refusal => <div className="criterion" key={`${refusal.at}${refusal.role}`}><strong className="amber">{when(refusal.at)} · {refusal.role}{refusal.work ? ` · ${refusal.work}` : ''} · nothing launched</strong><p>{refusal.reason}</p></div>)}
+      {!fleet.sessions.length && !fleet.refusals.length && <p>No session has been selected from the registry yet.</p>}
+    </PageSection>
   </>;
 }
 
@@ -325,7 +327,7 @@ export function ConnectWizard({ providers, hosts, wizard, setWizard, onConnect, 
 }
 
 /** Settings › Agents: connect an account without a shell, and every agent the control plane launches (GY-409). */
-export default function FleetPage({ api, status, observedAt, onOpenSetup }: Pick<Dashboard, 'api' | 'status' | 'observedAt'> & { onOpenSetup?: () => void }) {
+export default function FleetPage({ api, status, observedAt }: Pick<Dashboard, 'api' | 'status' | 'observedAt'>) {
   const [fleet, setFleet] = useState<FleetView | null>(status?.fleet ?? null);
   const [connects, setConnects] = useState<ConnectView[]>(status?.connects ?? []);
   const [providers, setProviders] = useState<ConnectProviderView[]>([]);
@@ -416,16 +418,16 @@ export default function FleetPage({ api, status, observedAt, onOpenSetup }: Pick
   const launchable = fleet ? fleet.roles.filter(role => roleLaunch(role, fleet, now).canLaunch).length : 0;
   const accounts = fleet ? `${fleet.accounts.length} ${fleet.accounts.length === 1 ? 'account' : 'accounts'}` : '';
   return <><PageHeader title="Agents" fact={!fleet ? (loadError ? 'The agents could not be read.' : 'Reading the agents…') : fleet.roles.length ? `${launchable} of ${fleet.roles.length} roles ready · ${accounts}` : `${accounts}; no role is configured yet.`}
-      actions={<>{onOpenSetup && <button type="button" className="text-button" data-open-setup onClick={onOpenSetup}>Open the first-run Setup checklist</button>}
-        {fleet && canEdit && !wizard.open && <button className="connect-button" data-connect-account onClick={() => setWizard({ ...closedWizard, open: true, host: hosts[0]?.host ?? null })}>Connect an account</button>}</>}/>
+      actions={<>{fleet && canEdit && !wizard.open && <button className="connect-button" data-connect-account onClick={() => setWizard({ ...closedWizard, open: true, host: hosts[0]?.host ?? null })}>Connect an account</button>}</>}/>
     {loadError && <div role="alert" className="notice danger">{loadError} <button onClick={() => void load()}>Retry loading the agents</button></div>}
     {!fleet && !loadError && <p role="status">Loading the agents…</p>}
     {fleet && canEdit && wizard.open && <PageSection title="Connect an account">
       <ConnectWizard providers={providers} hosts={hosts} wizard={wizard} setWizard={setWizard} onConnect={id => void connect(id, wizard.host ?? hosts[0]?.host ?? '', wizard.key)} onClose={() => setWizard(closedWizard)}/>
     </PageSection>}
     {fleet && <FleetOverview fleet={fleet} connects={connects.filter(connect => !removed.includes(connect.id))} now={now} onChangeRoles={canEdit ? changeRoles : undefined} onCancelConnect={canEdit ? id => void cancel(id) : undefined} onAnswerConnect={status?.actor?.role === 'admin' ? answer : undefined} onRetryConnect={status?.actor?.role === 'admin' ? retry : undefined} onRemoveConnect={canEdit ? remove : undefined}/>}
-    {fleet && canEdit && <section className="panel"><MoreDetails className="advanced" detailsRef={advanced} summary="Advanced: runtimes, models, roles and policies">
+    {fleet && canEdit && <section className="panel"><MoreDetails className="advanced" detailsRef={advanced} summary="Advanced">
       <p className="muted">Everything below names where a login lives — never the credential. Connect accounts at the top of the page; use this only to shape the fleet itself. Every change is recorded with its reason.</p>
+      <FleetReference fleet={fleet}/>
       {formError && <p role="alert" className="amber">{formError}</p>}
       <form className="grant-form" aria-label="Add or change a runtime" onSubmit={submit(() => 'agent-registry/runtimes', form => ({ runtime: { name: field(form, 'name'), launch: { kind: field(form, 'kind') || field(form, 'name'), args: field(form, 'args').split(/\s+/).filter(Boolean), homeVariable: optional(form, 'homeVariable'), modelFlag: optional(form, 'modelFlag'), toolsFlag: optional(form, 'toolsFlag'), login: optional(form, 'login'), loginFile: optional(form, 'loginFile') } }, reason: field(form, 'reason') }))}>
         <label>Runtime<input name="name" required placeholder="muse"/></label>

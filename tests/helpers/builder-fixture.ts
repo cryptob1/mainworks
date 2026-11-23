@@ -15,8 +15,9 @@ import { temporaryDirectory } from './temp-dirs.js';
  * GY-3632: an installation with a registry of two Claude worker accounts and a stub runtime. Each
  * worker run is recorded with its runtime words, request and directory, and prints the session id
  * `session(n)` names (null prints none); `fail(args)` makes a run exit at once with an error.
+ * `launch` overrides the stored Claude runtime contract (GY-3687: one that names no model flag).
  */
-export async function builderFixture(label: string) {
+export async function builderFixture(label: string, launch: { modelFlag?: string | null; args?: string[] } = {}) {
   const holder = await temporaryDirectory(label), root = join(holder, 'repository'), credentials = join(holder, 'credentials');
   await mkdir(root); await mkdir(credentials, { mode: 0o700 });
   execFileSync('git', ['init', '-q', root]);
@@ -30,7 +31,7 @@ export async function builderFixture(label: string) {
   await writeFile(credentialFile, 'worker-token-'.padEnd(40, 'x'), { mode: 0o600 });
   const profile: WorkerProfile = { name: 'registry-worker', principal: 'worker', agentName: 'builder', mode: 'launch', kind: 'claude', credentialFile, agentArgs: [], approvals: 'auto', environment: {} };
   const at = new Date().toISOString();
-  let registry: AgentRegistry = applyRegistryMutation(emptyRegistry(), 'apply', { runtimes: proposedRuntimes.filter(runtime => runtime.name === 'claude'),
+  let registry: AgentRegistry = applyRegistryMutation(emptyRegistry(), 'apply', { runtimes: proposedRuntimes.filter(runtime => runtime.name === 'claude').map(runtime => ({ ...runtime, launch: { ...runtime.launch, ...launch } })),
     models: [{ name: 'opus', id: 'claude-opus-5' }],
     accounts: ['claude-a', 'claude-b'].map(name => ({ name, runtime: 'claude', model: 'opus', credential: { host: hostId, home: null } })),
     roles: [{ name: 'worker', accounts: ['claude-a', 'claude-b'], concurrency: 4 }], reason: 'fixture' }, { actor: 'operator', at }).registry;

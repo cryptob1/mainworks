@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { getCachedPlanUsage, parseZaiUsage, type ProviderUsageResult } from '../provider-usage.js';
+import { claudeLimitWindows, claudeSpendLine, getCachedPlanUsage, parseZaiUsage, type ProviderUsageResult, type UsageWindow } from '../provider-usage.js';
 import type { AccountUsage, EnvironmentProbe } from './environments.js';
 import type { ProbedHome } from './runtimes.js';
 
@@ -32,9 +32,15 @@ export async function claudeAccount(environment: ProbedHome, probe: EnvironmentP
     const response = await (probe.fetch ?? fetch)('https://api.anthropic.com/api/oauth/usage', { headers: { Authorization: `Bearer ${oauth.accessToken}`, 'anthropic-beta': 'oauth-2025-04-20' }, signal: AbortSignal.timeout(probe.timeoutMs ?? 5_000) });
     if (!response.ok) return { loggedIn: response.status !== 401 || !!oauth.refreshToken, usage: [], note: `the provider usage endpoint answered ${response.status}` };
     const body: any = await response.json();
-    const usage = (['five_hour', 'seven_day'] as const).flatMap(key => typeof body?.[key]?.utilization === 'number'
-      ? [{ window: key === 'five_hour' ? '5h' : '7d', percent: body[key].utilization, resetsAt: typeof body[key].resets_at === 'string' ? new Date(body[key].resets_at).toISOString() : null }] : []);
-    return { loggedIn: true, usage, note: null };
+    // GY-3497: the answer's own limit list is the windows — the session, weekly and each
+    // model-scoped weekly allowance — when it carries one; the five_hour/seven_day utilization
+    // stands only for an answer with no list. Spend is read as the one line it shows, never changed.
+    const listed = claudeLimitWindows(body);
+    const usage: UsageWindow[] = Array.isArray(body?.limits) ? listed
+      : (['five_hour', 'seven_day'] as const).flatMap(key => typeof body?.[key]?.utilization === 'number'
+        ? [{ window: key === 'five_hour' ? '5h' : '7d', percent: body[key].utilization, resetsAt: typeof body[key].resets_at === 'string' && !Number.isNaN(Date.parse(body[key].resets_at)) ? new Date(body[key].resets_at).toISOString() : null }] : []);
+    const spend = claudeSpendLine(body?.spend);
+    return { loggedIn: true, usage, note: null, ...(spend ? { spend } : {}) };
   } catch (error) { return { loggedIn: true, usage: [], note: `the provider usage endpoint is unreachable: ${error instanceof Error ? error.message : 'unknown reason'}` }; }
 }
 

@@ -20,7 +20,7 @@
       "kind": "browser",
       "name": "sign in to the dashboard as the owner",
       "action": "open",
-      "path": "/?sign-in"
+      "path": "/?sign-in#work"
     },
     {
       "kind": "browser",

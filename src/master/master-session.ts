@@ -27,6 +27,7 @@ import { adoptConversation, assertConversationRuntime, awaitConversation, captur
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { worktreeRoot } from '../install/worktree-root.js';
 import type { MasterSessionState } from '../daemon/state.js';
+import { stateDirectory } from '../install/layout.js';
 
 /** The registry role and profile name the master session launches under. */
 export const masterProfile = 'master';
@@ -73,7 +74,10 @@ export async function launchMasterSession(root: string, config: MasterConfig, he
   // The same reach the human launch grants (startMaster): Codex's sandbox is widened to the private
   // state the master's own commands write beside its credential, and nothing beyond it.
   try { assertConversationRuntime(kind); plan = accountLaunch({ kind, approvals: 'auto', agentArgs: [], environment: {} }, selected.account, { writable: [dirname(config.credentialFile)] }); }
-  catch (error) { await selected.release(`master session launch failed: ${failureText(error).slice(0, 300)}`); throw error; }
+  catch (error) {
+    await selected.release(`master session launch failed: ${failureText(error).slice(0, 300)}`);
+    throw Object.assign(error instanceof Error ? error : new Error(failureText(error)), { account: selected.account.name });
+  }
   // GY-3237: the install state the master session's own recovery commands write — reviewer
   // bindings beside the coordinator credential (reviewer.ts reviewerCredentialDirectory) and
   // the managed worktree root its launches allocate checkouts under — granted writable.
@@ -94,7 +98,7 @@ export async function launchMasterSession(root: string, config: MasterConfig, he
       catch (closeError) { failure = withLaunchClose(failure, `Herdr could not confirm cleanup: ${failureText(closeError).slice(0, 200)}`); }
     }
     if (!await selected.release(`${note}: ${failureText(error).slice(0, 300)}`)) Object.assign(failure, { registrySession: selected.account.fleet.session });
-    return failure;
+    return Object.assign(failure, { account: selected.account.name });
   };
   try {
     const context = current ? await continuationContext(current) : { handover: 'Previous master conversation: no recovered record supplied. Last unanswered person message: unknown unless established by the handover.', input: null };
@@ -123,7 +127,7 @@ export async function launchMasterSession(root: string, config: MasterConfig, he
 /** The loop's master-session effect (GY-898): `launch` starts the session with the handover folded into its first request, on the registry's `master` role. */
 export interface MasterSessionEffects {
   initialize?: (master: MasterSessionState, handle?: HerdrAgent, prompts?: string[]) => Promise<Continuity>;
-  launch: (handover: string, previous?: Continuity | null) => Promise<Omit<MasterLaunch, 'delivery'>>;
+  launch: (handover: string, previous?: Continuity | null, options?: { exclude?: string[] }) => Promise<Omit<MasterLaunch, 'delivery'>>;
   /** Delivers an actionable cause even when the runtime still labels the pane working. */
   pendingCauses?: (work: Work[]) => Promise<MasterCause[]>;
   wake?: (target: string, text: string, continuity?: Continuity | null) => Promise<unknown>;
@@ -154,7 +158,7 @@ export const masterSessionEffects = (root: string, config: () => MasterConfig, r
     assertConversationRuntime(kind);
     const variable = runtime?.launch.homeVariable ?? (kind === 'claude' ? 'CLAUDE_CONFIG_DIR' : 'CODEX_HOME');
     const environment = { ...runtime?.launch.environment, ...(login?.credential.home ? { [variable]: login.credential.home } : {}), ...accountHomeEnvironment(kind, login?.credential.home) };
-    const request = await readFile(master.launchRequestRecord ?? join(root, '.graphyard/launch', `${master.agentName ?? current.masterAgentName}.request`), 'utf8').catch(() => null);
+    const request = await readFile(master.launchRequestRecord ?? join(stateDirectory(root), 'launch', `${master.agentName ?? current.masterAgentName}.request`), 'utf8').catch(() => null);
     if (request !== null) {
       const record = join(masterRecords(root), `${createHash('sha256').update(request).digest('hex')}.request`);
       await mkdir(masterRecords(root), { recursive: true, mode: 0o700 });
@@ -174,8 +178,8 @@ export const masterSessionEffects = (root: string, config: () => MasterConfig, r
     beforeSubmit: (text, attempt) => graphyardInput(continuity?.current.origins ?? masterInputs(root, config().masterAgentName), attempt === 1 ? 'wake' : 'retry', text),
   }),
   closeMigratedPane: async (pane, instance) => { await herdrCall(run ?? defaultChildRun, ['pane', 'close', pane], undefined, instance); },
-  launch: async (handover, previous) => {
-    const { delivery: _, ...launched } = await launchMasterSession(root, config(), await observeHerdrAgents(run), handover, run, {}, previous);
+  launch: async (handover, previous, options) => {
+    const { delivery: _, ...launched } = await launchMasterSession(root, config(), await observeHerdrAgents(run), handover, run, options?.exclude?.length ? { exclude: options.exclude } : {}, previous);
     return launched;
   },
 });

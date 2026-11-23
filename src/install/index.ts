@@ -32,6 +32,7 @@ import { localPaths } from './local-runtime.js';
 import { durableCheckoutPreflight } from './loop-unit.js';
 import { underTestRunner } from '../runtime-environment.js';
 import { deployUnitOf, perInstallUnits, proposedInstallUnits, userUnitDirectory } from './units.js';
+import { unitPrefix } from './layout.js';
 import { installIdFor, providers, REDACTED, SERVER_PORT, type EnvValue, type InstallInputs, type InstallPlan, type PlanAction, type PlanDrift, type PlanValue, type PreflightItem, type Provider } from './types.js';
 
 export * from './types.js';
@@ -735,7 +736,7 @@ export async function buildPlan(session: InstallSession): Promise<InstallPlan> {
     actions.push({ id: 'local.profiles', target: 'local', state: record?.profiles.length ? 'satisfied' : 'create', title: 'Register master, reviewer, and worker profiles for authenticated agent runtimes on this machine' });
     // GY-2877: the master loop and the continuous deploy run in two user units, both installed by master init.
     if (context.provider === 'compose' || context.provider === 'local') {
-    const units = (() => { try { return proposedInstallUnits(session.root, session.inputs.repository, userUnitDirectory()); } catch { return perInstallUnits(session.inputs.repository); } })();
+    const units = (() => { try { return proposedInstallUnits(session.root, session.inputs.repository, userUnitDirectory()); } catch { return perInstallUnits(session.inputs.repository, unitPrefix(session.root)); } })();
     actions.push({ id: 'local.units', target: 'local', state: existsSync(join(userUnitDirectory(), deployUnitOf(units))) ? 'satisfied' : 'create',
       title: 'Run the master loop under graphyard-master.service (master run) and the continuous deploy under graphyard-deploy.service (upgrade --watch: each new base tip built, restarted, health-checked, rolled back on failure); master init installs both',
       values: [{ name: 'graphyard-master.service', value: units.master, secret: false }, { name: 'graphyard-deploy.service', value: deployUnitOf(units), secret: false }] });

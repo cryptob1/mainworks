@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { describeHumanRequest } from '../src/model/human-request.ts';
 
-const { databaseUrl, delivery } = JSON.parse(await readFile(`.graphyard/e2e-serve-${new URL(process.env.TARGET_URL).port}.json`, 'utf8'));
+const { databaseUrl, delivery } = JSON.parse(await readFile(`.graphyard/e2e-serve-${new URL(process.env.TARGET_URL ?? 'http://127.0.0.1:4391').port}.json`, 'utf8'));
 const target = process.env.TARGET_URL ?? 'http://127.0.0.1:4391', now = new Date(), filed = new Date(now.getTime() - 10 * 60_000).toISOString();
 const request = { id: randomUUID(), kind: 'goals-and-priorities', reason: 'Two ways forward change the product', needed: 'Choose whether the export ships before the import',
   requestedBy: 'e2e-worker', epoch: 1, at: filed, ask: 'Ship the export first?', why: 'Users asked for export first.', recommendation: 'Go ahead as asked' };

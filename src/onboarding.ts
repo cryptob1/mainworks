@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { accessSync, constants as fsConstants } from 'node:fs';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { basename, resolve } from 'node:path';
 import { z } from 'zod';
 import { configHome } from './install/secrets.js';
 import { sessionNameField, suffixedSessionName } from './session-name.js';
@@ -13,6 +13,7 @@ import { deliveryPolicySchema } from './model-boundary/delivery-policy.js';
 import { onboardingBranch, onboardingWorkRequest } from './model/onboarding-work.js';
 import { applicationSchema } from './model-boundary/project-applications.js';
 import { discoverWorkspaces } from './onboarding-workspaces.js';
+import { stateDirectory } from './install/layout.js';
 
 export function repositoryFromRemote(remote: string) {
   const value = remote.trim();
@@ -62,8 +63,10 @@ export async function saveDiscovery(root: string) {
   return discovery;
 }
 export async function localDirectory(root: string) {
-  const tracked = execFileSync('git', ['ls-files', '--', '.graphyard'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-  if (tracked.trim()) throw new Error('.graphyard contains tracked files; untrack and inspect them before saving credentials');
+  // GY-3711: the checkout's state directory under whichever name its install chose.
+  const directory = stateDirectory(root), name = basename(directory);
+  const tracked = execFileSync('git', ['ls-files', '--', name], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  if (tracked.trim()) throw new Error(`${name} contains tracked files; untrack and inspect them before saving credentials`);
   const ignorePath = resolve(root, '.gitignore');
   let ignore = ''; try { ignore = await readFile(ignorePath, 'utf8'); } catch (error: any) { if (error.code !== 'ENOENT') throw error; }
   const ignored = (path: string) => {
@@ -72,9 +75,9 @@ export async function localDirectory(root: string) {
   };
   // An earlier matching line can be overridden by later negations. Ignore the
   // directory itself so nested rules cannot re-include credentials or temp files.
-  const directory = resolve(root, '.graphyard'); await mkdir(directory, { recursive: true, mode: 0o700 });
-  if (!ignored('.graphyard')) await writeFile(ignorePath, `${ignore}${ignore.endsWith('\n') || !ignore ? '' : '\n'}.graphyard/\n`);
-  if (!ignored('.graphyard') || !ignored('.graphyard/connection.json')) throw new Error('Local Graphyard credentials must be ignored by Git before saving');
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  if (!ignored(name)) await writeFile(ignorePath, `${ignore}${ignore.endsWith('\n') || !ignore ? '' : '\n'}${name}/\n`);
+  if (!ignored(name) || !ignored(`${name}/connection.json`)) throw new Error('Local Graphyard credentials must be ignored by Git before saving');
   return directory;
 }
 
@@ -87,7 +90,7 @@ export interface ScanInput { files: string[]; contents: Record<string, string> }
 // entries beneath it (GY-2007), which alone exhausted the scan's file bound and refused every
 // derived setup. Nothing the scan reads (scanInteresting) can live there, so skipping the whole
 // directory keeps discovery bounded without hiding any input it could use.
-const scanExcluded = new Set(['.git', '.graphyard', '.claude', 'node_modules', 'dist', 'build', 'coverage', 'vendor', 'venv', '.venv', '__pycache__', 'test-results', 'playwright-report']);
+const scanExcluded = new Set(['.git', '.graphyard', '.mainworks', '.claude', 'node_modules', 'dist', 'build', 'coverage', 'vendor', 'venv', '.venv', '__pycache__', 'test-results', 'playwright-report']);
 const scanInteresting: RegExp[] = [
   /^(?:.+\/)?package\.json$/, /^pnpm-workspace\.yaml$/, /^pyproject\.toml$/, /^requirements(?:-dev)?\.txt$/, /^setup\.(?:py|cfg)$/, /^Pipfile$/, /^tox\.ini$/,
   /^Dockerfile(?:\.[^/]*)?$/, /^(?:docker-)?compose\.ya?ml$/, /^railway\.(?:json|toml)$/, /^vercel\.json$/, /^fly\.toml$/, /^netlify\.toml$/,

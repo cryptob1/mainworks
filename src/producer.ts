@@ -1,4 +1,5 @@
 import { PRODUCT_NAME } from './model/product.js';
+import { stateDirectory } from './install/layout.js';
 import { loopStateClient, migrateLoopFile, ledgerSnapshot, saveLedger } from './loop-state.js';
 import { writeFailure } from './disk-space.js';
 import { parseEnvValue } from './env-file.js';
@@ -32,7 +33,7 @@ import { liveRun, liveRuns, registeredRun, unendedRunOnDisk, type RunAdopter } f
 import type { EvidencePayload } from './runner/payloads.js';
 import { sessionVerificationEnvironment } from './master/harness.js';
 import { withVerificationPath } from './master/verification-slots.js';
-import { liveInstallGuidance, liveInstallProof, liveInstallRequiredEnv, liveInstallSshKeyEnv, narrowRunner, piProducerPrompt, producerRunOptions, registryRunner, runOutcome, startNarrowRun, submitEvidence } from './runner/roles.js';
+import { liveInstallGuidance, liveInstallProof, liveInstallRequiredEnv, liveInstallSshKeyEnv, narrowRunner, producerRunOptions, registryRunner, runOutcome, startNarrowRun, submitEvidence } from './runner/roles.js';
 import { runRecordSchema, type RunRecord, type Runner } from './runner/types.js';
 import { projectMemoryDigest, type ProjectMemory } from './model/project-memory.js';
 import { readProjectMemory } from './project-memory.js';
@@ -179,7 +180,7 @@ export const producerLedgerSpec: SessionLedgerSpec = { name: 'producer ledger', 
 
 export async function readProducerLedger(root: string): Promise<ProducerLedger> {
   const client = await loopStateClient(root);
-  await migrateLoopFile(client, 'producers', resolve(root, producerLedgerSpec.path), value => producerLedgerSchema.parse(value).producers);
+  await migrateLoopFile(client, 'producers', resolve(stateDirectory(root), 'producers.json'), value => producerLedgerSchema.parse(value).producers);
   const producers = (await client.read('producers')).map(record => producerRecordSchema.parse(record));
   return ledgerSnapshot({ version: 1, producers }, producers);
 }
@@ -344,18 +345,41 @@ export const answeredByPendingSession = (error: unknown, request: Pick<DispatchR
 export function producerPrompt(config: Pick<MasterConfig, 'repository' | 'cliPath'> & { run?: MasterConfig['run'] }, binding: Pick<ProducerBinding, 'key' | 'pr' | 'sha' | 'baseSha' | 'policyRevision' | 'proofs'> & { group: string; requestId?: string; checkout?: string }, profile: Pick<ProducerProfile, 'principal'>,
   checkout: SessionCheckout = binding.checkout ? { directory: binding.checkout, worktree: resolve(binding.checkout, 'checkout') } : sessionCheckout(worktreeRoot(process.cwd(), config), 'proof', binding.key, binding.sha, binding.requestId ?? '0'.repeat(8)),
   memory?: ProjectMemory | null) {
-  const worktree = checkout.worktree, stripped = resolve(checkout.directory, 'exercise');
-  const evidenceFile = (proof: string) => resolve(checkout.directory, `${proof.replace(/[^a-zA-Z0-9]+/g, '-')}.evidence.json`);
-  const memorySection = projectMemoryDigest(memory, 'producer', { baseSha: binding.baseSha });
-  return `You are an independent Graphyard proof producer for ${config.repository}, principal ${profile.principal}. Produce trusted evidence for work item ${binding.key} (pull request #${binding.pr}) at exact head ${binding.sha} against base ${binding.baseSha} under policy revision ${binding.policyRevision}, for the ${binding.group} proof group: ${binding.proofs.join(', ')}. `
-    + (memorySection || '')
-    + `Your Graphyard credential is the file named by GRAPHYARD_TOKEN_FILE and is used only by node ${config.cliPath}; never print, copy, cat, or echo it or any other credential, and never read .graphyard/connection.json, .graphyard/credentials.json, .env, or anything under ~/.config. `
-    + liveInstallGuidance(binding.proofs, checkout.directory, binding.key, binding.sha)
-    + `Work in a detached worktree of the exact head, created only at the path Graphyard allocated under its managed worktree root — never in the repository's own checkout, never under .graphyard/worktrees and never under a temporary directory: git fetch --no-write-fetch-head origin ${binding.sha} && git worktree add --detach ${worktree} ${binding.sha}. Install and build there, then run what establishes each proof: the tests and scripts named for the proof and the acceptance criteria in node ${config.cliPath} status ${binding.key}, through the project's own runners (node ${config.cliPath} guide proof names the runner, the title rule and the manual: judging). `
-    + 'Do not edit, commit, push, rebase or merge the candidate, do not claim Graphyard work, do not post a review, and never weaken, skip or narrow a test to make a proof pass. '
-    + `A proof that passes against an unchanged tree proves nothing, so for each proof that passes also show it exercises its criterion: in a second detached worktree of the same head at ${stripped} (git worktree add --detach ${stripped} ${binding.sha}), remove the behaviour the criterion the proof is attached to describes — revert or stub exactly the lines of the change that implement it — and run the same proof there. `
-    + `For each proof write its evidence JSON at ${evidenceFile(binding.proofs[0])} (node ${config.cliPath} guide proof names the fields) and submit it with node ${config.cliPath} evidence ${binding.key} FILE. `
-    + `Keep everything this session writes inside ${checkout.directory}; Graphyard removes it when the session ends. When every proof is submitted, remove both worktrees, print a one-paragraph summary naming each proof and its result, and stop; Graphyard closes this session once it observes the evidence. `
+  return producerRequest(config, binding, profile.principal, [], checkout, memory, cliEvidenceSubmit(config.cliPath, binding.key, checkout.directory, binding.proofs[0]));
+}
+
+/** A headless (`pi`) producer's request: the same request, submitting through its graphyard_submit_evidence tool. */
+export function piProducerPrompt(config: { repository: string; cliPath?: string }, binding: Pick<ProducerBinding, 'key' | 'pr' | 'sha' | 'baseSha' | 'policyRevision' | 'proofs'> & { group: string },
+  criteria: { id: string; text: string; proofs: string[] }[], checkout: { directory: string; worktree: string }, memory?: ProjectMemory | null, principal?: string) {
+  return producerRequest(config, binding, principal, criteria, checkout, memory, toolEvidenceSubmit(binding));
+}
+
+/** How a CLI producer session submits each proof: an evidence file passed to `graphyard evidence`. */
+export const cliEvidenceSubmit = (cliPath: string, key: string, directory: string, proof: string) =>
+  `Write each proof's evidence JSON at ${resolve(directory, `${proof.replace(/[^a-zA-Z0-9]+/g, '-')}.evidence.json`)} (node ${cliPath} guide proof names the fields) and submit it with node ${cliPath} evidence ${key} FILE. `;
+/** How a headless producer submits each proof: its graphyard_submit_evidence tool, which Graphyard submits as the producer principal. */
+export const toolEvidenceSubmit = (binding: Pick<ProducerBinding, 'sha' | 'baseSha' | 'policyRevision'>) =>
+  `Submit each proof with the graphyard_submit_evidence tool: proof, sha "${binding.sha}", baseSha "${binding.baseSha}", policyRevision ${binding.policyRevision}, result, executed, skipped, and exercise {criterion, behaviour, result, executed} from the stripped run. `;
+
+/**
+ * The one producer request every runtime receives (GY-3492): only `submit`, how the session hands
+ * Graphyard its evidence, differs between a CLI session and a headless one.
+ */
+export function producerRequest(config: { repository: string; cliPath?: string }, binding: Pick<ProducerBinding, 'key' | 'pr' | 'sha' | 'baseSha' | 'policyRevision' | 'proofs'>,
+  principal: string | undefined, criteria: { id: string; text: string; proofs: string[] }[], checkout: { directory: string; worktree: string }, memory: ProjectMemory | null | undefined, submit: string) {
+  const cli = config.cliPath ?? 'graphyard', { key, sha } = binding, worktree = checkout.worktree, stripped = resolve(checkout.directory, 'exercise');
+  const attached = criteria.filter(criterion => criterion.proofs.some(proof => binding.proofs.includes(proof)));
+  return `You are an independent Graphyard proof producer for ${config.repository}${principal ? `, principal ${principal}` : ''}. Produce trusted evidence for work item ${key} (pull request #${binding.pr}) at head ${sha} on base ${binding.baseSha}, policy revision ${binding.policyRevision}: ${binding.proofs.join(', ')}. `
+    + (projectMemoryDigest(memory, 'producer', { baseSha: binding.baseSha }) || '')
+    + (attached.length ? `The criteria these proofs establish: ${attached.map(criterion => `${criterion.id} (${criterion.proofs.filter(proof => binding.proofs.includes(proof)).join(', ')}): ${criterion.text}`).join(' ')} ` : '')
+    + `Your Graphyard credential is the file named by GRAPHYARD_TOKEN_FILE, for node ${cli} only; never print, copy, cat, or echo it or any other credential, or read .graphyard/connection.json, .graphyard/credentials.json, .env or ~/.config. `
+    + liveInstallGuidance(binding.proofs, checkout.directory, key, sha)
+    + `Work only in a detached worktree at the allocated path, never under a temporary directory: git fetch --no-write-fetch-head origin ${sha} && git worktree add --detach ${worktree} ${sha}. `
+    + `Build there and run each proof's tests and the criteria from node ${cli} status ${key}, with GRAPHYARD_* and HERDR_* unset and a free GRAPHYARD_TEST_PORT; node ${cli} guide proof names the runner, the title rule and the manual: judging. `
+    + 'Never change the candidate, claim work, review, or weaken, skip or narrow a test. '
+    + `A proof that passes against an unchanged tree proves nothing: if it passes, run it again with the behaviour removed — in git worktree add --detach ${stripped} ${sha}, revert or stub exactly the lines that implement its criterion. `
+    + submit + 'Submit a failing or incomplete run as result fail, never omit it. '
+    + `Write only inside ${checkout.directory}. Once every proof is submitted, remove both worktrees (git worktree remove --force ${worktree} ${stripped}) and stop. `
     + destructivePromptGuidance
     + autonomousSession('submit pass or fail evidence for every proof of the group', `submit that proof as result fail with executed as the cases that ran, putting the blocked command and its error in environment`);
 }
@@ -522,7 +546,7 @@ async function launchHeadlessProducer(root: string, config: MasterConfig, work: 
   catch (error) { await registry?.release(`producer run for ${binding.key} was refused before it started: ${error instanceof Error ? error.message : String(error)}`.slice(0, 400)); throw error; }
   const via = registry ? `${registry.account.fleet.runtime} ${registry.account.fleet.modelId ?? registry.account.fleet.model} on ${registry.account.name}` : `pi ${pi.model} via ${pi.command}`;
   let checkout: Awaited<ReturnType<typeof allocateManagedCheckout>>;
-  try { checkout = await allocateManagedCheckout(root, config, 'proof', binding.key, binding.sha, session.id, dependencies.filesystem); }
+  try { checkout = await allocateManagedCheckout(root, config, 'proof', binding.key, binding.sha, session.id, dependencies.filesystem); await anchorSessionCheckout(root, checkout.directory); }
   catch (error) { await registry?.release(`producer run for ${binding.key} failed before it started: ${error instanceof Error ? error.message : String(error)}`.slice(0, 400)); throw error; }
   const requestedAt = dependencies.now();
   const timeoutMs = config.run.producerTimeoutMinutes * 60_000;
@@ -542,7 +566,7 @@ async function launchHeadlessProducer(root: string, config: MasterConfig, work: 
     started = startNarrowRun({ runner, name: session.agentName, role: 'producer', work: binding.key, subject: session.id, root,
       // What an adoption after a restart needs to judge and submit the run's evidence (producerRunAdopter); the credential is read from its file then.
       context: { url: config.url, credentialFile: profile.credentialFile, workId: binding.id, sha: binding.sha, baseSha: binding.baseSha, policyRevision: binding.policyRevision, proofs: binding.proofs, via, timeoutMs, checkout: checkout.directory, account: registry?.account.name ?? null },
-      prompt: piProducerPrompt(config, binding, work.criteria, checkout, root, memory),
+      prompt: piProducerPrompt(config, binding, work.criteria, checkout, memory, profile.principal),
       options: producerRunOptions(checkout.directory, binding, environment, timeoutMs),
       apply: async result => { const applied = []; for (const payload of result.payloads) applied.push(await submitEvidence(config.url, session.credential, { id: binding.id }, payload, via, dependencies.fetcher)); return applied; } });
   } catch (error) {

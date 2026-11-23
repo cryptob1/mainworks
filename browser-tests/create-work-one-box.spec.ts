@@ -48,7 +48,7 @@ test('e2e:create-work-one-box — one-box filing waits for master requirements, 
       const response = await route.fetch({ url: url + pathname + search }).catch(() => null);
       await (response ? route.fulfill({ response }) : route.abort()).catch(() => {});
     });
-    await page.goto('/?sign-in');
+    await page.goto('/?sign-in#work');
     await page.getByLabel('Access token').fill('browser-operator');
     await page.getByRole('button', { name: 'Open control plane' }).click();
     await page.getByRole('button', { name: '＋ New work item' }).click();

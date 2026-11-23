@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, statfsSync, writeFileSync } from 'node:fs';
-import { cp, readdir, rename, rm } from 'node:fs/promises';
+import { cp, mkdtemp, readdir, rename, rm } from 'node:fs/promises';
 import { availableParallelism, homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,7 +9,7 @@ import { hostAccountsVariable } from '../../src/host-accounts.js';
 import { isolatedTestEnvironment, reserveTestPorts, sharedClusterPort, suiteRunEnvironment, testPortSpan, type ReserveOptions } from '../../src/cli/test-isolation.js';
 import { hostMemoryFloor, memoryRecoveryMarginBytes, readHostMemory } from '../../src/master/host-memory.js';
 import { bytesPerSuiteFile, declareSlotFiles, heldVariable, othersDeclaredFiles, readStrictCap, sessionVerificationSlot, slotsDirectoryVariable } from '../../src/master/verification-slots.js';
-import { readTempOwner, tempOwnerGone, tempOwnerMarker } from '../../src/tmp-reclaim.js';
+import { readTempOwner, tempOwnerGone, tempOwnerMarker, writeTempOwner } from '../../src/tmp-reclaim.js';
 import { stopServersUnder } from '../../src/postgres-stop.js';
 import { buildEntries, builtEntries, builtEntry } from '../../bin/built-entry.mjs';
 
@@ -47,11 +47,14 @@ import { buildEntries, builtEntries, builtEntry } from '../../bin/built-entry.mj
 // whose owner marker names a process that is gone (GY-421), so a killed run stops leaking its
 // embedded-Postgres data dirs; one a live run owns, or one with no marker, is never touched.
 
+/** A run's scratch root (GY-3691): `gy` and mkdtemp's six characters, short so socket paths under it stay inside the 107-byte bound. */
+const runScratchName = /^gy[A-Za-z0-9]{6}$/;
+
 /** One runner sweep over `tmpRoot` (the host's tmpdir by default): its `graphyard-*` leftovers whose owner is gone. */
 export async function sweepLeftoverTempDirectories(tmpRoot = tmpdir()) {
   const removed: string[] = [];
   for (const name of await readdir(tmpRoot).catch(() => [] as string[])) {
-    const directory = join(tmpRoot, name), owner = name.startsWith('graphyard-') && !name.endsWith('.owner') ? await readTempOwner(directory) : null;
+    const directory = join(tmpRoot, name), owner = (name.startsWith('graphyard-') || runScratchName.test(name)) && !name.endsWith('.owner') ? await readTempOwner(directory) : null;
     if (!owner || !tempOwnerGone(owner) || !stopServersUnder(directory)) continue;
     try { await rm(directory, { recursive: true, force: true }); await rm(tempOwnerMarker(directory), { force: true }); removed.push(directory); } catch { /* the next sweep */ }
   }
@@ -146,6 +149,8 @@ export interface RunOptions {
   breadth?: number;
   /** GY-3610: hold each new file while the CPU sensors under this hwmon directory read at the heat limit (a coordinator run; never a shard). */
   holdWhenHot?: string;
+  /** GY-3691: where the run's scratch root is made; the tmpdir by default (a session's `.graphyard/scratch`). */
+  scratch?: string;
 }
 export interface RunResult { code: number; base: number; environment: Record<string, string>; stdout: string; stderr: string }
 
@@ -211,8 +216,8 @@ export function nestedFirst(environment: NodeJS.ProcessEnv = process.env): { fir
 }
 
 /** Whether a selected test file drives a browser or runs E2E cases against the served dashboard. */
-const opensDashboard = (cwd: string, args: string[]) => args.filter(arg => /\.test\.[cm]?[jt]sx?$/.test(arg)).some(file => {
-  try { return /chromium|playwright|projectCaseSuite/.test(readFileSync(resolve(cwd, file), 'utf8')); } catch { return false; }
+export const opensDashboard = (cwd: string, args: string[]) => args.filter(arg => /\.test\.[cm]?[jt]sx?$/.test(arg)).some(file => {
+  try { return /chromium|playwright|projectCaseSuite|runCases/.test(readFileSync(resolve(cwd, file), 'utf8')); } catch { return false; }
 });
 const defaultBuildDashboard = (cwd: string) => async (outDir: string) => {
   const { build } = await import('vite');
@@ -262,6 +267,7 @@ export async function ensureDashboardBuilt(
 export async function runTests(options: RunOptions = {}): Promise<RunResult> {
   const tmpRoot = durableTestTmpdir() ?? undefined;
   await sweepLeftoverTempDirectories(tmpRoot);
+  await sweepLeftoverTempDirectories(dirname(tmpRoot ?? tmpdir()));
   const cwd = resolve(options.cwd ?? process.cwd()), args = options.args ?? [];
   const selection = options.browser ? null : nodeTestArgs(cwd, args, !!options.holdWhenHot);
   // An empty selection (a shard with nothing assigned, a change that affects no test) runs nothing:
@@ -278,13 +284,23 @@ export async function runTests(options: RunOptions = {}): Promise<RunResult> {
   if (resolve(cwd) === resolve(repository) && !existsSync(join(cwd, 'dist', 'index.html')) && opensDashboard(cwd, selection?.args ?? [])) await ensureDashboardBuilt(cwd);
   // GY-3611: the CLI and server the tests start run from dist/; build them once, before the first file, when missing or stale.
   if (resolve(cwd) === resolve(repository) && !builtEntries.every(name => builtEntry(cwd, name))) await buildEntries(cwd);
+  // GY-3691: everything the run writes to its tmpdir — its Postgres, every test's directories — goes
+  // under one scratch root, removed when the run ends, pass, fail or SIGTERM, unless
+  // GRAPHYARD_KEEP_SCRATCH is set. A killed runner leaves its owner marker, so the next sweep takes it.
+  const keepScratch = !!(options.environment ?? process.env).GRAPHYARD_KEEP_SCRATCH;
+  // It sits beside the caller's tmpdir when that parent is writable, else inside it: a socket path
+  // under it is then no longer than under the tmpdir itself (the 107-byte bound a trial's
+  // `~/.gy/tmp/gy-XXXXXXX` left no room under), and a session's `/tmp` gives `/tmp/gyXXXXXX`.
+  const base = tmpRoot ?? tmpdir();
+  const scratch = options.scratch ? await mkdtemp(join(options.scratch, 'gy')) : await mkdtemp(join(dirname(base), 'gy')).catch(() => mkdtemp(join(base, 'gy')));
+  await writeTempOwner(scratch);
   const reservation = await reserveTestPorts(options.browser ? { first: defaultBrowserPort, span: 2 + testPortSpan, last: 65_000, ...options.ports } : { ...nestedFirst(), ...options.ports });
   let postgres: Awaited<ReturnType<typeof import('./postgres.js').startPostgres>> | undefined;
   try {
     // One shared warm cluster for the whole run, whichever suite runs (GY-3356).
     const { startPostgres } = await import('./postgres.js');
     const clusterPort = sharedClusterPort(reservation.base, options.browser);
-    postgres = await startPostgres(clusterPort);
+    postgres = await startPostgres(clusterPort, undefined, scratch);
     // The suite's managed checkouts live inside the tree it runs from (ignored by .graphyard/): a worker's
     // sandbox can write nowhere else, and the default ~/.local/share/graphyard failed every checkout there (GY-498).
     // A run of the suite reads no host memory (GY-612): a host the suite itself loaded low must not
@@ -298,7 +314,7 @@ export async function runTests(options: RunOptions = {}): Promise<RunResult> {
     // bound. tests/host-heavy-budget.test.ts drives the real limit in its own directories.
     mkdirSync(join(dataHome, 'heavy-jobs'), { recursive: true });
     try { writeFileSync(join(dataHome, 'heavy-jobs', 'limit'), '64\n'); } catch { /* the default bound stands */ }
-    const set = { ...suiteRunEnvironment({ browser: options.browser, browserPort: reservation.base, clusterPort, clusterUrl: postgres.url, dataHome, tmpRoot }),
+    const set = { ...suiteRunEnvironment({ browser: options.browser, browserPort: reservation.base, clusterPort, clusterUrl: postgres.url, dataHome, tmpRoot: scratch }),
       // GY-3333: the suite's host-level account records live under the test data home, never the real ~/.gy.
       [hostAccountsVariable]: join(dataHome, 'host-accounts') };
     const environment = isolatedTestEnvironment(options.environment ?? process.env, set);
@@ -323,7 +339,14 @@ export async function runTests(options: RunOptions = {}): Promise<RunResult> {
     // processes are gone now, so the sweep takes their directories back at once.
     await sweepLeftoverTempDirectories(tmpRoot);
     return { code, base: reservation.base, environment, stdout, stderr };
-  } finally { try { await postgres?.stop(); } finally { reservation.release(); } }
+  } finally {
+    try { await postgres?.stop(); } finally {
+      reservation.release();
+      if (keepScratch) console.error(`GRAPHYARD_KEEP_SCRATCH: kept ${scratch}`);
+      else { stopServersUnder(scratch); await rm(scratch, { recursive: true, force: true, maxRetries: 5 }); }
+      await rm(tempOwnerMarker(scratch), { force: true });
+    }
+  }
 }
 
 /**

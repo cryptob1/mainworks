@@ -28,13 +28,15 @@ async function open(page: Page, astraPriced: boolean) {
     if (url.pathname === '/api/costs') return route.fulfill({ json: summary });
     return route.fulfill({ json: boardApi(url.pathname.slice(1) + url.search) });
   });
-  await page.goto('/?sign-in');
+  await page.goto('/?sign-in#work');
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings', exact: true }).click();
   await page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: 'Costs', exact: true }).click();
   await expect(page.getByRole('main').getByRole('heading', { name: 'Costs', level: 1 })).toBeVisible();
   await expect(page.locator('[data-cost-window]')).toHaveCount(4);
+  // GY-3485: By model, By account and the price sheet sit in the Details fold.
+  await page.getByRole('main').getByText('Details', { exact: true }).click();
 }
 
 const cost = (page: Page, table: string, line: string) => page.getByRole('table', { name: table }).locator(`tr[data-cost-line="${line}"] td`).nth(6);

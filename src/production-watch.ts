@@ -4,6 +4,7 @@ import type { Work } from './model.js';
 import type { BuildIdentity } from './protocol-version.js';
 import type { Application } from './model/project-applications.js';
 import { posix } from 'node:path';
+import { setting } from './setting.js';
 
 /**
  * Production deployment observation for the managed base branch.
@@ -44,9 +45,9 @@ const railwayQuery = `query graphyardDeployments($input: DeploymentListInput!, $
  */
 export function railwayProvider(env: Record<string, string | undefined> = process.env, fetcher: typeof fetch = fetch): DeploymentProvider | null {
   const accountToken = env.RAILWAY_API_TOKEN?.trim(), projectToken = env.RAILWAY_TOKEN?.trim();
-  const serviceId = (env.GRAPHYARD_RAILWAY_SERVICE_ID ?? env.RAILWAY_SERVICE_ID)?.trim(), environmentId = (env.GRAPHYARD_RAILWAY_ENVIRONMENT_ID ?? env.RAILWAY_ENVIRONMENT_ID)?.trim(), projectId = (env.GRAPHYARD_RAILWAY_PROJECT_ID ?? env.RAILWAY_PROJECT_ID)?.trim();
+  const serviceId = (setting('RAILWAY_SERVICE_ID', env) ?? env.RAILWAY_SERVICE_ID)?.trim(), environmentId = (setting('RAILWAY_ENVIRONMENT_ID', env) ?? env.RAILWAY_ENVIRONMENT_ID)?.trim(), projectId = (setting('RAILWAY_PROJECT_ID', env) ?? env.RAILWAY_PROJECT_ID)?.trim();
   if (!(accountToken || projectToken) || !serviceId || !environmentId) return null;
-  const endpoint = env.GRAPHYARD_RAILWAY_API?.trim() || 'https://backboard.railway.com/graphql/v2';
+  const endpoint = setting('RAILWAY_API', env)?.trim() || 'https://backboard.railway.com/graphql/v2';
   return {
     name: 'railway', description: `Railway service ${serviceId}, environment ${environmentId}`,
     async list() {

@@ -9,7 +9,7 @@
 import { readFile } from 'node:fs/promises';
 import pg from 'pg';
 
-const { databaseUrl } = JSON.parse(await readFile(`.graphyard/e2e-serve-${new URL(process.env.TARGET_URL).port}.json`, 'utf8'));
+const { databaseUrl } = JSON.parse(await readFile(`.graphyard/e2e-serve-${new URL(process.env.TARGET_URL ?? 'http://127.0.0.1:4391').port}.json`, 'utf8'));
 const minute = 60_000, now = Date.now();
 const filed = new Date(now - 3 * 60 * minute).toISOString();
 const item = (n, key, title, minutesWaiting, blocker) => ({

@@ -20,7 +20,7 @@ const hostName = z.string().trim().min(1).max(200).refine(value => !/[\u0000-\u0
 const text = (max: number) => z.string().trim().min(1).max(max).refine(value => !/[\u0000-\u001f\u007f]/.test(value), 'Control characters are not allowed');
 
 const launchEnvironment = z.record(
-  z.string().regex(/^[A-Z_][A-Z0-9_]*$/).refine(name => !name.startsWith('GRAPHYARD_'), 'GRAPHYARD_ variables are owned by the launcher').refine(name => !secretName.test(name), 'A launch contract never carries a secret; the credential lives in the runtime login the account references'),
+  z.string().regex(/^[A-Z_][A-Z0-9_]*$/).refine(name => !/^(GRAPHYARD|MAINWORKS)_/.test(name), 'GRAPHYARD_ variables are owned by the launcher').refine(name => !secretName.test(name), 'A launch contract never carries a secret; the credential lives in the runtime login the account references'),
   z.string().min(1).refine(value => !/[\u0000-\u001f\u007f]/.test(value), 'Environment values cannot contain control characters').refine(notSecret, 'That value looks like a credential; the registry stores references, never secrets'),
 ).default({}).superRefine((values, context) => {
   // GY-3276: a value past the limit is a host problem to fix (a PATH that long), so the refusal
@@ -44,7 +44,7 @@ export const launchContractSchema = z.object({
   headlessArgs: z.array(z.string().max(1000).refine(notSecret, 'Arguments must not contain credentials')).max(30)
     .refine(args => args.filter(arg => arg === '{request}').length === 1, 'headlessArgs must contain exactly one {request} argument').optional(),
   environment: launchEnvironment,
-  homeVariable: z.string().regex(/^[A-Z_][A-Z0-9_]*$/).refine(name => !name.startsWith('GRAPHYARD_'), 'GRAPHYARD_ variables are owned by the launcher').nullable().default(null),
+  homeVariable: z.string().regex(/^[A-Z_][A-Z0-9_]*$/).refine(name => !/^(GRAPHYARD|MAINWORKS)_/.test(name), 'GRAPHYARD_ variables are owned by the launcher').nullable().default(null),
   modelFlag: z.string().regex(/^--?[a-zA-Z][a-zA-Z0-9-]*$/).nullable().default(null),
   login: z.string().trim().min(1).max(500).refine(notSecret, 'A login command names how to log in, never the credential').nullable().default(null),
   loginFile: z.string().trim().min(1).max(200).refine(value => !isAbsolute(value) && !value.split('/').includes('..'), 'loginFile is a path inside the account home').nullable().default(null),
@@ -71,7 +71,9 @@ export const modelSchema = z.object({
 }).strict();
 export const usageSchema = z.object({ window: text(40), percent: z.number().min(0).max(1000), resetsAt: z.string().datetime().nullable(),
   /** When a window carried past a failed usage read was last read (GY-3494). */
-  readAt: z.string().datetime().optional() }).strict();
+  readAt: z.string().datetime().optional(),
+  /** GY-3497: the provider's own limit list named this window (Claude's `limits[]`), so the provider enforces it and a reading at its ceiling holds. */
+  limitList: z.literal(true).optional() }).strict();
 /** What was last observed about an account: by an executor's probe on its host, or marked by an operator. */
 export const quotaObservationSchema = z.object({
   loggedIn: z.boolean().nullable().default(null),
@@ -94,6 +96,8 @@ export const quotaObservationSchema = z.object({
   key: z.string().regex(/^[0-9a-f]{12}$/).optional(),
   /** GY-3516: no longer written (GY-3555: the account's own live request decides); kept so stored readings still parse. */
   fault: text(300).nullable().optional(),
+  /** GY-3497: the extra-usage line the provider's answer gave when spend is enabled (`extra usage on: $3.21 of $10.00 used`); shown, never changed. */
+  spend: text(120).optional(),
 }).strict();
 
 /**

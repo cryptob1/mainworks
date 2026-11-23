@@ -171,7 +171,8 @@ test('unit:e2e-runner-results — e2e run runs passing and failing cases against
   // The shipped API-only cases run for real against this control plane; their browser siblings need a built dashboard.
   for (const id of ['create-work-item', 'board']) await cp(join(root, caseDirectory, `${id}.json`), join(dir, caseDirectory, `${id}.json`));
   const cases = await loadCases(dir);
-  assert.ok(cases.every(entry => entry.definition.steps.every(step => step.kind === 'http')));
+  // GY-3692: create-work-item's one command step checks the served head's seed; it runs here too.
+  assert.ok(cases.every(entry => entry.definition.steps.every(step => step.kind === 'http' || step.kind === 'command')));
   await syncCases(apiAs(operator), cases);
   const report = join(dir, 'report.json');
   const { GRAPHYARD_TOKEN_FILE: _file, ...inherited } = process.env;
@@ -243,7 +244,7 @@ test('unit:e2e-runner-results — browser steps open, fill, click and expect tex
   const health = (async () => new Response('{}')) as typeof fetch;
   const ok = await runCases(signIn, { url: 'https://uat.example.test', token: 'uat-token', launcher: launcher('nothing'), fetcher: health });
   assert.equal(ok.cases[0].outcome, 'pass', JSON.stringify(ok.cases[0].failingStep));
-  assert.deepEqual(actions, ['open https://uat.example.test/?sign-in', 'fill Access token=uat-token', 'click button:Open control plane:false', 'see navigation:Main:true', 'see heading:Work:true']);
+  assert.deepEqual(actions, ['open https://uat.example.test/?sign-in#work', 'fill Access token=uat-token', 'click button:Open control plane:false', 'see navigation:Main:true', 'see heading:Work:true']);
   assert.equal(launches, 1);
   const bad = await runCases(signIn, { url: 'https://uat.example.test', token: 'uat-token', launcher: launcher('heading:Work'), fetcher: health });
   assert.deepEqual(bad.cases[0].failingStep, { index: 4, name: 'expect heading "Work"', reason: 'Timeout waiting for heading:Work:true' });
@@ -459,8 +460,8 @@ test('unit:e2e-command-and-agent-steps — a case accepts command and agent step
   assert.match(refusal(file, { ...http200('general'), steps: [{ kind: 'shell', run: 'true' }] })!, /steps\.0\.kind: /);
   assert.match(refusal(file, { ...http200('general'), steps: [{ kind: 'browser', action: 'click', role: 'button' }, { kind: 'http', method: 'GET', path: '/', status: 200 }] })!, /steps\.0\.text: a browser click step needs text/);
   const shipped = await loadCases(root);
-  // Contract UI cases stay http|browser-only; GY-1708's capacity-limit-redispatch may use command.
-  const contractIds = new Set(['sign-in', 'create-work-item', 'board', 'work-item-detail', 'tests-page']);
+  // Contract UI cases stay http|browser-only; GY-1708's capacity-limit-redispatch and GY-3692's create-work-item may use command.
+  const contractIds = new Set(['sign-in', 'board', 'work-item-detail', 'tests-page']);
   assert.ok(shipped.filter(entry => contractIds.has(entry.definition.id)).every(entry =>
     entry.definition.secrets.length === 0 && entry.definition.steps.every(step => step.kind === 'http' || step.kind === 'browser')),
   'the contract UI cases are untouched');

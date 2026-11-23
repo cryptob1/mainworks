@@ -1,0 +1,16 @@
+{
+  "id": "headless-large-prompt-all-runtimes",
+  "title": "Every headless runtime takes a large prompt without spawn E2BIG",
+  "description": "Headless opencode, claude and codex sessions with a prompt larger than the platform's argument limit start and receive the whole prompt via stdin while small prompts stay on argv, and a review of a very large diff on opencode posts a verdict.",
+  "tags": ["review"],
+  "target": "any",
+  "required": true,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "large prompt on every runtime: integration and opencode review proofs",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/headless-large-prompt-all-runtimes.test.ts",
+      "timeoutSeconds": 600
+    }
+  ]
+}

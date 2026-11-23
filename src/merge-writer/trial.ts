@@ -2,7 +2,7 @@ import { trialCpuMonitor, trialOverloadFault, type TrialCpuReading } from './tri
 // Concern: the merge writer's trial merge — the exact merge commit of a head onto main, and its build and affected tests in a credential-free checkout.
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync, statfsSync } from 'node:fs';
-import { chmod, cp, mkdir, mkdtemp, readdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, cp, mkdir, mkdtemp, readdir, readFile, readlink, realpath, rename, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises';
 import { availableParallelism, constants, homedir, hostname, tmpdir } from 'node:os';
 import { basename, delimiter, dirname, join, relative, isAbsolute, resolve } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../child-runner.js';
@@ -25,12 +25,14 @@ import type { GateCheck } from '../model/delivery-policy.js';
 import { containerTrialE2e, trialContainerBoundary, trialContainerDependencies, trialImage } from './trial-container.js';
 import { cachedPasses, commitDependencies, dependencyKey, recordPasses, testResultKeys, warmDependencies } from './trial-caches.js';
 import { shellQuote } from '../shell-quote.js';
-import { HostDroppedError, readShardHosts, shardSshSession, type ShardSshSession, runShardsOnHosts, realFreeCores, recordRemoteShardRun, remoteShardSession, shardHosts, splitLocalOnlyTests, trialImageHasBrowser, underHeatLimit, type HostReading, type PlacedHost } from './remote-shards.js';
+import { HostBusyError, HostDroppedError, readShardHosts, shardSshSession, type ShardSshSession, runShardsOnHosts, realFreeCores, recordRemoteShardRun, remoteShardSession, shardHosts, splitLocalOnlyTests, trialImageHasBrowser, underHeatLimit, type HostReading, type PlacedHost } from './remote-shards.js';
 import { repositoryTrialImage, trialDockerfile, TrialRepositoryImageError } from './repository-trial-image.js';
 import { addressPoolsSpent, checkServiceVariables, dockerEnvironment, previewNetworkCount, startCheckServices, tcpAcceptProbe, type CheckServices } from '../compose-preview.js';
 import { diskFloorBytes, gateTrialKey, trialFileTimeoutMs, heatWaitSeconds, TrialHeatError, trialContainerFault, trialLoad, trialShardLanes, trialStartOwner } from './trial-load.js';
 import { nestedSandboxDenied, trialAppArmorFix } from './trial-apparmor.js';
 import { maskSecrets } from '../redaction.js';
+import { setting } from '../setting.js';
+import { stateDirectory } from '../install/layout.js';
 
 /** One git call in the coordinator's object store: the arguments after `git -C <root>`, the child's stdout. */
 export type TrialGit = (args: string[], env?: Record<string, string>) => Promise<string>;
@@ -147,7 +149,7 @@ export const credentialTrialVariable = (name: string) =>
   || /(?:TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE_KEY|API_KEY|ACCESS_KEY|CREDENTIAL)/i.test(name);
 /** The trial child's environment: the isolated test one, with every credential and Graphyard control removed and git's global configuration off. */
 export function trialEnvironment(environment: NodeJS.ProcessEnv = process.env): Record<string, string> {
-  const kept = Object.fromEntries(Object.entries(isolatedTestEnvironment(environment)).filter(([name]) => !/^(GRAPHYARD|HERDR|LC)_/.test(name) && name !== 'LANG' && !credentialTrialVariable(name)));
+  const kept = Object.fromEntries(Object.entries(isolatedTestEnvironment(environment)).filter(([name]) => !/^(GRAPHYARD|MAINWORKS|HERDR|LC)_/.test(name) && name !== 'LANG' && !credentialTrialVariable(name)));
   // Use the running Node installation before host version-manager shims: the trial's empty
   // home intentionally cannot supply the host's mise trust/configuration to those shims.
   // The private image supplies C.UTF-8, not the service manager's host locales.
@@ -179,7 +181,7 @@ export const ghConfigDirectory = (environment: NodeJS.ProcessEnv = process.env) 
   environment.GH_CONFIG_DIR || join(environment.XDG_CONFIG_HOME || join(environment.HOME ?? homedir(), '.config'), 'gh');
 /** GY-2997: what a trial child must not read by its absolute path: the operator config home (coordinator credentials, the deploy key's default place), the operator's gh config directory (the gh login), the deploy key wherever it is configured, and the loop's runtime directory (its session bus and sockets). */
 export const trialHiddenPaths = (credentialFile: string | undefined, environment: NodeJS.ProcessEnv = process.env, uid = process.getuid?.()): string[] =>
-  [...new Set([configHome(environment.GRAPHYARD_CONFIG_HOME), ghConfigDirectory(environment), credentialFile, environment.XDG_RUNTIME_DIR, uid === undefined ? undefined : `/run/user/${uid}`].filter((path): path is string => !!path && isAbsolute(path)))];
+  [...new Set([configHome(setting('CONFIG_HOME', environment)), ghConfigDirectory(environment), credentialFile, environment.XDG_RUNTIME_DIR, uid === undefined ? undefined : `/run/user/${uid}`].filter((path): path is string => !!path && isAbsolute(path)))];
 /**
  * The bubblewrap words every trial child runs under: a read-only host, private devices and
  * scratch, host launch sockets hidden, credential masks, then only the trial's allocated
@@ -245,7 +247,7 @@ export const trialTemporaryRoot = (sessionDirectory: string, roots: readonly str
 export function trialTemporaryRootReport(root: string, { roots = trialTemporaryRoots(), exists = existsSync, volatile = volatileFilesystem,
   size = path => { try { const info = statfsSync(path); return Number(info.blocks) * Number(info.bsize); } catch { return null; } } }: {
   roots?: readonly string[]; exists?: (path: string) => boolean; volatile?: (path: string) => string | null; size?: (path: string) => number | null } = {}) {
-  const floor = diskFloorBytes({ run: (() => { try { return JSON.parse(readFileSync(join(root, '.graphyard', 'master.json'), 'utf8')).run ?? {}; } catch { return {}; } })() });
+  const floor = diskFloorBytes({ run: (() => { try { return JSON.parse(readFileSync(join(stateDirectory(root), 'master.json'), 'utf8')).run ?? {}; } catch { return {}; } })() });
   const chosen = trialTemporaryRoot('the trial session directory', roots, exists, volatile);
   const skipped = roots.filter(path => exists(path) && volatile(path)).map(path => `${path} is a ${volatile(path)}, so trials do not use it`);
   const bytes = exists(chosen) ? size(chosen) : null;
@@ -344,39 +346,52 @@ export const trialTemporaryPrefix = 'gy-t';
  */
 export const trialCheckoutPrefix = 'gy-c';
 /**
- * GY-3589: the base tip's kept built tree — one directory per base commit under the trial's
- * worktree root, named by the commit's full sha. A caching trial's base-tip pass checks the tip
- * out there, installs and builds it once, and every later base pass on the same tip runs its
- * checks in that tree without installing or building again, so one unchanged commit never holds
- * trial slots for repeat builds. A base pass on another tip takes every other tip's tree back, so
- * at most one stays. `<directory>.built` marks a tree whose install and build both passed; a tree
- * without it, or one git no longer reports clean at the tip, is checked out fresh.
+ * GY-3589, GY-3640: a commit's kept built tree — one entry per commit under the trial's worktree
+ * root, named by the commit's full sha. The first caching pass on a commit checks it out, installs
+ * and builds it once; every later pass on that commit — a rerun of failing tests, a base pass, the
+ * release check — runs in that tree without installing or building again, and a
+ * pass that arrives while the first still builds waits for it. The entry is a link to a short
+ * directory beside the trial checkouts (`keptBuildPlacePrefix`; the entry itself when no short root
+ * is free). `<entry>.built` marks a tree whose install and build both passed, `<entry>.lock` is held
+ * by the pass building it, and each pass using it holds `<entry>.use-<id>`. The `keptBuildLimit`
+ * most recently used idle trees stay; older ones are taken back.
  */
 export const keptBaseBuildPrefix = 'graphyard-base-build-';
-/** The kept built tree of base commit `sha` under the trial worktree root `base`. */
+export const keptBuildPlacePrefix = 'gy-b';
+export const keptBuildLimit = 4;
+/** The kept built tree's entry for commit `sha` under the trial worktree root `base`. */
 export const keptBaseBuild = (base: string, sha: string) => join(base, `${keptBaseBuildPrefix}${sha.toLowerCase()}`);
-/** Sibling marker: the kept tree's install and build both passed, so a later base pass may run in it. */
+/** Sibling marker: the kept tree's install and build both passed, so a later pass may run in it. */
 export const keptBaseBuildMarker = (directory: string) => `${directory}.built`;
-/** The base commit a kept-tree entry under the trial worktree root names: its directory, built marker, lock or lock owner marker. */
+/** The commit a kept-tree entry under the trial worktree root names: its entry, built marker, lock, use or an owner marker of one. */
 export const keptBaseBuildSha = (name: string): string | null =>
   new RegExp(`^${keptBaseBuildPrefix}([0-9a-f]{40})(?:\\.built|(?:\\.lock|\\.use-[0-9a-f-]+)(?:\\.owner)?)?$`).exec(name)?.[1] ?? null;
-/** GY-3679: the markers `<tree>.use-<id>` of the previews serving a kept tree; a live one keeps it from being taken back. */
-const keptBaseBuildUses = async (tree: string) => (await readdir(dirname(tree)).catch(() => [] as string[]))
-  .filter(name => name.startsWith(`${basename(tree)}.use-`) && !name.endsWith('.owner')).map(name => join(dirname(tree), name));
+const ownerLive = async (directory: string) => { const owner = await readTempOwner(directory).catch(() => null); return !owner || !tempOwnerGone(owner); };
+/** The live uses of the kept tree `entry` other than `own`; a use whose pass is gone is removed. */
+async function keptBuildUses(entry: string, own: string | null = null): Promise<string[]> {
+  const live: string[] = [];
+  for (const name of await readdir(dirname(entry)).catch(() => [] as string[])) {
+    const use = join(dirname(entry), name);
+    if (!name.startsWith(`${basename(entry)}.use-`) || name.endsWith('.owner') || use === own) continue;
+    if (await ownerLive(use)) live.push(use);
+    else { await rm(use, { recursive: true, force: true }).catch(() => {}); await rm(tempOwnerMarker(use), { force: true }).catch(() => {}); }
+  }
+  return live;
+}
 /**
- * GY-3679: base commit `sha`'s kept built tree, held for a preview that serves it, or null when no
- * trial left one built. Held by a `.use-<id>` marker owned by this process until `release`, so a base
- * pass on another tip leaves the tree in place while the preview serves it.
+ * GY-3679: commit `sha`'s kept built tree, held for a preview that serves it, or null when no trial
+ * left one built and idle. Held by a `.use-<id>` marker owned by this process until `release`, so no
+ * pass takes the tree back or mutates it while the preview serves it.
  */
 export async function useKeptBaseBuild(base: string, sha: string): Promise<{ tree: string; release(): Promise<void> } | null> {
-  const tree = keptBaseBuild(base, sha);
-  if (!existsSync(keptBaseBuildMarker(tree))) return null;
-  const use = `${tree}.use-${randomUUID()}`;
+  const entry = keptBaseBuild(base, sha), lock = `${entry}.lock`;
+  if (!existsSync(keptBaseBuildMarker(entry))) return null;
+  const use = `${entry}.use-${randomUUID()}`;
   await mkdir(use); await writeTempOwner(use);
   const release = async () => { await rm(use, { recursive: true, force: true }); await rm(tempOwnerMarker(use), { force: true }); };
-  // A pass that took the tree back between the check and the marker leaves nothing to serve.
-  if (!existsSync(keptBaseBuildMarker(tree))) { await release(); return null; }
-  return { tree, release };
+  // A pass that took the tree back, or holds it to rebuild or overlay it, leaves nothing to serve.
+  if (!existsSync(keptBaseBuildMarker(entry)) || existsSync(lock) && await ownerLive(lock)) { await release(); return null; }
+  return { tree: await realpath(entry), release };
 }
 /**
  * The mode of a trial's own temporary directory (GY-1639): sticky, as CI's /tmp is, so a suite that
@@ -522,7 +537,7 @@ export function shardTestFiles(files: readonly string[], lanes: number, duration
   return shards.map(shard => shard.files).filter(shard => shard.length);
 }
 /** Where a passing trial saves its per-file durations (GY-3542): beside the install's other local state, never in a checkout. */
-export const refreshedDurationsPath = (root: string, path: string) => join(root, '.graphyard', basename(path));
+export const refreshedDurationsPath = (root: string, path: string) => join(stateDirectory(root), basename(path));
 const durationsIn = (text: string): Record<string, number> => { try { const files = (JSON.parse(text) as { files?: unknown } | null)?.files; return files && typeof files === 'object' ? files as Record<string, number> : {}; } catch { return {}; } };
 /** The timings a trial plans its shards from: the base commit's baseline when selectorApproved is false (GY-3635) or the merge's own baseline in its checkout when approved, under what passing trials on this install measured since; `{}` when neither exists. */
 const checkoutDurations = async (worktree: string, root: string, path?: string, options?: { baseTip?: string; selectorApproved?: boolean; run?: ChildRun }): Promise<Record<string, number>> => {
@@ -841,7 +856,9 @@ export interface RunTrialInput {
   /** GY-3283: run only the declared check of this name, whatever paths it is limited to (a worker's `graphyard check NAME`). */
   only?: string;
   /** GY-3412: the hosts a selection's shards fan out to — those `graphyard host add` recorded unless a test names others — and how they are read. */
-  remote?: { hosts: readonly string[]; read?: (hosts: readonly string[], transport: ShardSshSession) => Promise<HostReading[]> };
+  remote?: { hosts: readonly string[]; read?: (hosts: readonly string[], transport: ShardSshSession) => Promise<HostReading[]>; transport?: ShardSshSession };
+  /** GY-3704: a check with services ran on `host`, or fell back from it to this machine for `fallback` (at most 500 characters). */
+  onHostCheck?: (entry: { check: string; host: string; fallback?: string }) => void;
   /** GY-3526: a worker verification's label: it holds a host heavy-job slot under it only while a test shard or check runs on this machine, never while its shards run on other hosts. */
   localSlot?: string;
   /** GY-3634: optional benchmark metrics callback receiving shards per host, host temperatures at start, and per-file durations. */
@@ -1096,61 +1113,103 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
   let home: string | null = null, temporary: string | null = null, place: string | null = null, worktree = checkout.worktree, guarded: string | null = null;
   let env: Record<string, string>, wrapper: string[], boundary: ReturnType<typeof trialContainerBoundary>, runImage: string | undefined;
   let dependencies: string | null = null, warm: string | null = null, caches = '';
-  // GY-3589: this trial is the base tip itself (a caching trial's base pass), so it may run in the
-  // tip's kept built tree (keptBaseBuild): one built tree per base commit under the trial's
-  // worktree root, built by the first base pass on the tip and reused by every later one.
-  const keptSha = input.caches && input.baseTip && input.baseTip.toLowerCase() === input.mergeSha.toLowerCase() ? input.mergeSha.toLowerCase() : null;
-  const keptPath = keptSha ? keptBaseBuild(input.base, keptSha) : null;
-  let kept: string | null = null, keptLock: string | null = null, reused = false;
-  /** Takes the kept tree's lock for this pass: one pass owns the tree at a time, and a pass that cannot take it (a live pass holds it) builds its own checkout as trials did before. */
-  const takeKeptTree = async (): Promise<boolean> => {
-    if (!keptPath) return false;
-    const lock = `${keptPath}.lock`;
+  // GY-3640: a caching trial runs in its commit's kept built tree (keptBaseBuild), built by the
+  // first pass on the commit and reused by every later one.
+  const keptSha = input.caches ? input.mergeSha.toLowerCase() : null;
+  const keptEntry = keptSha ? keptBaseBuild(input.base, keptSha) : null;
+  let kept: string | null = null, keptLock: string | null = null, keptUse: string | null = null, reused = false;
+  let e2eOverlay: string[] = [], needsExclusive = false;
+  const dropOwned = async (directory: string) => { await rm(directory, { recursive: true, force: true }).catch(() => {}); await rm(tempOwnerMarker(directory), { force: true }).catch(() => {}); };
+  const claimKeptUse = async () => {
+    keptUse = `${keptEntry}.use-${randomUUID()}`;
+    await mkdir(keptUse, { recursive: true }); await writeTempOwner(keptUse);
+  };
+  const releaseKeptUse = async () => { if (keptUse) await dropOwned(keptUse); keptUse = null; };
+  /** Takes the kept tree's build lock: one pass builds or mutates a commit, and a lock whose owner is gone (a killed pass) is taken back. */
+  const takeKeptLock = async (): Promise<boolean> => {
+    const lock = `${keptEntry}.lock`;
     try { await mkdir(lock); }
     catch (error) {
-      // A lock a live pass holds is respected; one whose owner is gone (a killed pass) is taken back.
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') return false;
-      const owner = await readTempOwner(lock).catch(() => null);
-      if (!owner || !tempOwnerGone(owner)) return false;
-      await removeTree(lock).catch(() => {});
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || await ownerLive(lock)) return false;
+      await dropOwned(lock);
       try { await mkdir(lock); } catch { return false; }
     }
     keptLock = lock;
     await writeTempOwner(lock).catch(() => {});
     return true;
   };
-  /** Takes a kept tree away: its worktree registration first, then the tree and its built marker. */
-  const takeBackKeptTree = async (tree: string): Promise<void> => {
+  const releaseKeptLock = async () => { if (keptLock) await dropOwned(keptLock); keptLock = null; };
+  /** Takes a kept tree away: its built marker first, then its worktree registration, the tree and its entry. */
+  const takeBackKeptTree = async (entry: string): Promise<void> => {
+    await rm(keptBaseBuildMarker(entry), { force: true }).catch(() => {});
+    const tree = await readlink(entry).catch(() => entry);
     try { await run('git', ['-C', input.root, 'worktree', 'remove', '--force', tree], { timeoutMs: remaining() }); } catch { /* never registered, or already gone */ }
-    await removeTree(tree).catch(() => {});
-    await rm(`${tree}.built`, { force: true }).catch(() => {});
+    await removeTree(tree === entry ? tree : dirname(tree)).catch(() => {});
+    await rm(entry, { recursive: true, force: true }).catch(() => {});
   };
-  /** Whether the kept tree still sits clean at the tip — a tree a pass left different is never reused; git's own word decides. */
+  /** Whether the kept tree is built, unlocked by any other pass, and clean at its commit — git's own word decides. */
   const keptTreeReady = async (): Promise<boolean> => {
-    if (!existsSync(keptBaseBuildMarker(kept!))) return false;
+    if (!existsSync(keptBaseBuildMarker(keptEntry!))) return false;
+    const lock = `${keptEntry!}.lock`;
+    if (keptLock !== lock && existsSync(lock) && await ownerLive(lock)) return false;
     try {
-      const head = String(await run('git', ['-C', kept!, 'rev-parse', 'HEAD'], { timeoutMs: remaining() })).trim().toLowerCase();
-      const clean = String(await run('git', ['-C', kept!, 'status', '--porcelain'], { timeoutMs: remaining() })).trim();
-      return head === keptSha && clean === '';
+      const head = String(await run('git', ['-C', keptEntry!, 'rev-parse', 'HEAD'], { timeoutMs: remaining() })).trim().toLowerCase();
+      if (head !== keptSha) return false;
+      return String(await run('git', ['-C', keptEntry!, 'status', '--porcelain'], { timeoutMs: remaining() })).trim() === '';
     } catch { return false; }
   };
-  /** Takes the kept tree away, its worktree registration first, so the pass below checks the tip out fresh in its place. */
-  const discardKeptTree = async (): Promise<void> => { await takeBackKeptTree(kept!); };
-  /** One kept tree per base commit: a pass on this tip takes every other tip's back, unless a live pass holds that tip's lock. */
+  /** The `keptBuildLimit` most recently used idle built trees of other commits stay; the rest are taken back. */
   const reclaimKeptTrees = async (): Promise<void> => {
     const shas = new Set((await readdir(input.base).catch(() => [] as string[])).flatMap(name => { const sha = keptBaseBuildSha(name); return sha && sha !== keptSha ? [sha] : []; }));
+    const idle: { entry: string; usedAt: number }[] = [];
     for (const sha of shas) {
-      const tree = keptBaseBuild(input.base, sha), lock = `${tree}.lock`;
-      const owner = await readTempOwner(lock).catch(() => null);
-      if (existsSync(lock) && (!owner || !tempOwnerGone(owner))) continue;
-      // GY-3679: a tree a live preview serves stays; a gone preview's marker goes with the tree.
-      const uses = await keptBaseBuildUses(tree);
-      if (await Promise.all(uses.map(use => readTempOwner(use).catch(() => null))).then(owners => owners.some(owner => owner && !tempOwnerGone(owner)))) continue;
-      await takeBackKeptTree(tree);
-      for (const use of uses) { await removeTree(use).catch(() => {}); await rm(tempOwnerMarker(use), { force: true }).catch(() => {}); }
-      await removeTree(lock).catch(() => {});
-      await rm(`${lock}.owner`, { force: true }).catch(() => {});
+      const entry = keptBaseBuild(input.base, sha), lock = `${entry}.lock`;
+      if (existsSync(lock) && await ownerLive(lock) || (await keptBuildUses(entry)).length) continue;
+      idle.push({ entry, usedAt: await stat(keptBaseBuildMarker(entry)).then(found => found.mtimeMs, () => 0) });
     }
+    // A tree with no built marker is a build that failed or was killed: it goes at once.
+    for (const { entry } of [...idle.filter(tree => tree.usedAt).sort((a, b) => b.usedAt - a.usedAt).slice(keptBuildLimit), ...idle.filter(tree => !tree.usedAt)]) {
+      await takeBackKeptTree(entry);
+      await dropOwned(`${entry}.lock`);
+    }
+  };
+  /** Runs this pass in its commit's kept tree: the built one, waited for while another pass builds or mutates it, else a fresh checkout this pass builds under the lock; false when the tree is in use and this pass needs it alone. */
+  const enterKeptTree = async (): Promise<boolean> => {
+    e2eOverlay = input.e2eProofs?.length && input.e2eFrom
+      ? String(await run('git', ['-C', input.root, 'diff', '--name-only', '-z', input.mergeSha, input.e2eFrom, '--', 'e2e/', 'tests/'], { timeoutMs: remaining() })).split('\0').filter(Boolean)
+      : [];
+    needsExclusive = e2eOverlay.length > 0;
+    await reclaimKeptTrees();
+    const lock = `${keptEntry!}.lock`;
+    for (;;) {
+      if (!needsExclusive && existsSync(keptBaseBuildMarker(keptEntry!)) && !(existsSync(lock) && await ownerLive(lock))) {
+        await claimKeptUse();
+        if (await keptTreeReady()) { reused = true; break; }
+        await releaseKeptUse();
+      }
+      if (await takeKeptLock()) {
+        // A tree another pass or a preview still uses is never rebuilt or mutated: this pass builds its own checkout instead.
+        if ((await keptBuildUses(keptEntry!)).length) { await releaseKeptLock(); needsExclusive = false; e2eOverlay = []; return false; }
+        await claimKeptUse();
+        if (await keptTreeReady()) {
+          if (!needsExclusive) await releaseKeptLock();
+          reused = true;
+          break;
+        }
+        await takeBackKeptTree(keptEntry!);
+        const near = await trialCheckoutRoot(input.checkoutRoots ?? trialCheckoutRoots(), input.minFreeBytes ?? defaultWorktreeRootMinFreeGb * 1e9, input.probe, input.checkoutRoots ? [] : undefined);
+        if (near) await symlink(join(await mkdtemp(join(near, keptBuildPlacePrefix)), 'checkout'), keptEntry!);
+        const tree = near ? await readlink(keptEntry!) : keptEntry!;
+        await run('git', ['-C', input.root, 'worktree', 'add', '--detach', tree, input.mergeSha], { timeoutMs: remaining(), ...(input.signal ? { signal: input.signal } : {}) });
+        break;
+      }
+      if (now() >= deadline) throw new TrialTimeoutError('install', Math.max(0, now() - startedAt), `waited for another pass to build ${keptSha!.slice(0, 12)}`);
+      input.signal?.throwIfAborted();
+      await new Promise(next => setTimeout(next, 500));
+    }
+    worktree = kept = await realpath(keptEntry!);
+    if (reused) { const at = new Date(); await utimes(keptBaseBuildMarker(keptEntry!), at, at).catch(() => {}); }
+    return true;
   };
   const clear = async (directory: string) => {
     if (directory === place) return clearTrialCheckout(directory);
@@ -1168,19 +1227,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const { XDG_RUNTIME_DIR: _runtime, DBUS_SESSION_BUS_ADDRESS: _bus, ...hostEnv } = trialEnvironment(input.environment);
     env = { ...hostEnv, ...trialTemporaryVariables(temporary!), ...trialHomeVariables(home, input.environment, true) };
     assertIsolatableHostControlEndpoints({ ...process.env, ...input.environment });
-    // GY-3589: a base pass that took the kept tree's lock works in that tree — the tip's built tree
-    // when an earlier pass left one ready (nothing to install or build), else a fresh checkout of
-    // the tip it builds and leaves ready — and takes every other tip's kept tree back first.
-    if (await takeKeptTree()) {
-      kept = keptPath;
-      await reclaimKeptTrees();
-      if (await keptTreeReady()) { worktree = kept!; reused = true; }
-      else {
-        await discardKeptTree();
-        worktree = kept!;
-        await run('git', ['-C', input.root, 'worktree', 'add', '--detach', worktree, input.mergeSha], { timeoutMs: remaining(), ...(input.signal ? { signal: input.signal } : {}) });
-      }
-    } else {
+    if (!keptEntry || !await enterKeptTree()) {
       const near = await trialCheckoutRoot(input.checkoutRoots ?? trialCheckoutRoots(), input.minFreeBytes ?? defaultWorktreeRootMinFreeGb * 1e9, input.probe, input.checkoutRoots ? [] : undefined);
       if (near) { place = await mkdtemp(join(near, trialCheckoutPrefix)); await writeTempOwner(place); worktree = join(place, 'checkout'); }
       await run('git', ['-C', input.root, 'worktree', 'add', '--detach', worktree, input.mergeSha], { timeoutMs: remaining(), ...(input.signal ? { signal: input.signal } : {}) });
@@ -1407,8 +1454,8 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         return ran.out;
       }))! };
       if (reused) {
-        // GY-3589: the tip's kept built tree answered ready, so this base pass installs and builds nothing.
-        log.push(`base build of ${input.mergeSha.slice(0, 12)} reused: an earlier pass already built this tip`);
+        // GY-3589: the commit's kept built tree answered ready, so this pass installs and builds nothing.
+        log.push(`build of ${input.mergeSha.slice(0, 12)} reused: an earlier pass already built this commit`);
         enter('build');
         enterStep('build: reused');
       } else {
@@ -1456,9 +1503,13 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         }
       }
     }
-    // GY-3589: this pass reached the end of the base tip's install and build, so the tree it leaves
-    // is the built tree later base passes on the same tip reuse (a failed step returned above).
-    if (kept && !reused) await writeFile(keptBaseBuildMarker(kept), `${new Date(now()).toISOString()}\n`).catch(() => {});
+    // GY-3589: this pass reached the end of the commit's install and build, so the tree it leaves is
+    // the built tree later passes on the same commit reuse (a failed step returned above), and a
+    // pass waiting on the build lock goes on (unless this pass still holds the lock for an e2eFrom overlay).
+    if (kept && !reused) {
+      await writeFile(keptBaseBuildMarker(keptEntry!), `${new Date().toISOString()}\n`).catch(() => {});
+      if (!needsExclusive) await releaseKeptLock();
+    }
   };
   const finishTests = async (...verdict: Parameters<typeof finish>) => {
     await input.countProofs?.({
@@ -1504,24 +1555,29 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
   // the commit sent as a shard's is, the services started there, the command run on their network. With no host
   // ready, or one that drops the check, null: the check runs on this machine as before, the reason in the log.
   const onHost = async (check: RepositoryTrialCheck): Promise<Ended | null> => {
-    const here = (reason: string) => { log.push(`[remote] check ${check.check} runs on this machine: ${reason}`); return null; };
+    const here = (reason: string, from: readonly string[] = []) => {
+      log.push(`[remote] check ${check.check} runs on this machine: ${reason}`);
+      for (const host of from) input.onHostCheck?.({ check: check.check, host, fallback: reason.slice(0, 500) });
+      return null;
+    };
     const hosts = input.remote?.hosts ?? await shardHosts();
     if (!hosts.length) return here('no compute host is added');
-    const transport = shardSshSession(run);
+    const transport = input.remote?.transport ?? shardSshSession(run);
     const session = remoteShardSession({ root: input.root, sha: input.mergeSha, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport });
     try {
       const readings = (await (input.remote?.read ?? ((named, shared) => readShardHosts(named, run, cpu.cores(), shared)))(hosts, transport)).slice(1);
       const host = readings.filter(reading => underHeatLimit(reading) && reading.compose).sort((a, b) => realFreeCores(b) - realFreeCores(a))[0];
-      if (!host) return here(`no host is ready (${readings.map(reading => `${reading.name}: ${reading.away ? reading.reason ?? 'away' : reading.compose ? 'too hot' : 'no Docker Compose plugin, see graphyard host prepare'}`).join('; ')})`);
+      if (!host) return here(`no host is ready (${readings.map(reading => `${reading.name}: ${reading.away ? reading.reason ?? 'away' : reading.compose ? 'too hot' : 'no Docker Compose plugin, see graphyard host prepare'}`).join('; ')})`, readings.map(reading => reading.name));
       enterStep(`tests: ${check.check} on ${host.name}`);
       const probe = tcpAcceptProbe(check.services!.map(({ service, port }) => ({ host: service, port })), 120_000);
       const ended = await session.check(host.name, { file: check.services![0]!.file, services: check.services!.map(({ service, port }) => ({ service, port })), cpus: Math.max(1, host.cores),
         argv: ['/bin/sh', '-c', `${probe.map(shellQuote).join(' ')} && exec ${check.argv.map(shellQuote).join(' ')}`] });
+      input.onHostCheck?.({ check: check.check, host: host.name });
       for (const { step, ms } of ended.steps) input.onTiming?.(`${step}: ${check.check} on ${host.name}`, ms);
       log.push(`[remote] check ${check.check} ran on ${host.name}: ${ended.steps.map(({ step, ms }) => `${step} ${stepSeconds(ms)}`).join(', ')}`, `$ [${host.name}] ${check.argv.join(' ')}\n${ended.out}`);
       return { ok: ended.status === 0, out: ended.out, status: ended.status, signal: null, cause: undefined };
     } catch (error) {
-      if (error instanceof HostDroppedError) return here(error.message);
+      if (error instanceof HostDroppedError) return here(error.message, [error.host]);
       if ((error as { timedOut?: boolean }).timedOut) throw new TrialTimeoutError('tests', Math.max(0, now() - startedAt), tail());
       throw error;
     } finally { await session.close(); }
@@ -1534,7 +1590,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       enter('tests');
       enterStep('tests: e2e');
       // Run the candidate's proof against the base application, including edited cases and assertion scripts.
-      const overlay = input.e2eFrom ? String(await run('git', ['-C', worktree, 'diff', '--name-only', '-z', input.mergeSha, input.e2eFrom, '--', 'e2e/', 'tests/'], { timeoutMs: remaining() })).split('\0').filter(Boolean) : [];
+      const overlay = kept ? e2eOverlay : (input.e2eFrom ? String(await run('git', ['-C', worktree, 'diff', '--name-only', '-z', input.mergeSha, input.e2eFrom, '--', 'e2e/', 'tests/'], { timeoutMs: remaining() })).split('\0').filter(Boolean) : []);
       if (overlay.length) await run('git', ['-C', worktree, 'restore', '--source', input.e2eFrom!, '--staged', '--worktree', '--', ...overlay], { timeoutMs: remaining() });
       const cpuBefore = cpu.sample();
       const ran = await containerTrialE2e({
@@ -1542,8 +1598,9 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         networkWrapper: boundary, runDirectory: input.runDirectory,
         scratch: temporary ?? checkout.directory, budgetMs: remaining(), run, log: line => log.push(line),
       }).catch(async error => { throw await networkPoolFault(error, env) ?? error; }).finally(async () => {
-        // Restore both edited and added proof files before any later base checks.
-        if (overlay.length) await run('git', ['-C', worktree, 'restore', '--source', input.mergeSha, '--staged', '--worktree', '--', ...overlay], { timeoutMs: remaining() });
+        // Restore both edited and added proof files before any later base checks or concurrent passes.
+        try { if (overlay.length) await run('git', ['-C', worktree, 'restore', '--source', input.mergeSha, '--staged', '--worktree', '--', ...overlay], { timeoutMs: remaining() }); }
+        finally { if (needsExclusive) await releaseKeptLock(); }
       });
       const failures = ran.filter(entry => entry.failed);
       cpu.finish(stepLabel, cpuBefore, failures.length > 0 && failures.every(entry => /timed?\s*out|did not answer .* within \d+s|timeout/i.test(entry.failingStep ?? '')), line => log.push(line));
@@ -1681,7 +1738,8 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const shards: string[][] = [], pinned: boolean[] = [];
     for (const pool of [{ files: split.remoteable, lanes: trialShardLanes(cores) + remoteLanes, local: false }, { files: split.localOnly, lanes: trialShardLanes(cores), local: true }])
       for (const group of input.groupSize === undefined ? shardTestFiles(pool.files, pool.lanes, durations) : groupTestFiles(pool.files, input.groupSize)) { shards.push(group); pinned.push(pool.local); }
-    const slotsDirectory = process.env[(await import('../master/verification-slots.js')).slotsDirectoryVariable];
+    const slots = await import('../master/verification-slots.js');
+    const slotsDirectory = setting(slots.slotsDirectoryVariable);
     const { lanes, breadth } = trialShardBreadth(cores, shards.length, await trialAffordableFiles(input.memory));
     input.onTiming?.(`tests: ${lanes} lanes, breadth ${breadth}`, 0);
     const settledShards: ({ group: TrialGroup; entries: string[]; unattributed: TrialRunnerError | null; passed: string[]; records: string } | undefined)[] = [];
@@ -1701,7 +1759,10 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         let tests: Ended, recordText: string;
         try {
           if (remote) {
-            const ended = await session!.run(remote, index, group, (list, records) => [check.argv[0]!, ...argv(list, records)], breadth);
+            // GY-3528: a shard placed on a host takes a slot on that host's share, never this machine's; a spent share tries another host until one frees.
+            const held = slotsDirectory ? await slots.takeHostSlot(slotsDirectory, remote, `${slots.testMergeLabel(input.key ?? input.mergeSha.slice(0, 12))} shard ${index + 1}`, setting(slots.projectVariable)) : null;
+            if (slotsDirectory && !held) throw new HostBusyError(remote);
+            const ended = await session!.run(remote, index, group, (list, records) => [check.argv[0]!, ...argv(list, records)], breadth).finally(() => held?.release());
             entries.push(`$ [${remote}] ${check.argv.join(' ')} (shard ${index + 1})\n${ended.out}`);
             tests = { ok: ended.ok, out: ended.out, status: ended.status, signal: null, cause: undefined };
             recordText = ended.records;
@@ -1726,6 +1787,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         input.onStep?.(stepLabel, { tests: { passed: cached.size + ended.reduce((sum, shard) => sum + shard.passed.length, 0), failed: new Set(ended.flatMap(shard => shard.group.failed)).size, files: counted, ...(slowest ? { slowest } : {}) },
           ...(shown ? { output: maskSecrets(entries.join('\n')).slice(-4000) } : {}) });
       } catch (error) {
+        if (error instanceof HostBusyError) throw error;
         if (error instanceof HostDroppedError) { if (!dropped.has(error.host)) dropped.set(error.host, error); throw error; }
         log.push(...entries);
         // A remote shard past the deadline ends the trial as a timeout, as a local one does.
@@ -1736,8 +1798,10 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const release = await declareTrialFiles(slotsDirectory, input.key ?? input.mergeSha.slice(0, 12), lanes * breadth);
     try {
       // A lane takes the next shard until none is left or another lane's shard ended the trial; a running shard is always awaited, never orphaned.
+      // GY-3706: a host takes as many shards as it has free cores, less two.
+      const hostShare = (host: string) => slotsDirectory ? slots.hostShardRoom(slotsDirectory, host) : Infinity;
       const local: PlacedHost<string> = { name: readings[0]?.name ?? 'local', room: lanes, reading: readings[0] ?? { name: 'local', cores, busy: 0, steal: 0, celsius: null, limit: Infinity, away: false } };
-      const placed = [local, ...hosts.map((host, index) => ({ name: host, remote: host, reading: readings[index + 1]!, room: Math.floor(realFreeCores(readings[index + 1]!) / breadth) }))];
+      const placed = [local, ...hosts.map((host, index) => ({ name: host, remote: host, reading: readings[index + 1]!, room: Math.min(Math.floor(realFreeCores(readings[index + 1]!) / breadth), hostShare(host)) }))];
       const placement = await runShardsOnHosts({ count: shards.length, hosts: placed, breadth, pinned, stopped: () => stopped !== null,
         run: (host, index) => shard(index, host.remote) });
       if (input.onMetrics) {
@@ -1833,11 +1897,9 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
   const failures: { directory: string; cause: unknown }[] = [];
   for (const directory of [temporary, home, place]) if (directory) await clear(directory).catch(cause => { failures.push({ directory, cause }); });
   await (input.remove ?? removeSessionCheckout)(input.root, input.base, checkout.directory, input.run).catch(cause => { failures.push({ directory: checkout.directory, cause }); });
-  // GY-3589: the kept built tree stays for the next base pass on the same tip; this pass's lock goes.
-  if (keptLock) {
-    await rm(keptLock, { recursive: true, force: true }).catch(() => {});
-    await rm(tempOwnerMarker(keptLock), { force: true }).catch(() => {});
-  }
+  // GY-3589: the kept built tree stays for the next pass on the same commit; this pass's lock and use go.
+  await releaseKeptLock();
+  await releaseKeptUse();
   const failure = failures[0];
   if (failure) {
     const outcome = 'verdict' in settled ? `the trial itself answered build ${settled.verdict.build}, ${settled.verdict.tests.failed.length} failing test file(s)` : `the trial itself failed: ${settled.error instanceof Error ? settled.error.message : String(settled.error)}`;

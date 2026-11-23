@@ -15,6 +15,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { temporaryDirectory } from './temp-dirs.js';
 import { hostPrepareScript, hostUser } from '../../src/hosts.js';
+import { hostShimDigest } from '../../src/host-shim.js';
 
 export interface FakeHost {
   name: string;
@@ -40,7 +41,9 @@ export const fixturePublicKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFJpeHR1cmU
 const uid = process.getuid?.() ?? 1000;
 
 const executable = async (path: string, text: string) => { await writeFile(path, text); await chmod(path, 0o755); };
-const restrictLine = () => `restrict,command="graphyard-host-shim" ${fixturePublicKey}`;
+const restrictLine = () => `restrict,command="graphyard-host-shim-${hostShimDigest}" ${fixturePublicKey}`;
+/** GY-3688: another install's prepare — its own key, and its own helper release. */
+export interface PrepareInstall { publicKey?: string; shim?: { script: string; digest: string } }
 
 /** The user's own Docker, as dockerd-rootless-setuptool.sh leaves it: it answers only through its own socket. */
 const rootlessDockerTemplate = (dir: string) => `#!/bin/sh
@@ -161,9 +164,11 @@ echo "sshd $*" >> "$D/log"
 D='${dir}'
 echo "ssh-keygen $*" >> "$D/log"
 `,
+  // GY-3697: the user unit reads enabled and active unless the test writes unit-enabled or unit-active.
   systemctl: `#!/bin/sh
 D='${dir}'
 echo "systemctl $*" >> "$D/log"
+case "$*" in *is-enabled*) cat "$D/unit-enabled" 2>/dev/null || echo enabled ;; *is-active*) cat "$D/unit-active" 2>/dev/null || echo active ;; esac
 `,
   ufw: `#!/bin/sh
 echo 'Status: inactive'
@@ -254,7 +259,7 @@ echo "dockerd-rootless-setuptool.sh install for $USER at $XDG_RUNTIME_DIR/docker
 }
 
 /** Run the printed script itself against the stand-in host: gy-compute, linger, subuid, shim, key, rootless Docker. */
-async function runPrepareScript(host: FakeHost, dir: string) {
+async function runPrepareScript(host: FakeHost, dir: string, install: PrepareInstall = {}) {
   await Promise.all(['etc/ssh', 'etc/systemd/system', 'usr-local-bin', 'standins'].map(part => mkdir(join(dir, part), { recursive: true })));
   await Promise.all([
     writeFile(join(dir, 'etc', 'passwd'), 'root:x:0:0:root:/root:/bin/sh\n'),
@@ -269,7 +274,7 @@ async function runPrepareScript(host: FakeHost, dir: string) {
   // The one rewrite of the printed script: the test is not root, so the shim's /usr/local/bin and the
   // files it writes under /etc/ssh and /etc/systemd/system land inside the fixture. Every other line
   // runs exactly as printed.
-  const script = hostPrepareScript(fixturePublicKey).replaceAll('/usr/local/bin/graphyard-host-shim', join(dir, 'usr-local-bin', 'graphyard-host-shim'))
+  const script = hostPrepareScript(install.publicKey ?? fixturePublicKey, install.shim).replaceAll('/usr/local/bin/graphyard-host-shim', join(dir, 'usr-local-bin', 'graphyard-host-shim'))
     .replaceAll('/etc/ssh/', `${dir}/etc/ssh/`).replaceAll('/etc/systemd/system/', `${dir}/etc/systemd/system/`);
   const file = join(dir, 'prepare.sh');
   await writeFile(file, script);
@@ -288,8 +293,8 @@ export interface FakeHosts {
   home: (name: string, user?: string) => string;
   /** What running the printed script printed on that host. */
   prepareOutput: (name: string) => string;
-  /** Run the printed script on a prepared host again (GY-3419): what it printed this time. */
-  prepare: (name: string) => Promise<string>;
+  /** Run the printed script on a prepared host again (GY-3419), or another install's (GY-3688): what it printed this time. */
+  prepare: (name: string, install?: PrepareInstall) => Promise<string>;
 }
 
 export async function fakeHosts(label: string, hosts: FakeHost[]): Promise<FakeHosts> {
@@ -351,9 +356,11 @@ if [ "$port" != 22 ]; then
   /usr/bin/grep -qx "AllowUsers $user" "$conf" || { echo "$user@$host: Permission denied (publickey)." >&2; exit 255; }
   force=$(sed -n 's/^ForceCommand //p' "$conf")
 fi
-if [ ! -f "$keys" ]; then echo "$user@$host: Permission denied (publickey)." >&2; exit 255; fi
+# The caller's key (GY-3688: FAKE_SSH_KEY names another install's) picks its own line, as sshd does.
+line=$(/usr/bin/grep -F "\${FAKE_SSH_KEY:-${fixturePublicKey}}" "$keys" 2>/dev/null | head -n 1)
+if [ -z "$line" ]; then echo "$user@$host: Permission denied (publickey)." >&2; exit 255; fi
 cd "$home" || exit 255
-case "$(cat "$keys")" in 'restrict,command="graphyard-host-shim"'*) force=graphyard-host-shim ;; esac
+case "$line" in 'restrict,command="'*) force=$(printf %s "$line" | sed 's/^restrict,command="\\([^"]*\\)".*/\\1/') ;; esac
 HOME="$home"; export HOME
 if [ -n "$force" ]; then
   export FAKE_SSH_USER="$user"
@@ -364,5 +371,5 @@ PATH="$home/bin:/usr/bin:/bin"
 exec sh -c "$last"
 `);
   return { root, bin, publicKey: fixturePublicKey, host: (name: string) => join(root, 'hosts', name), home: (name: string, user = hostUser) => join(root, 'hosts', name, 'home', user), prepareOutput: (name: string) => outputs.get(name) ?? '',
-    prepare: async (name: string) => runPrepareScript(byName.get(name)!, join(root, 'hosts', name)) };
+    prepare: async (name: string, install?: PrepareInstall) => runPrepareScript(byName.get(name)!, join(root, 'hosts', name), install) };
 }

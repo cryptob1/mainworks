@@ -8,6 +8,7 @@ import { maskSecrets } from './redaction.js';
 import { sessionScopeProperties } from './session-share.js';
 import { setTimeout as delay } from 'node:timers/promises';
 import { unknownWorkCode } from './model/refusal.js';
+import { setting } from './setting.js';
 
 interface Renewal { lease: { epoch: number; expiresAt: string } | null; updatedAt: string }
 
@@ -132,7 +133,7 @@ async function postAssignment(url: string, token: string, path: string, body: un
  */
 export function assignmentSurrender(epoch: number, argv: string[] = process.argv, env: NodeJS.ProcessEnv = process.env, post = postAssignment) {
   const assignment = watchAssignment(argv);
-  const url = env.GRAPHYARD_URL, token = env.GRAPHYARD_TOKEN;
+  const url = setting('URL', env), token = setting('TOKEN', env);
   if (!assignment || Number(assignment.epoch) !== epoch || !url || !token) return undefined;
   return async (cause: string) => {
     const body = { epoch, cause: `Watch supervisor ended attempt ${epoch}: ${cause}`.slice(0, 2000) };
@@ -227,7 +228,7 @@ type ControlPlaneApi = (path: string, data?: unknown, requestId?: string) => Pro
  * connection dropped is answered from its receipt rather than applied twice.
  */
 export function restartTolerantApi(api: ControlPlaneApi, until: () => number, options: { retryMs?: number; retryMaxMs?: number } = {}): ControlPlaneApi {
-  return (path, data, requestId = process.env.GRAPHYARD_REQUEST_ID ?? randomUUID()) => throughRestart(() => api(path, data, requestId), until(), options);
+  return (path, data, requestId = setting('REQUEST_ID') ?? randomUUID()) => throughRestart(() => api(path, data, requestId), until(), options);
 }
 
 /**
@@ -328,7 +329,7 @@ export async function supervise(command: string, args: string[], epoch: number, 
   // control-plane restart for the restart window instead (GY-1506); a definite refusal still stops it.
   await throughRestart(heartbeatAttempt, performance.now() + (options.startupWindowMs ?? controlPlaneRestartWindowMs), { retryMs, retryMaxMs });
   const env = { ...process.env };
-  for (const key of ['GRAPHYARD_PRINCIPALS', 'DATABASE_URL', 'GITHUB_PRIVATE_KEY', 'GITHUB_PRIVATE_KEY_FILE', 'GITHUB_WEBHOOK_SECRET']) delete env[key];
+  for (const key of ['GRAPHYARD_PRINCIPALS', 'MAINWORKS_PRINCIPALS', 'DATABASE_URL', 'GITHUB_PRIVATE_KEY', 'GITHUB_PRIVATE_KEY_FILE', 'GITHUB_WEBHOOK_SECRET']) delete env[key];
   const platform = options.platform ?? process.platform;
   const detached = options.detached ?? platform !== 'win32';
   if (!detached && platform !== 'linux' && !options.containment) throw new Error(`Foreground worker supervision requires durable containment and is not supported on ${platform}`);
@@ -369,8 +370,13 @@ export async function supervise(command: string, args: string[], epoch: number, 
       if (stopping) return;
       stopping = true; clearInterval(timer); clearTimeout(expiry);
       signalGroup('SIGTERM');
+      // A detached agent's process group that has emptied needs no grace (GY-3715): the supervisor
+      // finishes at once rather than waiting the full grace after an agent that already exited.
+      const groupGone = () => { if (!detached || platform === 'win32' || containment || !child?.pid) return false; try { process.kill(-child.pid, 0); return false; } catch { return true; } };
+      const poll = setInterval(() => { if (groupGone()) { clearInterval(poll); clearTimeout(kill); finish(null, code); } }, 50);
       // Keep this timer referenced even if the group leader exits first.
-      setTimeout(async () => {
+      const kill = setTimeout(async () => {
+        clearInterval(poll);
         signalGroup('SIGKILL');
         finish(null, code);
       }, options.graceMs ?? 5000);
@@ -417,7 +423,7 @@ export async function supervise(command: string, args: string[], epoch: number, 
     void (async () => {
       try {
         if (prelaunchInterrupted) { finish(null, 1); return; }
-        child = spawn(containment?.command ?? command, containment?.args ?? args, { stdio: options.log ? ['ignore', 'pipe', 'pipe'] : 'inherit', detached, env });
+        child = spawn(containment?.command ?? command, containment?.args ?? args, { stdio: options.log ? ['inherit', 'pipe', 'pipe'] : 'inherit', detached, env });
         if (options.log) for (const stream of ['stdout', 'stderr'] as const) runLogLines(child[stream]!, stream, options.log);
         // Never learn the fallback root from a later /proc snapshot: after this
         // child exits its numeric PID can identify an unrelated replacement.
@@ -447,7 +453,8 @@ export async function supervise(command: string, args: string[], epoch: number, 
           }
           catch { console.error('Graphyard lease cannot be renewed. Stopping worker.'); stop(1); }
           finally { pending = false; }
-        }, options.intervalMs ?? 25_000);
+        // A lease shorter than 75 s is renewed every third of it, so it never lapses between beats (GY-3715).
+        }, options.intervalMs ?? Math.min(25_000, granted / 3));
         armDeadline();
       } catch (error) { finish(error); }
     })();

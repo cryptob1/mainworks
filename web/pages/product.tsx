@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { ProductBrief } from '../../src/model/project-memory';
 import { EmptyState, PageHeader } from '../components/page-layout';
 
@@ -26,17 +26,29 @@ export function ProductView({ brief, error, loading, retry }: { brief: ProductBr
       actions={error && <button type="button" onClick={retry}>Retry</button>}/>
     {error && <p role="alert" className="amber">{error}</p>}
     {!loading && !error && !brief && <EmptyState title="The master has not written the brief.">It records one with <code>master brief set FILE REASON</code>.</EmptyState>}
-    {brief && <article className="product-brief">{
-      // The brief's own Markdown headings are trusted structure from the master: render each section as text.
-      brief.markdown.split(/\n(?=##\s)/).map((section, index) => {
-        const heading = /^##\s+(.*)$/.exec(section.split('\n')[0] ?? '');
-        return heading
-          ? <section key={index} className="panel product-section"><h2>{heading[1]}</h2><pre>{section.slice(section.indexOf('\n') + 1).trim()}</pre></section>
-          : <p key={index}>{section.trim()}</p>;
-      })
-    }</article>}
+    {brief && <article className="product-brief panel">{briefBlocks(brief.markdown)}</article>}
     {brief && brief.history.length > 0 && <details className="panel product-history"><summary>Changes ({brief.history.length})</summary><ul>
       {brief.history.map(change => <li key={`${change.at}:${change.by}`}>{when(change.at)} — {change.by}: {change.why} ({change.words} words)</li>)}
     </ul></details>}
   </section>;
+}
+
+/** The brief's Markdown as headings, bullet lists and paragraphs (GY-3560): the master's own text, never HTML. */
+export function briefBlocks(markdown: string): ReactNode[] {
+  const blocks: ReactNode[] = [];
+  let list: string[] = [], text: string[] = [];
+  const flush = () => {
+    if (list.length) blocks.push(<ul key={blocks.length}>{list.map((item, index) => <li key={index}>{item}</li>)}</ul>);
+    if (text.length) blocks.push(<p key={blocks.length}>{text.join(' ')}</p>);
+    list = []; text = [];
+  };
+  for (const line of markdown.split('\n')) {
+    const heading = /^(#{1,6})\s+(.*)$/.exec(line), item = /^\s*[-*]\s+(.*)$/.exec(line);
+    if (item) { if (text.length) flush(); list.push(item[1]); }
+    else if (heading) { flush(); blocks.push(heading[1].length <= 2 ? <h2 key={blocks.length}>{heading[2]}</h2> : <h3 key={blocks.length}>{heading[2]}</h3>); }
+    else if (line.trim()) { if (list.length) flush(); text.push(line.trim()); }
+    else flush();
+  }
+  flush();
+  return blocks;
 }

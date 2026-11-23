@@ -1,0 +1,11 @@
+{
+  "id": "pages-seeded-review",
+  "title": "Every page an owner reads shows its seeded items, fits a phone and reads in plain words",
+  "description": "A real browser loads the seed fixture (browser-tests/ui-board.ts, plus a connected agent account, a week of usage and a declared application) and opens Home, Work, a Task page, Lead and every Settings tab (Agents, Workers, Costs, Setup, Delivery, Help) at 1440 px and 390 px. Each page shows its seeded items rather than its empty state, never scrolls sideways, and its visible text outside a closed Details fold contains none of the words trial, epoch or lease.",
+  "tags": ["dashboard"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "review the seeded pages at 1440 px and 390 px", "run": "npm run test:browser -- browser-tests/pages-seeded-review.spec.ts", "timeoutSeconds": 420 }
+  ]
+}

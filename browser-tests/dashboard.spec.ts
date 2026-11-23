@@ -25,7 +25,7 @@ async function fixture(page: Page, role = 'admin', extra: Record<string, unknown
     if (path.endsWith('/board')) return serveBoard(page, route);
     return route.fulfill({ json: path.endsWith('/status') ? { ...extra, actor: { id: 'fixture', role, sessionKind: role === 'admin' ? 'human' : 'ai' }, github: true, reviewProviders: ['github'], repository: 'fixture/repository', jobs: [], delegation: { limits: { maxLeads: 3, minReviewers: 1, maxReviewers: 2 }, slices: [{ id: 'product', name: 'Product', lead: { id: 'product-lead', displayName: 'Pine', role: 'slice-lead', sessionKind: 'ai' }, engineers: [{ id: 'engineer-a', displayName: 'Atlas', role: 'worker', sessionKind: 'ai' }, { id: 'human-pair', displayName: 'Rivera', role: 'worker', sessionKind: 'human' }], workers: [{ key: 'GY-1', id: 'engineer-a', displayName: 'Atlas', role: 'worker', sessionKind: 'ai' }, { key: 'GY-2', id: 'human-pair', displayName: 'Rivera', role: 'worker', sessionKind: 'human' }, { key: 'GY-3', id: 'engineer-a', displayName: 'Atlas', role: 'worker', sessionKind: 'ai' }], bottlenecks: [{ key: 'GY-1', reason: 'Independent review required' }] }, { id: 'infrastructure', name: 'Infrastructure', lead: null, workers: [], bottlenecks: [] }, { id: 'docs-experience', name: 'Docs/experience', lead: null, workers: [], bottlenecks: [] }], reviewers: [{ id: 'reviewer-a', displayName: 'Rowan', role: 'producer', sessionKind: 'ai' }, { id: 'legacy-proof', displayName: null, role: 'producer', sessionKind: 'undeclared' }] } } : path.endsWith('/work-snapshot') ? {work:[work],now:'2026-01-01T00:00:00Z'} : path.endsWith('/work') ? [work] : [] });
   });
-  await page.goto('/?sign-in'); return state;
+  await page.goto('/?sign-in#work'); return state;
 }
 // Opening a work item goes through the card's own selection control, a sibling of
 // the candidate links rather than a button wrapped around them.
@@ -80,7 +80,7 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
       if (path.endsWith('/board')) return route.fulfill({ json: boardFromStatus(items as any, Date.now(), null) });
       return route.fulfill({ json: [] });
     });
-    await page.goto('/?sign-in'); await login(page);
+    await page.goto('/?sign-in#work'); await login(page);
     // Every fixture item is handed in and waiting for review, so each is a Moving row with its
     // clock; the per-stage percentile strip went with the stage row (GY-161).
     await expect(page.locator('.task-row.group-moving')).toHaveCount(5);
@@ -117,7 +117,7 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
       if (path.endsWith('/board')) return route.fulfill({ json: boardFromStatus(items as any, Date.now(), status) });
       return route.fulfill({ json: [] });
     });
-    await page.goto('/?sign-in'); await login(page);
+    await page.goto('/?sign-in#work'); await login(page);
     // The release line: the live commit and the merged change it does not carry yet; health is named only when ill.
     const release = page.locator('[data-release-line="serving"]');
     await expect(release).toHaveAttribute('data-healthy', 'true');
@@ -177,7 +177,7 @@ test('every moving row carries how long it has held its status, in red past thir
     if (path.endsWith('/board')) return route.fulfill({ json: boardFromStatus(items as any, Date.now(), null) });
     return route.fulfill({ json: [] });
   });
-  await page.goto('/?sign-in'); await login(page);
+  await page.goto('/?sign-in#work'); await login(page);
   const age = (key: string) => row(page, key).locator('.status-age');
   const colour = (key: string) => age(key).evaluate(element => getComputedStyle(element).color);
   const red = (value: string) => { const [r, g, b] = value.match(/\d+/g)!.map(Number); return r > g + 40 && r > b + 40; };
@@ -299,8 +299,9 @@ test('reader has no creation controls; graph filters and search still work', asy
   await expect(page.getByRole('link', { name: /Browser fixture/ })).toHaveCount(0);
   await page.getByLabel('Search work').fill('GY-1');
   await expect(page.getByRole('link', { name: /Browser fixture/ })).toBeVisible();
-  await openPage(page, 'Tests', 'Test cases');
-  await expect(page.getByRole('heading', { name: 'Test-case library' })).toBeVisible();
+  // GY-3485: an empty test-case library is no tab for a reader, so there is nothing to create from.
+  await sidebarEntry(page, 'Work');
+  await expect(page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: 'Test cases', exact: true, includeHidden: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '＋ New test case' })).toHaveCount(0);
 });
 
@@ -462,11 +463,11 @@ test('scenario loading, failure, retry and real empty library are distinct', asy
   });
   await login(page); await openPage(page, 'Tests', 'Test cases');
   await expect(page.getByRole('status')).toHaveText('Loading test cases…');
-  await expect(page.getByText('Describe the behavior you need to prove.')).toHaveCount(0);
+  await expect(page.getByText('No test cases yet.')).toHaveCount(0);
   release(); await expect(page.getByRole('alert')).toContainText('unavailable');
-  await expect(page.getByText('Describe the behavior you need to prove.')).toHaveCount(0);
+  await expect(page.getByText('No test cases yet.')).toHaveCount(0);
   failing = false; await page.getByRole('button', { name: 'Retry loading test cases' }).click();
-  await expect(page.getByText('Describe the behavior you need to prove.')).toBeVisible();
+  await expect(page.getByText('No test cases yet.')).toBeVisible();
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
@@ -492,7 +493,7 @@ test('a failed re-read keeps already-observed test cases visible and marks them 
   await expect(page.getByRole('alert')).toContainText('unavailable');
   await expect(page.getByRole('heading', { name: 'Saved case' })).toBeVisible();
   await expect(page.getByText('Previously loaded definitions are shown; they may be stale.')).toBeVisible();
-  await expect(page.getByText('Describe the behavior you need to prove.')).toHaveCount(0);
+  await expect(page.getByText('No test cases yet.')).toHaveCount(0);
 });
 
 test('a failed re-read reports unknown contents instead of claiming an empty or shown library', async ({ page }) => {
@@ -500,10 +501,10 @@ test('a failed re-read reports unknown contents instead of claiming an empty or 
   await page.route('**/api/scenarios', route => route.request().method() === 'POST' ? (reads = true, route.fulfill({ json: savedScenario }))
     : reads ? route.fulfill({ status: 503, json: { error: 'Runner catalog unavailable' } }) : route.fulfill({ json: [] }));
   await login(page); await openPage(page, 'Tests', 'Test cases');
-  await expect(page.getByText('Describe the behavior you need to prove.')).toBeVisible();
+  await expect(page.getByText('No test cases yet.')).toBeVisible();
   await publishCase(page, 'published-case');
   await expect(page.getByRole('alert')).toContainText('unavailable');
-  await expect(page.getByText('Describe the behavior you need to prove.')).toHaveCount(0);
+  await expect(page.getByText('No test cases yet.')).toHaveCount(0);
   await expect(page.getByText('Previously loaded definitions are shown; they may be stale.')).toHaveCount(0);
   await expect(page.getByText('The library could not be re-read; its current contents are unknown.')).toBeVisible();
   await expect(page.getByText('Test cases could not be re-read. Retry to observe the library.')).toBeVisible();
@@ -529,11 +530,11 @@ test('a rejected publish leaves a confirmed empty library reported as empty', as
   await page.route('**/api/scenarios', route => route.request().method() === 'POST'
     ? route.fulfill({ status: 400, json: { error: 'Stable ID exceeds 100 characters' } }) : route.fulfill({ json: [] }));
   await login(page); await openPage(page, 'Tests', 'Test cases');
-  await expect(page.getByText('Describe the behavior you need to prove.')).toBeVisible();
+  await expect(page.getByText('No test cases yet.')).toBeVisible();
   await publishCase(page, 'rejected-case');
   await expect(page.getByRole('alert')).toContainText('Stable ID exceeds 100 characters');
   await page.getByRole('button', { name: 'Close form' }).click();
-  await expect(page.getByText('Describe the behavior you need to prove.')).toBeVisible();
+  await expect(page.getByText('No test cases yet.')).toBeVisible();
   await expect(page.getByRole('alert')).toHaveCount(0);
   await expect(page.getByText('The library could not be re-read; its current contents are unknown.')).toHaveCount(0);
   await expect(page.getByText('Test cases could not be re-read. Retry to observe the library.')).toHaveCount(0);
@@ -545,7 +546,7 @@ test('a publish error is not carried into the next form', async ({ page }) => {
     ? (reject ? route.fulfill({ status: 400, json: { error: 'Stable ID exceeds 100 characters' } }) : route.fulfill({ json: savedScenario }))
     : route.fulfill({ json: [] }));
   await login(page); await openPage(page, 'Tests', 'Test cases');
-  await expect(page.getByText('Describe the behavior you need to prove.')).toBeVisible();
+  await expect(page.getByText('No test cases yet.')).toBeVisible();
   await publishCase(page, 'rejected-case');
   await expect(page.getByRole('alert')).toContainText('Stable ID exceeds 100 characters');
   await page.getByRole('button', { name: 'Close form' }).click();

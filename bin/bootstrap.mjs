@@ -7,6 +7,8 @@ import { existsSync, readFileSync, realpathSync, symlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { currentCliPath, prepareCliRelease } from './cli-release.mjs';
+// GY-3711: an existing ~/.config/graphyard is kept; a fresh home gets ~/.config/mainworks (src/install/layout.ts).
+const configHome = () => existsSync(join(homedir(), '.config', 'graphyard')) ? join(homedir(), '.config', 'graphyard') : join(homedir(), '.config', 'mainworks');
 
 /** The release tree this host runs for the repository `args` or the working directory names, cloned and installed on first use. */
 export async function releaseRoot(packageRoot, args) {
@@ -17,7 +19,7 @@ export async function releaseRoot(packageRoot, args) {
   }
   const match = /^([\w.-]+)\/([\w.-]+)$/.exec(repository);
   if (!match) { console.error('Run this in your repository\'s checkout: npx @cryptob1/graphyard up --repo OWNER/NAME'); process.exit(1); }
-  const directory = join(process.env.GRAPHYARD_CONFIG_HOME ?? join(homedir(), '.config', 'graphyard'), `${match[1]}-${match[2]}`.toLowerCase().replace(/[^a-z0-9._-]/g, '-'));
+  const directory = join(process.env.MAINWORKS_CONFIG_HOME ?? process.env.GRAPHYARD_CONFIG_HOME ?? configHome(), `${match[1]}-${match[2]}`.toLowerCase().replace(/[^a-z0-9._-]/g, '-'));
   // An installed host runs the release it serves, which the deploy watch moves.
   const current = currentCliPath(directory);
   if (existsSync(join(current, 'bin', 'graphyard.mjs'))) return realpathSync(current);

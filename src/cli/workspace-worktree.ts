@@ -12,6 +12,8 @@ import { gitOrThrow, reclaimBranchHolders, type ReclaimedHolder } from '../workt
 import type { CliContext } from './context.js';
 import { installUnderLease } from './install-under-lease.js';
 import { workMutation } from './registry.js';
+import { setting } from '../setting.js';
+import { stateDirectory } from '../install/layout.js';
 
 /** `restore-branch GY-N EPOCH`: replace the leased attempt's own branch with HEAD. */
 export async function restoreBranchWork(context: CliContext, work: any) {
@@ -47,7 +49,7 @@ export const reworkWorktreePath = (work: { submission?: unknown; workspaces: { h
 export async function createWorktree(context: CliContext, work: any) {
   const { args, api, print } = context;
   // GY-1059: under GRAPHYARD_REQUEST_ID each write keys off it by name, so the failure release never replays the reservation.
-  const request = process.env.GRAPHYARD_REQUEST_ID;
+  const request = setting('REQUEST_ID');
   const mutate = (name: string, data: unknown) => api(`work/${work.id}/${name}`, data, request && name !== 'heartbeat' ? `${request}:worktree-${name}` : randomUUID());
   const epoch = Number(args[0]); const root = context.repositoryRoot();
   const status = await api('status');
@@ -58,7 +60,7 @@ export async function createWorktree(context: CliContext, work: any) {
   if (!branch) throw new Error('Submitted workspace branch is missing');
   // A reused path that stands but no longer holds the branch cannot take it again: that rework starts at its own path.
   const reuse = reworkWorktreePath(work, branch, context.individualHostId());
-  const path = reuse && (!existsSync(reuse) || spawnSync('git', ['-C', reuse, 'symbolic-ref', '--short', 'HEAD'], { encoding: 'utf8' }).stdout.trim() === branch) ? reuse : resolve(root, '.graphyard/worktrees', `${work.key}-${epoch}`);
+  const path = reuse && (!existsSync(reuse) || spawnSync('git', ['-C', reuse, 'symbolic-ref', '--short', 'HEAD'], { encoding: 'utf8' }).stdout.trim() === branch) ? reuse : resolve(stateDirectory(root), 'worktrees', `${work.key}-${epoch}`);
   let startPoint = args[1] ?? 'HEAD';
   if (work.submission) {
     // GY-2017: a control-plane rework starts from the head Graphyard registered at the last
@@ -81,7 +83,7 @@ export async function createWorktree(context: CliContext, work: any) {
   let reclaimed: ReclaimedHolder[] = [];
   try {
     // A full or read-only volume is the host's failure too (GY-1059), so it costs no attempt.
-    await mkdir(resolve(root, '.graphyard/worktrees'), { recursive: true });
+    await mkdir(resolve(stateDirectory(root), 'worktrees'), { recursive: true });
     if (exists) reclaimed = reclaimBranchHolders(root, branch, path, work, now, { checkouts: !!work.submission });
     for (const entry of reclaimed) console.error(`Reclaimed ${entry.path}, which held ${branch}${entry.epoch !== null ? ` for ${entry.key} epoch ${entry.epoch}` : ''}: ${entry.action}`);
     if (!released?.reused) gitOrThrow(exists ? ['worktree', 'add', path, branch] : ['worktree', 'add', '-b', branch, path, startPoint]);

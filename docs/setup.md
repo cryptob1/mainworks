@@ -1,77 +1,60 @@
 # Setup guide
 
-The details the [README](../README.md) leaves out. `graphyard guide setup` prints every prerequisite check and fix; `graphyard doctor` verifies a host.
+The details the [README](../README.md) leaves out. `mainworks guide setup` prints every prerequisite check and fix; `mainworks doctor` verifies a host. The `graphyard` command and `GRAPHYARD_*` settings still work.
+
+## First run
+
+1. **Connect.** Run `node bin/graphyard.mjs up --repo OWNER/NAME` and open the Setup link it prints.
+2. **Confirm your Builder.** Connect an AI coding account for building and one for reviewing (it may be the same account) until both turn green.
+3. **Ship one small change.** File a small goal from Home or Work; the Lead writes checkable criteria and dispatches a Builder.
+4. **Watch it merge.** Open the Task page to inspect the diff, checks and live session as the merge trial runs and lands on main.
 
 ## Host
 
-- Docker and Compose: on an AppArmor host up loads the `graphyard-trial` profile with sudo.
-- Docker and Compose are needed even for `--local`; merge trials run in them.
-- Fair sharing: each worker, reviewer and producer session gets the same CPU and disk weight and a memory share (memory in proportion to the host's cores divided by the live sessions, never under two cores). A lone session may use the whole machine; on a full machine each gets about the same CPU. The loop, the master, the server and the database weigh more, so they answer under load. `master status` → `sessionUsage` and Workers → Session usage show each session's use beside its share; the overload alarm names a session only when the machine is saturated and it has used over twice its share for five minutes.
+- Docker and Compose: on an AppArmor host up loads the `graphyard-trial` profile with sudo. Merge trials need Docker and Compose even for `--local`.
+- Fair sharing: each worker, reviewer and producer session gets equal CPU and disk weight and a memory share (host memory in proportion to cores divided by live sessions, never under two cores). A lone session may use the whole machine. The loop, master, server and database weigh more so they answer under load. `mainworks master status` → `sessionUsage` and Settings → Workers show use beside share; the overload alarm fires only when saturated and over twice its share for five minutes.
 
-## More hosts
+## Compute machines
 
-- A host lends Graphyard its compute and nothing else: merge trials send it test shards. Run `graphyard host prepare` here and the script it prints once on the host with sudo: it creates the unprivileged `gy-compute` user (no sudo, not in the docker group) with rootless Docker, and lets this machine's SSH key run only `graphyard-host-shim`, never a shell. The host needs no rootless extras preinstalled: when `dockerd-rootless-setuptool.sh` and `slirp4netns` are missing, the script itself fetches the static Docker rootless extras for the host's Docker version and a static slirp4netns into `gy-compute`'s home, checks them, and uses those; when the tools (or its own fetched copy) are there it downloads nothing. It needs `curl`, `python3` and `git`.
-- `graphyard host add gy-compute@HOST` refuses a host it cannot reach, one without Docker, a key that opens a plain shell, root, and a docker-group user, each with the reason. Workers lists every host, this machine first, with cores, temperature, CPU steal and runs now; one that stops answering shows Away.
-- Compute-only port: where port 22 is Tailscale SSH, which ignores keys and so the shim, the script also starts an OpenSSH for `gy-compute` only on port 2222 (key-only, no shell, tty or forwarding, always the shim). Add it as `gy-compute@HOST:2222`, or as an alias from `~/.ssh/config` such as `graphyard host add vish-msi-compute`.
-- Agent sessions on a host: `graphyard host sessions gy-compute@HOST 2` lets the host run up to two worker sessions at once (0 turns it back to test shards only). Codex workers start there, the runtime the worker image holds; others stay on this machine. The account's login is handed over for that one session over SSH into the container's memory, never written to the host's disk, and gone when the session ends; a login the provider refreshed comes back here. Its commits and changed files show up in the worktree here as it works, and its `graphyard` commands run here, so `complete` submits the commit it made. A host that drops ends its session and the item goes back to the queue. `master status` lists each session's host under `remoteSessions`. `host sessions` refuses a host whose helper is older than this release; run `graphyard host prepare` and its script there first.
-- Tailnet check rule: every Tailscale ssh rule that reaches a host must use action `check`, never `accept`, so no account there logs in unattended. `host add` tries your own account on the host's port 22 and warns when it gets in without you.
-- `graphyard host remove USER@HOST` stops reading one; `graphyard host list` shows the one host list.
-- Accepted risk: a host can forge its own shard results, so add only machines you own. Remote shard runs read this same host list.
-- Each trial sends each test shard to another host with room under its heat limit, else this machine. There the shard gets a clone of the commit and runs with no network, under CPU, memory and process limits. A host that drops a shard hands it back: capacity, never a fault. `master status` → `remoteShards` shows each host.
-- Tests that name Docker, nested confinement (bwrap, unshare, landlock, the hard-math benchmarks), npm exec or /var/tmp stay on this machine: a host's shard has none of them. Every other test file, database, browser and loopback servers included, may run on a host.
+- A compute machine lends Mainworks its CPU and nothing else: merge trials and worker checks send it test shards first, falling back to the coordinator only when none has room. Run `mainworks host prepare` on the coordinator and run the printed script once on the compute machine with sudo: it creates the unprivileged `gy-compute` user (no sudo, not in the docker group) with rootless Docker, and limits this machine's SSH key to `graphyard-host-shim` (no shell). When `dockerd-rootless-setuptool.sh` or `slirp4netns` are absent, the script fetches static copies into `gy-compute`'s home. It needs `curl`, `python3` and `git`.
+- `mainworks host add gy-compute@HOST` refuses an unreachable host, one without Docker, a plain-shell key, root or a docker-group user. Settings → Workers lists every host with cores, temperature, CPU steal and active runs; an unreachable host shows Away.
+- Compute-only port: where port 22 is Tailscale SSH (which ignores keys), the script starts OpenSSH for `gy-compute` on port 2222 (key-only, shim-only). Add `gy-compute@HOST:2222` or an alias from `~/.ssh/config`.
+- Agent sessions on a host: `mainworks host sessions gy-compute@HOST 2` lets the host run up to two worker sessions at once (0 turns it back to test shards only). Codex workers start there, the runtime the worker image holds; others stay on this machine. The account's login is handed over for that one session over SSH into the container's memory, never written to the host's disk, and gone when the session ends; a login the provider refreshed comes back here. Its commits and changed files show up in the worktree here as it works, and its `mainworks` commands run here, so `complete` submits the commit it made. A host that drops ends its session and the item goes back to the queue. `mainworks master status` lists each session's host under `remoteSessions`. `host sessions` refuses a host whose helper is older than this release; run `mainworks host prepare` and its script there first.
+- Tailnet check rule: Tailscale SSH rules reaching a host must use action `check`, never `accept`. `host add` warns if port 22 lets your account in unattended.
+- `mainworks host remove USER@HOST` removes one; `mainworks host list` lists all. Add only machines you own (a host can forge its own shard results).
+- Tests naming Docker, nested confinement (bwrap, unshare, landlock), npm exec or /var/tmp stay on the coordinator. Every other test — database, browser and loopback servers included — runs on compute machines first. Dropped shards hand back automatically. `mainworks master status` → `remoteShards` reports each machine.
 
-## Onboarding a project
+## Accounts and multi-session capacity
 
-- A project is onboarded only when main's `graphyard.json` declares two things: an `e2e.serve` that starts the real application, and a feature map (`featureMap`). Setup and `graphyard master status` read them from main, not from your working copy.
-- The feature map lists each feature of the app: its name, the URL path on the served app or a command to run, and its traps (known pitfalls, empty when none). Example: `"featureMap": [{"name":"Home","url":"/","traps":[]}]`.
-- Every batch check runs the feature map against the served app, and every deploy check runs it against the deployed site.
-- A missing serve, a missing feature map, or the generated placeholder serve that runs none of the app shows as a Master fault naming the project in `graphyard master status`, and Setup shows the same Master fault. The checks never report a pass for it. The master files the work to add the real serve and map; there is nothing for you to do.
-
-## Your app's address
-
-- Onboarding step: add `"app": { "url": "https://HOST.TAILNET.ts.net:PORT" }` to `graphyard.json` on main, with the tailnet or public address where the app runs. The dashboard's top bar then shows Open app, and Work's Where it runs card shows the link, the machine, the serving commit, its deploy time and the dashboard's own link.
-- The master refuses `127.0.0.1`, `localhost` and `::1`, which open only on that machine, and says why; `graphyard master status` names the setting while none is set.
-
-## Accounts and access
-
-- Workers and reviewers run headless, logged per item (`graphyard guide runtimes`).
+- Workers and reviewers run headless, logged per item (`mainworks guide runtimes`).
+- One account can run several sessions at once: set its cap with `mainworks master registry account set NAME --max-sessions 3 --reason "allow parallel sessions"` (shared across every install on the host). A held account shows the provider's own sentence and reset time.
 - Where a SAML organization or org policy blocks deploy keys, `--push-auth gh` pushes with your gh login instead of a deploy key.
 - Setup invites or revokes viewers and maintainers.
 - Sharing one machine across installs: the [shared server guide](shared-server.md).
 
-## Shipped means live
+## Onboarding a project
 
-Work counts a merge as shipped once the live app runs a commit that contains it; until then it is going live. The top bar and the Work page show the same two numbers. When your app deploys somewhere else, such as Railway, tell Graphyard where to ask which commit is live, in `graphyard.json`:
+- A project is onboarded when main's `graphyard.json` declares `e2e.serve` (starting the real app) and a `featureMap` (name, URL path or command, and traps: `"featureMap": [{"name":"Home","url":"/","traps":[]}]`).
+- Every batch check and deploy check runs the feature map. A missing serve, missing feature map or placeholder serve shows as a Master fault in `mainworks master status` and Setup; the Lead files work to add them.
+
+## Your app's address and live deploys
+
+- Add `"app": { "url": "https://HOST.TAILNET.ts.net:PORT" }` to `graphyard.json` on main (never `127.0.0.1`, `localhost` or `::1`). The top bar shows Open app and Settings → Delivery shows the live commit and link.
+- Work counts a merge as shipped once the live commit contains it. For apps deployed elsewhere (e.g. Railway), point `graphyard.json` at its version endpoint (plain SHA, or JSON `commit`/`sha`):
 
 ```json
 { "app": { "healthUrl": "https://your-app.example.com/version" } }
 ```
 
-The URL must answer the commit it runs: the plain SHA, or JSON with a `commit` or `sha` field. Graphyard asks at most once a minute. Without it, Graphyard reads the commit from its own deploy, and with neither nothing counts as shipped.
+Or declare multiple external apps under `delivery.applications` (`id`, `directory`, `versionUrl`). Mainworks polls at most once a minute and never deploys or previews them; `mainworks master status` lists each as current, deploying, lagging or failed.
 
-## Delivery feedback
+## Delivery feedback and publishing
 
-Work's **Taste** feed shows recent deliveries with why and evidence: **Looks good** records your call, **Send back** turns your note into a follow-up item and a proposed master lesson; nothing waits on a taste.
-
-## Apps deployed elsewhere
-
-Graphyard watches an app another host deploys, such as a Go service on Railway, when `graphyard.json` names where it reports its commit:
-
-```json
-{ "delivery": { "mode": "local", "applications": [
-  { "id": "api", "directory": "services/api", "versionUrl": "https://api.example.com/healthz" }
-] } }
-```
-
-The `versionUrl` answers the commit it serves (JSON `commit` or `sha`, or plain text). `master status` reads this from the main branch, not the local checkout, and lists the app as current, deploying, lagging or failed. If main's declaration is invalid, it names the bad fields. Graphyard never deploys or previews such an app.
-
-## Publishing
-
-- Verified deploys publish `@cryptob1/graphyard` with npm OIDC provenance plus both GHCR images via Actions — no host publish token. `graphyard guide publishing` covers owner setup.
+- Work's **Taste** feed shows recent deliveries with evidence: **Looks good** records your call; **Send back** opens a follow-up item and proposed lesson.
+- Verified deploys publish `@cryptob1/graphyard` with npm OIDC provenance plus both GHCR images via Actions — no host publish token. `mainworks guide publishing` covers owner setup.
 
 ## Prerequisite details
 
 - Ubuntu 26.04 kernel: `sudo apt install linux-image-oem-7.3`.
 - Check each tool: `git --version`, `git remote -v`, `docker version`, `docker compose version`, `gh auth status`, `bwrap --version`, `python3 --version`, `herdr --version`, `systemctl --user status`.
 - Install Herdr: `curl -fsSL https://herdr.dev/install.sh | sh`.
-- The dashboard's trust strip counts this week's deliveries: verified by running the real app, sent back, reverted.

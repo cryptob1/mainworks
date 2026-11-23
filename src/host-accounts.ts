@@ -5,10 +5,11 @@ import { closeSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, 
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { ChildProcessError, runChild } from './child-runner.js';
+import { setting } from './setting.js';
 
 /** Where the host's account records live; `GRAPHYARD_HOST_ACCOUNTS` moves it (the test runner isolates it from the real home). */
 export const hostAccountsVariable = 'GRAPHYARD_HOST_ACCOUNTS';
-export const hostAccountsRoot = (environment: NodeJS.ProcessEnv = process.env) => environment[hostAccountsVariable] ?? join(homedir(), '.gy', 'accounts');
+export const hostAccountsRoot = (environment: NodeJS.ProcessEnv = process.env) => setting(hostAccountsVariable, environment) ?? join(homedir(), '.gy', 'accounts');
 
 /** One account's records are keyed by its login home: the path itself, made safe for a file name. */
 export const hostAccountKey = (home: string) => `${home.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'home'}-${createHash('sha256').update(home).digest('hex').slice(0, 8)}`;
@@ -109,13 +110,32 @@ export async function hostAccountSessions(home: string): Promise<HostAccountSess
 
 /** The last real request on this login, shared by all installs on the host. */
 export interface HostAccountCheck { key?: import('./model/registry.js').AccountKey | null; at: string; nextCheck: string; quota: import('./model/registry.js').QuotaObservation }
+/** The last provider usage read on this login and when it was taken, shared by all installs on the host (GY-3500). */
+export interface HostAccountUsage { key: import('./model/registry.js').AccountKey | null; at: string; quota: import('./model/registry.js').QuotaObservation; health: import('./master/environments.js').EnvironmentHealth | null }
+type HostAccountRecord = Partial<HostAccountCheck> & { usage?: HostAccountUsage };
+const recordPath = (home: string) => join(accountDirectory(home), 'check.json');
 export function hostAccountCheck(home: string): HostAccountCheck | null {
-  return ownerOf<HostAccountCheck>(join(accountDirectory(home), 'check.json'));
+  const record = ownerOf<HostAccountRecord>(recordPath(home));
+  return record?.quota ? record as HostAccountCheck : null;
 }
-export function recordHostAccountCheck(home: string, check: HostAccountCheck) {
+export const hostAccountUsage = (home: string) => ownerOf<HostAccountRecord>(recordPath(home))?.usage ?? null;
+function writeRecord(home: string, change: HostAccountRecord) {
   const directory = accountDirectory(home);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
-  const path = join(directory, 'check.json'), pending = `${path}.${randomUUID()}.pending`;
-  writeFileSync(pending, JSON.stringify(check), { mode: 0o600 });
+  const path = recordPath(home), pending = `${path}.${randomUUID()}.pending`;
+  writeFileSync(pending, JSON.stringify({ ...ownerOf<HostAccountRecord>(path), ...change }), { mode: 0o600 });
   renameSync(pending, path);
+}
+export const recordHostAccountCheck = (home: string, check: HostAccountCheck) => writeRecord(home, check);
+export const recordHostAccountUsage = (home: string, usage: HostAccountUsage) => writeRecord(home, { usage });
+
+/** Run `read` holding the home's usage lock, so installs on the host read its provider one at a time; unlocked if the lock cannot be had. */
+export async function withHostAccountUsageLock<T>(home: string, read: () => Promise<T>): Promise<T> {
+  let fd: number | null = null;
+  try {
+    mkdirSync(accountDirectory(home), { recursive: true, mode: 0o700 });
+    fd = openSync(join(accountDirectory(home), 'usage.lock'), 'a');
+    await runChild('flock', ['--exclusive', '--wait', '30', '3'], { extraFds: [fd] });
+  } catch { /* read unlocked */ }
+  try { return await read(); } finally { if (fd !== null) try { closeSync(fd); } catch { /* already closed */ } }
 }

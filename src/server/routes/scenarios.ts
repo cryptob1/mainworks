@@ -6,10 +6,11 @@ import { gitRunnerFor } from '../../merge-writer/local-observation.js';
 import { defineRoutes, parseJson } from '../routes.js';
 import { gateRecordPath, readGateRecord } from '../../batch-gate.js';
 import { environmentRows } from '../../app-environments.js';
+import { setting } from '../../setting.js';
 
 /** The case ids with a file under e2e/cases/ on the base branch the checkout serves, or null with no checkout to read (GY-3278). */
 async function mainCases(engine: Engine): Promise<Set<string> | null> {
-  if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd());
+  if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(setting('REPOSITORY_ROOT') ?? process.cwd());
   if (!engine.gitRunner) return null;
   const listed = await engine.gitRunner(['ls-tree', '--name-only', `refs/remotes/origin/${engine.baseBranch}`, `${caseDirectory}/`]);
   if (listed.status !== 0) return null;
@@ -18,7 +19,7 @@ async function mainCases(engine: Engine): Promise<Set<string> | null> {
 
 /** The batch gate's record in the checkout the control plane serves (GY-3278 AC-3), when it gates this repository: the Main and Nightly columns. */
 function servedGate(repository: string | null | undefined) {
-  const record = readGateRecord(gateRecordPath(process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd()));
+  const record = readGateRecord(gateRecordPath(setting('REPOSITORY_ROOT') ?? process.cwd()));
   return record && record.repository?.toLowerCase() === repository?.toLowerCase() ? record : null;
 }
 
@@ -38,7 +39,7 @@ export const scenarioRoutes = defineRoutes('scenarios', [
     const gate = servedGate(services.repository);
     // GY-3296: where the app under test runs, beside the cases: local and each declared environment.
     return { ...await trackedCases(services.engine.store.pool, services.repository, await mainCases(services.engine), gate),
-      environments: environmentRows(process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd(), gate?.lastOutcome ? { ...gate.lastOutcome, tip: gate.lastOutcome.tip ?? null, reason: gate.lastOutcome.reason ?? null } : null) };
+      environments: environmentRows(setting('REPOSITORY_ROOT') ?? process.cwd(), gate?.lastOutcome ? { ...gate.lastOutcome, tip: gate.lastOutcome.tip ?? null, reason: gate.lastOutcome.reason ?? null } : null) };
   } },
   { method: 'GET', path: /^\/api\/tests\/([^/]+)\/runs$/, handle: ({ services, url }, [id]) => runHistory(services.engine.store.pool, decodeURIComponent(id), url.searchParams) },
 ]);

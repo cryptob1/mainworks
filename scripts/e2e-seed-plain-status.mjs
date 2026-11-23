@@ -11,7 +11,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import pg from 'pg';
 
-const { databaseUrl, delivery } = JSON.parse(await readFile(`.graphyard/e2e-serve-${new URL(process.env.TARGET_URL).port}.json`, 'utf8')), servingRoot = delivery?.root ?? '.';
+const { databaseUrl, delivery } = JSON.parse(await readFile(`.graphyard/e2e-serve-${new URL(process.env.TARGET_URL ?? 'http://127.0.0.1:4391').port}.json`, 'utf8')), servingRoot = delivery?.root ?? '.';
 const sha = '1234567890abcdef1234567890abcdef12345678', at = '2026-01-01T00:00:00.000Z';
 // The Work page names only the newest merge's stage, and cases before this one in the catalog merge
 // items of their own on the same control plane: the live item merges now, so it is the newest.

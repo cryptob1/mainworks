@@ -11,7 +11,7 @@ const section = (guide: string, name: string) => guide.split(`## ${name}\n`)[1]?
 
 test('e2e:docs-shared-server-guide — docs/shared-server.md carries the shared server (swap, Landlock kernel), several installs, Tailscale machine sharing, the shared Herdr with only Master sessions, per-install ports, sign-in and invites, and moving an install by hand, linked from README.md and docs/setup.md', () => {
   const guide = read('docs/shared-server.md');
-  assert.equal(guide.split('\n')[0], '# A shared Graphyard server on Tailscale', 'the guide carries its title');
+  assert.equal(guide.split('\n')[0], '# A shared Mainworks server on Tailscale', 'the guide carries its title');
   assert.deepEqual([...guide.matchAll(/^## (.+)$/gm)].map(match => match[1]), [
     'The server',
     'Several installs on one server',
@@ -28,7 +28,7 @@ test('e2e:docs-shared-server-guide — docs/shared-server.md carries the shared 
   for (const fact of ['swap', 'swapon', 'Landlock', 'Linux 7.0', 'uname -r']) assert.ok(server.includes(fact), `The server says: ${fact}`);
 
   const installs = section(guide, 'Several installs on one server');
-  for (const fact of ['graphyard up --repo OWNER/NAME', 'graphyard-OWNER-NAME-server-1', 'graphyard-master-OWNER-NAME.service']) assert.ok(installs.includes(fact), `Several installs says: ${fact}`);
+  for (const fact of ['mainworks up --repo OWNER/NAME', 'graphyard-OWNER-NAME-server-1', 'graphyard-master-OWNER-NAME.service']) assert.ok(installs.includes(fact), `Several installs says: ${fact}`);
 
   const sharing = section(guide, 'Sharing the machine over Tailscale');
   for (const fact of ['tailscale serve --bg --http=PORT', 'Share', '30 days']) assert.ok(sharing.includes(fact), `Sharing says: ${fact}`);
@@ -40,7 +40,7 @@ test('e2e:docs-shared-server-guide — docs/shared-server.md carries the shared 
   for (const fact of ['4310', 'http://SERVER:PORT']) assert.ok(ports.includes(fact), `Ports says: ${fact}`);
 
   const signin = section(guide, 'Signing in and inviting people');
-  for (const fact of ['Invite someone', 'opens once', 'viewer', 'maintainer', 'graphyard login']) assert.ok(signin.includes(fact), `Sign-in says: ${fact}`);
+  for (const fact of ['Invite someone', 'opens once', 'viewer', 'maintainer', 'mainworks login']) assert.ok(signin.includes(fact), `Sign-in says: ${fact}`);
 
   const move = section(guide, 'Moving an install by hand');
   for (const fact of ['~/.config/graphyard/<install>/', '~/.config/graphyard/masters/', '.git/worktrees']) assert.ok(move.includes(fact), `Moving says: ${fact}`);

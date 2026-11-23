@@ -7,7 +7,6 @@ import { readInstallLoopCode } from './loop-code.js';
 import { shellQuote } from './shell-quote.js';
 import { chmod, cp, lstat, mkdir, readdir, rmdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { spawn } from 'node:child_process';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -28,6 +27,7 @@ import { installArgv, packageManager } from './package-manager.js';
 import { pinnedNodePath } from './node-pin.js';
 import { defaultChildRun } from './child-runner.js';
 import { herdrSync } from './herdr-host.js';
+import { stateDirectory, defaultConfigHome } from './install/layout.js';
 export { readInstallLoopCode, readLoopCode, judgeLoopCode, localLoopCodeFiles, unitLauncherCheckout, systemdCommandLineWords, type UnitCode, type LoopCodeReading, type LoopCodeFiles, type LoopCodeFacts } from './loop-code.js';
 export { shellQuote } from './shell-quote.js';
 
@@ -46,7 +46,7 @@ export async function loadConnection(cwd: string): Promise<Connection | null> {
   try { roots = connectionRoots(cwd); } catch { return null; }
   for (const root of roots) {
     try {
-      const file = resolve(root, '.graphyard/connection.json'); const info = await lstat(file);
+      const file = resolve(stateDirectory(root), 'connection.json'); const info = await lstat(file);
       if (!info.isFile() || info.mode & 0o077) throw new Error('Connection credentials must be a regular file with mode 0600');
       const connection = connectionSchema.parse(JSON.parse(await readFile(file, 'utf8')));
       connection.url = serverOrigin(connection.url); return connection;
@@ -95,7 +95,7 @@ Never weaken requirements, and never use an operator/producer token for
 implementation or proof. Act without asking, and record blockers with the CLI.
 Submit with \`complete GY-N EPOCH --head SHA\`; make \`complete\` your last action.
 For any procedure, run \`node $GRAPHYARD_CLI guide TOPIC\`
-(topics: claim, sync, complete, park, blocked, review, proof, upgrade, master, setup, infra, publishing, runtimes).
+(worker: claim, sync, complete, park, blocked; reviewer: review; producer: proof; \`guide\` alone lists the rest).
 ${end}`;
   return starts ? existing.slice(0, existing.indexOf(start)) + section + existing.slice(existing.indexOf(end) + end.length) : `${existing}${existing.endsWith('\n') || !existing ? '' : '\n'}\n${section}\n`;
 }
@@ -185,7 +185,7 @@ export async function setupRepository(root: string, input: Connection, options: 
     const created = found ? null : parsed(['workspace', 'create', '--cwd', root, '--label', label, '--no-focus']);
     const workspace = found ?? created?.workspace?.workspace_id ?? created?.workspace_id;
     if (!workspace) throw new Error('Herdr returned no workspace for this installation');
-    const pluginRoot = options.pluginHome ?? join(homedir(), '.config/graphyard/herdr-plugin');
+    const pluginRoot = options.pluginHome ?? join(defaultConfigHome(), 'herdr-plugin');
     await mkdir(join(pluginRoot, 'integrations/herdr'), { recursive: true });
     // Installs share this one read/modify/write, including when two upgrades overlap.
     const lock = join(pluginRoot, '.refresh-lock');
@@ -285,7 +285,7 @@ export type AppliedSetup = z.infer<typeof appliedStateSchema>;
 
 /** Reads the applied record without creating .graphyard/ or touching .gitignore, so a scan writes nothing. */
 export async function loadAppliedSetup(root: string): Promise<AppliedSetup | null> {
-  const file = resolve(root, '.graphyard', appliedFileName);
+  const file = resolve(stateDirectory(root), appliedFileName);
   try {
     if (!(await lstat(file)).isFile()) throw new Error('The applied setup record must be a regular file');
     return appliedStateSchema.parse(JSON.parse(await readFile(file, 'utf8')));
@@ -302,7 +302,7 @@ export function setupDrift(applied: AppliedSetup | null, proposal: SetupProposal
 
 /** Non-mutating status of the local proposal and applied setup, for read-only commands. */
 export async function readSetupStatus(root: string) {
-  const directory = resolve(root, '.graphyard');
+  const directory = stateDirectory(root);
   const read = async (name: string, schema: z.ZodType<any>) => {
     let value: any = null;
     try { value = JSON.parse(await readFile(resolve(directory, name), 'utf8')); } catch (error: any) { if (error.code !== 'ENOENT') return { error: 'unreadable' }; }
@@ -524,7 +524,7 @@ export async function liftLoopPins(root: string, options: { installDir?: string 
 
 /** Remove the retired launcher pointer on every up, including an already current install. */
 export async function removeHeldCliPin(root: string): Promise<void> {
-  await rm(join(root, '.graphyard', 'held-cli.json'), { force: true });
+  await rm(join(stateDirectory(root), 'held-cli.json'), { force: true });
 }
 
 /**

@@ -14,6 +14,8 @@ import type { AccountUsage, EnvironmentProbe } from './environments.js';
 export interface ProbedHome { name: string; kind: string; home: string; plan?: string | null; declaredPlan?: string | null; keyFile?: string; keyVariable?: string; model?: string }
 /** What a usage reader reports of one account home: its login, the provider's usage windows, and a shared plan reading when it took one. */
 export interface AccountReading { loggedIn: boolean; usage: AccountUsage[]; note: string | null; reached?: boolean; shared?: boolean; plan?: PlanReading;
+  /** GY-3497: the extra-usage line the provider's answer gave when spend is enabled; shown, never changed. */
+  spend?: string;
   /** Why a logged-out reading is logged out, when the probe can say more than that. */
   loggedOutReason?: string;
   /** GY-3414: why a logged-in account still cannot run (its configured model is unavailable). */
@@ -40,7 +42,8 @@ export interface RuntimeAdapter {
   kind: string;
   recipe?: LaunchRecipe;
   /** `optional`: flags passed only when the installed runtime's `BEFORE --help` lists them (acceptedFlags). */
-  headless?: { program?: string; before: string[]; flags: string[]; drop?: string[]; optional?: string[] };
+  /** `stdin`: the words that replace a prompt too large for argv, which the runtime then reads on stdin (GY-3713). */
+  headless?: { program?: string; before: string[]; flags: string[]; drop?: string[]; optional?: string[]; stdin?: string[] };
   /** GY-3632: the words that make the one-task form continue runtime session `session`, placed before the request. */
   continue?: (session: string) => string[];
   request?: (reference: string) => string;
@@ -56,6 +59,8 @@ export interface RuntimeAdapter {
   state?: { variables: Record<string, string>; directory: string };
   /** GY-3596: the model a run reported on its own output, or null when it names none. */
   model?: (output: string) => string | null;
+  /** GY-3687: the flag that names the model, when the stored runtime contract names none. */
+  modelFlag?: string;
 }
 
 /** The usage-limit messages the provider APIs themselves return, in a runtime's error output. */
@@ -166,8 +171,9 @@ export const reportedModel = (kind: string | null | undefined, output: string) =
 // that never asks can still only act inside its own assigned worktree and its own credentials.
 const builtInAdapters = {
   claude: {
+    modelFlag: '--model',
     // `--output-format json`: the run ends with one `result` object carrying its reply and the tokens it used by model (GY-3289).
-    headless: { before: [], flags: ['-p', '--output-format', 'json'] },
+    headless: { before: [], flags: ['-p', '--output-format', 'json'], stdin: [] },
     continue: session => ['--resume', session],
     recipe: { args: ['--permission-mode', 'bypassPermissions'], environment: {}, equivalents: ['--dangerously-skip-permissions'], trust: trustClaudeFolder, verify: verifyClaudeTrust, prompts: 'tool-approval prompts on first use of each command class, and the folder-trust dialog in a folder it has not been trusted in',
       tradeoff: 'Claude Code stops classifying commands for this session and trusts its working directory without asking wherever that loads none of the repository\'s own Claude settings; everything the agent proposes runs without asking.' },
@@ -183,8 +189,9 @@ const builtInAdapters = {
     model: claudeModel,
   },
   codex: {
+    modelFlag: '--model',
     // `--json`: events on standard output, the last a `turn.completed` with the tokens the turn used (GY-3289).
-    headless: { before: ['exec'], flags: ['--skip-git-repo-check', '--json'], drop: ['--ask-for-approval', '-a'] },
+    headless: { before: ['exec'], flags: ['--skip-git-repo-check', '--json'], drop: ['--ask-for-approval', '-a'], stdin: ['-'] },
     continue: session => ['resume', session],
     // No Codex flag skips its "Trust this folder?" dialog in a folder its config does not list, so
     // the folder is recorded trusted first (trustCodexFolder, GY-1306).
@@ -199,6 +206,7 @@ const builtInAdapters = {
     model: codexModel,
   },
   cursor: {
+    modelFlag: '--model',
     headless: { program: 'cursor-agent', before: [], flags: ['-p', '--output-format', 'json'] },
     recipe: { program: 'agent', args: ['--force', '--trust'], environment: {}, prompts: "the 'Run Everything' approval and the fresh-worktree workspace-trust prompt",
       tradeoff: 'Cursor Agent (`agent`) runs every command it proposes in the assigned worktree and trusts that worktree without asking.' },
@@ -212,11 +220,12 @@ const builtInAdapters = {
     identity: { file: 'cli-config.json', ids: login => [login?.authInfo?.userId] },
   },
   opencode: {
+    modelFlag: '--model',
     // GY-3414: OpenCode 2.x hands every command to a background service on the host's loopback
     // unless `--standalone`, and that service answers with its own login — none — whatever the
     // account's XDG_DATA_HOME, so the run fell back to the free model and stopped at once. An
     // OpenCode without it rejects the flag, so it is passed only where `run --help` lists it (GY-3425).
-    headless: { before: ['run'], flags: ['--format', 'json'], optional: ['--standalone'] },
+    headless: { before: ['run'], flags: ['--format', 'json'], optional: ['--standalone'], stdin: [] },
     continue: session => ['--session', session],
     // GY-3592: the interactive launch needs it too, or the pane runs on the service's login and its free model.
     recipe: { args: ['--standalone'], environment: { OPENCODE_PERMISSION: '{"edit":"allow","bash":"allow","webfetch":"allow"}' }, permits: { OPENCODE_PERMISSION: asksNothing }, prompts: 'edit, bash, and webfetch permission prompts',
@@ -234,6 +243,7 @@ const builtInAdapters = {
     sharedPlan: true,
   },
   pi: {
+    modelFlag: '--model',
     headless: { before: [], flags: ['-p'] },
     // Pi has no approval or trust prompt to suppress: every tool it has runs without asking.
     recipe: { args: [], environment: {}, prompts: 'none: pi has no approval or workspace-trust prompts',
@@ -289,6 +299,18 @@ export const runtimeKinds = Object.keys(builtInAdapters) as [RuntimeKind, ...Run
 export const environmentKinds = runtimeKinds.filter(kind => 'home' in builtInAdapters[kind]) as [EnvironmentKind, ...EnvironmentKind[]];
 
 const adapters = new Map<string, RuntimeAdapter>(Object.entries(builtInAdapters).map(([kind, adapter]) => [kind, { kind, ...adapter } as RuntimeAdapter]));
+/**
+ * GY-3687: the one place a launch names its model. Every launch of a registry account — worker
+ * start and continue, code and product review, producer, master and smoke — carries the account's
+ * registered model id on the runtime's model flag, and any model a contract or role policy named
+ * (an alias such as 'opus') is dropped, so a login's own default never decides what runs.
+ */
+export function withModel(kind: string, args: readonly string[], contract: { modelFlag?: string | null } | null | undefined, modelId: string | null | undefined): string[] {
+  const flag = contract?.modelFlag ?? runtimeAdapter(kind)?.modelFlag;
+  if (!flag) return [...args];
+  const kept = args.filter((arg, index) => arg !== flag && !arg.startsWith(`${flag}=`) && args[index - 1] !== flag);
+  return modelId ? [...kept, flag, modelId] : kept;
+}
 /** The adapter for `kind`, or undefined for a kind Graphyard knows nothing of. */
 /** The remedy for a session stuck on its runtime's first-run screen, or null when the screen is not one. */
 export const runtimeAdapter = (kind: string | null | undefined): RuntimeAdapter | undefined => kind ? adapters.get(kind) : undefined;

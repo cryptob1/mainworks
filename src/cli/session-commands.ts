@@ -11,6 +11,8 @@ import { installIdFor } from '../install/types.js';
 import { repositoryFromRemote } from '../onboarding.js';
 import { workMutation, type CliCommand } from './registry.js';
 import { parkCommand, parkInput } from './park-command.js';
+import { setting } from '../setting.js';
+import { stateDirectory } from '../install/layout.js';
 export { parkArgs, parkCommand } from './park-command.js';
 
 /**
@@ -190,7 +192,7 @@ export async function recordedOperator(root: string): Promise<{ token: string; r
     if ((token = await readToken(directory, operator).catch(() => null))) break;
   }
   if (!token) return null;
-  const up = await readFile(join(root, '.graphyard/up.json'), 'utf8').then(JSON.parse, () => null);
+  const up = await readFile(join(stateDirectory(root), 'up.json'), 'utf8').then(JSON.parse, () => null);
   return { token, reachableUrl: typeof up?.tailnetUrl === 'string' && up.tailnetUrl ? up.tailnetUrl : null };
 }
 /**
@@ -224,7 +226,7 @@ export const openCommand: CliCommand = {
 };
 /** With no credential named, the install's recorded operator credential stands in for GRAPHYARD_TOKEN (the request helper reads it on first use). */
 export async function asRecordedOperator(root: string) {
-  const recorded = process.env.GRAPHYARD_TOKEN_FILE || process.env.GRAPHYARD_TOKEN ? null : await recordedOperator(root);
+  const recorded = setting('TOKEN_FILE') || setting('TOKEN') ? null : await recordedOperator(root);
   if (recorded) process.env.GRAPHYARD_TOKEN = recorded.token;
   return recorded;
 }

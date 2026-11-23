@@ -72,8 +72,8 @@ const stored = (work: Work) => work as Work & { queue?: unknown; queueHistory?: 
 export const deliverySettled = (work: Work) => work.stage === 'done' && absent(work.nextAction) && absent(stored(work).queue) && absent(work.lease)
   && !(Array.isArray(work.actionQueue?.actions) && work.actionQueue.actions.length)
   && !(Array.isArray(work.sessions) && work.sessions.some(handle => handle?.state === 'running'));
-/** A record bound to a release, not a candidate: the loop's own reading or a `manual:post-deploy/*` proof (`relevantEvidence` in src/store/coordination-sql.ts keeps the same). */
-const postDeployRecord = (entry: Work['evidence'][number]) => (!!entry.reading && typeof entry.reading === 'object') || entry.proof.startsWith('manual:post-deploy/');
+/** A record bound to a release, not a candidate: the loop's own reading or a `manual:post-deploy/*` proof; or a docs sign-off, which stands across heads (GY-3716). `relevantEvidence` in src/store/coordination-sql.ts keeps the same. */
+const postDeployRecord = (entry: Work['evidence'][number]) => (!!entry.reading && typeof entry.reading === 'object') || entry.proof.startsWith('manual:post-deploy/') || entry.proof.startsWith('manual:docs-updated/');
 const recent = <T>(entries: T[], keep: number) => entries.slice(Math.max(0, entries.length - keep));
 
 export function coordinationWork(work: Work, omitted: CoordinationOmissions): Work {

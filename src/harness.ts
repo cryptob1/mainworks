@@ -380,7 +380,7 @@ export const agyConfigFile = (environment: Record<string, string> = {}) => {
 /** A managed session checkout's leaf, by the name install/worktree-root.ts `sessionCheckoutName` gives its directory, under any root. */
 const managedCheckout = /[\\/]graphyard-(proof|review|approval)-[a-z0-9][a-z0-9-]{0,39}-[0-9a-f]{7}-[0-9a-f]{8}[\\/]checkout$/;
 const removedGraphyardWorktree = (entry: unknown) => typeof entry === 'string'
-  && (entry.includes(`${sep}.graphyard${sep}worktrees${sep}`) || managedCheckout.test(entry)) && !existsSync(entry);
+  && (['.graphyard', '.mainworks'].some(name => entry.includes(`${sep}${name}${sep}worktrees${sep}`)) || managedCheckout.test(entry)) && !existsSync(entry);
 export async function trustAgyFolder(directory: string, environment: Record<string, string> = {}): Promise<FolderTrust> {
   const file = agyConfigFile(environment), folder = canonicalPath(directory);
   if (underTestRunner() && !temporaryDirectories().some(temporary => canonicalPath(file).startsWith(`${temporary}${sep}`))) return { file, directory: folder, written: false };
@@ -618,6 +618,10 @@ export function masterHarnessPlan(input: { harness: string; root: string; cliPat
     { rule: 'Read(./.graphyard/connection.json)', why: 'Holds an individual Graphyard credential.' },
     { rule: 'Read(./.graphyard/credentials.json)', why: 'Holds local principal credentials.' },
     { rule: 'Read(./.graphyard/github-app.json)', why: 'Holds the control-plane App private key.' },
+    // GY-3711: a fresh install keeps the same files in .mainworks.
+    { rule: 'Read(./.mainworks/connection.json)', why: 'Holds an individual Graphyard credential.' },
+    { rule: 'Read(./.mainworks/credentials.json)', why: 'Holds local principal credentials.' },
+    { rule: 'Read(./.mainworks/github-app.json)', why: 'Holds the control-plane App private key.' },
     { rule: 'Read(**/*.pem)', why: 'App private keys are never read into a session transcript.' },
     { rule: 'Read(**/*.token)', why: 'Token files are never read into a session transcript.' },
     { rule: 'Bash(cat:*)', why: 'Reading files goes through the Read tool, where the credential rules above apply.' },

@@ -10,8 +10,9 @@ import { basename, dirname, join } from 'node:path';
 import { homedir, hostname, tmpdir } from 'node:os';
 import type { ChildRun } from '../child-runner.js';
 import { shellQuote } from '../shell-quote.js';
-import { probeHost, readHosts, sshTarget, type HostReading as HostProbe } from '../hosts.js';
+import { hostKnownHostsFile, probeHost, readHosts, sshTarget, type HostReading as HostProbe } from '../hosts.js';
 import { trialContainerFault, trialHotCelsius } from './trial-load.js';
+import { stateDirectory } from '../install/layout.js';
 
 /** One host's reading: cores, cores busy (1-minute load), the share of CPU stolen, and its hottest CPU sensor against the heat limit. */
 export interface HostReading { name: string; cores: number; busy: number; steal: number; celsius: number | null; limit: number; away: boolean; reason?: string; /** GY-3645: its shim runs a check's Compose services. */ compose?: boolean }
@@ -99,6 +100,10 @@ export async function readShardHosts(targets: readonly string[], run: ChildRun, 
 export class HostDroppedError extends Error {
   constructor(readonly host: string, readonly reason: string) { super(`host ${host} dropped a shard: ${reason}`); this.name = 'HostDroppedError'; }
 }
+/** GY-3528: a host whose heavy-job share is full right now; try other hosts and try it again once a shard finishes. */
+export class HostBusyError extends Error {
+  constructor(readonly host: string) { super(`host ${host} is at its heavy-job share`); this.name = 'HostBusyError'; }
+}
 
 /** One host's place in a trial: how many of its shards run at once, its reading, and how to run one there (absent: this machine). */
 export interface PlacedHost<R> { name: string; room: number; reading: HostReading; remote?: R }
@@ -116,12 +121,12 @@ export interface ShardPlacement { ran: string[]; queuedWhileIdle: number; droppe
  * re-queued first. `stopped` ends placement once a shard ended the trial; running shards are awaited.
  */
 export async function runShardsOnHosts<R>(input: { count: number; hosts: readonly PlacedHost<R>[]; breadth: number; run: (host: PlacedHost<R>, index: number) => Promise<void>; stopped?: () => boolean; pinned?: readonly boolean[] }): Promise<ShardPlacement> {
-  const queue = Array.from({ length: input.count }, (_, index) => index), ran: string[] = [], dropped = new Set<string>();
+  const queue = Array.from({ length: input.count }, (_, index) => index), ran: string[] = [], dropped = new Set<string>(), busy = new Set<string>();
   const running = new Map(input.hosts.map(host => [host.name, 0]));
   const inFlight = new Set<Promise<void>>();
   let queuedWhileIdle = 0, failure: { error: unknown } | null = null;
   // GY-3588: this machine is always usable up to its room; its launcher holds each container start while a sensor is hot.
-  const usable = (host: PlacedHost<R>) => host === input.hosts[0] || !dropped.has(host.name) && underHeatLimit(host.reading);
+  const usable = (host: PlacedHost<R>) => host === input.hosts[0] || !dropped.has(host.name) && !busy.has(host.name) && underHeatLimit(host.reading);
   const left = (host: PlacedHost<R>) => realFreeCores(host.reading) - running.get(host.name)! * input.breadth;
   const pick = (index: number) => {
     const open = input.hosts.filter(host => usable(host) && (!input.pinned?.[index] || host === input.hosts[0]) && running.get(host.name)! < host.room);
@@ -131,8 +136,9 @@ export async function runShardsOnHosts<R>(input: { count: number; hosts: readonl
   };
   const start = (host: PlacedHost<R>, index: number) => {
     running.set(host.name, running.get(host.name)! + 1);
-    const flight: Promise<void> = input.run(host, index).then(() => { ran[index] = host.name; }, error => {
-      if (error instanceof HostDroppedError && host !== input.hosts[0]) { dropped.add(host.name); queue.unshift(index); }
+    const flight: Promise<void> = input.run(host, index).then(() => { ran[index] = host.name; busy.clear(); }, error => {
+      if (error instanceof HostBusyError && host !== input.hosts[0]) { busy.add(host.name); queue.unshift(index); }
+      else if (error instanceof HostDroppedError && host !== input.hosts[0]) { dropped.add(host.name); busy.clear(); queue.unshift(index); }
       else failure ??= { error };
     }).finally(() => { running.set(host.name, running.get(host.name)! - 1); inFlight.delete(flight); });
     inFlight.add(flight);
@@ -145,7 +151,12 @@ export async function runShardsOnHosts<R>(input: { count: number; hosts: readonl
       // waited while a usable host idled counts as a placement wait.
       if (!input.pinned?.[queue[0]!] && input.hosts.some(other => usable(other) && running.get(other.name) === 0)) queuedWhileIdle++;
     }
-    if (!inFlight.size) break;
+    if (!inFlight.size) {
+      if (!busy.size || failure || input.stopped?.()) break;
+      busy.clear();
+      await new Promise(done => setTimeout(done, 25));
+      continue;
+    }
     await Promise.race(inFlight);
   }
   const failed = failure as { error: unknown } | null;
@@ -162,17 +173,20 @@ export const connectionsPerHost = 3;
  * Keep connection and host-key settings; commands, forwarding and system includes do not travel.
  * Sessions to a host share at most `connectionsPerHost` multiplexed connections (ControlMaster), their
  * sockets in this session's private directory, which is removed, the connections closed, when it ends. */
-export function shardSshSession(run: ChildRun) {
+export function shardSshSession(run: ChildRun, knownHosts = hostKnownHostsFile()) {
   let directory: Promise<string> | undefined, opened = 0;
   type Connection = { path: string; open: Promise<unknown>; sessions: number };
   const hosts = new Map<string, { config: Promise<string>; connections: Connection[]; waiting: (() => void)[] }>();
   const host = (target: string) => {
     if (!hosts.has(target)) hosts.set(target, { connections: [], waiting: [], config: (async () => {
+      if (!existsSync(dirname(knownHosts))) await mkdir(dirname(knownHosts), { recursive: true }).catch(() => {});
       const userConfig = join(homedir(), '.ssh', 'config');
       const resolved = String(await run('ssh', ['-G', '-F', existsSync(userConfig) ? userConfig : '/dev/null', ...sshTarget(target)], { timeoutMs: 5_000 }));
-      const settings = resolved.split('\n').filter(line => /^(hostname|user|port|identityfile|certificatefile|userknownhostsfile|globalknownhostsfile|hostkeyalias|stricthostkeychecking) /i.test(line));
+      const settings = resolved.split('\n').filter(line => /^(hostname|user|port|identityfile|certificatefile|globalknownhostsfile|hostkeyalias) /i.test(line));
       const path = join(await (directory ??= mkdtemp(join(tmpdir(), 'graphyard-shard-ssh-'))), `${randomUUID()}.conf`);
-      await writeFile(path, ['Host *', 'BatchMode yes', 'ConnectTimeout 10', 'IdentitiesOnly yes', 'ControlPersist 15m', ...settings, ''].join('\n'), { mode: 0o600 });
+      const knownHostsValue = knownHosts.includes(' ') ? `"${knownHosts}"` : knownHosts;
+      await writeFile(path, ['Host *', 'BatchMode yes', 'ConnectTimeout 10', 'IdentitiesOnly yes', 'ControlPersist 15m',
+        `UserKnownHostsFile ${knownHostsValue}`, 'StrictHostKeyChecking accept-new', ...settings, ''].join('\n'), { mode: 0o600 });
       return path;
     })() });
     return hosts.get(target)!;
@@ -317,7 +331,7 @@ export function remoteShardSession(input: { root: string; sha: string; image: st
 
 /** One trial's shard record, for master status: what ran them, wall time, shards run and run remotely, waits while a host idled, and each host's reading. */
 export interface RemoteShardRun { /** GY-3526: the worker verification that ran them; absent for a merge trial. */ label?: string; at: string; wallMs: number; shards: number; remote: number; queuedWhileIdle: number; host: string; celsius: number | null; hosts: { name: string; away: boolean; reason?: string; celsius: number | null; freeCores: number }[] }
-export const remoteShardRecordPath = (root: string) => join(root, '.graphyard', 'remote-shards.json');
+export const remoteShardRecordPath = (root: string) => join(stateDirectory(root), 'remote-shards.json');
 const keptRuns = 20;
 
 export async function recordRemoteShardRun(root: string, run: RemoteShardRun): Promise<void> {

@@ -28,7 +28,8 @@ import { defaultDiskFloorGb, minimumTrialContainers, trialHotCelsius, trialPress
 
 /** Read-only: Docker's answer, cores, load, the /proc/stat cpu line, CPU sensors and the trial containers running now. */
 export const hostProbeScript = [
-  'docker info --format "{{.ID}}" >/dev/null 2>&1 || { echo graphyard-no-docker; exit 0; }',
+  // GY-3697: without Docker, one line says whether its user unit is enabled and active.
+  'docker info --format "{{.ID}}" >/dev/null 2>&1 || { echo "docker-unit $(systemctl --user is-enabled docker.service 2>/dev/null) $(systemctl --user is-active docker.service 2>/dev/null)"; echo graphyard-no-docker; exit 0; }',
   'echo "cores $(nproc)"',
   'echo "load $(cut -d " " -f 1 /proc/loadavg)"',
   'head -n 1 /proc/stat',

@@ -49,7 +49,7 @@ async function signIn(page: Page, url: string) {
   const link = await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } });
   expect(link.status).toBe(200);
   const { code } = await link.json() as { code: string };
-  await page.goto(`/#sign-in=${code}`);
+  await page.goto(`/#sign-in=${code}&work`);
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
 }
 
@@ -95,6 +95,8 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
 
       // Workers shows each host's latest probe with when it was read.
       await page.evaluate(() => { location.hash = 'workers'; });
+      // GY-3485: the hosts sit in the closed Machine details fold.
+      await page.getByText('Machine details', { exact: true }).click();
       const hostsTable = page.getByRole('table', { name: 'Hosts' });
       await expect(hostsTable.locator('[data-host="gy-compute@oldbox"]')).not.toHaveAttribute('data-away', /.*/);
       await expect(hostsTable.locator('[data-host="gy-compute@oldbox"] [data-label="Read"]')).toHaveText(/^\d+m ago$/);

@@ -39,8 +39,8 @@ function SignInCommand() {
 }
 export const LINK_REFUSED_NOTICE = 'That sign-in link has expired or was already used. Ask for a new one.';
 
-/** The one-time code a sign-in link carries in its fragment (`/#sign-in=CODE`), which never reaches a server log. */
-export const signInCode = (hash: string) => /^#sign-in=([A-Za-z0-9_-]{16,200})$/.exec(hash)?.[1] ?? null;
+/** The one-time code a sign-in link carries in its fragment (`/#sign-in=CODE`, or `/#sign-in=CODE&page` naming the page to open), which never reaches a server log. */
+export const signInCode = (hash: string) => /^#sign-in=([A-Za-z0-9_-]{16,200})(?:&[a-z-]+(?:\/[a-z-]+)?)?$/.exec(hash)?.[1] ?? null;
 /**
  * Redeem a sign-in link's code for a human session token. The link is single use: the server
  * forgets it on the first attempt, whatever the outcome.
@@ -112,7 +112,7 @@ export interface LoginViewProps {
 export function LoginView({ state, error, draftToken, setDraftToken, submit, retry, useAnotherToken }: LoginViewProps) {
   const escape = <button type="button" className="text-button login-escape" onClick={useAnotherToken}>Use another token</button>;
   return <main className="login">
-    <div className="brand"><img className="mark" src="/graphyard-symbol.svg" alt="" width="32" height="32"/> {PRODUCT_NAME}</div>
+    <div className="brand"><img className="mark" src="/favicon.svg" alt="" width="32" height="32"/> {PRODUCT_NAME}</div>
     <h1>Keep the work<br/>moving forward.</h1>
     <p className="login-tagline">One place for ownership, evidence, and delivery.</p>
     {state.kind === 'form' && <form className="login-form" method="post" onSubmit={e => { e.preventDefault(); submit(); }}>

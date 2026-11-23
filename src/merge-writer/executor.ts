@@ -22,6 +22,7 @@ export { countProofCases };
 
 // ---- The queue (model/merge-queue.ts) ------------------------------------------------------------
 import { baseFailurePrefix, gate, keptTrialAheadOfReview, open, trialAheadOfReviewReason } from '../model/merge-queue.js';
+import { setting } from '../setting.js';
 export { baseFailureHoldMs, baseFailurePrefix, isBaseRepair, isHotfix, mergeQueue, nextToMerge, submittedAtOf, trialAheadOfReviewPrefix, trialAheadOfReviewReason, trialRefusalHeld, keptTrialAheadOfReview, type MergeQueue, type QueuedMerge } from '../model/merge-queue.js';
 
 /** Whether trial results still belong to this implementation and policy. */
@@ -351,8 +352,9 @@ export const failureIsBase = (run: Pick<MergeTrialRun, 'build' | 'tests' | 'base
   run.build === 'pass' && run.tests.failed.length > 0 && !!run.base && run.tests.failed.every(file => run.base!.files.includes(file))
   && run.base.cases.length > 0 && run.base.cases.every(test => run.base!.tests.includes(test));
 
-/** GY-3545: the open flaky-check item a batch gate check's failure belongs to, matched by its title. */
-export const openFlakyItem = (work: readonly Work[], check: string) => work.find(item => item.stage !== 'done' && item.title === `Flaky check on main: ${check}`) ?? null;
+/** GY-3545, GY-3693: the open flaky-check item a batch gate check's failure belongs to, matched by faultKey or title. */
+export const openFlakyItem = (work: readonly Work[], check: string) =>
+  work.find(item => item.stage !== 'done' && (item.faultKey === `flake:${check}` || item.title === `Flaky check on main: ${check}`)) ?? null;
 
 /**
  * GY-3545: a trial's failures that are not the candidate's: the build passed, no E2E case failed,
@@ -428,7 +430,7 @@ export const mergeAskpassName = 'merge-writer-askpass';
  * operator's gh login, the explicit https URL of the repository. GRAPHYARD_MERGE_WRITER_GIT_URL replaces that URL for tests.
  */
 export const mergeWriterRemote = (repository: string, credential: { tokenFile?: string; pushAuth?: string } | undefined, environment: NodeJS.ProcessEnv = process.env) =>
-  credential?.tokenFile || credential?.pushAuth ? environment.GRAPHYARD_MERGE_WRITER_GIT_URL || `https://github.com/${repository}.git` : 'origin';
+  credential?.tokenFile || credential?.pushAuth ? setting('MERGE_WRITER_GIT_URL', environment) || `https://github.com/${repository}.git` : 'origin';
 /** `git push origin --force-with-lease=refs/heads/BASE:<baseTip> <mergeSha>:refs/heads/BASE`: the merge commit lands only on the tip it was tested on. */
 export const pushArgs = (base: string, baseTip: string, mergeSha: string, remote = 'origin') => ['push', remote, `--force-with-lease=refs/heads/${base}:${baseTip}`, `${mergeSha}:refs/heads/${base}`];
 /**

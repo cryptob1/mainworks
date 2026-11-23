@@ -2,9 +2,10 @@ import { gitLedger, importRun, readImports, sealImports } from '../../validation
 import { gitRunnerFor } from '../../merge-writer/local-observation.js';
 import type { Engine } from '../../engine.js';
 import { defineRoutes, parseJson } from '../routes.js';
+import { setting } from '../../setting.js';
 
 /** The checkout the plane serves from, as the merge record and head observation read it. */
-const checkoutGit = (engine: Engine) => engine.gitRunner ??= gitRunnerFor(process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd());
+const checkoutGit = (engine: Engine) => engine.gitRunner ??= gitRunnerFor(setting('REPOSITORY_ROOT') ?? process.cwd());
 
 /** Deployment definitions and external reports survive the retired runner protocol. */
 export const validationRoutes = defineRoutes('validation', [

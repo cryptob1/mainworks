@@ -485,11 +485,11 @@ await t.test('integration:unacknowledged-session-recovery — the loop detects a
 await t.test('manual:launch-authorization-onboarding-review — a Claude Code role session carries the launch authorization on its command line and guide claim prints it', async () => {
   for (const fragment of ['receives its instruction as the', 'session\'s own first request, on the runtime\'s command line, never as pasted text', 'no human\nsends "go"', 'The one message such a session may later receive as a paste comes from that\nsame launcher', 'act on it without waiting for confirmation', 'Nothing else pasted into a\nsession carries that authority']) assert.ok(launchAuthorization.includes(fragment), `the authorization states: ${fragment}`);
   // GY-2972: the generated AGENTS.md block stays short and names the guide topics; the
-  // authorization's paste rule prints from guide claim, and the autonomy contract that ends it
-  // prints from guide blocked, word for word.
+  // authorization's paste rule prints from guide blocked (GY-3493), followed by the autonomy contract
+  // that ends it, word for word.
   const fold = (text: string) => text.replace(/\s+/g, ' ');
   const authorization = launchAuthorization.slice(0, launchAuthorization.indexOf(autonomyContract)).trim();
-  assert.ok(fold(guideText('claim')).includes(fold(authorization)), 'guide claim carries the authorization verbatim');
+  assert.ok(fold(guideText('blocked')).includes(fold(authorization)), 'guide blocked carries the authorization verbatim');
   assert.ok(fold(guideText('blocked')).includes(fold(autonomyContract)), 'guide blocked carries the autonomy contract verbatim');
   assert.match(managedInstructions('# Rules\n'), /guide TOPIC/);
   const agents = await readFile(join(repositoryRoot, 'AGENTS.md'), 'utf8');

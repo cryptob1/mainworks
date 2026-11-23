@@ -49,7 +49,7 @@ async function openWorkers(page: Page, url: string) {
   const signIn = await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } });
   expect(signIn.status).toBe(200);
   const { code } = await signIn.json() as { code: string };
-  await page.goto(`/#sign-in=${code}`);
+  await page.goto(`/#sign-in=${code}&work`);
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
   await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings', exact: true }).click();
   await page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: 'Workers', exact: true }).click();
@@ -67,11 +67,13 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
       await openWorkers(page, url);
       const figures = page.locator('.host-cpu');
       await expect(figures).toBeVisible({ timeout: 15_000 });
-      await expect(figures).toContainText('Host CPU pressure 94%');
-      await expect(figures).toContainText('steal 12%');
-      await expect(figures).toContainText('temperature 96°C');
-      await expect(figures).toContainText('2 test workers per session');
-      await expect(figures).toContainText('trials 2 of 4');
+      // GY-3485: the header reads how busy and how hot; steal, the test budget and the trial cap sit in Machine details.
+      await expect(figures).toHaveText('Machine: 94% busy · 96°C');
+      await page.getByText('Machine details', { exact: true }).click();
+      const details = page.locator('[data-machine-figures]');
+      await expect(details).toContainText('steal 12%');
+      await expect(details).toContainText('2 test workers per session');
+      await expect(details).toContainText('trials 2 of 4');
     } finally { await page.close(); await close(); }
   });
 }

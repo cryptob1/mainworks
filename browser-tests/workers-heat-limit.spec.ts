@@ -46,7 +46,7 @@ async function openWorkers(page: Page, url: string) {
   const signIn = await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } });
   expect(signIn.status).toBe(200);
   const { code } = await signIn.json() as { code: string };
-  await page.goto(`/#sign-in=${code}`);
+  await page.goto(`/#sign-in=${code}&work`);
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
   await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings', exact: true }).click();
   await page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: 'Workers', exact: true }).click();
@@ -62,7 +62,8 @@ test('e2e:heat-limit-laptop — the Workers page header shows the laptop\'s hot 
     await openWorkers(page, url);
     const figures = page.locator('.host-cpu');
     await expect(figures).toBeVisible({ timeout: 15_000 });
-    await expect(figures).toContainText('temperature 96°C');
-    await expect(figures).toContainText('trials 2 of 4');
+    await expect(figures).toContainText('96°C');
+    await page.getByText('Machine details', { exact: true }).click();
+    await expect(page.locator('[data-machine-figures]')).toContainText('trials 2 of 4');
   } finally { await page.close(); await close(); }
 });

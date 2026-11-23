@@ -18,7 +18,7 @@ import { MatrixView, TestsView, type MatrixFilter } from '../web/pages/tests.js'
 
 // GY-3278 AC-3: the Tests page's default view is the environment matrix — every E2E case, grouped
 // by its first tag, with its latest result in each place it runs (Trial, Main, Served, Nightly),
-// read from the run ledger and the batch gate's record; a place with no record reads 'not run here'.
+// read from the run ledger and the batch gate's record; a place with no record reads '—' (GY-3485).
 
 const operator: Principal = { id: 'operator', role: 'admin' };
 const token = `operator-${'t'.repeat(32)}`;
@@ -100,17 +100,17 @@ test('e2e:tests-page-matrix — the matrix shows each case\'s result per place, 
 
   // The matrix is the default view, its columns in delivery order.
   assert.match(html, /aria-label="Where each case runs"/);
-  assert.deepEqual([...html.matchAll(/<th scope="col"[^>]*>(\w+)<br/g)].map(match => match[1]), ['Trial', 'Main', 'Served', 'Nightly']);
+  assert.deepEqual([...html.matchAll(/<th scope="col" title="[^"]*">(\w+)<\/th>/g)].map(match => match[1]), ['Trial', 'Main', 'Served', 'Nightly']);
   // Case A: passed in Trial and Main, failed Served, never ran Nightly.
   assert.match(cell(html, 'case-a', 'trial'), /^✓ passed 3 h ago$/);
   assert.match(cell(html, 'case-a', 'main'), /^✓ passed 2 h ago$/);
   assert.match(cell(html, 'case-a', 'served'), /^× failed 1 h ago$/);
-  assert.equal(cell(html, 'case-a', 'nightly'), 'not run here');
+  assert.equal(cell(html, 'case-a', 'nightly'), '—');
   // Case B ran only Nightly.
-  for (const column of ['trial', 'main', 'served']) assert.equal(cell(html, 'case-b', column), 'not run here');
+  for (const column of ['trial', 'main', 'served']) assert.equal(cell(html, 'case-b', column), '—');
   assert.match(cell(html, 'case-b', 'nightly'), /^✓ passed 5 h ago$/);
   // A place with no record is neutral; the trial cell links to the item whose trial ran it; the served failure names its step.
-  assert.match(row(html, 'case-a'), /<td data-column="nightly" class="matrix-cell result-none">/);
+  assert.match(row(html, 'case-a'), /<td data-column="nightly" class="matrix-cell result-none" title="not run here">—</);
   assert.match(row(html, 'case-a'), new RegExp(`<a href="#${work.key}">✓ passed</a>`));
   assert.match(row(html, 'case-a'), /title="opens the dashboard: status 500"><a href="#case-case-a">× failed<\/a>/, 'the served failure opens the case\'s run history');
   // Grouped by first tag, each group with its pass/fail count.
@@ -129,8 +129,8 @@ test('e2e:tests-page-matrix — the matrix shows each case\'s result per place, 
   const review = render({ matrix: { failing: false, category: 'review', column: 'all' } });
   assert.deepEqual([...review.matchAll(/<tr data-case="([^"]+)"/g)].map(match => match[1]), ['case-b']);
   const nightly = render({ matrix: { failing: false, category: 'all', column: 'nightly' } });
-  assert.deepEqual([...nightly.matchAll(/<th scope="col"[^>]*>(\w+)<br/g)].map(match => match[1]), ['Nightly']);
-  assert.equal(cell(nightly, 'case-a', 'nightly'), 'not run here');
+  assert.deepEqual([...nightly.matchAll(/<th scope="col" title="[^"]*">(\w+)<\/th>/g)].map(match => match[1]), ['Nightly']);
+  assert.equal(cell(nightly, 'case-a', 'nightly'), '—');
   // A group collapses to its heading and count.
   const collapsed = renderToStaticMarkup(createElement(MatrixView, { cases: data.cases, filter: { failing: false, category: 'all', column: 'all' }, setFilter: noop, collapsed: new Set(['dashboard']), toggle: noop, openItem: noop }));
   assert.doesNotMatch(collapsed, /data-case="case-a"/);
@@ -153,9 +153,10 @@ test('e2e:tests-page-matrix — the matrix shows each case\'s result per place, 
   assert.deepEqual(chosen, { ...all, category: 'dashboard', column: 'served' });
   const filtered = render({ matrix: chosen });
   assert.deepEqual([...filtered.matchAll(/<tr data-case="([^"]+)"/g)].map(match => match[1]), ['case-a']);
-  assert.deepEqual([...filtered.matchAll(/<th scope="col" title[^>]*>(\w+)<br/g)].map(match => match[1]), ['Served']);
-  // Filter chips for category, required or optional, and place; and the fold that explains the places.
-  for (const group of ['Category', 'Where it runs']) assert.match(html, new RegExp(`role="group" aria-label="${group}"`));
+  assert.deepEqual([...filtered.matchAll(/<th scope="col" title="[^"]*">(\w+)<\/th>/g)].map(match => match[1]), ['Served']);
+  // GY-3559: one row of chips — the view, only failing, required or optional; the coverage grid picks category and place, and its pick shows as one chip that clears it.
+  assert.equal([...html.matchAll(/class="case-filters"/g)].length, 1);
+  assert.match(filtered, /aria-pressed="true">dashboard in Served ×</);
   assert.deepEqual([...render({ matrix: { ...all, required: 'optional' } }).matchAll(/<tr data-case="([^"]+)"/g)].map(match => match[1]), ['case-b']);
   assert.match(html, /<details class="matrix-help"><summary>How this works<\/summary>/);
   // The by-item view is one click away.

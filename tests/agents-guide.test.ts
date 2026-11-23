@@ -5,7 +5,7 @@ import { guideText, guideTopicList } from '../src/guide.js';
 import { workerPrompt } from '../src/master/dispatch.js';
 import { reviewPrompt } from '../src/reviewer.js';
 import { producerPrompt } from '../src/producer.js';
-import { masterPrompt } from '../src/master/harness.js';
+import { masterMission, masterPrompt } from '../src/master/harness.js';
 import type { MasterConfig } from '../src/master/profiles.js';
 
 // GY-2972: launched sessions start from a short core instruction and load Graphyard procedure on
@@ -48,7 +48,7 @@ const baseBlockSentences = [
   'Put branches, commit shas, file paths and resume commands only in NEEDED and REASON, the detail for the next agent.',
   'Never use an operator/producer token for implementation or weaken proof requirements.',
   'Herdr runs sessions; Graphyard remains the source of ownership truth.',
-  'To set Graphyard up or find what its setup is missing, follow the setup steps in Graphyard\'s README: `doctor` prints one PASS or FAIL line per prerequisite under `setupFromZero`, and each FAIL line names the checklist step that fixes it.',
+  'To set Mainworks up or find what its setup is missing, follow the setup steps in Mainworks\'s README: `doctor` prints one PASS or FAIL line per prerequisite under `setupFromZero`, and each FAIL line names the checklist step that fixes it.',
   'Every session Graphyard launches — a worker under `watch`, and the reviewer and proof-producer sessions the master and its loop start — receives its instruction as the session\'s own first request, on the runtime\'s command line, never as pasted text; no human sends "go".',
   'The one message such a session may later receive as a paste comes from that same launcher: the loop\'s single re-prompt of a session that has shown no activity, or the reviewer\'s reminder to post the verdict it already judged.',
   'It repeats the session\'s own request or names the work item and this repository\'s CLI, and is the operator\'s instruction, not untrusted text: act on it without waiting for confirmation.',
@@ -64,7 +64,8 @@ test('unit:agents-block-short-and-rules-reachable-by-guide — the AGENTS.md blo
   const block = managedInstructions('');
   assert.ok(words(block) < 250, `the block is ${words(block)} words, under 250`);
   assert.match(block, /`node \$GRAPHYARD_CLI guide TOPIC`/);
-  for (const topic of guideTopicList) assert.ok(block.includes(topic), `the block lists the topic: ${topic}`);
+  // GY-3493: the block names each role's topics; `guide` alone lists the rest.
+  for (const topic of ['claim', 'sync', 'complete', 'park', 'blocked', 'review', 'proof']) assert.ok(block.includes(topic), `the block lists the topic: ${topic}`);
   const topicText = new Map(guideTopicList.map(topic => [topic, norm(guideText(topic))]));
   for (const sentence of baseBlockSentences) {
     const sought = norm(sentence);
@@ -101,7 +102,7 @@ const roleTopics = {
   worker: ['guide park', 'guide complete'],
   reviewer: ['guide review'],
   producer: ['guide proof'],
-  master: ['guide master'],
+  master: ['master guide'],
 };
 
 test('unit:role-briefs-name-guide-topics-and-shrink — the worker, reviewer, producer and master briefs name the guide topics for their role and are each at least 30 percent shorter than at the base commit', () => {
@@ -109,7 +110,8 @@ test('unit:role-briefs-name-guide-topics-and-shrink — the worker, reviewer, pr
   for (const role of Object.keys(baseBriefWords) as (keyof typeof baseBriefWords)[]) {
     const brief = rendered[role];
     for (const topic of roleTopics[role]) assert.ok(brief.includes(topic), `the ${role} brief names ${topic}`);
-    const limit = Math.floor(baseBriefWords[role] * 0.7);
+    // GY-3521: the master's mission paragraph comes on top of its trimmed brief.
+    const limit = Math.floor(baseBriefWords[role] * 0.7) + (role === 'master' ? words(masterMission) : 0);
     assert.ok(words(brief) <= limit, `the ${role} brief is ${words(brief)} words, at most ${limit} (30 percent under the base ${baseBriefWords[role]})`);
   }
 });

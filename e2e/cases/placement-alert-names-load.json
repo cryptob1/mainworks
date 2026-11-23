@@ -1,0 +1,16 @@
+{
+  "id": "placement-alert-names-load",
+  "title": "The shard-placement alert names the local jobs loading this machine, each with its item and kind",
+  "description": "While this machine has been above its cores in load for 5 minutes beside a ready host with more than half its cores free, the loop reads CPU per process on this machine and the alert in master status lists up to five jobs using the most CPU, each with its cores, item (or none) and kind: builder session, builder test run, merge trial, batch gate, review or other. A busy process in a builder worktree is named by its item and builder session. Once this machine is back under its cores the alert clears.",
+  "tags": ["hosts", "heavy-jobs"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "With a busy local job and an idle remote host, master status shows the alert naming that job's item and kind",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/placement-alert-names-load.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}

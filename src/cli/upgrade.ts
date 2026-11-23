@@ -1,5 +1,6 @@
 // `graphyard upgrade` (GY-1962): one command moves the CLI checkout, the server, the loop and
 // executors, and the managed repository's generated files to one dated release, in order.
+import { imageLock, withHostLock } from '../host-lock.js';
 import { createRequire } from 'node:module';
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, readlinkSync, statSync } from 'node:fs';
@@ -25,6 +26,8 @@ import { loadMasterConfig } from '../master.js';
 import { cliReleasePath, activeCliRoot, prepareCliRelease, publishCliRelease } from '../install/cli-release.js';
 import { knownGoodState, pinKnownGood } from '../master/known-good.js';
 import { joinHostHeavyBudget, withHeavyJob } from '../master/verification-slots.js';
+import { setting } from '../setting.js';
+import { stateDirectory } from '../install/layout.js';
 
 export type UpgradeStepId = 'checkout' | 'npm-ci' | 'backup' | 'redeploy' | 'restart' | 'refresh' | 'health';
 export interface UpgradeStep { id: UpgradeStepId; title: string; command: string }
@@ -306,7 +309,7 @@ export async function ensureDeployCheckout(checkout: string, source: string, run
   if (origin) await git('-C', next, 'remote', 'add', 'origin', origin);
   if (linked) {
     // The release pointer publishCliRelease left beside the old checkout stays with the install.
-    if (existsSync(join(checkout, '.graphyard'))) await rename(join(checkout, '.graphyard'), join(next, '.graphyard'));
+    if (existsSync(stateDirectory(checkout))) await rename(stateDirectory(checkout), stateDirectory(next));
     await rm(checkout, { recursive: true, force: true });
     console.log(`Replaced the deploy checkout ${checkout}, a worktree of another checkout, with a standalone clone at ${await git('-C', next, 'rev-parse', 'HEAD')}`);
   }
@@ -454,7 +457,7 @@ export function managedServePorts(input: { root: string; baseBranch: string; run
     // as not yet run rather than as a verdict no case earned. The cases' bearer token is
     // GRAPHYARD_TOKEN; a case that needs the install's own credentials declares secrets, which the
     // runner resolves from the install's e2e-secrets env as in every other run.
-    check: (url, baselineUrl) => checkServedApp(checkout, url, process.env.GRAPHYARD_TOKEN ?? '', baselineUrl ?? undefined),
+    check: (url, baselineUrl) => checkServedApp(checkout, url, setting('TOKEN') ?? '', baselineUrl ?? undefined),
   };
 }
 
@@ -472,9 +475,13 @@ export const servedRepository = (cliRoot: string): string | null => {
 /**
  * Removes every per-commit image `graphyard-local:<sha12>` (or the older `previous-<sha12>`) but the kept
  * commits', one `docker image rm` each; docker refuses one a container uses, and each failure is one
- * logged line, never the deploy's.
+ * logged line, never the deploy's. It waits for the host's image lock, so it never runs during another install's build (GY-3718).
  */
-export async function pruneImages(run: ChildRun, keep: string[], log: (line: string) => void = line => console.error(line)) {
+export function pruneImages(run: ChildRun, keep: string[], log: (line: string) => void = line => console.error(line)) {
+  return withHostLock(imageLock, () => removeImages(run, keep, log));
+}
+
+async function removeImages(run: ChildRun, keep: string[], log: (line: string) => void) {
   const kept = new Set(keep.map(sha => sha.slice(0, 12)));
   const failed = (what: string) => (error: unknown) => log(`[graphyard-deploy] ${what}: ${error instanceof Error ? error.message : String(error)}`);
   const tags = await Promise.resolve(run('docker', ['image', 'ls', 'graphyard-local', '--format', '{{.Tag}}'])).then(String, failed('could not list the per-commit images'));
@@ -548,6 +555,7 @@ export async function watchPorts(input: { cliRoot: string; repoRoot: string; rep
     head: async () => git(activeCliRoot(cliRoot), 'rev-parse', 'HEAD'),
     checkout: commit => publishCliRelease(directory, cliRoot, commit),
     health: deployHealth(cliRoot, url),
+    serves: commit => deployHealth(cliRoot, url, 1)(commit).then(() => true, () => false),
     prune: keep => pruneImages(input.run, keep),
     pin: async commit => { if (knownGoodState(directory)) await pinKnownGood({ installDir: directory, repository: repoRoot }, commit, input.run); },
     schema: async commit => revisionSchema(cliRoot, commit),
@@ -635,12 +643,12 @@ export const upgradeCommands = defineCommands([{
     if (!flags.includes('--plan')) git(cliRoot, 'fetch', '--tags', '--force', 'origin', graphyardBaseBranch);
     const repository = repositoryFromRemote(git(repoRoot, 'remote', 'get-url', 'origin'));
     const directory = repository ? installDirectory(installIdFor(repository)) : null;
-    const url = process.env.GRAPHYARD_URL || context.connection?.url ? context.base : null;
+    const url = setting('URL') || context.connection?.url ? context.base : null;
     const current = checkoutRelease(cliRoot);
     const target = resolveTarget(cliRoot, to);
     const install = directory ? await readInstallRecord(directory) : null;
     const inputs: UpgradeInputs = { cliRoot, repoRoot, current, target, cliChanges: cliChangesOf(cliRoot), databaseSchema: await databaseSchemaOf(url), url, install,
-      backupFile: join(directory ?? join(repoRoot, '.graphyard'), 'backups', `before-${target.version}-${Date.now()}.json`) };
+      backupFile: join(directory ?? stateDirectory(repoRoot), 'backups', `before-${target.version}-${Date.now()}.json`) };
     const plan = upgradePlan(inputs);
     console.log(renderPlan(plan));
     if (flags.includes('--plan')) return;
@@ -649,7 +657,7 @@ export const upgradeCommands = defineCommands([{
     // Every precondition a later step needs is checked before the record and the checkout move.
     if (!databaseUrl) throw new Error('Set DATABASE_URL to the Graphyard database so the upgrade can back it up before the server migrates it; nothing was changed');
     if (!url) throw new Error('Set GRAPHYARD_URL so the upgrade can read /healthz after the redeploy; nothing was changed');
-    const result = await runUpgrade(plan, liveEffects(inputs, join(repoRoot, '.graphyard', 'upgrade.json')));
+    const result = await runUpgrade(plan, liveEffects(inputs, join(stateDirectory(repoRoot), 'upgrade.json')));
     if (result.ok) { await migrateHerdr(repoRoot); console.log(`upgraded to ${target.version}`); return; }
     process.exitCode = 1;
     console.error(upgradeFailure(result));

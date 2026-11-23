@@ -10,6 +10,8 @@ import { defineCommands } from './registry.js';
 import { readSecretFromStdin } from './context.js';
 import { moveInstall } from '../install/move.js';
 import { upCommand } from '../up.js'; import { runDoctor } from './install-doctor.js';
+import { setting } from '../setting.js';
+import { chooseInstallLayout } from '../install/layout.js';
 
 /** GY-2009: install registers no GitHub App, so `up --reuse-app` would reuse nothing; it is refused rather than silently ignored. */
 export const upAppReuseRefusal = 'graphyard up --reuse-app is refused: install registers no GitHub App and the merge writer\'s deploy key is its only GitHub access (GY-2009); rerun without --reuse-app';
@@ -145,6 +147,8 @@ export const installCommands = defineCommands([
       const { values, request: inputs } = installRequestFromArgs(context.rest);
       const mergeToken = values['merge-token-stdin'] ? await readSecretFromStdin(10000) : undefined;
       if (values['merge-token-stdin'] && !mergeToken) throw new Error('--merge-token-stdin requires a nonempty token on stdin');
+      // GY-3711: the one install-time choice of names, before anything is written.
+      if (values.apply) chooseInstallLayout(context.repositoryRoot());
       const session = await prepareInstall(process.cwd(), inputs, {
         ...(mergeToken ? { mergeToken } : {}),
         cliPath: await context.activeCliPath(), hostId: context.individualHostId(), log: line => console.error(line),
@@ -214,7 +218,7 @@ export const installCommands = defineCommands([
       if (workerToken !== undefined && !workerToken.trim()) throw new Error('Worker credential must be nonempty; setup has not changed local configuration');
       const selectedUrl = values.url ?? base;
       // Never silently send a saved credential to a newly selected server.
-      if (values.url && connection && new URL(values.url).origin !== connection.url && !process.env.GRAPHYARD_TOKEN && !values['token-stdin']) workerToken = undefined;
+      if (values.url && connection && new URL(values.url).origin !== connection.url && !setting('TOKEN') && !values['token-stdin']) workerToken = undefined;
       return print(await setupRepository(root, { url: selectedUrl, cliPath: resolve(values['cli-path'] ?? await context.activeCliPath()), hostId: values['host-id'] ?? context.individualHostId(), ...(workerToken ? { token: workerToken } : {}) }, { herdr: values.herdr }));
     },
   },

@@ -16,6 +16,7 @@ import TestsPage from './tests';
 import ProductPage from './product';
 import { DeliveryDefaults } from '../components/delivery-slices';
 import { WhereItRuns } from '../components/where-it-runs';
+import { PublicLink } from '../components/public-link';
 import { requestedView } from '../../src/model/setup-checklist';
 
 /**
@@ -34,6 +35,7 @@ export type Section = typeof sections[number]['id'];
 export const oldRouteRedirects: Record<string, string> = {
   master: 'lead',
   settings: 'agents',
+  start: 'home',
 };
 
 /**
@@ -64,15 +66,15 @@ export const views: readonly View[] = [
   { id: 'needs-you', icon: '☝', label: 'Needs you', section: 'work', inlineOnly: true, render: dashboard => <HumanRequestsPage {...dashboard}/> },
   { id: 'releases', icon: '⇈', label: 'Releases', section: 'work', advanced: true, visible: dashboard => configured(dashboard.features.releases), render: dashboard => <ReleasesView api={dashboard.api} work={dashboard.work}/> },
   { id: 'tests', icon: '⚗', label: 'Tests', section: 'work', visible: dashboard => role(dashboard) !== 'operator-agent', render: dashboard => <TestsPage api={dashboard.api} canEdit={role(dashboard) === 'admin'} setView={dashboard.setView} openItem={dashboard.setSelected}/> },
-  { id: 'scenarios', icon: '✓', label: 'Test cases', section: 'work', advanced: true, render: dashboard => <ScenarioLibrary api={dashboard.api} canEdit={role(dashboard) === 'admin'}/> },
+  { id: 'scenarios', icon: '✓', label: 'Test cases', section: 'work', advanced: true, visible: dashboard => role(dashboard) === 'admin' || configured(dashboard.features.scenarios), render: dashboard => <ScenarioLibrary api={dashboard.api} canEdit={role(dashboard) === 'admin'}/> },
   { id: 'lead', icon: '▶', label: 'Lead', section: 'lead', render: dashboard => <MasterPage {...dashboard}/> },
   { id: 'product', icon: '◎', label: 'Product', section: 'lead', render: dashboard => <ProductPage api={dashboard.api}/> },
-  { id: 'agents', icon: '⛭', label: 'Agents', section: 'settings', visible: dashboard => ['admin', 'coordinator', 'reader', 'slice-lead'].includes(role(dashboard)), render: dashboard => <FleetPage api={dashboard.api} status={dashboard.status} observedAt={dashboard.observedAt} onOpenSetup={role(dashboard) === 'admin' ? () => dashboard.setView('setup') : undefined}/> },
+  { id: 'agents', icon: '⛭', label: 'Agents', section: 'settings', visible: dashboard => ['admin', 'coordinator', 'reader', 'slice-lead'].includes(role(dashboard)), render: dashboard => <FleetPage api={dashboard.api} status={dashboard.status} observedAt={dashboard.observedAt}/> },
   { id: 'workers', icon: '⚙', label: 'Workers', section: 'settings', render: dashboard => <WorkersPage {...dashboard}/> },
   { id: 'costs', icon: '$', label: 'Costs', section: 'settings', render: dashboard => <CostsPage api={dashboard.api} observedAt={dashboard.observedAt}/> },
   { id: 'setup', icon: '✔', label: 'Setup', section: 'settings', adminOnly: true, render: dashboard => <SetupPage status={dashboard.status} api={dashboard.api} setView={dashboard.setView}/> },
   // The project's effective delivery defaults and declared applications (GY-1901), with where the app runs (GY-3434).
-  { id: 'delivery', icon: '⇉', label: 'Delivery', section: 'settings', visible: dashboard => ['admin', 'coordinator', 'reader', 'slice-lead'].includes(role(dashboard)), render: dashboard => <><DeliveryDefaults status={dashboard.status}/><WhereItRuns status={dashboard.status} now={Number.isNaN(dashboard.observedAt) ? Date.now() : dashboard.observedAt}/></> },
+  { id: 'delivery', icon: '⇉', label: 'Delivery', section: 'settings', visible: dashboard => ['admin', 'coordinator', 'reader', 'slice-lead'].includes(role(dashboard)), render: dashboard => <><DeliveryDefaults status={dashboard.status}/><PublicLink api={dashboard.api} status={dashboard.status}/><WhereItRuns status={dashboard.status} now={Number.isNaN(dashboard.observedAt) ? Date.now() : dashboard.observedAt}/></> },
   { id: 'guide', icon: '?', label: 'Help', section: 'settings', render: () => <GuidePage/> },
   { id: 'automation', icon: '◇', label: 'Operator automation', section: 'settings', advanced: true, adminOnly: true, visible: dashboard => configured(dashboard.features.automation), render: dashboard => <AutomationPage operatorAgents={dashboard.operatorAgents} operatorAgentsError={dashboard.operatorAgentsError}/> },
 ];
