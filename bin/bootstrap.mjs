@@ -17,7 +17,10 @@ export async function releaseRoot(packageRoot, args) {
   }
   const match = /^([\w.-]+)\/([\w.-]+)$/.exec(repository);
   if (!match) { console.error('Run this in your repository\'s checkout: npx @cryptob1/graphyard up --repo OWNER/NAME'); process.exit(1); }
-  const directory = join(process.env.GRAPHYARD_CONFIG_HOME ?? join(homedir(), '.config', 'graphyard'), `${match[1]}-${match[2]}`.toLowerCase().replace(/[^a-z0-9._-]/g, '-'));
+  const configBase = join(homedir(), '.config');
+  const configHome = process.env.MAINWORKS_CONFIG_HOME ?? process.env.GRAPHYARD_CONFIG_HOME
+    ?? join(configBase, existsSync(join(configBase, 'mainworks')) || !existsSync(join(configBase, 'graphyard')) ? 'mainworks' : 'graphyard');
+  const directory = join(configHome, `${match[1]}-${match[2]}`.toLowerCase().replace(/[^a-z0-9._-]/g, '-'));
   // An installed host runs the release it serves, which the deploy watch moves.
   const current = currentCliPath(directory);
   if (existsSync(join(current, 'bin', 'graphyard.mjs'))) return realpathSync(current);

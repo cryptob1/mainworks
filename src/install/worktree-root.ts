@@ -85,8 +85,8 @@ export interface WorktreeRootVerification { path: string; probed: string; freeBy
 export async function verifyWorktreeRoot(path: string, options: { minFreeBytes: number; probe?: FilesystemProbe }): Promise<WorktreeRootVerification> {
   if (!isAbsolute(path)) throw new Error('The managed worktree root must be an absolute path');
   const facts = await (options.probe ?? probeFilesystem)(path);
-  if (facts.volatile) throw new Error(`The managed worktree root ${path} is on a ${facts.volatile} (${facts.probed}): every checkout there is held in memory and lost at the next boot. Set run.worktreeRoot in .graphyard/master.json (or GRAPHYARD_DATA_HOME) to a directory on durable storage, then rerun`);
-  if (facts.freeBytes !== null && facts.freeBytes < options.minFreeBytes) throw new Error(`The managed worktree root ${path} has ${gigabytes(facts.freeBytes)} free, below the required ${gigabytes(options.minFreeBytes)}. Free space on that volume, point run.worktreeRoot at a larger one, or lower run.worktreeRootMinFreeGb in .graphyard/master.json`);
+  if (facts.volatile) throw new Error(`The managed worktree root ${path} is on a ${facts.volatile} (${facts.probed}): every checkout there is held in memory and lost at the next boot. Set run.worktreeRoot in .mainworks/master.json (or GRAPHYARD_DATA_HOME) to a directory on durable storage, then rerun`);
+  if (facts.freeBytes !== null && facts.freeBytes < options.minFreeBytes) throw new Error(`The managed worktree root ${path} has ${gigabytes(facts.freeBytes)} free, below the required ${gigabytes(options.minFreeBytes)}. Free space on that volume, point run.worktreeRoot at a larger one, or lower run.worktreeRootMinFreeGb in .mainworks/master.json`);
   return { path, probed: facts.probed, freeBytes: facts.freeBytes, minFreeBytes: options.minFreeBytes };
 }
 
@@ -214,7 +214,7 @@ export async function inspectWorktreeRoot(path: string, settings: { minFreeBytes
 export function worktreeRootConcerns(health: WorktreeRootHealth): string[] {
   const concerns: string[] = [];
   const held = `${health.checkouts} ephemeral checkout(s), ${health.unowned} owned by no live session`;
-  if (health.volatile) concerns.push(`The managed worktree root ${health.path} is on a ${health.volatile}: every proof and review checkout is held in memory. Set run.worktreeRoot in .graphyard/master.json to a directory on durable storage`);
+  if (health.volatile) concerns.push(`The managed worktree root ${health.path} is on a ${health.volatile}: every proof and review checkout is held in memory. Set run.worktreeRoot in .mainworks/master.json to a directory on durable storage`);
   if (health.low && health.freeBytes !== null) concerns.push(`${gigabytes(health.freeBytes)} free on the managed worktree root ${health.path}, below the configured ${gigabytes(health.minFreeBytes)} minimum; it holds ${held}`);
   if (health.overBudget && health.usedBytes !== null) concerns.push(`The managed worktree root ${health.path} holds ${gigabytes(health.usedBytes)} of its ${gigabytes(health.budgetBytes)} budget (run.worktreeRootBudgetGb) in ${held}`);
   return concerns;

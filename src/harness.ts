@@ -4,7 +4,8 @@ import { chmod, lstat, readFile, mkdir, rename, rm, stat, writeFile } from 'node
 import { randomUUID } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, isAbsolute, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, resolve, sep } from 'node:path';
+import { stateDir } from './mainworks-names.js';
 import { endedRuntimeStates, type RuntimeStates } from './model/sessions.js';
 import { temporaryDirectories, underTestRunner } from './runtime-environment.js';
 import { runtimeAdapter, runtimeAdapters } from './master/runtimes.js';
@@ -574,6 +575,7 @@ export function masterHarnessPlan(input: { harness: string; root: string; cliPat
   if (input.harness !== 'claude') return { harness: input.harness, file: null, allow: [], deny: [], manual: null,
     note: `Graphyard generates harness permissions for Claude Code and trust configuration for Codex; ${input.harness} has no generated rules, so its own approval configuration applies.` };
   const cli = `node ${input.cliPath}`;
+  const state = basename(stateDir(input.root));
   const allow: HarnessRule[] = [
     { rule: `Bash(${cli} master:*)`, why: 'Run the master\'s own coordinator commands: status, dispatch, review, reviewer, harness, run, merge, and guide.' },
     { rule: `Bash(${cli} master review:*)`, why: 'The reviewer launcher. Listed on its own because the classifier reads launching a second agent as a permission grant; the launched reviewer holds a read-only, hour-long App token and no Graphyard credential.' },
@@ -590,9 +592,9 @@ export function masterHarnessPlan(input: { harness: string; root: string; cliPat
     { rule: 'Bash(gh api user)', why: 'Name the GitHub identity an audit entry attributes an administration action to.' },
     { rule: 'Bash(gh api apps/*)', why: 'Read the permissions a public App record requests, to verify an App permission update.' },
     { rule: 'Bash(jq:*)', why: 'Filter the JSON that the commands above print, without leaving the session.' },
-    { rule: 'Read(./.graphyard/master-actions/**)', why: 'Read the master\'s administration records, the promotion audit included.' },
-    { rule: 'Write(./.graphyard/profiles/**)', why: 'Write the worker and reviewer profile files the master installs with master worker add and master reviewer add.' },
-    { rule: 'Edit(./.graphyard/profiles/**)', why: 'Revise those profile files; they contain no credential, only a path to one.' },
+    { rule: `Read(./${state}/master-actions/**)`, why: 'Read the master\'s administration records, the promotion audit included.' },
+    { rule: `Write(./${state}/profiles/**)`, why: 'Write the worker and reviewer profile files the master installs with master worker add and master reviewer add.' },
+    { rule: `Edit(./${state}/profiles/**)`, why: 'Revise those profile files; they contain no credential, only a path to one.' },
   ];
   const deny: HarnessRule[] = [
     { rule: 'Bash(gh pr merge:*)', why: 'GitHub merges a candidate whose build, review and required checks pass on its head; no agent merges by hand.' },
@@ -615,6 +617,9 @@ export function masterHarnessPlan(input: { harness: string; root: string; cliPat
     { rule: 'Bash(agent-browser *)', why: 'The operator\'s browser profile is their identity: its cookies, state, restore, and auth-vault commands would export the operator\'s login, and no Graphyard flow drives it.' },
     { rule: 'Bash(git push:*)', why: 'The master implements nothing and pushes nothing.' },
     { rule: `Read(//${input.credentialHome}/**)`, why: 'Coordinator, worker, and reviewer credentials live here; the master uses them through the CLI and never reads their bytes.' },
+    { rule: 'Read(./.mainworks/connection.json)', why: 'Holds an individual Mainworks credential.' },
+    { rule: 'Read(./.mainworks/credentials.json)', why: 'Holds local principal credentials.' },
+    { rule: 'Read(./.mainworks/github-app.json)', why: 'Holds the control-plane App private key.' },
     { rule: 'Read(./.graphyard/connection.json)', why: 'Holds an individual Graphyard credential.' },
     { rule: 'Read(./.graphyard/credentials.json)', why: 'Holds local principal credentials.' },
     { rule: 'Read(./.graphyard/github-app.json)', why: 'Holds the control-plane App private key.' },

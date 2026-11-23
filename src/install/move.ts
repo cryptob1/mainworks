@@ -148,7 +148,7 @@ export async function moveInstall(root: string, options: { to: string; into?: st
   let units: { master: string; deploy: string } | null = null;
   try { const recorded = readInstallUnits(root, dependencies.unitDirectory); units = { master: recorded.master, deploy: deployUnitOf(recorded) }; } catch { /* no units recorded: nothing to stop or copy */ }
   const unitDirectory = dependencies.unitDirectory ?? userUnitDirectory();
-  const unitNames = [...(units ? [units.master, units.deploy] : []), ...(local ? [localUnit(installId)] : [])];
+  const unitNames = [...(units ? [units.master, units.deploy] : []), ...(local ? [localUnit(installId, unitDirectory)] : [])];
   const unitFiles = unitNames.map(name => join(unitDirectory, name)).filter(file => existsSync(file));
   const files = [...directories, ...unitFiles];
   const credentials = [...credentialFiles(stored)].sort();

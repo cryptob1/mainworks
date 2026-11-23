@@ -84,7 +84,7 @@ export async function herdrWorkspaceHealth(config: Pick<MasterConfig, 'herdrWork
   try { listed = await listHerdrWorkspaces(run); }
   catch { return { workspace: config.herdrWorkspace, exists: null, reason: 'Herdr could not list workspaces, so the configured workspace is unverified' }; }
   const exists = listed.includes(config.herdrWorkspace);
-  return { workspace: config.herdrWorkspace, exists, reason: exists ? null : `Herdr workspace ${config.herdrWorkspace} configured in .graphyard/master.json no longer exists (Herdr lists ${listed.join(', ') || 'none'}); every launch into it will refuse. Set herdrWorkspace to a live workspace, or rerun master init --herdr-workspace ID` };
+  return { workspace: config.herdrWorkspace, exists, reason: exists ? null : `Herdr workspace ${config.herdrWorkspace} configured in .mainworks/master.json no longer exists (Herdr lists ${listed.join(', ') || 'none'}); every launch into it will refuse. Set herdrWorkspace to a live workspace, or rerun master init --herdr-workspace ID` };
 }
 const listHerdrWorkspaces = async (run?: ChildRun): Promise<string[]> => {
   const result = await herdrJson(['workspace', 'list'], run);

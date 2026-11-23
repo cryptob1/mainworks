@@ -40,8 +40,9 @@ function withMasterOwnedRules(plan: HarnessPlan, config: MasterConfig, root: str
   if (plan.harness !== 'claude') return plan;
   const workflows = [config.run.proofWorkflow, config.run.smokeWorkflow].filter((name): name is string => !!name);
   const units = installUnitRules(root, unitDirectory);
+  const state = basename(stateDir(root));
   const owned: HarnessRule[] = [
-    { rule: 'Read(./.graphyard/master.json)', why: 'Read the master configuration the loop runs from: profiles, agent environments, run settings. It holds paths to credentials, never their values. Changing it goes through master config, which writes only the fields the master owns.' },
+    { rule: `Read(./${state}/master.json)`, why: 'Read the master configuration the loop runs from: profiles, agent environments, run settings. It holds paths to credentials, never their values. Changing it goes through master config, which writes only the fields the master owns.' },
     ...units.allow,
     // Railway deploys each application from git on its own; Graphyard observes each app's versionUrl.
     { rule: 'Bash(railway status:*)', why: 'Railway deploys from git and Graphyard observes each app\'s versionUrl: read which release a service serves when master status names it lagging or failed.' },
@@ -112,6 +113,9 @@ export function sessionHarnessPlan(input: SessionHarnessInput): HarnessPlan {
   const cli = `node ${input.cliPath}`;
   const secrets: HarnessRule[] = [
     ...[...new Set(input.credentialDirectories)].sort().map(directory => ({ rule: `Read(/${directory}/**)`, why: 'Graphyard credentials live here; the session uses its own through the CLI and never reads their bytes.' })),
+    { rule: 'Read(./.mainworks/connection.json)', why: 'Holds an individual Mainworks credential.' },
+    { rule: 'Read(./.mainworks/credentials.json)', why: 'Holds local principal credentials.' },
+    { rule: 'Read(./.mainworks/github-app.json)', why: 'Holds the control-plane App private key.' },
     { rule: 'Read(./.graphyard/connection.json)', why: 'Holds an individual Graphyard credential.' },
     { rule: 'Read(./.graphyard/credentials.json)', why: 'Holds local principal credentials.' },
     { rule: 'Read(./.graphyard/github-app.json)', why: 'Holds the control-plane App private key.' },
@@ -311,6 +315,7 @@ export function autonomyPlan(config: MasterConfig) {
 
 /** Rules every master session gets on top of its loop rules: it cannot borrow another identity. */
 const autonomyDeny = (credentialHome: string): HarnessRule[] => [
+  { rule: 'Bash(*MAINWORKS_TOKEN_FILE=*)', why: 'The master acts only as its own identities; pointing a command at a worker\'s or producer\'s credential file would let it borrow another identity.' },
   { rule: 'Bash(*GRAPHYARD_TOKEN_FILE=*)', why: 'The master acts only as its own identities; pointing a command at a worker\'s or producer\'s credential file would let it borrow another identity.' },
   { rule: `Edit(//${credentialHome}/**)`, why: 'Agent credentials are issued by onboarding and rotated through the API, never edited in place.' },
 ];
@@ -489,6 +494,7 @@ export function workerHarnessPlan(input: { cliPath: string; branch: string; base
     { rule: 'Bash(git rebase:*)', why: 'sync merges the base branch; a rebase would re-resolve files already merged.' },
     { rule: 'Bash(gh pr merge:*)', why: 'Workers never merge; the control plane\'s merge gate decides.' },
     { rule: 'Bash(gh pr review:*)', why: 'Workers never review their own work.' },
+    { rule: 'Bash(*MAINWORKS_TOKEN_FILE=*)', why: 'A worker acts only as its own principal.' },
     { rule: 'Bash(*GRAPHYARD_TOKEN_FILE=*)', why: 'A worker acts only as its own principal.' },
     { rule: `Read(//${input.credentialHome}/**)`, why: 'Credentials are used through the CLI, never read into a transcript.' },
     { rule: 'Read(**/*.token)', why: 'Token files are never read into a session transcript.' },

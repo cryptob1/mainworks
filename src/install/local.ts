@@ -12,8 +12,10 @@ import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, openSync, readFileSync } from 'node:fs';
 import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
-import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { underTestRunner } from '../runtime-environment.js';
 import { emptyObservation, httpHealth, PORT_CANDIDATES, publishedSourceImages, tool, variableMarker, type AdapterContext, type ProviderAdapter } from './adapters.js';
 import { clusterExists, localDatabaseUrl, localPaths, postgresBinaries, postgresPackage, readLocalEnvironment, type LocalPaths } from './local-runtime.js';
 import { loopUnitDirectory, supervisorSupport, testSuiteHomeGuard } from './loop-unit.js';
@@ -46,7 +48,12 @@ export interface LocalSettings {
 }
 
 export const MINIMUM_NODE_MAJOR = 24;
-export const localUnit = (installId: string) => `graphyard-local-${installId}.service`;
+export function localUnit(installId: string, unitDirectory?: string) {
+  const mainworks = `mainworks-local-${installId}.service`, graphyard = `graphyard-local-${installId}.service`;
+  const directory = unitDirectory ?? loopUnitDirectory();
+  if (!unitDirectory && underTestRunner() && !resolve(directory).startsWith(resolve(tmpdir()))) return mainworks;
+  return existsSync(join(directory, mainworks)) || !existsSync(join(directory, graphyard)) ? mainworks : graphyard;
+}
 const runtimeEntry = () => fileURLToPath(new URL('./local-runtime.ts', import.meta.url));
 
 /** `node --import tsx src/install/local-runtime.ts DIRECTORY`, from the checkout the installer runs. */
@@ -94,7 +101,7 @@ export async function localSettings(directory: string, installId: string, superv
   let postgresPort: number | null = null;
   try { const recorded = Number((await readFile(paths.portFile, 'utf8')).trim()); if (Number.isInteger(recorded) && recorded > 0) postgresPort = recorded; }
   catch (error: any) { if (error.code !== 'ENOENT') throw error; }
-  return { paths, postgresPort: postgresPort ?? await freeLoopbackPort(), unit: localUnit(installId), command: runtimeCommand(paths.directory), supervisor };
+  return { paths, postgresPort: postgresPort ?? await freeLoopbackPort(), unit: localUnit(installId, supervisor.systemd?.unitDirectory), command: runtimeCommand(paths.directory), supervisor };
 }
 
 const settings = (ctx: AdapterContext) => {

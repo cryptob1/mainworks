@@ -311,7 +311,7 @@ export const openCodeAllowAll = { '*': 'allow', edit: 'allow', bash: 'allow', we
  * person. The explicit `.graphyard` entry keeps the grant readable beside the tree's, whichever
  * glob rules a runtime applies to dot-directories.
  */
-export const openCodeRepositoryGrant = (root: string) => ({ [`${root}/**`]: 'allow', [`${root}/.graphyard/**`]: 'allow', '*': 'deny' });
+export const openCodeRepositoryGrant = (root: string) => ({ [`${root}/**`]: 'allow', [`${stateDir(root)}/**`]: 'allow', '*': 'deny' });
 /**
  * An operator's own OpenCode permission document that asks nothing (the recipe's `permits`) is laid
  * over the allow-all rather than replacing it: a key it leaves out (`external_directory`,

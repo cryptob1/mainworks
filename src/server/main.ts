@@ -1,4 +1,4 @@
-import '../mainworks-names.js';
+import { honourMainworksNames } from '../mainworks-names.js';
 import { once } from 'node:events';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -21,6 +21,7 @@ export interface MainOptions { port?: number; host?: string }
 /** Process entry: configuration, migration, the HTTP server and the reconciliation tick. */
 export async function main(options: MainOptions = {}) {
   try { process.loadEnvFile(); } catch (error: any) { if (error.code !== 'ENOENT') throw error; }
+  honourMainworksNames();
   // An unparseable generated-files declaration refuses start-up with a clear message.
   const generatedFiles = configuredGeneratedFiles();
   const credentials = principalSchema.parse(JSON.parse(process.env.GRAPHYARD_PRINCIPALS ?? '[]'));

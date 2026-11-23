@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { ensureTokens, installDirectory, tokenFile, Vault } from '../src/install/secrets.js';
+import { localUnit } from '../src/install/local.js';
 import { deployUnitOf, perInstallUnits, readInstallUnits, recordInstallUnits } from '../src/install/units.js';
 import { setupRepository } from '../src/repository-setup.js';
 import { guideList, guideTopics } from '../src/guide.js';
@@ -36,7 +37,7 @@ async function layout(directory: string, prefix = ''): Promise<string[]> {
 }
 
 /** Lines naming a Graphyard setting, path or unit, other than the one line saying they are still honoured. */
-const oldNames = (text: string) => text.split('\n').filter(line => /GRAPHYARD_|\.graphyard\/|\.config\/graphyard|graphyard-(master|executor|deploy)-/.test(line) && !/still honoured/.test(line));
+const oldNames = (text: string) => text.split('\n').filter(line => /GRAPHYARD_|\.graphyard\b|\.config\/graphyard|graphyard-(master|executor|deploy|local)-/.test(line) && !/still honoured/.test(line));
 
 test('e2e:mainworks-settings-fallback — MAINWORKS_* settings win over GRAPHYARD_*, a fresh install gets only mainworks paths and units, an old install keeps its graphyard layout, and the docs name only the new names', async () => {
   const seen: string[] = [];
@@ -82,7 +83,7 @@ test('e2e:mainworks-settings-fallback — MAINWORKS_* settings win over GRAPHYAR
     await setupRepository(project, { url, cliPath: cli, hostId: 'host-a' });
     assert.equal((await stat(join(project, '.mainworks', 'connection.json'))).mode & 0o777, 0o600);
     const units = await recordInstallUnits(project, perInstallUnits('owner/project'));
-    assert.deepEqual([units.master, units.executorTemplate, deployUnitOf(units)], ['mainworks-master-owner-project.service', 'mainworks-executor-owner-project@.service', 'mainworks-deploy-owner-project.service']);
+    assert.deepEqual([units.master, units.executorTemplate, deployUnitOf(units), localUnit('owner-project', join(base, 'fresh-units'))], ['mainworks-master-owner-project.service', 'mainworks-executor-owner-project@.service', 'mainworks-deploy-owner-project.service', 'mainworks-local-owner-project.service']);
     assert.ok(existsSync(join(project, '.mainworks', 'units.json')));
     assert.match(await readFile(join(project, '.gitignore'), 'utf8'), /^\.mainworks\/$/m);
     const freshRun = await status(project, fresh, { MAINWORKS_TOKEN: token('f') });
@@ -105,8 +106,12 @@ test('e2e:mainworks-settings-fallback — MAINWORKS_* settings win over GRAPHYAR
     assert.deepEqual([...await layout(old), '|', ...await layout(oldProject)], before, 'nothing moved or added');
     process.env.HOME = old;
     assert.equal(installDirectory('owner-project'), join(old, '.config', 'graphyard', 'owner-project'));
-    const oldUnits = readInstallUnits(oldProject, join(base, 'units'), old);
+    const oldUnitsDir = join(base, 'units');
+    await mkdir(oldUnitsDir, { recursive: true });
+    await writeFile(join(oldUnitsDir, 'graphyard-local-owner-project.service'), '[Unit]\n');
+    const oldUnits = readInstallUnits(oldProject, oldUnitsDir, old);
     assert.equal(deployUnitOf(oldUnits), 'graphyard-deploy-owner-project.service');
+    assert.equal(localUnit('owner-project', oldUnitsDir), 'graphyard-local-owner-project.service');
 
     // AC-3: README and the CLI guide name only the new settings and paths, with one line saying the old ones are honoured.
     const readme = await readFile(join(repository, 'README.md'), 'utf8');
