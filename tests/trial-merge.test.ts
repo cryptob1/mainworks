@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { describe, test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -20,6 +20,11 @@ import { actionAccount } from '../src/model-boundary/next-action.js';
 import { trialFailedGround, trialFailurePrefix } from '../src/model/rework-ground.js';
 import { trialFailureRework } from '../src/daemon/cycle-merge-writer.js';
 import { trialFailureReason } from '../src/merge-writer/executor.js';
+
+// GY-3715: the cases share no state, so they run at once under one suite, each titled as before; one at
+// a time, the file spent minutes starting trial children one after another.
+const cases: [string, () => Promise<void>][] = [];
+const test = (name: string, run: () => Promise<void>) => { cases.push([name, run]); };
 
 // GY-1522: the merge writer's trial merge — the exact merge commit made in the object store, and its
 // build and affected tests run in a detached, credential-free checkout that is always removed.
@@ -269,9 +274,9 @@ test('integration:trial-hung-test-fails-fast — a hung file fails by name while
       if (args.includes('tests/helpers/run-tests.ts')) {
         testRuns++;
         assert.ok(args.includes('--file-timeout=300000'), 'production bounds each file at five minutes');
-        // Keep the real timeout and named verdict, with fifteen seconds for child startup on a
+        // Keep the real timeout and named verdict, with ten seconds for child startup on a
         // saturated host (GY-3715). The finishing fixture waits only 50 ms (GY-3386).
-        args = args.map(arg => arg === '--file-timeout=300000' ? '--file-timeout=15000' : arg);
+        args = args.map(arg => arg === '--file-timeout=300000' ? '--file-timeout=10000' : arg);
       }
       // This regression exercises test processes, not the separately tested container boundary.
       // All executed code belongs to this repository or the two fixtures above.
@@ -287,7 +292,7 @@ test('integration:trial-hung-test-fails-fast — a hung file fails by name while
   assert.match(result.logTail, /hung\.test\.ts/);
   // The file bound ended the hung file, not the overall deadline (which would leave no verdict):
   // no wall-clock limit here, so a hot or busy host cannot fail it (GY-3374).
-  assert.match(result.logTail, /test file timed out after 15000ms/);
+  assert.match(result.logTail, /test file timed out after 10000ms/);
   assert.deepEqual(result.retried ?? [], [], 'a named failure is a verdict, not a no-verdict retry');
 });
 
@@ -683,7 +688,8 @@ test('unit:trial-checkout-outside-temp — with /tmp a tmpfs and the process tmp
   assert.deepEqual([existsSync(crashed), existsSync(tempOwnerMarker(crashed)), existsSync(live)], [false, false, true]);
 });
 
-test('unit:trial-checkout-reclaim-durable — a crashed checkout that left the trials folder short of space is taken back before the root is given up on, while a removal that fails keeps its owner marker and is taken back by a later pass (GY-2020, GY-2963)', async () => {
+// Alone, before the concurrent suite: its 100 ms window judges a choice made on an idle host.
+nodeTest('unit:trial-checkout-reclaim-durable — a crashed checkout that left the trials folder short of space is taken back before the root is given up on, while a removal that fails keeps its owner marker and is taken back by a later pass (GY-2020, GY-2963)', async () => {
   const home = await temporaryDirectory('gy-trial-home', tmpdir());
   const [trials] = trialCheckoutRoots(home);
   mkdirSync(trials!, { recursive: true });
@@ -884,3 +890,5 @@ test('unit:trial-declared-policy-refusal — a head whose graphyard.json is malf
   const reason = 'graphyard.json is not valid JSON: x';
   assert.equal(trialFailureReason({ run: { build: 'pass', tests: { passed: 0, failed: ['graphyard.json'], files: 0 }, failingCase: reason } }), `${trialFailurePrefix}: tests graphyard.json: ${reason}`);
 });
+
+describe('trial-merge', { concurrency: true }, () => { for (const [name, run] of cases) nodeTest(name, run); });
