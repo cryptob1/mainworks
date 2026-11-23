@@ -1,9 +1,11 @@
 // Concern: the merge writer's local observation (GY-1523) — a submitted head read from the coordinator's own object store, never from GitHub.
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { demand, type Observation } from '../model.js';
 import type {} from '../model/gates.js'; // Observation.source
 import { graphyardChecksChanged } from '../model/risk-class.js';
 import { parseLocalScopeDiff } from '../sync.js';
+import { documentationDigestInput } from '../model/docs-signoff.js';
 
 /** What one git invocation returned; a non-zero exit is an answer here, never a throw. */
 export interface GitResult { status: number | null; stdout: string; stderr: string }
@@ -105,7 +107,7 @@ export async function observeHead(git: GitRunner, input: HeadObservationInput): 
   return {
     source: 'control-plane',
     candidate: { sha: head, baseSha: baseTip, pr: 0, branch, author },
-    files: scopeFiles.map(file => file.path), scopeFiles, baseTip, mergeBase, baseTipContained,
+    files: scopeFiles.map(file => file.path), scopeFiles, docsDigest: createHash('sha256').update(documentationDigestInput(scopeFiles)).digest('hex'), baseTip, mergeBase, baseTipContained,
     protected: false, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true,
     at: (input.at ?? new Date()).toISOString(),
   };
