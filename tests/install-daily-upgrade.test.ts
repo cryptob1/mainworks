@@ -39,6 +39,12 @@ function ports(input: { head: string; verified: string | null; fetched?: string;
   };
 }
 
+/** GY-3746: the last update, moved back past the hour a following install waits between updates. */
+async function ageUpdate(root: string, hours: number) {
+  const file = controlPlaneRecordPath(root), record = readControlPlaneRecord(file)!;
+  await writeControlPlaneRecord(file, { ...record, updatedAt: new Date(Date.now() - hours * 3_600_000).toISOString() });
+}
+
 /** The control-plane record's failedAt, moved back past the retry window so the next pass retries. */
 async function ageFailedStep(root: string, hours: number) {
   const file = controlPlaneRecordPath(root), record = readControlPlaneRecord(file)!;
@@ -79,6 +85,7 @@ test('unit:tests/install-daily-upgrade.test.ts — a failed upgrade keeps the pr
   const record = () => readControlPlaneRecord(controlPlaneRecordPath(root))!;
 
   assert.equal(await deployOnce(deployRecordPath(root), watch(b, a), () => {}, mainworksRepository), 'deployed');
+  await ageUpdate(root, 2);
   const firstUpdate = record().updatedAt;
   failing.failing = true;
   assert.equal(await deployOnce(deployRecordPath(root), watch(c, b), () => {}, mainworksRepository), 'rolled-back');
@@ -205,6 +212,7 @@ test('e2e:install-daily-upgrade — an install for another repository upgrades i
     const verified2 = yard.main();
     assert.equal(verifiedRef(), verified2);
     health.failing = true;
+    await ageUpdate(root, 2);
     assert.equal(await pass(), 'rolled-back');
     assert.equal(readDeployRecord(deployRecordPath(root))?.tip, verified, 'a failing upgrade keeps the previous version serving');
     assert.equal(control()?.commit, verified);
