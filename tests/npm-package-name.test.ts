@@ -12,7 +12,8 @@ import { publishedPackage } from '../src/publish-verified.js';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const read = (path: string) => readFileSync(join(root, path), 'utf8');
 const help = (...args: string[]) => execFileSync(process.execPath, ['--import', 'tsx', join(root, 'src/cli.ts'), ...args], { encoding: 'utf8' });
-const unscoped = /npx\s+(?:(?:--yes|-y)\s+)?mainworks\b/;
+const unscoped = /npx\s+(?:(?:--yes|-y)\s+)?(?:graphyard|mainworks)\b/;
+const negativeAssertion = /\b(?:not\.toContainText|doesNotMatch)\b/;
 const textFile = /\.(md|ts|tsx|js|mjs|json|html|txt|ya?ml)$/;
 
 /** Every tracked text file in the repository, except this test's own fixtures: scratch trees other
@@ -42,5 +43,8 @@ test('unit:tests/npm-package-name.test.ts — repository files, guide text and p
   };
   for (const topic of guideTopicList) texts[`guide ${topic}`] = guideText(topic);
   for (const path of repositoryTexts()) texts[relative(root, path)] = readFileSync(path, 'utf8');
-  for (const [name, text] of Object.entries(texts)) assert.doesNotMatch(text, unscoped, `${name} tells a user to run unscoped npx mainworks`);
+  for (const [name, text] of Object.entries(texts)) {
+    const check = /^(?:tests|browser-tests)\//.test(name) ? text.split('\n').filter(line => !negativeAssertion.test(line)).join('\n') : text;
+    assert.doesNotMatch(check, unscoped, `${name} tells a user to run unscoped npx mainworks`);
+  }
 });

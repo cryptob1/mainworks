@@ -15,7 +15,7 @@ import { git, shardHosts, shardRepository, type ShardHostsFixture } from './help
 // GY-3405 AC-2: a worker session on an added host, end to end. The host (the fixture's, with the real
 // graphyard-host-shim and Docker's read-only-root stand-in, where --tmpfs is memory) is opened to one
 // session with `host sessions`; the dispatch's placement picks it for a runtime its image holds. The
-// worker run starts as the loop starts it — startHeadlessWorker with the `graphyard host session`
+// worker run starts as the loop starts it — startHeadlessWorker with the `mainworks host session`
 // words in place of this machine's confinement — runs on the host, commits, and calls `complete`,
 // which runs here on the commit it made. Its run record names the host: what master status serves
 // as remoteSessions.

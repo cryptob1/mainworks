@@ -14,7 +14,7 @@ import { localDirectory } from '../src/onboarding.js';
 import { stateDirectory } from '../src/install/layout.js';
 
 // GY-3711: a fresh install takes the Mainworks names (~/.config/mainworks, .mainworks, mainworks-*
-// units); an install that already has the Graphyard ones keeps them, with nothing moved.
+// units); an install that already has the legacy ones keeps them, with nothing moved.
 
 const exec = promisify(execFile);
 const repository = fileURLToPath(new URL('..', import.meta.url));
@@ -30,7 +30,7 @@ async function tree(directory: string) {
 }
 const named = (paths: string[], word: string) => paths.filter(path => path.split(' ')[0]!.split('/').some(part => part.includes(word)));
 
-test('e2e:mainworks-install-layout — a fresh home gets only the Mainworks names; a home with the Graphyard layout keeps it, nothing moved, and status still runs', async () => {
+test('e2e:mainworks-install-layout — a fresh home gets only the Mainworks names; a home with the legacy layout keeps it, nothing moved, and status still runs', async () => {
   const server = createServer((request, response) => {
     response.setHeader('Content-Type', 'application/json');
     if (request.url === '/healthz') return response.end(JSON.stringify({ ok: true }));
@@ -81,9 +81,9 @@ test('e2e:mainworks-install-layout — a fresh home gets only the Mainworks name
     assert.match(await readFile(join(freshRoot, '.gitignore'), 'utf8'), /^\.mainworks\/$/m, 'Git ignores .mainworks');
     const freshStatus = await status(freshRoot, freshHome);
     assert.equal(freshStatus.code, 0, `status runs in the fresh install: ${freshStatus.stderr}`);
-    assert.deepEqual(named(await tree(freshHome), 'graphyard'), [], 'nothing in the fresh home is named graphyard');
+    assert.deepEqual(named(await tree(freshHome), 'graphyard'), [], 'nothing in the fresh home uses the old name');
 
-    // A home seeded with the Graphyard layout: kept as it is, and status runs from it.
+    // A home seeded with the legacy layout: kept as it is, and status runs from it.
     const oldHome = join(base, 'old-home'), oldRoot = join(oldHome, 'code', 'project');
     await mkdir(join(oldHome, '.config', 'graphyard', INSTALL, 'tokens'), { recursive: true, mode: 0o700 });
     await mkdir(join(oldRoot, '.graphyard'), { recursive: true });
@@ -93,9 +93,9 @@ test('e2e:mainworks-install-layout — a fresh home gets only the Mainworks name
     await writeFile(join(oldRoot, '.graphyard', 'units.json'), `${JSON.stringify({ version: 1, slug: INSTALL, master: `graphyard-master-${INSTALL}.service`, executorTemplate: `graphyard-executor-${INSTALL}@.service`, alias: false }, null, 2)}\n`, { mode: 0o600 });
     const before = await tree(oldHome);
     const oldStatus = await status(oldRoot, oldHome);
-    assert.equal(oldStatus.code, 0, `status runs in the Graphyard layout: ${oldStatus.stderr}`);
+    assert.equal(oldStatus.code, 0, `status runs in the legacy layout: ${oldStatus.stderr}`);
     assert.deepEqual(JSON.parse(oldStatus.stdout).key, 'GY-1');
-    // The upgrade re-runs the install steps: every name stays the Graphyard one.
+    // The upgrade re-runs the install steps: every name stays the legacy one.
     const oldDirectory = await install(oldRoot, oldHome);
     assert.equal(oldDirectory, join(oldHome, '.config', 'graphyard', INSTALL));
     const after = await tree(oldHome);

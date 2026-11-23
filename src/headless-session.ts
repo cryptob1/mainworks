@@ -365,7 +365,7 @@ export interface HeadlessWorker extends HeadlessAccountLaunch {
   timeoutMs: number;
   /** How long the start is watched; `workerStartupMs` by default. */
   startupMs?: number;
-  /** GY-3405: the added host the session runs on, and the `graphyard host session … --` words that run it there in place of this machine's confinement. */
+  /** GY-3405: the added host the session runs on, and the `mainworks host session … --` words that run it there in place of this machine's confinement. */
   remote?: { host: string; words: string[] };
   /** Hears a run that outlived its startup observation end, with what it printed, once its process has ended. */
   settle?: (ended: { output: string; ok: boolean }) => Promise<unknown>;
@@ -388,7 +388,7 @@ export async function startHeadlessWorker(input: HeadlessWorker): Promise<{ id: 
   const request = input.session ? input.prompt : launch.request;
   const stdin = headlessPromptInput(launch.kind, request, launch.contract);
   const promptFile = writePromptFile(launch.kind, request, directory, launch.contract);
-  // GY-3405: on a host the container confines the runtime; its relayed `graphyard` calls run here under this machine's confinement, as a local worker's do.
+  // GY-3405: on a host the container confines the runtime; its relayed `mainworks` calls run here under this machine's confinement, as a local worker's do.
   // A prompt too long for argv (on stdin or in a file here) keeps the session on this machine: the host's runtime has neither.
   const remote = input.remote && stdin === undefined && !promptFile ? (launch.wrapper.length ? [...input.remote.words.slice(0, -1), '--confine', JSON.stringify(launch.wrapper), '--'] : input.remote.words) : undefined;
   const record: HeadlessWorkerRecord = { id, name: input.name, work: input.work, epoch: input.epoch, principal: input.principal, account: input.account, kind: launch.kind, subject: input.subject.slice(0, 300), startedAt: new Date().toISOString(), ...(remote && input.remote ? { host: input.remote.host } : {}) };

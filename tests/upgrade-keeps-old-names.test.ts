@@ -174,7 +174,8 @@ esac
     assert.ok(existsSync(worktree.path));
 
     // Status answers through the old launcher, bin/graphyard.mjs.
-    const status = JSON.parse((await promisify(execFile)(process.execPath, [launcher, 'status', 'GY-9911'], { cwd: root, encoding: 'utf8', env: { ...process.env, GRAPHYARD_TOKEN_FILE: '', GRAPHYARD_URL: url, GRAPHYARD_TOKEN: token(coordinator) } })).stdout);
+    const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^(GRAPHYARD|MAINWORKS)_/.test(name)));
+    const status = JSON.parse((await promisify(execFile)(process.execPath, [launcher, 'status', 'GY-9911'], { cwd: root, encoding: 'utf8', env: { ...cleanEnv, HOME: home, GRAPHYARD_TOKEN_FILE: '', GRAPHYARD_URL: url, GRAPHYARD_TOKEN: token(coordinator) } })).stdout);
     assert.deepEqual([status.key, status.epoch], ['GY-9911', 1]);
 
     await writeFile(join(runtimeHome, 'release-GY-9911'), '');

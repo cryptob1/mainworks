@@ -1,5 +1,5 @@
-// GY-3711: Graphyard is now Mainworks. The names are chosen once, at install, from what exists: an
-// install that already has the Graphyard layout keeps it unchanged; a fresh one takes the Mainworks
+// GY-3711: The layout names are chosen once, at install, from what exists: an
+// install that already has the legacy layout keeps it unchanged; a fresh one takes the Mainworks
 // names. Every reader asks these helpers, which only look at what the install created.
 import { existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';

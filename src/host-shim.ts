@@ -40,7 +40,7 @@ export const hostProbeScript = [
 /** The warm image a host runs shards in: the trial image's digest and the lockfile's hash (`none` without one). */
 const warmImagePattern = /^graphyard-warm:[0-9a-f]{12}-(?:[0-9a-f]{12}|none)$/;
 
-/** GY-3405: no agent session runs longer on a host; Graphyard ends every session well before. */
+/** GY-3405: no agent session runs longer on a host; Mainworks ends every session well before. */
 const sessionHours = 8;
 /**
  * GY-3517: the verbs this shim speaks, each with a revision. Bump a verb's revision when a release
@@ -175,7 +175,7 @@ elif verb == 'run-session':
     run = os.path.join(runs, args[0])
     if not os.path.isdir(run):
         sys.exit('graphyard-host-shim: no run ' + args[0])
-    name = 'graphyard-session-' + args[0][len('trial-'):]
+    name = 'mainworks-session-' + args[0][len('trial-'):]
     # The network is the default one: the session reaches its model provider and the control plane. Only the checkout is mounted; the root is
     # read-only, as a trial's is, and every home and /tmp is memory.
     # No log driver: the login handed back on stderr never reaches the host's disk. Half the host's memory at most.

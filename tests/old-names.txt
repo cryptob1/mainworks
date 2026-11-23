@@ -21,7 +21,7 @@ GRAPHYARD_[A-Z0-9_]*
 '\.config', 'graphyard'
 'share'\)?, 'graphyard'
 \bshare/graphyard\b
-/(srv|run|var/lib|opt|home|install|code|removed|nonexistent)/graphyard\b
+/(srv|run|var/lib|var/tmp|opt|home|install|code|removed|nonexistent)/graphyard\b
 /etc/graphyard-trial\b
 /opt/graphyard-[\w-]+
 \bsshd_graphyard_config\b
@@ -79,7 +79,7 @@ POSTGRES_(USER|DB)=graphyard
 --username=graphyard
 \bgraphyard-[\w-]+-(server|db)-1\b
 # The old command, where the docs say it still works
-[Tt]he old \\?`?graphyard\\?`? command
+[Tt]he (old )?\\?`?graphyard\\?`? command
 # Image tags installs built before the rename
 \bgraphyard-(local|trial):[\w.$-]+
 # The same names escaped inside regular expressions, and the database name in connection strings
@@ -114,3 +114,9 @@ path tests/fixtures/gy-1907-slow-tick-receipt/
 \.config\[/\]graphyard
 graphyard\\\.trial\\\.Dockerfile
 --base-branch graphyard\b
+graphyard\\\.fun\b
+graphyard-(delivery|release-candidate)\.yml
+\\\/graphyard-\(review\|trial\|proof\|approval\)
+\bgraphyard-trial-[a-z0-9-]+-[0-9a-f]{7}-[0-9a-f]{8}\b
+\(GRAPHYARD\|MAINWORKS\)_
+\bgraphyard-\*
