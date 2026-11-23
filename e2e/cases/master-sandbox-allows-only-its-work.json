@@ -1,0 +1,16 @@
+{
+  "id": "master-sandbox-allows-only-its-work",
+  "title": "The master session's sandbox allows only its own work, including host add",
+  "description": "Under real bubblewrap confinement, the master session cannot edit tracked checkout files, forge conversation records, or touch host process-launch channels or other machine files, while its managed state, peer grants, and `graphyard host add` for a prepared host succeed and record the host key in the install's machine/known_hosts file.",
+  "tags": ["confinement", "master"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "Master session confinement allows only its work, including host add",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/master-session-confinement.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}

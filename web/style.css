@@ -683,4 +683,8 @@ header.main-top-bar{height:auto;min-height:60px;display:flex;flex-wrap:wrap;alig
 .first-run-terminal{padding:12px 14px;border-radius:10px;background:var(--surface);font-size:var(--type-small);color:var(--text-2);overflow-wrap:anywhere}
 .first-run-builder-card .facts{margin:0 0 var(--space-3)}
 @media(max-width:650px){.first-run{margin-top:var(--space-3);gap:var(--space-4)}.first-run-steps{max-width:none;flex-basis:100%}.first-run-body{flex-basis:100%}.first-run-body h1{font-size:26px}}
+/* GY-3559: the Tests chips are one row that scrolls sideways inside itself; a raw step wraps; Show more sits under the list. */
+.case-filters{flex-wrap:nowrap;overflow-x:auto}.case-filters>*{flex:none}
+.raw-steps pre{white-space:pre-wrap;overflow-wrap:anywhere}
+.show-more{display:block;margin:var(--space-3) auto}
 .infra-actions{list-style:none;margin:0;padding:0;display:grid;gap:4px}.infra-actions li{font-size:var(--type-small);overflow-wrap:anywhere;min-width:0}.infra-actions time{color:var(--text-3);font-size:11px}
