@@ -6,6 +6,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { type ChildRun, type ChildRunOptions, defaultChildTimeoutMs, type BoundChildRun, childRunner, defaultChildRun } from '../child-runner.js';
 import type { MasterConfig } from './profiles.js';
 import { herdrConnectCommands } from '../herdr-connect.js';
+import { setting } from '../setting.js';
 
 /** A legacy private server retained only while its existing panes drain. */
 export interface HerdrInstance { configHome: string; session: string }
@@ -46,11 +47,11 @@ export function herdrInvocation(args: string[], instance: HerdrInstance | null =
     // A caller inside an old pane can retain its socket after the install has moved to the main server.
     // The main server's own socket is kept (GY-3237): the confined master session's HOME is a scratch
     // home, so a herdr client without it would look for the main server where none listens.
-    if (!process.env.GRAPHYARD_HERDR_CONFIG_HOME && (!process.env.HERDR_SOCKET_PATH || mainHerdrSocket(process.env.HERDR_SOCKET_PATH))) return { command, args };
-    const { HERDR_SOCKET_PATH: _socket, GRAPHYARD_HERDR_CONFIG_HOME: _home, GRAPHYARD_HERDR_SESSION: _session, ...env } = process.env;
-    return { command, args, env: { ...env, ...(process.env.GRAPHYARD_HERDR_CONFIG_HOME ? { XDG_CONFIG_HOME: join(homedir(), '.config') } : {}) } };
+    if (!setting('HERDR_CONFIG_HOME') && (!process.env.HERDR_SOCKET_PATH || mainHerdrSocket(process.env.HERDR_SOCKET_PATH))) return { command, args };
+    const { HERDR_SOCKET_PATH: _socket, GRAPHYARD_HERDR_CONFIG_HOME: _home, GRAPHYARD_HERDR_SESSION: _session, MAINWORKS_HERDR_CONFIG_HOME: _newHome, MAINWORKS_HERDR_SESSION: _newSession, ...env } = process.env;
+    return { command, args, env: { ...env, ...(setting('HERDR_CONFIG_HOME') ? { XDG_CONFIG_HOME: join(homedir(), '.config') } : {}) } };
   }
-  const { HERDR_SOCKET_PATH: _socket, ...env } = process.env;
+  const { HERDR_SOCKET_PATH: _socket, MAINWORKS_HERDR_CONFIG_HOME: _newHome, MAINWORKS_HERDR_SESSION: _newSession, ...env } = process.env;
   return { command, args: ['--session', instance.session, ...args], env: { ...env, XDG_CONFIG_HOME: instance.configHome, [herdrInstanceEnv.configHome]: instance.configHome, [herdrInstanceEnv.session]: instance.session } };
 }
 /** Runs herdr ARGS through RUN (a ChildRun, or a synchronous stub) against INSTANCE. */

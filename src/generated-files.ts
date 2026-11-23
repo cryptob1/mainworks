@@ -1,3 +1,4 @@
+import { setting } from './setting.js';
 /**
  * Generated files: paths whose content is derived from other files by a script (the docs
  * indexes `scripts/check-docs.mjs --write` renders) and verified current by CI, never hand-merged.
@@ -27,5 +28,5 @@ export function parseGeneratedFiles(value: string | undefined): string[] {
  * regression guard is also bundled into the dashboard (through the model's gate evaluation),
  * where no process environment exists and no file is generated.
  */
-export const configuredGeneratedFiles = (env: NodeJS.ProcessEnv = typeof process === 'undefined' ? {} : process.env) => parseGeneratedFiles(env.GRAPHYARD_GENERATED_FILES);
+export const configuredGeneratedFiles = (env: NodeJS.ProcessEnv = typeof process === 'undefined' ? {} : process.env) => parseGeneratedFiles(setting('GENERATED_FILES', env));
 

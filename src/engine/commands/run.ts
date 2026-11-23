@@ -18,6 +18,7 @@ import { authorizeOperatorCommand } from './shared.js';
 import type { Ctx } from './types.js';
 import { gitRunnerFor } from '../../merge-writer/local-observation.js';
 import { pathScope } from '../../model/documentation-glob.js';
+import { setting } from '../../setting.js';
 
 /** The commands whose work only a gate observes later: a submitted item is woken after any other. */
 const noWake = new Set<Command>(['heartbeat', 'release', 'claim', 'workspace', 'priority']);
@@ -28,7 +29,7 @@ const noWake = new Set<Command>(['heartbeat', 'release', 'claim', 'workspace', '
  * A plain name (staging, deploy) is a declared resource and is kept.
  */
 async function resourcesOnBase(engine: Engine, names: string[]) {
-  if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd());
+  if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(setting('REPOSITORY_ROOT') ?? process.cwd());
   const kept: string[] = [];
   for (const name of names) {
     if (!name.includes('/') && !/\.[a-z0-9]{1,5}$/.test(name)) { kept.push(name); continue; }

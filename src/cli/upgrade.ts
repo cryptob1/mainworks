@@ -25,6 +25,7 @@ import { loadMasterConfig } from '../master.js';
 import { cliReleasePath, activeCliRoot, prepareCliRelease, publishCliRelease } from '../install/cli-release.js';
 import { knownGoodState, pinKnownGood } from '../master/known-good.js';
 import { joinHostHeavyBudget, withHeavyJob } from '../master/verification-slots.js';
+import { setting } from '../setting.js';
 
 export type UpgradeStepId = 'checkout' | 'npm-ci' | 'backup' | 'redeploy' | 'restart' | 'refresh' | 'health';
 export interface UpgradeStep { id: UpgradeStepId; title: string; command: string }
@@ -454,7 +455,7 @@ export function managedServePorts(input: { root: string; baseBranch: string; run
     // as not yet run rather than as a verdict no case earned. The cases' bearer token is
     // GRAPHYARD_TOKEN; a case that needs the install's own credentials declares secrets, which the
     // runner resolves from the install's e2e-secrets env as in every other run.
-    check: (url, baselineUrl) => checkServedApp(checkout, url, process.env.GRAPHYARD_TOKEN ?? '', baselineUrl ?? undefined),
+    check: (url, baselineUrl) => checkServedApp(checkout, url, setting('TOKEN') ?? '', baselineUrl ?? undefined),
   };
 }
 
@@ -636,7 +637,7 @@ export const upgradeCommands = defineCommands([{
     if (!flags.includes('--plan')) git(cliRoot, 'fetch', '--tags', '--force', 'origin', graphyardBaseBranch);
     const repository = repositoryFromRemote(git(repoRoot, 'remote', 'get-url', 'origin'));
     const directory = repository ? installDirectory(installIdFor(repository)) : null;
-    const url = process.env.GRAPHYARD_URL || context.connection?.url ? context.base : null;
+    const url = setting('URL') || context.connection?.url ? context.base : null;
     const current = checkoutRelease(cliRoot);
     const target = resolveTarget(cliRoot, to);
     const install = directory ? await readInstallRecord(directory) : null;

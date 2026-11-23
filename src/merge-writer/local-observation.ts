@@ -6,13 +6,14 @@ import type {} from '../model/gates.js'; // Observation.source
 import { graphyardChecksChanged } from '../model/risk-class.js';
 import { parseLocalScopeDiff } from '../sync.js';
 import { documentationDigestInput } from '../model/docs-signoff.js';
+import { setting } from '../setting.js';
 
 /** What one git invocation returned; a non-zero exit is an answer here, never a throw. */
 export interface GitResult { status: number | null; stdout: string; stderr: string }
 /** Runs `git` with `args` in the checkout whose object store holds the submitted heads; `timeoutMs` kills a run that outlasts it. */
 export type GitRunner = (args: readonly string[], options?: { timeoutMs?: number }) => Promise<GitResult>;
 /** The install's checkout: the directory the control plane reads submitted heads from, where nothing is pushed and a head is reached by its commit (GY-3599). */
-export const checkoutRoot = () => process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd();
+export const checkoutRoot = () => setting('REPOSITORY_ROOT') ?? process.cwd();
 
 /** The default runner: `git -C root`, the coordinator checkout the control plane serves from. */
 export function gitRunnerFor(root: string): GitRunner {

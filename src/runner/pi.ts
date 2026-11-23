@@ -43,7 +43,7 @@ export function piArgs(prompt: string, options: { model: string; extension?: str
 /** Inherited variables a run never sees: the loop's own Graphyard and Herdr identity. What a run may hold is passed in `env`. */
 export function runEnvironment(base: NodeJS.ProcessEnv, extra: Record<string, string> = {}) {
   const env: Record<string, string> = {};
-  for (const [name, value] of Object.entries(base)) if (value !== undefined && !/^(GRAPHYARD_|HERDR_)/.test(name)) env[name] = value;
+  for (const [name, value] of Object.entries(base)) if (value !== undefined && !/^(GRAPHYARD_|MAINWORKS_|HERDR_)/.test(name)) env[name] = value;
   return { ...env, ...extra };
 }
 

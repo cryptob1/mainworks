@@ -25,6 +25,7 @@ import type { PreparedWorker } from './dispatch.js';
 import { worktreeRoot } from '../install/worktree-root.js';
 import { graphyardRepository } from '../scenarios.js';
 import { hostHeavyJobsDirectory, slotsDirectoryVariable, verificationEnvironment } from './verification-slots.js';
+import { setting } from '../setting.js';
 
 /**
  * The master's harness rules cover everything the master owns, not only the coordination loop:
@@ -206,7 +207,7 @@ export function sessionVerificationEnvironment(config: Pick<MasterConfig, 'repos
  * budget adds to a session's writable roots. None when it cannot be created.
  */
 export function sessionSlotsGrant(): string[] {
-  const directory = process.env[slotsDirectoryVariable] ?? hostHeavyJobsDirectory();
+  const directory = setting(slotsDirectoryVariable) ?? hostHeavyJobsDirectory();
   try { mkdirSync(directory, { recursive: true }); } catch { return []; }
   return [directory];
 }
@@ -310,6 +311,7 @@ export function autonomyPlan(config: MasterConfig) {
 /** Rules every master session gets on top of its loop rules: it cannot borrow another identity. */
 const autonomyDeny = (credentialHome: string): HarnessRule[] => [
   { rule: 'Bash(*GRAPHYARD_TOKEN_FILE=*)', why: 'The master acts only as its own identities; pointing a command at a worker\'s or producer\'s credential file would let it borrow another identity.' },
+  { rule: 'Bash(*MAINWORKS_TOKEN_FILE=*)', why: 'The master acts only as its own identities; pointing a command at a worker\'s or producer\'s credential file would let it borrow another identity.' },
   { rule: `Edit(//${credentialHome}/**)`, why: 'Agent credentials are issued by onboarding and rotated through the API, never edited in place.' },
 ];
 /** Thrown when the checkout a harness apply resolved is not one it may apply against (GY-1662); `unit` is the unit file to update, when one names the right checkout elsewhere. */
@@ -488,6 +490,7 @@ export function workerHarnessPlan(input: { cliPath: string; branch: string; base
     { rule: 'Bash(gh pr merge:*)', why: 'Workers never merge; the control plane\'s merge gate decides.' },
     { rule: 'Bash(gh pr review:*)', why: 'Workers never review their own work.' },
     { rule: 'Bash(*GRAPHYARD_TOKEN_FILE=*)', why: 'A worker acts only as its own principal.' },
+    { rule: 'Bash(*MAINWORKS_TOKEN_FILE=*)', why: 'A worker acts only as its own principal.' },
     { rule: `Read(//${input.credentialHome}/**)`, why: 'Credentials are used through the CLI, never read into a transcript.' },
     { rule: 'Read(**/*.token)', why: 'Token files are never read into a session transcript.' },
   ];

@@ -2,6 +2,7 @@ import type pg from 'pg';
 import { advisoryLocks } from './locks.js';
 import { routineSaveKinds } from './snapshot-delta.js';
 import { DELIVERY_EVENT_PREDICATE } from './tables/production.js';
+import { setting } from '../setting.js';
 
 /**
  * Ledger compaction (GY-979): routine rows past their retention window are deleted, a bounded
@@ -33,7 +34,7 @@ import { DELIVERY_EVENT_PREDICATE } from './tables/production.js';
 export const ledgerRetentionMs = 14 * 24 * 60 * 60 * 1000;
 /** The retention window: `GRAPHYARD_LEDGER_RETENTION_DAYS` (at least one day), else `ledgerRetentionMs`. */
 export function configuredLedgerRetentionMs(env: NodeJS.ProcessEnv = process.env) {
-  const days = Number(env.GRAPHYARD_LEDGER_RETENTION_DAYS);
+  const days = Number(setting('LEDGER_RETENTION_DAYS', env));
   return Number.isFinite(days) && days >= 1 ? Math.floor(days * 24 * 60 * 60 * 1000) : ledgerRetentionMs;
 }
 /** Ledger rows one batch reads (and so deletes at most); each batch is its own short transaction. */

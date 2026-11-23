@@ -673,6 +673,10 @@ header.main-top-bar{height:auto;min-height:60px;display:flex;flex-wrap:wrap;alig
 .first-run-secondary{min-height:48px;padding:0 18px;border-radius:12px;background:var(--surface);border:1px solid var(--border);color:var(--text);font-weight:500}
 .first-run-terminal{padding:12px 14px;border-radius:10px;background:var(--surface);font-size:var(--type-small);color:var(--text-2);overflow-wrap:anywhere}
 .first-run-builder-card .facts{margin:0 0 var(--space-3)}
+.first-run-issues{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.first-run-issues li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border-radius:10px;background:var(--surface);overflow-wrap:anywhere}
+.first-run-issues li>span{min-width:0}.first-run-issues button{flex:none;min-height:40px}
+.first-run-typed{display:flex;flex-direction:column;gap:10px;align-items:flex-start}.first-run-typed label{width:100%}.first-run-typed textarea{width:100%;box-sizing:border-box}
 @media(max-width:650px){.first-run{gap:var(--space-4)}.first-run-steps{max-width:none;flex-basis:100%}.first-run-body{flex-basis:100%}}
 /* GY-3559: the Tests chips are one row that scrolls sideways inside itself; a raw step wraps; Show more sits under the list. */
 .case-filters{flex-wrap:nowrap;overflow-x:auto}.case-filters>*{flex:none}

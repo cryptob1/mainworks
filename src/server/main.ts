@@ -13,6 +13,7 @@ import { generatedFilesVariable } from '../install/generated-files.js';
 import { pruneReceipts, receiptPruneIntervalMs } from '../store/receipts.js';
 import { compactLedger, configuredLedgerRetentionMs, ledgerCompactionIntervalMs } from '../store/compaction.js';
 import { processControlPlaneJob } from './control-plane-observation.js';
+import { setting } from '../setting.js';
 
 /** Overrides for tests that start the process entry in-process; the deployment reads PORT and HOST. */
 export interface MainOptions { port?: number; host?: string }
@@ -22,7 +23,7 @@ export async function main(options: MainOptions = {}) {
   try { process.loadEnvFile(); } catch (error: any) { if (error.code !== 'ENOENT') throw error; }
   // An unparseable generated-files declaration refuses start-up with a clear message.
   const generatedFiles = configuredGeneratedFiles();
-  const credentials = principalSchema.parse(JSON.parse(process.env.GRAPHYARD_PRINCIPALS ?? '[]'));
+  const credentials = principalSchema.parse(JSON.parse(setting('PRINCIPALS') ?? '[]'));
   demand(new Set(credentials.map(p => p.id)).size === credentials.length && new Set(credentials.map(p => p.token)).size === credentials.length, 'Principal IDs and tokens must be unique');
   // The pool and the observation workers are sized together (GY-1114): workers at most half the pool.
   const capacity = observationCapacity();
@@ -31,7 +32,7 @@ export async function main(options: MainOptions = {}) {
   mark('database'); await waitForDatabase(store.pool);
   mark('store.init'); await store.init(); mark('store.init done');
   const engine = new Engine(store);
-  engine.reconcileBatchMs = reconcileBatchMs(process.env.GRAPHYARD_RECONCILE_BATCH_MS);
+  engine.reconcileBatchMs = reconcileBatchMs(setting('RECONCILE_BATCH_MS'));
   // The configured roster is the one this installation runs with: an over-limit roster starts with a warning.
   const knownPrincipals = credentials.map(credential => credential.id);
   const build = buildIdentity();
@@ -42,7 +43,7 @@ export async function main(options: MainOptions = {}) {
   // The deployed-variables record the status route reports gains the generated-files variable the
   // installers set beside GRAPHYARD_PRINCIPALS, so master status can compare what the deployment
   // runs with against the managed repository's manifest and name the command that fixes it.
-  http.services.delegationLimits.deployed[generatedFilesVariable] = process.env.GRAPHYARD_GENERATED_FILES ?? null;
+  http.services.delegationLimits.deployed[generatedFilesVariable] = setting('GENERATED_FILES') ?? null;
   for (const line of http.services.delegationLimits.attention) console.error(`Delegation limits: ${line}`);
   console.log(`Generated files: ${generatedFiles.length ? generatedFiles.join(', ') : 'none declared'}`);
   console.log(`Build ${build.commit ?? 'commit unknown'} (merge protocol ${build.protocol}); ${observationLine(provider, build)}`);
@@ -118,7 +119,7 @@ export async function main(options: MainOptions = {}) {
   http.listen(options.port ?? Number(process.env.PORT ?? 4310), options.host ?? process.env.HOST ?? '127.0.0.1', () => console.log(`Graphyard listening on port ${(http.address() as AddressInfo).port}`));
   await once(http, 'listening');
   // GY-3486: the serve socket tailscaled proxies the tailnet to; up serves it once it exists, else the TCP port as before.
-  const socketPath = process.env.GRAPHYARD_SERVE_SOCKET;
+  const socketPath = setting('SERVE_SOCKET');
   const served = socketPath ? await http.serveSocket(socketPath).catch(error => { console.error(`The serve socket ${socketPath} could not be opened (${error instanceof Error ? error.message : 'unknown'}); the tailnet reaches the TCP port`); return null; }) : null;
   void runStartup();
 
@@ -162,12 +163,12 @@ export type ReconciliationStep = <T>(name: string, run: () => Promise<T>) => Pro
 export const defaultDatabasePoolSize = 16, defaultObservationConcurrency = 8;
 export function observationCapacity(env: Record<string, string | undefined> = process.env) {
   const count = (value: string | undefined) => { const parsed = Number(value); return value && Number.isFinite(parsed) && parsed >= 1 ? Math.floor(parsed) : null; };
-  const workers = count(env.GRAPHYARD_OBSERVATION_CONCURRENCY), pool = count(env.GRAPHYARD_DATABASE_POOL_SIZE);
+  const workers = count(setting('OBSERVATION_CONCURRENCY', env)), pool = count(setting('DATABASE_POOL_SIZE', env));
   const poolMax = Math.max(2, pool ?? Math.max(defaultDatabasePoolSize, 2 * (workers ?? 0)));
   return { poolMax, concurrency: Math.max(1, Math.min(workers ?? defaultObservationConcurrency, Math.floor(poolMax / 2))) };
 }
 /** The worker count for a pool of `poolMax` connections, from the environment's configured workers. */
-export const observationConcurrency = (poolMax = defaultDatabasePoolSize) => observationCapacity({ GRAPHYARD_OBSERVATION_CONCURRENCY: process.env.GRAPHYARD_OBSERVATION_CONCURRENCY, GRAPHYARD_DATABASE_POOL_SIZE: String(poolMax) }).concurrency;
+export const observationConcurrency = (poolMax = defaultDatabasePoolSize) => observationCapacity({ GRAPHYARD_OBSERVATION_CONCURRENCY: setting('OBSERVATION_CONCURRENCY'), GRAPHYARD_DATABASE_POOL_SIZE: String(poolMax) }).concurrency;
 
 /**
  * The observation workers (GY-492): `concurrency` long-lived loops beside the reconciliation tick,

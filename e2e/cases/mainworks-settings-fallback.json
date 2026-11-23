@@ -1,0 +1,19 @@
+{
+  "id": "mainworks-settings-fallback",
+  "title": "MAINWORKS_* settings, with the GRAPHYARD_* names still honoured",
+  "description": "status GY-1 runs once with only MAINWORKS_URL and once with only GRAPHYARD_URL and both reach the same control plane; with both set the MAINWORKS_ name wins, and MAINWORKS_* from the checkout .env is honoured.",
+  "tags": [
+    "deployment",
+    "regression"
+  ],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "Run status under both setting names",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/mainworks-settings-fallback.test.ts",
+      "timeoutSeconds": 120
+    }
+  ]
+}

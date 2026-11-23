@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { stateSourceKinds, untrustedSourceKinds, defaultClosedQuestionThreshold, type ClosedQuestion, type StatePart, type StateSource, type StateSourceKind } from './model/closed-question.js';
 import type { Work } from './model.js';
+import { setting } from './setting.js';
 
 // ---------------------------------------------------------------------------
 // The responder that answers closed questions (GY-109), and the state it is asked against.
@@ -87,7 +88,7 @@ export function configuredResponder(config: ResponderConfig, env: NodeJS.Process
 }
 /** The responder `GRAPHYARD_RESPONDER` configures, or null when none is: closed questions then take their ordinary path. */
 export function responderFromEnv(env: NodeJS.ProcessEnv = process.env): Responder | null {
-  const raw = env.GRAPHYARD_RESPONDER?.trim();
+  const raw = setting('RESPONDER', env)?.trim();
   return raw ? configuredResponder(responderConfigSchema.parse(JSON.parse(raw)), env) : null;
 }
 
