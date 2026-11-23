@@ -1,0 +1,16 @@
+{
+  "id": "public-link-is-opt-in",
+  "title": "The public link is the owner's choice, and the loop keeps it on while it is on",
+  "description": "Against a real control plane and a temporary Postgres, with a stub tailscale serving the install tailnet-only on 443: with the owner's public link setting off (the default) the loop makes no funnel call and a new invite says it opens only on the tailnet. With it on and one teammate invited, the loop runs tailscale funnel for 443, the install's own port; while Funnel is refused Home shows one incident saying what the loop is doing and when the link was last public, master status reads the same line, the command runs at most once per 10 minutes, and both clear once the link is public.",
+  "tags": ["dashboard", "authentication", "deployment"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "Public link off: no Funnel; on: Funnel restored on the install's port, incident appears and clears",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/public-link-is-opt-in.test.ts",
+      "timeoutSeconds": 180
+    }
+  ]
+}

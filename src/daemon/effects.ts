@@ -128,6 +128,8 @@ export interface DaemonEffects {
   unblock?: (work: Work, reason: string) => Promise<unknown>;
   /** The disk Graphyard's leftovers hold, read once a day for the leftovers report (GY-3190). */
   leftoverDisk?: () => Promise<LeftoverDisk>;
+  /** GY-3691: the disk the working copies (attempt worktrees and the managed worktree root) take, or null when unreadable. */
+  worktreeDisk?: () => Promise<number | null>;
   /** Reports the token usage this host's sessions' runtimes printed (GY-3289, usage-capture.ts); `master` is the master session's conversation. */
   usage?: (master: Conversation | null) => Promise<unknown>;
   /**

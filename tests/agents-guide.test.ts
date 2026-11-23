@@ -5,7 +5,7 @@ import { guideText, guideTopicList } from '../src/guide.js';
 import { workerPrompt } from '../src/master/dispatch.js';
 import { reviewPrompt } from '../src/reviewer.js';
 import { producerPrompt } from '../src/producer.js';
-import { masterPrompt } from '../src/master/harness.js';
+import { masterMission, masterPrompt } from '../src/master/harness.js';
 import type { MasterConfig } from '../src/master/profiles.js';
 
 // GY-2972: launched sessions start from a short core instruction and load Graphyard procedure on
@@ -109,7 +109,8 @@ test('unit:role-briefs-name-guide-topics-and-shrink — the worker, reviewer, pr
   for (const role of Object.keys(baseBriefWords) as (keyof typeof baseBriefWords)[]) {
     const brief = rendered[role];
     for (const topic of roleTopics[role]) assert.ok(brief.includes(topic), `the ${role} brief names ${topic}`);
-    const limit = Math.floor(baseBriefWords[role] * 0.7);
+    // GY-3521: the master's mission paragraph comes on top of its trimmed brief.
+    const limit = Math.floor(baseBriefWords[role] * 0.7) + (role === 'master' ? words(masterMission) : 0);
     assert.ok(words(brief) <= limit, `the ${role} brief is ${words(brief)} words, at most ${limit} (30 percent under the base ${baseBriefWords[role]})`);
   }
 });

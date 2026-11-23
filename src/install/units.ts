@@ -10,7 +10,7 @@ import { stateDir } from '../mainworks-names.js';
 // host-supervision step, status, the master's harness — names the same units. A host whose single
 // install predates this keeps its legacy names through a recorded alias: the record says the
 // install owns `graphyard-master.service`, so nothing about a working host changes.
-import { readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
@@ -79,6 +79,30 @@ export function legacyUnitFiles(unitDirectory = userUnitDirectory()): LegacyUnit
     const path = join(unitDirectory, name);
     try { return { path, text: readFileSync(path, 'utf8') }; } catch (error) { if (!absent(error)) throw error; return { path, text: null }; }
   });
+}
+
+/**
+ * GY-3519: every install checkout registered as a master loop unit on this host (`graphyard-master*.service`).
+ * Under the test runner only a directory under the system temporary directory is read, so tests never touch the operator's units.
+ */
+export function hostInstallCheckouts(unitDirectory = userUnitDirectory(), home = homedir()): string[] {
+  const temporary = canonical(tmpdir());
+  if (underTestRunner() && !`${canonical(unitDirectory)}${sep}`.startsWith(`${temporary}${sep}`)) return [];
+  let entries: string[];
+  try { entries = readdirSync(unitDirectory); } catch { return []; }
+  const seen = new Set<string>(), checkouts: string[] = [];
+  for (const name of entries) {
+    if (!/^graphyard-master[A-Za-z0-9@._-]*\.service$/.test(name)) continue;
+    let text: string;
+    try { text = readFileSync(join(unitDirectory, name), 'utf8'); } catch { continue; }
+    const directory = unitCheckout(text, home).workingDirectory;
+    if (!directory || !existsSync(directory)) continue;
+    const resolved = canonical(directory);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    checkouts.push(resolved);
+  }
+  return checkouts;
 }
 
 /** Thrown when ROOT records no units and a legacy-named unit runs another checkout: its names are that install's, never ROOT's (GY-1452). */

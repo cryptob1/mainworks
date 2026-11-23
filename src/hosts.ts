@@ -22,7 +22,7 @@ import { shellQuote } from './install/transport.js';
 
 export interface HostRecord { target: string; addedAt: string }
 /** GY-3517: `at` is when this probe read the host; `update` marks one away only because its shim lacks a trial verb. */
-export interface HostReading { host: string; local?: boolean; at?: string; away: boolean; /** GY-3601: when an away host stopped answering. */ since?: string; update?: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; stat?: { total: number; steal: number } | null }
+export interface HostReading { host: string; local?: boolean; at?: string; away: boolean; /** GY-3601: when an away host stopped answering. */ since?: string; update?: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; /** GY-3528: cores busy (the 1-minute load). */ busy?: number | null; stat?: { total: number; steal: number } | null }
 
 /** Machine-wide, beside the machine-share link (team-access.ts): every install's loop on this machine reads the same hosts. */
 export const hostsFile = (home = configHome()) => join(home, 'machine', 'hosts.json');
@@ -115,8 +115,22 @@ else
 fi
 install -d "$home/.graphyard"
 chown -R "$user:$user" "$home/.graphyard"
+# The setup tool runs the docker beside it (GY-3697): where docker lives elsewhere, link it there.
+tooldir=$(dirname "$setuptool")
+if [ ! -x "$tooldir/docker" ]; then
+  docker=$(command -v docker) || { echo "Install Docker, then run this again." >&2; exit 1; }
+  ln -sfn "$docker" "$tooldir/docker"
+fi
 for _ in 1 2 3 4 5 6 7 8 9 10; do [ -S "/run/user/$uid/bus" ] && break; sleep 1; done
-sudo -u "$user" XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" PATH="$(dirname "$setuptool"):$PATH" "$setuptool" install
+as_user() { sudo -u "$user" XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" PATH="$tooldir:$PATH" "$@"; }
+as_user "$setuptool" install
+# Docker must come back after a reboot: enable the user unit and check it.
+as_user systemctl --user enable docker.service || true
+enabled=$(as_user systemctl --user is-enabled docker.service || true)
+active=$(as_user systemctl --user is-active docker.service || true)
+[ "$enabled" = enabled ] || { echo "Docker for $user does not start at boot: docker.service is \${enabled:-unknown}. See journalctl --user -u docker.service as $user, then run this again." >&2; exit 1; }
+[ "$active" = active ] || { echo "Docker for $user is not running: docker.service is \${active:-unknown}. See journalctl --user -u docker.service as $user, then run this again." >&2; exit 1; }
+echo "Docker for $user: running and starts at boot"
 # A check that declares Compose services runs whole on this host, so its rootless Docker needs the Compose plugin.
 if sudo -u "$user" docker compose version >/dev/null 2>&1; then echo "Docker Compose plugin: found. Checks that declare Compose services can run here."
 else echo "Docker Compose plugin: missing. This host's rootless Docker needs it to run checks that declare Compose services; install docker-compose-plugin and they run here. Test shards work without it."; fi
@@ -188,6 +202,14 @@ export const sshTarget = (target: string) => { const port = /^(.+@.+):(\d+)$/.ex
 const ssh = (target: string, verb: string, run: ChildRun) => run('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', ...sshTarget(target), verb], { timeoutMs: 15_000 });
 const unreachable = (target: string, error: any) => `${target} is unreachable over SSH: ${lastLine(String(error?.stderr ?? '')) || (error?.timedOut ? 'no answer within 15 seconds' : String(error?.message ?? error))}`;
 
+/** GY-3697: the probe's docker-unit line says whether rootless Docker's user unit failed or is not enabled. */
+export function noDockerReason(name: string, output: string) {
+  const [, enabled, active] = /^docker-unit (\S*) ?(\S*)$/m.exec(output) ?? [];
+  if (active === 'failed') return `${name} answers but its Docker failed (docker.service failed): see journalctl --user -u docker.service as ${hostUser} there, or run graphyard host prepare and the script it prints`;
+  if (enabled && enabled !== 'enabled') return `${name} answers but its Docker is not enabled (docker.service is ${enabled}), so it stops at reboot: run graphyard host prepare and the script it prints there`;
+  return `${name} answers but its Docker does not: run graphyard host prepare and the script it prints there`;
+}
+
 /** One probe of a host through its shim (null: this machine): its readings, or the plain reason it cannot be read. */
 export async function probeHost(target: string | null, run: ChildRun = defaultChildRun) {
   let output: string;
@@ -197,7 +219,7 @@ export async function probeHost(target: string | null, run: ChildRun = defaultCh
     return { ok: false as const, reason: error?.status === 255 || error?.timedOut ? unreachable(target, error) : `${target} does not answer graphyard-host-shim's probe: run graphyard host prepare and the script it prints there` };
   }
   const reading = parseHostProbe(output);
-  if (!reading) return { ok: false as const, reason: `${target ?? 'this machine'} answers but its Docker does not: run graphyard host prepare and the script it prints there` };
+  if (!reading) return { ok: false as const, reason: noDockerReason(target ?? 'this machine', output) };
   // GY-3476, GY-3517: a shim from an older release takes shards while it speaks every verb a trial uses; one lacking any waits for prepare.
   const missing = target ? missingTrialVerbs(reading) : [];
   if (missing.length) return { ok: false as const, update: true, reason: outdatedShimReason(target!, missing) };
@@ -255,8 +277,8 @@ export async function readHostReadings(previous: HostReading[], options: { file?
     const host = target ?? options.local ?? hostname();
     const probe = await probeHost(target, options.run), at = new Date().toISOString();
     const was = previous.find(reading => reading.host === host);
-    if (!probe.ok) return { host, ...(target ? {} : { local: true }), at, away: true, since: was?.away ? was.since ?? was.at ?? at : at, ...('update' in probe ? { update: true } : {}), reason: probe.reason, cores: null, celsius: null, steal: null, runs: null, stat: null };
+    if (!probe.ok) return { host, ...(target ? {} : { local: true }), at, away: true, since: was?.away ? was.since ?? was.at ?? at : at, ...('update' in probe ? { update: true } : {}), reason: probe.reason, cores: null, celsius: null, steal: null, runs: null, busy: null, stat: null };
     const before = was?.stat ?? null;
-    return { host, ...(target ? {} : { local: true }), at, away: false, cores: probe.cores, celsius: probe.celsius, steal: stealPercent(before, probe.stat), runs: probe.runs, stat: probe.stat };
+    return { host, ...(target ? {} : { local: true }), at, away: false, cores: probe.cores, celsius: probe.celsius, steal: stealPercent(before, probe.stat), runs: probe.runs, busy: probe.load, stat: probe.stat };
   }));
 }
