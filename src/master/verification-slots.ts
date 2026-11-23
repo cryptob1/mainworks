@@ -7,6 +7,7 @@ import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { availableParallelism } from 'node:os';
 import { cpuCelsius, heatReading, heatWindowMs, trialHotCelsius } from '../merge-writer/trial-load.js';
+import { budgetLine } from '../model/machine-load.js';
 
 /**
  * The host heavy-job budget (GY-612, GY-3290).
@@ -47,7 +48,7 @@ export const hostHeavyJobsDirectory = (environment: NodeJS.ProcessEnv = process.
 export const heavyJobsDirectory = (environment: NodeJS.ProcessEnv = process.env) => environment[slotsDirectoryVariable] ?? hostHeavyJobsDirectory(environment);
 /** This machine's limit: its `limit` file, else its share of the budget (GY-3528), else two; a strict cap standing now lowers it (GY-3446). */
 export const heavyJobLimit = (directory: string) => Math.min(ordinaryLimit(directory), readStrictCap(directory)?.limit ?? Infinity);
-function limitFile(directory: string) {
+export function limitFile(directory: string) {
   try { const limit = Number(readFileSync(join(directory, 'limit'), 'utf8').trim()); return Number.isInteger(limit) && limit >= 1 ? limit : null; }
   catch { return null; }
 }
@@ -79,11 +80,27 @@ export const machineSlots = (cores: number) => Math.floor(cores / 6);
 export function heavyJobBudget(directory: string): { slots: number; machines: { name: string; local?: true; slots: number }[]; hostsBounded: boolean } {
   const fixed = limitFile(directory), machines = fixed === null ? readMachines(directory) : null;
   if (!machines) return { slots: fixed ?? defaultHeavyJobs, machines: [{ name: 'this machine', local: true, slots: fixed ?? defaultHeavyJobs }], hostsBounded: false };
+  return scaledBudget(machines);
+}
+function scaledBudget(machines: readonly Machine[]) {
   const hosts = machines.slice(1).filter(host => !host.away && host.cores).map(host => ({ name: host.name, slots: machineSlots(host.cores!) }));
   const shared = hosts.reduce((sum, host) => sum + host.slots, 0), local = machineSlots(machines[0]!.cores ?? availableParallelism());
   // A trial holds a slot here while its shards run elsewhere, so this machine keeps at least one.
   const own = Math.max(1, local, defaultHeavyJobs - shared);
-  return { slots: own + shared, machines: [{ name: 'this machine', local: true, slots: own }, ...hosts], hostsBounded: true };
+  return { slots: own + shared, machines: [{ name: 'this machine', local: true as const, slots: own }, ...hosts], hostsBounded: true };
+}
+/** GY-3701: while a `limit` file fixes the budget and a compute host is ready, the fixed and machine-scaled budgets. */
+export function fixedHeavyJobLimit(directory: string): { fixed: number; scaled: number; file: string } | null {
+  const fixed = limitFile(directory), machines = fixed === null ? null : readMachines(directory);
+  if (!machines?.slice(1).some(host => !host.away && host.cores)) return null;
+  return { fixed: fixed!, scaled: scaledBudget(machines).slots, file: join(directory, 'limit') };
+}
+/** GY-3701: remove the fixed `limit` file, recording who lifted it, and answer the machine-scaled budget now standing. */
+export function liftHeavyJobLimit(directory: string, by: string, now = new Date()) {
+  const lifted = limitFile(directory);
+  rmSync(join(directory, 'limit'), { force: true });
+  writeFileSync(join(directory, 'limit-lifted.json'), JSON.stringify({ lifted, by, at: now.toISOString() }));
+  return { lifted, by, budget: budgetLine(heavyJobBudget(directory).machines) };
 }
 /** Slot numbers from here up are declarations (a trial's shard files), never part of the limit. */
 export const declarationSlot = 1000;

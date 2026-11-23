@@ -450,7 +450,8 @@ export function readOnlyMountWrapper(input: { coordinatorRoot: string; sessionDi
   const fetchHead = join(checkoutWorktreeAdminDirectory(root) ?? gitDir, 'FETCH_HEAD');
   const shared = [...sharedDirectories, ...(existsSync(fetchHead) && !isDirectoryPath(fetchHead) ? [fetchHead] : [])];
   const own = directory !== root ? [directory] : [];
-  const writable = [...(input.writable ?? []), ...(process.env[slotsDirectoryVariable] ? [process.env[slotsDirectoryVariable]!] : [])].filter(isDirectoryPath);
+  const writable = [...(input.writable ?? []), ...(process.env[slotsDirectoryVariable] ? [process.env[slotsDirectoryVariable]!] : [])].filter(existsSync);
+  const writableDirectories = writable.filter(isDirectoryPath);
   const scratch = join(directory, '.graphyard', 'scratch');
   mkdirSync(scratch, { recursive: true, mode: 0o700 });
   const bwrap = input.bwrap ?? 'bwrap';
@@ -513,7 +514,7 @@ export function readOnlyMountWrapper(input: { coordinatorRoot: string; sessionDi
   const siblings = declared.length ? siblingMaskEntries(root, declared, mounted) : [];
   if (siblings.length && !existsSync(blank)) writeFileSync(blank, '', { mode: 0 });
   const siblingMasks = siblings.length ? credentialMaskWords({ configHome: '', extraPaths: [], own: [], cli: [], hostPaths: siblings }, [root, directory], blank) : [];
-  return [bwrap, ...hostFilesystemWords(scratch, environment, [...writable, ...kept.filter(isDirectoryPath)]), ...masks, ...siblingMasks,
+  return [bwrap, ...hostFilesystemWords(scratch, environment, [...writableDirectories, ...kept.filter(isDirectoryPath)]), ...masks, ...siblingMasks,
     ...writable.filter(path => !withinCheckout(path, root)).flatMap(path => ['--bind', path, path]),
     ...drain.flatMap(path => ['--ro-bind', path, path]),
     '--ro-bind', root, root,
@@ -525,7 +526,7 @@ export function readOnlyMountWrapper(input: { coordinatorRoot: string; sessionDi
     ...kept.flatMap(path => isDirectoryPath(path) ? ['--bind', path, path] : ['--ro-bind', path, path]),
     ...cli.flatMap(path => ['--ro-bind', path, path]),
     ...herdr.flatMap(path => ['--ro-bind', path, path]), ...channels, '--',
-    ...socketConfinementWords([...own, ...writable, ...herdr, ...kept.filter(isDirectoryPath), ...commonGitDir, ...sharedDirectories],
+    ...socketConfinementWords([...own, ...writableDirectories, ...herdr, ...kept.filter(isDirectoryPath), ...commonGitDir, ...sharedDirectories],
       channels.flatMap((word, index) => word === '--ro-bind' && channels[index + 1] !== '/dev/null' ? [channels[index + 2]] : []))];
 }
 
