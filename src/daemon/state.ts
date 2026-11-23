@@ -259,6 +259,8 @@ export const daemonStateSchema = z.object({
     /** When the loop last POSTed a stall alert; null before the first, and the marker that an all-clear is owed once work moves. */
     lastAlertAt: z.string().max(64).nullable().default(null),
   }).strict().default({ stoppedAt: null, lastAlertAt: null }),
+  /** GY-3529: the served commit and the failed release candidate last announced to run.alertUrl, so a restart never repeats either. */
+  deliveryAlerts: z.object({ served: z.string().max(64).nullable().default(null), uatFailed: z.string().max(64).nullable().default(null) }).strict().default({ served: null, uatFailed: null }),
   /** Shared project memory (GY-1125): recent decisions and merges. */
   projectMemory: projectMemorySchema.default(() => emptyProjectMemory(new Date().toISOString())),
 }).strip();

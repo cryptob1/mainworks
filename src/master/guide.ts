@@ -50,7 +50,7 @@ Workers run headless (GY-3259): each attempt is one run of its account runtime's
 
 A worker launch waiting only on role concurrency stays queued with its reason in status. A run that exits unsuccessfully within 60 seconds without committing or submitting is a failed launch: the loop keeps a masked log excerpt and an item/epoch incident that wakes the master once, and backs off that runtime for the item from 1 minute doubling to 30. A newer runtime version installed beside a pinned one is tried on one canary session before the fleet switches.
 
-With \`run.alertUrl\` set in \`.graphyard/master.json\`, the loop posts one line to it when queued work has had no launch and no merge for \`run.alertMinutes\` (default 20), at most hourly, and one all-clear when work moves.
+With \`run.alertUrl\` set in \`.graphyard/master.json\` (a Slack webhook gets JSON), the loop posts each deploy's newly served items, each failed UAT with its cases, and one line when queued work has had no launch and no merge for \`run.alertMinutes\` (default 20), at most hourly, and one all-clear when work moves.
 
 The loop follows the master's live Herdr pane. Weekly/session limits or exhausted credits hold that account, close its pane and launch the next account in the same cycle. \`master restart\` restarts the install's loop unit; confined masters record a request.
 
