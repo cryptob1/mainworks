@@ -411,19 +411,26 @@ export function changedExports(changed, base, root = repositoryRoot, head = null
       visit(node);
       return out + text.slice(at, node.end);
     };
-    const outline = [], names = new Map(), effects = new Set();
+    const outline = [], names = new Map(), effects = new Set(), imports = new Map();
     const uses = (node, into = new Set()) => { const collect = child => { if (ts.isIdentifier(child)) into.add(child.text); ts.forEachChild(child, collect); }; collect(node); return into; };
     for (const node of source.statements) {
       const exported = node.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.ExportKeyword), isDefault = node.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.DefaultKeyword);
       const declared = ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node) || ts.isEnumDeclaration(node) ? [node.name?.text ?? 'default']
         : ts.isVariableStatement(node) ? node.declarationList.declarations.flatMap(declaration => ts.isIdentifier(declaration.name) ? [declaration.name.text] : [null]) : [];
-      if (ts.isImportDeclaration(node) && node.importClause) continue;
+      // An import is each local binding's module and imported name: a binding that changes changes every body using it.
+      if (ts.isImportDeclaration(node) && node.importClause) {
+        const from = node.moduleSpecifier.getText(source), clause = node.importClause, named = clause.namedBindings;
+        if (clause.name) imports.set(clause.name.text, `${from}:default`);
+        if (named && ts.isNamespaceImport(named)) imports.set(named.name.text, `${from}:*`);
+        else for (const element of named?.elements ?? []) imports.set(element.name.text, `${from}:${(element.propertyName ?? element.name).text}`);
+        continue;
+      }
       if (!declared.length || declared.includes(null)) { outline.push(node.getText(source)); if (!ts.isExportDeclaration(node) && !ts.isInterfaceDeclaration(node) && !ts.isTypeAliasDeclaration(node)) uses(node, effects); continue; }
       const exports = declared.flatMap(name => exported ? [isDefault ? 'default' : name] : listed.get(name) ?? []);
       if (exports.length) outline.push(bodiless(node));
       for (const name of declared) names.set(name, { text: node.getText(source), uses: uses(node), exports });
     }
-    return { outline: outline.join('\n'), names, effects };
+    return { outline: outline.join('\n'), names, effects, imports };
   };
   for (const file of changed) {
     if (isDocumentation(file)) continue;
@@ -431,9 +438,11 @@ export function changedExports(changed, base, root = repositoryRoot, head = null
     const before = show(base, file), after = head ? show(head, file) : existsSync(join(root, file)) ? readFileSync(join(root, file), 'utf8') : null;
     if (before === null || after === null) return null;
     const old = read(file, before), now = read(file, after);
-    if (old.outline !== now.outline) return null;
+    if (old.outline !== now.outline || [...now.imports].some(([name, from]) => old.imports.has(name) && old.imports.get(name) !== from)) return null;
     const reached = new Set([...now.names].filter(([name, entry]) => old.names.get(name)?.text !== entry.text).map(([name]) => name));
     for (const name of old.names.keys()) if (!now.names.has(name)) reached.add(name);
+    // An import added or removed reaches the declarations using it, whose own text changed with it too.
+    for (const name of new Set([...old.imports.keys(), ...now.imports.keys()])) if (old.imports.has(name) !== now.imports.has(name)) reached.add(name);
     for (let grew = true; grew;) {
       grew = false;
       for (const [name, entry] of now.names) if (!reached.has(name) && [...reached].some(used => entry.uses.has(used))) { reached.add(name); grew = true; }

@@ -27,6 +27,8 @@ const project = {
   'package.json': '{}',
   'src/common.ts': common,
   'src/index.ts': "export * from './common.js';\n",
+  'src/pick.ts': "import { widen } from './common.js';\nfunction step() { return widen({ size: 1 }); }\nexport function pick() { return step(); }\n",
+  'tests/pick.test.ts': "import { pick } from '../src/pick.js';\npick();\n",
   'src/user.ts': "import { widen } from './common.js';\nexport const twice = (size: number) => widen({ size }) * 2;\n",
   'tests/helpers/make.ts': "import { shrink } from '../../src/common.js';\nexport const make = () => shrink({ size: 1 });\n",
   'fixtures/case.json': '{}\n',
@@ -56,13 +58,24 @@ test('unit:small-change-selects-declaration-importers — a body-only edit in a 
 
     // A body edit of an exported function: its importers, through the re-exporting hub too; not the test reaching it through src/user.ts.
     const body = await trial({ 'src/common.ts': common.replace('clamp(options.size) + 1', 'clamp(options.size) + 2') });
-    assert.deepEqual(body.today, ['tests/hub.test.ts', 'tests/user.test.ts', 'tests/widen.test.ts'], 'today: every test reaching widen');
+    assert.deepEqual(body.today, ['tests/hub.test.ts', 'tests/pick.test.ts', 'tests/user.test.ts', 'tests/widen.test.ts'], 'today: every test reaching widen');
     assert.deepEqual(body.selection.files, ['tests/hub.test.ts', 'tests/widen.test.ts']);
-    assert.match(body.selection.reason, /^selected 2 of 3 reachable: the change is confined to function bodies or non-exported code of 1 file\(s\)$/);
+    assert.match(body.selection.reason, /^selected 2 of 4 reachable: the change is confined to function bodies or non-exported code of 1 file\(s\)$/);
 
     // A non-exported helper's edit selects the importers of the exported names using it.
     const helper = await trial({ 'src/common.ts': common.replace('Math.max(0, value)', 'Math.max(1, value)') });
     assert.deepEqual(helper.selection.files, ['tests/hub.test.ts', 'tests/widen.test.ts']);
+
+    // An import whose module or imported name changes under an unchanged body selects as today; an added import still narrows.
+    const pick = project['src/pick.ts'];
+    for (const edited of [pick.replace("from './common.js'", "from './index.js'"), pick.replace('{ widen }', '{ shrink as widen }')]) {
+      const outcome = await trial({ 'src/pick.ts': edited });
+      assert.deepEqual(outcome.today, ['tests/pick.test.ts']);
+      assert.deepEqual(outcome.selection.files, outcome.today, edited.split('\n')[0]);
+    }
+    const added = await trial({ 'src/pick.ts': `import { shrink } from './common.js';\n${pick.replace('return widen({ size: 1 })', 'return widen({ size: 1 }) + shrink({ size: 1 })')}` });
+    assert.deepEqual(added.selection.files, ['tests/pick.test.ts']);
+    assert.match(added.selection.reason, /^selected 1 of 1 reachable: the change is confined/);
 
     // An exported type or signature edit selects as today.
     const type = await trial({ 'src/common.ts': common.replace('size: number }', 'size: number; label?: string }') });
