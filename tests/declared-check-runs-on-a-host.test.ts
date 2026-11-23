@@ -148,7 +148,7 @@ test(`${proof} — with no host ready, or a host that drops the check, it runs o
     process.env[slotsDirectoryVariable] = heavy;
     try {
       const status = await masterStatusReport(repository.root, master, async () => ({ work: [], now: new Date().toISOString() }), async () => '');
-      assert.deepEqual(status.heavyJobs.machines, ['this machine: 1 of 4 cores busy', `box: 0 of 2 cores busy · last check fell back to this machine at ${reason.at}: ${reason.fallback}`]);
+      assert.deepEqual(status.heavyJobs.machines, ['this machine: 1 of 4 cores busy', `box: 0 of 2 cores busy, 0 shards · last check fell back to this machine at ${reason.at}: ${reason.fallback}`]);
     } finally { if (previous === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = previous; }
     const sent = loopHosts(encodeLoopHosts([{ host: target, away: false, cores: 2, celsius: null, steal: null, runs: 0, fallback: lastHostFallbacks(repository.root).get(target) }]))!;
     const page = renderToStaticMarkup(createElement(WorkersPage, { work: [], observedAt: new Date().toISOString(), setSelected: () => {}, setView: () => {}, token: 'fixture', status: { hosts: sent } } as never));

@@ -1,0 +1,11 @@
+{
+  "id": "master-prompt-single-source",
+  "title": "The master's rules live in one place each: a short first request, the role instructions and the guide",
+  "description": "The master's first request is at most 200 words beside the repository name, supervised and upstream sentences, and still states its role and product ownership, the three human decisions, never implement, claim or submit evidence, running master status and master guide, and why-and-simplest first. The role instructions and operating guide together are at least 25% shorter than before, and the three human decisions, review and proof starting on their own, and never approving or submitting evidence each appear in exactly one of the three texts.",
+  "tags": ["master", "prompt"],
+  "target": "any",
+  "required": true,
+  "steps": [
+    { "kind": "command", "name": "the master prompt is short and each rule lives in one place", "run": "node --import tsx tests/helpers/run-tests.ts tests/master-prompt-single-source.test.ts", "timeoutSeconds": 120 }
+  ]
+}
