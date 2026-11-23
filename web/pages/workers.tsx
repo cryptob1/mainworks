@@ -11,7 +11,7 @@ import { shortShas } from '../candidate';
 import { Agent } from '../fun';
 import { EmptyState, PageHeader } from '../components/page-layout';
 import { overloadAlarm, overloaded } from '../../src/model/session-usage';
-import { budgetLine, machineLine, machineName } from '../../src/model/machine-load';
+import { budgetLine, machineName } from '../../src/model/machine-load';
 import { formatAge } from '../../src/model/duration';
 import type { FleetAccountView } from '../../src/model/registry';
 import { localTime } from '../agent-status';
@@ -134,18 +134,18 @@ function Attach({ row }: { row: WorkerRow }) {
  * the row truncates, then the live read-only output of a headless run — following its tail — or
  * the attach commands of a pane session. Nothing here can type into anything.
  */
-export function SessionPanel({ row, item, now, release, token, setSelected, onEnded }: { row: WorkerRow; item?: Work; now: number; release: ReleaseView; token: string; setSelected(id: string | null): void; onEnded?: () => void }) {
+export function SessionPanel({ row, item, now, release, token, setSelected }: { row: WorkerRow; item?: Work; now: number; release: ReleaseView; token: string; setSelected(id: string | null): void }) {
   const run = transcriptRun(row.transcript);
   return <tr className="session-view" data-view-of={row.id}><td colSpan={4}>
     <div className="session-head">
       <button type="button" className="text-button session-item" title={item?.title ?? shortShas(row.subject)} onClick={() => setSelected(row.workId)}><span className="mono">{row.key}</span>{item ? <> {item.title}</> : null}</button>
       <span className="muted">{doing(row, item, now, release)} · {row.runtime} on {row.host}</span>
     </div>
-    {run ? <LiveRun workId={row.workId} run={run} token={token} onEnded={row.state === 'running' ? onEnded : undefined}/> : <Attach row={row}/>}
+    {run ? <LiveRun workId={row.workId} run={run} token={token}/> : <Attach row={row}/>}
   </td></tr>;
 }
 
-function Row({ row, item, now, release, open, setOpen, token, setSelected, setView, onEnded }: { row: WorkerRow; item?: Work; now: number; release: ReleaseView; open: string | null; setOpen(id: string | null): void; token: string; setSelected(id: string | null): void; setView(view: string): void; onEnded?: () => void }) {
+function Row({ row, item, now, release, open, setOpen, token, setSelected, setView }: { row: WorkerRow; item?: Work; now: number; release: ReleaseView; open: string | null; setOpen(id: string | null): void; token: string; setSelected(id: string | null): void; setView(view: string): void }) {
   const state = sessionState(row, item, now);
   // The master's row is the one exception: it opens the Master page, where its terminal lives.
   const master = row.roleKind === 'master';
@@ -157,17 +157,17 @@ function Row({ row, item, now, release, open, setOpen, token, setSelected, setVi
       <td data-label="State" data-state={state.words}>{state.words}</td>
       <td data-label="Age"><span className="spent">{spent(now - Date.parse(state.since))}</span></td>
     </tr>
-    {open === row.id && <SessionPanel key={`${row.id}:view`} row={row} item={item} now={now} release={release} token={token} setSelected={setSelected} onEnded={onEnded}/>}
+    {open === row.id && <SessionPanel key={`${row.id}:view`} row={row} item={item} now={now} release={release} token={token} setSelected={setSelected}/>}
   </>;
 }
 
 const columns = ['Agent', 'Working on', 'State', 'Age'];
-function Table({ rows, label, work, now, release, open, setOpen, token, setSelected, setView, onEnded }: { rows: WorkerRow[]; label: string; work: Work[]; now: number; release: ReleaseView; open: string | null; setOpen(id: string | null): void; token: string; setSelected(id: string | null): void; setView(view: string): void; onEnded?: () => void }) {
+function Table({ rows, label, work, now, release, open, setOpen, token, setSelected, setView }: { rows: WorkerRow[]; label: string; work: Work[]; now: number; release: ReleaseView; open: string | null; setOpen(id: string | null): void; token: string; setSelected(id: string | null): void; setView(view: string): void }) {
   const byId = new Map(work.map(item => [item.id, item]));
   return <table className="sessions-table workers" aria-label={label}>
     <colgroup><col className="col-agent"/><col/><col className="col-state"/><col className="col-age"/></colgroup>
     <thead><tr>{columns.map(column => <th key={column} scope="col">{column}</th>)}</tr></thead>
-    <tbody>{rows.map(row => <Row key={`${row.workId}:${row.id}`} row={row} item={byId.get(row.workId)} now={now} release={release} open={open} setOpen={setOpen} token={token} setSelected={setSelected} setView={setView} onEnded={onEnded}/>)}</tbody>
+    <tbody>{rows.map(row => <Row key={`${row.workId}:${row.id}`} row={row} item={byId.get(row.workId)} now={now} release={release} open={open} setOpen={setOpen} token={token} setSelected={setSelected} setView={setView}/>)}</tbody>
   </table>;
 }
 
@@ -213,17 +213,17 @@ type HostRow = { host: string; local?: boolean; at?: string; away: boolean; upda
 function Hosts({ hosts, now }: { hosts: HostRow[]; now: number }) {
   if (!hosts.length) return null;
   const figure = (value: number | null, unit = '') => value === null ? '—' : `${Math.round(value)}${unit}`;
-  // GY-3528: the heavy-job budget the ready machines share, then each machine's load, one short line each.
+  const cores = (host: HostRow) => host.cores === null ? '—' : host.busy == null ? `${Math.round(host.cores)}` : `${Math.round(host.busy)} of ${Math.round(host.cores)} busy`;
+  // GY-3528: the heavy-job budget the ready machines share, above the hosts table with each machine's short name and cores busy of total.
   const slotted = hosts.filter(host => host.slots !== undefined).map(host => ({ name: host.host, local: host.local, slots: host.slots! }));
   return <section className="hosts-section"><h2>Hosts</h2>
     {slotted.length ? <p data-heavy-budget>{budgetLine(slotted)}</p> : null}
-    <ul className="machine-load" aria-label="Machine load" data-machine-load>{hosts.map(host => <li key={host.host} data-machine={machineName(host.host)}>{machineLine({ ...host, name: host.host })}</li>)}</ul>
     <table className="sessions-table hosts" aria-label="Hosts" data-hosts>
     <thead><tr><th scope="col">Host</th><th scope="col">Cores</th><th scope="col">Temperature</th><th scope="col">Steal</th><th scope="col">Runs now</th><th scope="col">Read</th></tr></thead>
     <tbody>{hosts.map(host => <tr key={host.host} data-host={host.host} data-away={host.away || undefined}>
-      <th scope="row" data-label="Host">{host.host}{host.local ? <span className="muted"> (this machine)</span> : null}</th>
+      <th scope="row" data-label="Host">{machineName(host.host)}{host.local ? <span className="muted"> (this machine)</span> : null}</th>
       {host.away ? <td data-label="State" colSpan={4}><span className="muted" title={host.reason}>{host.update ? 'Away: needs an update, see the line at the top' : 'Away: not answering, tried again each cycle'}</span></td> : <>
-        <td data-label="Cores">{figure(host.cores)}</td>
+        <td data-label="Cores">{cores(host)}</td>
         <td data-label="Temperature">{figure(host.celsius, '°C')}</td>
         <td data-label="Steal">{figure(host.steal, '%')}</td>
         <td data-label="Runs now">{figure(host.runs)}</td></>}
@@ -297,7 +297,7 @@ function ProjectMemorySection({ memory }: { memory?: any }) {
  * two figures that explain why nothing new is launching when the host is saturated. Below the
  * sessions, the hosts table (GY-3407) lists this machine and every added host it watches.
  */
-export default function WorkersPage({ work, observedAt, setSelected, setView, token, status, refresh, sessionEpoch }: Pick<Dashboard, 'work' | 'observedAt' | 'setSelected' | 'setView' | 'token'> & Partial<Pick<Dashboard, 'status' | 'refresh' | 'sessionEpoch'>>) {
+export default function WorkersPage({ work, observedAt, setSelected, setView, token, status }: Pick<Dashboard, 'work' | 'observedAt' | 'setSelected' | 'setView' | 'token'> & { status?: Dashboard['status'] }) {
   const now = useLiveNow(observedAt);
   const release = releaseView(status);
   const view = workersView(work, new Date(now), undefined, release);
@@ -305,8 +305,7 @@ export default function WorkersPage({ work, observedAt, setSelected, setView, to
   // A session the runtime no longer reports is not open: it is listed, marked, but never counted as working.
   const stale = view.running.filter(row => row.stale).length;
   const openCount = view.running.length - stale;
-  const onEnded = refresh && sessionEpoch ? () => { void refresh(sessionEpoch.current).catch(() => {}); } : undefined;
-  const table = (rows: WorkerRow[], label: string) => <Table rows={rows} label={label} work={work} now={now} release={release} open={open} setOpen={setOpen} token={token} setSelected={setSelected} setView={setView} onEnded={onEnded}/>;
+  const table = (rows: WorkerRow[], label: string) => <Table rows={rows} label={label} work={work} now={now} release={release} open={open} setOpen={setOpen} token={token} setSelected={setSelected} setView={setView}/>;
   const cpu = status?.cpu as { avg60: number | null; steal: number | null; celsius?: number | null; testBudget?: number | null; trialCap?: { now: number; full: number } | null; waiting?: boolean | null } | null | undefined;
   // GY-3401: each new session's share of test parallelism, and the trial cap — halved while the CPU is hot.
   // GY-3416: and the guard's own word while it holds every new launch.

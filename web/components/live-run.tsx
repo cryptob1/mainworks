@@ -11,13 +11,12 @@ type RunLogChunk = { run: { account: string | null; kind: string }; lines: { at:
  * scroll the earlier output back; scrolling away from the bottom stops the following until the
  * reader returns to it. It is read-only: nothing here writes to the run, and no control can type.
  */
-export default function LiveRun({ workId, run, token, onEnded }: { workId: string; run: string; token: string; onEnded?: () => void }) {
+export default function LiveRun({ workId, run, token }: { workId: string; run: string; token: string }) {
   const [lines, setLines] = useState<RunLogChunk['lines'] | null>(null);
   const [error, setError] = useState('');
   const [ended, setEnded] = useState(false);
   const [account, setAccount] = useState<string | null>(null);
   const cursor = useRef(0), following = useRef(true), endedRef = useRef(false);
-  const onEndedRef = useRef(onEnded); onEndedRef.current = onEnded;
   const view = useRef<HTMLPreElement>(null);
   useEffect(() => {
     let active = true, reading = false;
@@ -38,9 +37,7 @@ export default function LiveRun({ workId, run, token, onEnded }: { workId: strin
         if (!response.ok) { setError(body.error ?? `The log could not be read (${response.status})`); return; }
         const chunk = body as RunLogChunk;
         setAccount(chunk.run.account); fresh.push(...chunk.lines);
-        const justEnded = chunk.ended && !endedRef.current;
         setEnded(chunk.ended); endedRef.current = chunk.ended;
-        if (justEnded) onEndedRef.current?.();
         if (chunk.cursor === cursor.current || !chunk.lines.length) break;
         cursor.current = chunk.cursor;
       }

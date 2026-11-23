@@ -56,10 +56,23 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
     try {
       await openWorkers(page, url);
       await expect(page.locator('[data-heavy-budget]')).toHaveText('13 heavy-job slots (this machine 4, vish-msi 4, omarchypc 5)', { timeout: 15_000 });
-      const lines = page.getByRole('list', { name: 'Machine load' }).getByRole('listitem');
-      await expect(lines).toHaveText(['this machine: 6 of 24 cores busy, 61°C', 'vish-msi: 3 of 24 cores busy, 58°C', 'omarchypc: 12 of 32 cores busy, 70°C']);
-      for (const line of await lines.all()) expect((await line.boundingBox())!.height).toBeLessThan(40);
-      await expect(page.locator('[data-heavy-budget], [data-machine-load]')).not.toContainText(['gy-compute']);
+      await expect(page.locator('[data-machine-load]')).toHaveCount(0);
+      const table = page.getByRole('table', { name: 'Hosts' });
+      const local = table.locator('[data-host="vishrog"]');
+      await expect(local.locator('[data-label="Host"]')).toHaveText('vishrog (this machine)');
+      await expect(local.locator('[data-label="Cores"]')).toHaveText('6 of 24 busy');
+      await expect(local.locator('[data-label="Temperature"]')).toHaveText('61°C');
+      const msi = table.locator('[data-host="gy-compute@vish-msi:2222"]');
+      await expect(msi.locator('[data-label="Host"]')).toHaveText('vish-msi');
+      await expect(msi.locator('[data-label="Cores"]')).toHaveText('3 of 24 busy');
+      await expect(msi.locator('[data-label="Temperature"]')).toHaveText('58°C');
+      const omarchy = table.locator('[data-host="gy-compute@omarchypc:2222"]');
+      await expect(omarchy.locator('[data-label="Host"]')).toHaveText('omarchypc');
+      await expect(omarchy.locator('[data-label="Cores"]')).toHaveText('12 of 32 busy');
+      await expect(omarchy.locator('[data-label="Temperature"]')).toHaveText('70°C');
+      const hostsSection = page.locator('section.hosts-section', { has: table });
+      await expect(hostsSection).not.toContainText('gy-compute');
+      await expect(hostsSection).not.toContainText(':2222');
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
     } finally { await page.close(); await close(); }
   });

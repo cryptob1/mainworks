@@ -85,12 +85,12 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
       await expect(page.getByRole('heading', { name: 'Hosts', level: 2 })).toBeVisible();
       const local = hosts.locator('[data-host="vishrog"]');
       await expect(local).toContainText('this machine');
-      await expect(local.locator('[data-label="Cores"]')).toHaveText(/^\d+$/);
+      await expect(local.locator('[data-label="Cores"]')).toHaveText(/^\d+ of \d+ busy$/);
       await expect(local.locator('[data-label="Temperature"]')).toHaveText(/^(\d+°C|—)$/);
       await expect(local.locator('[data-label="Steal"]')).toHaveText(/^\d+%$/);
       await expect(local.locator('[data-label="Runs now"]')).toHaveText('2');
       const added = hosts.locator('[data-host="gy-compute@prepped"]');
-      await expect(added.locator('[data-label="Cores"]')).toHaveText(/^\d+$/);
+      await expect(added.locator('[data-label="Cores"]')).toHaveText(/^\d+ of \d+ busy$/);
       await expect(added.locator('[data-label="Temperature"]')).toHaveText(/^(\d+°C|—)$/);
       await expect(added.locator('[data-label="Steal"]')).toHaveText(/^\d+%$/);
       await expect(added.locator('[data-label="Runs now"]')).toHaveText('2');
