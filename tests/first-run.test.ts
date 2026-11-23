@@ -6,6 +6,7 @@ import { firstRunState, hasMergedWork } from '../src/model/first-run.js';
 import FirstRunPage from '../web/pages/first-run.js';
 import type { Dashboard } from '../web/pages/dashboard.js';
 import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 test('unit:first-run — step 2 passes only after a live request answers on a registered model id and surfaces provider errors', () => {
   const noRepo = firstRunState({ repository: null }, []);
@@ -102,7 +103,7 @@ test('unit:first-run — FirstRunPage renders each step with its terminal equiva
   assert.match(step3, /mainworks create task\.json/);
   assert.match(step3, /mainworks ready GY-1/);
 
-  const task = { id: 'w1', key: 'GY-7', title: 'Fix port flag', stage: 'implementing' } as unknown as Work;
+  const task = workFixture({ id: 'w1', key: 'GY-7', title: 'Fix port flag', stage: 'build' });
   const step4 = renderStep({ repository: 'owner/repo', actor: { id: 'op', role: 'admin' }, fleet: passingFleet }, [task]);
   assert.match(step4, /data-first-run-step="4"/);
   assert.match(step4, /Fix port flag/);
