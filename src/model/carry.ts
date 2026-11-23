@@ -2,6 +2,7 @@ import { pathScopesOverlap } from './documentation-glob.js';
 import type { Evidence } from './evidence.js';
 import { exactApproval, type ReviewProvider } from './review.js';
 import type { Work } from './work.js';
+import { docsSignoffProof } from './docs-signoff.js';
 
 /**
  * Binding carry across a Graphyard-authored merge of the base into a candidate (a base refresh).
@@ -179,13 +180,15 @@ export function currentCarry(work: CarryBearer): QueueCarry | null {
  * record carried more than once — across two base refreshes — still be the one the latest
  * decision names.
  */
-export function evidenceBindsCandidate(work: CarryBearer, evidence: Pick<Evidence, 'id' | 'proof' | 'sha' | 'baseSha'>): boolean {
+export function evidenceBindsCandidate(work: CarryBearer & { observation?: Work['observation'] }, evidence: Pick<Evidence, 'id' | 'proof' | 'sha' | 'baseSha' | 'docsDigest'>): boolean {
   const candidate = work.candidate;
   if (!candidate) return false;
   if (evidence.sha === candidate.sha && evidence.baseSha === candidate.baseSha) return true;
   // A person (GY-2986) or the master (GY-3429) checked the commit itself: the base tip moving
   // under it asks them nothing new. Trial evidence keeps its base binding.
   if (evidence.sha === candidate.sha && /^(human|manual):/.test(evidence.proof)) return true;
+  // A docs sign-off (GY-3716) judged the documentation, so it stands while the head's docs are byte-identical.
+  if (docsSignoffProof(evidence.proof) && evidence.docsDigest && work.observation?.candidate.sha === candidate.sha && work.observation.docsDigest === evidence.docsDigest) return true;
   const carry = currentCarry(work);
   return !!carry && carry.evidence.some(entry => entry.carried && entry.proof === evidence.proof && entry.evidenceId === evidence.id);
 }
