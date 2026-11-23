@@ -138,8 +138,9 @@ def answers():
             with state:
                 path = os.path.join(session, 'answer.bundle')
                 open(path, 'wb').write(base64.b64decode(reply['commits']))
-                git('fetch', '-q', path, 'HEAD')
-                git('merge', '-q', '--ff-only', 'FETCH_HEAD')
+                tips = out('bundle', 'unbundle', path).split()
+                if tips:
+                    git('merge', '-q', '--ff-only', tips[0])
         target = os.path.join(session, 'answer-' + reply['id'] + '.json')
         open(target + '.part', 'wb').write(text)
         os.rename(target + '.part', target)
@@ -225,7 +226,7 @@ export async function runRemoteSession(input: RemoteSession): Promise<number> {
       if (bundle) {
         const path = join(scratch, `${randomUUID()}.bundle`);
         await writeFile(path, Buffer.from(bundle, 'base64'));
-        await git('fetch', '-q', path, 'refs/graphyard/work');
+        await git('bundle', 'unbundle', path);
         await rm(path, { force: true });
       }
       await git('reset', '-q', '--hard', head);
