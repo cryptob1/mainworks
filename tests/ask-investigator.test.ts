@@ -47,8 +47,9 @@ test('integration:ask-investigator — one read-only headless session on the ite
     const bin = await temporaryDirectory('ask-investigator-bin'), scratch = await temporaryDirectory('ask-investigator-tmp');
     writeFileSync(join(bin, 'claude'), fakeRuntime, { mode: 0o755 });
     const record = join(bin, 'record.json');
+    // The built CLI's compile cache would otherwise land in scratch, which must hold only the investigator's checkouts.
     const ask = async (mode: string, extra: Record<string, string> = {}) => {
-      const env: NodeJS.ProcessEnv = { ...process.env, ...extra, PATH: `${bin}:${process.env.PATH}`, TMPDIR: scratch, FAKE_MODE: mode, FAKE_RECORD: record, GRAPHYARD_URL: f.url, GRAPHYARD_TOKEN: f.tokens.master };
+      const env: NodeJS.ProcessEnv = { ...process.env, ...extra, PATH: `${bin}:${process.env.PATH}`, TMPDIR: scratch, NODE_COMPILE_CACHE: join(bin, 'compile-cache'), FAKE_MODE: mode, FAKE_RECORD: record, GRAPHYARD_URL: f.url, GRAPHYARD_TOKEN: f.tokens.master };
       delete env.GRAPHYARD_TOKEN_FILE;
       return JSON.parse((await promisify(execFile)(process.execPath, [cli, 'ask', item.key, 'Where', 'is', 'the', 'head', 'named?'], { cwd: repo, env })).stdout);
     };
