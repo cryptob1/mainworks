@@ -86,7 +86,7 @@ function evaluateBuilder(account: any): FirstRunBuilderAccount {
     && account?.loggedIn !== false
     && account?.eligible !== false
     && !!modelId
-    && smoke?.result === 'pass';
+    && (smoke?.result === 'pass' || (!!account?.checkedLive && account?.quota === 'available'));
   let error: string | null = null;
   if (!passed) {
     if (smoke?.result === 'fail') {
@@ -104,7 +104,8 @@ function evaluateBuilder(account: any): FirstRunBuilderAccount {
 
 /**
  * Derive the four first-run steps from the live `/api/status` and `/api/work-snapshot` reads.
- * Step 2 passes only after a live request (`smoke.result === 'pass'`) answers on a registered model id.
+ * Step 2 passes only after a live request answers on a registered model id: a passing smoke, or a host live check
+ * (`checkedLive`) that found the quota available.
  */
 export function firstRunState(status: any, work: readonly Work[], startedId?: string | null): FirstRunState {
   const repository = typeof status?.repository === 'string' && status.repository.trim() ? status.repository.trim() : null;

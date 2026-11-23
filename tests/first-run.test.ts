@@ -70,6 +70,26 @@ test('unit:first-run — step 2 passes only after a live request answers on a re
   assert.equal(passed.step2Done, true);
   assert.equal(passed.builder?.modelId, 'claude-opus-5-5');
 
+  const hostChecked = firstRunState({
+    repository: 'owner/repo',
+    fleet: {
+      roles: [{ role: 'worker', accounts: ['claude-a'] }],
+      accounts: [{ name: 'claude-a', runtime: 'claude', modelId: 'claude-opus-5-5', host: 'box', enabled: true, loggedIn: true, eligible: true, smoke: null, checkedLive: '2026-11-23T05:00:00Z', quota: 'available' }],
+    },
+  }, []);
+  assert.equal(hostChecked.step2Done, true, 'a host live check that found the quota available passes step 2');
+  assert.equal(hostChecked.currentStep, 3);
+
+  const hostExhausted = firstRunState({
+    repository: 'owner/repo',
+    fleet: {
+      roles: [{ role: 'worker', accounts: ['claude-a'] }],
+      accounts: [{ name: 'claude-a', runtime: 'claude', modelId: 'claude-opus-5-5', host: 'box', enabled: true, loggedIn: true, eligible: true, smoke: null, checkedLive: '2026-11-23T05:00:00Z', quota: 'exhausted', reason: 'You have hit your usage limit.' }],
+    },
+  }, []);
+  assert.equal(hostExhausted.step2Done, false);
+  assert.equal(hostExhausted.builder?.error, 'You have hit your usage limit.');
+
   assert.equal(hasMergedWork([]), false);
   assert.equal(hasMergedWork([{ stage: 'done', delivery: { mergedAt: '2026-11-22T00:00:00Z' } } as unknown as Work]), true);
 });
