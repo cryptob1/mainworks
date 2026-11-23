@@ -103,35 +103,59 @@ test('unit:first-run — GET /api/first-run/issues returns up to 3 small open is
     assert.equal(response.status, 200);
     const body = await response.json() as { issues: { number: number }[] };
     assert.deepEqual(body.issues.map(i => i.number), [2, 1]);
+    const post = async (path: string, payload: unknown, key: string) => {
+      const res = await fetch(`http://127.0.0.1:${port}/api/${path}`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer tok', 'Content-Type': 'application/json', 'Idempotency-Key': key },
+        body: JSON.stringify(payload),
+      });
+      assert.equal(res.status, 200);
+      return await res.json() as Work;
+    };
+    const created = await post(
+      'work',
+      draftFirstRunTask({ issue: { number: 88, title: 'Fix port flag', body: 'Add --port', labels: ['small'], url: null } }),
+      'first-run-test-create',
+    );
+    const activeWork = await post(
+      `work/${encodeURIComponent(created.id)}/ready`,
+      { expectedRevision: created.revision, reason: 'Started from first-run setup' },
+      'first-run-test-ready',
+    );
+    const noop = () => {};
+    const renderStep = (status: any, work: Work[] = []) => renderToStaticMarkup(createElement(FirstRunPage, {
+      token: 'tok', work, board: null, status, error: '', connected: true, lastUpdated: null,
+      view: 'home', setView: noop, filter: null, setFilter: noop, selected: null, setSelected: noop, creating: false, setCreating: noop,
+      busy: false, setBusy: noop, observedAt: Date.now(), jobs: [], query: '', setQuery: noop, operatorAgents: [], operatorAgentsError: null,
+      features: { validation: null, releases: null, automation: null }, events: [], editingRequirements: false, setEditingRequirements: noop,
+      sessionEpoch: { current: 0 }, api: async () => ({}), refresh: async () => {}, action: async () => {}, setError: noop, signOut: noop,
+    } as Dashboard));
+
+    const step1 = renderStep({ repository: null, actor: { id: 'op', role: 'admin' } });
+    assert.match(step1, /Connect a repository/);
+    assert.match(step1, /mainworks up --repo OWNER\/NAME/);
+    assert.doesNotMatch(step1, /npx mainworks/);
+
+    const step2 = renderStep({ repository: 'owner/repo', actor: { id: 'op', role: 'admin' }, fleet: { roles: [], accounts: [] } });
+    assert.match(step2, /mainworks master registry propose --apply/);
+    assert.doesNotMatch(step2, /npx mainworks/);
+
+    const passingFleet = {
+      roles: [{ role: 'worker', accounts: ['claude-a'] }],
+      accounts: [{ name: 'claude-a', runtime: 'claude', modelId: 'claude-opus-5-5', host: 'box', enabled: true, loggedIn: true, eligible: true, smoke: { result: 'pass', reason: null } }],
+    };
+    const step3 = renderStep({ repository: 'owner/repo', actor: { id: 'op', role: 'admin' }, fleet: passingFleet });
+    assert.match(step3, /mainworks create task\.json/);
+    assert.match(step3, /mainworks ready GY-1/);
+    assert.doesNotMatch(step3, /npx mainworks/);
+
+    const step4 = renderStep({ repository: 'owner/repo', actor: { id: 'op', role: 'admin' }, fleet: passingFleet }, [activeWork]);
+    assert.match(step4, /data-first-run-step="4"/);
+    assert.match(step4, /Fix port flag/);
+    assert.match(step4, new RegExp(`mainworks status ${activeWork.key}`));
+    assert.doesNotMatch(step4, /npx mainworks/);
   } finally {
     await new Promise<void>(resolve => http.close(() => resolve()));
     await store.close();
   }
-
-  const noop = () => {};
-  const renderStep = (status: any, work: Work[] = []) => renderToStaticMarkup(createElement(FirstRunPage, {
-    token: 'tok', work, board: null, status, error: '', connected: true, lastUpdated: null,
-    view: 'home', setView: noop, filter: null, setFilter: noop, selected: null, setSelected: noop, creating: false, setCreating: noop,
-    busy: false, setBusy: noop, observedAt: Date.now(), jobs: [], query: '', setQuery: noop, operatorAgents: [], operatorAgentsError: null,
-    features: { validation: null, releases: null, automation: null }, events: [], editingRequirements: false, setEditingRequirements: noop,
-    sessionEpoch: { current: 0 }, api: async () => ({}), refresh: async () => {}, action: async () => {}, setError: noop, signOut: noop,
-  } as Dashboard));
-
-  const step1 = renderStep({ repository: null, actor: { id: 'op', role: 'admin' } });
-  assert.match(step1, /Connect a repository/);
-  assert.match(step1, /mainworks up --repo OWNER\/NAME/);
-  assert.doesNotMatch(step1, /npx mainworks/);
-
-  const step2 = renderStep({ repository: 'owner/repo', actor: { id: 'op', role: 'admin' }, fleet: { roles: [], accounts: [] } });
-  assert.match(step2, /mainworks master registry propose --apply/);
-  assert.doesNotMatch(step2, /npx mainworks/);
-
-  const passingFleet = {
-    roles: [{ role: 'worker', accounts: ['claude-a'] }],
-    accounts: [{ name: 'claude-a', runtime: 'claude', modelId: 'claude-opus-5-5', host: 'box', enabled: true, loggedIn: true, eligible: true, smoke: { result: 'pass', reason: null } }],
-  };
-  const step3 = renderStep({ repository: 'owner/repo', actor: { id: 'op', role: 'admin' }, fleet: passingFleet });
-  assert.match(step3, /mainworks create task\.json/);
-  assert.match(step3, /mainworks ready GY-1/);
-  assert.doesNotMatch(step3, /npx mainworks/);
 });
