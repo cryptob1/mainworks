@@ -48,6 +48,7 @@ import { formatAge } from '../model/duration.js';
 import { loadProjectDelivery, parseProjectDelivery } from '../model-boundary/project-applications.js';
 import { backedOffProfiles, readDispatchCursor, type DispatchCursor } from '../dispatch/cursor.js';
 import { liveReviewRequest } from '../model/dispatch.js';
+import { remoteWorkerRuns } from '../headless-session.js';
 import { readReviewLedger, staleReviewReason, type ReviewRecord } from '../reviewer.js';
 import { allowanceSentence, allowanceWarning } from '../model/allowance.js';
 import { benchResultsPath, benchStatus, readBenchResults } from '../bench.js';
@@ -331,6 +332,8 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     accounts: accountAllowances(fleet, now),
     workers: `${sessions.filter(session => session.kind === 'implementation').length}/${workersAllowed(master, fleet?.roles ? { roles: fleet.roles.map(role => ({ ...role, name: role.role })) } : null)}`,
     sessions,
+    // GY-3405: the latest sessions that ran on an added host, running or ended: which item, where, and how it stands.
+    remoteSessions: remoteWorkerRuns(root).slice(0, 10),
     freeWorkers: health.filter(entry => entry.healthy).map(entry => entry.profile.name),
   };
 }

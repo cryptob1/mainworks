@@ -21,7 +21,8 @@ import { hostProbeScript, hostShimDigest, hostShimScript, missingTrialVerbs } fr
 import { trialAppArmorProfilePath, trialAppArmorProfileText } from './merge-writer/trial-apparmor.js';
 import { shellQuote } from './install/transport.js';
 
-export interface HostRecord { target: string; addedAt: string }
+/** `sessions` (GY-3405): how many agent sessions the host takes at once; absent or 0, it takes test shards only. */
+export interface HostRecord { target: string; addedAt: string; sessions?: number }
 /** GY-3517: `at` is when this probe read the host; `update` marks one away only because its shim lacks a trial verb. */
 export interface HostReading { host: string; local?: boolean; at?: string; away: boolean; /** GY-3601: when an away host stopped answering. */ since?: string; update?: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; /** GY-3528: cores busy (the 1-minute load). */ busy?: number | null; stat?: { total: number; steal: number } | null }
 
@@ -285,6 +286,24 @@ export async function removeHost(target: string, options: { file?: string } = {}
   const next = hosts.filter(host => host.target !== target);
   await writeHosts(file, next);
   return { removed: true, hosts: next };
+}
+
+/** GY-3405: why `target` cannot take agent sessions now, in one line; null when its helper runs them. */
+export async function sessionHelperProblem(target: string, run: ChildRun = defaultChildRun): Promise<string | null> {
+  const probe = await probeHost(target, run);
+  if (probe.ok && probe.verbs?.includes('run-session:1')) return null;
+  return probe.ok || probe.update ? `${target}'s helper is older than this release and takes no sessions: run graphyard host prepare and its script there first` : probe.reason;
+}
+
+/** GY-3405: open an added host to `sessions` agent sessions at once (0 closes it to them), once its helper runs them. */
+export async function setHostSessions(target: string, sessions: number, options: { file?: string; run?: ChildRun } = {}) {
+  const file = options.file ?? hostsFile();
+  if (!Number.isSafeInteger(sessions) || sessions < 0 || sessions > 64) throw new Error(`Name how many sessions ${target} takes at once, 0 to 64: got ${sessions}`);
+  const hosts = await readHosts(file);
+  if (!hosts.some(host => host.target === target)) throw new Error(`${target} is not added: run graphyard host add ${target} first`);
+  const problem = sessions ? await sessionHelperProblem(target, options.run) : null;
+  if (problem) throw new Error(problem);
+  await writeHosts(file, hosts.map(host => host.target === target ? { ...host, sessions } : host));
 }
 
 /** One cycle's readings: this machine first, then every recorded host; steal is measured from the previous cycle's counters. */
