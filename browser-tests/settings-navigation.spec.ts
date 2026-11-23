@@ -107,7 +107,7 @@ test('e2e:settings-navigation — a worker has no admin configuration controls',
   await entry(page, 'Settings');
   await expect(tabs(page).getByRole('button')).toHaveText(['Workers', 'Costs', 'Help']);
   await entry(page, 'Work');
-  await tabs(page).getByText('Advanced', { exact: true }).click();
-  await tabs(page).getByRole('button', { name: 'Test cases', exact: true }).click();
-  await heading(page, 'Test-case library');
+  await heading(page, 'Work');
+  // An empty test-case library is the admin's to fill, so a worker sees no Test cases tab (GY-3485).
+  await expect(tabs(page).getByRole('button', { name: 'Test cases', exact: true, includeHidden: true })).toHaveCount(0);
 });

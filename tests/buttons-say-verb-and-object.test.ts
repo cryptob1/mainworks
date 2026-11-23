@@ -51,7 +51,7 @@ function makeDashboard(overrides: Partial<Dashboard> = {}): Dashboard {
     token: 'fixture', work, status, error: '', connected: true, lastUpdated: '12:00:00', view: 'work', setView: noop,
     filter: null, setFilter: noop, selected: null, setSelected: noop,
     creating: false, setCreating: noop, busy: false, setBusy: noop, observedAt: NOW, jobs: [], query: '', setQuery: noop,
-    operatorAgents: [], operatorAgentsError: null, features: { validation: null, releases: null, automation: null },
+    operatorAgents: [], operatorAgentsError: null, features: { validation: null, releases: null, automation: null, scenarios: null },
     events: [], editingRequirements: false, setEditingRequirements: noop, sessionEpoch: { current: 0 },
     api: async (path: string) => boardApi(path, 'admin'), refresh: async () => {}, action: async () => {},
     setError: noop, signOut: noop, ...overrides,
