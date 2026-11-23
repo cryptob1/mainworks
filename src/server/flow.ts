@@ -7,7 +7,7 @@ interface Queryable { query: (text: string, values: unknown[]) => Promise<{ rows
 const flowKinds = ['rework', 'merge.intent', 'merge.trial', 'merge.refused', 'merge.serve-revert'];
 /** The 7-day window and a day before it, so a stay that began before the window is timed from its start. */
 const readSpanMs = 8 * 24 * 3_600_000;
-const sql = `SELECT work_id, kind, created_at,
+const columns = `work_id, kind, created_at, seq,
     CASE WHEN payload ? 'work' THEN payload->'work'->>'stage' END AS stage,
     CASE WHEN kind = 'rework' THEN COALESCE(payload->'details'->>'reason', payload->'details'->'intent'->>'reason')
       WHEN kind = 'merge.refused' THEN payload->>'reason' END AS reason,
@@ -15,8 +15,16 @@ const sql = `SELECT work_id, kind, created_at,
     CASE WHEN kind IN ('merge.trial', 'merge.refused') THEN payload->>'head' END AS head,
     CASE WHEN kind = 'merge.trial' THEN payload->>'durationMs' END AS duration_ms,
     CASE WHEN kind = 'merge.trial' THEN payload ? 'flaked' END AS flaked,
-    CASE WHEN kind = 'merge.serve-revert' THEN payload->>'outcome' = 'reverted' END AS reverted
-  FROM events WHERE work_id IS NOT NULL AND created_at > $1 AND (payload ? 'work' OR kind = ANY($2::text[])) ORDER BY seq`;
+    CASE WHEN kind = 'merge.serve-revert' THEN payload->>'outcome' = 'reverted' END AS reverted`;
+/**
+ * GY-3699: the window's first row, by its insertion-time index. The whole-document rows from it are
+ * read through their partial index and the flow kinds through theirs: testing `payload ? 'work'` on
+ * every row of the window detoasted 750,000 payloads and ran past the 60 s statement timeout.
+ */
+const firstSql = 'SELECT seq FROM events WHERE created_at > $1 ORDER BY created_at LIMIT 1';
+const sql = `SELECT ${columns} FROM events WHERE work_id IS NOT NULL AND seq >= $1 AND payload ? 'work'
+  UNION ALL SELECT ${columns} FROM events WHERE work_id IS NOT NULL AND created_at > $2 AND kind = ANY($3::text[]) AND NOT (payload ? 'work')
+  ORDER BY seq`;
 
 /**
  * Each item's attempts from its own document, only the three fields the flow reads: the fleet serves
@@ -26,7 +34,7 @@ const sql = `SELECT work_id, kind, created_at,
 const attemptsSql = `SELECT w.id, (SELECT jsonb_agg(jsonb_build_object('claimedAt', a->'claimedAt', 'endedAt', a->'endedAt', 'end', a->'end'))
     FROM jsonb_array_elements(CASE WHEN jsonb_typeof(w.document->'pipeline'->'attempts') = 'array' THEN w.document->'pipeline'->'attempts' ELSE '[]'::jsonb END) a) AS attempts
   FROM work_items w JOIN work_index i ON i.id = w.id
-  WHERE NOT i.settled OR i.merged_at > $1 OR w.id IN (SELECT work_id FROM events WHERE created_at > $1 AND work_id IS NOT NULL)`;
+  WHERE NOT i.settled OR i.merged_at > $1 OR EXISTS (SELECT 1 FROM events e WHERE e.work_id = w.id AND e.seq >= $2)`;
 type Attempts = Map<string, { claimedAt: string; endedAt: string | null; end?: string | null }[]>;
 
 /** The rows are read at most once a minute per database: master status and the Work page poll /api/flow. */
@@ -35,7 +43,8 @@ function rows(pool: Queryable, now: number) {
   const hit = cache.get(pool);
   if (hit && now - hit.at < 60_000 && now >= hit.at) return hit.rows;
   const since = new Date(now - readSpanMs);
-  const read = Promise.all([pool.query(sql, [since, flowKinds]), pool.query(attemptsSql, [since])]).then(([ledger, attempts]) => ({ ledger: ledger.rows,
+  const read = pool.query(firstSql, [since]).then(first => first.rows[0]?.seq ?? '9223372036854775807')
+    .then(seq => Promise.all([pool.query(sql, [seq, since, flowKinds]), pool.query(attemptsSql, [since, seq])])).then(([ledger, attempts]) => ({ ledger: ledger.rows,
     attempts: new Map(attempts.rows.filter(row => Array.isArray(row.attempts)).map(row => [row.id, row.attempts])) as Attempts }));
   cache.set(pool, { at: now, rows: read });
   read.catch(() => cache.delete(pool));
