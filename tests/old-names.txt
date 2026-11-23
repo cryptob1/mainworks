@@ -93,6 +93,8 @@ pathname = '/graphyard'
 # Assertions that the old name is gone from what people read
 (doesNotMatch|not\.toContain(Text)?|!.*includes)\(.*[Gg]raphyard.*
 /graphyard\.\*still work
+# A test fixture whose content is a rename sweep from the old name
+const graphyardSymbol_\$\{i\} = "graphyard-value-
 graphyard\\/
 graphyard\\.mjs
 graphyard\\\.(example|json|mjs)

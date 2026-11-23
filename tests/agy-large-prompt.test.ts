@@ -83,7 +83,7 @@ if (process.env.AGY_REVIEW_HEAD && process.env.AGY_REVIEW_BASE) {
   const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
   git('init', '-q', '--initial-branch=main');
   git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
-  const lines = Array.from({ length: 2400 }, (_, i) => `export const mainworksSymbol_${i} = "mainworks-value-${i}-${'a'.repeat(40)}";`).join('\n') + '\n';
+  const lines = Array.from({ length: 2400 }, (_, i) => `export const graphyardSymbol_${i} = "graphyard-value-${i}-${'a'.repeat(40)}";`).join('\n') + '\n';
   await writeFile(join(root, 'README.md'), 'Named spec file.\n');
   await writeFile(join(root, 'sweep.ts'), lines);
   git('add', '.'); git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'base');
