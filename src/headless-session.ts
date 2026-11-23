@@ -1,5 +1,5 @@
-import { headlessArgs, headlessArgv, headlessPromptInput, HeadlessConfigurationError } from './headless-argv.js';
-export { continuable, headlessKind, headlessArgs, headlessArgv, headlessPromptInput, HeadlessConfigurationError } from './headless-argv.js';
+import { headlessArgs, headlessArgv, headlessPromptInput, headlessPromptNeedsFile, HeadlessConfigurationError } from './headless-argv.js';
+export { continuable, headlessKind, headlessArgs, headlessArgv, headlessPromptInput, headlessPromptNeedsFile, headlessPromptPointer, HeadlessConfigurationError } from './headless-argv.js';
 // Concern: headless sessions — reviews, and since GY-3259 workers (at the end of this file). A reviewer no longer needs a Herdr pane,
 // a TUI start wait or a CLI call to post: its runtime runs once, non-interactively, as one child
 // process in the session's checkout, under the same coordinator confinement and credential mask a
@@ -42,6 +42,13 @@ export type HeadlessExec = (command: string, args: string[], options: { cwd: str
 /** The answer's text is bounded: what the run printed past this is ignored. */
 const outputLimit = 1024 * 1024;
 const readText = (file: string) => { try { return readFileSync(file, 'utf8'); } catch { return null; } };
+/** GY-3717: when a prompt exceeds the inline limit and its runtime has no stdin form, write it to the run directory as 0600 and return its path. */
+function writePromptFile(kind: string, prompt: string, directory: string, contract?: RegisteredLaunch | null): string | undefined {
+  const file = runFiles(directory).prompt;
+  if (!headlessPromptNeedsFile(kind, prompt, contract)) { rmSync(file, { force: true }); return undefined; }
+  writeFileSync(file, prompt, { mode: 0o600 });
+  return file;
+}
 /**
  * One child, detached (runner/pi.ts detachedLaunch): it leads its own session and, under a systemd
  * service, its own transient scope, so a stop of the loop's unit never takes it; stdin is closed
@@ -238,7 +245,8 @@ export async function startHeadlessSession<T>(input: HeadlessSession<T>): Promis
       const prompt = attempt === 1 ? launch.request : `${launch.request}\n\nYour previous answer was not accepted: ${refused}. Answer again with the one JSON object asked for.`;
       const env = runEnvironment(process.env, launch.environment);
       const stdin = headlessPromptInput(launch.kind, prompt, launch.contract);
-      const argv = [...launch.wrapper, ...await headlessArgv(launch, prompt, env)];
+      const promptFile = writePromptFile(launch.kind, prompt, runDirectory, launch.contract);
+      const argv = [...launch.wrapper, ...await headlessArgv({ ...launch, promptFile }, prompt, env)];
       const active = liveRun(input.name);
       if (active) active.agent = launch.kind;
       await input.onRun?.({ id, kind: launch.kind, ...(refused ? { reason: refused } : {}) });
@@ -378,7 +386,8 @@ export async function startHeadlessWorker(input: HeadlessWorker): Promise<{ id: 
   const env = runEnvironment(process.env, { ...launch.environment, GRAPHYARD_RUN_LOG: join(directory, runLogName), GRAPHYARD_E2E_SERVE_PORT: String(await freePort()) });
   const request = input.session ? input.prompt : launch.request;
   const stdin = headlessPromptInput(launch.kind, request, launch.contract);
-  const argv = [...input.supervisor, ...launch.wrapper, ...await headlessArgv({ ...launch, session: input.session }, request, env)];
+  const promptFile = writePromptFile(launch.kind, request, directory, launch.contract);
+  const argv = [...input.supervisor, ...launch.wrapper, ...await headlessArgv({ ...launch, session: input.session, promptFile }, request, env)];
   const stop = new AbortController(), detached = new AbortController();
   const running = input.exec(argv[0]!, argv.slice(1), { cwd: input.directory, env, timeoutMs: input.timeoutMs, signal: stop.signal, run: directory, detached: detached.signal, ...(stdin !== undefined ? { stdin } : {}) });
   const ended = await Promise.race([running.then(() => ({ ok: true }), () => ({ ok: false })), new Promise<null>(done => setTimeout(() => done(null), input.startupMs ?? workerStartupMs).unref())]);

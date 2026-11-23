@@ -101,11 +101,12 @@ test('unit:registry-discovers-agent-environments — propose discovers every ~/.
       ['cursor-a', 'cursor', 'cursor-default', { host: HOST, home: join(directory, 'cursor-a') }],
       ['opencode-a', 'opencode', 'opencode-default', { host: HOST, home: join(directory, 'opencode-a') }],
       ['opencode-b', 'opencode', 'opencode-default', { host: HOST, home: join(directory, 'opencode-b') }],
-      ['pi-a', 'pi', 'pi-default', { host: HOST, home: join(directory, 'pi-a') }],
-      ['pi-b', 'pi', 'pi-default', { host: HOST, home: join(directory, 'pi-b') }],
+      // The Pi homes hold a Z.AI key, so they are proposed Z.AI's strong model (GY-3705).
+      ['pi-a', 'pi', 'pi-glm-5.4', { host: HOST, home: join(directory, 'pi-a') }],
+      ['pi-b', 'pi', 'pi-glm-5.4', { host: HOST, home: join(directory, 'pi-b') }],
     ]);
     for (const account of proposal.accounts) assert.deepEqual(Object.keys(account.credential).sort(), ['home', 'host'], `${account.name} holds a reference, nothing more`);
-    assert.deepEqual(proposal.models.map((model: any) => model.name), ['claude-default', 'codex-default', 'cursor-default', 'opencode-default', 'pi-default']);
+    assert.deepEqual(proposal.models.map((model: any) => model.name), ['claude-default', 'codex-default', 'cursor-default', 'opencode-default', 'pi-glm-5.4']);
 
     // The role mapping: worker, reviewer, producer and master are all mapped; Pi serves the worker (GY-1746) and the narrow roles.
     const roles = Object.fromEntries(proposal.roles.map((role: any) => [role.name, role.accounts]));
