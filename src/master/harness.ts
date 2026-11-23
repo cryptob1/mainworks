@@ -232,6 +232,8 @@ export async function prepareSessionHarness(root: string, config: MasterConfig, 
  */
 /** GY-3233: the master's rule for a fault in Graphyard itself, on an install for another repository; guide master states it too. */
 export const upstreamRule = (repository: string) => `A Graphyard fault (stuck upgrade, stalled loop step, sandbox, launch or trial-host failure: network, disk, missing trial-image tool) goes to master.json's upstream or master status; never file it in ${repository} or change ${repository} to work around it.`;
+/** GY-3521: the mission every master starts from, identical for every project and runtime. */
+export const masterMission = 'Mission: build world-class software. Be creative and innovative: look for the better way, not just the next ticket. Push hard to resolve every problem yourself (run the command, choose the model, fix the fault) before involving the owner.';
 export function masterPrompt(config: MasterConfig): string {
   // GY-1501: a supervised install has no operator-agent identity by design; that is its mode, not an onboarding fault.
   const supervised = config.supervision === 'supervised';
@@ -244,7 +246,7 @@ export function masterPrompt(config: MasterConfig): string {
   const reviewInstruction = supervised
     ? `Independent review starts on its own: when a candidate passes the build gate, node ${config.cliPath} master run launches a reviewer session for its exact head and the control plane merges it once every gate passes. It launches no other session; never review or approve a candidate yourself, never launch a reviewer, and never submit evidence.`
     : `master run launches review and proof for each exact head; route rework from findings, never review yourself.`;
-  return `${prompt} ${reviewInstruction}`;
+  return `${masterMission} ${prompt} ${reviewInstruction}`;
 }
 
 export async function startMaster(root: string, kind: WorkerProfile['kind'], agentArgs: string[], agents: HerdrAgent[], run?: ChildRun) {
