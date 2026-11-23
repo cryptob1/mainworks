@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Work } from '../../src/model';
-import { sessionStaleThresholdMs, sessionState, workersView, type PrincipalSummary, type SessionRoleKind, type WorkerRow } from '../workers-view';
+import { sessionState, workersView, type PrincipalSummary, type SessionRoleKind, type WorkerRow } from '../workers-view';
 import { prSteps } from '../../src/model/pr-steps';
 import { transcriptRun } from '../../src/model/sessions';
 import { releaseView, type ReleaseView } from '../../src/model/release';
@@ -206,7 +206,7 @@ type HostRow = { host: string; local?: boolean; at?: string; away: boolean; upda
 /**
  * GY-3407: the hosts the loop watches — this machine first, then each one added with
  * `mainworks host add USER@HOST` — as the loop read them this cycle. A host that does not answer
- * reads Away and is read again next cycle. Merge trials send test shards to added hosts (GY-3412), which the note says.
+ * reads Away and is read again next cycle. Merge trials send test shards to added hosts (GY-3412).
  * GY-3517: each row is the latest probe, with how long ago it was read; one away only because its helper is too old says so.
  */
 function Hosts({ hosts, now }: { hosts: HostRow[]; now: number }) {
@@ -223,7 +223,7 @@ function Hosts({ hosts, now }: { hosts: HostRow[]; now: number }) {
         <td data-label="Runs now">{figure(host.runs)}</td></>}
       <td data-label="Read">{host.at ? `${formatAge(host.at, now)} ago` : '—'}</td>
     </tr>)}</tbody>
-  </table>{hosts.some(host => !host.local) ? <p className="muted" data-hosts-note>Merge trials send test shards to added hosts too; previews run on this machine.</p> : null}</section>;
+  </table></section>;
 }
 
 type SessionUsageRow = { session: string; cpu: number | null; cpuShare: number; memory: number; memoryShare: number; overSince: string | null };
@@ -233,11 +233,14 @@ type SessionUsageRow = { session: string; cpu: number | null; cpuShare: number; 
  * using far more than its share of a saturated machine for five minutes raises the overload alarm
  * above the table, naming it; one session alone on an idle machine may use it all.
  */
+/** The overload alarm stays in view above the fold that holds the usage table. */
+export function OverloadAlarms({ sessions, now }: { sessions: SessionUsageRow[]; now: number }) {
+  return <>{overloaded(sessions, now).map(session => <p key={session.session} className="notice danger" role="alert" data-overload={session.session}>Overload: {overloadAlarm(session, now)}</p>)}</>;
+}
 export function SessionUsage({ sessions, now }: { sessions: SessionUsageRow[]; now: number }) {
   if (!sessions.length) return null;
   const gib = (bytes: number) => `${(bytes / 2 ** 30).toFixed(1)} GiB`;
   return <section className="hosts-section"><h2>Session usage</h2>
-    {overloaded(sessions, now).map(session => <p key={session.session} className="notice danger" role="alert" data-overload={session.session}>Overload: {overloadAlarm(session, now)}</p>)}
     <table className="sessions-table hosts" aria-label="Session usage" data-session-usage>
       <thead><tr><th scope="col">Session</th><th scope="col">CPU</th><th scope="col">Memory</th></tr></thead>
       <tbody>{sessions.map(session => <tr key={session.session} data-session-usage-row={session.session}>
@@ -287,9 +290,9 @@ function ProjectMemorySection({ memory }: { memory?: any }) {
  * sessions open now — the agent, its item with a truncated title, its state of at most three
  * words and how long it has held it — where each row unfolds its session's live, read-only view,
  * with the sessions that ended and the per-account summary folded below.
- * The heading carries the host's CPU as the loop last read it (GY-3348): pressure and steal, the
- * two figures that explain why nothing new is launching when the host is saturated. Below the
- * sessions, the hosts table (GY-3407) lists this machine and every added host it watches.
+ * The heading carries the machine as the loop last read it (GY-3348, GY-3485): how busy and how hot.
+ * The rest — steal, test budget, trial cap, each session's cgroup usage and the hosts table
+ * (GY-3407) — sits in one closed Machine details fold.
  */
 export default function WorkersPage({ work, observedAt, setSelected, setView, token, status }: Pick<Dashboard, 'work' | 'observedAt' | 'setSelected' | 'setView' | 'token'> & { status?: Dashboard['status'] }) {
   const now = useLiveNow(observedAt);
@@ -301,21 +304,23 @@ export default function WorkersPage({ work, observedAt, setSelected, setView, to
   const openCount = view.running.length - stale;
   const table = (rows: WorkerRow[], label: string) => <Table rows={rows} label={label} work={work} now={now} release={release} open={open} setOpen={setOpen} token={token} setSelected={setSelected} setView={setView}/>;
   const cpu = status?.cpu as { avg60: number | null; steal: number | null; celsius?: number | null; testBudget?: number | null; trialCap?: { now: number; full: number } | null; waiting?: boolean | null } | null | undefined;
-  // GY-3401: each new session's share of test parallelism, and the trial cap — halved while the CPU is hot.
-  // GY-3416: and the guard's own word while it holds every new launch.
-  const cpuFigures = cpu ? [cpu.avg60 === null ? null : `Host CPU pressure ${Math.round(cpu.avg60)}% · steal ${cpu.steal === null ? '—' : `${Math.round(cpu.steal)}%`}`,
-    cpu.celsius == null ? null : `${cpu.avg60 === null ? 'Host CPU ' : ''}temperature ${Math.round(cpu.celsius)}°C`,
-    cpu.testBudget == null ? null : `${cpu.testBudget} test workers per session`,
-    cpu.trialCap ? `trials ${cpu.trialCap.now < cpu.trialCap.full ? `${cpu.trialCap.now} of ${cpu.trialCap.full}` : cpu.trialCap.full}` : null,
-    cpu.waiting ? 'launches waiting' : null].filter(Boolean).join(' · ') : '';
+  // GY-3485: the owner's line is how busy and how hot the machine is; steal, the test budget and the trial cap (GY-3401) sit in Machine details.
+  const machine = cpu && (cpu.avg60 != null || cpu.celsius != null) ? ['Machine:', [cpu.avg60 == null ? null : `${Math.round(cpu.avg60)}% busy`, cpu.celsius == null ? null : `${Math.round(cpu.celsius)}°C`,
+    cpu.waiting ? 'launches waiting' : null].filter(Boolean).join(' · ')].join(' ') : '';
+  const internals = cpu ? [cpu.steal == null ? null : `steal ${Math.round(cpu.steal)}%`, cpu.testBudget == null ? null : `${cpu.testBudget} test workers per session`,
+    cpu.trialCap ? `trials ${cpu.trialCap.now < cpu.trialCap.full ? `${cpu.trialCap.now} of ${cpu.trialCap.full}` : cpu.trialCap.full}` : null].filter(Boolean).join(' · ') : '';
+  const sessions = (status?.sessions ?? []) as SessionUsageRow[], hosts = status?.hosts ?? [];
   return <>
     <PageHeader title="Workers" fact={`${openCount} agent ${openCount === 1 ? 'session' : 'sessions'} open.${stale ? ` ${stale} not seen recently.` : ''} ${view.finished.length} ended.`}>
-      {cpuFigures ? <span className="host-cpu" data-host-cpu>{cpuFigures}</span> : null}</PageHeader>
+      {machine ? <span className="host-cpu" data-host-cpu>{machine}</span> : null}</PageHeader>
+    <OverloadAlarms sessions={sessions} now={now}/>
     {view.running.length ? table(view.running, 'Agent sessions') : <EmptyState title="No agent session is open.">Agents start here when the loop hands them an item.</EmptyState>}
-    <p className="muted workers-note">Building means an agent is writing the change; Rework, that it is making the requested changes; In review, someone else judges it; Proving runs the proofs; the Master runs the loop. An agent never reviews or approves its own work. A session not seen for {Math.round(sessionStaleThresholdMs / 60_000)} minutes reads Not seen, never as live.</p>
-    <SessionUsage sessions={(status?.sessions ?? []) as SessionUsageRow[]} now={now}/>
     <AccountAvailability accounts={(status?.fleet as { accounts?: FleetAccountView[] } | null | undefined)?.accounts ?? []} now={now}/>
-    <Hosts hosts={status?.hosts ?? []} now={now}/>
+    {internals || sessions.length || hosts.length ? <details className="panel finished-sessions machine-details"><summary>Machine details</summary>
+      {internals ? <p className="muted" data-machine-figures>{internals}</p> : null}
+      <SessionUsage sessions={sessions} now={now}/>
+      <Hosts hosts={hosts} now={now}/>
+    </details> : null}
     <ProjectMemorySection memory={status?.projectMemory}/>
     {/* A watched run that ends moves here: the section opens to it, so its panel stays in view. */}
     <details className="panel finished-sessions" open={view.finished.some(row => row.id === open) || undefined}><summary>Ended <span className="count">{view.finished.length}</span></summary>

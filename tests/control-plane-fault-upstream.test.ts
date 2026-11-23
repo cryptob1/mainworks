@@ -76,7 +76,7 @@ test('e2e:control-plane-fault-upstream — with upstream configured, a stuck upg
 
   const state = await cycles(3, config(upstream), effects, lines);
   assert.deepEqual(local, [], 'nothing is filed into owner/game');
-  assert.deepEqual(filed.map(entry => entry.key).sort(), [`control-plane-upgrade:${c}:health`, 'loop-step-stall:dispatch'], 'each fault is filed once to the upstream install, however many cycles see it');
+  assert.deepEqual(filed.map(entry => entry.key).sort(), ['control-plane-upgrade:health', 'loop-step-stall:dispatch'], 'each fault is filed once to the upstream install, however many cycles see it');
   assert.ok(filed.every(entry => entry.auth === `Bearer ${'u'.repeat(40)}`), 'the filing carries the upstream credential');
   assert.match(filed.find(entry => entry.key === 'loop-step-stall:dispatch')!.title, /dispatch step stalls/);
   assert.match(state.actions['loop-step-stall:dispatch']!.detail, /Filed GY-\d+ to the upstream install/);
@@ -89,7 +89,7 @@ test('e2e:control-plane-fault-upstream — without upstream, each fault raises o
   const attention = lines.filter(line => / attention failed: Mainworks fault/.test(line));
   assert.equal(attention.length, 2, 'one attention line per fault across three cycles');
   assert.equal(state.actions['loop-step-stall:dispatch']?.state, 'failed');
-  assert.match(state.actions[`control-plane-upgrade:${c}:health`]!.detail, /keeps failing at health.*No upstream install is configured/);
+  assert.match(state.actions['control-plane-upgrade:health']!.detail, /keeps failing at health.*No upstream install is configured/);
 });
 
 test('e2e:control-plane-fault-upstream — the master prompt and guide master state the upstream rule', () => {

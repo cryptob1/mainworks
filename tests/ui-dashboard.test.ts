@@ -37,7 +37,7 @@ function dashboard(overrides: Partial<Dashboard> = {}, role = 'admin'): Dashboar
     token: 'fixture', work, status: boardStatus(role), error: '', connected: true, lastUpdated: '12:00:00', view: 'work', setView: noop, filter: null, setFilter: noop,
    
     selected: null, setSelected: noop, creating: false, setCreating: noop, busy: false, setBusy: noop, observedAt: NOW, jobs: [], query: '', setQuery: noop,
-    operatorAgents: [], operatorAgentsError: null, features: { validation: null, releases: null, automation: null }, events: [], editingRequirements: false, setEditingRequirements: noop,
+    operatorAgents: [], operatorAgentsError: null, features: { validation: null, releases: null, automation: null, scenarios: null }, events: [], editingRequirements: false, setEditingRequirements: noop,
     sessionEpoch: { current: 0 }, api: async (path: string) => boardApi(path, role), refresh: async () => {},
     action: async () => {}, setError: noop, signOut: noop, ...overrides,
   };
@@ -310,10 +310,10 @@ test('unit:ui-workers-page — Workers is one compact table of agent sessions (a
   assert.doesNotMatch(first, /data-session="p16"/);
   assert.match(html, /data-session="p16"[\s\S]*?data-state="Ended"/);
   assert.match(html, /data-session="a15"[\s\S]*?data-state="Ended"/);
-  // No explanatory jargon on the first screen; the roles footnote reads as the page's help text.
+  // No explanatory jargon on the first screen, and no roles footnote (GY-3485): the table is the page.
   const words = visibleWords(first).join(' ');
   for (const term of ['principal', 'handle', 'liveness', 'sweep', 'epoch', 'lease', 'pane', 'reconcil']) assert.ok(!new RegExp(term, 'i').test(words), `"${term}" on the first screen: ${words}`);
-  assert.match(words, /An agent never reviews or approves its own work/);
+  assert.doesNotMatch(words, /An agent never reviews or approves its own work/);
   // No column is cut off: the table fills its width, the title truncates in its cell, and on a phone each agent is one card.
   const css = await read('web/style.css');
   assert.match(css, /\.sessions-table\{width:100%;/);

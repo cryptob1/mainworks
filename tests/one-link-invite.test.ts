@@ -24,6 +24,8 @@ const minute = 60_000, day = 24 * 60 * minute;
 async function funnelInstall(label: string) {
   let now = Date.now();
   const install = await servedInstall(label, { funnel: true, clock: () => now });
+  // GY-3690: the owner turned the public link on.
+  await install.call('/api/team-access/public-link', { on: true });
   await install.sync();
   const as = async (token: string, path: string, init: { method?: string; body?: unknown; headers?: Record<string, string> } = {}) => {
     const response = await fetch(install.base + path, { method: init.method ?? (init.body === undefined ? 'GET' : 'POST'), headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...init.headers }, ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }) });

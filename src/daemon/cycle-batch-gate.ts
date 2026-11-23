@@ -15,7 +15,7 @@ import type { Cycle } from './cycle.js';
 import { actionLine } from './run.js';
 import { actionDetailMax, message, storeAction } from './state.js';
 import { batchGateFlights as flights, busyTrialSlots } from './trial-slots.js';
-import { faultItem } from './control-plane.js';
+import { faultItem, fileLoopFault } from './control-plane.js';
 import { currentEvidence } from '../model/evidence.js';
 import { EnvironmentFault, declaredEnvironments, environmentSecretsFile, environmentStatePath, localEnvironment, loopLifecycle, trustedCheckout, type AppEnvironment } from '../app-environments.js';
 import { installSecretsDirectory } from '../e2e/steps.js';
@@ -166,7 +166,7 @@ export const gateFiledE2e = (key: string, repository: string): { proof: string; 
 
 /** A batch gate filing's item: its pinning test and its E2E case are named from its check and the gated repository. */
 export const gateFiledItem = (input: { title: string; description: string; key: string }, baseBranch: string, repository: string) =>
-  faultItem({ title: input.title, description: input.description, proof: pinningProof(input.key), repaired: { text: 'The batch gate passes again', proof: repairedProof }, e2e: gateFiledE2e(input.key, repository), reason: `Filed by the batch gate on ${baseBranch}` });
+  faultItem({ faultKey: input.key, title: input.title, description: input.description, proof: pinningProof(input.key), repaired: { text: 'The batch gate passes again', proof: repairedProof }, e2e: gateFiledE2e(input.key, repository), reason: `Filed by the batch gate on ${baseBranch}` });
 
 /**
  * GY-3443: while the gate's last outcome is verified, every open item owing `manual:batch-gate-repaired`
@@ -192,8 +192,13 @@ async function recordRepaired(record: GateRecord, work: readonly Work[], attest:
 export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<MergeWriterReads['git']> }, work: readonly Work[], trusted: () => string | null = () => null): GatePorts & { diagnose: DiagnosePort } {
   const git = reads.git;
   const file = async (input: { title: string; description: string; key: string }) => {
-    const created = await reads.createWork?.(gateFiledItem(input, reads.baseBranch, reads.gate?.repository ?? ''), input.key);
-    return { item: created?.key ?? null };
+    const result = await fileLoopFault(
+      { work, now: reads.now(), createWork: reads.createWork, note: reads.note },
+      gateFiledItem(input, reads.baseBranch, reads.gate?.repository ?? ''),
+      input.description,
+      input.key,
+    );
+    return { item: result.action === 'unwired' ? null : result.item };
   };
   const catalog = async (commit: string) => {
     // GY-3336: a repository with no e2e/cases directory — a fresh install of a repository Mainworks
@@ -246,6 +251,7 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
       return { revertSha: current };
     },
     file,
+    faultDedup: key => work.some(item => item.faultKey === key),
     flaky: check => openFlakyItem(work, check)?.key ?? null,
     // The full suite (a package.json change selects every test) and the whole catalog, each its own trial so the catalog's time is its own; then the preview cases, in a repository that holds them.
     diagnose: async commit => {

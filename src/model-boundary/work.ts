@@ -52,6 +52,8 @@ export const createSchema = z.object({
   closedQuestions: closedQuestionsSchema.optional(),
   // A yard repair (GY-3102): a fix for Mainworks's own fault takes its own route past the release cap, the dispatch order and the merge queue.
   yardRepair: z.boolean().optional(),
+  // GY-3693: stable fault identity for loop- and release-check-filed repair items, so repeats add a note instead of a duplicate item.
+  faultKey: z.string().trim().min(1).max(200).optional(),
   // Retired (GY-2875): where Mainworks itself opened an item; one filed with it keeps parsing.
   origin: z.unknown().optional(),
   // A system-driven item moves only through the loop: the master CLI refuses the hand actions the

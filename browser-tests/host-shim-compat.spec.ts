@@ -95,6 +95,8 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
 
       // Workers shows each host's latest probe with when it was read.
       await page.evaluate(() => { location.hash = 'workers'; });
+      // GY-3485: the hosts sit in the closed Machine details fold.
+      await page.getByText('Machine details', { exact: true }).click();
       const hostsTable = page.getByRole('table', { name: 'Hosts' });
       await expect(hostsTable.locator('[data-host="gy-compute@oldbox"]')).not.toHaveAttribute('data-away', /.*/);
       await expect(hostsTable.locator('[data-host="gy-compute@oldbox"] [data-label="Read"]')).toHaveText(/^\d+m ago$/);
