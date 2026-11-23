@@ -67,7 +67,7 @@ echo "dirty" > uncommitted.txt
 
   const workFrames: Array<{ head: string; work: string; bundle: string | null }> = [];
   await new Promise<void>((resolve, reject) => {
-    const child = spawn('python3', ['-I', '-c', sessionBoot.replace('/tmp/graphyard-session', sessionDir), runtime], {
+    const child = spawn('python3', ['-I', '-c', sessionBoot.replace('/tmp/mainworks-session', sessionDir), runtime], {
       cwd: host,
       env: { ...process.env, HOME: home },
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -79,8 +79,8 @@ echo "dirty" > uncommitted.txt
       for (let nl = stderrBuf.indexOf('\n'); nl !== -1; nl = stderrBuf.indexOf('\n')) {
         const line = stderrBuf.slice(0, nl);
         stderrBuf = stderrBuf.slice(nl + 1);
-        if (!line.startsWith('\u001egraphyard-')) continue;
-        const space = line.indexOf(' '), kind = line.slice('\u001egraphyard-'.length, space), body = line.slice(space + 1);
+        if (!line.startsWith('\u001emainworks-')) continue;
+        const space = line.indexOf(' '), kind = line.slice('\u001emainworks-'.length, space), body = line.slice(space + 1);
         if (kind === 'call') {
           const { id } = JSON.parse(body) as { id: string };
           child.stdin.write(`${JSON.stringify({ id, status: 0, stdout: '', stderr: '', commits: answerBundle })}\n`);
