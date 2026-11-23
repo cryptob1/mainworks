@@ -176,17 +176,21 @@ else:
                          'floorBytes': float(os.environ.get('GRAPHYARD_HOST_FLOOR_GB', ${defaultDiskFloorGb})) * 1e9, 'hwmon': '/sys/class/hwmon', 'pressureBoundSeconds': ${trialPressureBoundSeconds}}}
         # Keep new files removable by the host's mapped group too, point Node at the warm image's compile cache,
         # and overlay its built CLI/server entries when src/ matches its commit (or rebuild them when the head changed src/).
+        # Shards of one trial on this host share run/repo from separate PID namespaces: one at a time builds, under a lock on the shared file.
         prelude = (
             'umask 0002; '
             'warm="\${GRAPHYARD_WARM_DIR:-/warm}"; '
             'if [ -d "$warm/compile-cache" ] && [ -z "\${NODE_COMPILE_CACHE:-}" ]; then export NODE_COMPILE_CACHE="$warm/compile-cache"; fi; '
             'if [ -f "$warm/commit" ] && [ -f "$warm/dist/cli.mjs" ] && [ ! -f dist/cli.mjs ]; then '
-            '  if git diff --quiet "$(cat "$warm/commit")" HEAD -- src bin/built-entry.mjs package.json 2>/dev/null; then '
-            '    mkdir -p dist; '
-            '    for f in "$warm"/dist/*.mjs; do [ -f "$f" ] || continue; b=$(basename "$f"); ln -sf "$f" "dist/$b.$$.tmp" && mv -f "dist/$b.$$.tmp" "dist/$b"; done; '
-            '  elif [ -f bin/built-entry.mjs ]; then '
-            '    node bin/built-entry.mjs; '
+            '  mkdir -p dist; exec 9>dist/.warm-lock; flock 9; '
+            '  if [ ! -f dist/cli.mjs ]; then '
+            '    if git diff --quiet "$(cat "$warm/commit")" HEAD -- src bin/built-entry.mjs package.json 2>/dev/null; then '
+            '      for f in "$warm"/dist/*.mjs; do [ -f "$f" ] || continue; b=$(basename "$f"); ln -sf "$f" "dist/$b.tmp" && mv -f "dist/$b.tmp" "dist/$b"; done; '
+            '    elif [ -f bin/built-entry.mjs ]; then '
+            '      node bin/built-entry.mjs; '
+            '    fi; '
             '  fi; '
+            '  exec 9>&-; '
             'fi; '
             'exec "$@"'
         )
