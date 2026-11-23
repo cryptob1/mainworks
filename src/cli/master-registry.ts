@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import type { MasterConfig } from '../master.js';
-import { discoverHostLogins, installDirectory, proposeFleet, type FleetLaunchAccount } from '../fleet.js';
+import { checkAccountLive, discoverHostLogins, installDirectory, proposeFleet, type FleetLaunchAccount } from '../fleet.js';
 import { smokePiWorker } from '../runner/pi-launch.js';
 import type { SmokeResult } from '../runner/pi.js';
 import { seedPrices } from '../model/price-sheet.js';
@@ -29,6 +29,7 @@ export const registryHelp = [
   '                                headless run reads into VAR at launch; the registry stores the reference only.',
   '                                Any change re-runs the account\'s smoke test and clears its holds',
   '  master registry account quota NAME exhausted|available|unknown [--resets-at ISO] --reason R',
+  '  master registry account check NAME   Re-run one account\'s live check now and print the result',
   '  master registry role set ROLE ACCOUNT[,ACCOUNT…] [--concurrency N] [--arg=A]… [--tool T]… [--model M]',
   '              [--clear-policy] --reason R   The role\'s accounts and its launch policy: permission-mode /',
   '                                auto-approve flags, tool allowlist and model for every session of it',
@@ -90,6 +91,18 @@ export async function registryCommand(master: Pick<MasterConfig, 'hostId'> & Par
     const [name, state] = positionals;
     if (!name || !(quotaStates as readonly string[]).includes(state ?? '') || !values.reason) throw new Error(`Use master registry account quota NAME ${quotaStates.join('|')} [--resets-at ISO] --reason REASON`);
     return api.write(`agent-registry/accounts/${encodeURIComponent(name)}/quota`, { quota: { state, resetsAt: values['resets-at'] ? new Date(values['resets-at']).toISOString() : null }, reason: values.reason });
+  }
+  // GY-3749: one account's live check, now, outside the 30-minute cache, so a Lead can confirm a repair.
+  if (collection === 'account' && action === 'check') {
+    const name = rest[0];
+    if (!name) throw new Error('Use master registry account check NAME');
+    const current: AgentRegistry = await api.read('agent-registry/document');
+    const account = current.accounts.find(entry => entry.name === name && entry.credential.host === master.hostId);
+    const runtime = current.runtimes.find(entry => entry.name === account?.runtime);
+    if (!account || !runtime) throw new Error(`${name} is not a registry account on ${master.hostId}; master registry lists this host's accounts`);
+    const quota = await checkAccountLive(account, runtime, { smoke: options.smoke }, current.models.find(model => model.name === account.model)?.id ?? null);
+    await api.write('agent-registry/observe', { host: master.hostId, observations: [{ account: name, quota }] });
+    return quota.state === 'available' ? `${name} passed its live check` : `${name} ${quota.loggedIn === false ? 'is not logged in' : `is ${quota.state}`}: ${quota.reason ?? 'no reason given'}`;
   }
   if (collection === 'model' && action === 'seed') {
     const { values } = parseArgs({ args: rest, options: { reason: { type: 'string' } } });
