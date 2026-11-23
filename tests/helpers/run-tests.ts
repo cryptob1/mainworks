@@ -47,11 +47,14 @@ import { buildEntries, builtEntries, builtEntry } from '../../bin/built-entry.mj
 // whose owner marker names a process that is gone (GY-421), so a killed run stops leaking its
 // embedded-Postgres data dirs; one a live run owns, or one with no marker, is never touched.
 
+/** A run's scratch root (GY-3691): `gy` and mkdtemp's six characters, short so socket paths under it stay inside the 107-byte bound. */
+const runScratchName = /^gy[A-Za-z0-9]{6}$/;
+
 /** One runner sweep over `tmpRoot` (the host's tmpdir by default): its `graphyard-*` leftovers whose owner is gone. */
 export async function sweepLeftoverTempDirectories(tmpRoot = tmpdir()) {
   const removed: string[] = [];
   for (const name of await readdir(tmpRoot).catch(() => [] as string[])) {
-    const directory = join(tmpRoot, name), owner = name.startsWith('graphyard-') && !name.endsWith('.owner') ? await readTempOwner(directory) : null;
+    const directory = join(tmpRoot, name), owner = (name.startsWith('graphyard-') || runScratchName.test(name)) && !name.endsWith('.owner') ? await readTempOwner(directory) : null;
     if (!owner || !tempOwnerGone(owner) || !stopServersUnder(directory)) continue;
     try { await rm(directory, { recursive: true, force: true }); await rm(tempOwnerMarker(directory), { force: true }); removed.push(directory); } catch { /* the next sweep */ }
   }
@@ -264,6 +267,7 @@ export async function ensureDashboardBuilt(
 export async function runTests(options: RunOptions = {}): Promise<RunResult> {
   const tmpRoot = durableTestTmpdir() ?? undefined;
   await sweepLeftoverTempDirectories(tmpRoot);
+  await sweepLeftoverTempDirectories(dirname(tmpRoot ?? tmpdir()));
   const cwd = resolve(options.cwd ?? process.cwd()), args = options.args ?? [];
   const selection = options.browser ? null : nodeTestArgs(cwd, args, !!options.holdWhenHot);
   // An empty selection (a shard with nothing assigned, a change that affects no test) runs nothing:
@@ -284,7 +288,11 @@ export async function runTests(options: RunOptions = {}): Promise<RunResult> {
   // under one scratch root, removed when the run ends, pass, fail or SIGTERM, unless
   // GRAPHYARD_KEEP_SCRATCH is set. A killed runner leaves its owner marker, so the next sweep takes it.
   const keepScratch = !!(options.environment ?? process.env).GRAPHYARD_KEEP_SCRATCH;
-  const scratch = await mkdtemp(join(options.scratch ?? tmpRoot ?? tmpdir(), 'graphyard-run-'));
+  // It sits beside the caller's tmpdir when that parent is writable, else inside it: a socket path
+  // under it is then no longer than under the tmpdir itself (the 107-byte bound a trial's
+  // `~/.gy/tmp/gy-XXXXXXX` left no room under), and a session's `/tmp` gives `/tmp/gyXXXXXX`.
+  const base = tmpRoot ?? tmpdir();
+  const scratch = options.scratch ? await mkdtemp(join(options.scratch, 'gy')) : await mkdtemp(join(dirname(base), 'gy')).catch(() => mkdtemp(join(base, 'gy')));
   await writeTempOwner(scratch);
   const reservation = await reserveTestPorts(options.browser ? { first: defaultBrowserPort, span: 2 + testPortSpan, last: 65_000, ...options.ports } : { ...nestedFirst(), ...options.ports });
   let postgres: Awaited<ReturnType<typeof import('./postgres.js').startPostgres>> | undefined;
