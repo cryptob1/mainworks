@@ -25,7 +25,9 @@ import { migrateHerdr } from '../herdr-migration.js';
 import { loadMasterConfig } from '../master.js';
 import { cliReleasePath, activeCliRoot, prepareCliRelease, publishCliRelease } from '../install/cli-release.js';
 import { knownGoodState, pinKnownGood } from '../master/known-good.js';
-import { joinHostHeavyBudget, withHeavyJob } from '../master/verification-slots.js';
+import { heavyJobsDirectory, heldSlots, joinHostHeavyBudget, withHeavyJob } from '../master/verification-slots.js';
+import { readReviewLedger } from '../reviewer.js';
+import { readProducerLedger } from '../producer.js';
 import { pullLine, readImagePulls } from '../install/image-pulls.js';
 import { setting } from '../setting.js';
 import { stateDirectory } from '../install/layout.js';
@@ -510,6 +512,18 @@ export function stoppedPlanePorts(url: string, composeDirectory: string, run: Ch
   };
 }
 
+/**
+ * GY-3746: what is in flight on this install, as the deploy watch's wait names it: a review session,
+ * a merge trial holding a heavy-job slot, or a proof producer's acceptance run; null when nothing is.
+ */
+export async function installInFlight(root: string, repository: string, slots: string = heavyJobsDirectory()): Promise<string | null> {
+  if ((await readReviewLedger(root)).reviews.some(record => record.state === 'pending')) return 'a review is running';
+  const own = (project: string | undefined) => !project || project.toLowerCase() === repository.toLowerCase();
+  if (heldSlots(slots).some(({ owner }) => owner && own(owner.project) && /^(?:merge trial|test merge) /.test(owner.label))) return 'a merge trial is running';
+  if ((await readProducerLedger(root)).producers.some(record => record.state === 'pending')) return 'an acceptance run is running';
+  return null;
+}
+
 /** The deploy watch builds isolated per-commit CLI artifacts, redeploys through the existing install
  * plan/apply flow, and publishes the launcher pointer only after strict health passes. Published
  * artifacts (including the legacy build checkout) are retained for in-flight CLI/server processes.
@@ -535,6 +549,9 @@ export async function watchPorts(input: { cliRoot: string; repoRoot: string; rep
     // GY-3199: the verified ref from Mainworks's canonical upstream — the only commit an install for
     // another repository adopts, at least once a day, without a command or a new setting.
     verifiedUpstream: () => oneFetchAtATime(() => fetchVerifiedRef(gitIn)),
+    // GY-3746: a following install takes a newer build only when nothing is in flight, unless it carries a hotfix.
+    busy: () => installInFlight(repoRoot, input.repository),
+    hotfix: async (from, to) => /\bhotfix:/i.test(await gitIn('log', '--first-parent', '--format=%s', `${from}..${to}`)),
     // GY-3450: the deploy build and restart take the deploy path's reserved slot, never waiting behind item work or a drain.
     build: async commit => {
       await withHeavyJob(`deploy build ${commit.slice(0, 12)}`, () => prepareCliRelease(directory, cliRoot, commit, input.run), { reserved: true });

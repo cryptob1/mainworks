@@ -16,6 +16,9 @@ import type { ChildRun } from '../../child-runner.js';
 import { masterConfinementVariable } from '../../master/launch.js';
 import { heavyDrainLine, heavyJobsDirectory, requestHeavyDrain, resumeHeavyDrain } from '../../master/verification-slots.js';
 import { setting } from '../../setting.js';
+import { updateNowPath } from '../../deploy-watch.js';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 
 /** Whether this command runs inside the master session's confinement (GY-1658): its wrapper sets the variable. */
 export const confinedMaster = (env: NodeJS.ProcessEnv = process.env) => setting(masterConfinementVariable, env) === 'master';
@@ -45,6 +48,14 @@ export async function operationsCommand(session: MasterSession, effects: Recover
   if (id === 'resume') {
     const lifted = resumeHeavyDrain(heavyJobsDirectory());
     return print({ resumed: !!lifted, lifted, detail: lifted ? 'New heavy jobs start again from the next loop cycle, each with all its gates' : 'Heavy work was not drained' });
+  }
+  // GY-3746: the deploy watch takes the waiting newer build on its next pass instead of waiting for a quiet moment.
+  if (id === 'update') {
+    if (args[0] !== 'now') throw new Error('Use master update now');
+    const file = updateNowPath(root);
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, `${new Date().toISOString()}\n`);
+    return print({ requested: true, detail: 'The deploy watch takes the newest verified build on its next pass' });
   }
   if (id === 'dispatch') {
     const { positionals } = parseArgs({ args, options: {}, allowPositionals: true });

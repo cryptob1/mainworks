@@ -48,6 +48,8 @@ export const masterCommands = defineCommands([
       '                                gate, declared check, worker verification or session suite on',
       '                                this host until master resume (another project\'s quiet window)',
       '  master resume                 Lift the drain: queued heavy jobs start again with all their gates',
+      '  master update now             Take the newest verified build on the deploy watch\'s next pass,',
+      '                                without waiting for a quiet moment',
       '  master dispatch GY-N PROFILE  Invite a worker to claim ready work in a visible tab',
       '  master lesson add TEXT [--for workers] [--enforceable] | remove ID | list',
       '                                Record a durable lesson the master reads on every launch;',

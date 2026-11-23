@@ -109,6 +109,8 @@ export interface ControlPlaneRecord {
   failedStep: string | null;
   failedReason: string | null;
   failedAt: string | null;
+  /** GY-3746: the newer build an install following Mainworks waits to take, why, and since when; null once it updates. */
+  waiting?: { tip: string; reason: string; since: string } | null;
   at: string;
 }
 export const controlPlaneRecordPath = (root: string) => join(stateDirectory(root), 'control-plane.json');
@@ -153,7 +155,31 @@ export function controlPlaneSummary(record: ControlPlaneRecord | null, now: numb
   return { commit: short(record.commit), checkedAt: record.checkedAt, updatedAt: record.updatedAt,
     verified: short(record.verified), verifiedSeenAt: record.verifiedSeenAt,
     failedStep: record.failedStep, failedReason: record.failedReason,
+    waiting: record.waiting?.reason ?? null,
     stale: controlPlaneStaleLines(record, now) };
+}
+
+/** GY-3746: an install following Mainworks takes a newer build at most once an hour, and anyway after 4 hours of waiting. */
+export const quietUpdateMs = 60 * 60_000, forcedUpdateMs = 4 * 60 * 60_000;
+/** `master update now` leaves this file; the next pass takes the newer build at once and removes it. */
+export const updateNowPath = (root: string) => join(stateDirectory(root), 'update-now');
+
+/**
+ * GY-3746: why an install following Mainworks's verified builds does not take `tip` yet, or null to
+ * take it now: a hotfix, `master update now`, 4 hours of waiting, or over an hour since the last
+ * update with no review, merge trial or acceptance run in flight.
+ */
+async function updateWait(tip: string, previous: string | null, ports: DeployWatchPorts, control: ControlPlaneRecord | null, nowFile: string): Promise<ControlPlaneRecord['waiting']> {
+  if (existsSync(nowFile)) { await rm(nowFile, { force: true }); return null; }
+  if (previous && await ports.hotfix?.(previous, tip).catch(() => false)) return null;
+  const now = Date.now(), since = control?.waiting?.since ?? new Date(now).toISOString();
+  if (now - Date.parse(since) >= forcedUpdateMs) return null;
+  const last = control?.updatedAt ? Date.parse(control.updatedAt) : null;
+  const recent = last !== null && now - last < quietUpdateMs;
+  const busy = await ports.busy?.().catch(() => null) ?? null;
+  if (!busy && !recent) return null;
+  const why = [busy, last !== null ? `last update ${Math.floor((now - last) / 60_000)} minutes ago` : null].filter(Boolean).join(', ');
+  return { tip, since, reason: `update to ${tip.slice(0, 12)} waits: ${why}` };
 }
 
 /** What one deploy runs a commit through, each throwing its failure's reason. */
@@ -168,6 +194,10 @@ export interface DeployWatchPorts {
    * deploys the fetched tip as before.
    */
   verifiedUpstream?(): Promise<string | null>;
+  /** GY-3746: what is in flight on this install ('a review is running'), or null when nothing is. */
+  busy?(): Promise<string | null>;
+  /** GY-3746: a commit after the first, up to the second, is titled as a hotfix. */
+  hotfix?(from: string, to: string): Promise<boolean>;
   /** The commit the checkout holds now: the tip served before the watch recorded one. */
   head(): Promise<string>;
   /** Publishes the ready CLI after health; production ports move a pointer, preserving loaded trees. */
@@ -371,6 +401,17 @@ async function deployPass(file: string, ports: DeployWatchPorts, log: (line: str
     // stack up at the commit it already recorded as serving.
     if (ports.stoppedPlane && record.tip && !record.restore) await recoverStoppedPlane(record, ports.stoppedPlane, write, log);
     return 'unchanged';
+  }
+  // GY-3746: an install following Mainworks updates at a quiet moment, so a restart never cuts a review or trial short.
+  if (followsUpstream) {
+    const control = readControlPlaneRecord(controlFile);
+    const waiting = await updateWait(tip, previous, ports, control, updateNowPath(dirname(dirname(file))));
+    if (waiting) {
+      if (waiting.reason !== control?.waiting?.reason) log(`[mainworks-deploy] ${waiting.reason}`);
+      await noteControl({ waiting });
+      return 'unchanged';
+    }
+    if (control?.waiting) await noteControl({ waiting: null });
   }
   // GY-3700: a watch started after a handover finds the commit already serving: record it, build and restart nothing.
   if (await ports.serves?.(tip).catch(() => false)) {
