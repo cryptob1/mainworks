@@ -94,11 +94,11 @@ function herdr() {
 }
 const paneCwd = (tab: string[]) => { const index = tab.indexOf('--cwd'); return index >= 0 ? tab[index + 1] : null; };
 /** The checkout the launch files were written in: the stem's path before its `.mainworks/launch/` segment. */
-const checkoutOfStem = (stem: string | null) => stem && stem.includes(`${sep}.graphyard${sep}launch${sep}`) ? stem.slice(0, stem.indexOf(`${sep}.graphyard${sep}launch${sep}`)) : null;
+const checkoutOfStem = (stem: string | null) => stem && stem.includes(`${sep}.mainworks${sep}launch${sep}`) ? stem.slice(0, stem.indexOf(`${sep}.mainworks${sep}launch${sep}`)) : null;
 /** Outside the coordinator checkout: another tree altogether, or Graphyard's own managed area under `.mainworks/`. */
 const outsideCoordinator = (path: string, coordinatorRoot: string) => {
   const directory = resolve(path), base = resolve(coordinatorRoot);
-  return directory !== base && (!directory.startsWith(`${base}${sep}`) || directory.startsWith(`${base}${sep}.graphyard${sep}`));
+  return directory !== base && (!directory.startsWith(`${base}${sep}`) || directory.startsWith(`${base}${sep}.mainworks${sep}`));
 };
 
 /**

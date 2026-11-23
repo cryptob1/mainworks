@@ -33,17 +33,17 @@
 
   <!-- The loop unit -->
   <rect class="box loop" x="20" y="66" width="286" height="96" rx="10"/>
-  <text class="t-title" x="32" y="86">graphyard-master-OWNER-NAME.service</text>
+  <text class="t-title" x="32" y="86">mainworks-master-OWNER-NAME.service</text>
   <text class="t-sub" x="32" y="103">the loop — dispatch · merge writer · batch gate</text>
   <text class="t-key" x="32" y="124">journalctl --user</text>
-  <text class="t-key" x="32" y="138">  -u graphyard-master-OWNER-NAME.service</text>
+  <text class="t-key" x="32" y="138">  -u mainworks-master-OWNER-NAME.service</text>
 
   <!-- The deploy unit -->
   <rect class="box" x="20" y="170" width="286" height="82" rx="10"/>
-  <text class="t-title" x="32" y="190">graphyard-deploy-OWNER-NAME.service</text>
+  <text class="t-title" x="32" y="190">mainworks-deploy-OWNER-NAME.service</text>
   <text class="t-sub" x="32" y="207">the deploy watch — build, restart, health, rollback</text>
   <text class="t-key" x="32" y="228">journalctl --user</text>
-  <text class="t-key" x="32" y="242">  -u graphyard-deploy-OWNER-NAME.service</text>
+  <text class="t-key" x="32" y="242">  -u mainworks-deploy-OWNER-NAME.service</text>
 
   <!-- Herdr -->
   <rect class="box" x="20" y="266" width="286" height="60" rx="10"/>
@@ -60,7 +60,7 @@
   <rect class="box" x="20" y="422" width="286" height="88" rx="10"/>
   <text class="t-title" x="32" y="442">The files</text>
   <text class="t-sub" x="32" y="460">checkout .graphyard/ — connection, units,</text>
-  <text class="t-sub" x="32" y="474">worktrees · ~/.config/graphyard/&lt;install&gt;/</text>
+  <text class="t-sub" x="32" y="474">worktrees · ~/.config/mainworks/&lt;install&gt;/</text>
   <text class="t-sub" x="32" y="490">— credentials 0600, CLI releases</text>
 
   <!-- Docker containers -->

@@ -135,7 +135,7 @@ function upWorld(checkout: string, events: UpEvent[], profiles: { workers: numbe
   /** A self-contained host's write (`install --profiles-only`): what the host's master environments --apply reports, its master.json being the host's. */
   const hostReport = () => ({ host: 'gy-host', profiles: { counts: { environments: 1, loggedIn: 1, workers: profiles?.workers ?? 0, reviewers: profiles?.reviewers ?? 0, producers: 0 } } });
   const writeProfiles = async () => {
-    const file = join(checkout, '.graphyard/master.json');
+    const file = join(checkout, '.mainworks/master.json');
     const config = JSON.parse(await readFile(file, 'utf8'));
     config.reviewers = Array.from({ length: profiles?.reviewers ?? 0 }, (_, index) => ({ name: `review-claude-${index}`, agentName: `review-claude-${index + 1}`, kind: 'claude' }));
     config.workers = Array.from({ length: profiles?.workers ?? 0 }, (_, index) => ({ name: `claude-${index + 1}`, principal: `owner-project-worker-${index + 1}`, agentName: `worker-claude-${index + 1}`, mode: 'launch', kind: 'claude', credentialFile: `/creds/worker-${index + 1}.token` }));
@@ -174,8 +174,8 @@ function upWorld(checkout: string, events: UpEvent[], profiles: { workers: numbe
         if (args[0] === 'install' && args.includes('--apply')) {
           installed = true;
           // What install --apply leaves behind: the configured checkout, with no profiles yet.
-          await mkdir(join(checkout, '.graphyard'), { recursive: true });
-          await writeFile(join(checkout, '.graphyard/master.json'), JSON.stringify(bareMasterConfig(join(checkout, 'install-dir', 'master.token'))), { mode: 0o600 });
+          await mkdir(join(checkout, '.mainworks'), { recursive: true });
+          await writeFile(join(checkout, '.mainworks/master.json'), JSON.stringify(bareMasterConfig(join(checkout, 'install-dir', 'master.token'))), { mode: 0o600 });
           return { code: 0, stdout: JSON.stringify({ ok: true, installDirectory: join(checkout, 'install-dir'), principals: [{ id: 'owner-project-operator', role: 'admin' }] }) };
         }
         if (joined === 'master registry propose --apply') { fleetReady = true; return { code: 0, stdout: '{}' }; }
@@ -202,7 +202,7 @@ test('unit:up-writes-profiles — up\'s accounts step runs the profile write mas
   const order = world.calls.map(args => args.join(' '));
   assert.ok(order.includes('master environments --apply'), 'the accounts step runs the profile write');
   assert.ok(order.indexOf('master registry propose --apply') < order.indexOf('master environments --apply'), 'the profile write follows the registry proposal');
-  const stored = JSON.parse(await readFile(join(checkout, '.graphyard/master.json'), 'utf8'));
+  const stored = JSON.parse(await readFile(join(checkout, '.mainworks/master.json'), 'utf8'));
   assert.ok(stored.reviewers.length >= 1, 'master.json holds a reviewer profile for the logged-in environment');
   assert.ok(stored.workers.some((worker: { mode?: string }) => worker.mode === 'launch'), 'master.json holds a worker profile');
   for (const id of ['account:worker', 'account:reviewer'] as const) assert.equal(result.checklist.find(item => item.id === id)?.done, true, `${id} is green once both profiles exist`);
@@ -265,7 +265,7 @@ test('unit:up-writes-profiles — an account signed in while the accounts step w
   assert.equal(result.exitCode, 0, result.next);
   assert.ok(writes >= 2, 'the write ran again while a profile was missing');
   assert.ok(result.completed.includes('accounts'));
-  const stored = JSON.parse(await readFile(join(checkout, '.graphyard/master.json'), 'utf8'));
+  const stored = JSON.parse(await readFile(join(checkout, '.mainworks/master.json'), 'utf8'));
   assert.equal(stored.reviewers.length, 1, 'master.json holds the reviewer profile written during the wait');
 });
 
@@ -315,6 +315,6 @@ test('unit:up-writes-profiles — with profiles already written for account A, a
   const result = await runUp(request(), world.deps);
   assert.equal(result.exitCode, 0, result.next);
   assert.ok(result.completed.includes('accounts'));
-  const stored = JSON.parse(await readFile(join(checkout, '.graphyard/master.json'), 'utf8'));
+  const stored = JSON.parse(await readFile(join(checkout, '.mainworks/master.json'), 'utf8'));
   assert.equal(stored.reviewers.length, 2, 'master.json holds a reviewer profile for account B, signed in during the wait');
 });

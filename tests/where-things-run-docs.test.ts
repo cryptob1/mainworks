@@ -22,17 +22,17 @@ const read = (path: string) => readFileSync(join(root, path), 'utf8');
 
 /** Every unit, container, port and log command the diagram carries: what the README section shows through it and `guide infra` lists. */
 const diagramFacts = [
-  'graphyard-master-OWNER-NAME.service',
-  'journalctl --user -u graphyard-master-OWNER-NAME.service',
-  'graphyard-deploy-OWNER-NAME.service',
-  'journalctl --user -u graphyard-deploy-OWNER-NAME.service',
+  'mainworks-master-OWNER-NAME.service',
+  'journalctl --user -u mainworks-master-OWNER-NAME.service',
+  'mainworks-deploy-OWNER-NAME.service',
+  'journalctl --user -u mainworks-deploy-OWNER-NAME.service',
   'graphyard-OWNER-NAME-server-1',
   'docker logs graphyard-OWNER-NAME-server-1',
   'graphyard-OWNER-NAME-db-1',
   'docker logs graphyard-OWNER-NAME-db-1',
   '4310',
   'graphyard-trial-',
-  '~/.config/graphyard/<install>/',
+  '~/.config/mainworks/<install>/',
 ];
 
 test('unit:tests/where-things-run-docs.test.ts — the README\'s Where things run section embeds the diagram, whose every unit, container, port and log command shows there, and points to guide infra', () => {
@@ -56,11 +56,11 @@ test('unit:tests/where-things-run-docs.test.ts — guide infra prints the same f
 test('unit:tests/where-things-run-docs.test.ts — the diagram SVG exists, names the same units and containers, and the dashboard Guide draws them as readable panels', () => {
   const svg = read('docs/diagrams/where-things-run.svg');
   assert.ok(svg.startsWith('<svg'), 'the diagram is an SVG');
-  for (const fact of ['graphyard-master-OWNER-NAME.service', 'graphyard-deploy-OWNER-NAME.service', 'graphyard-OWNER-NAME-server-1', 'graphyard-OWNER-NAME-db-1', 'graphyard-trial-', '4310', 'YOUR HOST', 'DOCKER', 'GitHub', 'Agent providers', 'npm + GHCR', 'Your browser', 'Herdr'])
+  for (const fact of ['mainworks-master-OWNER-NAME.service', 'mainworks-deploy-OWNER-NAME.service', 'graphyard-OWNER-NAME-server-1', 'graphyard-OWNER-NAME-db-1', 'graphyard-trial-', '4310', 'YOUR HOST', 'DOCKER', 'GitHub', 'Agent providers', 'npm + GHCR', 'Your browser', 'Herdr'])
     assert.ok(svg.includes(fact), `the diagram names ${fact}`);
   // GY-3295: the Guide shows where things run as HTML panels, readable at any width, naming the same parts.
   const guidePage = read('web/pages/guide.tsx');
-  for (const fact of ['graphyard-master-OWNER-NAME.service', 'graphyard-deploy-OWNER-NAME.service', 'graphyard-OWNER-NAME-server-1', 'graphyard-OWNER-NAME-db-1', 'graphyard-trial-', '4310', 'Your Linux host', 'GitHub', 'Agent providers', 'npm and GHCR', 'Your browser'])
+  for (const fact of ['mainworks-master-OWNER-NAME.service', 'mainworks-deploy-OWNER-NAME.service', 'graphyard-OWNER-NAME-server-1', 'graphyard-OWNER-NAME-db-1', 'graphyard-trial-', '4310', 'Your Linux host', 'GitHub', 'Agent providers', 'npm and GHCR', 'Your browser'])
     assert.ok(guidePage.includes(fact), `the Guide's Where things run panels name ${fact}`);
 });
 
@@ -97,7 +97,7 @@ test('unit:tests/where-things-run-docs.test.ts — the loop reports its install\
   // A local install runs its server under its own unit on an embedded cluster, in the same report.
   writeFileSync(join(install, 'install.json'), JSON.stringify({ version: 1, installId: 'fixture-shop', repository: 'fixture/shop', provider: 'local', baseBranch: 'main', createdAt: at, updatedAt: at }));
   const local = await loopWhereReport(checkout, master, configHome);
-  assert.equal(local!.server, 'graphyard-local-fixture-shop.service');
+  assert.equal(local!.server, 'mainworks-local-fixture-shop.service');
   assert.match(local!.database, /^embedded Postgres \(/);
   // An install whose records do not name its parts reports nothing rather than guess.
   writeFileSync(join(install, 'install.json'), 'not json');

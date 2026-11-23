@@ -55,7 +55,7 @@ test('unit:worker-verification-long-wait — verify survives six minutes before 
     await complete();
     assert.equal(submitted, false);
     // Verification records are local-only, as in an assigned repository.
-    await import('node:fs/promises').then(fs => fs.writeFile(`${root}/.git/info/exclude`, '.graphyard/\n'));
+    await import('node:fs/promises').then(fs => fs.writeFile(`${root}/.git/info/exclude`, '.graphyard/\n.mainworks/\n'));
     for (const next of ['timeout', 'body-timeout', 'refusal', 'disconnect'] as const) {
       mode = next; submitted = false;
       const before = verificationCalls;
