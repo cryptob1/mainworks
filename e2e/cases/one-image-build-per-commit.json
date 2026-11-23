@@ -1,0 +1,13 @@
+{
+  "id": "one-image-build-per-commit",
+  "title": "Two installs on one host build a commit's image once",
+  "description": "Two deploy watches on one Docker host start together for the same verified commit: one builds its image, the other waits and reuses it, the host logs one build, and both end serving that commit.",
+  "target": "any",
+  "required": false,
+  "steps": [{
+    "kind": "command",
+    "name": "two watches, one image build",
+    "run": "node --import tsx tests/helpers/run-tests.ts tests/one-image-build-per-commit.test.ts",
+    "timeoutSeconds": 600
+  }]
+}

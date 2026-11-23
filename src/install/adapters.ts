@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { controlPlaneWeight } from '../session-share.js';
+import { withHostLock } from '../host-lock.js';
 import { fingerprint, Vault } from './secrets.js';
 import { SERVER_CONTAINER_UID, shellQuote, type Transport } from './transport.js';
 import { SERVER_PORT, type EnvValue, type PlanAction, type PreflightItem, type Provider } from './types.js';
@@ -345,10 +346,12 @@ export const composeAdapter: ProviderAdapter = {
       ...composeActions(ctx, observation),
     ];
   },
-  async provision(ctx) {
+  // GY-3710: installs on one host provision an image tag one at a time; a commit's image (tagged with its 12-hex sha) that already exists is reused, never built twice.
+  provision: ctx => withHostLock(`image-${ctx.image}`, async () => {
     const published = publishedSourceImages(ctx.sourceRoot);
     await provisionTrialImage(ctx, published?.trial ?? null);
     await provisionTrialAppArmor(ctx);
+    if (/:[0-9a-f]{12}$/.test(ctx.image) && (await ctx.transport.exec('docker', ['image', 'inspect', ctx.image], { allowFailure: true })).code === 0) return;
     if (published && (await ctx.transport.exec('docker', ['image', 'pull', published.server], { allowFailure: true, timeout: 1_800_000 })).code === 0) {
       // The install keeps naming, pruning and rolling back its own tag; the registry's name is dropped, the layers stay.
       await ctx.transport.exec('docker', ['tag', published.server, ctx.image]);
@@ -356,7 +359,7 @@ export const composeAdapter: ProviderAdapter = {
       return;
     }
     await ctx.transport.exec('docker', ['build', ...imageBuildArgs(ctx.sourceRoot), '--tag', ctx.image, ctx.sourceRoot], { timeout: 1_800_000 });
-  },
+  }),
   async setEnv(ctx, values) {
     for (const file of composeBundle(ctx, values)) await ctx.transport.putFile(file.path, file.content, file.mode, file.owner);
   },

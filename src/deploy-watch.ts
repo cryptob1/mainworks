@@ -4,7 +4,8 @@ import { appOnboarding, type AppOnboarding } from './model/onboarding-work.js';
 // The master loop restarts onto the serving tip recorded here (daemon/run.ts restartCause).
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { link, mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { takeLock } from './host-lock.js';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { GitRunner } from './merge-writer/local-observation.js';
@@ -240,20 +241,6 @@ export async function deployOnce(file: string, ports: DeployWatchPorts, log: (li
   const lock = ports.lockFile ?? join(dirname(file), 'deploy.lock');
   if (!await takeLock(lock)) { log(`[graphyard-deploy] another deploy holds ${lock}; skipping this round`); return 'unchanged'; }
   try { return await deployPass(file, ports, log, owner); } finally { await rm(lock, { force: true }); }
-}
-
-/** Links the lock file into place holding this process's id, atomically; a lock whose process is gone is taken over. */
-async function takeLock(lock: string): Promise<boolean> {
-  await mkdir(dirname(lock), { recursive: true });
-  const mine = `${lock}.${process.pid}`;
-  await writeFile(mine, String(process.pid));
-  try {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try { await link(mine, lock); return true; } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
-      try { process.kill(Number(readFileSync(lock, 'utf8')), 0); return false; } catch { await rm(lock, { force: true }); } // the holder is gone
-    }
-    return false;
-  } finally { await rm(mine, { force: true }); }
 }
 
 async function deployPass(file: string, ports: DeployWatchPorts, log: (line: string) => void, owner: string | null): Promise<'unchanged' | 'deployed' | 'rolled-back' | 'kept' | 'restoring'> {
