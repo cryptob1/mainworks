@@ -192,7 +192,7 @@ export async function localPublicKey(home = homedir()) {
 }
 
 function parseHostProbe(text: string) {
-  if (/^graphyard-no-docker$/m.test(text)) return null;
+  if (/^(?:graphyard|mainworks)-no-docker$/m.test(text)) return null;
   const number = (pattern: RegExp) => { const value = Number(pattern.exec(text)?.[1]); return Number.isFinite(value) ? value : null; };
   const temps = [...text.matchAll(/^temp (\S+) (\d+)$/gm)].filter(match => cpuSensorNames.includes(match[1]!)).map(match => Math.floor(Number(match[2]) / 1000));
   const user = /^user (\d+) ?(.*)$/m.exec(text);
