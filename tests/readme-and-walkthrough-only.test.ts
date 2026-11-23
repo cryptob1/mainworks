@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 // GY-3109: one short README and one walkthrough video replace the documentation pages.
 const root = new URL('..', import.meta.url);
 const read = (path: string) => readFileSync(new URL(path, root), 'utf8');
-const video = 'docs/diagrams/how-graphyard-works.mp4', gif = 'docs/diagrams/how-graphyard-works.gif';
+const video = 'docs/diagrams/how-mainworks-works.mp4', gif = 'docs/diagrams/how-mainworks-works.gif';
 
 /** The movie's length in seconds, from the MP4's mvhd box. */
 function mp4Seconds(bytes: Buffer) {
@@ -34,7 +34,7 @@ test('unit:readme-and-walkthrough-only — docs/ holds only the walkthrough medi
   assert.ok(seconds >= 60 && seconds <= 100, `the video runs ${seconds} s`);
   assert.equal(readFileSync(new URL(gif, root)).subarray(0, 6).toString(), 'GIF89a');
 
-  const html = read('scripts/walkthrough/how-graphyard-works.html');
+  const html = read('scripts/walkthrough/how-mainworks-works.html');
   const max = Number(html.match(/id="scrub"[^>]*max="(\d+)"/)?.[1]);
   assert.ok(Math.abs(max - seconds) < 1, `the rendered video is the walkthrough's ${max} s`);
   const chapters = html.match(/const chapters = (\[.*\]);/)?.[1] ?? '';
