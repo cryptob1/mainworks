@@ -11,7 +11,7 @@ import { shortShas } from '../candidate';
 import { Agent } from '../fun';
 import { EmptyState, PageHeader } from '../components/page-layout';
 import { overloadAlarm, overloaded } from '../../src/model/session-usage';
-import { budgetLine, machineName } from '../../src/model/machine-load';
+import { budgetLine, fallbackLine, machineName } from '../../src/model/machine-load';
 import { formatAge } from '../../src/model/duration';
 import type { FleetAccountView } from '../../src/model/registry';
 import { localTime } from '../agent-status';
@@ -203,7 +203,7 @@ export function AccountAvailability({ accounts, now }: { accounts: FleetAccountV
   </ul></section>;
 }
 
-type HostRow = { host: string; local?: boolean; at?: string; away: boolean; update?: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; busy?: number | null; slots?: number };
+type HostRow = { host: string; local?: boolean; at?: string; away: boolean; update?: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; busy?: number | null; slots?: number; fallback?: { reason: string; at: string } };
 /**
  * GY-3407: the hosts the loop watches — this machine first, then each one added with
  * `graphyard host add USER@HOST` — as the loop read them this cycle. A host that does not answer
@@ -221,7 +221,8 @@ function Hosts({ hosts, now }: { hosts: HostRow[]; now: number }) {
     <table className="sessions-table hosts" aria-label="Hosts" data-hosts>
     <thead><tr><th scope="col">Host</th><th scope="col">Cores</th><th scope="col">Temperature</th><th scope="col">Steal</th><th scope="col">Runs now</th><th scope="col">Read</th></tr></thead>
     <tbody>{hosts.map(host => <tr key={host.host} data-host={host.host} data-away={host.away || undefined}>
-      <th scope="row" data-label="Host">{machineName(host.host)}{host.local ? <span className="muted"> (this machine)</span> : null}</th>
+      <th scope="row" data-label="Host">{machineName(host.host)}{host.local ? <span className="muted"> (this machine)</span> : null}
+        {host.fallback ? <div className="muted" data-host-fallback>{fallbackLine(host.fallback)}</div> : null}</th>
       {host.away ? <td data-label="State" colSpan={4}><span className="muted" title={host.reason}>{host.update ? 'Away: needs an update, see the line at the top' : 'Away: not answering, tried again each cycle'}</span></td> : <>
         <td data-label="Cores">{cores(host)}</td>
         <td data-label="Temperature">{figure(host.celsius, '°C')}</td>

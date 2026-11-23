@@ -97,7 +97,7 @@ export function loginCommand(environment: AgentEnvironment) {
     opencode: `XDG_DATA_HOME=${home} opencode auth login`, cursor: `CURSOR_CONFIG_DIR=${home} XDG_CONFIG_HOME=${home} agent login` }[environment.kind];
 }
 
-export interface AccountUsage { window: string; percent: number; resetsAt: string | null }
+export interface AccountUsage { window: string; percent: number; resetsAt: string | null; /** GY-3497: the provider's own limit list named this window, so the provider enforces it and a reading at its ceiling holds. */ limitList?: true }
 export interface EnvironmentHealth {
   name: string; kind: EnvironmentKind; home: string; variable: string; checkedAt: string;
   loggedIn: boolean; quota: 'available' | 'exhausted' | 'unknown'; usage: AccountUsage[];
@@ -107,6 +107,8 @@ export interface EnvironmentHealth {
   identity?: string | null;
   /** GY-3516: the fingerprint of the key the probe read the quota with; never the key. */
   key?: string;
+  /** GY-3497: the extra-usage line the provider's answer gave when spend is enabled (`extra usage on: $3.21 of $10.00 used`); shown, never changed. */
+  spend?: string;
 }
 export interface EnvironmentProbe {
   fetch?: typeof fetch; now?: () => number; ceilingPercent?: number; timeoutMs?: number; cacheMs?: number;
@@ -160,7 +162,7 @@ export async function checkAgentEnvironment(environment: ProbedEnvironment, prob
     : exhausted ? `${environment.name} quota is exhausted (${(spent.length ? spent : account.usage).map(usage => `${usage.window} window at ${usage.percent}%${usage.resetsAt ? ` until ${usage.resetsAt}` : ''}`).join(', ')}; ceiling ${ceiling}%)` : null;
   const health: EnvironmentHealth = { name: environment.name, kind: environment.kind, home: environment.home, variable: environmentVariable[environment.kind], checkedAt: new Date(now).toISOString(),
     loggedIn: account.loggedIn, quota, usage: account.usage, healthy: !reason, reason, note: account.note, login: account.loggedIn ? null : loginCommand(environment),
-    identity: account.loggedIn ? await providerIdentity(environment.kind, environment.home) : null, ...account.key ? { key: account.key } : {} };
+    identity: account.loggedIn ? await providerIdentity(environment.kind, environment.home) : null, ...account.key ? { key: account.key } : {}, ...account.spend ? { spend: account.spend } : {} };
   healthCache.set(cacheKey, { at: now, health });
   return health;
 }

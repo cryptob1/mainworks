@@ -1,0 +1,11 @@
+{
+  "id": "master-status-shows-flow",
+  "title": "Master status shows the flow numbers read from /api/flow",
+  "description": "After a merge, master status reads GET /api/flow with the master's coordinator credential and shows non-null flow numbers for 6 hours, 24 hours and 7 days with the merged attempt counted; /api/status carries no flow, and a failed flow read shows its reason while the rest of master status answers.",
+  "tags": ["api", "regression"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "after a merge, master status shows the flow with at least one attempt counted", "run": "node --import tsx tests/helpers/run-tests.ts tests/master-status-shows-flow.test.ts", "timeoutSeconds": 240 }
+  ]
+}

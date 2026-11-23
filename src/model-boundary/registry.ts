@@ -71,7 +71,9 @@ export const modelSchema = z.object({
 }).strict();
 export const usageSchema = z.object({ window: text(40), percent: z.number().min(0).max(1000), resetsAt: z.string().datetime().nullable(),
   /** When a window carried past a failed usage read was last read (GY-3494). */
-  readAt: z.string().datetime().optional() }).strict();
+  readAt: z.string().datetime().optional(),
+  /** GY-3497: the provider's own limit list named this window (Claude's `limits[]`), so the provider enforces it and a reading at its ceiling holds. */
+  limitList: z.literal(true).optional() }).strict();
 /** What was last observed about an account: by an executor's probe on its host, or marked by an operator. */
 export const quotaObservationSchema = z.object({
   loggedIn: z.boolean().nullable().default(null),
@@ -94,6 +96,8 @@ export const quotaObservationSchema = z.object({
   key: z.string().regex(/^[0-9a-f]{12}$/).optional(),
   /** GY-3516: no longer written (GY-3555: the account's own live request decides); kept so stored readings still parse. */
   fault: text(300).nullable().optional(),
+  /** GY-3497: the extra-usage line the provider's answer gave when spend is enabled (`extra usage on: $3.21 of $10.00 used`); shown, never changed. */
+  spend: text(120).optional(),
 }).strict();
 
 /**
