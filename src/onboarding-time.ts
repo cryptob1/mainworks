@@ -14,7 +14,7 @@ import { defaultChildRun } from './child-runner.js';
 export const onboardingCase = 'onboarding-time-measured';
 
 /** The brief's bound: a first merge slower than this files an item. */
-export const onboardingLimitMinutes = 15;
+const onboardingLimitMinutes = 15;
 
 /** One daily onboarding run: minutes from connect to first merge, and each step that needed a hand fix. */
 export interface OnboardingRun { at: string; commit: string; minutes: number; result: 'passed' | 'failed'; handFixes: string[] }
