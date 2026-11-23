@@ -74,7 +74,7 @@ for (const width of [1280, 390]) {
     // AC-1: title, state with time in state, pull request, Builder, model with its mark, diff stats, one action, key and commit small.
     await expect(header.getByRole('heading', { level: 1 })).toHaveText(item.title);
     // Its time in state counts from when the trial failed, two minutes ago, not from when the change was handed in; the badge says it is stuck.
-    await expect(header.locator('[data-task-state]')).toHaveText(/^Stuck\s*Merge trial failed · 2m$/);
+    await expect(header.locator('[data-task-state]')).toHaveText(/^Stuck\s*Test merge failed · 2m$/);
     await expect(header.getByRole('link', { name: /PR #412/ })).toHaveAttribute('href', 'https://github.com/fixture/repository/pull/412');
     await expect(header.locator('[data-builder]')).toHaveText(`Builder ${friendlyName(builder)}`);
     const model = header.locator('[data-model]');
@@ -169,7 +169,7 @@ test('e2e:task-shows-evidence — a trial that passed ahead of review is not sho
   const held = { ...item, mergeLedger: { ...item.mergeLedger, refusal: { kind: 'merge', reason: 'trial passed ahead of review: the trial that passed is kept and the head lands once the same head is approved' } } };
   await open(page, 1280, held, { ...timings, trial: { ...timings.trial, steps: timings.trial.steps.map(step => ({ ...step, result: 'passed' })) } });
   const task = page.locator('article.item-page');
-  await expect(task.locator('[data-task-state]')).not.toContainText('Merge trial failed');
+  await expect(task.locator('[data-task-state]')).not.toContainText('Test merge failed');
   await expect(task.locator('[data-stage="trial"]')).not.toHaveAttribute('data-state', 'failed');
   await expect(task.getByText(/It goes back to a Builder/)).toHaveCount(0);
   await expect(task.getByLabel('Test output')).toHaveCount(0);
@@ -182,7 +182,7 @@ test('e2e:task-shows-evidence — a running trial shows its test output, counts 
   await open(page, 390, running as unknown as typeof item, { ...timings, trial: { ...timings.trial, finishedAt: null, groups: [{ name: 'tests', passed: 12, failed: 0, total: 40 }], slowest: { file: 'tests/shard-hosts.test.ts', durationMs: 4 * 60_000 }, soFar: true, output: sofar,
     steps: [...timings.trial.steps.slice(0, 3), { step: 'tests', durationMs: 17 * 60_000, result: 'running' }] } });
   const task = page.locator('article.item-page');
-  await expect(task.locator('[data-task-state]')).not.toContainText('Merge trial failed');
+  await expect(task.locator('[data-task-state]')).not.toContainText('Test merge failed');
   await expect(task.locator('[data-task-state]')).toHaveText(/^Moving Testing · 30m$/);
   const checks = task.getByRole('region', { name: 'Checks' });
   await expect(checks.locator('[data-check="tests"]')).toHaveText(/tests.*running.*17 min/);
