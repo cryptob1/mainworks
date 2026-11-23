@@ -112,7 +112,7 @@ export function repositoryPolicyAssignment(config: Record<string, unknown> | nul
 export function loadRepositoryPolicy(env?: Record<string, string | undefined>, root?: string, cwd?: string): { policy: RepositoryPolicy; source: Source } {
   const host = (globalThis as { process?: { env: Record<string, string | undefined>; cwd(): string; getBuiltinModule?(name: string): any } }).process;
   const variables = env ?? host?.env;
-  const raw = variables?.[repositoryPolicyVariable]?.trim();
+  const raw = (variables && setting(repositoryPolicyVariable, variables))?.trim();
   if (raw) {
     let value: unknown;
     try { value = JSON.parse(raw); } catch { throw new Error(`${repositoryPolicyVariable} must be JSON of graphyard.json's risk, e2e and release sections, e.g. {"e2e":{"pendingOutcomes":"blocking"}}`); }

@@ -1,5 +1,6 @@
 // Host-level account state shared by every install using the same login home: locked live
 // session records for concurrency, and the latest real request with its next check time.
+import { setting } from './setting.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { closeSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -8,7 +9,7 @@ import { ChildProcessError, runChild } from './child-runner.js';
 
 /** Where the host's account records live; `GRAPHYARD_HOST_ACCOUNTS` moves it (the test runner isolates it from the real home). */
 export const hostAccountsVariable = 'GRAPHYARD_HOST_ACCOUNTS';
-export const hostAccountsRoot = (environment: NodeJS.ProcessEnv = process.env) => environment[hostAccountsVariable] ?? join(homedir(), '.gy', 'accounts');
+export const hostAccountsRoot = (environment: NodeJS.ProcessEnv = process.env) => setting(hostAccountsVariable, environment) ?? join(homedir(), '.gy', 'accounts');
 
 /** One account's records are keyed by its login home: the path itself, made safe for a file name. */
 export const hostAccountKey = (home: string) => `${home.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'home'}-${createHash('sha256').update(home).digest('hex').slice(0, 8)}`;

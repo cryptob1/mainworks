@@ -452,7 +452,7 @@ export function readOnlyMountWrapper(input: { coordinatorRoot: string; sessionDi
   const fetchHead = join(checkoutWorktreeAdminDirectory(root) ?? gitDir, 'FETCH_HEAD');
   const shared = [...sharedDirectories, ...(existsSync(fetchHead) && !isDirectoryPath(fetchHead) ? [fetchHead] : [])];
   const own = directory !== root ? [directory] : [];
-  const writable = [...(input.writable ?? []), ...(process.env[slotsDirectoryVariable] ? [process.env[slotsDirectoryVariable]!] : [])].filter(existsSync);
+  const writable = [...(input.writable ?? []), ...(setting(slotsDirectoryVariable) ? [setting(slotsDirectoryVariable)!] : [])].filter(existsSync);
   const writableDirectories = writable.filter(isDirectoryPath);
   const scratch = join(stateDir(directory), 'scratch');
   mkdirSync(scratch, { recursive: true, mode: 0o700 });
@@ -546,7 +546,7 @@ export const confinementRefusalText = (kind: string, coordinatorRoot: string, pr
 /** The variable the master session's wrapper sets: its `master restart` then asks the loop to restart itself instead of the host's systemd, which the confinement hides. */
 export const masterConfinementVariable = 'GRAPHYARD_CONFINEMENT';
 /** Whether this process runs inside the master session's confinement (GY-3237). */
-export const insideMasterConfinement = (env: NodeJS.ProcessEnv = process.env) => env[masterConfinementVariable] === 'master';
+export const insideMasterConfinement = (env: NodeJS.ProcessEnv = process.env) => setting(masterConfinementVariable, env) === 'master';
 /** Whether bubblewrap can build the mount namespace here; a host may refuse unprivileged namespaces. Probed through the asynchronous runner once per executable and cached; the probe asks for the pid namespace and a fresh /proc too, because that is what the wrapper itself requires. */
 export async function sessionMountNamespaceWorks(bwrap = 'bwrap'): Promise<boolean> {
   // GY-3237: inside the master session's own confinement the host's bubblewrap already built this

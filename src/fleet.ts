@@ -1,3 +1,4 @@
+import { setting } from './setting.js';
 import { detectLoggedOut, runtimeResetTime } from './master/runtime-prompt.js';
 import { foldObservations } from './model/registry-sessions.js';
 import { randomUUID } from 'node:crypto';
@@ -256,7 +257,7 @@ export async function observeAccount(account: FleetAccount, runtime: FleetRuntim
   const cached = saved && JSON.stringify(saved.key ?? null) === JSON.stringify(account.credential.key ?? null) ? saved : null;
   // Preserve the confined master's unreadable-home rule: only the host executor can test these logins.
   const home = account.credential.home;
-  if (home && await readdir(home).then(entries => !entries.length && !!process.env[masterConfinementVariable], (error: NodeJS.ErrnoException) => error.code === 'EACCES'))
+  if (home && await readdir(home).then(entries => !entries.length && !!setting(masterConfinementVariable), (error: NodeJS.ErrnoException) => error.code === 'EACCES'))
     return { quota: cached?.quota ?? { loggedIn: null, state: 'unknown', usage: [], resetsAt: null, reason: null }, health: null };
 
   if (!home && account.quota.since && nextLiveCheck(account.quota) > now) {

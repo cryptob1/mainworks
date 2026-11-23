@@ -64,7 +64,7 @@ export function projectDeliveryAssignment(policy: Record<string, unknown>) {
  * A declaration that does not parse, or binds a case to an undeclared application, refuses with the reason.
  */
 export function loadProjectDelivery(env: Record<string, string | undefined> = process.env, root?: string): ProjectDelivery {
-  const raw = env[projectDeliveryVariable]?.trim();
+  const raw = setting(projectDeliveryVariable, env)?.trim();
   if (raw) {
     let value: unknown;
     try { value = JSON.parse(raw); } catch { throw new Error(`${projectDeliveryVariable} must be JSON of graphyard.json's delivery mode, previews, candidateMaxChanges, productionVerification, applications and cases`); }

@@ -1,5 +1,6 @@
 export { humanOnlyDecisions } from '../model/human-request.js';
 // Concern: session and worker harness permissions, and starting the master session.
+import { setting } from '../setting.js';
 import { stateDir } from '../mainworks-names.js';
 import { itemLeadBrief } from '../review-prompt.js';
 import { lstat, mkdir } from 'node:fs/promises';
@@ -211,7 +212,7 @@ export function sessionVerificationEnvironment(config: Pick<MasterConfig, 'repos
  * budget adds to a session's writable roots. None when it cannot be created.
  */
 export function sessionSlotsGrant(): string[] {
-  const directory = process.env[slotsDirectoryVariable] ?? hostHeavyJobsDirectory();
+  const directory = setting(slotsDirectoryVariable) ?? hostHeavyJobsDirectory();
   try { mkdirSync(directory, { recursive: true }); } catch { return []; }
   return [directory];
 }

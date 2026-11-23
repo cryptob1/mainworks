@@ -1,3 +1,4 @@
+import { setting } from '../setting.js';
 import { trialOverloadFault } from '../merge-writer/trial-cpu.js';
 import { timedMergePorts, trialStepMedians } from './trial-timings.js';
 import type { TrialStepReport } from '../merge-writer/trial.js';
@@ -108,7 +109,7 @@ const output = (error: unknown) => { const failed = error as { stdout?: unknown;
  * project on the host shares, naming the holders as its step, before anything of it starts.
  */
 export const heavyTrial = <T>(key: string, onStep: ((step: string) => void) | undefined, signal: AbortSignal | undefined, trial: () => Promise<T>, until?: AbortSignal, gate?: boolean) =>
-  withHeavyJob(testMergeLabel(key), trial, { onWait: () => onStep?.(waitStep(process.env[slotsDirectoryVariable]!)), signal, until, reserved: gate });
+  withHeavyJob(testMergeLabel(key), trial, { onWait: () => onStep?.(waitStep(setting(slotsDirectoryVariable)!)), signal, until, reserved: gate });
 
 /**
  * The reads over the coordinator checkout `root` (its object store holds every submitted head,

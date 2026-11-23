@@ -1,4 +1,5 @@
 // Concern: `graphyard master` operations subcommands — status, the confined master's restart request, dispatch, recover.
+import { setting } from '../../setting.js';
 import { parseArgs } from 'node:util';
 import { resourceConflicts } from '../../coordination.js';
 import { dispatchWork, readWorkerCredential } from '../../master.js';
@@ -17,7 +18,7 @@ import { masterConfinementVariable } from '../../master/launch.js';
 import { heavyDrainLine, heavyJobsDirectory, requestHeavyDrain, resumeHeavyDrain } from '../../master/verification-slots.js';
 
 /** Whether this command runs inside the master session's confinement (GY-1658): its wrapper sets the variable. */
-export const confinedMaster = (env: NodeJS.ProcessEnv = process.env) => env[masterConfinementVariable] === 'master';
+export const confinedMaster = (env: NodeJS.ProcessEnv = process.env) => setting(masterConfinementVariable, env) === 'master';
 
 /** `master recover`: repin the known-good coordinator (GY-1529). */
 export const recoverUsage = 'Use master recover [--to SHA] [--reason TEXT] --admin-token-stdin (the admin credential on stdin; the pin returns to the previous known-good SHA without --to)';
