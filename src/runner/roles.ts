@@ -1,4 +1,5 @@
 import { headlessArgv } from '../headless-argv.js';
+import { launchPlan } from '../harness.js';
 import { ChildProcessError, runChild } from '../child-runner.js';
 import { randomUUID } from 'node:crypto';
 import { confinedRuntimeArgs } from '../worker-sandbox.js';
@@ -131,9 +132,11 @@ export async function smokeRegistryAccount(account: FleetLaunchAccount, options:
     const env = runEnvironment(process.env, { ...launch.environment, ...key });
     try {
       // GY-3592: `opencode run` takes --model though its contract names no flag (the TUI refuses it); unnamed, OpenCode answers on its free model.
-      const args = withModel(account.kind, launch.args, account.fleet.contract, account.fleet.modelId);
+      // GY-3749: Cursor's check trusts the folder as its sessions do (the recipe's flags), from the install's checkout.
+      const cursor = account.kind === 'cursor';
+      const args = withModel(account.kind, cursor ? launchPlan('cursor', 'auto', launch.args).args : launch.args, account.fleet.contract, account.fleet.modelId);
       const [command, ...argv] = await headlessArgv({ kind: account.kind, args, contract: account.fleet.contract }, 'Reply with the single word OK.', env);
-      const output = await runChild(options.command ?? command, [...(options.commandArgs ?? []), ...argv], { env, cwd: options.cwd ?? account.home ?? undefined, timeoutMs: options.timeoutMs ?? 120_000 });
+      const output = await runChild(options.command ?? command, [...(options.commandArgs ?? []), ...argv], { env, cwd: options.cwd ?? (cursor ? process.cwd() : account.home ?? undefined), timeoutMs: options.timeoutMs ?? 120_000 });
       // Print-mode runtimes can report provider errors with exit zero (OpenCode).
       const failure = failureEvents(output).length > 0;
       const answered = /\bOK\b/i.test(output);

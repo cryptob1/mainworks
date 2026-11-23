@@ -643,7 +643,7 @@ export const connectProviders: readonly ConnectProvider[] = [
     // desktop keyring the sign-in lands at ACCOUNT_HOME/cursor/auth.json, where a confined session
     // reads it — never in the operator's own ~/.config.
     login: { command: 'agent', args: ['login'], envVariable: 'CURSOR_CONFIG_DIR', env: { NO_OPEN_BROWSER: '1' } }, loginFile: cursorLoginFile,
-    smoke: { command: 'agent', args: ['-p', smokePrompt], envVariable: 'CURSOR_CONFIG_DIR' },
+    smoke: { command: 'agent', args: ['-p', '--trust', smokePrompt], envVariable: 'CURSOR_CONFIG_DIR' },
     help: 'Your Cursor plan. Finish the sign-in in your own browser.',
   },
 ];
