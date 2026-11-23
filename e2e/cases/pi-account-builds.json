@@ -1,0 +1,16 @@
+{
+  "id": "pi-account-builds",
+  "title": "A Pi account in the worker role builds on its own login",
+  "description": "The real control plane, registry, dispatch, claim and watch launch a Pi worker for one item. The stub Pi exits non-zero unless its key file is under PI_CODING_AGENT_DIR and it was named the registry model's provider and model; it commits and the item reaches submitted.",
+  "tags": ["workers", "accounts"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "Pi worker runs one item to submitted",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/pi-account-builds.test.ts",
+      "timeoutSeconds": 600
+    }
+  ]
+}
