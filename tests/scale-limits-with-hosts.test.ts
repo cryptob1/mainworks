@@ -102,8 +102,9 @@ test('integration:scale-limits-with-hosts — a 24-core machine with ready hosts
   // A limit file still sets the budget, and host shards are then bounded only by placement.
   writeMachines(directory, machines(false));
   // A host whose share is temporarily full under another trial is not dropped: overflow runs locally and the host is reused once a shard finishes.
-  const busyOther = [await takeHostSlot(directory, msi, 'other 1'), await takeHostSlot(directory, msi, 'other 2'), await takeHostSlot(directory, msi, 'other 3')].filter((slot): slot is HeldSlot => !!slot);
-  assert.equal(busyOther.length, 3);
+  const busyOther: HeldSlot[] = [];
+  for (let shard = 1; shard <= 18; shard++) busyOther.push((await takeHostSlot(directory, msi, `other ${shard}`))!);
+  assert.equal(busyOther.length, 18, 'another trial leaves vish-msi one free shard');
   const placed: PlacedHost<string>[] = [
     { name: 'vishrog', room: 1, reading: { name: 'vishrog', cores: 24, busy: 0, steal: 0, celsius: 60, limit: 85, away: false } },
     { name: msi, remote: msi, room: 4, reading: { name: msi, cores: 24, busy: 0, steal: 0, celsius: 58, limit: 85, away: false } },

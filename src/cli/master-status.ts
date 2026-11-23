@@ -269,7 +269,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     heavyDrain: drain,
     // GY-3447: who holds the host's heavy-job slots (trials, gates, whole suites, deploy builds) and the limit they share.
     // GY-3528: the budget across this machine and every ready host, and each machine's load, one line each.
-    heavyJobs: { limit: heavyJobLimit(heavyJobsDirectory()), budget: budgetLine(heavyJobBudget(heavyJobsDirectory()).machines), machines: (readMachines(heavyJobsDirectory()) ?? []).map(machine => machineLine(machine, machine.local ? undefined : shardsOnHost(heavyJobsDirectory(), machine.name))), holders: slotHolders(heavyJobsDirectory()) },
+    heavyJobs: { limit: heavyJobLimit(heavyJobsDirectory()), budget: budgetLine(heavyJobBudget(heavyJobsDirectory()).machines), machines: (readMachines(heavyJobsDirectory()) ?? []).map(machine => machineLine(machine.local ? machine : { ...machine, shards: shardsOnHost(heavyJobsDirectory(), machine.name) })), holders: slotHolders(heavyJobsDirectory()) },
     // GY-3694: heads waiting for or running a merge trial against twice the available trial slots (local heavy-job limit plus ready hosts).
     testQueue: testQueueStatus(open, state?.mergeWriter, state?.hosts, now),
     // GY-3446: the temporary limits standing now, each with the time it reverts to the default; null once expired or never set.
