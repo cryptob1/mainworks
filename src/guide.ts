@@ -54,8 +54,8 @@ A dedicated master coordinator keeps cycling: run master status and act on what 
 
 Operators and maintainers change an item's priority (P0–P3) on a work row or item page, or with \`${COMMAND_NAME} priority GY-N 0|1|2|3 REASON\` from the checkout and \`${COMMAND_NAME} master priority GY-N 0|1|2|3 REASON\` on the control plane host; both require an audit reason. Changes record who changed it and why in History; the next dispatch uses the new priority. Existing P4 items retain P4 until changed.
 
-To set ${PRODUCT_NAME} up or find what its setup is missing, follow the setup steps in ${PRODUCT_NAME}'s README: \`doctor\` prints one PASS or FAIL line per prerequisite under \`setupFromZero\`, and each FAIL line names the checklist step that fixes it. The \`graphyard\` command and \`GRAPHYARD_*\` settings still work.`,
-  setup: `${PRODUCT_NAME} runs on a Linux host. Check each prerequisite; \`${COMMAND_NAME} doctor\` (or \`npx @cryptob1/graphyard doctor\`) in the repository's checkout checks credentials, agent logins, confinement, the kernel and services in one pass, and each failed check prints its fix. The \`graphyard\` command and \`GRAPHYARD_*\` settings still work.
+To set ${PRODUCT_NAME} up or find what its setup is missing, follow the setup steps in ${PRODUCT_NAME}'s README: \`doctor\` prints one PASS or FAIL line per prerequisite under \`setupFromZero\`, and each FAIL line names the checklist step that fixes it.`,
+  setup: `${PRODUCT_NAME} runs on a Linux host. Check each prerequisite; \`${COMMAND_NAME} doctor\` (or \`npx @cryptob1/graphyard doctor\`) in the repository's checkout checks credentials, agent logins, confinement, the kernel and services in one pass, and each failed check prints its fix.
 
 - Linux 7.0+ with Landlock ABI 9+ enabled: \`uname -r\` (doctor checks the ABI).
 - Node.js 24+ and npm: \`node --version && npm --version\`.
