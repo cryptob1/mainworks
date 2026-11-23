@@ -42,8 +42,10 @@ export async function publishVerified(commit: string, ports: { root: string; run
     for (const tag of tags(images.server)) await run('docker', ['image', 'push', tag]);
     // Pushed, the image needs no name on this host: none piles up here, one per verified commit.
     await run('docker', ['image', 'rm', ...tags(images.server)]);
-    // Uses the builder selected by setup-buildx-action (or the local test runner).
-    await run('docker', ['buildx', 'build', '--target', 'trial', ...stamp, ...tags(images.trial).flatMap(tag => ['--tag', tag]), '--push', tree]);
+    // Uses the builder selected by setup-buildx-action (or the local test runner). GY-3733: the previous
+    // build's layers come from the registry cache, so the heavy ones keep their digests and an update pulls only what changed.
+    const cache = `type=registry,ref=${repositoryOf(images.trial)}:buildcache`;
+    await run('docker', ['buildx', 'build', '--target', 'trial', ...stamp, '--cache-from', cache, '--cache-to', `${cache},mode=max`, ...tags(images.trial).flatMap(tag => ['--tag', tag]), '--push', tree]);
 
     await writeFile(join(tree, 'package.json'), `${JSON.stringify(publishedPackage(JSON.parse(await readFile(join(tree, 'package.json'), 'utf8')), commit, version), null, 2)}\n`);
     const npmRegistry = new URL(env.npm_config_registry || 'https://registry.npmjs.org/');
