@@ -6,6 +6,7 @@ import { NOW, boardApi } from './ui-board';
 
 const brief = { markdown: '# Mainworks\n\n## Problem\n\nShipping needs a coordinator.\n\n- a bullet\n- another bullet\n\n## Users\n\nThe owner.', updatedAt: new Date(NOW).toISOString(), history: [] };
 const delivery = { previews: 'local', candidateMaxChanges: null, productionVerification: false, mode: 'local-compose', applications: [], cases: {} };
+const app = { url: null, refused: null, missing: 'No app address set: add "app": { "url": "https://..." } to graphyard.json with the tailnet or public address teammates open', machine: 'vishrog', commit: null, deployedAt: null };
 const guidance = 'Turn on Tailscale Funnel so the link opens outside your tailnet.';
 
 async function open(page: Page) {
@@ -15,7 +16,7 @@ async function open(page: Page) {
     if (path === 'product-brief') return route.fulfill({ json: { brief } });
     if (path === 'team-access') return route.fulfill({ json: { installUrl: null, public: false, hostSynced: false, publicLink: { on: true }, guidance, teammates: [] } });
     const json = boardApi(url.pathname.slice(1) + url.search) as any;
-    return route.fulfill({ json: path === 'status' ? { ...json, project: { delivery }, setup: { ...json.setup, loop: true } } : json });
+    return route.fulfill({ json: path === 'status' ? { ...json, app, project: { delivery }, setup: { ...json.setup, loop: true } } : json });
   });
   await page.goto('/?sign-in');
   await page.getByLabel('Access token').fill('fixture');

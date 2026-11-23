@@ -11,12 +11,12 @@ export function OpenApp({ status }: { status: Dashboard['status'] }) {
   return url ? <a className="open-app" href={url} target="_blank" rel="noreferrer" data-open-app>Open app ↗</a> : null;
 }
 
-/** The Work page's Where it runs card: the app's link, its machine, serving commit and deploy time, and the dashboard's own link; or the one setting to add. */
+/** The Work page's Where it runs card: the app's link, its machine, serving commit and deploy time, and the dashboard's own link; or why a declared address was refused. Nothing while none is declared: Delivery already says there is no app. */
 export function WhereItRuns({ status, now }: { status: Dashboard['status']; now: number }) {
   const app = appOf(status);
-  if (!app) return null;
+  if (!app || (!app.url && !app.refused)) return null;
   const dashboard = typeof location === 'undefined' ? '' : location.origin;
-  return <section className="panel where-it-runs" aria-label="Where it runs" data-where-it-runs={app.url ? 'declared' : 'missing'}>
+  return <section className="panel where-it-runs" aria-label="Where it runs" data-where-it-runs={app.url ? 'declared' : 'refused'}>
     <h2>Where it runs</h2>
     {app.url
       ? <dl className="facts">
@@ -26,6 +26,6 @@ export function WhereItRuns({ status, now }: { status: Dashboard['status']; now:
         <div><dt>Deployed</dt><dd data-deployed-at title={app.deployedAt ?? undefined}>{app.deployedAt ? `${formatAge(app.deployedAt, now)} ago` : '—'}</dd></div>
         <div><dt>Dashboard</dt><dd><a href={dashboard} data-dashboard-link>{dashboard}</a></dd></div>
       </dl>
-      : <p data-app-missing>{app.refused ?? app.missing}</p>}
+      : <p data-app-refused>{app.refused}</p>}
   </section>;
 }
