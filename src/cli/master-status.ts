@@ -276,7 +276,8 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     // GY-3438: every live agent session with its CPU and memory use beside its fair share, as the loop last read its cgroup.
     sessionUsage: (state?.sessions ?? []).map(session => ({ session: session.name ?? session.unit, use: sessionFigures(session), overSince: session.overSince })),
     // GY-3190: the latest daily report of what the loop's sweeps stopped or removed, and the disk Graphyard's leftovers hold.
-    leftovers: state?.leftovers.report ?? null,
+    // GY-3691: with the working copies' disk use as the loop last read it.
+    leftovers: state && (state.leftovers.report || state.leftovers.worktreeDisk) ? { ...state.leftovers.report, worktreeDisk: state.leftovers.worktreeDisk } : null,
     loop: loop ? { state: loop.liveness.state, detail: loop.liveness.detail, cycle: loop.cycle, steps: loop.metrics?.steps ?? null } : { state: 'absent', detail: 'The loop cursor cannot be read' },
     // The loop's own master session (GY-2949): working / idle / `limited until T` while the account hold stands / absent.
     masterSession: { ...masterSummary(session ?? emptyMasterSession(), now, masterAgent, masterScreen), screenError },

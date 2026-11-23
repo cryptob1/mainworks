@@ -47,7 +47,7 @@ import { runLogTail } from '../headless-session.js';
 import { transcriptRun } from '../model/sessions.js';
 import { refusedBodyDetail, type DaemonEffects } from './effects.js';
 import { composeServer } from './compose-recovery.js';
-import { leftoverDisk } from './leftovers.js';
+import { leftoverDisk, pathsBytes } from './leftovers.js';
 import { cpuCelsius } from './cpu-pressure.js';
 import { repairCliStamp, servedCliRelease, sweepCliReleases } from '../install/cli-release.js';
 import { declarationSlot, heavyJobLimit, heavyJobsDirectory, heldSlots, readHeavyDrain } from '../master/verification-slots.js';
@@ -115,6 +115,8 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     if (memory && memory !== writtenMemory) await writeProjectMemory(root, state.projectMemory).then(() => { writtenMemory = memory; }, () => {});
     return writeDaemonState(current(), state);
   };
+  // GY-3691: where the working copies live: the attempt worktrees and the managed worktree root.
+  const workingCopyRoots = () => [worktreesDirectory(root), worktreeRoot(root, current())];
   const verifyWorkers = workerVerificationPump(root, () => current().hostId, mutate, () => worktreeRoot(root, current()));
   let cursor: DispatchCursor | null = null, ticking: Promise<unknown> | null = null;
   return Object.defineProperties({
@@ -198,7 +200,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
       }))).filter(entry => entry.changedAt > 0);
     },
     sweepCheckouts: () => sweepManagedCheckouts(root, current()),
-    stopOrphanedProcesses: () => stopOrphansOfRemovedWorktrees([worktreesDirectory(root), worktreeRoot(root, current())]),
+    stopOrphanedProcesses: () => stopOrphansOfRemovedWorktrees(workingCopyRoots()),
     diskVolumes: () => graphyardVolumes([root, dataDirectory(), worktreeRoot(root, current()), ...trialCheckoutRoots(), durableTemporaryRoot()]),
     reclaimDisk: () => reclaimGraphyardLeftovers(run),
     // GY-3553: the readings that clear environment blockers, the stamp repair, and the unblock itself.
@@ -242,7 +244,8 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
       releasesSweptAt = Date.now();
       return sweepCliReleases(installDirectory(installIdFor(current().repository)), run);
     },
-    leftoverDisk: () => leftoverDisk({ trialRuns: trialRunsDirectory(root), worktrees: worktreesDirectory(root), trialCheckouts: trialCheckoutRoots()[0]! }, run),
+    leftoverDisk: () => leftoverDisk({ trialRuns: trialRunsDirectory(root), worktrees: workingCopyRoots(), trialCheckouts: trialCheckoutRoots() }, run),
+    worktreeDisk: () => pathsBytes(workingCopyRoots()),
     // GY-2966: the compose install this host recorded for the repository, whose server the loop starts when the control plane stays unreachable.
     composeServer: async () => {
       const directory = installDirectory(installIdFor(current().repository));
