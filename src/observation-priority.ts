@@ -6,20 +6,20 @@ import { mergeAuthorized } from './model/merge-authorization.js';
  * no launch enforces (`assertReviewCandidate` binds the head, not the age, GY-710), so a requested
  * head that moved on GitHub is noticed, and the request superseded, within it.
  */
-export const reviewObservationFreshnessMs = 30 * 60_000;
+const reviewObservationFreshnessMs = 30 * 60_000;
 /** A review-requested item whose reading is this old is claimed with the merge path, ahead of starved jobs. */
-export const reviewPromotionAgeMs = reviewObservationFreshnessMs / 2;
+const reviewPromotionAgeMs = reviewObservationFreshnessMs / 2;
 
 /** A submitted item the control plane has never read: its first observation is what every later gate waits on. */
-export const firstObservationOwed = (work: Work) => !!work.submission && !work.observation && !work.candidate && work.stage !== 'done';
+const firstObservationOwed = (work: Work) => !!work.submission && !work.observation && !work.candidate && work.stage !== 'done';
 /** Whether a session is running on the item now: a worker, reviewer or producer whose result an observation reads. */
-export const runningSession = (work: Work) => (work.sessions ?? []).some(session => session.state === 'running' && !session.endedAt);
+const runningSession = (work: Work) => (work.sessions ?? []).some(session => session.state === 'running' && !session.endedAt);
 /**
  * Whether this item's next action waits on an observation (GY-492): the loop requests a rework
  * round and dispatches a review only from a fresh reading of the pull request, so a job for such
  * an item is claimed ahead of the idle backlog that would otherwise hold it minutes.
  */
-export function waitsOnObservation(work: Work, all: Work[], now = new Date(), kind = nextAction(work, all, now)?.kind): boolean {
+function waitsOnObservation(work: Work, all: Work[], now = new Date(), kind = nextAction(work, all, now)?.kind): boolean {
   // A resync is the wait for a fresher reading itself (a first reading has its own tier): unnamed, it was
   // claimed only after every named starved job, and under a paced budget never (2026-09-26: GY-393, GY-430 for 3 h).
   return kind === 'request-rework' || kind === 'request-review' || (kind === 'resync' && !firstObservationOwed(work));
@@ -31,7 +31,7 @@ function mergePath(all: Work[]): string[] {
 }
 /** Every open item's claim class, read once from the fleet: the expensive part of the claim order. */
 export interface ObservationClaimClasses { mergePath: string[]; firstReads: string[]; review: string[]; waiting: string[]; running: string[] }
-export function observationClaimClasses(all: Work[], now = Date.now()): ObservationClaimClasses {
+function observationClaimClasses(all: Work[], now = Date.now()): ObservationClaimClasses {
   const ranked = mergePath(all), date = new Date(now);
   const open = all.filter(work => work.stage !== 'done' && !ranked.includes(work.id));
   // A submission never observed has no candidate, so no gate, review or proof can start until it
@@ -51,7 +51,7 @@ export function observationClaimClasses(all: Work[], now = Date.now()): Observat
  * (ahead of the waits under a `tight` budget, GY-567), and the rest by `available_at`.
  * `available_at` still gates every claim: priority reorders due jobs, never makes one due.
  */
-export function observationClaimPlan(classes: ObservationClaimClasses, observedAt: (id: string) => number | null, now = Date.now(), tight = false): { order: string[]; headCount: number } {
+function observationClaimPlan(classes: ObservationClaimClasses, observedAt: (id: string) => number | null, now = Date.now(), tight = false): { order: string[]; headCount: number } {
   const age = (id: string) => { const at = observedAt(id); return at === null ? Infinity : now - at; };
   const promoted = classes.review.filter(id => age(id) >= reviewPromotionAgeMs).sort((a, b) => age(b) - age(a));
   const head = [...new Set([...classes.mergePath, ...promoted])];

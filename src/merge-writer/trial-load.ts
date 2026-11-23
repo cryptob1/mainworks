@@ -27,7 +27,7 @@ export const cpuSensorNames = ['coretemp', 'k10temp', 'zenpower', 'cpu_thermal']
 export const trialHotCelsius = 85;
 /** GY-3532: the heat rule compares the mean of the package samples over this window with the limit, once it holds `heatMinSamples`. */
 export const heatWindowMs = 120_000;
-export const heatMinSamples = 4;
+const heatMinSamples = 4;
 /** The [epoch ms, degrees] samples of the window as the heat rule reads them: the rounded mean with at least 4 samples, else the latest sample; null with none. */
 export function heatReading(samples: readonly (readonly [number, number])[]): { latest: number; mean: number | null; celsius: number } | null {
   if (!samples.length) return null;
@@ -76,7 +76,7 @@ export async function trialLoad(root: string, who: keyof typeof trialStartOrder,
   return { slots: trialSlots(), cap: trialContainerCap(cores, usable), order: trialStartOrder[who], ...(who === 'gate' ? { cpuShares: gateCpuShares, hotCap: Math.max(1, Math.floor(trialContainerCap(cores, usable) / 2)) } : {}), hotCelsius: trialHotCelsius, floorBytes: diskFloorBytes({ run }), hwmon: '/sys/class/hwmon',
     pressureBoundSeconds: trialPressureBoundSeconds };
 }
-export const trialSlots = (home = homedir()) => join(home, '.gy', 'trial-slots');
+const trialSlots = (home = homedir()) => join(home, '.gy', 'trial-slots');
 
 const launcherLine = 'graphyard trial container: ', waitingLine = `${launcherLine}waiting`, startingLine = `${launcherLine}starting`;
 /** GY-3535: the line a launcher prints when a heat wait ends, followed by its seconds. */
@@ -252,7 +252,7 @@ export const trialContainerFault = (output: string): string | null => {
   return at < 0 ? null : output.slice(at + launcherLine.length).split('\n')[0]!;
 };
 /** GY-3332: the disk-floor readings live launchers on this machine wait on now, one per start. */
-export function trialFloorWaits(slots = trialSlots()): string[] {
+function trialFloorWaits(slots = trialSlots()): string[] {
   let names: string[];
   try { names = readdirSync(slots); } catch { return []; }
   return names.flatMap(name => {

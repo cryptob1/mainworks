@@ -13,8 +13,12 @@ import { allowanceSentence } from './allowance.js';
  * action runs on, and the view status and the dashboard show. Everything here is pure over the
  * registry document; src/agent-registry.ts runs it inside the coordination transaction.
  */
-export const sessionHistoryLimit = 100, refusalHistoryLimit = 20;
-export const launchGraceMs = 5 * 60_000, reviewSessionMs = 2 * 3_600_000, producerSessionMs = 24 * 3_600_000, sessionCapMs = 48 * 3_600_000;
+const sessionHistoryLimit = 100;
+export const refusalHistoryLimit = 20;
+export const launchGraceMs = 5 * 60_000;
+const reviewSessionMs = 2 * 3_600_000;
+const producerSessionMs = 24 * 3_600_000;
+const sessionCapMs = 48 * 3_600_000;
 type SessionWork = Pick<Work, 'key' | 'lease' | 'autoDispatch' | 'stage'> & Partial<Pick<Work, 'sessions'>>;
 /**
  * Whether a recorded session still occupies its account, and why not when it does not. Nothing
@@ -146,9 +150,10 @@ export function accountIneligibility(registry: AgentRegistry, account: FleetAcco
  * that role on it ended without a result (GY-446): a run that dies unjudged twice in a row is the
  * account failing, not the item, so the loop falls through to the role's next account.
  */
-export const unjudgedRunLimit = 2, unjudgedHoldMs = 3_600_000;
+const unjudgedRunLimit = 2;
+export const unjudgedHoldMs = 3_600_000;
 /** Why an account is kept from one role right now, or null. */
-export function roleIneligibility(account: FleetAccount, role: FleetRoleName, now: number): string | null {
+function roleIneligibility(account: FleetAccount, role: FleetRoleName, now: number): string | null {
   const held = account.unjudged?.[role];
   if (!held?.until || Date.parse(held.until) <= now) return null;
   return `${account.name} is held from ${role} until ${held.until}: ${unjudgedRunLimit} consecutive ${role} runs on it ended without a result${held.reason ? ` (last: ${held.reason})` : ''}`;
@@ -207,7 +212,7 @@ export function foldObservations(registry: AgentRegistry, request: Pick<Selectio
 }
 
 /** A usage window that resets within the hour with at least 30% of it unused (GY-3197): quota its account loses unless a session spends it now. */
-export function expiringWindow(account: FleetAccount, now: number) {
+function expiringWindow(account: FleetAccount, now: number) {
   return account.quota.usage.find(usage => usage.resetsAt && Date.parse(usage.resetsAt) > now && Date.parse(usage.resetsAt) - now <= 3_600_000 && usage.percent <= 70) ?? null;
 }
 /** The highest share any of an account's unreset usage windows shows (GY-3498); null with no reading. */
@@ -218,7 +223,7 @@ function highestWindow(account: FleetAccount, now: number): number | null {
 /** At this share of its highest window an eligible account trails the role's accounts with room left (GY-3498). */
 const nearAllowance = 80;
 /** A choice past the role's own accounts (GY-3092): the role, the fleet account that serves it, and why each of the role's own was passed over. */
-export interface RoleFailover { role: FleetRoleName; account: string; reason: string }
+interface RoleFailover { role: FleetRoleName; account: string; reason: string }
 export interface SessionChoice { account: FleetAccount; runtime: FleetRuntime; model: FleetModel; policy: RolePolicy; reason: string; skipped: SessionSkip[]; failover: RoleFailover | null }
 export interface SessionRefusal { account: null; reason: string; skipped: SessionSkip[] }
 /**

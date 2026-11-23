@@ -9,7 +9,7 @@ const revision = z.number().int().positive();
 const base = { id: name, expectedRevision: z.number().int().min(0) };
 const resourceNames = z.array(name).min(1).max(30).refine(a => new Set(a).size === a.length, 'Resources must be unique');
 const ref = z.object({ id: name, revision }).strict();
-export const definitionSchema = z.discriminatedUnion('kind', [
+const definitionSchema = z.discriminatedUnion('kind', [
   // `delivery` is the environment's release policy: how recent a verified common interval
   // must be, and whether selecting an expected release needs a separate operator approval.
   // Absent, the defaults are the conservative ones.

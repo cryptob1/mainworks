@@ -7,7 +7,7 @@ import type { MasterConfig } from './profiles.js';
 import { herdrCall, herdrInvocation, herdrTarget, herdrTerminalArgs, observeHerdrAgents } from './herdr.js';
 import { readSessionScreenOrError } from './prompt-delivery.js';
 
-export interface TerminalSession { account: string | null; runtime: string | null; pane: string | null; state: string; since?: string | null }
+interface TerminalSession { account: string | null; runtime: string | null; pane: string | null; state: string; since?: string | null }
 export type SessionReader = () => Promise<TerminalSession>;
 export const terminalSessionReader = (config: () => MasterConfig): SessionReader => async () => {
   const master = masterSessionSchema.parse(JSON.parse(await readFile(daemonStatePath(config()), 'utf8').catch(error => { if (error.code === 'ENOENT') return '{}'; throw error; })).master ?? {});

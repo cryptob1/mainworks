@@ -40,7 +40,7 @@ async function fold(context: RouteContext) {
 /** GY-3690: whether the owner turned the install's public link on, who did and when; off until they do. */
 export interface PublicLinkSetting { on: boolean; by: string | null; at: string | null }
 type Pool = RouteContext['services']['engine']['store']['pool'];
-export async function publicLinkSetting(pool: Pool): Promise<PublicLinkSetting> {
+async function publicLinkSetting(pool: Pool): Promise<PublicLinkSetting> {
   const row = (await pool.query(`SELECT actor, created_at, payload FROM events WHERE ${unownedFamilySql(prefix)} AND kind = $1 ORDER BY seq DESC LIMIT 1`, [`${prefix}public-link`])).rows[0];
   return row ? { on: !!row.payload.on, by: row.actor, at: new Date(row.created_at).toISOString() } : { on: false, by: null, at: null };
 }
@@ -61,7 +61,7 @@ export async function publicLinkOff(pool: Pool, now: Date): Promise<{ doing: str
 }
 
 /** GY-3514: the one line Invite shows when its link opens only on the tailnet. */
-export const funnelOffGuidance = 'This link opens only on your tailnet: turn on Funnel for this machine in the Tailscale admin console.';
+const funnelOffGuidance = 'This link opens only on your tailnet: turn on Funnel for this machine in the Tailscale admin console.';
 /** GY-3690: the line Invite shows while the owner keeps the public link off. */
 export const tailnetOnlyGuidance = 'This link opens only on your tailnet: the public link is off. Turn it on in Settings to let people without Tailscale open it.';
 const linkGuidance = (report: HostReport | undefined, setting: PublicLinkSetting, port: string) =>
@@ -95,7 +95,7 @@ const hostReportSchema = z.object({
 }).strict();
 
 /** GY-3514: what the owner may pick for how long an invite stays unopened. */
-export const inviteDays = [1, 7, 30] as const;
+const inviteDays = [1, 7, 30] as const;
 
 export const teamAccessRoutes = defineRoutes('team-access', [
   { method: 'GET', path: '/api/team-access', handle: view },

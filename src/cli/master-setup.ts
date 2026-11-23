@@ -26,7 +26,7 @@ export interface MasterSetupDependencies {
 }
 
 /** The deployment this host installed, from its install record (`graphyard install`); null without one. */
-export async function recordedDeployment(root: string, master: Pick<MasterConfig, 'repository'>, options: MasterSetupOptions) {
+async function recordedDeployment(root: string, master: Pick<MasterConfig, 'repository'>, options: MasterSetupOptions) {
   const record = await readInstallRecord(installDirectory(installIdFor(master.repository)));
   if (!record) return null;
   // The service install named (--server-name) is recorded; --service names it for a record written before it was.

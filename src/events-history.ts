@@ -48,7 +48,7 @@ export interface EventHistoryQuery {
 }
 
 const kindPattern = /^[\w.:-]{1,100}$/;
-export const eventHistorySchema = z.object({
+const eventHistorySchema = z.object({
   work: z.string().uuid().nullish(),
   kind: z.array(z.string().regex(kindPattern, 'An event kind is 1-100 characters of letters, digits, dot, colon, dash or underscore')).max(25).default([]),
   since: z.string().datetime().nullish(), until: z.string().datetime().nullish(),
@@ -122,7 +122,7 @@ export function routineSummarySql(query: EventHistoryQuery, scan: number = event
      GROUP BY kind ORDER BY kind`, values };
 }
 
-export interface RoutineKindSummary { kind: string; count: number; firstAt: string | null; lastAt: string | null; firstSeq: string | null; lastSeq: string | null }
+interface RoutineKindSummary { kind: string; count: number; firstAt: string | null; lastAt: string | null; firstSeq: string | null; lastSeq: string | null }
 export interface RoutineSummary {
   included: boolean; excluded: string[]; kinds: RoutineKindSummary[]; total: number;
   scanLimit: number; truncated: boolean; statement: string;

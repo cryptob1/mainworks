@@ -15,7 +15,7 @@ import { namedPaths } from './documentation-glob.js';
  * `manual:post-deploy/…`) names none of them and stays a worker's — its loop still defers it
  * inside its observation window (GY-1740) and a producer session records the reading.
  */
-export const masterRoleObservation = (proof: string) => /checkout-restore|master[.-](status|role)|\.graphyard\/master\.json/i.test(proof);
+const masterRoleObservation = (proof: string) => /checkout-restore|master[.-](status|role)|\.graphyard\/master\.json/i.test(proof);
 
 /** Whether nothing of the item is a worker's to do: no criterion names a file to change, and every proof it owes is recorded by the master side, so releasing it would only dispatch a worker that must block. An item with code work keeps its worker (GY-1762), and one criterion that a worker can serve keeps the whole item dispatchable. */
 export const loopOwned = (work: Pick<Work, 'criteria'>) => {
@@ -36,7 +36,7 @@ export const loopOwnedRefusal = (work: Pick<Work, 'key' | 'criteria'>) => loopOw
  * or anyone once the item carries an owner's provided answer (GY-2606).
  */
 const ownerHoldWording = /\b(?:leaves the backlog only when|stays in the backlog until) the owner releases it\b/i;
-export const ownerHeld = (work: Pick<Work, 'title' | 'description' | 'criteria'>) => /^owner hold:/i.test(work.title)
+const ownerHeld = (work: Pick<Work, 'title' | 'description' | 'criteria'>) => /^owner hold:/i.test(work.title)
   || ownerHoldWording.test([work.description ?? '', ...work.criteria.map(criterion => criterion.text)].join('\n'))
   || work.criteria.some(criterion => criterion.proofs.some(proof => proof.startsWith('manual:owner-schedules')));
 const ownerAnswered = (work: Pick<Work, 'humanRequest' | 'humanRequests'>) =>

@@ -47,7 +47,7 @@ export function launchedSessionHandle(kind: 'review' | 'proof', request: Dispatc
  * that runs them. It is pure over the snapshot: the caller writes each closure back through the
  * coordinator mutation, so one sweep answers a status reader and this loop alike.
  */
-export type ClosureCause = 'vanished' | 'ended' | 'superseded' | 'duplicate';
+type ClosureCause = 'vanished' | 'ended' | 'superseded' | 'duplicate';
 export interface SessionClosure { workId: string; key: string; id: string; kind: SessionKind; role: string; runtime: string; host: string; subject: string; cause: ClosureCause; outcome: string;
   /** The session report entry that closed it, when the runtime's observation did rather than the item. */
   report?: SessionReportEntry }

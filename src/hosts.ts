@@ -30,10 +30,10 @@ export const hostsFile = (home = configHome()) => join(home, 'machine', 'hosts.j
 /** GY-3698: compute host keys live beside hosts.json in the machine folder, so a confined master with no ~/.ssh records and verifies them. */
 export const hostKnownHostsFile = (home = configHome()) => join(home, 'machine', 'known_hosts');
 /** SSH options that pin compute host keys to the machine folder with accept-new. */
-export const hostKeySshOptions = (knownHosts = hostKnownHostsFile()) => ['-o', `UserKnownHostsFile=${knownHosts}`, '-o', 'StrictHostKeyChecking=accept-new'];
+const hostKeySshOptions = (knownHosts = hostKnownHostsFile()) => ['-o', `UserKnownHostsFile=${knownHosts}`, '-o', 'StrictHostKeyChecking=accept-new'];
 /** USER@HOST, USER@HOST:PORT, or an ssh-config alias. */
-export const hostTargetPattern = /^(?:[a-z_][a-z0-9_.-]*@[A-Za-z0-9][A-Za-z0-9.-]*(?::\d{1,5})?|[A-Za-z0-9][A-Za-z0-9._-]*)$/;
-export const computePort = 2222;
+const hostTargetPattern = /^(?:[a-z_][a-z0-9_.-]*@[A-Za-z0-9][A-Za-z0-9.-]*(?::\d{1,5})?|[A-Za-z0-9][A-Za-z0-9._-]*)$/;
+const computePort = 2222;
 export const hostUser = 'gy-compute';
 
 export async function readHosts(file = hostsFile()): Promise<HostRecord[]> {
@@ -190,7 +190,7 @@ export async function localPublicKey(home = homedir()) {
   throw new Error(`No SSH public key in ${join(home, '.ssh')}: create one with ssh-keygen -t ed25519, then run graphyard host prepare again`);
 }
 
-export function parseHostProbe(text: string) {
+function parseHostProbe(text: string) {
   if (/^graphyard-no-docker$/m.test(text)) return null;
   const number = (pattern: RegExp) => { const value = Number(pattern.exec(text)?.[1]); return Number.isFinite(value) ? value : null; };
   const temps = [...text.matchAll(/^temp (\S+) (\d+)$/gm)].filter(match => cpuSensorNames.includes(match[1]!)).map(match => Math.floor(Number(match[2]) / 1000));
@@ -200,7 +200,7 @@ export function parseHostProbe(text: string) {
     uid: user ? Number(user[1]) : null, groups: user ? user[2]!.split(/\s+/).filter(Boolean) : [] };
 }
 
-export const outdatedShimReason = (target: string, missing: readonly string[] = []) => `${target}'s graphyard-host-shim is older than this release: run graphyard host prepare and the script it prints there${missing.length ? ` (it lacks ${missing.join(', ')})` : ''}`;
+const outdatedShimReason = (target: string, missing: readonly string[] = []) => `${target}'s graphyard-host-shim is older than this release: run graphyard host prepare and the script it prints there${missing.length ? ` (it lacks ${missing.join(', ')})` : ''}`;
 const lastLine = (text: string) => text.trim().split('\n').filter(Boolean).at(-1) ?? '';
 /** ssh's arguments for a host target: USER@HOST:PORT becomes -p PORT USER@HOST; USER@HOST and an alias pass as they are. */
 export const sshTarget = (target: string) => { const port = /^(.+@.+):(\d+)$/.exec(target); return port ? ['-p', port[2]!, port[1]!] : [target]; };
@@ -215,7 +215,7 @@ const sshFailure = (target: string, error: any, knownHosts: string) => hostKeyCh
   : `${target} is unreachable over SSH: ${lastLine(String(error?.stderr ?? '')) || (error?.timedOut ? 'no answer within 15 seconds' : String(error?.message ?? error))}`;
 
 /** GY-3697: the probe's docker-unit line says whether rootless Docker's user unit failed or is not enabled. */
-export function noDockerReason(name: string, output: string) {
+function noDockerReason(name: string, output: string) {
   const [, enabled, active] = /^docker-unit (\S*) ?(\S*)$/m.exec(output) ?? [];
   if (active === 'failed') return `${name} answers but its Docker failed (docker.service failed): see journalctl --user -u docker.service as ${hostUser} there, or run graphyard host prepare and the script it prints`;
   if (enabled && enabled !== 'enabled') return `${name} answers but its Docker is not enabled (docker.service is ${enabled}), so it stops at reboot: run graphyard host prepare and the script it prints there`;
@@ -247,7 +247,7 @@ async function opensPlainShell(target: string, run: ChildRun, knownHosts: string
 const targetHost = (target: string) => target.replace(/^.*@/, '').replace(/:\d+$/, '');
 
 /** Read-only: does this machine's own account open a shell on the host's port 22 (Tailscale SSH or a key) with nobody there to approve it? */
-export async function operatorLogin(target: string, run: ChildRun = defaultChildRun, account = userInfo().username, knownHosts = hostKnownHostsFile()) {
+async function operatorLogin(target: string, run: ChildRun = defaultChildRun, account = userInfo().username, knownHosts = hostKnownHostsFile()) {
   const host = /^hostname (\S+)$/m.exec(String(await Promise.resolve(run('ssh', ['-G', ...sshTarget(target)], { timeoutMs: 5_000 })).catch(() => '')))?.[1] ?? targetHost(target);
   const login = `${account}@${host}`;
   try {

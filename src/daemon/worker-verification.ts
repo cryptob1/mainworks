@@ -22,7 +22,7 @@ export async function moveBranchToHead(root: string, branch: string, head: strin
  * GY-3528 (GY-3533): which worker verification slots stay held — those whose item has a request in
  * flight here under a live worker lease, or a verification child still running. Every other is freed.
  */
-export const keepVerificationSlot = (inFlight: ReadonlyMap<string, number>, work: readonly Pick<Work, 'key' | 'lease'>[], children: ReadonlyMap<string, number> = runningVerificationChildren) =>
+const keepVerificationSlot = (inFlight: ReadonlyMap<string, number>, work: readonly Pick<Work, 'key' | 'lease'>[], children: ReadonlyMap<string, number> = runningVerificationChildren) =>
   (key: string) => (children.get(key) ?? 0) > 0 || (inFlight.get(key) ?? 0) > 0 && work.some(item => item.key === key && item.lease);
 
 /** Poll alongside the host loop; trials never hold up supervision or renewal. */

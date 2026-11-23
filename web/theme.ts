@@ -11,7 +11,7 @@ export type Theme = 'night' | 'daylight';
 const KEY = 'graphyard.theme';
 const listeners = new Set<() => void>();
 
-export function readTheme(): Theme {
+function readTheme(): Theme {
   try { return localStorage.getItem(KEY) === 'daylight' ? 'daylight' : 'night'; } catch { return 'night'; }
 }
 const apply = (theme: Theme) => { document.documentElement.dataset.theme = theme; };

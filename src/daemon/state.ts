@@ -18,11 +18,11 @@ import { continuitySchema } from '../master/conversation.js';
 // 'diagnosis' stays a kind a cursor may hold: the diagnostician's rows (GY-439, retired by GY-2186) still load, and nothing new records one.
 // A cursor's rows of the retired 'decision' and 'escalation' kinds (GY-2874) load as 'judgement' and 'attention'.
 const retiredActionKinds: Record<string, string> = { decision: 'judgement', escalation: 'attention' };
-export const daemonActionKinds = ['close', 'dispatch', 'review', 'refresh', 'proof', 'merge', 'deployment', 'smoke', 'attention', 'config', 'session', 'reclaim', 'judgement', 'scope', 'settle', 'failover', 'capacity', 'human', 'preserve', 'fault', 'diagnosis', 'wake', 'blocker'] as const;
+const daemonActionKinds = ['close', 'dispatch', 'review', 'refresh', 'proof', 'merge', 'deployment', 'smoke', 'attention', 'config', 'session', 'reclaim', 'judgement', 'scope', 'settle', 'failover', 'capacity', 'human', 'preserve', 'fault', 'diagnosis', 'wake', 'blocker'] as const;
 export type DaemonActionKind = typeof daemonActionKinds[number];
 /** The most an action's detail may carry: daemonActionSchema's bound, which record() enforces. */
 export { actionDetailMax } from './text.js';
-export const daemonActionSchema = z.object({
+const daemonActionSchema = z.object({
   kind: z.preprocess(kind => retiredActionKinds[kind as string] ?? kind, z.enum(daemonActionKinds)),
   work: z.string().nullable().default(null),
   principal: z.string().nullable().default(null),
@@ -47,7 +47,6 @@ export const cycleMetricsSchema = z.object({
   /** The steps the cycle ran, in order: snapshot, close, dispatch, merge writer, persist. A cursor written before recorded step costs here, which read as absent. */
   steps: z.preprocess(steps => Array.isArray(steps) && steps.every(step => typeof step === 'string') ? steps : undefined, z.array(z.string().max(40)).max(10).optional()),
 }).strip();
-export type CycleMetrics = z.infer<typeof cycleMetricsSchema>;
 
 /**
  * The loop's own failures (GY-119). A cycle that throws — a control-plane read that timed out, a runtime call that failed, a
@@ -56,7 +55,7 @@ export type CycleMetrics = z.infer<typeof cycleMetricsSchema>;
  * anywhere in the process — a detached promise in the dispatcher, a Herdr read — is caught at the process level and
  * counted here too. The supervisor's restart is reserved for a process that hangs, which the watchdog detects; nothing here ends the process.
  */
-export const cycleFailureSchema = z.object({
+const cycleFailureSchema = z.object({
   /** Failed cycles since the last one that completed; the backoff and the attention item read it. */
   consecutive: z.number().int().min(0).default(0),
   /** Every failed cycle this cursor has seen, so a loop that fails and recovers still says so. */
@@ -78,7 +77,7 @@ export const cycleFailureSchema = z.object({
 export type CycleFailures = z.infer<typeof cycleFailureSchema>;
 
 /** The release this loop's own process loaded, read once at its startup (GY-437) and overwritten by every new process: what every action it takes runs, until its supervisor replaces it. */
-export const loopReleaseSchema = z.object({ commit: z.string().regex(/^[0-9a-f]{40}$/).nullable(), dirty: z.boolean().nullable() }).strict();
+const loopReleaseSchema = z.object({ commit: z.string().regex(/^[0-9a-f]{40}$/).nullable(), dirty: z.boolean().nullable() }).strict();
 export type LoopRelease = z.infer<typeof loopReleaseSchema>;
 
 /**
@@ -293,7 +292,8 @@ const toleratedStateSchema = () => tolerated ??= forwardTolerant(daemonStateSche
  * the undeclared ones of `previous` survive under it; a null `next` clears the record as before.
  */
 export const carryUndeclared = <T extends object | null>(previous: object | null | undefined, next: T): T => previous && next ? { ...previous, ...next } : next;
-export const retainedActions = 500, retainedMetrics = 100, maxProofAttempts = 3;
+export const retainedActions = 500;
+const retainedMetrics = 100;
 
 export function emptyDaemonState(config: MasterConfig): DaemonState {
   return daemonStateSchema.parse({ version: 1, url: config.url, repository: config.repository });
@@ -304,7 +304,7 @@ export function daemonStatePath(config: MasterConfig) {
   return besideCursor(config, 'daemon');
 }
 /** A file beside the loop's cursor, under the credential's private directory. */
-export const besideCursor = (config: Pick<MasterConfig, 'credentialFile'>, suffix: string) =>
+const besideCursor = (config: Pick<MasterConfig, 'credentialFile'>, suffix: string) =>
   resolve(dirname(config.credentialFile), `${basename(config.credentialFile).replace(/\.token$/, '')}.${suffix}.json`);
 /** The file a master or caretaker writes to ask the loop to restart after its current cycle. */
 export const loopRestartRequestPath = (config: Pick<MasterConfig, 'credentialFile'>) => besideCursor(config, 'loop-restart');
@@ -364,7 +364,7 @@ export function pruneDaemonState(state: DaemonState) {
  * Truncation loses the tail of a long string or the oldest entries of a long list; failing the
  * write loses the cycle. Counts are clamped, never reset, so a backoff keeps its place.
  */
-export const clampCount = (value: number, max: number) => Math.min(max, Math.max(0, Math.floor(Number.isFinite(value) ? value : 0)));
+const clampCount = (value: number, max: number) => Math.min(max, Math.max(0, Math.floor(Number.isFinite(value) ? value : 0)));
 
 /**
  * Every write of an action goes through here. The detail is bounded here, before the schema sees

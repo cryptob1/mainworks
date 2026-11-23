@@ -46,7 +46,7 @@ export type TestedBinding = { source: string; sha: string; baseSha?: string; pol
  * key@sha@baseSha@policyRevision in GRAPHYARD_PRODUCER_BINDING (src/producer.ts); any other caller
  * tested the commit its checkout holds.
  */
-export function testedBinding(key: string, env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()): TestedBinding | null {
+function testedBinding(key: string, env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()): TestedBinding | null {
   const request = /^([^@]+)@([0-9a-f]{40})@([0-9a-f]{40})@(\d+)$/.exec(setting('PRODUCER_BINDING', env) ?? '');
   if (request && request[1] === key) return { source: `the producer request for ${key}`, sha: request[2], baseSha: request[3], policyRevision: Number(request[4]) };
   const head = spawnSync('git', ['rev-parse', '-q', '--verify', 'HEAD^{commit}'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
@@ -63,7 +63,7 @@ export function testedBinding(key: string, env: NodeJS.ProcessEnv = process.env,
  * A value the file carries is sent as written, and the control plane still refuses evidence for
  * anything but the current candidate.
  */
-export function bindEvidence(input: unknown, work: { key: string; candidate?: { sha?: string | null; baseSha?: string | null } | null; policyRevision?: number }, tested: TestedBinding | null) {
+function bindEvidence(input: unknown, work: { key: string; candidate?: { sha?: string | null; baseSha?: string | null } | null; policyRevision?: number }, tested: TestedBinding | null) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Evidence must be a JSON object');
   const evidence = { ...input as Record<string, unknown> };
   const missing = (name: string) => evidence[name] === undefined || evidence[name] === null || evidence[name] === '';

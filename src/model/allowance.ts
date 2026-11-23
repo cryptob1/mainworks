@@ -5,7 +5,7 @@ const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /** `at 09:20` later the same day, else `Sun 22 Nov 05:00` (UTC). */
-export function backAt(iso: string, now: number) {
+function backAt(iso: string, now: number) {
   const date = new Date(iso); iso = date.toISOString(); const clock = iso.slice(11, 16);
   return iso.slice(0, 10) === new Date(now).toISOString().slice(0, 10) ? `at ${clock}` : `${days[date.getUTCDay()]} ${date.getUTCDate()} ${months[date.getUTCMonth()]} ${clock}`;
 }
@@ -21,7 +21,7 @@ function span(window: string) {
 }
 
 /** The window nearest its limit among those that have not reset yet. */
-export function tightestWindow(usage: readonly Window[], now: number) {
+function tightestWindow(usage: readonly Window[], now: number) {
   return usage.filter(entry => !entry.resetsAt || Date.parse(entry.resetsAt) > now)
     .reduce<Window | null>((tightest, entry) => !tightest || entry.percent > tightest.percent ? entry : tightest, null);
 }

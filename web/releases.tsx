@@ -4,7 +4,7 @@ import type { Work } from '../src/model';
 import { EmptyState, PageHeader } from './components/page-layout';
 
 /** Precise labels: a verified release is a common interval over the whole manifest, never a green deploy job. */
-export const verificationLabel: Record<EnvironmentDelivery['verification']['status'], string> = {
+const verificationLabel: Record<EnvironmentDelivery['verification']['status'], string> = {
   unselected: 'No expected release selected', unobserved: 'Awaiting observation of every required service', incomplete: 'Instance listing incomplete',
   unknown: 'Runtime identity unknown — not verified', mismatched: 'Running artifacts differ from the expected release', unhealthy: 'Deployment failed or instances unhealthy',
   'no-common-interval': 'Services never observed matching at once', stale: 'Verified interval older than the freshness bound', verified: 'Verified in production', degraded: 'Verified, then a later observation failed',

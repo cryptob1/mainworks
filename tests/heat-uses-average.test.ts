@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { cpuPressureStep, cpuWaiting, implementationWaiting, trialCapNow } from '../src/daemon/cpu-pressure.js';
+import { cpuPressureStep, cpuWaiting, trialCapNow } from '../src/daemon/cpu-pressure.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
 import { emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
 import { heatReading } from '../src/merge-writer/trial-load.js';
@@ -30,7 +30,7 @@ test('unit:heat-uses-average — one 95C sample among 58C samples holds nothing;
   // A turbo spike as the latest sample among two minutes of 58C.
   let state = await cycles([...Array(12).fill(58), 95]);
   assert.equal(cpuWaiting(state), null, 'one 95C spike holds no launch');
-  assert.equal(implementationWaiting(state), null, 'nor any implementation launch');
+  assert.equal(cpuWaiting(state), null, 'nor any implementation launch');
   assert.equal(trialCapNow(state, 4), 4, 'and sets no trial cap');
   assert.equal(state.cpuPressure?.celsius, 61, 'the heat rule reads the 120 s mean');
 

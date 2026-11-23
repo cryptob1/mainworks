@@ -30,7 +30,7 @@ import { setting } from '../setting.js';
 import { stateDirectory } from '../install/layout.js';
 // Prompt delivery moved to prompt-delivery.ts (GY-1863) with the screen a stalled delivery is
 // judged by; the names below are the one address every existing import has always had.
-export { promptAttempts, promptAcceptMs, promptRetryPauseMs, noticeSettleMs, PromptNotAcceptedError, herdrErrorCode, herdrErrorText, nameRefusedByRuntime, deliverPrompt, readSessionScreen, sessionWords, type PromptDelivery } from './prompt-delivery.js';
+export { promptAttempts, promptAcceptMs, promptRetryPauseMs,  PromptNotAcceptedError, herdrErrorCode, herdrErrorText, nameRefusedByRuntime, deliverPrompt, readSessionScreen, sessionWords, type PromptDelivery } from './prompt-delivery.js';
 
 /**
  * Keep what an interrupted attempt had not committed. The work is committed on the attempt's own
@@ -363,7 +363,7 @@ export function paneLastLine(text: string | null, limit = paneLineLimit) {
 /** Whether the pane's last line is the launch command itself — typed, or still being typed — and not yet answered: it opens with the stem binding and names the runtime. */
 export const commandEchoing = (line: string, command: string) => !!line && (line.includes(command.slice(0, 24)) || (line.includes(`${launchVariable}=`) && line.includes(` ${command.replace(/^GY=\S+; /, '').split(' ')[0]}`)));
 /** How many of the runtime's last printed lines an exit at start quotes. */
-export const exitedLineLimit = 5;
+const exitedLineLimit = 5;
 /**
  * What the runtime printed after the launch command, when the pane's screen shows that command
  * echoed with output below it (GY-976): the lines below its last echo, less the shell's new prompt
@@ -439,10 +439,6 @@ export async function paneForeground(pane: string, run?: ChildRun, program?: str
     const named = typeof inspected?.name === 'string' && inspected.name ? inspected.name : argvs[at][0].split('/').at(-1);
     return { other: named || 'an unnamed process' };
   } catch { return null; }
-}
-/** Whether the pane's own shell holds its terminal's foreground (paneForeground). False when Herdr cannot say. */
-export async function shellInForeground(pane: string, run?: ChildRun) {
-  return await paneForeground(pane, run) === 'shell';
 }
 export async function observeStart(pane: string, kind: string, command: string, run?: ChildRun, readyStates = startedStates, answers: readonly import('../consent-prompt.js').ConsentRule[] = consentAnswers): Promise<StartObservation> {
   let agent: HerdrAgent | null = null;
@@ -826,7 +822,7 @@ export function repromptText(request: string, ackMs: number) {
  * carry it, and the liveness sweep's wording, the blocked-prompt read and the per-runtime exhaustion
  * notices judge a codex pane as codex. A launch that reports no account ran on the profile's own.
  */
-export function launchedRuntime(launched: unknown): string | null {
+function launchedRuntime(launched: unknown): string | null {
   const kind = (launched as { account?: { kind?: unknown } | null } | null | undefined)?.account?.kind;
   return typeof kind === 'string' && kind ? kind : null;
 }

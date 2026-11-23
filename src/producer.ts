@@ -44,7 +44,7 @@ export { parseEnvValue } from './env-file.js';
  * (operator-approved for GY-49's live installs, GY-73; the SSH key name since GY-1170). Nothing
  * else in .env leaves it, and none of these names can shadow a control-plane variable.
  */
-export const producerEnvNames = [...liveInstallRequiredEnv, liveInstallSshKeyEnv] as const;
+const producerEnvNames = [...liveInstallRequiredEnv, liveInstallSshKeyEnv] as const;
 /**
  * The proofs that provision real servers, and the .env names each cannot run without (GY-1071): a
  * launch for one of them on a host whose .env lacks a name is refused before any session exists,
@@ -126,7 +126,7 @@ export async function producerSecretsPrefix(directory: string, env: Record<strin
 
 const sha40 = z.string().regex(/^[0-9a-f]{40}$/i);
 /** `unexercised`: the pass was recorded as not exercising its criterion (GY-135, model/evidence.ts exerciseRefusal). */
-export const producerOutcomes = ['pass', 'fail', 'unexercised', 'untrusted', 'missing'] as const;
+const producerOutcomes = ['pass', 'fail', 'unexercised', 'untrusted', 'missing'] as const;
 export type ProducerOutcome = typeof producerOutcomes[number];
 export const producerRecordSchema = z.object({
   id: z.string().uuid(),
@@ -174,9 +174,9 @@ export const producerRecordSchema = z.object({
   run: runRecordSchema.optional(),
 }).strict();
 export type ProducerRecord = z.infer<typeof producerRecordSchema>;
-export const producerLedgerSchema = z.object({ version: z.literal(1), producers: z.array(producerRecordSchema).default([]) }).strict();
+const producerLedgerSchema = z.object({ version: z.literal(1), producers: z.array(producerRecordSchema).default([]) }).strict();
 export type ProducerLedger = z.infer<typeof producerLedgerSchema>;
-export const producerLedgerSpec: SessionLedgerSpec = { name: 'producer ledger', path: '.graphyard/producers.json', role: 'producer', idleGraceMs: 5 * 60_000 };
+const producerLedgerSpec: SessionLedgerSpec = { name: 'producer ledger', path: '.graphyard/producers.json', role: 'producer', idleGraceMs: 5 * 60_000 };
 
 export async function readProducerLedger(root: string): Promise<ProducerLedger> {
   const client = await loopStateClient(root);
@@ -209,8 +209,11 @@ export const producerIdleGraceMs = producerLedgerSpec.idleGraceMs;
  */
 /** Every session one request may have in all, however each ended: the dispatch failure limit (dispatch/cursor.ts). */
 export const requestAttemptLimit = 12;
-export const sessionRetryLimit = 4, sessionRetryBaseMs = 60_000, sessionRetryMaxMs = 30 * 60_000, unstartedRetryLimit = 3;
-export const sessionRetryDelay = (attempts: number) => Math.min(sessionRetryBaseMs * 4 ** Math.max(0, attempts - 1), sessionRetryMaxMs);
+export const sessionRetryLimit = 4;
+export const sessionRetryBaseMs = 60_000;
+const sessionRetryMaxMs = 30 * 60_000;
+export const unstartedRetryLimit = 3;
+const sessionRetryDelay = (attempts: number) => Math.min(sessionRetryBaseMs * 4 ** Math.max(0, attempts - 1), sessionRetryMaxMs);
 const retriedStates = ['failed', 'expired'];
 /**
  * GY-496. The prefix of a settled session's resolution when the run ended without a verdict
@@ -221,9 +224,9 @@ const retriedStates = ['failed', 'expired'];
 export const lostRunReason = 'lost';
 export const lostRun = (record: { state: string; resolution?: string | null }) => retriedStates.includes(record.state) && !!record.resolution?.startsWith(`${lostRunReason}: `);
 /** A headless run that exited on a kill signal (143 is SIGTERM, 137 is SIGKILL) rather than on its own. */
-export const killedRun = (result: RunRecord['result'] | null | undefined) => !!result && !result.ok && result.reason === 'exit' && /\b(?:on SIG(?:TERM|KILL)|with code (?:143|137))\b/.test(result.detail);
+const killedRun = (result: RunRecord['result'] | null | undefined) => !!result && !result.ok && result.reason === 'exit' && /\b(?:on SIG(?:TERM|KILL)|with code (?:143|137))\b/.test(result.detail);
 /** Whether a process is alive: signal 0 probes it, and a probe refused for permission means it exists. */
-export const processAlive = (pid: number) => { try { process.kill(pid, 0); return true; } catch (error: any) { return error?.code === 'EPERM'; } };
+const processAlive = (pid: number) => { try { process.kill(pid, 0); return true; } catch (error: any) { return error?.code === 'EPERM'; } };
 /**
  * GY-3428. A session that failed because its runtime could not start judged nothing: the runtime
  * could not be spawned or rejected its own command line, its sandbox would not start, or it
@@ -233,7 +236,7 @@ export const processAlive = (pid: number) => { try { process.kill(pid, 0); retur
  * has. Read from the failure the session recorded, never from a session's quoted last words.
  */
 const runtimeStartFault = /could not (?:be )?start|never confirmed its runtime started|refused before it started|failed before it started|launch refused|exited (?:at launch|within seconds of its launch)|\bbwrap\b|unknown (?:option|flag|argument)|usage limit|session limit|rate limit|quota/i;
-export const runtimeStartFailure = (record: { state: string; resolution?: string | null }) =>
+const runtimeStartFailure = (record: { state: string; resolution?: string | null }) =>
   record.state === 'failed' && !neverStarted(record) && !lostRun(record) && runtimeStartFault.test((record.resolution ?? '').split(' Its last words:')[0]!);
 export function sessionRetry(records: { requestId?: string; state: string; requestedAt: string; closedAt?: string | null; resolution?: string | null }[], requestId: string, now: number, review = false) {
   const launched = records.filter(record => record.requestId === requestId);
@@ -253,7 +256,7 @@ export function sessionRetry(records: { requestId?: string; state: string; reque
 
 // The request must still be the one the record holds for the exact current candidate; a session
 // launched for anything else would submit evidence the gates cannot bind.
-export function assertProducerCandidate(work: Work, request: DispatchRequest, observedAt: string) {
+function assertProducerCandidate(work: Work, request: DispatchRequest, observedAt: string) {
   const now = Date.parse(observedAt);
   if (!Number.isFinite(now)) throw new Error('A producer launch requires a valid Graphyard snapshot clock');
   if (request.kind !== 'producer' || !request.group || !request.proofs?.length) throw new Error(`${work.key} request ${request.id} is not a producer request`);
@@ -283,7 +286,7 @@ export function independentProducerProfiles(work: Work, profiles: ProducerProfil
  * path, so the session is launched for exactly the proofs no answer decided.
  */
 export type ClosedQuestionJudge = (proof: string) => Promise<{ verdict: 'decided' | 'escalated'; escalation?: { reason: string } | null }>;
-export async function judgeClosedQuestions(work: Work, binding: Pick<ProducerBinding, 'proofs'>, judge: ClosedQuestionJudge) {
+async function judgeClosedQuestions(work: Work, binding: Pick<ProducerBinding, 'proofs'>, judge: ClosedQuestionJudge) {
   const decided: string[] = [], escalated: { proof: string; reason: string }[] = [];
   for (const proof of binding.proofs.filter(entry => closedQuestionFor(work, entry))) {
     try {
@@ -295,7 +298,7 @@ export async function judgeClosedQuestions(work: Work, binding: Pick<ProducerBin
   return { decided, escalated, remaining: binding.proofs.filter(proof => !decided.includes(proof)) };
 }
 /** The control plane's judge, called with the producer's own credential: it triggers the judgement and supplies nothing it rests on. */
-export const httpClosedQuestionJudge = (url: string, token: string, binding: Pick<ProducerBinding, 'key' | 'sha' | 'baseSha' | 'policyRevision'>, fetcher: typeof fetch = fetch): ClosedQuestionJudge => async proof => {
+const httpClosedQuestionJudge = (url: string, token: string, binding: Pick<ProducerBinding, 'key' | 'sha' | 'baseSha' | 'policyRevision'>, fetcher: typeof fetch = fetch): ClosedQuestionJudge => async proof => {
   const response = await fetcher(`${url}/api/work/${encodeURIComponent(binding.key)}/closed-question`, {
     method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': `closed-question:${binding.key}:${binding.sha}:${binding.baseSha}:${binding.policyRevision}:${proof}` },
     body: JSON.stringify({ proof, sha: binding.sha, baseSha: binding.baseSha, policyRevision: binding.policyRevision }), signal: AbortSignal.timeout(150_000),

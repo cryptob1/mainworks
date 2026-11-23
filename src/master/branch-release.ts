@@ -13,7 +13,7 @@ import { failureText, worktreesDirectory } from './worktrees.js';
 export interface PreservedWorktree { path: string; head: string; branchTip: string; op: 'rebase' | 'merge' | 'cherry-pick' | null; refs: string; diff: string; at: string }
 
 /** The git a branch release runs: the asynchronous runner, so a launcher on this loop never blocks on a child. */
-export type BranchGit = (cwd: string, ...args: string[]) => Promise<string>;
+type BranchGit = (cwd: string, ...args: string[]) => Promise<string>;
 
 /** An operation a holder can be stopped inside; the ledger's record names the first three, and the diff's first line names the rest. */
 type HolderOperation = NonNullable<PreservedWorktree['op']> | 'revert' | 'merge --squash';
@@ -41,7 +41,7 @@ async function rebaseHeadName(git: BranchGit, path: string): Promise<string> {
 }
 
 /** The most `git diff` output a release buffers (GY-1059): far above the ledger's limit, far below the runner's. */
-export const preservedDiffCaptureBytes = 1024 * 1024;
+const preservedDiffCaptureBytes = 1024 * 1024;
 
 /**
  * The holder's uncommitted tracked changes, bounded before they are buffered: a diff larger than

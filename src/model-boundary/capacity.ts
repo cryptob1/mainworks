@@ -39,9 +39,9 @@ export const capacityAccountSchema = z.object({
   account: z.string().min(1).max(80), profile: z.string().min(1).max(80),
   resetsAt: instant.nullable(), reason: z.string().min(1).max(500),
 }).strict();
-export const capacitySpentSchema = z.object({
+const capacitySpentSchema = z.object({
   event: z.literal('spent'), role: z.enum(quotaRoles),
   accounts: z.array(capacityAccountSchema).min(1).max(40),
 }).strict();
-export const capacityRestoredSchema = z.object({ event: z.literal('restored'), role: z.enum(quotaRoles), reason: z.string().trim().min(1).max(500) }).strict();
+const capacityRestoredSchema = z.object({ event: z.literal('restored'), role: z.enum(quotaRoles), reason: z.string().trim().min(1).max(500) }).strict();
 export const capacityEventSchema = z.union([exhaustionReportSchema, capacitySpentSchema, capacityRestoredSchema]);

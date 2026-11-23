@@ -6,9 +6,9 @@ import type { ScanInput } from './onboarding.js';
 // and a node application for every package that has a start script. Pure: reads only ScanInput.
 // ---------------------------------------------------------------------------
 
-export interface WorkspacePackage { name: string; directory: string; scripts: Record<string, string> }
-export interface RailwayFile { app: string | null; file: string }
-export interface ProposedNodeApplication { id: string; kind: 'node'; directory: string; build: string | null; start: string }
+interface WorkspacePackage { name: string; directory: string; scripts: Record<string, string> }
+interface RailwayFile { app: string | null; file: string }
+interface ProposedNodeApplication { id: string; kind: 'node'; directory: string; build: string | null; start: string }
 export interface WorkspaceDiscovery { workspacePackages: WorkspacePackage[]; railway: RailwayFile[]; proposedApplications: ProposedNodeApplication[] }
 
 const json = (raw: string | undefined): any => { try { return raw ? JSON.parse(raw) : null; } catch { return null; } };

@@ -54,11 +54,11 @@ export function installCommand(root: string): string[] | null {
 /** The served commit's required cases, as the pass ran them against the URL it serves; `case`, `step` and `reason` name the first required case that failed, and are null when verified. */
 export interface ServeCheck { verified: boolean; case: string | null; step: string | null; reason: string | null }
 /** The previously served build kept serving beside the current one (GY-2985): what was live, and what a compare case judges the new build against. */
-export interface ServeBaseline { commit: string; url: string; pid: number | null; started: string | null }
+interface ServeBaseline { commit: string; url: string; pid: number | null; started: string | null }
 /** What the serve pass last did: the commit whose build serves, the URL it answers, the commit whose build last failed and why, the serve process it tracks (pid and kernel start time, so a pid reused after a reboot is never mistaken for it), the required cases' verdict on the served commit (null while they have not run against it), and what was live serving on the baseline URL (GY-2985). */
 export interface ServeRecord { commit: string | null; url: string | null; failed: string | null; reason: string | null; pid?: number | null; started?: string | null; check?: ServeCheck | null; baseline?: ServeBaseline | null; at: string }
 /** The serve process a restart left running. */
-export interface ServeProcess { pid: number | null; started: string | null }
+interface ServeProcess { pid: number | null; started: string | null }
 export const serveRecordPath = (root: string) => join(stateDirectory(root), 'served.json');
 export function readServeRecord(file: string): ServeRecord | null {
   if (!existsSync(file)) return null;
@@ -79,7 +79,7 @@ async function writeServeRecord(file: string, record: Omit<ServeRecord, 'at'>) {
 export const answering = (url: string) => fetch(url, { signal: AbortSignal.timeout(5_000) }).then(() => true, () => false);
 
 /** How long a restarted serve has to answer before the pass records the commit as unserved (a serve that cannot bind, a command that fails). */
-export const serveAnswerTimeoutMs = 30_000;
+const serveAnswerTimeoutMs = 30_000;
 
 /** The answer the pass waited for must be the restarted serve's own (GY-2993): when the ports can tell who holds the port, an answer from a process the pass did not start means the serve left without binding the port another process already holds — a failure whose reason names the port, never a served commit. Ports that cannot tell (no /proc, off Linux) leave the answer standing. */
 const servedByRestart = (ports: ServePorts, port: number, url: string, served: ServeProcess) => {

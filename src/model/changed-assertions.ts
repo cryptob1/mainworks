@@ -15,7 +15,7 @@ const unquoted = (path: string): string =>
 const testAssertionPattern = /\b(?:assert(?:\.[A-Za-z_]\w*|\s*\(|\s+\S)|expect\s*\(|should\.[A-Za-z_]\w*|require\.[A-Za-z_]\w*|t\.(?:Error|Errorf|Fatal|Fatalf|Fail|FailNow)\s*\()/;
 const e2eAssertionPattern = /"(?:expect|equals|notEquals|status|contains|notContains|matches|run|required|assert|exists|count|visible|text|min|max)"\s*:/;
 
-export function isAssertionLine(path: string, line: string): boolean {
+function isAssertionLine(path: string, line: string): boolean {
   const trimmed = line.trim();
   if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('#')) return false;
   if (isE2eCasePath(path)) return e2eAssertionPattern.test(trimmed);

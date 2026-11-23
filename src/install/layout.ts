@@ -21,8 +21,6 @@ export type UnitPrefix = 'mainworks' | 'graphyard';
 export const unitPrefix = (root: string): UnitPrefix => basename(stateDirectory(root)) === '.mainworks' ? 'mainworks' : 'graphyard';
 /** The prefix of host units named by install id alone (the local provider's server), from the config home the install chose. */
 export const configUnitPrefix = (home = homedir()): UnitPrefix => !setting('CONFIG_HOME') && basename(defaultConfigHome(home)) === 'mainworks' ? 'mainworks' : 'graphyard';
-/** A path component that is a checkout's state directory, under either name. */
-export const stateDirectoryNames = ['.mainworks', '.graphyard'] as const;
 
 /**
  * The one install-time choice: a checkout with no `.graphyard` gets `.mainworks`, and a home with no

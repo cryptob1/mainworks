@@ -1,7 +1,7 @@
 import { appendOnly, defineTable } from '../tables.js';
 
 /** Deployment environment and registration definitions shared with Delivery. */
-export const validationDefinitions = defineTable({
+const validationDefinitions = defineTable({
   name: 'validation_definitions', orderBy: 'kind,id,revision',
   ddl: `CREATE TABLE IF NOT EXISTS validation_definitions (
   kind text NOT NULL, id text NOT NULL, revision int NOT NULL, document jsonb NOT NULL,

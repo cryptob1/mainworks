@@ -50,7 +50,7 @@ function OnboardingStep({ wait }: { wait: OnboardingWait }) {
   </li>;
 }
 
-export function SetupChecklist({ items, onConnect, onboarding }: { items: SetupItem[]; onConnect: () => void; onboarding?: OnboardingWait | null }) {
+function SetupChecklist({ items, onConnect, onboarding }: { items: SetupItem[]; onConnect: () => void; onboarding?: OnboardingWait | null }) {
   return <ol className="setup-checklist" aria-label="First-run checklist">
     {items.map(item => <li key={item.id} data-setup-item={item.id} data-done={item.done ? 'yes' : 'no'}>
       <strong>{item.done ? '✓ ' : '○ '}{item.title}</strong>
@@ -65,7 +65,7 @@ export function SetupChecklist({ items, onConnect, onboarding }: { items: SetupI
  * Where to watch the agents (GY-1511): the copyable commands that attach to the Herdr server holding
  * this install's sessions, on its host and from another machine, and whether that server is running.
  */
-export function HerdrConnect({ watch }: { watch: HerdrWatch }) {
+function HerdrConnect({ watch }: { watch: HerdrWatch }) {
   const commands = herdrConnectCommands(watch);
   const rows = [
     { id: 'local', label: 'On this host', text: commands.local },
@@ -120,7 +120,7 @@ export function WhereThingsRunPanel({ where, panes }: { where: WhereThingsRun | 
 export interface InfraActionRow { who: string; at: string; action: string; target: string; outcome: string; detail: string }
 const infraVerbs: Record<string, string> = { 'repo.create': 'Create repository', 'repo.push': 'Push repository', 'project.create': 'Create hosting project', 'environment.create': 'Create environment' };
 /** GY-3515: what masters did with scoped infra access, newest first: who, what and when, in one short list. */
-export function InfraActionsPanel({ actions }: { actions: readonly InfraActionRow[] }) {
+function InfraActionsPanel({ actions }: { actions: readonly InfraActionRow[] }) {
   return <ol className="infra-actions" data-infra-actions={actions.length}>{actions.slice(0, 20).map((entry, index) =>
     <li key={index}><time dateTime={entry.at}>{new Date(entry.at).toLocaleString()}</time> <b>{entry.who}</b> {infraVerbs[entry.action] ?? entry.action} {entry.target}{entry.outcome === 'done' ? '' : ` — ${entry.outcome}`}</li>)}</ol>;
 }

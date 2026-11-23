@@ -6,7 +6,7 @@ import { defineTable } from '../tables.js';
  * count and last-seen time instead of appending another row, so registry history keeps real
  * changes among its newest entries. Keyed by the refusal's event sequence.
  */
-export const registryRefusalRepeats = defineTable({
+const registryRefusalRepeats = defineTable({
   name: 'registry_refusal_repeats', orderBy: 'seq',
   ddl: `CREATE TABLE IF NOT EXISTS registry_refusal_repeats (
   seq bigint PRIMARY KEY, count integer NOT NULL, last_at timestamptz NOT NULL

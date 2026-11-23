@@ -21,7 +21,7 @@ import { accountIneligibility, lastGoodUsage, windowHold, deriveAccountPlan, pin
 import { parseProbeFailure } from './model/account-quota.js';
 import { hostAccountCheck, hostAccountUsage, recordHostAccountCheck, recordHostAccountUsage, withHostAccountUsageLock, clearEndedHostAccountSessions, clearHostAccountSession, hostAccountSessions, registerHostAccountSession } from './host-accounts.js';
 import { setting } from './setting.js';
-export { exhaustionTail, outOfCreditsScreen } from './exhaustion-screen.js';
+;
 
 /**
  * The executor's side of the agent registry (GY-91).
@@ -40,7 +40,7 @@ export interface FleetProbe extends EnvironmentProbe { work?: string; /** Which 
   smoke?: (account: FleetLaunchAccount) => Promise<SmokeResult>;
   smokeTimeoutMs?: number }
 /** What Herdr listed on the executor's own host, and whether it could be read at all. */
-export interface RuntimeInventory { agents: { name?: string | null }[]; available: boolean }
+interface RuntimeInventory { agents: { name?: string | null }[]; available: boolean }
 /** The three calls an executor makes. */
 export interface FleetClient {
   document(): Promise<AgentRegistry>;
@@ -62,7 +62,7 @@ export interface FleetLaunchAccount { name: string; kind: string; home: string |
   key?: AccountKey | null; fleet: { runtime: string; contract: LaunchContract; model: string; modelId: string | null; session: string; reason: string;
   role?: FleetRoleName; policy?: RolePolicy; revision?: number } }
 
-export class FleetUnreachableError extends Error {
+class FleetUnreachableError extends Error {
   /** The status and parsed body of the answer that came back, when one did (GY-1895): planeWideRefusal reads them structurally, the way it reads a RefusedResponse — a bare `answered 502` wording matches no plane-wide pattern. */
   constructor(message: string, public status?: number, public body?: unknown) { super(message); }
 }
@@ -71,7 +71,7 @@ export class FleetUnreachableError extends Error {
  * not a fault of any account and not a decision to give up on: the launch waits for a slot, and the
  * loop makes it again on the first cycle after one frees.
  */
-export const roleAtCapacity = (reason: string) => /^role \S+ (?:is at its concurrency limit|already reserved for)\b/.test(reason);
+const roleAtCapacity = (reason: string) => /^role \S+ (?:is at its concurrency limit|already reserved for)\b/.test(reason);
 /** The refusal's reason when `error` is a launch refused for its role's capacity, else null. (A tag, not a subclass: fleet.ts and master.ts import each other.) */
 export const capacityRefusal = (error: unknown): string | null => { const tag = error instanceof Error ? (error as Error & { roleAtCapacity?: unknown }).roleAtCapacity : null; return typeof tag === 'string' ? tag : null; };
 
@@ -81,7 +81,7 @@ export const capacityRefusal = (error: unknown): string | null => { const tag = 
  * account is something a master fixes in one command, and reporting it as spent would read as a
  * wait for a provider reset that never comes.
  */
-export const skipCause = (reason: string): AccountSkipCause =>
+const skipCause = (reason: string): AccountSkipCause =>
   /is not logged in/.test(reason) ? 'logged-out' : /quota is exhausted/.test(reason) ? 'exhausted' : 'unconfigured';
 
 /**
@@ -130,11 +130,11 @@ export function httpFleetClient(config: Required<Pick<FleetConfig, 'url'>> & Pic
 
 // One failed read is not repeated for every launch of the same cycle.
 const unreachable = new Map<string, { at: number; error: FleetUnreachableError }>();
-export const unreachableRetryMs = 30_000;
+const unreachableRetryMs = 30_000;
 
 export type FleetRead = { managed: true; registry: AgentRegistry; client: FleetClient } | { managed: false; reason: string };
 /** Whether the registry decides `role` for this executor, and the registry when it does. */
-export async function readFleet(config: FleetConfig, role: FleetRoleName, probe: FleetProbe = {}): Promise<FleetRead> {
+async function readFleet(config: FleetConfig, role: FleetRoleName, probe: FleetProbe = {}): Promise<FleetRead> {
   if (!probe.registry && (!config.url || !config.hostId)) return { managed: false, reason: 'this configuration names no control plane' };
   const client = probe.registry ?? httpFleetClient({ url: config.url!, credentialFile: config.credentialFile }, probe.fetch ?? fetch, probe.timeoutMs ?? fleetRequestTimeoutMs);
   const now = probe.now?.() ?? Date.now(), failed = probe.registry ? undefined : unreachable.get(config.url!);
@@ -233,7 +233,7 @@ export async function checkAccountLive(account: FleetAccount, runtime: FleetRunt
 }
 
 /** A provider usage read is shared by every install on the host and taken at most once in this interval per login home (GY-3500). */
-export const usageReadIntervalMs = 5 * 60_000;
+const usageReadIntervalMs = 5 * 60_000;
 /** The account's reading, from the host's record when one was taken within the interval on this login and key; otherwise one provider read, written back. */
 async function readAccountShared(account: FleetAccount, runtime: FleetRuntime, probe: FleetProbe, allAccounts: readonly FleetAccount[], model: string | undefined, now: number): Promise<{ quota: QuotaObservation; health: EnvironmentHealth | null }> {
   const home = account.credential.home, key = account.credential.key ?? null;

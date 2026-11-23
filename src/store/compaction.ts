@@ -40,7 +40,7 @@ export function configuredLedgerRetentionMs(env: NodeJS.ProcessEnv = process.env
 /** Ledger rows one batch reads (and so deletes at most); each batch is its own short transaction. */
 export const ledgerCompactionBatch = 2_000;
 /** Batches one run takes at most; the saved cursor carries a pass across runs. */
-export const ledgerCompactionBatches = 20;
+const ledgerCompactionBatches = 20;
 /** How often the server's reconciliation tick runs a compaction. */
 export const ledgerCompactionIntervalMs = 10 * 60_000;
 /** The audit row each batch that removed anything appends (never itself compacted: not a routine kind). */
@@ -50,9 +50,9 @@ export const ledgerCompactedKind = 'ledger.compacted';
  * GY-3342: executor bookkeeping rows (no work item). The records themselves live in `loop_state`;
  * the ledger row only names which ids changed, and goes whole once past the retention window.
  */
-export const bookkeepingKinds = ['loop-state.saved', 'loop-state.migrated'] as const;
+const bookkeepingKinds = ['loop-state.saved', 'loop-state.migrated'] as const;
 /** Pause between batches, so a pass never holds the database for more than one short batch at a time. */
-export const ledgerCompactionPauseMs = 100;
+const ledgerCompactionPauseMs = 100;
 
 const literal = (list: readonly string[]) => `ARRAY[${list.map(kind => `'${kind}'`).join(',')}]::text[]`;
 const kinds = literal([...routineSaveKinds, ...bookkeepingKinds]);

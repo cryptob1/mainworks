@@ -24,9 +24,9 @@ export const humanDecisionLabel = {
 } as const satisfies Record<HumanDecisionKind, string>;
 export type HumanChoice = z.infer<typeof humanChoiceSchema>;
 /** Bare labels that say nothing of what changes (GY-3598): refused on park and banned on state-changing buttons. */
-export const bannedBareChoiceLabels = ['Approve', 'Decline', 'Decide', 'Confirm', 'OK', 'Yes', 'No', 'Go ahead as asked', 'Go ahead differently'] as const;
+const bannedBareChoiceLabels = ['Approve', 'Decline', 'Decide', 'Confirm', 'OK', 'Yes', 'No', 'Go ahead as asked', 'Go ahead differently'] as const;
 const bannedChoiceSet = new Set(bannedBareChoiceLabels.map(label => label.toLowerCase()));
-export const isGenericChoiceLabel = (label: string) => bannedChoiceSet.has(label.trim().replace(/[….:]+$/, '').toLowerCase());
+const isGenericChoiceLabel = (label: string) => bannedChoiceSet.has(label.trim().replace(/[….:]+$/, '').toLowerCase());
 export function genericChoiceIssues(choices?: readonly Pick<HumanChoice, 'label'>[] | null): string[] {
   return (choices ?? []).filter(choice => isGenericChoiceLabel(choice.label))
     .map(choice => `Choice "${choice.label}" is too generic: name both verb and object (for example "Hold this task" or "Approve 2 more seats")`);
@@ -57,7 +57,7 @@ export function recommendationIssues(data: { kind?: HumanDecisionKind; choices?:
   ];
 }
 /** The id of the choice a request's recommendation names, by label or id, or null when it names none. */
-export function recommendedChoice(request: { kind: HumanDecisionKind; choices?: HumanChoice[] | null; sealTo?: string | null; recommendation?: string | null }): string | null {
+function recommendedChoice(request: { kind: HumanDecisionKind; choices?: HumanChoice[] | null; sealTo?: string | null; recommendation?: string | null }): string | null {
   const key = (words: string) => words.trim().replace(/[….:]+$/, '').toLowerCase();
   const advice = request.recommendation ? key(request.recommendation) : null;
   return advice ? requestChoices(request).find(choice => key(choice.id) === advice || key(choice.label) === advice)?.id ?? null : null;
@@ -107,7 +107,7 @@ export const parkRefusal = (data: ParkQuestion): string | null => requirementsQu
  * needed, why, who asked, and when. A park request and an approval the server takes only from the
  * operator's own credential share them, so the list, page and CLI read one shape (GY-102).
  */
-export interface HumanOnlyRequest {
+interface HumanOnlyRequest {
   id: string; kind: string; reason: string; needed: string;
   requestedBy: string; epoch: number; at: string;
   /** The short note the card leads with (GY-1408); absent on older requests, which lead with `needed`'s first sentence (`humanAsk`). */
@@ -132,7 +132,7 @@ export const parkedOnHuman = (work: { humanRequest?: HumanRequest | null }) => !
 
 /** How to answer, exactly as the list and `master status` print it. */
 export const answerCommand = (key: string, request: Pick<HumanRequest, 'id'>) => `graphyard answer ${key} ${request.id} ANSWER`;
-export const declineCommand = (key: string, request: Pick<HumanRequest, 'id'>) => `graphyard answer ${key} ${request.id} --decline REASON`;
+const declineCommand = (key: string, request: Pick<HumanRequest, 'id'>) => `graphyard answer ${key} ${request.id} --decline REASON`;
 
 /** One button on a card (GY-738): the whole body it posts, whether it asks for words or a secret, and the field an optional note goes in (null when it takes none). */
 export interface HumanOnlyChoice { label: string; input: HumanChoice['input']; declines: boolean; body: Record<string, unknown>; note: string | null; recommended?: boolean }
@@ -218,8 +218,8 @@ export const humanProofRule: HumanOnlyRule = {
  * Every rule, in the order the surface lists them. Enforcement reads this table and so does the
  * page: adding a rule here is the one change a new human-only action needs.
  */
-export const humanOnlyRules: HumanOnlyRule[] = [parkRule, humanProofRule];
-export const humanOnlyRule = (kind: string, rules: readonly HumanOnlyRule[] = humanOnlyRules) => rules.find(rule => rule.kind === kind) ?? null;
+const humanOnlyRules: HumanOnlyRule[] = [parkRule, humanProofRule];
+const humanOnlyRule = (kind: string, rules: readonly HumanOnlyRule[] = humanOnlyRules) => rules.find(rule => rule.kind === kind) ?? null;
 /**
  * Why this session may not answer a row of that rule, or null when it may. A rule this reader
  * does not know refuses: a client older than the server that raised the row must not offer a

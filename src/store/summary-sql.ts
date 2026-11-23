@@ -25,9 +25,9 @@ import { detoasted } from './coordination-sql.js';
  * `summary: true` is how a reader tells it from a document; `GET /api/work/:id` answers the whole
  * document, history included, for the reader that needs it.
  */
-export const summarySessionWindowMs = 24 * 3_600_000;
+const summarySessionWindowMs = 24 * 3_600_000;
 /** What the stored settled form carries that no snapshot reader renders, left out of the summary. */
-export const summaryOmitted = ['description', 'humanRequests', 'sessions', 'pipeline'] as const;
+const summaryOmitted = ['description', 'humanRequests', 'sessions', 'pipeline'] as const;
 
 const array = (path: string) => `(CASE WHEN jsonb_typeof(${path}) = 'array' THEN ${path} ELSE '[]'::jsonb END)`;
 /** The timeline `p` as the item summary reads it (src/pipeline-speed.ts). */
