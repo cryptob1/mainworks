@@ -1,0 +1,16 @@
+{
+  "id": "agents-block-role-topics",
+  "title": "The AGENTS.md block names each role's guide topics and guide claim is short",
+  "description": "Verifies the managed block's topics line names the worker, reviewer and producer topics, guide alone still lists every topic, the checked-in AGENTS.md matches, and guide claim keeps the lease rules in at most 90 words while manual startup moves to guide setup.",
+  "tags": ["guide", "agents"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "block names role topics and guide claim is at most 90 words",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/agents-block-role-topics.test.ts",
+      "timeoutSeconds": 120
+    }
+  ]
+}
