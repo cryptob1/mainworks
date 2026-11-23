@@ -1,5 +1,6 @@
 // Concern: launching an agent session — request files, start observation, prompt delivery and acknowledgement.
-import { stateDir, setting } from '../mainworks-names.js';
+import { stateDir } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { PRODUCT_NAME } from '../model/product.js';
 import { createHash } from 'node:crypto';
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, realpathSync, writeFileSync } from 'node:fs';

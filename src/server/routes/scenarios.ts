@@ -1,4 +1,4 @@
-import { setting } from '../../mainworks-names.js';
+import { setting } from '../../setting.js';
 import { defineScenario, recordCaseRun, scenarios, trackedCases } from '../../scenarios.js';
 import { runHistory } from '../../test-runs.js';
 import { caseDirectory } from '../../e2e/case.js';

@@ -1,5 +1,6 @@
 // Concern: local isolated worktree reservation and creation, and the leased attempt's one branch replacement.
-import { stateDir, setting } from '../mainworks-names.js';
+import { stateDir } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';

@@ -4,12 +4,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-/**
- * The one helper every setting goes through: MAINWORKS_<NAME>, else GRAPHYARD_<NAME>. It only reads;
- * the environment is never rewritten, so child processes inherit it as it is.
- */
-export const setting = (name: string, env: Record<string, string | undefined> = process.env) => env[`MAINWORKS_${name}`] ?? env[`GRAPHYARD_${name}`];
-
 /** The mainworks name under PARENT when it exists or the graphyard one does not, else the graphyard one. */
 export const mainworksOr = (parent: string, mainworks: string, graphyard: string) =>
   join(parent, existsSync(join(parent, mainworks)) || !existsSync(join(parent, graphyard)) ? mainworks : graphyard);

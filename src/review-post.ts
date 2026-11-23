@@ -3,7 +3,7 @@
 // command needs no Graphyard credential: the launch binds a one-time verdict token (GY-1525), and
 // the command sends the verdict to `POST /api/work/:id/review-verdict` as that token; the server
 // records it on the item's observation (server/review-verdict.ts).
-import { setting } from './mainworks-names.js';
+import { setting } from './setting.js';
 import { randomUUID } from 'node:crypto';
 import { chmod, readFile, writeFile } from 'node:fs/promises';
 import { extname, isAbsolute, join } from 'node:path';

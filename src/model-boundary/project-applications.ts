@@ -1,4 +1,4 @@
-import { setting } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { z } from 'zod';
 import { previewModes, maxCandidateChanges, boundCaseId, applicationProblems, declarationKeys, projectDeliveryVariable, type ProjectDelivery, effectiveDelivery } from '../model/project-applications.js';
 // ---------------------------------------------------------------------------

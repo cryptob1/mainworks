@@ -1,5 +1,6 @@
 // Concern: OS-level host filesystem and coordinator confinement for every launched role.
-import { stateDir, setting } from '../mainworks-names.js';
+import { stateDir } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { PRODUCT_NAME } from '../model/product.js';
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';

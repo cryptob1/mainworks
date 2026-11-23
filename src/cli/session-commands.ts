@@ -1,4 +1,5 @@
-import { stateDir, setting } from '../mainworks-names.js';
+import { stateDir } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { constants as cryptoConstants, createDecipheriv, createPublicKey, generateKeyPairSync, privateDecrypt, randomUUID } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
 import { chmod, link, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';

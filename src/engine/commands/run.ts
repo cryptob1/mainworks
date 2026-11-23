@@ -1,4 +1,4 @@
-import { setting } from '../../mainworks-names.js';
+import { setting } from '../../setting.js';
 import { decisionWork } from '../../store/decision-read.js';
 import { once } from '../../store/mutations.js';
 import { save, wakeJob } from '../../store.js';

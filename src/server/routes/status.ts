@@ -1,4 +1,4 @@
-import { setting } from '../../mainworks-names.js';
+import { setting } from '../../setting.js';
 import { newestCaretakerReport } from './caretaker.js';
 import { pendingWorkerVerifications } from '../worker-verification-queue.js';
 import { readWorkReplay } from '../work-replay.js';

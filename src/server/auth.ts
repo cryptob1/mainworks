@@ -1,4 +1,4 @@
-import { setting } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import { demand, operatorScopeIncludes, type Principal } from '../model.js';

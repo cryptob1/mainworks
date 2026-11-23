@@ -14,7 +14,7 @@ import { deployUnitOf, perInstallUnits, readInstallUnits, recordInstallUnits } f
 import { setupRepository } from '../src/repository-setup.js';
 import { guideList, guideTopics } from '../src/guide.js';
 import { masterGuide } from '../src/master/guide.js';
-import { setting } from '../src/mainworks-names.js';
+import { setting } from '../src/setting.js';
 
 // GY-3573: Graphyard is now Mainworks. Every setting reads MAINWORKS_X before GRAPHYARD_X, a fresh
 // install uses the mainworks paths and unit names, and an existing install keeps its graphyard ones.

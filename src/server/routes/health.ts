@@ -1,4 +1,4 @@
-import { setting } from '../../mainworks-names.js';
+import { setting } from '../../setting.js';
 import { releaseInfo, schemaVersion } from '../../release.js';
 import { planeVerdict, probeWrites, readDatabaseCapacity } from '../plane-health.js';
 import { defineRoutes, parseJson, type Services } from '../routes.js';

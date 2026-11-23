@@ -1,4 +1,4 @@
-import { setting } from '../../mainworks-names.js';
+import { setting } from '../../setting.js';
 import { gitLedger, importRun, readImports, sealImports } from '../../validation-import.js';
 import { gitRunnerFor } from '../../merge-writer/local-observation.js';
 import type { Engine } from '../../engine.js';

@@ -1,5 +1,5 @@
 // Concern: the Compose adapter of an item's local preview (GY-1903) — one isolated, bounded Compose project per preview, its pages published, and every container, volume and network removed after it.
-import { setting } from './mainworks-names.js';
+import { setting } from './setting.js';
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';

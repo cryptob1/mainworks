@@ -1,6 +1,7 @@
 // `graphyard upgrade` (GY-1962): one command moves the CLI checkout, the server, the loop and
 // executors, and the managed repository's generated files to one dated release, in order.
-import { stateDir, setting } from '../mainworks-names.js';
+import { stateDir } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { createRequire } from 'node:module';
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, readlinkSync, statSync } from 'node:fs';

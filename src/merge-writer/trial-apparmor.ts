@@ -2,7 +2,7 @@
 // mounts a nested bubblewrap sandbox makes ("Failed to make / slave"), and Ubuntu 24.04 and later
 // deny unconfined processes a user namespace ("setting up uid map"). Trial containers alone run
 // under a dedicated profile that is unconfined and grants userns; every other container keeps docker-default.
-import { setting } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { readFileSync } from 'node:fs';
 import { shellQuote } from '../install/transport.js';
 

@@ -2,7 +2,7 @@
 // confined master holds a credential that names them and nothing else. The control plane does each
 // repository or hosting call itself with the install's provider tokens (the install's .env), so the
 // session never holds a provider token, and every call is recorded as an `infra.action` event.
-import { setting } from './mainworks-names.js';
+import { setting } from './setting.js';
 import { execFile } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

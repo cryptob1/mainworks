@@ -1,5 +1,5 @@
 // Concern: `graphyard master` intent subcommands — autonomy, promote, adopt, close — applied at once with the master's identity.
-import { setting } from '../../mainworks-names.js';
+import { setting } from '../../setting.js';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { agentToken, intentInput, autonomySubcommands, runAutonomyCommand, listHerdrAgents, promoteToAutonomy, assertPromotionRoute } from '../../master.js';

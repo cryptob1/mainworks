@@ -1,5 +1,5 @@
 // Concern: GY-3335 — the loop's own submission of a finished head a blocked worker named.
-import { setting } from '../../mainworks-names.js';
+import { setting } from '../../setting.js';
 import { readReceipt } from '../../store/mutations.js';
 import { demand, type Work } from '../../model.js';
 import { allocateChangeNumber } from '../../merge-writer/change-numbers.js';

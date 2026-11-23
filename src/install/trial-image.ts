@@ -1,4 +1,4 @@
-import { setting } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { fileURLToPath } from 'node:url';
 import { publishedSourceImages, type AdapterContext } from './adapters.js';
 import type { PlanAction } from './types.js';

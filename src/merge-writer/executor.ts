@@ -1,5 +1,5 @@
 // Concern: the control-plane merge executor (GY-1524) — the queue, one merge's steps against the ledger, the leased deploy-key push and the reconcile of intents a crash left open.
-import { setting } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { dirname, join } from 'node:path';
 import type { Work } from '../model.js';
 import { batchLimit } from '../master/merge-writer-settings.js';

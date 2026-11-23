@@ -1,5 +1,5 @@
 // Concern: the Herdr runtime adapter — the instance every herdr call targets, workspace health, agent inventory, panes and tabs.
-import { setting } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, delimiter, dirname, join } from 'node:path';

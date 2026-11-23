@@ -1,4 +1,4 @@
-import { setting } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { defineCommands } from './registry.js';
 import { cliRelease, type Release } from '../release.js';
 

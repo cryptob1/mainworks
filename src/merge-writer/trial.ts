@@ -1,4 +1,5 @@
-import { stateDir, setting } from '../mainworks-names.js';
+import { stateDir } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { trialCpuMonitor, trialOverloadFault, type TrialCpuReading } from './trial-cpu.js';
 // Concern: the merge writer's trial merge — the exact merge commit of a head onto main, and its build and affected tests in a credential-free checkout.
 import { randomUUID } from 'node:crypto';

@@ -1,4 +1,4 @@
-import { setting } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { readFile } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';

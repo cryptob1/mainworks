@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { setting } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { pendingOutcomeRules, releaseFailureActions, type RepositoryPolicy, type SensitiveEntry, defaultRepositoryPolicy, genericSensitiveRules, type Source, policySections, repositoryPolicyVariable, gitToplevel, configFile } from '../model/repository-policy.js';
 // ---- Per-repository policy (GY-1843) -------------------------------------------------------------
 

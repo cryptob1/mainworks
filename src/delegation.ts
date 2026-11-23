@@ -1,4 +1,4 @@
-import { setting } from './mainworks-names.js';
+import { setting } from './setting.js';
 import { once } from './store/mutations.js';
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';

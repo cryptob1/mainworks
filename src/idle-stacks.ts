@@ -1,6 +1,6 @@
 // Concern: stopping idle Graphyard stacks on a shared host (GY-3291) — previews nobody used for the
 // idle period and temporary stacks whose owning process is gone — without touching anything else.
-import { setting } from './mainworks-names.js';
+import { setting } from './setting.js';
 import { composeOwnerLabel, composeProjectPrefix, defaultDocker, dockerEnvironment, type Docker } from './compose-preview.js';
 import { tempOwnerGone, tempOwnerJudgeable, tmpReclaimMinAgeMs, type TempOwner } from './tmp-reclaim.js';
 

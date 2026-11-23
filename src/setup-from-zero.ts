@@ -1,4 +1,5 @@
-import { stateDir, setting } from './mainworks-names.js';
+import { stateDir } from './mainworks-names.js';
+import { setting } from './setting.js';
 import { readInstallLoopCode } from './loop-code.js';
 import { access, lstat, readFile, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';

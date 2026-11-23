@@ -1,4 +1,4 @@
-import { setting } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { decisionWork } from '../store/decision-read.js';
 import { readReceipt, record } from '../store/mutations.js';
 import { stableJson } from '../model/stable-json.js';

@@ -1,4 +1,4 @@
-import { setting } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import type pg from 'pg';
 import { advisoryLocks } from './locks.js';
 import { routineSaveKinds } from './snapshot-delta.js';

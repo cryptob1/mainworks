@@ -1,4 +1,4 @@
-import { setting } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { execFileSync } from 'node:child_process';
 import { controlPlaneWeight } from '../session-share.js';
 import { fingerprint, Vault } from './secrets.js';

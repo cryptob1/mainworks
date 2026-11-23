@@ -1,4 +1,5 @@
-import { stateDir, setting } from './mainworks-names.js';
+import { stateDir } from './mainworks-names.js';
+import { setting } from './setting.js';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';

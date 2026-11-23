@@ -1,4 +1,4 @@
-import { setting } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { caretakerRequestsFile, type CaretakerRequest } from '../master/caretaker-prompt.js';
 import { registryCommand } from './master-registry.js';

@@ -1,4 +1,4 @@
-import { setting } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { appendEvidence } from '../model-boundary/append-evidence.js';
 import { recordDispatch } from '../engine/evaluate.js';
 import { once, receipt } from '../store/mutations.js';

@@ -1,5 +1,5 @@
 // Concern: `master unblock` clearing a blocker, retried when the item's revision moved under it.
-import { setting } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { randomUUID } from 'node:crypto';
 import type { Work } from '../model.js';
 

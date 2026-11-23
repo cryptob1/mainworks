@@ -1,4 +1,4 @@
-import { setting } from '../../mainworks-names.js';
+import { setting } from '../../setting.js';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { defineRoutes } from '../routes.js';
 import type { Credential } from '../principals.js';

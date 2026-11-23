@@ -1,4 +1,4 @@
-import { setting } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { defaultChildRun, runChild, type ChildRun } from '../child-runner.js';
 import { statfsSync, type Dirent } from 'node:fs';
 import { chmod, lstat, mkdir, readdir, rm, rmdir, statfs } from 'node:fs/promises';

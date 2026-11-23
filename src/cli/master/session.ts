@@ -1,5 +1,5 @@
 // Concern: the authenticated master session every `graphyard master` subcommand after init runs in.
-import { setting } from '../../mainworks-names.js';
+import { setting } from '../../setting.js';
 import { sessionName } from '../../session-name.js';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';

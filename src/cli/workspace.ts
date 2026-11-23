@@ -1,5 +1,5 @@
 // Concern: workspace commands — sync with the base branch tip, and the supervised worker watch under lease.
-import { setting } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { readFile, realpath, writeFile } from 'node:fs/promises';

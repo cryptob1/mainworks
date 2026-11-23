@@ -1,4 +1,4 @@
-import { setting } from './mainworks-names.js';
+import { setting } from './setting.js';
 import { randomUUID } from 'node:crypto';
 import type { Store } from './store.js';
 import type { Work } from './model.js';

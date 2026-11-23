@@ -1,4 +1,4 @@
-import { setting } from './mainworks-names.js';
+import { setting } from './setting.js';
 /**
  * The deployment-provider environment whose successful deployments count as production. Providers
  * name environments freely, so the name is configuration, not a guess.

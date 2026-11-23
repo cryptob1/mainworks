@@ -1,4 +1,5 @@
-import { stateDir, setting } from '../mainworks-names.js';
+import { stateDir } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { PRODUCT_NAME } from '../model/product.js';
 import { registryToolsArgs } from '../registry-tools.js';
 export { registryToolsArgs } from '../registry-tools.js';

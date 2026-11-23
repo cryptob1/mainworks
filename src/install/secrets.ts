@@ -1,4 +1,5 @@
-import { mainworksOr, setting } from '../mainworks-names.js';
+import { mainworksOr } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { createHash, randomBytes } from 'node:crypto';
 import { chmod, lstat, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';

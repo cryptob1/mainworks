@@ -1,4 +1,4 @@
-import { setting } from './mainworks-names.js';
+import { setting } from './setting.js';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';

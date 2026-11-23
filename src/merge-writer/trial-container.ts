@@ -1,6 +1,7 @@
 // The outer trial has a private filesystem, rather than a host Landlock domain:
 // its tests can establish their own mount namespaces before applying Landlock.
-import { stateDir, setting } from '../mainworks-names.js';
+import { stateDir } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { chmodSync, existsSync, lstatSync, mkdtempSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';

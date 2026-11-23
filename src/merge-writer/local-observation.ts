@@ -1,5 +1,5 @@
 // Concern: the merge writer's local observation (GY-1523) — a submitted head read from the coordinator's own object store, never from GitHub.
-import { setting } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { execFile } from 'node:child_process';
 import { demand, type Observation } from '../model.js';
 import type {} from '../model/gates.js'; // Observation.source

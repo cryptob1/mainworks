@@ -1,4 +1,4 @@
-import { setting } from './mainworks-names.js';
+import { setting } from './setting.js';
 /**
  * Generated files: paths whose content is derived from other files by a script (the docs
  * indexes `scripts/check-docs.mjs --write` renders) and verified current by CI, never hand-merged.

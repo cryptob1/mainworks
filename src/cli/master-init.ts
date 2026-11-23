@@ -1,4 +1,5 @@
-import { stateDir, setting } from '../mainworks-names.js';
+import { stateDir } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { loadMasterConfig, loadStoredMasterConfig, setupMaster } from '../master.js';

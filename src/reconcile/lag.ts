@@ -1,4 +1,4 @@
-import { setting } from '../mainworks-names.js';
+import { setting } from '../setting.js';
 
 
 /** The event-loop lag sampler's timer interval (GY-1777); a sample is that timer's overrun past it. */
