@@ -18,6 +18,7 @@ import { unhandled, type MasterSession } from './session.js';
 import { exitWhenStopped, recordingLockRefusal } from '../../master/loop-restart.js';
 import { processConnectAccounts } from '../../master/connect-accounts.js';
 import { syncTeamAccess } from '../../master/team-access.js';
+import { reportOpenIssues } from '../../master/first-run-issues.js';
 import { recordRunningPin } from '../../master/known-good.js';
 import { installDirectory } from '../../install/secrets.js';
 import { installIdFor } from '../../install/types.js';
@@ -97,6 +98,15 @@ export async function loopCommand(session: MasterSession): Promise<unknown> {
     }, 15_000);
     connects?.unref?.();
     stopping.signal.addEventListener('abort', () => clearInterval(connects));
+    // GY-3709: until something merges, the loop reports the repository's open issues for the first-run page's step 3.
+    const issues = values.once ? undefined : setInterval(function report() {
+      reportOpenIssues(master.repository, body => masterMutation('first-run/issues', body))
+        .then(wanted => { if (!wanted) clearInterval(issues); })
+        .catch(error => console.error(`[graphyard-master] first-run issues: ${error instanceof Error ? error.message : String(error)}`));
+      return report;
+    }(), 600_000);
+    issues?.unref?.();
+    stopping.signal.addEventListener('abort', () => clearInterval(issues));
     // GY-3241: and streams the Master page's terminal for a server (a compose container) that has no Herdr of its own,
     // and the headless worker run logs this host holds for the item page (GY-3259).
     if (!values.once && current().url) bridgeTerminals(current().url!, masterToken, stopping.signal, undefined, terminalSessionReader(current), root);

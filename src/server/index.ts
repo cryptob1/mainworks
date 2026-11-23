@@ -18,6 +18,7 @@ import { delegationRoutes } from './routes/delegation.js';
 import { validationRoutes } from './routes/validation.js';
 import { deliveryRoutes } from './routes/delivery.js';
 import { emblemRoutes } from './routes/emblem.js';
+import { firstRunRoutes } from './routes/first-run.js';
 import { usageRoutes } from './routes/usage.js';
 import { scenarioRoutes } from './routes/scenarios.js';
 import { statusRoutes } from './routes/status.js';
@@ -40,7 +41,7 @@ export const publicRoutes: readonly RouteModule[] = [healthRoutes, signinRoutes,
 export const apiRoutes: readonly RouteModule[] = [
   operatorAgentRoutes, teamAccessRoutes, infraRoutes,
   { name: 'operator-agent-scope', routes: [operatorAgentRouteGuard] },
-  loopStateRoutes, agentRegistryRoutes, delegationRoutes, validationRoutes, deliveryRoutes, emblemRoutes, usageRoutes, scenarioRoutes, actionRoutes, statusRoutes, workRoutes, productBriefRoutes, homeVisitRoutes, masterMessageRoutes, caretakerRoutes,
+  loopStateRoutes, agentRegistryRoutes, delegationRoutes, validationRoutes, deliveryRoutes, emblemRoutes, usageRoutes, scenarioRoutes, actionRoutes, statusRoutes, workRoutes, productBriefRoutes, homeVisitRoutes, masterMessageRoutes, caretakerRoutes, firstRunRoutes,
 ];
 
 async function body(req: IncomingMessage, limit = 1_000_000) {

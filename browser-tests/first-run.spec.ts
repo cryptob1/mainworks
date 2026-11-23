@@ -158,7 +158,7 @@ test('e2e:first-run — a fresh install opens on the first-run page and walks st
     await expect(stepItems.nth(2)).toHaveAttribute('data-step-state', 'current');
     await expect(stepItems.nth(3)).toHaveAttribute('data-step-state', 'pending');
     await expect(page.getByRole('heading', { name: 'Ship one small change', level: 1 })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'New task' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Start task' })).toBeVisible();
     await expect(page.locator('[data-terminal-equivalent]')).toContainText('mainworks create task.json');
     await expect(page.locator('[data-terminal-equivalent]')).toContainText('mainworks ready');
 
