@@ -17,8 +17,9 @@ import type { MasterConfig, WorkerProfile } from './profiles.js';
 import { runtimeLoginHomes } from './profiles.js';
 import { loadMasterConfig, readWorkerCredential } from './config.js';
 import { atomicPrivateWrite, readCredentialFile } from '../private-file.js';
-import { credentialMaskFor, CredentialMaskError, type MaskProbe } from './confinement.js';
-import { accountLaunch, agentLaunchPlan, NoHealthyAccountError, onSelectedSession, recordObservedExhaustion, selectAccount, sharedGitDirectory } from './environments.js';
+import { CredentialMaskError, type MaskProbe } from './confinement.js';
+import { agentLaunchPlan, NoHealthyAccountError, onSelectedSession, recordObservedExhaustion, selectAccount, sharedGitDirectory } from './environments.js';
+import { workerSessionLaunch } from '../runner/pi-launch.js';
 import type { FleetProbe } from '../fleet.js';
 import { repinPath, type CanaryOffer } from '../model/registry.js';
 import { criteriaListing, featureCaseRule, reviewStandards } from '../review-prompt.js';
@@ -168,7 +169,7 @@ export async function dispatchWork(root: string, work: Work, profile: WorkerProf
   // The served repository can differ from the CLI release checkout (Huck's install).
   // Confine its Git store, not the launcher's code. Injected preparers retain the test boundary.
   const coordinatorRoot = options.coordinatorRoot ?? (prepare === prepareWorkerLaunch ? root : undefined);
-  let selected: Awaited<ReturnType<typeof selectAccount>> | undefined, launched: ReturnType<typeof accountLaunch> | undefined;
+  let selected: Awaited<ReturnType<typeof selectAccount>> | undefined, launched: Awaited<ReturnType<typeof workerSessionLaunch>> | undefined;
   // GY-1772: which runtimes the worker is tried on first, never judged from its path lane; recorded with the selection it ordered.
   let prefer: 'fast' | 'strong' | null = null;
   let result: Awaited<ReturnType<typeof launchWorker>> | undefined;
@@ -226,7 +227,7 @@ export async function dispatchWork(root: string, work: Work, profile: WorkerProf
     // The repository root rides the choice, so an opencode launch derives its repository-tree
     // permission from the checkout the dispatch serves (GY-2959).
     const chosen = selected;
-    let launch = await onSelectedSession(chosen, `worker launch for ${work.key} failed`, async () => accountLaunch(profile, chosen.account, { repositoryRoot, headless: true }));
+    let launch = await onSelectedSession(chosen, `worker launch for ${work.key} failed`, async () => workerSessionLaunch(config, profile, chosen.account, { repositoryRoot }));
     const offer: CanaryOffer | undefined = !canary && chosen.account && 'fleet' in chosen.account ? options.canaries?.find(entry => entry.runtime === (chosen.account as { fleet: { runtime: string } }).fleet.runtime) : undefined;
     if (offer) {
       launch = { ...launch, environment: { ...launch.environment, PATH: repinPath(launch.environment.PATH ?? '', offer.entry) } };
@@ -342,7 +343,7 @@ export async function readProfileLaunchRecords(root: string, profiles: { name: s
 
 
 interface WorkerLaunchOptions { probe?: FleetProbe; settleReservation?: (reason: string) => Promise<unknown>; onRun?: DispatchOptions['onRun']; sandboxProbe: SandboxExec | 'host' | null; claimBy?: number; coordinatorRoot?: string; renew: LeaseRenewer | null; renewIntervalMs?: number; verificationMaps: NonNullable<DispatchOptions['verificationMaps']>; rework: AppliedRework | null; cycle?: string; diagnosis: string; maskProbe?: MaskProbe; headless: HeadlessExec; startupMs?: number; capacity?: DispatchOptions['capacity']; continuing?: Builder | null }
-async function launchWorker(root: string, config: MasterConfig, work: Work, profile: WorkerProfile, launch: ReturnType<typeof accountLaunch>, prepare: WorkerPreparer, release: (root: string, key: string, epoch: number, profileName: string, blocker?: string) => Promise<void>, { probe, settleReservation, onRun, sandboxProbe, claimBy, coordinatorRoot, renew, renewIntervalMs, verificationMaps, rework, cycle, diagnosis, maskProbe, headless, startupMs, capacity, continuing }: WorkerLaunchOptions) {
+async function launchWorker(root: string, config: MasterConfig, work: Work, profile: WorkerProfile, launch: Awaited<ReturnType<typeof workerSessionLaunch>>, prepare: WorkerPreparer, release: (root: string, key: string, epoch: number, profileName: string, blocker?: string) => Promise<void>, { probe, settleReservation, onRun, sandboxProbe, claimBy, coordinatorRoot, renew, renewIntervalMs, verificationMaps, rework, cycle, diagnosis, maskProbe, headless, startupMs, capacity, continuing }: WorkerLaunchOptions) {
   const mergeWriter = 'control-plane' as const;
   // The lease is the launch's to keep alive until the supervisor's first heartbeat (GY-1287), from
   // the claim itself (GY-1373): building the worktree of a large repository on a loaded host took
@@ -362,7 +363,7 @@ async function launchWorker(root: string, config: MasterConfig, work: Work, prof
     const confinementCredential = { ownGitHubCredential: false, secretsBus: null };
     // The operator's credential locations are hidden from this session (GY-1856): the config home
     // wholesale, the deployment and configured mask paths, while its own token and runtime login stay.
-    const credentialMask = credentialMaskFor(config, { credentialFile: profile.credentialFile, runtimeHomes: runtimeLoginHomes(launch.environment, launch.contract?.homeVariable, launch.kind) });
+    const credentialMask = launch.credentialMask;
     // The worker writes its worktree, the worktree's own Git admin directory, the common Git
     // directory (GY-2977: packed-refs lock) and the shared Git paths the coordinator confinement
     // re-exposes; each is granted to the runtime's sandbox, and the grant is proved below before

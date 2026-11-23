@@ -10,8 +10,9 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3721: a Pi account in the worker role builds. The real control plane, registry, dispatch,
 // claim, worktree and watch; the only substitute is the `pi` program, which exits non-zero unless
-// its key file sits under PI_CODING_AGENT_DIR and it was named provider and model as the registry
-// id gives them, then commits and submits its head under its lease.
+// its auth file sits under PI_CODING_AGENT_DIR, the key its auth file's command names arrives as
+// ZAI_API_KEY, and it was named provider and model as the registry id gives them, then commits and
+// submits its head under its lease.
 let workers: HeadlessWorkers;
 before(async () => { workers = await headlessWorkers('pi-account-builds'); });
 after(async () => { await workers.stop(); });
@@ -19,15 +20,19 @@ after(async () => { await workers.stop(); });
 const coordinator = { id: 'graphyard-master', role: 'coordinator' } as const;
 
 test('e2e:pi-account-builds — a Pi worker launched on its own login runs one item to submitted with a commit', async () => {
-  const bin = await temporaryDirectory('pi-bin'), home = await temporaryDirectory('pi-a');
+  const bin = await temporaryDirectory('pi-bin'), home = await temporaryDirectory('pi-a'), other = await temporaryDirectory('opencode-a');
   await mkdir(home, { recursive: true });
-  await writeFile(join(home, 'auth.json'), JSON.stringify({ zai: { type: 'api_key', key: 'fixture-key' } }), { mode: 0o600 });
+  await mkdir(other, { recursive: true });
+  // GY-3738: as on the live host, the key sits behind a command reading another account's home,
+  // which the worker sandbox masks; the launch resolves it on the host into ZAI_API_KEY.
+  await writeFile(join(other, 'key'), 'fixture-key\n', { mode: 0o600 });
+  await writeFile(join(home, 'auth.json'), JSON.stringify({ zai: { type: 'api_key', key: `!cat ${join(other, 'key')}` } }), { mode: 0o600 });
   await writeFile(join(bin, 'pi'), `#!${process.execPath}
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 const args = process.argv.slice(2), line = ' ' + args.join(' ') + ' ';
 const dir = process.env.PI_CODING_AGENT_DIR;
-if (!dir || !fs.existsSync(dir + '/auth.json')) { console.error('No API key found for zai'); process.exit(1); }
+if (!dir || !fs.existsSync(dir + '/auth.json') || process.env.ZAI_API_KEY !== 'fixture-key') { console.error('No API key found for zai'); process.exit(1); }
 if (!line.includes(' --provider zai --model glm-5.3 ')) { console.error('Model not found: ' + args.join(' ')); process.exit(1); }
 if (line.includes('Reply with the single word OK.')) { console.log(JSON.stringify({ type: 'message_end', message: { role: 'assistant', content: 'OK', model: 'glm-5.3' } })); process.exit(0); }
 const [, key, epoch] = /complete (GY-\\d+) (\\d+) --head/.exec(args.join(' ')) ?? [];
