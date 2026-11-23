@@ -114,7 +114,7 @@ test('unit:ui-reads-session-state — Up next says what an item waits on: the de
   const upNext = byGroup['up-next'].map(entry => entry.key).sort();
   assert.deepEqual(upNext, ['GY-12', 'GY-13', 'GY-17'], 'both are released and unclaimed, beside GY-12, whose worker\'s lease lapsed');
   assert.deepEqual(nextActor(item('GY-13'), 'up-next', NOW, undefined, work), { who: 'Nobody yet', does: 'Waiting for GY-17 to ship first' });
-  assert.deepEqual(nextActor(item('GY-17'), 'up-next', NOW, undefined, work), { who: 'Nobody yet', does: 'Waiting for GY-14 to release staging-db: an exclusive resource it needs' });
+  assert.deepEqual(nextActor(item('GY-17'), 'up-next', NOW, undefined, work), { who: 'Nobody yet', does: 'Starts after GY-14 (shares staging-db)' });
   assert.equal(nextActor(item('GY-12'), 'up-next', NOW, undefined, work).does, 'Hands it to the next free builder agent', 'GY-12 really is waiting for a worker');
   assert.equal(upNextMeaning(byGroup['up-next'], work, NOW), '1 waiting for a worker · 2 held', 'the tile counts what waits for a worker apart from what is held');
   assert.equal(upNextMeaning(byGroup['up-next'].filter(entry => entry.key !== 'GY-12'), work, NOW), 'Held behind other work', 'and never says a worker is what held items wait for');
@@ -123,7 +123,7 @@ test('unit:ui-reads-session-state — Up next says what an item waits on: the de
   // GY-3600: each Up next row of the Work list says what it waits on.
   const row = (key: string) => { const start = html.indexOf(`data-row="${key}"`); assert.ok(start >= 0, key); assert.match(html.slice(start, start + 100), /group-up-next/); return visibleWords(html.slice(start, html.indexOf('</tr>', start))).join(' '); };
   assert.match(row('GY-13'), /Waiting for GY-17 to ship first/);
-  assert.match(row('GY-17'), /Waiting for GY-14 to release staging-db: an exclusive resource it needs/);
+  assert.match(row('GY-17'), /Starts after GY-14 \(shares staging-db\)/);
   for (const key of ['GY-13', 'GY-17']) assert.doesNotMatch(row(key), /Waiting for a worker|next free builder/);
   // With nothing held, the tile says what it always said.
   assert.equal(upNextMeaning([item('GY-12')], work, NOW), groupMeaning['up-next']);
