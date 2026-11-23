@@ -380,7 +380,7 @@ export const agyConfigFile = (environment: Record<string, string> = {}) => {
 /** A managed session checkout's leaf, by the name install/worktree-root.ts `sessionCheckoutName` gives its directory, under any root. */
 const managedCheckout = /[\\/]graphyard-(proof|review|approval)-[a-z0-9][a-z0-9-]{0,39}-[0-9a-f]{7}-[0-9a-f]{8}[\\/]checkout$/;
 const removedGraphyardWorktree = (entry: unknown) => typeof entry === 'string'
-  && (entry.includes(`${sep}.graphyard${sep}worktrees${sep}`) || managedCheckout.test(entry)) && !existsSync(entry);
+  && (['.graphyard', '.mainworks'].some(name => entry.includes(`${sep}${name}${sep}worktrees${sep}`)) || managedCheckout.test(entry)) && !existsSync(entry);
 export async function trustAgyFolder(directory: string, environment: Record<string, string> = {}): Promise<FolderTrust> {
   const file = agyConfigFile(environment), folder = canonicalPath(directory);
   if (underTestRunner() && !temporaryDirectories().some(temporary => canonicalPath(file).startsWith(`${temporary}${sep}`))) return { file, directory: folder, written: false };

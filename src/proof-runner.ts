@@ -64,7 +64,7 @@ export interface ProofRunnerInput {
  */
 export async function countByRunner({ root, proofs, scratch, runner, git }: ProofRunnerInput): Promise<Record<string, RunnerCount>> {
   const grep = async (patterns: string[], paths: string[], word = false) => {
-    try { return String(await git('git', ['-C', root, 'grep', '-l', '--untracked', ...(word ? ['-w'] : []), '-F', ...patterns.flatMap(pattern => ['-e', pattern]), '--', ...paths, ':(exclude).graphyard'])).split('\n').filter(Boolean); }
+    try { return String(await git('git', ['-C', root, 'grep', '-l', '--untracked', ...(word ? ['-w'] : []), '-F', ...patterns.flatMap(pattern => ['-e', pattern]), '--', ...paths, ':(exclude).graphyard', ':(exclude).mainworks'])).split('\n').filter(Boolean); }
     catch (error) { if ((error as { status?: number | null }).status === 1) return []; throw error; }
   };
   const vitest = await readFile(join(root, 'package.json'), 'utf8').then(text => Boolean(JSON.parse(text)?.devDependencies?.vitest)).catch(() => false);

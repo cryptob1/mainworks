@@ -12,8 +12,9 @@ import { runFiles } from './runner/pi.js';
 import { reportedModel } from './master/runtimes.js';
 import { listRunDirectories, runsDirectory } from './runner/registry.js';
 import type { Conversation } from './master/conversation.js';
+import { stateDirectory } from './install/layout.js';
 
-const outbox = (root: string) => resolve(root, '.graphyard', 'usage-outbox');
+const outbox = (root: string) => resolve(stateDirectory(root), 'usage-outbox');
 type Session = Pick<UsageRow, 'id' | 'work' | 'role' | 'account' | 'runtime' | 'at'>;
 
 /** A run's rows: its tokens by model, or one 'not reported' row for a runtime that printed no usage. */

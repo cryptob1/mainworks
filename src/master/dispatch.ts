@@ -42,6 +42,7 @@ import { namedPaths } from '../model/documentation-glob.js';
 import { appliedReworkBrief, reworkBriefSection, type AppliedRework } from './rework-brief.js';
 import { workerFastGatesPresent, workerFastGatesSentence } from './worker-fast-gates.js';
 import { attemptBoundMs, attemptCeilingMs } from './attempt-bound.js';
+import { stateDirectory } from '../install/layout.js';
 
 /** The launcher's own runner: the CLI as a child, and git. `stdio` is honoured for the streams a child may inherit; the rest is captured. */
 type WorkerCommand = (command: string, args: string[], options?: { cwd?: string; env?: NodeJS.ProcessEnv; stdio?: ('ignore' | 'pipe' | 'inherit')[] }) => string | Buffer | Promise<string | Buffer>;
@@ -255,7 +256,7 @@ export async function dispatchWork(root: string, work: Work, profile: WorkerProf
     }
     // History supports status; it never grants or reserves a slot.
     const at = new Date().toISOString();
-    await mkdir(resolve(root, '.graphyard/dispatch'), { recursive: true }).catch(() => {});
+    await mkdir(resolve(stateDirectory(root), 'dispatch'), { recursive: true }).catch(() => {});
     await writeFile(dispatchedFile(root, work.key), JSON.stringify({ epoch: result.epoch, at, runtime: launch.kind ?? null, account: chosen.account?.name ?? null, run: result.run, path: result.path,
       ...(result.resumedFrom ? { resumedFrom: result.resumedFrom } : {}), ...(fresh ? { fresh } : {}) }), { mode: 0o600 }).catch(() => {});
     // The dispatch record names the runtime and account the session runs on, the preference

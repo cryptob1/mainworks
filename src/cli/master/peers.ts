@@ -7,6 +7,7 @@ import { atomicPrivateText, atomicPrivateWrite, loadStoredMasterConfig, readCred
 import { peerTokenDirectory } from '../../master/confinement.js';
 import { masterConfigSchema } from '../../master/profiles.js';
 import { unhandled, type MasterSession } from './session.js';
+import { stateDirectory } from '../../install/layout.js';
 
 type Peer = NonNullable<import('../../master/profiles.js').MasterConfig['peers']>[number];
 
@@ -31,7 +32,7 @@ async function peerCall(peer: Peer, path: string, body?: unknown) {
 
 async function savePeers(root: string, peers: Peer[]) {
   const config = await loadStoredMasterConfig(root);
-  await atomicPrivateWrite(resolve(root, '.graphyard/master.json'), masterConfigSchema.parse({ ...config, peers }));
+  await atomicPrivateWrite(resolve(stateDirectory(root), 'master.json'), masterConfigSchema.parse({ ...config, peers }));
 }
 
 /** An install's config directory — the one holding its `masters` credentials — from its master.json credential path. */
@@ -57,7 +58,7 @@ export async function peerCommand(session: MasterSession): Promise<unknown> {
       const peerRoot = resolve(given);
       if (peerRoot === resolve(root)) throw new Error('That is this install\'s own checkout; master peer issue peers another install on this host');
       let stored: { url?: unknown; repository?: unknown; credentialFile?: unknown };
-      try { stored = JSON.parse(await readFile(resolve(peerRoot, '.graphyard/master.json'), 'utf8')); }
+      try { stored = JSON.parse(await readFile(resolve(stateDirectory(peerRoot), 'master.json'), 'utf8')); }
       catch { throw new Error(`${peerRoot} holds no readable .graphyard/master.json; name another install's coordinator checkout on this host`); }
       const peerName = typeof stored.repository === 'string' ? basename(stored.repository) : '';
       if (typeof stored.url !== 'string' || !/^https?:\/\//.test(stored.url) || !/^[\w.-]{1,60}$/.test(peerName) || typeof stored.credentialFile !== 'string' || !isAbsolute(stored.credentialFile))

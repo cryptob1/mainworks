@@ -27,6 +27,7 @@ import { herdrErrorText, nameRefusedByRuntime, sessionWords, type PromptDelivery
 import { keyringEndpointWarning, keyringProbeBackoff } from './launch-keyring.js';
 import { masterRecords } from './conversation.js';
 import { setting } from '../setting.js';
+import { stateDirectory } from '../install/layout.js';
 // Prompt delivery moved to prompt-delivery.ts (GY-1863) with the screen a stalled delivery is
 // judged by; the names below are the one address every existing import has always had.
 export { promptAttempts, promptAcceptMs, promptRetryPauseMs, noticeSettleMs, PromptNotAcceptedError, herdrErrorCode, herdrErrorText, nameRefusedByRuntime, deliverPrompt, readSessionScreen, sessionWords, type PromptDelivery } from './prompt-delivery.js';
@@ -87,7 +88,7 @@ export const launchDelivery = (kind: string | undefined, args: string[] = []): R
 export const requestContractRefusal = (kind: string) => `${PRODUCT_NAME} refuses to launch the ${kind} runtime: it has no way to take the session's first request on its command line, and a launched session's instruction is never pasted into it. Register where ${kind} takes its first prompt with graphyard master registry runtime set NAME --kind ${kind} --arg=${requestPlaceholder} (or --arg=FLAG --arg=${requestPlaceholder}) --reason REASON.`;
 /** The most bytes a launch command line may hold: the runtime, its flags and two file paths, never the request. */
 export const launchCommandLimit = 512;
-export const launchDirectory = (directory: string) => resolve(directory, '.graphyard/launch');
+export const launchDirectory = (directory: string) => resolve(stateDirectory(directory), 'launch');
 /** The session's launch files: `stem` is `DIR/.graphyard/launch/NAME`, and each file present is `STEM.role` or `STEM.request` (and `STEM.launch`, the runtime's words, for a line that would exceed the bound). */
 export interface LaunchFiles { stem: string; role: string | null; request: string | null }
 /** A word for the pane's shell: bare when it needs no quoting, single-quoted otherwise. */
@@ -192,7 +193,7 @@ export async function masterSessionConfinement(kind: string, root: string, probe
   prepareConfinedGitPaths(root);
   // The master's dispatches add worktrees: the shared worktrees area is re-exposed only where it exists.
   if (existsSync(checkoutGitDirectory(root))) mkdirSync(join(checkoutGitDirectory(root), 'worktrees'), { recursive: true });
-  const managed = join(resolve(root), '.graphyard');
+  const managed = stateDirectory(resolve(root));
   mkdirSync(managed, { recursive: true, mode: 0o700 });
   // GY-3237: the Herdr socket and config the install records now — the main server after a
   // GY-3212 migration, a private instance while it drains — so `herdr agent list` and

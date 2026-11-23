@@ -19,10 +19,11 @@ import { cliCommit } from './protocol-version.js';
 import type { Work } from './model.js';
 import type { MergeLedgerState } from './model/merge-ledger.js';
 import type { DaemonState } from './daemon/state.js';
+import { stateDirectory } from './install/layout.js';
 
 export const defaultBenchFilesPath = 'bench/trial-files.txt';
 export const benchResultsLimit = 200;
-export const benchResultsPath = (root: string) => join(root, '.graphyard', 'bench-results.jsonl');
+export const benchResultsPath = (root: string) => join(stateDirectory(root), 'bench-results.jsonl');
 export const benchTrialKey = 'bench-trial';
 export const benchIntervalMs = 6 * 60 * 60_000;
 export const benchRegressionThreshold = 0.25;
@@ -193,7 +194,7 @@ export async function benchTrial(input: {
   const readStat = input.readCpuStat ?? readProcStat;
   const commit = await resolveRef(input.root, input.ref, run);
   const { fileList, files, fileListHash } = readBenchFileList(input.root, input.filesPath);
-  const base = input.base ?? await loadStoredMasterConfig(input.root).then(cfg => worktreeRoot(input.root, cfg), () => join(input.root, '.graphyard', 'bench-worktrees'));
+  const base = input.base ?? await loadStoredMasterConfig(input.root).then(cfg => worktreeRoot(input.root, cfg), () => join(stateDirectory(input.root), 'bench-worktrees'));
   const resultsFile = input.resultsFile ?? benchResultsPath(input.root);
   const build = input.build !== undefined
     ? input.build

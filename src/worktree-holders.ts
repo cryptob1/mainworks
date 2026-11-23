@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import type { Work } from './model.js';
+import { stateDirectory } from './install/layout.js';
 
 /*
  * The branch an assignment worktree is created on can be held by another worktree that git no
@@ -99,7 +100,7 @@ function statusLines(path: string, ignored: boolean, trackedOnly = false) {
  * so it asks without `dirty`.
  */
 export function holderRefusals(root: string, holders: BranchHolder[], work: Pick<Work, 'key' | 'lease'>, now: number, options: { dirty: boolean }): string[] {
-  const sessions = resolve(root, '.graphyard/worktrees');
+  const sessions = resolve(stateDirectory(root), 'worktrees');
   const refusals: string[] = [];
   const live = (holder: BranchHolder) => !!work.lease && work.lease.epoch === holder.epoch && Date.parse(work.lease.expiresAt) > now;
   for (const holder of holders) {

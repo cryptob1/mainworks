@@ -9,7 +9,7 @@ import { type ChildRun, defaultChildRun } from '../child-runner.js';
 import { nameForLaunch } from '../session-name.js';
 import { launchAuthorization } from '../repository-setup.js';
 import { type HarnessPlan, type HarnessRule, repositoryClaudeConfig, writeHarnessPermissions, masterHarnessPlan, harnessDecision, claudeRuleProblem, bashRuleMatches } from '../harness.js';
-import { foreignUnitText, initialiseUnitsCommand, userUnitDirectory, installUnitsFile, type InstallUnits, LegacyUnitRefusal, legacyLoopUnit, perInstallUnits, proposedInstallUnits, readInstallUnits, recordInstallUnits, resolveInstallUnits, unitCheckout } from '../install/units.js';
+import { foreignUnitText, initialiseUnitsCommand, userUnitDirectory, installUnitsFile, installUnitsPath, type InstallUnits, LegacyUnitRefusal, legacyLoopUnit, perInstallUnits, proposedInstallUnits, readInstallUnits, recordInstallUnits, resolveInstallUnits, unitCheckout } from '../install/units.js';
 import type { Work } from '../model.js';
 import type { MasterConfig, WorkerProfile } from './profiles.js';
 import { coordinatorCheckoutRoot, promotionCommand, runtimeLoginHomes, workerConfinementRefusal } from './profiles.js';
@@ -26,6 +26,7 @@ import { worktreeRoot } from '../install/worktree-root.js';
 import { graphyardRepository } from '../scenarios.js';
 import { hostHeavyJobsDirectory, slotsDirectoryVariable, verificationEnvironment } from './verification-slots.js';
 import { setting } from '../setting.js';
+import { stateDirectory, unitPrefix } from '../install/layout.js';
 
 /**
  * The master's harness rules cover everything the master owns, not only the coordination loop:
@@ -84,7 +85,7 @@ export function installUnitRules(root: string, unitDirectory: string): { allow: 
   try {
     for (const name of readdirSync(unitDirectory)) {
       if (name === master) continue;
-      if (/^graphyard-master[A-Za-z0-9._-]*\.service$/.test(name)) others.push(name, `${name} *`, name.replace(/\.service$/, ''));
+      if (/^(?:graphyard|mainworks)-master[A-Za-z0-9._-]*\.service$/.test(name)) others.push(name, `${name} *`, name.replace(/\.service$/, ''));
     }
   } catch { /* no unit directory: only the structural shapes apply */ }
   const own = allow.map(entry => /^Bash\((.*)\)$/.exec(entry.rule)![1].replace(/:\*$/, ''));
@@ -180,7 +181,7 @@ export function sessionHarnessPlan(input: SessionHarnessInput): HarnessPlan {
 }
 
 /** Where a session's role file lives: beside the ledgers, ignored by Git, never inside a worktree it is launched for. */
-export const sessionHarnessFile = (root: string, role: SessionRole, profile: string) => resolve(root, '.graphyard/harness', `${role}-${profile}.json`);
+export const sessionHarnessFile = (root: string, role: SessionRole, profile: string) => resolve(stateDirectory(root), 'harness', `${role}-${profile}.json`);
 async function repositoryCarriesClaudeSettings(root: string) {
   for (const name of ['settings.json', 'settings.local.json']) {
     try { await lstat(resolve(root, '.claude', name)); return true; } catch (error: any) { if (error.code !== 'ENOENT') throw error; }
@@ -356,13 +357,13 @@ function launchedCheckout(text: string, root: string, home: string): string | nu
  */
 export async function recordServingUnits(root: string, repository: string, options: { servingUnit?: string | null; unitDirectory?: string; home?: string } = {}): Promise<InstallUnits | null> {
   const unitDirectory = options.unitDirectory ?? userUnitDirectory(), home = options.home ?? homedir();
-  if (!options.servingUnit || existsSync(resolve(root, installUnitsFile))) return null;
+  if (!options.servingUnit || existsSync(installUnitsPath(root))) return null;
   let text: string;
   try { text = readFileSync(resolve(unitDirectory, options.servingUnit), 'utf8'); } catch { return null; }
   if (foreignUnitText(text, root, home) ?? launchedCheckout(text, root, home)) return null;
   if (proposedInstallUnits(root, repository, unitDirectory, home).master !== options.servingUnit) {
     // GY-1745: a leftover legacy-named unit that also runs ROOT makes the proposal the legacy alias, though the unit serving the loop, which runs ROOT, is this install's own per-install unit: that name is what the install records.
-    const own = perInstallUnits(repository);
+    const own = perInstallUnits(repository, unitPrefix(root));
     return own.master === options.servingUnit ? recordInstallUnits(root, own) : null;
   }
   return resolveInstallUnits(root, repository, unitDirectory, home);
@@ -376,7 +377,7 @@ export function harnessApplyCheckout(root: string, options: { servingUnit?: stri
     throw new HarnessCheckoutRefusal(root, error.unitPath, `The harness contract was not applied: ${root} records no units (${installUnitsFile} is absent) and the legacy unit ${error.unitPath} runs another checkout (${error.checkout}). Run ${initialiseUnitsCommand} in ${root} to record its own units, or update ${error.unitPath} if ${root} is the checkout it should run`);
   }
   // The legacy alias readInstallUnits falls back to is no proof ROOT is this install's checkout: with no serving unit detected, a separate launcher checkout would pass and receive the managed repository's plan.
-  if (!existsSync(resolve(root, installUnitsFile))) throw new HarnessCheckoutRefusal(root, null, `The harness contract was not applied: ${root} records no units (${installUnitsFile} is absent), so it is not established that it is this install's checkout. Run ${initialiseUnitsCommand} in ${root} to record its own units`);
+  if (!existsSync(installUnitsPath(root))) throw new HarnessCheckoutRefusal(root, null, `The harness contract was not applied: ${root} records no units (${installUnitsFile} is absent), so it is not established that it is this install's checkout. Run ${initialiseUnitsCommand} in ${root} to record its own units`);
   if (options.servingUnit) {
     const path = resolve(unitDirectory, options.servingUnit);
     // Only an absent unit file names no checkout; one that exists but cannot be read cannot show it runs ROOT, so it is refused.

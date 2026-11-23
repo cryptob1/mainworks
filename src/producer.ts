@@ -1,4 +1,5 @@
 import { PRODUCT_NAME } from './model/product.js';
+import { stateDirectory } from './install/layout.js';
 import { loopStateClient, migrateLoopFile, ledgerSnapshot, saveLedger } from './loop-state.js';
 import { writeFailure } from './disk-space.js';
 import { parseEnvValue } from './env-file.js';
@@ -179,7 +180,7 @@ export const producerLedgerSpec: SessionLedgerSpec = { name: 'producer ledger', 
 
 export async function readProducerLedger(root: string): Promise<ProducerLedger> {
   const client = await loopStateClient(root);
-  await migrateLoopFile(client, 'producers', resolve(root, producerLedgerSpec.path), value => producerLedgerSchema.parse(value).producers);
+  await migrateLoopFile(client, 'producers', resolve(stateDirectory(root), 'producers.json'), value => producerLedgerSchema.parse(value).producers);
   const producers = (await client.read('producers')).map(record => producerRecordSchema.parse(record));
   return ledgerSnapshot({ version: 1, producers }, producers);
 }

@@ -16,9 +16,10 @@ import { setTrialAttempts, TrialCancelledError, TrialTimeoutError, TrialRunnerEr
 import { harnessModules } from './trial-container.js';
 import { heldJobEnvironment } from '../master/verification-slots.js';
 import type { MergeTrialRun } from './executor.js';
+import { stateDirectory } from '../install/layout.js';
 
 /** Where a loop's detached trial runs live: `<coordinator root>/.graphyard/trial-runs`, beside the deploy record it already keeps there. */
-export const trialRunsDirectory = (root: string) => join(root, '.graphyard', 'trial-runs');
+export const trialRunsDirectory = (root: string) => join(stateDirectory(root), 'trial-runs');
 
 /** What one merge flight asks a detached trial run to do: everything `runMergeTrial` reads that is not a function; the launch fills where it runs. */
 export interface TrialRunRequest { key: string; head: string; mergeSha: string; baseTip: string | null; changedFiles: string[]; proofs: string[]; e2eProofs: string[]; timeoutMs: number; reproduce: boolean; cores: number | null; selectorApproved?: boolean }

@@ -29,6 +29,7 @@ import { confinedRuntimeArgs } from './worker-sandbox.js';
 import { freePort } from './serve-app.js';
 import { runtimeReport, runtimeSessionId } from './model/token-costs.js';
 import { noteRunUsage } from './usage-capture.js';
+import { stateDirectory } from './install/layout.js';
 
 /**
  * One child run: the confined command line, its directory and environment in; its standard output
@@ -280,7 +281,7 @@ export async function startHeadlessSession<T>(input: HeadlessSession<T>): Promis
 
 // ---- Adoption after a loop restart (GY-3113) -------------------------------------------------------
 
-export const headlessRunsDirectory = (root: string) => resolve(root, '.graphyard', 'headless-runs');
+export const headlessRunsDirectory = (root: string) => resolve(stateDirectory(root), 'headless-runs');
 const sessionFile = 'session.json';
 export type HeadlessRoute = 'review';
 const sessionRecordSchema = z.object({ id: z.string().optional(), name: z.string().min(1).max(200), work: z.string().min(1).max(200), subject: z.string().min(1).max(200), kind: z.string().min(1).max(40),
@@ -337,7 +338,7 @@ export function adoptHeadlessSessions(root: string, adopters: Record<HeadlessRou
  * Where a worker's runs live: in the loop's own installation state, never in the worktree the
  * worker writes, and kept after the run ends so its log stays readable through every handoff.
  */
-export const workerRunsDirectory = (root: string) => resolve(root, '.graphyard', 'worker-runs');
+export const workerRunsDirectory = (root: string) => resolve(stateDirectory(root), 'worker-runs');
 const runLogName = 'log.jsonl';
 const workerRecordSchema = z.object({ id: z.string().uuid(), name: z.string().min(1).max(200), work: z.string().min(1).max(200), epoch: z.number().int().positive(),
   principal: z.string().min(1).max(200), account: z.string().max(200).nullable(), kind: z.string().min(1).max(40), subject: z.string().min(1).max(300), startedAt: z.string().max(40) });

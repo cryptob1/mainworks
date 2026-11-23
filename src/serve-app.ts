@@ -23,6 +23,7 @@ import { nodeApplicationSchema } from './model-boundary/project-applications.js'
 import { installArgv, packageManager } from './package-manager.js';
 import { pinnedNodePath } from './node-pin.js';
 import type { Application } from './project-applications.js';
+import { stateDirectory } from './install/layout.js';
 
 /** The application the serve pass serves: the first node application main's graphyard.json declares. */
 export type ServeDeclaration = Extract<Application, { kind: 'node' }>;
@@ -58,7 +59,7 @@ export interface ServeBaseline { commit: string; url: string; pid: number | null
 export interface ServeRecord { commit: string | null; url: string | null; failed: string | null; reason: string | null; pid?: number | null; started?: string | null; check?: ServeCheck | null; baseline?: ServeBaseline | null; at: string }
 /** The serve process a restart left running. */
 export interface ServeProcess { pid: number | null; started: string | null }
-export const serveRecordPath = (root: string) => join(root, '.graphyard', 'served.json');
+export const serveRecordPath = (root: string) => join(stateDirectory(root), 'served.json');
 export function readServeRecord(file: string): ServeRecord | null {
   if (!existsSync(file)) return null;
   try { return JSON.parse(readFileSync(file, 'utf8')) as ServeRecord; } catch { return null; }
@@ -220,9 +221,9 @@ export async function watchServe(file: string, ports: ServePorts, options: { int
 }
 
 /** The install's own serve checkout: a detached worktree of the managed root under its local .graphyard — never the coordinator's or a worker's checkout. Its ports live beside the deploy watch's own (src/cli/upgrade.ts), the one file allowed to reach the remote. */
-export const serveCheckoutPath = (root: string) => join(root, '.graphyard', 'serve-checkout');
+export const serveCheckoutPath = (root: string) => join(stateDirectory(root), 'serve-checkout');
 /** The baseline checkout (GY-2985): a second detached worktree holding the previously served build, which keeps serving on the port beside the served one. */
-export const serveBaselineCheckoutPath = (root: string) => join(root, '.graphyard', 'serve-checkout-baseline');
+export const serveBaselineCheckoutPath = (root: string) => join(stateDirectory(root), 'serve-checkout-baseline');
 
 /**
  * GY-3207: the environment the serve checkout's install, build and serve commands run under: the host's, with the Node major the checkout declares first on PATH.

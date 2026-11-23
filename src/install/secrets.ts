@@ -1,11 +1,11 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { chmod, lstat, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
 import { observeShaGrant, principalGrants, type PrincipalGrant } from '../server/principals.js';
 import { REDACTED, type DeclaredSessionKind, type PlannedPrincipal, type Role } from './types.js';
 import { setting } from '../setting.js';
+import { defaultConfigHome } from './layout.js';
 
 /** 32 random bytes rendered base64url: 43 characters, far above the 32-character floor. */
 export const generateToken = () => randomBytes(32).toString('base64url');
@@ -84,7 +84,7 @@ export const installRecordSchema = z.object({
 }).strict();
 export type InstallRecord = z.infer<typeof installRecordSchema>;
 
-export const configHome = (override?: string) => resolve(override ?? setting('CONFIG_HOME') ?? resolve(homedir(), '.config/graphyard'));
+export const configHome = (override?: string) => resolve(override ?? setting('CONFIG_HOME') ?? defaultConfigHome());
 export const installDirectory = (installId: string, override?: string) => resolve(configHome(override), installId);
 
 /** Credentials never live inside the managed repository, its worktrees, or any Git checkout. */

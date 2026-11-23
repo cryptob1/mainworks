@@ -32,6 +32,7 @@ import { diskFloorBytes, gateTrialKey, trialFileTimeoutMs, heatWaitSeconds, Tria
 import { nestedSandboxDenied, trialAppArmorFix } from './trial-apparmor.js';
 import { maskSecrets } from '../redaction.js';
 import { setting } from '../setting.js';
+import { stateDirectory } from '../install/layout.js';
 
 /** One git call in the coordinator's object store: the arguments after `git -C <root>`, the child's stdout. */
 export type TrialGit = (args: string[], env?: Record<string, string>) => Promise<string>;
@@ -246,7 +247,7 @@ export const trialTemporaryRoot = (sessionDirectory: string, roots: readonly str
 export function trialTemporaryRootReport(root: string, { roots = trialTemporaryRoots(), exists = existsSync, volatile = volatileFilesystem,
   size = path => { try { const info = statfsSync(path); return Number(info.blocks) * Number(info.bsize); } catch { return null; } } }: {
   roots?: readonly string[]; exists?: (path: string) => boolean; volatile?: (path: string) => string | null; size?: (path: string) => number | null } = {}) {
-  const floor = diskFloorBytes({ run: (() => { try { return JSON.parse(readFileSync(join(root, '.graphyard', 'master.json'), 'utf8')).run ?? {}; } catch { return {}; } })() });
+  const floor = diskFloorBytes({ run: (() => { try { return JSON.parse(readFileSync(join(stateDirectory(root), 'master.json'), 'utf8')).run ?? {}; } catch { return {}; } })() });
   const chosen = trialTemporaryRoot('the trial session directory', roots, exists, volatile);
   const skipped = roots.filter(path => exists(path) && volatile(path)).map(path => `${path} is a ${volatile(path)}, so trials do not use it`);
   const bytes = exists(chosen) ? size(chosen) : null;
@@ -536,7 +537,7 @@ export function shardTestFiles(files: readonly string[], lanes: number, duration
   return shards.map(shard => shard.files).filter(shard => shard.length);
 }
 /** Where a passing trial saves its per-file durations (GY-3542): beside the install's other local state, never in a checkout. */
-export const refreshedDurationsPath = (root: string, path: string) => join(root, '.graphyard', basename(path));
+export const refreshedDurationsPath = (root: string, path: string) => join(stateDirectory(root), basename(path));
 const durationsIn = (text: string): Record<string, number> => { try { const files = (JSON.parse(text) as { files?: unknown } | null)?.files; return files && typeof files === 'object' ? files as Record<string, number> : {}; } catch { return {}; } };
 /** The timings a trial plans its shards from: the base commit's baseline when selectorApproved is false (GY-3635) or the merge's own baseline in its checkout when approved, under what passing trials on this install measured since; `{}` when neither exists. */
 const checkoutDurations = async (worktree: string, root: string, path?: string, options?: { baseTip?: string; selectorApproved?: boolean; run?: ChildRun }): Promise<Record<string, number>> => {
