@@ -14,7 +14,7 @@ import type { ProfileAccountHealth } from '../master/environments.js';
 import type { CheckoutTrustFleet, CheckoutTrustRefusal } from '../harness.js';
 import type { MasterSessionEffects } from '../master/master-session.js';
 import type { MasterMessage } from './master-stalled-delivery.js';
-import { type DaemonState, type LeftoverDisk, type LoopRelease, record } from './state.js';
+import { type DaemonState, type DiskKind, type LeftoverDisk, type LoopRelease, record } from './state.js';
 import type { MergeWriterReads } from './cycle-merge-writer.js';
 import type { AdoptedRun } from './run-adoption.js';
 import type { ComposeServer } from './compose-recovery.js';
@@ -95,6 +95,8 @@ export interface DaemonEffects {
   attemptWorktrees?: () => Promise<{ path: string; changedAt: number }[]>;
   /** The free space of each volume Mainworks writes (GY-3122). Absent, no headroom is kept. */
   diskVolumes?: () => Promise<{ path: string; freeBytes: number | null }[]>;
+  /** GY-3743: Mainworks's disk use by kind (Docker images by repository, build cache, worktrees, trial runs, CLI releases), read at most once an hour. */
+  diskUseByKind?: () => Promise<DiskKind[]>;
   /** Reclaims Mainworks's own leftovers when free space is below the floor (GY-3122): what it removed, by name. */
   reclaimDisk?: () => Promise<string[]>;
   /**

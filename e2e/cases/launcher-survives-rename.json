@@ -1,0 +1,19 @@
+{
+  "id": "launcher-survives-rename",
+  "title": "A deploy that renames the CLI entry leaves every launcher working",
+  "description": "A deploy publishes a release whose bin/graphyard.mjs is a shim importing a renamed entry. The install launcher, the watch checkout's launcher and deploy/build's launcher all still run status and master status, and the master loop, restarted on this checkout's real CLI through the install launcher and deploy/build's launcher, completes its first cycle against a control plane: no file a launcher imports is missing.",
+  "tags": [
+    "deployment",
+    "regression"
+  ],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "deploy a release with a renamed CLI entry, run every launcher, then restart the master loop and see its first cycle complete",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/launcher-survives-rename.test.ts",
+      "timeoutSeconds": 180
+    }
+  ]
+}

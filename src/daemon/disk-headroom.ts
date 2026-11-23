@@ -9,9 +9,9 @@ import { trialContainerImage, trialImage } from '../merge-writer/trial-container
 import { repositoryTrialImageRepository } from '../merge-writer/repository-trial-image.js';
 import { diskFloorBytes } from '../merge-writer/trial-load.js';
 import { reclaimTrialCheckouts, trialCheckoutPrefix, trialCheckoutRoots, trialTemporaryPrefix, trialTemporaryRoots } from '../merge-writer/trial.js';
-import { tallyLeftovers } from './leftovers.js';
+import { dockerBytes, pathsBytes, tallyLeftovers } from './leftovers.js';
 import type { DaemonEffects } from './effects.js';
-import { record, type DaemonAction, type DaemonState } from './state.js';
+import { record, type DaemonAction, type DaemonState, type DiskKind, type DiskSample, type DiskUse } from './state.js';
 import { workerVerificationPrefix, workerVerificationRoot, workerVerificationTimeoutMs } from '../merge-writer/worker-verification.js';
 import { trialBuilder } from '../install/trial-image.js';
 import { composeProjectPrefix, sweepComposePreviews } from '../compose-preview.js';
@@ -20,23 +20,96 @@ import { defaultMergeWriterParallel } from '../master/merge-writer-settings.js';
 
 /** The cursor key of the shortage: a failed `attention` row the master is woken by while it stands. */
 export const diskHeadroomKey = 'disk-headroom';
+export const diskUseIntervalMs = 3_600_000;
+export const diskUseMaxReadings = 48;
 export interface Volume { path: string; freeBytes: number | null }
 
 const gb = (bytes: number) => `${(bytes / 1e9).toFixed(1)} GB`;
 const short = (volumes: Volume[], floor: number) => volumes.filter((volume): volume is Volume & { freeBytes: number } => volume.freeBytes !== null && volume.freeBytes < floor);
+const mainworksImageRepo = (repository: string) => /^(mainworks|graphyard)-/.test(repository.split('/').at(-1) ?? repository);
 
 /**
- * One cycle's headroom check. Above the floor it changes nothing. Below it, Mainworks's own
- * leftovers are reclaimed and the volumes measured again; a shortage that remains is kept on the
- * cursor (`state.diskHeadroom`, which dispatch, the merge writer and master status read) and as
- * the failed `disk-headroom` attention row that wakes the master. The row names the volumes and
- * the floor, never the free bytes, so a shortage that only moves wakes the master once.
+ * GY-3743: Mainworks's disk use by kind — Docker images grouped by repository (`mainworks-local`,
+ * `mainworks-trial`, `graphyard-*`), Docker build cache, worktrees, trial runs and CLI releases —
+ * sorted largest first, omitting empty or unreadable kinds.
+ */
+export async function measureDiskUseByKind(paths: { worktrees: string[]; trialRuns: string[]; cliReleases: string[] }, run: ChildRun): Promise<DiskKind[]> {
+  const [worktrees, trialRuns, cliReleases, docker] = await Promise.all([
+    pathsBytes(paths.worktrees),
+    pathsBytes(paths.trialRuns),
+    pathsBytes(paths.cliReleases),
+    (async (): Promise<DiskKind[]> => {
+      try {
+        const df = JSON.parse(String(await run('docker', ['system', 'df', '-v', '--format', 'json'], { timeoutMs: 60_000 })));
+        const repos = new Map<string, number>();
+        for (const image of (df.Images ?? []) as { Repository?: string; Size?: string }[]) {
+          const repo = image.Repository ?? '';
+          if (!repo || !mainworksImageRepo(repo)) continue;
+          repos.set(repo, (repos.get(repo) ?? 0) + dockerBytes(image.Size));
+        }
+        const buildCache = ((df.BuildCache ?? []) as { Size?: string }[]).reduce((total, row) => total + dockerBytes(row.Size), 0);
+        return [...[...repos.entries()].map(([repo, bytes]) => ({ kind: `images: ${repo}`, bytes })), { kind: 'build cache', bytes: buildCache }];
+      } catch { return []; }
+    })(),
+  ]);
+  const kinds: DiskKind[] = [
+    ...docker,
+    ...(worktrees !== null ? [{ kind: 'worktrees', bytes: worktrees }] : []),
+    ...(trialRuns !== null ? [{ kind: 'trial runs', bytes: trialRuns }] : []),
+    ...(cliReleases !== null ? [{ kind: 'CLI releases', bytes: cliReleases }] : []),
+  ];
+  return kinds.filter(entry => entry.bytes > 0).sort((a, b) => b.bytes - a.bytes);
+}
+
+/** GY-3743: change in free bytes over the last 24 hours from stored hourly readings, or null with fewer than two. */
+export function diskChange24h(readings: readonly DiskSample[]): number | null {
+  if (readings.length < 2) return null;
+  const latest = readings.at(-1)!, cutoff = Date.parse(latest.at) - 24 * diskUseIntervalMs;
+  let baseline = readings[0]!, best = Math.abs(Date.parse(baseline.at) - cutoff);
+  for (const sample of readings.slice(1, -1)) {
+    const distance = Math.abs(Date.parse(sample.at) - cutoff);
+    if (distance < best) { baseline = sample; best = distance; }
+  }
+  return latest.freeBytes - baseline.freeBytes;
+}
+
+/** GY-3743: `master status`'s `diskHeadroom` — free bytes, 24h change and the five largest kinds, plus shortage fields when below the floor. */
+export function diskHeadroomSummary(shortage: DaemonState['diskHeadroom'], use: DiskUse | null) {
+  if (!shortage && !use) return null;
+  if (!use) return shortage;
+  return {
+    at: use.at,
+    freeBytes: use.freeBytes,
+    change24hBytes: diskChange24h(use.readings),
+    top: use.top,
+    ...(shortage ? { floorBytes: shortage.floorBytes, volumes: shortage.volumes, shortage: shortage.shortage } : {}),
+  };
+}
+
+/**
+ * One cycle's headroom check. Records free bytes and the five largest kinds of Mainworks disk use
+ * at most once an hour (keeping the last 48 readings). Above the floor it holds nothing. Below it,
+ * Mainworks's own leftovers are reclaimed and the volumes measured again; a shortage that remains
+ * is kept on the cursor (`state.diskHeadroom`, which dispatch, the merge writer and master status
+ * read) and as the failed `disk-headroom` attention row that wakes the master. The row names the
+ * volumes and the floor, never the free bytes, so a shortage that only moves wakes the master once.
  */
 export async function diskHeadroomStep(cycle: { config: Pick<MasterConfig, 'run'>; state: DaemonState; effects: DaemonEffects; now: () => number; performed: DaemonAction[] }) {
   const { config, state, effects, now, performed } = cycle;
   if (!effects.diskVolumes) return;
   const floor = diskFloorBytes(config);
-  let low = short(await effects.diskVolumes(), floor);
+  const volumes = await effects.diskVolumes();
+  const clock = now();
+  const measured = volumes.map(volume => volume.freeBytes).filter((value): value is number => value !== null);
+  if (measured.length && (!state.diskUse || clock - Date.parse(state.diskUse.at) >= diskUseIntervalMs)) {
+    const at = new Date(clock).toISOString();
+    const freeBytes = Math.min(...measured);
+    const kinds = effects.diskUseByKind ? await effects.diskUseByKind().catch(() => [] as DiskKind[]) : [];
+    const top = kinds.filter(entry => entry.bytes > 0).sort((a, b) => b.bytes - a.bytes).slice(0, 5);
+    const readings = [...(state.diskUse?.readings ?? []), { at, freeBytes }].slice(-diskUseMaxReadings);
+    state.diskUse = { at, freeBytes, readings, top };
+  }
+  let low = short(volumes, floor);
   if (!low.length && !state.diskHeadroom) return;
   if (low.length && effects.reclaimDisk) {
     const removed = await effects.reclaimDisk();
