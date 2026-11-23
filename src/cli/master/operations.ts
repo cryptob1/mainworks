@@ -16,7 +16,7 @@ import type { ChildRun } from '../../child-runner.js';
 import { masterConfinementVariable } from '../../master/launch.js';
 import { heavyDrainLine, heavyJobsDirectory, requestHeavyDrain, resumeHeavyDrain } from '../../master/verification-slots.js';
 import { setting } from '../../setting.js';
-import { updateNowPath } from '../../deploy-watch.js';
+import { controlPlaneRecordPath, readControlPlaneRecord, updateNowPath } from '../../deploy-watch.js';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
@@ -55,7 +55,8 @@ export async function operationsCommand(session: MasterSession, effects: Recover
     const file = updateNowPath(root);
     await mkdir(dirname(file), { recursive: true });
     await writeFile(file, `${new Date().toISOString()}\n`);
-    return print({ requested: true, detail: 'The deploy watch takes the newest verified build on its next pass' });
+    const waiting = readControlPlaneRecord(controlPlaneRecordPath(root))?.waiting;
+    return print({ requested: true, detail: waiting ? `The deploy watch takes ${waiting.tip.slice(0, 12)} on its next pass` : 'No build is waiting; the deploy watch takes the next newer verified build at once' });
   }
   if (id === 'dispatch') {
     const { positionals } = parseArgs({ args, options: {}, allowPositionals: true });
