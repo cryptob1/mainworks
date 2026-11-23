@@ -1,0 +1,11 @@
+{
+  "id": "live-station-window",
+  "title": "The live station counts only merges inside its window",
+  "description": "With a week-old merge and a fresh one, /api/flow's 6h and 24h live stations count only the fresh merge, timed from merge to its first serving deploy, while 7d counts both. After a merge deploys, master status shows a 6h live station whose samples are within the window and no 'Live is slow' alert for older merges.",
+  "tags": ["api", "regression"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "after a merge deploys, master status shows a 6h live station within its window and no slow-live alert", "run": "node --import tsx tests/helpers/run-tests.ts tests/live-station-window.test.ts", "timeoutSeconds": 240 }
+  ]
+}
