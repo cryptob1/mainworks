@@ -51,15 +51,32 @@ test('e2e:first-run — a fresh install opens on the first-run page and walks st
 
   try {
     // Forward the built dashboard's /api/** requests straight to this test's real control plane without altering any response.
+    // While `held` is set, replies wait for it (GY-3720): see clickBeforeReplies.
+    let held: Promise<void> | null = null;
     await page.route('**/api/**', async route => {
       try {
         const reqUrl = new URL(route.request().url());
         const response = await route.fetch({ url: url + reqUrl.pathname + reqUrl.search });
+        await held;
         return await route.fulfill({ response });
       } catch {
         await route.abort().catch(() => {});
       }
     });
+
+    // GY-3720: the page polls every 5 s. A poll answered between a change and its click advanced the step,
+    // removed the button, and the click waited out the test's 120 s. Replies wait until the click lands.
+    const clickBeforeReplies = async (change: () => Promise<unknown>, button: string) => {
+      let release!: () => void;
+      held = new Promise(resolve => { release = resolve; });
+      try {
+        await change();
+        await page.getByRole('button', { name: button }).click();
+      } finally {
+        held = null;
+        release();
+      }
+    };
 
     const api = async (path: string, token: string, data?: unknown, extraHeaders: Record<string, string> = {}) => {
       const response = await fetch(`${url}/api/${path}`, {
@@ -104,8 +121,7 @@ test('e2e:first-run — a fresh install opens on the first-run page and walks st
     await expect(page.locator('[data-terminal-equivalent]')).not.toContainText('npx mainworks');
 
     // Repository connection succeeds -> coordinator poll clears fetchRefusal -> Step 1 ticks with repository name, Step 2 becomes current.
-    await api('work-snapshot', coordinatorToken, undefined, { [loopPresenceHeader]: '5' });
-    await page.getByRole('button', { name: 'Check connection' }).click();
+    await clickBeforeReplies(() => api('work-snapshot', coordinatorToken, undefined, { [loopPresenceHeader]: '5' }), 'Check connection');
     await expect(stepItems.nth(0)).toHaveAttribute('data-step-state', 'done');
     await expect(stepItems.nth(0)).toContainText('✓');
     await expect(stepItems.nth(0)).toContainText('fixture/first-run');
@@ -125,29 +141,27 @@ test('e2e:first-run — a fresh install opens on the first-run page and walks st
     });
 
     // AC-1: Step 2 does NOT pass when the live request fails; it says the provider's sentence.
-    await api('agent-registry/observe', coordinatorToken, {
+    await clickBeforeReplies(() => api('agent-registry/observe', coordinatorToken, {
       host: 'build-host',
       observations: [{
         account: 'builder-stub',
         quota: { loggedIn: true, state: 'broken', usage: [], resetsAt: null, reason: 'Your Anthropic API key was rejected.' },
         smoke: { result: 'fail', reason: 'Your Anthropic API key was rejected.' },
       }],
-    });
-    await page.getByRole('button', { name: 'Refresh status' }).click();
+    }), 'Refresh status');
     await expect(stepItems.nth(1)).toHaveAttribute('data-step-state', 'current');
     await expect(page.getByRole('alert')).toContainText('Your Anthropic API key was rejected.');
     await expect(page.locator('main')).toContainText(modelId);
 
     // AC-1: Step 2 passes once a live request answers on the registered model, and ticks with Builder name and model id.
-    await api('agent-registry/observe', coordinatorToken, {
+    await clickBeforeReplies(() => api('agent-registry/observe', coordinatorToken, {
       host: 'build-host',
       observations: [{
         account: 'builder-stub',
         quota: { loggedIn: true, state: 'available', usage: [], resetsAt: null, reason: null, since: new Date().toISOString() },
         smoke: { result: 'pass', reason: null },
       }],
-    });
-    await page.getByRole('button', { name: 'Refresh status' }).click();
+    }), 'Refresh status');
     await expect(stepItems.nth(1)).toHaveAttribute('data-step-state', 'done');
     await expect(stepItems.nth(1)).toContainText('✓');
     await expect(stepItems.nth(1)).toContainText(builderFriendly);
