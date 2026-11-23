@@ -13,16 +13,33 @@ export class HeadlessConfigurationError extends Error {}
 export const continuable = (kind: string | null | undefined, contract?: RegisteredLaunch | null) => !contract?.headlessArgs && !!runtimeAdapter(kind)?.continue;
 
 /**
+ * GY-3696: Linux caps a single argv string at MAX_ARG_STRLEN (128 KiB); a headless agy prompt
+ * past this bound goes on stdin instead of as a command-line argument so spawn never fails with
+ * E2BIG, while smaller prompts stay on argv as before.
+ */
+export const agyInlinePromptLimitBytes = 64 * 1024;
+const agyPrintFlags = new Set(['-p', '--print', '--prompt']);
+/** The prompt to pipe to stdin for a headless run, or undefined when the prompt stays on argv. */
+export const headlessPromptInput = (kind: string, prompt: string): string | undefined =>
+  kind === 'agy' && Buffer.byteLength(prompt, 'utf8') > agyInlinePromptLimitBytes ? prompt : undefined;
+
+/**
  * Explicit argv replaces the interactive argv and built-in form. A leading subcommand precedes policy flags.
  * Of the form's optional flags, only `accepted` ones are passed, once each, whether the form or the profile names them (GY-3425).
  */
 export function headlessArgs(kind: string, args: readonly string[], prompt: string, contract?: RegisteredLaunch | null, accepted: readonly string[] = [], session?: string | null): string[] {
   if (session && !continuable(kind, contract)) throw new HeadlessConfigurationError(`The ${kind} runtime has no continue form`);
+  const onStdin = headlessPromptInput(kind, prompt) !== undefined;
+  const place = (arg: string, index: number, list: readonly string[]) => {
+    if (arg === requestPlaceholder) return onStdin ? [] : [prompt];
+    if (onStdin && agyPrintFlags.has(arg) && list[index + 1] === requestPlaceholder) return [];
+    return [arg];
+  };
   if (contract?.headlessArgs) {
     const words = contract.headlessArgs;
     if (words.filter(word => word === requestPlaceholder).length !== 1) throw new HeadlessConfigurationError(`${kind}: launch.headlessArgs must contain exactly one {request}`);
     const subcommand = words[0] !== requestPlaceholder && !words[0]?.startsWith('-') ? 1 : 0;
-    return [...words.slice(0, subcommand), ...args.filter(arg => arg !== requestPlaceholder), ...words.slice(subcommand).map(arg => arg === requestPlaceholder ? prompt : arg)];
+    return [...words.slice(0, subcommand), ...args.filter(arg => arg !== requestPlaceholder), ...words.slice(subcommand).flatMap(place)];
   }
   const form = runtimeAdapter(kind)?.headless;
   if (!form) throw new HeadlessConfigurationError(`The ${kind} runtime has no one-task contract. Set launch.headlessArgs with exactly one {request} using graphyard master registry runtime set NAME --headless-arg=ARG --reason REASON; reviews never use Herdr.`);
@@ -30,7 +47,7 @@ export function headlessArgs(kind: string, args: readonly string[], prompt: stri
   const kept = args.filter((arg, index) => !drop.some(flag => arg === flag || arg.startsWith(`${flag}=`) || args[index - 1] === flag) && !optional.includes(arg));
   const placed = kept.includes(requestPlaceholder);
   const resumed = session ? runtimeAdapter(kind)!.continue!(session) : [];
-  return [...form.before, ...kept.map(arg => arg === requestPlaceholder ? prompt : arg), ...form.flags, ...optional.filter(flag => accepted.includes(flag)), ...resumed, ...(placed ? [] : [prompt])];
+  return [...form.before, ...kept.flatMap(place), ...form.flags, ...optional.filter(flag => accepted.includes(flag)), ...resumed, ...(placed || onStdin ? [] : [prompt])];
 }
 
 /** The headless command line of one run: the installed runtime, asked once which of its form's optional flags it takes. */

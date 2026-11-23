@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Agent } from './fun';
 
 type Answer = { ownerSaid?: string; by: string; text?: string; note?: string };
-type Event = { seq: number; kind: string; actor: string; created_at: string; payload?: { details?: { oldPriority?: number; newPriority?: number; reason?: string; request?: { answer?: Answer }; answer?: Answer } } };
+type Event = { seq: number; kind: string; actor: string; created_at: string; payload?: { details?: { oldPriority?: number; newPriority?: number; reason?: string; request?: { answer?: Answer }; answer?: Answer; question?: string; summary?: string; evidence?: string[]; failure?: string } } };
+const titles: Record<string, string> = { priority: 'Priority changed', 'investigator.answered': 'Investigator answered', 'investigator.failed': 'Investigator gave no answer' };
 export default function History({ events }: { events: Event[] }) {
   const [limit, setLimit] = useState(20);
   const [groupObservations, setGroupObservations] = useState(true);
@@ -20,7 +21,8 @@ export default function History({ events }: { events: Event[] }) {
     <div className="history-scroll" role="region" aria-label="History entries" tabIndex={0}>
       <div className="timeline">{groups.slice(0, limit).map(({ newest, oldest, count }) => <div key={newest.seq}>
         <span>{new Date(newest.created_at).toLocaleString()}{count > 1 && <> back to {new Date(oldest.created_at).toLocaleString()}</>}</span>
-        <strong>{newest.kind === 'priority' ? 'Priority changed' : newest.kind}{count > 1 && ` × ${count}`}</strong><small><Agent id={newest.actor}/></small>{newest.kind === 'priority' && <p>P{newest.payload?.details?.oldPriority} → P{newest.payload?.details?.newPriority} · {newest.payload?.details?.reason}</p>}
+        <strong>{titles[newest.kind] ?? newest.kind}{count > 1 && ` × ${count}`}</strong><small><Agent id={newest.actor}/></small>{newest.kind === 'priority' && <p>P{newest.payload?.details?.oldPriority} → P{newest.payload?.details?.newPriority} · {newest.payload?.details?.reason}</p>}
+        {newest.kind.startsWith('investigator.') && <InvestigatorNote details={newest.payload?.details}/>}
         {(newest.kind === 'human.answered' || newest.kind === 'human-proof.answered') && <AnswerHistory answer={newest.payload?.details?.request?.answer ?? newest.payload?.details?.answer}/>}
       </div>)}</div>
       {events.length === 0 && <p>No history loaded.</p>}
@@ -34,4 +36,10 @@ export default function History({ events }: { events: Event[] }) {
 function AnswerHistory({ answer }: { answer?: Answer }) {
   if (!answer) return null;
   return <p>{answer.text ?? answer.note}{answer.ownerSaid && <span> · relayed by {answer.by} from the owner: "{answer.ownerSaid}"</span>}</p>;
+}
+
+/** GY-3530: an `ask GY-N QUESTION` answer: the question, the summary or failure line, and the file:line evidence. */
+function InvestigatorNote({ details }: { details?: { question?: string; summary?: string; evidence?: string[]; failure?: string } }) {
+  if (!details) return null;
+  return <p>{details.question} → {details.summary ?? details.failure}{details.evidence?.length ? <small> · {details.evidence.join(', ')}</small> : null}</p>;
 }

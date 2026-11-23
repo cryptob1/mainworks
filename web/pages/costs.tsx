@@ -18,16 +18,15 @@ export default function CostsPage({ api, observedAt }: { api: Api; observedAt: n
 }
 
 /** A window's total: what its priced tokens cost, 'at least' beside unpriced ones, or 'price unknown' when none is priced. */
-const totalText = (entry: CostLine) => { const tokens = lineTokens(entry); return tokens && entry.unpriced >= tokens ? 'price unknown' : `${entry.unpriced ? 'at least ' : ''}${dollars(entry.cost)}`; };
+const totalText = (entry: CostLine) => { const tokens = lineTokens(entry); return tokens && entry.unpriced + entry.flatTokens >= tokens ? costFigure(entry) : `${entry.unpriced ? 'at least ' : ''}${dollars(entry.cost)}`; };
 
 // Numbers sit right in tabular figures, under right-aligned headers; the token split folds away on a phone.
 const breakdown = (title: string, lines: CostLine[]) => {
   if (!lines.length) return null;
-  const notReported = lines.some(entry => entry.notReported > 0);
   return <section className="panel" aria-label={title}><h2>{title}</h2><div className="table-scroll">
-    <table className="sessions-table figures" aria-label={title}><thead><tr><th scope="col">{title.replace('By ', '')}</th><th scope="col" className="num">Tokens</th><th scope="col" className="num detail">Input</th><th scope="col" className="num detail">Output</th><th scope="col" className="num detail">Cache read</th><th scope="col" className="num detail">Cache write</th><th scope="col" className="num">Cost</th>{notReported && <th scope="col" className="num">Not reported</th>}</tr></thead>
+    <table className="sessions-table figures" aria-label={title}><thead><tr><th scope="col">{title.replace('By ', '')}</th><th scope="col" className="num">Tokens</th><th scope="col" className="num detail">Input</th><th scope="col" className="num detail">Output</th><th scope="col" className="num detail">Cache read</th><th scope="col" className="num detail">Cache write</th><th scope="col" className="num">Cost</th></tr></thead>
       <tbody>{lines.map(entry => <tr key={entry.name} data-cost-line={entry.name}><td>{entry.name}</td><td className="num">{tokenCount(lineTokens(entry))}</td><td className="num detail">{tokenCount(entry.input)}</td><td className="num detail">{tokenCount(entry.output)}</td><td className="num detail">{tokenCount(entry.cacheRead)}</td><td className="num detail">{tokenCount(entry.cacheWrite)}</td>
-        <td className="num">{lineTokens(entry) ? costFigure(entry) : '—'}{entry.monthlyFee != null ? ` · plan ${dollars(entry.monthlyFee)}/month` : ''}</td>{notReported && <td className="num">{entry.notReported ? `${entry.notReported} session${entry.notReported === 1 ? '' : 's'}` : '—'}</td>}</tr>)}</tbody>
+        <td className="num">{lineTokens(entry) ? costFigure(entry) : '—'}{entry.monthlyFee != null ? ` · plan ${dollars(entry.monthlyFee)}/month` : ''}</td></tr>)}</tbody>
     </table></div></section>;
 };
 
@@ -48,7 +47,7 @@ export function CostsView({ costs, error, now }: { costs: CostSummary | null; er
       {(spent || costs.prices.length > 0) && <details className="panel more-details" data-cost-details><summary>Details</summary>
       {unpriced.length > 0 && <p className="muted" data-unpriced>No price for {unpriced.map(entry => `${entry.name} (${tokenCount(entry.unpriced)} tokens)`).join(', ')}: totals count only priced tokens.</p>}
       {costs.monthlyFees > 0 && <p className="muted">Accounts on a flat plan are not billed per token: their figures are API-equivalent, what the same tokens would cost at list price. Those plans cost {dollars(costs.monthlyFees)} a month.</p>}
-      {costs.windows.all.notReported > 0 && <p className="muted">{costs.windows.all.notReported} session{costs.windows.all.notReported === 1 ? '' : 's'} ran on a runtime that reported no usage: not counted.</p>}
+      {costs.notMetered?.map(text => <p key={text} className="muted" data-not-metered>{text}</p>)}
       {spent && <>{breakdown('By model', costs.models)}
       {breakdown('By account', costs.accounts)}</>}
       {costs.prices.length > 0 && <section className="panel" aria-label="Price sheet"><h2>Price sheet <small>US dollars per million tokens, from each provider's public price page</small></h2>

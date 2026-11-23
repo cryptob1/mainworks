@@ -316,7 +316,7 @@ export interface MasterOwnedSettings {
   intervalSeconds?: number | null; dispatchIntervalSeconds?: number | null; proofWorkflow?: string | null; smokeWorkflow?: string | null;
   deploymentUrl?: string | null; deploymentShaField?: string | null; productionEnvironment?: string | null; reviewerProfile?: string | null; producerTimeoutMinutes?: number | null; acknowledgementSeconds?: number | null; inactivityMinutes?: number | null; quotaCeilingPercent?: number | null;
   masterSessionMinutes?: number | null; masterHeartbeatMinutes?: number | null; promoteEveryMinutes?: number | null; deploymentReuseMinutes?: number | null;
-  trialCap?: TemporaryLimit; launchHotCelsius?: TemporaryLimit; hostHeavyJobs?: TemporaryLimit;
+  trialCap?: TemporaryLimit; launchHotCelsius?: TemporaryLimit; hostHeavyJobs?: TemporaryLimit | 'auto';
   accounts?: { profile: string; accounts: string[] }[];
 }
 
@@ -330,6 +330,8 @@ export function masterSettingsFromArgs(args: string[], now = Date.now()): Master
     if (!assignment) throw new Error(`master config takes FIELD=VALUE assignments; "${arg}" is not one`);
     const [, field, raw] = assignment, value = raw.trim();
     if (field.startsWith('accounts:')) { accounts.push({ profile: field.slice('accounts:'.length), accounts: value ? value.split(',').map(name => name.trim()).filter(Boolean) : [] }); continue; }
+    // GY-3701: hostHeavyJobs=auto lifts the host's fixed `limit` file, so the budget scales with the ready machines.
+    if (field === 'hostHeavyJobs' && value === 'auto') { settings.hostHeavyJobs = 'auto'; continue; }
     if ((temporaryFields as readonly string[]).includes(field)) {
       if (value !== '' && value !== 'null' && !/^[0-9]+$/.test(value)) throw new Error(`${field} takes a whole number`);
       if (value !== '' && value !== 'null' && !(Date.parse(until ?? '') > now)) throw new Error(`${field} is temporary: add until=TIME, a future ISO time such as 2026-11-18T16:00:00Z, when it reverts to its default`);
@@ -339,7 +341,7 @@ export function masterSettingsFromArgs(args: string[], now = Date.now()): Master
     if (!(masterOwnedRunFields as readonly string[]).includes(field)) throw new Error(`master config changes only what the master owns (${masterOwnedRunFields.join(', ')}, hostHeavyJobs and accounts:PROFILE), never ${field}`);
     (settings as Record<string, unknown>)[field] = value === '' || value === 'null' ? null : /^[0-9]+$/.test(value) ? Number(value) : value;
   }
-  if (until !== undefined && !temporaryFields.some(field => settings[field])) throw new Error('until= sets when trialCap, launchHotCelsius or hostHeavyJobs expire; give one of them');
+  if (until !== undefined && !temporaryFields.some(field => settings[field] && settings[field] !== 'auto')) throw new Error('until= sets when trialCap, launchHotCelsius or hostHeavyJobs expire; give one of them');
   return accounts.length ? { ...settings, accounts } : settings;
 }
 

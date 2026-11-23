@@ -1,0 +1,16 @@
+{
+  "id": "agy-large-prompt",
+  "title": "Headless agy sessions take a large prompt without spawn E2BIG",
+  "description": "A headless agy session with a prompt larger than the platform's argument limit starts and receives the whole prompt via stdin while small prompts stay on argv, and a review of a very large diff on agy posts a verdict.",
+  "tags": ["review"],
+  "target": "any",
+  "required": true,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "agy large prompt integration and review proofs",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/agy-large-prompt.test.ts",
+      "timeoutSeconds": 600
+    }
+  ]
+}

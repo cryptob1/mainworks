@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { isClosed, type Work } from '../../src/model';
 import { mergedAt, releasedAt, timedGroups, type BoardItem, type Group } from '../groups';
 import { releaseView } from '../../src/model/release';
@@ -44,6 +44,13 @@ function Builder({ item, now }: { item: Work; now: number }) {
   if (!owner) return <>—</>;
   const named = item.lastAssignment?.owner === owner ? item.lastAssignment : undefined;
   return <>{named?.displayName ? <span className="agent" data-agent={owner} title={owner}>{named.displayName}</span> : <Agent id={owner}/>}{named?.runtime ? ` · ${named.runtime}` : ''}</>;
+}
+
+/** GY-3559: a long list shows 50 rows; each press of Show more adds 50. */
+const pageSize = 50;
+function Paged({ total, children }: { total: number; children(limit: number): ReactNode }) {
+  const [limit, setLimit] = useState(pageSize);
+  return <>{children(limit)}{total > limit && <button type="button" className="show-more" onClick={() => setLimit(limit + pageSize)}>Show {Math.min(pageSize, total - limit)} more</button>}</>;
 }
 
 function median(values: number[]): number | null {
@@ -120,12 +127,13 @@ export default function WorkPage({ work, board, status, query, setQuery, setSele
     const live = releasedAt(item, release), started = Date.parse(item.pipeline?.submittedAt ?? item.candidate?.createdAt ?? '');
     return live !== null && now - live <= 24 * 3_600_000 && Number.isFinite(started) && live >= started ? [live - started] : [];
   }));
-  const header = `${counts['in-flight']} in flight · ${merges.toFixed(1)} merges/hour (6h) · ${reviewToLive === null ? 'nothing live (24h)' : `${formatDuration(reviewToLive / 60000)} median review to live`}`;
+  const header = `${filter === 'shipped-today' ? `${counts['shipped-today']} merged today` : `${counts['in-flight']} in flight`} · ${merges.toFixed(1)} merges/hour (6h) · ${reviewToLive === null ? 'nothing live (24h)' : `${formatDuration(reviewToLive / 60000)} median review to live`}`;
 
   const needs = board?.groups['needs-you'] ?? [];
   // GY-3593: the caretaker's newest lines that need the owner, in one notice under the Needs you strip.
   const caretaker: string[] = status?.caretaker?.needsOwner ?? [];
-  const goals = [...new Set(shown.flatMap(({ item }) => item.goal ? [item.goal] : []))].sort((a, b) => a.localeCompare(b));
+  const ordered = [...shown].sort((a, b) => order[a.group] - order[b.group]);
+  const goalsOf = (list: Row[]) => [...new Set(list.flatMap(({ item }) => item.goal ? [item.goal] : []))].sort((a, b) => a.localeCompare(b));
   const progress = (goal: string) => { const all = work.filter(item => item.goal === goal && !isClosed(item)); return { shipped: all.filter(item => item.stage === 'done').length, total: all.length }; };
   // GY-3452: shipped means live: the live commit contains it (status `live`), else the release was observed serving it.
   const liveWaiting = typeof status?.live?.commit === 'string' && Array.isArray(status.live.waiting) ? new Set<string>(status.live.waiting) : null;
@@ -146,7 +154,7 @@ export default function WorkPage({ work, board, status, query, setQuery, setSele
   };
   const table = (list: Row[]) => <table className="sessions-table work-table">
     <thead><tr><th scope="col">State</th><th scope="col">Task</th><th scope="col">Now</th><th scope="col">Builder</th><th scope="col"><Term term="pull request" focusable={false}>PR</Term></th><th scope="col">Time</th></tr></thead>
-    <tbody>{[...list].sort((a, b) => order[a.group] - order[b.group]).map(row => {
+    <tbody>{list.map(row => {
       const { item, group, entry } = row;
       const live = group === 'shipped' && (liveWaiting ? !liveWaiting.has(item.key) : releasedAt(item, release) !== null);
       const state = group === 'blocked' ? 'Stuck' : group === 'needs-you' ? 'Needs you' : group === 'moving' ? stageWord[item.stage] ?? 'Moving' : group === 'up-next' ? 'Up next' : group === 'backlog' ? 'Backlog' : live ? 'Shipped' : 'Merged';
@@ -163,7 +171,6 @@ export default function WorkPage({ work, board, status, query, setQuery, setSele
       </tr>;
     })}</tbody>
   </table>;
-  const noGoal = shown.filter(({ item }) => !item.goal);
 
   return <>
     <div className="page-heading"><div><h1>Work</h1><p className="page-fact" data-work-header>{board ? header : 'Reading the board…'}</p><Flow api={api}/><BuildLine/></div>
@@ -181,15 +188,17 @@ export default function WorkPage({ work, board, status, query, setQuery, setSele
     <div role="group" aria-label="Filter work" className="work-filters">{workFilters.map(name => <button type="button" key={name} className={filter === name ? 'chip active' : 'chip'} aria-pressed={filter === name} data-filter={name} onClick={() => setFilter(filter === name ? null : name)}>
       {filterLabel[name]} <span className="count">{counts[name]}</span>
     </button>)}</div>
-    {goals.map(goal => { const { shipped, total } = progress(goal); return <section key={goal} className="panel goal-group" data-goal={goal}>
-      <h2>{goal}</h2>
-      <p className="goal-progress"><progress value={shipped} max={Math.max(total, 1)}/><span data-goal-progress>{shipped}/{total} shipped</span></p>
-      {table(shown.filter(({ item }) => item.goal === goal))}
-    </section>; })}
-    {noGoal.length > 0 && <details className="panel goal-group" data-goal="none" open={goals.length === 0}>
-      <summary><h2>No goal <span className="count">{noGoal.length}</span></h2></summary>
-      {table(noGoal)}
-    </details>}
+    <Paged key={`${filter}:${needle}`} total={ordered.length}>{limit => { const page = ordered.slice(0, limit), goals = goalsOf(page), noGoal = page.filter(({ item }) => !item.goal); return <>
+      {goals.map(goal => { const { shipped, total } = progress(goal); return <section key={goal} className="panel goal-group" data-goal={goal}>
+        <h2>{goal}</h2>
+        <p className="goal-progress"><progress value={shipped} max={Math.max(total, 1)}/><span data-goal-progress>{shipped}/{total} shipped</span></p>
+        {table(page.filter(({ item }) => item.goal === goal))}
+      </section>; })}
+      {noGoal.length > 0 && <details className="panel goal-group" data-goal="none" open={goals.length === 0}>
+        <summary><h2>No goal <span className="count">{noGoal.length}</span></h2></summary>
+        {table(noGoal)}
+      </details>}
+    </>; }}</Paged>
     {work.length === 0 ? <EmptyState title="The yard is quiet. File a goal and wake the crew." action={status?.actor?.role === 'admin' && <button type="button" onClick={() => setCreating(true)}>Create the first task</button>}>Create a task, say what must be true when it is done, and an agent will pick it up.</EmptyState>
       : shown.length === 0 && <p className="muted">{needle ? 'No task matches.' : 'Nothing here right now.'}</p>}
   </>;
