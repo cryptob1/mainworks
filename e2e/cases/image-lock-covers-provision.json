@@ -1,0 +1,13 @@
+{
+  "id": "image-lock-covers-provision",
+  "title": "An install's old-image cleanup never breaks another install's deploy",
+  "description": "Two deploy watches on one Docker host deploy the same verified commit while one removes old images: the second reuses the image without building, cleanup waits for the image lock, the host logs one build of the commit, and both end serving it with no rollback.",
+  "target": "any",
+  "required": false,
+  "steps": [{
+    "kind": "command",
+    "name": "two watches, one build, cleanup under the image lock",
+    "run": "node --import tsx tests/helpers/run-tests.ts tests/image-lock-covers-provision.test.ts",
+    "timeoutSeconds": 600
+  }]
+}

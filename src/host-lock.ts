@@ -18,6 +18,9 @@ export async function takeLock(lock: string): Promise<boolean> {
   } finally { await rm(mine, { force: true }); }
 }
 
+/** GY-3718: the host-wide lock every install's image provisioning and old-image removal take, so no image is removed during a build. */
+export const imageLock = 'graphyard-local-images';
+
 /** GY-3710: runs `work` holding the host-wide lock `name` (under /tmp, whatever an install's TMPDIR), waiting while another process or install holds it. */
 export async function withHostLock<T>(name: string, work: () => Promise<T>): Promise<T> {
   const lock = join('/tmp', 'graphyard-locks', `${name.replace(/[^\w.-]/g, '_')}.lock`);
