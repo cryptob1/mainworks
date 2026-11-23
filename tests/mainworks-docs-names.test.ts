@@ -17,7 +17,7 @@ function checkOne(name: string, text: string) {
   const lines = text.split('\n').filter((line) => line.includes('GRAPHYARD_') && line.replace(notSettings, '').includes('GRAPHYARD_'));
   assert.ok(lines.length <= 1, `${name} names GRAPHYARD_* on one line only, got:\n${lines.join('\n')}`);
   for (const line of lines) assert.match(line, honoured, `${name}'s one GRAPHYARD_ line says the Graphyard names still work`);
-  for (const old of [/~\/\.config\/graphyard\//, /`\.graphyard\//]) assert.doesNotMatch(text, old, `${name} names the Mainworks path, not ${old}`);
+  for (const old of [/~\/\.config\/graphyard\//, /(^|[^\w/])\.graphyard\b/]) assert.doesNotMatch(text, old, `${name} names the Mainworks path, not ${old}`);
 }
 
 test('e2e:mainworks-docs-names — guide master and README name MAINWORKS_URL and no GRAPHYARD_URL outside the one honoured line', () => {
@@ -32,4 +32,5 @@ test('e2e:mainworks-docs-names — guide master and README name MAINWORKS_URL an
 test('e2e:mainworks-docs-names — every guide topic and the index name only MAINWORKS_* settings and Mainworks paths', () => {
   checkOne('guide', guide());
   for (const topic of topics) checkOne(`guide ${topic}`, guide(topic));
+  checkOne('master guide', execFileSync(process.execPath, ['--import', 'tsx', cli.pathname, 'master', 'guide'], { encoding: 'utf8' }));
 });
