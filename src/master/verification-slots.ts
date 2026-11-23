@@ -603,7 +603,7 @@ export function verificationEnvironment(project: string, environment: NodeJS.Pro
  */
 export function withVerificationPath(harness: Record<string, string>, launch: Record<string, string>): Record<string, string> {
   const merged = { ...harness, ...launch };
-  if (harness[slotsDirectoryVariable] && launch.PATH !== undefined) merged.PATH = [verificationBin, pathWithout(launch.PATH, verificationBin)].filter(Boolean).join(delimiter);
+  if (setting(slotsDirectoryVariable, harness) && launch.PATH !== undefined) merged.PATH = [verificationBin, pathWithout(launch.PATH, verificationBin)].filter(Boolean).join(delimiter);
   return merged;
 }
 

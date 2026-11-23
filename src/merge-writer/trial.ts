@@ -1738,7 +1738,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     for (const pool of [{ files: split.remoteable, lanes: trialShardLanes(cores) + remoteLanes, local: false }, { files: split.localOnly, lanes: trialShardLanes(cores), local: true }])
       for (const group of input.groupSize === undefined ? shardTestFiles(pool.files, pool.lanes, durations) : groupTestFiles(pool.files, input.groupSize)) { shards.push(group); pinned.push(pool.local); }
     const slots = await import('../master/verification-slots.js');
-    const slotsDirectory = process.env[slots.slotsDirectoryVariable];
+    const slotsDirectory = setting(slots.slotsDirectoryVariable);
     const { lanes, breadth } = trialShardBreadth(cores, shards.length, await trialAffordableFiles(input.memory));
     input.onTiming?.(`tests: ${lanes} lanes, breadth ${breadth}`, 0);
     const settledShards: ({ group: TrialGroup; entries: string[]; unattributed: TrialRunnerError | null; passed: string[]; records: string } | undefined)[] = [];
@@ -1759,7 +1759,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         try {
           if (remote) {
             // GY-3528: a shard placed on a host takes a slot on that host's share, never this machine's; a spent share tries another host until one frees.
-            const held = slotsDirectory ? await slots.takeHostSlot(slotsDirectory, remote, `${slots.testMergeLabel(input.key ?? input.mergeSha.slice(0, 12))} shard ${index + 1}`, process.env[slots.projectVariable]) : null;
+            const held = slotsDirectory ? await slots.takeHostSlot(slotsDirectory, remote, `${slots.testMergeLabel(input.key ?? input.mergeSha.slice(0, 12))} shard ${index + 1}`, setting(slots.projectVariable)) : null;
             if (slotsDirectory && !held) throw new HostBusyError(remote);
             const ended = await session!.run(remote, index, group, (list, records) => [check.argv[0]!, ...argv(list, records)], breadth).finally(() => held?.release());
             entries.push(`$ [${remote}] ${check.argv.join(' ')} (shard ${index + 1})\n${ended.out}`);

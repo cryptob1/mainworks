@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -61,6 +61,15 @@ test('e2e:mainworks-settings-fallback — only MAINWORKS_URL and only GRAPHYARD_
     assert.equal(setting('GRAPHYARD_PROBE', env), 'new');
     assert.equal(setting('ONLY', env), 'old');
     assert.deepEqual(env, { MAINWORKS_PROBE: 'new', GRAPHYARD_PROBE: 'old', GRAPHYARD_ONLY: 'old' });
+
+    // Every GRAPHYARD_* read in the CLI, loop and server goes through that helper: no direct read is left in src/.
+    const direct = /(?:\benv|environment|variables|process\.env)\??\.(?:\[['"])?GRAPHYARD_[A-Z0-9_]+/;
+    const sources = (await readdir(join(repository, 'src'), { recursive: true })).filter(file => /\.tsx?$/.test(file) && file !== 'setting.ts');
+    const reads: string[] = [];
+    for (const file of sources) (await readFile(join(repository, 'src', file), 'utf8')).split('\n').forEach((line, index) => {
+      if (direct.test(line) && !/^\s*(\*|\/\/)/.test(line) && !/GRAPHYARD_[A-Z0-9_]+\s*=[^=]|delete\s/.test(line)) reads.push(`src/${file}:${index + 1}`);
+    });
+    assert.deepEqual(reads, [], 'every GRAPHYARD_* setting is read through setting()');
   } finally {
     await close(server);
   }

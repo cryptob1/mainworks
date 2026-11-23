@@ -202,7 +202,7 @@ export async function masterSessionConfinement(kind: string, root: string, probe
   // GY-3445: and the host-wide heavy-jobs folder, whose drain record `master drain` and `master resume` write.
   const heavyJobs = heavyJobsDirectory();
   // GY-3698: the machine's compute known-hosts and host list files, so `host add` works from the confined master while the rest of machine/ stays hidden.
-  const config = configHome(environment?.GRAPHYARD_CONFIG_HOME);
+  const config = configHome(environment && setting('CONFIG_HOME', environment));
   const knownHosts = hostKnownHostsFile(config), hosts = hostsFile(config);
   for (const path of [ledgerLocks, heavyJobs, dirname(knownHosts)]) mkdirSync(path, { recursive: true });
   if (!existsSync(knownHosts)) writeFileSync(knownHosts, '', { mode: 0o600 });
@@ -244,7 +244,7 @@ export async function sessionConfinement(kind: string, args: readonly string[], 
     return null;
   }
   const workspaceRoot = resolve(options.cwd ?? options.directory), allocated = resolve(options.directory);
-  const input: ConfinementInput = { kind, args, environment: options.environment, coordinatorRoot: root, writable: [...(options.writable ?? []), ...(options.environment?.[slotsDirectoryVariable] ? [options.environment[slotsDirectoryVariable]] : [])], sessionDirectory: workspaceRoot, ...(allocated === workspaceRoot ? {} : { allocatedDirectory: allocated }), ...(options.ownGitHubCredential ? { ownGitHubCredential: true } : {}), ...(options.secretsBus === null ? { secretsBus: null } : {}), ...(options.credentialMask ? { credentialMask: options.credentialMask } : {}), ...(options.maskProbe !== undefined ? { maskProbe: options.maskProbe } : {}) };
+  const input: ConfinementInput = { kind, args, environment: options.environment, coordinatorRoot: root, writable: [...(options.writable ?? []), ...(options.environment && setting(slotsDirectoryVariable, options.environment) ? [setting(slotsDirectoryVariable, options.environment)!] : [])], sessionDirectory: workspaceRoot, ...(allocated === workspaceRoot ? {} : { allocatedDirectory: allocated }), ...(options.ownGitHubCredential ? { ownGitHubCredential: true } : {}), ...(options.secretsBus === null ? { secretsBus: null } : {}), ...(options.credentialMask ? { credentialMask: options.credentialMask } : {}), ...(options.maskProbe !== undefined ? { maskProbe: options.maskProbe } : {}) };
   const refusal = await coordinatorConfinementRefusal(input);
   if (refusal) throw new Error(refusal);
   prepareConfinedGitPaths(root);
