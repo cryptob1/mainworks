@@ -62,12 +62,9 @@ test('unit:tests/master-founder-guidance.test.ts — the owner\'s stated mission
   assert.match(guideTopic, /spending money, opening third-party accounts and issuing credentials to people stay with the owner/);
 });
 
-test('unit:tests/master-founder-guidance.test.ts — the master guide, which `master guide` prints at launch, carries the same founder guidance', () => {
+// GY-3491: the founder guidance lives in the prompt alone; the guide keeps only the brief command and shape.
+test('unit:tests/master-founder-guidance.test.ts — the master guide, which `master guide` prints at launch, names the brief command and its shape without repeating the founder guidance', () => {
   const { masterGuide: guide } = texts();
-  assert.match(guide, /The master is responsible for the product succeeding/);
-  assert.match(guide, /learn the problem and the users first \(repository, docs, the running app, owner messages, item history\)/);
-  assert.match(guide, /keep the product brief current/);
-  assert.match(guide, /rank work by its impact on the brief's success signals and re-check those signals after each deploy/);
-  assert.match(guide, /the owner's stated mission and priorities override that ranking/);
-  assert.match(guide, /spending money, opening third-party accounts and issuing credentials for people stay with the owner/);
+  assert.match(guide, /`master brief set FILE REASON`: at most 800 words/);
+  assert.doesNotMatch(guide, /responsible for the product succeeding/);
 });

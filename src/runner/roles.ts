@@ -15,7 +15,6 @@ import { registryToolsArgs } from '../registry-tools.js';
 import { claimRunWatch, liveRun, runsDirectory, superviseRun, writeRunOwner, type Applied } from './registry.js';
 import { evidencePayloadSchema, mainworksTools, piRuntimeSchema, type EvidencePayload } from './payloads.js';
 import { runRecord, type RunOptions, type RunRecord, type RunResult, type Runner } from './types.js';
-import { projectMemoryDigest, type ProjectMemory } from '../model/project-memory.js';
 import { parseProbeFailure } from '../model/account-quota.js';
 
 /**
@@ -267,24 +266,8 @@ export const liveInstallSshKeyEnv = 'HETZNER_SSH_KEY';
 export function liveInstallGuidance(proofs: readonly string[], directory: string, key: string, sha: string) {
   if (!proofs.some(liveInstallProof)) return '';
   const name = `graphyard-${key.toLowerCase()}-${sha.slice(0, 8)}`, file = `${directory}/hetzner-ssh-key`;
-  return `For the live install proofs (${proofs.filter(liveInstallProof).join(', ')}), ${liveInstallRequiredEnv.join(' and ')} are available in your environment; the spend cap bounds what you may create. `
-    + `The hetzner adapter needs a registered SSH key (--ssh-key NAME). If ${liveInstallSshKeyEnv} is set in your environment, pass --ssh-key "$${liveInstallSshKeyEnv}". `
-    + `Otherwise register a throwaway key with the provided HCLOUD_TOKEN: ssh-keygen -t ed25519 -N '' -C ${name} -f ${file}, then hcloud ssh-key create --name ${name} --public-key-from-file ${file}.pub, and pass --ssh-key ${name}. `
-    + `When the proof is judged, delete every server and volume you created and, if you registered it, the throwaway key (hcloud ssh-key delete ${name}), pass or fail. `;
+  return `For the live install proofs (${proofs.filter(liveInstallProof).join(', ')}), ${liveInstallRequiredEnv.join(' and ')} are available in your environment; stay under the cap. `
+    + `If ${liveInstallSshKeyEnv} is set in your environment, pass --ssh-key "$${liveInstallSshKeyEnv}"; otherwise ssh-keygen -t ed25519 -N '' -C ${name} -f ${file}, hcloud ssh-key create --name ${name} --public-key-from-file ${file}.pub, and pass --ssh-key ${name}. `
+    + `Pass or fail, delete every server, volume and key you created (hcloud ssh-key delete ${name}). `;
 }
 
-export function piProducerPrompt(config: { repository: string; cliPath?: string }, binding: { key: string; pr: number; sha: string; baseSha: string; policyRevision: number; group: string; proofs: string[] },
-  criteria: { id: string; text: string; proofs: string[] }[], checkout: { directory: string; worktree: string }, repository: string, memory?: ProjectMemory | null) {
-  const stripped = `${checkout.directory}/exercise`;
-  const attached = criteria.filter(criterion => criterion.proofs.some(proof => binding.proofs.includes(proof)));
-  const memorySection = projectMemoryDigest(memory, 'producer', { baseSha: binding.baseSha });
-  return `You are an independent Mainworks proof producer for ${config.repository}. Produce evidence for work item ${binding.key} (pull request #${binding.pr}) at exact head ${binding.sha} against base ${binding.baseSha} under policy revision ${binding.policyRevision}, for the ${binding.group} proof group: ${binding.proofs.join(', ')}. `
-    + (memorySection || '')
-    + `The criteria these proofs establish: ${attached.map(criterion => `${criterion.id} (${criterion.proofs.filter(proof => binding.proofs.includes(proof)).join(', ')}): ${criterion.text}`).join(' ')} `
-    + `Work in a detached worktree of the exact head at ${checkout.worktree}: git -C ${repository} fetch origin ${binding.sha} && git -C ${repository} worktree add --detach ${checkout.worktree} ${binding.sha}. Install and build there, then run what establishes each proof — start from the tests named for it (grep the proof name under tests/) — with every GRAPHYARD_* and HERDR_* variable unset and a free GRAPHYARD_TEST_PORT, through the project's own runners (node ${config.cliPath ?? 'graphyard'} guide proof names the runner, the title rule and the manual: judging). `
-    + liveInstallGuidance(binding.proofs, checkout.directory, binding.key, binding.sha)
-    + 'Do not edit, commit, push, rebase or merge the candidate, and never weaken, skip or narrow a test to make a proof pass. '
-    + `A proof that passes against an unchanged tree proves nothing, so for each proof also run it in a second detached worktree of the same head at ${stripped} (git -C ${repository} worktree add --detach ${stripped} ${binding.sha}) with the behaviour its criterion describes removed — revert or stub exactly the lines of the change that implement it. `
-    + `Then call the graphyard_submit_evidence tool once per proof with proof, sha "${binding.sha}", baseSha "${binding.baseSha}", policyRevision ${binding.policyRevision}, result pass or fail, executed as the cases that actually ran, skipped, and exercise {criterion, behaviour, result, executed} as the stripped run's true outcome; a failing or incomplete run is submitted as result fail, never omitted. Mainworks submits it as your producer principal and its gates decide whether it is trusted. `
-    + `Keep everything you write inside ${checkout.directory}. When every proof is submitted, remove both worktrees with git -C ${repository} worktree remove --force ${checkout.worktree} and git -C ${repository} worktree remove --force ${stripped}, and stop.`;
-}

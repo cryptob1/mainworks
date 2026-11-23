@@ -8,7 +8,8 @@ import { writeHarnessPermissions } from '../../harness.js';
 import { reviewerCommand } from '../master-reviewer.js';
 import { registryCommand, workersCommand } from '../master-registry.js';
 import { unhandled, type MasterSession } from './session.js';
-import { heavyJobsDirectory, setStrictCap } from '../../master/verification-slots.js';
+import { heavyJobsDirectory, liftHeavyJobLimit, setStrictCap } from '../../master/verification-slots.js';
+import { agentToken } from '../../master/autonomy.js';
 
 /** Launch profiles, the master session, reviewer launches and the master's harness rules. */
 export async function fleetCommand(session: MasterSession): Promise<unknown> {
@@ -26,6 +27,11 @@ export async function fleetCommand(session: MasterSession): Promise<unknown> {
     // GY-3446: hostHeavyJobs is the host-wide strict cap every Mainworks install here shares, kept beside the heavy-job slots, not in master.json.
     const { hostHeavyJobs, ...settings } = masterSettingsFromArgs(args);
     const saved = Object.keys(settings).length || hostHeavyJobs === undefined ? await saveMasterSettings(root, settings) : {};
+    if (hostHeavyJobs === 'auto') {
+      // GY-3701: only the master's operator-agent identity lifts the fixed limit; the record names it.
+      await agentToken(root, master, 'operatorAgent');
+      return print({ ...saved, hostHeavyJobs: liftHeavyJobLimit(heavyJobsDirectory(), master.operatorAgent!.id) });
+    }
     return print({ ...saved, ...(hostHeavyJobs === undefined ? {} : { hostHeavyJobs: setStrictCap(heavyJobsDirectory(), hostHeavyJobs, String(session.coordinator?.actor?.id ?? master.masterAgentName)) }) });
   }
   if (id === 'registry') return print(await registryCommand(master, args, { read: path => masterApi(path), write: (path, data) => masterMutation(path, data) }));

@@ -188,9 +188,9 @@ test('integration:expired-worker-partial-work-handoff — a worker attempt ended
   // historical reservation survive it.
   await runCycle(config, state, effects);
   const cleaned = await reload(filed.id);
-  assert.equal(state.actions[`worktree:${filed.id}:1`]?.state, 'done');
+  assert.equal(state.actions[`worktree:${filed.id}:1:forced`]?.state, 'done');
   assert.ok(!existsSync(worktree), 'the ended attempt\'s worktree is cleaned only after its work was preserved');
-  assert.equal(Date.parse(state.actions[`reclaim:lease:${filed.id}:1`].at) <= Date.parse(state.actions[`worktree:${filed.id}:1`].at), true, 'the preservation is recorded before the cleanup');
+  assert.equal(Date.parse(state.actions[`reclaim:lease:${filed.id}:1`].at) <= Date.parse(state.actions[`worktree:${filed.id}:1:forced`].at), true, 'the preservation is recorded before the cleanup');
   assert.equal(git(['rev-parse', '--verify', branch]), wip, 'the preserved commit survives the worktree cleanup');
   assert.deepEqual(cleaned.workspaces?.map(space => [space.epoch, space.branch, space.host]), [[1, branch, HOST]], 'the historical workspace reservation stays on the record');
   assert.equal(cleaned.sessions?.find(handle => handle.id === 'worker-a:1')?.state, 'finished');

@@ -91,7 +91,8 @@ pathname = '/graphyard'
 'graphyard-token'
 \[\\\\/\]graphyard-\(
 # Assertions that the old name is gone from what people read
-(doesNotMatch|not\.toContain(Text)?|!.*includes)\(.*Graphyard.*
+(doesNotMatch|not\.toContain(Text)?|!.*includes)\(.*[Gg]raphyard.*
+/graphyard\.\*still work
 graphyard\\/
 graphyard\\.mjs
 graphyard\\\.(example|json|mjs)

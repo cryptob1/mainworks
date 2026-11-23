@@ -10,8 +10,8 @@ import { loadMasterConfig, masterConfigSchema, saveProducerProfile, setupMaster 
 import { emptyDispatchCursor, dispatchFailureLimit, dispatchRetryMaxMs, dispatchRetryMinMs } from '../src/dispatch/cursor.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import { type DispatchEffects } from '../src/dispatch/effects.js';
-import { ClosedQuestionsDecided, launchProducer, missingProducerEnv, needsProducerEnv, parseEnvValue, producerPrompt, producerSecretsPrefix, readProducerEnvironment, readProducerLedger } from '../src/producer.js';
-import { liveInstallProof, piProducerPrompt } from '../src/runner/roles.js';
+import { piProducerPrompt, ClosedQuestionsDecided, launchProducer, missingProducerEnv, needsProducerEnv, parseEnvValue, producerPrompt, producerSecretsPrefix, readProducerEnvironment, readProducerLedger } from '../src/producer.js';
+import { liveInstallProof } from '../src/runner/roles.js';
 import { clearRuns } from '../src/runner/registry.js';
 import type { RunOptions, Runner } from '../src/runner/types.js';
 import type { FilesystemProbe } from '../src/install/worktree-root.js';
@@ -358,7 +358,7 @@ test('unit:live-install-ssh-key-available without HETZNER_SSH_KEY the launch is 
     assert.ok(prompt.includes(`hcloud ssh-key create --name ${name} --public-key-from-file ${join(launched.checkout, 'hetzner-ssh-key')}.pub`), 'registered with the provided HCLOUD_TOKEN');
     assert.ok(prompt.includes(`pass --ssh-key ${name}`));
     assert.ok(prompt.includes(`hcloud ssh-key delete ${name}`), 'and deleted afterwards');
-    const pi = piProducerPrompt({ repository: 'owner/project' }, { ...item.autoDispatch!.producers[0] as any, key: 'GY-717' }, item.criteria, { directory: launched.checkout, worktree: join(launched.checkout, 'checkout') }, root);
+    const pi = piProducerPrompt({ repository: 'owner/project' }, { ...item.autoDispatch!.producers[0] as any, key: 'GY-717' }, item.criteria, { directory: launched.checkout, worktree: join(launched.checkout, 'checkout') });
     assert.ok(pi.includes(`hcloud ssh-key delete ${name}`), 'a headless producer prompt reads the same guidance');
   } finally { await cleanup(); }
 });

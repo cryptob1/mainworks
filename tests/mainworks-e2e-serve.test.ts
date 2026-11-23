@@ -66,6 +66,31 @@ test('unit:mainworks-repo-serves-its-head-for-e2e — the declared serve command
       assert.notEqual(url.port, new URL(serve.url).port);
       const listed = await fetch(new URL('/api/scenarios', url), { headers: { Authorization: `Bearer ${token}` } });
       assert.equal(listed.status, 200, 'the server on the given port is this run\'s: it accepts the run\'s token');
+      // GY-3666 / GY-3692: another serve in this checkout (a worker's, tests/worker-serve-own-port.test.ts) starts and stops
+      // beside this run; the seed this run's cases read stays this serve's own.
+      const otherPort = await freePort();
+      const otherScratch = await temporaryDirectory('e2e-serve-other');
+      const other = spawn('sh', ['-c', serve.command], { cwd: checkout, detached: true, stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...trialEnvironment(process.env), TMPDIR: otherScratch, GRAPHYARD_E2E_TOKEN: `other-${randomUUID()}`, GRAPHYARD_E2E_SERVE_PORT: String(otherPort) } });
+      other.stdout.resume(); other.stderr.resume();
+      const otherDescendantsGone = Promise.all([whenClosed(other.stdout), whenClosed(other.stderr)]);
+      try {
+        const otherUrl = new URL(url); otherUrl.port = String(otherPort);
+        const deadline = Date.now() + serve.readySeconds * 1000;
+        let otherAnswered = false;
+        while (!otherAnswered && Date.now() < deadline && other.exitCode === null) {
+          otherAnswered = await fetch(otherUrl, { signal: AbortSignal.timeout(2_000) }).then(response => response.ok, () => false);
+          if (!otherAnswered) await new Promise(accept => setTimeout(accept, 500));
+        }
+        assert.ok(otherAnswered, `${otherUrl} answered within ${serve.readySeconds}s`);
+        process.kill(-other.pid!, 'SIGTERM');
+        await Promise.race([otherDescendantsGone, new Promise(accept => setTimeout(accept, 20_000))]);
+      } finally {
+        try { process.kill(-other.pid!, 'SIGKILL'); } catch { /* already gone */ }
+      }
+      const seed = JSON.parse(readFileSync(join(checkout, '.graphyard', `e2e-serve-${port}.json`), 'utf8'));
+      const own = await fetch(new URL('/api/scenarios', url), { headers: { Authorization: `Bearer ${seed.delivery.coordinatorToken}` } });
+      assert.equal(own.status, 200, 'the seed names this serve\'s delivery credentials after another serve stopped');
     });
     const databases = readdirSync(scratch).filter(name => name.startsWith('graphyard-e2e-serve-'));
     assert.equal(databases.length, 1, 'the database lives in one temporary directory under TMPDIR');

@@ -58,7 +58,7 @@ export const masterCommands = defineCommands([
       '                                open questions; at most 800 words) the master prompt carries',
       '  master config FIELD=VALUE…   Tune owned run settings and profile accounts',
       '                                (accounts:PROFILE=a,b); credential paths stay operator-only.',
-      '                                trialCap=N launchHotCelsius=C hostHeavyJobs=N until=TIME:',
+      '                                trialCap=N launchHotCelsius=C hostHeavyJobs=N until=TIME (hostHeavyJobs=auto removes the limit file):',
       '                                temporary limits that revert on their own at TIME',
       '  master emblem [set FILE]     Show whether the project has an emblem (who drew it, when), or',
       '                                store its SVG (one <svg> root, at most 8 KB), shown beside',

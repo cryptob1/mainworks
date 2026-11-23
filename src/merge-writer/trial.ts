@@ -25,7 +25,7 @@ import type { GateCheck } from '../model/delivery-policy.js';
 import { containerTrialE2e, trialContainerBoundary, trialContainerDependencies, trialImage } from './trial-container.js';
 import { cachedPasses, commitDependencies, dependencyKey, recordPasses, testResultKeys, warmDependencies } from './trial-caches.js';
 import { shellQuote } from '../shell-quote.js';
-import { HostDroppedError, readShardHosts, shardSshSession, type ShardSshSession, runShardsOnHosts, realFreeCores, recordRemoteShardRun, remoteShardSession, shardHosts, splitLocalOnlyTests, trialImageHasBrowser, underHeatLimit, type HostReading, type PlacedHost } from './remote-shards.js';
+import { HostBusyError, HostDroppedError, readShardHosts, shardSshSession, type ShardSshSession, runShardsOnHosts, realFreeCores, recordRemoteShardRun, remoteShardSession, shardHosts, splitLocalOnlyTests, trialImageHasBrowser, underHeatLimit, type HostReading, type PlacedHost } from './remote-shards.js';
 import { repositoryTrialImage, trialDockerfile, TrialRepositoryImageError } from './repository-trial-image.js';
 import { addressPoolsSpent, checkServiceVariables, dockerEnvironment, previewNetworkCount, startCheckServices, tcpAcceptProbe, type CheckServices } from '../compose-preview.js';
 import { diskFloorBytes, gateTrialKey, trialFileTimeoutMs, heatWaitSeconds, TrialHeatError, trialContainerFault, trialLoad, trialShardLanes, trialStartOwner } from './trial-load.js';
@@ -854,7 +854,9 @@ export interface RunTrialInput {
   /** GY-3283: run only the declared check of this name, whatever paths it is limited to (a worker's `mainworks check NAME`). */
   only?: string;
   /** GY-3412: the hosts a selection's shards fan out to — those `mainworks host add` recorded unless a test names others — and how they are read. */
-  remote?: { hosts: readonly string[]; read?: (hosts: readonly string[], transport: ShardSshSession) => Promise<HostReading[]> };
+  remote?: { hosts: readonly string[]; read?: (hosts: readonly string[], transport: ShardSshSession) => Promise<HostReading[]>; transport?: ShardSshSession };
+  /** GY-3704: a check with services ran on `host`, or fell back from it to this machine for `fallback` (at most 500 characters). */
+  onHostCheck?: (entry: { check: string; host: string; fallback?: string }) => void;
   /** GY-3526: a worker verification's label: it holds a host heavy-job slot under it only while a test shard or check runs on this machine, never while its shards run on other hosts. */
   localSlot?: string;
   /** GY-3634: optional benchmark metrics callback receiving shards per host, host temperatures at start, and per-file durations. */
@@ -1551,24 +1553,29 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
   // the commit sent as a shard's is, the services started there, the command run on their network. With no host
   // ready, or one that drops the check, null: the check runs on this machine as before, the reason in the log.
   const onHost = async (check: RepositoryTrialCheck): Promise<Ended | null> => {
-    const here = (reason: string) => { log.push(`[remote] check ${check.check} runs on this machine: ${reason}`); return null; };
+    const here = (reason: string, from: readonly string[] = []) => {
+      log.push(`[remote] check ${check.check} runs on this machine: ${reason}`);
+      for (const host of from) input.onHostCheck?.({ check: check.check, host, fallback: reason.slice(0, 500) });
+      return null;
+    };
     const hosts = input.remote?.hosts ?? await shardHosts();
     if (!hosts.length) return here('no compute host is added');
-    const transport = shardSshSession(run);
+    const transport = input.remote?.transport ?? shardSshSession(run);
     const session = remoteShardSession({ root: input.root, sha: input.mergeSha, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport });
     try {
       const readings = (await (input.remote?.read ?? ((named, shared) => readShardHosts(named, run, cpu.cores(), shared)))(hosts, transport)).slice(1);
       const host = readings.filter(reading => underHeatLimit(reading) && reading.compose).sort((a, b) => realFreeCores(b) - realFreeCores(a))[0];
-      if (!host) return here(`no host is ready (${readings.map(reading => `${reading.name}: ${reading.away ? reading.reason ?? 'away' : reading.compose ? 'too hot' : 'no Docker Compose plugin, see mainworks host prepare'}`).join('; ')})`);
+      if (!host) return here(`no host is ready (${readings.map(reading => `${reading.name}: ${reading.away ? reading.reason ?? 'away' : reading.compose ? 'too hot' : 'no Docker Compose plugin, see mainworks host prepare'}`).join('; ')})`, readings.map(reading => reading.name));
       enterStep(`tests: ${check.check} on ${host.name}`);
       const probe = tcpAcceptProbe(check.services!.map(({ service, port }) => ({ host: service, port })), 120_000);
       const ended = await session.check(host.name, { file: check.services![0]!.file, services: check.services!.map(({ service, port }) => ({ service, port })), cpus: Math.max(1, host.cores),
         argv: ['/bin/sh', '-c', `${probe.map(shellQuote).join(' ')} && exec ${check.argv.map(shellQuote).join(' ')}`] });
+      input.onHostCheck?.({ check: check.check, host: host.name });
       for (const { step, ms } of ended.steps) input.onTiming?.(`${step}: ${check.check} on ${host.name}`, ms);
       log.push(`[remote] check ${check.check} ran on ${host.name}: ${ended.steps.map(({ step, ms }) => `${step} ${stepSeconds(ms)}`).join(', ')}`, `$ [${host.name}] ${check.argv.join(' ')}\n${ended.out}`);
       return { ok: ended.status === 0, out: ended.out, status: ended.status, signal: null, cause: undefined };
     } catch (error) {
-      if (error instanceof HostDroppedError) return here(error.message);
+      if (error instanceof HostDroppedError) return here(error.message, [error.host]);
       if ((error as { timedOut?: boolean }).timedOut) throw new TrialTimeoutError('tests', Math.max(0, now() - startedAt), tail());
       throw error;
     } finally { await session.close(); }
@@ -1729,7 +1736,8 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const shards: string[][] = [], pinned: boolean[] = [];
     for (const pool of [{ files: split.remoteable, lanes: trialShardLanes(cores) + remoteLanes, local: false }, { files: split.localOnly, lanes: trialShardLanes(cores), local: true }])
       for (const group of input.groupSize === undefined ? shardTestFiles(pool.files, pool.lanes, durations) : groupTestFiles(pool.files, input.groupSize)) { shards.push(group); pinned.push(pool.local); }
-    const slotsDirectory = process.env[(await import('../master/verification-slots.js')).slotsDirectoryVariable];
+    const slots = await import('../master/verification-slots.js');
+    const slotsDirectory = process.env[slots.slotsDirectoryVariable];
     const { lanes, breadth } = trialShardBreadth(cores, shards.length, await trialAffordableFiles(input.memory));
     input.onTiming?.(`tests: ${lanes} lanes, breadth ${breadth}`, 0);
     const settledShards: ({ group: TrialGroup; entries: string[]; unattributed: TrialRunnerError | null; passed: string[]; records: string } | undefined)[] = [];
@@ -1749,7 +1757,10 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         let tests: Ended, recordText: string;
         try {
           if (remote) {
-            const ended = await session!.run(remote, index, group, (list, records) => [check.argv[0]!, ...argv(list, records)], breadth);
+            // GY-3528: a shard placed on a host takes a slot on that host's share, never this machine's; a spent share tries another host until one frees.
+            const held = slotsDirectory ? await slots.takeHostSlot(slotsDirectory, remote, `${slots.testMergeLabel(input.key ?? input.mergeSha.slice(0, 12))} shard ${index + 1}`, process.env[slots.projectVariable]) : null;
+            if (slotsDirectory && !held) throw new HostBusyError(remote);
+            const ended = await session!.run(remote, index, group, (list, records) => [check.argv[0]!, ...argv(list, records)], breadth).finally(() => held?.release());
             entries.push(`$ [${remote}] ${check.argv.join(' ')} (shard ${index + 1})\n${ended.out}`);
             tests = { ok: ended.ok, out: ended.out, status: ended.status, signal: null, cause: undefined };
             recordText = ended.records;
@@ -1774,6 +1785,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         input.onStep?.(stepLabel, { tests: { passed: cached.size + ended.reduce((sum, shard) => sum + shard.passed.length, 0), failed: new Set(ended.flatMap(shard => shard.group.failed)).size, files: counted, ...(slowest ? { slowest } : {}) },
           ...(shown ? { output: maskSecrets(entries.join('\n')).slice(-4000) } : {}) });
       } catch (error) {
+        if (error instanceof HostBusyError) throw error;
         if (error instanceof HostDroppedError) { if (!dropped.has(error.host)) dropped.set(error.host, error); throw error; }
         log.push(...entries);
         // A remote shard past the deadline ends the trial as a timeout, as a local one does.
@@ -1784,8 +1796,10 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const release = await declareTrialFiles(slotsDirectory, input.key ?? input.mergeSha.slice(0, 12), lanes * breadth);
     try {
       // A lane takes the next shard until none is left or another lane's shard ended the trial; a running shard is always awaited, never orphaned.
+      // GY-3706: a host takes as many shards as it has free cores, less two.
+      const hostShare = (host: string) => slotsDirectory ? slots.hostShardRoom(slotsDirectory, host) : Infinity;
       const local: PlacedHost<string> = { name: readings[0]?.name ?? 'local', room: lanes, reading: readings[0] ?? { name: 'local', cores, busy: 0, steal: 0, celsius: null, limit: Infinity, away: false } };
-      const placed = [local, ...hosts.map((host, index) => ({ name: host, remote: host, reading: readings[index + 1]!, room: Math.floor(realFreeCores(readings[index + 1]!) / breadth) }))];
+      const placed = [local, ...hosts.map((host, index) => ({ name: host, remote: host, reading: readings[index + 1]!, room: Math.min(Math.floor(realFreeCores(readings[index + 1]!) / breadth), hostShare(host)) }))];
       const placement = await runShardsOnHosts({ count: shards.length, hosts: placed, breadth, pinned, stopped: () => stopped !== null,
         run: (host, index) => shard(index, host.remote) });
       if (input.onMetrics) {

@@ -1,0 +1,11 @@
+{
+  "id": "item-status-plain",
+  "title": "Work rows and the item page say state plus one next step in plain words, with no principal ids",
+  "description": "A real browser on the built dashboard, served a blocked task its owner declined, a task waiting for a worker, one waiting on another's files and one the master holds, at 1280 and 390 px. The rows read 'Blocked <age>: you declined; the master picks the next step.', 'Waiting for a worker · <age>', 'Starts after GY-204 (same files)' and 'On hold by the master: <first sentence>'; no row says 'Nothing is happening', 'exclusive resource' or a file path, and no principal id appears on Work or the item page. The item page's h1 is the title and it has no empty Details panel. Neither page scrolls sideways and every row's cells lie inside the row.",
+  "tags": ["dashboard"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "Work rows and item page: plain state and next step at 1280 and 390 px", "run": "npm run test:browser -- browser-tests/item-status-plain.spec.ts", "timeoutSeconds": 420 }
+  ]
+}

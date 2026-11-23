@@ -5,7 +5,9 @@ import { dataDirectory } from '../install/worktree-root.js';
 import { randomUUID } from 'node:crypto';
 import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { availableParallelism } from 'node:os';
 import { cpuCelsius, heatReading, heatWindowMs, trialHotCelsius } from '../merge-writer/trial-load.js';
+import { budgetLine, machineName } from '../model/machine-load.js';
 
 /**
  * The host heavy-job budget (GY-612, GY-3290).
@@ -15,7 +17,7 @@ import { cpuCelsius, heatReading, heatWindowMs, trialHotCelsius } from '../merge
  * verification timed out, because each project bounded only its own runs. Every Mainworks project
  * of one user on one host now shares one budget: a heavy job — a merge, gate or diagnostic trial, a
  * session's whole suite, a preview build, a deploy build — takes one slot first, and at most `limit`
- * (two unless the host says otherwise) ordinary jobs run at once, plus one reserved
+ * (this machine's share of the budget, GY-3528) ordinary jobs run at once, plus one reserved
  * gate/deploy job shared across all installs. GY-3447: a session's own build, type check and
  * selected tests, and the host-run verification and checks of its head, take no slot — they ran
  * behind trials holding both slots for most of an hour — and stay bounded by the session's share of
@@ -44,11 +46,77 @@ export const defaultHeavyJobs = 2;
 export const hostHeavyJobsDirectory = (environment: NodeJS.ProcessEnv = process.env) => resolve(dataDirectory(environment), 'heavy-jobs');
 /** The lock directory this process uses: the one it joined (`joinHostHeavyBudget`), else the host's. */
 export const heavyJobsDirectory = (environment: NodeJS.ProcessEnv = process.env) => environment[slotsDirectoryVariable] ?? hostHeavyJobsDirectory(environment);
-/** The host's limit: the whole number in `<directory>/limit`, else two; a strict cap standing now lowers it (GY-3446). */
+/** This machine's limit: its `limit` file, else its share of the budget (GY-3528), else two; a strict cap standing now lowers it (GY-3446). */
 export const heavyJobLimit = (directory: string) => Math.min(ordinaryLimit(directory), readStrictCap(directory)?.limit ?? Infinity);
-function ordinaryLimit(directory: string) {
-  try { const limit = Number(readFileSync(join(directory, 'limit'), 'utf8').trim()); return Number.isInteger(limit) && limit >= 1 ? limit : defaultHeavyJobs; }
-  catch { return defaultHeavyJobs; }
+export function limitFile(directory: string) {
+  try { const limit = Number(readFileSync(join(directory, 'limit'), 'utf8').trim()); return Number.isInteger(limit) && limit >= 1 ? limit : null; }
+  catch { return null; }
+}
+const ordinaryLimit = (directory: string) => limitFile(directory) ?? heavyJobBudget(directory).machines[0]!.slots;
+
+/**
+ * GY-3528: the machines the loop read last — this machine first, then every added compute host —
+ * written beside the slots each cycle, so every install on this machine budgets from the same readings.
+ */
+export interface Machine { name: string; local?: boolean; away: boolean; cores: number | null; busy: number | null; celsius: number | null }
+export const machinesFile = (directory: string) => join(directory, 'machines.json');
+export function writeMachines(directory: string, machines: readonly Machine[], now = new Date()) {
+  const pending = `${machinesFile(directory)}.${randomUUID()}`;
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(pending, JSON.stringify(machines.map(({ name, local, away, cores, busy, celsius }) => ({ name, ...(local ? { local } : {}), away, cores, busy, celsius }))));
+  renameSync(pending, machinesFile(directory));
+  // GY-3706: since when this machine is above its cores in load while a ready host has more than half its cores free.
+  const local = machines[0], idle = machines.slice(1).find(host => !host.away && host.cores && host.busy !== null && host.cores - host.busy > host.cores / 2);
+  const since = local?.cores && local.busy !== null && local.busy > local.cores && idle ? readImbalance(directory)?.since ?? now.toISOString() : null;
+  if (since) writeFileSync(imbalanceFile(directory), JSON.stringify({ since })); else rmSync(imbalanceFile(directory), { force: true });
+}
+const imbalanceFile = (directory: string) => join(directory, 'imbalance.json');
+function readImbalance(directory: string): { since: string } | null {
+  try { return JSON.parse(readFileSync(imbalanceFile(directory), 'utf8')); } catch { return null; }
+}
+/** GY-3706: one line once this machine has been above its cores in load for 5 minutes while a ready host had more than half its cores free. */
+export function imbalanceLine(directory: string, now = Date.now()): string | null {
+  const since = Date.parse(readImbalance(directory)?.since ?? ''), machines = readMachines(directory);
+  if (!(now - since >= 5 * 60_000) || !machines) return null;
+  const local = machines[0]!, idle = machines.slice(1).filter(host => !host.away && host.cores && host.busy !== null).sort((a, b) => (b.cores! - b.busy!) - (a.cores! - a.busy!))[0];
+  if (!idle) return null;
+  return `This machine is at load ${Math.round(local.busy!)} on ${local.cores} cores while ${machineName(idle.name)} has ${Math.round(idle.cores! - idle.busy!)} of ${idle.cores} cores free, for ${Math.floor((now - since) / 60_000)} minutes.`;
+}
+export function readMachines(directory: string): Machine[] | null {
+  try { const machines = JSON.parse(readFileSync(machinesFile(directory), 'utf8')); return Array.isArray(machines) && machines[0]?.local ? machines : null; } catch { return null; }
+}
+/** A machine's heavy-job share: one job per six cores. */
+export const machineSlots = (cores: number) => Math.floor(cores / 6);
+/**
+ * GY-3528: the heavy-job budget — this machine's share and each ready host's, at least two in all.
+ * Jobs on this machine take its share; a trial's shard placed on a host takes that host's. With a
+ * `limit` file, or before the loop has read the machines, the budget is this machine's alone, as it was:
+ * the file's number, else two; host shards are then bounded only by placement.
+ */
+export function heavyJobBudget(directory: string): { slots: number; machines: { name: string; local?: true; slots: number }[]; hostsBounded: boolean } {
+  const fixed = limitFile(directory), machines = fixed === null ? readMachines(directory) : null;
+  if (!machines) return { slots: fixed ?? defaultHeavyJobs, machines: [{ name: 'this machine', local: true, slots: fixed ?? defaultHeavyJobs }], hostsBounded: false };
+  return scaledBudget(machines);
+}
+function scaledBudget(machines: readonly Machine[]) {
+  const hosts = machines.slice(1).filter(host => !host.away && host.cores).map(host => ({ name: host.name, slots: machineSlots(host.cores!) }));
+  const shared = hosts.reduce((sum, host) => sum + host.slots, 0), local = machineSlots(machines[0]!.cores ?? availableParallelism());
+  // A trial holds a slot here while its shards run elsewhere, so this machine keeps at least one.
+  const own = Math.max(1, local, defaultHeavyJobs - shared);
+  return { slots: own + shared, machines: [{ name: 'this machine', local: true as const, slots: own }, ...hosts], hostsBounded: true };
+}
+/** GY-3701: while a `limit` file fixes the budget and a compute host is ready, the fixed and machine-scaled budgets. */
+export function fixedHeavyJobLimit(directory: string): { fixed: number; scaled: number; file: string } | null {
+  const fixed = limitFile(directory), machines = fixed === null ? null : readMachines(directory);
+  if (!machines?.slice(1).some(host => !host.away && host.cores)) return null;
+  return { fixed: fixed!, scaled: scaledBudget(machines).slots, file: join(directory, 'limit') };
+}
+/** GY-3701: remove the fixed `limit` file, recording who lifted it, and answer the machine-scaled budget now standing. */
+export function liftHeavyJobLimit(directory: string, by: string, now = new Date()) {
+  const lifted = limitFile(directory);
+  rmSync(join(directory, 'limit'), { force: true });
+  writeFileSync(join(directory, 'limit-lifted.json'), JSON.stringify({ lifted, by, at: now.toISOString() }));
+  return { lifted, by, budget: budgetLine(heavyJobBudget(directory).machines) };
 }
 /** Slot numbers from here up are declarations (a trial's shard files), never part of the limit. */
 export const declarationSlot = 1000;
@@ -67,7 +135,7 @@ export function joinHostHeavyBudget(project: string, environment: NodeJS.Process
   environment[projectVariable] = project;
 }
 
-export interface SlotOwner { identity?: string; locked?: true; pid: number; label: string; project?: string; cwd: string; at: string; /** The in-flight suite files the holder declared (`declareSlotFiles`, GY-1821): what later runs deduct from the floor's budget. */ files?: number }
+export interface SlotOwner { identity?: string; locked?: true; pid: number; label: string; project?: string; /** GY-3528: the host a placed shard runs on. */ host?: string; cwd: string; at: string; /** The in-flight suite files the holder declared (`declareSlotFiles`, GY-1821): what later runs deduct from the floor's budget. */ files?: number }
 export interface HeldSlot { slot: number; path: string; release: () => void }
 export interface AcquireOptions {
   directory: string; label: string; project?: string;
@@ -249,8 +317,13 @@ async function tryTake(directory: string, slots: number, owner: SlotOwner, first
           released = true;
           const freed = `${path}.freed-${owner.pid}-${Date.now()}`;
           try {
-            renameSync(path, freed);
-            rmSync(freed, { recursive: true, force: true });
+            // Only remove the slot if it still holds our locked owner inode: releaseSettledVerificationSlots
+            // may have freed it early and another job may now own slot-N.
+            const opened = fstatSync(fd), current = statSync(join(path, 'owner.json'), { throwIfNoEntry: false });
+            if (current && opened.ino === current.ino && opened.dev === current.dev) {
+              renameSync(path, freed);
+              rmSync(freed, { recursive: true, force: true });
+            }
           } catch { /* already removed */ } finally { closeSync(fd); }
         } };
       } catch (error) {
@@ -262,6 +335,44 @@ async function tryTake(directory: string, slots: number, owner: SlotOwner, first
     }
   }
   return null;
+}
+
+/** The loop's host readings with each one's slots in `budget` (GY-3528); a host outside it holds none. */
+export const hostsWithSlots = <H extends { host: string; local?: boolean }>(hosts: readonly H[], budget: ReturnType<typeof heavyJobBudget>) =>
+  hosts.map(host => { const slots = host.local ? budget.machines[0]!.slots : budget.machines.find(machine => !machine.local && machine.name === host.host)?.slots; return slots === undefined ? host : { ...host, slots }; });
+
+/** Slot numbers from here up are shards placed on hosts (GY-3528): each counts against its host's share, never this machine's. */
+export const hostSlot = 3000;
+/** The shards every install on this machine has placed on `host` now. */
+export const shardsOnHost = (directory: string, host: string) => heldSlots(directory).filter(entry => entry.slot >= hostSlot && entry.owner?.host === host).length;
+/**
+ * GY-3706: the shards `host` accepts at once — while its last read busy cores plus the shards placed
+ * there stay under its cores less two. Unbounded with a `limit` file or before the loop read the
+ * machines; none for a host away or never read.
+ */
+export function hostShardRoom(directory: string, host: string): number {
+  if (limitFile(directory) !== null) return Infinity;
+  const machines = readMachines(directory);
+  if (!machines) return Infinity;
+  const reading = machines.slice(1).find(machine => machine.name === host);
+  return reading && !reading.away && reading.cores ? Math.max(0, Math.ceil(reading.cores - 2 - (reading.busy ?? 0))) : 0;
+}
+/**
+ * GY-3528: a slot on `host`'s share for one shard placed there, or null when its share is spent. It
+ * never waits: the trial places the shard elsewhere. Where hosts are unbounded (a `limit` file, or no
+ * reading yet) it holds nothing.
+ */
+export async function takeHostSlot(directory: string, host: string, label: string, project?: string): Promise<HeldSlot | null> {
+  const share = hostShardRoom(directory, host);
+  if (share === Infinity) return { slot: -1, path: '', release: () => {} };
+  const onHost = async () => {
+    for (const entry of heldSlots(directory)) if (entry.slot >= hostSlot) await reclaimStale(join(directory, `slot-${entry.slot}`));
+    return shardsOnHost(directory, host);
+  };
+  if (await onHost() >= share) return null;
+  const held = await tryTake(directory, 1000, { identity, locked: true, pid: process.pid, label, host, ...(project ? { project } : {}), cwd: process.cwd(), at: new Date().toISOString() }, hostSlot);
+  if (held && await onHost() > share) { held.release(); return null; }
+  return held;
 }
 
 const holderText = (entry: { slot: number; owner: SlotOwner | null }) => entry.owner ? `${entry.owner.label}${entry.owner.project ? ` (${entry.owner.project})` : ''}` : `slot-${entry.slot}`;
@@ -504,4 +615,22 @@ export function wrappedCommand(command: string, args: string[], environment: Nod
   const path = pathWithout(environment.PATH, verificationBin);
   const directory = environment[slotsDirectoryVariable];
   return { real: onPathOf(command, path), path, heavy: heavyCommand(command, args, process.cwd(), !!directory && !!readStrictCap(directory)) };
+}
+
+/** The label a worker verification's heavy job holds its slot under. */
+export const workerVerificationLabel = (key: string) => `worker verification ${key}`;
+/**
+ * GY-3528 (GY-3533): free every worker verification slot this process holds that `keep` no longer
+ * names — its request finished or abandoned, or its worker lease gone, and no child of it running.
+ * Its job's own release later finds the slot gone. Answers the keys freed.
+ */
+export function releaseSettledVerificationSlots(directory: string, keep: (key: string) => boolean): string[] {
+  const freed: string[] = [];
+  for (const entry of heldSlots(directory)) {
+    const key = entry.owner?.identity === identity && entry.owner.pid === process.pid ? /^worker verification (\S+)$/.exec(entry.owner.label)?.[1] : undefined;
+    if (!key || keep(key)) continue;
+    const path = join(directory, `slot-${entry.slot}`), freedPath = `${path}.freed-${process.pid}-${Date.now()}`;
+    try { renameSync(path, freedPath); rmSync(freedPath, { recursive: true, force: true }); freed.push(key); } catch { /* already freed */ }
+  }
+  return freed;
 }

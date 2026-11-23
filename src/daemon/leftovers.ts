@@ -30,21 +30,32 @@ export async function leftoversStep(state: DaemonState, clock: number, disk: (()
   log(`[mainworks-master] leftovers report ${JSON.stringify(leftovers.report)}`);
 }
 
-/** The recursive size of a directory in bytes (symlinks not followed), or null when it cannot be read. */
+/**
+ * The disk a directory takes in bytes — allocated blocks, each hard-linked file once, symlinks not
+ * followed (GY-3691: the real use, not the files' apparent sizes) — or null when it cannot be read.
+ */
 export async function directoryBytes(path: string): Promise<number | null> {
   const root = await lstat(path).catch(() => null);
   if (!root) return null;
-  let total = root.size;
+  const seen = new Set<string>();
+  let total = root.blocks * 512;
   const walk = async (directory: string): Promise<void> => {
     for (const entry of await readdir(directory, { withFileTypes: true }).catch(() => [])) {
       const child = join(directory, entry.name), info = await lstat(child).catch(() => null);
       if (!info) continue;
-      total += info.size;
+      if (info.nlink > 1 && !info.isDirectory()) { const inode = `${info.dev}:${info.ino}`; if (seen.has(inode)) continue; seen.add(inode); }
+      total += info.blocks * 512;
       if (info.isDirectory()) await walk(child);
     }
   };
   if (root.isDirectory()) await walk(path);
   return total;
+}
+
+/** The disk several directories take together, or null when none can be read. */
+export async function pathsBytes(paths: string[]): Promise<number | null> {
+  const readings = (await Promise.all([...new Set(paths)].map(directoryBytes))).filter((bytes): bytes is number => bytes !== null);
+  return readings.length ? readings.reduce((sum, bytes) => sum + bytes, 0) : null;
 }
 
 const units: Record<string, number> = { b: 1, kb: 1e3, mb: 1e6, gb: 1e9, tb: 1e12, kib: 1024, mib: 1024 ** 2, gib: 1024 ** 3, tib: 1024 ** 4 };
@@ -64,7 +75,7 @@ export async function dockerLeftoverBytes(run: ChildRun): Promise<{ trialImages:
 }
 
 /** The disk readings the report carries. Core dumps are left out: they are root-owned. */
-export async function leftoverDisk(paths: { trialRuns: string; worktrees: string; trialCheckouts: string }, run: ChildRun): Promise<LeftoverDisk> {
-  const [trialRuns, worktrees, trialCheckouts, docker] = await Promise.all([directoryBytes(paths.trialRuns), directoryBytes(paths.worktrees), directoryBytes(paths.trialCheckouts), dockerLeftoverBytes(run)]);
+export async function leftoverDisk(paths: { trialRuns: string | string[]; worktrees: string | string[]; trialCheckouts: string | string[] }, run: ChildRun): Promise<LeftoverDisk> {
+  const [trialRuns, worktrees, trialCheckouts, docker] = await Promise.all([pathsBytes([paths.trialRuns].flat()), pathsBytes([paths.worktrees].flat()), pathsBytes([paths.trialCheckouts].flat()), dockerLeftoverBytes(run)]);
   return { trialRuns, worktrees, trialCheckouts, ...docker };
 }

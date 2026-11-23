@@ -211,6 +211,8 @@ export interface Work extends Create {
   repair?: 'merge-path';
   /** A yard repair (GY-3102): released past the pipeline cap, dispatched first, merged first. */
   yardRepair?: boolean;
+  /** GY-3694: released only when no other item is in test, acceptance or merge, and while it is in flight nothing else is released. */
+  landsAlone?: boolean;
   repairLane?: Record<string, unknown> | null;
   /**
    * Independently observed production delivery, one record per environment: the first

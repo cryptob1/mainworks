@@ -43,7 +43,7 @@ No credential is ever committed. The install record, sign-in credentials (mode 0
 
 ## Moving an install by hand
 
-A move command is coming; until then, per install:
+Run `mainworks install move --to HOST --plan`, or move per install:
 
 1. On the old host, stop the loop and deploy units (`systemctl --user stop graphyard-master-OWNER-NAME.service graphyard-deploy-OWNER-NAME.service`) and the containers (`docker stop graphyard-OWNER-NAME-server-1 graphyard-OWNER-NAME-db-1`).
 2. Copy the repository checkout, `~/.config/graphyard/<install>/` and `~/.config/graphyard/masters/` to the new host (`rsync -a` keeps modes).

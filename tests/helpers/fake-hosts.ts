@@ -164,9 +164,11 @@ echo "sshd $*" >> "$D/log"
 D='${dir}'
 echo "ssh-keygen $*" >> "$D/log"
 `,
+  // GY-3697: the user unit reads enabled and active unless the test writes unit-enabled or unit-active.
   systemctl: `#!/bin/sh
 D='${dir}'
 echo "systemctl $*" >> "$D/log"
+case "$*" in *is-enabled*) cat "$D/unit-enabled" 2>/dev/null || echo enabled ;; *is-active*) cat "$D/unit-active" 2>/dev/null || echo active ;; esac
 `,
   ufw: `#!/bin/sh
 echo 'Status: inactive'

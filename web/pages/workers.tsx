@@ -11,6 +11,7 @@ import { shortShas } from '../candidate';
 import { Agent } from '../fun';
 import { EmptyState, PageHeader } from '../components/page-layout';
 import { overloadAlarm, overloaded } from '../../src/model/session-usage';
+import { budgetLine, fallbackLine, machineName } from '../../src/model/machine-load';
 import { formatAge } from '../../src/model/duration';
 import type { FleetAccountView } from '../../src/model/registry';
 import { localTime } from '../agent-status';
@@ -202,7 +203,7 @@ export function AccountAvailability({ accounts, now }: { accounts: FleetAccountV
   </ul></section>;
 }
 
-type HostRow = { host: string; local?: boolean; at?: string; away: boolean; update?: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null };
+type HostRow = { host: string; local?: boolean; at?: string; away: boolean; update?: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; busy?: number | null; slots?: number; fallback?: { reason: string; at: string } };
 /**
  * GY-3407: the hosts the loop watches — this machine first, then each one added with
  * `mainworks host add USER@HOST` — as the loop read them this cycle. A host that does not answer
@@ -212,12 +213,18 @@ type HostRow = { host: string; local?: boolean; at?: string; away: boolean; upda
 function Hosts({ hosts, now }: { hosts: HostRow[]; now: number }) {
   if (!hosts.length) return null;
   const figure = (value: number | null, unit = '') => value === null ? '—' : `${Math.round(value)}${unit}`;
-  return <section className="hosts-section"><h2>Hosts</h2><table className="sessions-table hosts" aria-label="Hosts" data-hosts>
+  const cores = (host: HostRow) => host.cores === null ? '—' : host.busy == null ? `${Math.round(host.cores)}` : `${Math.round(host.busy)} of ${Math.round(host.cores)} busy`;
+  // GY-3528: the heavy-job budget the ready machines share, above the hosts table with each machine's short name and cores busy of total.
+  const slotted = hosts.filter(host => host.slots !== undefined).map(host => ({ name: host.host, local: host.local, slots: host.slots! }));
+  return <section className="hosts-section"><h2>Hosts</h2>
+    {slotted.length ? <p data-heavy-budget>{budgetLine(slotted)}</p> : null}
+    <table className="sessions-table hosts" aria-label="Hosts" data-hosts>
     <thead><tr><th scope="col">Host</th><th scope="col">Cores</th><th scope="col">Temperature</th><th scope="col">Steal</th><th scope="col">Runs now</th><th scope="col">Read</th></tr></thead>
     <tbody>{hosts.map(host => <tr key={host.host} data-host={host.host} data-away={host.away || undefined}>
-      <th scope="row" data-label="Host">{host.host}{host.local ? <span className="muted"> (this machine)</span> : null}</th>
+      <th scope="row" data-label="Host">{machineName(host.host)}{host.local ? <span className="muted"> (this machine)</span> : null}
+        {host.fallback ? <div className="muted" data-host-fallback>{fallbackLine(host.fallback)}</div> : null}</th>
       {host.away ? <td data-label="State" colSpan={4}><span className="muted" title={host.reason}>{host.update ? 'Away: needs an update, see the line at the top' : 'Away: not answering, tried again each cycle'}</span></td> : <>
-        <td data-label="Cores">{figure(host.cores)}</td>
+        <td data-label="Cores">{cores(host)}</td>
         <td data-label="Temperature">{figure(host.celsius, '°C')}</td>
         <td data-label="Steal">{figure(host.steal, '%')}</td>
         <td data-label="Runs now">{figure(host.runs)}</td></>}

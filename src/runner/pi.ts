@@ -152,7 +152,7 @@ export function runContainment(input: { cgroup?: string | null; systemd?: () => 
 /** The files of a run's directory: its registry entry, Pi's output, and the exit its shell records. */
 export const runFiles = (directory: string) => ({
   meta: join(directory, 'run.json'), stdout: join(directory, 'stdout.jsonl'), stderr: join(directory, 'stderr.log'),
-  exit: join(directory, 'exit'), stopped: join(directory, 'stopped.json'),
+  exit: join(directory, 'exit'), stopped: join(directory, 'stopped.json'), stdin: join(directory, 'stdin.txt'),
 });
 export const runMetaSchema = z.object({
   version: z.literal(1), id: z.string().min(1).max(80), command: z.string().max(4000), pid: z.number().int().positive().nullable(),
@@ -173,7 +173,7 @@ const quoted = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
  * `confinement` words wrap Pi alone, never the shell: the run's directory lies under the
  * coordinator checkout the confinement makes read-only, so only the shell outside it can write there.
  */
-export function detachedLaunch(directory: string, id: string, command: string, args: string[], containment: RunContainment, confinement: readonly string[] = [], boundSeconds?: number, scopeProperties: readonly string[] = []) {
+export function detachedLaunch(directory: string, id: string, command: string, args: string[], containment: RunContainment, confinement: readonly string[] = [], boundSeconds?: number, scopeProperties: readonly string[] = [], stdinFile?: string) {
   if (confinement.length) args = confinedRuntimeArgs(command, args);
   const files = runFiles(directory), pending = `${files.exit}.tmp`;
   const confined = confinement.map(word => `${quoted(word)} `).join('');
@@ -189,7 +189,7 @@ export function detachedLaunch(directory: string, id: string, command: string, a
   // shell sent inside that instant is lost, so the watchdog never relies on receiving it.
   const watchdog = boundSeconds ? `( trap 'kill "$nap" 2>/dev/null; exit 0' TERM; sleep ${Math.ceil(boundSeconds)} & nap=$!; wait "$nap"; trap '' TERM; kill -TERM -$$; trap 'exit 0' TERM; `
     + `for grace in 1 2 3 4 5; do kill -0 $$ 2>/dev/null || exit 0; sleep 1; done; kill -KILL -$$ ) & watchdog=$!; ` : '';
-  const script = `trap : TERM INT HUP; ${watchdog}if command -v "$0" >/dev/null 2>&1; then ${confined}"$0" "$@" <${'/dev/null'} >${quoted(files.stdout)} 2>${quoted(files.stderr)}; code=$?; `
+  const script = `trap : TERM INT HUP; ${watchdog}if command -v "$0" >/dev/null 2>&1; then ${confined}"$0" "$@" <${stdinFile ? quoted(stdinFile) : '/dev/null'} >${quoted(files.stdout)} 2>${quoted(files.stderr)}; code=$?; `
     + `else printf '%s: command not found\\n' "$0" >${quoted(files.stderr)}; code=spawn; fi; ${watchdog ? 'kill -TERM "$watchdog" 2>/dev/null; ' : ''}printf '%s\\n' "$code" >${quoted(pending)} && mv -f ${quoted(pending)} ${quoted(files.exit)}`;
   const shell = ['/bin/sh', '-c', script, command, ...args];
   const unit = containment === 'systemd' ? `graphyard-run-${id}.scope` : null;
@@ -197,8 +197,8 @@ export function detachedLaunch(directory: string, id: string, command: string, a
 }
 
 /** GY-3438: an agent session's launch — a worker, reviewer or producer — whose scope carries the session's CPU and memory share. */
-export const sessionLaunch = (directory: string, id: string, command: string, args: string[], containment: RunContainment, confinement: readonly string[] = []) =>
-  detachedLaunch(directory, id, command, args, containment, confinement, undefined, containment === 'systemd' ? sessionScopeProperties() : []);
+export const sessionLaunch = (directory: string, id: string, command: string, args: string[], containment: RunContainment, confinement: readonly string[] = [], stdinFile?: string) =>
+  detachedLaunch(directory, id, command, args, containment, confinement, undefined, containment === 'systemd' ? sessionScopeProperties() : [], stdinFile);
 
 /** A process's start time (/proc/PID/stat), which tells it from a later process given the same pid. */
 export function processIdentity(pid: number): string | null {

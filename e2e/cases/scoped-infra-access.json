@@ -1,0 +1,16 @@
+{
+  "id": "scoped-infra-access",
+  "title": "A master creates a repository and a hosting project through one scoped, logged route",
+  "description": "Against a real control plane, a temporary Postgres and stand-ins for GitHub and Railway: the owner approves one repository and one hosting project; the master's credential creates and pushes that repository and creates that project and its environments, and is refused for any other name in one line; every call is listed with who, what and when on the Setup page and by mainworks infra log; guide infra names the route and forbids an unconfined session.",
+  "tags": ["dashboard", "deployment"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "Scoped infra access: approve, take, create, push, refuse, list",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/scoped-infra-access.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}

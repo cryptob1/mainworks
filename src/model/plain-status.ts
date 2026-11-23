@@ -122,7 +122,7 @@ export function blockerSummary(text: string, now: number, work?: Pick<Work, 'key
   if (text.startsWith(startupFailureBlocker)) return { sentence: text, kind: 'fault' };
   const named = (pattern: RegExp) => text.match(pattern)?.[1];
   // A declined answer is the human's last word: what happens next is the master's unblock.
-  if (!human && /^A human declined /.test(text)) return { sentence: 'A human declined the request; the master agent decides the next step and clears the block.', kind: 'human' };
+  if (!human && /^A human declined /.test(text)) return { sentence: 'You declined; the master picks the next step.', kind: 'human' };
   if (human || text.startsWith(humanRequestBlocker)) { const on = named(/\b((?!AC-)[A-Z][A-Z0-9]*-\d+)\b/); return { sentence: `Waiting on a human answer${on && on !== work?.key ? ` to ${on}` : ''}; only you can clear it.`, kind: 'human' }; }
   const window = work ? observationWindowHold(work as Work, new Date(now)) : null;
   const future = [...notBeforeInstants(text), ...(window ? [Date.parse(window.notBefore)] : [])].filter(at => at > now);

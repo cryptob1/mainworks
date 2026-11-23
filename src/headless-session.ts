@@ -1,5 +1,5 @@
-import { headlessArgs, headlessArgv, HeadlessConfigurationError } from './headless-argv.js';
-export { continuable, headlessKind, headlessArgs, headlessArgv, HeadlessConfigurationError } from './headless-argv.js';
+import { headlessArgs, headlessArgv, headlessPromptInput, HeadlessConfigurationError } from './headless-argv.js';
+export { continuable, headlessKind, headlessArgs, headlessArgv, headlessPromptInput, HeadlessConfigurationError } from './headless-argv.js';
 // Concern: headless sessions — reviews, and since GY-3259 workers (at the end of this file). A reviewer no longer needs a Herdr pane,
 // a TUI start wait or a CLI call to post: its runtime runs once, non-interactively, as one child
 // process in the session's checkout, under the same coordinator confinement and credential mask a
@@ -36,21 +36,29 @@ import { noteRunUsage } from './usage-capture.js';
  * keeps its output and exit so a restarted loop can adopt it; `detached` stops the wait without
  * stopping the child.
  */
-export type HeadlessExec = (command: string, args: string[], options: { cwd: string; env: Record<string, string>; timeoutMs: number; signal: AbortSignal; run: string; detached: AbortSignal }) => Promise<string>;
+export type HeadlessExec = (command: string, args: string[], options: { cwd: string; env: Record<string, string>; timeoutMs: number; signal: AbortSignal; run: string; detached: AbortSignal; stdin?: string }) => Promise<string>;
 
 /** The answer's text is bounded: what the run printed past this is ignored. */
 const outputLimit = 1024 * 1024;
 const readText = (file: string) => { try { return readFileSync(file, 'utf8'); } catch { return null; } };
 /**
  * One child, detached (runner/pi.ts detachedLaunch): it leads its own session and, under a systemd
- * service, its own transient scope, so a stop of the loop's unit never takes it; stdin is closed,
- * and its output and exit go to its run directory. A non-zero exit or the bound is a failure naming
+ * service, its own transient scope, so a stop of the loop's unit never takes it; stdin is closed
+ * unless `options.stdin` supplies the prompt (GY-3696), and its output and exit go to its run directory. A non-zero exit or the bound is a failure naming
  * the last of its standard error, carrying what it printed as `output`.
  */
 export const spawnHeadless: HeadlessExec = async (command, args, options) => {
   mkdirSync(options.run, { recursive: true, mode: 0o700 });
-  rmSync(runFiles(options.run).exit, { force: true });
-  const id = basename(options.run), containment = runContainment(), launch = sessionLaunch(options.run, id, command, args, containment);
+  const files = runFiles(options.run);
+  rmSync(files.exit, { force: true });
+  let stdinFile: string | undefined;
+  if (options.stdin !== undefined) {
+    stdinFile = files.stdin;
+    writeFileSync(stdinFile, options.stdin, { mode: 0o600 });
+  } else {
+    rmSync(files.stdin, { force: true });
+  }
+  const id = basename(options.run), containment = runContainment(), launch = sessionLaunch(options.run, id, command, args, containment, [], stdinFile);
   let failure: string | null = null;
   const child = spawn(launch.file, launch.args, { cwd: options.cwd, env: options.env, stdio: ['ignore', 'ignore', 'ignore'], detached: true });
   child.on('error', error => { failure = `${command} could not be started: ${error.message}`; });
@@ -228,6 +236,7 @@ export async function startHeadlessSession<T>(input: HeadlessSession<T>): Promis
     for (let attempt = 1; ; attempt++) {
       const prompt = attempt === 1 ? launch.request : `${launch.request}\n\nYour previous answer was not accepted: ${refused}. Answer again with the one JSON object asked for.`;
       const env = runEnvironment(process.env, launch.environment);
+      const stdin = headlessPromptInput(launch.kind, prompt);
       const argv = [...launch.wrapper, ...await headlessArgv(launch, prompt, env)];
       const active = liveRun(input.name);
       if (active) active.agent = launch.kind;
@@ -236,7 +245,7 @@ export async function startHeadlessSession<T>(input: HeadlessSession<T>): Promis
       let output: string | null = null;
       let startup: NodeJS.Timeout | undefined;
       try {
-        const running = input.exec(argv[0]!, argv.slice(1), { cwd: input.directory, env, timeoutMs: headlessRunMs, signal: controller.signal, run: runDirectory, detached: detached.signal });
+        const running = input.exec(argv[0]!, argv.slice(1), { cwd: input.directory, env, timeoutMs: headlessRunMs, signal: controller.signal, run: runDirectory, detached: detached.signal, ...(stdin !== undefined ? { stdin } : {}) });
         startup = setTimeout(ready, headlessStartupMs);
         output = await running.finally(() => clearTimeout(startup));
         noteUsage();
@@ -366,9 +375,11 @@ export async function startHeadlessWorker(input: HeadlessWorker): Promise<{ id: 
   writeFileSync(join(directory, sessionFile), JSON.stringify(record), { mode: 0o600 });
   // GY-3584: the session's e2e serve (scripts/e2e-serve.mjs) takes a free port of its own, so reviews and trials keep the declared 4391.
   const env = runEnvironment(process.env, { ...launch.environment, GRAPHYARD_RUN_LOG: join(directory, runLogName), GRAPHYARD_E2E_SERVE_PORT: String(await freePort()) });
-  const argv = [...input.supervisor, ...launch.wrapper, ...await headlessArgv({ ...launch, session: input.session }, input.session ? input.prompt : launch.request, env)];
+  const request = input.session ? input.prompt : launch.request;
+  const stdin = headlessPromptInput(launch.kind, request);
+  const argv = [...input.supervisor, ...launch.wrapper, ...await headlessArgv({ ...launch, session: input.session }, request, env)];
   const stop = new AbortController(), detached = new AbortController();
-  const running = input.exec(argv[0]!, argv.slice(1), { cwd: input.directory, env, timeoutMs: input.timeoutMs, signal: stop.signal, run: directory, detached: detached.signal });
+  const running = input.exec(argv[0]!, argv.slice(1), { cwd: input.directory, env, timeoutMs: input.timeoutMs, signal: stop.signal, run: directory, detached: detached.signal, ...(stdin !== undefined ? { stdin } : {}) });
   const ended = await Promise.race([running.then(() => ({ ok: true }), () => ({ ok: false })), new Promise<null>(done => setTimeout(() => done(null), input.startupMs ?? workerStartupMs).unref())]);
   const printed = () => runLogTail(input.root, id) ?? '';
   if (ended) return { id, ended: { ...ended, output: printed() } };

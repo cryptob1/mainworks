@@ -128,6 +128,10 @@ const masterSessionRecordSchema = z.object({
    * until the registry takes it back, or until the registry's own session cap has ended it.
    */
   unreleased: z.array(z.object({ session: z.string().max(200), since: z.string(), reason: z.string().max(300) }).strict()).max(20).default([]),
+  /** Per-account consecutive identical launch failures (GY-3519): two in a row hold the account for an hour. */
+  launchFailures: z.record(z.string().max(200), z.object({ reason: z.string().max(500), count: z.number().int().min(1), at: z.string() }).strict()).default({}),
+  /** Accounts temporarily unusable for master launches after repeated identical launch failures (GY-3519). */
+  unusableAccounts: z.record(z.string().max(200), z.object({ until: z.string(), reason: z.string().max(500) }).strict()).default({}),
 }).strict();
 export const masterSessionSchema = masterSessionRecordSchema.extend({
   /** Unread histories remain addressable with their original session and delivery provenance. */
@@ -233,8 +237,10 @@ export const daemonStateSchema = z.object({
     stat: z.object({ total: z.number().min(0), steal: z.number().min(0) }).strict().nullable().optional() }).strict()).default([]),
   /** GY-3190: the UTC day being tallied, its counts so far, and the latest day's report. */
   leftovers: z.object({ day: z.string().max(10).nullable(), counts: leftoverCountsSchema,
-    report: z.object({ day: z.string().max(10), counts: leftoverCountsSchema, disk: leftoverDiskSchema, at: z.string() }).strict().nullable() }).strict()
-    .default(() => ({ day: null, counts: { processes: 0, trialContainers: 0, reclaimed: 0, panes: 0, worktrees: 0, networks: 0, cliReleases: 0, cliReleaseBytes: 0 }, report: null })),
+    report: z.object({ day: z.string().max(10), counts: leftoverCountsSchema, disk: leftoverDiskSchema, at: z.string() }).strict().nullable(),
+    /** GY-3691: the working copies' disk use as last read, and whether a removal has made it stale since. */
+    worktreeDisk: z.object({ bytes: z.number().min(0), at: z.string(), stale: z.boolean() }).strict().nullable().default(null) }).strict()
+    .default(() => ({ day: null, counts: { processes: 0, trialContainers: 0, reclaimed: 0, panes: 0, worktrees: 0, networks: 0, cliReleases: 0, cliReleaseBytes: 0 }, report: null, worktreeDisk: null })),
   /** GY-3199: the UTC day the control-plane diagnostics last ran, so the staleness lines log once a day. */
   controlPlaneDay: z.string().max(10).nullable().default(null),
   /** GY-3104: each open item's current run of equal-signature failures, kept here so a restart does not forget it. */
@@ -253,6 +259,8 @@ export const daemonStateSchema = z.object({
     /** When the loop last POSTed a stall alert; null before the first, and the marker that an all-clear is owed once work moves. */
     lastAlertAt: z.string().max(64).nullable().default(null),
   }).strict().default({ stoppedAt: null, lastAlertAt: null }),
+  /** GY-3529: the served commit and the failed release candidate last announced to run.alertUrl, so a restart never repeats either. */
+  deliveryAlerts: z.object({ served: z.string().max(64).nullable().default(null), uatFailed: z.string().max(64).nullable().default(null) }).strict().default({ served: null, uatFailed: null }),
   /** Shared project memory (GY-1125): recent decisions and merges. */
   projectMemory: projectMemorySchema.default(() => emptyProjectMemory(new Date().toISOString())),
 }).strip();

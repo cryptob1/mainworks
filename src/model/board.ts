@@ -136,7 +136,7 @@ export const timedGroups: ReadonlySet<Group> = new Set(['moving', 'blocked']);
  */
 export function nextActor(work: Work, group: Group | null, now: number, release: ReleaseView = noRelease, all: Work[] = []): { who: string; does: string } {
   if (group === 'needs-you') return { who: 'You', does: work.humanRequest ? shortShas(humanAsk(work.humanRequest)) : 'Answer the decision it is waiting on' };
-  if (work.hold && work.ready) return { who: 'Nobody yet', does: `Held by ${work.heldBy}: ${work.holdReason} — release it to resume` };
+  if (work.hold && work.ready) return { who: 'Nobody yet', does: `On hold by ${/master/.test(work.heldBy ?? '') ? 'the master' : 'you'}: ${(work.holdReason ?? 'held').split(/(?<=[.!?])\s/)[0]}` };
   if (group === 'backlog') {
     const dependency = work.gates.find(gate => gate.name === 'ready')?.reasons.find(reason => reason.startsWith('Dependency '));
     return dependency && work.ready ? { who: 'Nobody yet', does: plainReason(dependency, 'ready', now).text } : { who: 'Master agent', does: 'Release it for work when it is a priority' };
@@ -161,7 +161,9 @@ export function upNextHold(work: Work, all: Work[], now: number): { kind: 'depen
   const observing = loopObservation(work, new Date(now), all); if (observing) return { kind: 'observation', text: `Waiting for ${observing.waitingFor}; no builder is assigned` };
   const held = resourceConflicts(work, all, now);
   if (!held.length) return null;
-  return { kind: 'resource', text: `Waiting for ${[...new Set(held.map(entry => entry.key))].join(', ')} to release ${[...new Set(held.map(entry => entry.resource))].join(', ')}: an exclusive resource it needs` };
+  // A file another item holds is named by that item, never by its path (GY-3558).
+  const files = held.every(entry => entry.resource.includes('/') || entry.resource.includes('.'));
+  return { kind: 'resource', text: `Starts after ${[...new Set(held.map(entry => entry.key))].join(', ')} (${files ? 'same files' : `shares ${[...new Set(held.map(entry => entry.resource))].join(', ')}`})` };
 }
 /** What the Up next tile says under its count: waiting for a worker only when that is true of what it counts. */
 export function upNextMeaning(items: Work[], all: Work[], now: number): string {
