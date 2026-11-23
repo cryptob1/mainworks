@@ -153,6 +153,7 @@ export function runContainment(input: { cgroup?: string | null; systemd?: () => 
 export const runFiles = (directory: string) => ({
   meta: join(directory, 'run.json'), stdout: join(directory, 'stdout.jsonl'), stderr: join(directory, 'stderr.log'),
   exit: join(directory, 'exit'), stopped: join(directory, 'stopped.json'), stdin: join(directory, 'stdin.txt'),
+  prompt: join(directory, 'prompt.txt'),
 });
 export const runMetaSchema = z.object({
   version: z.literal(1), id: z.string().min(1).max(80), command: z.string().max(4000), pid: z.number().int().positive().nullable(),
