@@ -4,7 +4,7 @@ import { mergeWriterTrialGround } from './model/rework-ground.js';
 
 export const flowWindows = { '6h': 6, '24h': 24, '7d': 168 } as const;
 export type FlowWindow = keyof typeof flowWindows;
-export const flowStations = ['ready', 'build', 'review', 'test queue', 'merge trial', 'acceptance', 'merge'] as const;
+export const flowStations = ['ready', 'build', 'review', 'test queue', 'merge trial', 'acceptance', 'merge', 'live'] as const;
 export type FlowStation = typeof flowStations[number];
 export const reworkCauses = ['review', 'product review', 'merge trial', 'acceptance', 'base moved', 'red base'] as const;
 export type ReworkCause = typeof reworkCauses[number];
@@ -18,6 +18,8 @@ export type ReworkCause = typeof reworkCauses[number];
 export interface FlowEvent { kind: string; at: string; stage?: string | null; reason?: string | null; binding?: string | null; head?: string | null; durationMs?: number | null; flaky?: boolean; reverted?: boolean }
 export interface FlowItem {
   key: string; title: string; stage: string; stageEnteredAt: string; mergedAt: string | null;
+  /** First serving deploy containing this merge (`null` when deploy records exist and none contains it yet; `undefined` when deploy tracking is unavailable). */
+  deployedAt?: string | null;
   attempts: { claimedAt: string; endedAt: string | null; end: string | null }[];
   events: FlowEvent[];
 }
@@ -69,6 +71,13 @@ function visits(item: FlowItem, now: number): Visit[] {
       out.push(started.length ? { station: 'test queue', start: mark.at, end: Math.min(...started), open: false } : { station: 'test queue', start: mark.at, end, open });
     } else if (stationOf[mark.stage]) out.push({ station: stationOf[mark.stage], start: mark.at, end, open });
   });
+  const merged = ms(item.mergedAt);
+  if (Number.isFinite(merged) && item.deployedAt !== undefined) {
+    const deployed = ms(item.deployedAt);
+    out.push(Number.isFinite(deployed)
+      ? { station: 'live', start: merged, end: Math.max(merged, deployed), open: false }
+      : { station: 'live', start: merged, end: now, open: true });
+  }
   return out;
 }
 

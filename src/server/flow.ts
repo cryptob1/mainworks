@@ -1,6 +1,7 @@
 // Concern: GY-3624 — the ledger rows the flow numbers read, turned into item histories, and the numbers for each window.
 import type { Work } from '../model.js';
 import { baseFailurePrefix } from '../model/merge-queue.js';
+import type { DeployHistoryEntry, GitRead } from '../deploy-watch.js';
 import { flowAttention, flowNumbers, flowWindows, type FlowEvent, type FlowItem, type FlowNumbers, type FlowWindow } from '../flow-numbers.js';
 
 interface Queryable { query: (text: string, values: unknown[]) => Promise<{ rows: any[] }> }
@@ -58,7 +59,7 @@ type Flowed = Pick<Work, 'id' | 'key' | 'title' | 'stage' | 'stageEnteredAt' | '
  * next refusal, of the same head — finds its failing tests fail on the base too. A head held for a
  * red base is refused without a trial of its own, so that refusal flags none.
  */
-export function flowItems(work: readonly Flowed[], ledger: readonly any[], attempts: Attempts = new Map()): FlowItem[] {
+export function flowItems(work: readonly Flowed[], ledger: readonly any[], attempts: Attempts = new Map(), deployed: ReadonlyMap<string, string | null> = new Map()): FlowItem[] {
   const events = new Map<string, FlowEvent[]>(), unanswered = new Map<string, FlowEvent>();
   for (const row of ledger) {
     const list = events.get(row.work_id) ?? [];
@@ -78,15 +79,73 @@ export function flowItems(work: readonly Flowed[], ledger: readonly any[], attem
   }
   return work.map(item => ({ key: item.key, title: item.title, stage: item.stage, stageEnteredAt: item.stageEnteredAt,
     mergedAt: item.delivery?.mergedAt ?? item.observation?.mergedAt ?? null,
+    ...(deployed.has(item.id) ? { deployedAt: deployed.get(item.id) } : {}),
     attempts: (attempts.get(item.id) ?? []).map(attempt => ({ claimedAt: attempt.claimedAt, endedAt: attempt.endedAt, end: attempt.end ?? null })),
     events: events.get(item.id) ?? [] }));
 }
 
+/**
+ * GY-3725: for each merge within the flow read span, find the first serving deploy record whose
+ * commit contains its merge commit (`null` when deploys exist and none contains it yet).
+ */
+async function resolveDeployedAt(work: readonly Flowed[], deploys: readonly DeployHistoryEntry[], git: GitRead | null | undefined, now: number): Promise<Map<string, string | null>> {
+  const result = new Map<string, string | null>();
+  if (!deploys.length || !git) return result;
+  const from = now - readSpanMs;
+  const candidates = work.flatMap(item => {
+    const mergedAt = item.delivery?.mergedAt ?? item.observation?.mergedAt ?? null;
+    const sha = item.delivery?.mergeSha?.toLowerCase();
+    const at = mergedAt ? Date.parse(mergedAt) : Number.NaN;
+    return sha && /^[0-9a-f]{40}$/.test(sha) && Number.isFinite(at) && at > from && at <= now ? [{ id: item.id, sha }] : [];
+  });
+  if (!candidates.length) return result;
+  const ordered = [...deploys]
+    .filter(entry => /^[0-9a-f]{40}$/i.test(entry.commit) && Number.isFinite(Date.parse(entry.at)))
+    .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  const unique: DeployHistoryEntry[] = [];
+  const seenDeploy = new Set<string>();
+  for (const entry of ordered) {
+    const commit = entry.commit.toLowerCase();
+    if (seenDeploy.has(commit)) continue;
+    seenDeploy.add(commit);
+    unique.push({ ...entry, commit });
+  }
+  const unmatched = new Set(candidates.map(candidate => candidate.sha));
+  const firstDeploy = new Map<string, string>();
+  const seenCommits: string[] = [];
+  for (const deploy of unique) {
+    if (!unmatched.size) break;
+    try {
+      const args = ['rev-list', ...(seenCommits.length ? [] : ['--max-count=5000']), deploy.commit, ...seenCommits.map(commit => `^${commit}`)];
+      const output = await git(args);
+      for (const line of output.split('\n')) {
+        const sha = line.trim().toLowerCase();
+        if (sha && unmatched.has(sha)) { firstDeploy.set(sha, deploy.at); unmatched.delete(sha); }
+      }
+      seenCommits.push(deploy.commit);
+    } catch { /* commit missing in this checkout */ }
+  }
+  if (!seenCommits.length) return result;
+  const validUnmatched = new Set<string>();
+  for (const sha of unmatched) {
+    try { await git(['cat-file', '-e', `${sha}^{commit}`]); validUnmatched.add(sha); } catch { /* not in this checkout */ }
+  }
+  for (const candidate of candidates) {
+    if (firstDeploy.has(candidate.sha)) result.set(candidate.id, firstDeploy.get(candidate.sha)!);
+    else if (validUnmatched.has(candidate.sha)) result.set(candidate.id, null);
+  }
+  return result;
+}
+
+export interface FlowLiveOptions { deploys?: readonly DeployHistoryEntry[]; git?: GitRead | null }
 export type Flow = Record<FlowWindow, FlowNumbers> & { attention: ReturnType<typeof flowAttention> };
 /** The flow numbers for 6 hours, 24 hours and 7 days over `work`, and the attention line the 24 hours raise. */
-export async function readFlow(pool: Queryable, work: readonly Flowed[], now: number): Promise<Flow> {
-  const { ledger, attempts } = await rows(pool, now);
-  const items = flowItems(work, ledger, attempts);
+export async function readFlow(pool: Queryable, work: readonly Flowed[], now: number, live?: FlowLiveOptions): Promise<Flow> {
+  const [{ ledger, attempts }, deployed] = await Promise.all([
+    rows(pool, now),
+    live?.deploys?.length && live.git ? resolveDeployedAt(work, live.deploys, live.git, now) : Promise.resolve(new Map<string, string | null>()),
+  ]);
+  const items = flowItems(work, ledger, attempts, deployed);
   const windows = Object.fromEntries(Object.entries(flowWindows).map(([name, hours]) => [name, flowNumbers(items, hours, now)])) as Record<FlowWindow, FlowNumbers>;
   return { ...windows, attention: flowAttention(windows['24h']) };
 }
