@@ -16,9 +16,10 @@ import { setTrialAttempts, TrialCancelledError, TrialTimeoutError, TrialRunnerEr
 import { harnessModules } from './trial-container.js';
 import { heldJobEnvironment } from '../master/verification-slots.js';
 import type { MergeTrialRun } from './executor.js';
+import { stateDirectory } from '../install/layout.js';
 
 /** Where a loop's detached trial runs live: `<coordinator root>/.graphyard/trial-runs`, beside the deploy record it already keeps there. */
-export const trialRunsDirectory = (root: string) => join(root, '.graphyard', 'trial-runs');
+export const trialRunsDirectory = (root: string) => join(stateDirectory(root), 'trial-runs');
 
 /** What one merge flight asks a detached trial run to do: everything `runMergeTrial` reads that is not a function; the launch fills where it runs. */
 export interface TrialRunRequest { key: string; head: string; mergeSha: string; baseTip: string | null; changedFiles: string[]; proofs: string[]; e2eProofs: string[]; timeoutMs: number; reproduce: boolean; cores: number | null; selectorApproved?: boolean }
@@ -26,7 +27,7 @@ export interface TrialRunRequest { key: string; head: string; mergeSha: string; 
 export interface TrialRunSpec extends TrialRunRequest { version: 1; root: string; base: string; hidden: string[]; startedAt: string }
 
 /** The run's verdict or its own failure, as the run records it for whichever loop reads it. */
-export type TrialRunOutcome = { ok: true; run: MergeTrialRun } | { ok: false; error: SerializedTrialError };
+type TrialRunOutcome = { ok: true; run: MergeTrialRun } | { ok: false; error: SerializedTrialError };
 /** A run's failure as it crosses the process boundary: the error's class, message and fields, with every attempt the run made (GY-1832). */
 export interface SerializedTrialError { name: string; message: string; attempts: TrialNoVerdict[];
   phase?: TrialPhaseText; durationMs?: number; logTail?: string; status?: number | null; signal?: string | null; files?: string[]; finished?: number; outputTail?: string; mergeSha?: string; reason?: string }
@@ -84,7 +85,7 @@ export function serializeTrialError(error: unknown, attempts: readonly TrialNoVe
 }
 
 /** The error a run recorded, rebuilt as the class the merge writer reads (its attempts re-attached, GY-1832). */
-export function reconstructTrialError(serialized: SerializedTrialError): Error {
+function reconstructTrialError(serialized: SerializedTrialError): Error {
   const error: Error = serialized.name === 'TrialTimeoutError' && serialized.phase !== undefined && typeof serialized.durationMs === 'number'
     ? new TrialTimeoutError(serialized.phase, serialized.durationMs, serialized.logTail ?? '')
     : serialized.name === 'TrialRunnerError' && serialized.phase !== undefined
@@ -98,7 +99,7 @@ export function reconstructTrialError(serialized: SerializedTrialError): Error {
 const phaseOfStep = (step: string): TrialPhaseText => /^(checkout|scan|install)/.test(step) ? 'install' : step.startsWith('build') ? 'build' : step.startsWith('selection') ? 'selection' : 'tests';
 
 /** How long a run directory nobody read is kept before a later launch prunes it. */
-export const trialRunRetentionMs = 24 * 60 * 60_000;
+const trialRunRetentionMs = 24 * 60 * 60_000;
 
 /** Reads a run's spec, or null when its directory holds none. */
 export async function readTrialRunSpec(directory: string): Promise<TrialRunSpec | null> {
@@ -106,7 +107,7 @@ export async function readTrialRunSpec(directory: string): Promise<TrialRunSpec 
 }
 
 /** How the detached run is invoked: `node --import <the running code's own tsx> <trial-main> <directory>`. */
-export const trialMainInvocation = (directory: string): [string, string[]] =>
+const trialMainInvocation = (directory: string): [string, string[]] =>
   [process.execPath, ['--import', join(harnessModules, 'tsx', 'dist', 'loader.mjs'), fileURLToPath(new URL('./trial-main.ts', import.meta.url)), directory]];
 
 /** The launch's own bound, past which the run's watchdog ends it even with no watcher alive: its deadline plus a margin. */

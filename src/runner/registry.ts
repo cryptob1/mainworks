@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { z } from 'zod';
 import { cancelScratchRuns, piRunner, processIdentity, readRunMeta, runAlive } from './pi.js';
 import { runRecord, runRecordSchema, type Run, type RunOptions, type RunRecord, type RunResult, type Runner } from './types.js';
+import { stateDirectory } from '../install/layout.js';
 
 /**
  * The runs this process started (GY-169). A headless run has no pane, so Herdr cannot list it;
@@ -87,7 +88,7 @@ export function detachRuns() {
 
 // ---- The registry on disk -------------------------------------------------------------------------
 
-export const runsDirectory = (root: string) => resolve(root, '.graphyard', 'runs');
+export const runsDirectory = (root: string) => resolve(stateDirectory(root), 'runs');
 export const runOwnerSchema = z.object({
   version: z.literal(1), name: z.string().min(1).max(200), role: z.enum(['producer']), work: z.string().min(1).max(200), subject: z.string().min(1).max(200),
   /** What the role needs to apply the run's result after a restart: never a credential, only where to read one. */

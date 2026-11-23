@@ -13,6 +13,10 @@
 //                                  started as one project, argv run by the trial launcher on its first service's network
 //                                  with the services' variables, the project and its volumes removed whatever argv answered
 //   clean RUN                      remove a run directory
+//   run-session RUN                GY-3405: one agent session in IMAGE with RUN's checkout mounted at the session's own
+//                                  working directory; the first stdin line is JSON {argv, env, cwd, homes}, nothing else,
+//                                  each home an in-memory tmpfs; the rest of stdin (the login) goes straight into the container;
+//                                  no Docker log, a memory limit, a deadline, and a guardian that removes the container
 // Anything else is refused. As in a local trial, containers may start nested sandboxes (seccomp and system
 // paths unconfined, the mainworks-trial AppArmor profile where Docker uses AppArmor; GY-3549), and never
 // get the Docker socket, so a shard, which has no network either, reaches no private address, the tailnet or the host.
@@ -34,19 +38,21 @@ export const hostProbeScript = [
 ].join('\n');
 
 /** The warm image a host runs shards in: the trial image's digest and the lockfile's hash (`none` without one). */
-export const warmImagePattern = /^graphyard-warm:[0-9a-f]{12}-(?:[0-9a-f]{12}|none)$/;
+const warmImagePattern = /^graphyard-warm:[0-9a-f]{12}-(?:[0-9a-f]{12}|none)$/;
 
+/** GY-3405: no agent session runs longer on a host; Graphyard ends every session well before. */
+const sessionHours = 8;
 /**
  * GY-3517: the verbs this shim speaks, each with a revision. Bump a verb's revision when a release
  * changes what it does in a way a trial relies on, and add a new verb here; any other change to the
  * shim (its launcher, limits, wording) leaves this list alone, so hosts on the older shim keep taking shards.
  */
-export const hostShimVerbs = ['probe:1', 'receive-pack:1', 'receive-image:1', 'prepare-run:1', 'run-shard:2', 'fetch-records:1', 'clean:1'];
+export const hostShimVerbs = ['probe:1', 'receive-pack:1', 'receive-image:1', 'prepare-run:1', 'run-shard:2', 'fetch-records:1', 'clean:1', 'run-session:1'];
 /** GY-3645: `run-check` is no trial verb: a host takes a whole check once its probe names a Compose plugin, which only a shim with the verb prints. */
 /** The verbs a merge trial uses: a host whose shim lacks any of them takes no shards until prepare runs again there. */
-export const trialVerbs = hostShimVerbs;
+export const trialVerbs = hostShimVerbs.filter(verb => !verb.startsWith('run-session:'));
 /** Shims released before the probe listed its verbs, by digest: the verbs each speaks (GY-3549's shim). */
-export const legacyShimVerbs: Record<string, readonly string[]> = { '90b5bdaa66f84f53f7dbc87ef089f17051c1e230900a4248ffb76ecb8d2315d6': hostShimVerbs };
+export const legacyShimVerbs: Record<string, readonly string[]> = { '90b5bdaa66f84f53f7dbc87ef089f17051c1e230900a4248ffb76ecb8d2315d6': trialVerbs };
 /** The trial verbs a shim lacks, by what its probe printed: its verbs line, else what its digest is known to speak. */
 export const missingTrialVerbs = (probe: { shim: string | null; verbs: string[] | null }) => {
   const speaks = probe.verbs ?? (probe.shim === hostShimDigest ? hostShimVerbs : probe.shim ? legacyShimVerbs[probe.shim] : undefined) ?? [];
@@ -68,7 +74,7 @@ case "$SSH_ORIGINAL_COMMAND" in
     echo "compose $(docker compose version --short 2>/dev/null)"
 ${hostProbeScript.split('\n').map(line => `    ${line}`).join('\n')}
     ;;
-  receive-pack\\ *|receive-image\\ *|prepare-run\\ *|run-shard\\ *|run-check\\ *|fetch-records\\ *|clean\\ *)
+  receive-pack\\ *|receive-image\\ *|prepare-run\\ *|run-shard\\ *|run-check\\ *|fetch-records\\ *|clean\\ *|run-session\\ *)
     # The verbs that take arguments, validated and run in Python.
     exec python3 -I -c "$(cat <<'GRAPHYARD_VERBS'
 import json, os, re, shutil, signal, subprocess, sys, tempfile, time
@@ -86,7 +92,7 @@ RUN = r'trial-[A-Za-z0-9_]{6,40}'
 IMAGE = ${JSON.stringify(warmImagePattern.source.slice(1, -1))}
 INDEX = r'[1-9][0-9]{0,3}'
 SHAPES = {'receive-pack': [NAME, SHA], 'receive-image': [IMAGE], 'prepare-run': [NAME, SHA, IMAGE],
-          'run-shard': [RUN, INDEX], 'run-check': [RUN], 'fetch-records': [RUN, INDEX], 'clean': [RUN]}
+          'run-shard': [RUN, INDEX], 'run-check': [RUN], 'fetch-records': [RUN, INDEX], 'clean': [RUN], 'run-session': [RUN]}
 if verb not in SHAPES or len(args) != len(SHAPES[verb]) or not all(re.fullmatch(shape, arg) for shape, arg in zip(SHAPES[verb], args)):
     refuse()
 mirrors, runs = os.path.join(home, '.graphyard', 'mirrors'), os.path.join(home, '.graphyard', 'runs')
@@ -146,6 +152,68 @@ elif verb == 'prepare-run':
             if not os.path.islink(path):
                 os.chmod(path, os.stat(path).st_mode | 0o060)
     print('run ' + os.path.basename(run))
+elif verb == 'run-session':
+    # Only the first line is the shim's: read unbuffered, so the login after it reaches the container's stdin and never a file here.
+    line = b''
+    while not line.endswith(b'\\n'):
+        byte = os.read(0, 1)
+        if not byte:
+            break
+        line += byte
+    try:
+        session = json.loads(line)
+    except ValueError:
+        refuse()
+    if not isinstance(session, dict) or set(session) != {'argv', 'env', 'cwd', 'homes'}:
+        refuse()
+    argv, env, cwd, homes = session['argv'], session['env'], session['cwd'], session['homes']
+    path = lambda value: isinstance(value, str) and re.fullmatch(r'/[A-Za-z0-9._/@+-]{1,400}', value) and '..' not in value.split('/')
+    if not (isinstance(argv, list) and 0 < len(argv) <= 5000 and all(isinstance(word, str) and '\\0' not in word for word in argv)) or not path(cwd) \\
+            or not (isinstance(homes, list) and len(homes) <= 20 and all(path(home) for home in homes)) \\
+            or not (isinstance(env, dict) and len(env) <= 200 and all(re.fullmatch(r'[A-Z_][A-Z0-9_]{0,99}', key) and isinstance(value, str) and not set('\\0\\n') & set(value) for key, value in env.items())):
+        refuse()
+    run = os.path.join(runs, args[0])
+    if not os.path.isdir(run):
+        sys.exit('graphyard-host-shim: no run ' + args[0])
+    name = 'graphyard-session-' + args[0][len('trial-'):]
+    # The network is the default one: the session reaches its model provider and the control plane. Only the checkout is mounted; the root is
+    # read-only, as a trial's is, and every home and /tmp is memory.
+    # No log driver: the login handed back on stderr never reaches the host's disk. Half the host's memory at most.
+    memory = next((int(line.split()[1]) for line in open('/proc/meminfo') if line.startswith('MemTotal:')), 4 << 20) // 1024 // 2
+    create = ['docker', 'create', '-i', '--init', '--name', name, '--user', '1000:0', '--workdir', cwd, '--log-driver', 'none', '--memory', '%dm' % max(1024, memory),
+              '--pids-limit', '4096',
+              '--read-only', '--cap-drop=ALL', '--security-opt=no-new-privileges', '--security-opt', 'seccomp=unconfined', '--tmpfs', '/tmp:mode=1777']
+    if 'apparmor' in subprocess.run(['docker', 'info', '--format', '{{json .SecurityOptions}}'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True).stdout:
+        create += ['--security-opt', 'apparmor=${trialAppArmorProfile}']
+    for home in homes:
+        create += ['--tmpfs', home + ':uid=1000,gid=0,mode=0700']
+    create += ['--mount', 'type=bind,src=' + os.path.join(run, 'repo') + ',dst=' + cwd]
+    for key, value in sorted(env.items()):
+        create += ['--env', key + '=' + value]
+    # The session stops at its deadline on its own, even when no shim or guardian is left to remove it.
+    create += ['--entrypoint', '/usr/bin/timeout', open(os.path.join(run, 'image')).read().strip(), '--kill-after=10', '${sessionHours}h'] + argv
+    # A guardian outside this process tree removes the container once the shim is gone, however it ended (a dropped SSH session, a kill).
+    reader, writer = os.pipe()
+    if os.fork() == 0:
+        os.close(writer)
+        os.setsid()
+        if os.fork() == 0:
+            os.chdir('/')
+            devnull = os.open(os.devnull, os.O_RDWR)
+            for fd in (0, 1, 2):
+                os.dup2(devnull, fd)
+            os.read(reader, 1)
+            quiet('docker', 'rm', '-f', name)
+        os._exit(0)
+    os.close(reader)
+    os.wait()
+    if not quiet(*create):
+        sys.exit('graphyard-host-shim: the session container could not be created')
+    try:
+        code = subprocess.call(['docker', 'start', '-a', '-i', name])
+    finally:
+        quiet('docker', 'rm', '-f', name)
+    sys.exit(code)
 else:
     run = os.path.join(runs, args[0])
     project = 'mainworks-check-' + args[0][6:].lower()

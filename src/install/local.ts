@@ -20,6 +20,7 @@ import { loopUnitDirectory, supervisorSupport, testSuiteHomeGuard } from './loop
 import { SERVER_PORT, type EnvValue, type PreflightItem } from './types.js';
 import { withLocalBin } from '../herdr-host.js';
 import { provisionTrialAppArmor, provisionTrialImage, trialAppArmorPlan, trialImagePlan } from './trial-image.js';
+import { configUnitPrefix } from './layout.js';
 
 /** How the runtime is kept alive on this machine. A test supervisor runs it in-process. */
 export interface LocalSupervisor {
@@ -46,7 +47,7 @@ export interface LocalSettings {
 }
 
 export const MINIMUM_NODE_MAJOR = 24;
-export const localUnit = (installId: string) => `graphyard-local-${installId}.service`;
+export const localUnit = (installId: string) => `${configUnitPrefix()}-local-${installId}.service`;
 const runtimeEntry = () => fileURLToPath(new URL('./local-runtime.ts', import.meta.url));
 
 /** `node --import tsx src/install/local-runtime.ts DIRECTORY`, from the checkout the installer runs. */

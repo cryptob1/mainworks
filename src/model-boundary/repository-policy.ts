@@ -109,7 +109,7 @@ export function repositoryPolicyAssignment(config: Record<string, unknown> | nul
  * subdirectory reads the root's declaration. A value or file that does not parse refuses, rather than
  * silently judging every change by the default. Browser-safe: with no process, the default.
  */
-export function loadRepositoryPolicy(env?: Record<string, string | undefined>, root?: string, cwd?: string): { policy: RepositoryPolicy; source: Source } {
+function loadRepositoryPolicy(env?: Record<string, string | undefined>, root?: string, cwd?: string): { policy: RepositoryPolicy; source: Source } {
   const host = (globalThis as { process?: { env: Record<string, string | undefined>; cwd(): string; getBuiltinModule?(name: string): any } }).process;
   const variables = env ?? host?.env;
   const raw = (variables && setting(repositoryPolicyVariable, variables))?.trim();

@@ -20,7 +20,7 @@ import { setting } from './setting.js';
  * equality alone — a delivery counts as deployed only when production serves its exact
  * merge commit — and nothing here rewrites a delivery snapshot.
  */
-export type ProviderDeploymentStatus = 'success' | 'failed' | 'crashed' | 'building' | 'deploying' | 'queued' | 'removed' | 'skipped' | 'unknown';
+type ProviderDeploymentStatus = 'success' | 'failed' | 'crashed' | 'building' | 'deploying' | 'queued' | 'removed' | 'skipped' | 'unknown';
 export interface ProviderDeployment {
   id: string; status: ProviderDeploymentStatus; providerStatus: string;
   commit: string | null; branch: string | null; createdAt: string; updatedAt: string | null; url: string | null;
@@ -43,7 +43,7 @@ const railwayQuery = `query mainworksDeployments($input: DeploymentListInput!, $
  * RAILWAY_API_TOKEN (an account or team token) or RAILWAY_TOKEN (a project token). Absent
  * a token the provider is not configured and the watch reports the build identity alone.
  */
-export function railwayProvider(env: Record<string, string | undefined> = process.env, fetcher: typeof fetch = fetch): DeploymentProvider | null {
+function railwayProvider(env: Record<string, string | undefined> = process.env, fetcher: typeof fetch = fetch): DeploymentProvider | null {
   const accountToken = env.RAILWAY_API_TOKEN?.trim(), projectToken = env.RAILWAY_TOKEN?.trim();
   const serviceId = (setting('RAILWAY_SERVICE_ID', env) ?? env.RAILWAY_SERVICE_ID)?.trim(), environmentId = (setting('RAILWAY_ENVIRONMENT_ID', env) ?? env.RAILWAY_ENVIRONMENT_ID)?.trim(), projectId = (setting('RAILWAY_PROJECT_ID', env) ?? env.RAILWAY_PROJECT_ID)?.trim();
   if (!(accountToken || projectToken) || !serviceId || !environmentId) return null;
@@ -103,16 +103,17 @@ export interface ProductionReport {
   incidents: ProductionIncident[];
   attention: string[];
 }
-export const INCIDENT_EVENT = 'delivery.deployment-incident', RECOVERY_EVENT = 'delivery.deployment-recovered';
+export const INCIDENT_EVENT = 'delivery.deployment-incident';
+const RECOVERY_EVENT = 'delivery.deployment-recovered';
 /** A delivery first observed inside the serving release; containment is never asked again for it. */
-export const CONTAINED_EVENT = 'delivery.deployment-contained';
+const CONTAINED_EVENT = 'delivery.deployment-contained';
 /** A merged commit not served within this long is a missing deployment. */
 export const DEPLOYMENT_GRACE_MS = 5 * 60_000;
 /** Deliveries older than this are not re-verified against the provider on every pass. */
-export const DEPLOYMENT_WINDOW_MS = 14 * 86_400_000;
-export const DEPLOYMENT_POLL_MS = 60_000;
+const DEPLOYMENT_WINDOW_MS = 14 * 86_400_000;
+const DEPLOYMENT_POLL_MS = 60_000;
 /** How often the watch's own timer offers it a pass; the pass itself runs at most once per poll interval. */
-export const PRODUCTION_WATCH_TIMER_MS = 5_000;
+const PRODUCTION_WATCH_TIMER_MS = 5_000;
 
 export interface ProductionWatchOptions {
   provider: DeploymentProvider | null;
@@ -271,7 +272,7 @@ export const ENDPOINT_FRESH_MS = 3 * DEPLOYMENT_GRACE_MS;
  * short of that proof leaves the provider's answer standing, so a failed or unserved release is
  * reported as before.
  */
-export function liveEndpointRelease(delivered: Pick<Work, 'delivery'>[], deployments: ProviderDeployment[], newestSuccess: ProviderDeployment | undefined, now: number): string | null {
+function liveEndpointRelease(delivered: Pick<Work, 'delivery'>[], deployments: ProviderDeployment[], newestSuccess: ProviderDeployment | undefined, now: number): string | null {
   const provided = newestSuccess ? Date.parse(newestSuccess.updatedAt ?? newestSuccess.createdAt) : -Infinity;
   let best: { sha: string; at: number } | null = null;
   for (const item of delivered) {

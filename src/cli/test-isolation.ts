@@ -1,11 +1,9 @@
-import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync } from 'node:fs';
+
+import { existsSync, lstatSync, mkdirSync, readlinkSync, realpathSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { hostMemoryVariable } from '../master/host-memory.js';
 import { homedir } from 'node:os';
-import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { setting } from '../setting.js';
 
 /**
@@ -20,9 +18,9 @@ import { setting } from '../setting.js';
  */
 
 /** Harness controls a caller sets on purpose for the suite; every other GRAPHYARD_* and HERDR_* variable is withheld. */
-export const passedTestControls = ['GRAPHYARD_TIMING_RECORD', 'GRAPHYARD_TIMING_BASELINE_RECORDING'] as const;
+const passedTestControls = ['GRAPHYARD_TIMING_RECORD', 'GRAPHYARD_TIMING_BASELINE_RECORDING'] as const;
 /** The first base tried when nothing is reserved; the historical fixed base, so a lone run keeps its ports. */
-export const defaultTestPortBase = 15438;
+const defaultTestPortBase = 15438;
 /** One shared Postgres port and the sentinel that reserves it. */
 export const testPortSpan = 2;
 const highestBase = 60_000;
@@ -71,7 +69,7 @@ export function suiteRunEnvironment(input: { browser?: boolean; browserPort: num
 }
 
 /** Whether nothing on this host listens on `port` at 127.0.0.1. */
-export function portFree(port: number, host = '127.0.0.1'): Promise<boolean> {
+function portFree(port: number, host = '127.0.0.1'): Promise<boolean> {
   return new Promise(resolve => {
     const probe = createServer();
     probe.once('error', () => resolve(false));
@@ -89,7 +87,7 @@ export function freePort(host = '127.0.0.1'): Promise<number> {
 }
 
 /** A listening socket this process holds on `port`; the kernel frees it when the process exits, however it exits. */
-export function holdPort(port: number, host = '127.0.0.1'): Promise<{ close(): void } | null> {
+function holdPort(port: number, host = '127.0.0.1'): Promise<{ close(): void } | null> {
   return new Promise(resolve => {
     const server = createServer();
     server.once('error', () => resolve(null));
@@ -194,11 +192,6 @@ function onPath(name: string, env: NodeJS.ProcessEnv): string | null {
   return null;
 }
 
-/** Whether `bwrap` runs here with the namespaces containedInstall unshares (a host can refuse unprivileged user namespaces). */
-export function containmentWorks(bwrap = 'bwrap'): boolean {
-  return spawnSync(bwrap, ['--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--unshare-all', '--share-net', '--die-with-parent', '--', 'true'], { stdio: 'ignore' }).status === 0;
-}
-
 export interface ContainedInstall { command: string; args: string[] }
 /**
  * The install `argv` (npm ci, or pnpm's frozen install) for a checkout whose lifecycle scripts must not reach this host's authority. The
@@ -271,60 +264,4 @@ export function containedInstall(cwd: string, argv: readonly string[], env: Node
   for (const path of credentials) if (!hiddenRoot(path) || [...made, ...writable].some(exposed => within(path, exposed))) args.push('--tmpfs', path);
   args.push('--chdir', resolve(cwd), '--', ...argv);
   return { command: bwrap, args };
-}
-
-/**
- * A digest of everything a transpiler loads when the trusted unit runner passes it to `--import`:
- * the package `entry` resolves into and every package it depends on, found as node finds them
- * (a nested node_modules first, then each one above), each package's whole folder (a nested
- * node_modules added to shadow a dependency changes its parent's digest), and the node binary
- * that runs it. The candidate's `npm ci` runs lifecycle scripts as the runner's user, which can
- * write the harness's own node_modules; the runner records this digest before that install and
- * refuses to run, or to judge a run, when it differs afterwards.
- */
-export function loaderDigest(entry: string, node: string = process.execPath): string {
-  const file = entry.startsWith('file:') ? fileURLToPath(entry) : resolve(entry);
-  let root = dirname(file);
-  while (!existsSync(join(root, 'package.json')) || !/(^|\/)node_modules\/(@[^/]+\/)?[^/@]+$/.test(root)) {
-    if (dirname(root) === root) throw new Error(`${file} does not lie in an installed package`);
-    root = dirname(root);
-  }
-  const hash = createHash('sha256'), seen = new Set<string>(), queue = [root];
-  const walk = (path: string, label: string) => {
-    const info = lstatSync(path);
-    if (info.isSymbolicLink()) hash.update(`link ${label} ${readlinkSync(path)}\n`);
-    else if (info.isDirectory()) { hash.update(`dir ${label}\n`); for (const name of readdirSync(path).sort()) walk(join(path, name), `${label}/${name}`); }
-    else hash.update(`file ${label} ${info.mode} `).update(readFileSync(path)).update('\n');
-  };
-  while (queue.length) {
-    const directory = queue.shift()!;
-    if (seen.has(directory)) continue;
-    seen.add(directory); walk(directory, directory);
-    const manifest = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'));
-    for (const name of Object.keys({ ...manifest.dependencies, ...manifest.optionalDependencies, ...manifest.peerDependencies })) {
-      for (let at = directory; ; at = dirname(at)) {
-        const candidate = basename(at) === 'node_modules' ? null : join(at, 'node_modules', name);
-        if (candidate && existsSync(join(candidate, 'package.json'))) { queue.push(candidate); break; }
-        if (dirname(at) === at) break;
-      }
-    }
-  }
-  hash.update(`node ${node} `).update(readFileSync(node));
-  return hash.digest('hex');
-}
-
-/**
- * Why a TAP stream cannot decide the required titles, or null. The verdict of a required case is
- * read by its title, so each must report exactly once: a module the inventory imports can register
- * a later case under a required title, and a map keeping the last verdict would let that
- * duplicate's pass stand in for the protected case's failure.
- */
-export function repeatedRequiredTitle(tap: string, titles: string[]): string | null {
-  const counts = new Map<string, number>(titles.map(title => [title, 0]));
-  for (const line of tap.split(/\r?\n/)) {
-    const match = line.match(/^\s*(?:ok|not ok) \d+ - (.*?)(?: # (?:SKIP|TODO)\b.*)?$/);
-    if (match && counts.has(match[1])) counts.set(match[1], counts.get(match[1])! + 1);
-  }
-  const repeated = [...counts].find(([, count]) => count > 1);
-  return repeated ? `the required case "${repeated[0]}" reported ${repeated[1]} verdicts, so none of them identifies the protected case` : null;
 }

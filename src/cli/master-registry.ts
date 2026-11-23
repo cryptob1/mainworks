@@ -1,9 +1,12 @@
 import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import type { MasterConfig } from '../master.js';
-import { discoverHostLogins, installDirectory, proposeFleet } from '../fleet.js';
+import { discoverHostLogins, installDirectory, proposeFleet, type FleetLaunchAccount } from '../fleet.js';
+import { smokeRegistryAccount } from '../runner/roles.js';
+import type { SmokeResult } from '../runner/pi.js';
 import { seedPrices } from '../model/price-sheet.js';
-import { emptyRolePolicy, quotaStates, registryRoles, roleLimit, rolePolicy, type AgentRegistry } from '../model/registry.js';
+import { emptyRolePolicy, quotaStates, fleetRoles, roleLimit, rolePolicy, type AgentRegistry } from '../model/registry.js';
+import { unlaunchableLine, unlaunchableNext, workerAccounts } from '../master/worker-pool.js';
 
 export const registryHelp = [
   '  master registry               The fleet the control plane holds: every account with its runtime,',
@@ -46,7 +49,7 @@ const number = (value: string | undefined, flag: string) => { if (value === unde
  * holds the coordinator credential. A `set` names the entry and only what changes; the rest of an
  * existing entry stands. Every change carries a reason and appends to the registry's history.
  */
-export async function registryCommand(master: Pick<MasterConfig, 'hostId'>, args: string[], api: RegistryCommandApi, options: { directory?: string; home?: string; executables?: (name: string) => boolean; install?: (program: string) => string | null } = {}) {
+export async function registryCommand(master: Pick<MasterConfig, 'hostId'>, args: string[], api: RegistryCommandApi, options: { directory?: string; home?: string; executables?: (name: string) => boolean; install?: (program: string) => string | null; smoke?: (account: FleetLaunchAccount) => Promise<SmokeResult> } = {}) {
   const [collection, action, ...rest] = args;
   if (!collection) return api.read(`agent-registry?host=${encodeURIComponent(master.hostId)}`);
   if (collection === 'history') {
@@ -147,7 +150,7 @@ export async function registryCommand(master: Pick<MasterConfig, 'hostId'>, args
   const { values, positionals } = parseArgs({ args: rest, allowPositionals: true, options: { reason: { type: 'string' }, concurrency: { type: 'string' },
     arg: { type: 'string', multiple: true }, tool: { type: 'string', multiple: true }, model: { type: 'string' }, 'clear-policy': { type: 'boolean' } } });
   const [name, list] = positionals;
-  if (!(registryRoles as readonly string[]).includes(name ?? '') || !values.reason) throw new Error(`Use master registry role set ${registryRoles.join('|')} ACCOUNT[,ACCOUNT…] [--concurrency N] [--arg=A]… [--tool T]… [--model M] [--clear-policy] --reason REASON`);
+  if (!(fleetRoles as readonly string[]).includes(name ?? '') || !values.reason) throw new Error(`Use master registry role set ${fleetRoles.join('|')} ACCOUNT[,ACCOUNT…] [--concurrency N] [--arg=A]… [--tool T]… [--model M] [--clear-policy] --reason REASON`);
   const existing = current.roles.find(role => role.name === name);
   const accounts = list === undefined ? existing?.accounts : list.split(',').map(entry => entry.trim()).filter(Boolean);
   const concurrency = number(values.concurrency, '--concurrency') ?? existing?.concurrency;
@@ -155,8 +158,24 @@ export async function registryCommand(master: Pick<MasterConfig, 'hostId'>, args
   // The policy is changed only where a flag names it; --clear-policy starts it from empty. `--model none` drops the override.
   const base = values['clear-policy'] ? emptyRolePolicy() : rolePolicy(existing);
   const policy = { ...base, ...defined({ args: values.arg, tools: values.tool?.flatMap(entry => entry.split(',').map(tool => tool.trim()).filter(Boolean)), model: values.model === undefined ? undefined : values.model === 'none' ? null : values.model }) };
+  if (name === 'worker') await smokeNewPiWorkers(master.hostId, current, accounts.filter(account => !existing?.accounts.includes(account)), options.smoke ?? smokeRegistryAccount);
   const empty = !policy.args.length && !policy.tools.length && policy.model === null;
   return api.write('agent-registry/roles', { role: { name, accounts, concurrency, ...(empty && !existing?.policy ? {} : { policy }) }, reason: values.reason });
+}
+
+/**
+ * GY-3721: a Pi account on this host joins the worker role only once one prompt, launched as its
+ * worker is (its home on PI_CODING_AGENT_DIR, provider and model from the registry id), answers.
+ */
+async function smokeNewPiWorkers(host: string, registry: AgentRegistry, added: string[], smoke: (account: FleetLaunchAccount) => Promise<SmokeResult>) {
+  for (const name of added) {
+    const account = registry.accounts.find(entry => entry.name === name), runtime = registry.runtimes.find(entry => entry.name === account?.runtime);
+    if (!account || runtime?.launch.kind !== 'pi' || account.credential.host !== host) continue;
+    const modelId = registry.models.find(model => model.name === account.model)?.id ?? null;
+    const result = await smoke({ name, kind: 'pi', home: account.credential.home, key: account.credential.key ?? null,
+      fleet: { runtime: runtime.name, contract: runtime.launch, model: account.model, modelId, session: 'smoke', reason: 'worker role smoke', role: 'worker' } });
+    if (!result.ok) throw new Error(`${name} cannot build: its worker launch did not authenticate: ${(result.error ?? 'no answer').replace(/\s+/g, ' ').trim()}. Log it in, then set the role again.`);
+  }
 }
 
 /**
@@ -171,8 +190,10 @@ export async function workersCommand(args: string[], api: RegistryCommandApi) {
   const concurrency = args[0] === undefined ? role.concurrency : Number(args[0]);
   if (!Number.isInteger(concurrency) || concurrency < 0) throw new Error('Use master workers N, the worker sessions each account of the worker role runs at once');
   if (concurrency !== role.concurrency) await api.write('agent-registry/roles', { role: { name: 'worker', accounts: role.accounts, concurrency, ...(role.policy ? { policy: role.policy } : {}) }, reason: `master workers ${concurrency}` });
-  return { allowed: roleLimit({ ...role, concurrency }), accounts: role.accounts, perAccount: concurrency,
-    line: `${roleLimit({ ...role, concurrency })} workers allowed: ${role.accounts.length} account${role.accounts.length === 1 ? '' : 's'} × ${concurrency} each; master status shows workers running/allowed` };
+  // GY-3730: only accounts a worker launch can start are capacity; the rest are named on the same line.
+  const { launchable, unlaunchable } = workerAccounts(current), allowed = roleLimit({ ...role, accounts: launchable, concurrency });
+  return { allowed, accounts: launchable, unlaunchable, perAccount: concurrency,
+    line: [`${allowed} workers allowed: ${launchable.length} account${launchable.length === 1 ? '' : 's'} × ${concurrency} each; master status shows workers running/allowed.`, unlaunchable.length ? `${unlaunchableLine(unlaunchable)} ${unlaunchableNext}.` : null].filter(Boolean).join(' ') };
 }
 
 /**

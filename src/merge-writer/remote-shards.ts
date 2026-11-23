@@ -12,6 +12,7 @@ import type { ChildRun } from '../child-runner.js';
 import { shellQuote } from '../shell-quote.js';
 import { hostKnownHostsFile, probeHost, readHosts, sshTarget, type HostReading as HostProbe } from '../hosts.js';
 import { trialContainerFault, trialHotCelsius } from './trial-load.js';
+import { stateDirectory } from '../install/layout.js';
 
 /** One host's reading: cores, cores busy (1-minute load), the share of CPU stolen, and its hottest CPU sensor against the heat limit. */
 export interface HostReading { name: string; cores: number; busy: number; steal: number; celsius: number | null; limit: number; away: boolean; reason?: string; /** GY-3645: its shim runs a check's Compose services. */ compose?: boolean }
@@ -41,8 +42,8 @@ export const localOnlyTestPattern = /docker|bwrap|unshare|landlock|hard-math|del
 export const remoteableTestFile = (text: string) => !localOnlyTestPattern.test(text);
 
 /** GY-3612, GY-3656: a test file that drives a browser — a Playwright spec under browser-tests/, or a file naming playwright, chromium or projectCaseSuite. */
-export const browserTestPattern = /playwright|chromium|projectCaseSuite/i;
-export const isBrowserTestFile = (file: string, text: string) =>
+const browserTestPattern = /playwright|chromium|projectCaseSuite/i;
+const isBrowserTestFile = (file: string, text: string) =>
   /^browser-tests\/.*\.spec\.[cm]?[jt]sx?$/i.test(file) || browserTestPattern.test(text);
 
 /** GY-3612: whether `image` ships a Playwright browser (its ENV names PLAYWRIGHT_BROWSERS_PATH, as the trial image does). */
@@ -166,7 +167,7 @@ export async function runShardsOnHosts<R>(input: { count: number; hosts: readonl
 /** OpenSSH's default MaxSessions: the sessions one connection carries at once. */
 const sessionsPerConnection = 10;
 /** GY-3534: the new SSH connections a trial opens to one host at most; a burst of one per shard reads as resets from the host's sshd. */
-export const connectionsPerHost = 3;
+const connectionsPerHost = 3;
 
 /** A trial owns its SSH config: resolve only the user's aliases, never the system config/includes.
  * Keep connection and host-key settings; commands, forwarding and system includes do not travel.
@@ -226,7 +227,7 @@ export interface RemoteShardEnd { ok: boolean; out: string; status: number | nul
 /** The name of this checkout's mirror on a host (~/.graphyard/mirrors/NAME.git): one per checkout this install trials from. */
 export const mirrorName = (root: string) => `${createHash('sha1').update(root).digest('hex').slice(0, 8)}-${basename(root).replace(/[^A-Za-z0-9._-]/g, '-')}`.slice(0, 100);
 /** The warm image for a trial image's digest and a lockfile's hash (`none` without one): dependencies installed once, then reused. */
-export const warmImageTag = (digest: string, lockHash: string) => `graphyard-warm:${digest.replace(/^sha256:/, '').slice(0, 12)}-${lockHash.slice(0, 12)}`;
+const warmImageTag = (digest: string, lockHash: string) => `graphyard-warm:${digest.replace(/^sha256:/, '').slice(0, 12)}-${lockHash.slice(0, 12)}`;
 
 /**
  * One trial's remote hosts. The warm image — the trial image with the commit's locked dependencies
@@ -283,6 +284,9 @@ export function remoteShardSession(input: { root: string; sha: string; image: st
   };
   const ready = new Map<string, Promise<string>>();
   return {
+    /** GY-3405: the run directory on `target` holding the commit's checkout, made once: what a remote agent session runs in. */
+    ready(target: string) { if (!ready.has(target)) ready.set(target, prepare(target)); return ready.get(target)!; },
+    shim,
     /** Run one shard on `target` through the shim: its files, `argv(list, records)` run by the trial launcher there with `cpus` CPUs, the output and records brought back. */
     async run(target: string, index: number, files: readonly string[], argv: (list: string, records: string) => string[], cpus: number): Promise<RemoteShardEnd> {
       if (!ready.has(target)) ready.set(target, prepare(target));
@@ -327,7 +331,7 @@ export function remoteShardSession(input: { root: string; sha: string; image: st
 
 /** One trial's shard record, for master status: what ran them, wall time, shards run and run remotely, waits while a host idled, and each host's reading. */
 export interface RemoteShardRun { /** GY-3526: the worker verification that ran them; absent for a merge trial. */ label?: string; at: string; wallMs: number; shards: number; remote: number; queuedWhileIdle: number; host: string; celsius: number | null; hosts: { name: string; away: boolean; reason?: string; celsius: number | null; freeCores: number }[] }
-export const remoteShardRecordPath = (root: string) => join(root, '.graphyard', 'remote-shards.json');
+const remoteShardRecordPath = (root: string) => join(stateDirectory(root), 'remote-shards.json');
 const keptRuns = 20;
 
 export async function recordRemoteShardRun(root: string, run: RemoteShardRun): Promise<void> {

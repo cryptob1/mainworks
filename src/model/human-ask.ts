@@ -9,7 +9,7 @@
 // it goes in REASON, which the card folds away under "Details for agents".
 // ---------------------------------------------------------------------------
 
-export const askLimits = { ask: 140, steps: 5, step: 160, why: 200 } as const;
+const askLimits = { ask: 140, steps: 5, step: 160, why: 200 } as const;
 
 // URLs are left alone: "open github.com/settings/apps" is a step a person takes, not a path.
 const url = /\bhttps?:\/\/\S+|\b[\w-]+(?:\.[\w-]+)*\.(?:com|org|net|io|dev|app|ai)\/\S*/gi;
@@ -20,7 +20,7 @@ const jargon: [string, RegExp][] = [
   ['a file path', /(?:^|[\s`'"(])(?:~|\.{1,2})?\/[\w.-]+(?:\/[\w.-]*)*|\b[\w.-]+\/[\w.-]+\/[\w./-]*|\b[\w-]+\/[\w-]+\.\w{1,5}\b|\b[\w-]+\.(?:ts|tsx|js|mjs|cjs|json|md|ya?ml|sh|pem|env|toml|txt|css|html)\b/],
 ];
 /** The agent shorthand a line a human reads carries, as "a commit sha (abc1234)", or null when it has none. */
-export function jargonIn(text: string): string | null {
+function jargonIn(text: string): string | null {
   const plain = text.replace(url, ' ');
   for (const [what, pattern] of jargon) {
     const found = pattern.exec(plain);
@@ -49,7 +49,7 @@ export function shortAskIssues(data: { ask?: string; steps?: readonly string[]; 
 }
 
 /** The first sentence of a longer text, cut to a readable length. */
-export function firstSentence(text: string, limit = askLimits.ask + askLimits.step) {
+function firstSentence(text: string, limit = askLimits.ask + askLimits.step) {
   const sentence = text.trim().split(/(?<=[.!?])\s+/)[0] ?? '';
   return sentence.length > limit ? `${sentence.slice(0, limit - 1).trimEnd()}…` : sentence;
 }

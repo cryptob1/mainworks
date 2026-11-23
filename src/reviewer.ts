@@ -58,6 +58,7 @@ import { startReviewServe, stopReviewServe } from './review-serve.js';
 import { freePort } from './serve-app.js';
 import { runEnvironment } from './runner/pi.js';
 import { browserInstallCommand, browserToolName, provisionBrowserTool } from './browser-tool.js';
+import { stateDirectory } from './install/layout.js';
 export { controlPlaneFindingSection } from './review-prompt.js';
 export { reviewStandard, reviewStandards, repetitionReviewSection, repeatingPaths, touchesRepeatingPath } from './review-prompt.js';
 export { simplicityParagraph, blockingStandardSection, postDeployReviewSection, singleCaseReviewSection, criteriaRuleSection, criteriaVerdictRule } from './review-prompt.js';
@@ -210,7 +211,7 @@ export function releaseClosedRequests(records: LedgerRecord[], work: Work[], now
 
 export async function readReviewLedger(root: string): Promise<ReviewLedger> {
   const client = await loopStateClient(root);
-  await migrateLoopFile(client, 'reviews', resolve(root, reviewLedgerSpec.path), value => reviewLedgerSchema.parse(value).reviews);
+  await migrateLoopFile(client, 'reviews', resolve(stateDirectory(root), 'reviews.json'), value => reviewLedgerSchema.parse(value).reviews);
   const reviews = (await client.read('reviews')).map(record => reviewRecordSchema.parse(record));
   return ledgerSnapshot({ version: 1, reviews }, reviews);
 }
@@ -345,7 +346,7 @@ export async function saveReviewerProfile(root: string, profileInput: unknown) {
   const config = await loadStoredMasterConfig(root);
   if (config.reviewers.some(item => item.name === profile.name || item.agentName === profile.agentName)) throw new Error('Reviewer profile name and agent name must be unique');
   if (config.workers.some(item => item.agentName === profile.agentName)) throw new Error('A worker profile already uses that Herdr agent name');
-  await atomicPrivateWrite(resolve(root, '.graphyard/master.json'), { ...config, reviewers: [...config.reviewers, profile] });
+  await atomicPrivateWrite(resolve(stateDirectory(root), 'master.json'), { ...config, reviewers: [...config.reviewers, profile] });
   const launch = agentLaunchPlan(profile.kind, profile.approvals, profile.agentArgs, profile.environment);
   return { added: profile.name, agentName: profile.agentName, kind: profile.kind, reviewers: config.reviewers.length + 1, launch };
 }
@@ -358,7 +359,7 @@ export async function removeReviewerProfile(root: string, name: string) {
   const reviewers = config.reviewers.filter(item => item.name !== name);
   const clearedAutomatic = config.run.reviewerProfile === name;
   const run = { ...config.run }; if (clearedAutomatic) delete run.reviewerProfile;
-  await atomicPrivateWrite(resolve(root, '.graphyard/master.json'), { ...config, reviewers, run });
+  await atomicPrivateWrite(resolve(stateDirectory(root), 'master.json'), { ...config, reviewers, run });
   return { removed: name, agentName: removed.agentName, reviewers: reviewers.length, clearedAutomatic,
     automatic: run.reviewerProfile ?? (reviewers.length === 1 ? reviewers[0].name : null),
     next: reviewers.length ? 'master run adopts the change on its next tick' : 'No reviewer profile remains; review requests wait until one is added with master reviewer add' };

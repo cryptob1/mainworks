@@ -14,7 +14,7 @@ export interface WorkerCredentials {
   missing: string[];
 }
 
-export const workerCredentialFile = (directory: string, principal: string) => resolve(directory, 'workers', `${principal}.token`);
+const workerCredentialFile = (directory: string, principal: string) => resolve(directory, 'workers', `${principal}.token`);
 
 const usable = async (file: string) => { const text = await readFile(file, 'utf8').catch(() => null); return text !== null && !!text.trim() ? text : null; };
 

@@ -10,6 +10,7 @@ import type { MasterConfig } from './profiles.js';
 import { assertOutsideWorktrees } from '../private-file.js';
 import { stopProcessesUnder } from '../session-processes.js';
 import { agentOwner, type AttentionItem } from './attention.js';
+import { stateDirectory } from '../install/layout.js';
 
 /*
  * Assignment worktrees are the loop's largest consumer of disk: every attempt checks the
@@ -20,7 +21,7 @@ import { agentOwner, type AttentionItem } from './attention.js';
 /** The dependency trees a package manager recreates from the lockfile. */
 export const dependencyDirectories = ['node_modules'] as const;
 export const lockfiles = ['package-lock.json'] as const;
-export const worktreesDirectory = (root: string) => resolve(root, '.graphyard/worktrees');
+export const worktreesDirectory = (root: string) => resolve(stateDirectory(root), 'worktrees');
 export { failureText } from '../disk-space.js';
 
 /** Free space on the volume holding a path, as the kernel reports it to this user. */
@@ -55,7 +56,7 @@ export async function removeAttemptWorktree(root: string, path: string, run: Chi
 }
 
 /** Where a removed worktree's commits that no branch or remote held stay reachable (GY-3279): `<KEY>-<ATTEMPT>`, the worktree's own name. */
-export const preservedRefPrefix = 'refs/graphyard/preserved/';
+const preservedRefPrefix = 'refs/graphyard/preserved/';
 /** A worktree's HEAD is the only name its detached commits have: before the tree goes, a HEAD on no branch and no remote gets a ref of its own. */
 async function preserveDetachedHead(root: string, target: string, run: ChildRun): Promise<void> {
   const git = async (...args: string[]) => String(await run('git', ['-C', target, ...args])).trim();
@@ -123,8 +124,8 @@ export async function managedRootStatus(root: string, config: MasterConfig, sess
  * Either way the install must answer for this exact head — the same lockfile, byte for byte — and a
  * worktree that already has an install of its own is reported and left exactly as it is.
  */
-export const sharedInstallMarker = '.graphyard-shared';
-export interface SharedDependency { name: string; source: string; how: 'reachable' | 'mirrored' }
+const sharedInstallMarker = '.graphyard-shared';
+interface SharedDependency { name: string; source: string; how: 'reachable' | 'mirrored' }
 export interface SharedDependencies { shared: SharedDependency[]; skipped: { name: string; reason: string }[] }
 export async function shareDependencies(root: string, worktree: string): Promise<SharedDependencies> {
   const shared: SharedDependency[] = [], skipped: { name: string; reason: string }[] = [];
@@ -172,7 +173,7 @@ async function reachableInstall(worktree: string, name: string): Promise<string 
   }
 }
 /** The install a worktree's dependency directory mirrors, or null when it is the worktree's own. */
-export async function sharedInstallSource(target: string): Promise<string | null> {
+async function sharedInstallSource(target: string): Promise<string | null> {
   const marker = await readFile(resolve(target, sharedInstallMarker), 'utf8').catch(() => null);
   return marker?.trim() || null;
 }
@@ -197,7 +198,7 @@ async function compatibleInstall(installed: string, worktree: string): Promise<t
 /** The child runner a preparation runs its git through: `workerCommand`'s shape. */
 export type PrepareRun = (command: string, args: string[], options?: { cwd?: string; env?: NodeJS.ProcessEnv; stdio?: ('ignore' | 'pipe' | 'inherit')[] }) => string | Buffer | Promise<string | Buffer>;
 /** How many recent cycles' shared fetches are kept beyond those a queued launch still holds (holdCycleBase). */
-export const retainedCycleFetches = 8;
+const retainedCycleFetches = 8;
 const cycleBaseFetches = new Map<string, { cycle: string; tip: Promise<string> }>();
 const cycleHolds = new Map<string, number>();
 /** Drops the oldest fetches no queued launch holds until the bound is met; a held cycle's tip is never dropped. */
@@ -207,24 +208,6 @@ function trimCycleFetches() {
     if (unheld <= retainedCycleFetches) return;
     if (!cycleHolds.has(entry.cycle)) { cycleBaseFetches.delete(key); unheld -= 1; }
   }
-}
-/**
- * Holds a dispatch cycle's fetched tip for a launch queued on it: the loop's launcher runs launches
- * after the cycle that chose them, cycles later under load, and every launch a cycle queued must
- * prepare from the tip that cycle fetched, never fetch again for a newer one. Taken when the launch
- * is queued and given back, once, by the function it returns when the launch settles; while any
- * launch holds the cycle, the bound never drops its fetch.
- */
-export function holdCycleBase(cycle: string): () => void {
-  cycleHolds.set(cycle, (cycleHolds.get(cycle) ?? 0) + 1);
-  let held = true;
-  return () => {
-    if (!held) return;
-    held = false;
-    const left = (cycleHolds.get(cycle) ?? 1) - 1;
-    if (left > 0) cycleHolds.set(cycle, left); else cycleHolds.delete(cycle);
-    trimCycleFetches();
-  };
 }
 /**
  * The tip of `baseBranch` that one fetch of origin holds. A preparation without a cycle fetches
@@ -262,4 +245,4 @@ export async function remoteFetchProbe(root: string): Promise<string | null> {
   catch (error: any) { return (String(error?.stderr ?? '').trim() || String(error?.message ?? error)).split('\n').filter(Boolean).join(' ').slice(0, 400); }
 }
 
-export { diskExhaustion, reclaimAdvice, exhaustedPath, diskExhaustionMessage, writeFailure } from '../disk-space.js';
+export { diskExhaustion, reclaimAdvice,  diskExhaustionMessage, writeFailure } from '../disk-space.js';

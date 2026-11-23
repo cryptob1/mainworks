@@ -1,8 +1,8 @@
 import { trialOverloadFault } from '../merge-writer/trial-cpu.js';
 import { timedMergePorts, trialStepMedians } from './trial-timings.js';
 import type { TrialStepReport } from '../merge-writer/trial.js';
-import { mergeWriterKeptQueue, mergeWriterKeptRefusals, mergeWriterKeptReworks, mergeWriterKeptTimeouts, mergeWriterTrialTimeoutRefusals, mergeWriterKeptUnconfirmed, mergeWriterUnconfirmedReplays, serveRevertsKept, type PendingRework, type UnconfirmedRecord, type MergeWriterState, type RevertFlight } from './merge-writer-state.js';
-export { mergeWriterKeptQueue, mergeWriterKeptRefusals, mergeWriterKeptReworks, mergeWriterKeptTimeouts, mergeWriterTrialTimeoutRefusals, mergeWriterKeptUnconfirmed, mergeWriterUnconfirmedReplays, pendingReworkSchema, unconfirmedRecordSchema, mergeWriterStateSchema, emptyMergeWriterState, type PendingRework, type UnconfirmedRecord, type MergeWriterState, type RevertFlight } from './merge-writer-state.js';
+import { mergeWriterKeptQueue, mergeWriterKeptRefusals, mergeWriterKeptReworks, mergeWriterKeptTimeouts, mergeWriterTrialTimeoutRefusals, mergeWriterKeptUnconfirmed, mergeWriterUnconfirmedReplays, type PendingRework, type UnconfirmedRecord, type MergeWriterState, type RevertFlight } from './merge-writer-state.js';
+export { mergeWriterKeptQueue, mergeWriterKeptRefusals, mergeWriterKeptReworks,   mergeWriterKeptUnconfirmed, mergeWriterUnconfirmedReplays,   mergeWriterStateSchema, emptyMergeWriterState,   type MergeWriterState, type RevertFlight } from './merge-writer-state.js';
 // Concern: the control-plane merge executor's cycle step (GY-1524) — reconcile open intents, pick the next head, run one merge beside the cycle and record what it did.
 import { randomUUID } from 'node:crypto';
 import { availableParallelism } from 'node:os';
@@ -263,13 +263,14 @@ function cancellableTrials(ports: MergeWriterReads, trials: Set<RunningTrial>): 
     return Promise.race([trial, cancelled]).finally(() => trials.delete(running));
   } };
 }
-/** GY-3099: why a running trial carrying `key`'s `head` no longer counts: the item is gone, was returned for rework, or carries a new head. */
-export function carriedHeadStale(work: readonly Work[], key: string, head: string): string | null {
+/** GY-3099: why a running trial carrying `key`'s `head` no longer counts: the item is gone, was returned for rework, was held, or carries a new head. */
+function carriedHeadStale(work: readonly Work[], key: string, head: string): string | null {
   const item = work.find(entry => entry.key === key);
   if (!item) return `${key} is no longer available`;
   const current = item.candidate?.sha.toLowerCase() ?? null;
   if (current !== head) return `${key}'s head ${head.slice(0, 12)} was replaced by ${current ? current.slice(0, 12) : 'no candidate'}`;
   if (item.reworkRequested) return `${key}'s head ${head.slice(0, 12)} was returned for rework`;
+  if (item.hold) return `${key} was held`; // GY-3728: a held item cannot merge, so its trial frees its slot
   return null;
 }
 /** Resolves once the merge in flight for `state` has settled; for the step's tests. */
@@ -279,7 +280,7 @@ const itemPreviews = new WeakMap<DaemonState, Map<string, LivePreview>>();
 export const mergeWriterInFlight = (state: DaemonState) => [...flights.get(state) ?? []].some(flight => !flight.settled);
 export const mergeWriterIdle = async (state: DaemonState) => { for (let waited = 0; mergeWriterInFlight(state) && waited < 600_000; waited += 5) await new Promise(resolve => setTimeout(resolve, 5)); };
 /** The action key a merge of `key`'s `head` is recorded under. */
-export const mergeWriterActionKey = (key: string, head: string) => `merge-writer:${key}:${head}`;
+const mergeWriterActionKey = (key: string, head: string) => `merge-writer:${key}:${head}`;
 /** The ledger states the snapshot carries, by item key: what `mergeQueue` and `reconcileIntents` read. */
 export const snapshotLedger = (work: readonly Work[]): Record<string, MergeLedgerState> => Object.fromEntries(work.flatMap(item => item.mergeLedger ? [[item.key, item.mergeLedger] as const] : []));
 /** The rework a failed trial grounds (AC-3): its binding names the head and the ground, as every loop rework does, so the server's lane rework finds it. */
@@ -350,14 +351,14 @@ export function trialShareAllowance(share: number | undefined, timeoutMs?: numbe
  * tip move another head's landing makes (GY-3120), one cycle's allowance per head that can trial at once
  * (`run.mergeWriter.parallel`, plus the diagnostic flight) — the bound a held head's motion is judged inside (owed-report.ts `mergeWriterMotionBound`).
  */
-export const mergeWriterFlightBoundMs = (run: { intervalSeconds?: number; mergeWriter?: { parallel?: number } }) =>
+const mergeWriterFlightBoundMs = (run: { intervalSeconds?: number; mergeWriter?: { parallel?: number } }) =>
   ((run.mergeWriter?.parallel ?? defaultMergeWriterParallel) + 1) * (trialTimeoutMinutes * 60_000 + (run.intervalSeconds ?? 20) * 1000);
 
 /**
  * GY-2053: what one recorded write says, as the reader reads it — the attempt step the writer's summary reports as its newest movement.
  * Every ledger write a flight or a reconcile makes is attempt progress: an intent, a trial verdict, a push, a reconcile.
  */
-export const attemptProgressLine = (item: { key: string }, event: MergeRecordEvent): string => {
+const attemptProgressLine = (item: { key: string }, event: MergeRecordEvent): string => {
   const sha = (value: unknown) => typeof value === 'string' && value ? value.slice(0, 12) : null;
   switch (event.kind) {
     case 'intent': return `${item.key}'s head ${sha(event.head)} recorded its merge intent on base tip ${sha(event.baseTip)} as merge ${sha(event.mergeSha)}`;
@@ -377,7 +378,7 @@ export const attemptProgressLine = (item: { key: string }, event: MergeRecordEve
  * Each write is also the attempt progress the summary reports (GY-2053), recorded before it is
  * sent: the write itself is the writer moving, whatever its reply turns out to be.
  */
-export function attemptRecorder(writer: MergeWriterState, record: MergePorts['record'], attempt: string, at: () => string): MergePorts['record'] {
+function attemptRecorder(writer: MergeWriterState, record: MergePorts['record'], attempt: string, at: () => string): MergePorts['record'] {
   let next = 0;
   return async (item, event) => {
     const mergeAttempt = { id: attempt, write: next++ };
@@ -450,7 +451,7 @@ export const mergeWriterReworkKey = (key: string, head: string) => `${mergeWrite
  * transient failure never loses the rework. Without the decision effects the record waits, named
  * for the operator. Answers whether the state changed.
  */
-export async function requestPendingReworks(cycle: Pick<Cycle, 'state' | 'effects' | 'now' | 'snapshot' | 'performed'>): Promise<boolean> {
+async function requestPendingReworks(cycle: Pick<Cycle, 'state' | 'effects' | 'now' | 'snapshot' | 'performed'>): Promise<boolean> {
   const { state, effects, now, snapshot, performed } = cycle;
   const writer = state.mergeWriter;
   const at = () => new Date(now()).toISOString();
@@ -1169,5 +1170,5 @@ export const mergeWriterSummary = (writer: MergeWriterState | null | undefined, 
   const inFlight = writer.inFlight && timed(writer.inFlight);
   return { trials: writer.trials, stepMedians: trialStepMedians(writer.trials ?? []), queue: writer.queue, inFlight, ...(writer.inFlights ? { inFlights: writer.inFlights.map(timed) } : {}), lastMergeAt: writer.lastMergeAt, refusals: writer.refusals, reworks: writer.reworks, progress: writer.progress, motionBoundMs: writer.motionBoundMs, serveRevert: writer.serveRevert };
 };
-export type { MergeRecordEvent };
-export { serveRevertsKept };
+;
+;

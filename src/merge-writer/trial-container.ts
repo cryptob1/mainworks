@@ -14,10 +14,11 @@ import { randomUUID } from 'node:crypto';
 import { trialAdmission, type TrialLoad } from './trial-load.js';
 import { appArmorEnabled, trialAppArmorProfile } from './trial-apparmor.js';
 import { setting } from '../setting.js';
+import { stateDirectory } from '../install/layout.js';
 
 export const trialContainerImage = 'mainworks-trial:local', legacyTrialContainerImage = 'graphyard-trial:local';
 /** GY-3214: where an install names the published trial image it pulled for the release tree at `root`. */
-export const pulledTrialImageFile = (root: string) => join(root, '.graphyard', 'trial-image');
+export const pulledTrialImageFile = (root: string) => join(stateDirectory(root), 'trial-image');
 /** The image trials run: GRAPHYARD_TRIAL_IMAGE, else the published image the install pulled for this release, else the one built on this host. */
 export function trialImage(root = fileURLToPath(new URL('../..', import.meta.url))): string {
   if (setting('TRIAL_IMAGE')) return setting('TRIAL_IMAGE')!;

@@ -1,12 +1,6 @@
 import type { Work } from './work.js';
 import type { QueueCarry, TipMerge } from './carry.js';
 
-/** The carry decisions on record that moved bindings onto `sha`, under the current policy: a base refresh's. */
-export function onto(work: Pick<Work, 'baseRefresh' | 'policyRevision'>, sha: string): QueueCarry[] {
-  const carry = work.baseRefresh?.carry;
-  return carry && carry.to.sha === sha && carry.policyRevision === work.policyRevision ? [carry] : [];
-}
-
 /**
  * The record of the control plane bringing an in-flight candidate onto a base branch that moved
  * under it: the head it republished on the new base, or the conflict that stopped it. While a
@@ -46,22 +40,13 @@ export interface BaseRefresh {
   conflictSince?: string | null;
 }
 /**
- * GY-1200. When the conflict a refresh records was first found on this head: the earlier record's
- * own first conflict when it conflicted on the same head and policy revision, else the refresh's own time.
- */
-export function conflictSince(previous: Pick<BaseRefresh, 'from' | 'policyRevision' | 'at' | 'conflict' | 'conflictSince'> | null | undefined, refresh: Pick<BaseRefresh, 'from' | 'policyRevision' | 'at' | 'conflict'>): string | null {
-  if (!refresh.conflict) return null;
-  const same = !!previous?.conflict && previous.from.sha === refresh.from.sha && previous.policyRevision === refresh.policyRevision;
-  return same ? previous!.conflictSince ?? previous!.at : refresh.at;
-}
-/**
  * The coordinator's request that a base tip be merged into this head although no conflict is
  * reported (GY-528): the head carries a base failure the base has since repaired. Kept beside
  * `baseRefresh`, not in it, so an approval an earlier refresh carried onto the head still binds until this one runs.
  */
 export interface BaseRefreshRequest { head: string; base: string; policyRevision: number; by: string; at: string; reason: string }
 /** Why a branch was written by the control plane rather than by its worker (GY-375, GY-528). */
-export type RefreshTrigger = 'conflict confirmed' | 'base failure repaired';
+type RefreshTrigger = 'conflict confirmed' | 'base failure repaired';
 
 /**
  * The refresh this candidate is waiting for, or null when it needs none (GY-292): only a candidate

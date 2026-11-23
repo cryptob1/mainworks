@@ -18,12 +18,12 @@ import type { PreviewableApplication as Application, ProjectDelivery } from '../
 import type { Work } from '../model/work.js';
 import { heldEntries, heldOpenPaths, readTempOwner, tempOwnerGone, tempOwnerJudgeable, tempOwnerMarker, tmpReclaimMinAgeMs, treeLastWritten, writeTempOwner } from '../tmp-reclaim.js';
 
-export { serveStaticSite, type StaticUat } from './serve-head.js';
+export { serveStaticSite,  } from './serve-head.js';
 
 /** One case's result on the preview; an `unrun` case names why in `reason` (a declared install secret the preview withholds). */
-export interface PreviewCase { case: string; verdict: 'passed' | 'failed' | 'flaky' | 'unrun'; required: boolean; reason?: string }
+interface PreviewCase { case: string; verdict: 'passed' | 'failed' | 'flaky' | 'unrun'; required: boolean; reason?: string }
 /** The preview's verdict: `pass`, `fail` (a declared case failed, the change's cases did not load, or it could not be served; `failed` names them), `timeout`, or `error` (the preview itself could not run). */
-export interface PreviewVerdict { result: 'pass' | 'fail' | 'timeout' | 'error'; mergeSha: string; cases: PreviewCase[]; failed: string[]; detail: string; durationMs: number }
+interface PreviewVerdict { result: 'pass' | 'fail' | 'timeout' | 'error'; mergeSha: string; cases: PreviewCase[]; failed: string[]; detail: string; durationMs: number }
 
 /** How many previews run at once on one host. */
 export const previewConcurrency = 2;
@@ -366,7 +366,7 @@ const mediaTypes: Record<string, string> = { '.html': 'text/html; charset=utf-8'
  * the build output is published. A site past `previewSiteFileLimit` files or `previewSiteByteLimit`
  * bytes, or naming a file no link can address, is refused, naming why.
  */
-export async function readPreviewSite(directory: string): Promise<PreviewSiteFile[]> {
+async function readPreviewSite(directory: string): Promise<PreviewSiteFile[]> {
   const files: PreviewSiteFile[] = [];
   let bytes = 0;
   const walk = async (relative: string) => {

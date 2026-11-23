@@ -4,7 +4,7 @@ const defaultProductionEnvironment = 'production';
 const time = (value: string | null | undefined) => { const parsed = Date.parse(value ?? ''); return Number.isFinite(parsed) ? parsed : null; };
 
 /** What the production watch observes about production: merged items not served yet, those with an open deployment incident, and when it last looked. */
-export interface ProductionHold {
+interface ProductionHold {
   unserved: ReadonlySet<string>;
   failed: ReadonlySet<string>;
   observedAt: number | null;

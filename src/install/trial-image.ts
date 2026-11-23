@@ -8,7 +8,7 @@ import { setting } from '../setting.js';
 
 /** GY-3188: trial images build on Mainworks's own builder, so its cache is pruned without touching another project's. */
 export const trialBuilder = 'mainworks-trial';
-export const trialBuilderCreateArgs = ['buildx', 'create', '--name', trialBuilder, '--driver', 'docker-container'];
+const trialBuilderCreateArgs = ['buildx', 'create', '--name', trialBuilder, '--driver', 'docker-container'];
 export const trialImageBuildArgs = (root: string) => ['buildx', 'build', '--builder', trialBuilder, '--load', '--target', 'trial', '--tag', trialContainerImage, root];
 /** `published` (GY-3214) is the trial image Mainworks published for the source checkout's commit, null for a tree no published image holds. */
 export const trialImagePlan = (ctx: Pick<AdapterContext, 'sourceRoot'>, published: string | null): PlanAction => ({
@@ -41,7 +41,7 @@ export const provisionTrialAppArmor = async (ctx: AdapterContext, enabled = appA
 };
 
 /** GY-3328: the trial image could not be provisioned on this host — the trial host's fault, never a head's: no verdict, no rework. */
-export const trialImageMissingPrefix = 'Trial-host fault: the trial image ';
+const trialImageMissingPrefix = 'Trial-host fault: the trial image ';
 export const trialImageMissingFault = (error: unknown): string | null => {
   const message = error instanceof Error ? error.message : String(error);
   return message.startsWith(trialImageMissingPrefix) ? message : null;

@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { contractFile, describeStep, loadContract, registeredRevision, scenarioDefinition, type Api, type CaseFile, type E2eStep, type ReleaseContract } from './case.js';
+import { describeStep, registeredRevision, scenarioDefinition, type Api, type CaseFile, type E2eStep, type ReleaseContract } from './case.js';
 import { checkoutRepositoryPolicy, repositoryPolicy } from '../model-boundary/repository-policy.js';
 import { type RepositoryPolicy } from '../model/repository-policy.js';
 import { E2eHostError, installSecretsDirectory, loadSecrets, redact, redactValues, runAgentStep, runCommandStep, runProcess, stepEnvironment, type CompareJudge, type ProcessRunner, type StepRecord } from './steps.js';
@@ -26,12 +25,12 @@ import { importedEvidenceArtifacts, type EvidenceArtifact } from '../model/evide
  * the checkout `root` names, with `TARGET_URL` and the case's declared secrets — read from the
  * install's `e2e-secrets.<target>.env` before the case runs — and nothing else Mainworks holds.
  */
-export const defaultStepTimeoutMs = 30_000;
+const defaultStepTimeoutMs = 30_000;
 
 /** The slice of Playwright's chromium the browser steps drive; tests substitute their own. */
 export interface E2eLauncher { launch(options: { headless: boolean }): Promise<E2eBrowser> }
-export interface E2eBrowser { newPage(): Promise<E2ePage>; close(): Promise<void> }
-export interface E2eLocator {
+interface E2eBrowser { newPage(): Promise<E2ePage>; close(): Promise<void> }
+interface E2eLocator {
   first(): E2eLocator;
   click(options: { timeout: number }): Promise<void>;
   fill(value: string, options: { timeout: number }): Promise<void>;
@@ -48,7 +47,7 @@ export interface E2ePage {
 
 export interface FailingStep { index: number; name: string; reason: string }
 export type CaseVerdict = 'passed' | 'failed' | 'flaky' | 'unrun';
-export interface AttemptResult { attempt: number; outcome: 'pass' | 'fail'; durationMs: number; executed: number; failingStep: FailingStep | null;
+interface AttemptResult { attempt: number; outcome: 'pass' | 'fail'; durationMs: number; executed: number; failingStep: FailingStep | null;
   /** GY-3180: the failing step's browser or process could not start, which says nothing of the head. */
   hostFailure?: boolean;
   /** Each command and agent step the attempt ran: its outcome, last lines of output (secrets redacted), verdict and screenshots. */
@@ -88,7 +87,7 @@ export interface E2eReport {
 }
 
 /** A work item a run's cases created (GY-2216): what a successful POST /api/work step answered. */
-export interface CreatedWork { id: string; key: string | null; case: string }
+interface CreatedWork { id: string; key: string | null; case: string }
 export interface RunOptions {
   url: string; token: string; environment?: string; runId?: string;
   stepTimeoutMs?: number; retries?: number;
@@ -132,7 +131,7 @@ export interface RunOptions {
   versionPath?: string;
 }
 /** What a case a cancelled run never started names in `stoppedBy`. */
-export const cancelledRun = 'cancelled';
+const cancelledRun = 'cancelled';
 /** `fetcher` with `signal` added to every request, beside the request's own. */
 const cancellable = (fetcher: typeof fetch, signal: AbortSignal): typeof fetch =>
   (input, init) => fetcher(input, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, signal]) : signal });
@@ -174,7 +173,7 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 const redactedMessage = (error: unknown, secrets: Record<string, string>) => message(redact(error instanceof Error ? error.message : String(error), secrets));
 
 /** The value at a dotted path (`criteria.0.id`); the empty path is the value itself. */
-export function valueAt(value: unknown, path: string): unknown {
+function valueAt(value: unknown, path: string): unknown {
   if (!path) return value;
   return path.split('.').reduce<unknown>((current, key) => current !== null && typeof current === 'object' ? (current as Record<string, unknown>)[key] : undefined, value);
 }
@@ -204,7 +203,7 @@ const unsetAt = (body: unknown, path: string) => {
   return 'unset (the answer has no body)';
 };
 /** Why an http step's answer fails its checks, or null when it passes. */
-export function checkAnswer(step: Extract<E2eStep, { kind: 'http' }>, status: number, body: unknown, text: string): string | null {
+function checkAnswer(step: Extract<E2eStep, { kind: 'http' }>, status: number, body: unknown, text: string): string | null {
   if (status !== step.status) return `expected status ${step.status}, got ${status}${text ? `: ${text.slice(0, 200)}` : ''}`;
   for (const check of step.expect) {
     const actual = valueAt(body, check.path), at = check.path || '(body)';
@@ -249,7 +248,7 @@ const timeoutOf = (step: E2eStep, context: Pick<CaseContext, 'timeoutMs' | 'maxW
 const waitMs = (waitSeconds: number, context: Pick<CaseContext, 'maxWaitSeconds' | 'waitUntil' | 'now'>) =>
   Math.max(0, Math.min(Math.min(waitSeconds, context.maxWaitSeconds) * 1000, context.waitUntil - context.now()));
 /** How often a waiting GET step asks again. */
-export const httpWaitPollMs = 5_000;
+const httpWaitPollMs = 5_000;
 
 async function runStep(step: E2eStep, index: number, context: CaseContext): Promise<Omit<StepRecord, 'index' | 'name'> | void> {
   if (step.kind === 'command' || step.kind === 'agent') {
@@ -406,7 +405,7 @@ export async function runCases(cases: readonly CaseFile[], options: RunOptions):
 }
 
 /** The cases a run treats as pending under the repository's `e2e.pendingOutcomes` (GY-1843): all of them when non-blocking (GY-1802), none when blocking. */
-export const pendingUnder = (pendingCases: readonly string[], policy: RepositoryPolicy = repositoryPolicy()) =>
+const pendingUnder = (pendingCases: readonly string[], policy: RepositoryPolicy = repositoryPolicy()) =>
   policy.e2e.pendingOutcomes === 'blocking' ? [] : pendingCases;
 
 /** An accepted flaky result (GY-1378): the evidence decision that accepted one case of one run at one exact SHA. */
@@ -471,9 +470,9 @@ export function importedRunVerdict(run: ExternalRunResult, acceptances: readonly
 }
 
 /** The run id one attempt is recorded under: the run's own for a single attempt, `RUN:attempt-N` when a case took several. */
-export const attemptRunId = (runId: string, outcome: Pick<CaseOutcome, 'attempts'>, attempt: number) => outcome.attempts > 1 ? `${runId}:attempt-${attempt}` : runId;
+const attemptRunId = (runId: string, outcome: Pick<CaseOutcome, 'attempts'>, attempt: number) => outcome.attempts > 1 ? `${runId}:attempt-${attempt}` : runId;
 /** Why a pending case's failure did not count (GY-1802), recorded beside its failing step on the Tests page. */
-export const pendingNote = '; recorded pending: its outcome has no delivered item yet, so it does not block the candidate';
+const pendingNote = '; recorded pending: its outcome has no delivered item yet, so it does not block the candidate';
 
 /**
  * Append each attempt of each case as a run of the scenario revision it is registered as, so a
@@ -538,7 +537,7 @@ const caseFailure = (outcome: CaseOutcome) => outcome.verdict === 'flaky'
   ? `case ${outcome.id} was flaky: it failed at step ${outcome.failingStep!.index + 1} (${outcome.failingStep!.name}) and passed on attempt ${outcome.attempts}; it blocks until an evidence decision accepts it`
   : `case ${outcome.id} failed at step ${outcome.failingStep!.index + 1} (${outcome.failingStep!.name}): ${outcome.failingStep!.reason}`;
 /** A failing report in one line, for a release validation suite's detail and its follow-up item: the blocking cases, then the unrun and pending ones apart. */
-export const failureDetail = (report: E2eReport, pendingCases: readonly string[] = [], policy?: RepositoryPolicy) => {
+const failureDetail = (report: E2eReport, pendingCases: readonly string[] = [], policy?: RepositoryPolicy) => {
   const verdict = releaseVerdict(report, [], pendingCases, policy);
   return [verdict.blocking.filter(outcome => outcome.failingStep).map(caseFailure).join('; '),
     verdict.unrun.length ? `unrun after required case ${verdict.unrun[0].stoppedBy} stopped the run: ${verdict.unrun.map(outcome => outcome.id).join(', ')}` : '',
@@ -560,13 +559,13 @@ export const failureDetail = (report: E2eReport, pendingCases: readonly string[]
  * github and which reports no repository wiring can never satisfy the delivery cases, so the run
  * pends them and names them, instead of failing on waits nothing can answer.
  */
-export const releaseRetries = 1;
+const releaseRetries = 1;
 /** How long a release run's waits may take together (GY-1938), shared out among its cases (GY-2603): half the suite's one-hour command timeout, so the suite reports instead of being killed however many steps wait. */
-export const releaseWaitBudgetSeconds = 1800;
+const releaseWaitBudgetSeconds = 1800;
 /** The wait deadline of a release run starting at `start` (ms). */
-export const releaseWaitUntil = (start: number) => start + releaseWaitBudgetSeconds * 1000;
+const releaseWaitUntil = (start: number) => start + releaseWaitBudgetSeconds * 1000;
 /** Whether a case's steps exercise the install's delivery surface — the delivery and production routes whose expectations only an install that delivers changes can satisfy (GY-1938). */
-export const exercisesDelivery = (definition: Pick<CaseFile['definition'], 'steps'>): boolean =>
+const exercisesDelivery = (definition: Pick<CaseFile['definition'], 'steps'>): boolean =>
   definition.steps.some(step => step.kind === 'http' && (step.path.startsWith('/api/delivery') || step.path.startsWith('/production/')));
 /**
  * Whether the install at `url` can deliver a change at all (GY-1938), and whether it serves
@@ -580,7 +579,7 @@ export const exercisesDelivery = (definition: Pick<CaseFile['definition'], 'step
  * when the install's project delivery binds declared applications to cases under a local preview
  * mode: without that, no item ever gains the preview a `preview` case reads, however long it waits.
  */
-export const installServesDeliveries = async (url: string, token: string, fetcher: typeof fetch = fetch, uat = true): Promise<{ servesDeliveries: boolean; merger: string; repositoryWired: boolean; previewsServed: boolean }> => {
+const installServesDeliveries = async (url: string, token: string, fetcher: typeof fetch = fetch, uat = true): Promise<{ servesDeliveries: boolean; merger: string; repositoryWired: boolean; previewsServed: boolean }> => {
   const read = async (path: string, authorized: boolean): Promise<any> => {
     try { const response = await fetcher(new URL(path, url), { ...(authorized ? { headers: { Authorization: `Bearer ${token}` } } : {}), signal: AbortSignal.timeout(10_000) }); return response.ok ? await response.json() : null; } catch { return null; }
   };
@@ -596,7 +595,7 @@ export const installServesDeliveries = async (url: string, token: string, fetche
   return { servesDeliveries: repositoryWired, merger: mode, repositoryWired, previewsServed: previewsServed(status) };
 };
 /** The required cases a release run pends because the install it runs against cannot serve deliveries (GY-1938): those that exercise the delivery surface. */
-export const deliverySuspendedCases = (cases: readonly CaseFile[], servesDeliveries: boolean): string[] =>
+const deliverySuspendedCases = (cases: readonly CaseFile[], servesDeliveries: boolean): string[] =>
   servesDeliveries ? [] : cases.filter(entry => entry.definition.required && exercisesDelivery(entry.definition)).map(entry => entry.definition.id);
 /**
  * Whether a case's outcome is served by an install's project applications at all (GY-2217): the
@@ -605,16 +604,14 @@ export const deliverySuspendedCases = (cases: readonly CaseFile[], servesDeliver
  * cases and the two fixture cases whose target is the fixture project's own site and app — or, for
  * preview-serves-change, `static-preview`: the merge trial runs it, and a trial leaves `preview` out (GY-3193).
  */
-export const exercisesApplications = (definition: Pick<CaseFile['definition'], 'tags'>): boolean => definition.tags.includes('preview') || definition.tags.includes('static-preview');
+const exercisesApplications = (definition: Pick<CaseFile['definition'], 'tags'>): boolean => definition.tags.includes('preview') || definition.tags.includes('static-preview');
 /** The cases a run pends because the install it runs against declares no application previews (GY-2217): every case that exercises the applications' surface, required or not — the deploy's end-to-end step fails on optional cases too. */
 export const applicationSuspendedCases = (cases: readonly CaseFile[], previewsServed: boolean): string[] =>
   previewsServed ? [] : cases.filter(entry => exercisesApplications(entry.definition)).map(entry => entry.definition.id);
 /** GY-1802: the required case ids the contract binds only to outcomes in `pendingOutcomes` — the cases whose failure records as pending instead of blocking. */
-export const contractPendingCases = (contract: Pick<ReleaseContract, 'outcomes'> | null | undefined, pendingOutcomes: readonly string[] | undefined): string[] =>
+const contractPendingCases = (contract: Pick<ReleaseContract, 'outcomes'> | null | undefined, pendingOutcomes: readonly string[] | undefined): string[] =>
   !contract || !pendingOutcomes?.length ? [] : [...new Set(contract.outcomes.filter(outcome => pendingOutcomes.includes(outcome.id)).flatMap(outcome => outcome.cases))]
     .filter(id => !contract.outcomes.some(outcome => !pendingOutcomes.includes(outcome.id) && outcome.cases.includes(id)));
-/** The checkout's release contract, or null when it has none or one that does not parse. */
-export const checkoutContract = async (root: string): Promise<ReleaseContract | null> => existsSync(join(root, contractFile)) ? await loadContract(root).catch(() => null) : null;
 export const e2eSuite = (cases: readonly CaseFile[], token: string, options: { fetcher?: typeof fetch; launcher?: E2eLauncher; stepTimeoutMs?: number; root?: string; report?: (report: E2eReport) => void | Promise<void>;
   /** Which cases run: those targeting uat by default; a managed repository's candidate (GY-1535) runs every required case too. */
   select?: (entry: CaseFile) => boolean;

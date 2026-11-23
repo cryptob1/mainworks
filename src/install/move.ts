@@ -25,6 +25,7 @@ import { deployUnitOf, readInstallUnits, userUnitDirectory } from './units.js';
 import { localUnit } from './local.js';
 import { provisionTrialImage, trialImagePlan } from './trial-image.js';
 import { commandFailure, shellQuote, type CommandResult, type RunOptions, type Transport } from './transport.js';
+import { stateDirectory } from './layout.js';
 
 export interface MoveApi { read(path: string): Promise<any>; write(path: string, data: unknown): Promise<any> }
 export interface MoveDependencies {
@@ -98,7 +99,7 @@ const commonGitdir = (registration: string): string => {
  * carried directory (a checkout that is its own main repository) went with the copy.
  */
 function worktreeRepositories(root: string, carried: string[]): string[] {
-  const releases = join(root, '.graphyard', 'cli-releases');
+  const releases = join(stateDirectory(root), 'cli-releases');
   const trees = [root, ...(existsSync(releases) ? readdirSync(releases, { withFileTypes: true }) : []).filter(entry => entry.isDirectory()).map(entry => join(releases, entry.name))];
   return [...new Set(trees.map(gitdirPointer).filter((entry): entry is string => !!entry && existsSync(entry)).map(commonGitdir))]
     .filter(entry => !carried.some(base => entry === base || entry.startsWith(`${base}/`)));
@@ -128,7 +129,7 @@ function targetTransport(to: string, into: string | undefined, exec: (program: s
 /** The move of the install whose checkout is ROOT to host TO; `into` writes the target's files under that directory instead of `TO:` over SSH. */
 export async function moveInstall(root: string, options: { to: string; into?: string; plan?: boolean }, dependencies: MoveDependencies = {}) {
   root = resolve(root);
-  const masterFile = join(root, '.graphyard/master.json'), connectionFile = join(root, '.graphyard/connection.json');
+  const masterFile = join(stateDirectory(root), 'master.json'), connectionFile = join(stateDirectory(root), 'connection.json');
   const stored = JSON.parse(await readFile(masterFile, 'utf8'));
   const config = masterConfigSchema.parse(stored);
   const from = config.hostId, to = options.to.trim();
@@ -192,7 +193,7 @@ export async function moveInstall(root: string, options: { to: string; into?: st
     })();
   };
   if (!local) await exec('docker', ['run', '--rm', '-v', `${volume}:/data`, '-v', `${directory}:/out`, 'postgres:17-alpine', 'tar', '-C', '/data', '-cf', '/out/graphyard-data.tar', '.']);
-  for (const path of directories) await (path === root ? copy(path, { contents: true, exclude: join('.graphyard', 'worktrees') }) : copy(path, { contents: true }));
+  for (const path of directories) await (path === root ? copy(path, { contents: true, exclude: join(basename(stateDirectory(root)), 'worktrees') }) : copy(path, { contents: true }));
   for (const file of unitFiles) await copy(file);
   for (const file of credentials) await copy(file, { mode: 0o600 });
   // hostId names the target in both files the target's CLI and loop read.

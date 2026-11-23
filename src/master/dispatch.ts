@@ -23,7 +23,8 @@ import type { FleetProbe } from '../fleet.js';
 import { repinPath, type CanaryOffer } from '../model/registry.js';
 import { criteriaListing, featureCaseRule, reviewStandards } from '../review-prompt.js';
 import { launcherCoordinatorRoot, preservePartialWork, prepareConfinedGitPaths, sessionConfinement } from './launch.js';
-import { continuable, defaultHeadlessExec, HeadlessConfigurationError, runSessionId, startHeadlessWorker, type HeadlessExec } from '../headless-session.js';
+import { continuable, defaultHeadlessExec, HeadlessConfigurationError, liveWorkerHosts, runSessionId, startHeadlessWorker, type HeadlessExec } from '../headless-session.js';
+import { remoteSessionHost } from '../remote-session.js';
 import { readAttemptLaunch } from './session-resume.js';
 import { liveRun } from '../runner/registry.js';
 import { releaseOfPath, resolvedLauncher } from '../install/cli-release.js';
@@ -42,6 +43,7 @@ import { namedPaths } from '../model/documentation-glob.js';
 import { appliedReworkBrief, reworkBriefSection, type AppliedRework } from './rework-brief.js';
 import { workerFastGatesPresent, workerFastGatesSentence } from './worker-fast-gates.js';
 import { attemptBoundMs, attemptCeilingMs } from './attempt-bound.js';
+import { stateDirectory } from '../install/layout.js';
 
 /** The launcher's own runner: the CLI as a child, and git. `stdio` is honoured for the streams a child may inherit; the rest is captured. */
 type WorkerCommand = (command: string, args: string[], options?: { cwd?: string; env?: NodeJS.ProcessEnv; stdio?: ('ignore' | 'pipe' | 'inherit')[] }) => string | Buffer | Promise<string | Buffer>;
@@ -255,7 +257,7 @@ export async function dispatchWork(root: string, work: Work, profile: WorkerProf
     }
     // History supports status; it never grants or reserves a slot.
     const at = new Date().toISOString();
-    await mkdir(resolve(root, '.graphyard/dispatch'), { recursive: true }).catch(() => {});
+    await mkdir(resolve(stateDirectory(root), 'dispatch'), { recursive: true }).catch(() => {});
     await writeFile(dispatchedFile(root, work.key), JSON.stringify({ epoch: result.epoch, at, runtime: launch.kind ?? null, account: chosen.account?.name ?? null, run: result.run, path: result.path,
       ...(result.resumedFrom ? { resumedFrom: result.resumedFrom } : {}), ...(fresh ? { fresh } : {}) }), { mode: 0o600 }).catch(() => {});
     // The dispatch record names the runtime and account the session runs on, the preference
@@ -404,9 +406,14 @@ async function launchWorker(root: string, config: MasterConfig, work: Work, prof
       const sameTree = !!continuing && resolve(continuing.path) === resolve(prepared.path);
       let resume = continuing && rework && sameTree && continuable(launch.kind, launch.contract) ? continuing : null;
       let fresh = continuing && !resume ? (sameTree ? `the ${launch.kind} launch contract has no continue form` : `the worktree moved from ${continuing.path} to ${prepared.path}`) : null;
-      const start = (session: string | null) => startHeadlessWorker({ name: profile.agentName, work: work.key, subject: `${work.key}: ${work.title}`, epoch: prepared.epoch, principal: profile.principal, account: launch.account ?? null,
+      // GY-3405: an added host open to sessions takes the run when it has room; its login is handed over for this session only.
+      const environment = { GRAPHYARD_URL: config.url, GRAPHYARD_TOKEN_FILE: profile.credentialFile!, GRAPHYARD_HOST_ID: config.hostId, GRAPHYARD_HERDR_AGENT_KIND: launch.kind!, ...(process.env.XDG_RUNTIME_DIR ? { XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR } : {}), ...(process.env.DBUS_SESSION_BUS_ADDRESS ? { DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS } : {}), ...withVerificationPath(sessionHarness.environment, launch.environment) };
+      const host = await remoteSessionHost(launch.kind!, () => liveWorkerHosts(root)).catch(() => null);
+      const forwarded = [...Object.keys(environment), 'VITEST_MAX_WORKERS', 'PLAYWRIGHT_WORKERS'].filter(name => !['GRAPHYARD_TOKEN_FILE', 'GRAPHYARD_TOKEN', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'PATH'].includes(name));
+      const remote = host ? { host, words: [process.execPath, config.cliPath, 'host', 'session', host, ...runtimeLoginHomes(launch.environment, launch.contract?.homeVariable, launch.kind).flatMap(home => ['--home', home]), ...forwarded.flatMap(name => ['--env', name]), '--cli', config.cliPath, '--'] } : undefined;
+      const start = (session: string | null) => startHeadlessWorker({ remote, name: profile.agentName, work: work.key, subject: `${work.key}: ${work.title}`, epoch: prepared.epoch, principal: profile.principal, account: launch.account ?? null,
         kind: launch.kind!, args: [...args, ...sessionHarness.args], contract: launch.contract, credentialMask, role: sessionHarness.role, directory: prepared.path, prompt: session ? continuedPrompt(config, work, prepared.epoch, rework!) : prompt, session, root, exec: headless, coordinatorRoot,
-        environment: { GRAPHYARD_URL: config.url, GRAPHYARD_TOKEN_FILE: profile.credentialFile!, GRAPHYARD_HOST_ID: config.hostId, GRAPHYARD_HERDR_AGENT_KIND: launch.kind!, ...(process.env.XDG_RUNTIME_DIR ? { XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR } : {}), ...(process.env.DBUS_SESSION_BUS_ADDRESS ? { DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS } : {}), ...withVerificationPath(sessionHarness.environment, launch.environment) },
+        environment,
         supervisor: [process.execPath, config.cliPath, 'watch', work.key, String(prepared.epoch), '--'], timeoutMs: attemptCeilingMs(config.run), startupMs,
         settle: async ({ output, ok }) => { await stoppedOnLimit(output, ok).catch(() => null); await settleReservation?.(`the ${launch.kind} worker run ended`); } });
       let started = await start(resume?.session ?? null);
@@ -623,12 +630,12 @@ export function worktreeFailure(key: string, epoch: number, error: unknown, cliP
 /** The launch's renewal of its claim (GY-1287): the worker's own `heartbeat`, under the profile's credential. */
 export async function renewWorkerLaunch(root: string, key: string, epoch: number, profileName: string, run: WorkerCommand = workerCommand) {
   const config = await loadMasterConfig(root); const profile = config.workers.find(worker => worker.name === profileName);
-  if (!profile || profile.mode !== 'launch' || !profile.kind || !profile.credentialFile) throw new Error('A complete launch profile is required');
+  if (!profile || profile.mode !== 'launch' || !profile.credentialFile) throw new Error('A complete launch profile is required');
   await run(process.execPath, [config.cliPath, 'heartbeat', key, String(epoch)], { cwd: root, env: workerEnvironment(config, profile) });
 }
 export async function releaseWorkerLaunch(root: string, key: string, epoch: number, profileName: string, blocker?: string, run: WorkerCommand = workerCommand) {
   const config = await loadMasterConfig(root); const profile = config.workers.find(worker => worker.name === profileName);
-  if (!profile || profile.mode !== 'launch' || !profile.kind || !profile.credentialFile) throw new Error('A complete launch profile is required');
+  if (!profile || profile.mode !== 'launch' || !profile.credentialFile) throw new Error('A complete launch profile is required');
   await readWorkerCredential(root, profile.credentialFile);
   await run(process.execPath, [config.cliPath, ...(blocker ? ['blocked', key, String(epoch), blocker] : ['unclaim', key, String(epoch)])], { cwd: root, env: workerEnvironment(config, profile) });
 }
@@ -640,7 +647,7 @@ export async function releaseWorkerLaunch(root: string, key: string, epoch: numb
  */
 export async function prepareWorkerLaunch(root: string, key: string, profileName: string, run: WorkerCommand = workerCommand, claimBy?: number, onClaimed?: ClaimedHook, cycle?: string): Promise<PreparedWorker> {
   const config = await loadMasterConfig(root); const profile = config.workers.find(worker => worker.name === profileName);
-  if (!profile || profile.mode !== 'launch' || !profile.kind || !profile.credentialFile) throw new Error('A complete launch profile is required');
+  if (!profile || profile.mode !== 'launch' || !profile.credentialFile) throw new Error('A complete launch profile is required');
   await readWorkerCredential(root, profile.credentialFile);
   const detected = await discover(root);
   if (!detected.repository) throw new Error('Worker launcher requires a recognized GitHub origin');

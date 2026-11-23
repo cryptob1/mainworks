@@ -11,7 +11,7 @@ import { parseGeneratedManifest, type GeneratedManifest } from '../sync.js';
  * The generated files a repository declares for sync: `scripts/check-docs.mjs --manifest` names
  * the paths its `--write` renders in full. A repository without the script declares none.
  */
-export const generatedManifestScript = 'scripts/check-docs.mjs';
+const generatedManifestScript = 'scripts/check-docs.mjs';
 
 export async function localGeneratedManifest(cwd: string): Promise<GeneratedManifest | null> {
   if (!existsSync(resolve(cwd, generatedManifestScript))) return null;

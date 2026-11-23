@@ -11,10 +11,10 @@ import { message, type DaemonState } from './state.js';
 /** How often a lasting stop is re-alerted while it lasts. */
 export const alertRepeatMs = 3_600_000;
 /** The stall window before the loop alerts, `run.alertMinutes` unset (GY-3101). */
-export const defaultAlertMinutes = 20;
+const defaultAlertMinutes = 20;
 export const alertMinutesOf = (run: { alertMinutes?: number | null }) => run.alertMinutes ?? defaultAlertMinutes;
 /** The cursor key of the yard alert's one action row: `failed` while the stop stands, `done` on the all-clear. */
-export const yardAlertKey = 'yard:alert';
+const yardAlertKey = 'yard:alert';
 
 /**
  * Queued work (GY-3101): open items that are not blocked, not parked on a human decision (the
@@ -103,7 +103,7 @@ export function yardAlertText(repository: string, since: number, now: number, qu
 }
 
 /** The one all-clear (GY-3101), sent when work moves again after an alert. */
-export const yardAllClearText = (repository: string, since: string, now: number) =>
+const yardAllClearText = (repository: string, since: string, now: number) =>
   `Mainworks ${repository}: the yard is moving again — work started or merged after ${formatAge(since, now)} stopped (since ${since})`;
 
 /**

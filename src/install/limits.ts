@@ -1,6 +1,6 @@
 import { delegationLimitDrift, delegationLimitVariables, requiredDelegationLimits, type DelegationLimitDrift, type DelegationLimitVariable } from '../delegation.js';
 
-export { delegationLimitDrift, delegationLimitVariables, requiredDelegationLimits, type DelegationLimitDrift, type DelegationLimitVariable };
+export {  delegationLimitVariables,    };
 
 /**
  * What every installer and provider adapter writes beside GRAPHYARD_PRINCIPALS: the

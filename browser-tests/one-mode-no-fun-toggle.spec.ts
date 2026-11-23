@@ -61,7 +61,7 @@ test('e2e:one-mode-no-fun-toggle — no Fun control on any page, a stored Fun pr
 test('e2e:one-mode-no-fun-toggle — no source under web/ or src/ references the Fun mode setting', () => {
   const files = (dir: string): string[] => readdirSync(dir, { withFileTypes: true })
     .flatMap(entry => entry.isDirectory() ? files(join(dir, entry.name)) : /\.(tsx?|css|html|mjs)$/.test(entry.name) ? [join(dir, entry.name)] : []);
-  const setting = /mainworks\.fun\b|data-fun|dataset\.fun|\b(useFun|readFun|setFun|bootFun|applyFun)\b|Fun (toggle|mode|off|on)\b/;
+  const setting = /graphyard\.fun\b|data-fun|dataset\.fun|\b(useFun|readFun|setFun|bootFun|applyFun)\b|Fun (toggle|mode|off|on)\b/;
   const offenders = ['web', 'src'].flatMap(files).filter(file => setting.test(readFileSync(file, 'utf8')));
   expect(offenders).toEqual([]);
 });

@@ -12,6 +12,7 @@ import { installDirectory } from './install/secrets.js';
 import { installIdFor } from './install/types.js';
 import { knownGoodDirectory } from './master/known-good.js';
 import { currentCliPath } from './install/cli-release.js';
+import { stateDirectory } from './install/layout.js';
 
 export interface UnitCode {
   unit: string; path: string;
@@ -163,7 +164,7 @@ export async function readLoopCode(root: string, options: {
   const cliCommit = head(cliRoot);
   const primary = await (async () => { try { return connectionRoots(root)[0]; } catch { return root; } })();
   let master = options.master !== undefined ? options.master : null;
-  if (options.master === undefined) { try { master = JSON.parse(await readFile(resolve(root, '.graphyard', 'master.json'), 'utf8')); } catch { master = null; } }
+  if (options.master === undefined) { try { master = JSON.parse(await readFile(resolve(stateDirectory(root), 'master.json'), 'utf8')); } catch { master = null; } }
   const repository = typeof master?.repository === 'string' ? master.repository : null;
   const failed = (failure: unknown): LoopCodeReading => ({ loop: null, loopCommit: null, cli: { root: cliRoot, commit: cliCommit }, repository, loopStale: null, loopReplace: null, host: null, error: failureText(failure) });
   let units: InstallUnits | null;

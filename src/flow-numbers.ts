@@ -4,10 +4,10 @@ import { mergeWriterTrialGround } from './model/rework-ground.js';
 
 export const flowWindows = { '6h': 6, '24h': 24, '7d': 168 } as const;
 export type FlowWindow = keyof typeof flowWindows;
-export const flowStations = ['ready', 'build', 'review', 'test queue', 'merge trial', 'acceptance', 'merge'] as const;
-export type FlowStation = typeof flowStations[number];
+export const flowStations = ['ready', 'build', 'review', 'test queue', 'merge trial', 'acceptance', 'merge', 'live'] as const;
+type FlowStation = typeof flowStations[number];
 export const reworkCauses = ['review', 'product review', 'merge trial', 'acceptance', 'base moved', 'red base'] as const;
-export type ReworkCause = typeof reworkCauses[number];
+type ReworkCause = typeof reworkCauses[number];
 
 /**
  * One ledger row as the flow reads it: a row carrying the item's whole document names its `stage`;
@@ -18,10 +18,12 @@ export type ReworkCause = typeof reworkCauses[number];
 export interface FlowEvent { kind: string; at: string; stage?: string | null; reason?: string | null; binding?: string | null; head?: string | null; durationMs?: number | null; flaky?: boolean; reverted?: boolean }
 export interface FlowItem {
   key: string; title: string; stage: string; stageEnteredAt: string; mergedAt: string | null;
+  /** First serving deploy containing this merge (`null` when deploy records exist and none contains it yet; `undefined` when deploy tracking is unavailable). */
+  deployedAt?: string | null;
   attempts: { claimedAt: string; endedAt: string | null; end: string | null }[];
   events: FlowEvent[];
 }
-export interface StationWait { median: number; p90: number; samples: number; oldest: { key: string; title: string; minutes: number; waiting: boolean } }
+interface StationWait { median: number; p90: number; samples: number; oldest: { key: string; title: string; minutes: number; waiting: boolean } }
 export interface FlowNumbers {
   hours: number; attempts: number; attemptsPerHour: number; merges: number; mergesPerHour: number;
   /** Attempts merged with no rework request ÷ attempts ended; null when none ended. */
@@ -33,7 +35,7 @@ export interface FlowNumbers {
 }
 
 /** Which station sent the head back, read from the rework's reason and the ground it binds. */
-export function reworkCause(reason: string, binding: string | null | undefined): ReworkCause {
+function reworkCause(reason: string, binding: string | null | undefined): ReworkCause {
   const ground = binding ?? '';
   if (/:conflict$|:sync:/.test(ground) || /merge conflicts in|The base moved/.test(reason)) return 'base moved';
   if (/base failure|on the base tip too/i.test(reason)) return 'red base';
@@ -69,6 +71,13 @@ function visits(item: FlowItem, now: number): Visit[] {
       out.push(started.length ? { station: 'test queue', start: mark.at, end: Math.min(...started), open: false } : { station: 'test queue', start: mark.at, end, open });
     } else if (stationOf[mark.stage]) out.push({ station: stationOf[mark.stage], start: mark.at, end, open });
   });
+  const merged = ms(item.mergedAt);
+  if (Number.isFinite(merged) && item.deployedAt !== undefined) {
+    const deployed = ms(item.deployedAt);
+    out.push(Number.isFinite(deployed)
+      ? { station: 'live', start: merged, end: Math.max(merged, deployed), open: false }
+      : { station: 'live', start: merged, end: now, open: true });
+  }
   return out;
 }
 
@@ -94,7 +103,8 @@ export function flowNumbers(items: readonly FlowItem[], hours: number, now: numb
   const events = items.flatMap(item => item.events.filter(event => inWindow(ms(event.at))));
   const rework = Object.fromEntries(reworkCauses.map(cause => [cause, 0])) as Record<ReworkCause, number>;
   for (const event of events) if (event.kind === 'rework') rework[reworkCause(event.reason ?? '', event.binding)] += 1;
-  const stays = items.flatMap(item => visits(item, now).filter(visit => visit.end > from).map(visit => ({ item, visit, ms: visit.end - visit.start })));
+  // GY-3732: like merges an hour, the live station counts only merges made inside the window.
+  const stays = items.flatMap(item => visits(item, now).filter(visit => visit.station === 'live' ? inWindow(visit.start) : visit.end > from).map(visit => ({ item, visit, ms: visit.end - visit.start })));
   const stations = Object.fromEntries(flowStations.map(station => {
     const here = stays.filter(stay => stay.visit.station === station);
     const wait = spread(here.map(stay => stay.ms));

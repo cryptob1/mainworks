@@ -36,14 +36,14 @@ export interface FakeHost {
 }
 
 /** The operator public key the fixture authorizes on every host (the wrapper reads no key material). */
-export const fixturePublicKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFJpeHR1cmU mainworks-host-fixture';
+const fixturePublicKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFJpeHR1cmU mainworks-host-fixture';
 /** This process's uid: GY-3412's shim names its socket by the real uid (os.getuid), which in the fixture is this, not gy-compute's 1001. */
 const uid = process.getuid?.() ?? 1000;
 
 const executable = async (path: string, text: string) => { await writeFile(path, text); await chmod(path, 0o755); };
 const restrictLine = () => `restrict,command="graphyard-host-shim-${hostShimDigest}" ${fixturePublicKey}`;
 /** GY-3688: another install's prepare — its own key, and its own helper release. */
-export interface PrepareInstall { publicKey?: string; shim?: { script: string; digest: string } }
+interface PrepareInstall { publicKey?: string; shim?: { script: string; digest: string } }
 
 /** The user's own Docker, as dockerd-rootless-setuptool.sh leaves it: it answers only through its own socket. */
 const rootlessDockerTemplate = (dir: string) => `#!/bin/sh

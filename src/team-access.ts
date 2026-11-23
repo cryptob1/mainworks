@@ -9,11 +9,11 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { setting } from './setting.js';
+import { defaultConfigHome } from './install/layout.js';
 
-export const machineDirectory = (config = setting('CONFIG_HOME') ?? join(homedir(), '.config', 'graphyard')) => join(config, 'machine');
+export const machineDirectory = (config = setting('CONFIG_HOME') ?? defaultConfigHome()) => join(config, 'machine');
 const machineFile = (dir: string) => join(dir, 'tailnet.json');
 
 /**
@@ -57,7 +57,7 @@ export async function readTailnet(): Promise<{ dnsName: string | null; ip: strin
 }
 type ServeStatus = { TCP?: Record<string, { HTTPS?: boolean }>; Web?: Record<string, { Handlers?: Record<string, { Proxy?: string }> }>; AllowFunnel?: Record<string, boolean> };
 /** The public ports Tailscale Funnel accepts. */
-export const funnelPorts = ['443', '8443', '10000'];
+const funnelPorts = ['443', '8443', '10000'];
 /** Whether a handler at ADDRESS proxies to this install's loopback PORT, or its serve socket on that port (GY-3486). */
 const servesInstall = (address: string, proxy: string | undefined, port: string) => {
   try { if (new URL(proxy!).port === port) return true; } catch { /* not a URL */ }

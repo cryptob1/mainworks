@@ -11,7 +11,7 @@ export function readTrialCpu(stat = () => readFileSync('/proc/stat', 'utf8'), lo
     return { total: values.reduce((sum, value) => sum + value, 0), steal: values[7]!, idle: values[3]! + values[4]!, load, at };
   } catch { return null; }
 }
-export function trialCpuUsage(before: TrialCpuReading | null, after: TrialCpuReading | null) {
+function trialCpuUsage(before: TrialCpuReading | null, after: TrialCpuReading | null) {
   if (!before || !after || after.total <= before.total) return null;
   const total = after.total - before.total;
   return { steal: (after.steal - before.steal) / total, idle: (after.idle - before.idle) / total, load: after.load };
@@ -19,7 +19,7 @@ export function trialCpuUsage(before: TrialCpuReading | null, after: TrialCpuRea
 export const usableTrialCores = (cores: number, steal: number) => Math.max(1, cores * (1 - steal));
 export { trialOverloadPrefix } from '../model/merge-queue.js';
 export const trialOverloadFault = (error: unknown) => error instanceof Error && error.message.startsWith(trialOverloadPrefix);
-export class TrialOverloadError extends Error {
+class TrialOverloadError extends Error {
   constructor(step: string, usage: NonNullable<ReturnType<typeof trialCpuUsage>>, cores: number) {
     super(`${trialOverloadPrefix} ${step} timed out with ${Math.round(usage.steal * 100)}% CPU steal, ${Math.round(usage.idle * 100)}% idle, load ${usage.load.toFixed(1)} on ${cores} cores`);
   }

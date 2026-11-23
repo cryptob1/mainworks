@@ -11,11 +11,11 @@ export const timingBaselinePath = 'tests/helpers/timing-baseline.json';
 export const timedTestFile = (path: string) => testFile(path) && /^tests\/[^/]+\.test\.ts$/.test(path);
 
 /** The test files a change adds, changes or removes: the files whose baseline lines it may write. */
-export const changedTestFiles = (files: readonly { path: string; previousPath?: string; status?: string }[]) =>
+const changedTestFiles = (files: readonly { path: string; previousPath?: string; status?: string }[]) =>
   [...new Set(files.filter(file => file.status !== 'unchanged').flatMap(file => [file.path, ...(file.previousPath && file.status !== 'copied' ? [file.previousPath] : [])]))]
     .filter(path => path !== timingBaselinePath && timedTestFile(path));
 
-export interface TimingCompanion { allowed: boolean; detail: string }
+interface TimingCompanion { allowed: boolean; detail: string }
 const canonical = (value: unknown) => JSON.stringify(value, (_key, entry) => entry && typeof entry === 'object' && !Array.isArray(entry) ? Object.fromEntries(Object.keys(entry).sort().map(key => [key, entry[key]])) : entry);
 const parse = (text: string) => { try { const value = JSON.parse(text); return value && typeof value === 'object' && !Array.isArray(value) ? value : null; } catch { return null; } };
 const listed = (lines: readonly string[]) => lines.length > 5 ? `${lines.slice(0, 5).join(', ')} and ${lines.length - 5} more` : lines.join(', ');
@@ -27,7 +27,7 @@ const listed = (lines: readonly string[]) => lines.length > 5 ? `${lines.slice(0
  * with a non-negative duration. Anything else is refused,
  * naming the lines, and the file is judged as any out-of-scope rewrite.
  */
-export function timingBaselineCompanion(base: string, head: string, tests: readonly string[]): TimingCompanion {
+function timingBaselineCompanion(base: string, head: string, tests: readonly string[]): TimingCompanion {
   const before = parse(base), after = parse(head);
   if (!before || !after) return { allowed: false, detail: `${timingBaselinePath} does not parse as a JSON object on both sides, so its lines cannot be judged` };
   const fields = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(key => key !== 'files' && canonical(before[key]) !== canonical(after[key]));

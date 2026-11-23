@@ -179,7 +179,7 @@ export function continueAfterDecline(key: string, prompt: Pick<RuntimePrompt, 't
 // ---------------------------------------------------------------------------
 
 /** The notices a session on `runtime` is judged against; an unnamed runtime gets the shared provider errors. */
-export const runtimeLimitNotices = (runtime: string | null | undefined): readonly RegExp[] => runtimeAdapter(runtime)?.limitNotices ?? providerUsageErrors;
+const runtimeLimitNotices = (runtime: string | null | undefined): readonly RegExp[] => runtimeAdapter(runtime)?.limitNotices ?? providerUsageErrors;
 
 /** The label a runtime draws in front of a provider error — `Error:`, `API Error:`, `Error code: 429 -` — which is not the agent's voice. */
 const severityLabel = /^(?:\[[^\]]*\]\s*)?(?:api\s+)?error(?:\s+code)?\s*[:#]?\s*(?:\d{3}\s*)?[-–—:]*\s*/i;

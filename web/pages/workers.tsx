@@ -40,7 +40,7 @@ export function spent(ms: number) {
   return hours ? `${hours}h ${two(minutes)}m ${two(seconds)}s` : minutes ? `${minutes}m ${two(seconds)}s` : `${seconds}s`;
 }
 /** How long ago an instant was, in the same units: `12s ago`, `4m 30s ago`. Never an absolute timestamp. */
-export function ago(iso: string | null, now: number) {
+function ago(iso: string | null, now: number) {
   const at = Date.parse(iso ?? '');
   return Number.isFinite(at) ? `${spent(now - at)} ago` : 'at an unrecorded time';
 }
@@ -65,7 +65,7 @@ export function CopyButton({ text, label }: { text: string; label: string }) {
  * seconds since it arrived are added on a one-second tick, so a running row counts up between
  * polls without a reload. Rendered without effects (a test, the server) it is exactly the anchor.
  */
-export function useLiveNow(observedAt: number) {
+function useLiveNow(observedAt: number) {
   const anchor = Number.isNaN(observedAt) ? Date.now() : observedAt;
   const receivedAt = useRef({ anchor, at: Date.now() });
   if (receivedAt.current.anchor !== anchor) receivedAt.current = { anchor, at: Date.now() };
@@ -86,7 +86,7 @@ export const roleWords: Record<SessionRoleKind, string> = {
  * observation — one recorded open but not seen since is stale, and one observed ended or lost is
  * ended. Neither of the last two is ever shown as running.
  */
-export function health(row: WorkerRow, now: number): { tone: 'live' | 'stale' | 'ended'; text: string } {
+function health(row: WorkerRow, now: number): { tone: 'live' | 'stale' | 'ended'; text: string } {
   if (row.leftOn && row.stale) return { tone: 'ended', text: `Not seen for ${spent(now - Date.parse(row.stale.since))} · its item is ${row.leftOn}` };
   if (row.stale) return { tone: 'stale', text: `Not seen for ${spent(now - Date.parse(row.stale.since))}` };
   if (row.state === 'running') return { tone: 'live', text: `Seen ${ago(row.seenAt, now)}${row.observed === 'idle' ? ' · at its prompt' : ''}` };

@@ -15,7 +15,7 @@
 // its own as BASELINE_URL, so a compare case judges a new build against what was live (GY-2985).
 // A repository that declares no node application is untouched.
 import { existsSync, readFileSync } from 'node:fs';
-import { mkdir, rename, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, rename, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -23,6 +23,7 @@ import { nodeApplicationSchema } from './model-boundary/project-applications.js'
 import { installArgv, packageManager } from './package-manager.js';
 import { pinnedNodePath } from './node-pin.js';
 import type { Application } from './project-applications.js';
+import { stateDirectory } from './install/layout.js';
 
 /** The application the serve pass serves: the first node application main's graphyard.json declares. */
 export type ServeDeclaration = Extract<Application, { kind: 'node' }>;
@@ -53,28 +54,32 @@ export function installCommand(root: string): string[] | null {
 /** The served commit's required cases, as the pass ran them against the URL it serves; `case`, `step` and `reason` name the first required case that failed, and are null when verified. */
 export interface ServeCheck { verified: boolean; case: string | null; step: string | null; reason: string | null }
 /** The previously served build kept serving beside the current one (GY-2985): what was live, and what a compare case judges the new build against. */
-export interface ServeBaseline { commit: string; url: string; pid: number | null; started: string | null }
+interface ServeBaseline { commit: string; url: string; pid: number | null; started: string | null }
 /** What the serve pass last did: the commit whose build serves, the URL it answers, the commit whose build last failed and why, the serve process it tracks (pid and kernel start time, so a pid reused after a reboot is never mistaken for it), the required cases' verdict on the served commit (null while they have not run against it), and what was live serving on the baseline URL (GY-2985). */
 export interface ServeRecord { commit: string | null; url: string | null; failed: string | null; reason: string | null; pid?: number | null; started?: string | null; check?: ServeCheck | null; baseline?: ServeBaseline | null; at: string }
 /** The serve process a restart left running. */
-export interface ServeProcess { pid: number | null; started: string | null }
-export const serveRecordPath = (root: string) => join(root, '.graphyard', 'served.json');
+interface ServeProcess { pid: number | null; started: string | null }
+export const serveRecordPath = (root: string) => join(stateDirectory(root), 'served.json');
 export function readServeRecord(file: string): ServeRecord | null {
   if (!existsSync(file)) return null;
   try { return JSON.parse(readFileSync(file, 'utf8')) as ServeRecord; } catch { return null; }
 }
 async function writeServeRecord(file: string, record: Omit<ServeRecord, 'at'>) {
   const cut = (reason: string | null | undefined) => reason?.slice(0, 2000) ?? null;
+  const at = new Date().toISOString();
   await mkdir(dirname(file), { recursive: true });
-  await writeFile(`${file}.tmp`, `${JSON.stringify({ ...record, reason: cut(record.reason), check: record.check ? { ...record.check, reason: cut(record.check.reason) } : null, baseline: record.baseline ?? null, at: new Date().toISOString() }, null, 2)}\n`);
+  await writeFile(`${file}.tmp`, `${JSON.stringify({ ...record, reason: cut(record.reason), check: record.check ? { ...record.check, reason: cut(record.check.reason) } : null, baseline: record.baseline ?? null, at }, null, 2)}\n`);
   await rename(`${file}.tmp`, file);
+  if (record.commit && !record.failed) {
+    await appendFile(join(dirname(file), 'serve-history.jsonl'), `${JSON.stringify({ commit: record.commit, at })}\n`).catch(() => {});
+  }
 }
 
 /** Whether an HTTP URL answers at all (any status counts: an app may 404 its root and still be served). */
 export const answering = (url: string) => fetch(url, { signal: AbortSignal.timeout(5_000) }).then(() => true, () => false);
 
 /** How long a restarted serve has to answer before the pass records the commit as unserved (a serve that cannot bind, a command that fails). */
-export const serveAnswerTimeoutMs = 30_000;
+const serveAnswerTimeoutMs = 30_000;
 
 /** The answer the pass waited for must be the restarted serve's own (GY-2993): when the ports can tell who holds the port, an answer from a process the pass did not start means the serve left without binding the port another process already holds — a failure whose reason names the port, never a served commit. Ports that cannot tell (no /proc, off Linux) leave the answer standing. */
 const servedByRestart = (ports: ServePorts, port: number, url: string, served: ServeProcess) => {
@@ -220,9 +225,9 @@ export async function watchServe(file: string, ports: ServePorts, options: { int
 }
 
 /** The install's own serve checkout: a detached worktree of the managed root under its local .graphyard — never the coordinator's or a worker's checkout. Its ports live beside the deploy watch's own (src/cli/upgrade.ts), the one file allowed to reach the remote. */
-export const serveCheckoutPath = (root: string) => join(root, '.graphyard', 'serve-checkout');
+export const serveCheckoutPath = (root: string) => join(stateDirectory(root), 'serve-checkout');
 /** The baseline checkout (GY-2985): a second detached worktree holding the previously served build, which keeps serving on the port beside the served one. */
-export const serveBaselineCheckoutPath = (root: string) => join(root, '.graphyard', 'serve-checkout-baseline');
+export const serveBaselineCheckoutPath = (root: string) => join(stateDirectory(root), 'serve-checkout-baseline');
 
 /**
  * GY-3207: the environment the serve checkout's install, build and serve commands run under: the host's, with the Node major the checkout declares first on PATH.

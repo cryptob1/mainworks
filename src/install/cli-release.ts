@@ -11,16 +11,17 @@ import { recordCommit, recordedCommit } from '../release.js';
 
 // GY-3214: the paths and the create-once step live in plain JavaScript, which the published npm package runs before any dependency is installed.
 import { cliReleasePath, currentCliPath, installLauncherPath, prepareCliRelease } from '../../bin/cli-release.mjs';
+import { stateDirectory } from './layout.js';
 export { cliReleasePath, currentCliPath, installLauncherPath, prepareCliRelease };
 
 /** Release launchers need the same stable, credential-free mount as the legacy launcher. */
 export function cliMountRoot(root: string): string {
-  return basename(dirname(root)) === 'cli-releases' && basename(resolve(root, '../..')) === '.graphyard'
+  return basename(dirname(root)) === 'cli-releases' && ['.graphyard', '.mainworks'].includes(basename(resolve(root, '../..')))
     ? resolve(root, '../../..') : root;
 }
 
 export function activeCliRoot(root: string): string {
-  try { return realpathSync(join(root, '.graphyard', 'cli-current')); } catch { return root; }
+  try { return realpathSync(join(stateDirectory(root), 'cli-current')); } catch { return root; }
 }
 
 /** A path's real self, or null when it resolves to nothing. */
@@ -36,7 +37,7 @@ const realPath = (path: string): string | null => {
 export function resolvedLauncher(launcher: string): string | null {
   const direct = realPath(launcher);
   if (direct === null) return null;
-  const pointer = realPath(join(dirname(dirname(direct)), '.graphyard', 'cli-current'));
+  const pointer = realPath(join(stateDirectory(dirname(dirname(direct))), 'cli-current'));
   return pointer ? join(pointer, 'bin', 'graphyard.mjs') : direct;
 }
 
@@ -77,8 +78,8 @@ export async function publishCliRelease(directory: string, source: string, commi
       await copyFile(code, `${launcher}.tmp`);
       await rename(`${launcher}.tmp`, launcher);
     }
-    await mkdir(join(root, '.graphyard'), { recursive: true });
-    const pointer = join(root, '.graphyard', 'cli-current');
+    await mkdir(stateDirectory(root), { recursive: true });
+    const pointer = join(stateDirectory(root), 'cli-current');
     if (!existsSync(pointer)) await symlink(current, pointer);
   }
   // GY-3337: every publication rewrites the install's stable launcher beside the pointer it moves.
@@ -121,7 +122,7 @@ export async function sweepCliReleases(directory: string, run: ChildRun, procRoo
   const store = dirname(cliReleasePath(directory, 'x'));
   let serving: string;
   try { serving = realpathSync(currentCliPath(directory)); } catch { return swept; }
-  const readyAt = (path: string) => stat(join(path, '.graphyard', 'cli-ready')).catch(() => stat(path)).then(info => info.mtimeMs, () => 0);
+  const readyAt = (path: string) => stat(join(stateDirectory(path), 'cli-ready')).catch(() => stat(path)).then(info => info.mtimeMs, () => 0);
   const copies = await Promise.all((await readdir(store, { withFileTypes: true }).catch(() => []))
     .filter(entry => entry.isDirectory()).map(async entry => ({ path: realpathSync(join(store, entry.name)), at: await readyAt(join(store, entry.name)) })));
   const served = copies.find(copy => copy.path === serving);

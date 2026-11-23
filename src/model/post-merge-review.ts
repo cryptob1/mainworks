@@ -12,7 +12,7 @@ import type { ChangedAssertion } from './changed-assertions.js';
  * post-merge verdict is recorded. It is cleared when an approval of the head arrives before the
  * merge after all, and never changes once the item is delivered or reviewed.
  */
-export const postMergeReviewStates = ['owed', 'reviewed'] as const;
+const postMergeReviewStates = ['owed', 'reviewed'] as const;
 export type PostMergeReviewState = typeof postMergeReviewStates[number];
 
 /** The verdict a control-plane reviewer session posted, as the launch and the observation record it. */

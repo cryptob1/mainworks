@@ -1,4 +1,4 @@
-import { stateIds, stateLabel, type PrSteps } from '../../src/model/pr-steps';
+import { type PrSteps } from '../../src/model/pr-steps';
 
 /**
  * The four item states as one bar (GY-1979): Todo, Doing, Checking, Done — done, current (live)
@@ -14,12 +14,4 @@ export default function StepsBar({ steps, labelled = true }: { steps: PrSteps; l
     </span>
     {labelled && <span className="steps-label">{steps.label}</span>}
   </span>;
-}
-
-/**
- * The four state names above the Moving rows, laid out as the same track as each row's bar (same
- * element, same gap, one equal share per state) so every name sits over its own segment.
- */
-export function StepNames() {
-  return <span className="steps-track step-names" aria-hidden="true">{stateIds.map(id => <span key={id} className="step-name" data-step={id}>{stateLabel[id]}</span>)}</span>;
 }

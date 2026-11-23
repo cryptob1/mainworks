@@ -4,7 +4,8 @@ import type { DaemonState } from './state.js';
 import { message } from './state.js';
 
 /** How long the control plane must be unreachable before the loop starts its server, and how often it tries again. */
-export const composeRestartAfterMs = 120_000, composeRestartEveryMs = 300_000;
+const composeRestartAfterMs = 120_000;
+const composeRestartEveryMs = 300_000;
 
 /** A compose install's server, as the loop drives it: its compose directory, the restart, and the readings master status names. */
 export interface ComposeServer {

@@ -18,7 +18,7 @@ export const continuable = (kind: string | null | undefined, contract?: Register
  * or into a 0600 file in the run directory named by a one-line pointer prompt for runtimes with no
  * stdin form, so spawn never fails with E2BIG, while smaller prompts stay on argv.
  */
-export const inlinePromptLimitBytes = 64 * 1024;
+const inlinePromptLimitBytes = 64 * 1024;
 const agyPrintFlags = new Set(['-p', '--print', '--prompt']);
 const stdinForm = (kind: string, contract?: RegisteredLaunch | null) => contract?.headlessArgs ? undefined : runtimeAdapter(kind)?.headless?.stdin;
 /** The prompt to pipe to stdin for a headless run, or undefined when the prompt does not go on stdin. */

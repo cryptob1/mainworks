@@ -3,15 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { setting } from './setting.js';
-
-/**
- * `package.json`'s version. It is no longer the release: every candidate production promotes is
- * tagged with a date version (GY-1959), and that tag is what the CLI, `/healthz` and the install
- * defaults report. It stays exported for builds that still stamp it.
- */
-export const packageVersion = (() => {
-  try { return String(JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version ?? '0.0.0'); } catch { return '0.0.0'; }
-})();
+import { stateDirectory } from './install/layout.js';
 
 /** A date version: YYYY.M.D for a day's first promotion, YYYY.M.D.N for the next ones. */
 export const datedVersionPattern = /^(\d{4})\.([1-9]\d?)\.([1-9]\d?)(?:\.([1-9]\d*))?$/;
@@ -99,14 +91,14 @@ export const installationRoot = fileURLToPath(new URL('..', import.meta.url));
  * release is a Git worktree whose `.git` names the source checkout of the host that made it, so a
  * tree copied to another host cannot be read by Git; this file still names the code it holds.
  */
-export const releaseIdentityPath = (root: string) => join(root, '.graphyard', 'cli-ready');
+export const releaseIdentityPath = (root: string) => join(stateDirectory(root), 'cli-ready');
 export const recordedCommit = (root: string) => {
   try { const value = readFileSync(releaseIdentityPath(root), 'utf8').trim(); return /^[0-9a-f]{40}$/i.test(value) ? value.toLowerCase() : null; } catch { return null; }
 };
 /** GY-3569: record the commit a release tree now holds; every checkout move writes it, so a caller that cannot run git reads the code it runs. */
 export const recordCommit = (root: string, commit: string) => {
   const file = releaseIdentityPath(root);
-  mkdirSync(join(root, '.graphyard'), { recursive: true });
+  mkdirSync(stateDirectory(root), { recursive: true });
   writeFileSync(file, commit.toLowerCase());
   return file;
 };
@@ -128,7 +120,7 @@ export const releaseInfo = () => {
   return { version: (stamped ?? cliRelease()).version, revision: stamped?.revision ?? (setting('BUILD_REVISION') || 'unknown') };
 };
 
-export { schemaGenerations, schemaVersion } from './store/schema-lineage.js';
+export {  schemaVersion } from './store/schema-lineage.js';
 
 /** One commit, one npm version, using the commit's own UTC date. */
 export function publishedVersion(commit: string, committedAt: Date) {

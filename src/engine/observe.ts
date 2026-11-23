@@ -47,7 +47,7 @@ export async function onlyActionsMovedSince(db: { query: (text: string, values: 
   return !!read && same(read, work);
 }
 /** The item as its save at `revision` wrote it to the ledger, when that save is at most `lookback` saves behind `work`. */
-export async function revisionAt(db: { query: (text: string, values: unknown[]) => Promise<{ rows: any[] }> }, work: Work, revision: number, lookback: number): Promise<Work | null> {
+async function revisionAt(db: { query: (text: string, values: unknown[]) => Promise<{ rows: any[] }> }, work: Work, revision: number, lookback: number): Promise<Work | null> {
   const behind = work.revision - revision;
   if (!Number.isInteger(behind) || behind <= 0 || behind > lookback) return null;
   const read = (await db.query(`SELECT ${eventWorkSql('saved')} AS work FROM (SELECT work_id, payload FROM events WHERE work_id=$1 AND (payload ? 'work' OR payload ? 'delta') ORDER BY seq DESC OFFSET $2 LIMIT 1) saved`, [work.id, behind])).rows[0]?.work as Work | undefined;

@@ -20,7 +20,7 @@ import { plainReason } from './plain-status.js';
  */
 
 /** A refusal that belongs to another item: that item's action is what moves this one. */
-export const deferredRefusal = (reason: string) => /^Dependency .+ is unfinished$/.test(reason);
+const deferredRefusal = (reason: string) => /^Dependency .+ is unfinished$/.test(reason);
 
 export interface ActionlessCard {
   item: Work;

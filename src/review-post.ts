@@ -20,7 +20,7 @@ export const reviewEvents = ['APPROVE', 'REQUEST_CHANGES', 'COMMENT', 'REJECT', 
 export type ReviewEvent = typeof reviewEvents[number];
 const sha = z.string().regex(/^[0-9a-f]{40}$/);
 /** The verdict token a control-plane launch binds: 32 random bytes, hex; only its sha256 is kept anywhere but the binding. */
-export const verdictTokenSchema = z.string().regex(/^[0-9a-f]{64}$/);
+const verdictTokenSchema = z.string().regex(/^[0-9a-f]{64}$/);
 export const reviewBindingSchema = z.object({
   repository: z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
   key: z.string().min(1).max(100), pr: z.number().int().positive(), sha, baseSha: sha, policyRevision: z.number().int().nonnegative(),
@@ -61,7 +61,7 @@ export class ReviewPostRefusal extends Error {}
 const unquoted = (path: string): string => /^".*"$/.test(path) ? (() => { try { return JSON.parse(path) as string; } catch { return path; } })() : path;
 
 /** The hunks the new head changes, by file, read from `git diff -U0 PREVIOUS HEAD`: each file's new-side [first line, last line] ranges. */
-export function changedHunks(diff: string): Map<string, Array<[number, number]>> {
+function changedHunks(diff: string): Map<string, Array<[number, number]>> {
   const hunks = new Map<string, Array<[number, number]>>();
   let path: string | null = null;
   for (const line of diff.split('\n')) {
@@ -89,7 +89,7 @@ export function changedHunks(diff: string): Map<string, Array<[number, number]>>
  * criterion named. A finding re-raising an earlier round's path, naming a changed line, or citing an
  * unmet AC-N stands; anything else on unchanged code belongs on a Nit: line.
  */
-export function unchangedCodeFindings(body: string, binding: Pick<ReviewPostBinding, 'previousHead' | 'earlierPaths'>, diff: string): string[] {
+function unchangedCodeFindings(body: string, binding: Pick<ReviewPostBinding, 'previousHead' | 'earlierPaths'>, diff: string): string[] {
   const hunks = changedHunks(diff), earlier = new Set(binding.earlierPaths ?? []);
   return blockingFindings(body).filter(finding => {
     const location = findingLocation(finding);

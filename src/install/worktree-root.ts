@@ -19,7 +19,8 @@ import { setting } from '../setting.js';
  * from the system temporary directory.
  */
 
-export const defaultWorktreeRootMinFreeGb = 2, defaultWorktreeRootBudgetGb = 10;
+export const defaultWorktreeRootMinFreeGb = 2;
+const defaultWorktreeRootBudgetGb = 10;
 type Environment = Record<string, string | undefined>;
 export interface WorktreeRootSettings { repository: string; run?: { worktreeRoot?: string; worktreeRootMinFreeGb?: number; worktreeRootBudgetGb?: number } }
 
@@ -52,7 +53,7 @@ const volatileFilesystems: Record<number, string> = { 0x01021994: 'tmpfs', 0x858
 export const volatileFilesystem = (path: string): string | null => {
   try { return volatileFilesystems[Number(statfsSync(path).type)] ?? null; } catch { return null; }
 };
-export interface FilesystemFacts {
+interface FilesystemFacts {
   /** The directory that was measured: the path itself, or its nearest existing ancestor. */
   probed: string;
   /** `tmpfs` or `ramfs` when the volume is memory-backed; null on durable storage. */
@@ -102,7 +103,7 @@ export const checkoutKinds = ['proof', 'review', 'approval', 'trial'] as const;
 export type CheckoutKind = typeof checkoutKinds[number];
 const managedName = /^graphyard-(proof|review|approval|trial)-[a-z0-9][a-z0-9-]{0,39}-[0-9a-f]{7}-[0-9a-f]{8}$/;
 export interface SessionCheckout { directory: string; worktree: string }
-export const sessionCheckoutName = (kind: CheckoutKind, key: string, sha: string, id: string) => `graphyard-${kind}-${key.toLowerCase().replace(/[^a-z0-9-]/g, '-')}-${sha.slice(0, 7).toLowerCase()}-${id.replace(/-/g, '').slice(0, 8).toLowerCase()}`;
+const sessionCheckoutName = (kind: CheckoutKind, key: string, sha: string, id: string) => `graphyard-${kind}-${key.toLowerCase().replace(/[^a-z0-9-]/g, '-')}-${sha.slice(0, 7).toLowerCase()}-${id.replace(/-/g, '').slice(0, 8).toLowerCase()}`;
 export function sessionCheckout(base: string, kind: CheckoutKind, key: string, sha: string, id: string): SessionCheckout {
   const directory = resolve(base, sessionCheckoutName(kind, key, sha, id));
   return { directory, worktree: resolve(directory, 'checkout') };
@@ -182,7 +183,7 @@ export async function removeUnownedCheckouts(repository: string, base: string, l
 }
 
 /** What the root itself holds, as `du` counts it; null when it cannot be measured in time. */
-export async function directoryBytes(path: string, timeoutMs = 10_000): Promise<number | null> {
+async function directoryBytes(path: string, timeoutMs = 10_000): Promise<number | null> {
   try {
     const kilobytes = Number.parseInt((await runChild('du', ['-sk', path], { timeoutMs })).split(/\s/)[0] ?? '', 10);
     return Number.isFinite(kilobytes) ? kilobytes * 1024 : null;
@@ -194,7 +195,7 @@ export interface WorktreeRootHealth {
   usedBytes: number | null; budgetBytes: number; checkouts: number; unowned: number; low: boolean; overBudget: boolean;
 }
 /** The share of the budget at which `master status` speaks up, while writes still succeed. */
-export const worktreeRootBudgetWarning = 0.8;
+const worktreeRootBudgetWarning = 0.8;
 /**
  * The root as `master status` reports it. Free space is what the kernel reports for the volume; a
  * user quota is invisible there, so the root's own size is also held against a configured budget —

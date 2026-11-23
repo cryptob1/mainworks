@@ -4,8 +4,8 @@ import type { Credential } from '../principals.js';
 import { setting } from '../../setting.js';
 
 /** The ledger event that spends a sign-in claim: one per claim hash, ever. */
-export const signinClaimedEvent = 'signin.claimed';
-export const claimHashOf = (code: string) => createHash('sha256').update(code).digest('hex');
+const signinClaimedEvent = 'signin.claimed';
+const claimHashOf = (code: string) => createHash('sha256').update(code).digest('hex');
 
 /** The deployed claim (GRAPHYARD_SIGNIN_CLAIM, a SHA-256) and the admin credential it yields; null when none is deployed. */
 export function signinClaimFromEnv(env: NodeJS.ProcessEnv, credentials: Credential[]) {

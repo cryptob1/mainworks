@@ -19,13 +19,13 @@ const versionPath = z.string().trim().max(300).regex(/^\/(?!\/)[^?#\s]*$/, "A ve
 const applicationId = z.string().trim().regex(/^[a-z0-9][a-z0-9-]{0,39}$/, 'An application id is 1-40 lowercase letters, digits or hyphens, starting with a letter or digit');
 
 /** A static site: the directory its build writes, and the command that builds it (null: the directory is served as committed). */
-export const staticApplicationSchema = z.object({ id: applicationId, kind: z.literal('static'), directory: relativePath('A static application directory'), build: z.string().trim().min(1).max(500).nullable().default(null), versionUrl, versionPath }).strict();
+const staticApplicationSchema = z.object({ id: applicationId, kind: z.literal('static'), directory: relativePath('A static application directory'), build: z.string().trim().min(1).max(500).nullable().default(null), versionUrl, versionPath }).strict();
 /** A Compose project: its file, the service that answers HTTP and that service's container port. */
-export const composeApplicationSchema = z.object({ id: applicationId, kind: z.literal('compose'), file: relativePath('A Compose file'), service: z.string().trim().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/, 'A Compose service name'), port: z.number().int().min(1).max(65535), versionUrl, versionPath }).strict();
+const composeApplicationSchema = z.object({ id: applicationId, kind: z.literal('compose'), file: relativePath('A Compose file'), service: z.string().trim().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/, 'A Compose service name'), port: z.number().int().min(1).max(65535), versionUrl, versionPath }).strict();
 /** A Node application (GY-3201): its directory, the command that builds it there (null: none) and the command that starts it there, listening on the PORT Mainworks assigns; the repository's install runs at its root first. */
 export const nodeApplicationSchema = z.object({ id: applicationId, kind: z.literal('node'), directory: relativePath('A node application directory'), build: z.string().trim().min(1).max(500).nullable().default(null), start: z.string().trim().min(1).max(500), versionUrl, versionPath }).strict();
 /** A service deployed elsewhere (a Go service on Railway, say) that Mainworks only observes (GY-3459): its directory and the versionUrl it answers; never previewed. Declared without a kind. */
-export const externalApplicationSchema = z.object({ id: applicationId, kind: z.literal('external'), directory: relativePath('An application directory'), versionUrl: versionUrl.unwrap() }).strict();
+const externalApplicationSchema = z.object({ id: applicationId, kind: z.literal('external'), directory: relativePath('An application directory'), versionUrl: versionUrl.unwrap() }).strict();
 export const applicationSchema = z.preprocess(
   value => value && typeof value === 'object' && !Array.isArray(value) && !('kind' in value) ? { ...value, kind: 'external' } : value,
   z.discriminatedUnion('kind', [staticApplicationSchema, composeApplicationSchema, nodeApplicationSchema, externalApplicationSchema]));

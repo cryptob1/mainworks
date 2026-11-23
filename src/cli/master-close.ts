@@ -1,7 +1,7 @@
 import { parseArgs } from 'node:util';
 import type { CloseInput } from '../model/closure.js';
 
-export const closeUsage = 'Use master close GY-N REASON --duplicate-of GY-M | --superseded-by COMMIT|GY-M | --obsolete';
+const closeUsage = 'Use master close GY-N REASON --duplicate-of GY-M | --superseded-by COMMIT|GY-M | --obsolete';
 export const closeHelp = [
   '  master close GY-N REASON --duplicate-of GY-M | --superseded-by COMMIT|GY-M | --obsolete',
   '                                Close work that will never be delivered; refused under a live',

@@ -9,6 +9,7 @@ import { availableParallelism } from 'node:os';
 import { cpuCelsius, heatReading, heatWindowMs, trialHotCelsius } from '../merge-writer/trial-load.js';
 import { budgetLine, machineName } from '../model/machine-load.js';
 import { setting } from '../setting.js';
+import { busiestLocalJobs, forgetLocalJobs, localJobsText, type LocalJob } from './local-jobs.js';
 
 /**
  * The host heavy-job budget (GY-612, GY-3290).
@@ -61,7 +62,7 @@ const ordinaryLimit = (directory: string) => limitFile(directory) ?? heavyJobBud
  */
 export interface Machine { name: string; local?: boolean; away: boolean; cores: number | null; busy: number | null; celsius: number | null }
 export const machinesFile = (directory: string) => join(directory, 'machines.json');
-export function writeMachines(directory: string, machines: readonly Machine[], now = new Date()) {
+export function writeMachines(directory: string, machines: readonly Machine[], now = new Date(), proc = '/proc') {
   const pending = `${machinesFile(directory)}.${randomUUID()}`;
   mkdirSync(directory, { recursive: true });
   writeFileSync(pending, JSON.stringify(machines.map(({ name, local, away, cores, busy, celsius }) => ({ name, ...(local ? { local } : {}), away, cores, busy, celsius }))));
@@ -69,19 +70,21 @@ export function writeMachines(directory: string, machines: readonly Machine[], n
   // GY-3706: since when this machine is above its cores in load while a ready host has more than half its cores free.
   const local = machines[0], idle = machines.slice(1).find(host => !host.away && host.cores && host.busy !== null && host.cores - host.busy > host.cores / 2);
   const since = local?.cores && local.busy !== null && local.busy > local.cores && idle ? readImbalance(directory)?.since ?? now.toISOString() : null;
-  if (since) writeFileSync(imbalanceFile(directory), JSON.stringify({ since })); else rmSync(imbalanceFile(directory), { force: true });
+  // GY-3722: while it stands, the jobs using the most CPU here since the last reading.
+  if (since) writeFileSync(imbalanceFile(directory), JSON.stringify({ since, jobs: busiestLocalJobs(proc, now.getTime()) }));
+  else { rmSync(imbalanceFile(directory), { force: true }); forgetLocalJobs(proc); }
 }
 const imbalanceFile = (directory: string) => join(directory, 'imbalance.json');
-function readImbalance(directory: string): { since: string } | null {
+function readImbalance(directory: string): { since: string; jobs?: LocalJob[] } | null {
   try { return JSON.parse(readFileSync(imbalanceFile(directory), 'utf8')); } catch { return null; }
 }
 /** GY-3706: one line once this machine has been above its cores in load for 5 minutes while a ready host had more than half its cores free. */
 export function imbalanceLine(directory: string, now = Date.now()): string | null {
-  const since = Date.parse(readImbalance(directory)?.since ?? ''), machines = readMachines(directory);
+  const imbalance = readImbalance(directory), since = Date.parse(imbalance?.since ?? ''), machines = readMachines(directory);
   if (!(now - since >= 5 * 60_000) || !machines) return null;
   const local = machines[0]!, idle = machines.slice(1).filter(host => !host.away && host.cores && host.busy !== null).sort((a, b) => (b.cores! - b.busy!) - (a.cores! - a.busy!))[0];
   if (!idle) return null;
-  return `This machine is at load ${Math.round(local.busy!)} on ${local.cores} cores while ${machineName(idle.name)} has ${Math.round(idle.cores! - idle.busy!)} of ${idle.cores} cores free, for ${Math.floor((now - since) / 60_000)} minutes.`;
+  return `This machine is at load ${Math.round(local.busy!)} on ${local.cores} cores while ${machineName(idle.name)} has ${Math.round(idle.cores! - idle.busy!)} of ${idle.cores} cores free, for ${Math.floor((now - since) / 60_000)} minutes.${imbalance?.jobs?.length ? ` Busiest here: ${localJobsText(imbalance.jobs)}.` : ''}`;
 }
 export function readMachines(directory: string): Machine[] | null {
   try { const machines = JSON.parse(readFileSync(machinesFile(directory), 'utf8')); return Array.isArray(machines) && machines[0]?.local ? machines : null; } catch { return null; }

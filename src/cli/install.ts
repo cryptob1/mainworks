@@ -11,9 +11,10 @@ import { readSecretFromStdin } from './context.js';
 import { moveInstall } from '../install/move.js';
 import { upCommand } from '../up.js'; import { runDoctor } from './install-doctor.js';
 import { setting } from '../setting.js';
+import { chooseInstallLayout } from '../install/layout.js';
 
 /** GY-2009: install registers no GitHub App, so `up --reuse-app` would reuse nothing; it is refused rather than silently ignored. */
-export const upAppReuseRefusal = 'mainworks up --reuse-app is refused: install registers no GitHub App and the merge writer\'s deploy key is its only GitHub access (GY-2009); rerun without --reuse-app';
+const upAppReuseRefusal = 'mainworks up --reuse-app is refused: install registers no GitHub App and the merge writer\'s deploy key is its only GitHub access (GY-2009); rerun without --reuse-app';
 export function refuseUpAppReuse(args: readonly (string | undefined)[]): void {
   if (args.some(arg => arg === '--reuse-app' || arg?.startsWith('--reuse-app='))) throw new Error(upAppReuseRefusal);
 }
@@ -146,6 +147,8 @@ export const installCommands = defineCommands([
       const { values, request: inputs } = installRequestFromArgs(context.rest);
       const mergeToken = values['merge-token-stdin'] ? await readSecretFromStdin(10000) : undefined;
       if (values['merge-token-stdin'] && !mergeToken) throw new Error('--merge-token-stdin requires a nonempty token on stdin');
+      // GY-3711: the one install-time choice of names, before anything is written.
+      if (values.apply) chooseInstallLayout(context.repositoryRoot());
       const session = await prepareInstall(process.cwd(), inputs, {
         ...(mergeToken ? { mergeToken } : {}),
         cliPath: await context.activeCliPath(), hostId: context.individualHostId(), log: line => console.error(line),

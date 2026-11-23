@@ -19,18 +19,19 @@ import { cliCommit } from './protocol-version.js';
 import type { Work } from './model.js';
 import type { MergeLedgerState } from './model/merge-ledger.js';
 import type { DaemonState } from './daemon/state.js';
+import { stateDirectory } from './install/layout.js';
 
-export const defaultBenchFilesPath = 'bench/trial-files.txt';
+const defaultBenchFilesPath = 'bench/trial-files.txt';
 export const benchResultsLimit = 200;
-export const benchResultsPath = (root: string) => join(root, '.graphyard', 'bench-results.jsonl');
-export const benchTrialKey = 'bench-trial';
+export const benchResultsPath = (root: string) => join(stateDirectory(root), 'bench-results.jsonl');
+const benchTrialKey = 'bench-trial';
 export const benchIntervalMs = 6 * 60 * 60_000;
-export const benchRegressionThreshold = 0.25;
-export const benchWindowSize = 10;
+const benchRegressionThreshold = 0.25;
+const benchWindowSize = 10;
 const benchTimeoutMs = 60 * 60_000;
 const ticksPerSecond = 100;
 
-export interface BenchSteps {
+interface BenchSteps {
   checkout: number;
   build: number;
   selection: number;
@@ -55,7 +56,7 @@ export interface BenchResult {
   hostTemperatures: Record<string, number | null>;
 }
 
-export interface BenchAttention {
+interface BenchAttention {
   subject: string;
   text: string;
   next: string;
@@ -69,7 +70,7 @@ export interface BenchStatus {
   attention: BenchAttention | null;
 }
 
-export interface BenchStepDiff {
+interface BenchStepDiff {
   baseline: number;
   candidate: number;
   deltaSeconds: number;
@@ -97,7 +98,7 @@ function median(values: readonly number[]): number {
 }
 
 /** Reads the checked-in list of test files and computes its stable hash. */
-export function readBenchFileList(root: string, filesPath = defaultBenchFilesPath): { fileList: string; files: string[]; fileListHash: string } {
+function readBenchFileList(root: string, filesPath = defaultBenchFilesPath): { fileList: string; files: string[]; fileListHash: string } {
   const absolute = isAbsolute(filesPath) ? filesPath : join(root, filesPath);
   if (!existsSync(absolute)) throw new Error(`Benchmark file list not found: ${absolute}`);
   const files = readFileSync(absolute, 'utf8')
@@ -193,7 +194,7 @@ export async function benchTrial(input: {
   const readStat = input.readCpuStat ?? readProcStat;
   const commit = await resolveRef(input.root, input.ref, run);
   const { fileList, files, fileListHash } = readBenchFileList(input.root, input.filesPath);
-  const base = input.base ?? await loadStoredMasterConfig(input.root).then(cfg => worktreeRoot(input.root, cfg), () => join(input.root, '.graphyard', 'bench-worktrees'));
+  const base = input.base ?? await loadStoredMasterConfig(input.root).then(cfg => worktreeRoot(input.root, cfg), () => join(stateDirectory(input.root), 'bench-worktrees'));
   const resultsFile = input.resultsFile ?? benchResultsPath(input.root);
   const build = input.build !== undefined
     ? input.build

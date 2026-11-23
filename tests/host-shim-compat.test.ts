@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
-import { hostShimDigest, hostShimScript, legacyShimVerbs, trialVerbs } from '../src/host-shim.js';
+import { hostShimDigest, hostShimScript, hostShimVerbs, legacyShimVerbs, trialVerbs } from '../src/host-shim.js';
 import { readHostReadings } from '../src/hosts.js';
 import { encodeLoopHosts, loopHosts } from '../src/model/loop-presence.js';
 import { outdatedShimAttention, readRemoteShardRuns, readShardHosts, recordRemoteShardRun, remoteShardSummary } from '../src/merge-writer/remote-shards.js';
@@ -24,7 +24,7 @@ before(async () => {
   await writeFile(file, JSON.stringify([{ target, addedAt: '2026-11-19T00:00:00.000Z' }]));
 });
 const run: ChildRun = (command, args, options) => defaultChildRun(command, args, { ...options, env: { ...process.env, ...options?.env, PATH: `${hosts.bin}:${process.env.PATH}` } });
-const verbsLine = `verbs ${trialVerbs.join(' ')}`;
+const verbsLine = `verbs ${hostShimVerbs.join(' ')}`;
 const install = (script: string) => writeFile(hosts.shim, script);
 const probe = async () => (await readHostReadings([], { file, run, local: 'here' })).find(reading => reading.host === target)!;
 const trialReading = async () => (await readShardHosts([target], run, 2)).find(reading => reading.name === target)!;

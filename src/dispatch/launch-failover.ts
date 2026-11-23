@@ -19,13 +19,13 @@ export { selectReviewerProfile } from '../master/profiles.js';
  * the pane's last words rather than the CLI's JSON error.
  */
 export interface InstantExit { pane: string; words: string; notice: ExhaustionSignal }
-export class InstantExitError extends Error {
+class InstantExitError extends Error {
   constructor(readonly instantExit: InstantExit, override readonly cause: unknown) {
     super(`${instantExitReason} on its provider's limit notice: ${instantExit.notice.reason}`);
   }
 }
 /** How many times one profile launches again on its next account within a single tick after such exits. */
-export const instantExitRelaunchLimit = 4;
+const instantExitRelaunchLimit = 4;
 export interface InstantExitWatch {
   /** The launcher's Herdr calls, with each read of the pane it typed the launch into remembered. */
   run: ChildRun;

@@ -37,6 +37,6 @@ export const requiredPullRequestChecks = (policy: DeliveryPolicy) =>
 export const localDeliveryDefaults = { previews: 'local', candidateMaxChanges: 5, productionVerification: true } as const;
 
 /** The two workflow files `init --apply` generates under the candidate model. */
-export const candidateWorkflowFile = '.github/workflows/graphyard-release-candidate.yml';
-export const promotionWorkflowFile = '.github/workflows/graphyard-promotion.yml';
+const candidateWorkflowFile = '.github/workflows/graphyard-release-candidate.yml';
+const promotionWorkflowFile = '.github/workflows/graphyard-promotion.yml';
 export const generatedWorkflowFiles = [candidateWorkflowFile, promotionWorkflowFile] as const;

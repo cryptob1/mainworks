@@ -16,9 +16,9 @@ import { actionLine, message, storeAction } from './state.js';
 import type { Cycle } from './cycle.js';
 
 /** How long a failed upstream filing waits before the loop asks again. */
-export const upstreamRetryMs = 3_600_000;
+const upstreamRetryMs = 3_600_000;
 /** GY-3693: how long after a repair item is delivered or closed before the same fault files a new item. */
-export const faultCooldownMs = 24 * 60 * 60_000;
+const faultCooldownMs = 24 * 60 * 60_000;
 
 /**
  * The bug item every fault the loop files is built from (GY-3160, GY-3365, GY-3693): the batch gate's flakes,
@@ -115,7 +115,7 @@ const doneAt = (item: Pick<Work, 'stageEnteredAt' | 'updatedAt' | 'delivery' | '
  * GY-3693: the standing repair item for `faultKey` — any open item with that fault key, else the
  * most recently delivered or closed item with that fault key within the last 24 hours.
  */
-export function existingFaultItem(work: readonly Work[], faultKey: string, now: number): Work | null {
+function existingFaultItem(work: readonly Work[], faultKey: string, now: number): Work | null {
   const matching = work.filter(item => item.faultKey === faultKey);
   const open = matching.find(item => item.stage !== 'done');
   if (open) return open;

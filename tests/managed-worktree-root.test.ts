@@ -284,7 +284,7 @@ test('integration:ephemeral-checkout-reclaim — every checkout is removed when 
     const pending = records.filter(record => record.state === 'pending').map(record => record.checkout!);
     assert.deepEqual((await readdir(managed)).filter(name => name.startsWith('graphyard-')).map(name => join(managed, name)), pending);
     assert.deepEqual(pending, [live.checkout]);
-    assert.doesNotMatch(registered(git), /mainworks-(proof|review)-gy-1(0\d|1[0234])-(?!.*gy-111)/);
+    assert.doesNotMatch(registered(git), /graphyard-(proof|review)-gy-1(0\d|1[0234])-(?!.*gy-111)/);
     // And the last one goes when its session does, taking the emptied root with it.
     await settle({ ...producing('GY-111', live.asked), evidence: [passing] } as any);
     gone(live.checkout);

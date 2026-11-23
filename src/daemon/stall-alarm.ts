@@ -10,9 +10,9 @@ import { actionDetailMax, storeAction, type DaemonState } from './state.js';
 
 export const stallAlarmKey = 'stall-alarm';
 /** Free capacity and ready work with no launch this long raise the alarm. */
-export const stallIdleMs = 10 * 60_000;
+const stallIdleMs = 10 * 60_000;
 /** An open item with no change and no actor this long raises it too. */
-export const noActorMs = 60 * 60_000;
+const noActorMs = 60 * 60_000;
 
 export interface StallReadings {
   now: number;
@@ -37,7 +37,7 @@ const live = (item: Work, now: number) => (!!item.lease && Date.parse(item.lease
  * progress, or a dispatch the loop recorded done; else the loop's own start. A launch that failed
  * and exited is not one.
  */
-export function lastLaunchAt(state: StallReadings['state'], work: readonly Work[]): number | null {
+function lastLaunchAt(state: StallReadings['state'], work: readonly Work[]): number | null {
   const times: number[] = [];
   for (const item of work) for (const session of item.sessions ?? []) {
     if (session.kind !== 'implementation') continue;

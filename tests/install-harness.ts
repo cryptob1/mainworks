@@ -11,10 +11,9 @@ import { ensureDeployKey } from '../src/install/deploy-key.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 export const REPOSITORY = 'owner/project';
-export const HEAD_SHA = 'a'.repeat(40);
 /** The Mainworks source every harness install builds from: this checkout, never the managed repository, at a fixed commit. */
-export const GRAPHYARD_SOURCE = fileURLToPath(new URL('..', import.meta.url));
-export const GRAPHYARD_SOURCE_SHA = 'c'.repeat(40);
+const GRAPHYARD_SOURCE = fileURLToPath(new URL('..', import.meta.url));
+const GRAPHYARD_SOURCE_SHA = 'c'.repeat(40);
 
 export async function temporaryRepository(repository = REPOSITORY) {
   const root = await temporaryDirectory('install');
@@ -25,7 +24,7 @@ export async function temporaryRepository(repository = REPOSITORY) {
 }
 
 /** An ed25519 public key as an OpenSSH line, the form ssh-keygen writes and `gh repo deploy-key list` answers (GY-2010). */
-export function openSshPublicKey(comment: string) {
+function openSshPublicKey(comment: string) {
   const raw = generateKeyPairSync('ed25519').publicKey.export({ format: 'der', type: 'spki' }).subarray(-32);
   const field = (value: Buffer) => { const length = Buffer.alloc(4); length.writeUInt32BE(value.length); return Buffer.concat([length, value]); };
   return `ssh-ed25519 ${Buffer.concat([field(Buffer.from('ssh-ed25519')), field(raw)]).toString('base64')} ${comment}`;

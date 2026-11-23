@@ -40,7 +40,7 @@ const summaries = new WeakSet<object>(), projections = new WeakSet<object>();
 const cache = new Map<string, Work>();
 /** The version each item's stand-in of each kind is cached under, so a newer version replaces it rather than accumulating beside it. */
 const cachedVersion = new Map<string, string>();
-export const lockedSummaryCacheLimit = 20_000;
+const lockedSummaryCacheLimit = 20_000;
 let cacheLimit = lockedSummaryCacheLimit;
 /** Bound the stand-in cache at `limit` entries instead of `lockedSummaryCacheLimit`: tests reach eviction with it. */
 export function boundLockedCache(limit = lockedSummaryCacheLimit) { cacheLimit = limit; }

@@ -21,7 +21,7 @@ import { setting } from '../../setting.js';
 export const confinedMaster = (env: NodeJS.ProcessEnv = process.env) => setting(masterConfinementVariable, env) === 'master';
 
 /** `master recover`: repin the known-good coordinator (GY-1529). */
-export const recoverUsage = 'Use master recover [--to SHA] [--reason TEXT] --admin-token-stdin (the admin credential on stdin; the pin returns to the previous known-good SHA without --to)';
+const recoverUsage = 'Use master recover [--to SHA] [--reason TEXT] --admin-token-stdin (the admin credential on stdin; the pin returns to the previous known-good SHA without --to)';
 
 /** What `master recover` does outside this process; a test hands in its own so no real unit is touched. */
 export interface RecoverEffects { run: ChildRun; host: LoopSupervisorHost; restart: (unit: string) => Promise<unknown> }

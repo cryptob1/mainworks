@@ -94,6 +94,10 @@ test('e2e:master-page-ux — history, fitting, native input, clipboard, reconnec
       return Array.from({ length: buffer.length }, (_, i) => buffer.getLine(i)?.translateToString()).filter(line => String(line).startsWith('earlier line ')).length;
     })).toBe(1000);
     await page.evaluate(() => (window as any).testTerminal.scrollToBottom());
+    // GY-3731: the pane mounts hidden under the Conversation tab; a hello that lands before the switch
+    // to #master/live cannot focus it, so keys went to the page body. Focus it as a user does, and wait.
+    await page.locator('.terminal-host').click();
+    await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
     await page.keyboard.type('hello master'); await page.keyboard.press('Enter');
     for (const key of ['Control+c', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Escape', 'Alt+x']) await page.keyboard.press(key);
     await expect.poll(f.inputs).toEqual(expect.arrayContaining(['\x03', '\x1b[A', '\x1b[B', '\x1b[D', '\x1b[C', '\x1b', '\x1bx']));
@@ -115,14 +119,14 @@ test('e2e:master-page-ux — history, fitting, native input, clipboard, reconnec
     // written after the drop could miss that read (GY-3261).
     f.current.gap = 'output produced during the gap'; await f.save();
     f.child.send('drop-terminals');
-    await expect.poll(f.reconnects).toBe(1);
+    await expect.poll(f.reconnects, settled).toBe(1);
     await expect(page.locator('.xterm-rows')).toContainText(f.current.gap, settled);
     expect(await page.evaluate(() => (window as any).survivedDrop)).toBe(true);
     // A failed reconnect while offline must keep retrying once the network returns.
     await page.context().setOffline(true);
     f.current.gap = 'output while offline'; await f.save();
     f.child.send('drop-terminals');
-    await expect.poll(f.reconnects).toBe(2);
+    await expect.poll(f.reconnects, settled).toBe(2);
     await page.waitForTimeout(1000);
     await page.context().setOffline(false);
     await expect(page.locator('.xterm-rows')).toContainText(f.current.gap, settled);

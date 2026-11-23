@@ -90,7 +90,7 @@ const insideCheckout = (path: string, checkout: string) => {
  * links, an external network, volume, secret or config (shared with something outside the preview),
  * or no `service` to serve.
  */
-export function composeMountProblems(config: Json, checkout: string, service: string): string[] {
+function composeMountProblems(config: Json, checkout: string, service: string): string[] {
   const problems: string[] = [], root = followed(resolve(checkout));
   const inside = (path: unknown) => { if (typeof path !== 'string') return false; const real = followed(resolve(root, path)); return real === root || real.startsWith(`${root}${sep}`); };
   const services: Json = config.services ?? {};
@@ -172,7 +172,7 @@ const keyed = (value: unknown): Record<string, unknown> => Array.isArray(value)
  * any resolved configuration can be checked. Read as text before Compose reads it, so it fails closed:
  * the words anywhere (or a YAML escape that could spell them) refuse the file.
  */
-export async function composeSourceProblems(checkout: string, file: string, isolatedTrial = false): Promise<string[]> {
+async function composeSourceProblems(checkout: string, file: string, isolatedTrial = false): Promise<string[]> {
   const root = followed(resolve(checkout)), real = followed(resolve(root, file));
   if (real !== root && !real.startsWith(`${root}${sep}`)) return [`the Compose file ${file} is outside the change's checkout`];
   const text = await readFile(real, 'utf8');
@@ -184,7 +184,7 @@ export async function composeSourceProblems(checkout: string, file: string, isol
 }
 
 /** This process, as the owner label records it. */
-export const currentOwner = (now = Date.now()): TempOwner => ({ pid: process.pid, startedAt: processStartTicks(process.pid), pidNamespace: processPidNamespace(), at: new Date(now).toISOString() });
+const currentOwner = (now = Date.now()): TempOwner => ({ pid: process.pid, startedAt: processStartTicks(process.pid), pidNamespace: processPidNamespace(), at: new Date(now).toISOString() });
 
 /** A preview's running Compose project: `start` brings it up and answers its loopback origin; `close` removes it, volumes and networks with it. */
 export interface ComposeStack { project: string; url: string | null; start(signal: AbortSignal, timeoutMs: number): Promise<string>; close(): Promise<void> }
@@ -447,9 +447,9 @@ export async function sweepComposePreviews(options: { docker?: Docker; env?: Rec
 }
 
 /** The most pages and assets a Compose preview publishes. */
-export const composeSnapshotPages = 200;
+const composeSnapshotPages = 200;
 /** The most requests one publication makes, whatever they answer: a page naming endless unpublishable links ends here. */
-export const composeSnapshotFetches = 400;
+const composeSnapshotFetches = 400;
 /**
  * The served application's pages as its link publishes them: `/` and every same-origin page and
  * asset its HTML and CSS name by relative path (`href`, `src`, `url(...)`), fetched from the running

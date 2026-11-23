@@ -40,6 +40,7 @@ import type { Work } from './model.js';
 import { baseStillFails, type ServeLanding } from './merge-writer/serve-revert.js';
 import type { PreviewCaseRun } from './merge-writer/served-previews.js';
 import { trialFileTimeoutMs } from './merge-writer/trial-load.js';
+import { stateDirectory } from './install/layout.js';
 
 /** How long one gate may run before it counts as failed (gate timeout). */
 export const gateLimitMs = 45 * 60_000;
@@ -64,14 +65,16 @@ export const diagnosticsIntervalMs = 24 * 60 * 60_000;
 /** The gate runs the whole catalog only when its measured time fits this share of the limit. */
 export const catalogBudgetMs = gateLimitMs / 2;
 /** The whole-catalog gate runs the measure reads: the last few, within a week (older ones age out so the catalog is tried again). */
-export const gateRunsWindow = 5, gateRunsMaxAgeMs = 7 * 24 * 60 * 60_000;
+const gateRunsWindow = 5;
+export const gateRunsMaxAgeMs = 7 * 24 * 60 * 60_000;
 /** The merges the revert rate reads, and the rate above which the master is woken. */
-export const revertRateWindow = 20, revertRateLimit = 1 / 5;
+const revertRateWindow = 20;
+const revertRateLimit = 1 / 5;
 
 /** One merge the gate judged: its landing commit, its item, and whether the gate reverted it. */
-export interface GateMerge { sha: string; item: string; reverted: boolean }
+interface GateMerge { sha: string; item: string; reverted: boolean }
 /** What the last settled gate run came to (GY-3141): why the verified commit has not moved, at a glance. */
-export interface GateLastOutcome {
+interface GateLastOutcome {
   /** The tip the run gated; null when the run failed before it cut a batch. */
   tip: string | null;
   outcome: 'verified' | 'reverted' | 'timeout' | 'retry' | 'held' | 'error';
@@ -149,7 +152,7 @@ export interface GateRecord {
   at: string;
 }
 
-export const gateRecordPath = (root: string) => join(root, '.graphyard', 'main-gate.json');
+export const gateRecordPath = (root: string) => join(stateDirectory(root), 'main-gate.json');
 export function readGateRecord(file: string): GateRecord | null {
   if (!existsSync(file)) return null;
   try { return JSON.parse(readFileSync(file, 'utf8')) as GateRecord; } catch { return null; }
@@ -213,7 +216,7 @@ export interface GatePorts {
 }
 
 /** How many filing notes the record keeps. */
-export const filingNotesWindow = 5;
+const filingNotesWindow = 5;
 
 /** Whether a filing was refused because its key was filed before with different wording (GY-3147). */
 const reusedFilingKey = (error: unknown) => /Idempotency key reused with different input/.test(error instanceof Error ? error.message : String(error));
@@ -600,7 +603,7 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
 }
 
 /** One diagnostic failure as the record keeps it (GY-3264). */
-export interface DiagnosticFailure { commit: string; detail: string | null; at: string }
+interface DiagnosticFailure { commit: string; detail: string | null; at: string }
 
 /**
  * The diagnostics' run: the full suite and the whole catalog on the commit, their failures, the

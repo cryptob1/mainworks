@@ -9,11 +9,11 @@ import { daemonSummary } from '../daemon/run.js';
 import { emptyMasterSession, masterSummary, readDaemonState } from '../daemon/state.js';
 import { standingStepFailures, testQueueStatus, workerGrowthKey, masterLaunchKey, masterLaunchBackoffAfter } from '../daemon/cycle.js';
 import { fetchRefusalKey, gateStallKey } from '../daemon/cycle-batch-gate.js';
-import { cpuPerMergedItem, implementationWaiting } from '../daemon/cpu-pressure.js';
+import { cpuPerMergedItem, cpuWaiting } from '../daemon/cpu-pressure.js';
 import { heatReading } from '../merge-writer/trial-load.js';
 import { overloadAlarm, overloaded, sessionFigures } from '../session-share.js';
 import { profileHealth, repeatedLaunchFailures } from '../daemon/sessions.js';
-import { workersAllowed } from '../master/worker-pool.js';
+import { unlaunchableLine, unlaunchableNext, workerAccounts, workersAllowed } from '../master/worker-pool.js';
 import { fixedHeavyJobLimit, heavyDrainLine, heavyJobBudget, heavyJobLimit, heavyJobsDirectory, imbalanceLine, readHeavyDrain, readMachines, readStrictCap, shardsOnHost, slotHolders } from '../master/verification-slots.js';
 import { budgetLine, fallbackLine, machineLine } from '../model/machine-load.js';
 import { lastHostFallbacks } from '../merge-writer/trial-run.js';
@@ -48,6 +48,8 @@ import { formatAge } from '../model/duration.js';
 import { loadProjectDelivery, parseProjectDelivery } from '../model-boundary/project-applications.js';
 import { backedOffProfiles, readDispatchCursor, type DispatchCursor } from '../dispatch/cursor.js';
 import { liveReviewRequest } from '../model/dispatch.js';
+import { remoteWorkerRuns } from '../headless-session.js';
+import { readReviewLedger, staleReviewReason, type ReviewRecord } from '../reviewer.js';
 import { allowanceSentence, allowanceWarning } from '../model/allowance.js';
 import { benchResultsPath, benchStatus, readBenchResults } from '../bench.js';
 import { repeatedFailureAttention } from '../model/incidents.js';
@@ -182,6 +184,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   const stopped = stoppedRoles(fleet, now, master.run.intervalSeconds * 1000, session?.session ?? null);
   // GY-3235: a profile skipped after failing its launch probe twice, with the cause, while its backoff stands.
   const cursor = await readDispatchCursor(root, master).catch(() => null);
+  const reviews = cursor ? (await readReviewLedger(root).catch(() => null))?.reviews ?? [] : [];
   const backedOff = backedOffProfiles(cursor ?? { profileBackoff: {} }, now)
     .map(entry => ({ subject: `${entry.role} profile ${entry.profile}`, text: `Backed off until ${entry.until}, the next profile launches instead: ${entry.cause}`, next: 'Grant the path the launch probe names; the profile is tried again once its backoff ends' }));
   // GY-3413: an item whose worker launch failed the same way twice waits out its backoff, one line naming the reason and the retry.
@@ -258,7 +261,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     caretaker: state?.caretaker ? `Last ran ${formatAge(Date.parse(state.caretaker.at), now)} ago: ${state.caretaker.result}` : 'Not run yet',
     // GY-3095: the pipeline has stopped where a role cannot launch; each line names the role, the refusal, how long it has lasted and the next command.
     // GY-3204: and each application whose versionUrl lags main or fails to answer.
-    attention: [...humanAttention, ...reworkCaps, ...leaseLosses, ...blockerAttention, ...drained, ...fixedLimitAttention, ...imbalanceAttention, ...growth, ...trialImageFault, ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now) : []), ...backedOff, ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...wrongModelAttention(fleet), ...allowanceAttention(fleet, now), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(readRemoteShardRuns(root)), ...gateStalled, ...overloadAttention, ...flowAttention, ...linkAttention, ...(bench?.attention ? [bench.attention] : []), ...repeatedFailureAttention(snapshot.work, now), ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
+    attention: [...humanAttention, ...reworkCaps, ...leaseLosses, ...blockerAttention, ...drained, ...fixedLimitAttention, ...imbalanceAttention, ...growth, ...trialImageFault, ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now, reviews) : []), ...backedOff, ...unlaunchableWorkerAttention(fleet), ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...wrongModelAttention(fleet), ...allowanceAttention(fleet, now), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(readRemoteShardRuns(root)), ...gateStalled, ...overloadAttention, ...flowAttention, ...linkAttention, ...(bench?.attention ? [bench.attention] : []), ...repeatedFailureAttention(snapshot.work, now), ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
     // GY-3199: the control plane's own update record — the Mainworks commit this install runs, its
     // last check and last update, the step of a failed upgrade, and the staleness the daily
     // diagnostics reports (a check over a day old, or a verified commit first seen over a day ago
@@ -289,7 +292,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
       ? { at: state.cpuPressure.at, avg60: state.cpuPressure.avg60, steal: state.cpuPressure.steal, celsius: state.cpuPressure.celsius,
         // GY-3532: the latest package sample beside the 120 s mean the heat rule compares (null under 4 samples).
         ...((heat) => ({ latestCelsius: heat?.latest ?? null, meanCelsius: heat?.mean ?? null }))(heatReading(state.cpuPressure.samples)),
-        waiting: implementationWaiting(state), testBudget: state.cpuPressure.testBudget, trialCap: state.cpuPressure.trialCap }
+        waiting: cpuWaiting(state), testBudget: state.cpuPressure.testBudget, trialCap: state.cpuPressure.trialCap }
       : null,
     // GY-3438: every live agent session with its CPU and memory use beside its fair share, as the loop last read its cgroup.
     sessionUsage: (state?.sessions ?? []).map(session => ({ session: session.name ?? session.unit, use: sessionFigures(session), overSince: session.overSince })),
@@ -327,26 +330,35 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     // GY-3285: worker sessions running of the number the registry worker role allows (master workers N sets it).
     // GY-3499: what each account has left, one plain sentence each.
     accounts: accountAllowances(fleet, now),
-    workers: `${sessions.filter(session => session.kind === 'implementation').length}/${workersAllowed(master, fleet?.roles ? { roles: fleet.roles.map(role => ({ ...role, name: role.role })) } : null)}`,
+    workers: `${sessions.filter(session => session.kind === 'implementation').length}/${workersAllowed(master, workerFleet(fleet))}`,
     sessions,
+    // GY-3405: the latest sessions that ran on an added host, running or ended: which item, where, and how it stands.
+    remoteSessions: remoteWorkerRuns(root).slice(0, 10),
     freeWorkers: health.filter(entry => entry.healthy).map(entry => entry.profile.name),
   };
 }
 /**
  * GY-3421: an item whose review request the loop could not launch — every launch refused, its
  * attempts spent, or reviewer capacity exhausted — one line naming the item, why no reviewer is
- * eligible and what would make one eligible.
+ * eligible and what would make one eligible. GY-3729: none while a reviewer session is live on the
+ * item's current head — the same pending record master review refuses a second launch for.
  */
-export function reviewLaunchAttention(open: readonly Work[], cursor: Pick<DispatchCursor, 'failures' | 'abandoned' | 'capacity'>, now: number) {
+export function reviewLaunchAttention(open: readonly Work[], cursor: Pick<DispatchCursor, 'failures' | 'abandoned' | 'capacity'>, now: number, reviews: readonly ReviewRecord[] = []) {
   const capacity = cursor.capacity.review && Date.parse(cursor.capacity.review.recheckAt) > now ? cursor.capacity.review : null;
   return open.flatMap(item => {
     const request = liveReviewRequest(item);
-    const reason = request && ((cursor.abandoned[request.id] ?? cursor.failures[request.id])?.reason ?? capacity?.reason);
+    const live = reviews.some(record => record.state === 'pending' && record.key === item.key && !staleReviewReason(record, [...open]));
+    const reason = request && !live && ((cursor.abandoned[request.id] ?? cursor.failures[request.id])?.reason ?? capacity?.reason);
     return reason ? [{ subject: item.key, text: `${item.key}'s review of ${request.sha.slice(0, 12)} has no reviewer: ${reason}`,
       next: `Make a reviewer account eligible — log it in, wait for its reset, or add one to the reviewer role (mainworks master registry role set reviewer ACCOUNT[,ACCOUNT…] --reason R) — then mainworks master review ${item.key}` }] : [];
   });
 }
 /** GY-3441: each enabled account serving a role that is held as not logged in, with why, so a skipped reviewer is named. */
+/** The registry as the worker count reads it: the view's roles under their role names. */
+const workerFleet = (fleet: FleetView | null) => fleet?.roles ? { runtimes: fleet.runtimes ?? [], accounts: fleet.accounts ?? [], roles: fleet.roles.map(role => ({ ...role, name: role.role })) } : null;
+/** GY-3730: one attention line naming the worker accounts no worker launch can start; they are not counted as workers. */
+export const unlaunchableWorkerAttention = (fleet: FleetView | null) => { const fleetView = workerFleet(fleet), line = fleetView && unlaunchableLine(workerAccounts(fleetView).unlaunchable);
+  return line ? [{ subject: 'workers', text: line, next: unlaunchableNext }] : []; };
 export const loggedOutAttention = (fleet: Pick<FleetView, 'accounts'> | null) => (fleet?.accounts ?? []).filter(account => account.enabled && account.roles.length && account.loggedIn === false && account.ineligible).map(account =>
   ({ subject: `account ${account.name}`, text: `${account.ineligible} — skipped for ${account.roles.map(entry => entry.role).join(', ')}`, next: `Log ${account.name} in again; the hold lifts when its probe reads the new login, or clear it with mainworks master registry account quota ${account.name} available --reason R` }));
 /** GY-3499: `NAME: about 24% of this week left, back Sun 22 Nov 05:00`, one line per account. */

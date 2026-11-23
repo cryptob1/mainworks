@@ -22,7 +22,7 @@ export const repositoryTrialImageTag = (repository: string, base: string, docker
   `${repositoryTrialImageRepository}:${createHash('sha256').update(`${repository}\0${base}\0${dockerfile}`).digest('hex').slice(0, 24)}`;
 
 /** GY-3275: the repository's trial image could not be built — the trial host's Docker, not the head's: no verdict, not retried, and reported upstream like a fetch fault (GY-3249). */
-export const trialRepositoryImageFaultPrefix = `Trial-host fault: the trial host could not build the repository's trial image (${trialDockerfile}): `;
+const trialRepositoryImageFaultPrefix = `Trial-host fault: the trial host could not build the repository's trial image (${trialDockerfile}): `;
 export class TrialRepositoryImageError extends Error {
   constructor(readonly detail: string) {
     super(`${trialRepositoryImageFaultPrefix}${detail}`);

@@ -118,7 +118,7 @@ export async function tailscaleTeammate(services: Services, login: string): Prom
 const visited = new WeakMap<Services, Set<string>>();
 
 /** Whoever reads the dashboard on this machine without signing in: a reader, so every action and human-only decision still needs a signed-in session. */
-export const localViewer: Principal = { id: 'local-viewer', role: 'reader', displayName: 'Local viewer' };
+const localViewer: Principal = { id: 'local-viewer', role: 'reader', displayName: 'Local viewer' };
 const loopbackHost = /^(?:localhost|127\.0\.0\.1|\[::1\])(?::(\d+))?$/i;
 /**
  * A read addressed to the loopback host and served (or Compose-published) port. Another Host header (a
@@ -195,7 +195,7 @@ const lanes: Record<PrincipalGrant, Lane> = {
  * route (src/server/index.ts dispatches it ahead of the table): each grant passes or answers its own
  * routes, GET /api/principals answers with its own entry alone, and every other route is refused.
  */
-export const laneProducerRouteGuard: Route = {
+const laneProducerRouteGuard: Route = {
   method: '*', path: /^\/api\//,
   async handle(context) {
     const { actor, url, req } = context;

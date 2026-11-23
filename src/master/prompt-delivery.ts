@@ -34,7 +34,7 @@ import { herdrCall, herdrJson, herdrRun } from './herdr.js';
  */
 export const promptAttempts = 3, promptAcceptMs = 20_000, promptRetryPauseMs = 3_000;
 /** How long a dismissed notice is given to clear before the text is delivered again. */
-export const noticeSettleMs = 2_000;
+const noticeSettleMs = 2_000;
 export class PromptNotAcceptedError extends Error { readonly promptDropped = true; }
 /** The delivery that stops at a consent dialog rather than submit into it. */
 function consentRefusal(target: string, screen: string | null, stalls: string[]) {

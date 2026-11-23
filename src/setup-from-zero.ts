@@ -9,7 +9,7 @@ import { checkAgentEnvironment, discoverAgentEnvironments } from './master/envir
 import type { AgentEnvironment } from './master/profiles.js';
 import { sharedGitPaths, workerPaths } from './worker-sandbox.js';
 import type { LoopCodeReading } from './repository-setup.js';
-import { installUnitsFile, parseInstallUnits, systemdCommandLineWords, unitCheckout, userUnitDirectory } from './install/units.js';
+import { installUnitsFile, installUnitsPath, parseInstallUnits, systemdCommandLineWords, unitCheckout, userUnitDirectory } from './install/units.js';
 import { installDirectory } from './install/secrets.js';
 import { installIdFor } from './install/types.js';
 import { unitLauncherFault } from './install/cli-release.js';
@@ -25,6 +25,7 @@ import { MINIMUM_NODE_MAJOR } from './install/local.js';
 import { appArmorEnabled, trialAppArmorFix, trialAppArmorProfile } from './merge-writer/trial-apparmor.js';
 import { trialContainerLaunch, trialImage } from './merge-writer/trial-container.js';
 import { setting } from './setting.js';
+import { stateDirectory } from './install/layout.js';
 
 /**
  * The prerequisites that `mainworks doctor` can check from this machine (GY-1352).
@@ -87,7 +88,7 @@ const readJson = async (file: string) => { try { return JSON.parse(await readFil
 const rewritable = async (file: string) => { try { await stat(file); return writable(file); } catch { return writable(dirname(file)); } };
 
 /** Bubblewrap's own probe, as the worker confinement runs it, with PATHS bound writable. */
-export function bubblewrapProbe(paths: string[]): string | null {
+function bubblewrapProbe(paths: string[]): string | null {
   const binds = paths.flatMap(path => ['--bind', path, path]);
   try {
     execFileSync('bwrap', ['--ro-bind', '/', '/', ...binds, '--dev', '/dev', '--proc', '/proc', '--unshare-all', '--share-net', '--die-with-parent', '--', 'sh', '-c', paths.map(path => `test -w '${path.replace(/'/g, `'\\''`)}'`).join(' && ')], { stdio: 'ignore', timeout: 20_000 });
@@ -96,7 +97,7 @@ export function bubblewrapProbe(paths: string[]): string | null {
 }
 
 /** GY-3339: a trial container, as merge trials create it, starting the nested sandbox its tests start. */
-export function trialSandboxProbe(): string | null {
+function trialSandboxProbe(): string | null {
   const [command, ...args] = trialContainerLaunch({ image: trialImage(), mounts: [], network: 'none' });
   try {
     execFileSync(command!, [...args, 'bwrap', '--ro-bind', '/', '/', '--dev', '/dev', '--unshare-user', '--unshare-pid', 'true'], { cwd: '/', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000 });
@@ -113,7 +114,7 @@ export function trialSandboxProbe(): string | null {
 export async function masterCredential(root: string, base: string, env: NodeJS.ProcessEnv = process.env): Promise<{ file: string; token: string } | null> {
   if (setting('TOKEN_FILE', env) || setting('TOKEN', env)) return null;
   try {
-    const config = JSON.parse(await readFile(resolve(root, '.graphyard/master.json'), 'utf8'));
+    const config = JSON.parse(await readFile(resolve(stateDirectory(root), 'master.json'), 'utf8'));
     if (new URL(config.url).origin !== new URL(base).origin) return null;
     const file = resolve(config.credentialFile), info = await lstat(file);
     const token = (await readFile(file, 'utf8')).trim();
@@ -148,7 +149,7 @@ export function setupNext(readiness: { next: string; items: { id: string; status
 async function credentialsCheck(root: string, env: NodeJS.ProcessEnv, master?: string | null): Promise<SetupCheck> {
   if (master) return { id: 'credentials-file', status: 'pass', step: setupSteps.install, detail: `the master credential ${master} (.graphyard/master.json) is present with mode 0600` };
   const named = setting('TOKEN_FILE', env) ? resolve(setting('TOKEN_FILE', env)!) : null;
-  const file = named ?? resolve(root, '.graphyard/connection.json');
+  const file = named ?? resolve(stateDirectory(root), 'connection.json');
   const check = (status: SetupCheck['status'], detail: string): SetupCheck => ({ id: 'credentials-file', status, detail, step: setupSteps.install });
   let info;
   try { info = await lstat(file); } catch {
@@ -221,7 +222,7 @@ async function loopCodeCheck(root: string, injected: LoopCodeReading | null | un
 async function unitOverridesChecks(root: string, systemctl: UserSystemctl, platform: NodeJS.Platform): Promise<SetupCheck[]> {
   if (platform !== 'linux') return [];
   let units;
-  try { units = parseInstallUnits(await readFile(resolve(root, installUnitsFile), 'utf8'), installUnitsFile, () => { throw new Error('absent'); }); } catch { return []; }
+  try { units = parseInstallUnits(await readFile(installUnitsPath(root), 'utf8'), installUnitsFile, () => { throw new Error('absent'); }); } catch { return []; }
   const check = (status: SetupCheck['status'], detail: string): SetupCheck => ({ id: 'unit-overrides', status, step: setupSteps.unitOverrides, detail });
   const herdr = herdrServerUnit(null);
   const overrides = new Map<string, string>();
@@ -262,8 +263,8 @@ const unitLauncher = (text: string, home: string): string | null => {
 async function loopUnitReleaseChecks(root: string, env: NodeJS.ProcessEnv): Promise<SetupCheck[]> {
   const check = (status: SetupCheck['status'], detail: string): SetupCheck => ({ id: 'loop-unit-release', status, step: setupSteps.loopUnitRelease, detail });
   let units, repository;
-  try { units = parseInstallUnits(await readFile(resolve(root, installUnitsFile), 'utf8'), installUnitsFile, () => { throw new Error('absent'); }); } catch { return []; }
-  try { repository = JSON.parse(await readFile(resolve(root, '.graphyard/master.json'), 'utf8'))?.repository; } catch { /* no configuration: nothing to judge against */ }
+  try { units = parseInstallUnits(await readFile(installUnitsPath(root), 'utf8'), installUnitsFile, () => { throw new Error('absent'); }); } catch { return []; }
+  try { repository = JSON.parse(await readFile(resolve(stateDirectory(root), 'master.json'), 'utf8'))?.repository; } catch { /* no configuration: nothing to judge against */ }
   if (typeof repository !== 'string' || !repository) return [];
   let installDir: string;
   try { installDir = installDirectory(installIdFor(repository), setting('CONFIG_HOME', env)); } catch { return []; }
@@ -279,7 +280,7 @@ async function loopUnitReleaseChecks(root: string, env: NodeJS.ProcessEnv): Prom
 }
 
 /** GY-3337: how recent a lock refusal doctor still blames; a crash-looping war refreshes it every RestartSec. */
-export const loopCrashLoopWindowMs = 5 * 60_000;
+const loopCrashLoopWindowMs = 5 * 60_000;
 
 /**
  * GY-3337: the loop-lock line. A `master run` that keeps exiting on another live loop's lock is a

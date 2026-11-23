@@ -18,7 +18,7 @@ export interface Diagnostic { kind: string; message: string; next: string }
  * Planned files and observed changed files are advisory: shown, never holding a dispatch — the
  * merge queue and base refresh integrate overlapping edits, and file locks idled ten of twelve workers.
  */
-export const declaredResources = (work: Work) => work.exclusiveResources ?? [];
+const declaredResources = (work: Work) => work.exclusiveResources ?? [];
 export function sharedResources(work: Work, other: Work) {
   const theirs = declaredResources(other);
   return [...new Set(declaredResources(work).filter(name => theirs.some(held => pathScopesOverlap(name, held))))];
@@ -60,7 +60,7 @@ export const inFlight = (work: Work, now: number) => work.stage !== 'done' && (c
  * GY-3503: what holds an item off the pipeline, as assertDispatchable refuses it — an unanswered
  * human request or an unfinished dependency. Such an item fills no concurrency slot and raises no stall.
  */
-export const waitsOffPipeline = (work: Work, all: readonly Work[]) =>
+const waitsOffPipeline = (work: Work, all: readonly Work[]) =>
   parkedOnHuman(work) || work.dependencies.some(id => all.find(item => item.id === id)?.stage !== 'done');
 /** In the pipeline: in flight, or released and not held off it (`waitsOffPipeline`). */
 export const inPipeline = (work: Work, all: readonly Work[], now: number) =>
@@ -140,7 +140,7 @@ const starving = (item: Work, now: number | undefined) => now !== undefined && s
 const reworkRounds = (work: Work & { reworkRounds?: number }) => work.pipeline?.reworkRounds ?? work.reworkRounds ?? 0;
 const attempted = (work: Work & { reworkRounds?: number }) => !!work.submission || !!work.pipeline?.submittedAt || reworkRounds(work) > 0;
 /** From this rework round an attempted item loses the attempted-first rank and sorts with fresh work (GY-3504). */
-export const attemptedRankMaxRounds = 4;
+const attemptedRankMaxRounds = 4;
 function dispatchRank(a: Work, b: Work, hot: ReadonlySet<string>, starvingA: boolean, starvingB: boolean) {
   const hotA = touchesHot(a, hot), hotB = touchesHot(b, hot);
   return a.priority - b.priority
@@ -255,5 +255,3 @@ export function proofAuthorization(work: Work, authorities: readonly ProofAuthor
   const required = [...new Set([...work.criteria.flatMap(ac => ac.proofs), ...inheritedObligations(work, all).map(obligation => obligation.proof)])];
   return required.map(proof => ({ proof, producers: authorities.filter(a => grantsAuthorize(a.patterns, proof)).map(a => a.principalId) }));
 }
-export const proofGaps = (work: Work, authorities: readonly ProofAuthority[]) =>
-  proofAuthorization(work, authorities).filter(entry => !entry.producers.length).map(entry => entry.proof);

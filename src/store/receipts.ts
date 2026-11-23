@@ -11,7 +11,7 @@ import type { Work } from '../model.js';
  */
 export const receiptReplayWindowMs = 24 * 60 * 60 * 1000;
 /** Rows one prune run deletes at most, so a backlog drains across runs instead of in one statement. */
-export const receiptPruneBatch = 5_000;
+const receiptPruneBatch = 5_000;
 /** How often the server's reconciliation tick runs the prune. */
 export const receiptPruneIntervalMs = 10 * 60_000;
 

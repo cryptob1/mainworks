@@ -34,35 +34,6 @@ export function standingVerdict(work: Work): StandingVerdict | null {
   return null;
 }
 
-/**
- * GY-144. Rework throws away a current review and its proofs, so it is applied only on an
- * observation that still describes the item: one taken within the last two minutes, or the loop's
- * own woken observation of the submitted head (GY-1266, GY-1257). Otherwise the loop wakes one.
- */
-export const reworkObservationMaxAgeMs = 120_000;
-export function reworkObservationWait(work: Work, now: number, wokenAt?: string | null): string | null {
-  const observation = work.observation;
-  if (!observation) return `${work.key}: rework waits for an observation of the item; there is none to decide from`;
-  const seen = `the last observation (taken at ${observation.at} of head ${observation.candidate.sha.slice(0, 12)})`;
-  const age = now - Date.parse(observation.at);
-  if (wokenAt && Date.parse(observation.at) > Date.parse(wokenAt) && observation.candidate.sha === work.candidate?.sha) return null;
-  if (!(Number.isFinite(age) && age < reworkObservationMaxAgeMs)) return `${work.key}: rework waits for a fresh observation — ${seen} is a stale observation, older than two minutes, and the branch may have moved past that head`;
-  return null;
-}
-/**
- * GY-710. A rework waiting for a fresh observation wakes the item's observation job and waits for it
- * to land; a wake that brought none within this bound is sent again.
- */
-export const observationWakeRetryMs = 5 * 60_000;
-export function observationWakeDue(work: Work, wokenAt: string | null | undefined, now: number): boolean {
-  if (!work.submission) return false;
-  const woken = wokenAt ? Date.parse(wokenAt) : Number.NaN;
-  if (!Number.isFinite(woken)) return true;
-  const observed = work.observation ? Date.parse(work.observation.at) : Number.NaN;
-  if (Number.isFinite(observed) && observed > woken) return true;
-  return now - woken >= observationWakeRetryMs;
-}
-
 /** A rework the item needs: why, and the grounds it binds (head and ground), so one head is reworked once per ground. */
 export interface Rework { reason: string; binding: string }
 /** The longest rework reason the engine accepts (schemas.ts `rework`, matching `reworkBriefMax`). */
@@ -134,7 +105,7 @@ export function proofRework(work: Work): Rework | null {
  * null: GitHub computed a merge conflict for the open pull request. While the control plane's own
  * test merge of the head onto that tip is pending, it decides first.
  */
-export function syncConflict(work: Work): Rework | null {
+function syncConflict(work: Work): Rework | null {
   const candidate = work.candidate, observation = work.observation;
   if (!work.submission || work.reworkRequested || !candidate || !observation || work.stage === 'done') return null;
   if (observation.candidate.sha !== candidate.sha || observation.merged || observation.prState === 'closed') return null;
@@ -143,7 +114,5 @@ export function syncConflict(work: Work): Rework | null {
     return { reason: `GitHub reports that candidate ${candidate.sha.slice(0, 12)} conflicts with base branch tip ${tip.slice(0, 12)}`, binding: `${candidate.sha}:sync:${tip}` };
   return null;
 }
-/** Every gate green on a submitted candidate: what "mergeable" means to the cycle and its budget. */
-export const mergeableCandidate = (work: Work) => work.stage === 'merge' && !!work.candidate && !work.violations.length && work.gates.every(gate => gate.passed);
 /** The cursor key of one rework the loop applies: one per item and grounds. */
 export const reworkKey = (work: Pick<Work, 'id'>, binding: string) => `rework:${work.id}:${binding}`;

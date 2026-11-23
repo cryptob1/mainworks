@@ -7,7 +7,7 @@ import type { EnvironmentRow } from '../../src/app-environments';
 import { EmptyState, PageHeader } from '../components/page-layout';
 
 /** Each result in words and a mark; a skip is its own state and never reads as a pass. */
-export const resultLabel: Record<string, { mark: string; word: string; tone: string }> = {
+const resultLabel: Record<string, { mark: string; word: string; tone: string }> = {
   pass: { mark: '✓', word: 'passed', tone: 'pass' }, fail: { mark: '×', word: 'failed', tone: 'fail' }, skipped: { mark: '◌', word: 'skipped', tone: 'skipped' },
   'not-run': { mark: '○', word: 'not run yet', tone: 'none' }, 'no-pr': { mark: '○', word: 'no pull request yet', tone: 'none' }, never: { mark: '○', word: 'never run', tone: 'none' },
   'not-written': { mark: '○', word: 'not written yet', tone: 'none' },
@@ -17,7 +17,7 @@ const day = (at: string) => new Date(at).toLocaleString();
 const Commit = ({ sha }: { sha: string }) => <Term term="commit"><span className="mono">{sha.slice(0, 8)}</span></Term>;
 const Pr = ({ pr }: { pr: number | null }) => pr ? <> · <Term term="pull request">PR</Term> #{pr}</> : null;
 /** Where a run came from: its commit, pull request, item and its lane's own run identity. */
-export const RunLine = ({ run }: { run: CaseRun }) => run.e2e ? <E2eRunLine run={run} e2e={run.e2e}/> : <>
+const RunLine = ({ run }: { run: CaseRun }) => run.e2e ? <E2eRunLine run={run} e2e={run.e2e}/> : <>
   <Result result={run.result}/> <Commit sha={run.sha}/><Pr pr={run.pr}/> · {run.workKey}
   {' · '}{run.run.url
     ? <a href={run.run.url} target="_blank" rel="noopener noreferrer">{run.run.kind} run {run.run.id.slice(0, 12)}{run.run.attempt ? ` attempt ${String(run.run.attempt).slice(0, 8)}` : ''} ↗</a>
@@ -36,7 +36,7 @@ type OpenItem = ((id: string) => void) | undefined;
 const Link = ({ link, openItem }: { link: ProofLink; openItem: OpenItem }) => <div className="proof-item">
   <a href={`#${link.key}`} onClick={event => { if (openItem) { event.preventDefault(); openItem(link.id); } }}><span className="mono">{link.key}</span> {link.title}</a>
   {link.criteria.map(criterion => <small key={criterion.id} className="proof-criterion">{criterion.id}: {criterion.text}</small>)}</div>;
-export const LinkedWork = ({ links, openItem }: { links: TrackedCase['links']; openItem?: OpenItem }) => {
+const LinkedWork = ({ links, openItem }: { links: TrackedCase['links']; openItem?: OpenItem }) => {
   if (!links.length) return <span className="muted">none</span>;
   const newest = [...links].reverse(), rest = newest.slice(linkedShown);
   return <>{links.length > 1 && <>{links.length} items</>}
@@ -72,7 +72,7 @@ const lastWords: Record<string, string> = { passed: 'passed', failed: 'failed', 
  * used and its last run; the lifecycle, waits and cleanup folded. The tests themselves always run on
  * this host. Since GY-3485 the whole block sits in the page's Details fold.
  */
-export function WhereTestsRun({ environments }: { environments: EnvironmentRow[] }) {
+function WhereTestsRun({ environments }: { environments: EnvironmentRow[] }) {
   const named = environments.filter(row => row.lifecycle);
   return <details className="panel more-details"><summary>Details</summary><section className="where-tests-run" aria-label="Where tests run"><h3>Where tests run</h3>
     <p className="muted">Where the app under test runs. The test runner itself always runs on this host.</p>

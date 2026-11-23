@@ -51,7 +51,7 @@ import { actionStallDelay, actionStallThreshold } from '../model/action-progress
 import { syncProjectMemory } from '../project-memory.js';
 import { reconcileMasterMemory } from '../model/project-memory.js';
 import { diskHeadroomStep } from './disk-headroom.js';
-import { cpuPressureStep, cpuWaiting, heatClear, implementationWaiting, sessionUsageStep } from './cpu-pressure.js';
+import { cpuPressureStep, cpuWaiting, heatClear, sessionUsageStep } from './cpu-pressure.js';
 import { causeCleared, environmentCause } from './environment-blockers.js';
 import { leftoversStep, tallyLeftovers } from './leftovers.js';
 import { yardAlertStep } from './yard-alerts.js';
@@ -94,8 +94,8 @@ export const masterLaunchBackoffAfter = 3;
 /** How long the loop waits before retrying the master launch after its `attempts`-th same-way failure: one minute doubling, capped at fifteen. */
 export const masterLaunchRetryMs = (attempts: number) => Math.min(60_000 * 2 ** Math.max(0, attempts - masterLaunchBackoffAfter), 15 * 60_000);
 /** GY-3519: two identical launch failures for the master on one account mark that account unusable for an hour and move to the next. */
-export const masterAccountFailoverAfter = 2;
-export const masterAccountHoldMs = 3_600_000;
+const masterAccountFailoverAfter = 2;
+const masterAccountHoldMs = 3_600_000;
 const masterLaunchFailureReason = (error: unknown) =>
   normalizeFailureReason(message(error).replace(/\bin pane\s+\S+/g, 'in pane'));
 const activeUnusableAccounts = (master: DaemonState['master'], now: number) =>
@@ -313,7 +313,7 @@ function reconciledAttempt(item: Work, hostId: string): Pick<NonNullable<Work['l
 }
 
 /** The ended attempts' worktrees on this host: no live lease and no running session holds their epoch. */
-export function endedAttemptWorktrees(work: Work[], hostId: string, now: number) {
+function endedAttemptWorktrees(work: Work[], hostId: string, now: number) {
   return work.flatMap(item => (item.workspaces ?? []).filter(space => space.host === hostId
     // GY-3632: a rework that reused the path owns it now.
     && !(item.workspaces ?? []).some(later => later.epoch > space.epoch && later.host === hostId && later.path === space.path)
@@ -502,7 +502,7 @@ async function closeStep(cycle: Cycle) {
     const cwd = (agent.cwd ?? '').replace(/ \(deleted\)$/, '');
     const pane = agent.pane_id;
     if (!pane || attemptedPanes.has(pane) || masters.has(pane) || live.has(pane) || agent.agent_status === 'working') continue;
-    if (!cwd.includes('/.graphyard/worktrees/') && !managedRoots.some(root => cwd.startsWith(root + sep))) continue;
+    if (!/\/\.(graphyard|mainworks)\/worktrees\//.test(cwd) && !managedRoots.some(root => cwd.startsWith(root + sep))) continue;
     const gone = !existsSync(cwd), exited = !agent.agent || endedRuntimeStates.includes(agent.agent_status ?? '');
     const due = () => ended.has(pane) || (gone && exited && launched.has(pane));
     // Finished sessions disappear from coordination, and old launch actions are pruned.
@@ -737,7 +737,7 @@ async function dispatchStep(cycle: Cycle) {
   // GY-3473: each hold named once, so the stall alarm reports the reason dispatch itself has this cycle.
   const holds = [
     state.diskHeadroom && `implementation launches waiting: disk below its floor: ${state.diskHeadroom.shortage}`,
-    implementationWaiting(state),
+    cpuWaiting(state),
     refusedRoles.has('worker') && 'worker launches held: the checkout is not trusted for the worker accounts (see master status)',
   ].filter((hold): hold is string => !!hold);
   if (!holds.length) for (const item of claimable) {
@@ -818,7 +818,7 @@ async function dispatchStep(cycle: Cycle) {
 /**
  * GY-3694: available merge-trial slots — the host's local heavy-job limit plus ready remote hosts.
  */
-export function availableTrialSlots(hosts: readonly { local?: boolean; away: boolean }[] = [], localLimit = heavyJobLimit(heavyJobsDirectory())): number {
+function availableTrialSlots(hosts: readonly { local?: boolean; away: boolean }[] = [], localLimit = heavyJobLimit(heavyJobsDirectory())): number {
   return localLimit + hosts.filter(host => !host.local && !host.away).length;
 }
 
@@ -826,7 +826,7 @@ export function availableTrialSlots(hosts: readonly { local?: boolean; away: boo
  * GY-3694: heads waiting for or running a merge trial, deduplicated across the live snapshot and
  * the merge writer's cursor state (excluding items already done or returned for rework).
  */
-export function testQueueCount(work: readonly Work[], mergeWriter: Pick<MergeWriterState, 'queue' | 'inFlight' | 'inFlights'> | null | undefined, now: number): number {
+function testQueueCount(work: readonly Work[], mergeWriter: Pick<MergeWriterState, 'queue' | 'inFlight' | 'inFlights'> | null | undefined, now: number): number {
   const byKey = new Map(work.map(item => [item.key, item]));
   const active = (key: string) => {
     const item = byKey.get(key);
@@ -958,12 +958,14 @@ async function launchWorker(cycle: Cycle, item: Work, key: string, profile: Work
   try {
     // Every run the dispatch starts is recorded on the item as it starts, a handed-off or failed one with how it ended (GY-3259).
     const onRun = async (run: WorkerRun) => effects.recordSession?.(item, workerRunHandle(item, profile, config.hostId, run));
-    const launched = await effects.dispatch(item, profile, herdr.agents, snapshot, { diagnosis: diagnosisSection(state.failureRuns[item.id]), canaries, exclude, onRuntime: kind => { runtime = kind; }, onRun }) as { run?: string; epoch?: number; runtime?: string | null; initialHead?: string | null; runtimeStartedAt?: string | null; canary?: { runtime: string; failed: string | null } | null } | undefined;
+    const launched = await effects.dispatch(item, profile, herdr.agents, snapshot, { diagnosis: diagnosisSection(state.failureRuns[item.id]), canaries, exclude, onRuntime: kind => { runtime = kind; }, onRun }) as { run?: string; epoch?: number; runtime?: string | null; initialHead?: string | null; runtimeStartedAt?: string | null; canary?: { runtime: string; failed: string | null } | null; account?: { environment: string } | null } | undefined;
     await settle(launched?.canary, launched?.epoch, launched?.runtimeStartedAt);
     // The session's handle is what the close step reads to end it once its attempt does: the run's, with when it started and from which commit.
     if (launched?.run && launched.epoch) await effects.recordSession?.(item, { ...workerRunHandle(item, profile, config.hostId, { epoch: launched.epoch, run: launched.run, runtime: launched.runtime ?? profile.kind ?? profile.mode, account: null, outcome: null }),
       ...(launched.runtimeStartedAt ? { runtimeStartedAt: launched.runtimeStartedAt } : {}), ...(launched.initialHead ? { initialHead: launched.initialHead } : {}) })?.catch(() => undefined);
-    sink.push(await entry('done', `Dispatched ${item.key} to ${profile.name}; the worker launcher claimed under ${profile.principal}`));
+    // GY-3730: the line names the registry account that builds and its runtime; the profile is only the identity it claims under.
+    const builder = launched?.account ? `${launched.account.environment} (${launched.runtime ?? 'unknown runtime'})` : profile.name;
+    sink.push(await entry('done', `Dispatched ${item.key} to ${builder}; the worker launcher claimed under ${profile.principal}`));
   } catch (error) {
     await settle(null, undefined, undefined);
     const full = capacityRefusal(error);

@@ -33,7 +33,7 @@ export async function probeWrites(pool: { connect(): Promise<{ query(sql: string
  * same path exists on this host — an embedded, compose or same-machine database. A database on its
  * own host (a managed service) answers null and the default bound stands.
  */
-export async function readDatabaseVolumeBytes(pool: { query(sql: string): Promise<{ rows: any[] }> }): Promise<{ bytes: number; path: string } | null> {
+async function readDatabaseVolumeBytes(pool: { query(sql: string): Promise<{ rows: any[] }> }): Promise<{ bytes: number; path: string } | null> {
   try {
     const path = String((await pool.query("SELECT current_setting('data_directory') AS path")).rows[0]?.path ?? '');
     if (!path) return null;

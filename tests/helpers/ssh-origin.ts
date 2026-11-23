@@ -23,7 +23,7 @@ import { deployKeySshCommand } from '../../src/merge-writer/executor.js';
 export const keylessSshCommand = 'ssh -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new';
 
 /** One recorded call of the wrapper: the git service asked for, the repository path it named, whether the caller presented the deploy key, and what the door did. */
-export interface SshOriginAccess { service: string; path: string; presented: boolean; outcome: 'served' | 'refused'; caller: string }
+interface SshOriginAccess { service: string; path: string; presented: boolean; outcome: 'served' | 'refused'; caller: string }
 
 export interface SshOrigin {
   /** The local bare repository the door serves. */

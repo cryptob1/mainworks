@@ -105,7 +105,7 @@ export function transcriptUsage(kind: string) {
 // ---- The price sheet -------------------------------------------------------------------------------
 
 /** The registry model a session's model names: by id or name, or the longest registered id it starts with (a dated or `[1m]` variant). */
-export function pricedModel(models: readonly FleetModel[], name: string | null): FleetModel | null {
+function pricedModel(models: readonly FleetModel[], name: string | null): FleetModel | null {
   if (!name) return null;
   const bare = name.replace(/\[[^\]]*\]$/, '');
   return models.find(model => model.id === bare || model.name === bare)
@@ -116,14 +116,14 @@ export function pricedModel(models: readonly FleetModel[], name: string | null):
  * sheet's price for its id or name, then the bundled sheet's own models, so a session on a model
  * the sheet knows is priced without first running `master registry model seed`.
  */
-export function priceModels(models: readonly FleetModel[]): FleetModel[] {
+function priceModels(models: readonly FleetModel[]): FleetModel[] {
   const sheet = seedPrices.map(price => ({ name: price.id, id: price.id, provider: price.provider, cost: price.cost }) as FleetModel);
   const filled = models.map(model => model.cost.inputPerMTok != null && model.cost.outputPerMTok != null ? model
     : { ...model, cost: pricedModel(sheet, model.id ?? model.name)?.cost ?? model.cost });
   return [...filled, ...sheet];
 }
 /** US dollars for these tokens at a model's prices; null — price unknown — when a rate the tokens need was never recorded. */
-export function tokenCost(model: FleetModel | null, tokens: Tokens): number | null {
+function tokenCost(model: FleetModel | null, tokens: Tokens): number | null {
   if (!model) return null;
   const rates: [number, number | null | undefined][] = [[tokens.input, model.cost.inputPerMTok], [tokens.output, model.cost.outputPerMTok], [tokens.cacheRead, model.cost.cacheReadPerMTok], [tokens.cacheWrite, model.cost.cacheWritePerMTok]];
   if (model.cost.inputPerMTok == null || model.cost.outputPerMTok == null || rates.some(([used, rate]) => used > 0 && rate == null)) return null;
@@ -152,7 +152,7 @@ export interface CostLine extends Tokens {
   figure?: string;
 }
 export const costWindows = [['today', 'Today'], ['week', '7 days'], ['month', '30 days'], ['all', 'All time']] as const;
-export type CostWindow = typeof costWindows[number][0];
+type CostWindow = typeof costWindows[number][0];
 export interface CostSummary {
   windows: Record<CostWindow, CostLine & { shipped: number; perShipped: number | null }>;
   /** The breakdowns over `days` (null: all time). */
@@ -169,7 +169,7 @@ export interface CostSummary {
 const line = (name: string): CostLine => ({ name, ...zero(), cost: 0, apiEquivalent: 0, unpriced: 0, flatTokens: 0, notReported: 0 });
 const total = (tokens: Tokens) => tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite;
 /** An account on a flat plan is not billed per token: its figure is API-equivalent. */
-export const flatPlan = (account: { plan?: string; monthlyFee?: number } | undefined) => !!account && (!!account.plan || account.monthlyFee !== undefined);
+const flatPlan = (account: { plan?: string; monthlyFee?: number } | undefined) => !!account && (!!account.plan || account.monthlyFee !== undefined);
 const roleNames: Record<string, string> = { worker: 'Workers', reviewer: 'Reviewers', producer: 'Producers', master: 'Master' };
 
 /**

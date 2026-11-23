@@ -7,7 +7,9 @@ import { setting } from '../setting.js';
  * recovery margin.
  */
 export interface HostMemoryReading { totalBytes: number; availableBytes: number }
-export const memoryFloorShare = 0.1, memoryFloorMinimumBytes = 4 * 2 ** 30, memoryRecoveryMarginBytes = 2 ** 30;
+const memoryFloorShare = 0.1;
+const memoryFloorMinimumBytes = 4 * 2 ** 30;
+export const memoryRecoveryMarginBytes = 2 ** 30;
 export const hostMemoryFloor = (totalBytes: number) => Math.max(totalBytes * memoryFloorShare, memoryFloorMinimumBytes);
 
 /** The variable the suite's runner sets on the runs it starts (tests/helpers/run-tests.ts, value `unreadable`): a run so marked reads nothing. Production never sets it. */

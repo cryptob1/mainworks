@@ -27,9 +27,10 @@ import { herdrErrorText, nameRefusedByRuntime, sessionWords, type PromptDelivery
 import { keyringEndpointWarning, keyringProbeBackoff } from './launch-keyring.js';
 import { masterRecords } from './conversation.js';
 import { setting } from '../setting.js';
+import { stateDirectory } from '../install/layout.js';
 // Prompt delivery moved to prompt-delivery.ts (GY-1863) with the screen a stalled delivery is
 // judged by; the names below are the one address every existing import has always had.
-export { promptAttempts, promptAcceptMs, promptRetryPauseMs, noticeSettleMs, PromptNotAcceptedError, herdrErrorCode, herdrErrorText, nameRefusedByRuntime, deliverPrompt, readSessionScreen, sessionWords, type PromptDelivery } from './prompt-delivery.js';
+export { promptAttempts, promptAcceptMs, promptRetryPauseMs,  PromptNotAcceptedError, herdrErrorCode, herdrErrorText, nameRefusedByRuntime, deliverPrompt, readSessionScreen, sessionWords, type PromptDelivery } from './prompt-delivery.js';
 
 /**
  * Keep what an interrupted attempt had not committed. The work is committed on the attempt's own
@@ -87,7 +88,7 @@ export const launchDelivery = (kind: string | undefined, args: string[] = []): R
 export const requestContractRefusal = (kind: string) => `${PRODUCT_NAME} refuses to launch the ${kind} runtime: it has no way to take the session's first request on its command line, and a launched session's instruction is never pasted into it. Register where ${kind} takes its first prompt with mainworks master registry runtime set NAME --kind ${kind} --arg=${requestPlaceholder} (or --arg=FLAG --arg=${requestPlaceholder}) --reason REASON.`;
 /** The most bytes a launch command line may hold: the runtime, its flags and two file paths, never the request. */
 export const launchCommandLimit = 512;
-export const launchDirectory = (directory: string) => resolve(directory, '.graphyard/launch');
+export const launchDirectory = (directory: string) => resolve(stateDirectory(directory), 'launch');
 /** The session's launch files: `stem` is `DIR/.graphyard/launch/NAME`, and each file present is `STEM.role` or `STEM.request` (and `STEM.launch`, the runtime's words, for a line that would exceed the bound). */
 export interface LaunchFiles { stem: string; role: string | null; request: string | null }
 /** A word for the pane's shell: bare when it needs no quoting, single-quoted otherwise. */
@@ -192,7 +193,7 @@ export async function masterSessionConfinement(kind: string, root: string, probe
   prepareConfinedGitPaths(root);
   // The master's dispatches add worktrees: the shared worktrees area is re-exposed only where it exists.
   if (existsSync(checkoutGitDirectory(root))) mkdirSync(join(checkoutGitDirectory(root), 'worktrees'), { recursive: true });
-  const managed = join(resolve(root), '.graphyard');
+  const managed = stateDirectory(resolve(root));
   mkdirSync(managed, { recursive: true, mode: 0o700 });
   // GY-3237: the Herdr socket and config the install records now — the main server after a
   // GY-3212 migration, a private instance while it drains — so `herdr agent list` and
@@ -362,7 +363,7 @@ export function paneLastLine(text: string | null, limit = paneLineLimit) {
 /** Whether the pane's last line is the launch command itself — typed, or still being typed — and not yet answered: it opens with the stem binding and names the runtime. */
 export const commandEchoing = (line: string, command: string) => !!line && (line.includes(command.slice(0, 24)) || (line.includes(`${launchVariable}=`) && line.includes(` ${command.replace(/^GY=\S+; /, '').split(' ')[0]}`)));
 /** How many of the runtime's last printed lines an exit at start quotes. */
-export const exitedLineLimit = 5;
+const exitedLineLimit = 5;
 /**
  * What the runtime printed after the launch command, when the pane's screen shows that command
  * echoed with output below it (GY-976): the lines below its last echo, less the shell's new prompt
@@ -438,10 +439,6 @@ export async function paneForeground(pane: string, run?: ChildRun, program?: str
     const named = typeof inspected?.name === 'string' && inspected.name ? inspected.name : argvs[at][0].split('/').at(-1);
     return { other: named || 'an unnamed process' };
   } catch { return null; }
-}
-/** Whether the pane's own shell holds its terminal's foreground (paneForeground). False when Herdr cannot say. */
-export async function shellInForeground(pane: string, run?: ChildRun) {
-  return await paneForeground(pane, run) === 'shell';
 }
 export async function observeStart(pane: string, kind: string, command: string, run?: ChildRun, readyStates = startedStates, answers: readonly import('../consent-prompt.js').ConsentRule[] = consentAnswers): Promise<StartObservation> {
   let agent: HerdrAgent | null = null;
@@ -825,7 +822,7 @@ export function repromptText(request: string, ackMs: number) {
  * carry it, and the liveness sweep's wording, the blocked-prompt read and the per-runtime exhaustion
  * notices judge a codex pane as codex. A launch that reports no account ran on the profile's own.
  */
-export function launchedRuntime(launched: unknown): string | null {
+function launchedRuntime(launched: unknown): string | null {
   const kind = (launched as { account?: { kind?: unknown } | null } | null | undefined)?.account?.kind;
   return typeof kind === 'string' && kind ? kind : null;
 }

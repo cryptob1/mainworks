@@ -76,9 +76,9 @@ export function capacityLimitRedispatchRevision(createdAt = new Date().toISOStri
  * `any`: each runs against a change's preview of the fixture site or app, never UAT itself. The
  * matching files under `e2e/cases/` stay the source e2e sync revises later.
  */
-export const fixtureStaticHomeScenario = 'fixture-static-home';
-export const fixtureComposeAppScenario = 'fixture-compose-app';
-export const fixtureNodeHomeScenario = 'fixture-node-home';
+const fixtureStaticHomeScenario = 'fixture-static-home';
+const fixtureComposeAppScenario = 'fixture-compose-app';
+const fixtureNodeHomeScenario = 'fixture-node-home';
 const fixtureCase = (id: string, what: string, title: string, description: string, heading: string): E2eCase => caseSchema.parse({
   id, title, description, tags: ['fixture', 'preview'], target: 'any', required: false,
   steps: [{ kind: 'browser', name: `open the ${what}'s preview`, action: 'open', path: '/' }, { kind: 'browser', action: 'expectText', text: heading, exact: false }],
@@ -94,7 +94,7 @@ export const fixtureCases = (): E2eCase[] => [
 ];
 
 /** Revision 1 of a case shipped in code: exactly the revision `e2e sync` registers from its file under `e2e/cases/`. The timestamp is real (GY-2964): a seeded revision never reads as the epoch. */
-export function shippedCaseRevision(definition: E2eCase, createdAt = new Date().toISOString(), createdBy = 'graphyard'): Scenario {
+function shippedCaseRevision(definition: E2eCase, createdAt = new Date().toISOString(), createdBy = 'graphyard'): Scenario {
   const scenario = scenarioDefinition({ file: `${caseDirectory}/${definition.id}.json`, definition });
   return { ...scenario, revision: 1, hash: createHash('sha256').update(JSON.stringify(scenario)).digest('hex'), createdAt, createdBy };
 }
@@ -146,7 +146,7 @@ export async function resolveScenario(db: ScenarioDb, id: string, persist?: { at
   return (await db.query('SELECT document FROM scenarios WHERE id=$1 ORDER BY revision DESC LIMIT 1', [id])).rows[0]?.document as Scenario | undefined ?? document;
 }
 
-export const scenarioSchema = z.object({
+const scenarioSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9._-]*$/).max(100),
   title: z.string().min(1).max(200),
   purpose: z.string().min(1).max(5000),
@@ -212,7 +212,7 @@ export async function defineScenario(store: Store, actor: Principal, input: unkn
 }
 
 /** One E2E case run (GY-1351) as `mainworks e2e run` reports it against a registered revision. */
-export const caseRunSchema = z.object({
+const caseRunSchema = z.object({
   revision: z.number().int().min(1),
   runId: z.string().regex(/^[a-zA-Z0-9._:-]+$/).max(100),
   baseUrl: z.string().url().max(500),
@@ -227,7 +227,7 @@ export const caseRunSchema = z.object({
 }).strict().refine(run => (run.outcome === 'fail') === (run.failingStep !== null), 'A failed run names its failing step, and a passing run names none');
 
 /** The detail an E2E case run adds to a scenario run: where it ran, how long it took, the step that failed. */
-export interface E2eRunDetail { baseUrl: string; durationMs: number; failingStep: { index: number; name: string; reason: string } | null }
+interface E2eRunDetail { baseUrl: string; durationMs: number; failingStep: { index: number; name: string; reason: string } | null }
 /** A scenario run as the Tests page reads it: a trusted evidence run, or an E2E case run (`run.kind` `e2e`). */
 export type CaseRun = Omit<ScenarioRun, 'run'> & { run: Omit<RunIdentity, 'kind'> & { kind: RunIdentity['kind'] | 'e2e' }; e2e?: E2eRunDetail };
 /** One case as the Tests page reads it: its summary, its pass rate, and whether it is a repository E2E case. */

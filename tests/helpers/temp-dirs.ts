@@ -43,7 +43,7 @@ export async function temporaryDirectory(label: string, parent?: string): Promis
  * Remove every directory still tracked, its marker with it, and return what went. A directory a
  * live server still runs in is kept for the exit pass unless `force` is set.
  */
-export async function disposeTemporaryDirectories(options: { force?: boolean } = {}): Promise<string[]> {
+async function disposeTemporaryDirectories(options: { force?: boolean } = {}): Promise<string[]> {
   const removed: string[] = [], postmasters = options.force ? [] : livePostmasters();
   for (const directory of [...created]) {
     if (liveServersUnder(directory, postmasters).length) continue;

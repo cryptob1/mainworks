@@ -2,7 +2,7 @@
 // below Landlock ABI 9, so up's preflight and doctor read the ABI first, the same way it does.
 import { execFileSync } from 'node:child_process';
 
-export const landlockAbiRequired = 9;
+const landlockAbiRequired = 9;
 
 /** The host's Landlock ABI: landlock_create_ruleset(NULL, 0, LANDLOCK_CREATE_RULESET_VERSION). Throws when it cannot be read. */
 export function readLandlockAbi(): number {

@@ -15,7 +15,7 @@ import { trialImage } from '../../src/merge-writer/trial-container.js';
 // does, under run-tests.ts's narrow, heat-aware breadth on a coordinator.
 
 /** The suite runner, here and on a host. */
-export const suiteCommand = ['node', '--import', 'tsx', 'tests/helpers/run-tests.ts'];
+const suiteCommand = ['node', '--import', 'tsx', 'tests/helpers/run-tests.ts'];
 /** How many files a remote shard runs at once, as a trial shard does on its host. */
 const remoteBreadth = 4;
 

@@ -80,7 +80,7 @@ function artifactReferenceFault(artifact: unknown): string | null {
  * a receipt that records a failure is a valid record of a broken sequence, and
  * verifySlowTickReceipt refuses it as a twenty-pass claim.
  */
-export function buildSlowTickReceipt(input: { runs: SlowTickReceiptRun[]; artifact: string; at?: Date; environment?: SlowTickReceipt['environment'] }): SlowTickReceipt {
+function buildSlowTickReceipt(input: { runs: SlowTickReceiptRun[]; artifact: string; at?: Date; environment?: SlowTickReceipt['environment'] }): SlowTickReceipt {
   let consecutivePasses = 0;
   for (const run of input.runs) { if (!run.passed) break; consecutivePasses++; }
   return {

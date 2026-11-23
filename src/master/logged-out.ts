@@ -16,7 +16,7 @@ type HoldConfig = Pick<MasterConfig, 'credentialFile'> & Partial<Pick<MasterConf
  * another login, a passing smoke test, `master registry account quota NAME available` and changing
  * the account (`master registry account set`) do (GY-3441).
  */
-export async function recordLoggedOut(config: HoldConfig, account: string, reason: string, registry?: Pick<FleetClient, 'observe'>) {
+async function recordLoggedOut(config: HoldConfig, account: string, reason: string, registry?: Pick<FleetClient, 'observe'>) {
   const client = registry ?? (config.url ? httpFleetClient({ url: config.url, credentialFile: config.credentialFile }) : null);
   if (!client?.observe || !config.hostId) throw new Error('Holding a logged-out account requires the control-plane registry');
   await client.observe({ host: config.hostId, observations: [{ account, quota: { loggedIn: false, state: 'unknown', usage: [], resetsAt: null, reason: reason.slice(0, 500), session: 'login' } }] });

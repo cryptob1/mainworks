@@ -7,12 +7,13 @@ import { loadStoredMasterConfig, recordSupervision } from './config.js';
 import { setupAutonomy } from './autonomy.js';
 import { autonomyPlan } from './harness.js';
 import type { MasterConfig } from './profiles.js';
+import { stateDirectory } from '../install/layout.js';
 
 export const promoteCommand = 'mainworks master promote --admin-token-stdin';
 /** Recorded on every control-plane identity the promotion creates, configures or rotates, ahead of the autonomy apply's own reason. */
 export const promotionReason = `Promotion of a supervised install to autonomy (${promoteCommand})`;
 /** The master's administration records: the promotion's audit entry is appended beside them. */
-export const actionsDirectory = (root: string) => resolve(root, '.graphyard/master-actions');
+const actionsDirectory = (root: string) => resolve(stateDirectory(root), 'master-actions');
 /** The append-only audit of promotions, beside the master's other administration records. */
 export const promotionAuditFile = (root: string) => resolve(actionsDirectory(root), 'promotions.jsonl');
 

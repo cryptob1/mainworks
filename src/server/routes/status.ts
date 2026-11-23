@@ -6,7 +6,7 @@ import { demand, type Work } from '../../model.js';
 import type { IntegrationJob } from '../../coordination.js';
 import { parseEventHistoryQuery, readEventHistory } from '../../events-history.js';
 import { delegationSnapshot } from '../../delegation.js';
-import { loopAlerts, loopAlertsHeader, loopCheckoutTrust, loopCheckoutTrustHeader, loopCpu, loopCpuHeader, loopHosts, loopHostsHeader, loopSessions, loopSessionsHeader, loopFetchRefusal, loopFetchRefusalHeader, loopStallAlarm, loopStallAlarmHeader, loopStepFailure, loopStepFailureHeader, loopSupervision, loopSupervisionHeader, loopWorkerGrowth, loopWorkerGrowthHeader, loopPresenceHeader, loopPresenceInterval, loopPanes, loopPanesHeader, loopPanesRegistry, loopRegistry, reportedLoopMerger } from '../../model/loop-presence.js';
+import { loopAlerts, loopAlertsHeader, loopCheckoutTrust, loopCheckoutTrustHeader, loopCpu, loopCpuHeader, loopHosts, loopHostsHeader, loopSessions, loopSessionsHeader, loopFetchRefusalHeader, loopStallAlarmHeader, loopStepFailureHeader, loopSupervision, loopSupervisionHeader, loopWorkerGrowthHeader, loopPresenceHeader, loopPresenceInterval, loopPanes, loopPanesHeader, loopPanesRegistry, loopRegistry, reportedLoopMerger } from '../../model/loop-presence.js';
 import { loopWhere, loopWhereHeader, loopWhereRegistry } from '../../model/where-things-run.js';
 import { releaseInfo, schemaVersion } from '../../release.js';
 import { openHumanOnly } from '../../model/human-request.js';
@@ -17,7 +17,7 @@ import { executorHost } from './agent-registry.js';
 import { projectDelivery } from '../../model-boundary/project-applications.js';
 import { repositoryPolicy } from '../../model-boundary/repository-policy.js';
 import { productionEnvironmentFromEnv } from '../../production-environment.js';
-import { liveRelease, managedDeploy, repositoryToplevel, servingReport } from '../../deploy-watch.js';
+import { liveRelease, managedDeploy, readDeployHistory, repositoryToplevel, servingReport } from '../../deploy-watch.js';
 import { mainworksRepository } from '../../scenarios.js';
 import { gitRunnerFor } from '../../merge-writer/local-observation.js';
 import { boardFromStatus } from '../../model/board.js';
@@ -46,8 +46,13 @@ export const statusRoutes = defineRoutes('status', [
   } },
   // GY-3624: the flow numbers, for master status and the Work page; /api/status does not carry them (GY-3677).
   { method: 'GET', path: '/api/flow', async handle({ services, operatorVisible }) {
-    const now = (await services.engine.store.pool.query('SELECT clock_timestamp() AS now')).rows[0].now as Date;
-    return readFlow(services.engine.store.pool, operatorVisible(await services.engine.store.fleet()), now.getTime());
+    const { engine, repository } = services;
+    const now = (await engine.store.pool.query('SELECT clock_timestamp() AS now')).rows[0].now as Date;
+    const runner = engine.gitRunner === undefined ? engine.gitRunner = gitRunnerFor(setting('REPOSITORY_ROOT') ?? process.cwd()) : engine.gitRunner;
+    const servingRoot = setting('REPOSITORY_ROOT')?.trim() ? resolve(setting('REPOSITORY_ROOT')!) : repositoryToplevel(process.cwd());
+    const read = runner ? async (args: readonly string[]) => { const result = await runner(args); if (result.status !== 0) throw new Error(result.stderr); return result.stdout; } : null;
+    const deploys = servingRoot ? readDeployHistory(servingRoot, repository ?? null) : [];
+    return readFlow(engine.store.pool, operatorVisible(await engine.store.fleet()), now.getTime(), { deploys, git: read });
   } },
   {
     method: 'GET', path: '/api/status',
@@ -177,7 +182,7 @@ export const statusRoutes = defineRoutes('status', [
       const view = z.enum(['bounded', 'full', 'coordination']).parse(Array.isArray(requested) ? requested[0] : requested ?? 'bounded');
       // The loop's own read is its presence (GY-916): it merges while it lives, however long nothing is mergeable.
       const loopInterval = actor.role === 'coordinator' ? loopPresenceInterval(req.headers[loopPresenceHeader.toLowerCase()]) : null;
-      if (loopInterval !== null) loopRegistry(services.engine).observe({ principal: actor.id, intervalSeconds: loopInterval, supervision: loopSupervision(req.headers[loopSupervisionHeader.toLowerCase()]), alerts: loopAlerts(req.headers[loopAlertsHeader.toLowerCase()]), checkoutTrust: loopCheckoutTrust(req.headers[loopCheckoutTrustHeader.toLowerCase()]) ?? undefined, workerGrowth: loopWorkerGrowth(req.headers[loopWorkerGrowthHeader.toLowerCase()]), stepFailure: loopStepFailure(req.headers[loopStepFailureHeader.toLowerCase()]), fetchRefusal: loopFetchRefusal(req.headers[loopFetchRefusalHeader.toLowerCase()]), stallAlarm: loopStallAlarm(req.headers[loopStallAlarmHeader.toLowerCase()]), cpu: loopCpu(req.headers[loopCpuHeader.toLowerCase()]), hosts: loopHosts(req.headers[loopHostsHeader.toLowerCase()]), sessions: loopSessions(req.headers[loopSessionsHeader.toLowerCase()]) }, new Date());
+      if (loopInterval !== null) loopRegistry(services.engine).observe({ principal: actor.id, intervalSeconds: loopInterval, supervision: loopSupervision(req.headers[loopSupervisionHeader.toLowerCase()]), alerts: loopAlerts(req.headers[loopAlertsHeader.toLowerCase()]), checkoutTrust: loopCheckoutTrust(req.headers[loopCheckoutTrustHeader.toLowerCase()]) ?? undefined, workerGrowth: loopCheckoutTrust(req.headers[loopWorkerGrowthHeader.toLowerCase()]), stepFailure: loopCheckoutTrust(req.headers[loopStepFailureHeader.toLowerCase()]), fetchRefusal: loopCheckoutTrust(req.headers[loopFetchRefusalHeader.toLowerCase()]), stallAlarm: loopCheckoutTrust(req.headers[loopStallAlarmHeader.toLowerCase()]), cpu: loopCpu(req.headers[loopCpuHeader.toLowerCase()]), hosts: loopHosts(req.headers[loopHostsHeader.toLowerCase()]), sessions: loopSessions(req.headers[loopSessionsHeader.toLowerCase()]) }, new Date());
       if (loopInterval !== null) loopPanesRegistry(services.engine).observe(loopPanes(req.headers[loopPanesHeader.toLowerCase()]));
       if (loopInterval !== null) loopWhereRegistry(services.engine).observe(loopWhere(req.headers[loopWhereHeader.toLowerCase()]));
       const scope = <T extends { work: Work[]; jobs: IntegrationJob[] }>(snapshot: T) => {

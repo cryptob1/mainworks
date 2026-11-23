@@ -1,7 +1,4 @@
 // Concern: what a change request names as blocking, where, and what it leaves as follow-up.
-
-/** How much of a change request's body an observation keeps: enough to file its findings, bounded like a decision reason. */
-export const reviewBodyMax = 2000;
 /**
  * The line that names one blocking finding in a change request: `BLOCKING: <finding>`, optionally as a list item.
  * It captures the bold markers before the label, after it (after `BLOCKING` or after `finding`) and after its

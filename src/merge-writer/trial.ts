@@ -32,6 +32,7 @@ import { diskFloorBytes, gateTrialKey, trialFileTimeoutMs, heatWaitSeconds, Tria
 import { nestedSandboxDenied, trialAppArmorFix } from './trial-apparmor.js';
 import { maskSecrets } from '../redaction.js';
 import { setting } from '../setting.js';
+import { stateDirectory } from '../install/layout.js';
 
 /** One git call in the coordinator's object store: the arguments after `git -C <root>`, the child's stdout. */
 export type TrialGit = (args: string[], env?: Record<string, string>) => Promise<string>;
@@ -49,13 +50,13 @@ export const ansiEscape = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
  * The line a trial's log tail puts where it cut a failing group's output (GY-1639): what follows may
  * be the middle of a `failing tests:` summary whose heading was cut, so it reopens summary reading.
  */
-export const trialCutLine = "… (this group's earlier output was cut)";
+const trialCutLine = "… (this group's earlier output was cut)";
 /**
  * The runner's last `failing tests:` summary in one group's output (GY-1645): its heading through
  * the last line of its entries (each `test at` line, its `✖` test and the indented error), or null
  * when the output carries none. ANSI escapes are ignored when reading where it starts and ends.
  */
-export function failingSummary(output: string): string | null {
+function failingSummary(output: string): string | null {
   const lines = output.split('\n'), plain = lines.map(line => line.replace(ansiEscape, ''));
   // Only the runner's own heading, at column zero: a child run's summary a failing test printed is indented under it.
   const start = plain.findLastIndex(line => /^✖ failing tests:\s*$/.test(line));
@@ -246,7 +247,7 @@ export const trialTemporaryRoot = (sessionDirectory: string, roots: readonly str
 export function trialTemporaryRootReport(root: string, { roots = trialTemporaryRoots(), exists = existsSync, volatile = volatileFilesystem,
   size = path => { try { const info = statfsSync(path); return Number(info.blocks) * Number(info.bsize); } catch { return null; } } }: {
   roots?: readonly string[]; exists?: (path: string) => boolean; volatile?: (path: string) => string | null; size?: (path: string) => number | null } = {}) {
-  const floor = diskFloorBytes({ run: (() => { try { return JSON.parse(readFileSync(join(root, '.graphyard', 'master.json'), 'utf8')).run ?? {}; } catch { return {}; } })() });
+  const floor = diskFloorBytes({ run: (() => { try { return JSON.parse(readFileSync(join(stateDirectory(root), 'master.json'), 'utf8')).run ?? {}; } catch { return {}; } })() });
   const chosen = trialTemporaryRoot('the trial session directory', roots, exists, volatile);
   const skipped = roots.filter(path => exists(path) && volatile(path)).map(path => `${path} is a ${volatile(path)}, so trials do not use it`);
   const bytes = exists(chosen) ? size(chosen) : null;
@@ -355,8 +356,8 @@ export const trialCheckoutPrefix = 'gy-c';
  * by the pass building it, and each pass using it holds `<entry>.use-<id>`. The `keptBuildLimit`
  * most recently used idle trees stay; older ones are taken back.
  */
-export const keptBaseBuildPrefix = 'mainworks-base-build-';
-export const keptBuildPlacePrefix = 'gy-b';
+const keptBaseBuildPrefix = 'mainworks-base-build-';
+const keptBuildPlacePrefix = 'gy-b';
 export const keptBuildLimit = 4;
 /** The kept built tree's entry for commit `sha` under the trial worktree root `base`. */
 export const keptBaseBuild = (base: string, sha: string) => join(base, `${keptBaseBuildPrefix}${sha.toLowerCase()}`);
@@ -448,15 +449,15 @@ export type TrialPhaseDurations = Record<TrialPhase, number>;
 export type TrialNoVerdictOutcome = 'timeout' | 'cancelled' | 'host-failure';
 export interface TrialNoVerdict { outcome: TrialNoVerdictOutcome; phase: TrialPhase; reason: string; phases: TrialPhaseDurations }
 /** The signals that end a runner child as cancelled rather than failed: a stop, an interrupt or a hangup sent from outside the trial. */
-export const trialCancelSignals: readonly string[] = ['SIGTERM', 'SIGINT', 'SIGHUP'];
+const trialCancelSignals: readonly string[] = ['SIGTERM', 'SIGINT', 'SIGHUP'];
 /** GY-3099: a trial the merge writer stopped because a head it carries was refused or replaced; it is never retried and its heads stay queued. */
 export class TrialCancelledError extends Error {
   constructor(readonly reason: string) { super(`The trial was cancelled: ${reason}`); this.name = 'TrialCancelledError'; }
 }
 /** How many times a trial that reached no verdict is tried again before its outcome is final (GY-1832). */
-export const trialRetries = 1;
+const trialRetries = 1;
 /** One runner process of a trial (GY-1548): the files it ran, how it ended, and the failing files its records or log named. */
-export interface TrialGroup { files: string[]; status: number | null; signal: string | null; failed: string[] }
+interface TrialGroup { files: string[]; status: number | null; signal: string | null; failed: string[] }
 /** Whether a verdict's log tail is worth recording: the build did not pass, a test file failed, or the runner did not exit 0. */
 export const trialNeedsLog = (run: Pick<TrialRun, 'build' | 'tests' | 'runnerExit'>) => run.build !== 'pass' || run.tests.failed.length > 0 || (run.runnerExit != null && run.runnerExit !== 0);
 /**
@@ -536,7 +537,7 @@ export function shardTestFiles(files: readonly string[], lanes: number, duration
   return shards.map(shard => shard.files).filter(shard => shard.length);
 }
 /** Where a passing trial saves its per-file durations (GY-3542): beside the install's other local state, never in a checkout. */
-export const refreshedDurationsPath = (root: string, path: string) => join(root, '.graphyard', basename(path));
+export const refreshedDurationsPath = (root: string, path: string) => join(stateDirectory(root), basename(path));
 const durationsIn = (text: string): Record<string, number> => { try { const files = (JSON.parse(text) as { files?: unknown } | null)?.files; return files && typeof files === 'object' ? files as Record<string, number> : {}; } catch { return {}; } };
 /** The timings a trial plans its shards from: the base commit's baseline when selectorApproved is false (GY-3635) or the merge's own baseline in its checkout when approved, under what passing trials on this install measured since; `{}` when neither exists. */
 const checkoutDurations = async (worktree: string, root: string, path?: string, options?: { baseTip?: string; selectorApproved?: boolean; run?: ChildRun }): Promise<Record<string, number>> => {
@@ -571,7 +572,7 @@ export function slowestFile(records: string): { file: string; durationMs: number
  * of every file the trial runs, those that have passed and those that have failed so far, and the
  * file that has run longest so far.
  */
-export interface TrialCounts { passed: number; failed: number; files: number; slowest?: { file: string; durationMs: number } }
+interface TrialCounts { passed: number; failed: number; files: number; slowest?: { file: string; durationMs: number } }
 /** GY-3599: what a trial sends beside its step as each test shard ends: its counts so far, and what it printed so far. */
 export interface TrialStepReport { output?: string; tests?: TrialCounts }
 /** How much of a failing runner child's output its diagnostic record keeps: enough to read the exit, little enough for one daemon action. */
@@ -630,7 +631,7 @@ export class TrialHostFaultError extends Error {
  * GY-3339: a trial step whose nested sandbox AppArmor denied — the trial host's AppArmor, not the
  * head's. Like a fetch fault it reaches no verdict, is not retried, and the loop reports it upstream.
  */
-export const trialSandboxFaultLead = `${trialHostFaultPrefix}: a nested sandbox could not start in the trial container`;
+const trialSandboxFaultLead = `${trialHostFaultPrefix}: a nested sandbox could not start in the trial container`;
 export class TrialSandboxFaultError extends Error {
   constructor(readonly phase: string, readonly line: string) {
     super(`${trialSandboxFaultLead} during the ${phase} step (${line}); this is the trial host's AppArmor, not the head's: ${trialAppArmorFix}`);
@@ -718,7 +719,7 @@ export type RepositoryTrialCheck = { check: string; argv: string[]; paths?: stri
 const touchesPaths = (files: readonly string[], paths: readonly string[]) =>
   files.some(file => paths.some(path => file === path || (path.endsWith('/') && file.startsWith(path))));
 /** `npm run test` → `['npm','run','test']`; empty or whitespace-only commands yield null. */
-export const checkCommandArgv = (command: string): string[] | null => {
+const checkCommandArgv = (command: string): string[] | null => {
   const parts = command.trim().split(/\s+/).filter(Boolean);
   return parts.length ? parts : null;
 };
@@ -939,9 +940,9 @@ const playwrightCounts = /^\s*\d+ (?:passed|failed|flaky|skipped|interrupted|did
  * shutdown warnings, pool-end errors) crowds the log's tail. Only the numbered summary headings
  * name the file; the run's `✘` progress lines carry the title alone.
  */
-export interface PlaywrightFailure { file: string; line: number; title: string; error: string | null }
+interface PlaywrightFailure { file: string; line: number; title: string; error: string | null }
 /** Every failure a Playwright run's output names, in log order, deduplicated by file, line and title. */
-export function playwrightFailures(log: string): PlaywrightFailure[] {
+function playwrightFailures(log: string): PlaywrightFailure[] {
   const lines = log.split('\n').map(line => line.replace(ansiEscape, ''));
   const failures: PlaywrightFailure[] = [];
   for (let at = 0; at < lines.length; at++) {
@@ -970,7 +971,7 @@ export function playwrightFailures(log: string): PlaywrightFailure[] {
  * the files the runner ran, only those count (GY-1645): a name printed inside a test's own output,
  * such as a fixture's `test at example.test.ts:1:1` in an assertion message, is no failing file.
  */
-export function failingFilesInLog(out: string, ran?: readonly string[]): string[] {
+function failingFilesInLog(out: string, ran?: readonly string[]): string[] {
   const files = new Set<string>();
   for (const line of out.split('\n')) {
     if (/not ok|✖|FAIL/.test(line)) for (const file of line.match(testFile) ?? []) files.add(file);
@@ -1031,7 +1032,7 @@ const attemptContext = new WeakMap<object, { phase: TrialPhase; phases: TrialPha
  * host failure, with the phase it was in, the reason and the phases' times. A runner child ended
  * by `trialCancelSignals` is cancelled; every other rejection, whatever its class, is the host's.
  */
-export function trialNoVerdict(error: unknown): TrialNoVerdict {
+function trialNoVerdict(error: unknown): TrialNoVerdict {
   const context = typeof error === 'object' && error ? attemptContext.get(error) : undefined;
   const phases = context?.phases ?? { install: 0, build: 0, selection: 0, tests: 0 }, reason = (error instanceof Error ? error.message : String(error)).slice(0, 900);
   if (error instanceof TrialTimeoutError) return { outcome: 'timeout', phase: error.phase, reason, phases };

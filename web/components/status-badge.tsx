@@ -9,8 +9,3 @@ import { groupLabel, type Group } from '../groups';
 export default function StatusBadge({ group, children }: { group: Group; children?: string }) {
   return <span className={`badge badge-${group}`} data-status-badge={group}><span className="badge-dot" aria-hidden="true"/>{children ?? groupLabel[group]}</span>;
 }
-
-/** The group's dot alone, for a tile or a section heading beside its written name. */
-export function GroupDot({ group }: { group: Group }) {
-  return <span className={`group-dot dot-${group}`} aria-hidden="true"/>;
-}

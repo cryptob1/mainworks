@@ -15,7 +15,7 @@ import type { ScopeFile } from './work.js';
  * - `carried`: other items' unlanded candidates whose commits this head has in its history, while
  *   its tree holds their files as the landing commit does (how GY-93's merge took GY-84's delivery).
  */
-export interface CarriedCandidate {
+interface CarriedCandidate {
   key: string; pr: number; head: string;
   /** The owning item's files this head does not hold, each with how it holds them instead. */
   dropped: { path: string; detail: string }[];
@@ -23,7 +23,7 @@ export interface CarriedCandidate {
   unverified?: boolean;
 }
 /** Another item whose unlanded commits this head's history carries; see `LandingCheck.foreign`. */
-export interface ForeignCandidate { key: string; pr: number; head: string }
+interface ForeignCandidate { key: string; pr: number; head: string }
 export interface LandingCheck {
   base: string;
   files?: ScopeFile[];

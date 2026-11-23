@@ -131,7 +131,6 @@ export const workerProfileSchema = z.object({
   /** GY-3293: set on every profile the loop minted itself (worker-pool.ts), so a config that will not load is repaired by removing the loop's own entries, never the operator's. */
   minted: z.literal(true).optional(),
 }).strict().superRefine((profile, context) => {
-  if (profile.mode === 'launch' && !profile.kind) context.addIssue({ code: 'custom', message: 'A launched worker requires kind', path: ['kind'] });
   if (profile.mode === 'launch' && !profile.credentialFile) context.addIssue({ code: 'custom', message: 'A launched worker requires credentialFile', path: ['credentialFile'] });
   if (profile.credentialFile && !isAbsolute(profile.credentialFile)) context.addIssue({ code: 'custom', message: 'credentialFile must be absolute', path: ['credentialFile'] });
 });
@@ -366,7 +365,7 @@ export const agentIdentitySchema = z.object({ id: z.string().regex(/^[a-zA-Z0-9]
  * the exact head) and GitHub auto-merge merges it; the loop launches no reviewer or
  * session and the master claims no autonomy. `master promote` promotes it (GY-1502).
  */
-export const supervisionModes = ['autonomous', 'supervised'] as const;
+const supervisionModes = ['autonomous', 'supervised'] as const;
 export type Supervision = typeof supervisionModes[number];
 export const promotionCommand = 'mainworks master promote --admin-token-stdin (after mainworks master reviewer add)';
 export const masterConfigSchema = forwardTolerant(z.object({
@@ -463,7 +462,7 @@ export function withProducerDefaults<T extends Pick<MasterConfig, 'producers'>>(
  * whatever master.json still records, so the loop applies no rework itself; its reviewer answers in control-plane mode
  * (GY-1978), which needs a profile, not an App. Autonomous configs pass unchanged.
  */
-export function withSupervision<T extends { supervision?: Supervision; operatorAgent?: unknown }>(config: T): T {
+function withSupervision<T extends { supervision?: Supervision; operatorAgent?: unknown }>(config: T): T {
   if (config.supervision !== 'supervised') return config;
   const { operatorAgent: _operatorAgent, ...kept } = config;
   return kept as T;
@@ -494,15 +493,15 @@ export function assertMasterBinding(config: MasterConfig, status: any) {
 /** The coordinator checkout the CLI launcher at `cliPath` runs from: `<root>/bin/graphyard.mjs`. */
 export const coordinatorCheckoutRoot = (cliPath: string) => dirname(dirname(cliPath));
 /** The checkout areas whose files the loop and the executors load; untracked files under them are uncommitted source, not scratch. */
-export const coordinatorSourcePrefixes = ['src/', 'scripts/', 'bin/', 'tests/', 'docs/'];
-export const coordinatorSourceFiles = ['package.json', 'package-lock.json', 'tsconfig.json'];
-export const isCoordinatorSourcePath = (path: string) => coordinatorSourceFiles.includes(path) || coordinatorSourcePrefixes.some(prefix => path.startsWith(prefix));
+const coordinatorSourcePrefixes = ['src/', 'scripts/', 'bin/', 'tests/', 'docs/'];
+const coordinatorSourceFiles = ['package.json', 'package-lock.json', 'tsconfig.json'];
+const isCoordinatorSourcePath = (path: string) => coordinatorSourceFiles.includes(path) || coordinatorSourcePrefixes.some(prefix => path.startsWith(prefix));
 
 /** How a coordinator checkout stands: its commit, and the paths that make it dirty. */
 export interface CoordinatorCheckout { root: string; commit: string | null; /** Tracked files that differ from HEAD. */ modified: string[]; /** Untracked, not ignored files under the source paths. */ untracked: string[] }
 export type CheckoutRun = (command: string, args: string[]) => Promise<string> | string;
 /** The commit and porcelain status a checkout read produced; both verbatim (`-z`), never trimmed. */
-export function parseCoordinatorCheckout(root: string, commitRead: string, status: string): CoordinatorCheckout {
+function parseCoordinatorCheckout(root: string, commitRead: string, status: string): CoordinatorCheckout {
   const commit = commitRead.trim() || null;
   const modified: string[] = [], untracked: string[] = [];
   // -z: entries verbatim and NUL-separated; a rename or copy carries its old path in a second field.

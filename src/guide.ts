@@ -43,7 +43,7 @@ export type GuideTopic = keyof typeof guideTopics;
 export const guideTopicList = Object.keys(guideTopics) as readonly GuideTopic[];
 
 /** What `guide` prints with no topic: the list, and how to read one. */
-export const guideList = () => `${PRODUCT_NAME} guide topics: ${guideTopicList.join(', ')}.\nRun \`${COMMAND_NAME} guide TOPIC\` (or \`node $GRAPHYARD_CLI guide TOPIC\`) to print one topic's procedure.`;
+export const guideList = () => `${PRODUCT_NAME} guide topics: ${guideTopicList.join(', ')}.\nRun \`${COMMAND_NAME} guide TOPIC\` (or \`node $MAINWORKS_CLI guide TOPIC\`) to print one topic's procedure.`;
 
 /** One topic's procedure; an unknown topic is refused with the list, so a typo is never a silence. */
 export function guideText(topic: string): string {

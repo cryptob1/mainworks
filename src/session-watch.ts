@@ -370,8 +370,13 @@ export async function supervise(command: string, args: string[], epoch: number, 
       if (stopping) return;
       stopping = true; clearInterval(timer); clearTimeout(expiry);
       signalGroup('SIGTERM');
+      // A detached agent's process group that has emptied needs no grace (GY-3715): the supervisor
+      // finishes at once rather than waiting the full grace after an agent that already exited.
+      const groupGone = () => { if (!detached || platform === 'win32' || containment || !child?.pid) return false; try { process.kill(-child.pid, 0); return false; } catch { return true; } };
+      const poll = setInterval(() => { if (groupGone()) { clearInterval(poll); clearTimeout(kill); finish(null, code); } }, 50);
       // Keep this timer referenced even if the group leader exits first.
-      setTimeout(async () => {
+      const kill = setTimeout(async () => {
+        clearInterval(poll);
         signalGroup('SIGKILL');
         finish(null, code);
       }, options.graceMs ?? 5000);
@@ -448,7 +453,8 @@ export async function supervise(command: string, args: string[], epoch: number, 
           }
           catch { console.error('Mainworks lease cannot be renewed. Stopping worker.'); stop(1); }
           finally { pending = false; }
-        }, options.intervalMs ?? 25_000);
+        // A lease shorter than 75 s is renewed every third of it, so it never lapses between beats (GY-3715).
+        }, options.intervalMs ?? Math.min(25_000, granted / 3));
         armDeadline();
       } catch (error) { finish(error); }
     })();

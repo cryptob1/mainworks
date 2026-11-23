@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { setting } from './setting.js';
 
-export const infraActions = ['repo.create', 'repo.push', 'project.create', 'environment.create'] as const;
+const infraActions = ['repo.create', 'repo.push', 'project.create', 'environment.create'] as const;
 export type InfraAction = typeof infraActions[number];
 /** What an infra credential covers: one repository (OWNER/NAME) and one hosting project. */
 export interface InfraScope { repository: string; project: string }

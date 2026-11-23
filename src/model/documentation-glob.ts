@@ -18,7 +18,7 @@ export function pathScopeContains(outer: string, inner: string) {
 }
 const pathToken = /(?:[A-Za-z0-9_.-]+\/)+[A-Za-z0-9_.*-]*|[A-Za-z0-9_-]+\.[A-Za-z0-9]{1,5}|(?<![\w./-])\.[A-Za-z_][\w.-]*/g;
 const fileToken = /^[\w-]+\.[A-Za-z0-9]{1,5}$|^\.[A-Za-z_][\w.-]*$/;
-export const wellFormed = (path: string) => {
+const wellFormed = (path: string) => {
   const segments = pathScope(path).path.split('/');
   return segments.length > 0 && segments.every((segment, index) => segment !== '.' && segment !== '..' && (segment !== '' || index === segments.length - 1));
 };

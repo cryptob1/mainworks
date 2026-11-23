@@ -7,11 +7,11 @@ import { PRODUCT_NAME } from './product.js';
  */
 
 /** The roles a first installation needs an agent account for: one writes the code, one reviews it. */
-export const requiredSetupRoles = ['worker', 'reviewer'] as const;
-export type RequiredSetupRole = typeof requiredSetupRoles[number];
+const requiredSetupRoles = ['worker', 'reviewer'] as const;
+type RequiredSetupRole = typeof requiredSetupRoles[number];
 
 /** What the one button on a checklist item does. */
-export type SetupAction =
+type SetupAction =
   | { kind: 'link'; label: string; href: string }
   | { kind: 'connect'; label: string; role: RequiredSetupRole }
   | { kind: 'wait'; label: string };

@@ -20,7 +20,7 @@ const shortSha = (sha: string) => <span className="mono" title={sha}>{sha.slice(
  * open ones plus the master's pane), the checks running (merge trials and a batch gate on main, as
  * /api/status counts them) and today's merges. Each number rides a data attribute for readers and tests.
  */
-export function ActivityStrip({ work, observedAt, status }: { work: Work[]; observedAt: number; status?: Dashboard['status'] }) {
+function ActivityStrip({ work, observedAt, status }: { work: Work[]; observedAt: number; status?: Dashboard['status'] }) {
   const now = Number.isNaN(observedAt) ? Date.now() : observedAt;
   const agents = workersView(work, new Date(now)).running.filter(row => !row.stale && row.roleKind !== 'master').length + (status?.setup?.panes?.master ? 1 : 0);
   const checks = typeof status?.checksRunning === 'number' ? status.checksRunning : 0;
@@ -39,7 +39,7 @@ export function ActivityStrip({ work, observedAt, status }: { work: Work[]; obse
  * not carry yet — the Work page card's one count, so the two never disagree. With no live commit
  * known the release line already says so, and the strip stays out of the way.
  */
-export function ShippedStrip({ work, observedAt, live }: { work: Work[]; observedAt: number; live?: { commit?: unknown; waiting?: unknown } | null }) {
+function ShippedStrip({ work, observedAt, live }: { work: Work[]; observedAt: number; live?: { commit?: unknown; waiting?: unknown } | null }) {
   if (typeof live?.commit !== 'string') return null;
   const { shipped, waiting } = shippedCounts(work, live, Number.isNaN(observedAt) ? Date.now() : observedAt);
   return <p className="shipped-strip" aria-label="Shipped" data-shipped={shipped.length} data-waiting={waiting.length}>
@@ -103,7 +103,7 @@ export function ReleaseLine({ status }: { status?: Dashboard['status'] }) {
  * whose item's delivery removed them — as /api/status's `thisWeek` reports them, each count
  * followed by links that open its items. One line, shown only while either count is above zero (GY-3483).
  */
-export function WeekLine({ status, work, open }: { status?: Dashboard['status']; work: Work[]; open?: (id: string) => void }) {
+function WeekLine({ status, work, open }: { status?: Dashboard['status']; work: Work[]; open?: (id: string) => void }) {
   const week = status?.thisWeek as { reverts?: unknown; revertedItems?: unknown; gatesRemoved?: unknown; gatesRemovedItems?: unknown } | null | undefined;
   if (!week || typeof week.reverts !== 'number' || typeof week.gatesRemoved !== 'number' || (!week.reverts && !week.gatesRemoved)) return null;
   const keys = (value: unknown) => Array.isArray(value) ? value.filter((key): key is string => typeof key === 'string') : [];
@@ -124,7 +124,7 @@ export const hostsNeedingUpdate = (status?: Dashboard['status']): string[] =>
 export const hostUpdateCommand = 'mainworks host prepare';
 
 /** GY-3517: one line while any compute machine needs its helper updated, naming them and the one command; gone once the next probe reads them ready. */
-export function HostUpdateLine({ status }: { status?: Dashboard['status'] }) {
+function HostUpdateLine({ status }: { status?: Dashboard['status'] }) {
   const names = hostsNeedingUpdate(status);
   if (!names.length) return null;
   return <p className="host-update-line" role="status" data-host-update={names.join(' ')}>
@@ -145,7 +145,7 @@ export interface CaretakerFault { summary: string; view: string }
  * GY-3598: what the Caretaker pill reports. Once GY-3593 reports `status.caretaker`, it reads that;
  * until then, it reads from master status attention and the stall alarm.
  */
-export function caretakerSummary(status: Dashboard['status'], work: Work[], now: number): { faults: CaretakerFault[]; minutesAgo: number } {
+function caretakerSummary(status: Dashboard['status'], work: Work[], now: number): { faults: CaretakerFault[]; minutesAgo: number } {
   const reported = status?.caretaker as { faults?: { summary?: string; view?: string }[]; checkedAt?: string } | null | undefined;
   const checkedAtMs = typeof reported?.checkedAt === 'string' ? Date.parse(reported.checkedAt)
     : typeof status?.now === 'string' ? Date.parse(status.now) : now;

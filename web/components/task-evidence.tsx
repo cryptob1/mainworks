@@ -22,7 +22,7 @@ export function useEvidence<T>(api: Api, path: string | null, key: unknown): T |
 }
 
 /** "20 s", "14 min", "1 h 5 min". */
-export const shortDuration = (ms: number) => ms < 60_000 ? `${Math.round(ms / 1000)} s` : plainDuration(ms / 60_000);
+const shortDuration = (ms: number) => ms < 60_000 ? `${Math.round(ms / 1000)} s` : plainDuration(ms / 60_000);
 
 export interface Stage { id: 'built' | 'reviewed' | 'queued' | 'trial' | 'ship'; label: string; state: 'done' | 'current' | 'failed' | 'pending'; ms: number | null }
 const stageLabels: [Stage['id'], string][] = [['built', 'Built'], ['reviewed', 'Reviewed'], ['queued', 'Queued'], ['trial', 'Test merge'], ['ship', 'Ship']];
@@ -31,7 +31,7 @@ const stageLabels: [Stage['id'], string][] = [['built', 'Built'], ['reviewed', '
  * and its ledger already record: released, handed in, approved, trial started, trial ended, merged.
  * A stage is done once any later instant exists, and its time is known when both of its own do.
  */
-export function taskStages(item: Work, timings: TaskTimings | null, now: number): { stages: Stage[]; totalMs: number | null; merged: boolean } {
+function taskStages(item: Work, timings: TaskTimings | null, now: number): { stages: Stage[]; totalMs: number | null; merged: boolean } {
   const time = (value: string | null | undefined) => { const at = Date.parse(value ?? ''); return Number.isFinite(at) ? at : null; };
   const head = item.candidate?.sha, ledger = head && item.mergeLedger?.head === head ? item.mergeLedger : null, trial = head && timings?.trial?.head === head ? timings.trial : null;
   const submitted = item.submission ? time(item.pipeline?.resubmittedAt ?? item.pipeline?.submittedAt) : null;

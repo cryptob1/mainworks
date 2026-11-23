@@ -22,8 +22,8 @@ const defaultStates: RuntimeStates = () => endedRuntimeStates;
  * that misses such a handle keeps that sighting's time rather than the time of its own write.
  */
 export const sessionObservationFreshMs = 15 * 60_000;
-export interface SessionObservationReading { state: ObservedSessionState; at: string }
-export function latestObservation(handle: Pick<SessionHandle, 'state' | 'updatedAt' | 'observed' | 'observedAt'>): SessionObservationReading | null {
+interface SessionObservationReading { state: ObservedSessionState; at: string }
+function latestObservation(handle: Pick<SessionHandle, 'state' | 'updatedAt' | 'observed' | 'observedAt'>): SessionObservationReading | null {
   if (handle.observed && handle.observedAt) return { state: handle.observed, at: handle.observedAt };
   // A report that missed an unobserved handle carries that first sighting as `observedAt`, so the
   // write that says the session is absent does not make it read as freshly seen.
@@ -107,7 +107,7 @@ export function runningSessions(all: Work[], now: Date) {
  */
 export const lostAfterReports = 2, sessionObservationRefreshMs = 5 * 60_000;
 /** The most misses a record counts: the handle schema's ceiling on `missedReports`. */
-export const missedReportsCeiling = 1000;
+const missedReportsCeiling = 1000;
 /** What one listed runtime entry says about the session in it. */
 export function observedRuntimeState(entry: RuntimeSession, runtime: string, states: RuntimeStates = defaultStates): 'working' | 'idle' | 'ended' {
   if (entry.agent === null || entry.agent === '') return 'ended';
@@ -289,5 +289,5 @@ export function reportedHandle(entry: SessionReportEntry): SessionHandleInput {
     ...(entry.observed ? { observed: entry.observed } : {}), ...(entry.observedAt ? { observedAt: entry.observedAt } : {}), missedReports: entry.missedReports };
 }
 
-export { launchHeldByLease, sessionLaunchGraceMs, unclaimedLaunch } from './session-launch-window.js';
-export { coordinateAttempts, coordinateRetryMs, registeredLaunch, type LaunchedCoordinates } from './session-launch.js';
+;
+export {   registeredLaunch,  } from './session-launch.js';

@@ -14,7 +14,7 @@ import type { Work } from './work.js';
 export interface HumanNeeded { decision: string; resolve: string }
 /** The computed action as this module writes it; `Work['nextAction']` is typed as the base kind. */
 export interface OpenAction extends NextAction { needsHuman?: HumanNeeded }
-export const openAction = (work: Pick<Work, 'nextAction'>): OpenAction | null => (work.nextAction ?? null) as OpenAction | null;
+const openAction = (work: Pick<Work, 'nextAction'>): OpenAction | null => (work.nextAction ?? null) as OpenAction | null;
 
 /**
  * What an action waits on when no executor may run it, or null when the loop can run it itself.
@@ -54,7 +54,7 @@ export function dispatchHold(work: Work, all: Work[], now: Date): string | null 
 }
 
 /** A delivered (merged or Done) item owes nothing more. */
-export const isDeliveredWork = (work: Pick<Work, 'stage'> & { observation?: { merged?: boolean } | null; delivery?: unknown }): boolean =>
+const isDeliveredWork = (work: Pick<Work, 'stage'> & { observation?: { merged?: boolean } | null; delivery?: unknown }): boolean =>
   work.stage === 'done' || !!work.observation?.merged || !!work.delivery;
 
 /** The step an item needs, with who owes it when no executor may run it. */

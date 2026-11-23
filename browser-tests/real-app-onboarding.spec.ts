@@ -7,6 +7,7 @@ import { temporaryDirectory } from '../tests/helpers/temp-dirs';
 import { Engine } from '../src/engine';
 import { server } from '../src/server';
 import { onboardingServe } from '../src/model/onboarding-work';
+import { VERIFY_TIMEOUT_MS } from '../web/pages/login';
 
 test('e2e:real-app-onboarding — Setup names the placeholder fault and recognizes the real app on main', async ({ page, context, baseURL }) => {
   test.setTimeout(90_000);
@@ -31,8 +32,9 @@ test('e2e:real-app-onboarding — Setup names the placeholder fault and recogniz
     const signIn = await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-operator' } });
     const { code } = await signIn.json() as { code: string };
     await page.goto(`${baseURL}/#sign-in=${code}&setup`);
+    // GY-3724: the item's text comes from /api/status after sign-in; a loaded gate host spends past the 5 s expect default, so wait as long as the page allows.
     const item = page.locator('[data-setup-item="real-app"]');
-    await expect(item).toContainText('Master fault: owner/Lumina is not onboarded');
+    await expect(item).toContainText('Master fault: owner/Lumina is not onboarded', { timeout: VERIFY_TIMEOUT_MS });
     await expect(item).toContainText('Placeholder serve');
     await expect(item).toHaveAttribute('data-done', 'no');
     await expect(item).not.toContainText('Needs you');
@@ -41,7 +43,7 @@ test('e2e:real-app-onboarding — Setup names the placeholder fault and recogniz
     await writeFile(join(root, 'graphyard.json'), JSON.stringify({ e2e: { serve: onboardingServe } }));
     await page.goto(`${baseURL}/#setup`);
     await page.reload();
-    await expect(item).toContainText('Project onboarded');
+    await expect(item).toContainText('Project onboarded', { timeout: VERIFY_TIMEOUT_MS });
     await expect(item).toHaveAttribute('data-done', 'yes');
     await expect(item).not.toContainText('Master fault');
   } finally {

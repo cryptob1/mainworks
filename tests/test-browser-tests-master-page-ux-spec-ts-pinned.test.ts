@@ -21,5 +21,5 @@ test('unit:test-browser-tests-master-page-ux-spec-ts-pinned — a socket that fa
   assert.match(spec, /new MutationObserver\([\s\S]*attributeFilter: \['data-terminal'\]/, 'every data-terminal change is recorded from page load');
   const drops = spec.split("f.child.send('drop-terminals');").slice(1, 3);
   assert.equal(drops.length, 2, 'both reconnecting drops are found');
-  drops.forEach((after, index) => assert.ok(after.trimStart().startsWith(`await expect.poll(f.reconnects).toBe(${index + 1});`), `drop ${index + 1} waits for reconnect ${index + 1} in the record`));
+  drops.forEach((after, index) => assert.ok(after.trimStart().startsWith(`await expect.poll(f.reconnects, settled).toBe(${index + 1});`), `drop ${index + 1} waits for reconnect ${index + 1} in the record`));
 });
