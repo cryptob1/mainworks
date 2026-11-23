@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { link, mkdir, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -19,9 +18,9 @@ export async function takeLock(lock: string): Promise<boolean> {
   } finally { await rm(mine, { force: true }); }
 }
 
-/** GY-3710: runs `work` holding the host-wide lock `name`, waiting while another process or install holds it. */
+/** GY-3710: runs `work` holding the host-wide lock `name` (under /tmp, whatever an install's TMPDIR), waiting while another process or install holds it. */
 export async function withHostLock<T>(name: string, work: () => Promise<T>): Promise<T> {
-  const lock = join(tmpdir(), 'graphyard-locks', `${name.replace(/[^\w.-]/g, '_')}.lock`);
+  const lock = join('/tmp', 'graphyard-locks', `${name.replace(/[^\w.-]/g, '_')}.lock`);
   while (!await takeLock(lock)) await delay(1000);
   try { return await work(); } finally { await rm(lock, { force: true }); }
 }
