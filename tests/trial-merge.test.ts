@@ -221,7 +221,7 @@ test('integration:trial-run-build-and-tests — a trial checkout that cannot be 
 });
 
 /** This repository's own trial: HEAD's tree with tests/ reduced to two fast, Postgres-free files, committed in a shared scratch clone that borrows this checkout's install. */
-async function ownRepositoryTrial(keep: readonly string[]) {
+async function ownRepositoryTrial(keep: readonly string[], build?: string) {
   const own = resolve(dirname(fileURLToPath(import.meta.url)), '..');
   const scratch = await temporaryDirectory('trial-merge-own', tmpdir());
   const root = join(scratch, 'repo');
@@ -231,6 +231,12 @@ async function ownRepositoryTrial(keep: readonly string[]) {
   indexed('read-tree', head);
   const dropped = gitIn(root, 'ls-tree', '--name-only', head, 'tests/').split('\n').filter(path => path.endsWith('.test.ts') && !keep.includes(path));
   execFileSync('git', ['-C', root, 'update-index', '--force-remove', '--stdin'], { input: `${dropped.join('\n')}\n`, env: { ...process.env, ...identity, GIT_INDEX_FILE: join(scratch, 'index') } });
+  // With `build`, the scratch tree's package.json builds with that script instead of the repository's own.
+  if (build) {
+    const manifest = JSON.parse(gitIn(root, 'show', `${head}:package.json`));
+    const blob = execFileSync('git', ['-C', root, 'hash-object', '-w', '--stdin'], { input: JSON.stringify({ ...manifest, scripts: { ...manifest.scripts, build } }), encoding: 'utf8' }).trim();
+    indexed('update-index', '--cacheinfo', `100644,${blob},package.json`);
+  }
   const mergeSha = gitIn(root, 'commit-tree', indexed('write-tree'), '-p', head, '-m', `Trial of ${keep.join(' and ')}`);
   // The scratch root is the coordinator checkout: its lockfile is the merge's, so the trial borrows its install.
   copyFileSync(join(own, 'package-lock.json'), join(root, 'package-lock.json'));
@@ -263,9 +269,9 @@ test('integration:trial-hung-test-fails-fast — a hung file fails by name while
       if (args.includes('tests/helpers/run-tests.ts')) {
         testRuns++;
         assert.ok(args.includes('--file-timeout=300000'), 'production bounds each file at five minutes');
-        // Keep the real timeout and named verdict, with a minute for child startup on a
-        // saturated host. The finishing fixture waits only 50 ms (GY-3386).
-        args = args.map(arg => arg === '--file-timeout=300000' ? '--file-timeout=60000' : arg);
+        // Keep the real timeout and named verdict, with fifteen seconds for child startup on a
+        // saturated host (GY-3715). The finishing fixture waits only 50 ms (GY-3386).
+        args = args.map(arg => arg === '--file-timeout=300000' ? '--file-timeout=15000' : arg);
       }
       // This regression exercises test processes, not the separately tested container boundary.
       // All executed code belongs to this repository or the two fixtures above.
@@ -281,13 +287,14 @@ test('integration:trial-hung-test-fails-fast — a hung file fails by name while
   assert.match(result.logTail, /hung\.test\.ts/);
   // The file bound ended the hung file, not the overall deadline (which would leave no verdict):
   // no wall-clock limit here, so a hot or busy host cannot fail it (GY-3374).
-  assert.match(result.logTail, /test file timed out after 60000ms/);
+  assert.match(result.logTail, /test file timed out after 15000ms/);
   assert.deepEqual(result.retried ?? [], [], 'a named failure is a verdict, not a no-verdict retry');
 });
 
 test('unit:trial-credential-free-runner-exits-zero — this repository\'s own two-file fast selection, built and run by the real runner in a credential-free scratch checkout through runTrial\'s environment (GH_CONFIG_DIR, GH_TOKEN, GITHUB_TOKEN, SSH_AUTH_SOCK, GIT_SSH_COMMAND and every GRAPHYARD_*/HERDR_* variable removed, GIT_CONFIG_NOSYSTEM=1, GIT_CONFIG_GLOBAL=/dev/null), records no failed file and a runner exit code of 0 (GY-1549)', async () => {
   const keep = ['tests/stable-json.test.ts', 'tests/vite-config-loader.test.ts'];
-  const trial = await ownRepositoryTrial(keep);
+  // The build is the repository's own without its type check, which alone took most of this file's time (GY-3715).
+  const trial = await ownRepositoryTrial(keep, 'vite build --configLoader runner && node bin/built-entry.mjs');
   assert.ok(trial.dropped > 100, `the scratch tree keeps only the two files (${trial.dropped} dropped)`);
   const planted: NodeJS.ProcessEnv = { ...process.env, GH_CONFIG_DIR: '/nowhere/gh', GH_TOKEN: 'gh-secret', GITHUB_TOKEN: 'github-secret', SSH_AUTH_SOCK: '/nowhere/agent.sock', GIT_SSH_COMMAND: 'ssh -i /nowhere/key', GRAPHYARD_TOKEN: 'graphyard-secret', HERDR_PANE_ID: 'p1', GIT_CONFIG_GLOBAL: '/nowhere/.gitconfig' };
   const environment = trialEnvironment(planted);

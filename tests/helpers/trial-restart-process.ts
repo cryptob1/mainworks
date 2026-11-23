@@ -1,4 +1,5 @@
-// Real loop and detached-run processes; only the trial's commands are fixture stubs.
+// Real loop and detached-run processes; only the trial's commands are fixture stubs. The slow tests
+// command runs until the unit writes `release` beside commands.jsonl, once its restarts are done (GY-3715).
 import { spawn } from 'node:child_process';
 import { appendFile, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -17,8 +18,8 @@ if (process.argv[2] === 'trial') {
   for (const step of ['install', 'build', 'tests']) {
     await appendFile(files.steps, JSON.stringify({ step, at: new Date().toISOString() }) + '\n');
     await defaultChildRun(process.execPath, ['--input-type=module', '-e',
-      `import { appendFileSync } from 'node:fs'; appendFileSync(process.argv[1], JSON.stringify({step: process.argv[2], at: Date.now(), pid: process.pid})+'\\n'); if(process.argv[2]==='tests') await new Promise(r=>setTimeout(r,25000));`,
-      join(spec.base, 'commands.jsonl'), step]);
+      `import { appendFileSync, existsSync } from 'node:fs'; appendFileSync(process.argv[1], JSON.stringify({step: process.argv[2], at: Date.now(), pid: process.pid})+'\\n'); if(process.argv[2]==='tests') while(!existsSync(process.argv[3])) await new Promise(r=>setTimeout(r,50));`,
+      join(spec.base, 'commands.jsonl'), step, join(spec.base, 'release')]);
   }
   await writeFile(files.result + '.tmp', JSON.stringify({ ok: true, run: {
     build: 'pass', tests: { passed: 1, failed: [], files: 1 }, durationMs: 25000, logTail: '', files: ['proof.cjs'],

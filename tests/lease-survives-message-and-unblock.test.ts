@@ -22,7 +22,7 @@ const cli = resolve('bin/graphyard.mjs');
 const exec = promisify(execFile);
 
 test('e2e:lease-survives-message-and-unblock — a headless rework holder syncs messages with its own epoch and completes after a full lease period', async () => {
-  const f = await headlessWorkers('lease-survives-message', 40);
+  const f = await headlessWorkers('lease-survives-message', 12);
   try {
     await f.configure([{ name: 'first', kind: 'codex' }]);
     const work = await f.readyItem('GY-9700');
@@ -44,8 +44,8 @@ test('e2e:lease-survives-message-and-unblock — a headless rework holder syncs 
     assert.equal(before.workspaces[0].branch, before.workspaces[1].branch, 'rework reuses the submitted branch');
     await master('message', work.key, 'Keep this change small');
     await master('unblock', work.key, 'The dependency is available');
-    // No command from the agent during this interval: watch alone renews the lease.
-    await new Promise(resolve => setTimeout(resolve, 41_000));
+    // No command from the agent during this interval: watch alone renews the lease (every third of it).
+    await new Promise(resolve => setTimeout(resolve, 13_000));
     const live = await f.stored(work.id);
     assert.equal(live.lease?.epoch, 2);
     assert.ok(Date.parse(live.lease!.expiresAt) > Date.now());
@@ -69,7 +69,7 @@ test('e2e:lease-survives-message-and-unblock — a headless rework holder syncs 
   } finally {
     // Release a waiting stub even when the regression assertion fails.
     const home = f.homes.get('second');
-    if (home) { await writeFile(join(home, 'release'), ''); await new Promise(resolve => setTimeout(resolve, 6000)); }
+    if (home) { await writeFile(join(home, 'release'), ''); for (let i = 0; i < 120 && liveRun('eng-a'); i++) await new Promise(resolve => setTimeout(resolve, 50)); }
     await f.stop();
   }
 });

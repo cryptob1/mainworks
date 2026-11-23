@@ -160,7 +160,9 @@ if (${JSON.stringify(entry.failure ?? '')}) { console.error(${JSON.stringify(ent
   }
   async function dispatch(work: Work) {
     const config = await loadMasterConfig(root);
-    return dispatchWork(root, work, config.workers[0]!, { allWork: [work], observedAt: now(), headless: spawnHeadless,
+    // GY-3715: a short startup observation. Every fixture run that ends at once (a limit exit) has
+    // ended well inside it, and a live successor no longer holds each dispatch for the full ten seconds.
+    return dispatchWork(root, work, config.workers[0]!, { allWork: [work], observedAt: now(), headless: spawnHeadless, startupMs: 2000,
       prepare: (at, key, profile, _run, claimBy, keep, cycle) => prepareWorkerLaunch(at, key, profile, (command, args, options) => command === 'git' && args[0] === 'fetch' ? '' : workerCommand(command, args, options), claimBy, keep, cycle),
       capacity: async event => { const result = await api(coordinator, 'POST', `work/${work.id}/capacity`, event); assert.equal(result.status, 200, JSON.stringify(result.body)); },
       // The loop records each run on the item as it starts (daemon/cycle.ts), as the coordinator.

@@ -72,6 +72,7 @@ test('e2e:trial-survives-loop-restart — one and three SIGTERM restarts retain 
         assert.deepEqual((await commands()).map(row => row.step), ['install', 'build', 'tests']);
         restartMs += Date.now() - before;
       }
+      await writeFile(join(world.trials, 'release'), '');
       await waitFor(world.work, work => work.find(entry => entry.id === item.id)?.mergeLedger?.state === 'reconciled', 'one merge completes: ' + errors);
       const rows = await commands();
       assert.deepEqual(rows.map(row => row.step), ['install', 'build', 'tests']);
