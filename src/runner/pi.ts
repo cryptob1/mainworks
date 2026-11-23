@@ -43,7 +43,7 @@ export function piArgs(prompt: string, options: { model: string; extension?: str
 /** Inherited variables a run never sees: the loop's own Graphyard and Herdr identity. What a run may hold is passed in `env`. */
 export function runEnvironment(base: NodeJS.ProcessEnv, extra: Record<string, string> = {}) {
   const env: Record<string, string> = {};
-  for (const [name, value] of Object.entries(base)) if (value !== undefined && !/^(GRAPHYARD_|HERDR_)/.test(name)) env[name] = value;
+  for (const [name, value] of Object.entries(base)) if (value !== undefined && !/^(GRAPHYARD_|MAINWORKS_|HERDR_)/.test(name)) env[name] = value;
   return { ...env, ...extra };
 }
 
@@ -153,6 +153,7 @@ export function runContainment(input: { cgroup?: string | null; systemd?: () => 
 export const runFiles = (directory: string) => ({
   meta: join(directory, 'run.json'), stdout: join(directory, 'stdout.jsonl'), stderr: join(directory, 'stderr.log'),
   exit: join(directory, 'exit'), stopped: join(directory, 'stopped.json'), stdin: join(directory, 'stdin.txt'),
+  prompt: join(directory, 'prompt.txt'),
 });
 export const runMetaSchema = z.object({
   version: z.literal(1), id: z.string().min(1).max(80), command: z.string().max(4000), pid: z.number().int().positive().nullable(),

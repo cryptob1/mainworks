@@ -1138,8 +1138,8 @@ export async function launchReview(root: string, work: Work, profileName: string
           // The tool resolved on the host the confinement mounts read-only; its directory goes
           // first on the session's PATH, so a runtime that declares its own PATH keeps it too.
           own.PATH = [dirname(tool!), own.PATH ?? process.env.PATH ?? ''].filter(Boolean).join(':');
-          own.GRAPHYARD_URL = config.url;
-          own.GRAPHYARD_CLI = config.cliPath ?? launcherPath;
+          own.GRAPHYARD_URL = own.MAINWORKS_URL = config.url;
+          own.GRAPHYARD_CLI = own.MAINWORKS_CLI = config.cliPath ?? launcherPath;
           // What the reviewer walks: the head's preview while it runs, the app the install serves,
           // the head itself served by the install's own e2e.serve command, or — with neither — no
           // walkthrough at all, the absence of an app never a reason to request changes.

@@ -1,12 +1,13 @@
 import { execFileSync } from 'node:child_process';
 import { controlPlaneWeight } from '../session-share.js';
-import { withHostLock } from '../host-lock.js';
+import { imageLock, withHostLock } from '../host-lock.js';
 import { fingerprint, Vault } from './secrets.js';
 import { SERVER_CONTAINER_UID, shellQuote, type Transport } from './transport.js';
 import { SERVER_PORT, type EnvValue, type PlanAction, type PreflightItem, type Provider } from './types.js';
 import { checkoutRelease, publishedImages } from '../release.js';
 import { localAdapter } from './local.js';
 import { provisionTrialAppArmor, provisionTrialImage, trialAppArmorPlan, trialImagePlan } from './trial-image.js';
+import { setting } from '../setting.js';
 
 /** GY-3438: Docker's cpu_shares for the server and database: CPUWeight 1000 (controlPlaneWeight) under cgroup v2 (weight = 1 + (shares - 2) * 9999 / 262142), above every trial container's default. */
 export const composeCpuShares = Math.ceil((controlPlaneWeight - 1) * 262142 / 9999) + 2;
@@ -294,7 +295,7 @@ export function imageBuildArgs(sourceRoot: string, dirty = sourceTreeDirty) {
   // A deploy that names both stamp values vouches the commit it moved onto (GY-2167): they are the
   // build args verbatim, so the tree's untracked files or a failed git read under load cannot
   // leave the image unstamped and /healthz reporting `unreleased unknown` instead of the commit.
-  const named = process.env.GRAPHYARD_VERSION?.trim(), revision = process.env.GRAPHYARD_BUILD_REVISION?.trim();
+  const named = setting('VERSION')?.trim(), revision = setting('BUILD_REVISION')?.trim();
   if (named && revision) return ['--build-arg', `GRAPHYARD_VERSION=${named}`, '--build-arg', `GRAPHYARD_BUILD_REVISION=${revision}`];
   if (dirty(sourceRoot)) return [];
   const release = checkoutRelease(sourceRoot, revision || 'unknown');
@@ -309,7 +310,7 @@ export function imageBuildArgs(sourceRoot: string, dirty = sourceTreeDirty) {
  * server must report the release it is deployed as.
  */
 export function publishedSourceImages(sourceRoot: string, dirty = sourceTreeDirty) {
-  const version = process.env.GRAPHYARD_VERSION?.trim(), revision = process.env.GRAPHYARD_BUILD_REVISION?.trim();
+  const version = setting('VERSION')?.trim(), revision = setting('BUILD_REVISION')?.trim();
   const release = version && revision ? { version, revision } : dirty(sourceRoot) ? null : checkoutRelease(sourceRoot);
   return release && /^[0-9a-f]{40}$/.test(release.revision) && release.version === `unreleased ${release.revision.slice(0, 12)}` ? publishedImages(release.revision) : null;
 }
@@ -346,12 +347,12 @@ export const composeAdapter: ProviderAdapter = {
       ...composeActions(ctx, observation),
     ];
   },
-  // GY-3710: installs on one host provision an image tag one at a time; a commit's image (tagged with its 12-hex sha) that already exists is reused, never built twice.
-  provision: ctx => withHostLock(`image-${ctx.image}`, async () => {
-    const published = publishedSourceImages(ctx.sourceRoot);
-    await provisionTrialImage(ctx, published?.trial ?? null);
+  // GY-3710/GY-3718: installs on one host provision under one image lock, which old-image removal also takes; a commit's image (tagged with its 12-hex sha) that already exists is reused and nothing is built.
+  provision: ctx => withHostLock(imageLock, async () => {
     await provisionTrialAppArmor(ctx);
     if (/:[0-9a-f]{12}$/.test(ctx.image) && (await ctx.transport.exec('docker', ['image', 'inspect', ctx.image], { allowFailure: true })).code === 0) return;
+    const published = publishedSourceImages(ctx.sourceRoot);
+    await provisionTrialImage(ctx, published?.trial ?? null);
     if (published && (await ctx.transport.exec('docker', ['image', 'pull', published.server], { allowFailure: true, timeout: 1_800_000 })).code === 0) {
       // The install keeps naming, pruning and rolling back its own tag; the registry's name is dropped, the layers stay.
       await ctx.transport.exec('docker', ['tag', published.server, ctx.image]);

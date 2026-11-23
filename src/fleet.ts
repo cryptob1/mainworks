@@ -2,7 +2,7 @@ import { detectLoggedOut, runtimeResetTime } from './master/runtime-prompt.js';
 import { foldObservations } from './model/registry-sessions.js';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { access, readdir, realpath, stat } from 'node:fs/promises';
+import { access, readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { launchRecipe } from './harness.js';
 import { isMiseShim, onSearchPath, realRuntimeBinary } from './runtime-binary.js';
 import { runtimeAdapter, runtimeAdapters, reportedModel, providerUsageErrors, cursorLoginFile, accountHomeEnvironment } from './master/runtimes.js';
@@ -20,6 +20,7 @@ import type { SmokeResult } from './runner/pi.js';
 import { accountIneligibility, lastGoodUsage, windowHold, deriveAccountPlan, pinnedInstall, fleetRoles, liveSessions, roleLimit, proposedConcurrency, proposedRuntimeRoles, proposedRuntimes, rolePolicy, roleRuntimeKinds, roleRuntimeRefusal, smokeFailureDue, smokeTestedKinds, type AccountKey, type AgentRegistry, type RolePolicy, type FleetAccount, type FleetAccountInput, type FleetModel, type FleetRole, type FleetRoleName, type FleetRuntime, type FleetSession, type LaunchContract, type QuotaObservation, type RunOutcome, type SessionSkip, type SmokeObservation } from './model/registry.js';
 import { parseProbeFailure } from './model/account-quota.js';
 import { hostAccountCheck, hostAccountUsage, recordHostAccountCheck, recordHostAccountUsage, withHostAccountUsageLock, clearEndedHostAccountSessions, clearHostAccountSession, hostAccountSessions, registerHostAccountSession } from './host-accounts.js';
+import { setting } from './setting.js';
 export { exhaustionTail, outOfCreditsScreen } from './exhaustion-screen.js';
 
 /**
@@ -256,7 +257,7 @@ export async function observeAccount(account: FleetAccount, runtime: FleetRuntim
   const cached = saved && JSON.stringify(saved.key ?? null) === JSON.stringify(account.credential.key ?? null) ? saved : null;
   // Preserve the confined master's unreadable-home rule: only the host executor can test these logins.
   const home = account.credential.home;
-  if (home && await readdir(home).then(entries => !entries.length && !!process.env[masterConfinementVariable], (error: NodeJS.ErrnoException) => error.code === 'EACCES'))
+  if (home && await readdir(home).then(entries => !entries.length && !!setting(masterConfinementVariable), (error: NodeJS.ErrnoException) => error.code === 'EACCES'))
     return { quota: cached?.quota ?? { loggedIn: null, state: 'unknown', usage: [], resetsAt: null, reason: null }, health: null };
 
   if (!home && account.quota.since && nextLiveCheck(account.quota) > now) {
@@ -370,7 +371,7 @@ export async function fleetRoleHealth(config: FleetConfig, role: FleetRoleName, 
 // Setup: discover what the host already has, and propose a registry from it.
 // ---------------------------------------------------------------------------
 
-export interface HostLogin { name: string; runtime: string; home: string | null; loggedIn: boolean | null; quota: EnvironmentHealth['quota']; reason: string | null; login: string | null; source: 'environment' | 'default-home' | 'executable' }
+export interface HostLogin { name: string; runtime: string; home: string | null; loggedIn: boolean | null; quota: EnvironmentHealth['quota']; reason: string | null; login: string | null; source: 'environment' | 'default-home' | 'executable'; /** A login whose credential is a Z.AI key. */ provider?: 'zai' }
 const onPath = (executable: string) => { try { execFileSync('which', [executable], { stdio: 'ignore' }); return true; } catch { return false; } };
 
 /**
@@ -421,7 +422,7 @@ export async function discoverHostLogins(options: { directory?: string; home?: s
     if (health.loggedIn) found.push({ name, runtime: kind, home: location, loggedIn: true, quota: health.quota, reason: health.reason, login: null, source: 'default-home' });
   }
   // A runtime Graphyard has no probe of its own for (Pi) keeps each login in an `<runtime>-<letter>`
-  // environment too; its readiness is only whether the contract's login file exists — never read.
+  // environment too; its readiness is only whether the contract's login file exists.
   for (const location of await runtimeEnvironments(agentEnvironmentRoot(options.directory))) {
     const loggedIn = await access(resolve(location.home, location.runtime.launch.loginFile!)).then(() => true, () => false);
     found.push({ name: location.name, runtime: location.runtime.name, home: location.home, loggedIn, quota: 'unknown', reason: loggedIn ? null : `${location.name} is not logged in`,
@@ -431,6 +432,13 @@ export async function discoverHostLogins(options: { directory?: string; home?: s
   for (const runtime of proposedRuntimes) {
     if ((environmentKinds as readonly string[]).includes(runtime.name) || found.some(entry => entry.runtime === runtime.name) || !has(runtime.launch.kind)) continue;
     found.push({ name: runtime.name, runtime: runtime.name, home: null, loggedIn: null, quota: 'unknown', reason: null, login: runtime.launch.login, source: 'executable' });
+  }
+  // An OpenCode or Pi login holding a Z.AI key is proposed Z.AI's strong model (GY-3705).
+  for (const login of found) {
+    const loginFile = zaiStrongModels[login.runtime] && login.home && proposedRuntimes.find(runtime => runtime.name === login.runtime)?.launch.loginFile;
+    if (!loginFile) continue;
+    const auth = await readFile(resolve(login.home!, loginFile), 'utf8').then(text => JSON.parse(text) as Record<string, unknown>, () => null);
+    if (auth && ['zai-coding-plan', 'zai', 'z.ai'].some(key => key in auth)) login.provider = 'zai';
   }
   return found;
 }
@@ -470,6 +478,10 @@ async function runtimeEnvironments(directory: string) {
   return found;
 }
 
+/** Z.AI's strong model as each runtime names it. */
+const zaiStrongModels: Partial<Record<string, FleetModel>> = Object.fromEntries([['opencode', 'zai-coding-plan/glm-5.4'], ['pi', 'zai/glm-5.4']].map(([runtime, id]) =>
+  [runtime, { name: `${runtime}-glm-5.4`, id, cost: { inputPerMTok: null, outputPerMTok: null }, capability: { tier: 'strong' as const, contextTokens: null, notes: 'Z.AI\'s strong model' } }]));
+
 export interface FleetProposal { runtimes: FleetRuntime[]; models: FleetModel[]; accounts: FleetAccountInput[]; roles: FleetRole[] }
 /**
  * A registry for what discovery found, merged onto what the control plane already holds: a
@@ -492,10 +504,11 @@ export function proposeFleet(logins: HostLogin[], host: string, current: Pick<Ag
     let name = login.name; for (let suffix = 2; taken.has(name); suffix++) name = `${login.name}-${suffix}`;
     taken.add(name);
     const used = current.accounts.find(account => account.runtime === login.runtime)?.model;
-    accounts.push({ name, runtime: login.runtime, model: used ?? modelName(login.runtime), credential: { host, home: login.home }, enabled: true, maxSessions: null });
+    const zai = login.provider === 'zai' ? zaiStrongModels[login.runtime]?.name : undefined;
+    accounts.push({ name, runtime: login.runtime, model: used ?? zai ?? modelName(login.runtime), credential: { host, home: login.home }, enabled: true, maxSessions: null });
   }
   const models: FleetModel[] = [...new Set(accounts.map(account => account.model))].filter(name => !current.models.some(model => model.name === name))
-    .map(name => ({ name, id: null, cost: { inputPerMTok: null, outputPerMTok: null }, capability: { tier: 'strong' as const, contextTokens: null, notes: 'The account\'s own default model; name the real model, its cost and capability with master registry model set' } }));
+    .map(name => Object.values(zaiStrongModels).find(model => model!.name === name) ?? ({ name, id: null, cost: { inputPerMTok: null, outputPerMTok: null }, capability: { tier: 'strong' as const, contextTokens: null, notes: 'The account\'s own default model; name the real model, its cost and capability with master registry model set' } }));
   const kindOf = (name: string) => runtimes.find(runtime => runtime.name === name)?.launch.kind ?? current.runtimes.find(runtime => runtime.name === name)?.launch.kind ?? null;
   const serves = (account: FleetAccountInput, role: FleetRoleName) => {
     const capability = roleRuntimeKinds[role];
@@ -569,7 +582,7 @@ const smokePrompt = 'Reply with the single word: ok';
 /** The providers Settings › Agents offers, in the order the picker shows them. */
 export const connectProviders: readonly ConnectProvider[] = [
   {
-    id: 'z.ai', label: 'z.ai (GLM coding plan)', kind: 'api-key', runtime: 'opencode', model: 'opencode-default', tier: 'fast',
+    id: 'z.ai', label: 'z.ai (GLM 5.4 plan)', kind: 'api-key', runtime: 'opencode', model: 'opencode-default', tier: 'fast',
     authFile: 'opencode/auth.json',
     // OpenCode's auth entries are a union discriminated on `type`: without `type: 'api'` it
     // discards the entry, so the pasted key would never be used and the smoke would pass on
@@ -585,8 +598,8 @@ export const connectProviders: readonly ConnectProvider[] = [
     authFile: 'auth.json',
     authDocument: (existing, key) => ({ ...existing, zai: { type: 'api_key', key } }),
     // A registry account launches `pi` with no provider flag, so the home names z.ai as its default.
-    settings: { file: 'settings.json', document: existing => ({ ...existing, defaultProvider: 'zai', defaultModel: 'glm-5.3' }) },
-    smoke: { command: 'pi', args: ['-p', '--no-session', '--provider', 'zai', '--model', 'glm-5.3', smokePrompt], envVariable: 'PI_CODING_AGENT_DIR' },
+    settings: { file: 'settings.json', document: existing => ({ ...existing, defaultProvider: 'zai', defaultModel: 'glm-5.4' }) },
+    smoke: { command: 'pi', args: ['-p', '--no-session', '--provider', 'zai', '--model', 'glm-5.4', smokePrompt], envVariable: 'PI_CODING_AGENT_DIR' },
     help: 'Your z.ai coding-plan key, run by the Pi coding agent. Pi accounts join approval and proofs.',
   },
   {

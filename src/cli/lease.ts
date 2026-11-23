@@ -5,6 +5,7 @@ import { defineCommands, workMutation } from './registry.js';
 import { verifyCommand } from './verify.js';
 import { checkCommand } from './check.js';
 import { completeCommand } from './complete.js';
+import { setting } from '../setting.js';
 
 /**
  * Keeps what a blocked attempt had not committed (GY-1008), run from its own worktree: when the
@@ -46,7 +47,7 @@ export type TestedBinding = { source: string; sha: string; baseSha?: string; pol
  * tested the commit its checkout holds.
  */
 export function testedBinding(key: string, env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()): TestedBinding | null {
-  const request = /^([^@]+)@([0-9a-f]{40})@([0-9a-f]{40})@(\d+)$/.exec(env.GRAPHYARD_PRODUCER_BINDING ?? '');
+  const request = /^([^@]+)@([0-9a-f]{40})@([0-9a-f]{40})@(\d+)$/.exec(setting('PRODUCER_BINDING', env) ?? '');
   if (request && request[1] === key) return { source: `the producer request for ${key}`, sha: request[2], baseSha: request[3], policyRevision: Number(request[4]) };
   const head = spawnSync('git', ['rev-parse', '-q', '--verify', 'HEAD^{commit}'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
   return head.status === 0 && /^[0-9a-f]{40}$/.test(head.stdout.trim()) ? { source: `the checkout HEAD in ${cwd}`, sha: head.stdout.trim() } : null;

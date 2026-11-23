@@ -8,6 +8,7 @@ import { readEmblem } from '../model/emblem.js';
 import { save } from '../store.js';
 import { lockedWork } from '../store/locked-read.js';
 import type { Services } from './routes.js';
+import { setting } from '../setting.js';
 
 const plain = (res: ServerResponse, status: number, text: string) => { res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end(`${text}\n`); return Sent; };
 
@@ -17,7 +18,7 @@ const plain = (res: ServerResponse, status: number, text: string) => { res.write
  * http(s) origin.
  */
 export function previewOrigin(environment: NodeJS.ProcessEnv = process.env): URL | null {
-  const value = environment.GRAPHYARD_PREVIEW_ORIGIN?.trim();
+  const value = setting('PREVIEW_ORIGIN', environment)?.trim();
   if (!value) return null;
   try { const origin = new URL(value); return /^https?:$/.test(origin.protocol) && origin.pathname === '/' && !origin.search ? origin : null; } catch { return null; }
 }

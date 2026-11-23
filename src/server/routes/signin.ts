@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { defineRoutes } from '../routes.js';
 import type { Credential } from '../principals.js';
+import { setting } from '../../setting.js';
 
 /** The ledger event that spends a sign-in claim: one per claim hash, ever. */
 export const signinClaimedEvent = 'signin.claimed';
@@ -8,7 +9,7 @@ export const claimHashOf = (code: string) => createHash('sha256').update(code).d
 
 /** The deployed claim (GRAPHYARD_SIGNIN_CLAIM, a SHA-256) and the admin credential it yields; null when none is deployed. */
 export function signinClaimFromEnv(env: NodeJS.ProcessEnv, credentials: Credential[]) {
-  const hash = String(env.GRAPHYARD_SIGNIN_CLAIM ?? '').trim().toLowerCase();
+  const hash = String(setting('SIGNIN_CLAIM', env) ?? '').trim().toLowerCase();
   const admin = credentials.find(credential => credential.role === 'admin');
   return /^[a-f0-9]{64}$/.test(hash) && admin ? { hash, principal: admin.id, token: admin.token } : null;
 }

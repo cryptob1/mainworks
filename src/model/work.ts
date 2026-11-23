@@ -101,6 +101,8 @@ export interface Observation {
   protected: boolean; files: string[]; at: string;
   /** The candidate diff compared against its bound base; see regression-guard.ts. */
   scopeFiles?: ScopeFile[];
+  /** sha256 of the documentation files this head changes, with their blobs (GY-3716, model/docs-signoff.ts). */
+  docsDigest?: string;
   /** The same judgement against the commit the candidate would land on, and the unlanded work its head carries; see model/landing-check.ts. */
   landing?: LandingCheck;
   revertedDelivery?: RevertedDelivery; // a merged change whose content the base branch does not hold; see model/landing-check.ts

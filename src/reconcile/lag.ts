@@ -1,3 +1,4 @@
+import { setting } from '../setting.js';
 
 
 /** The event-loop lag sampler's timer interval (GY-1777); a sample is that timer's overrun past it. */
@@ -51,7 +52,7 @@ export class EventLoopLag {
  * was 10000 under GY-1124, when nothing recorded when each item was next due; the per-item due
  * instants wake the clock-driven changes now, and the full evaluation is the rare safety net).
  */
-export function configuredReconcileFullMs(value = process.env.GRAPHYARD_RECONCILE_FULL_MS, fallback = 300_000): number {
+export function configuredReconcileFullMs(value = setting('RECONCILE_FULL_MS'), fallback = 300_000): number {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed >= 2_000 && parsed <= 300_000 ? parsed : fallback;
 }

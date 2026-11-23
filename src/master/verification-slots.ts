@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { availableParallelism } from 'node:os';
 import { cpuCelsius, heatReading, heatWindowMs, trialHotCelsius } from '../merge-writer/trial-load.js';
 import { budgetLine, machineName } from '../model/machine-load.js';
+import { setting } from '../setting.js';
 
 /**
  * The host heavy-job budget (GY-612, GY-3290).
@@ -45,7 +46,7 @@ export const defaultHeavyJobs = 2;
 /** The one lock directory every Graphyard project of this user shares: under the data directory, outside every repository. */
 export const hostHeavyJobsDirectory = (environment: NodeJS.ProcessEnv = process.env) => resolve(dataDirectory(environment), 'heavy-jobs');
 /** The lock directory this process uses: the one it joined (`joinHostHeavyBudget`), else the host's. */
-export const heavyJobsDirectory = (environment: NodeJS.ProcessEnv = process.env) => environment[slotsDirectoryVariable] ?? hostHeavyJobsDirectory(environment);
+export const heavyJobsDirectory = (environment: NodeJS.ProcessEnv = process.env) => setting(slotsDirectoryVariable, environment) ?? hostHeavyJobsDirectory(environment);
 /** This machine's limit: its `limit` file, else its share of the budget (GY-3528), else two; a strict cap standing now lowers it (GY-3446). */
 export const heavyJobLimit = (directory: string) => Math.min(ordinaryLimit(directory), readStrictCap(directory)?.limit ?? Infinity);
 export function limitFile(directory: string) {
@@ -505,10 +506,10 @@ const reportUnusable = (label: string, directory: string, error: unknown) =>
  * sandbox that does not grant it) is reported and the run goes ahead unbounded rather than failing.
  */
 export async function sessionVerificationSlot(label: string, environment: NodeJS.ProcessEnv = process.env, log: (line: string) => void = line => process.stderr.write(`${line}\n`)): Promise<HeldSlot | null> {
-  const directory = environment[slotsDirectoryVariable];
-  if (!directory || environment[heldVariable]) return null;
+  const directory = setting(slotsDirectoryVariable, environment);
+  if (!directory || setting(heldVariable, environment)) return null;
   let held: HeldSlot;
-  try { held = await acquireVerificationSlot({ directory, label, project: environment[projectVariable], onWait: log, drainable: true }); }
+  try { held = await acquireVerificationSlot({ directory, label, project: setting(projectVariable, environment), onWait: log, drainable: true }); }
   catch (error) { reportUnusable(label, directory, error); return null; }
   process.once('exit', held.release);
   return held;
@@ -516,7 +517,7 @@ export async function sessionVerificationSlot(label: string, environment: NodeJS
 
 /** What a detached child of a job that holds a slot carries: the lock directory (its declarations go there) and the mark that it takes no slot of its own. */
 export const heldJobEnvironment = (): Record<string, string> =>
-  process.env[slotsDirectoryVariable] ? { [slotsDirectoryVariable]: process.env[slotsDirectoryVariable]!, [heldVariable]: '1' } : {};
+  setting(slotsDirectoryVariable) ? { [slotsDirectoryVariable]: setting(slotsDirectoryVariable)!, [heldVariable]: '1' } : {};
 
 /**
  * Run one heavy job of this process (a trial, a host-run verification, a preview or deploy build)
@@ -525,10 +526,10 @@ export const heldJobEnvironment = (): Record<string, string> =>
  * slot. A process that never joined the budget runs the job as it always did.
  */
 export async function withHeavyJob<T>(label: string, job: () => Promise<T>, options: { onWait?: (line: string) => void; signal?: AbortSignal; until?: AbortSignal; reserved?: boolean; /** GY-3446: a job that takes a slot only under a strict cap. */ strictOnly?: boolean } = {}): Promise<T> {
-  const directory = process.env[slotsDirectoryVariable];
-  if (!directory || process.env[heldVariable] || inheritedVariables.getStore()?.[heldVariable] || options.strictOnly && !readStrictCap(directory)) return job();
+  const directory = setting(slotsDirectoryVariable);
+  if (!directory || setting(heldVariable) || inheritedVariables.getStore()?.[heldVariable] || options.strictOnly && !readStrictCap(directory)) return job();
   let held: HeldSlot;
-  try { held = await acquireVerificationSlot({ directory, label, project: process.env[projectVariable], onWait: options.onWait ?? (line => process.stderr.write(`${line}\n`)), signal: options.signal, drainable: !options.reserved, reserved: options.reserved }); }
+  try { held = await acquireVerificationSlot({ directory, label, project: setting(projectVariable), onWait: options.onWait ?? (line => process.stderr.write(`${line}\n`)), signal: options.signal, drainable: !options.reserved, reserved: options.reserved }); }
   catch (error) { if (options.signal?.aborted) throw error; reportUnusable(label, directory, error); return job(); }
   // GY-3449: a cancelled job (`signal`), or one whose owner's run ended (`until`: a gate run that
   // verified, timed out, held or stopped for a restart), gives its slot back at once, even while a
@@ -591,7 +592,7 @@ export const slotHolders = (directory: string) => heldSlots(directory).filter(en
 
 /** The variables a session's tab carries: the host's lock directory, its project, and PATH with the wrappers first. */
 export function verificationEnvironment(project: string, environment: NodeJS.ProcessEnv = process.env): Record<string, string> {
-  return { [slotsDirectoryVariable]: environment[slotsDirectoryVariable] ?? hostHeavyJobsDirectory(environment), [projectVariable]: project,
+  return { [slotsDirectoryVariable]: setting(slotsDirectoryVariable, environment) ?? hostHeavyJobsDirectory(environment), [projectVariable]: project,
     PATH: [verificationBin, pathWithout(environment.PATH, verificationBin)].filter(Boolean).join(delimiter) };
 }
 
@@ -602,7 +603,7 @@ export function verificationEnvironment(project: string, environment: NodeJS.Pro
  */
 export function withVerificationPath(harness: Record<string, string>, launch: Record<string, string>): Record<string, string> {
   const merged = { ...harness, ...launch };
-  if (harness[slotsDirectoryVariable] && launch.PATH !== undefined) merged.PATH = [verificationBin, pathWithout(launch.PATH, verificationBin)].filter(Boolean).join(delimiter);
+  if (setting(slotsDirectoryVariable, harness) && launch.PATH !== undefined) merged.PATH = [verificationBin, pathWithout(launch.PATH, verificationBin)].filter(Boolean).join(delimiter);
   return merged;
 }
 
@@ -613,7 +614,7 @@ export function withVerificationPath(harness: Record<string, string>, launch: Re
  */
 export function wrappedCommand(command: string, args: string[], environment: NodeJS.ProcessEnv = process.env) {
   const path = pathWithout(environment.PATH, verificationBin);
-  const directory = environment[slotsDirectoryVariable];
+  const directory = setting(slotsDirectoryVariable, environment);
   return { real: onPathOf(command, path), path, heavy: heavyCommand(command, args, process.cwd(), !!directory && !!readStrictCap(directory)) };
 }
 

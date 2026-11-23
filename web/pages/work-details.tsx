@@ -311,7 +311,7 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
         </div>
       </div>
       <div className="item-meta">
-        <span data-task-state>{trialFailed ? <StatusBadge group="blocked">Stuck</StatusBadge> : group && <StatusBadge group={group}/>} <strong>{trialFailed ? 'Merge trial failed' : stageLabel(item, now, release, serve)}</strong>{inState && <> · <StatusAge held={inState}/></>}</span>
+        <span data-task-state>{trialFailed ? <StatusBadge group="blocked">Stuck</StatusBadge> : group && <StatusBadge group={group}/>} <strong>{trialFailed ? 'Test merge failed' : stageLabel(item, now, release, serve)}</strong>{inState && <> · <StatusAge held={inState}/></>}</span>
         {builderName && <span data-builder title={builder!}>Builder {builderName}</span>}
         {model && <span data-model={model.differs ? 'differs' : 'same'} className={model.differs ? 'amber' : undefined}>Model <span className="mono">{model.model}</span>{model.differs ? ` ▲ not the account's ${model.accountModel}` : ''}</span>}
         {files && files.length > 0 && <span className="mono" data-diff-stats>+{add} −{del} · {files.length} {files.length === 1 ? 'file' : 'files'}</span>}
@@ -353,7 +353,7 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
         {item.criteria.map(ac => { const own = proofs.filter(p => p.criterion === ac.id); const met = own.length > 0 && own.every(p => p.status === 'passed');
           return <div className={`criterion ${met ? 'criterion-met' : 'criterion-pending'}`} key={ac.id}>
             <details className="criterion-full"><summary><span className="criterion-mark" title={met ? 'Met' : 'Pending'}>{met ? '✓' : '○'}</span> <span className="criterion-line"><span className="mono">{ac.id}</span> · <span className="criterion-text" title={ac.text}>{oneLine(ac.text)}</span></span></summary><p>{ac.text}</p></details>
-            <ul className="proof-markers">{own.map(p => <li key={p.proof} className={`marker-${marker[p.status]?.tone ?? 'pending'}`}>{marker[p.status]?.symbol ?? '○'} <Term term="proof">{p.proof}</Term> {marker[p.status]?.word ?? p.status}</li>)}</ul></div>; })}</section>
+            <ul className="proof-markers">{own.map(p => <li key={p.proof} className={`marker-${marker[p.status]?.tone ?? 'pending'}`}>{marker[p.status]?.symbol ?? '○'} <Term term="proof">{p.proof}</Term> {marker[p.status]?.word ?? p.status}{p.stands ? ` · ${p.stands}` : ''}</li>)}</ul></div>; })}</section>
     </details>
     {item.preview && <PreviewPanel preview={item.preview}/>}
       <ItemCostsView costs={costs?.windows ? costs : null}/>

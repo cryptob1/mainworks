@@ -26,6 +26,8 @@ export interface Evidence {
    * scope is disjoint from what the predecessor changed; an undeclared scope is never carried.
    */
   scopeFiles?: string[];
+  /** GY-3716: on a `manual:docs-updated/…` attestation, the observed head's documentation digest; it stands while that digest does. */
+  docsDigest?: string;
   revocation?: { at: string; actor: string; reason: string };
   /**
    * GY-1779: the control plane's own reading of a loop-owned observation item's proof on the serving

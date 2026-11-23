@@ -11,6 +11,7 @@ import { observeBaseHold } from '../model/behind-base.js';
 import { workIdByRef } from '../store/locked-read.js';
 import type { Engine } from '../engine.js';
 import { recordDispatch } from './evaluate.js';
+import { setting } from '../setting.js';
 
 /**
  * Whether two readings of one item differ only in action-queue bookkeeping (GY-607). Claiming,
@@ -71,7 +72,7 @@ export async function observeSubmittedHead(engine: Engine, actor: Principal, id:
   // A superseded owner reaches the transaction's lease refusal before observation. Leave
   // expiry to that transaction: a recorded renewal fault may still keep this lease live.
   if (!work.lease || work.lease.owner !== actor.id || work.lease.epoch !== data.epoch) return null;
-  if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd());
+  if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(setting('REPOSITORY_ROOT') ?? process.cwd());
   demand(engine.gitRunner, 'The control plane has no checkout to read a submitted head from; a head submission needs the merge writer checkout', 503);
   return observeLocalHead(engine.gitRunner, { head: data.head, base: engine.baseBranch, branch: workspace.branch, author: actor.id });
 }
@@ -80,7 +81,7 @@ export async function observeSubmittedHead(engine: Engine, actor: Principal, id:
  */
 export async function observeControlPlaneCandidate(engine: Engine, work: Work): Promise<Observation | null> {
   if (!work.candidate) return null;
-  if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd());
+  if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(setting('REPOSITORY_ROOT') ?? process.cwd());
   if (!engine.gitRunner) return null;
   const observation = await observeLocalHead(engine.gitRunner, {
     head: work.candidate.sha,

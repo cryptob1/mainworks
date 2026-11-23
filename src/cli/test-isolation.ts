@@ -6,6 +6,7 @@ import { hostMemoryVariable } from '../master/host-memory.js';
 import { homedir } from 'node:os';
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { setting } from '../setting.js';
 
 /**
  * What a clean test run needs from the host, done by the tooling rather than remembered by the
@@ -35,7 +36,7 @@ export function isolatedTestEnvironment(environment: NodeJS.ProcessEnv = process
   const kept = Object.entries(environment).filter((entry): entry is [string, string] => {
     const [name, value] = entry;
     if (value === undefined || name === 'NODE_TEST_CONTEXT') return false;
-    return !/^(GRAPHYARD|HERDR)_/.test(name) || (passedTestControls as readonly string[]).includes(name);
+    return !/^(GRAPHYARD|MAINWORKS|HERDR)_/.test(name) || (passedTestControls as readonly string[]).includes(name.replace(/^MAINWORKS_/, 'GRAPHYARD_'));
   });
   return { ...Object.fromEntries(kept), ...set };
 }
@@ -183,7 +184,7 @@ export function npmCiEnvironment(env: NodeJS.ProcessEnv = process.env): NodeJS.P
  * or Herdr variable (GRAPHYARD_TOKEN_FILE and every other credential or control among them) and no
  * GitHub token. npm's own registry settings stay: they are what the install needs.
  */
-const withheldFromInstall = /^(GRAPHYARD_|HERDR_|GH_TOKEN$|GITHUB_TOKEN$|GH_ENTERPRISE_TOKEN$|GITHUB_ENTERPRISE_TOKEN$)/;
+const withheldFromInstall = /^(GRAPHYARD_|MAINWORKS_|HERDR_|GH_TOKEN$|GITHUB_TOKEN$|GH_ENTERPRISE_TOKEN$|GITHUB_ENTERPRISE_TOKEN$)/;
 
 /** Whether `path` is `parent` or lies inside it. */
 const within = (path: string, parent: string) => { const from = relative(parent, path); return from !== '..' && !from.startsWith('../') && !isAbsolute(from); };
@@ -233,8 +234,8 @@ export function containedInstall(cwd: string, argv: readonly string[], env: Node
     .filter((path): path is string => !!path && isAbsolute(path)).map(path => resolve(path)))].filter(path => path === home || path === '/tmp' || directory(path))
     .sort((a, b) => a.length - b.length);
   const credentials = [...new Set([
-    env.GRAPHYARD_CONFIG_HOME, env.XDG_CONFIG_HOME, join(home, '.config'), join(home, '.ssh'),
-    env.GRAPHYARD_TOKEN_FILE ? dirname(env.GRAPHYARD_TOKEN_FILE) : undefined,
+    setting('CONFIG_HOME', env), env.XDG_CONFIG_HOME, join(home, '.config'), join(home, '.ssh'),
+    setting('TOKEN_FILE', env) ? dirname(setting('TOKEN_FILE', env)!) : undefined,
   ].filter((path): path is string => !!path && isAbsolute(path)).map(path => resolve(path)))].filter(directory);
   // npm's content cache: its entries are addressed and verified by integrity. npx's installs are
   // writable too, for a manager npm exec runs (pnpm, GY-3200); the rest (logs) stays out of reach.
