@@ -1,18 +1,18 @@
-<title>How Graphyard Works</title>
+<title>How Mainworks Works</title>
 <style>
-/* Layout: one column holding the walkthrough player; rail-yard signal colours on a cool steel neutral */
+/* Layout: one column holding the walkthrough player; Mainworks palette */
 :root {
   --bg: #f5f6f7;
   --surface: #ffffff;
   --fg: #1b2129;
   --muted: #5b6672;
   --rule: #d9dee3;
-  --accent: #b5480f;      /* signal orange */
+  --accent: #b5480f;
   --accent-soft: #fbe9df;
-  --steel: #2f4a63;        /* rail steel blue */
+  --steel: #2f4a63;
   --ok: #2c7a4b;
   --bad: #b3362a;
-  --ext: #6a4bb5;          /* an outside service the system depends on */
+  --ext: #6a4bb5;
   --ext-soft: #efe9fb;
   --font-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
   --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -43,10 +43,8 @@ p { margin: 0; max-width: 65ch; }
 .eyebrow { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
 header { display: grid; gap: 14px; }
 .lede { font-size: 1.12rem; color: var(--muted); }
-.status-note { font-size: 0.9rem; color: var(--muted); border-left: 3px solid var(--accent); padding-left: 12px; }
 code { font-family: var(--font-mono); font-size: 0.88em; }
 section { display: grid; gap: 14px; }
-footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--rule); padding-top: 16px; }
 
 /* Walkthrough player */
 .player { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; display: grid; }
@@ -61,7 +59,7 @@ footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--ru
 .caption { height: 6.4em; padding: 10px 16px; border-top: 1px solid var(--rule); font-size: 0.98rem; display: flex; align-items: center; }
 .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 16px 14px; }
 .controls button { font: inherit; font-size: 0.85rem; border: 1px solid var(--rule); background: var(--bg); color: var(--fg); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
-.controls button:focus-visible, .chapters button:focus-visible, .poster:focus-visible, .mode button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.controls button:focus-visible, .chapters button:focus-visible, .poster:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 #play { min-width: 76px; font-weight: 600; }
 #scrub { flex: 1 1 200px; min-width: 0; accent-color: var(--accent); }
 #clock { font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -81,35 +79,36 @@ footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--ru
 .t-key { font-family: var(--font-mono); font-size: 13px; fill: var(--accent); font-weight: 500; }
 .t-label { font-family: var(--font-mono); font-size: 12px; fill: var(--muted); letter-spacing: 0.06em; }
 .t-scene { font-family: var(--font-mono); font-size: 13px; fill: var(--accent); letter-spacing: 0.08em; }
+.t-brand { font-family: var(--font-display); font-weight: 800; font-size: 15px; fill: var(--fg); }
+.t-nav { font-family: var(--font-body); font-weight: 600; font-size: 12.5px; fill: var(--muted); }
+.t-nav.on { fill: var(--accent); }
+.t-code { font-family: var(--font-mono); font-size: 11px; fill: var(--fg); }
+.t-add { font-family: var(--font-mono); font-size: 11px; fill: var(--ok); }
+.t-del { font-family: var(--font-mono); font-size: 11px; fill: var(--bad); }
 .v-line { stroke: var(--muted); stroke-width: 2; fill: none; }
 .v-line.bad { stroke: var(--bad); }
 .v-ring { fill: none; stroke: var(--steel); stroke-width: 3; }
 .v-dot { fill: var(--accent); }
 .v-bar-bg { fill: var(--rule); }
 .v-bar { fill: var(--ok); }
-.v-main { stroke: var(--steel); stroke-width: 4; }
-.v-commit { fill: var(--steel); }
-.v-commit.new { fill: var(--accent); }
-.v-commit.bad { fill: var(--bad); }
 .ok-text { fill: var(--ok); }
 .bad-text { fill: var(--bad); }
-
 </style>
 
 <main>
   <header>
-    <span class="eyebrow">Graphyard · how it works</span>
+    <span class="eyebrow">Mainworks · how it works</span>
     <h1>From a goal to production</h1>
-    <p class="lede">The human keeps goals, money and credentials. The master (AI) decides. The loop (plain code) dispatches workers, requests review and proof, and drives the merge writer, which trials every change on the latest main.</p>
+    <p class="lede">The human keeps goals, money and credentials. The Lead (master) decides. The loop dispatches Builders, requests review and proof, and drives the merge writer across compute machines and the coordinator.</p>
   </header>
 
   <section aria-labelledby="watch">
     <div class="player">
       <div class="screen">
-        <svg id="stage" viewBox="0 0 960 540" role="img" aria-label="Animated walkthrough of Graphyard taking a goal to production"></svg>
+        <svg id="stage" viewBox="0 0 960 540" role="img" aria-label="Animated walkthrough of Mainworks taking a goal to production across Home, Work, Task and Lead"></svg>
         <button class="poster" id="poster" type="button" aria-label="Play the walkthrough">
           <div class="big" aria-hidden="true"></div>
-          <strong>How Graphyard works</strong>
+          <strong>How Mainworks works</strong>
           <span>11 short scenes · 95 seconds</span>
         </button>
       </div>
@@ -153,6 +152,20 @@ footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--ru
   const marker = el('marker', { id: 'arrow', viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse' }, defs);
   el('path', { d: 'M0 0 L10 5 L0 10 z', class: 'v-dot' }, marker);
 
+  // Mainworks top bar chrome with the factory-roof mark (one window lit) and the four places.
+  const bar = el('g', {});
+  el('rect', { x: 0, y: 0, width: 960, height: 50, fill: '#ffffff', stroke: '#d9dee3', 'stroke-width': 1 }, bar);
+  const mark = el('g', { transform: 'translate(18 11) scale(0.44)' }, bar);
+  el('rect', { width: 64, height: 64, rx: 14, fill: '#111714' }, mark);
+  el('path', { d: 'M12 50V24L26 34V24L40 34V24L54 34V50Z', stroke: '#c5e69b', 'stroke-width': 4.5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', fill: 'none' }, mark);
+  el('rect', { x: 19, y: 40, width: 8, height: 6, rx: 1.5, fill: '#F5B86A' }, mark);
+  el('rect', { x: 31, y: 40, width: 8, height: 6, rx: 1.5, fill: '#c5e69b', opacity: '.45' }, mark);
+  el('rect', { x: 43, y: 40, width: 5, height: 6, rx: 1.5, fill: '#c5e69b', opacity: '.45' }, mark);
+  text(bar, 54, 31, 't-brand', 'Mainworks', 'start');
+  const navNames = ['Home', 'Work', 'Lead', 'Settings'];
+  const navEls = navNames.map((n, i) => text(bar, 175 + i * 74, 31, 't-nav', n, 'start'));
+  const sceneLabel = text(bar, 932, 31, 't-scene', '', 'end');
+
   function A(g) {
     const k = [];
     const o = {
@@ -177,24 +190,44 @@ footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--ru
     return [0, 0, 0, 1];
   }
 
-
   const chapters = [[0, 'Roles'], [9, 'Decide'], [18, 'Loop'], [27, 'Ready'], [36, 'Build'], [45, 'Review'], [54, 'Merge trial'], [63, 'Deploy'], [72, 'Revert'], [81, 'Failures'], [90, 'Where things run']];
-  const sceneLabel = text(stage, 32, 40, 't-scene', '', 'start');
-  updaters.push(t => { let i = 0; chapters.forEach(([s], j) => { if (t >= s) i = j; }); sceneLabel.textContent = String(i + 1).padStart(2, '0') + ' · ' + chapters[i][1].toUpperCase(); });
+  const sceneNav = [0, 2, 0, 1, 1, 1, 1, 0, 0, 2, 3];
+  updaters.push(t => {
+    let i = 0; chapters.forEach(([s], j) => { if (t >= s) i = j; });
+    sceneLabel.textContent = String(i + 1).padStart(2, '0') + ' · ' + chapters[i][1].toUpperCase();
+    navEls.forEach((n, j) => n.setAttribute('class', j === sceneNav[i] ? 't-nav on' : 't-nav'));
+  });
   const ok = (s, x, y, at, out) => { const g = el('g', {}); text(g, 0, 0, 't-title ok-text', '✓ ' + s, 'start'); A(g).at(at, x, y).out(out); };
 
-  // 1 · Roles (0–9): visible from the first encoded frame.
-  A(card(300, 70, 'Human', 'goals · money · credentials', 'hl')).at(-0.5, 480, 120).out(8.5);
-  A(card(260, 84, 'Master', 'AI · decides', 'steel')).at(-0.5, 180, 270).out(8.5);
-  A(card(260, 84, 'Loop', 'plain code · acts', 'hl')).at(-0.5, 480, 270).out(8.5);
-  A(card(260, 84, 'Workers', 'AI · build in worktrees')).at(-0.5, 780, 270).out(8.5);
-  A(card(560, 60, 'Merge writer', 'trials on latest main · the only writer of main', 'ok')).at(-0.5, 480, 410).out(8.5);
+  // 1 · Roles & Home (0–9): Home status line + roles overview
+  const homeBar = el('g', { class: 'v-card ok' });
+  el('rect', { x: -430, y: -24, width: 860, height: 48, rx: 10 }, homeBar);
+  text(homeBar, -408, 5, 't-title ok-text', 'OK', 'start');
+  text(homeBar, -356, 5, 't-sub', '2 of 3 Builders working  ·  2 of 2 test machines ready  ·  Last live 8m ago  ·  4.5 merges/hr', 'start');
+  A(homeBar).at(-0.5, 480, 102).out(8.5);
+  A(card(270, 76, 'Human (Home)', 'goals · money · credentials', 'hl')).at(-0.5, 190, 200).out(8.5);
+  A(card(270, 76, 'Lead (Master AI)', 'decides · plans · unblocks', 'steel')).at(-0.5, 480, 200).out(8.5);
+  A(card(270, 76, 'Caretaker', 'checks health every 30m', '')).at(-0.5, 770, 200).out(8.5);
+  A(card(270, 76, 'Loop (plain code)', 'dispatches · reviews · proves', 'hl')).at(-0.5, 290, 315).out(8.5);
+  A(card(270, 76, 'Builders (AI)', 'write code in worktrees')).at(-0.5, 670, 315).out(8.5);
+  A(card(650, 58, 'Merge writer + compute machines', 'trials on latest main · tests run on compute machines first', 'ok')).at(-0.5, 480, 425).out(8.5);
 
-  // 2 · Decide (9–18)
-  ['Goals and priorities', 'Money and accounts', 'Credentials for people'].forEach((s, i) => A(card(260, 56, s, '', 'hl')).at(9.3 + i * 0.5, 190 + i * 290, 120).out(17.5));
-  A(label('THE HUMAN KEEPS ONLY THESE')).at(10.5, 480, 182).out(17.5);
-  A(card(300, 62, 'Master', 'decides everything else', 'steel')).at(12, 480, 260).out(17.5);
-  [['GY-1', 'Board'], ['GY-2', 'Scoring'], ['GY-3', 'Publish']].forEach(([key, name], i) => A(card(170, 84, name, 'criteria + proofs', '', key)).at(13.6 + i * 0.7, 250 + i * 230, 420).out(17.5));
+  // 2 · Decide & Lead conversation (9–18)
+  const lead = el('g', { class: 'v-card' });
+  el('rect', { x: -420, y: -185, width: 840, height: 370, rx: 12 }, lead);
+  text(lead, -396, -152, 't-label', 'LEAD CONVERSATION · CARDS YOU CAN ACT ON · TERMINAL ONE CLICK AWAY', 'start');
+  el('rect', { x: -396, y: -132, width: 380, height: 76, rx: 8, fill: '#fbe9df', stroke: '#b5480f' }, lead);
+  text(lead, -380, -104, 't-key', 'YOU', 'start');
+  text(lead, -380, -82, 't-title', 'Ship the onboarding flow this week.', 'start');
+  el('rect', { x: -396, y: -38, width: 792, height: 108, rx: 8, fill: '#f5f6f7', stroke: '#2f4a63' }, lead);
+  text(lead, -380, -10, 't-key', 'LEAD · FILED 3 TASKS WITH CHECKABLE CRITERIA', 'start');
+  text(lead, -380, 14, 't-title', 'GY-1 Connect account  ·  GY-2 Confirm Builder  ·  GY-3 First merge', 'start');
+  text(lead, -380, 38, 't-sub', 'Human keeps only: goals & priorities · money & accounts · credentials for people.', 'start');
+  el('rect', { x: -396, y: 90, width: 250, height: 42, rx: 8, fill: '#2c7a4b', stroke: '#2c7a4b' }, lead);
+  text(lead, -271, 116, 't-title', 'Approve goal', 'middle');
+  el('rect', { x: -130, y: 90, width: 230, height: 42, rx: 8, fill: '#ffffff', stroke: '#d9dee3' }, lead);
+  text(lead, -15, 116, 't-sub', 'Open live terminal →', 'middle');
+  A(lead).at(9.2, 480, 295).out(17.5);
 
   // 3 · Loop (18–27)
   const ring = el('g', {});
@@ -202,92 +235,116 @@ footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--ru
   const tick = el('circle', { cx: 0, cy: -92, r: 9, class: 'v-dot' }, ring);
   text(ring, 0, -6, 't-title', 'Loop');
   text(ring, 0, 16, 't-sub', 'plain code, every cycle');
-  A(ring).at(18.3, 480, 280).out(26.5);
+  A(ring).at(18.3, 480, 295).out(26.5);
   updaters.push(t => { const a = t * Math.PI / 2; tick.setAttribute('cx', (Math.sin(a) * 92).toFixed(1)); tick.setAttribute('cy', (-Math.cos(a) * 92).toFixed(1)); });
-  ['dispatch workers', 'release backlog', 'review', 'proof', 'merge writer', 'report failures'].forEach((w, i) => {
+  ['dispatch builders', 'release backlog', 'review', 'proof', 'merge writer', 'caretaker'].forEach((w, i) => {
     const ang = -Math.PI / 2 + i * Math.PI / 3, r = 175;
-    A(label(w.toUpperCase(), 't-key')).at(19 + i * 0.6, 480 + Math.cos(ang) * r, 285 + Math.sin(ang) * r * 0.85).out(26.5);
+    A(label(w.toUpperCase(), 't-key')).at(19 + i * 0.6, 480 + Math.cos(ang) * r, 300 + Math.sin(ang) * r * 0.85).out(26.5);
   });
 
-  // 4 · Ready (27–36)
-  A(card(200, 84, 'Board', 'feature item', 'hl', 'GY-1')).at(27.3, 160, 250).out(35.5);
-  A(line([[265, 250], [345, 250]])).at(28.3, 0, 0).out(35.5);
-  A(card(240, 70, 'Ready', 'released for implementation')).at(28.8, 480, 250).out(35.5);
-  A(line([[605, 230], [690, 180]])).at(30.3, 0, 0).out(35.5);
-  A(line([[605, 270], [690, 320]], 'bad')).at(30.6, 0, 0).out(35.5);
-  A(card(200, 56, 'Worker', 'starts next cycle', 'ok')).at(31, 800, 170).out(35.5);
-  A(card(200, 56, 'Held', 'dependencies unfinished', 'bad')).at(31.6, 800, 330).out(35.5);
-  A(label('no one builds until the item says what done means')).at(32.8, 480, 440).out(35.5);
+  // 4 · Ready & Work page (27–36)
+  const workView = el('g', { class: 'v-card' });
+  el('rect', { x: -420, y: -185, width: 840, height: 370, rx: 12 }, workView);
+  text(workView, -396, -152, 't-label', 'WORK · GROUPED BY GOAL · NEEDS YOU PINNED ON TOP', 'start');
+  el('rect', { x: -396, y: -134, width: 792, height: 58, rx: 8, fill: '#fbe9df', stroke: '#b5480f' }, workView);
+  text(workView, -380, -108, 't-key', 'NEEDS YOU (1)', 'start');
+  text(workView, -380, -88, 't-sub', 'GY-9  Approve npm publish token scope  ·  waiting 4m', 'start');
+  text(workView, -396, -50, 't-label', 'GOAL: FIRST-RUN ONBOARDING', 'start');
+  el('rect', { x: -396, y: -36, width: 792, height: 58, rx: 8, fill: '#ffffff', stroke: '#2c7a4b' }, workView);
+  text(workView, -380, -10, 't-title', 'GY-1  Connect account & confirm Builder', 'start');
+  text(workView, -380, 10, 't-sub', 'Ready → Builder starts next cycle  ·  criteria + e2e proof bound', 'start');
+  el('rect', { x: -396, y: 36, width: 792, height: 58, rx: 8, fill: '#ffffff', stroke: '#d9dee3' }, workView);
+  text(workView, -380, 62, 't-title', 'GY-2  Ship first change', 'start');
+  text(workView, -380, 82, 't-sub', 'Held — waiting for GY-1', 'start');
+  text(workView, 0, 146, 't-label', 'NO ONE BUILDS UNTIL THE TASK SAYS WHAT DONE MEANS');
+  A(workView).at(27.2, 480, 295).out(35.5);
 
-  // 5 · Build (36–45)
-  const ws = el('g', {});
-  el('rect', { x: -300, y: -150, width: 600, height: 300, rx: 14, class: 'v-bar-bg', opacity: 0.35 }, ws);
-  text(ws, -280, -122, 't-label', 'OWN WORKTREE · UNDER A LEASE', 'start');
-  A(ws).at(36.3, 480, 270).out(44.5);
-  A(card(170, 84, 'Board', 'building', 'hl', 'GY-1')).at(36.7, 330, 230).out(44.5);
-  A(card(170, 60, 'Worker', 'writes code + tests', 'steel')).at(37.2, 620, 230).out(44.5);
-  ['● commit', '● commit', '● submit exact head'].forEach((s, i) => A(label(s, 't-sub')).at(38.5 + i * 1.1, 360 + i * 120, 340).out(44.5));
-  A(label('submitting ends the lease; workers push nothing')).at(41.5, 480, 395).out(44.5);
+  // 5 · Build & Task page with diff and live session (36–45)
+  const taskPage = el('g', { class: 'v-card' });
+  el('rect', { x: -430, y: -195, width: 860, height: 390, rx: 12 }, taskPage);
+  text(taskPage, -406, -162, 't-key', 'TASK · GY-1 · CONNECT ACCOUNT & CONFIRM BUILDER', 'start');
+  text(taskPage, 406, -162, 't-sub', 'Builder in worktree · under lease', 'end');
+  // Left pane: Diff
+  el('rect', { x: -406, y: -142, width: 400, height: 276, rx: 8, fill: '#f5f6f7', stroke: '#d9dee3' }, taskPage);
+  text(taskPage, -390, -118, 't-label', 'DIFF · src/setup.ts (+14 -3)', 'start');
+  text(taskPage, -390, -90, 't-code', '  export function confirmBuilder(fleet) {', 'start');
+  text(taskPage, -390, -68, 't-del', '-   return fleet.accounts.length > 0;', 'start');
+  text(taskPage, -390, -46, 't-add', '+   return fleet.accounts.some(a =>', 'start');
+  text(taskPage, -390, -24, 't-add', '+     a.eligible && a.smoke === "pass");', 'start');
+  text(taskPage, -390, -2, 't-code', '  }', 'start');
+  text(taskPage, -390, 44, 't-label', 'CHECKS', 'start');
+  text(taskPage, -390, 68, 't-add', '✓ unit:confirm-builder (passed)', 'start');
+  text(taskPage, -390, 90, 't-add', '✓ typecheck + build (passed)', 'start');
+  // Right pane: Live session
+  el('rect', { x: 10, y: -142, width: 396, height: 276, rx: 8, fill: '#12161b', stroke: '#2c343d' }, taskPage);
+  text(taskPage, 26, -118, 't-key', 'LIVE SESSION · claude-builder-1', 'start');
+  text(taskPage, 26, -90, 't-sub', '$ npm run test:affected -- tests/setup.test.ts', 'start');
+  text(taskPage, 26, -66, 't-add', 'ok 1 - unit:confirm-builder (142ms)', 'start');
+  text(taskPage, 26, -42, 't-sub', '$ git commit -m "GY-1: confirm builder"', 'start');
+  text(taskPage, 26, -18, 't-sub', '$ mainworks complete GY-1 1 --head 9c0945f', 'start');
+  text(taskPage, 26, 8, 't-add', 'Submitted head 9c0945f. Lease ended.', 'start');
+  text(taskPage, 0, 166, 't-label', 'SUBMITTING ENDS THE LEASE · BUILDERS PUSH NOTHING');
+  A(taskPage).at(36.2, 480, 295).out(44.5);
 
   // 6 · Review (45–54)
-  A(card(200, 60, 'GY-1 head', 'submitted', 'hl')).at(45.3, 170, 250).out(53.5);
-  A(line([[275, 250], [350, 250]])).at(46.2, 0, 0).out(53.5);
-  A(card(260, 70, 'Independent reviewer', 'never the builder', 'ok')).at(46.6, 490, 250).out(53.5);
-  ok('Criteria met', 650, 205, 48, 53.5);
-  ok('Exact head approved', 650, 245, 48.8, 53.5);
-  ok('Proofs named', 650, 285, 49.6, 53.5);
-  A(label('sensitive changes: approved before merge · others: reviewed after')).at(50.6, 480, 420).out(53.5);
+  A(card(200, 60, 'GY-1 head', 'submitted', 'hl')).at(45.3, 170, 265).out(53.5);
+  A(line([[275, 265], [350, 265]])).at(46.2, 0, 0).out(53.5);
+  A(card(260, 70, 'Independent reviewer', 'never the builder', 'ok')).at(46.6, 490, 265).out(53.5);
+  ok('Criteria met', 650, 220, 48, 53.5);
+  ok('Exact head approved', 650, 260, 48.8, 53.5);
+  ok('Proofs named', 650, 300, 49.6, 53.5);
+  A(label('sensitive changes: approved before merge · others: reviewed after')).at(50.6, 480, 430).out(53.5);
 
   // 7 · Merge trial (54–63)
-  A(card(150, 54, 'main', 'latest tip', 'steel')).at(54.3, 170, 170).out(62.5);
-  A(card(150, 54, 'GY-1 head', 'approved', 'hl')).at(54.6, 170, 330).out(62.5);
-  A(line([[250, 170], [370, 235]])).at(55.4, 0, 0).out(62.5);
-  A(line([[250, 330], [370, 270]])).at(55.6, 0, 0).out(62.5);
-  A(card(210, 70, 'Merge trial', 'on latest main')).at(56, 480, 250).out(62.5);
-  A(line([[590, 250], [640, 250]])).at(57, 0, 0).out(62.5);
-  ok('Build', 660, 225, 57.4, 62.5);
-  ok('Tests and proofs', 660, 265, 58, 62.5);
-  A(card(440, 58, 'Merge writer pushes main', 'with its own key · nobody else writes main', 'steel')).at(59.2, 480, 410).out(62.5);
+  A(card(150, 54, 'main', 'latest tip', 'steel')).at(54.3, 170, 185).out(62.5);
+  A(card(150, 54, 'GY-1 head', 'approved', 'hl')).at(54.6, 170, 345).out(62.5);
+  A(line([[250, 185], [370, 250]])).at(55.4, 0, 0).out(62.5);
+  A(line([[250, 345], [370, 285]])).at(55.6, 0, 0).out(62.5);
+  A(card(230, 74, 'Merge trial', 'compute machines first')).at(56, 490, 265).out(62.5);
+  A(line([[610, 265], [655, 265]])).at(57, 0, 0).out(62.5);
+  ok('Build', 670, 240, 57.4, 62.5);
+  ok('Tests and proofs', 670, 280, 58, 62.5);
+  A(card(460, 58, 'Merge writer pushes main', 'with its own key · nobody else writes main', 'steel')).at(59.2, 480, 425).out(62.5);
 
   // 8 · Deploy (63–72)
   [['main', 'new commit'], ['Deploy', 'build + restart'], ['Health + e2e', 'required cases'], ['Live', 'serving it']].forEach(([t1, t2], i) => {
-    A(card(170, 66, t1, t2, i === 3 ? 'ok' : '')).at(63.4 + i * 1.3, 140 + i * 225, 220).out(71.5);
-    if (i < 3) A(line([[228 + i * 225, 220], [272 + i * 225, 220]])).at(64 + i * 1.3, 0, 0).out(71.5);
+    A(card(170, 66, t1, t2, i === 3 ? 'ok' : '')).at(63.4 + i * 1.3, 140 + i * 225, 235).out(71.5);
+    if (i < 3) A(line([[228 + i * 225, 235], [272 + i * 225, 235]])).at(64 + i * 1.3, 0, 0).out(71.5);
   });
-  A(card(420, 60, 'Post-merge review', 'normal changes are reviewed once live', 'hl')).at(67.8, 480, 360).out(71.5);
-  A(label('the loop deploys main itself')).at(68.8, 480, 450).out(71.5);
+  A(card(420, 60, 'Post-merge review', 'normal changes are reviewed once live', 'hl')).at(67.8, 480, 375).out(71.5);
+  A(label('the loop deploys main itself')).at(68.8, 480, 460).out(71.5);
 
   // 9 · Revert (72–81)
-  A(card(320, 62, 'A required live case fails', 'after GY-1 is served', 'bad')).at(72.3, 480, 120).out(80.5);
-  A(line([[480, 155], [480, 215]], 'bad')).at(73.4, 0, 0).out(80.5);
-  A(card(360, 64, 'Merge writer reverts GY-1', 'automatically, on latest main', 'ok')).at(73.8, 480, 250).out(80.5);
-  A(line([[480, 285], [480, 345]])).at(75.2, 0, 0).out(80.5);
-  A(card(360, 64, 'Last good commit serves again', 'a re-land item is filed', 'hl')).at(75.6, 480, 380).out(80.5);
+  A(card(320, 62, 'A required live case fails', 'after GY-1 is served', 'bad')).at(72.3, 480, 140).out(80.5);
+  A(line([[480, 175], [480, 235]], 'bad')).at(73.4, 0, 0).out(80.5);
+  A(card(360, 64, 'Merge writer reverts GY-1', 'automatically, on latest main', 'ok')).at(73.8, 480, 270).out(80.5);
+  A(line([[480, 305], [480, 365]])).at(75.2, 0, 0).out(80.5);
+  A(card(360, 64, 'Last good commit serves again', 'a re-land item is filed', 'hl')).at(75.6, 480, 400).out(80.5);
 
   // 10 · Failures (81–90)
-  ['Trial fails on main', 'Worker blocked', 'Deploy fails'].forEach((s, i) => A(card(240, 52, s, '', 'bad')).at(81.3 + i * 0.4, 200 + i * 280, 115).out(90.5));
-  A(card(360, 60, 'Loop hands the cause to the master', 'once per new cause', 'hl')).at(82.8, 480, 230).out(90.5);
-  A(card(360, 60, 'Master diagnoses, files a repair', 'a worker builds it · every gate stays', 'steel')).at(84, 480, 330).out(90.5);
-  A(label('AGENTS CHECK AGENTS · THE HUMAN KEEPS THREE DECISIONS', 't-scene')).at(85.6, 480, 440).out(90.5);
+  ['Trial fails on main', 'Worker blocked', 'Deploy fails'].forEach((s, i) => A(card(240, 52, s, '', 'bad')).at(81.3 + i * 0.4, 200 + i * 280, 130).out(90.5));
+  A(card(380, 60, 'Loop & caretaker surface the cause', 'once per new cause', 'hl')).at(82.8, 480, 245).out(90.5);
+  A(card(380, 60, 'Lead diagnoses, files a repair', 'a Builder fixes it · every gate stays', 'steel')).at(84, 480, 345).out(90.5);
+  A(label('AGENTS CHECK AGENTS · THE HUMAN KEEPS THREE DECISIONS', 't-scene')).at(85.6, 480, 455).out(90.5);
 
-  // 11 · Where things run (90–95): the README's diagram itself closes the story — one host, and what sits outside it.
+  // 11 · Where things run (90–95)
   const where = el('g', {});
-  el('image', { href: '../../docs/diagrams/where-things-run.svg', x: -480, y: -270, width: 960, height: 540 }, where);
-  A(where).at(90.2, 480, 284, 0.9).out(94.6);
+  el('image', { href: '../../docs/diagrams/where-things-run.svg', x: -480, y: -245, width: 960, height: 490 }, where);
+  A(where).at(90.2, 480, 295, 0.96).out(94.6);
 
   const captions = [
-    [0, 9, 'The human sets goals. The master (AI) decides. The loop (plain code) acts. Workers build. The merge writer is the only writer of main.'],
-    [9, 13, 'The human keeps three decisions: goals and priorities, money and accounts, and credentials for people.'],
-    [13, 18, 'The master decides the rest and files each goal as work items with checkable criteria and proofs.'],
-    [18, 27, 'Every cycle the loop dispatches workers and requests independent review and proof, then drives the merge writer.'],
-    [27, 36, 'A released feature goes straight to a worker when its dependencies are done and capacity is available.'],
-    [36, 45, 'A worker builds one item in its own worktree under a lease, commits, and submits the exact head. It pushes nothing.'],
+    [0, 9, 'Home shows the live status line. The human sets goals. The master (AI) decides. The loop (plain code) acts. Workers build. The merge writer is the only writer of main.'],
+    [9, 13, 'In Lead, the human keeps three decisions: goals and priorities, money and accounts, and credentials for people.'],
+    [13, 18, 'The Lead conversation turns goals into cards you can act on and files work items with checkable criteria and proofs.'],
+    [18, 27, 'Every cycle the loop dispatches workers and requests independent review and proof, then drives the merge writer while the caretaker checks health.'],
+    [27, 36, 'Work groups tasks by goal with Needs you pinned on top. A released feature goes straight to a worker when its dependencies are done.'],
+    [36, 45, 'On the Task page you inspect the diff, checks and live session. A worker builds in its own worktree under a lease, commits, and submits the exact head.'],
     [45, 54, 'An independent reviewer judges the exact head against its criteria. Sensitive changes are approved before merge.'],
-    [54, 63, 'The merge writer trials the head on the latest main, runs build, tests and proofs, and merges only when all pass.'],
+    [54, 63, 'The merge writer trials the head on the latest main, running test shards on compute machines first, and merges only when all pass.'],
     [63, 72, 'The loop deploys main and checks health and required end-to-end cases. Normal changes get a post-merge review.'],
     [72, 81, 'If a required live case fails, the merge writer reverts the merge automatically and files a re-land item.'],
     [81, 90, 'Any failure goes to the master, which diagnoses it and files a repair. Agents check agents; gates never relax.'],
-    [90, 95, 'It all runs on one Linux host. graphyard guide infra lists each part and its logs.'],
+    [90, 95, 'Coordinator, compute machines and caretaker. mainworks guide infra lists each part and its logs.'],
   ];
   const capEl = document.getElementById('caption');
   const playBtn = document.getElementById('play'), scrub = document.getElementById('scrub');

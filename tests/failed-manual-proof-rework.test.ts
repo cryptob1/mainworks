@@ -5,8 +5,7 @@ import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master.js';
 import { neededRework, proofRework } from '../src/daemon/rework.js';
-import { producerPrompt } from '../src/producer.js';
-import { piProducerPrompt } from '../src/runner/roles.js';
+import { piProducerPrompt, producerPrompt } from '../src/producer.js';
 import { guideText } from '../src/guide.js';
 import type { Evidence, Work } from '../src/model.js';
 
@@ -42,7 +41,7 @@ test('unit:producer-prompt-manual-proof-judged — both producer prompts judge a
   const prompts = [
     producerPrompt({ repository: 'owner/project', cliPath: '/bin/graphyard.mjs' }, binding, { principal: 'graphyard-producer-x' }),
     piProducerPrompt({ repository: 'owner/project' }, binding, [{ id: 'AC-1', text: 'Review follow-ups are triaged', proofs: [PROOF] }],
-      { directory: '/tmp/producer-session', worktree: '/tmp/producer-session/checkout' }, '/repo'),
+      { directory: '/tmp/producer-session', worktree: '/tmp/producer-session/checkout' }),
   ];
   // GY-2972: the runner, title and manual-judging rules print from guide proof; both briefs name it.
   const guide = guideText('proof');

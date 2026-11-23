@@ -854,7 +854,9 @@ export interface RunTrialInput {
   /** GY-3283: run only the declared check of this name, whatever paths it is limited to (a worker's `graphyard check NAME`). */
   only?: string;
   /** GY-3412: the hosts a selection's shards fan out to — those `graphyard host add` recorded unless a test names others — and how they are read. */
-  remote?: { hosts: readonly string[]; read?: (hosts: readonly string[], transport: ShardSshSession) => Promise<HostReading[]> };
+  remote?: { hosts: readonly string[]; read?: (hosts: readonly string[], transport: ShardSshSession) => Promise<HostReading[]>; transport?: ShardSshSession };
+  /** GY-3704: a check with services ran on `host`, or fell back from it to this machine for `fallback` (at most 500 characters). */
+  onHostCheck?: (entry: { check: string; host: string; fallback?: string }) => void;
   /** GY-3526: a worker verification's label: it holds a host heavy-job slot under it only while a test shard or check runs on this machine, never while its shards run on other hosts. */
   localSlot?: string;
   /** GY-3634: optional benchmark metrics callback receiving shards per host, host temperatures at start, and per-file durations. */
@@ -1551,24 +1553,29 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
   // the commit sent as a shard's is, the services started there, the command run on their network. With no host
   // ready, or one that drops the check, null: the check runs on this machine as before, the reason in the log.
   const onHost = async (check: RepositoryTrialCheck): Promise<Ended | null> => {
-    const here = (reason: string) => { log.push(`[remote] check ${check.check} runs on this machine: ${reason}`); return null; };
+    const here = (reason: string, from: readonly string[] = []) => {
+      log.push(`[remote] check ${check.check} runs on this machine: ${reason}`);
+      for (const host of from) input.onHostCheck?.({ check: check.check, host, fallback: reason.slice(0, 500) });
+      return null;
+    };
     const hosts = input.remote?.hosts ?? await shardHosts();
     if (!hosts.length) return here('no compute host is added');
-    const transport = shardSshSession(run);
+    const transport = input.remote?.transport ?? shardSshSession(run);
     const session = remoteShardSession({ root: input.root, sha: input.mergeSha, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport });
     try {
       const readings = (await (input.remote?.read ?? ((named, shared) => readShardHosts(named, run, cpu.cores(), shared)))(hosts, transport)).slice(1);
       const host = readings.filter(reading => underHeatLimit(reading) && reading.compose).sort((a, b) => realFreeCores(b) - realFreeCores(a))[0];
-      if (!host) return here(`no host is ready (${readings.map(reading => `${reading.name}: ${reading.away ? reading.reason ?? 'away' : reading.compose ? 'too hot' : 'no Docker Compose plugin, see graphyard host prepare'}`).join('; ')})`);
+      if (!host) return here(`no host is ready (${readings.map(reading => `${reading.name}: ${reading.away ? reading.reason ?? 'away' : reading.compose ? 'too hot' : 'no Docker Compose plugin, see graphyard host prepare'}`).join('; ')})`, readings.map(reading => reading.name));
       enterStep(`tests: ${check.check} on ${host.name}`);
       const probe = tcpAcceptProbe(check.services!.map(({ service, port }) => ({ host: service, port })), 120_000);
       const ended = await session.check(host.name, { file: check.services![0]!.file, services: check.services!.map(({ service, port }) => ({ service, port })), cpus: Math.max(1, host.cores),
         argv: ['/bin/sh', '-c', `${probe.map(shellQuote).join(' ')} && exec ${check.argv.map(shellQuote).join(' ')}`] });
+      input.onHostCheck?.({ check: check.check, host: host.name });
       for (const { step, ms } of ended.steps) input.onTiming?.(`${step}: ${check.check} on ${host.name}`, ms);
       log.push(`[remote] check ${check.check} ran on ${host.name}: ${ended.steps.map(({ step, ms }) => `${step} ${stepSeconds(ms)}`).join(', ')}`, `$ [${host.name}] ${check.argv.join(' ')}\n${ended.out}`);
       return { ok: ended.status === 0, out: ended.out, status: ended.status, signal: null, cause: undefined };
     } catch (error) {
-      if (error instanceof HostDroppedError) return here(error.message);
+      if (error instanceof HostDroppedError) return here(error.message, [error.host]);
       if ((error as { timedOut?: boolean }).timedOut) throw new TrialTimeoutError('tests', Math.max(0, now() - startedAt), tail());
       throw error;
     } finally { await session.close(); }
@@ -1789,8 +1796,8 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const release = await declareTrialFiles(slotsDirectory, input.key ?? input.mergeSha.slice(0, 12), lanes * breadth);
     try {
       // A lane takes the next shard until none is left or another lane's shard ended the trial; a running shard is always awaited, never orphaned.
-      const budget = slotsDirectory ? slots.heavyJobBudget(slotsDirectory) : null;
-      const hostShare = (host: string) => budget?.hostsBounded ? (budget.machines.find(machine => !machine.local && machine.name === host)?.slots ?? 0) : Infinity;
+      // GY-3706: a host takes as many shards as it has free cores, less two.
+      const hostShare = (host: string) => slotsDirectory ? slots.hostShardRoom(slotsDirectory, host) : Infinity;
       const local: PlacedHost<string> = { name: readings[0]?.name ?? 'local', room: lanes, reading: readings[0] ?? { name: 'local', cores, busy: 0, steal: 0, celsius: null, limit: Infinity, away: false } };
       const placed = [local, ...hosts.map((host, index) => ({ name: host, remote: host, reading: readings[index + 1]!, room: Math.min(Math.floor(realFreeCores(readings[index + 1]!) / breadth), hostShare(host)) }))];
       const placement = await runShardsOnHosts({ count: shards.length, hosts: placed, breadth, pinned, stopped: () => stopped !== null,

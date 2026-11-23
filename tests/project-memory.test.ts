@@ -18,8 +18,7 @@ import {
 } from '../src/project-memory.js';
 import { workerPrompt } from '../src/master/dispatch.js';
 import { reviewPrompt } from '../src/reviewer.js';
-import { producerPrompt } from '../src/producer.js';
-import { piProducerPrompt } from '../src/runner/roles.js';
+import { piProducerPrompt, producerPrompt } from '../src/producer.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import type { Work } from '../src/model/work.js';
 // Time-bomb allowance (GY-1694): the 2026-10-02 instants are memory/answer timestamps that updateProjectMemoryFromWork only sorts; its 24 h merge window runs on Date.now() against mergedAt values also derived from Date.now().
@@ -182,11 +181,10 @@ test('unit:session-request-carries-project-memory — piProducerPrompt carries r
     { key: 'GY-1125', pr: 1125, sha: 'abcdef1234567890abcdef1234567890abcdef12', baseSha, policyRevision: 1, group: 'unit', proofs: ['unit:session-request-carries-project-memory'] },
     [{ id: 'AC-1', text: 'Digest carried', proofs: ['unit:session-request-carries-project-memory'] }],
     { directory: '/srv/proof', worktree: '/srv/proof/checkout' },
-    '/srv/repo',
     memory
   );
 
-  assert.ok(request.includes('Produce evidence for work item GY-1125'));
+  assert.ok(request.includes('Produce trusted evidence for work item GY-1125'));
   assert.ok(request.includes('Shared project memory:'));
 });
 

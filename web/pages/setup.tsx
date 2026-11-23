@@ -116,13 +116,22 @@ export function WhereThingsRunPanel({ where, panes }: { where: WhereThingsRun | 
   </div>;
 }
 
+/** GY-3515: one call made with a scoped infra credential, as `GET /api/infra/actions` serves it. */
+export interface InfraActionRow { who: string; at: string; action: string; target: string; outcome: string; detail: string }
+const infraVerbs: Record<string, string> = { 'repo.create': 'Create repository', 'repo.push': 'Push repository', 'project.create': 'Create hosting project', 'environment.create': 'Create environment' };
+/** GY-3515: what masters did with scoped infra access, newest first: who, what and when, in one short list. */
+export function InfraActionsPanel({ actions }: { actions: readonly InfraActionRow[] }) {
+  return <ol className="infra-actions" data-infra-actions={actions.length}>{actions.slice(0, 20).map((entry, index) =>
+    <li key={index}><time dateTime={entry.at}>{new Date(entry.at).toLocaleString()}</time> <b>{entry.who}</b> {infraVerbs[entry.action] ?? entry.action} {entry.target}{entry.outcome === 'done' ? '' : ` — ${entry.outcome}`}</li>)}</ol>;
+}
+
 /**
  * The page body for a status answer and the work items (WORK, read at NOW), without the dashboard's
  * state: what the tests render. The onboarding change is a step of its own while it is open, as
  * `graphyard up` waits for it. WORKUNREAD: the work items are not read yet (or the read failed), so
  * whether the change merged is unknown and the page is not yet green.
  */
-export function SetupView({ status, work, workUnread, now, onConnect }: { status: any; work?: readonly any[] | null; workUnread?: boolean; now?: number; onConnect: () => void }) {
+export function SetupView({ status, work, workUnread, now, onConnect, infra }: { status: any; work?: readonly any[] | null; workUnread?: boolean; now?: number; onConnect: () => void; infra?: readonly InfraActionRow[] }) {
   // A supervised install (GY-1501) is set up as any other; it only provisions no approver.
   const supervised = statusSupervised(status), items = setupChecklist(status);
   const item = findOnboardingWork(work);
@@ -134,6 +143,7 @@ export function SetupView({ status, work, workUnread, now, onConnect }: { status
     <PageHeader title={`Set up ${PRODUCT_NAME}`} fact={green ? 'Everything is ready.' : !left ? 'Checking whether the onboarding change has merged.' : `${left} of ${total} steps left.`}/>
     {supervised && <p className="notice" data-supervised>An agent reviews each change and {PRODUCT_NAME} merges it; no agent approves decisions on your behalf, so you answer each one.</p>}
     <PageSection title="Checklist" label="Setup checklist"><SetupChecklist items={items} onConnect={onConnect} onboarding={onboarding}/></PageSection>
+    {!!infra?.length && <PageSection title="Repository and hosting changes" label="Repository and hosting changes"><InfraActionsPanel actions={infra}/></PageSection>}
     <PageSection title="Be told when the yard stops" label="Be told when the yard stops"><AlertsLine status={status}/></PageSection>
     <section className="panel" aria-label="Watch agents in a terminal"><MoreDetails summary="Watch agents in a terminal"><HerdrConnect watch={paneServer(status)}/></MoreDetails></section>
     <section className="panel" aria-label="Where things run"><MoreDetails summary="Where things run"><WhereThingsRunPanel where={status?.setup?.where ?? null} panes={status?.setup?.panes ?? null}/></MoreDetails></section>
@@ -143,6 +153,8 @@ export function SetupView({ status, work, workUnread, now, onConnect }: { status
 export default function SetupPage({ status, api, setView }: Pick<Dashboard, 'status' | 'api' | 'setView'>) {
   // The work items, read while this page is open, so the onboarding change shows as the current step (GY-1478).
   const [work, setWork] = useState<any[] | null>(null);
+  const [infra, setInfra] = useState<InfraActionRow[]>([]);
+  useEffect(() => { void api('infra/actions').then(body => setInfra(body?.actions ?? []), () => {}); }, [api]);
   useEffect(() => {
     let live = true;
     const read = () => api('work-snapshot').then(snapshot => { if (live) setWork(Array.isArray(snapshot?.work) ? snapshot.work : null); }, () => { if (live) setWork(null); });
@@ -150,5 +162,5 @@ export default function SetupPage({ status, api, setView }: Pick<Dashboard, 'sta
     const timer = setInterval(read, 15_000);
     return () => { live = false; clearInterval(timer); };
   }, [api]);
-  return <SetupView status={status} work={work} workUnread={work === null} onConnect={() => { location.hash = 'connect'; setView('agents'); }}/>;
+  return <SetupView status={status} work={work} workUnread={work === null} infra={infra} onConnect={() => { location.hash = 'connect'; setView('agents'); }}/>;
 }

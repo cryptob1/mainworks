@@ -1,0 +1,16 @@
+{
+  "id": "deploy-watch-retries",
+  "title": "A verified commit whose deploy failed once is served after a retry, without restarting the watch",
+  "description": "The running deploy watch meets a one-off build failure and then a one-off restart failure on a verified commit. It tries the commit again after a short backoff, and /healthz reports the verified commit with the failed step cleared, from the same watch process.",
+  "tags": ["deployment", "regression"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "Fail a deploy once, let the running watch retry it, and verify /healthz serves the verified commit",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/deploy-watch-retries.test.ts",
+      "timeoutSeconds": 120
+    }
+  ]
+}

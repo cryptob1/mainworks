@@ -97,7 +97,7 @@ for (const width of [1280, 390]) {
     await expect(row.locator('[data-col="pr"] a')).toHaveAttribute('href', 'https://github.com/fixture/repository/pull/401');
     await expect(row.locator('[data-col="time"]')).toHaveText('12m');
     await expect(speedGroup.locator('[data-row="GY-102"] [data-col="state"]')).toHaveText('Stuck');
-    await expect(speedGroup.locator('[data-row="GY-102"] [data-col="now"]')).toHaveText('A fault blocks it; the master agent clears it.');
+    await expect(speedGroup.locator('[data-row="GY-102"] [data-col="now"]')).toHaveText('Blocked 41m: a fault blocks it; the master agent clears it.');
     await expect(speedGroup.locator('[data-row="GY-103"] [data-col="state"]')).toHaveText('Shipped');
     // At 390 px a row is a compact three-line grid, not a stack of six cells; the search box shows its whole placeholder.
     expect(await row.evaluate(r => getComputedStyle(r).display)).toBe(width === 390 ? 'grid' : 'table-row');
