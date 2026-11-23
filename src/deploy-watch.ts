@@ -57,6 +57,7 @@ async function writeDeployRecord(file: string, record: Omit<DeployRecord, 'at'>)
  */
 export function readDeployHistory(root: string, repository?: string | null): DeployHistoryEntry[] {
   const entries: DeployHistoryEntry[] = [];
+  const isTime = (at: unknown): at is string => typeof at === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(at) && Number.isFinite(Date.parse(at));
   const matchesRepo = (repo: string | null | undefined) => !repository || repo?.toLowerCase() === repository.toLowerCase();
   const readLines = (file: string, checkRepo: boolean) => {
     if (!existsSync(file)) return;
@@ -65,7 +66,7 @@ export function readDeployHistory(root: string, repository?: string | null): Dep
         if (!line.trim()) continue;
         try {
           const parsed = JSON.parse(line) as Partial<DeployHistoryEntry>;
-          if (typeof parsed.commit === 'string' && /^[0-9a-f]{40}$/i.test(parsed.commit) && typeof parsed.at === 'string' && Number.isFinite(Date.parse(parsed.at))) {
+          if (typeof parsed.commit === 'string' && /^[0-9a-f]{40}$/i.test(parsed.commit) && isTime(parsed.at)) {
             if (!checkRepo || matchesRepo(parsed.repository)) entries.push({ commit: parsed.commit.toLowerCase(), at: parsed.at, repository: parsed.repository ?? null });
           }
         } catch { /* skip malformed line */ }
@@ -75,13 +76,12 @@ export function readDeployHistory(root: string, repository?: string | null): Dep
   readLines(deployHistoryPath(root), true);
   readLines(join(stateDirectory(root), 'serve-history.jsonl'), false);
   const current = readDeployRecord(deployRecordPath(root));
-  if (current?.tip && /^[0-9a-f]{40}$/i.test(current.tip) && Number.isFinite(Date.parse(current.at)) && matchesRepo(current.repository)) {
+  if (current?.tip && /^[0-9a-f]{40}$/i.test(current.tip) && isTime(current.at) && matchesRepo(current.repository)) {
     entries.push({ commit: current.tip.toLowerCase(), at: current.at, repository: current.repository ?? null });
   }
   const serve = readServeRecord(serveRecordPath(root));
-  const serveAt = serve?.at;
-  if (serve?.commit && /^[0-9a-f]{40}$/i.test(serve.commit) && serveAt && Number.isFinite(Date.parse(serveAt))) {
-    entries.push({ commit: serve.commit.toLowerCase(), at: serveAt });
+  if (serve?.commit && /^[0-9a-f]{40}$/i.test(serve.commit) && isTime(serve.at)) {
+    entries.push({ commit: serve.commit.toLowerCase(), at: serve.at });
   }
   entries.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
   const seen = new Set<string>();
