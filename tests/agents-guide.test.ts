@@ -101,7 +101,7 @@ const roleTopics = {
   worker: ['guide park', 'guide complete'],
   reviewer: ['guide review'],
   producer: ['guide proof'],
-  master: ['guide master'],
+  master: ['master guide'],
 };
 
 test('unit:role-briefs-name-guide-topics-and-shrink — the worker, reviewer, producer and master briefs name the guide topics for their role and are each at least 30 percent shorter than at the base commit', () => {
