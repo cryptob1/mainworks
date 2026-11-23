@@ -32,7 +32,7 @@ const diagramFacts = [
   'docker logs graphyard-OWNER-NAME-db-1',
   '4310',
   'graphyard-trial-',
-  '~/.config/graphyard/<install>/',
+  '~/.config/mainworks/<install>/',
 ];
 
 test('unit:tests/where-things-run-docs.test.ts — the README\'s Where things run section embeds the diagram, whose every unit, container, port and log command shows there, and points to guide infra', () => {
