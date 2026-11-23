@@ -15,7 +15,7 @@ import type { Cycle } from './cycle.js';
 import { actionLine } from './run.js';
 import { actionDetailMax, message, storeAction } from './state.js';
 import { batchGateFlights as flights, busyTrialSlots } from './trial-slots.js';
-import { faultItem, fileLoopFault } from './control-plane.js';
+import { fileLoopFault, gateFiledItem, repairedProof } from './control-plane.js';
 import { currentEvidence } from '../model/evidence.js';
 import { EnvironmentFault, declaredEnvironments, environmentSecretsFile, environmentStatePath, localEnvironment, loopLifecycle, trustedCheckout, type AppEnvironment } from '../app-environments.js';
 import { installSecretsDirectory } from '../e2e/steps.js';
@@ -143,30 +143,7 @@ async function gateEnvironments(reads: MergeWriterReads, commit: string, cases: 
   return result;
 }
 
-/** The pinning-test proof a gate filing binds, named from its check: `known-red:test:tests/a-b.test.ts` → `unit:a-b-pinned`. */
-export const pinningProof = (key: string) =>
-  `unit:${key.slice(key.indexOf(':') + 1).toLowerCase().replace(/^test:tests\//, '').replace(/\.test\.ts$/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}-pinned`;
-
-/** The proof a gate filing owes once the batch gate passes again; the loop records it itself (GY-3443). */
-export const repairedProof = 'manual:batch-gate-repaired';
-
-/**
- * The E2E proof a gate filing binds (GY-3568): Mainworks's own filings keep create-work-item, the
- * case its install has always run; every other repository binds its own — the failing case itself
- * when the check is one, else a new case named like the pinning proof, which the fix adds to that
- * repository's catalog.
- */
-const gateFiledE2e = (key: string, repository: string): { proof: string; clause: string } => {
-  if (repository.toLowerCase() === mainworksRepository) return { proof: 'e2e:create-work-item', clause: 'creating a work item still works' };
-  const check = key.slice(key.indexOf(':') + 1);
-  return check.startsWith('e2e:')
-    ? { proof: check, clause: `the E2E case ${check.slice(4)} passes again` }
-    : { proof: `e2e:${pinningProof(key).slice('unit:'.length)}`, clause: `a new E2E case ${pinningProof(key).slice('unit:'.length)} passes` };
-};
-
-/** A batch gate filing's item: its pinning test and its E2E case are named from its check and the gated repository. */
-export const gateFiledItem = (input: { title: string; description: string; key: string }, baseBranch: string, repository: string) =>
-  faultItem({ faultKey: input.key, title: input.title, description: input.description, proof: pinningProof(input.key), repaired: { text: 'The batch gate passes again', proof: repairedProof }, e2e: gateFiledE2e(input.key, repository), reason: `Filed by the batch gate on ${baseBranch}` });
+export { fileFlakyCheck, gateFiledItem, pinningProof, repairedProof } from './control-plane.js';
 
 /**
  * GY-3443: while the gate's last outcome is verified, every open item owing `manual:batch-gate-repaired`
