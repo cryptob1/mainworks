@@ -1,14 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { masterConfinementVariable, masterSessionConfinement, startAgentSession } from '../src/master/launch.js';
 import { dirtyCheckoutPaths, readCoordinatorCheckout } from '../src/master/profiles.js';
 import { hostProcessLaunchTargets, masterCredentialMask, peerTokenDirectory, preparePeerExchange, sessionMountNamespaceWorks } from '../src/master/confinement.js';
+import { hostKnownHostsFile, hostsFile } from '../src/hosts.js';
+import { hostShimScript } from '../src/host-shim.js';
 import { loopRestartRequestPath } from '../src/daemon/state.js';
 import { confinedMaster } from '../src/cli/master/operations.js';
 import { masterRecords } from '../src/master/conversation.js';
+import { sshdHost } from './helpers/shard-hosts.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-1658: the loop-launched master session ran with the coordinator checkout writable (it opted
@@ -131,5 +135,66 @@ test('unit:master-session-confinement-refusal — a master launch that cannot ca
   for (const file of ['src/master/master-session.ts', 'src/master/harness.ts']) {
     const source = readFileSync(join(import.meta.dirname, '..', file), 'utf8');
     assert.ok(!source.includes('confinement: false') && source.includes("confinement: 'master'"), `${file} launches the master confined`);
+  }
+});
+
+test('e2e:master-sandbox-allows-only-its-work — from a confined master session, host add for a prepared host succeeds and records the host key in machine/known_hosts while other machine files stay hidden', async () => {
+  if (process.platform !== 'linux') return;
+  assert.ok(await sessionMountNamespaceWorks(), 'mount namespaces work on this Linux host');
+  const checkout = dirname(dirname(fileURLToPath(import.meta.url)));
+  mkdirSync(join(checkout, '.graphyard'), { recursive: true });
+  // Keep fixture state outside /tmp: bwrap replaces /tmp with its own scratch.
+  const base = await temporaryDirectory('master-host-add', join(checkout, '.graphyard'));
+  const { root } = coordinator(base);
+  const config = join(base, 'config'), install = join(config, 'own-install'), machine = join(config, 'machine');
+  mkdirSync(join(install, 'masters'), { recursive: true });
+  mkdirSync(machine, { recursive: true });
+  const credentialFile = join(install, 'masters', 'master.token');
+  writeFileSync(credentialFile, 't'.repeat(40), { mode: 0o600 });
+  const tailnetFile = join(machine, 'tailnet.json');
+  writeFileSync(tailnetFile, '{"ip":"100.64.0.1"}\n', { mode: 0o600 });
+
+  // A real OpenSSH server on 127.0.0.1 whose key is restricted to graphyard-host-shim,
+  // with stand-in id/docker so the host reports unprivileged gy-compute with rootless Docker.
+  const shim = join(base, 'graphyard-host-shim'), hostHome = join(base, 'host-home'), hostBin = join(base, 'host-bin'), bin = join(base, 'bin');
+  mkdirSync(hostBin, { recursive: true });
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(shim, hostShimScript); chmodSync(shim, 0o755);
+  writeFileSync(join(hostBin, 'id'), '#!/bin/sh\nif [ "$1" = -u ]; then echo 1001; else echo gy-compute; fi\n'); chmodSync(join(hostBin, 'id'), 0o755);
+  writeFileSync(join(hostBin, 'docker'), '#!/bin/sh\ncase "$1" in info) exit 0;; ps) printf "a1\\n";; esac\n'); chmodSync(join(hostBin, 'docker'), 0o755);
+  const server = await sshdHost(base, shim, hostHome, hostBin, bin);
+  // Override sshdHost's wrapper so real OpenSSH checks and writes the known_hosts file host add passes (no StrictHostKeyChecking=no).
+  const realSsh = execFileSync('sh', ['-c', 'command -v ssh'], { encoding: 'utf8' }).trim();
+  writeFileSync(join(bin, 'ssh'), `#!/bin/sh\nexec ${realSsh} -i ${join(base, 'sshd', 'client')} -o IdentitiesOnly=yes "$@"\n`);
+  chmodSync(join(bin, 'ssh'), 0o755);
+
+  try {
+    const mask = masterCredentialMask({ credentialFile }, [], config);
+    const live = await masterSessionConfinement('claude', root, {}, [join(install, 'masters')], { GRAPHYARD_CONFIG_HOME: config }, mask);
+    const target = `${server.user}@127.0.0.1:${server.port}`;
+    const driver = join(base, 'add-host-driver.mjs');
+    writeFileSync(driver, [
+      `import { addHost } from ${JSON.stringify(join(checkout, 'src', 'hosts.js'))};`,
+      `const result = await addHost(${JSON.stringify(target)});`,
+      'console.log(JSON.stringify({ added: result.added, cores: result.probe?.cores ?? null }));',
+    ].join('\n'));
+    const run = spawnSync(live.wrapper[0], [...live.wrapper.slice(1), 'node', '--import', 'tsx', driver], {
+      cwd: checkout, encoding: 'utf8', timeout: 60_000,
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, GRAPHYARD_CONFIG_HOME: config },
+    });
+    assert.equal(run.status, 0, `confined host add succeeded: ${run.stdout}\n${run.stderr}`);
+    const parsed = JSON.parse(run.stdout.trim().split('\n').at(-1)!) as { added: boolean; cores: number | null };
+    assert.equal(parsed.added, true);
+    assert.ok((parsed.cores ?? 0) > 0);
+    const knownHosts = readFileSync(hostKnownHostsFile(config), 'utf8');
+    assert.match(knownHosts, new RegExp(`\\[127\\.0\\.0\\.1\\]:${server.port}\\s+ssh-`), 'real OpenSSH recorded the host key in machine/known_hosts');
+    const recorded = JSON.parse(readFileSync(hostsFile(config), 'utf8')) as { target: string }[];
+    assert.deepEqual(recorded.map(h => h.target), [target]);
+
+    // Other files under machine/ remain hidden and unwritable.
+    const probe = spawnSync(live.wrapper[0], [...live.wrapper.slice(1), '/bin/sh', '-c', `test ! -r ${tailnetFile} && ! touch ${join(machine, 'extra')}`], { encoding: 'utf8', timeout: 30_000 });
+    assert.equal(probe.status, 0, `machine/tailnet.json stays hidden and machine/ stays unwritable: ${probe.stderr}`);
+  } finally {
+    server.kill();
   }
 });
