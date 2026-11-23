@@ -34,6 +34,15 @@ test('unit:shard-timing-baseline — the baseline lists measured durations, and 
   assert.ok(spread(blind) > spread(planned), `blind shards differ by ${spread(blind).toFixed(2)}x`);
 });
 
+// GY-3715: the six files most often a trial's slowest took 80 to 125 seconds each; the baseline records each under 30.
+const slowestSix = ['tests/lease-survives-message-and-unblock.test.ts', 'tests/headless-workers.test.ts', 'tests/trial-loop-process-restart.test.ts',
+  'tests/trial-merge.test.ts', 'tests/headless-claude-usage-limit.test.ts', 'tests/headless-workers-registry-kinds.test.ts'];
+
+test('unit:slowest-six-test-files-under-30s — each of the six files that were most often a trial\'s slowest records under 30 seconds in the timing baseline', async () => {
+  const { files: baseline } = JSON.parse(await readFile(join(repo, baselinePath), 'utf8')) as { files: Record<string, number> };
+  for (const file of slowestSix) assert.ok((baseline[file] ?? Infinity) < 30_000, `${file}: ${baseline[file] ?? 'no'} ms recorded`);
+});
+
 test('unit:shard-timing-baseline — without timings the plan is by name and count; a file with no timing weighs the median', () => {
   assert.deepEqual(shardTestFiles(['b', 'a', 'c', 'd', 'e'], 2), [['a', 'c', 'e'], ['b', 'd']]);
   // d has no timing: at the median (300) it joins b; at any default above 500 it would lead its own shard.
