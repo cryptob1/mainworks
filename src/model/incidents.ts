@@ -1,7 +1,9 @@
 import type { Work } from './work.js';
+import { trialRefusalHeld } from './merge-queue.js';
+import { isBaseMovedRework } from './rework-ground.js';
 
 /**
- * GY-3601: Home's incidents, from five timers (and the public link, GY-3690) over the status snapshot `/api/status` already
+ * GY-3601: Home's incidents, from six timers (the sixth groups repeated failures, GY-3626; and the public link, GY-3690) over the status snapshot `/api/status` already
  * serves and the work snapshot beside it. None of them waits on an agent to report: each reads a
  * clock against a fact the control plane observes itself.
  */
@@ -59,6 +61,7 @@ export function normaliseFailureLine(reason: string): string {
   const first = reason.split(/\r?\n/).map(line => line.trim()).find(Boolean) ?? '';
   if (!first) return '';
   return first
+    .replace(/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?/g, '')
     .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '')
     .replace(/(\/(?:private\/)?(?:var\/)?tmp)\/[^/\s:'")]+/g, '$1')
     .replace(/(\/\.graphyard\/worktrees)\/[^/\s:'")]+/g, '$1')
@@ -111,7 +114,7 @@ export function groupRepeatedFailures(entries: readonly FailureEntry[], now: num
   return result.sort((a, b) => b.count - a.count || a.line.localeCompare(b.line));
 }
 
-/** Failed session exits and merge-trial refusals on the work snapshot; rework reasons are worker instructions, not failures. */
+/** Failed session exits and real merge-trial failures of the current head on the work snapshot; rework reasons are worker instructions, not failures. */
 export function recentWorkFailures(work: readonly Work[]): FailureEntry[] {
   const entries: FailureEntry[] = [];
   for (const w of work) {
@@ -120,8 +123,11 @@ export function recentWorkFailures(work: readonly Work[]): FailureEntry[] {
       if (session.state === 'finished' && outcome && !benignSessionOutcome.test(outcome))
         entries.push({ item: w.key, reason: outcome, at: session.endedAt ?? session.updatedAt });
     }
-    if (w.mergeLedger?.state === 'refused' && w.mergeLedger.refusal?.reason)
-      entries.push({ item: w.key, reason: w.mergeLedger.refusal.reason, at: w.mergeLedger.trialStep?.at ?? w.updatedAt ?? w.mergeLedger.intentAt ?? '' });
+    // Only a real trial failure of the current head, dated by its trial step or intent (never the item's updatedAt).
+    const refusal = trialRefusalHeld(w.candidate, w.mergeLedger);
+    const at = w.mergeLedger?.trialStep?.at ?? w.mergeLedger?.intentAt;
+    if (refusal && at && !isBaseMovedRework({ binding: null, reason: refusal.reason }))
+      entries.push({ item: w.key, reason: refusal.reason, at });
   }
   return entries;
 }
@@ -186,7 +192,7 @@ export function releaseCheckSince(gate: { verifiedAt: string | null; inFlight: {
 /** GY-3690: when the install's link was last public, in words. */
 export const lastPublic = (at: string | null | undefined, now: number) => at ? `It was last public ${span(now - Date.parse(at))} ago.` : 'It has not been public yet.';
 
-/** Every open incident, by the five timers. */
+/** Every open incident, by the six timers and the public link. */
 export function incidentsFromStatus(status: StatusSnapshot, work: Work[], now: number): Incident[] {
   const incidents: Incident[] = [];
   const waiting = Array.isArray(status.live?.waiting) ? status.live.waiting.length : 0;
@@ -244,7 +250,7 @@ export function incidentsFromStatus(status: StatusSnapshot, work: Work[], now: n
     incidents.push({
       kind: 'repeated-failure',
       broke: `“${group.line}” failed on ${plural(group.count, 'item')}.`,
-      impact: 'Sessions keep stopping on the same fault until it is fixed.',
+      impact: 'Every retry stops on the same fault until it is fixed.',
       doing: filed ? `Filed as ${filed.key} (“${filed.title}”).` : 'No item filed yet — the caretaker is looking.',
       action: filed ? { label: 'Open the item', open: 'item', item: filed.id } : { label: 'Ask the Lead', open: 'lead' },
     });

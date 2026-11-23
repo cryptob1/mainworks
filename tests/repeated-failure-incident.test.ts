@@ -95,13 +95,14 @@ test('unit:repeated-failure-is-one-incident — removes item keys, hashes, temp 
   const work = [
     { id: '1', key: 'GY-1', title: 'One', stage: 'build', stageEnteredAt: ago(10 * minute), updatedAt: ago(10 * minute), lease: null, dependencies: [],
       sessions: [
-        { id: 's1', kind: 'implementation', state: 'finished', endedAt: ago(5 * minute), updatedAt: ago(5 * minute), outcome: 'Free usage limit reached' },
+        { id: 's1', kind: 'implementation', state: 'finished', endedAt: ago(5 * minute), updatedAt: ago(5 * minute), outcome: 'trial failed: Free usage limit reached' },
         { id: 's2', kind: 'implementation', state: 'finished', endedAt: ago(4 * minute), updatedAt: ago(4 * minute), outcome: 'ended: delivered' },
       ] },
     { id: '2', key: 'GY-2', title: 'Two', stage: 'test', stageEnteredAt: ago(10 * minute), updatedAt: ago(6 * minute), lease: null, dependencies: [],
-      mergeLedger: { state: 'refused', refusal: { kind: 'merge', reason: 'Free usage limit reached\ndetails' }, trialStep: { step: 'tests', at: ago(6 * minute) } } },
+      candidate: { sha: 'abc123def456' },
+      mergeLedger: { state: 'refused', head: 'abc123def456', refusal: { kind: 'merge', reason: 'trial failed: Free usage limit reached\ndetails' }, trialStep: { step: 'tests', at: ago(6 * minute) } } },
     { id: '3', key: 'GY-3', title: 'Three', stage: 'ready', stageEnteredAt: ago(10 * minute), updatedAt: ago(7 * minute), lease: null, dependencies: [],
-      sessions: [{ id: 's3', kind: 'review', state: 'finished', endedAt: ago(7 * minute), updatedAt: ago(7 * minute), outcome: 'Free usage limit reached' }] },
+      sessions: [{ id: 's3', kind: 'review', state: 'finished', endedAt: ago(7 * minute), updatedAt: ago(7 * minute), outcome: 'trial failed: Free usage limit reached' }] },
   ] as unknown as Work[];
   const groups = repeatedFailureGroups(work, baseNow);
 
@@ -110,8 +111,25 @@ test('unit:repeated-failure-is-one-incident — removes item keys, hashes, temp 
     lastRework: { reason: `${key}: GitHub reports that candidate ${sha} conflicts with base branch tip 9f8e7d6c. The base moved: run sync ${key}, resolve, then complete ${key} EPOCH --head NEWSHA.`, binding: null, at: ago(5 * minute) },
     reworkHistory: [{ reason: `${key}: GitHub reports that candidate ${sha} conflicts with base branch tip 9f8e7d6c. The base moved: run sync ${key}, resolve, then complete ${key} EPOCH --head NEWSHA.`, at: ago(4 * minute) }] });
   assert.deepEqual(repeatedFailureGroups([conflict('GY-7', 'a1b2c3d4'), conflict('GY-8', 'b2c3d4e5'), conflict('GY-9', 'c3d4e5f6')] as unknown as Work[], baseNow), []);
+
+  // Ledger refusals that are not trial failures of the current head are no incident: a trial that passed ahead of review,
+  // a requeued intent, a base-moved conflict, a refusal of an older head, and a refusal with neither trial step nor intent
+  // (an old refusal must not take the item's fresh updatedAt).
+  const refused = (key: string, reason: string, extra: Record<string, unknown> = {}) => ({ id: key, key, title: key, stage: 'test', stageEnteredAt: ago(5 * minute), updatedAt: ago(0), lease: null, dependencies: [],
+    candidate: { sha: 'feedface0001' }, mergeLedger: { state: 'refused', head: 'feedface0001', refusal: { kind: 'merge', reason }, trialStep: { step: 'tests', at: ago(5 * minute) }, ...extra } });
+  const three = (reason: string, extra?: Record<string, unknown>) => repeatedFailureGroups(['GY-7', 'GY-8', 'GY-9'].map(key => refused(key, reason.replace('KEY', key), extra)) as unknown as Work[], baseNow);
+  assert.deepEqual(three("trial passed ahead of review: KEY's review gate has not passed for this head"), []);
+  assert.deepEqual(three('intent superseded: KEY was never pushed'), []);
+  assert.deepEqual(three('trial failed: the merge conflicts in src/guide.ts'), []);
+  assert.deepEqual(three('trial failed: the proof already passes before the change', { head: 'oldhead00001' }), []);
+  assert.deepEqual(three('trial failed: the proof already passes before the change', { trialStep: undefined }), []);
+  assert.equal(three('trial failed: the proof already passes before the change', { trialStep: undefined, intentAt: ago(9 * minute) }).length, 1);
+
+  // A fault that differs only by an instant is one fault.
+  assert.equal(normaliseFailureLine('the serve command ended (status 1): ERR_MODULE_NOT_FOUND (it ran from 2026-11-04T14:02:11.373Z)'),
+    normaliseFailureLine('the serve command ended (status 1): ERR_MODULE_NOT_FOUND (it ran from 2026-11-05T09:47:58.001Z)'));
   assert.equal(groups.length, 1);
-  assert.equal(groups[0].line, 'Free usage limit reached');
+  assert.equal(groups[0].line, 'trial failed: Free usage limit reached');
   assert.deepEqual(groups[0].items, ['GY-1', 'GY-2', 'GY-3']);
 
   // Home incident card says 'the caretaker is looking' until an open item is filed for the fault,
@@ -121,9 +139,10 @@ test('unit:repeated-failure-is-one-incident — removes item keys, hashes, temp 
   assert.match(unfiled.broke, /Free usage limit reached/);
   assert.match(unfiled.broke, /3 items/);
   assert.doesNotMatch(unfiled.impact, /\b3 items\b/);
+  assert.equal(unfiled.impact, 'Every retry stops on the same fault until it is fixed.');
   assert.match(unfiled.doing, /the caretaker is looking/);
 
-  const filedItem = { id: '4', key: 'GY-4', title: 'Fix Free usage limit reached across workers', description: 'Caretaker filed', stage: 'ready', stageEnteredAt: ago(2 * minute), updatedAt: ago(2 * minute), lease: null, dependencies: [] } as unknown as Work;
+  const filedItem = { id: '4', key: 'GY-4', title: 'Fix trial failed: Free usage limit reached across workers', description: 'Caretaker filed', stage: 'ready', stageEnteredAt: ago(2 * minute), updatedAt: ago(2 * minute), lease: null, dependencies: [] } as unknown as Work;
   const [filed] = incidentsFromStatus({}, [...work, filedItem], baseNow);
   assert.equal(filed.kind, 'repeated-failure');
   assert.match(filed.doing, /GY-4/);
