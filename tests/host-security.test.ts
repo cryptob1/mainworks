@@ -5,6 +5,7 @@ import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fakeHosts } from './helpers/fake-hosts.js';
 import { main } from '../src/cli/index.js';
+import { hostShimDigest } from '../src/host-shim.js';
 
 // GY-3407 AC-5: a host lends compute and nothing else. `host prepare` prints the one-time sudo script
 // (gy-compute, not in the docker group, linger, rootless Docker, a key that may only run the shim);
@@ -44,13 +45,13 @@ test(`${proof} — host prepare prints a one-time sudo script: an unprivileged g
   // GY-3419: the host's own tools when both are installed, else the static extras fetched into gy-compute's home; either way the install runs through $setuptool.
   assert.match(script, /command -v dockerd-rootless-setuptool\.sh >\/dev\/null && command -v slirp4netns/);
   assert.match(script, /"\$setuptool" install/);
-  assert.match(script, /'restrict,command="graphyard-host-shim" ssh-ed25519 AAAAC3NzaOperatorKey operator@vishrog' > "\$home\/\.ssh\/authorized_keys"/);
+  assert.ok(script.includes(`line='restrict,command="graphyard-host-shim-${hostShimDigest}" ssh-ed25519 AAAAC3NzaOperatorKey operator@vishrog'`));
 });
 
 test(`${proof} — the script host prepare prints, run, prepares the host: gy-compute outside the docker group, with linger, subuid ranges, its own rootless Docker, and a shim-only key`, async () => {
   const box = hosts.host('box');
-  assert.equal(await readFile(join(box, 'home', 'gy-compute', '.ssh', 'authorized_keys'), 'utf8'), `restrict,command="graphyard-host-shim" ${hosts.publicKey}\n`);
-  const shim = join(box, 'usr-local-bin', 'graphyard-host-shim');
+  assert.equal(await readFile(join(box, 'home', 'gy-compute', '.ssh', 'authorized_keys'), 'utf8'), `restrict,command="graphyard-host-shim-${hostShimDigest}" ${hosts.publicKey}\n`);
+  const shim = join(box, 'usr-local-bin', `graphyard-host-shim-${hostShimDigest}`);
   assert.match(await readFile(shim, 'utf8'), /^# graphyard-host-shim: the only command/m);
   assert.equal((await stat(shim)).mode & 0o111, 0o111, 'the script installed the shim executable');
   assert.match(await readFile(join(box, 'etc', 'passwd'), 'utf8'), /^gy-compute:x:1001:1001::.*:\/bin\/sh$/m);
@@ -68,7 +69,7 @@ test(`${proof} — the script host prepare prints, run, prepares the host: gy-co
 
 test(`${proof} — the shim the script installed answers only its verbs: a plain shell command is refused`, async () => {
   const box = hosts.host('box');
-  const run = (command: string) => spawnSync(join(box, 'usr-local-bin', 'graphyard-host-shim'), {
+  const run = (command: string) => spawnSync(join(box, 'usr-local-bin', `graphyard-host-shim-${hostShimDigest}`), {
     env: { PATH: `${join(box, 'home', 'gy-compute', 'bin')}:${join(box, 'standins')}:/usr/bin:/bin`, FAKE_SSH_USER: 'gy-compute', SSH_ORIGINAL_COMMAND: command },
     encoding: 'utf8',
   });

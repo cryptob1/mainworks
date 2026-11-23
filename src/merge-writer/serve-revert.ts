@@ -116,7 +116,7 @@ export async function revertMergeCommit(git: ServeRevertGit, input: { mergeSha: 
 /** The title of the follow-up the loop files for a reverted item. */
 export const relandTitle = (item: Pick<Work, 'key'>) => `Re-land ${item.key}`;
 /** What the loop files for a reverted item (`POST /api/work` as the master's operator-agent identity). */
-export interface RelandInput { title: string; type: Work['type']; priority: number; description: string; why: string; simplest: string; criteria: { id: string; text: string; proofs: string[] }[]; dependencies: string[]; reason: string; owner?: string }
+export interface RelandInput { title: string; type: Work['type']; priority: number; description: string; why: string; simplest: string; criteria: { id: string; text: string; proofs: string[] }[]; dependencies: string[]; reason: string; owner?: string; faultKey?: string }
 
 /** The most criteria, the most proofs on one and the longest text the create route accepts (model/work.ts, model/policy.ts). */
 const relandCriteriaLimit = 50, criterionProofLimit = 20, criterionTextLimit = 2000;

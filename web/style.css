@@ -283,7 +283,6 @@ img.mark{width:26px;height:26px}
 .health,.health.live{display:inline-flex;align-items:center;gap:6px;color:var(--text-2);font-size:var(--type-small)}.health-dot{width:8px;height:8px;border-radius:50%;border:1.5px solid var(--text-2);flex-shrink:0}
 .health.live{color:var(--shipped)}.health.live .health-dot{background:var(--shipped);border-color:var(--shipped)}
 .health.stale{color:var(--needs-you)}.health.stale .health-dot{border-color:var(--needs-you)}
-.workers-note{margin:var(--space-3) 0}
 .availability{list-style:none;margin:0;padding:0;font-size:12px}.availability li{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:var(--space-2) 0;border-bottom:1px solid var(--border);color:var(--text-2)}.availability li[data-state=held]{color:var(--needs-you)}.availability li[data-state=broken]{color:var(--blocked)}
 /* GY-3314: the Workers table is one compact line per agent — the name, the item with its title
    truncated in place, a state of at most three words, the age — never taller than 44 px, with
@@ -630,6 +629,9 @@ header.main-top-bar{height:auto;min-height:60px;display:flex;flex-wrap:wrap;alig
 /* GY-3598: a test case's long ids, commands and paths wrap inside its card, so the Test-case library never scrolls sideways at 390 px. */
 .scenario-list{grid-template-columns:minmax(0,1fr)}.scenario-card,.scenario-columns>div{min-width:0;overflow-wrap:anywhere}.scenario-card code{white-space:normal;word-break:break-all}
 .caretaker-lines{list-style:none;padding:0;margin:0 0 var(--space-3);display:grid;gap:var(--space-2);font-size:var(--type-small)}
+/* GY-3671: Home's since you last looked, active goals and the box to the Lead. */
+.since-looked ul{margin:var(--space-2) 0 0;padding-left:18px}.since-looked li{overflow-wrap:anywhere}.goals ul{margin:0;padding-left:20px}.goals li{overflow-wrap:anywhere}
+.tell-lead label{display:block;font-weight:600;margin-bottom:6px}.tell-lead-row{display:flex;gap:var(--space-2);align-items:flex-end}.tell-lead textarea{flex:1;min-width:0}
 /* GY-3601: Home's status line and incident cards. */
 .home-status-line{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin:18px 0 0;font-size:30px;font-weight:600;letter-spacing:-.6px;line-height:1.2;overflow-wrap:anywhere}
 .home-status-line span{font-weight:450;color:var(--text-2)}

@@ -351,8 +351,9 @@ export const failureIsBase = (run: Pick<MergeTrialRun, 'build' | 'tests' | 'base
   run.build === 'pass' && run.tests.failed.length > 0 && !!run.base && run.tests.failed.every(file => run.base!.files.includes(file))
   && run.base.cases.length > 0 && run.base.cases.every(test => run.base!.tests.includes(test));
 
-/** GY-3545: the open flaky-check item a batch gate check's failure belongs to, matched by its title. */
-export const openFlakyItem = (work: readonly Work[], check: string) => work.find(item => item.stage !== 'done' && item.title === `Flaky check on main: ${check}`) ?? null;
+/** GY-3545, GY-3693: the open flaky-check item a batch gate check's failure belongs to, matched by faultKey or title. */
+export const openFlakyItem = (work: readonly Work[], check: string) =>
+  work.find(item => item.stage !== 'done' && (item.faultKey === `flake:${check}` || item.title === `Flaky check on main: ${check}`)) ?? null;
 
 /**
  * GY-3545: a trial's failures that are not the candidate's: the build passed, no E2E case failed,

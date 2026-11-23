@@ -24,7 +24,7 @@ import { getCachedPlanUsage, setCachedPlanUsage } from '../provider-usage.js';
 export { describeObservedExhaustion, providerIdentity } from './account-identity.js';
 // The per-provider login and quota probes live in ./environment-quota.ts, reached through each runtime's adapter.
 import type { PlanReading } from './environment-quota.js';
-import { accountHomeEnvironment, runtimeAdapter, type AccountReading } from './runtimes.js';
+import { accountHomeEnvironment, runtimeAdapter, withModel, type AccountReading } from './runtimes.js';
 
 /** Where agent environments live: one directory per account, named <agent>-<letter>. */
 export function agentEnvironmentRoot(input?: string) {
@@ -340,8 +340,7 @@ export function registryLaunchArgs(account: FleetLaunchAccount, headless = false
   const { contract, policy, modelId } = account.fleet, args = [...(headless && contract.headlessArgs ? [] : contract.args), ...(policy?.args ?? [])];
   // OpenCode's interactive TUI refuses --model (only `run` takes it), so its model rides in
   // OPENCODE_CONFIG_CONTENT instead (GY-3118), whatever flag a stored runtime still names.
-  const model = contract.kind !== 'opencode' && contract.modelFlag && modelId && !args.includes(contract.modelFlag) ? [contract.modelFlag, modelId] : [];
-  return [...args, ...model, ...registryToolsArgs(account)];
+  return [...withModel(contract.kind, args, contract, contract.kind === 'opencode' ? null : modelId), ...registryToolsArgs(account)];
 }
 
 /**
