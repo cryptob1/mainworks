@@ -1,7 +1,7 @@
 {
   "id": "verification-uses-remote-hosts",
   "title": "A worker verification's test shards run on ready hosts while a merge trial starts",
-  "description": "A worker's host-run test check over a large test list, with two ready compute hosts reached through graphyard-host-shim under a strict heavy-job cap of one. Its shards run on both hosts as a merge trial's do, and it holds no heavy-job slot while they run there, so a merge trial takes the one slot at once. Master status's remoteShards shows the worker verification as the latest run, with every shard run remotely and both hosts ready. A check that is one script beside a declared Postgres Compose service has no shards to send: it runs whole on a ready host, which starts the service in its run directory, runs the script on the service's network and removes the project, and it runs on this machine, with the reason in the trial log, when no host is ready or the host drops it. One host serves two installs: each install's key reaches its own release's helper, and removing one install's key leaves the other working.",
+  "description": "A worker's host-run test check over a large test list, with two ready compute hosts reached through graphyard-host-shim under a strict heavy-job cap of one. Its shards run on both hosts as a merge trial's do, and it holds no heavy-job slot while they run there, so a merge trial takes the one slot at once. Master status's remoteShards shows the worker verification as the latest run, with every shard run remotely and both hosts ready. A check that is one script beside a declared Postgres Compose service has no shards to send: it runs whole on a ready host, which starts the service in its run directory, runs the script on the service's network and removes the project, and it runs on this machine, with the reason in the trial log, when no host is ready or the host drops it. One host serves two installs: each install's key reaches its own release's helper, and removing one install's key leaves the other working. The warm test image is keyed to main's commit and lockfile, holds dist/cli.mjs, dist/server.mjs and a filled compile cache, is pushed to ready hosts before shards start, starts the CLI in under 0.6 CPU-seconds, and rebuilds when a head changes source files.",
   "tags": [
     "trial",
     "verification"
@@ -25,6 +25,12 @@
       "kind": "command",
       "name": "Prepare one fake host for two installs at different helper releases and probe each through its own helper",
       "run": "node --import tsx tests/helpers/run-tests.ts tests/two-installs-share-a-host.test.ts",
+      "timeoutSeconds": 300
+    },
+    {
+      "kind": "command",
+      "name": "Build the commit- and lockfile-keyed warm image, verify warm CLI startup under 0.6 CPU-seconds and head source rebuild on a remote host",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/warm-image-serves-the-head.test.ts",
       "timeoutSeconds": 300
     }
   ]
