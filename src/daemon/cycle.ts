@@ -39,7 +39,10 @@ import { attemptBoundMs, attemptCeilingMs, boundMinutes } from '../master/attemp
 import { backedOffAccounts, canaryOffer, canaryVerdict, profileHealth, recordLaunchFailure } from './sessions.js';
 import { pinnedInstall, repinRuntime, type AgentRegistry, type CanaryOffer } from '../model/registry.js';
 import { type DaemonEffects, record } from './effects.js';
-import { mergeWriterStep } from './cycle-merge-writer.js';
+import { mergeWriterStep, snapshotLedger } from './cycle-merge-writer.js';
+import type { MergeWriterState } from './merge-writer-state.js';
+import { awaitsMerge } from '../model/merge-queue.js';
+import { heavyJobLimit, heavyJobsDirectory } from '../master/verification-slots.js';
 import { batchGateStep } from './cycle-batch-gate.js';
 import { benchStep } from '../bench.js';
 import { lessonsToCode } from './lessons-to-code.js';
@@ -813,43 +816,106 @@ async function dispatchStep(cycle: Cycle) {
 }
 
 /**
- * The loop keeps the pipeline full itself (GY-2991): while fewer items occupy it — claimed,
- * submitted, in review or merge, or released and not yet done — than its concurrency (the workers
- * the registry worker role allows, `workersAllowed`), it releases the backlog item with the highest priority, oldest first
- * on ties, whose dependencies are all done, recording the release decision under the loop's own
- * identity with the reason. A parked item — any standing blocker — never releases, nor an
- * owner-held or loop-owned item, whose release the control plane refuses, nor one sharing an
- * exclusive resource with an item in flight or released (`resourceConflicts`). Items the master wants
- * held are parked, not left in backlog, so backlog means "work this next"; `master release` stays
- * for an out-of-order pull. Each release takes its response's document, so the same cycle's
- * dispatch offers the item.
+ * GY-3694: available merge-trial slots — the host's local heavy-job limit plus ready remote hosts.
+ */
+export function availableTrialSlots(hosts: readonly { local?: boolean; away: boolean }[] = [], localLimit = heavyJobLimit(heavyJobsDirectory())): number {
+  return localLimit + hosts.filter(host => !host.local && !host.away).length;
+}
+
+/**
+ * GY-3694: heads waiting for or running a merge trial, deduplicated across the live snapshot and
+ * the merge writer's cursor state (excluding items already done or returned for rework).
+ */
+export function testQueueCount(work: readonly Work[], mergeWriter: Pick<MergeWriterState, 'queue' | 'inFlight' | 'inFlights'> | null | undefined, now: number): number {
+  const byKey = new Map(work.map(item => [item.key, item]));
+  const active = (key: string) => {
+    const item = byKey.get(key);
+    return !item || (item.stage !== 'done' && !item.reworkRequested);
+  };
+  const ledger = snapshotLedger(work);
+  const keys = new Set<string>();
+  for (const item of work) if (awaitsMerge(item, ledger, now)) keys.add(item.key);
+  const flying = mergeWriter?.inFlights ?? (mergeWriter?.inFlight && !mergeWriter.inFlight.revert ? [mergeWriter.inFlight] : []);
+  for (const entry of flying) if (active(entry.key)) keys.add(entry.key);
+  for (const entry of mergeWriter?.queue ?? []) if (active(entry.key)) keys.add(entry.key);
+  return keys.size;
+}
+
+/** GY-3694: current test-queue count beside its limit (twice the available trial slots). */
+export function testQueueStatus(
+  work: readonly Work[],
+  mergeWriter: Pick<MergeWriterState, 'queue' | 'inFlight' | 'inFlights'> | null | undefined,
+  hosts: readonly { local?: boolean; away: boolean }[] = [],
+  now: number = Date.now(),
+  localLimit: number = heavyJobLimit(heavyJobsDirectory()),
+) {
+  const slots = availableTrialSlots(hosts, localLimit);
+  return { count: testQueueCount(work, mergeWriter, now), limit: slots * 2, slots };
+}
+
+function anythingInTestOrMerge(work: readonly Work[], mergeWriter: Pick<MergeWriterState, 'queue' | 'inFlight' | 'inFlights'> | null | undefined, now: number, excludeId: string): boolean {
+  const ledger = snapshotLedger(work);
+  if (work.some(item => item.id !== excludeId && item.stage !== 'done'
+    && (item.stage === 'test' || item.stage === 'acceptance' || item.stage === 'merge' || awaitsMerge(item, ledger, now)))) return true;
+  const byKey = new Map(work.map(item => [item.key, item]));
+  const active = (key: string) => {
+    const item = byKey.get(key);
+    return item ? item.id !== excludeId && item.stage !== 'done' && !item.reworkRequested : true;
+  };
+  const flying = mergeWriter?.inFlights ?? (mergeWriter?.inFlight && !mergeWriter.inFlight.revert ? [mergeWriter.inFlight] : []);
+  return flying.some(entry => active(entry.key)) || (mergeWriter?.queue ?? []).some(entry => active(entry.key));
+}
+
+/**
+ * The loop keeps the pipeline full itself (GY-2991, GY-3694): while fewer items occupy it than its
+ * worker concurrency (`workersAllowed`) AND heads waiting for or running a merge trial are fewer
+ * than twice the available trial slots (local heavy-job limit plus ready hosts), it releases the
+ * backlog item with the highest priority, oldest first on ties, whose dependencies are all done.
+ * A yard repair (GY-3102) still releases past both limits. An item marked `landsAlone` releases
+ * only when no other item is in test, acceptance or merge, and while it is in flight nothing else
+ * is released.
  */
 async function releaseBacklog(cycle: Cycle, allowed: number) {
-  const { config, effects, snapshot, clock } = cycle;
-  let slots = allowed - snapshot.work.filter(item => inPipeline(item, snapshot.work, clock)).length;
+  const { config, state, effects, snapshot, clock } = cycle;
+  let pipelineRoom = allowed - snapshot.work.filter(item => inPipeline(item, snapshot.work, clock)).length;
+  const queue = testQueueStatus(snapshot.work, state.mergeWriter, state.hosts, clock);
+  let queued = queue.count, queueRoom = queue.limit - queued;
+  let landsAloneInFlight = snapshot.work.some(item => item.landsAlone && inPipeline(item, snapshot.work, clock));
   const identity = config.operatorAgent ? { id: config.operatorAgent.id, role: 'operator-agent' as const } : undefined;
   const candidates = snapshot.work
     .filter(item => item.criteria.length > 0 && item.stage !== 'done' && !item.ready && !item.hold && !item.blocker && !loopOwnedRefusal(item) && !ownerHoldRefusal(item, identity)
       && item.dependencies.every(dep => snapshot.work.find(entry => entry.id === dep)?.stage === 'done'))
     .sort((a, b) => Number(!!b.yardRepair) - Number(!!a.yardRepair) || a.priority - b.priority || Date.parse(a.createdAt) - Date.parse(b.createdAt));
   for (const item of candidates) {
-    // A yard repair (GY-3102) is released past the pipeline cap.
-    if (slots <= 0 && !item.yardRepair) continue;
+    // A yard repair (GY-3102) is released past both caps; ordinary items wait for room and any lands-alone item in flight.
+    if (!item.yardRepair) {
+      if (landsAloneInFlight) continue;
+      if (pipelineRoom <= 0 || queueRoom <= 0) continue;
+      if (item.landsAlone && anythingInTestOrMerge(snapshot.work, state.mergeWriter, clock, item.id)) continue;
+    }
     // An item sharing an exclusive resource with one in flight or released waits until that one lands.
     if (resourceConflicts(item, snapshot.work, clock).length || snapshot.work.some(other => other.id !== item.id && other.stage !== 'done' && other.ready && sharedResources(item, other).length)) continue;
     const key = `release:${item.id}:${item.revision}`, filled = snapshot.work.filter(entry => inPipeline(entry, snapshot.work, clock)).length;
     try {
-      const overCap = !!item.yardRepair && slots <= 0;
+      const overCap = !!item.yardRepair && (pipelineRoom <= 0 || queueRoom <= 0 || landsAloneInFlight);
+      const governing = queueRoom <= pipelineRoom
+        ? `test-queue limit (${queued} of ${queue.limit} queued)`
+        : `worker-concurrency limit (${filled} of ${allowed} in flight)`;
       const reason = overCap
-        ? `${item.key} is a yard repair, so the loop releases it past the pipeline cap: ${filled} item(s) in flight of concurrency ${allowed} and every dependency of ${item.key} is done`
-        : `The loop keeps the pipeline full: ${filled} item(s) in flight of concurrency ${allowed}, every dependency of ${item.key} is done, and backlog means work this next`;
+        ? `${item.key} is a yard repair, so the loop releases it past the pipeline cap: ${filled} item(s) in flight of concurrency ${allowed}, ${queued} head(s) in the test queue of limit ${queue.limit}, and every dependency of ${item.key} is done`
+        : `The loop keeps the pipeline full under the ${governing}: ${filled} item(s) in flight of concurrency ${allowed}, ${queued} head(s) in the test queue of limit ${queue.limit}${item.landsAlone ? ', lands alone with nothing else in test or merge' : ''}, and every dependency of ${item.key} is done`;
       const released = await effects.release!(item, reason) as Work | undefined;
       const index = snapshot.work.findIndex(entry => entry.id === item.id);
       if (index >= 0 && released && typeof released === 'object' && 'ready' in released) snapshot.work[index] = released;
-      if (!item.yardRepair) slots -= 1;
+      if (!item.yardRepair) {
+        pipelineRoom -= 1;
+        queueRoom -= 1;
+        queued += 1;
+        if (item.landsAlone) landsAloneInFlight = true;
+      }
       await note(cycle, key, 'judgement', item.key, 'done', overCap
-        ? `Released yard repair ${item.key} past the pipeline cap: ${filled} item(s) in flight of concurrency ${allowed} and every dependency is done`
-        : `Released ${item.key} to keep the pipeline full: ${filled} item(s) in flight of concurrency ${allowed} and every dependency is done`, config.operatorAgent?.id ?? null);
+        ? `Released yard repair ${item.key} past the pipeline cap: ${filled}/${allowed} in flight, ${queued}/${queue.limit} test queue, and every dependency is done`
+        : `Released ${item.key} to keep the pipeline full under the ${governing}: ${filled}/${allowed} in flight, ${queue.limit - queueRoom}/${queue.limit} test queue, and every dependency is done`, config.operatorAgent?.id ?? null);
     }
     catch (error) { await note(cycle, key, 'judgement', item.key, 'failed', `Could not release ${item.key} from backlog: ${message(error)}`, config.operatorAgent?.id ?? null); }
   }

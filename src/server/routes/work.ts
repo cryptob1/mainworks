@@ -19,6 +19,7 @@ import { save } from '../../store.js';
 import { lockedWork, workIdByRef } from '../../store/locked-read.js';
 import { applyPreviewRecord, previewRecordBodySchema, previewSiteByteLimit, previewSiteFileLimit } from '../../project-previews.js';
 import type { Services } from '../routes.js';
+import { recordInvestigatorNote } from '../investigator-note.js';
 
 /** GY-3415: the address the owner opens this install at — the address Tailscale serves it at once the host reported one (routes/team-access.ts), else the address this request reached. */
 async function installAddress(context: RouteContext) {
@@ -172,6 +173,14 @@ export const workRoutes = defineRoutes('work', [
   // GY-3599: the Task page's evidence, open to any reader of the item — where the trial's time went, and the change's files and diffs.
   { method: 'GET', path: /^\/api\/work\/([^/]+)\/timings$/, handle: ({ services }, [id]) => readTaskTimings(services, decodeURIComponent(id!)) },
   { method: 'GET', path: /^\/api\/work\/([^/]+)\/diff$/, handle: ({ services, url }, [id]) => readTaskDiff(services, decodeURIComponent(id!), url.searchParams.get('path')) },
+  // GY-3530: a read-only investigator's answer (`ask GY-N QUESTION`), noted on the item's history; it moves no state.
+  {
+    method: 'POST', path: /^\/api\/work\/([^/]+)\/note$/,
+    async handle(context, [id]) {
+      await refuseLead(context, id, 'note');
+      return recordInvestigatorNote(context.services, context.actor, decodeURIComponent(id!), await parseJson(context));
+    },
+  },
   // The merge writer's ledger (GY-1524): intent, trial, pushed, reconciled and refused, recorded by the
   // loop's coordinator identity only; a reconciliation delivers the item in the same transaction.
   {

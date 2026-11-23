@@ -60,6 +60,7 @@ async function reviseRequirements(engine: Engine, db: PoolClient, actor: Princip
   if (data.why !== undefined) work.why = data.why;
   if (data.simplest !== undefined) work.simplest = data.simplest;
   if (data.plannedFiles !== undefined) work.plannedFiles = data.plannedFiles;
+  if (data.landsAlone !== undefined) work.landsAlone = data.landsAlone;
   work.dependencies = data.dependencies; work.exclusiveResources = data.exclusiveResources; work.producerProofs = data.producerProofs;
   work.scenarioRequirements = pins; work.policyRevision++;
   refuseRenewedDeferral(work, all);

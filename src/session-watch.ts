@@ -417,7 +417,7 @@ export async function supervise(command: string, args: string[], epoch: number, 
     void (async () => {
       try {
         if (prelaunchInterrupted) { finish(null, 1); return; }
-        child = spawn(containment?.command ?? command, containment?.args ?? args, { stdio: options.log ? ['ignore', 'pipe', 'pipe'] : 'inherit', detached, env });
+        child = spawn(containment?.command ?? command, containment?.args ?? args, { stdio: options.log ? ['inherit', 'pipe', 'pipe'] : 'inherit', detached, env });
         if (options.log) for (const stream of ['stdout', 'stderr'] as const) runLogLines(child[stream]!, stream, options.log);
         // Never learn the fallback root from a later /proc snapshot: after this
         // child exits its numeric PID can identify an unrelated replacement.
