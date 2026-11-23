@@ -21,7 +21,6 @@ import { allocateManagedCheckout, lockfiles, settleCheckout, shareDependencies }
 import { containedInstall, npmCiEnvironment } from './cli/test-isolation.js';
 import { buildArgv, installArgv, packageManager } from './package-manager.js';
 import { loadMasterConfig, loadStoredMasterConfig, } from './master/config.js';
-import { autonomousSession } from './master/dispatch.js';
 import { closeHerdrPane, type HerdrAgent } from './master/herdr.js';
 import { holdRepeatedLimitAccount } from './master/launch-account.js';
 import { prepareSessionHarness } from './master/harness.js';
@@ -628,6 +627,8 @@ function reviewAutonomySection() {
     + reviewRecoverySection()
     + `Record a genuine blocker as one review posted with --event COMMENT (or, when posting is itself refused, as a final line starting BLOCKED:). After posting, stop; Graphyard closes the session.`;
 }
+const codeVerdictChoices = 'Verdict choices: APPROVE (no BLOCKING finding stands) or REQUEST_CHANGES (each as BLOCKING: PATH:LINE - FINDING). ';
+const productVerdictChoices = 'Verdict choices: APPROVE (ship as is), REQUEST_CHANGES (each as BLOCKING: SCREEN OR FLOW - FINDING), REJECT (should not ship), COULD_NOT_RUN (you could not open the app: GRAPHYARD_URL unset, no browser, unreachable; no worker can fix that, so it is never a change request). ';
 export function reviewPrompt(config: Pick<MasterConfig, 'repository'> & Partial<Pick<MasterConfig, 'cliPath'>>, binding: Pick<ReviewBinding, 'key' | 'pr' | 'sha' | 'baseSha' | 'policyRevision'>, checkout?: SessionCheckout, _legacy?: unknown, criteria?: ReviewCriterion[], history?: ReviewHistory, files?: readonly string[] | null, projectMemory?: ProjectMemory | null, memory?: ProjectMemory | null, verification?: { maps: readonly VerificationMap[]; paths: readonly string[] } | null, plane?: ControlPlanePrompt | null, scenarioRequirements: Work['scenarioRequirements'] = []) {
   memory ??= projectMemory;
   if (plane) return controlPlaneReviewPrompt(config, binding, plane, checkout, criteria, history, files, memory, verification, scenarioRequirements);
@@ -688,7 +689,7 @@ function productReviewPrompt(config: Pick<MasterConfig, 'repository'> & Partial<
       : plane.noApp
         ? `This install serves no app and declares no serve command, so no walkthrough is required and none is owed: judge the change from the head's diff (git diff ${plane.baseTip} ${plane.head}), the criteria and the trial evidence, and say in your findings that no app was there to walk — the absence of an app is never a reason to request changes. `
         : `The head itself is not separately previewed, so walk the app as currently served with agent-browser (its address is the serving.serve.url field of GET $GRAPHYARD_URL/api/status, when one is served), use the flows the feature belongs to, and read the head's diff (git diff ${plane.baseTip} ${plane.head}) beside what you see. ${unreachable}`;
-  return `You are the independent Graphyard product reviewer for ${config.repository}. Work item ${binding.key} is a user-facing feature: its head ${plane.head} (judged against base ${plane.baseTip}, policy revision ${binding.policyRevision}) was observed by the control plane. `
+  return `You are the independent Graphyard product reviewer for ${config.repository}. ${productVerdictChoices}Work item ${binding.key} is a user-facing feature: its head ${plane.head} (judged against base ${plane.baseTip}, policy revision ${binding.policyRevision}) was observed by the control plane. `
     + `Judge the feature as a product, in the whole app's context — not only whether the diff is correct. `
     + reviewStandards({ ...binding, criteria, scenarioRequirements }, plane.head).criteria + criteriaVerdictRule
     + (plane.trialEvidence ?? `No trial evidence recorded for head ${plane.head}. `)
@@ -697,28 +698,25 @@ function productReviewPrompt(config: Pick<MasterConfig, 'repository'> & Partial<
     + `Then judge: ${reviewStandards(binding).product}`
     + `${reviewStandards(binding).ux}Request changes on any violation of this UX standard, with a screenshot of it. `
     + (plane.answer ? readOnlySession + plane.answer : productPostSection(config.cliPath ?? launcherPath) + readOnlySession
-    + `Posting that verdict is granted to this session's role, not a permission to request: post it as soon as you have judged the feature, without asking for confirmation. `
     + `review post sends it to the Graphyard control plane at GRAPHYARD_URL with this launch's one-time token from GH_CONFIG_DIR. `
-    + `Once it has posted, stop; Graphyard closes this session once it observes your verdict. `
-    + autonomousSession('post the verdict yourself, APPROVE, REQUEST_CHANGES, REJECT or COULD_NOT_RUN, as soon as you have judged the feature', 'record a blocker as a final line starting BLOCKED:'));
+    + `Decide and act on your own: post your verdict without asking a human or waiting on input (record a blocker as a final line starting BLOCKED:). After posting, stop; Graphyard closes this session.`);
 }
 const readOnlySession = 'This session is read-only: do not edit, stage, commit, push, rebase, or merge anything, do not run the project\'s build, tests, or servers, do not claim Graphyard work, and do not submit evidence. ';
 function productPostSection(cliPath: string) {
-  return `Post exactly one verdict, only through Graphyard, with the body on standard input: node ${cliPath} review post --event EVENT <<'EOF' … EOF. `
-    + `--event APPROVE when the feature should ship as it stands; --event REQUEST_CHANGES when it should ship after concrete changes, each named on its own "BLOCKING: SCREEN OR FLOW — FINDING" line; --event REJECT when it should not ship at all, with the reason in the body — the master closes the item unmerged on it, or files a reshaped one; --event COULD_NOT_RUN when your own environment failed (GRAPHYARD_URL unset, no Graphyard CLI, no browser tool, or an app you cannot reach), the reason in the body — Graphyard retries the review on another reviewer and the item never returns to its worker for it. `
-    + `Open the body by naming the head you judged, and name each screenshot you captured (at most 5, .png or .jpg, each under 2 MiB) on its own "Screenshot: PATH" line, the path of the file you saved: review post uploads each with your verdict, and the item shows your verdict, findings and screenshots together. `;
+  return `Post exactly one verdict, only through Graphyard, with the body on standard input: node ${cliPath} review post --event EVENT <<'EOF' … EOF (--event APPROVE, --event REQUEST_CHANGES, --event REJECT, or --event COULD_NOT_RUN). `
+    + `Open the body by naming the head you judged, and name each screenshot you captured (at most 5, .png or .jpg, each under 2 MiB) on its own "Screenshot: PATH" line: review post uploads each with your verdict. `;
 }
 /**
  * A headless session's answer (in place of `review post`): one JSON object the launcher posts as
  * this launch's verdict through the same route and token, each finding as a BLOCKING: line.
  */
-export function headlessReviewAnswer(key: string, product = false, screenshots?: string) {
+export function headlessReviewAnswer(_key: string, product = false, screenshots?: string) {
   return `Answer in one JSON object, the last thing you print: {"verdict": "APPROVE" or "BLOCKING"${product ? ' or "REJECT" or "COULD_NOT_RUN"' : ''}, "body": "THE REVIEW BODY", "findings": ["${product ? 'SCREEN OR FLOW' : 'PATH:LINE'} — FINDING", …]}. `
-    + `APPROVE when no blocking finding stands, with findings empty; BLOCKING when one does, each in findings${product ? '; REJECT when the feature should not ship at all, the reason in the body: the master closes the item unmerged on it; COULD_NOT_RUN when your own environment failed — GRAPHYARD_URL unset, no Graphyard CLI, no browser tool, or an app you cannot reach — the reason in the body and no findings: Graphyard retries the review on another reviewer and the item never returns to its worker for it' : ''}. `
-    + (product ? (screenshots ? `Save each screenshot in ${screenshots} — the one directory both this session and Graphyard, which posts your answer, can read — and open the body by naming the head you judged, then name each screenshot you saved (at most 5, .png or .jpg, each under 2 MiB) on its own "Screenshot: NAME" line, NAME its file name in that directory: the item shows them beside your verdict. `
-      : 'Open the body by naming the head you judged, and name each screenshot you saved (at most 5, .png or .jpg, each under 2 MiB) on its own "Screenshot: PATH" line: the item shows them beside your verdict. ') : '')
-    + 'Graphyard posts that answer as your verdict under this launch, each finding on a BLOCKING: line, so run no review post. '
-    + `Judge whether this change meets what ${key} requires; never weaken a requirement to let it pass, and never hold a change that meets its criteria over a FOLLOW-UP. Decide on your own: never ask a human or wait on input.`;
+    + `Use findings only with BLOCKING (leave findings empty for APPROVE${product ? ', REJECT or COULD_NOT_RUN' : ''}). `
+    + (product ? (screenshots ? `Save each screenshot in ${screenshots} — open the body by naming the head you judged, then name each screenshot (at most 5, .png or .jpg, each under 2 MiB) on its own "Screenshot: NAME" line. `
+      : 'Open the body by naming the head you judged, and name each screenshot (at most 5, .png or .jpg, each under 2 MiB) on its own "Screenshot: PATH" line. ') : '')
+    + 'Graphyard posts that answer as your verdict, each finding on a BLOCKING: line, so run no review post. '
+    + `Never weaken a requirement to let it pass, and never hold a change that meets its criteria over a FOLLOW-UP. Decide and act on your own: never ask a human or wait on input.`;
 }
 /** The headless answer, checked before it is posted: a BLOCKING verdict names its findings, an approval none. */
 export const headlessVerdictSchema = z.object({ verdict: z.enum(['APPROVE', 'BLOCKING', 'REJECT', 'COULD_NOT_RUN']), body: z.string().trim().min(1).max(60_000), findings: z.array(z.string().trim().min(1).max(2_000)).max(100).default([]) })
@@ -788,7 +786,7 @@ function controlPlaneReviewPrompt(config: Pick<MasterConfig, 'repository'> & Par
   const outcome = plane.postMerge
     ? 'Name each finding that meets the blocking standard on its own line starting BLOCKING: as PATH:LINE — FINDING; Graphyard files one follow-up item per BLOCKING line, planned on that file, keeps every other finding in project memory, and never reopens the delivered item. Post REQUEST_CHANGES when any BLOCKING line stands and APPROVE otherwise. '
     : '';
-  return `You are the independent Graphyard reviewer for ${config.repository}. ${subject}`
+  return `You are the independent Graphyard reviewer for ${config.repository}. ${codeVerdictChoices}${subject}`
     + scope
     + reviewStandard({ key: binding.key, head: plane.head, base: plane.baseTip }, criteria, files, verification, { memory: memorySection || '', round: reviewRoundSection(plane.head, history), scenarioRequirements, changedAssertions: plane.changedAssertions })
     + reviewReadSection(config.cliPath ?? launcherPath, plane.head)
@@ -798,10 +796,8 @@ function controlPlaneReviewPrompt(config: Pick<MasterConfig, 'repository'> & Par
     + readOnlySession
     + (plane.answer ? reviewRecoverySection() : '')
     + (plane.answer ?? reviewPostSection(config.cliPath ?? launcherPath, 'only when a BLOCKING finding stands')
-    + `Judge whether this diff meets what ${binding.key} requires by that rule; never weaken a requirement to let it pass, and never hold a change that meets its criteria over a FOLLOW-UP. `
-    + `Posting that review is granted to this session's role, not a permission to request: the launch allows exactly this one command, so post it as soon as you have judged the diff, without asking for confirmation. `
+    + `Never weaken a requirement to let it pass, and never hold a change that meets its criteria over a FOLLOW-UP. `
     + `review post sends the verdict to the Graphyard control plane at GRAPHYARD_URL with this launch's one-time token from GH_CONFIG_DIR; it names no pull request and runs no gh. `
-    + `Once it has posted, stop; Graphyard closes this session once it observes your verdict. `
     + reviewAutonomySection());
 }
 

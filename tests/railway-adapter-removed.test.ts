@@ -43,5 +43,5 @@ test('unit:tests/railway-adapter-removed.test.ts — onboarding, the example pro
   assert.match(deploy.verification, /^Railway deploys each application from git on its own; Graphyard deploys nothing there\. Declare each app's versionUrl/);
   const example = JSON.parse(await readFile(new URL('../examples/setup-proposal.json', import.meta.url), 'utf8'));
   assert.equal(example.deploy.verification, deploy.verification);
-  assert.match(guideText('master'), /Railway deploys each application from git on its own; Graphyard deploys nothing there and uses no Railway credential for it\. It observes each app's versionUrl/);
+  assert.match(guideText('master'), /Railway deploys each application from git on its own; Mainworks deploys nothing there and uses no Railway credential for it\. It observes each app's versionUrl/);
 });

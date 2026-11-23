@@ -181,6 +181,6 @@ test('e2e:scoped-infra-access — every call made with the credential is recorde
 
     const guide = guideText('infra');
     assert.match(guide, /Creating a repository or a hosting project is one route, and a master never starts an unconfined session to do it\./);
-    for (const command of ['graphyard infra approve OWNER/NAME --project NAME', 'graphyard infra take', 'infra repo create OWNER/NAME', 'infra repo push OWNER/NAME', 'infra project create NAME', 'infra env create NAME ENV', 'graphyard infra log']) assert.ok(guide.includes(command), `guide infra names ${command}`);
+    for (const command of ['mainworks infra approve OWNER/NAME --project NAME', 'mainworks infra take', 'infra repo create OWNER/NAME', 'infra repo push OWNER/NAME', 'infra project create NAME', 'infra env create NAME ENV', 'mainworks infra log']) assert.ok(guide.includes(command), `guide infra names ${command}`);
   } finally { await install.close(); }
 });

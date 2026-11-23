@@ -76,7 +76,7 @@ const commands: [string, string][] = [
 export default function GuidePage() {
   const [media, setMedia] = useState<{ video: string; setup: string; infra: string } | null>(null);
   useEffect(() => {
-    Promise.all([import('../../docs/diagrams/how-graphyard-works.mp4?url'), import('../../src/guide')])
+    Promise.all([import('../../docs/diagrams/how-mainworks-works.mp4?url'), import('../../src/guide')])
       .then(([video, guide]) => setMedia({ video: video.default, setup: guide.guideText('setup'), infra: guide.guideText('infra') }));
   }, []);
   return <article className="guide">

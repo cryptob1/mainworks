@@ -8,7 +8,7 @@
 import { stateDir } from '../mainworks-names.js';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -52,6 +52,28 @@ export interface TrialRunHandle {
 
 /** The files of a run's directory: its input and its verdict, beside the detached launch's own (runner/pi.ts `runFiles`). */
 export const trialRunFiles = (directory: string) => ({ spec: join(directory, 'spec.json'), steps: join(directory, 'steps.jsonl'), result: join(directory, 'result.json') });
+
+/**
+ * GY-3704: each compute host's last check fallback to this machine, read from the runs' steps.jsonl:
+ * its reason and when, kept until a check next runs on that host.
+ */
+export function lastHostFallbacks(root: string): Map<string, { reason: string; at: string }> {
+  const latest = new Map<string, { fallback?: string; at: string }>();
+  const runs = (() => { try { return readdirSync(trialRunsDirectory(root)); } catch { return []; } })();
+  for (const run of runs) {
+    let text = '';
+    try { text = readFileSync(trialRunFiles(join(trialRunsDirectory(root), run)).steps, 'utf8'); } catch { continue; }
+    for (const line of text.split('\n')) {
+      if (!line.includes('"host"')) continue;
+      try {
+        const entry = JSON.parse(line) as { check?: string; host?: string; fallback?: string; at?: string };
+        if (typeof entry.host !== 'string' || typeof entry.at !== 'string') continue;
+        if ((latest.get(entry.host)?.at ?? '') <= entry.at) latest.set(entry.host, { fallback: entry.fallback, at: entry.at });
+      } catch { /* a line being written */ }
+    }
+  }
+  return new Map([...latest].flatMap(([host, entry]) => entry.fallback ? [[host, { reason: entry.fallback, at: entry.at }] as const] : []));
+}
 
 /** A run's error as it crosses the process boundary, with every attempt the run made. */
 export function serializeTrialError(error: unknown, attempts: readonly TrialNoVerdict[]): SerializedTrialError {
