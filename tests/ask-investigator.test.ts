@@ -27,7 +27,7 @@ else if (mode === 'garbage') console.log('I looked around but have no JSON for y
 else console.log('Here is what I found.\\n' + JSON.stringify({ summary: 'The readme names the branch head.', evidence: ['README.md:1'] }));
 `;
 
-test('ask-investigator: one read-only headless session on the item head records its answer, or one failure line, on the item', async () => {
+test('integration:ask-investigator — one read-only headless session on the item head records its answer, or one failure line, on the item', async () => {
   const f = await priorityServer();
   try {
     const item = await f.ok('work', { ...fields, title: 'Investigate me' });
