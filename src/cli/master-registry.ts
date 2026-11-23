@@ -6,6 +6,7 @@ import { smokeRegistryAccount } from '../runner/roles.js';
 import type { SmokeResult } from '../runner/pi.js';
 import { seedPrices } from '../model/price-sheet.js';
 import { emptyRolePolicy, quotaStates, fleetRoles, roleLimit, rolePolicy, type AgentRegistry } from '../model/registry.js';
+import { unlaunchableLine, unlaunchableNext, workerAccounts } from '../master/worker-pool.js';
 
 export const registryHelp = [
   '  master registry               The fleet the control plane holds: every account with its runtime,',
@@ -189,8 +190,10 @@ export async function workersCommand(args: string[], api: RegistryCommandApi) {
   const concurrency = args[0] === undefined ? role.concurrency : Number(args[0]);
   if (!Number.isInteger(concurrency) || concurrency < 0) throw new Error('Use master workers N, the worker sessions each account of the worker role runs at once');
   if (concurrency !== role.concurrency) await api.write('agent-registry/roles', { role: { name: 'worker', accounts: role.accounts, concurrency, ...(role.policy ? { policy: role.policy } : {}) }, reason: `master workers ${concurrency}` });
-  return { allowed: roleLimit({ ...role, concurrency }), accounts: role.accounts, perAccount: concurrency,
-    line: `${roleLimit({ ...role, concurrency })} workers allowed: ${role.accounts.length} account${role.accounts.length === 1 ? '' : 's'} × ${concurrency} each; master status shows workers running/allowed` };
+  // GY-3730: only accounts a worker launch can start are capacity; the rest are named on the same line.
+  const { launchable, unlaunchable } = workerAccounts(current), allowed = roleLimit({ ...role, accounts: launchable, concurrency });
+  return { allowed, accounts: launchable, unlaunchable, perAccount: concurrency,
+    line: [`${allowed} workers allowed: ${launchable.length} account${launchable.length === 1 ? '' : 's'} × ${concurrency} each; master status shows workers running/allowed.`, unlaunchable.length ? `${unlaunchableLine(unlaunchable)} ${unlaunchableNext}.` : null].filter(Boolean).join(' ') };
 }
 
 /**
