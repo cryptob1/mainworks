@@ -11,6 +11,7 @@ const noteSchema = z.union([
 
 /** GY-3530: append an investigator's answer, or its one failure line, to the item's history. */
 export async function recordInvestigatorNote(services: Services, actor: Principal, id: string, body: unknown) {
+  demand(!['reader', 'reporter'].includes(actor.role) || actor.team === 'maintainer', 'A viewer reads items; ask a maintainer, a worker or the master to ask', 403);
   const details = noteSchema.parse(body);
   const kind = 'failure' in details ? 'investigator.failed' : 'investigator.answered';
   return services.engine.store.transaction(async (db, now) => {
