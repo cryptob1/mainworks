@@ -34,6 +34,7 @@ import { writeProjectMemory, recordedMasterMemory } from '../project-memory.js';
 import { mergeCandidateHold, mergeOpeningHold, openFlakyItem } from '../merge-writer/executor.js';
 import { mergeRecordKey, mergeWriterReads } from './cycle-merge-writer.js';
 import { runServedPreviewCases } from '../merge-writer/served-previews.js';
+import { postAlert } from './delivery-alerts.js';
 import { readServeRecord, serveRecordPath } from '../serve-app.js';
 import type { RelandInput } from '../merge-writer/serve-revert.js';
 import { worktreeRoot } from '../install/worktree-root.js';
@@ -47,10 +48,10 @@ import { runLogTail } from '../headless-session.js';
 import { transcriptRun } from '../model/sessions.js';
 import { refusedBodyDetail, type DaemonEffects } from './effects.js';
 import { composeServer } from './compose-recovery.js';
-import { leftoverDisk } from './leftovers.js';
+import { leftoverDisk, pathsBytes } from './leftovers.js';
 import { cpuCelsius } from './cpu-pressure.js';
 import { repairCliStamp, servedCliRelease, sweepCliReleases } from '../install/cli-release.js';
-import { declarationSlot, heavyJobLimit, heavyJobsDirectory, heldSlots, readHeavyDrain } from '../master/verification-slots.js';
+import { declarationSlot, heavyJobLimit, heavyJobsDirectory, heldSlots, readHeavyDrain, writeMachines } from '../master/verification-slots.js';
 import { collectUsage } from '../usage-capture.js';
 import { upstreamFiler } from './control-plane.js';
 import { trialRunsDirectory } from '../merge-writer/trial-run.js';
@@ -116,13 +117,15 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     if (memory && memory !== writtenMemory) await writeProjectMemory(root, state.projectMemory).then(() => { writtenMemory = memory; }, () => {});
     return writeDaemonState(current(), state);
   };
+  // GY-3691: where the working copies live: the attempt worktrees and the managed worktree root.
+  const workingCopyRoots = () => [worktreesDirectory(root), worktreeRoot(root, current())];
   const verifyWorkers = workerVerificationPump(root, () => current().hostId, mutate, () => worktreeRoot(root, current()));
   let cursor: DispatchCursor | null = null, ticking: Promise<unknown> | null = null;
   return Object.defineProperties({
     snapshot: async () => {
       const snapshot = await deps.snapshot();
       // Never holds up or fails the cycle; a missed take is retried on the next snapshot.
-      void verifyWorkers().catch(() => {});
+      void verifyWorkers(snapshot.work).catch(() => {});
       return snapshot;
     },
     // GY-3274: the lessons and product brief the master session wrote straight to the file, adopted each cycle.
@@ -199,7 +202,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
       }))).filter(entry => entry.changedAt > 0);
     },
     sweepCheckouts: () => sweepManagedCheckouts(root, current()),
-    stopOrphanedProcesses: () => stopOrphansOfRemovedWorktrees([worktreesDirectory(root), worktreeRoot(root, current())]),
+    stopOrphanedProcesses: () => stopOrphansOfRemovedWorktrees(workingCopyRoots()),
     diskVolumes: () => graphyardVolumes([root, dataDirectory(), worktreeRoot(root, current()), ...trialCheckoutRoots(), durableTemporaryRoot()]),
     reclaimDisk: () => reclaimGraphyardLeftovers(run),
     // GY-3553: the readings that clear environment blockers, the stamp repair, and the unblock itself.
@@ -230,7 +233,11 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     sessionName: unit => liveRuns().find(entry => entry.run.directory && `graphyard-run-${basename(entry.run.directory)}.scope` === unit)?.name,
     // GY-3407: the read runs beside the cycle, so a host taking its SSH timeout never slows the loop; the cycle takes the latest finished one.
     hostReadings: async previous => {
-      hostsReading ??= readHostReadings(previous, { run }).then(readings => { hostsLatest = readings; }, () => {}).finally(() => { hostsReading = null; });
+      hostsReading ??= readHostReadings(previous, { run }).then(readings => {
+        hostsLatest = readings;
+        // GY-3528: every install on this machine budgets heavy jobs from these readings.
+        writeMachines(heavyJobsDirectory(), readings.map(reading => ({ name: reading.host, local: reading.local, away: reading.away, cores: reading.cores, busy: reading.busy ?? null, celsius: reading.celsius })));
+      }, () => {}).finally(() => { hostsReading = null; });
       return hostsLatest ?? previous;
     },
     stopOrphanTrials: () => stopOrphanTrialContainers(run, trialContainerMaxAgeMs(current().run)),
@@ -243,7 +250,8 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
       releasesSweptAt = Date.now();
       return sweepCliReleases(installDirectory(installIdFor(current().repository)), run);
     },
-    leftoverDisk: () => leftoverDisk({ trialRuns: trialRunsDirectory(root), worktrees: worktreesDirectory(root), trialCheckouts: trialCheckoutRoots()[0]! }, run),
+    leftoverDisk: () => leftoverDisk({ trialRuns: trialRunsDirectory(root), worktrees: workingCopyRoots(), trialCheckouts: trialCheckoutRoots() }, run),
+    worktreeDisk: () => pathsBytes(workingCopyRoots()),
     // GY-2966: the compose install this host recorded for the repository, whose server the loop starts when the control plane stays unreachable.
     composeServer: async () => {
       const directory = installDirectory(installIdFor(current().repository));
@@ -312,11 +320,8 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     notify: async state => { await run('systemd-notify', state === 'ready' ? ['--ready'] : ['WATCHDOG=1']); },
     // GY-3233: control-plane faults go to the upstream install while the live configuration names one.
     get fileUpstream() { const upstream = current().upstream; return upstream ? upstreamFiler(upstream, fetcher) : undefined; },
-    // GY-3101: one plain-text line POSTed to the operator's alert webhook (run.alertUrl) — any receiver that takes a body, such as an ntfy topic.
-    alertWebhook: async text => {
-      const response = await fetcher(current().run.alertUrl!, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: text, signal: AbortSignal.timeout(10_000) });
-      if (!response.ok) throw new Error(`the alert webhook answered ${response.status} ${response.statusText}`.trim());
-    },
+    // GY-3101: one plain-text message POSTed to the operator's alert webhook (run.alertUrl) — any receiver that takes a body, such as an ntfy topic; GY-3529: a Slack incoming webhook gets {"text": ...}.
+    alertWebhook: text => postAlert(fetcher, current().run.alertUrl!, text),
     persist,
   } satisfies DaemonEffects, {});
 }

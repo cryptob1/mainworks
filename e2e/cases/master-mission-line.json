@@ -1,0 +1,15 @@
+{
+  "id": "master-mission-line",
+  "title": "Every master session starts from the shared mission paragraph",
+  "description": "Runs the real master-session launch against the executable credential-free runtime fixture through a stub Herdr: the started session's first message begins with the mission paragraph, which is identical for every project. No provider credentials, accounts or network.",
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "master session's first message carries the mission",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/master-mission-line.test.ts",
+      "timeoutSeconds": 600
+    }
+  ]
+}

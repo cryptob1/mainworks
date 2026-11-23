@@ -100,6 +100,10 @@ export async function readShardHosts(targets: readonly string[], run: ChildRun, 
 export class HostDroppedError extends Error {
   constructor(readonly host: string, readonly reason: string) { super(`host ${host} dropped a shard: ${reason}`); this.name = 'HostDroppedError'; }
 }
+/** GY-3528: a host whose heavy-job share is full right now; try other hosts and try it again once a shard finishes. */
+export class HostBusyError extends Error {
+  constructor(readonly host: string) { super(`host ${host} is at its heavy-job share`); this.name = 'HostBusyError'; }
+}
 
 /** One host's place in a trial: how many of its shards run at once, its reading, and how to run one there (absent: this machine). */
 export interface PlacedHost<R> { name: string; room: number; reading: HostReading; remote?: R }
@@ -117,12 +121,12 @@ export interface ShardPlacement { ran: string[]; queuedWhileIdle: number; droppe
  * re-queued first. `stopped` ends placement once a shard ended the trial; running shards are awaited.
  */
 export async function runShardsOnHosts<R>(input: { count: number; hosts: readonly PlacedHost<R>[]; breadth: number; run: (host: PlacedHost<R>, index: number) => Promise<void>; stopped?: () => boolean; pinned?: readonly boolean[] }): Promise<ShardPlacement> {
-  const queue = Array.from({ length: input.count }, (_, index) => index), ran: string[] = [], dropped = new Set<string>();
+  const queue = Array.from({ length: input.count }, (_, index) => index), ran: string[] = [], dropped = new Set<string>(), busy = new Set<string>();
   const running = new Map(input.hosts.map(host => [host.name, 0]));
   const inFlight = new Set<Promise<void>>();
   let queuedWhileIdle = 0, failure: { error: unknown } | null = null;
   // GY-3588: this machine is always usable up to its room; its launcher holds each container start while a sensor is hot.
-  const usable = (host: PlacedHost<R>) => host === input.hosts[0] || !dropped.has(host.name) && underHeatLimit(host.reading);
+  const usable = (host: PlacedHost<R>) => host === input.hosts[0] || !dropped.has(host.name) && !busy.has(host.name) && underHeatLimit(host.reading);
   const left = (host: PlacedHost<R>) => realFreeCores(host.reading) - running.get(host.name)! * input.breadth;
   const pick = (index: number) => {
     const open = input.hosts.filter(host => usable(host) && (!input.pinned?.[index] || host === input.hosts[0]) && running.get(host.name)! < host.room);
@@ -132,8 +136,9 @@ export async function runShardsOnHosts<R>(input: { count: number; hosts: readonl
   };
   const start = (host: PlacedHost<R>, index: number) => {
     running.set(host.name, running.get(host.name)! + 1);
-    const flight: Promise<void> = input.run(host, index).then(() => { ran[index] = host.name; }, error => {
-      if (error instanceof HostDroppedError && host !== input.hosts[0]) { dropped.add(host.name); queue.unshift(index); }
+    const flight: Promise<void> = input.run(host, index).then(() => { ran[index] = host.name; busy.clear(); }, error => {
+      if (error instanceof HostBusyError && host !== input.hosts[0]) { busy.add(host.name); queue.unshift(index); }
+      else if (error instanceof HostDroppedError && host !== input.hosts[0]) { dropped.add(host.name); busy.clear(); queue.unshift(index); }
       else failure ??= { error };
     }).finally(() => { running.set(host.name, running.get(host.name)! - 1); inFlight.delete(flight); });
     inFlight.add(flight);
@@ -146,7 +151,12 @@ export async function runShardsOnHosts<R>(input: { count: number; hosts: readonl
       // waited while a usable host idled counts as a placement wait.
       if (!input.pinned?.[queue[0]!] && input.hosts.some(other => usable(other) && running.get(other.name) === 0)) queuedWhileIdle++;
     }
-    if (!inFlight.size) break;
+    if (!inFlight.size) {
+      if (!busy.size || failure || input.stopped?.()) break;
+      busy.clear();
+      await new Promise(done => setTimeout(done, 25));
+      continue;
+    }
     await Promise.race(inFlight);
   }
   const failed = failure as { error: unknown } | null;

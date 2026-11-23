@@ -17,6 +17,8 @@ import { versionCommands } from './version.js';
 import { upgradeCommands } from './upgrade.js';
 import { hostCommands } from './hosts.js';
 import { benchCommands } from './bench.js';
+import { teamAccessCommands } from './team-access.js';
+import { infraCommands } from './infra.js';
 import { COMMAND_NAME, PRODUCT_NAME } from '../model/product.js';
 
 /**
@@ -27,7 +29,7 @@ export const commands: readonly CliCommand[] = [
   ...installCommands, ...dbCommands, ...masterCommands, ...workCommands, ...admissionAuditCommands, ...policyCommands,
   ...deliveryCommands, ...scenarioCommands,
   ...operatorAgentCommands, ...leaseCommands, ...workspaceCommands,
-  ...reviewCommands, ...guideCommands, ...versionCommands, ...upgradeCommands, ...hostCommands, ...benchCommands,
+  ...reviewCommands, ...guideCommands, ...versionCommands, ...upgradeCommands, ...hostCommands, ...benchCommands, ...teamAccessCommands, ...infraCommands,
 ];
 
 export function renderHelp() {

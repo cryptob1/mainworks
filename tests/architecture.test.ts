@@ -372,7 +372,8 @@ test('unit:git-network-door-baseline — the allowlist is exactly the set that s
 
 test('unit:architecture — source files never call the GitHub API or mint App installation tokens', async () => {
   for (const [file, text] of await scanCheckout()) {
-    if (!file.startsWith('src/')) continue;
+    // GY-3515: the owner-approved infra route creates the one repository a grant names; nothing else calls GitHub.
+    if (!file.startsWith('src/') || file === 'src/infra-access.ts') continue;
     assert.doesNotMatch(text, /api\.github\.com/, `${file} must not call api.github.com`);
     assert.doesNotMatch(text, /\/app\/installations\/[^/\s]+\/access_tokens/, `${file} must not request a GitHub App installation token`);
     assert.doesNotMatch(text, /mintPushToken|installationToken\s*\(/, `${file} must not mint an App installation token`);
