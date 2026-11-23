@@ -8,6 +8,7 @@ import { checkoutRelease, publishedImages } from '../release.js';
 import { localAdapter } from './local.js';
 import { provisionTrialAppArmor, provisionTrialImage, trialAppArmorPlan, trialImagePlan } from './trial-image.js';
 import { setting } from '../setting.js';
+import { timedPull } from './image-pulls.js';
 
 /** GY-3438: Docker's cpu_shares for the server and database: CPUWeight 1000 (controlPlaneWeight) under cgroup v2 (weight = 1 + (shares - 2) * 9999 / 262142), above every trial container's default. */
 const composeCpuShares = Math.ceil((controlPlaneWeight - 1) * 262142 / 9999) + 2;
@@ -353,7 +354,7 @@ export const composeAdapter: ProviderAdapter = {
     if (/:[0-9a-f]{12}$/.test(ctx.image) && (await ctx.transport.exec('docker', ['image', 'inspect', ctx.image], { allowFailure: true })).code === 0) return;
     const published = publishedSourceImages(ctx.sourceRoot);
     await provisionTrialImage(ctx, published?.trial ?? null);
-    if (published && (await ctx.transport.exec('docker', ['image', 'pull', published.server], { allowFailure: true, timeout: 1_800_000 })).code === 0) {
+    if (published && await timedPull(ctx.transport, published.server)) {
       // The install keeps naming, pruning and rolling back its own tag; the registry's name is dropped, the layers stay.
       await ctx.transport.exec('docker', ['tag', published.server, ctx.image]);
       await ctx.transport.exec('docker', ['image', 'rm', published.server], { allowFailure: true });

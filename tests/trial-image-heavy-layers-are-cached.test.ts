@@ -43,3 +43,18 @@ test('unit:trial-image-heavy-layers-are-cached — no per-commit ARG, LABEL or s
   assert.match(build, / --cache-to type=registry,ref=ghcr\.io\/cryptob1\/graphyard-trial:buildcache,mode=max /);
   assert.match(readFileSync(new URL('../.github/workflows/publish.yml', import.meta.url), 'utf8'), /docker\/setup-buildx-action/, 'the workflow selects a buildx builder that can export a registry cache');
 });
+
+test('unit:trial-image-heavy-layers-are-cached — each pull is timed for the deploy restart line, and a pull over five minutes is one attention line', async () => {
+  const { mkdtempSync } = await import('node:fs'), { tmpdir } = await import('node:os'), { join } = await import('node:path');
+  process.env.GRAPHYARD_VERIFICATION_SLOTS_DIR = mkdtempSync(join(tmpdir(), 'gy-pulls-'));
+  const { timedPull, readImagePulls, pullLine, slowPullAttention } = await import('../src/install/image-pulls.js');
+  let clock = Date.parse('2026-11-23T12:00:00Z');
+  const pull = (ms: number) => ({ exec: async () => { clock += ms; return { code: 0, stdout: '', stderr: '' }; } });
+  assert.equal(await timedPull(pull(7 * 60_000), 'ghcr.io/cryptob1/graphyard-trial:aaa', () => clock), true);
+  assert.deepEqual(slowPullAttention(readImagePulls()).map(line => line.text), ['ghcr.io/cryptob1/graphyard-trial took 7m 0s to pull, over 5 minutes: its layers were not reused.']);
+  const since = clock;
+  await timedPull(pull(12_000), 'ghcr.io/cryptob1/graphyard-trial:bbb', () => clock);
+  await timedPull(pull(3_000), 'ghcr.io/cryptob1/graphyard:bbb', () => clock);
+  assert.equal(pullLine(readImagePulls(), since), 'Image pulls: ghcr.io/cryptob1/graphyard-trial took 12s; ghcr.io/cryptob1/graphyard took 3s');
+  assert.deepEqual(slowPullAttention(readImagePulls()), [], 'a fast pull of the same image clears the attention line');
+});
