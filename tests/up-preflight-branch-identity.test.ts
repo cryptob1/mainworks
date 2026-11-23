@@ -53,7 +53,7 @@ const onboardingFiles = async (root: string) => {
   await writeFile(join(root, 'graphyard.json'), '{}\n');
 };
 
-test("unit:tests/up-preflight-branch-identity.test.ts — up refuses --base-branch mainworks and graphyard/x before any action runs", async () => {
+test("unit:tests/up-preflight-branch-identity.test.ts — up refuses --base-branch graphyard and graphyard/x before any action runs", async () => {
   const root = await temporaryDirectory('up-preflight-namespace');
   const calls: string[][] = [];
   const events: UpEvent[] = [];
@@ -73,7 +73,7 @@ test("unit:tests/up-preflight-branch-identity.test.ts — up refuses --base-bran
     calls.length = 0; events.length = 0;
     const result = await runUp({ repository: 'owner/project', provider: 'compose', agent: false, master: 'claude', baseBranch: branch }, deps);
     assert.equal(result.ok, false, `${branch} is refused`);
-    assert.match(result.next, /--base-branch mainworks[/\w.-]* is Mainworks's own branch namespace/);
+    assert.match(result.next, /--base-branch graphyard[/\w.-]* is Mainworks's own branch namespace/);
     assert.match(result.next, new RegExp(onboardingBranch));
     assert.deepEqual(calls, [], `${branch}: no command ran before the refusal`);
     assert.ok(events.every(event => event.kind !== 'step'), `${branch}: no step ran: ${JSON.stringify(events)}`);

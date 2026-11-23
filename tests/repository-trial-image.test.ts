@@ -156,7 +156,7 @@ test('unit:tests/repository-trial-image.test.ts — a build that fails is a tria
   assert.equal(trialHostFaultHost(failed), null, 'a build fault is no fetch fault');
   const item = trialImageFaultItem('owner/game');
   assert.match(item.title, /Merge trials cannot build owner\/game's trial image/);
-  assert.match(item.description, /mainworks\.trial\.Dockerfile/);
+  assert.match(item.description, /graphyard\.trial\.Dockerfile/);
 });
 
 // AC-1: the real merge-trial path with a stub docker and a stub gofake standing in for the tool the

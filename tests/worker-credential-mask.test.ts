@@ -102,7 +102,7 @@ test('unit:credential-mask-covers-recorded-credential-locations — the mask gat
       process.env.GRAPHYARD_CONFIG_HOME = join(base, 'from-env');
       assert.equal(credentialMaskFor({}, {}).configHome, join(base, 'from-env'), 'GRAPHYARD_CONFIG_HOME names the config home');
       delete process.env.GRAPHYARD_CONFIG_HOME;
-      assert.match(credentialMaskFor({}, {}).configHome, /[/]\.config[/]mainworks$/, 'the default is ~/.config/graphyard');
+      assert.match(credentialMaskFor({}, {}).configHome, /[/]\.config[/]graphyard$/, 'the default is ~/.config/graphyard');
     } finally { if (saved === undefined) delete process.env.GRAPHYARD_CONFIG_HOME; else process.env.GRAPHYARD_CONFIG_HOME = saved; }
   } finally { rmSync(base, { recursive: true, force: true }); }
 });

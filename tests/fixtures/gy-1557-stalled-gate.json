@@ -21,7 +21,7 @@
       { "at": "2026-10-08T09:58:09.790Z", "base": "2e4c4eddc1e6921b3aa954e275df6125ce0e4ec4", "baseSha": "ac2d45bde8092845e920b22a6ad969bcd049be7a" }
     ],
     "movedAt": "2026-10-08T09:58:45.924Z",
-    "moved": "the loop requested the sync rework decision onto base tip 2e4c4eddc1e6 from the control plane's confirmed conflict (mainworks-risk-lane approved and applied it at 09:58:45)"
+    "moved": "the loop requested the sync rework decision onto base tip 2e4c4eddc1e6 from the control plane's confirmed conflict (graphyard-risk-lane approved and applied it at 09:58:45)"
   },
   {
     "id": "unsubmitted-attempt|GY-1549|2026-10-08T16:39:52.678Z",
@@ -55,6 +55,6 @@
     "mergeable": false,
     "conflicting": true,
     "movedAt": "2026-10-08T18:26:06.498Z",
-    "moved": "the loop requested the sync rework decision from GitHub's conflict reading at 18:26:01 (mainworks-risk-lane approved and applied it at 18:26:06)"
+    "moved": "the loop requested the sync rework decision from GitHub's conflict reading at 18:26:01 (graphyard-risk-lane approved and applied it at 18:26:06)"
   }
 ]

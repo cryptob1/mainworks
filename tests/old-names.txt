@@ -103,3 +103,10 @@ cryptob1/Graphyard
 mirror/graphyard:
 \bgraphyard-(acme-app|cryptob1|fixture-status|gy-\d+-)
 DATABASE graphyard\b
+# Recorded historical files: a predecessor release's source and captured runs, kept byte for byte
+path tests/fixtures/deploy-predecessor/
+path tests/fixtures/gy-1557-stalled-gate.json
+path tests/fixtures/gy-1907-slow-tick-receipt/
+\.config\[/\]graphyard
+graphyard\\\.trial\\\.Dockerfile
+--base-branch graphyard\b
