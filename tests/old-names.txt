@@ -120,3 +120,12 @@ graphyard-(delivery|release-candidate)\.yml
 \bgraphyard-trial-[a-z0-9-]+-[0-9a-f]{7}-[0-9a-f]{8}\b
 \(GRAPHYARD\|MAINWORKS\)_
 \bgraphyard-\*
+# GY-3744: lines a host helper prepared before the rename prints, which the coordinator still reads
+\bgraphyard-check\b
+\bgraphyard trial container\b
+\(\?:graphyard\|
+graphyard\\\|mainworks
+# Trial images built before the rename, which disk use still counts and clears
+\(mainworks\|graphyard\)-
+'graphyard-trial'
+images: graphyard-trial
