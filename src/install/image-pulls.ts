@@ -7,7 +7,7 @@ import { heavyJobsDirectory } from '../master/verification-slots.js';
 import type { Transport } from './transport.js';
 
 export interface ImagePull { image: string; ms: number; at: string }
-export const slowPullMs = 5 * 60_000;
+const slowPullMs = 5 * 60_000;
 const pullsFile = () => join(heavyJobsDirectory(), 'image-pulls.json');
 const repository = (image: string) => image.replace(/:[^:/]+$/, '');
 

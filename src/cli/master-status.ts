@@ -358,7 +358,7 @@ export function reviewLaunchAttention(open: readonly Work[], cursor: Pick<Dispat
 /** The registry as the worker count reads it: the view's roles under their role names. */
 const workerFleet = (fleet: FleetView | null) => fleet?.roles ? { runtimes: fleet.runtimes ?? [], accounts: fleet.accounts ?? [], roles: fleet.roles.map(role => ({ ...role, name: role.role })) } : null;
 /** GY-3730: one attention line naming the worker accounts no worker launch can start; they are not counted as workers. */
-export const unlaunchableWorkerAttention = (fleet: FleetView | null) => { const fleetView = workerFleet(fleet), line = fleetView && unlaunchableLine(workerAccounts(fleetView).unlaunchable);
+const unlaunchableWorkerAttention = (fleet: FleetView | null) => { const fleetView = workerFleet(fleet), line = fleetView && unlaunchableLine(workerAccounts(fleetView).unlaunchable);
   return line ? [{ subject: 'workers', text: line, next: unlaunchableNext }] : []; };
 export const loggedOutAttention = (fleet: Pick<FleetView, 'accounts'> | null) => (fleet?.accounts ?? []).filter(account => account.enabled && account.roles.length && account.loggedIn === false && account.ineligible).map(account =>
   ({ subject: `account ${account.name}`, text: `${account.ineligible} — skipped for ${account.roles.map(entry => entry.role).join(', ')}`, next: `Log ${account.name} in again; the hold lifts when its probe reads the new login, or clear it with mainworks master registry account quota ${account.name} available --reason R` }));
