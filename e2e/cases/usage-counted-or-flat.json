@@ -1,0 +1,14 @@
+{
+  "id": "usage-counted-or-flat",
+  "title": "Flat-plan accounts read 'flat plan' and unmetered sessions one line per account",
+  "description": "Seeded usage for an account with a monthly fee on an unpriced model, an account with neither price nor fee, and two sessions on a runtime that reports no tokens: master usage and the Costs API show 'flat plan' for the fee account, 'price unknown' for the other, and one line '<account>: 2 sessions not metered by <runtime>' outside the totals line.",
+  "tags": ["api", "cli"],
+  "target": "any",
+  "required": false,
+  "steps": [{
+    "kind": "command",
+    "name": "usage counted or flat",
+    "run": "node --import tsx tests/helpers/run-tests.ts tests/usage-counted-or-flat.test.ts",
+    "timeoutSeconds": 300
+  }]
+}
