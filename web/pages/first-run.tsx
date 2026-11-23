@@ -1,70 +1,24 @@
-import { useEffect, useState } from 'react';
-import { draftFirstRunTask, firstRunState, type SmallIssue } from '../../src/model/first-run';
+import { useState } from 'react';
+import { firstRunState } from '../../src/model/first-run';
 import { COMMAND_NAME } from '../../src/model/product';
 import { friendlyName } from '../fun';
 import type { Dashboard } from './dashboard';
-import WorkDetails from './work-details';
 
 /**
  * First-run page (GY-3603): shown instead of an empty Home when an install has no merged work.
- * Walks a new person through four steps — connect repository, confirm Builder via live request,
- * pick one small open issue or type a one-line fix, and watch the task merge — each stating its
- * own terminal equivalent. Matches the approved Start prototype.
+ * Shows four steps — connect repository, confirm Builder via live request, start one small task,
+ * watch it merge — with the current one marked, done ones ticked with their result, and each
+ * step's terminal equivalent.
  */
 export default function FirstRunPage(dashboard: Dashboard) {
-  const { status, work, api, refresh, sessionEpoch, setView } = dashboard;
-  const [startedId, setStartedId] = useState<string | null>(null);
+  const { status, work, refresh, sessionEpoch, setView, setCreating, setSelected } = dashboard;
   const [checking, setChecking] = useState(false);
-  const [issues, setIssues] = useState<SmallIssue[] | null>(null);
-  const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
-  const [ownText, setOwnText] = useState('');
-  const [starting, setStarting] = useState(false);
-  const [submitError, setSubmitError] = useState('');
-
-  const state = firstRunState(status, work, startedId);
+  const state = firstRunState(status, work);
   const builderName = state.builder ? friendlyName(state.builder.name) ?? state.builder.name : 'Builder';
-
-  useEffect(() => {
-    if (state.currentStep !== 3 || !state.repository) return;
-    let active = true;
-    void api('first-run/issues').then(
-      (body: { issues?: SmallIssue[] }) => {
-        if (!active) return;
-        const list = Array.isArray(body?.issues) ? body.issues.slice(0, 3) : [];
-        setIssues(list);
-        setSelectedNumber(prev => (prev !== null && list.some(i => i.number === prev) ? prev : list[0]?.number ?? null));
-      },
-      () => { if (active) setIssues([]); },
-    );
-    return () => { active = false; };
-  }, [state.currentStep, state.repository]);
 
   const recheck = async () => {
     setChecking(true);
     try { await refresh(sessionEpoch.current); } finally { setChecking(false); }
-  };
-
-  const selectedIssue = ownText.trim() ? null : (issues ?? []).find(i => i.number === selectedNumber) ?? null;
-  const canStart = !!ownText.trim() || !!selectedIssue;
-
-  const startTask = async () => {
-    if (!canStart || starting) return;
-    setStarting(true);
-    setSubmitError('');
-    const epoch = sessionEpoch.current;
-    try {
-      const body = ownText.trim() ? draftFirstRunTask({ text: ownText.trim() }) : draftFirstRunTask({ issue: selectedIssue! });
-      const created = await api('work', body);
-      if (epoch !== sessionEpoch.current) return;
-      await api(`work/${encodeURIComponent(created.id)}/ready`, { expectedRevision: created.revision, reason: 'Started from first-run setup' });
-      if (epoch !== sessionEpoch.current) return;
-      setStartedId(created.id);
-      await refresh(epoch);
-    } catch (err) {
-      if (epoch === sessionEpoch.current) setSubmitError((err as Error).message);
-    } finally {
-      if (epoch === sessionEpoch.current) setStarting(false);
-    }
   };
 
   const steps: { number: 1 | 2 | 3 | 4; label: string; done: boolean; detail: string | null }[] = [
@@ -143,28 +97,9 @@ export default function FirstRunPage(dashboard: Dashboard) {
 
       {state.currentStep === 3 && <>
         <h1 id="first-run-title">Ship one small change</h1>
-        <p className="first-run-lead">Pick an open issue or type a one-line fix. {builderName} will branch, write a test, and open a pull request you can read before it merges.</p>
-        <fieldset className="first-run-issues">
-          <legend>Small open issues in this repository</legend>
-          {issues === null && <p className="muted">Reading open issues…</p>}
-          {issues !== null && issues.length === 0 && <p className="muted">No open issues found in this repository. Describe a small change below.</p>}
-          {(issues ?? []).map(issue => {
-            const checked = !ownText.trim() && selectedNumber === issue.number;
-            return <label key={issue.number} className={checked ? 'first-run-issue selected' : 'first-run-issue'}>
-              <input type="radio" name="first-run-pick" checked={checked} onChange={() => { setSelectedNumber(issue.number); setOwnText(''); }}/>
-              <span><strong>#{issue.number}</strong> {issue.title}</span>
-            </label>;
-          })}
-        </fieldset>
-        <div className="first-run-own">
-          <label htmlFor="first-run-own">Or describe your own</label>
-          <input id="first-run-own" placeholder="For example: the footer year is hard-coded" value={ownText} onChange={e => setOwnText(e.currentTarget.value)}/>
-        </div>
-        {submitError && <p role="alert" className="notice danger">{submitError}</p>}
+        <p className="first-run-lead">Describe one small change. {builderName} will branch, write a test, and open a pull request you can read before it merges.</p>
         <div className="first-run-actions">
-          <button type="button" className="first-run-cta" disabled={!canStart || starting} onClick={() => void startTask()}>
-            {starting ? `Starting ${builderName}…` : ownText.trim() ? `Start ${builderName} on this change` : selectedIssue ? `Start ${builderName} on #${selectedIssue.number}` : `Start ${builderName} on this change`}
-          </button>
+          <button type="button" className="first-run-cta" onClick={() => setCreating(true)}>New task</button>
           <span className="muted">Nothing merges until its tests and a second agent's review pass.</span>
         </div>
         <div className="first-run-terminal" data-terminal-equivalent>
@@ -173,7 +108,11 @@ export default function FirstRunPage(dashboard: Dashboard) {
       </>}
 
       {state.currentStep === 4 && state.activeTask && <>
-        <WorkDetails key={state.activeTask.id} {...dashboard} item={state.activeTask} embedded defaultTab="Live session"/>
+        <h1 id="first-run-title">Watch it merge</h1>
+        <p className="first-run-lead">{builderName} is working on {state.activeTask.title}. This page becomes Home when it merges.</p>
+        <div className="first-run-actions">
+          <button type="button" className="first-run-cta" onClick={() => setSelected(state.activeTask!.id)}>Open the task</button>
+        </div>
         <div className="first-run-terminal" data-terminal-equivalent>
           Prefer a terminal? <code>{COMMAND_NAME} status {state.activeTask.key}</code> shows this task's gates and merge pipeline.
         </div>

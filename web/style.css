@@ -669,14 +669,6 @@ header.main-top-bar{height:auto;min-height:60px;display:flex;flex-wrap:wrap;alig
 .first-run-body{flex:3 1 480px;min-width:0;display:flex;flex-direction:column;gap:var(--space-4)}
 .first-run-body h1{margin:0;font-size:30px;font-weight:600;line-height:1.2}
 .first-run-lead{margin:0;font-size:var(--type-sentence);color:var(--text-2);overflow-wrap:anywhere}
-.first-run-issues{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;min-width:0}
-.first-run-issues legend{font-size:var(--type-small);color:var(--text-2);padding:0 0 8px}
-.first-run-issue{display:flex;gap:12px;align-items:center;min-height:52px;padding:8px 14px;border-radius:10px;border:1px solid var(--border);cursor:pointer;overflow-wrap:anywhere}
-.first-run-issue.selected{border-color:var(--shipped);background:color-mix(in srgb,var(--shipped) 12%,var(--surface))}
-.first-run-issue input[type=radio]{width:auto;flex:0 0 auto}
-.first-run-own{display:flex;flex-direction:column;gap:6px}
-.first-run-own label{font-size:var(--type-small);color:var(--text-2)}
-.first-run-own input{min-height:48px;width:100%;box-sizing:border-box;padding:0 14px;border-radius:10px}
 .first-run-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
 .first-run-cta{min-height:48px;padding:0 22px;border-radius:12px;font-weight:600}
 .first-run-secondary{min-height:48px;padding:0 18px;border-radius:12px;background:var(--surface);border:1px solid var(--border);color:var(--text);font-weight:500}
