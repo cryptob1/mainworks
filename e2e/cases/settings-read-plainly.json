@@ -1,0 +1,9 @@
+{
+  "id": "settings-read-plainly",
+  "title": "Settings, Invite and the Product brief read plainly",
+  "description": "At 1280px and 390px: Settings → Delivery shows no delivery.applications text or Mode row and reads 'No app to preview yet.' with no app declared, its Where it runs card still naming the one setting to add; Setup shows no 'Done' badge and no 'Coordinator', its loop step reading 'Mainworks is handing out work'; Agents has one fold named 'Advanced' and no first-run Setup link; the Invite dialog's first field is 'Name or email' with no Funnel or Tailscale text before Invite; a seeded brief renders its headings and list items as such, no line starting with '#' or '- '; nothing scrolls sideways.",
+  "tags": ["dashboard"],
+  "target": "any",
+  "required": false,
+  "steps": [{ "kind": "command", "name": "Read Settings, Invite and Product", "run": "npm run test:browser -- browser-tests/settings-read-plainly.spec.ts", "timeoutSeconds": 300 }]
+}

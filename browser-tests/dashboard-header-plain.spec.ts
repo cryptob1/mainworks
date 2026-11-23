@@ -69,7 +69,7 @@ for (const width of [1280, 390]) {
     try {
       const signIn = await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-owner' } });
       expect(signIn.status).toBe(200);
-      await page.goto(`/#sign-in=${(await signIn.json() as { code: string }).code}`);
+      await page.goto(`/#sign-in=${(await signIn.json() as { code: string }).code}&work`);
       await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
 
       // The strip: no agent session is live, the batch gate on main is one check running, nothing merged today.

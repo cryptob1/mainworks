@@ -16,7 +16,7 @@ test('e2e:team-access-served-url — Invite gives a link on the https address Ta
     });
     const page = await context.newPage();
     const { code } = await (await fetch(install.base + '/api/sign-in-links', { method: 'POST', headers: { Authorization: `Bearer ${install.operator}` } })).json() as { code: string };
-    await page.goto(`${baseURL}/#sign-in=${code}`);
+    await page.goto(`${baseURL}/#sign-in=${code}&work`);
     // GY-3514: the top bar's Invite dialog gives one link on the served address.
     await page.getByRole('button', { name: 'Invite', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Invite' });

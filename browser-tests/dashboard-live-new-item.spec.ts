@@ -40,7 +40,7 @@ test('e2e:dashboard-live-new-item — an item filed through the CLI, and its sta
       await route.fulfill({ response }).catch(() => {});
     });
     const { code } = await (await fetch(http.url + '/api/sign-in-links', { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string };
-    await page.goto('/#sign-in=' + code);
+    await page.goto('/#sign-in=' + code + '&work');
     await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('[data-filter="shipped-today"]')).toBeVisible();
     remote = true;

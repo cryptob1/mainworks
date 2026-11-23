@@ -35,6 +35,7 @@ export type Section = typeof sections[number]['id'];
 export const oldRouteRedirects: Record<string, string> = {
   master: 'lead',
   settings: 'agents',
+  start: 'home',
 };
 
 /**
@@ -68,7 +69,7 @@ export const views: readonly View[] = [
   { id: 'scenarios', icon: '✓', label: 'Test cases', section: 'work', advanced: true, visible: dashboard => role(dashboard) === 'admin' || configured(dashboard.features.scenarios), render: dashboard => <ScenarioLibrary api={dashboard.api} canEdit={role(dashboard) === 'admin'}/> },
   { id: 'lead', icon: '▶', label: 'Lead', section: 'lead', render: dashboard => <MasterPage {...dashboard}/> },
   { id: 'product', icon: '◎', label: 'Product', section: 'lead', render: dashboard => <ProductPage api={dashboard.api}/> },
-  { id: 'agents', icon: '⛭', label: 'Agents', section: 'settings', visible: dashboard => ['admin', 'coordinator', 'reader', 'slice-lead'].includes(role(dashboard)), render: dashboard => <FleetPage api={dashboard.api} status={dashboard.status} observedAt={dashboard.observedAt} onOpenSetup={role(dashboard) === 'admin' ? () => dashboard.setView('setup') : undefined}/> },
+  { id: 'agents', icon: '⛭', label: 'Agents', section: 'settings', visible: dashboard => ['admin', 'coordinator', 'reader', 'slice-lead'].includes(role(dashboard)), render: dashboard => <FleetPage api={dashboard.api} status={dashboard.status} observedAt={dashboard.observedAt}/> },
   { id: 'workers', icon: '⚙', label: 'Workers', section: 'settings', render: dashboard => <WorkersPage {...dashboard}/> },
   { id: 'costs', icon: '$', label: 'Costs', section: 'settings', render: dashboard => <CostsPage api={dashboard.api} observedAt={dashboard.observedAt}/> },
   { id: 'setup', icon: '✔', label: 'Setup', section: 'settings', adminOnly: true, render: dashboard => <SetupPage status={dashboard.status} api={dashboard.api} setView={dashboard.setView}/> },
