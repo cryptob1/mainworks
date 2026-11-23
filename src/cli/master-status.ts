@@ -13,7 +13,7 @@ import { cpuPerMergedItem, cpuWaiting } from '../daemon/cpu-pressure.js';
 import { heatReading } from '../merge-writer/trial-load.js';
 import { overloadAlarm, overloaded, sessionFigures } from '../session-share.js';
 import { profileHealth, repeatedLaunchFailures } from '../daemon/sessions.js';
-import { workersAllowed } from '../master/worker-pool.js';
+import { unlaunchableLine, unlaunchableNext, workerAccounts, workersAllowed } from '../master/worker-pool.js';
 import { fixedHeavyJobLimit, heavyDrainLine, heavyJobBudget, heavyJobLimit, heavyJobsDirectory, imbalanceLine, readHeavyDrain, readMachines, readStrictCap, shardsOnHost, slotHolders } from '../master/verification-slots.js';
 import { budgetLine, fallbackLine, machineLine } from '../model/machine-load.js';
 import { lastHostFallbacks } from '../merge-writer/trial-run.js';
@@ -258,7 +258,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     caretaker: state?.caretaker ? `Last ran ${formatAge(Date.parse(state.caretaker.at), now)} ago: ${state.caretaker.result}` : 'Not run yet',
     // GY-3095: the pipeline has stopped where a role cannot launch; each line names the role, the refusal, how long it has lasted and the next command.
     // GY-3204: and each application whose versionUrl lags main or fails to answer.
-    attention: [...humanAttention, ...reworkCaps, ...leaseLosses, ...blockerAttention, ...drained, ...fixedLimitAttention, ...imbalanceAttention, ...growth, ...trialImageFault, ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now) : []), ...backedOff, ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...wrongModelAttention(fleet), ...allowanceAttention(fleet, now), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(readRemoteShardRuns(root)), ...gateStalled, ...overloadAttention, ...flowAttention, ...linkAttention, ...(bench?.attention ? [bench.attention] : []), ...repeatedFailureAttention(snapshot.work, now), ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
+    attention: [...humanAttention, ...reworkCaps, ...leaseLosses, ...blockerAttention, ...drained, ...fixedLimitAttention, ...imbalanceAttention, ...growth, ...trialImageFault, ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now) : []), ...backedOff, ...unlaunchableWorkerAttention(fleet), ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...wrongModelAttention(fleet), ...allowanceAttention(fleet, now), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(readRemoteShardRuns(root)), ...gateStalled, ...overloadAttention, ...flowAttention, ...linkAttention, ...(bench?.attention ? [bench.attention] : []), ...repeatedFailureAttention(snapshot.work, now), ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
     // GY-3199: the control plane's own update record — the Graphyard commit this install runs, its
     // last check and last update, the step of a failed upgrade, and the staleness the daily
     // diagnostics reports (a check over a day old, or a verified commit first seen over a day ago
@@ -327,7 +327,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     // GY-3285: worker sessions running of the number the registry worker role allows (master workers N sets it).
     // GY-3499: what each account has left, one plain sentence each.
     accounts: accountAllowances(fleet, now),
-    workers: `${sessions.filter(session => session.kind === 'implementation').length}/${workersAllowed(master, fleet?.roles ? { roles: fleet.roles.map(role => ({ ...role, name: role.role })) } : null)}`,
+    workers: `${sessions.filter(session => session.kind === 'implementation').length}/${workersAllowed(master, workerFleet(fleet))}`,
     sessions,
     freeWorkers: health.filter(entry => entry.healthy).map(entry => entry.profile.name),
   };
@@ -347,6 +347,11 @@ export function reviewLaunchAttention(open: readonly Work[], cursor: Pick<Dispat
   });
 }
 /** GY-3441: each enabled account serving a role that is held as not logged in, with why, so a skipped reviewer is named. */
+/** The registry as the worker count reads it: the view's roles under their role names. */
+const workerFleet = (fleet: FleetView | null) => fleet?.roles ? { runtimes: fleet.runtimes ?? [], accounts: fleet.accounts ?? [], roles: fleet.roles.map(role => ({ ...role, name: role.role })) } : null;
+/** GY-3730: one attention line naming the worker accounts no worker launch can start; they are not counted as workers. */
+export const unlaunchableWorkerAttention = (fleet: FleetView | null) => { const fleetView = workerFleet(fleet), line = fleetView && unlaunchableLine(workerAccounts(fleetView).unlaunchable);
+  return line ? [{ subject: 'workers', text: line, next: unlaunchableNext }] : []; };
 export const loggedOutAttention = (fleet: Pick<FleetView, 'accounts'> | null) => (fleet?.accounts ?? []).filter(account => account.enabled && account.roles.length && account.loggedIn === false && account.ineligible).map(account =>
   ({ subject: `account ${account.name}`, text: `${account.ineligible} — skipped for ${account.roles.map(entry => entry.role).join(', ')}`, next: `Log ${account.name} in again; the hold lifts when its probe reads the new login, or clear it with graphyard master registry account quota ${account.name} available --reason R` }));
 /** GY-3499: `NAME: about 24% of this week left, back Sun 22 Nov 05:00`, one line per account. */

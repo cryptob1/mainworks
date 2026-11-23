@@ -958,12 +958,14 @@ async function launchWorker(cycle: Cycle, item: Work, key: string, profile: Work
   try {
     // Every run the dispatch starts is recorded on the item as it starts, a handed-off or failed one with how it ended (GY-3259).
     const onRun = async (run: WorkerRun) => effects.recordSession?.(item, workerRunHandle(item, profile, config.hostId, run));
-    const launched = await effects.dispatch(item, profile, herdr.agents, snapshot, { diagnosis: diagnosisSection(state.failureRuns[item.id]), canaries, exclude, onRuntime: kind => { runtime = kind; }, onRun }) as { run?: string; epoch?: number; runtime?: string | null; initialHead?: string | null; runtimeStartedAt?: string | null; canary?: { runtime: string; failed: string | null } | null } | undefined;
+    const launched = await effects.dispatch(item, profile, herdr.agents, snapshot, { diagnosis: diagnosisSection(state.failureRuns[item.id]), canaries, exclude, onRuntime: kind => { runtime = kind; }, onRun }) as { run?: string; epoch?: number; runtime?: string | null; initialHead?: string | null; runtimeStartedAt?: string | null; canary?: { runtime: string; failed: string | null } | null; account?: { environment: string } | null } | undefined;
     await settle(launched?.canary, launched?.epoch, launched?.runtimeStartedAt);
     // The session's handle is what the close step reads to end it once its attempt does: the run's, with when it started and from which commit.
     if (launched?.run && launched.epoch) await effects.recordSession?.(item, { ...workerRunHandle(item, profile, config.hostId, { epoch: launched.epoch, run: launched.run, runtime: launched.runtime ?? profile.kind ?? profile.mode, account: null, outcome: null }),
       ...(launched.runtimeStartedAt ? { runtimeStartedAt: launched.runtimeStartedAt } : {}), ...(launched.initialHead ? { initialHead: launched.initialHead } : {}) })?.catch(() => undefined);
-    sink.push(await entry('done', `Dispatched ${item.key} to ${profile.name}; the worker launcher claimed under ${profile.principal}`));
+    // GY-3730: the line names the registry account that builds and its runtime; the profile is only the identity it claims under.
+    const builder = launched?.account ? `${launched.account.environment} (${launched.runtime ?? 'unknown runtime'})` : profile.name;
+    sink.push(await entry('done', `Dispatched ${item.key} to ${builder}; the worker launcher claimed under ${profile.principal}`));
   } catch (error) {
     await settle(null, undefined, undefined);
     const full = capacityRefusal(error);

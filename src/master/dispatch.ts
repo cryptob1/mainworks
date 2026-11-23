@@ -624,12 +624,12 @@ export function worktreeFailure(key: string, epoch: number, error: unknown, cliP
 /** The launch's renewal of its claim (GY-1287): the worker's own `heartbeat`, under the profile's credential. */
 export async function renewWorkerLaunch(root: string, key: string, epoch: number, profileName: string, run: WorkerCommand = workerCommand) {
   const config = await loadMasterConfig(root); const profile = config.workers.find(worker => worker.name === profileName);
-  if (!profile || profile.mode !== 'launch' || !profile.kind || !profile.credentialFile) throw new Error('A complete launch profile is required');
+  if (!profile || profile.mode !== 'launch' || !profile.credentialFile) throw new Error('A complete launch profile is required');
   await run(process.execPath, [config.cliPath, 'heartbeat', key, String(epoch)], { cwd: root, env: workerEnvironment(config, profile) });
 }
 export async function releaseWorkerLaunch(root: string, key: string, epoch: number, profileName: string, blocker?: string, run: WorkerCommand = workerCommand) {
   const config = await loadMasterConfig(root); const profile = config.workers.find(worker => worker.name === profileName);
-  if (!profile || profile.mode !== 'launch' || !profile.kind || !profile.credentialFile) throw new Error('A complete launch profile is required');
+  if (!profile || profile.mode !== 'launch' || !profile.credentialFile) throw new Error('A complete launch profile is required');
   await readWorkerCredential(root, profile.credentialFile);
   await run(process.execPath, [config.cliPath, ...(blocker ? ['blocked', key, String(epoch), blocker] : ['unclaim', key, String(epoch)])], { cwd: root, env: workerEnvironment(config, profile) });
 }
@@ -641,7 +641,7 @@ export async function releaseWorkerLaunch(root: string, key: string, epoch: numb
  */
 export async function prepareWorkerLaunch(root: string, key: string, profileName: string, run: WorkerCommand = workerCommand, claimBy?: number, onClaimed?: ClaimedHook, cycle?: string): Promise<PreparedWorker> {
   const config = await loadMasterConfig(root); const profile = config.workers.find(worker => worker.name === profileName);
-  if (!profile || profile.mode !== 'launch' || !profile.kind || !profile.credentialFile) throw new Error('A complete launch profile is required');
+  if (!profile || profile.mode !== 'launch' || !profile.credentialFile) throw new Error('A complete launch profile is required');
   await readWorkerCredential(root, profile.credentialFile);
   const detected = await discover(root);
   if (!detected.repository) throw new Error('Worker launcher requires a recognized GitHub origin');
