@@ -95,7 +95,7 @@ export function keptTrialAheadOfReview(candidate: Work['candidate'], state: Merg
 /**
  * Whether the item is owed a merge at its current head — the queue's own `due` test: submitted (a
  * candidate the control plane observed itself, GY-1523), not done, not returned to a worker, with
- * the `build` gate passed as the control plane served it (GY-3164: the trial runs beside review,
+ * not held (GY-3728), with the `build` gate passed as the control plane served it (GY-3164: the trial runs beside review,
  * so the review gate no longer holds a head out of the queue; the landing still requires it).
  * A head the writer's own trial already refused (`trial failed`, GY-1524 AC-3) waits for its rework
  * rather than a second trial; one refused for another cause (a push rejected on an unmoved tip, a
@@ -108,7 +108,7 @@ export function keptTrialAheadOfReview(candidate: Work['candidate'], state: Merg
  */
 export function awaitsMerge(item: Work, ledger: Readonly<Record<string, MergeLedgerState>>, now: number): boolean {
   const candidate = item.candidate;
-  if (item.stage === 'done' || !item.submission || !candidate || item.observation?.source !== 'control-plane' || item.reworkRequested || item.observation?.merged) return false;
+  if (item.stage === 'done' || !item.submission || !candidate || item.observation?.source !== 'control-plane' || item.reworkRequested || item.hold || item.observation?.merged) return false;
   if (!gate(item, 'build') || (item.blocker?.startsWith(readOnlyTrialBlocker) || item.blocker?.startsWith(trialOverloadPrefix))) return false;
   const state = ledger[item.key];
   // GY-3164: the trial already passed; only the review gate still stands between the head and its landing.

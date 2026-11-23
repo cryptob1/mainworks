@@ -1,0 +1,11 @@
+{
+  "id": "flow-release-to-live",
+  "title": "Master status flow shows time from merge to live",
+  "description": "After a merge deploys, master status reads GET /api/flow and shows a live station with median, p90, at least one sample and the oldest merged change not yet serving.",
+  "tags": ["api", "regression"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "after a merge deploys, master status shows a live station with at least one sample", "run": "node --import tsx tests/helpers/run-tests.ts tests/flow-release-to-live.test.ts", "timeoutSeconds": 240 }
+  ]
+}

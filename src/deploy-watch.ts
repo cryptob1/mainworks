@@ -4,7 +4,7 @@ import { appOnboarding, type AppOnboarding } from './model/onboarding-work.js';
 // The master loop restarts onto the serving tip recorded here (daemon/run.ts restartCause).
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { takeLock } from './host-lock.js';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -24,15 +24,68 @@ import { stateDirectory } from './install/layout.js';
  * checkout whose origin names no repository) name none (GY-2955).
  */
 export interface DeployRecord { tip: string | null; failed: string | null; reason: string | null; at: string; restore?: string | null; attempts?: number; /** Retries the failed tip has had (GY-3703). */ retries?: number; repository?: string | null; /** This successful deploy selected a batch-gate verified tip. */ verified?: boolean }
+export interface DeployHistoryEntry { commit: string; at: string; repository?: string | null }
 export const deployRecordPath = (root: string) => join(stateDirectory(root), 'deploy.json');
+const deployHistoryPath = (root: string) => join(stateDirectory(root), 'deploy-history.jsonl');
 export function readDeployRecord(file: string): DeployRecord | null {
   if (!existsSync(file)) return null;
   try { return JSON.parse(readFileSync(file, 'utf8')) as DeployRecord; } catch { return null; }
 }
 async function writeDeployRecord(file: string, record: Omit<DeployRecord, 'at'>) {
+  const at = new Date().toISOString();
+  const history = join(dirname(file), 'deploy-history.jsonl');
   await mkdir(dirname(file), { recursive: true });
-  await writeFile(`${file}.tmp`, `${JSON.stringify({ ...record, reason: record.reason?.slice(0, 2000) ?? null, at: new Date().toISOString() }, null, 2)}\n`);
+  // Preserve the last healthy deploy's timestamp before a later write rewrites deploy.json.
+  if (!existsSync(history)) {
+    const previous = readDeployRecord(file);
+    if (previous?.tip && !previous.failed && !previous.restore) {
+      await appendFile(history, `${JSON.stringify({ commit: previous.tip, at: previous.at, repository: previous.repository ?? null })}\n`).catch(() => {});
+    }
+  }
+  await writeFile(`${file}.tmp`, `${JSON.stringify({ ...record, reason: record.reason?.slice(0, 2000) ?? null, at }, null, 2)}\n`);
   await rename(`${file}.tmp`, file);
+  // GY-3725: keep a history of serving deploys so flow numbers measure each merge to the first deploy that contains it.
+  if (record.tip && !record.failed && !record.restore) {
+    await appendFile(history, `${JSON.stringify({ commit: record.tip, at, repository: record.repository ?? null })}\n`).catch(() => {});
+  }
+}
+
+/**
+ * Serving deploy records for `root` (and `repository`, when named), oldest first, deduplicated to
+ * each commit's earliest serving time (GY-3725). Reads `deploy-history.jsonl` and `serve-history.jsonl`
+ * plus the current `deploy.json` and `served.json` so installs with no history file yet still measure.
+ */
+export function readDeployHistory(root: string, repository?: string | null): DeployHistoryEntry[] {
+  const entries: DeployHistoryEntry[] = [];
+  const isTime = (at: unknown): at is string => typeof at === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(at) && Number.isFinite(Date.parse(at));
+  const matchesRepo = (repo: string | null | undefined) => !repository || repo?.toLowerCase() === repository.toLowerCase();
+  const readLines = (file: string, checkRepo: boolean) => {
+    if (!existsSync(file)) return;
+    try {
+      for (const line of readFileSync(file, 'utf8').split('\n')) {
+        if (!line.trim()) continue;
+        try {
+          const parsed = JSON.parse(line) as Partial<DeployHistoryEntry>;
+          if (typeof parsed.commit === 'string' && /^[0-9a-f]{40}$/i.test(parsed.commit) && isTime(parsed.at)) {
+            if (!checkRepo || matchesRepo(parsed.repository)) entries.push({ commit: parsed.commit.toLowerCase(), at: parsed.at, repository: parsed.repository ?? null });
+          }
+        } catch { /* skip malformed line */ }
+      }
+    } catch { /* unreadable */ }
+  };
+  readLines(deployHistoryPath(root), true);
+  readLines(join(stateDirectory(root), 'serve-history.jsonl'), false);
+  const current = readDeployRecord(deployRecordPath(root));
+  if (current?.tip && /^[0-9a-f]{40}$/i.test(current.tip) && isTime(current.at) && matchesRepo(current.repository)) {
+    entries.push({ commit: current.tip.toLowerCase(), at: current.at, repository: current.repository ?? null });
+  }
+  const serve = readServeRecord(serveRecordPath(root));
+  if (serve?.commit && /^[0-9a-f]{40}$/i.test(serve.commit) && isTime(serve.at)) {
+    entries.push({ commit: serve.commit.toLowerCase(), at: serve.at });
+  }
+  entries.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  const seen = new Set<string>();
+  return entries.filter(entry => seen.has(entry.commit) ? false : (seen.add(entry.commit), true));
 }
 
 /**
