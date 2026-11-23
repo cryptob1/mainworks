@@ -65,7 +65,7 @@ test('e2e:loop-files-deploy-fault — a deploy failing at restart is filed once 
     persist: async () => {},
   };
   const state = emptyDaemonState(config), lines: string[] = [];
-  const key = `control-plane-upgrade:${c}:restart`;
+  const key = 'control-plane-upgrade:restart';
 
   await runCycle(config, state, effects, Date.now, undefined, line => lines.push(line));
   assert.equal(state.actions[key]?.state, 'done', `the create call is accepted: ${state.actions[key]?.detail}`);
