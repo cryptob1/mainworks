@@ -23,6 +23,8 @@ export interface UsageWindow {
   window: string;
   percent: number;
   resetsAt: string | null;
+  /** GY-3497: the window came from the provider's own limit list (Claude's `limits[]`), which the provider itself enforces: a reading at its ceiling holds the account. */
+  limitList?: true;
 }
 
 export interface ProviderUsageResult {
@@ -60,6 +62,27 @@ export function notReportedUsage(provider: string): ProviderUsageResult {
 /**
  * Claude Code usage adapter: parses Anthropic OAuth usage windows (5h, 7d).
  */
+const claudeWindowNames: Record<string, string | null> = { session: 'session', weekly_all: 'weekly' };
+/**
+ * GY-3497: one window per entry of Claude's own limit list (`limits[]` in the OAuth usage answer) —
+ * the session allowance, the weekly one, and each model-scoped weekly named by its model. The
+ * provider enforces this list itself, so each window carries `limitList`: a reading at its ceiling
+ * is the wall, not a metering hint.
+ */
+export function claudeLimitWindows(body: any): UsageWindow[] {
+  return (Array.isArray(body?.limits) ? body.limits : []).flatMap((entry: any) => {
+    if (typeof entry?.percent !== 'number') return [];
+    const resetsAt = typeof entry?.resets_at === 'string' && !Number.isNaN(Date.parse(entry.resets_at)) ? new Date(entry.resets_at).toISOString() : null;
+    const window = entry?.kind === 'weekly_scoped' ? `${typeof entry?.scope?.model === 'string' && entry.scope.model ? entry.scope.model : 'model'} weekly`
+      : claudeWindowNames[entry?.kind] ?? null;
+    return window ? [{ window, percent: entry.percent, resetsAt, limitList: true as const }] : [];
+  });
+}
+/** The extra-usage line a spend-enabled answer shows (GY-3497): `extra usage on: $3.21 of $10.00 used`, from the answer's minor units. Read-only: Graphyard never changes spending. */
+export function claudeSpendLine(spend: any): string | null {
+  return spend?.enabled === true && typeof spend.used === 'number' && typeof spend.limit === 'number'
+    ? `extra usage on: $${(spend.used / 100).toFixed(2)} of $${(spend.limit / 100).toFixed(2)} used` : null;
+}
 export function parseClaudeUsage(response: unknown): ProviderUsageResult {
   if (!response) {
     return notReportedUsage('Claude');
@@ -98,8 +121,9 @@ export function parseClaudeUsage(response: unknown): ProviderUsageResult {
     return { reported: true, status: 'reported', windows, resetsAt: (body.resetsAt as string | null) ?? resets.at(-1) ?? null, reason: null };
   }
   const container = (body.usage && typeof body.usage === 'object') ? body.usage : body;
-  const usage: UsageWindow[] = [];
-  const entries: [string, any][] = [
+  const usage: UsageWindow[] = claudeLimitWindows(container);
+  // The list stands on its own when the answer carries one, empty or not (GY-3497); five_hour/seven_day are the answer with no list.
+  const entries: [string, any][] = Array.isArray(container?.limits) ? [] : [
     ['5h', container.five_hour ?? container.fiveHour ?? container.fiveHourWindow ?? container['5h']],
     ['7d', container.seven_day ?? container.sevenDay ?? container.sevenDayWindow ?? container['7d'] ?? container.weekly],
   ];

@@ -89,6 +89,8 @@ export async function npmPublishedVersion(run: ChildRun): Promise<string> {
 export async function masterStatusReport(root: string, master: MasterConfig, masterApi: (path: string) => Promise<any>, run: ChildRun = defaultChildRun) {
   // An unreachable control plane (GY-2966) is reported, not thrown: since when, the server's last exit and the free disk space, as the loop recorded them.
   let unreachable: string | null = null;
+  // GY-3699: the flow numbers come from their own route, read beside the other reads so a slow or failed read delays nothing; a failure carries its reason.
+  const flowRead: Promise<Flow | { error: string }> = Promise.resolve().then(() => masterApi('flow')).catch(error => ({ error: `The flow numbers could not be read: ${error instanceof Error ? error.message : String(error)}` }));
   const [snapshot, runtime, credentials, state] = await Promise.all([(masterApi('work-snapshot') as Promise<{ work: Work[]; now: string; workerVerifications?: ReturnType<typeof pendingWorkerVerifications> }>).catch(error => {
     if (typeof error?.status === 'number') throw error;
     unreachable = error instanceof Error ? error.message : String(error);
@@ -232,7 +234,8 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   const gateStalled = state?.actions[gateStallKey]?.state === 'failed' ? [{ subject: 'the batch gate', text: state.actions[gateStallKey]!.detail, next: 'Free a host heavy-job slot (stop the stuck holder it names); the alarm clears once a gate check starts' }] : [];
   // GY-3438: a session using far more than its share of a saturated machine for five minutes raises the overload alarm, naming it.
   // GY-3624: the flow numbers for 6 hours, 24 hours and 7 days, and one attention line when a station's slowest tenth waits over an hour.
-  const flow: Flow | null = unreachable ? null : await Promise.resolve().then(() => masterApi('flow')).catch(() => null);
+  const flowAnswer = await flowRead;
+  const flow = 'error' in flowAnswer ? null : flowAnswer;
   const flowAttention = flow?.attention ? [flow.attention] : [];
   // GY-3690: one line while the owner turned the public link on and someone is invited, but the link is not public.
   const linkOff: { doing: string; lastPublic: string | null } | null = unreachable ? null : await Promise.resolve().then(() => masterApi('team-access/host')).then(body => body?.publicLinkOff ?? null, () => null);
@@ -292,6 +295,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
       : { state: state?.mergeWriter.inFlight ? 'validating' : 'no shared base failure', reason: null, nextAction: null },
     deliverySpeed: deliverySpeed(merged, open, now),
     flow: flow ? { '6h': flow['6h'], '24h': flow['24h'], '7d': flow['7d'] } : null,
+    flowError: 'error' in flowAnswer ? flowAnswer.error : null,
     // GY-3418: the host's busy CPU-seconds per merged item over the last 7 days, with the target: half the first measured day's figure.
     cpuPerMergedItem: cpuPerMergedItem(state?.cpuSeconds?.days ?? {}, mergedAt, now),
     // GY-3634: the latest trial benchmark beside the median of the previous ten on the same file list.
