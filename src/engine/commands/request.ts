@@ -40,3 +40,5 @@ export function run(c: Ctx) {
     work.agentRequests = boundedAgentRequests([...work.agentRequests, request], request);
   }
 }
+
+export const delivered = (c: Ctx) => !c.data.resolve && c.data.type === 'note';

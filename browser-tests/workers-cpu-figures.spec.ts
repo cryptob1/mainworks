@@ -67,11 +67,13 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
       await openWorkers(page, url);
       const figures = page.locator('.host-cpu');
       await expect(figures).toBeVisible({ timeout: 15_000 });
-      await expect(figures).toContainText('Host CPU pressure 94%');
-      await expect(figures).toContainText('steal 12%');
-      await expect(figures).toContainText('temperature 96°C');
-      await expect(figures).toContainText('2 test workers per session');
-      await expect(figures).toContainText('trials 2 of 4');
+      // GY-3485: the header reads how busy and how hot; steal, the test budget and the trial cap sit in Machine details.
+      await expect(figures).toHaveText('Machine: 94% busy · 96°C');
+      await page.getByText('Machine details', { exact: true }).click();
+      const details = page.locator('[data-machine-figures]');
+      await expect(details).toContainText('steal 12%');
+      await expect(details).toContainText('2 test workers per session');
+      await expect(details).toContainText('trials 2 of 4');
     } finally { await page.close(); await close(); }
   });
 }
