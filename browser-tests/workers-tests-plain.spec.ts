@@ -106,7 +106,7 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
     await expect(main).not.toContainText('master registry');
     await expect(main.getByRole('table', { name: 'By role' })).toBeVisible();
     for (const name of ['By model', 'By account', 'Price sheet']) await expect(main.getByRole('table', { name, includeHidden: true })).toBeHidden();
-    await expect(main.getByText('ran on a runtime that reported no usage')).toBeHidden();
+    await expect(main.getByText('claude-a: 1 session not metered by stub')).toBeHidden();
     await plain(page);
 
     // Tests: only the place a case ran, no grouping of one category, an empty cell a dash; the rest in titles and folds.

@@ -1,0 +1,13 @@
+{
+  "id": "watch-skips-serving-commit",
+  "title": "A handed-over deploy watch leaves the serving commit alone",
+  "description": "After a deploy hands over, the new watch finds the verified commit already serving healthy: it stays served, nothing builds it a second time, and nothing rolls it back.",
+  "target": "any",
+  "required": false,
+  "steps": [{
+    "kind": "command",
+    "name": "handed-over watch skips the serving commit",
+    "run": "node --import tsx tests/helpers/run-tests.ts tests/watch-skips-serving-commit.test.ts",
+    "timeoutSeconds": 600
+  }]
+}
