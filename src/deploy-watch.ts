@@ -15,13 +15,13 @@ import { servedCommit } from './production-watch.js';
 import type { Work } from './model/work.js';
 
 /**
- * What the deploy last served, the tip that failed and is skipped until the base moves past it, and,
+ * What the deploy last served, the tip that failed and is retried after a backoff (GY-3703), and,
  * while a rollback has not yet succeeded, the tip still to restore (tip is then null: nothing is served).
  * `repository` names the repository the watch serves — its origin's owner/name — so a record for one
  * repository cannot pass for another's release health; records written before it was kept (or by a
  * checkout whose origin names no repository) name none (GY-2955).
  */
-export interface DeployRecord { tip: string | null; failed: string | null; reason: string | null; at: string; restore?: string | null; attempts?: number; repository?: string | null; /** This successful deploy selected a batch-gate verified tip. */ verified?: boolean }
+export interface DeployRecord { tip: string | null; failed: string | null; reason: string | null; at: string; restore?: string | null; attempts?: number; /** Retries the failed tip has had (GY-3703). */ retries?: number; repository?: string | null; /** This successful deploy selected a batch-gate verified tip. */ verified?: boolean }
 export const deployRecordPath = (root: string) => join(root, '.graphyard', 'deploy.json');
 export function readDeployRecord(file: string): DeployRecord | null {
   if (!existsSync(file)) return null;
@@ -67,8 +67,10 @@ export async function writeControlPlaneRecord(file: string, record: Omit<Partial
   await rename(`${file}.tmp`, file);
 }
 
-/** A control-plane upgrade that failed retries once its failure is this old: the pass cadence keeps a day the ceiling (GY-3199). */
+/** The longest wait before a failed verified commit is tried again (GY-3199). */
 export const controlPlaneRetryMs = 60 * 60_000;
+/** GY-3703: waits before each retry of a failed verified commit; the last repeats. */
+export const deployRetryBackoffMs = [5 * 60_000, 15 * 60_000, 30 * 60_000, controlPlaneRetryMs];
 /** How old a check, or a first sighting of an unrun verified commit, may be before the daily diagnostics reports it (GY-3199). */
 export const controlPlaneStaleAfterMs = 24 * 60 * 60_000;
 
@@ -140,6 +142,8 @@ export interface DeployWatchPorts {
   stoppedPlane?: StoppedPlanePorts;
   /** GY-3676: the lock file one deploy at a time holds on this control plane; absent, one beside the deploy record. */
   lockFile?: string;
+  /** GY-3703: the retry backoff; absent, deployRetryBackoffMs. */
+  retryBackoffMs?: readonly number[];
 }
 
 /**
@@ -217,7 +221,7 @@ const message = (error: unknown) => error instanceof Error ? error.message : Str
 /**
  * One pass: fetch, and when the base tip (the batch gate's latest verified commit, once the gate
  * names this repository) is new, deploy it. A failure at any step rolls back to the
- * previous tip through the same steps and records the failed tip, which waits for the next one —
+ * previous tip through the same steps and records the failed tip, retried after a backoff —
  * unless the failed deploy may have migrated the database, which the previous tip would refuse: a
  * failure from the restart on whose tip's code migrates past the previous tip's is kept and recorded
  * as served, unless the database reads at a generation the previous tip supports. A rollback that
@@ -226,8 +230,8 @@ const message = (error: unknown) => error instanceof Error ? error.message : Str
  *
  * GY-3199: an install that does not gate this checkout's repository — every install for another
  * repository — serves only the commit Graphyard's own gate publishes at refs/graphyard/verified on
- * its canonical upstream, never a fetched main tip the gate has not verified; a failed upgrade
- * retries once its failure is an hour old. Every pass writes the control plane's own record
+ * its canonical upstream, never a fetched main tip the gate has not verified. Every pass writes
+ * the control plane's own record
  * (.graphyard/control-plane.json: the commit it runs, last check, last update, last failed step),
  * separate from the deploy record.
  */
@@ -262,15 +266,18 @@ async function deployPass(file: string, ports: DeployWatchPorts, log: (line: str
   const tip = verified ?? (followsUpstream ? upstream : fetched) as string | null;
   const controlFile = controlPlaneRecordPath(dirname(dirname(file)));
   let stored = readDeployRecord(file);
-  // A failed control-plane upgrade retries once its failure is an hour old: the verified ref it failed
-  // on may not move for days, and a stuck install must not wait for it to.
-  if (followsUpstream && stored?.failed === tip && !stored.restore) {
-    const control = readControlPlaneRecord(controlFile);
-    if (control?.failedAt && Date.now() - Date.parse(control.failedAt) >= controlPlaneRetryMs) stored = { ...stored, failed: null };
+  // GY-3703: a failed verified commit is tried again after a backoff: the verified commit may not move
+  // for days, and a transient failure must not freeze deploys until it does.
+  let retries = 0;
+  if (stored?.failed === tip && !stored.restore) {
+    const backoff = ports.retryBackoffMs ?? deployRetryBackoffMs;
+    const failedAt = readControlPlaneRecord(controlFile)?.failedAt ?? stored.at;
+    const wait = backoff[Math.min(stored.retries ?? 0, backoff.length - 1)]!;
+    if (Date.now() - Date.parse(failedAt) >= wait) { retries = (stored.retries ?? 0) + 1; stored = { ...stored, failed: null }; }
   }
   const record = stored ?? { tip: await ports.head(), failed: null, reason: null, at: '' };
   const previous = record.restore ?? record.tip;
-  const write = (entry: Omit<DeployRecord, 'at' | 'repository'>) => writeDeployRecord(file, { ...entry, repository: owner });
+  const write = (entry: Omit<DeployRecord, 'at' | 'repository'>) => writeDeployRecord(file, { ...entry, ...(retries && entry.failed === tip ? { retries } : {}), repository: owner });
   const noteControl = async (entry: Partial<Omit<ControlPlaneRecord, 'at'>>) => {
     const current = readControlPlaneRecord(controlFile) ?? { commit: previous, checkedAt: null, updatedAt: null, verified: null, verifiedSeenAt: null, failedStep: null, failedReason: null, failedAt: null };
     await writeControlPlaneRecord(controlFile, { ...current, commit: current.commit ?? previous, ...entry });
