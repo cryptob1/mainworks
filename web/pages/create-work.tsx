@@ -25,7 +25,8 @@ export default function CreateWork({ work, error, busy, setCreating, setBusy, se
       const filled = rows.map(row => ({ text: String(f.get(`criterion-${row}`) ?? '').trim(), proofs: split(f.get(`proof-${row}`)) })).filter(row => row.text.length || row.proofs.length);
       const criteria = filled.map((row, i) => ({ id: `AC-${i + 1}`, ...row }));
       const created = await api('work', { title: f.get('title'), why: f.get('why'), simplest: f.get('simplest'), description: f.get('description'), hold: f.get('hold') === 'on' || undefined, criteria, dependencies: f.get('dependency') ? [f.get('dependency')] : [], exclusiveResources: split(f.get('exclusiveResources')), policy: { review: true, checks: split(f.get('checks')) } });
-      if (epoch !== sessionEpoch.current) return; setCreating(false); await refresh(epoch); if (epoch === sessionEpoch.current) setSelected(created.id);
+      // GY-3723: open the new item before the refresh, so a failed read never leaves it filed but unopened; the next poll brings it.
+      if (epoch !== sessionEpoch.current) return; setCreating(false); setSelected(created.id); await refresh(epoch);
     } catch (e) { if (epoch === sessionEpoch.current) setError((e as Error).message); } finally { if (epoch === sessionEpoch.current) setBusy(false); }
   }}>
     <label>Title<input name="title" required maxLength={200} placeholder="What needs to change?"/></label>

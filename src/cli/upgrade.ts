@@ -1,5 +1,6 @@
 // `mainworks upgrade` (GY-1962): one command moves the CLI checkout, the server, the loop and
 // executors, and the managed repository's generated files to one dated release, in order.
+import { imageLock, withHostLock } from '../host-lock.js';
 import { createRequire } from 'node:module';
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, readlinkSync, statSync } from 'node:fs';
@@ -473,9 +474,13 @@ export const servedRepository = (cliRoot: string): string | null => {
 /**
  * Removes every per-commit image `mainworks-local:<sha12>` (or the older `previous-<sha12>`) but the kept
  * commits', one `docker image rm` each; docker refuses one a container uses, and each failure is one
- * logged line, never the deploy's.
+ * logged line, never the deploy's. It waits for the host's image lock, so it never runs during another install's build (GY-3718).
  */
-export async function pruneImages(run: ChildRun, keep: string[], log: (line: string) => void = line => console.error(line)) {
+export function pruneImages(run: ChildRun, keep: string[], log: (line: string) => void = line => console.error(line)) {
+  return withHostLock(imageLock, () => removeImages(run, keep, log));
+}
+
+async function removeImages(run: ChildRun, keep: string[], log: (line: string) => void) {
   const kept = new Set(keep.map(sha => sha.slice(0, 12)));
   const failed = (what: string) => (error: unknown) => log(`[mainworks-deploy] ${what}: ${error instanceof Error ? error.message : String(error)}`);
   const tags = await Promise.resolve(run('docker', ['image', 'ls', 'mainworks-local', '--format', '{{.Tag}}'])).then(String, failed('could not list the per-commit images'));

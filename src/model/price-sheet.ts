@@ -18,7 +18,7 @@ const sheet: [string, string, number, number, number, number | null, string][] =
   ['gpt-5.6-terra', 'OpenAI', 2, 12, 0.2, 2.5, '2026-11-13'],
   ['gpt-5.6-luna', 'OpenAI', 0.2, 1.2, 0.02, 0.25, '2026-11-13'],
   ['gpt-5.3-codex', 'OpenAI', 1.75, 14, 0.175, null, '2026-11-13'],
-  // Z.AI's pricing page.
+  // Z.AI's pricing page. A glm-5.4 row is owed: Z.AI had not priced it when checked on 2026-11-23.
   ['glm-5.3', 'Z.AI', 1.4, 4.4, 0.26, null, '2026-11-13'],
   ['glm-5.3-flash', 'Z.AI', 0.15, 0.5, 0.03, null, '2026-11-13'],
   // Google's Gemini API pricing page.

@@ -7,6 +7,7 @@ import type { Evidence } from '../../model.js';
 import { attestedProof } from '../../model/mechanical-proofs.js';
 import { producerIndependenceRefusal } from '../../delegation.js';
 import type { Ctx } from './types.js';
+import { docsSignoffProof } from '../../model/docs-signoff.js';
 
 export async function run(c: Ctx) {
   const { engine, db, actor, data, all, now, work } = c;
@@ -40,7 +41,8 @@ export async function run(c: Ctx) {
   // GY-135: a pass is trusted only beside a recorded run that fails with the criterion's
   // behaviour removed; otherwise it is kept, untrusted, as not exercising its criterion.
   const unexercised = trusted && data.proof !== deploySmokeProof ? exerciseRefusal(work, all, data) : null;
-  const evidence: Evidence = { ...data, id: randomUUID(), producer: actor.id, trusted: trusted && !unexercised, at: now.toISOString(), ...(unexercised ? { unexercised } : {}) };
+  const docsDigest = attest && docsSignoffProof(data.proof) && work.observation?.candidate.sha === data.sha ? work.observation?.docsDigest : undefined;
+  const evidence: Evidence = { ...data, id: randomUUID(), producer: actor.id, trusted: trusted && !unexercised, at: now.toISOString(), ...(unexercised ? { unexercised } : {}), ...(docsDigest ? { docsDigest } : {}) };
   if (unexercised) await record(db, work, actor.id, 'evidence.exercise.refused', { details: { proof: data.proof, criteria: attachedCriteria(work, all, data.proof), behaviour: data.exercise?.behaviour ?? null, sha: data.sha, reason: unexercised } });
   await appendEvidence(work, evidence, db);
   // GY-162: a trusted e2e: record is also a run of its test case, appended to the case's history.
