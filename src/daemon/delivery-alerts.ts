@@ -3,8 +3,7 @@
 import { gateRecordPath, readGateRecord } from '../batch-gate.js';
 import type { Work } from '../model.js';
 import type { Cycle } from './cycle.js';
-import { record } from './effects.js';
-import { message } from './state.js';
+import { message, record } from './state.js';
 
 const short = (sha: string) => sha.slice(0, 12);
 

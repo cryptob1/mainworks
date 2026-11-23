@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { defaultChildRun } from '../src/child-runner.js';
 import { credentialTrialVariable, groupTestFiles, mergeSubject, runnerDiagnosticTailLength, runTrial, trialAuthor, trialEnvironment, trialMerge, trialNeedsLog, trialRef, lookupPoisoned, trialLookupEntries, trialCheckoutPrefix, trialCheckoutRoot, trialCheckoutRoots, trialExcludedRoots, reclaimTrialCheckouts, clearTrialCheckout, durableTemporaryRoot, trialTemporaryPrefix, trialTemporaryRoot, trialTemporaryRoots, trialTemporaryVariables, trialTestGroupSize, TrialCleanupError, TrialEnvironmentError, TrialRunnerError, TrialTimeoutError, withheldTrialVariables, type RunTrialInput } from '../src/merge-writer/trial.js';
 import { listTestFiles } from '../scripts/ci-tests.mjs';
-import { checkoutKinds } from '../src/install/worktree-root.js';
+import { checkoutKinds, sessionCheckoutName } from '../src/install/worktree-root.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { processPidNamespace, processStartTicks, tempOwnerMarker, writeTempOwner } from '../src/tmp-reclaim.js';
 import type { FilesystemProbe } from '../src/install/worktree-root.js';
@@ -206,7 +206,7 @@ test('integration:trial-run-build-and-tests — a trial checkout that cannot be 
   const head = repo.commitOnBase({ 'tests/a.test.ts': 'x\n' }, 'head');
   const stuck: RunTrialInput['remove'] = async () => { throw new Error('EBUSY: the checkout is in use'); };
   await assert.rejects(trialOf(repo, head, ['tests/a.test.ts'], { PATH: process.env.PATH! }, stuck, cpu), (error: unknown) =>
-    error instanceof TrialCleanupError && /mainworks-trial-gy-9-/.test(error.directory) && /EBUSY/.test(error.message) && /answered build pass, 0 failing/.test(error.message)
+    error instanceof TrialCleanupError && error.directory.includes(sessionCheckoutName('trial', 'GY-9', '', '').replace(/-+$/, '-')) && /EBUSY/.test(error.message) && /answered build pass, 0 failing/.test(error.message)
     && error.verdict?.build === 'pass' && error.verdict.tests.files === 1);
   const broken = repo.commitOnBase({ 'break-build': '' }, 'breaks the build');
   await assert.rejects(trialOf(repo, broken, [], { PATH: process.env.PATH! }, stuck, cpu), (error: unknown) => error instanceof TrialCleanupError && error.verdict?.build === 'fail');
@@ -808,7 +808,7 @@ test('unit:trial-checkout-reclaim-soak — a simulated day of real trials: crash
   assert.ok(existsSync(kept) && existsSync(tempOwnerMarker(kept)), 'the live owner\'s checkout stands at the end of the day');
   // A poisoned ancestor forces the managed session fallback; a clean trials root gets the short checkout.
   for (const made of checkouts) {
-    const expected = lookupPoisoned(trials!) ? `${sessions}/mainworks-trial-` : `${trials}/${trialCheckoutPrefix}`;
+    const expected = lookupPoisoned(trials!) ? `${sessions}/${sessionCheckoutName('trial', '', '', '').replace(/-+$/, '-')}` : `${trials}/${trialCheckoutPrefix}`;
     assert.ok(made.startsWith(expected) && made.endsWith('/checkout'), `${made} uses ${expected}`);
   }
   assert.deepEqual(trialExcludedRoots('/var/tmp', '/home/me'), ['/tmp', '/var/tmp', '/home/me/.gy/tmp'], 'every temporary root keeps the checkout out');

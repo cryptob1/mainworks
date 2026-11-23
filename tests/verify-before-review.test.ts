@@ -121,7 +121,7 @@ async function stubControlPlane(work: any, root: string) {
   return { url: `http://127.0.0.1:${address.port}`, submitted, close: () => new Promise(resolve => server.close(resolve)) };
 }
 const cli = async (cwd: string, url: string, ...args: string[]) => {
-  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^(MAINWORKS|HERDR)_/.test(name)));
+  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^(GRAPHYARD_|MAINWORKS_|HERDR_)/.test(name)));
   try { const { stdout } = await run(process.execPath, [launcher, ...args], { cwd, env: { ...env, GRAPHYARD_URL: url, GRAPHYARD_TOKEN: 'worker-token' }, maxBuffer: 16 * 1024 * 1024 }); return { code: 0, output: JSON.parse(stdout) }; }
   catch (error: any) { return { code: error.code as number, output: error.stdout?.trim() ? JSON.parse(error.stdout) : { error: error.stderr } }; }
 };

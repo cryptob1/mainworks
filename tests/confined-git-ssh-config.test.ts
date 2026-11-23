@@ -93,7 +93,7 @@ async function confinedFixture(run: (fixture: { spawn: (script: string) => Retur
 
 const fetchScript = [
   `ls -ln ${omarchyInclude} | awk '{ print "INCLUDE-OWNER-" $3 }'`,
-  'git -C "$1" fetch --no-tags origin +refs/heads/graphyard-main:refs/remotes/origin/graphyard-main; echo "FETCH-$?"',
+  'git -C "$1" fetch --no-tags origin +refs/heads/mainworks-main:refs/remotes/origin/mainworks-main; echo "FETCH-$?"',
 ].join('\n');
 
 test('integration:confined-git-ssh-config — a confined fetch over SSH succeeds with a foreign-owned system ssh include present, presenting the assigned deploy key with host-key checking kept', async () => {
@@ -113,7 +113,7 @@ test('integration:confined-git-ssh-config — a confined fetch over SSH succeeds
 test('e2e:confined-git-ssh-config — a confined coordinator fetches its configured non-default base branch mainworks-main and proceeds to verification; an ssh config ownership refusal is reported as such, not as SAML', async () => {
   await confinedFixture(({ spawn }) => {
     const ran = spawn([fetchScript,
-      'git -C "$1" checkout -q --detach refs/remotes/origin/graphyard-main && sh "$1/check.sh"'].join('\n'));
+      'git -C "$1" checkout -q --detach refs/remotes/origin/mainworks-main && sh "$1/check.sh"'].join('\n'));
     const output = `${ran.stdout}\n${ran.stderr}`;
     assert.ok(String(ran.stdout).includes('FETCH-0\n'), `the confined coordinator fetched mainworks-main: ${output.slice(-800)}`);
     assert.ok(String(ran.stdout).includes('VERIFIED-GRAPHYARD-MAIN\n'), `verification ran on the fetched base: ${output.slice(-800)}`);

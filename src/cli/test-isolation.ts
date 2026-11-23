@@ -35,7 +35,7 @@ export function isolatedTestEnvironment(environment: NodeJS.ProcessEnv = process
   const kept = Object.entries(environment).filter((entry): entry is [string, string] => {
     const [name, value] = entry;
     if (value === undefined || name === 'NODE_TEST_CONTEXT') return false;
-    return !/^(MAINWORKS|HERDR)_/.test(name) || (passedTestControls as readonly string[]).includes(name);
+    return !/^(GRAPHYARD_|MAINWORKS_|HERDR_)/.test(name) || (passedTestControls as readonly string[]).includes(name);
   });
   return { ...Object.fromEntries(kept), ...set };
 }

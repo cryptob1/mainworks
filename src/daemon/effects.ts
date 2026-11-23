@@ -14,7 +14,7 @@ import type { ProfileAccountHealth } from '../master/environments.js';
 import type { CheckoutTrustFleet, CheckoutTrustRefusal } from '../harness.js';
 import type { MasterSessionEffects } from '../master/master-session.js';
 import type { MasterMessage } from './master-stalled-delivery.js';
-import { type DaemonAction, type DaemonState, type LeftoverDisk, type LoopRelease, storeAction } from './state.js';
+import { type DaemonState, type LeftoverDisk, type LoopRelease, record } from './state.js';
 import type { MergeWriterReads } from './cycle-merge-writer.js';
 import type { AdoptedRun } from './run-adoption.js';
 import type { ComposeServer } from './compose-recovery.js';
@@ -198,12 +198,7 @@ export interface DaemonEffects {
   persist: (state: DaemonState) => Promise<void>;
 }
 
-/** Put an action on the cursor, through storeAction, which bounds it. */
-export async function record(state: DaemonState, key: string, action: Omit<DaemonAction, 'at' | 'epoch'> & { at?: string; epoch?: number | null }, now: number, persist: DaemonEffects['persist']) {
-  const entry = storeAction(state, key, { epoch: null, ...action, at: action.at ?? new Date(now).toISOString() });
-  await persist(state);
-  return entry;
-}
+export { record };
 
 // The production wiring lives in ./effects-production.ts.
 export { daemonEffects } from './effects-production.js';

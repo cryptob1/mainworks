@@ -16,6 +16,8 @@ export const packageVersion = (() => {
 export const datedVersionPattern = /^(\d{4})\.([1-9]\d?)\.([1-9]\d?)(?:\.([1-9]\d*))?$/;
 /** Mainworks's own base branch: every install follows its tip, whatever base branch the managed repository uses. */
 export const mainworksBaseBranch = 'main';
+/** Compatibility export for the archived predecessor deploy watcher (tests/fixtures/deploy-predecessor/upgrade.ts.txt). */
+export const graphyardBaseBranch = mainworksBaseBranch;
 export const imageRepository = 'ghcr.io/cryptob1/graphyard';
 /**
  * GY-3199: Mainworks's canonical upstream — the URL every install's deploy watch fetches the

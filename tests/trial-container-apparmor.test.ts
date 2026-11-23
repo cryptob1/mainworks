@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { defaultChildRun } from '../src/child-runner.js';
 import { runTrial, trialMerge, trialSandboxFault, TrialSandboxFaultError } from '../src/merge-writer/trial.js';
 import { trialContainerLaunch } from '../src/merge-writer/trial-container.js';
-import { trialAppArmorProfilePath } from '../src/merge-writer/trial-apparmor.js';
+import { trialAppArmorProfile, trialAppArmorProfilePath } from '../src/merge-writer/trial-apparmor.js';
 import { provisionTrialAppArmor, trialAppArmorPlan } from '../src/install/trial-image.js';
 import type { AdapterContext } from '../src/install/adapters.js';
 import { setupFromZeroChecks, setupLine } from '../src/setup-from-zero.js';
@@ -45,7 +45,7 @@ async function host(enabled: boolean) {
   await writeFile(join(bin, 'docker'), `#!/bin/sh
 echo "$*" >> '${log}'
 case " $* " in
-  *" create "*) case " $* " in *apparmor=mainworks-trial*) [ -f '${loaded}' ] || { echo "docker: Error response from daemon: AppArmor enabled on system but the mainworks-trial profile could not be loaded." >&2; exit 125; } ;; esac ;;
+  *" create "*) case " $* " in *apparmor=${trialAppArmorProfile}*) [ -f '${loaded}' ] || { echo "docker: Error response from daemon: AppArmor enabled on system but the ${trialAppArmorProfile} profile could not be loaded." >&2; exit 125; } ;; esac ;;
   *" start "*) [ -n "$STUB_SANDBOX_ERROR" ] && { echo "$STUB_SANDBOX_ERROR" >&2; exit 1; } ;;
 esac
 exit 0
@@ -73,7 +73,7 @@ test('e2e:trial-container-apparmor — on an AppArmor host install plans and loa
   const apparmor = await host(true);
   const [action] = trialAppArmorPlan();
   assert.equal(action?.id, 'provider.trial-apparmor');
-  assert.match(action!.command!, /profile mainworks-trial flags=\(unconfined\) \{\s+userns,\s+\}/);
+  assert.match(action!.command!, new RegExp(`profile ${trialAppArmorProfile} flags=\\(unconfined\\) \\{\\s+userns,\\s+\\}`));
   assert.match(action!.command!, new RegExp(`sudo apparmor_parser -r -W ${trialAppArmorProfilePath}`));
   const calls: { program: string; args: string[]; input?: string }[] = [];
   await provisionTrialAppArmor(stubTransport(calls));
@@ -84,7 +84,7 @@ test('e2e:trial-container-apparmor — on an AppArmor host install plans and loa
   const [command, ...args] = trialContainerLaunch({ image: 'mainworks-trial:local', mounts: [], network: 'none' });
   execFileSync(command!, [...args, 'true'], { cwd: '/', env: process.env });
   const [created] = await apparmor.createArgs();
-  assert.match(created!, /--security-opt=apparmor=mainworks-trial /);
+  assert.match(created!, new RegExp(`--security-opt=apparmor=${trialAppArmorProfile} `));
   assert.doesNotMatch(created!, /apparmor=unconfined/);
 
   const plain = await host(false);
@@ -105,7 +105,7 @@ const doctorLines = async (root: string) => (await setupFromZeroChecks({ root, s
 test('e2e:trial-container-apparmor — doctor prints a FAIL line naming AppArmor and the fix when the profile is not loaded or the nested sandbox is denied, PASS when it starts', async () => {
   const apparmor = await host(true);
   const [notLoaded] = await doctorLines(apparmor.root);
-  assert.match(notLoaded!, /^FAIL trial-apparmor: AppArmor .*mainworks-trial profile could not be loaded.*\(fix: rerun mainworks up, which writes the mainworks-trial AppArmor profile .*apparmor_parser -r -W/);
+  assert.match(notLoaded!, new RegExp(`^FAIL trial-apparmor: AppArmor .*${trialAppArmorProfile} profile could not be loaded.*\\(fix: rerun mainworks up, which writes the ${trialAppArmorProfile} AppArmor profile .*apparmor_parser -r -W`));
   await writeFile(apparmor.loaded, '');
   for (const denied of [slave, uidMap]) {
     process.env.STUB_SANDBOX_ERROR = denied;
@@ -116,7 +116,7 @@ test('e2e:trial-container-apparmor — doctor prints a FAIL line naming AppArmor
       assert.match(line!, /\(fix: rerun mainworks up/);
     } finally { delete process.env.STUB_SANDBOX_ERROR; }
   }
-  assert.deepEqual(await doctorLines(apparmor.root), ['PASS trial-apparmor: merge-trial containers start nested sandboxes under the mainworks-trial AppArmor profile']);
+  assert.deepEqual(await doctorLines(apparmor.root), [`PASS trial-apparmor: merge-trial containers start nested sandboxes under the ${trialAppArmorProfile} AppArmor profile`]);
   const plain = await host(false);
   assert.deepEqual(await doctorLines(plain.root), [], 'no AppArmor, no line');
 });

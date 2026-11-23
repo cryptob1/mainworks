@@ -56,7 +56,9 @@ export function ensureTrialImage(root = fileURLToPath(new URL('../..', import.me
     const transport = localTransport(), image = trialImage(root);
     if ((await transport.exec('docker', ['image', 'inspect', image], { allowFailure: true })).code === 0) return;
     // GY-3594: a host from before the rename holds the same image under its old name.
-    if (image === trialContainerImage && (await transport.exec('docker', ['tag', legacyTrialContainerImage, image], { allowFailure: true })).code === 0) return;
+    if (image === trialContainerImage
+      && (await transport.exec('docker', ['image', 'inspect', legacyTrialContainerImage], { allowFailure: true })).code === 0
+      && (await transport.exec('docker', ['tag', legacyTrialContainerImage, image], { allowFailure: true })).code === 0) return;
     try { await provisionTrialImage({ sourceRoot: root, transport }, publishedSourceImages(root)?.trial ?? null); }
     catch (error) { throw new Error(`${trialImageMissingPrefix}${image} is missing on this host and could not be provisioned: ${error instanceof Error ? error.message : String(error)}`); }
   })().finally(() => { provisioning = null; });

@@ -9,10 +9,9 @@ import { trialContainerImage, trialImage } from '../merge-writer/trial-container
 import { repositoryTrialImageRepository } from '../merge-writer/repository-trial-image.js';
 import { diskFloorBytes } from '../merge-writer/trial-load.js';
 import { reclaimTrialCheckouts, trialCheckoutPrefix, trialCheckoutRoots, trialTemporaryPrefix, trialTemporaryRoots } from '../merge-writer/trial.js';
-import { record } from './effects.js';
 import { tallyLeftovers } from './leftovers.js';
 import type { DaemonEffects } from './effects.js';
-import type { DaemonAction, DaemonState } from './state.js';
+import { record, type DaemonAction, type DaemonState } from './state.js';
 import { workerVerificationPrefix, workerVerificationRoot, workerVerificationTimeoutMs } from '../merge-writer/worker-verification.js';
 import { trialBuilder } from '../install/trial-image.js';
 import { composeProjectPrefix, sweepComposePreviews } from '../compose-preview.js';

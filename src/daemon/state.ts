@@ -377,6 +377,13 @@ export function storeAction(state: DaemonState, key: string, action: DaemonActio
   return entry;
 }
 
+/** Put an action on the cursor, through storeAction, which bounds it. */
+export async function record(state: DaemonState, key: string, action: Omit<DaemonAction, 'at' | 'epoch'> & { at?: string; epoch?: number | null }, now: number, persist: (state: DaemonState) => Promise<void>) {
+  const entry = storeAction(state, key, { epoch: null, ...action, at: action.at ?? new Date(now).toISOString() });
+  await persist(state);
+  return entry;
+}
+
 /** The line the loop logs for each action a cycle took; the tests that pin a logged failure build it from here. It lives beside storeAction so a step that settles beside the cycle logs without importing the loop's runner. */
 export const actionLine = (cycle: number, action: Pick<DaemonAction, 'kind' | 'state' | 'detail'>) => `[mainworks-master] cycle ${cycle} ${action.kind} ${action.state}: ${action.detail}`;
 /** A refusal that still stands, observed again with the same detail (GY-1086): its row is not rewritten, but its time moves. */
