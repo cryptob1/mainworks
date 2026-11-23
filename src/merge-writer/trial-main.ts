@@ -30,6 +30,7 @@ try {
     ...(spec.baseTip ? { baseTip: spec.baseTip } : {}), ...(spec.cores ? { cores: spec.cores } : {}), ...(spec.selectorApproved ? { selectorApproved: true } : {}),
     onStep: (step, report) => void record({ step, at: new Date().toISOString(), ...report }),
     onTiming: (step, durationMs) => void record({ timing: step, durationMs }),
+    onHostCheck: entry => void record({ ...entry, at: new Date().toISOString() }),
     environment: process.env, signal: stop.signal, runDirectory: directory, caches: true,
   });
   await writeFile(`${files.result}.tmp`, `${JSON.stringify({ ok: true, run } as const)}\n`);
