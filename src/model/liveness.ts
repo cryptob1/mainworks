@@ -5,6 +5,7 @@ import type { Work } from './work.js';
 import { claimLive, actionSettleMs, waitingToRetry, actionIdleMs, actionStall, actionStallMaxMs } from './action-progress.js';
 import { roleSessionMaximumMs } from './sessions.js';
 import { producerGroupDecisions } from './mechanical-proofs.js';
+import { submittedAtOf } from './merge-queue.js';
 /**
  * The liveness invariant (GY-201): every open item always has exactly one owned next step with a
  * deadline, and the server — not a loop re-deriving the world — keeps it that way.
@@ -30,6 +31,7 @@ import { producerGroupDecisions } from './mechanical-proofs.js';
 export const livenessRetryLimit = 8;
 /** How long an item may wait on an event nobody else is named as owing before the wait is stale. */
 export const livenessWaitBoundMs = 30 * 60_000;
+export const mergeWriterWaitBoundMs = 2 * 60 * 60_000;
 
 export type ObligationKind = 'session' | 'action' | 'wait';
 export interface Obligation { kind: ObligationKind; owner: string | null; dueAt: string; detail: string; action?: { id: string; kind: ActionRow['kind']; state: ActionRow['state'] } }
@@ -119,6 +121,8 @@ export function waitDueAt(work: Work, wait: ActionWait, all: Work[], now: Date):
     const rows = (other.actionQueue?.actions ?? []).map(row => rowDueAt(row, now)).sort();
     return rows[0] ?? now.toISOString();
   }
+  // GY-3695: a head queued for the merge writer is overdue only once it has waited over 2 hours for its trial; the queue ages it ahead before then.
+  if (wait.kind === 'session' && wait.on === 'merge-writer') return iso(submittedAtOf(work) + mergeWriterWaitBoundMs);
   if (wait.kind === 'human') return iso(Date.parse(heldSince(work)) + 24 * 60 * 60_000);
   // An observation window is due at its instant (GY-1698): past it the account names the dispatch, so the wait never stales.
   // GY-1779: a wait on the loop's own reading is owned by the loop, which records it or why it cannot each cycle; it is due a bound ahead of every evaluation and never stales.
