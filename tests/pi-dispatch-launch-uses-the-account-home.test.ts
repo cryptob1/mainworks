@@ -4,7 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { proposedRuntimes } from '../src/model/registry.js';
 import { readOnlyMountWrapper } from '../src/master/confinement.js';
-import { workerSessionLaunch } from '../src/master/pi-launch.js';
+import { workerSessionLaunch } from '../src/runner/pi-launch.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3738: pi-b's auth.json names its Z.AI key by a `!` command that reads an OpenCode account's
@@ -22,7 +22,7 @@ test('unit:pi-dispatch-launch-uses-the-account-home — a Pi launch claimed by a
   const config = { credentialFile: join(root, 'config', 'master.token'), environments: [{ name: 'opencode-b', kind: 'opencode' as const, home: opencode }] };
   const profile = { name: 'claude-primary', kind: 'claude' as const, principal: 'graphyard-claude-2', approvals: 'auto' as const, agentArgs: [], environment: {}, credentialFile: join(root, 'workers', 'graphyard-claude-2.token') };
 
-  const launch = workerSessionLaunch(config, profile, account as never, { repositoryRoot: root });
+  const launch = await workerSessionLaunch(config, profile, account as never, { repositoryRoot: root });
   assert.equal(launch.kind, 'pi', 'the account decides the runtime, not the claiming worker identity');
   assert.equal(launch.environment.PI_CODING_AGENT_DIR, home);
   assert.equal(launch.environment.ZAI_API_KEY, 'fixture-zai-key', 'the key its auth.json command names is resolved on the host, where the other account home is readable');

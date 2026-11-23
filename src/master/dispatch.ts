@@ -19,7 +19,7 @@ import { loadMasterConfig, readWorkerCredential } from './config.js';
 import { atomicPrivateWrite, readCredentialFile } from '../private-file.js';
 import { CredentialMaskError, type MaskProbe } from './confinement.js';
 import { agentLaunchPlan, NoHealthyAccountError, onSelectedSession, recordObservedExhaustion, selectAccount, sharedGitDirectory } from './environments.js';
-import { workerSessionLaunch } from './pi-launch.js';
+import { workerSessionLaunch } from '../runner/pi-launch.js';
 import type { FleetProbe } from '../fleet.js';
 import { repinPath, type CanaryOffer } from '../model/registry.js';
 import { criteriaListing, featureCaseRule, reviewStandards } from '../review-prompt.js';
@@ -169,7 +169,7 @@ export async function dispatchWork(root: string, work: Work, profile: WorkerProf
   // The served repository can differ from the CLI release checkout (Huck's install).
   // Confine its Git store, not the launcher's code. Injected preparers retain the test boundary.
   const coordinatorRoot = options.coordinatorRoot ?? (prepare === prepareWorkerLaunch ? root : undefined);
-  let selected: Awaited<ReturnType<typeof selectAccount>> | undefined, launched: ReturnType<typeof workerSessionLaunch> | undefined;
+  let selected: Awaited<ReturnType<typeof selectAccount>> | undefined, launched: Awaited<ReturnType<typeof workerSessionLaunch>> | undefined;
   // GY-1772: which runtimes the worker is tried on first, never judged from its path lane; recorded with the selection it ordered.
   let prefer: 'fast' | 'strong' | null = null;
   let result: Awaited<ReturnType<typeof launchWorker>> | undefined;
@@ -343,7 +343,7 @@ export async function readProfileLaunchRecords(root: string, profiles: { name: s
 
 
 interface WorkerLaunchOptions { probe?: FleetProbe; settleReservation?: (reason: string) => Promise<unknown>; onRun?: DispatchOptions['onRun']; sandboxProbe: SandboxExec | 'host' | null; claimBy?: number; coordinatorRoot?: string; renew: LeaseRenewer | null; renewIntervalMs?: number; verificationMaps: NonNullable<DispatchOptions['verificationMaps']>; rework: AppliedRework | null; cycle?: string; diagnosis: string; maskProbe?: MaskProbe; headless: HeadlessExec; startupMs?: number; capacity?: DispatchOptions['capacity']; continuing?: Builder | null }
-async function launchWorker(root: string, config: MasterConfig, work: Work, profile: WorkerProfile, launch: ReturnType<typeof workerSessionLaunch>, prepare: WorkerPreparer, release: (root: string, key: string, epoch: number, profileName: string, blocker?: string) => Promise<void>, { probe, settleReservation, onRun, sandboxProbe, claimBy, coordinatorRoot, renew, renewIntervalMs, verificationMaps, rework, cycle, diagnosis, maskProbe, headless, startupMs, capacity, continuing }: WorkerLaunchOptions) {
+async function launchWorker(root: string, config: MasterConfig, work: Work, profile: WorkerProfile, launch: Awaited<ReturnType<typeof workerSessionLaunch>>, prepare: WorkerPreparer, release: (root: string, key: string, epoch: number, profileName: string, blocker?: string) => Promise<void>, { probe, settleReservation, onRun, sandboxProbe, claimBy, coordinatorRoot, renew, renewIntervalMs, verificationMaps, rework, cycle, diagnosis, maskProbe, headless, startupMs, capacity, continuing }: WorkerLaunchOptions) {
   const mergeWriter = 'control-plane' as const;
   // The lease is the launch's to keep alive until the supervisor's first heartbeat (GY-1287), from
   // the claim itself (GY-1373): building the worktree of a large repository on a loaded host took

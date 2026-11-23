@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import type { MasterConfig } from '../master.js';
 import { discoverHostLogins, installDirectory, proposeFleet, type FleetLaunchAccount } from '../fleet.js';
-import { smokePiWorker } from '../master/pi-launch.js';
+import { smokePiWorker } from '../runner/pi-launch.js';
 import type { SmokeResult } from '../runner/pi.js';
 import { seedPrices } from '../model/price-sheet.js';
 import { emptyRolePolicy, quotaStates, fleetRoles, roleLimit, rolePolicy, type AgentRegistry } from '../model/registry.js';
