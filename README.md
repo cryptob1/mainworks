@@ -24,7 +24,7 @@ npm run build
 node bin/graphyard.mjs up --repo OWNER/NAME
 ```
 
-The `graphyard` command and `GRAPHYARD_*` settings still work.
+Settings are `MAINWORKS_*` (`MAINWORKS_URL`). The `graphyard` command and `GRAPHYARD_*` settings still work.
 
 Once published to npm:
 
