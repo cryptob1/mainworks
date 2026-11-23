@@ -42,7 +42,7 @@ test('unit:architecture-pinned — src/remote-session.ts unpacks local bundles w
   git(host, 'config', 'user.email', 'test@example.com');
   git(origin, 'worktree', 'add', '-q', '-b', 'worker', worktree, base);
 
-  // Create a commit on the worktree side to send as a relayed answer bundle (simulating `graphyard sync`).
+  // Create a commit on the worktree side to send as a relayed answer bundle (simulating `mainworks sync`).
   await writeFile(join(worktree, 'synced.txt'), 'from-worktree\n');
   git(worktree, 'add', 'synced.txt');
   git(worktree, 'commit', '-qm', 'synced commit');

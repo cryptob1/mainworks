@@ -305,7 +305,7 @@ export function remoteShardSession(input: { root: string; sha: string; image: st
       // (less the launcher's own waiting lines, which on a hot host would fill it).
       const fault = trialContainerFault(end.out);
       // A session over a shared connection that lost its host prints nothing of its own, so name that loss.
-      const said = end.out.replace(/^mainworks trial container: (waiting|starting).*\n/gm, '').slice(-500).trim();
+      const said = end.out.replace(/^(?:graphyard|mainworks) trial container: (waiting|starting).*\n/gm, '').slice(-500).trim();
       if (!end.ok && (end.status === 255 || end.status === null || fault || !records.trim())) throw new HostDroppedError(target, fault ?? (said || `the SSH connection to ${target} closed mid-shard (exit ${end.status ?? 'signal'})`));
       return { ...end, records };
     },
@@ -313,11 +313,7 @@ export function remoteShardSession(input: { root: string; sha: string; image: st
     async check(target: string, check: { file: string; services: { service: string; port: number }[]; argv: string[]; cpus: number }): Promise<RemoteCheckEnd> {
       if (!ready.has(target)) ready.set(target, prepare(target));
       const run = await ready.get(target)!;
-      const out = await shim(target, `run-check ${run}`, `printf '%s' ${shellQuote(JSON.stringify({ ...check, deadline: input.deadline }))}`);
-      const exit = /\nmainworks-check exit (\d+)\n?$/.exec(out), fault = trialContainerFault(out);
-      // No exit line, or a launcher that gave up on the host's heat or disk: the host never judged the check.
-      if (!exit || fault) throw new HostDroppedError(target, fault ?? (out.slice(-300).trim() || 'the check ended without an exit code'));
-      return { out: out.replace(/\n(?:mainworks-check .*\n?)+$/, '\n'), status: Number(exit[1]), steps: [...out.matchAll(/^mainworks-check (services|command|teardown) (\d+)$/gm)].map(match => ({ step: match[1]!, ms: Number(match[2]) })) };
+      return remoteCheckEnd(target, await shim(target, `run-check ${run}`, `printf '%s' ${shellQuote(JSON.stringify({ ...check, deadline: input.deadline }))}`));
     },
     async close() {
       await Promise.all([...ready.entries()].map(async ([target, prepared]) => {
@@ -327,6 +323,17 @@ export function remoteShardSession(input: { root: string; sha: string; image: st
       await transport.close();
     },
   };
+}
+
+/**
+ * GY-3645: a run-check's verdict from the helper's output; GY-3744: a helper prepared before the rename prints
+ * its check lines under the old name, and both names' lines are the host's verdict.
+ */
+export function remoteCheckEnd(target: string, out: string): RemoteCheckEnd {
+  const exit = /\n(?:graphyard|mainworks)-check exit (\d+)\n?$/.exec(out), fault = trialContainerFault(out);
+  // No exit line, or a launcher that gave up on the host's heat or disk: the host never judged the check.
+  if (!exit || fault) throw new HostDroppedError(target, fault ?? (out.slice(-300).trim() || 'the check ended without an exit code'));
+  return { out: out.replace(/\n(?:(?:graphyard|mainworks)-check .*\n?)+$/, '\n'), status: Number(exit[1]), steps: [...out.matchAll(/^(?:graphyard|mainworks)-check (services|command|teardown) (\d+)$/gm)].map(match => ({ step: match[1]!, ms: Number(match[2]) })) };
 }
 
 /** One trial's shard record, for master status: what ran them, wall time, shards run and run remotely, waits while a host idled, and each host's reading. */
@@ -367,9 +374,11 @@ export function remoteShardSummary(runs: readonly RemoteShardRun[], probes?: rea
   };
 }
 
-/** GY-3476, GY-3517: one attention line for each host the latest probe reads away because its shim lacks a verb trials use; it clears on the first probe that reads it ready. */
-export const outdatedShimAttention = (probes: readonly Pick<HostProbe, 'host' | 'away' | 'update'>[]) => probes.filter(probe => probe.away && probe.update).map(probe =>
-  ({ subject: `host ${probe.host}`, text: `${probe.host} takes no trial shards: its graphyard-host-shim is older than this release`, next: `Run mainworks host prepare and, with sudo on ${probe.host}, the script it prints` }));
+/** GY-3476, GY-3517: one attention line for each host the latest probe reads away because its shim lacks a verb trials use, or (GY-3744) reads ready on an older helper; it clears with the probe. */
+export const outdatedShimAttention = (probes: readonly Pick<HostProbe, 'host' | 'away' | 'update' | 'older'>[]) => probes.flatMap(probe =>
+  probe.away && probe.update ? [{ subject: `host ${probe.host}`, text: `${probe.host} takes no trial shards: its graphyard-host-shim is older than this release`, next: `Run mainworks host prepare and, with sudo on ${probe.host}, the script it prints` }]
+  // GY-3744: a ready host on another release's helper keeps taking shards; one line says how to update it.
+  : !probe.away && probe.older ? [{ subject: `host ${probe.host}`, text: `${probe.host} runs an older helper: run host prepare there to update it`, next: `Run mainworks host prepare and, with sudo on ${probe.host}, the script it prints` }] : []);
 
 /** GY-3534: one attention line for each host the latest trial left away because its SSH server reset the connection. */
 export const connectionResetAttention = (runs: readonly RemoteShardRun[]) => (runs.at(-1)?.hosts ?? []).filter(host => host.away && /connection reset|kex_exchange_identification/i.test(host.reason ?? '')).map(host =>

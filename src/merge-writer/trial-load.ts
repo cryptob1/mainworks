@@ -79,10 +79,12 @@ export async function trialLoad(root: string, who: keyof typeof trialStartOrder,
 const trialSlots = (home = homedir()) => join(home, '.gy', 'trial-slots');
 
 const launcherLine = 'mainworks trial container: ', waitingLine = `${launcherLine}waiting`, startingLine = `${launcherLine}starting`;
+/** GY-3744: a host helper prepared before the rename prints these words under the old name; both are the launcher's. */
+const launcherWords = '(?:graphyard|mainworks) trial container: ', launcherPattern = new RegExp(`^${launcherWords}`);
 /** GY-3535: the line a launcher prints when a heat wait ends, followed by its seconds. */
 const heatLine = `${waitingLine}: a CPU sensor held this start `;
 /** GY-3535: the seconds every container start in `output` waited for the CPU to cool, summed. */
-export const heatWaitSeconds = (output: string) => [...output.matchAll(new RegExp(`${heatLine}(\\d+)s`, 'g'))].reduce((sum, match) => sum + Number(match[1]), 0);
+export const heatWaitSeconds = (output: string) => [...output.matchAll(new RegExp(`${launcherWords}waiting: a CPU sensor held this start (\\d+)s`, 'g'))].reduce((sum, match) => sum + Number(match[1]), 0);
 /** GY-3535: a step that failed or timed out after its containers waited over a minute on heat: the host's overload, so the same head is trialled again, never reworked. */
 export class TrialHeatError extends Error {
   constructor(step: string, seconds: number) {
@@ -243,13 +245,13 @@ export function launcherLines(line: (text: string) => void): (chunk: string) => 
   return chunk => {
     const lines = (rest + chunk).split('\n');
     rest = lines.pop()!;
-    for (const text of lines) if (text.startsWith(launcherLine)) line(text.slice(launcherLine.length));
+    for (const text of lines) { const words = launcherPattern.exec(text); if (words) line(text.slice(words[0].length)); }
   };
 }
 /** The trial-host fault a launcher gave up waiting with, from its output; null when it never did. */
 export const trialContainerFault = (output: string): string | null => {
-  const at = output.lastIndexOf(faultLine);
-  return at < 0 ? null : output.slice(at + launcherLine.length).split('\n')[0]!;
+  const fault = [...output.matchAll(new RegExp(`${launcherWords}(Trial-host fault: [^\\n]*)`, 'g'))].at(-1);
+  return fault ? fault[1]! : null;
 };
 /** GY-3332: the disk-floor readings live launchers on this machine wait on now, one per start. */
 function trialFloorWaits(slots = trialSlots()): string[] {
