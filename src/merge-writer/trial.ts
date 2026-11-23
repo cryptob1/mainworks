@@ -25,6 +25,7 @@ import type { GateCheck } from '../model/delivery-policy.js';
 import { containerTrialE2e, trialContainerBoundary, trialContainerDependencies, trialImage } from './trial-container.js';
 import { cachedPasses, commitDependencies, dependencyKey, recordPasses, testResultKeys, warmDependencies } from './trial-caches.js';
 import { shellQuote } from '../shell-quote.js';
+import { recordTestSelection, selectionCounts } from './test-selection.js';
 import { HostBusyError, HostDroppedError, readShardHosts, shardSshSession, type ShardSshSession, runShardsOnHosts, realFreeCores, recordRemoteShardRun, remoteShardSession, shardHosts, splitLocalOnlyTests, trialImageHasBrowser, underHeatLimit, type HostReading, type PlacedHost } from './remote-shards.js';
 import { repositoryTrialImage, trialDockerfile, TrialRepositoryImageError } from './repository-trial-image.js';
 import { addressPoolsSpent, checkServiceVariables, dockerEnvironment, previewNetworkCount, startCheckServices, tcpAcceptProbe, type CheckServices } from '../compose-preview.js';
@@ -1685,12 +1686,15 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     }
     let selection: Ended;
     try {
-      selection = await child('selection', selector[0]!, [...selector.slice(1), ...input.changedFiles], input.baseTip ? { env: { ...env, GRAPHYARD_SELECTION_BASE: input.baseTip } } : {});
+      // GY-3750: an item's trial narrows a body-only change to the importers of what it reaches; the batch gate keeps the sweep.
+      selection = await child('selection', selector[0]!, [...selector.slice(1), ...input.changedFiles], input.baseTip ? { env: { ...env, GRAPHYARD_SELECTION_BASE: input.baseTip, ...(input.key === gateTrialKey ? {} : { GRAPHYARD_SELECTION_IMPORTERS: '1' }) } } : {});
     } finally {
       if (restoreSelector) await restoreSelector().catch(() => {});
     }
     if (hostEnded(selection)) throw runnerFailure('selection', selection);
     if (!selection.ok) return result({ passed: 0, failed: [strategy.command], files: 0 });
+    const counts = input.key === gateTrialKey ? null : selectionCounts(selection.out.split('\n')[0] ?? '');
+    if (counts) await recordTestSelection(input.root, counts).catch(() => {});
     const pattern = new RegExp(strategy.pattern);
     let selected = selection.out.split('\n').map(line => line.trim()).filter(line => pattern.test(line));
     // GY-3418: a selected file that passed in an earlier trial with the same content, imports, data

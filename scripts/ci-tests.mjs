@@ -312,6 +312,27 @@ export function dependencyMap(root = repositoryRoot, tests = listTestFiles(root)
     }
   }
   map.declarations = declarations; map.readers = readers; map.listers = listers;
+  // GY-3750: per file, the tests importing each exported name (`*`: the whole module), directly or through re-exports.
+  map.importers = new Map();
+  const imported = (test, target, name, seen = new Set()) => {
+    const key = `${target}\0${name}`, shape = edgesOf(target).shape;
+    if (seen.has(key)) return;
+    seen.add(key);
+    if (!map.importers.has(target)) map.importers.set(target, new Map());
+    const names = map.importers.get(target), at = name ?? '*';
+    names.set(at, [...new Set([...(names.get(at) ?? []), test])]);
+    if (!shape) return;
+    if (name === null) { for (const [, entry] of shape.exports) if (!entry.local) imported(test, entry.target, entry.name, seen); for (const star of shape.stars) imported(test, star, null, seen); return; }
+    const entry = shape.exports.get(name);
+    if (entry && !entry.local) imported(test, entry.target, entry.name, seen);
+    else if (!entry) for (const star of shape.stars) if (provides(star, name)) imported(test, star, name, seen);
+  };
+  for (const test of tests) {
+    const shape = edgesOf(test).shape;
+    if (!shape) continue;
+    for (const { target, name } of shape.bindings.values()) imported(test, target, name);
+    for (const statement of shape.statements) for (const { target, name } of statement.loads) for (const each of name === null ? [null] : [...name]) imported(test, target, each);
+  }
   map.reverse = new Map();
   for (const file of tracked) for (const next of edgesOf(file).imports) map.reverse.set(next, [...(map.reverse.get(next) ?? []), file]);
   map.texts = new Map(tests.filter(test => files.has(test)).map(test => [test, text(test)]));
@@ -366,6 +387,65 @@ export function changedDeclarations(changed, base, root = repositoryRoot, head =
 }
 
 /**
+ * GY-3750: for an item's trial, the exported names of each changed src file a change confined to
+ * function bodies and non-exported code reaches — the changed top-level declarations and every one
+ * using them, in the file — or `null` when the change alters an exported signature, a type, an
+ * export, a statement run on load, a test, a new or deleted file, or any file outside src/.
+ */
+export function changedExports(changed, base, root = repositoryRoot, head = null) {
+  typescript ??= createRequire(import.meta.url)('typescript');
+  const ts = typescript, result = new Map();
+  const show = (revision, file) => { try { return execFileSync('git', ['show', `${revision}:${file}`], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }); } catch { return null; } };
+  // A file's outline — what a change must leave alone to stay narrow — and each top-level name's text and the identifiers it uses.
+  const read = (file, text) => {
+    const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, file.endsWith('x') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+    const listed = new Map();
+    for (const node of source.statements) if (ts.isExportDeclaration(node) && !node.moduleSpecifier && node.exportClause && ts.isNamedExports(node.exportClause)) for (const element of node.exportClause.elements) listed.set((element.propertyName ?? element.name).text, [...(listed.get((element.propertyName ?? element.name).text) ?? []), element.name.text]);
+    const bodiless = node => {
+      let out = '', at = node.getStart(source);
+      const visit = child => {
+        const body = (ts.isFunctionLike(child) && child.body) || null;
+        if (body) { out += text.slice(at, body.getStart(source)) + '{}'; at = body.end; ts.forEachChild(child, inner => { if (inner !== body) visit(inner); }); }
+        else ts.forEachChild(child, visit);
+      };
+      visit(node);
+      return out + text.slice(at, node.end);
+    };
+    const outline = [], names = new Map(), effects = new Set();
+    const uses = (node, into = new Set()) => { const collect = child => { if (ts.isIdentifier(child)) into.add(child.text); ts.forEachChild(child, collect); }; collect(node); return into; };
+    for (const node of source.statements) {
+      const exported = node.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.ExportKeyword), isDefault = node.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.DefaultKeyword);
+      const declared = ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node) || ts.isEnumDeclaration(node) ? [node.name?.text ?? 'default']
+        : ts.isVariableStatement(node) ? node.declarationList.declarations.flatMap(declaration => ts.isIdentifier(declaration.name) ? [declaration.name.text] : [null]) : [];
+      if (ts.isImportDeclaration(node) && node.importClause) continue;
+      if (!declared.length || declared.includes(null)) { outline.push(node.getText(source)); if (!ts.isExportDeclaration(node) && !ts.isInterfaceDeclaration(node) && !ts.isTypeAliasDeclaration(node)) uses(node, effects); continue; }
+      const exports = declared.flatMap(name => exported ? [isDefault ? 'default' : name] : listed.get(name) ?? []);
+      if (exports.length) outline.push(bodiless(node));
+      for (const name of declared) names.set(name, { text: node.getText(source), uses: uses(node), exports });
+    }
+    return { outline: outline.join('\n'), names, effects };
+  };
+  for (const file of changed) {
+    if (isDocumentation(file)) continue;
+    if (!file.startsWith('src/') || !/\.[cm]?tsx?$/.test(file) || /\.test\.[cm]?tsx?$/.test(file)) return null;
+    const before = show(base, file), after = head ? show(head, file) : existsSync(join(root, file)) ? readFileSync(join(root, file), 'utf8') : null;
+    if (before === null || after === null) return null;
+    const old = read(file, before), now = read(file, after);
+    if (old.outline !== now.outline) return null;
+    const reached = new Set([...now.names].filter(([name, entry]) => old.names.get(name)?.text !== entry.text).map(([name]) => name));
+    for (const name of old.names.keys()) if (!now.names.has(name)) reached.add(name);
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const [name, entry] of now.names) if (!reached.has(name) && [...reached].some(used => entry.uses.has(used))) { reached.add(name); grew = true; }
+    }
+    // A statement run on load, or an export list, that uses what changed changes every importer.
+    if ([...reached].some(name => now.effects.has(name))) return null;
+    result.set(file, new Set([...reached].flatMap(name => now.names.get(name)?.exports ?? [])));
+  }
+  return result;
+}
+
+/**
  * The test files a change affects, the full suite and why, or nothing. The full suite runs when a
  * changed file is the install or configuration, or when the changed files are unknown. A changed file
  * selects the tests reaching it — only those needing the declarations it touches, where `declarations`
@@ -374,7 +454,18 @@ export function changedDeclarations(changed, base, root = repositoryRoot, head =
  * (`declarations` given: an item's trial against its base) skips the tests whose only link to a
  * changed file is listing its directory (GY-3541); the batch gate selects with no base and runs them.
  */
-export function selectAffected(changed, map, tests, declarations) {
+export function selectAffected(changed, map, tests, declarations, exports) {
+  const all = selectWhole(changed, map, tests, declarations);
+  if (exports === undefined) return all;
+  // GY-3750: an item's trial of a change confined to function bodies and non-exported src code runs
+  // only the tests importing the exported names it reaches; the batch gate keeps the sweep.
+  const importers = exports?.size && new Set([...exports].flatMap(([file, names]) => [...names, '*'].flatMap(name => map.importers?.get(file)?.get(name) ?? [])));
+  const files = importers ? all.files.filter(test => importers.has(test)) : all.files;
+  const reason = importers ? `the change is confined to function bodies or non-exported code of ${exports.size} file(s)` : all.reason;
+  return { mode: importers ? 'affected' : all.mode, reason: `selected ${files.length} of ${all.files.length} reachable: ${reason}`, files };
+}
+
+function selectWhole(changed, map, tests, declarations) {
   if (!changed) return { mode: 'full', reason: 'the changed files are unknown', files: tests };
   const effective = changed.filter(file => !isDocumentation(file));
   if (!effective.length) return { mode: 'affected', reason: `${changed.length} changed file(s) are documentation only`, files: [] };
@@ -394,7 +485,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   if (command === 'affected') {
     // GRAPHYARD_SELECTION_BASE (the merge writer's trial sets its base tip) narrows each changed file to the declarations its diff touches.
     const base = process.env.GRAPHYARD_SELECTION_BASE;
-    const selection = selectAffected(args, dependencyMap(), listTestFiles(), base ? changedDeclarations(args, base) : undefined);
+    // GRAPHYARD_SELECTION_IMPORTERS (an item's trial, never the batch gate) narrows a body-only change to the tests importing what it reaches.
+    const selection = selectAffected(args, dependencyMap(), listTestFiles(), base ? changedDeclarations(args, base) : undefined, base && process.env.GRAPHYARD_SELECTION_IMPORTERS ? changedExports(args, base) : undefined);
     // The files follow in both modes, so the merge writer's trial runs exactly this selection; an empty one runs nothing.
     console.log(`${selection.mode}: ${selection.reason}`); if (selection.files.length) console.log(selection.files.join('\n'));
   } else {
