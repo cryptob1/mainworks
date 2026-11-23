@@ -13,15 +13,16 @@ export class HeadlessConfigurationError extends Error {}
 export const continuable = (kind: string | null | undefined, contract?: RegisteredLaunch | null) => !contract?.headlessArgs && !!runtimeAdapter(kind)?.continue;
 
 /**
- * GY-3696: Linux caps a single argv string at MAX_ARG_STRLEN (128 KiB); a headless agy prompt
+ * GY-3696, GY-3713: Linux caps a single argv string at MAX_ARG_STRLEN (128 KiB); a headless prompt
  * past this bound goes on stdin instead of as a command-line argument so spawn never fails with
- * E2BIG, while smaller prompts stay on argv as before.
+ * E2BIG, on agy and on every built-in form that names its stdin words, while smaller prompts stay on argv.
  */
-export const agyInlinePromptLimitBytes = 64 * 1024;
+export const inlinePromptLimitBytes = 64 * 1024;
 const agyPrintFlags = new Set(['-p', '--print', '--prompt']);
+const stdinForm = (kind: string, contract?: RegisteredLaunch | null) => contract?.headlessArgs ? undefined : runtimeAdapter(kind)?.headless?.stdin;
 /** The prompt to pipe to stdin for a headless run, or undefined when the prompt stays on argv. */
-export const headlessPromptInput = (kind: string, prompt: string): string | undefined =>
-  kind === 'agy' && Buffer.byteLength(prompt, 'utf8') > agyInlinePromptLimitBytes ? prompt : undefined;
+export const headlessPromptInput = (kind: string, prompt: string, contract?: RegisteredLaunch | null): string | undefined =>
+  (kind === 'agy' || stdinForm(kind, contract)) && Buffer.byteLength(prompt, 'utf8') > inlinePromptLimitBytes ? prompt : undefined;
 
 /**
  * Explicit argv replaces the interactive argv and built-in form. A leading subcommand precedes policy flags.
@@ -29,7 +30,7 @@ export const headlessPromptInput = (kind: string, prompt: string): string | unde
  */
 export function headlessArgs(kind: string, args: readonly string[], prompt: string, contract?: RegisteredLaunch | null, accepted: readonly string[] = [], session?: string | null): string[] {
   if (session && !continuable(kind, contract)) throw new HeadlessConfigurationError(`The ${kind} runtime has no continue form`);
-  const onStdin = headlessPromptInput(kind, prompt) !== undefined;
+  const onStdin = headlessPromptInput(kind, prompt, contract) !== undefined;
   const place = (arg: string, index: number, list: readonly string[]) => {
     if (arg === requestPlaceholder) return onStdin ? [] : [prompt];
     if (onStdin && agyPrintFlags.has(arg) && list[index + 1] === requestPlaceholder) return [];
@@ -47,7 +48,7 @@ export function headlessArgs(kind: string, args: readonly string[], prompt: stri
   const kept = args.filter((arg, index) => !drop.some(flag => arg === flag || arg.startsWith(`${flag}=`) || args[index - 1] === flag) && !optional.includes(arg));
   const placed = kept.includes(requestPlaceholder);
   const resumed = session ? runtimeAdapter(kind)!.continue!(session) : [];
-  return [...form.before, ...kept.flatMap(place), ...form.flags, ...optional.filter(flag => accepted.includes(flag)), ...resumed, ...(placed || onStdin ? [] : [prompt])];
+  return [...form.before, ...kept.flatMap(place), ...form.flags, ...optional.filter(flag => accepted.includes(flag)), ...resumed, ...(onStdin ? form.stdin ?? [] : placed ? [] : [prompt])];
 }
 
 /** The headless command line of one run: the installed runtime, asked once which of its form's optional flags it takes. */
