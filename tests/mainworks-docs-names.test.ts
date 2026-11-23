@@ -6,6 +6,8 @@ import { execFileSync } from 'node:child_process';
 // GY-3712: the docs follow the code — README and the CLI guide name the Mainworks settings and
 // paths, with one line saying the Graphyard names are still honoured.
 const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+// README embeds the "Where things run" diagram, so its paths count as README text.
+const diagram = readFileSync(new URL('../docs/diagrams/where-things-run.svg', import.meta.url), 'utf8');
 const cli = new URL('../src/cli.ts', import.meta.url);
 const guide = (...args: string[]) => execFileSync(process.execPath, ['--import', 'tsx', cli.pathname, 'guide', ...args], { encoding: 'utf8' });
 const topics = ['claim', 'sync', 'complete', 'park', 'blocked', 'review', 'proof', 'upgrade', 'master', 'setup', 'infra', 'publishing', 'runtimes'];
@@ -30,6 +32,7 @@ test('e2e:mainworks-docs-names — guide master and README name MAINWORKS_URL an
 });
 
 test('e2e:mainworks-docs-names — every guide topic and the index name only MAINWORKS_* settings and Mainworks paths', () => {
+  checkOne('docs/diagrams/where-things-run.svg (embedded in README.md)', diagram);
   checkOne('guide', guide());
   for (const topic of topics) checkOne(`guide ${topic}`, guide(topic));
   checkOne('master guide', execFileSync(process.execPath, ['--import', 'tsx', cli.pathname, 'master', 'guide'], { encoding: 'utf8' }));
