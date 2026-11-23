@@ -8,7 +8,7 @@ import type { ChildRun } from '../child-runner.js';
 import { directoryBytes } from '../daemon/leftovers.js';
 import { livePaths } from '../session-processes.js';
 import { cliCommit } from '../protocol-version.js';
-import { recordCommit, recordedCommit } from '../release.js';
+import { recordCommit, recordedCommit, releaseIdentityPath } from '../release.js';
 
 // GY-3214: the paths and the create-once step live in plain JavaScript, which the published npm package runs before any dependency is installed.
 import { cliReleasePath, currentCliPath, installLauncherPath, prepareCliRelease } from '../../bin/cli-release.mjs';
@@ -120,7 +120,7 @@ export async function sweepCliReleases(directory: string, run: ChildRun, procRoo
   const store = dirname(cliReleasePath(directory, 'x'));
   let serving: string;
   try { serving = realpathSync(currentCliPath(directory)); } catch { return swept; }
-  const readyAt = (path: string) => stat(join(path, '.graphyard', 'cli-ready')).catch(() => stat(path)).then(info => info.mtimeMs, () => 0);
+  const readyAt = (path: string) => stat(releaseIdentityPath(path)).catch(() => stat(path)).then(info => info.mtimeMs, () => 0);
   const copies = await Promise.all((await readdir(store, { withFileTypes: true }).catch(() => []))
     .filter(entry => entry.isDirectory()).map(async entry => ({ path: realpathSync(join(store, entry.name)), at: await readyAt(join(store, entry.name)) })));
   const served = copies.find(copy => copy.path === serving);

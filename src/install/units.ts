@@ -82,7 +82,7 @@ export function legacyUnitFiles(unitDirectory = userUnitDirectory()): LegacyUnit
 }
 
 /**
- * GY-3519: every install checkout registered as a master loop unit on this host (`graphyard-master*.service`).
+ * GY-3519: every install checkout registered as a master loop unit on this host (`mainworks-master*.service` or `graphyard-master*.service`).
  * Under the test runner only a directory under the system temporary directory is read, so tests never touch the operator's units.
  */
 export function hostInstallCheckouts(unitDirectory = userUnitDirectory(), home = homedir()): string[] {
@@ -92,7 +92,7 @@ export function hostInstallCheckouts(unitDirectory = userUnitDirectory(), home =
   try { entries = readdirSync(unitDirectory); } catch { return []; }
   const seen = new Set<string>(), checkouts: string[] = [];
   for (const name of entries) {
-    if (!/^graphyard-master[A-Za-z0-9@._-]*\.service$/.test(name)) continue;
+    if (!/^(?:graphyard|mainworks)-master[A-Za-z0-9@._-]*\.service$/.test(name)) continue;
     let text: string;
     try { text = readFileSync(join(unitDirectory, name), 'utf8'); } catch { continue; }
     const directory = unitCheckout(text, home).workingDirectory;

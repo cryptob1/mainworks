@@ -117,7 +117,7 @@ export interface DeployUnitProcess { unit: string; commit: string | null; busy: 
  */
 export function readDeployUnitProcess(read: (file: string) => string = file => readFileSync(file, 'utf8'), commitOf: (root: string) => string | null = cliCommit): DeployUnitProcess | null {
   try {
-    const own = read('/proc/self/cgroup').match(/^0::(\/.*\/)(graphyard-master[^/\s]*\.service)(?:\/.*)?$/m);
+    const own = read('/proc/self/cgroup').match(/^0::(\/.*\/)((?:graphyard|mainworks)-master[^/\s]*\.service)(?:\/.*)?$/m);
     if (!own) return null;
     const unit = deployUnitOf({ master: own[2] });
     let commit: string | null = null, busy = false;

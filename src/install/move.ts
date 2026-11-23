@@ -193,7 +193,7 @@ export async function moveInstall(root: string, options: { to: string; into?: st
     })();
   };
   if (!local) await exec('docker', ['run', '--rm', '-v', `${volume}:/data`, '-v', `${directory}:/out`, 'postgres:17-alpine', 'tar', '-C', '/data', '-cf', '/out/graphyard-data.tar', '.']);
-  for (const path of directories) await (path === root ? copy(path, { contents: true, exclude: join('.graphyard', 'worktrees') }) : copy(path, { contents: true }));
+  for (const path of directories) await (path === root ? copy(path, { contents: true, exclude: join(basename(stateDir(root)), 'worktrees') }) : copy(path, { contents: true }));
   for (const file of unitFiles) await copy(file);
   for (const file of credentials) await copy(file, { mode: 0o600 });
   // hostId names the target in both files the target's CLI and loop read.
