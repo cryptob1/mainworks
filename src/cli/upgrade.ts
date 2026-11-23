@@ -26,6 +26,7 @@ import { loadMasterConfig } from '../master.js';
 import { cliReleasePath, activeCliRoot, prepareCliRelease, publishCliRelease } from '../install/cli-release.js';
 import { knownGoodState, pinKnownGood } from '../master/known-good.js';
 import { joinHostHeavyBudget, withHeavyJob } from '../master/verification-slots.js';
+import { pullLine, readImagePulls } from '../install/image-pulls.js';
 import { setting } from '../setting.js';
 import { stateDirectory } from '../install/layout.js';
 
@@ -550,7 +551,11 @@ export async function watchPorts(input: { cliRoot: string; repoRoot: string; rep
       const args = [...redeployArguments(install, inputs.image!).slice(0, -1), '--source-root', build, '--apply'];
       const invoke = (flags: string[]) => run(process.execPath, ['--import', loader, join(build, 'src', 'cli.ts'), 'install', ...flags], repoRoot, { ...process.env, GRAPHYARD_VERSION: stamp.version, GRAPHYARD_BUILD_REVISION: stamp.revision });
       await invoke([...args.slice(0, -1), '--plan']);
+      const started = Date.now();
       await invoke(args);
+      // GY-3733: one line naming how long each image pull of this restart took.
+      const pulled = pullLine(readImagePulls(), started);
+      if (pulled) console.error(`[graphyard-deploy] ${pulled}`);
     }, { reserved: true }),
     head: async () => git(activeCliRoot(cliRoot), 'rev-parse', 'HEAD'),
     checkout: commit => publishCliRelease(directory, cliRoot, commit),

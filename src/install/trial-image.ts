@@ -5,6 +5,7 @@ import { legacyTrialContainerImage, pulledTrialImageFile, trialContainerImage, t
 import { localTransport, shellQuote } from './transport.js';
 import { appArmorEnabled, trialAppArmorLoadCommand, trialAppArmorProfile, trialAppArmorProfilePath, trialAppArmorProfileText } from '../merge-writer/trial-apparmor.js';
 import { setting } from '../setting.js';
+import { timedPull } from './image-pulls.js';
 
 /** GY-3188: trial images build on Mainworks's own builder, so its cache is pruned without touching another project's. */
 export const trialBuilder = 'mainworks-trial';
@@ -20,7 +21,7 @@ export const trialImagePlan = (ctx: Pick<AdapterContext, 'sourceRoot'>, publishe
 /** Pulls the published trial image and names it for the release tree's trials (trial-container.ts `trialImage`); builds it here otherwise. The marker is removed through the transport, so it goes where the image is provisioned — the target of a move, not the machine that ran it. */
 export const provisionTrialImage = async (ctx: Pick<AdapterContext, 'transport' | 'sourceRoot'>, published: string | null) => {
   const marker = pulledTrialImageFile(ctx.sourceRoot);
-  if (published && (await ctx.transport.exec('docker', ['image', 'pull', published], { allowFailure: true, timeout: 1_800_000 })).code === 0) return ctx.transport.putFile(marker, `${published}\n`, 0o644);
+  if (published && await timedPull(ctx.transport, published)) return ctx.transport.putFile(marker, `${published}\n`, 0o644);
   await ctx.transport.exec('rm', ['-f', marker], { allowFailure: true });
   if ((await ctx.transport.exec('docker', ['buildx', 'inspect', trialBuilder], { allowFailure: true })).code !== 0) await ctx.transport.exec('docker', trialBuilderCreateArgs);
   await ctx.transport.exec('docker', trialImageBuildArgs(ctx.sourceRoot), { timeout: 1_800_000 });

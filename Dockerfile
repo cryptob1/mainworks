@@ -9,34 +9,39 @@
 ARG GRAPHYARD_VERSION=0.0.0-dev
 ARG GRAPHYARD_BUILD_REVISION=unknown
 
-FROM node:24-bookworm-slim AS build
+# The lockfile's install alone: the trial's browser layer mounts it, so only a lockfile change rebuilds that layer.
+FROM node:24-bookworm-slim AS deps
 WORKDIR /app
-COPY package*.json ./
+COPY package.json package-lock.json ./
 RUN npm ci
+
+FROM deps AS build
 COPY . .
 RUN npm run build
 
 # Private-root merge trials. Nested bwrap uses unprivileged user namespaces;
 # no capabilities or host control sockets are supplied to this image.
-FROM node:24-trixie-slim AS trial
+# GY-3733: the heavy layers (apt, browsers, global CLIs) come first, from a base pinned by digest,
+# and the publish build reuses them from the registry cache, so an update pulls only what changed.
+FROM node:24-trixie-slim@sha256:af02d57b57719b9657a45199a79264a9437940cd55b3c7b3fc99615654f124a0 AS trial
 # Reverts require merge-tree --merge-base (Git >= 2.43); trixie supplies it.
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/graphyard-browsers
 RUN apt-get update && apt-get install -y --no-install-recommends bubblewrap python3 python3-venv git ripgrep ca-certificates openssh-client openssh-server && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/local/bin/node /usr/bin/node && ln -s /usr/local/bin/npm /usr/bin/npm && ln -s /usr/local/bin/npx /usr/bin/npx \
     && touch /etc/graphyard-trial
+# Use the locked Playwright version for both Chromium and its Debian libraries.
+# The browser is read-only image content; sessions keep their profiles in scratch.
+RUN --mount=from=deps,source=/app/node_modules,target=/opt/browser-dependencies/node_modules \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/graphyard-browsers node /opt/browser-dependencies/node_modules/playwright/cli.js install --with-deps chromium
+# Native workspace-sandbox regression tool; no login or account is copied in.
+RUN npm install --global @openai/codex@0.166.0
+RUN find /usr/local/lib/node_modules/@openai -type f -name codex -exec ln -s '{}' /usr/local/bin/codex-linux-sandbox ';'
 # Independent exact-math producer dependencies, immutable to the unprivileged trial.
 COPY benchmarks/hard-math/oracle/requirements.txt /opt/hard-math-requirements.txt
 RUN python3 -m venv /opt/graphyard-hard-math-oracle \
     && /opt/graphyard-hard-math-oracle/bin/pip install --no-cache-dir -r /opt/hard-math-requirements.txt \
     && chmod -R a-w /opt/graphyard-hard-math-oracle
 ENV HARD_MATH_PYTHON=/opt/graphyard-hard-math-oracle/bin/python
-# Use the locked Playwright version for both Chromium and its Debian libraries.
-# The browser is read-only image content; sessions keep their profiles in scratch.
-RUN --mount=from=build,source=/app/node_modules,target=/opt/browser-dependencies/node_modules \
-    PLAYWRIGHT_BROWSERS_PATH=/opt/graphyard-browsers node /opt/browser-dependencies/node_modules/playwright/cli.js install --with-deps chromium
-# Native workspace-sandbox regression tool; no login or account is copied in.
-RUN npm install --global @openai/codex@0.166.0
-RUN find /usr/local/lib/node_modules/@openai -type f -name codex -exec ln -s '{}' /usr/local/bin/codex-linux-sandbox ';'
 # Last, so a new commit rebuilds no layer above: the commit a published trial image was built from.
 ARG GRAPHYARD_BUILD_SHA=
 LABEL org.opencontainers.image.revision="${GRAPHYARD_BUILD_SHA}"
