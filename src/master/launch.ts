@@ -3,7 +3,7 @@ import { stateDir } from '../mainworks-names.js';
 import { PRODUCT_NAME } from '../model/product.js';
 import { createHash } from 'node:crypto';
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, realpathSync, writeFileSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { heavyJobsDirectory, slotsDirectoryVariable } from './verification-slots.js';
 import { confinedRuntimeArgs } from '../worker-sandbox.js';
@@ -18,6 +18,8 @@ import type { PartialWork } from '../model/capacity.js';
 import { type ConsentPrompt, consentAnswers, detectConsentPrompt, ownCheckoutTrustAnswer, screenDialog, settingsWarning, type ConsentAnswer, sameConsentPrompt } from '../consent-prompt.js';
 import { assertIsolatableHostControlEndpoints } from './confinement.js';
 import { dataDirectory } from '../install/worktree-root.js';
+import { configHome } from '../install/secrets.js';
+import { hostKnownHostsFile, hostsFile } from '../hosts.js';
 import { bwrapOnPath, masterConfinementVariable, confinementRefusalText, coordinatorConfinement, coordinatorConfinementRefusal, mountNamespaceProbeResult, readOnlyMountWrapper, assertCredentialsMasked, type CoordinatorConfinement, type ConfinementInput, type CredentialMask, type MaskProbe } from './confinement.js';
 import { runtimeLoginHomes, checkoutGitDirectory, checkoutGitProblem, checkoutWorktreeAdminDirectory, coordinatorCheckoutRoot } from './profiles.js';
 import type { MasterRun } from './profiles.js';
@@ -199,8 +201,13 @@ export async function masterSessionConfinement(kind: string, root: string, probe
   const ledgerLocks = join(dataDirectory(), 'review-ledger');
   // GY-3445: and the host-wide heavy-jobs folder, whose drain record `master drain` and `master resume` write.
   const heavyJobs = heavyJobsDirectory();
-  for (const path of [ledgerLocks, heavyJobs]) mkdirSync(path, { recursive: true });
-  const [bwrap, ...words] = readOnlyMountWrapper({ coordinatorRoot: root, sessionDirectory: root, bwrap: probe.bwrap ?? undefined, writable: [managed, ledgerLocks, heavyJobs, ...writable], drainWritable: true, environment, ...(credentialMask ? { credentialMask } : {}), ...(herdrPaths?.length ? { herdrPaths } : {}) });
+  // GY-3698: the machine's compute known-hosts and host list files, so `host add` works from the confined master while the rest of machine/ stays hidden.
+  const config = configHome(environment?.GRAPHYARD_CONFIG_HOME);
+  const knownHosts = hostKnownHostsFile(config), hosts = hostsFile(config);
+  for (const path of [ledgerLocks, heavyJobs, dirname(knownHosts)]) mkdirSync(path, { recursive: true });
+  if (!existsSync(knownHosts)) writeFileSync(knownHosts, '', { mode: 0o600 });
+  if (!existsSync(hosts)) writeFileSync(hosts, '[]\n', { mode: 0o600 });
+  const [bwrap, ...words] = readOnlyMountWrapper({ coordinatorRoot: root, sessionDirectory: root, bwrap: probe.bwrap ?? undefined, writable: [managed, ledgerLocks, heavyJobs, knownHosts, hosts, ...writable], drainWritable: true, environment, ...(credentialMask ? { credentialMask } : {}), ...(herdrPaths?.length ? { herdrPaths } : {}) });
   const records = masterRecords(root);
   mkdirSync(records, { recursive: true, mode: 0o700 });
   // Mount options precede the socket-confinement command inside bubblewrap.
@@ -208,7 +215,7 @@ export async function masterSessionConfinement(kind: string, root: string, probe
   // GY-3237: the session's HOME is a scratch home, so the host's data directory is named outright:
   // the checkouts its `master review` allocates land in the host's managed worktree root, where
   // the Herdr pane the host starts for the reviewer finds them.
-  const wrapper = [bwrap, '--setenv', masterConfinementVariable, 'master', '--setenv', 'GRAPHYARD_DATA_HOME', dataDirectory(), ...words.slice(0, command), '--ro-bind', records, records, ...words.slice(command)];
+  const wrapper = [bwrap, '--setenv', masterConfinementVariable, 'master', '--setenv', 'GRAPHYARD_DATA_HOME', dataDirectory(), '--setenv', 'GRAPHYARD_CONFIG_HOME', config, ...words.slice(0, command), '--ro-bind', records, records, ...words.slice(command)];
   await assertCredentialsMasked(wrapper, { coordinatorRoot: root, sessionDirectory: root, credentialMask });
   const reexposed = wrapper.filter((word, index) => index > 0 && wrapper[index - 1] === '--bind');
   return { mechanism: 'read-only-mount', wrapper, detail: `the coordinator checkout at ${resolve(root)} is bind-mounted read-only for the master session in a bubblewrap namespace whose /proc shows only its own processes and whose host systemd and bus sockets are hidden; only ${reexposed.join(', ')} are re-exposed writable, so no command it runs, nor any host process it could ask to start, can patch the checkout's tracked files` };
