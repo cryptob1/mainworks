@@ -1,7 +1,7 @@
 import type { Work } from './work.js';
 
 /**
- * GY-3601: Home's incidents, from five timers over the status snapshot `/api/status` already
+ * GY-3601: Home's incidents, from five timers (and the public link, GY-3690) over the status snapshot `/api/status` already
  * serves and the work snapshot beside it. None of them waits on an agent to report: each reads a
  * clock against a fact the control plane observes itself.
  */
@@ -29,9 +29,13 @@ export interface StatusSnapshot {
   hosts?: { host: string; away: boolean; at?: string; since?: string }[];
   /** When the live commit was deployed. */
   app?: { deployedAt?: string | null } | null;
+  /** GY-3690: while the owner turned the public link on and someone is invited but the link is not public, what the loop does and when it was last public. */
+  publicLink?: { doing: string; lastPublic?: string | null } | null;
 }
 
-export type IncidentKind = 'release-check' | 'not-pushed' | 'accounts' | 'machine-away' | 'no-merge' | 'repeated-failure';
+export type IncidentKind = 'release-check' | 'not-pushed' | 'accounts' | 'machine-away' | 'no-merge' | 'repeated-failure' | 'public-link';
+/** GY-3690: the incident's and `master status`'s attention line's words. */
+export const publicLinkOffLine = 'Invited people cannot open the dashboard: the public link is off although you turned it on';
 /** One card: what broke, the impact, what the team is doing, and the one action — none when it heals itself. */
 export interface Incident {
   kind: IncidentKind;
@@ -179,6 +183,9 @@ export function releaseCheckSince(gate: { verifiedAt: string | null; inFlight: {
   return Number.isFinite(since) ? new Date(since).toISOString() : gate.verifiedAt ?? gate.inFlight?.startedAt ?? gate.held?.at ?? null;
 }
 
+/** GY-3690: when the install's link was last public, in words. */
+export const lastPublic = (at: string | null | undefined, now: number) => at ? `It was last public ${span(now - Date.parse(at))} ago.` : 'It has not been public yet.';
+
 /** Every open incident, by the five timers. */
 export function incidentsFromStatus(status: StatusSnapshot, work: Work[], now: number): Incident[] {
   const incidents: Incident[] = [];
@@ -228,8 +235,10 @@ export function incidentsFromStatus(status: StatusSnapshot, work: Work[], now: n
     if (Number.isFinite(since) && now - since >= 2 * hour) incidents.push({ kind: 'no-merge', broke: `Nothing has merged for ${span(now - since)}.`,
       impact: `${plural(flying.length, 'task')} in flight ${flying.length === 1 ? 'is' : 'are'} stuck.`, doing: 'Builders keep working.', action: { label: 'Ask the Lead', open: 'lead' } });
   }
+  // 6. GY-3690: the owner turned the public link on and someone is invited, but the link is not public.
+  if (status.publicLink) incidents.push({ kind: 'public-link', broke: `${publicLinkOffLine}.`, impact: lastPublic(status.publicLink.lastPublic, now), doing: status.publicLink.doing, action: null });
 
-  // 6. The same normalised failure across three or more distinct items within 30 minutes (GY-3626).
+  // 7. The same normalised failure across three or more distinct items within 30 minutes (GY-3626).
   for (const group of repeatedFailureGroups(work, now)) {
     const filed = filedItemForFailure(work, group);
     incidents.push({

@@ -1,0 +1,16 @@
+{
+  "id": "account-pretrust",
+  "title": "New agent accounts trust host install checkouts and master launch failover moves to the next account",
+  "description": "Verifies that creating or logging in an agent environment records folder trust for every install checkout on the host, and that with the first account unable to launch, two identical master launch failures mark it unusable for an hour and start the master on the second account within two cycles.",
+  "tags": ["accounts", "master", "failover"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "pre-trusts host install checkouts and fails master launch over to the second account within two cycles",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/account-pretrust.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}
