@@ -13,7 +13,7 @@ export default `${PRODUCT_NAME} runs on a Linux host. Check each prerequisite; \
 - Herdr: \`herdr --version\` (\`up\` installs it if absent).
 - systemd user manager: \`systemctl --user status\`.
 
-Use \`handoff GY-N\` to obtain the workspace and launch command for this machine. Run agents through \`watch GY-N EPOCH -- YOUR_AGENT_COMMAND\`. The supervisor supplies \`GRAPHYARD_CLI\`, \`GRAPHYARD_URL\`, and worker identity to the child. Inside that session, invoke the CLI as \`node "$GRAPHYARD_CLI" status GY-N\` (or other commands). For manual startup, use the CLI path printed by \`init\` or Herdr's handoff command.
+Use \`handoff GY-N\` to obtain the workspace and launch command for this machine. Run agents through \`watch GY-N EPOCH -- YOUR_AGENT_COMMAND\`. The supervisor supplies \`MAINWORKS_CLI\`, \`MAINWORKS_URL\`, and worker identity to the child. Inside that session, invoke the CLI as \`node "$MAINWORKS_CLI" status GY-N\` (or other commands). For manual startup, use the CLI path printed by \`init\` or Herdr's handoff command.
 
 Test runs go to compute machines first, with the coordinator as fallback. Add a compute machine with \`${COMMAND_NAME} host prepare\` and \`${COMMAND_NAME} host add gy-compute@HOST\`.
 
