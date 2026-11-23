@@ -154,8 +154,9 @@ test('e2e:tests-page-matrix — the matrix shows each case\'s result per place, 
   const filtered = render({ matrix: chosen });
   assert.deepEqual([...filtered.matchAll(/<tr data-case="([^"]+)"/g)].map(match => match[1]), ['case-a']);
   assert.deepEqual([...filtered.matchAll(/<th scope="col" title="[^"]*">(\w+)<\/th>/g)].map(match => match[1]), ['Served']);
-  // Filter chips for category, required or optional, and place; and the fold that explains the places.
-  for (const group of ['Category', 'Where it runs']) assert.match(html, new RegExp(`role="group" aria-label="${group}"`));
+  // GY-3559: one row of chips — the view, only failing, required or optional; the coverage grid picks category and place, and its pick shows as one chip that clears it.
+  assert.equal([...html.matchAll(/class="case-filters"/g)].length, 1);
+  assert.match(filtered, /aria-pressed="true">dashboard in Served ×</);
   assert.deepEqual([...render({ matrix: { ...all, required: 'optional' } }).matchAll(/<tr data-case="([^"]+)"/g)].map(match => match[1]), ['case-b']);
   assert.match(html, /<details class="matrix-help"><summary>How this works<\/summary>/);
   // The by-item view is one click away.

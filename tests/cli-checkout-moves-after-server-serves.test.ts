@@ -118,7 +118,9 @@ appendFileSync(process.env.GRAPHYARD_TEST_REDEPLOY_LOG, JSON.stringify({ args: p
     const b = await commit('B');
 
     const server = createHttpServer((request, response) => {
-      response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: true, healthy: true, version: `unreleased ${b.slice(0, 12)}` }));
+      // The new commit serves only once the redeploy restarted the server (GY-3700: the watch probes first).
+      const up = existsSync(log);
+      response.writeHead(up ? 200 : 503, { 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: up, healthy: up, version: up ? `unreleased ${b.slice(0, 12)}` : 'unreleased old' }));
     });
     await new Promise<void>(done => server.listen(0, '127.0.0.1', done));
     const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;

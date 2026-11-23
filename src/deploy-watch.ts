@@ -122,6 +122,8 @@ export interface DeployWatchPorts {
   restart(commit: string): Promise<void>;
   /** /healthz answers healthy at the commit. */
   health(commit: string): Promise<void>;
+  /** GY-3700: one quick /healthz probe: the commit already serves healthy. */
+  serves?(commit: string): Promise<boolean>;
   /** The first commit is an ancestor of, or equal to, the second: the second contains it. */
   contains?(ancestor: string, commit: string): Promise<boolean>;
   /** Advances the known-good coordinator pin the loop's unit loads, so the loop's restart loads the commit. */
@@ -319,6 +321,13 @@ async function deployPass(file: string, ports: DeployWatchPorts, log: (line: str
     // nothing and no rollback is mid-flight (that is a deploy at work), so the watch brings the
     // stack up at the commit it already recorded as serving.
     if (ports.stoppedPlane && record.tip && !record.restore) await recoverStoppedPlane(record, ports.stoppedPlane, write, log);
+    return 'unchanged';
+  }
+  // GY-3700: a watch started after a handover finds the commit already serving: record it, build and restart nothing.
+  if (await ports.serves?.(tip).catch(() => false)) {
+    await write({ tip, failed: null, reason: null, verified: gated === tip });
+    await noteControl({ commit: tip, failedStep: null, failedReason: null, failedAt: null });
+    log(`[graphyard-deploy] ${tip.slice(0, 12)} already serves healthy; recorded as serving`);
     return 'unchanged';
   }
   const before = await ports.database().catch(() => null);
