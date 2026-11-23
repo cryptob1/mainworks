@@ -34,6 +34,7 @@ import { writeProjectMemory, recordedMasterMemory } from '../project-memory.js';
 import { mergeCandidateHold, mergeOpeningHold, openFlakyItem } from '../merge-writer/executor.js';
 import { mergeRecordKey, mergeWriterReads } from './cycle-merge-writer.js';
 import { runServedPreviewCases } from '../merge-writer/served-previews.js';
+import { runOnboardingTime } from '../onboarding-time.js';
 import { postAlert } from './delivery-alerts.js';
 import { readServeRecord, serveRecordPath } from '../serve-app.js';
 import type { RelandInput } from '../merge-writer/serve-revert.js';
@@ -309,7 +310,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
         serveRecord: async () => { const record = readServeRecord(serveRecordPath(root)); return record?.commit ? { commit: record.commit, check: record.check ?? null } : null; },
         ...(createWork ? { createWork,
           attest: (work: Work, proof: string, reason: string, idempotencyKey: string) => asOperatorAgent(`work/${work.id}/evidence`, intentInput('attest', work, { proof, reason }), idempotencyKey) } : {}),
-        gate: { root, repository: config.repository, previews: (commit: string) => runServedPreviewCases({ root, commit }) },
+        gate: { root, repository: config.repository, previews: (commit: string) => runServedPreviewCases({ root, commit }), onboarding: (commit: string) => runOnboardingTime({ root, commit }) },
       };
     },
     adoptRuns: loopRunAdoption(root, current, deps.fetcher),

@@ -7,6 +7,7 @@ import { mainworksRepository } from '../scenarios.js';
 import { releaseNotesPath, releaseNote, appendReleaseNote } from '../release-notes.js';
 import { deployRecordPath, readDeployRecord } from '../deploy-watch.js';
 import { notCovered, servedPreviewCases } from '../merge-writer/served-previews.js';
+import { onboardingCase } from '../onboarding-time.js';
 import { baseStillFails, relandItemFor, revertMergeCommit, serveLandings, serveRangeCommits, trialAndPushRevert } from '../merge-writer/serve-revert.js';
 import { gateTrialKey, trialStartOwner, trialStartWaiting } from '../merge-writer/trial-load.js';
 import { heavyTrial, trialShareAllowance, type MergeWriterReads } from './cycle-merge-writer.js';
@@ -238,9 +239,11 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
       const previews = reads.gate?.previews;
       const previewCases = !servedPreviewCases.some(id => held.includes(id)) ? []
         : previews ? await previews(commit) : notCovered(commit, new Date(reads.now()).toISOString(), 'this loop runs no served preview cases');
+      // GY-3747: a repository holding the onboarding case times a fresh repository to its first merge.
+      const onboarding = held.includes(onboardingCase) ? await reads.gate?.onboarding?.(commit) : undefined;
       // GY-3305: the suite trial's details ride with the catalog's — a failing test check (the browser
       // suite among them) keeps its identity whichever trial named it.
-      return { failed: [...new Set([...suite.failed, ...failed])], catalogMs, previewCases, details: { ...suite.details, ...details }, outputs: { ...suite.outputs, ...outputs } };
+      return { failed: [...new Set([...suite.failed, ...failed])], catalogMs, previewCases, ...(onboarding ? { onboarding } : {}), details: { ...suite.details, ...details }, outputs: { ...suite.outputs, ...outputs } };
     },
   };
 }
@@ -291,7 +294,7 @@ function mergeGateRecord(file: string, merge: (latest: GateRecord | null) => Gat
 }
 
 /** What a gate's write keeps of the diagnostics' own fields (GY-3147, GY-3193): they recorded them meanwhile. */
-const diagnosticFields = (latest: GateRecord | null, current: GateRecord) => ({ releaseTagged: latest?.releaseTagged ?? current.releaseTagged, catalogMs: latest?.catalogMs ?? current.catalogMs, diagnosticsAt: latest?.diagnosticsAt ?? current.diagnosticsAt, diagnosticFailures: latest?.diagnosticFailures ?? current.diagnosticFailures, previewCases: latest?.previewCases ?? current.previewCases, ...mergeFilings(latest, current) });
+const diagnosticFields = (latest: GateRecord | null, current: GateRecord) => ({ releaseTagged: latest?.releaseTagged ?? current.releaseTagged, catalogMs: latest?.catalogMs ?? current.catalogMs, diagnosticsAt: latest?.diagnosticsAt ?? current.diagnosticsAt, diagnosticFailures: latest?.diagnosticFailures ?? current.diagnosticFailures, previewCases: latest?.previewCases ?? current.previewCases, onboarding: latest?.onboarding ?? current.onboarding, ...mergeFilings(latest, current) });
 
 /** The commit served at rollout, which becomes the first verified commit: the deploy record's when it names this repository, else main's tip. */
 async function rolloutCommit(root: string, repository: string, reads: MergeWriterReads) {
@@ -476,7 +479,7 @@ export async function batchGateStep(cycle: Pick<Cycle, 'state' | 'effects' | 'sn
         if (failed) {
           // Re-read so the diagnostics' fields never overwrite what a gate recorded meanwhile; the
           // filings of both writers merge (GY-3147).
-          await mergeGateRecord(file, latest => ({ ...(latest ?? fresh), catalogMs: fresh.catalogMs, diagnosticsAt: fresh.diagnosticsAt, diagnosticFailures: fresh.diagnosticFailures, previewCases: fresh.previewCases, ...mergeFilings(latest, fresh) }));
+          await mergeGateRecord(file, latest => ({ ...(latest ?? fresh), catalogMs: fresh.catalogMs, diagnosticsAt: fresh.diagnosticsAt, diagnosticFailures: fresh.diagnosticFailures, previewCases: fresh.previewCases, onboarding: fresh.onboarding, ...mergeFilings(latest, fresh) }));
           note('batch-gate:diagnostics', 'done', `Diagnostics on ${fresh.verified?.slice(0, 12)}: ${failed.length} failure(s) filed`);
         }
       } catch (error) { note('batch-gate:diagnostics', 'failed', `The diagnostics failed and run again next cycle: ${message(error)}`); }
