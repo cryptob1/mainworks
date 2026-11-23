@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir, userInfo } from 'node:os';
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, isAbsolute, join, relative, sep } from 'node:path';
 import { deployUnitOf, legacyLoopUnit, proposedInstallUnits, readInstallUnits, resolveInstallUnits, systemdCommandLineWords, unitsFileOf } from './units.js';
 import { knownGoodCli, knownGoodState } from '../master/known-good.js';
 import { installDirectory } from './secrets.js';
