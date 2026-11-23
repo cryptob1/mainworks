@@ -9,6 +9,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import type { Run, RunEvent, RunFailure, RunOptions, RunResult, Runner } from './types.js';
+import { stateDirectory } from '../install/layout.js';
 
 /**
  * The Pi implementation of the runner (GY-169). It launches `pi --mode json` in the given
@@ -293,7 +294,7 @@ export function scratchRunsDirectory(cwd: string | undefined) {
   if (cwd) {
     // Each level made on its own, never recursively: a recursive mkdir can spin forever on a
     // pseudo-filesystem such as /proc, where a plain one fails at once.
-    const local = resolve(cwd, '.graphyard', 'scratch-runs');
+    const local = resolve(stateDirectory(cwd), 'scratch-runs');
     const made = (directory: string) => { try { mkdirSync(directory, { mode: 0o700 }); } catch (error: any) { if (error?.code !== 'EEXIST') throw error; } };
     try { made(dirname(local)); made(local); return local; } catch { /* a checkout it cannot write to: the temp directory */ }
   }

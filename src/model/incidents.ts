@@ -64,7 +64,7 @@ export function normaliseFailureLine(reason: string): string {
     .replace(/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?/g, '')
     .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '')
     .replace(/(\/(?:private\/)?(?:var\/)?tmp)\/[^/\s:'")]+/g, '$1')
-    .replace(/(\/\.graphyard\/worktrees)\/[^/\s:'")]+/g, '$1')
+    .replace(/(\/\.(?:graphyard|mainworks)\/worktrees)\/[^/\s:'")]+/g, '$1')
     .replace(/(\bworktrees)\/[^/\s:'")]+/g, '$1')
     .replace(/\b[A-Z]{2,10}-\d+\b/g, '')
     .replace(/\b0x[0-9a-f]+\b/gi, '')

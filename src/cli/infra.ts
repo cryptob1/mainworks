@@ -5,6 +5,7 @@ import { parseArgs } from 'node:util';
 import { defineCommands, type CliCommand } from './registry.js';
 import type { CliContext } from './context.js';
 import { asRecordedOperator } from './session-commands.js';
+import { stateDirectory } from '../install/layout.js';
 
 /**
  * GY-3515: scoped infra access. The owner approves one repository and one hosting project; the
@@ -13,7 +14,7 @@ import { asRecordedOperator } from './session-commands.js';
  * and its environments through the control plane, which records each call.
  */
 const usage = 'Usage: graphyard infra approve OWNER/NAME --project NAME [--from OLD] | take | repo create OWNER/NAME | repo push OWNER/NAME [DIR] | project create NAME | env create PROJECT ENV | log';
-export const infraCredentialFile = (root: string) => join(root, '.graphyard', 'infra-credential');
+export const infraCredentialFile = (root: string) => join(stateDirectory(root), 'infra-credential');
 
 async function act(context: CliContext, body: Record<string, unknown>) {
   let token: string;

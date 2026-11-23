@@ -27,6 +27,7 @@ import { adoptConversation, assertConversationRuntime, awaitConversation, captur
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { worktreeRoot } from '../install/worktree-root.js';
 import type { MasterSessionState } from '../daemon/state.js';
+import { stateDirectory } from '../install/layout.js';
 
 /** The registry role and profile name the master session launches under. */
 export const masterProfile = 'master';
@@ -157,7 +158,7 @@ export const masterSessionEffects = (root: string, config: () => MasterConfig, r
     assertConversationRuntime(kind);
     const variable = runtime?.launch.homeVariable ?? (kind === 'claude' ? 'CLAUDE_CONFIG_DIR' : 'CODEX_HOME');
     const environment = { ...runtime?.launch.environment, ...(login?.credential.home ? { [variable]: login.credential.home } : {}), ...accountHomeEnvironment(kind, login?.credential.home) };
-    const request = await readFile(master.launchRequestRecord ?? join(root, '.graphyard/launch', `${master.agentName ?? current.masterAgentName}.request`), 'utf8').catch(() => null);
+    const request = await readFile(master.launchRequestRecord ?? join(stateDirectory(root), 'launch', `${master.agentName ?? current.masterAgentName}.request`), 'utf8').catch(() => null);
     if (request !== null) {
       const record = join(masterRecords(root), `${createHash('sha256').update(request).digest('hex')}.request`);
       await mkdir(masterRecords(root), { recursive: true, mode: 0o700 });

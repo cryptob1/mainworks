@@ -6,6 +6,7 @@ import { readdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import { availableParallelism, homedir } from 'node:os';
 import { join } from 'node:path';
+import { stateDirectory } from '../install/layout.js';
 
 /** The free space every volume Graphyard writes keeps, when master.json sets no `run.diskFloorGb`. */
 export const defaultDiskFloorGb = 30;
@@ -71,7 +72,7 @@ export interface TrialLoad { slots: string; cap: number; order: number; /** GY-3
 /** The load of one start for `root`'s install; `run.diskFloorGb` is the one setting it reads. */
 const hostCpu = trialCpuMonitor();
 export async function trialLoad(root: string, who: keyof typeof trialStartOrder, usable = hostCpu.cores(), cores = availableParallelism()): Promise<TrialLoad> {
-  const run = await readFile(join(root, '.graphyard', 'master.json'), 'utf8').then(text => JSON.parse(text).run ?? {}, () => ({}));
+  const run = await readFile(join(stateDirectory(root), 'master.json'), 'utf8').then(text => JSON.parse(text).run ?? {}, () => ({}));
   return { slots: trialSlots(), cap: trialContainerCap(cores, usable), order: trialStartOrder[who], ...(who === 'gate' ? { cpuShares: gateCpuShares, hotCap: Math.max(1, Math.floor(trialContainerCap(cores, usable) / 2)) } : {}), hotCelsius: trialHotCelsius, floorBytes: diskFloorBytes({ run }), hwmon: '/sys/class/hwmon',
     pressureBoundSeconds: trialPressureBoundSeconds };
 }

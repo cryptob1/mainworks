@@ -1,0 +1,19 @@
+{
+  "id": "mainworks-install-layout",
+  "title": "Fresh installs use Mainworks paths and unit names; existing Graphyard installs keep theirs",
+  "description": "A fresh temporary home and checkout get ~/.config/mainworks/<install>/ (0600 files), a .mainworks directory and mainworks-* units, and nothing named graphyard; a temporary home seeded with ~/.config/graphyard, .graphyard and graphyard-* units runs status before and after the upgrade's install steps with nothing moved and nothing named mainworks.",
+  "tags": [
+    "deployment",
+    "regression"
+  ],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "Install into a fresh home and upgrade a Graphyard home",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/mainworks-install-layout.test.ts",
+      "timeoutSeconds": 180
+    }
+  ]
+}

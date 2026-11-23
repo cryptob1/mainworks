@@ -40,6 +40,7 @@ import type { Work } from './model.js';
 import { baseStillFails, type ServeLanding } from './merge-writer/serve-revert.js';
 import type { PreviewCaseRun } from './merge-writer/served-previews.js';
 import { trialFileTimeoutMs } from './merge-writer/trial-load.js';
+import { stateDirectory } from './install/layout.js';
 
 /** How long one gate may run before it counts as failed (gate timeout). */
 export const gateLimitMs = 45 * 60_000;
@@ -149,7 +150,7 @@ export interface GateRecord {
   at: string;
 }
 
-export const gateRecordPath = (root: string) => join(root, '.graphyard', 'main-gate.json');
+export const gateRecordPath = (root: string) => join(stateDirectory(root), 'main-gate.json');
 export function readGateRecord(file: string): GateRecord | null {
   if (!existsSync(file)) return null;
   try { return JSON.parse(readFileSync(file, 'utf8')) as GateRecord; } catch { return null; }

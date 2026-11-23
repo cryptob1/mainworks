@@ -12,6 +12,7 @@ import type { ChildRun } from '../child-runner.js';
 import { shellQuote } from '../shell-quote.js';
 import { hostKnownHostsFile, probeHost, readHosts, sshTarget, type HostReading as HostProbe } from '../hosts.js';
 import { trialContainerFault, trialHotCelsius } from './trial-load.js';
+import { stateDirectory } from '../install/layout.js';
 
 /** One host's reading: cores, cores busy (1-minute load), the share of CPU stolen, and its hottest CPU sensor against the heat limit. */
 export interface HostReading { name: string; cores: number; busy: number; steal: number; celsius: number | null; limit: number; away: boolean; reason?: string; /** GY-3645: its shim runs a check's Compose services. */ compose?: boolean }
@@ -327,7 +328,7 @@ export function remoteShardSession(input: { root: string; sha: string; image: st
 
 /** One trial's shard record, for master status: what ran them, wall time, shards run and run remotely, waits while a host idled, and each host's reading. */
 export interface RemoteShardRun { /** GY-3526: the worker verification that ran them; absent for a merge trial. */ label?: string; at: string; wallMs: number; shards: number; remote: number; queuedWhileIdle: number; host: string; celsius: number | null; hosts: { name: string; away: boolean; reason?: string; celsius: number | null; freeCores: number }[] }
-export const remoteShardRecordPath = (root: string) => join(root, '.graphyard', 'remote-shards.json');
+export const remoteShardRecordPath = (root: string) => join(stateDirectory(root), 'remote-shards.json');
 const keptRuns = 20;
 
 export async function recordRemoteShardRun(root: string, run: RemoteShardRun): Promise<void> {

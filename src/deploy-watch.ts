@@ -14,6 +14,7 @@ import { servedVerified } from './batch-gate.js';
 import { graphyardRepository } from './scenarios.js';
 import { servedCommit } from './production-watch.js';
 import type { Work } from './model/work.js';
+import { stateDirectory } from './install/layout.js';
 
 /**
  * What the deploy last served, the tip that failed and is retried after a backoff (GY-3703), and,
@@ -23,7 +24,7 @@ import type { Work } from './model/work.js';
  * checkout whose origin names no repository) name none (GY-2955).
  */
 export interface DeployRecord { tip: string | null; failed: string | null; reason: string | null; at: string; restore?: string | null; attempts?: number; /** Retries the failed tip has had (GY-3703). */ retries?: number; repository?: string | null; /** This successful deploy selected a batch-gate verified tip. */ verified?: boolean }
-export const deployRecordPath = (root: string) => join(root, '.graphyard', 'deploy.json');
+export const deployRecordPath = (root: string) => join(stateDirectory(root), 'deploy.json');
 export function readDeployRecord(file: string): DeployRecord | null {
   if (!existsSync(file)) return null;
   try { return JSON.parse(readFileSync(file, 'utf8')) as DeployRecord; } catch { return null; }
@@ -57,7 +58,7 @@ export interface ControlPlaneRecord {
   failedAt: string | null;
   at: string;
 }
-export const controlPlaneRecordPath = (root: string) => join(root, '.graphyard', 'control-plane.json');
+export const controlPlaneRecordPath = (root: string) => join(stateDirectory(root), 'control-plane.json');
 export function readControlPlaneRecord(file: string): ControlPlaneRecord | null {
   if (!existsSync(file)) return null;
   try { return JSON.parse(readFileSync(file, 'utf8')) as ControlPlaneRecord; } catch { return null; }

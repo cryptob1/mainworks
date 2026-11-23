@@ -12,6 +12,7 @@ import { repositoryFromRemote } from '../onboarding.js';
 import { workMutation, type CliCommand } from './registry.js';
 import { parkCommand, parkInput } from './park-command.js';
 import { setting } from '../setting.js';
+import { stateDirectory } from '../install/layout.js';
 export { parkArgs, parkCommand } from './park-command.js';
 
 /**
@@ -191,7 +192,7 @@ export async function recordedOperator(root: string): Promise<{ token: string; r
     if ((token = await readToken(directory, operator).catch(() => null))) break;
   }
   if (!token) return null;
-  const up = await readFile(join(root, '.graphyard/up.json'), 'utf8').then(JSON.parse, () => null);
+  const up = await readFile(join(stateDirectory(root), 'up.json'), 'utf8').then(JSON.parse, () => null);
   return { token, reachableUrl: typeof up?.tailnetUrl === 'string' && up.tailnetUrl ? up.tailnetUrl : null };
 }
 /**

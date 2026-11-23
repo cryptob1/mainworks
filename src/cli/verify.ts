@@ -8,6 +8,7 @@ import { countByRunner, countProofCases, proofTitle } from '../proof-runner.js';
 import { mechanicalProof } from '../model/dispatch.js';
 import type { CliCommand } from './registry.js';
 import { abnormalTestExit, isolatedTestEnvironment, reserveTestPorts, testPortEnvironment, type ReserveOptions } from './test-isolation.js';
+import { stateDirectory } from '../install/layout.js';
 
 /**
  * `graphyard verify GY-N`: the worker's own mechanical check before `complete` (GY-115).
@@ -54,7 +55,7 @@ type Criterion = { id: string; proofs: string[]; bootstrap?: unknown };
 
 const git = (root: string, args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 export { countProofCases, proofTitle };
-export const recordPath = (root: string, key: string) => join(root, '.graphyard', 'verify', `${key}.json`);
+export const recordPath = (root: string, key: string) => join(stateDirectory(root), 'verify', `${key}.json`);
 
 /** Which of the item's proofs a worker can run here, and why each of the rest is outstanding. */
 export function classifyProofs(criteria: Criterion[]): { runnable: { proof: string; criteria: string[] }[]; outstanding: Outstanding[] } {
@@ -118,7 +119,7 @@ export async function runProof(root: string, proof: string, files: string[], por
  */
 export const testSide = (file: string) => /(^|\/)(tests?|__tests__|fixtures?)\//.test(file) || /\.test\.(ts|mts|js|mjs|cjs)$/.test(file);
 /** Graphyard's own state in a worktree (records, the base scratch tree): never part of the change. */
-const graphyardState = (file: string) => file.startsWith('.graphyard/');
+const graphyardState = (file: string) => file.startsWith('.graphyard/') || file.startsWith('.mainworks/');
 
 /** The commit the change is measured from: the merge base of HEAD with the base branch's remote tip, or null when it cannot be resolved here. */
 export function changeBase(root: string, baseBranch = 'main') {
@@ -150,8 +151,8 @@ export async function baseTree(root: string, base: string): Promise<{ tree: stri
   if (!reverted.length) return null;
   let scratch: string;
   try {
-    await mkdir(join(root, '.graphyard', 'verify'), { recursive: true });
-    scratch = await mkdtemp(join(root, '.graphyard', 'verify', 'base-'));
+    await mkdir(join(stateDirectory(root), 'verify'), { recursive: true });
+    scratch = await mkdtemp(join(stateDirectory(root), 'verify', 'base-'));
   } catch (error: any) { return { tree: null, reverted, reason: `no scratch directory for the base tree: ${error.message}`, release: async () => {} }; }
   const release = () => rm(scratch, { recursive: true, force: true });
   const tree = join(scratch, 'tree');
@@ -239,7 +240,7 @@ export async function verifyWorkingTree(work: { key: string; criteria: Criterion
 }
 
 export async function written(root: string, record: VerifyRecord) {
-  await mkdir(join(root, '.graphyard', 'verify'), { recursive: true });
+  await mkdir(join(stateDirectory(root), 'verify'), { recursive: true });
   await writeFile(recordPath(root, record.key), JSON.stringify(record, null, 2));
   return record;
 }

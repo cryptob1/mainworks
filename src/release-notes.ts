@@ -3,12 +3,13 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { Work } from './model.js';
+import { stateDirectory } from './install/layout.js';
 
 export interface ReleaseNoteItem { key: string; title: string; summary: string; cases: string[] }
 export interface ReleaseNote { commit: string; at: string; items: ReleaseNoteItem[]; reverted: ReleaseNoteItem[] }
 
 const keep = 20;
-export const releaseNotesPath = (root: string) => join(root, '.graphyard', 'release-notes.json');
+export const releaseNotesPath = (root: string) => join(stateDirectory(root), 'release-notes.json');
 
 export function readReleaseNotes(file: string): ReleaseNote[] {
   if (!existsSync(file)) return [];

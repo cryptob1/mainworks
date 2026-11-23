@@ -6,6 +6,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { z } from 'zod';
+import { stateDirectory } from '../install/layout.js';
 
 const inputReferenceSchema = z.object({ record: z.string(), runtime: z.string(), event: z.string() }).strict();
 type InputReference = z.infer<typeof inputReferenceSchema>;
@@ -19,8 +20,8 @@ export const conversationSchema = z.object({
 export type Conversation = z.infer<typeof conversationSchema>;
 export const continuitySchema = z.object({ current: conversationSchema, predecessor: conversationSchema.nullable() }).strict();
 export type Continuity = z.infer<typeof continuitySchema>;
-export const masterRecords = (root: string) => resolve(root, '.graphyard/master-records');
-export const masterInputs = (root: string, launch: string) => resolve(root, '.graphyard/launch', `${launch}.inputs.jsonl`);
+export const masterRecords = (root: string) => resolve(stateDirectory(root), 'master-records');
+export const masterInputs = (root: string, launch: string) => resolve(stateDirectory(root), 'launch', `${launch}.inputs.jsonl`);
 
 /** Supported native formats, rather than silently launching a master that cannot continue. */
 export function assertConversationRuntime(kind: string): asserts kind is 'claude' | 'codex' {

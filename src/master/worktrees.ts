@@ -10,6 +10,7 @@ import type { MasterConfig } from './profiles.js';
 import { assertOutsideWorktrees } from '../private-file.js';
 import { stopProcessesUnder } from '../session-processes.js';
 import { agentOwner, type AttentionItem } from './attention.js';
+import { stateDirectory } from '../install/layout.js';
 
 /*
  * Assignment worktrees are the loop's largest consumer of disk: every attempt checks the
@@ -20,7 +21,7 @@ import { agentOwner, type AttentionItem } from './attention.js';
 /** The dependency trees a package manager recreates from the lockfile. */
 export const dependencyDirectories = ['node_modules'] as const;
 export const lockfiles = ['package-lock.json'] as const;
-export const worktreesDirectory = (root: string) => resolve(root, '.graphyard/worktrees');
+export const worktreesDirectory = (root: string) => resolve(stateDirectory(root), 'worktrees');
 export { failureText } from '../disk-space.js';
 
 /** Free space on the volume holding a path, as the kernel reports it to this user. */
