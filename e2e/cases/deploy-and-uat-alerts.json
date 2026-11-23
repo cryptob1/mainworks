@@ -1,0 +1,15 @@
+{
+  "id": "deploy-and-uat-alerts",
+  "title": "The alert webhook hears about each deploy and each failed UAT once",
+  "description": "Runs the loop's alert step against a fake webhook: after a promotion it receives one message listing each newly served item's key, title and commit, and after a failing release candidate one line naming the candidate, the commit that stays served and the failed cases.",
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "the webhook receives the deployed and UAT-failed messages",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:deploy-and-uat-alerts tests/deploy-and-uat-alerts.test.ts",
+      "timeoutSeconds": 120
+    }
+  ]
+}

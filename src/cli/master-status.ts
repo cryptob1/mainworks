@@ -7,14 +7,15 @@ import type { Work } from '../model/work.js';
 import { type ChildRun, defaultChildRun } from '../child-runner.js';
 import { daemonSummary } from '../daemon/run.js';
 import { emptyMasterSession, masterSummary, readDaemonState } from '../daemon/state.js';
-import { standingStepFailures, workerGrowthKey, masterLaunchKey, masterLaunchBackoffAfter } from '../daemon/cycle.js';
+import { standingStepFailures, testQueueStatus, workerGrowthKey, masterLaunchKey, masterLaunchBackoffAfter } from '../daemon/cycle.js';
 import { fetchRefusalKey, gateStallKey } from '../daemon/cycle-batch-gate.js';
 import { cpuPerMergedItem, implementationWaiting } from '../daemon/cpu-pressure.js';
 import { heatReading } from '../merge-writer/trial-load.js';
 import { overloadAlarm, overloaded, sessionFigures } from '../session-share.js';
 import { profileHealth, repeatedLaunchFailures } from '../daemon/sessions.js';
 import { workersAllowed } from '../master/worker-pool.js';
-import { heavyDrainLine, heavyJobLimit, heavyJobsDirectory, readHeavyDrain, readStrictCap, slotHolders } from '../master/verification-slots.js';
+import { heavyDrainLine, heavyJobBudget, heavyJobLimit, heavyJobsDirectory, readHeavyDrain, readMachines, readStrictCap, slotHolders } from '../master/verification-slots.js';
+import { budgetLine, machineLine } from '../model/machine-load.js';
 import { standingLimit } from '../master/profiles.js';
 import { attemptBoundSummary } from '../master/attempt-bound.js';
 import { mergeWriterSummary, trialImageKey } from '../daemon/cycle-merge-writer.js';
@@ -37,6 +38,7 @@ import { unspecifiedModel, type FleetView } from '../model/registry.js';
 import { observeApplications } from '../production-watch.js';
 import { appRelease } from '../app-url.js';
 import { applicationAttention, reworkAttention } from '../master/attention.js';
+import { lastPublic, publicLinkOffLine } from '../model/incidents.js';
 import { trialFloorAttention } from '../merge-writer/trial-load.js';
 import { openHumanRequests, parkedOnHuman } from '../model/human-request.js';
 import { humanAsk } from '../model/human-ask.js';
@@ -229,6 +231,9 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   // GY-3624: the flow numbers for 6 hours, 24 hours and 7 days, and one attention line when a station's slowest tenth waits over an hour.
   const flow: Flow | null = unreachable ? null : await Promise.resolve().then(() => masterApi('flow')).catch(() => null);
   const flowAttention = flow?.attention ? [flow.attention] : [];
+  // GY-3690: one line while the owner turned the public link on and someone is invited, but the link is not public.
+  const linkOff: { doing: string; lastPublic: string | null } | null = unreachable ? null : await Promise.resolve().then(() => masterApi('team-access/host')).then(body => body?.publicLinkOff ?? null, () => null);
+  const linkAttention = linkOff ? [{ subject: 'team access', text: `${publicLinkOffLine}. ${lastPublic(linkOff.lastPublic, now)} ${linkOff.doing}`, next: 'Do what the line names if the loop cannot; it clears once the link is public' }] : [];
   const overloadAttention = overloaded(state?.sessions ?? [], now).map(session => ({ subject: session.name ?? session.unit, text: `Overload: ${overloadAlarm(session, now)}`, next: 'The session is only held to its share, not stopped; see what it runs on the Workers page' }));
   // GY-3634: the latest trial benchmark beside the median of the previous ten on the same file list, with one attention line on >25% wall regression.
   const bench = benchStatus(readBenchResults(benchResultsPath(root)));
@@ -239,7 +244,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     caretaker: state?.caretaker ? `Last ran ${formatAge(Date.parse(state.caretaker.at), now)} ago: ${state.caretaker.result}` : 'Not run yet',
     // GY-3095: the pipeline has stopped where a role cannot launch; each line names the role, the refusal, how long it has lasted and the next command.
     // GY-3204: and each application whose versionUrl lags main or fails to answer.
-    attention: [...humanAttention, ...reworkCaps, ...leaseLosses, ...blockerAttention, ...drained, ...growth, ...trialImageFault, ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now) : []), ...backedOff, ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...wrongModelAttention(fleet), ...allowanceAttention(fleet, now), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(readRemoteShardRuns(root)), ...gateStalled, ...overloadAttention, ...flowAttention, ...(bench?.attention ? [bench.attention] : []), ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
+    attention: [...humanAttention, ...reworkCaps, ...leaseLosses, ...blockerAttention, ...drained, ...growth, ...trialImageFault, ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now) : []), ...backedOff, ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...wrongModelAttention(fleet), ...allowanceAttention(fleet, now), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(readRemoteShardRuns(root)), ...gateStalled, ...overloadAttention, ...flowAttention, ...linkAttention, ...(bench?.attention ? [bench.attention] : []), ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
     // GY-3199: the control plane's own update record — the Graphyard commit this install runs, its
     // last check and last update, the step of a failed upgrade, and the staleness the daily
     // diagnostics reports (a check over a day old, or a verified commit first seen over a day ago
@@ -257,7 +262,10 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     diskHeadroom: state?.diskHeadroom ?? null,
     heavyDrain: drain,
     // GY-3447: who holds the host's heavy-job slots (trials, gates, whole suites, deploy builds) and the limit they share.
-    heavyJobs: { limit: heavyJobLimit(heavyJobsDirectory()), holders: slotHolders(heavyJobsDirectory()) },
+    // GY-3528: the budget across this machine and every ready host, and each machine's load, one line each.
+    heavyJobs: { limit: heavyJobLimit(heavyJobsDirectory()), budget: budgetLine(heavyJobBudget(heavyJobsDirectory()).machines), machines: (readMachines(heavyJobsDirectory()) ?? []).map(machineLine), holders: slotHolders(heavyJobsDirectory()) },
+    // GY-3694: heads waiting for or running a merge trial against twice the available trial slots (local heavy-job limit plus ready hosts).
+    testQueue: testQueueStatus(open, state?.mergeWriter, state?.hosts, now),
     // GY-3446: the temporary limits standing now, each with the time it reverts to the default; null once expired or never set.
     temporaryLimits: { trialCap: standing(master.run.trialCap), launchHotCelsius: standing(master.run.launchHotCelsius), hostHeavyJobs: strictCap ? { value: strictCap.limit, until: strictCap.until, by: strictCap.requestedBy } : null },
     // GY-3348: the host's CPU as the loop last read it — pressure (avg60) and steal percent, the
@@ -272,7 +280,8 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     // GY-3438: every live agent session with its CPU and memory use beside its fair share, as the loop last read its cgroup.
     sessionUsage: (state?.sessions ?? []).map(session => ({ session: session.name ?? session.unit, use: sessionFigures(session), overSince: session.overSince })),
     // GY-3190: the latest daily report of what the loop's sweeps stopped or removed, and the disk Graphyard's leftovers hold.
-    leftovers: state?.leftovers.report ?? null,
+    // GY-3691: with the working copies' disk use as the loop last read it.
+    leftovers: state && (state.leftovers.report || state.leftovers.worktreeDisk) ? { ...state.leftovers.report, worktreeDisk: state.leftovers.worktreeDisk } : null,
     loop: loop ? { state: loop.liveness.state, detail: loop.liveness.detail, cycle: loop.cycle, steps: loop.metrics?.steps ?? null } : { state: 'absent', detail: 'The loop cursor cannot be read' },
     // The loop's own master session (GY-2949): working / idle / `limited until T` while the account hold stands / absent.
     masterSession: { ...masterSummary(session ?? emptyMasterSession(), now, masterAgent, masterScreen), screenError },

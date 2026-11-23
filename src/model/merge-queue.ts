@@ -32,7 +32,7 @@ export const readOnlyTrialBlocker = 'Read-only file system';
 export const trialOverloadPrefix = 'Trial-host overload:';
 
 /** One queued control-plane candidate, highest priority first, oldest on ties. */
-export interface QueuedMerge { key: string; id: string; head: string; submittedAt: string; waitingMs: number }
+export interface QueuedMerge { key: string; id: string; head: string; submittedAt: string; waitingMs: number; priority: number }
 export interface MergeQueue {
   /** The candidate the writer merges next, or null: nothing is due, or an open intent blocks the queue. */
   next: Work | null;
@@ -45,6 +45,11 @@ export interface MergeQueue {
 export const open = (state: MergeLedgerState) => state.state === 'intent' || state.state === 'pushed';
 export const gate = (item: Work, name: string) => item.gates.find(entry => entry.name === name)?.passed === true;
 
+/**
+ * GY-3695: the queue ages. A head counts one priority level higher for each full hour it has waited
+ * for its trial, never above 1; a priority 0 head keeps 0, so a hotfix still goes first.
+ */
+export const effectivePriority = (priority: number, waitingMs: number) => priority === 0 ? 0 : Math.max(1, priority - Math.floor(Math.max(0, waitingMs) / 3_600_000));
 const createdAtOf = (item: Pick<Work, 'createdAt'>) => Date.parse(item.createdAt) || 0;
 /** A hotfix (an item titled `Hotfix: …`) is merged before every other queued head, so a fix to a bottleneck never waits out the queue. */
 export const isHotfix = (item: Pick<Work, 'title'>) => /^hotfix:/i.test(item.title ?? '');
@@ -115,7 +120,7 @@ export function awaitsMerge(item: Work, ledger: Readonly<Record<string, MergeLed
 }
 
 /**
- * The control-plane candidates owed a merge, hotfixes and base-failure repairs first, then by priority (0 first, GY-3098), then the oldest item (by `createdAt`, ties by submission) first.
+ * The control-plane candidates owed a merge, hotfixes and base-failure repairs first, then by effective priority (0 first, GY-3098; aged per hour waited, GY-3695), then the oldest item (by `createdAt`, ties by submission) first.
  * An item whose ledger holds an open intent or an unreconciled push blocks the whole queue:
  * `reconcileIntents` settles it before any new flight starts.
  */
@@ -123,9 +128,11 @@ export function mergeQueue(work: readonly Work[], ledger: Readonly<Record<string
   const blocking = Object.values(ledger).find(open);
   // The order dispatch releases in (GY-3098): highest priority first, then the oldest item, by when it was filed, not by its latest
   // submission: lead time runs from release, so a head redone after a refusal goes ahead of newer work instead of rejoining at the back.
+  // GY-3695: by effective priority — the item's own, one level higher per full hour its head has waited.
+  const level = (item: Work) => effectivePriority(item.priority, now - submittedAtOf(item));
   const owed = work.filter(item => awaitsMerge(item, ledger, now))
-    .sort((a, b) => Number(mergesFirst(b)) - Number(mergesFirst(a)) || a.priority - b.priority || createdAtOf(a) - createdAtOf(b) || submittedAtOf(a) - submittedAtOf(b) || a.key.localeCompare(b.key));
-  const queue = owed.map(item => { const at = submittedAtOf(item); return { key: item.key, id: item.id, head: item.candidate!.sha.toLowerCase(), submittedAt: new Date(at).toISOString(), waitingMs: Math.max(0, now - at) }; });
+    .sort((a, b) => Number(mergesFirst(b)) - Number(mergesFirst(a)) || level(a) - level(b) || createdAtOf(a) - createdAtOf(b) || submittedAtOf(a) - submittedAtOf(b) || a.key.localeCompare(b.key));
+  const queue = owed.map(item => { const at = submittedAtOf(item); return { key: item.key, id: item.id, head: item.candidate!.sha.toLowerCase(), submittedAt: new Date(at).toISOString(), waitingMs: Math.max(0, now - at), priority: level(item) }; });
   return { next: blocking ? null : owed[0] ?? null, due: blocking ? [] : owed, queue, blockedBy: blocking?.key ?? null };
 }
 /** The oldest-submitted candidate due a merge (hotfixes and base-failure repairs first), or null while nothing is due or an open intent blocks the queue (AC-1). */

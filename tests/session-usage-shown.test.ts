@@ -13,7 +13,7 @@ import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { encodeLoopSessions, loopSessions } from '../src/model/loop-presence.js';
 import type { SessionScope } from '../src/session-share.js';
-import { SessionUsage } from '../web/pages/workers.js';
+import { OverloadAlarms, SessionUsage } from '../web/pages/workers.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // e2e:session-usage-shown — GY-3438: the loop reads every live agent session's scope from its
@@ -59,7 +59,9 @@ async function fixture() {
     },
   };
 }
-const page = (yard: Awaited<ReturnType<typeof fixture>>) => renderToStaticMarkup(createElement(SessionUsage, { sessions: loopSessions(encodeLoopSessions(yard.state.sessions))!, now: yard.now() }));
+// The overload alarm sits above the Workers page's Machine details fold, the usage table inside it (GY-3485).
+const page = (yard: Awaited<ReturnType<typeof fixture>>) => { const props = { sessions: loopSessions(encodeLoopSessions(yard.state.sessions))!, now: yard.now() };
+  return renderToStaticMarkup(createElement(OverloadAlarms, props)) + renderToStaticMarkup(createElement(SessionUsage, props)); };
 const alarms = (yard: Awaited<ReturnType<typeof fixture>>) => yard.logged.filter(line => /overload/.test(line));
 
 test('e2e:session-usage-shown — master status and the Workers page list each live session with its CPU and memory use and its share', async () => {

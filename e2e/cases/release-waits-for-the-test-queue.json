@@ -1,0 +1,16 @@
+{
+  "id": "release-waits-for-the-test-queue",
+  "title": "The loop releases backlog only while the test queue has room and holds a lands-alone item until the test and merge stages clear",
+  "description": "Seeds 8 backlog items (7 ordinary and 1 marked landsAlone), 24 allowed workers and 3 trial slots with a stub trial that takes 3 cycles, and asserts the test queue never exceeds 6 and the lands-alone item is released last.",
+  "tags": ["daemon", "delivery"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "test queue stays at or below twice the trial slots and lands-alone releases last",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:release-waits-for-the-test-queue tests/release-waits-for-the-test-queue.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}

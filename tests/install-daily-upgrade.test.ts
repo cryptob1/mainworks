@@ -114,7 +114,7 @@ test('unit:tests/install-daily-upgrade.test.ts — the master loop of Graphyard\
   assert.equal(filed.length, 1, 'one item, however many passes fail at the same step of the same commit');
   assert.match(filed[0]!.title, /stuck at health/);
   assert.match(filed[0]!.description, /fails at health/, 'the item names the failed step');
-  assert.match(filed[0]!.key, new RegExp(`control-plane-upgrade:${c}:health`), 'the filing is idempotent per verified commit and failed step');
+  assert.equal(filed[0]!.key, 'control-plane-upgrade:health', 'the filing is idempotent per failed step');
 });
 
 test('unit:tests/install-daily-upgrade.test.ts — master status shows the control plane\'s commit, last check and last update, and the daily diagnostics reports a stale check and a commit over a day behind the latest verified one', async () => {

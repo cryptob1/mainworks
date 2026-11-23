@@ -9,6 +9,7 @@
 // GY-3440: where port 22 is Tailscale SSH (it ignores authorized_keys and so the shim), prepare adds a
 // second OpenSSH for gy-compute only on port 2222; host add takes USER@HOST:PORT or an ssh-config alias
 // and reports whether the operator's own account logs into that host unattended on port 22.
+import { existsSync } from 'node:fs';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { homedir, hostname, userInfo } from 'node:os';
@@ -22,10 +23,14 @@ import { shellQuote } from './install/transport.js';
 
 export interface HostRecord { target: string; addedAt: string }
 /** GY-3517: `at` is when this probe read the host; `update` marks one away only because its shim lacks a trial verb. */
-export interface HostReading { host: string; local?: boolean; at?: string; away: boolean; /** GY-3601: when an away host stopped answering. */ since?: string; update?: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; stat?: { total: number; steal: number } | null }
+export interface HostReading { host: string; local?: boolean; at?: string; away: boolean; /** GY-3601: when an away host stopped answering. */ since?: string; update?: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; /** GY-3528: cores busy (the 1-minute load). */ busy?: number | null; stat?: { total: number; steal: number } | null }
 
 /** Machine-wide, beside the machine-share link (team-access.ts): every install's loop on this machine reads the same hosts. */
 export const hostsFile = (home = configHome()) => join(home, 'machine', 'hosts.json');
+/** GY-3698: compute host keys live beside hosts.json in the machine folder, so a confined master with no ~/.ssh records and verifies them. */
+export const hostKnownHostsFile = (home = configHome()) => join(home, 'machine', 'known_hosts');
+/** SSH options that pin compute host keys to the machine folder with accept-new. */
+export const hostKeySshOptions = (knownHosts = hostKnownHostsFile()) => ['-o', `UserKnownHostsFile=${knownHosts}`, '-o', 'StrictHostKeyChecking=accept-new'];
 /** USER@HOST, USER@HOST:PORT, or an ssh-config alias. */
 export const hostTargetPattern = /^(?:[a-z_][a-z0-9_.-]*@[A-Za-z0-9][A-Za-z0-9.-]*(?::\d{1,5})?|[A-Za-z0-9][A-Za-z0-9._-]*)$/;
 export const computePort = 2222;
@@ -36,7 +41,7 @@ export async function readHosts(file = hostsFile()): Promise<HostRecord[]> {
   const parsed = JSON.parse(text) as unknown;
   return Array.isArray(parsed) ? parsed.filter((entry): entry is HostRecord => typeof entry?.target === 'string') : [];
 }
-const writeHosts = async (file: string, hosts: HostRecord[]) => { await mkdir(dirname(file), { recursive: true }); await writeFile(file, JSON.stringify(hosts, null, 2) + '\n'); };
+const writeHosts = async (file: string, hosts: HostRecord[]) => { if (!existsSync(dirname(file))) await mkdir(dirname(file), { recursive: true }); await writeFile(file, JSON.stringify(hosts, null, 2) + '\n'); };
 
 /**
  * The one-time script `host prepare` prints, for the host's owner to run with sudo. GY-3688: one host
@@ -115,8 +120,22 @@ else
 fi
 install -d "$home/.graphyard"
 chown -R "$user:$user" "$home/.graphyard"
+# The setup tool runs the docker beside it (GY-3697): where docker lives elsewhere, link it there.
+tooldir=$(dirname "$setuptool")
+if [ ! -x "$tooldir/docker" ]; then
+  docker=$(command -v docker) || { echo "Install Docker, then run this again." >&2; exit 1; }
+  ln -sfn "$docker" "$tooldir/docker"
+fi
 for _ in 1 2 3 4 5 6 7 8 9 10; do [ -S "/run/user/$uid/bus" ] && break; sleep 1; done
-sudo -u "$user" XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" PATH="$(dirname "$setuptool"):$PATH" "$setuptool" install
+as_user() { sudo -u "$user" XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" PATH="$tooldir:$PATH" "$@"; }
+as_user "$setuptool" install
+# Docker must come back after a reboot: enable the user unit and check it.
+as_user systemctl --user enable docker.service || true
+enabled=$(as_user systemctl --user is-enabled docker.service || true)
+active=$(as_user systemctl --user is-active docker.service || true)
+[ "$enabled" = enabled ] || { echo "Docker for $user does not start at boot: docker.service is \${enabled:-unknown}. See journalctl --user -u docker.service as $user, then run this again." >&2; exit 1; }
+[ "$active" = active ] || { echo "Docker for $user is not running: docker.service is \${active:-unknown}. See journalctl --user -u docker.service as $user, then run this again." >&2; exit 1; }
+echo "Docker for $user: running and starts at boot"
 # A check that declares Compose services runs whole on this host, so its rootless Docker needs the Compose plugin.
 if sudo -u "$user" docker compose version >/dev/null 2>&1; then echo "Docker Compose plugin: found. Checks that declare Compose services can run here."
 else echo "Docker Compose plugin: missing. This host's rootless Docker needs it to run checks that declare Compose services; install docker-compose-plugin and they run here. Test shards work without it."; fi
@@ -185,19 +204,34 @@ export const outdatedShimReason = (target: string, missing: readonly string[] = 
 const lastLine = (text: string) => text.trim().split('\n').filter(Boolean).at(-1) ?? '';
 /** ssh's arguments for a host target: USER@HOST:PORT becomes -p PORT USER@HOST; USER@HOST and an alias pass as they are. */
 export const sshTarget = (target: string) => { const port = /^(.+@.+):(\d+)$/.exec(target); return port ? ['-p', port[2]!, port[1]!] : [target]; };
-const ssh = (target: string, verb: string, run: ChildRun) => run('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', ...sshTarget(target), verb], { timeoutMs: 15_000 });
-const unreachable = (target: string, error: any) => `${target} is unreachable over SSH: ${lastLine(String(error?.stderr ?? '')) || (error?.timedOut ? 'no answer within 15 seconds' : String(error?.message ?? error))}`;
+const ensureKnownHostsDirectory = async (knownHosts: string) => { if (!existsSync(dirname(knownHosts))) await mkdir(dirname(knownHosts), { recursive: true }).catch(() => {}); };
+const ssh = async (target: string, verb: string, run: ChildRun, knownHosts = hostKnownHostsFile()) => {
+  await ensureKnownHostsDirectory(knownHosts);
+  return run('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', ...hostKeySshOptions(knownHosts), ...sshTarget(target), verb], { timeoutMs: 15_000 });
+};
+const hostKeyChanged = (error: any) => /REMOTE HOST IDENTIFICATION HAS CHANGED|Host key for .* has changed/i.test(`${error?.stderr ?? ''}\n${error?.message ?? ''}`);
+const sshFailure = (target: string, error: any, knownHosts: string) => hostKeyChanged(error)
+  ? `${target}'s SSH host key changed: remove its old line from ${knownHosts} if you rebuilt the host`
+  : `${target} is unreachable over SSH: ${lastLine(String(error?.stderr ?? '')) || (error?.timedOut ? 'no answer within 15 seconds' : String(error?.message ?? error))}`;
+
+/** GY-3697: the probe's docker-unit line says whether rootless Docker's user unit failed or is not enabled. */
+export function noDockerReason(name: string, output: string) {
+  const [, enabled, active] = /^docker-unit (\S*) ?(\S*)$/m.exec(output) ?? [];
+  if (active === 'failed') return `${name} answers but its Docker failed (docker.service failed): see journalctl --user -u docker.service as ${hostUser} there, or run graphyard host prepare and the script it prints`;
+  if (enabled && enabled !== 'enabled') return `${name} answers but its Docker is not enabled (docker.service is ${enabled}), so it stops at reboot: run graphyard host prepare and the script it prints there`;
+  return `${name} answers but its Docker does not: run graphyard host prepare and the script it prints there`;
+}
 
 /** One probe of a host through its shim (null: this machine): its readings, or the plain reason it cannot be read. */
-export async function probeHost(target: string | null, run: ChildRun = defaultChildRun) {
+export async function probeHost(target: string | null, run: ChildRun = defaultChildRun, knownHosts = hostKnownHostsFile()) {
   let output: string;
-  try { output = String(await (target ? ssh(target, 'probe', run) : run('sh', ['-c', hostProbeScript], { timeoutMs: 15_000 }))); }
+  try { output = String(await (target ? ssh(target, 'probe', run, knownHosts) : run('sh', ['-c', hostProbeScript], { timeoutMs: 15_000 }))); }
   catch (error: any) {
     if (!target) return { ok: false as const, reason: `this machine could not be read: ${lastLine(String(error?.stderr ?? '')) || String(error?.message ?? error)}` };
-    return { ok: false as const, reason: error?.status === 255 || error?.timedOut ? unreachable(target, error) : `${target} does not answer graphyard-host-shim's probe: run graphyard host prepare and the script it prints there` };
+    return { ok: false as const, reason: error?.status === 255 || error?.timedOut ? sshFailure(target, error, knownHosts) : `${target} does not answer graphyard-host-shim's probe: run graphyard host prepare and the script it prints there` };
   }
   const reading = parseHostProbe(output);
-  if (!reading) return { ok: false as const, reason: `${target ?? 'this machine'} answers but its Docker does not: run graphyard host prepare and the script it prints there` };
+  if (!reading) return { ok: false as const, reason: noDockerReason(target ?? 'this machine', output) };
   // GY-3476, GY-3517: a shim from an older release takes shards while it speaks every verb a trial uses; one lacking any waits for prepare.
   const missing = target ? missingTrialVerbs(reading) : [];
   if (missing.length) return { ok: false as const, update: true, reason: outdatedShimReason(target!, missing) };
@@ -205,38 +239,43 @@ export async function probeHost(target: string | null, run: ChildRun = defaultCh
 }
 
 /** A host's key must reach only the shim: a plain shell command run through it is refused. */
-async function opensPlainShell(target: string, run: ChildRun) {
-  try { return String(await ssh(target, 'echo graphyard-plain-shell', run)).includes('graphyard-plain-shell') ? 'yes' : 'no'; }
-  catch (error: any) { return error?.status === 255 || error?.timedOut ? unreachable(target, error) : 'no'; }
+async function opensPlainShell(target: string, run: ChildRun, knownHosts: string) {
+  try { return String(await ssh(target, 'echo graphyard-plain-shell', run, knownHosts)).includes('graphyard-plain-shell') ? 'yes' : 'no'; }
+  catch (error: any) { return error?.status === 255 || error?.timedOut ? sshFailure(target, error, knownHosts) : 'no'; }
 }
 
 const targetHost = (target: string) => target.replace(/^.*@/, '').replace(/:\d+$/, '');
 
 /** Read-only: does this machine's own account open a shell on the host's port 22 (Tailscale SSH or a key) with nobody there to approve it? */
-export async function operatorLogin(target: string, run: ChildRun = defaultChildRun, account = userInfo().username) {
+export async function operatorLogin(target: string, run: ChildRun = defaultChildRun, account = userInfo().username, knownHosts = hostKnownHostsFile()) {
   const host = /^hostname (\S+)$/m.exec(String(await Promise.resolve(run('ssh', ['-G', ...sshTarget(target)], { timeoutMs: 5_000 })).catch(() => '')))?.[1] ?? targetHost(target);
   const login = `${account}@${host}`;
-  try { await run('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '-p', '22', login, 'true'], { timeoutMs: 15_000 }); return { login, unattended: true }; }
+  try {
+    await ensureKnownHostsDirectory(knownHosts);
+    await run('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', ...hostKeySshOptions(knownHosts), '-p', '22', login, 'true'], { timeoutMs: 15_000 });
+    return { login, unattended: true };
+  }
   catch { return { login, unattended: false }; }
 }
 
-export async function addHost(target: string, options: { file?: string; run?: ChildRun } = {}) {
+export async function addHost(target: string, options: { file?: string; knownHosts?: string; run?: ChildRun } = {}) {
   const file = options.file ?? hostsFile(), run = options.run ?? defaultChildRun;
+  const knownHosts = options.knownHosts ?? (options.file ? join(dirname(options.file), 'known_hosts') : hostKnownHostsFile());
   if (target.length > 300 || !hostTargetPattern.test(target)) throw new Error(`Name the host as USER@HOST, USER@HOST:PORT or an ssh-config alias, for example ${hostUser}@omarchypc:${computePort}: got ${JSON.stringify(target)}`);
   const hosts = await readHosts(file);
   if (hosts.some(host => host.target === target)) return { added: false, hosts };
   const host = targetHost(target);
   const refuse = (reason: string) => { throw new Error(`${target} was not added: ${reason}`); };
-  const shell = await opensPlainShell(target, run);
+  const shell = await opensPlainShell(target, run, knownHosts);
   if (shell === 'yes') refuse(`its SSH key opens a plain shell, so Graphyard could reach everything that user can; run graphyard host prepare and the script it prints there, then add ${hostUser}@${host} (${hostUser}@${host}:${computePort} where port 22 is Tailscale SSH)`);
   if (shell !== 'no') refuse(shell);
-  const probe = await probeHost(target, run);
+  const probe = await probeHost(target, run, knownHosts);
   if (!probe.ok) refuse(probe.reason);
   if (probe.ok && probe.uid === 0) refuse(`it logs in as root; add the unprivileged ${hostUser} user that graphyard host prepare creates`);
   if (probe.ok && probe.groups.includes('docker')) refuse(`${target.split('@')[0]} is in the docker group, which is root on that host; use ${hostUser} with rootless Docker (graphyard host prepare)`);
   const next = [...hosts, { target, addedAt: new Date().toISOString() }];
   await writeHosts(file, next);
-  return { added: true, hosts: next, probe: probe.ok ? probe : null, operator: await operatorLogin(target, run) };
+  return { added: true, hosts: next, probe: probe.ok ? probe : null, operator: await operatorLogin(target, run, userInfo().username, knownHosts) };
 }
 
 export async function removeHost(target: string, options: { file?: string } = {}) {
@@ -249,14 +288,15 @@ export async function removeHost(target: string, options: { file?: string } = {}
 }
 
 /** One cycle's readings: this machine first, then every recorded host; steal is measured from the previous cycle's counters. */
-export async function readHostReadings(previous: HostReading[], options: { file?: string; run?: ChildRun; local?: string } = {}): Promise<HostReading[]> {
+export async function readHostReadings(previous: HostReading[], options: { file?: string; knownHosts?: string; run?: ChildRun; local?: string } = {}): Promise<HostReading[]> {
+  const knownHosts = options.knownHosts ?? (options.file ? join(dirname(options.file), 'known_hosts') : hostKnownHostsFile());
   const targets = [null, ...(await readHosts(options.file).catch(() => [])).map(host => host.target)];
   return Promise.all(targets.map(async target => {
     const host = target ?? options.local ?? hostname();
-    const probe = await probeHost(target, options.run), at = new Date().toISOString();
+    const probe = await probeHost(target, options.run, knownHosts), at = new Date().toISOString();
     const was = previous.find(reading => reading.host === host);
-    if (!probe.ok) return { host, ...(target ? {} : { local: true }), at, away: true, since: was?.away ? was.since ?? was.at ?? at : at, ...('update' in probe ? { update: true } : {}), reason: probe.reason, cores: null, celsius: null, steal: null, runs: null, stat: null };
+    if (!probe.ok) return { host, ...(target ? {} : { local: true }), at, away: true, since: was?.away ? was.since ?? was.at ?? at : at, ...('update' in probe ? { update: true } : {}), reason: probe.reason, cores: null, celsius: null, steal: null, runs: null, busy: null, stat: null };
     const before = was?.stat ?? null;
-    return { host, ...(target ? {} : { local: true }), at, away: false, cores: probe.cores, celsius: probe.celsius, steal: stealPercent(before, probe.stat), runs: probe.runs, stat: probe.stat };
+    return { host, ...(target ? {} : { local: true }), at, away: false, cores: probe.cores, celsius: probe.celsius, steal: stealPercent(before, probe.stat), runs: probe.runs, busy: probe.load, stat: probe.stat };
   }));
 }
