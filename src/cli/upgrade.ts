@@ -548,6 +548,7 @@ export async function watchPorts(input: { cliRoot: string; repoRoot: string; rep
     head: async () => git(activeCliRoot(cliRoot), 'rev-parse', 'HEAD'),
     checkout: commit => publishCliRelease(directory, cliRoot, commit),
     health: deployHealth(cliRoot, url),
+    serves: commit => deployHealth(cliRoot, url, 1)(commit).then(() => true, () => false),
     prune: keep => pruneImages(input.run, keep),
     pin: async commit => { if (knownGoodState(directory)) await pinKnownGood({ installDir: directory, repository: repoRoot }, commit, input.run); },
     schema: async commit => revisionSchema(cliRoot, commit),
