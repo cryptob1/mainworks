@@ -18,7 +18,7 @@ const settled = { timeout: 15_000 };
 
 const open = async (page: Page) => {
   // The sign-in page is the pre-identity state: the plain fallback every install shares.
-  await page.goto('/?sign-in');
+  await page.goto('/?sign-in#work');
   await expect(page).toHaveTitle('Mainworks');
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();

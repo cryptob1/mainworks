@@ -36,7 +36,7 @@ test('an older poll cannot undo a successful answer', async ({ page }) => {
     if (path.endsWith('/board')) return route.fulfill({ json: boardFromStatus([work], Date.parse(now), null) });
     return route.fulfill({ json: path.endsWith('/work') ? [work] : [] });
   });
-  await page.goto('/#sign-in=one-time-code-from-mainworks-login');
+  await page.goto('/#sign-in=one-time-code-from-mainworks-login&work');
   await held;
   await page.getByRole('button', { name: 'Every request and answer →' }).click();
   await page.locator('.human-request').getByRole('button', { name: 'Approve up to €50/month' }).click();

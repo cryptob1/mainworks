@@ -20,7 +20,7 @@ test('e2e:item-why-and-simplest — the create box files both sentences, the ite
       await (response ? route.fulfill({ response }) : route.abort()).catch(() => {});
     });
     const { code } = await f.ok('sign-in-links', {});
-    await page.goto('/#sign-in=' + code);
+    await page.goto('/#sign-in=' + code + '&work');
     await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible(settled);
 
     await page.getByRole('button', { name: '＋ New work item' }).click();

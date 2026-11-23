@@ -42,7 +42,7 @@ async function open(page: Page, alerts: number | false) {
     const json = boardApi(url.pathname.slice(1) + url.search);
     return route.fulfill({ json: path === 'status' ? { ...json, setup: { ...(json as any).setup, alerts } } : json });
   });
-  await page.goto('/?sign-in');
+  await page.goto('/?sign-in#work');
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.getByRole('heading', { name: 'Work', level: 1 })).toBeVisible();
@@ -90,7 +90,7 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
   const why = main.locator('[data-account-row="spent-a"] td.why');
   await expect(why).toHaveText(`Limit reached · back ${day(NOW + 20 * minute)}`);
   await expect(why).toHaveAttribute('title', /\{"code":"rate_limit_exceeded"/);
-  await expect(main.locator('details.more-details > summary')).toContainText(['Account details', 'Roles', 'Runtimes']);
+  await expect(main.locator('details.more-details > summary')).toContainText(['Account details', 'Advanced']);
   await plain(page, 'Agents');
   await main.locator('details.more-details > summary', { hasText: 'Account details' }).click();
   await expect(main.locator('details.more-details', { hasText: 'Account details' })).toContainText('/home/agent/.coding_agents/spent-a');

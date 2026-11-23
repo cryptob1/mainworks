@@ -58,7 +58,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
       const served = async () => (await (await fetch(`${http.url}/api/status`, { headers: { Authorization: 'Bearer test-human-operator' } })).json() as { build: { commit: string } }).build.commit.slice(0, 7);
       expect(await served()).toBe(first.slice(0, 7));
       const { code } = await (await fetch(`${http.url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string };
-      await page.goto(`${http.url}/#sign-in=${code}`);
+      await page.goto(`${http.url}/#sign-in=${code}&work`);
       await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible(settled);
       await expect(page.locator('.version-label')).toContainText(await served());
       await checkCorner(page);

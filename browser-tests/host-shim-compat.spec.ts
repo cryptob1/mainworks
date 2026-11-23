@@ -49,7 +49,7 @@ async function signIn(page: Page, url: string) {
   const link = await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } });
   expect(link.status).toBe(200);
   const { code } = await link.json() as { code: string };
-  await page.goto(`/#sign-in=${code}`);
+  await page.goto(`/#sign-in=${code}&work`);
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
 }
 

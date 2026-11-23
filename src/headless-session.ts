@@ -236,7 +236,7 @@ export async function startHeadlessSession<T>(input: HeadlessSession<T>): Promis
     for (let attempt = 1; ; attempt++) {
       const prompt = attempt === 1 ? launch.request : `${launch.request}\n\nYour previous answer was not accepted: ${refused}. Answer again with the one JSON object asked for.`;
       const env = runEnvironment(process.env, launch.environment);
-      const stdin = headlessPromptInput(launch.kind, prompt);
+      const stdin = headlessPromptInput(launch.kind, prompt, launch.contract);
       const argv = [...launch.wrapper, ...await headlessArgv(launch, prompt, env)];
       const active = liveRun(input.name);
       if (active) active.agent = launch.kind;
@@ -376,7 +376,7 @@ export async function startHeadlessWorker(input: HeadlessWorker): Promise<{ id: 
   // GY-3584: the session's e2e serve (scripts/e2e-serve.mjs) takes a free port of its own, so reviews and trials keep the declared 4391.
   const env = runEnvironment(process.env, { ...launch.environment, GRAPHYARD_RUN_LOG: join(directory, runLogName), GRAPHYARD_E2E_SERVE_PORT: String(await freePort()) });
   const request = input.session ? input.prompt : launch.request;
-  const stdin = headlessPromptInput(launch.kind, request);
+  const stdin = headlessPromptInput(launch.kind, request, launch.contract);
   const argv = [...input.supervisor, ...launch.wrapper, ...await headlessArgv({ ...launch, session: input.session }, request, env)];
   const stop = new AbortController(), detached = new AbortController();
   const running = input.exec(argv[0]!, argv.slice(1), { cwd: input.directory, env, timeoutMs: input.timeoutMs, signal: stop.signal, run: directory, detached: detached.signal, ...(stdin !== undefined ? { stdin } : {}) });

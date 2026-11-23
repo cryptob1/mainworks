@@ -86,7 +86,7 @@ for (const width of [1280, 390]) {
       await loopRead(url, null);
       const signIn = await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } });
       const { code } = await signIn.json() as { code: string };
-      await page.goto(`/#sign-in=${code}`);
+      await page.goto(`/#sign-in=${code}&work`);
       await expect(page.locator('header.main-top-bar')).toBeVisible({ timeout: 15_000 });
 
       // Clean state: Caretaker pill shows quiet grey "Caretaker ✓ N min ago".

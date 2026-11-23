@@ -167,7 +167,7 @@ async function main() {
     await page.screenshot({ path: join(out, `${name}.png`), fullPage: true });
     console.log(`${name.padEnd(20)} ${String(count).padStart(5)} visible words (excluding item titles) -> ${join(out, `${name}.png`)}`);
   };
-  await page.goto(origin);
+  await page.goto(`${origin}#work`);
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await page.getByRole('heading', { name: 'Work', level: 1 }).waitFor();

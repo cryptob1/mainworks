@@ -59,7 +59,7 @@ async function open(page: Page, width: number) {
     if (path.endsWith('/api/scenarios')) return route.fulfill({ json: scenarios });
     return route.fulfill({ json: [] });
   });
-  await page.goto('/?sign-in');
+  await page.goto('/?sign-in#work');
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible();

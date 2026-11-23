@@ -39,8 +39,8 @@ function SignInCommand() {
 }
 export const LINK_REFUSED_NOTICE = 'That sign-in link has expired or was already used. Ask for a new one.';
 
-/** The one-time code a sign-in link carries in its fragment (`/#sign-in=CODE`), which never reaches a server log. */
-export const signInCode = (hash: string) => /^#sign-in=([A-Za-z0-9_-]{16,200})$/.exec(hash)?.[1] ?? null;
+/** The one-time code a sign-in link carries in its fragment (`/#sign-in=CODE`, or `/#sign-in=CODE&page` naming the page to open), which never reaches a server log. */
+export const signInCode = (hash: string) => /^#sign-in=([A-Za-z0-9_-]{16,200})(?:&[a-z-]+(?:\/[a-z-]+)?)?$/.exec(hash)?.[1] ?? null;
 /**
  * Redeem a sign-in link's code for a human session token. The link is single use: the server
  * forgets it on the first attempt, whatever the outcome.

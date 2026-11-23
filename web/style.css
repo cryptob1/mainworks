@@ -547,7 +547,7 @@ kbd{font-family:var(--font-mono);font-size:11px;color:var(--text);background:var
 .shortcuts kbd{white-space:nowrap}
 /* The row the keyboard cursor is on (GY-3272). */
 [data-row].kb-cursor{outline:2px solid var(--accent);outline-offset:-2px;background:var(--raised);box-shadow:0 0 18px color-mix(in srgb,var(--accent) 20%,transparent)}
-.product-section pre{white-space:pre-wrap;font:inherit;margin:0 0 var(--space-3,16px);max-width:720px;line-height:1.65}
+.product-brief :is(p,ul,h2,h3){margin:0;max-width:720px;line-height:1.65}
 /* GY-3278 Tests rows: each proof's item and criterion; only a merged item's missing case file is an alarm. */
 .proof-item{margin-bottom:var(--space-2)}.proof-item a{display:block}.proof-criterion{display:block;color:var(--text-2)}
 .case-alarm{display:block;color:var(--blocked);font-weight:500}.case-pending{display:block;color:var(--text-2);font-size:var(--type-small)}
@@ -659,6 +659,21 @@ header.main-top-bar{height:auto;min-height:60px;display:flex;flex-wrap:wrap;alig
   .sessions-table.work-table [data-col=now]{grid-area:now;color:var(--text-2)}.sessions-table.work-table [data-col=builder]{grid-area:builder;color:var(--text-2)}.sessions-table.work-table [data-col=pr]{grid-area:pr}
   .sessions-table.work-table td::before{content:none}
   .need{grid-template-columns:minmax(0,1fr) auto}.need button{grid-column:1/-1;justify-self:start}}
+/* GY-3603: First-run four-step onboarding page matching the Start prototype. */
+.first-run{display:flex;flex-wrap:wrap;gap:var(--space-6);align-items:flex-start}
+.first-run-steps{flex:1 1 240px;max-width:280px;list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;min-width:0}
+.first-run-step{padding:12px 14px;border-radius:10px;color:var(--text-2);overflow-wrap:anywhere}
+.first-run-step.step-current{background:var(--surface);color:var(--text);font-weight:600}
+.first-run-tick{color:var(--shipped)}
+.first-run-step-detail{font-size:var(--type-small);color:var(--text-3);margin-top:2px;font-weight:400;overflow-wrap:anywhere}
+.first-run-body{flex:3 1 480px;min-width:0;display:flex;flex-direction:column;gap:var(--space-4)}
+.first-run-lead{margin:0;font-size:var(--type-sentence);color:var(--text-2);overflow-wrap:anywhere}
+.first-run-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.first-run-cta{min-height:48px;padding:0 22px;border-radius:12px;font-weight:600}
+.first-run-secondary{min-height:48px;padding:0 18px;border-radius:12px;background:var(--surface);border:1px solid var(--border);color:var(--text);font-weight:500}
+.first-run-terminal{padding:12px 14px;border-radius:10px;background:var(--surface);font-size:var(--type-small);color:var(--text-2);overflow-wrap:anywhere}
+.first-run-builder-card .facts{margin:0 0 var(--space-3)}
+@media(max-width:650px){.first-run{gap:var(--space-4)}.first-run-steps{max-width:none;flex-basis:100%}.first-run-body{flex-basis:100%}}
 /* GY-3559: the Tests chips are one row that scrolls sideways inside itself; a raw step wraps; Show more sits under the list. */
 .case-filters{flex-wrap:nowrap;overflow-x:auto}.case-filters>*{flex:none}
 .raw-steps pre{white-space:pre-wrap;overflow-wrap:anywhere}

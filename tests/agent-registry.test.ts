@@ -23,7 +23,7 @@ import { atomicPrivateWrite, dispatchWork, loadMasterConfig, selectAccount, setu
 import { applyRegistryMutation } from '../src/model-boundary/registry.js';
 import { chooseSession, emptyRegistry, fleetRoles, fleetView, foldObservation, launchGraceMs, proposedRuntimes, sessionEnded, settleSessions, type AgentRegistry as Registry, type FleetSession, type FleetView } from '../src/model/registry.js';
 import type { Principal, Work } from '../src/model.js';
-import { FleetOverview, pastesCredential } from '../web/pages/fleet.js';
+import { FleetOverview, FleetReference, pastesCredential } from '../web/pages/fleet.js';
 import { views, visibleViews } from '../web/pages/index.js';
 import { startedAtOnce } from './helpers/launch-shell.js';
 import { recordedRuns } from './helpers/headless-runs.js';
@@ -523,8 +523,8 @@ test('unit:registry-visibility — the fleet view and the dashboard show each ac
   const settled = structuredClone(registry); settled.sessions.push(session({ id: 'newer', selectedAt: new Date(now + 1000).toISOString() }));
   assert.deepEqual(settleSessions(settled, [], new Date(now + 2000).toISOString()).map(entry => entry.endReason), ['superseded by the claude-a session launched for GY-5']);
 
-  // Dashboard: the page renders the same view.
-  const page = renderToStaticMarkup(createElement(FleetOverview, { fleet: view }));
+  // Dashboard: the page renders the same view; roles and runtimes sit in its Advanced fold (GY-3560).
+  const page = renderToStaticMarkup(createElement(FleetOverview, { fleet: view })) + renderToStaticMarkup(createElement(FleetReference, { fleet: view }));
   for (const shown of ['claude-b · claude · opus (claude-opus-5) · ineligible', `Ineligible: claude-b quota is exhausted until ${resetsAt} (weekly window spent)`, 'worker (2 of 3), reviewer (2 of 2), producer (1 of 1)', 'Quota: exhausted — 7d 100%', 'worker on GY-5 since', '(limit 1)', 'Ineligible: codex-out is not logged in', 'Login: logged out', 'Ineligible: codex-a is placed on build-host-2', '$15 in / $75 out per MTok', 'Capability: frontier',
     'worker · 1 of 12 running · next: none', 'claude-a → claude-b → codex-a', 'role producer is paused (concurrency 0)', 'Credential by reference: /agents/claude-a on build-host-1', 'CLAUDE_CONFIG_DIR'])
     assert.ok(page.includes(shown.replaceAll('\'', '&#x27;')), shown);

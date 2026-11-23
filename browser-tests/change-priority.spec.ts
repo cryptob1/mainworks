@@ -17,7 +17,7 @@ test('e2e:change-priority — the item page control persists and shows attribute
       await route.fulfill({ response: await route.fetch({ url: f.url + pathname + search }) });
     });
     const { code } = await f.ok('sign-in-links', {});
-    await page.goto('/#sign-in=' + code);
+    await page.goto('/#sign-in=' + code + '&work');
     await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible(settled);
     // GY-3600: the Work list row opens the item; the priority control is on the item page.
     await page.locator(`[data-row="${item.key}"]`).getByRole('link', { name: /open/ }).click();

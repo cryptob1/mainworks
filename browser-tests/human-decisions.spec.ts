@@ -40,7 +40,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
   test(`the operator signs in from the link and answers a money request with one click at ${viewport.width} px`, async ({ page }) => {
     await page.setViewportSize(viewport);
     const posted = await fixture(page);
-    await page.goto('/#sign-in=one-time-code-from-mainworks-login');
+    await page.goto('/#sign-in=one-time-code-from-mainworks-login&work');
     // Signed in without typing a token; the code leaves the address bar at once.
     await expect(page.getByRole('button', { name: 'Every request and answer →' })).toBeVisible();
     expect(posted[0]).toEqual({ path: '/api/sign-in', body: { code: 'one-time-code-from-mainworks-login' } });
@@ -79,7 +79,7 @@ test('the local viewer sees the dashboard without a login wall and is offered Si
     if (path.endsWith('/board')) return route.fulfill({ json: boardFromStatus([parked as never], Date.parse(now), null) });
     return route.fulfill({ json: path.endsWith('/work') ? [parked] : [] });
   });
-  await page.goto('/');
+  await page.goto('/#work');
   await expect(page.getByRole('button', { name: 'Every request and answer →' })).toBeVisible();
   await expect(page.getByLabel('Access token')).toHaveCount(0);
   await page.getByRole('button', { name: 'Every request and answer →' }).click();
@@ -90,7 +90,7 @@ test('the local viewer sees the dashboard without a login wall and is offered Si
 test('a refused answer keeps everything the operator typed: the card clears only after the answer succeeds', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   const posted = await fixture(page, { refuseAnswers: true });
-  await page.goto('/#sign-in=one-time-code-from-mainworks-login');
+  await page.goto('/#sign-in=one-time-code-from-mainworks-login&work');
   await page.getByRole('button', { name: 'Every request and answer →' }).click();
   const card = page.locator('.human-request');
   // The choice that asks for words: typed, submitted, refused.
@@ -116,7 +116,7 @@ test('a real-world check keeps the photo the person chose: a 1 MiB image posts w
     if (path.endsWith('/board')) return route.fulfill({ json: boardFromStatus([work as never], Date.parse(now), { humanOnly: openHumanOnly([{ work: work as never }], Date.parse(now)) }) });
     return route.fulfill({ json: path.endsWith('/work') ? [work] : [] });
   });
-  await page.goto('/#sign-in=one-time-code-from-mainworks-login');
+  await page.goto('/#sign-in=one-time-code-from-mainworks-login&work');
   await page.getByRole('button', { name: 'Every request and answer →' }).click();
   const card = page.locator('.human-request'), pass = card.getByRole('button', { name: 'Pass, with this note…' }), photo = card.getByLabel('Photo (optional)');
   await card.getByRole('textbox', { name: 'Note for GY-7' }).fill('Printed clean');
