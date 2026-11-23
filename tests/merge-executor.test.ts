@@ -920,7 +920,7 @@ test('unit:oldest-item-first — among non-hotfix heads the item filed first mer
 
 
 test('unit:merge-queue-priority-order — the writer trials heads in priority order (0 first), the oldest submission first among equal priorities, and a running trial is never interrupted', () => {
-  const p3old = submitted(1, 60, ['src/a.ts'], { priority: 3 }), p3new = submitted(2, 50, ['src/b.ts'], { priority: 3 }), p2 = submitted(3, 40, ['src/c.ts'], { priority: 2 });
+  const p3old = submitted(1, 55, ['src/a.ts'], { priority: 3 }), p3new = submitted(2, 50, ['src/b.ts'], { priority: 3 }), p2 = submitted(3, 40, ['src/c.ts'], { priority: 2 });
   const p0new = submitted(4, 10, ['src/d.ts'], { priority: 0 }), p0old = submitted(5, 20, ['src/e.ts'], { priority: 0 }), p1 = submitted(6, 30, ['src/f.ts'], { priority: 1 });
   const all = [p3old, p3new, p2, p0new, p0old, p1];
   const queue = mergeQueue(all, {}, start);

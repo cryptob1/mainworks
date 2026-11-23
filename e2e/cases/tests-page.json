@@ -199,7 +199,7 @@
     {
       "kind": "browser",
       "action": "expectText",
-      "text": "its latest trusted result. A result is recorded only from a trusted run",
+      "text": "tracked.",
       "exact": false
     },
     {

@@ -194,6 +194,8 @@ export interface GatePorts {
   revert(landing: ServeLanding & { item: Work }, tip: string, check: string, prior?: readonly (ServeLanding & { item: Work })[]): Promise<{ revertSha: string } | { held: string } | { retry: string; revertSha?: string }>;
   /** Files an item owning a failure, once per `key`; answers the item it filed, when it names one. */
   file(input: { title: string; description: string; key: string }): Promise<{ item: string | null } | void>;
+  /** GY-3693: when true for `key`, `file` checks existing items (open or done within 24h) and notes instead of re-filing. */
+  faultDedup?(key: string): boolean;
   /** GY-3431: the key of the open "Flaky check on main" item for `check`, or null when none is open. */
   flaky?(check: string): string | null;
   /**
@@ -222,8 +224,8 @@ const reusedFilingKey = (error: unknown) => /Idempotency key reused with differe
  * tip it names moves — a key the control plane already holds is already filed, and any other filing
  * failure is a gate note. A refused or failed filing never aborts the run's verdict.
  */
-async function fileFailure(ports: Pick<GatePorts, 'file'>, record: Pick<GateRecord, 'filed' | 'notes'>, at: string, input: { title: string; description: string; key: string }) {
-  if (input.key in (record.filed ?? {})) return; // the case has its item: reuse it
+async function fileFailure(ports: Pick<GatePorts, 'file' | 'faultDedup'>, record: Pick<GateRecord, 'filed' | 'notes'>, at: string, input: { title: string; description: string; key: string }) {
+  if (!ports.faultDedup?.(input.key) && input.key in (record.filed ?? {})) return; // the case has its item: reuse it
   try {
     const filed = await ports.file(input);
     (record.filed ??= {})[input.key] = { item: typeof filed === 'object' && filed !== null ? filed.item : null, at };

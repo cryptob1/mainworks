@@ -37,7 +37,7 @@ export async function servedInstall(label: string, options: { funnel?: boolean; 
   };
   return {
     port, base, operator, call, serve, host, engine, store, http, loop,
-    sync: () => syncTeamAccess({ url: base, credentialFile }, { machineDir }),
+    sync: (now?: number) => syncTeamAccess({ url: base, credentialFile }, { machineDir, now }),
     close: async () => { restorePath(); await new Promise<void>(resolve => { http.close(() => resolve()); http.closeAllConnections(); }); await store.close(); },
   };
 }
