@@ -50,7 +50,7 @@ import { composeServer } from './compose-recovery.js';
 import { leftoverDisk, pathsBytes } from './leftovers.js';
 import { cpuCelsius } from './cpu-pressure.js';
 import { repairCliStamp, servedCliRelease, sweepCliReleases } from '../install/cli-release.js';
-import { declarationSlot, heavyJobLimit, heavyJobsDirectory, heldSlots, readHeavyDrain } from '../master/verification-slots.js';
+import { declarationSlot, heavyJobLimit, heavyJobsDirectory, heldSlots, readHeavyDrain, writeMachines } from '../master/verification-slots.js';
 import { collectUsage } from '../usage-capture.js';
 import { upstreamFiler } from './control-plane.js';
 import { trialRunsDirectory } from '../merge-writer/trial-run.js';
@@ -123,7 +123,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     snapshot: async () => {
       const snapshot = await deps.snapshot();
       // Never holds up or fails the cycle; a missed take is retried on the next snapshot.
-      void verifyWorkers().catch(() => {});
+      void verifyWorkers(snapshot.work).catch(() => {});
       return snapshot;
     },
     // GY-3274: the lessons and product brief the master session wrote straight to the file, adopted each cycle.
@@ -231,7 +231,11 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     sessionName: unit => liveRuns().find(entry => entry.run.directory && `graphyard-run-${basename(entry.run.directory)}.scope` === unit)?.name,
     // GY-3407: the read runs beside the cycle, so a host taking its SSH timeout never slows the loop; the cycle takes the latest finished one.
     hostReadings: async previous => {
-      hostsReading ??= readHostReadings(previous, { run }).then(readings => { hostsLatest = readings; }, () => {}).finally(() => { hostsReading = null; });
+      hostsReading ??= readHostReadings(previous, { run }).then(readings => {
+        hostsLatest = readings;
+        // GY-3528: every install on this machine budgets heavy jobs from these readings.
+        writeMachines(heavyJobsDirectory(), readings.map(reading => ({ name: reading.host, local: reading.local, away: reading.away, cores: reading.cores, busy: reading.busy ?? null, celsius: reading.celsius })));
+      }, () => {}).finally(() => { hostsReading = null; });
       return hostsLatest ?? previous;
     },
     stopOrphanTrials: () => stopOrphanTrialContainers(run, trialContainerMaxAgeMs(current().run)),
