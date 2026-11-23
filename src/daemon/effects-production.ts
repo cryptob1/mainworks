@@ -54,6 +54,7 @@ import { repairCliStamp, servedCliRelease, sweepCliReleases } from '../install/c
 import { declarationSlot, heavyJobLimit, heavyJobsDirectory, heldSlots, readHeavyDrain, writeMachines } from '../master/verification-slots.js';
 import { collectUsage } from '../usage-capture.js';
 import { upstreamFiler } from './control-plane.js';
+import { fileFlakyCheck } from './cycle-batch-gate.js';
 import { trialRunsDirectory } from '../merge-writer/trial-run.js';
 import { deployRecordPath, readDeployRecord } from '../deploy-watch.js';
 import { mainworksVolumes, reclaimMainworksLeftovers, reclaimJobLeftovers, stopOrphanTrialContainers, trialContainerMaxAgeMs } from './disk-headroom.js';
@@ -296,13 +297,17 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     // live configuration names that identity, like the rework beside it.
     get mergeWriter() { const config = current();
       const reads = mergeWriterReads(config, root, run, { base: worktreeRoot(root, config), hold: async work => { const snapshot = await deps.snapshot(); return mergeCandidateHold(snapshot.work.find(item => item.id === work.id), work, snapshot.work); }, holdOpening: async work => mergeOpeningHold((await deps.snapshot()).work.find(item => item.id === work.id), work), record: (work, event) => mutate(`work/${work.id}/merge-record`, event, mergeRecordKey(work, event)) });
+      const createWork = current().operatorAgent ? (input: RelandInput, idempotencyKey: string) => asOperatorAgent('work', input, idempotencyKey) : undefined;
+      const note = (item: Pick<Work, 'id' | 'key'>, text: string, key: string) => mutate(`work/${item.id}/request`, { type: 'note', reason: text }, key);
       return { ...reads,
         ensureTrialImage: () => ensureTrialImage(),
         // GY-3545: a merge trial's failure of a test with an open flaky-check item is noted on that item as the coordinator.
         flaky: async (check: string) => openFlakyItem((await deps.snapshot()).work, check),
-        note: (item: Pick<Work, 'id' | 'key'>, text: string, key: string) => mutate(`work/${item.id}/request`, { type: 'note', reason: text }, key),
+        note,
+        // GY-3735: a merge trial's flake files the batch gate's flaky-check item.
+        fileFlaky: async (check: string, text: string) => fileFlakyCheck({ ...reads, createWork, note }, config.repository, (await deps.snapshot()).work, check, text),
         serveRecord: async () => { const record = readServeRecord(serveRecordPath(root)); return record?.commit ? { commit: record.commit, check: record.check ?? null } : null; },
-        ...(current().operatorAgent ? { createWork: (input: RelandInput, idempotencyKey: string) => asOperatorAgent('work', input, idempotencyKey),
+        ...(createWork ? { createWork,
           attest: (work: Work, proof: string, reason: string, idempotencyKey: string) => asOperatorAgent(`work/${work.id}/evidence`, intentInput('attest', work, { proof, reason }), idempotencyKey) } : {}),
         gate: { root, repository: config.repository, previews: (commit: string) => runServedPreviewCases({ root, commit }) },
       };

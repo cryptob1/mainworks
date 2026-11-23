@@ -168,6 +168,11 @@ const gateFiledE2e = (key: string, repository: string): { proof: string; clause:
 export const gateFiledItem = (input: { title: string; description: string; key: string }, baseBranch: string, repository: string) =>
   faultItem({ faultKey: input.key, title: input.title, description: input.description, proof: pinningProof(input.key), repaired: { text: 'The batch gate passes again', proof: repairedProof }, e2e: gateFiledE2e(input.key, repository), reason: `Filed by the batch gate on ${baseBranch}` });
 
+/** GY-3735: a merge trial's flake files the batch gate's own "Flaky check on main: CHECK" item, or notes the one its fault key has. */
+export const fileFlakyCheck = (reads: Pick<MergeWriterReads, 'createWork' | 'note' | 'baseBranch' | 'now'>, repository: string, work: readonly Work[], check: string, text: string) =>
+  fileLoopFault({ work, now: reads.now(), createWork: reads.createWork, note: reads.note },
+    gateFiledItem({ key: `flake:${check}`, title: `Flaky check on main: ${check}`, description: text }, reads.baseBranch, repository), text);
+
 /**
  * GY-3443: while the gate's last outcome is verified, every open item owing `manual:batch-gate-repaired`
  * whose candidate head has no current evidence for it gets a trusted pass citing the verified tip.
