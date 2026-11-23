@@ -26,7 +26,7 @@ import { stateDirectory } from './install/layout.js';
 export interface DeployRecord { tip: string | null; failed: string | null; reason: string | null; at: string; restore?: string | null; attempts?: number; /** Retries the failed tip has had (GY-3703). */ retries?: number; repository?: string | null; /** This successful deploy selected a batch-gate verified tip. */ verified?: boolean }
 export interface DeployHistoryEntry { commit: string; at: string; repository?: string | null }
 export const deployRecordPath = (root: string) => join(stateDirectory(root), 'deploy.json');
-export const deployHistoryPath = (root: string) => join(stateDirectory(root), 'deploy-history.jsonl');
+const deployHistoryPath = (root: string) => join(stateDirectory(root), 'deploy-history.jsonl');
 export function readDeployRecord(file: string): DeployRecord | null {
   if (!existsSync(file)) return null;
   try { return JSON.parse(readFileSync(file, 'utf8')) as DeployRecord; } catch { return null; }

@@ -85,12 +85,15 @@ export function flowItems(work: readonly Flowed[], ledger: readonly any[], attem
 }
 
 /**
- * GY-3725: for each merge within the flow read span, find the first serving deploy record whose
- * commit contains its merge commit (`null` when deploys exist and none contains it yet).
+ * GY-3725: each merge's first serving deploy, fixed once found, so a read walks only the merges not
+ * yet serving and only the deploys since the oldest of them. A merge found missing from the newest
+ * deploy is not walked again until a newer deploy lands.
  */
+const served = new Map<string, string | { missingFrom: string }>();
 async function resolveDeployedAt(work: readonly Flowed[], deploys: readonly DeployHistoryEntry[], git: GitRead | null | undefined, now: number): Promise<Map<string, string | null>> {
   const result = new Map<string, string | null>();
-  if (!deploys.length || !git) return result;
+  const newest = deploys.at(-1);
+  if (!newest || !git) return result;
   const from = now - readSpanMs;
   const candidates = work.flatMap(item => {
     const mergedAt = item.delivery?.mergedAt ?? item.observation?.mergedAt ?? null;
@@ -98,49 +101,41 @@ async function resolveDeployedAt(work: readonly Flowed[], deploys: readonly Depl
     const at = mergedAt ? Date.parse(mergedAt) : Number.NaN;
     return sha && /^[0-9a-f]{40}$/.test(sha) && Number.isFinite(at) && at > from && at <= now ? [{ id: item.id, sha, at }] : [];
   });
-  if (!candidates.length) return result;
-  const minMergedAt = Math.min(...candidates.map(candidate => candidate.at));
-  const ordered = [...deploys]
-    .filter(entry => /^[0-9a-f]{40}$/i.test(entry.commit) && Number.isFinite(Date.parse(entry.at)))
-    .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
-  const unique: DeployHistoryEntry[] = [];
-  const seenDeploy = new Set<string>();
-  for (const entry of ordered) {
-    const commit = entry.commit.toLowerCase();
-    if (seenDeploy.has(commit)) continue;
-    seenDeploy.add(commit);
-    unique.push({ ...entry, commit });
-  }
-  const recent = unique.filter(entry => Date.parse(entry.at) >= minMergedAt - 60_000);
-  const toCheck = recent.length ? recent : unique.slice(-1);
-  const unmatched = new Set(candidates.map(candidate => candidate.sha));
-  const firstDeploy = new Map<string, string>();
-  const seenCommits: string[] = [];
-  for (const deploy of toCheck) {
-    if (!unmatched.size) break;
-    try {
-      const args = ['rev-list', ...(seenCommits.length ? [] : ['--max-count=5000']), deploy.commit, ...seenCommits.map(commit => `^${commit}`)];
-      const output = await git(args);
-      for (const line of output.split('\n')) {
-        const sha = line.trim().toLowerCase();
-        if (sha && unmatched.has(sha)) { firstDeploy.set(sha, deploy.at); unmatched.delete(sha); }
-      }
-      seenCommits.push(deploy.commit);
-    } catch { /* commit missing in this checkout */ }
-  }
-  if (!seenCommits.length) return result;
-  const validUnmatched = new Set<string>();
-  for (const sha of unmatched) {
-    try { await git(['cat-file', '-e', `${sha}^{commit}`]); validUnmatched.add(sha); } catch { /* not in this checkout */ }
+  const inWindow = new Set(candidates.map(candidate => candidate.sha));
+  for (const sha of served.keys()) if (!inWindow.has(sha)) served.delete(sha);
+  const pending = candidates.filter(candidate => {
+    const hit = served.get(candidate.sha);
+    return hit === undefined || (typeof hit !== 'string' && hit.missingFrom !== newest.commit);
+  });
+  if (pending.length) {
+    const since = Math.min(...pending.map(candidate => candidate.at)) - 60_000;
+    const recent = deploys.filter(entry => Date.parse(entry.at) >= since);
+    const unmatched = new Set(pending.map(candidate => candidate.sha));
+    const walked: string[] = [];
+    for (const deploy of recent.length ? recent : [newest]) {
+      if (!unmatched.size) break;
+      try {
+        const output = await git(['rev-list', ...(walked.length ? [] : ['--max-count=5000']), deploy.commit, ...walked.map(commit => `^${commit}`)]);
+        for (const line of output.split('\n')) {
+          const sha = line.trim().toLowerCase();
+          if (unmatched.delete(sha)) served.set(sha, deploy.at);
+        }
+        walked.push(deploy.commit);
+      } catch { /* commit missing in this checkout */ }
+    }
+    if (walked.length) for (const sha of unmatched) {
+      try { await git(['cat-file', '-e', `${sha}^{commit}`]); served.set(sha, { missingFrom: newest.commit }); } catch { /* not in this checkout */ }
+    }
   }
   for (const candidate of candidates) {
-    if (firstDeploy.has(candidate.sha)) result.set(candidate.id, firstDeploy.get(candidate.sha)!);
-    else if (validUnmatched.has(candidate.sha)) result.set(candidate.id, null);
+    const hit = served.get(candidate.sha);
+    if (typeof hit === 'string') result.set(candidate.id, hit);
+    else if (hit) result.set(candidate.id, null);
   }
   return result;
 }
 
-export interface FlowLiveOptions { deploys?: readonly DeployHistoryEntry[]; git?: GitRead | null }
+interface FlowLiveOptions { deploys?: readonly DeployHistoryEntry[]; git?: GitRead | null }
 export type Flow = Record<FlowWindow, FlowNumbers> & { attention: ReturnType<typeof flowAttention> };
 /** The flow numbers for 6 hours, 24 hours and 7 days over `work`, and the attention line the 24 hours raise. */
 export async function readFlow(pool: Queryable, work: readonly Flowed[], now: number, live?: FlowLiveOptions): Promise<Flow> {
