@@ -26,7 +26,7 @@ test('e2e:status-master-screen-after-migration — status reads the live main-He
   // A private worker still drains, while the master has moved to the main server.
   await migrateHerdr(root, async (_command, args) => args[0] === '--session'
     ? JSON.stringify({ panes: [{ pane_id: 'wOld:p1' }] })
-    : JSON.stringify({ workspaces: [{ workspace_id: 'wMain', label: 'mainworks-fixture-status' }] }), home);
+    : JSON.stringify({ workspaces: [{ workspace_id: 'wMain', label: 'graphyard-fixture-status' }] }), home);
   const config = masterConfigSchema.parse(JSON.parse(await readFile(file, 'utf8')));
   assert.equal(config.herdrWorkspace, 'wMain');
   assert.deepEqual(config.herdrInstance, instance);

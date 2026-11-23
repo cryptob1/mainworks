@@ -6,6 +6,8 @@
 
 # Settings live installs set
 GRAPHYARD_[A-Z0-9_]*
+# Compose projects and bot logins named for an install of this repository
+\bgraphyard-cryptob1-graphyard\b
 # Files and directories installs and managed repositories hold
 \.graphyard\b
 \bgraphyard\.json\b
@@ -99,3 +101,4 @@ the graphyard App
 cryptob1/Graphyard
 \[trial, 'graphyard-trial'\]
 mirror/graphyard:
+\bgraphyard-(acme-app|cryptob1|fixture-status|gy-\d+-)

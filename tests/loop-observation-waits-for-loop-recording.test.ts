@@ -33,7 +33,7 @@ const reading = (extra: object = {}) => ({ id: 'r1', proof: own, trusted: true, 
 
 test('unit:loop-observation-waits-for-loop-recording — a due reading is a window wait on the loop, never an operator-proof escalation, for a ready item and for one left in build with an unsubmitted worker candidate', () => {
   const due = item(1724), windowed = item(1728, { observationWindow: { notBefore: iso(now + 6 * hour), basis: 'criterion-window', detail: 'later' } });
-  const inBuild = item(1725, { stage: 'build', epoch: 3, candidate: { pr: 1172, sha: sha('d'), baseSha: sha('e'), author: 'mainworks-cryptob1-graphyard[bot]', branch: 'graphyard/gy-1725-3', createdAt: iso(now - 5 * hour) } } as Partial<Work>);
+  const inBuild = item(1725, { stage: 'build', epoch: 3, candidate: { pr: 1172, sha: sha('d'), baseSha: sha('e'), author: 'graphyard-cryptob1-graphyard[bot]', branch: 'graphyard/gy-1725-3', createdAt: iso(now - 5 * hour) } } as Partial<Work>);
   const all = [parent, due, windowed, inBuild];
   for (const work of [due, inBuild]) {
     assert.equal(loopObservation(work, new Date(now), all)?.due, true);

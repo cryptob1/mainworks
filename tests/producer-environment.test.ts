@@ -353,7 +353,7 @@ test('unit:live-install-ssh-key-available without HETZNER_SSH_KEY the launch is 
     const item = work('GY-717', 'manual', ['manual:host-install-live']), calls: string[][] = [];
     const launched = await launchProducer(root, item, item.autoDispatch!.producers[0] as any, (await loadMasterConfig(root)).producers[0], [], new Date().toISOString(), { run: herdr(calls), filesystem: durable, probe: fleet() });
     const prompt = producerPrompt({ repository: 'owner/project', cliPath: launcher }, { ...item.autoDispatch!.producers[0] as any, key: 'GY-717', checkout: launched.checkout }, { principal: 'proof-runner' });
-    const name = `mainworks-gy-717-${H.slice(0, 8)}`;
+    const name = `graphyard-gy-717-${H.slice(0, 8)}`;
     assert.ok(prompt.includes(`ssh-keygen -t ed25519 -N '' -C ${name} -f ${join(launched.checkout, 'hetzner-ssh-key')}`), 'the key is generated inside the session directory');
     assert.ok(prompt.includes(`hcloud ssh-key create --name ${name} --public-key-from-file ${join(launched.checkout, 'hetzner-ssh-key')}.pub`), 'registered with the provided HCLOUD_TOKEN');
     assert.ok(prompt.includes(`pass --ssh-key ${name}`));

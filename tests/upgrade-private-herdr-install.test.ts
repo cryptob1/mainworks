@@ -41,7 +41,7 @@ test('e2e:upgrade-private-herdr-install — a pre-GY-3212 private-Herdr install 
     const run = async (command: string, args: string[]) => {
       calls.push([command, ...args]);
       if (args[0] === '--session') return JSON.stringify({ panes });
-      if (args[0] === 'workspace') return JSON.stringify({ workspaces: [{ workspace_id: 'wMain', label: 'mainworks-acme-app' }] });
+      if (args[0] === 'workspace') return JSON.stringify({ workspaces: [{ workspace_id: 'wMain', label: 'graphyard-acme-app' }] });
       return '';
     };
     await migrateHerdr(root, run, home);

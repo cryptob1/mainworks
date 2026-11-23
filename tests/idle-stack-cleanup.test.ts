@@ -50,8 +50,8 @@ function fakeDocker(containers: Container[]) {
 }
 /** What every host keeps beside Mainworks's own stacks: an installed control plane and its database, a foreign Compose project, an unlabelled preview-named one and the shared BuildKit builder. */
 const untouchable = (): Container[] => [
-  { id: 'server', project: 'mainworks-cryptob1-graphyard', owner: null, running: true },
-  { id: 'database', project: 'mainworks-cryptob1-graphyard', owner: null, running: true, volume: 'mainworks-cryptob1-graphyard_db' },
+  { id: 'server', project: 'graphyard-cryptob1-graphyard', owner: null, running: true },
+  { id: 'database', project: 'graphyard-cryptob1-graphyard', owner: null, running: true, volume: 'graphyard-cryptob1-graphyard_db' },
   { id: 'huck', project: 'hello-huck', owner: null, running: true },
   { id: 'openworld', project: 'cryptob1-graphyard-openworld', owner: null, running: true },
   { id: 'unowned', project: 'graphyard-preview-gy-1-unowned', owner: null, running: true },
@@ -88,7 +88,7 @@ test('unit:idle-stack-cleanup — the cleanup decision and its Docker adapter st
   assert.equal(kept['graphyard-preview-gy-58-aaaaaaaa'], "GY-58's preview, last used 2030-06-01T00:25:00.000Z");
   assert.match(kept['graphyard-preview-gy-59-bbbbbbbb']!, /in use by a review$/);
   assert.match(kept['graphyard-preview-trial-services-gy-60-cccccccc']!, /^its owner pid \d+ still runs$/);
-  for (const project of ['mainworks-cryptob1-graphyard', 'hello-huck', 'cryptob1-graphyard-openworld', 'graphyard-preview-gy-1-unowned', '']) assert.equal(kept[project], 'not a Mainworks stack', `${project || 'the builder'} is never Mainworks's to stop`);
+  for (const project of ['graphyard-cryptob1-graphyard', 'hello-huck', 'cryptob1-graphyard-openworld', 'graphyard-preview-gy-1-unowned', '']) assert.equal(kept[project], 'not a Mainworks stack', `${project || 'the builder'} is never Mainworks's to stop`);
 
   // Reconciling again, later, finds nothing new to stop: what it stopped is no longer running.
   assert.deepEqual(await stopIdleStacks(previews, { now: now + 2 * minute, idleMs: 30 * minute, docker, env: {} }), []);
