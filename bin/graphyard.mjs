@@ -22,11 +22,18 @@ for (let attempt = 0; ; attempt++) {
   const built = existsSync(check) && (await import(pathToFileURL(check).href)).builtEntry(selected, 'cli');
   // GY-3627: when NODE_COMPILE_CACHE is already active and no release-handover pointer is in use,
   // load the built CLI directly instead of paying a second Node process start.
-  if (built && process.env.NODE_COMPILE_CACHE && selected === root) {
+  // A release handover (exit code 75) then retries through the spawned path below.
+  if (attempt === 0 && built && process.env.NODE_COMPILE_CACHE && selected === root) {
     process.argv[1] = built;
     process.env.GRAPHYARD_LAUNCHER = '1';
+    const finished = new Promise(resolve => process.once('beforeExit', resolve));
     await import(pathToFileURL(built).href);
-    break;
+    await finished;
+    if (process.exitCode !== 75) break;
+    process.exitCode = 0;
+    console.error(`[graphyard] release handover: retry 1/3 in 500ms`);
+    await new Promise(resolve => setTimeout(resolve, 500));
+    continue;
   }
   const entry = built ? [built] : ['--import', createRequire(join(selected, 'package.json')).resolve('tsx'), join(selected, 'src/cli.ts')];
   // Node's compile cache spares the built CLI recompiling its one large file on every start.
