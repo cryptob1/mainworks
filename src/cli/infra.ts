@@ -34,7 +34,7 @@ export const infraCommands = defineCommands([{
     const [verb, noun, a, b] = positionals;
     if (verb === 'approve' && noun && values.project) {
       await asRecordedOperator(context.repositoryRoot());
-      return context.print(await context.api('infra/grants', { repository: noun, project: values.project, ...(values.from ? { from: values.from } : {}) }));
+      return context.print(await context.api('infra/approvals', { repository: noun, project: values.project, ...(values.from ? { from: values.from } : {}) }));
     }
     if (verb === 'take') {
       const { token, repository, project } = await context.api('infra/credential', {}) as { token: string; repository: string; project: string };

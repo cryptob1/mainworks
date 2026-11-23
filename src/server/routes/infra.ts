@@ -87,7 +87,7 @@ export const infraActRoutes = defineRoutes('infra-act', [{ method: 'POST', path:
 
 export const infraRoutes = defineRoutes('infra', [
   // The owner approves one repository and one hosting project.
-  { method: 'POST', path: '/api/infra/grants', handle: async context => {
+  { method: 'POST', path: '/api/infra/approvals', handle: async context => {
     demand(context.actor.role === 'admin' && context.actor.sessionKind === 'human', 'Only the owner approves infra access.', 403);
     const input = grantSchema.parse(await parseJson(context));
     const grant: Grant = { id: randomUUID(), repository: input.repository, project: input.project, from: input.from ?? null, approvedBy: context.actor.id };
