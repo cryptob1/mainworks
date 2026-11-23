@@ -1,0 +1,14 @@
+{
+  "id": "home-default-does-not-change-the-model",
+  "title": "A login's own default model never changes what a worker runs",
+  "description": "GY-3687: an account registered for one model, on a stored Claude runtime that names no model flag, whose stub runtime answers on another model when none is named. A worker start and its rework continue both name the registered id, report the registered model, and leave the account available.",
+  "tags": ["capacity", "work"],
+  "target": "any",
+  "required": true,
+  "steps": [{
+    "kind": "command",
+    "name": "worker start and rework continue run the registered model",
+    "run": "node --import tsx tests/helpers/run-tests.ts tests/home-default-does-not-change-the-model.test.ts",
+    "timeoutSeconds": 600
+  }]
+}

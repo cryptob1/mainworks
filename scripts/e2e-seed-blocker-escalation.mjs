@@ -5,11 +5,11 @@
 //   node --import tsx scripts/e2e-seed-blocker-escalation.mjs
 //
 // Run from the checkout scripts/e2e-serve.mjs serves: it reads the database URL that serve wrote
-// to .graphyard/e2e-serve-PORT.json. Re-running refreshes both stamps.
+// to .graphyard/e2e-serve.json. Re-running refreshes both stamps.
 import { readFile } from 'node:fs/promises';
 import pg from 'pg';
 
-const { databaseUrl } = JSON.parse(await readFile(`.graphyard/e2e-serve-${new URL(process.env.TARGET_URL).port}.json`, 'utf8'));
+const { databaseUrl } = JSON.parse(await readFile('.graphyard/e2e-serve.json', 'utf8'));
 const minute = 60_000, now = Date.now();
 const filed = new Date(now - 3 * 60 * minute).toISOString();
 const item = (n, key, title, minutesWaiting, blocker) => ({
