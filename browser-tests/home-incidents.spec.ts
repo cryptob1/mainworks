@@ -63,7 +63,7 @@ test('e2e:home-incidents — the status line and both incident cards at 1280 and
     return route.fulfill({ json: [] });
   });
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto('/?sign-in');
+  await page.goto('/?sign-in#work');
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.locator('header.main-top-bar')).toBeVisible();

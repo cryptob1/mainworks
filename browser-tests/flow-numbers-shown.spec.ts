@@ -32,7 +32,7 @@ async function serve(page: Page) {
     if (path.endsWith('/board')) return route.fulfill({ json: boardFromStatus(work as never, Date.parse(stamp), null) });
     return route.fulfill({ json: [] });
   });
-  await page.goto('/?sign-in');
+  await page.goto('/?sign-in#work');
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible();

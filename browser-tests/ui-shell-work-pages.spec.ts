@@ -62,7 +62,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
       });
       await page.setViewportSize(viewport);
       const { code } = await (await fetch(`${http.url}/api/sign-in-links`, { method: 'POST', headers: operator })).json() as { code: string };
-      await page.goto('/#sign-in=' + code);
+      await page.goto('/#sign-in=' + code + '&work');
       await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible(settled);
       // GY-3600: with no goal set, every task sits in the 'No goal' group, open.
       await expect(page.locator('[data-goal="none"]')).toBeVisible(settled);

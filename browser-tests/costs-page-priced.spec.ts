@@ -28,7 +28,7 @@ async function open(page: Page, astraPriced: boolean) {
     if (url.pathname === '/api/costs') return route.fulfill({ json: summary });
     return route.fulfill({ json: boardApi(url.pathname.slice(1) + url.search) });
   });
-  await page.goto('/?sign-in');
+  await page.goto('/?sign-in#work');
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings', exact: true }).click();

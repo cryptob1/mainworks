@@ -32,7 +32,7 @@ async function namesMainworks(page: Page) {
 test('e2e:product-name-mainworks — sign-in, home and an invite link say Mainworks, never Graphyard', async ({ page }) => {
   test.setTimeout(90_000);
   await serve(page);
-  await page.goto('/?sign-in');
+  await page.goto('/?sign-in#work');
   await expect(page.getByLabel('Access token')).toBeVisible();
   await namesMainworks(page);
 
@@ -61,7 +61,7 @@ test('e2e:product-name-mainworks — sign-in, home and an invite link say Mainwo
   // An invite link opens once and lands on the home page.
   const invite = await page.context().newPage();
   await serve(invite);
-  await invite.goto('/#sign-in=invite-code-0123456789');
+  await invite.goto('/#sign-in=invite-code-0123456789&work');
   await expect(invite.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible(settled);
   await namesMainworks(invite);
 });

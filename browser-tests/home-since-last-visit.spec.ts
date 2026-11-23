@@ -44,7 +44,7 @@ async function plane(page: Page, state: { work: unknown[]; actor?: unknown }) {
 
 async function visit(page: Page, first = false) {
   if (first) {
-    await page.goto('/?sign-in');
+    await page.goto('/?sign-in#work');
     await page.getByLabel('Access token').fill(token);
     await page.getByRole('button', { name: 'Open control plane' }).click();
     await expect(page.locator('header.main-top-bar')).toBeVisible();
