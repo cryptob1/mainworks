@@ -2,6 +2,7 @@
 // mounts a nested bubblewrap sandbox makes ("Failed to make / slave"), and Ubuntu 24.04 and later
 // deny unconfined processes a user namespace ("setting up uid map"). Trial containers alone run
 // under a dedicated profile that is unconfined and grants userns; every other container keeps docker-default.
+import { setting } from '../mainworks-names.js';
 import { readFileSync } from 'node:fs';
 import { shellQuote } from '../install/transport.js';
 
@@ -18,7 +19,7 @@ profile ${trialAppArmorProfile} flags=(unconfined) {
 }
 `;
 /** Whether the host enforces AppArmor; GRAPHYARD_APPARMOR_ENABLED_FILE stands in for the kernel's answer. */
-export function appArmorEnabled(file = process.env.GRAPHYARD_APPARMOR_ENABLED_FILE || '/sys/module/apparmor/parameters/enabled'): boolean {
+export function appArmorEnabled(file = setting('APPARMOR_ENABLED_FILE') || '/sys/module/apparmor/parameters/enabled'): boolean {
   try { return readFileSync(file, 'utf8').trim().startsWith('Y'); } catch { return false; }
 }
 /** The commands that install and load the trial profile, as one shell line. */

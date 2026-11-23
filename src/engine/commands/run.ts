@@ -1,3 +1,4 @@
+import { setting } from '../../mainworks-names.js';
 import { decisionWork } from '../../store/decision-read.js';
 import { once } from '../../store/mutations.js';
 import { save, wakeJob } from '../../store.js';
@@ -28,7 +29,7 @@ const noWake = new Set<Command>(['heartbeat', 'release', 'claim', 'workspace', '
  * A plain name (staging, deploy) is a declared resource and is kept.
  */
 async function resourcesOnBase(engine: Engine, names: string[]) {
-  if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd());
+  if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(setting('REPOSITORY_ROOT') ?? process.cwd());
   const kept: string[] = [];
   for (const name of names) {
     if (!name.includes('/') && !/\.[a-z0-9]{1,5}$/.test(name)) { kept.push(name); continue; }

@@ -1,3 +1,4 @@
+import { setting } from '../mainworks-names.js';
 import { rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -214,7 +215,7 @@ export const installCommands = defineCommands([
       if (workerToken !== undefined && !workerToken.trim()) throw new Error('Worker credential must be nonempty; setup has not changed local configuration');
       const selectedUrl = values.url ?? base;
       // Never silently send a saved credential to a newly selected server.
-      if (values.url && connection && new URL(values.url).origin !== connection.url && !process.env.GRAPHYARD_TOKEN && !values['token-stdin']) workerToken = undefined;
+      if (values.url && connection && new URL(values.url).origin !== connection.url && !setting('TOKEN') && !values['token-stdin']) workerToken = undefined;
       return print(await setupRepository(root, { url: selectedUrl, cliPath: resolve(values['cli-path'] ?? await context.activeCliPath()), hostId: values['host-id'] ?? context.individualHostId(), ...(workerToken ? { token: workerToken } : {}) }, { herdr: values.herdr }));
     },
   },

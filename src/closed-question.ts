@@ -1,3 +1,4 @@
+import { setting } from './mainworks-names.js';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
@@ -87,7 +88,7 @@ export function configuredResponder(config: ResponderConfig, env: NodeJS.Process
 }
 /** The responder `GRAPHYARD_RESPONDER` configures, or null when none is: closed questions then take their ordinary path. */
 export function responderFromEnv(env: NodeJS.ProcessEnv = process.env): Responder | null {
-  const raw = env.GRAPHYARD_RESPONDER?.trim();
+  const raw = setting('RESPONDER', env)?.trim();
   return raw ? configuredResponder(responderConfigSchema.parse(JSON.parse(raw)), env) : null;
 }
 

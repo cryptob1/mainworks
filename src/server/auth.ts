@@ -1,3 +1,4 @@
+import { setting } from '../mainworks-names.js';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import { demand, operatorScopeIncludes, type Principal } from '../model.js';
@@ -128,7 +129,7 @@ export function localRead(req: IncomingMessage) {
   const host = loopbackHost.exec(req.headers.host ?? '');
   // Compose publishes only on host loopback, but NAT changes both the port and socket peer.
   // This installer-owned setting declares that boundary; direct servers still require loopback.
-  const publishedPort = process.env.GRAPHYARD_LOCAL_VIEW_PORT;
+  const publishedPort = setting('LOCAL_VIEW_PORT');
   return req.method === 'GET' && !!host && Number(host[1] ?? 80) === (publishedPort ? Number(publishedPort) : req.socket.localPort)
     && (!!publishedPort || ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress ?? ''))
     && !req.headers.forwarded && !req.headers['x-forwarded-for']
@@ -399,5 +400,5 @@ export function assembleServices(engine: Engine, credentials: Credential[], opti
   return { signinClaim: signinClaimFromEnv(env, credentials), engine, repository, principals, limits: delegationLimits.limits, delegationLimits, build: buildIdentity(env), production: options.production ?? null, validation, delivery, operatorAgents, agentRegistry: new AgentRegistry(engine.store), responder: options.responder !== undefined ? options.responder : responderFromEnv(env),
     ...(options.clock ? { clock: options.clock } : {}),
     // GY-3294: the port the dashboard is published on, which its tailnet address and invites name.
-    teamAccess: { port: env.GRAPHYARD_LOCAL_VIEW_PORT || null }, infra: infraProviders(env) };
+    teamAccess: { port: setting('LOCAL_VIEW_PORT', env) || null }, infra: infraProviders(env) };
 }

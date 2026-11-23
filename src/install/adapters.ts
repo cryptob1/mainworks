@@ -1,3 +1,4 @@
+import { setting } from '../mainworks-names.js';
 import { execFileSync } from 'node:child_process';
 import { controlPlaneWeight } from '../session-share.js';
 import { fingerprint, Vault } from './secrets.js';
@@ -293,7 +294,7 @@ export function imageBuildArgs(sourceRoot: string, dirty = sourceTreeDirty) {
   // A deploy that names both stamp values vouches the commit it moved onto (GY-2167): they are the
   // build args verbatim, so the tree's untracked files or a failed git read under load cannot
   // leave the image unstamped and /healthz reporting `unreleased unknown` instead of the commit.
-  const named = process.env.GRAPHYARD_VERSION?.trim(), revision = process.env.GRAPHYARD_BUILD_REVISION?.trim();
+  const named = setting('VERSION')?.trim(), revision = setting('BUILD_REVISION')?.trim();
   if (named && revision) return ['--build-arg', `GRAPHYARD_VERSION=${named}`, '--build-arg', `GRAPHYARD_BUILD_REVISION=${revision}`];
   if (dirty(sourceRoot)) return [];
   const release = checkoutRelease(sourceRoot, revision || 'unknown');
@@ -308,7 +309,7 @@ export function imageBuildArgs(sourceRoot: string, dirty = sourceTreeDirty) {
  * server must report the release it is deployed as.
  */
 export function publishedSourceImages(sourceRoot: string, dirty = sourceTreeDirty) {
-  const version = process.env.GRAPHYARD_VERSION?.trim(), revision = process.env.GRAPHYARD_BUILD_REVISION?.trim();
+  const version = setting('VERSION')?.trim(), revision = setting('BUILD_REVISION')?.trim();
   const release = version && revision ? { version, revision } : dirty(sourceRoot) ? null : checkoutRelease(sourceRoot);
   return release && /^[0-9a-f]{40}$/.test(release.revision) && release.version === `unreleased ${release.revision.slice(0, 12)}` ? publishedImages(release.revision) : null;
 }

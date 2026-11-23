@@ -594,7 +594,9 @@ function resumedAttempt(work: Partial<Pick<Work, 'capacity' | 'humanRequests'>>)
 
 function workerEnvironment(config: MasterConfig, profile: WorkerProfile) {
   const env: NodeJS.ProcessEnv = { ...process.env, GRAPHYARD_URL: config.url, GRAPHYARD_TOKEN_FILE: profile.credentialFile, GRAPHYARD_HOST_ID: config.hostId };
-  delete env.GRAPHYARD_TOKEN; delete env.GRAPHYARD_MASTER_TOKEN; delete env.GRAPHYARD_REQUEST_ID;
+  // The worker's copy drops the master's credentials and request id, and any MAINWORKS_* name that would shadow the worker's own settings.
+  for (const name of ['TOKEN', 'MASTER_TOKEN', 'REQUEST_ID']) delete env[`GRAPHYARD_${name}`];
+  for (const name of ['TOKEN', 'MASTER_TOKEN', 'REQUEST_ID', 'URL', 'TOKEN_FILE', 'HOST_ID']) delete env[`MAINWORKS_${name}`];
   return env;
 }
 // A worker launch runs the Graphyard CLI to claim and to build the assigned worktree, which on a

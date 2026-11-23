@@ -1,4 +1,5 @@
 // Concern: workspace commands — sync with the base branch tip, and the supervised worker watch under lease.
+import { setting } from '../mainworks-names.js';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { readFile, realpath, writeFile } from 'node:fs/promises';
@@ -145,7 +146,7 @@ export const workspaceCommands = defineCommands([
       try { await syncWork(context, work); } catch (error) {
         const failure = environmentFailure(error); const epoch = [...work.workspaces].reverse().find((w: any) => w.branch === quietBranch())?.epoch ?? work.lease?.epoch;
         if (!failure || epoch === undefined) throw error;
-        const reason = environmentBlocker(`sync ${work.key}`, process.env.GRAPHYARD_HERDR_AGENT_KIND, failure);
+        const reason = environmentBlocker(`sync ${work.key}`, setting('HERDR_AGENT_KIND'), failure);
         const partialWork = keepBlockedWork(work, epoch); await workMutation(context, work)('blocked', { epoch, reason, ...(partialWork ? { partialWork } : {}) });
         throw new Error(`${reason} Recorded as the blocker on ${work.key}.`);
       }
@@ -184,9 +185,9 @@ export const workspaceCommands = defineCommands([
       if (!workspace || workspace.host !== hostId || await realpath(process.cwd()) !== await realpath(workspace.path)) throw new Error('Run watch from the assigned workspace on its registered host');
       const workerStatus = await setupApi('status'); if (workerStatus.actor?.role !== 'worker') throw new Error('watch requires a worker credential; never pass operator or producer credentials to implementation processes');
       const watchToken = await context.individualToken();
-      process.env.GRAPHYARD_URL = base; process.env.GRAPHYARD_TOKEN = watchToken;
-      process.env.GRAPHYARD_CLI = await context.activeCliPath(); process.env.GRAPHYARD_HOST_ID = hostId;
-      for (const name of ['URL', 'TOKEN', 'CLI', 'HOST_ID']) process.env[`MAINWORKS_${name}`] = process.env[`GRAPHYARD_${name}`];
+      // Under both names, so a MAINWORKS_* value this shell carried never shadows the worker's own.
+      const own = { URL: base, TOKEN: watchToken, CLI: await context.activeCliPath(), HOST_ID: hostId };
+      for (const [name, value] of Object.entries(own)) process.env[`GRAPHYARD_${name}`] = process.env[`MAINWORKS_${name}`] = value;
       // `complete` ends the lease, so the renewal after a submission is refused by design: say
       // so before the supervisor stops the session, so the stop reads as the end of the attempt
       // rather than as a lost assignment.
@@ -200,7 +201,7 @@ export const workspaceCommands = defineCommands([
       // The agent leads its own process group inside the headless run's own scope (GY-3259), and its output goes to the run log.
       process.exitCode = await supervise(args[separator + 1], args.slice(separator + 2), epoch, renew, {
           detached: true,
-          ...(process.env.GRAPHYARD_RUN_LOG ? { log: process.env.GRAPHYARD_RUN_LOG } : {}),
+          ...(setting('RUN_LOG') ? { log: setting('RUN_LOG') } : {}),
         });
     },
   },

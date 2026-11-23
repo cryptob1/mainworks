@@ -1,3 +1,4 @@
+import { setting } from '../mainworks-names.js';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync } from 'node:fs';
@@ -35,7 +36,7 @@ export function isolatedTestEnvironment(environment: NodeJS.ProcessEnv = process
   const kept = Object.entries(environment).filter((entry): entry is [string, string] => {
     const [name, value] = entry;
     if (value === undefined || name === 'NODE_TEST_CONTEXT') return false;
-    return !/^(GRAPHYARD|MAINWORKS|HERDR)_/.test(name) || (passedTestControls as readonly string[]).includes(name);
+    return !/^(GRAPHYARD|MAINWORKS|HERDR)_/.test(name) || (passedTestControls as readonly string[]).includes(name.replace(/^MAINWORKS_/, 'GRAPHYARD_'));
   });
   return { ...Object.fromEntries(kept), ...set };
 }
@@ -233,8 +234,8 @@ export function containedInstall(cwd: string, argv: readonly string[], env: Node
     .filter((path): path is string => !!path && isAbsolute(path)).map(path => resolve(path)))].filter(path => path === home || path === '/tmp' || directory(path))
     .sort((a, b) => a.length - b.length);
   const credentials = [...new Set([
-    env.GRAPHYARD_CONFIG_HOME, env.XDG_CONFIG_HOME, join(home, '.config'), join(home, '.ssh'),
-    env.GRAPHYARD_TOKEN_FILE ? dirname(env.GRAPHYARD_TOKEN_FILE) : undefined,
+    setting('CONFIG_HOME', env), env.XDG_CONFIG_HOME, join(home, '.config'), join(home, '.ssh'),
+    setting('TOKEN_FILE', env) ? dirname(setting('TOKEN_FILE', env)!) : undefined,
   ].filter((path): path is string => !!path && isAbsolute(path)).map(path => resolve(path)))].filter(directory);
   // npm's content cache: its entries are addressed and verified by integrity. npx's installs are
   // writable too, for a manager npm exec runs (pnpm, GY-3200); the rest (logs) stays out of reach.

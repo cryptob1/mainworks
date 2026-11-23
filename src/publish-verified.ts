@@ -1,6 +1,7 @@
 // What the release workflow publishes for each verified and deployed commit, so
 // `npx @cryptob1/graphyard up` works on a host that holds no checkout: the control-plane and trial images,
 // by commit, and the npm package `@cryptob1/graphyard` — the launcher alone, naming the commit it fetches.
+import { setting } from './mainworks-names.js';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -54,7 +55,7 @@ export async function publishVerified(commit: string, ports: { root: string; run
 
 // Built by `node scripts/build-publisher.mjs`; both Actions and the offline install proof run this entry point.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const commit = process.env.GRAPHYARD_PUBLISH_COMMIT;
+  const commit = setting('PUBLISH_COMMIT');
   if (!commit) throw new Error('GRAPHYARD_PUBLISH_COMMIT is required');
   console.log(JSON.stringify(await publishVerified(commit, { root: process.cwd(), run: defaultChildRun, provenance: process.argv.includes('--provenance') })));
 }

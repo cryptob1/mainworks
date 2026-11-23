@@ -1,4 +1,4 @@
-import { stateDir } from '../mainworks-names.js';
+import { stateDir, setting } from '../mainworks-names.js';
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -529,7 +529,7 @@ export const completeCommand: CliCommand = {
     completeArgs(context.args);
     await checkoutRoot(context, `graphyard complete ${work.key}`);
     const root = context.repositoryRoot();
-    const body = completionBody(context.args, () => worktreeHead(root)), requestId = process.env.GRAPHYARD_REQUEST_ID ?? `complete:${work.id}:${body.epoch}:${body.head}`;
+    const body = completionBody(context.args, () => worktreeHead(root)), requestId = setting('REQUEST_ID') ?? `complete:${work.id}:${body.epoch}:${body.head}`;
     await completePreflight(root, work, body.head);
     let verification: Awaited<ReturnType<typeof selfVerification>> | { state: 'unavailable'; reason: string };
     try { verification = await selfVerification(root, work.key); } catch (error: any) { verification = { state: 'unavailable', reason: `the worktree could not be read: ${error.message}` }; }

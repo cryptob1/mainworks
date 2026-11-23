@@ -1,4 +1,4 @@
-import { mainworksOr } from '../mainworks-names.js';
+import { mainworksOr, setting } from '../mainworks-names.js';
 import { createHash, randomBytes } from 'node:crypto';
 import { chmod, lstat, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -85,7 +85,7 @@ export const installRecordSchema = z.object({
 export type InstallRecord = z.infer<typeof installRecordSchema>;
 
 /** `~/.config/mainworks`, or `~/.config/graphyard` where an existing install has it (GY-3573); MAINWORKS_CONFIG_HOME (or GRAPHYARD_CONFIG_HOME) overrides. */
-export const configHome = (override?: string) => resolve(override ?? process.env.GRAPHYARD_CONFIG_HOME ?? homeConfigDirectory(homedir()));
+export const configHome = (override?: string) => resolve(override ?? setting('CONFIG_HOME') ?? homeConfigDirectory(homedir()));
 /** The config home under HOME's `.config`: mainworks on a fresh home, graphyard where only that exists. */
 export const homeConfigDirectory = (home: string) => mainworksOr(join(home, '.config'), 'mainworks', 'graphyard');
 export const installDirectory = (installId: string, override?: string) => resolve(configHome(override), installId);

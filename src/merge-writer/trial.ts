@@ -1,4 +1,4 @@
-import { stateDir } from '../mainworks-names.js';
+import { stateDir, setting } from '../mainworks-names.js';
 import { trialCpuMonitor, trialOverloadFault, type TrialCpuReading } from './trial-cpu.js';
 // Concern: the merge writer's trial merge — the exact merge commit of a head onto main, and its build and affected tests in a credential-free checkout.
 import { randomUUID } from 'node:crypto';
@@ -180,7 +180,7 @@ export const ghConfigDirectory = (environment: NodeJS.ProcessEnv = process.env) 
   environment.GH_CONFIG_DIR || join(environment.XDG_CONFIG_HOME || join(environment.HOME ?? homedir(), '.config'), 'gh');
 /** GY-2997: what a trial child must not read by its absolute path: the operator config home (coordinator credentials, the deploy key's default place), the operator's gh config directory (the gh login), the deploy key wherever it is configured, and the loop's runtime directory (its session bus and sockets). */
 export const trialHiddenPaths = (credentialFile: string | undefined, environment: NodeJS.ProcessEnv = process.env, uid = process.getuid?.()): string[] =>
-  [...new Set([configHome(environment.GRAPHYARD_CONFIG_HOME), ghConfigDirectory(environment), credentialFile, environment.XDG_RUNTIME_DIR, uid === undefined ? undefined : `/run/user/${uid}`].filter((path): path is string => !!path && isAbsolute(path)))];
+  [...new Set([configHome(setting('CONFIG_HOME', environment)), ghConfigDirectory(environment), credentialFile, environment.XDG_RUNTIME_DIR, uid === undefined ? undefined : `/run/user/${uid}`].filter((path): path is string => !!path && isAbsolute(path)))];
 /**
  * The bubblewrap words every trial child runs under: a read-only host, private devices and
  * scratch, host launch sockets hidden, credential masks, then only the trial's allocated

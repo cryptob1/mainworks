@@ -1,5 +1,5 @@
 // Concern: launching an agent session — request files, start observation, prompt delivery and acknowledgement.
-import { stateDir } from '../mainworks-names.js';
+import { stateDir, setting } from '../mainworks-names.js';
 import { PRODUCT_NAME } from '../model/product.js';
 import { createHash } from 'node:crypto';
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, realpathSync, writeFileSync } from 'node:fs';
@@ -143,7 +143,7 @@ export const launcherCoordinatorRoot = (argv1: string | undefined = process.argv
   if (!argv1 || testRunner || !cliEntry(argv1)) return null;
   // GY-1790: an entry the restart started from the held snapshot is handed the checkout it serves
   // in the environment; confinement guards that checkout, not the snapshot's own tree.
-  const handed = process.env.GRAPHYARD_CHECKOUT_ROOT?.trim();
+  const handed = setting('CHECKOUT_ROOT')?.trim();
   const root = handed || coordinatorCheckoutRoot(resolve(argv1));
   return root && root !== '/' ? root : null;
 };
@@ -151,7 +151,7 @@ export const launcherCoordinatorRoot = (argv1: string | undefined = process.argv
 export const launcherRootUndetermined = (argv1: string | undefined = process.argv[1], testRunner: boolean = underTestRunner()): string | null => {
   if (!argv1 || testRunner || !cliEntry(argv1)) return null;
   // GY-1790: a snapshot entry is handed its checkout in the environment, so its root is determined.
-  if (process.env.GRAPHYARD_CHECKOUT_ROOT?.trim()) return null;
+  if (setting('CHECKOUT_ROOT')?.trim()) return null;
   const root = coordinatorCheckoutRoot(resolve(argv1));
   return root && root !== '/' ? null : `this launcher's coordinator checkout could not be derived from its entry ${argv1}`;
 };
@@ -202,7 +202,7 @@ export async function masterSessionConfinement(kind: string, root: string, probe
   // GY-3445: and the host-wide heavy-jobs folder, whose drain record `master drain` and `master resume` write.
   const heavyJobs = heavyJobsDirectory();
   // GY-3698: the machine's compute known-hosts and host list files, so `host add` works from the confined master while the rest of machine/ stays hidden.
-  const config = configHome(environment?.GRAPHYARD_CONFIG_HOME);
+  const config = configHome(environment && setting('CONFIG_HOME', environment));
   const knownHosts = hostKnownHostsFile(config), hosts = hostsFile(config);
   for (const path of [ledgerLocks, heavyJobs, dirname(knownHosts)]) mkdirSync(path, { recursive: true });
   if (!existsSync(knownHosts)) writeFileSync(knownHosts, '', { mode: 0o600 });

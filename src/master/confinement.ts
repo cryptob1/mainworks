@@ -1,5 +1,5 @@
 // Concern: OS-level host filesystem and coordinator confinement for every launched role.
-import { stateDir } from '../mainworks-names.js';
+import { stateDir, setting } from '../mainworks-names.js';
 import { PRODUCT_NAME } from '../model/product.js';
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -352,7 +352,7 @@ const keptCredentialPaths = (mask: CredentialMask | undefined): string[] =>
   [...new Set((mask?.own ?? []).filter(path => isAbsolute(path) && existsSync(path)).map(canonicalPath))];
 /** Where `graphyard-secrets-bus.socket` listens: `$GRAPHYARD_SECRETS_BUS`, else `graphyard-secrets-bus` in the user's runtime directory. */
 export const secretsBusPath = (uid: number | undefined = process.getuid?.(), env: NodeJS.ProcessEnv = process.env): string | null =>
-  env.GRAPHYARD_SECRETS_BUS || (env.XDG_RUNTIME_DIR ? join(env.XDG_RUNTIME_DIR, 'graphyard-secrets-bus') : uid === undefined ? null : `/run/user/${uid}/graphyard-secrets-bus`);
+  setting('SECRETS_BUS', env) || (env.XDG_RUNTIME_DIR ? join(env.XDG_RUNTIME_DIR, 'graphyard-secrets-bus') : uid === undefined ? null : `/run/user/${uid}/graphyard-secrets-bus`);
 /**
  * The host's own process-launch channels that exist here: the systemd manager directories and
  * session-bus sockets of the user's runtime directory (`/run/user/<uid>`, `$XDG_RUNTIME_DIR`) and
@@ -366,7 +366,7 @@ export const hostProcessLaunchTargets = (uid: number | undefined = process.getui
       join(home, '.config', 'herdr', 'sessions'), join(home, '.docker', 'run'), join(home, '.docker', 'desktop'), join(home, '.local', 'share', 'docker')]),
     ...[
       env.XDG_CONFIG_HOME && join(env.XDG_CONFIG_HOME, 'herdr', 'sessions'),
-      env.GRAPHYARD_HERDR_CONFIG_HOME && join(env.GRAPHYARD_HERDR_CONFIG_HOME, 'herdr', 'sessions'),
+      setting('HERDR_CONFIG_HOME', env) && join(setting('HERDR_CONFIG_HOME', env)!, 'herdr', 'sessions'),
       herdrTarget()?.configHome && join(herdrTarget()!.configHome, 'herdr', 'sessions')].filter((path): path is string => !!path)];
   return { directories, busSockets: [...runtimeDirectories.map(directory => join(directory, 'bus')),
     ...[env.DOCKER_HOST, env.CONTAINER_HOST, env.BUILDKIT_HOST].flatMap(value => value?.startsWith('unix://') ? [value.slice(7)] : []),

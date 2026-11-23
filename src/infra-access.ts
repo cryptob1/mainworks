@@ -2,6 +2,7 @@
 // confined master holds a credential that names them and nothing else. The control plane does each
 // repository or hosting call itself with the install's provider tokens (the install's .env), so the
 // session never holds a provider token, and every call is recorded as an `infra.action` event.
+import { setting } from './mainworks-names.js';
 import { execFile } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -19,12 +20,12 @@ export const infraRefusal = (scope: InfraScope) => `Refused: this credential cov
 /** The provider endpoints and tokens, from the server's environment. */
 export interface InfraProviders { githubToken?: string; githubApi: string; gitUrl: string; railwayToken?: string; railwayApi: string; railwayTeam?: string }
 export const infraProviders = (env: NodeJS.ProcessEnv): InfraProviders => ({
-  githubToken: env.GRAPHYARD_INFRA_GITHUB_TOKEN || undefined,
-  githubApi: (env.GRAPHYARD_INFRA_GITHUB_API || 'https://api.github.com').replace(/\/+$/, ''),
-  gitUrl: (env.GRAPHYARD_INFRA_GIT_URL || 'https://github.com').replace(/\/+$/, ''),
-  railwayToken: env.GRAPHYARD_INFRA_RAILWAY_TOKEN || undefined,
-  railwayApi: env.GRAPHYARD_INFRA_RAILWAY_API || 'https://backboard.railway.com/graphql/v2',
-  railwayTeam: env.GRAPHYARD_INFRA_RAILWAY_TEAM || undefined,
+  githubToken: setting('INFRA_GITHUB_TOKEN', env) || undefined,
+  githubApi: (setting('INFRA_GITHUB_API', env) || 'https://api.github.com').replace(/\/+$/, ''),
+  gitUrl: (setting('INFRA_GIT_URL', env) || 'https://github.com').replace(/\/+$/, ''),
+  railwayToken: setting('INFRA_RAILWAY_TOKEN', env) || undefined,
+  railwayApi: setting('INFRA_RAILWAY_API', env) || 'https://backboard.railway.com/graphql/v2',
+  railwayTeam: setting('INFRA_RAILWAY_TEAM', env) || undefined,
 });
 
 const missing = (name: string) => new Error(`Set ${name} in the install's .env and restart the server.`);

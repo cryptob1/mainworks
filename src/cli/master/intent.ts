@@ -1,4 +1,5 @@
 // Concern: `graphyard master` intent subcommands — autonomy, promote, adopt, close — applied at once with the master's identity.
+import { setting } from '../../mainworks-names.js';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { agentToken, intentInput, autonomySubcommands, runAutonomyCommand, listHerdrAgents, promoteToAutonomy, assertPromotionRoute } from '../../master.js';
@@ -28,7 +29,7 @@ export async function derivedIntent(id: 'create' | 'requirements', args: string[
   const intent = work ? intentInput('requirements', work, input) : input;
   const postDeploy = postDeployCriterionRefusal(intent.criteria ?? []) ?? postDeployOnlyRefusal(intent.criteria ?? []);
   if (postDeploy) throw new Error(postDeploy);
-  return deps.mutate(work ? `work/${work.id}/requirements` : 'work', { ...intent, reason }, process.env.GRAPHYARD_REQUEST_ID ?? randomUUID(), await deps.token());
+  return deps.mutate(work ? `work/${work.id}/requirements` : 'work', { ...intent, reason }, setting('REQUEST_ID') ?? randomUUID(), await deps.token());
 }
 
 /** The master's own intent, applied at once with its operator-agent identity. */

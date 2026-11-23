@@ -1,3 +1,4 @@
+import { setting } from '../mainworks-names.js';
 import { fileURLToPath } from 'node:url';
 import { publishedSourceImages, type AdapterContext } from './adapters.js';
 import type { PlanAction } from './types.js';
@@ -51,7 +52,7 @@ let provisioning: Promise<void> | null = null;
  * cache) — pulled, else built, by the install's own code. Concurrent callers wait on one provision.
  */
 export function ensureTrialImage(root = fileURLToPath(new URL('../..', import.meta.url))): Promise<void> {
-  if (process.env.GRAPHYARD_TRIAL_IMAGE) return Promise.resolve();
+  if (setting('TRIAL_IMAGE')) return Promise.resolve();
   return provisioning ??= (async () => {
     const transport = localTransport(), image = trialImage(root);
     if ((await transport.exec('docker', ['image', 'inspect', image], { allowFailure: true })).code === 0) return;

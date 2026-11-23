@@ -1,3 +1,4 @@
+import { setting } from '../mainworks-names.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
@@ -17,7 +18,7 @@ const plain = (res: ServerResponse, status: number, text: string) => { res.write
  * http(s) origin.
  */
 export function previewOrigin(environment: NodeJS.ProcessEnv = process.env): URL | null {
-  const value = environment.GRAPHYARD_PREVIEW_ORIGIN?.trim();
+  const value = setting('PREVIEW_ORIGIN', environment)?.trim();
   if (!value) return null;
   try { const origin = new URL(value); return /^https?:$/.test(origin.protocol) && origin.pathname === '/' && !origin.search ? origin : null; } catch { return null; }
 }

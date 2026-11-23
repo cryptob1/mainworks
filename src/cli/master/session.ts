@@ -1,4 +1,5 @@
 // Concern: the authenticated master session every `graphyard master` subcommand after init runs in.
+import { setting } from '../../mainworks-names.js';
 import { sessionName } from '../../session-name.js';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -15,7 +16,7 @@ export const unhandled = Symbol('unhandled master subcommand');
 export async function openMasterSession(context: CliContext, root: string) {
   const { id, args, print } = context;
   const stored = await loadMasterConfig(root);
-  const person = process.env.GRAPHYARD_FOR_PERSON;
+  const person = setting('FOR_PERSON');
   const master = person ? { ...stored, forPerson: person, masterAgentName: sessionName(stored.masterAgentName, person) } : stored;
   const masterToken = await readCredentialFile(master.credentialFile);
   const masterApi = async (path: string, credential = masterToken, timeoutMs = 30_000, headers: Record<string, string> = {}) => {

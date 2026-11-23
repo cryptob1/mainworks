@@ -1,3 +1,4 @@
+import { setting } from '../mainworks-names.js';
 import { appendEvidence } from '../model-boundary/append-evidence.js';
 import { recordDispatch } from '../engine/evaluate.js';
 import { once, receipt } from '../store/mutations.js';
@@ -41,7 +42,7 @@ function refusal(work: Work | undefined, data: { proof: string; sha: string; bas
 function checkoutReaders(services: Services): StateReaders {
   const git = () => {
     const { engine } = services;
-    if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd());
+    if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(setting('REPOSITORY_ROOT') ?? process.cwd());
     demand(engine.gitRunner, 'The control plane has no checkout to read the state a closed question is asked against', 503);
     return engine.gitRunner!;
   };

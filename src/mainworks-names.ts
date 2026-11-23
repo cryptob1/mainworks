@@ -5,15 +5,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * The one helper every setting goes through: each MAINWORKS_X moves onto GRAPHYARD_X at process
- * start, the new name winning, so every reader of GRAPHYARD_X honours it and a child process this
- * one sets GRAPHYARD_X for never sees a stale MAINWORKS_X.
+ * The one helper every setting goes through: MAINWORKS_<NAME>, else GRAPHYARD_<NAME>. It only reads;
+ * the environment is never rewritten, so child processes inherit it as it is.
  */
-export function honourMainworksNames(env: NodeJS.ProcessEnv = process.env) {
-  for (const [name, value] of Object.entries(env)) if (name.startsWith('MAINWORKS_')) { if (value !== undefined) env[`GRAPHYARD_${name.slice('MAINWORKS_'.length)}`] = value; delete env[name]; }
-  return env;
-}
-honourMainworksNames();
+export const setting = (name: string, env: Record<string, string | undefined> = process.env) => env[`MAINWORKS_${name}`] ?? env[`GRAPHYARD_${name}`];
 
 /** The mainworks name under PARENT when it exists or the graphyard one does not, else the graphyard one. */
 export const mainworksOr = (parent: string, mainworks: string, graphyard: string) =>

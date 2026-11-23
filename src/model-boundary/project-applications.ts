@@ -1,3 +1,4 @@
+import { setting } from '../mainworks-names.js';
 import { z } from 'zod';
 import { previewModes, maxCandidateChanges, boundCaseId, applicationProblems, declarationKeys, projectDeliveryVariable, type ProjectDelivery, effectiveDelivery } from '../model/project-applications.js';
 // ---------------------------------------------------------------------------
@@ -73,7 +74,7 @@ export function loadProjectDelivery(env: Record<string, string | undefined> = pr
   const fs = host?.getBuiltinModule?.('node:fs'), path = host?.getBuiltinModule?.('node:path');
   if (!fs || !path) return effectiveDelivery(null);
   let text: string;
-  try { text = fs.readFileSync(path.resolve(root ?? env.GRAPHYARD_REPOSITORY_ROOT?.trim() ?? host!.cwd(), 'graphyard.json'), 'utf8'); } catch (error: any) {
+  try { text = fs.readFileSync(path.resolve(root ?? setting('REPOSITORY_ROOT', env)?.trim() ?? host!.cwd(), 'graphyard.json'), 'utf8'); } catch (error: any) {
     if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return effectiveDelivery(null);
     throw error;
   }

@@ -3,6 +3,7 @@
 // command needs no Graphyard credential: the launch binds a one-time verdict token (GY-1525), and
 // the command sends the verdict to `POST /api/work/:id/review-verdict` as that token; the server
 // records it on the item's observation (server/review-verdict.ts).
+import { setting } from './mainworks-names.js';
 import { randomUUID } from 'node:crypto';
 import { chmod, readFile, writeFile } from 'node:fs/promises';
 import { extname, isAbsolute, join } from 'node:path';
@@ -146,7 +147,7 @@ export async function postReview(input: { event: string | undefined; body: strin
   try { binding = await readReviewBinding(directory!); } catch (error) { refuse((error as Error).message); }
   if (!event) refuse(`--event must be one of ${reviewEvents.join(', ')}`);
   const bound = binding!;
-  if (input.environment.GRAPHYARD_REVIEW !== `${bound.key}@${bound.sha}`) refuse(`GRAPHYARD_REVIEW is ${input.environment.GRAPHYARD_REVIEW ? `"${input.environment.GRAPHYARD_REVIEW}"` : 'unset'}, not this launch's ${bound.key}@${bound.sha}`);
+  if (setting('REVIEW', input.environment) !== `${bound.key}@${bound.sha}`) refuse(`GRAPHYARD_REVIEW is ${setting('REVIEW', input.environment) ? `"${setting('REVIEW', input.environment)}"` : 'unset'}, not this launch's ${bound.key}@${bound.sha}`);
   const body = input.body.trim();
   if (!body) refuse('the review body is empty');
   // Control-plane mode (GY-1525): the verdict goes to the API as the launch's one-time token, bound
@@ -164,7 +165,7 @@ export async function postReview(input: { event: string | undefined; body: strin
       const assertionRefusal = validateAssertionRulings(body, bound.changedAssertions);
       if (assertionRefusal) refuse(assertionRefusal);
     }
-    const base = input.environment.GRAPHYARD_URL;
+    const base = setting('URL', input.environment);
     if (!base) refuse('GRAPHYARD_URL is unset; a control-plane reviewer session is launched with the control plane\'s address');
     const post = dependencies.fetch ?? fetch;
     let screenshots: Awaited<ReturnType<typeof screenshotUploads>> = [];

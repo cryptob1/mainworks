@@ -14,6 +14,7 @@ import { deployUnitOf, perInstallUnits, readInstallUnits, recordInstallUnits } f
 import { setupRepository } from '../src/repository-setup.js';
 import { guideList, guideTopics } from '../src/guide.js';
 import { masterGuide } from '../src/master/guide.js';
+import { setting } from '../src/mainworks-names.js';
 
 // GY-3573: Graphyard is now Mainworks. Every setting reads MAINWORKS_X before GRAPHYARD_X, a fresh
 // install uses the mainworks paths and unit names, and an existing install keeps its graphyard ones.
@@ -69,6 +70,13 @@ test('e2e:mainworks-settings-fallback — MAINWORKS_* settings win over GRAPHYAR
     const both = await status(outside, bare, { MAINWORKS_URL: url, GRAPHYARD_URL: 'http://127.0.0.1:9', MAINWORKS_TOKEN: token('b'), GRAPHYARD_TOKEN: token('x') });
     assert.equal(both.code, 0, `the MAINWORKS_ names win when both are set: ${both.stderr}`);
     assert.ok(seen.includes(`Bearer ${token('b')}`) && !seen.includes(`Bearer ${token('x')}`));
+    // One read helper, the new name first; loading the CLI never rewrites the environment children inherit.
+    process.env.MAINWORKS_PROBE = 'new'; process.env.GRAPHYARD_PROBE = 'old';
+    try {
+      await import('../src/cli/index.js');
+      assert.equal(setting('PROBE'), 'new');
+      assert.deepEqual([process.env.MAINWORKS_PROBE, process.env.GRAPHYARD_PROBE], ['new', 'old'], 'the environment is read, never copied, renamed or deleted');
+    } finally { delete process.env.MAINWORKS_PROBE; delete process.env.GRAPHYARD_PROBE; }
     // MAINWORKS_* settings that arrive through the checkout's .env are honoured too.
     const dotenv = join(base, 'dotenv'); await mkdir(dotenv);
     await writeFile(join(dotenv, '.env'), `MAINWORKS_URL=${url}\nMAINWORKS_TOKEN=${token('e')}\n`);

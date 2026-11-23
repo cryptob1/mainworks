@@ -1,4 +1,4 @@
-import { stateDir } from '../mainworks-names.js';
+import { stateDir, setting } from '../mainworks-names.js';
 import { constants as cryptoConstants, createDecipheriv, createPublicKey, generateKeyPairSync, privateDecrypt, randomUUID } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
 import { chmod, link, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
@@ -225,7 +225,7 @@ export const openCommand: CliCommand = {
 };
 /** With no credential named, the install's recorded operator credential stands in for GRAPHYARD_TOKEN (the request helper reads it on first use). */
 export async function asRecordedOperator(root: string) {
-  const recorded = process.env.GRAPHYARD_TOKEN_FILE || process.env.GRAPHYARD_TOKEN ? null : await recordedOperator(root);
+  const recorded = setting('TOKEN_FILE') || setting('TOKEN') ? null : await recordedOperator(root);
   if (recorded) process.env.GRAPHYARD_TOKEN = recorded.token;
   return recorded;
 }

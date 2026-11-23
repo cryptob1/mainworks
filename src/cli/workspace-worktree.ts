@@ -1,5 +1,5 @@
 // Concern: local isolated worktree reservation and creation, and the leased attempt's one branch replacement.
-import { stateDir } from '../mainworks-names.js';
+import { stateDir, setting } from '../mainworks-names.js';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -48,7 +48,7 @@ export const reworkWorktreePath = (work: { submission?: unknown; workspaces: { h
 export async function createWorktree(context: CliContext, work: any) {
   const { args, api, print } = context;
   // GY-1059: under GRAPHYARD_REQUEST_ID each write keys off it by name, so the failure release never replays the reservation.
-  const request = process.env.GRAPHYARD_REQUEST_ID;
+  const request = setting('REQUEST_ID');
   const mutate = (name: string, data: unknown) => api(`work/${work.id}/${name}`, data, request && name !== 'heartbeat' ? `${request}:worktree-${name}` : randomUUID());
   const epoch = Number(args[0]); const root = context.repositoryRoot();
   const status = await api('status');

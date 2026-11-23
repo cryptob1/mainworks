@@ -1,4 +1,5 @@
 // Concern: the control-plane merge executor (GY-1524) — the queue, one merge's steps against the ledger, the leased deploy-key push and the reconcile of intents a crash left open.
+import { setting } from '../mainworks-names.js';
 import { dirname, join } from 'node:path';
 import type { Work } from '../model.js';
 import { batchLimit } from '../master/merge-writer-settings.js';
@@ -429,7 +430,7 @@ export const mergeAskpassName = 'merge-writer-askpass';
  * operator's gh login, the explicit https URL of the repository. GRAPHYARD_MERGE_WRITER_GIT_URL replaces that URL for tests.
  */
 export const mergeWriterRemote = (repository: string, credential: { tokenFile?: string; pushAuth?: string } | undefined, environment: NodeJS.ProcessEnv = process.env) =>
-  credential?.tokenFile || credential?.pushAuth ? environment.GRAPHYARD_MERGE_WRITER_GIT_URL || `https://github.com/${repository}.git` : 'origin';
+  credential?.tokenFile || credential?.pushAuth ? setting('MERGE_WRITER_GIT_URL', environment) || `https://github.com/${repository}.git` : 'origin';
 /** `git push origin --force-with-lease=refs/heads/BASE:<baseTip> <mergeSha>:refs/heads/BASE`: the merge commit lands only on the tip it was tested on. */
 export const pushArgs = (base: string, baseTip: string, mergeSha: string, remote = 'origin') => ['push', remote, `--force-with-lease=refs/heads/${base}:${baseTip}`, `${mergeSha}:refs/heads/${base}`];
 /**

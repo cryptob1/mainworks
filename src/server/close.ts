@@ -1,3 +1,4 @@
+import { setting } from '../mainworks-names.js';
 import { decisionWork } from '../store/decision-read.js';
 import { recordDispatch } from '../engine/evaluate.js';
 import { once, record } from '../store/mutations.js';
@@ -34,7 +35,7 @@ export async function closeWork(services: Services, caller: Principal, id: strin
   let ancestry: { base: string; contained: boolean } | null = null;
   if (data.kind === 'superseded' && ref && !itemRef.test(ref) && commitRef.test(ref)) {
     const { engine } = services;
-    if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd());
+    if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(setting('REPOSITORY_ROOT') ?? process.cwd());
     demand(engine.gitRunner, 'The control plane has no checkout to verify that the superseding commit is on the base branch', 503);
     const baseRef = `refs/remotes/origin/${engine.baseBranch}`;
     const tip = await engine.gitRunner(['rev-parse', '--verify', '--quiet', baseRef]);

@@ -1,3 +1,4 @@
+import { setting } from '../../mainworks-names.js';
 import { releaseInfo, schemaVersion } from '../../release.js';
 import { planeVerdict, probeWrites, readDatabaseCapacity } from '../plane-health.js';
 import { defineRoutes, parseJson, type Services } from '../routes.js';
@@ -69,7 +70,7 @@ function startProbe(pool: any): DatabaseProbe {
  * rework later reclaimed (GY-2054): every observation then refused as a commit missing from the
  * object store while health stayed green, so the outage is a health cause instead.
  */
-export async function repositoryRootCause(root = process.env.GRAPHYARD_REPOSITORY_ROOT?.trim()): Promise<string | null> {
+export async function repositoryRootCause(root = setting('REPOSITORY_ROOT')?.trim()): Promise<string | null> {
   if (!root) return null;
   if (!existsSync(root)) return `repository root ${root} (GRAPHYARD_REPOSITORY_ROOT) is missing; submitted heads cannot be observed`;
   const inside = await new Promise<string | null>(resolve => execFile('git', ['-C', root, 'rev-parse', '--is-inside-work-tree'], { encoding: 'utf8', timeout: healthCheckWaitMs }, (error, stdout) => resolve(error ? null : String(stdout).trim())));

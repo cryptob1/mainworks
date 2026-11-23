@@ -1,4 +1,5 @@
 // Concern: the merge writer's local observation (GY-1523) — a submitted head read from the coordinator's own object store, never from GitHub.
+import { setting } from '../mainworks-names.js';
 import { execFile } from 'node:child_process';
 import { demand, type Observation } from '../model.js';
 import type {} from '../model/gates.js'; // Observation.source
@@ -10,7 +11,7 @@ export interface GitResult { status: number | null; stdout: string; stderr: stri
 /** Runs `git` with `args` in the checkout whose object store holds the submitted heads; `timeoutMs` kills a run that outlasts it. */
 export type GitRunner = (args: readonly string[], options?: { timeoutMs?: number }) => Promise<GitResult>;
 /** The install's checkout: the directory the control plane reads submitted heads from, where nothing is pushed and a head is reached by its commit (GY-3599). */
-export const checkoutRoot = () => process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd();
+export const checkoutRoot = () => setting('REPOSITORY_ROOT') ?? process.cwd();
 
 /** The default runner: `git -C root`, the coordinator checkout the control plane serves from. */
 export function gitRunnerFor(root: string): GitRunner {

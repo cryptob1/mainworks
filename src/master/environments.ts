@@ -1,4 +1,4 @@
-import { stateDir } from '../mainworks-names.js';
+import { stateDir, setting } from '../mainworks-names.js';
 import { PRODUCT_NAME } from '../model/product.js';
 import { registryToolsArgs } from '../registry-tools.js';
 export { registryToolsArgs } from '../registry-tools.js';
@@ -30,7 +30,7 @@ import { accountHomeEnvironment, runtimeAdapter, withModel, type AccountReading 
 
 /** Where agent environments live: one directory per account, named <agent>-<letter>. */
 export function agentEnvironmentRoot(input?: string) {
-  return resolve(input ?? process.env.GRAPHYARD_AGENT_ENVIRONMENTS ?? resolve(homedir(), '.coding_agents'));
+  return resolve(input ?? setting('AGENT_ENVIRONMENTS') ?? resolve(homedir(), '.coding_agents'));
 }
 const environmentDirectory = /^(claude|codex|opencode|cursor)(?:-([a-z0-9][a-z0-9_-]{0,30}))?$/;
 export async function discoverAgentEnvironments(directory = agentEnvironmentRoot()): Promise<AgentEnvironment[]> {

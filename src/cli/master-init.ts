@@ -1,4 +1,4 @@
-import { stateDir } from '../mainworks-names.js';
+import { stateDir, setting } from '../mainworks-names.js';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { loadMasterConfig, loadStoredMasterConfig, setupMaster } from '../master.js';
@@ -32,7 +32,7 @@ export async function masterInit(context: CliContext, root: string) {
   const run = { ...(values.interval ? { intervalSeconds: Number(values.interval) } : {}), ...(values['proof-workflow'] ? { proofWorkflow: values['proof-workflow'] } : {}), ...(values['deployment-url'] ? { deploymentUrl: values['deployment-url'] } : {}), ...(values['deployment-sha-field'] ? { deploymentShaField: values['deployment-sha-field'] } : {}), ...(values['smoke-workflow'] ? { smokeWorkflow: values['smoke-workflow'] } : {}),
     ...(values['dispatch-interval'] ? { dispatchIntervalSeconds: Number(values['dispatch-interval']) } : {}), ...(values['reviewer-profile'] ? { reviewerProfile: values['reviewer-profile'] } : {}), ...(values['producer-timeout'] ? { producerTimeoutMinutes: Number(values['producer-timeout']) } : {}) };
   // GY-1641: with no --url, GRAPHYARD_URL or connection file, the server master.json records (the port the install bound), not the default one.
-  const url = values.url ?? (process.env.GRAPHYARD_URL || connection ? base : await recordedMasterUrl(root) ?? base);
+  const url = values.url ?? (setting('URL') || connection ? base : await recordedMasterUrl(root) ?? base);
   const installed = await setupMaster(root, { url, token: masterToken, cliPath: resolve(values['cli-path'] ?? await context.activeCliPath()), hostId: values['host-id'] ?? context.individualHostId(), herdrWorkspace: values['herdr-workspace'], ...(Object.keys(run).length ? { run } : {}), installSupervisor: true, replaceSupervisor: !!values['replace-supervisor'] });
   const fleet = await initialFleetProposal(await loadMasterConfig(root), masterToken);
   return print({ ...installed, fleet });

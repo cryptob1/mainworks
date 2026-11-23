@@ -1,3 +1,4 @@
+import { setting } from '../mainworks-names.js';
 import { defaultChildRun, runChild, type ChildRun } from '../child-runner.js';
 import { statfsSync, type Dirent } from 'node:fs';
 import { chmod, lstat, mkdir, readdir, rm, rmdir, statfs } from 'node:fs/promises';
@@ -28,7 +29,7 @@ export interface WorktreeRootSettings { repository: string; run?: { worktreeRoot
  * account home, and a root that moved with the caller would not be one root.
  */
 export function dataDirectory(environment: Environment = process.env) {
-  const configured = environment.GRAPHYARD_DATA_HOME;
+  const configured = setting('DATA_HOME', environment);
   if (configured && !isAbsolute(configured)) throw new Error('GRAPHYARD_DATA_HOME must be an absolute path');
   return resolve(configured || resolve(homedir(), '.local/share/graphyard'));
 }
