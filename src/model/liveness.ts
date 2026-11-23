@@ -6,7 +6,6 @@ import { claimLive, actionSettleMs, waitingToRetry, actionIdleMs, actionStall, a
 import { roleSessionMaximumMs } from './sessions.js';
 import { producerGroupDecisions } from './mechanical-proofs.js';
 import { submittedAtOf } from './merge-queue.js';
-import { mergeWriterRefusal } from './gates.js';
 /**
  * The liveness invariant (GY-201): every open item always has exactly one owned next step with a
  * deadline, and the server — not a loop re-deriving the world — keeps it that way.
@@ -122,8 +121,9 @@ export function waitDueAt(work: Work, wait: ActionWait, all: Work[], now: Date):
     const rows = (other.actionQueue?.actions ?? []).map(row => rowDueAt(row, now)).sort();
     return rows[0] ?? now.toISOString();
   }
-  // GY-3695: a head queued for the merge writer (every refusal is the writer's own) is overdue only once it has waited over 2 hours for its trial; the queue ages it ahead before then.
-  if (wait.kind === 'session' && wait.on === 'merge-writer' && work.gates.every(gate => gate.passed || gate.reasons.every(reason => mergeWriterRefusal(gate.name, reason)))) return iso(submittedAtOf(work) + mergeWriterWaitBoundMs);
+  // GY-3695: a head queued for the merge writer is overdue only once it has waited over 2 hours for its trial; the queue ages it ahead before then.
+  // A draft is not queued work: no producer may prove it, so it keeps the ordinary bound.
+  if (wait.kind === 'session' && wait.on === 'merge-writer' && !work.observation?.draft) return iso(submittedAtOf(work) + mergeWriterWaitBoundMs);
   if (wait.kind === 'human') return iso(Date.parse(heldSince(work)) + 24 * 60 * 60_000);
   // An observation window is due at its instant (GY-1698): past it the account names the dispatch, so the wait never stales.
   // GY-1779: a wait on the loop's own reading is owned by the loop, which records it or why it cannot each cycle; it is due a bound ahead of every evaluation and never stales.

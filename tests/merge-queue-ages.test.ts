@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mergeQueue } from '../src/merge-writer/executor.js';
 import { effectivePriority } from '../src/model/merge-queue.js';
-import { waitDueAt } from '../src/model/liveness.js';
+import { livenessOf } from '../src/model-boundary/liveness.js';
 import type { Work } from '../src/model.js';
 
 // GY-3695: the merge queue ages — a head counts one priority level higher per full hour it has waited for its trial, never above 1; priority 0 keeps 0.
@@ -42,9 +42,15 @@ test('unit:merge-queue-ages — equal effective priority falls back to oldest fi
   assert.deepEqual(queue.map(entry => [entry.waitingMs, entry.priority]), [[70 * minute, 1], [10 * minute, 1], [0, 1]]);
 });
 
-test('unit:merge-queue-ages — the merge-writer stale wait is due only after a head has waited 2 hours', () => {
-  const item = head(1, 2, start);
-  assert.equal(waitDueAt(item, { kind: 'session', on: 'merge-writer', detail: 'queued' } as never, [item], new Date(start + minute)), iso(start + 120 * minute));
+test('unit:merge-queue-ages — a queued head (trial, its proofs and push still owed) is a wait on the merge writer that goes stale only after 2 hours', () => {
+  const item = { ...head(1, 2, start), stage: 'review', ready: true, type: 'feature', epoch: 1, revision: 1, policyRevision: 1, criteria: [{ id: 'AC-1', text: 'Specified work', proofs: ['e2e:fixture'] }],
+    dependencies: [], evidence: [], workspaces: [], violations: [], blocker: null, lease: null, policy: { checks: [], review: true } } as unknown as Work, sha = item.candidate!.sha.slice(0, 12);
+  item.gates.push({ name: 'test', passed: false, reasons: [`merge writer has not trialled ${sha} on bbbbbbbbbbbb`] },
+    { name: 'acceptance', passed: false, reasons: ['AC-1: e2e:fixture needs trusted passing evidence, with executed > 0 and skipped = 0, for this candidate and policy'] },
+    { name: 'merge', passed: false, reasons: [`merge writer has not pushed ${sha}`] });
+  const at = (minutes: number) => livenessOf(item, [item], new Date(start + minutes * minute));
+  assert.deepEqual([at(61).obligation?.owner, at(61).obligation?.dueAt, at(61).violation], ['merge-writer', iso(start + 120 * minute), null], JSON.stringify(at(61)));
+  assert.equal(at(121).violation?.class, 'stale-wait', 'past 2 hours the wait is stale');
 });
 
 test('e2e:old-head-is-not-starved — one priority 2 head among a steady stream of priority 1 heads is trialled within 70 simulated minutes', () => {
