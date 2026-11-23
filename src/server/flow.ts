@@ -96,9 +96,10 @@ async function resolveDeployedAt(work: readonly Flowed[], deploys: readonly Depl
     const mergedAt = item.delivery?.mergedAt ?? item.observation?.mergedAt ?? null;
     const sha = item.delivery?.mergeSha?.toLowerCase();
     const at = mergedAt ? Date.parse(mergedAt) : Number.NaN;
-    return sha && /^[0-9a-f]{40}$/.test(sha) && Number.isFinite(at) && at > from && at <= now ? [{ id: item.id, sha }] : [];
+    return sha && /^[0-9a-f]{40}$/.test(sha) && Number.isFinite(at) && at > from && at <= now ? [{ id: item.id, sha, at }] : [];
   });
   if (!candidates.length) return result;
+  const minMergedAt = Math.min(...candidates.map(candidate => candidate.at));
   const ordered = [...deploys]
     .filter(entry => /^[0-9a-f]{40}$/i.test(entry.commit) && Number.isFinite(Date.parse(entry.at)))
     .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
@@ -110,10 +111,12 @@ async function resolveDeployedAt(work: readonly Flowed[], deploys: readonly Depl
     seenDeploy.add(commit);
     unique.push({ ...entry, commit });
   }
+  const recent = unique.filter(entry => Date.parse(entry.at) >= minMergedAt - 60_000);
+  const toCheck = recent.length ? recent : unique.slice(-1);
   const unmatched = new Set(candidates.map(candidate => candidate.sha));
   const firstDeploy = new Map<string, string>();
   const seenCommits: string[] = [];
-  for (const deploy of unique) {
+  for (const deploy of toCheck) {
     if (!unmatched.size) break;
     try {
       const args = ['rev-list', ...(seenCommits.length ? [] : ['--max-count=5000']), deploy.commit, ...seenCommits.map(commit => `^${commit}`)];
