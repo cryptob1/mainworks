@@ -26,7 +26,7 @@ async function localInstall() {
   const { port, password } = (url => ({ port: url.port, password: decodeURIComponent(url.password) }))(new URL(cluster.url));
   const admin = new pg.Client({ connectionString: cluster.url });
   await admin.connect();
-  try { await admin.query('CREATE DATABASE mainworks'); } finally { await admin.end(); }
+  try { await admin.query('CREATE DATABASE graphyard'); } finally { await admin.end(); }
   const migrated = new URL(cluster.url); migrated.pathname = '/graphyard';
   const store = new Store(migrated.href);
   try { await store.init(); } finally { await store.close(); }

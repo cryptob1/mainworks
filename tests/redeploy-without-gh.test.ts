@@ -82,7 +82,7 @@ test('e2e:redeploy-without-gh — a newly verified commit reaches the control pl
   const cluster = await startPostgres();
   const admin = new pg.Client({ connectionString: cluster.url });
   await admin.connect();
-  try { await admin.query('CREATE DATABASE mainworks'); } finally { await admin.end(); }
+  try { await admin.query('CREATE DATABASE graphyard'); } finally { await admin.end(); }
   const databaseUrl = new URL(cluster.url);
   databaseUrl.pathname = '/graphyard';
   const store = new Store(databaseUrl.href);

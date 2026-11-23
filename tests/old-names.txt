@@ -102,3 +102,4 @@ cryptob1/Graphyard
 \[trial, 'graphyard-trial'\]
 mirror/graphyard:
 \bgraphyard-(acme-app|cryptob1|fixture-status|gy-\d+-)
+DATABASE graphyard\b

@@ -43,7 +43,7 @@ async function database() {
   const cluster = await startPostgres();
   const admin = new pg.Client({ connectionString: cluster.url });
   await admin.connect();
-  try { await admin.query('CREATE DATABASE mainworks'); } finally { await admin.end(); }
+  try { await admin.query('CREATE DATABASE graphyard'); } finally { await admin.end(); }
   const url = new URL(cluster.url); url.pathname = '/graphyard';
   return { cluster, url: url.href };
 }
