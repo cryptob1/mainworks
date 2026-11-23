@@ -128,6 +128,10 @@ const masterSessionRecordSchema = z.object({
    * until the registry takes it back, or until the registry's own session cap has ended it.
    */
   unreleased: z.array(z.object({ session: z.string().max(200), since: z.string(), reason: z.string().max(300) }).strict()).max(20).default([]),
+  /** Per-account consecutive identical launch failures (GY-3519): two in a row hold the account for an hour. */
+  launchFailures: z.record(z.string().max(200), z.object({ reason: z.string().max(500), count: z.number().int().min(1), at: z.string() }).strict()).default({}),
+  /** Accounts temporarily unusable for master launches after repeated identical launch failures (GY-3519). */
+  unusableAccounts: z.record(z.string().max(200), z.object({ until: z.string(), reason: z.string().max(500) }).strict()).default({}),
 }).strict();
 export const masterSessionSchema = masterSessionRecordSchema.extend({
   /** Unread histories remain addressable with their original session and delivery provenance. */
