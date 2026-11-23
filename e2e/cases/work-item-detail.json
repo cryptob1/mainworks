@@ -85,7 +85,7 @@
     {
       "kind": "browser",
       "action": "open",
-      "path": "/?sign-in"
+      "path": "/?sign-in#work"
     },
     {
       "kind": "browser",

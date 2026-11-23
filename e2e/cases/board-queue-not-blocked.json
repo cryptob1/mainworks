@@ -61,7 +61,7 @@
       "kind": "browser",
       "name": "open the local dashboard without signing in",
       "action": "open",
-      "path": "/"
+      "path": "/#work"
     },
     {
       "kind": "browser",

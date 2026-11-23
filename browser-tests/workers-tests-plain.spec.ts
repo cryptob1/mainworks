@@ -39,7 +39,7 @@ async function open(page: Page, role = 'admin') {
     if (url.pathname === '/api/scenarios') return route.fulfill({ json: [] });
     return route.fulfill({ json: boardApi(url.pathname.slice(1) + url.search, role) });
   });
-  await page.goto('/?sign-in');
+  await page.goto('/?sign-in#work');
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });

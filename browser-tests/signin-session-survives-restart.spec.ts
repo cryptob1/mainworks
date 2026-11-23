@@ -29,7 +29,7 @@ test('e2e:signin-session-survives-restart — login link remains signed in after
     });
     const response = await fetch(http.url + '/api/sign-in-links', { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } });
     const { code } = await response.json() as { code: string };
-    await page.goto('/#sign-in=' + code);
+    await page.goto('/#sign-in=' + code + '&work');
     await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible(settled);
     const token = await page.evaluate(() => localStorage.getItem('graphyard-token'));
     expect(token).toMatch(/^gyh_/);

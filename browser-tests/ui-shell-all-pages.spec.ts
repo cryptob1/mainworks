@@ -70,7 +70,7 @@ for (const data of ['seeded', 'empty'] as const) for (const viewport of [{ width
       await page.routeWebSocket(/\/api\/terminal/, () => {});
       await page.setViewportSize(viewport);
       const { code } = await (await fetch(`${http.url}/api/sign-in-links`, { method: 'POST', headers: operator })).json() as { code: string };
-      await page.goto('/#sign-in=' + code);
+      await page.goto('/#sign-in=' + code + '&work');
       await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible(settled);
       if (shots) mkdirSync(shots, { recursive: true });
       const reads: Record<string, Awaited<ReturnType<typeof shell>>> = {};

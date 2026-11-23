@@ -46,7 +46,7 @@ test('e2e:app-test-environments — the Tests view\'s Where tests run block show
   process.env.GRAPHYARD_REPOSITORY_ROOT = checkout;
   try {
     const { code } = await (await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string };
-    await page.goto(`${baseURL}/#sign-in=${code}`);
+    await page.goto(`${baseURL}/#sign-in=${code}&work`);
     await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
     const mainNav = page.getByRole('navigation', { name: 'Main' });
     const tabs = page.getByRole('navigation', { name: 'Pages in this section' });

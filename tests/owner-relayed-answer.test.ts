@@ -50,7 +50,7 @@ test('e2e:owner-relayed-answer — owner direction relayed by the master is reco
     assert.equal(saved.evidence.at(-1).result, 'pass');
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage();
-    await page.goto(`${url}/?sign-in`);
+    await page.goto(`${url}/?sign-in#work`);
     await page.getByLabel('Access token').fill(token(owner));
     await page.getByRole('button', { name: 'Open control plane' }).click();
     // GY-3600: with no request open there is no Needs you strip; every request and answer has its own address.

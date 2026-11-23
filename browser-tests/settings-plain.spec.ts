@@ -42,7 +42,7 @@ async function open(page: Page, alerts: number | false) {
     const json = boardApi(url.pathname.slice(1) + url.search);
     return route.fulfill({ json: path === 'status' ? { ...json, setup: { ...(json as any).setup, alerts } } : json });
   });
-  await page.goto('/?sign-in');
+  await page.goto('/?sign-in#work');
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.getByRole('heading', { name: 'Work', level: 1 })).toBeVisible();

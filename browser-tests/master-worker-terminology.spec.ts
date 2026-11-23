@@ -16,7 +16,7 @@ test('e2e:master-worker-terminology — navigation, the Lead heading and its acc
     return route.fulfill({ json: [] });
   });
   await serveXterm(page); // the Lead page's xterm.js, served locally (GY-3357)
-  await page.goto('/?sign-in');
+  await page.goto('/?sign-in#work');
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible();
