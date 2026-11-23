@@ -1,0 +1,16 @@
+{
+  "id": "repeated-failure-incident",
+  "title": "Three sessions ending with the same error raise one incident card and one attention line, and clear after 30 minutes",
+  "description": "The real control plane seeds three work items whose implementation sessions ended with the same error carrying different commit hashes: master status raises one repeated-failure attention line naming the normalised error, 3 items and 'the caretaker is looking', Home renders one repeated-failure incident card with the same facts, and both clear once the 30-minute window passes.",
+  "tags": ["dashboard", "incidents"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "repeated failure incident in master status and on Home",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:repeated-failure-incident tests/repeated-failure-incident.test.ts",
+      "timeoutSeconds": 240
+    }
+  ]
+}
