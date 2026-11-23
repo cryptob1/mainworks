@@ -8,7 +8,8 @@ import test from 'node:test';
 import { bootstrapGate, gateRecordPath, gateSummary, readGateRecord, runDiagnostics, writeGateRecord, type GateRecord } from '../src/batch-gate.js';
 import { batchGatePorts } from '../src/daemon/cycle-batch-gate.js';
 import { defaultChildRun } from '../src/child-runner.js';
-import { measureOnboarding, onboardingCase, runOnboardingTime, type OnboardingRun } from '../src/onboarding-time.js';
+import { measureOnboarding } from '../src/onboarding-scratch.js';
+import { onboardingCase, runOnboardingTime, type OnboardingRun } from '../src/onboarding-time.js';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 

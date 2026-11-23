@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { reserveTestPorts } from '../src/cli/test-isolation.js';
 import { copyTemplateCluster, createMigratedDatabase, warmPassword, warmUser } from '../src/e2e/warm-postgres.js';
 import { postgresBinaries, startCluster, type LocalPaths } from '../src/install/local-runtime.js';
-import { measureOnboarding } from '../src/onboarding-time.js';
+import { measureOnboarding } from '../src/onboarding-scratch.js';
 import { Store } from '../src/store.js';
 
 const scratch = await mkdtemp(join(tmpdir(), 'mainworks-onboarding-'));
