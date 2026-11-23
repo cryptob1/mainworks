@@ -1,0 +1,11 @@
+{
+  "id": "one-usage-read-per-host",
+  "title": "Every install on a host shares one usage read of each login per five minutes",
+  "description": "Two temporary installs on one host whose registries name the same Claude login home each select a worker twice within five minutes. The stub usage endpoint counts one request: the first selection reads the provider and writes the windows with their read time into the per-home host record, and every later selection within five minutes reads that record. Both installs' registry rows show the same windows.",
+  "tags": ["accounts", "quota"],
+  "target": "any",
+  "required": true,
+  "steps": [
+    { "kind": "command", "name": "one usage read per login home per host", "run": "node --import tsx tests/helpers/run-tests.ts tests/one-usage-read-per-host.test.ts", "timeoutSeconds": 300 }
+  ]
+}

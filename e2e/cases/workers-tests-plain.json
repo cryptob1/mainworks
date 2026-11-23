@@ -1,0 +1,11 @@
+{
+  "id": "workers-tests-plain",
+  "title": "Workers, Costs and Tests keep one fact line and their table; machine internals fold away",
+  "description": "A real browser at 1280 px and at 390 px opens the served dashboard over stubbed reads: a loop CPU reading, live sessions' cgroup scopes, two hosts, usage with two unpriced models and a runtime that reported nothing, and cases of one category that ran only in a merge trial. Workers reads 'Machine: 8% busy · 79°C' with Session usage and Hosts in one closed 'Machine details' fold; Costs reads '$12.00 this week · 2 models have no price' with By model, By account and Price sheet folded and By role open; Tests shows only the Trial column, no category grouping, '—' for a case that never ran there, and Where tests run folded; an empty Test cases library shows 'No test cases yet.' with one button to an admin and no tab to a reader. No '.scope', 'master registry', 'not run here' or 'builder' text is visible outside a fold or title.",
+  "tags": ["dashboard"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "read Workers, Costs, Tests and Test cases at 1280 px and 390 px", "run": "npm run test:browser -- browser-tests/workers-tests-plain.spec.ts", "timeoutSeconds": 240 }
+  ]
+}
