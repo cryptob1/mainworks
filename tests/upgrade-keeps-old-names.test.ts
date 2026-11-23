@@ -1,7 +1,8 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import { promisify } from 'node:util';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -68,7 +69,8 @@ before(async () => {
   // The model executable waits for the fixture to release its item, then commits and submits its head as the leased worker.
   await writeFile(join(bin, 'claude'), `#!${process.execPath}
 import fs from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import { promisify } from 'node:util';
 const [, key, epoch] = /complete (GY-\\d+) (\\d+) --head/.exec(process.argv.slice(2).join(' ')) ?? [];
 (async () => {
   while (!fs.existsSync(process.env.RUNTIME_HOME + '/release-' + key)) await new Promise(resolve => setTimeout(resolve, 20));
@@ -172,7 +174,7 @@ esac
     assert.ok(existsSync(worktree.path));
 
     // Status answers through the old launcher, bin/graphyard.mjs.
-    const status = JSON.parse(execFileSync(process.execPath, [launcher, 'status', 'GY-9911'], { cwd: root, encoding: 'utf8', env: { ...process.env, GRAPHYARD_URL: url, GRAPHYARD_TOKEN: token(coordinator) } }));
+    const status = JSON.parse((await promisify(execFile)(process.execPath, [launcher, 'status', 'GY-9911'], { cwd: root, encoding: 'utf8', env: { ...process.env, GRAPHYARD_TOKEN_FILE: '', GRAPHYARD_URL: url, GRAPHYARD_TOKEN: token(coordinator) } })).stdout);
     assert.deepEqual([status.key, status.epoch], ['GY-9911', 1]);
 
     await writeFile(join(runtimeHome, 'release-GY-9911'), '');
