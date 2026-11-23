@@ -80,23 +80,24 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
     try {
       await seedLoopRead(url, readings);
       await openWorkers(page, url);
+      // GY-3485: the hosts sit in the closed Machine details fold.
+      await page.getByText('Machine details', { exact: true }).click();
       const hosts = page.getByRole('table', { name: 'Hosts' });
       await expect(hosts).toBeVisible({ timeout: 15_000 });
       await expect(page.getByRole('heading', { name: 'Hosts', level: 2 })).toBeVisible();
       const local = hosts.locator('[data-host="vishrog"]');
       await expect(local).toContainText('this machine');
-      await expect(local.locator('[data-label="Cores"]')).toHaveText(/^\d+$/);
+      await expect(local.locator('[data-label="Cores"]')).toHaveText(/^\d+ of \d+ busy$/);
       await expect(local.locator('[data-label="Temperature"]')).toHaveText(/^(\d+°C|—)$/);
       await expect(local.locator('[data-label="Steal"]')).toHaveText(/^\d+%$/);
       await expect(local.locator('[data-label="Runs now"]')).toHaveText('2');
       const added = hosts.locator('[data-host="gy-compute@prepped"]');
-      await expect(added.locator('[data-label="Cores"]')).toHaveText(/^\d+$/);
+      await expect(added.locator('[data-label="Cores"]')).toHaveText(/^\d+ of \d+ busy$/);
       await expect(added.locator('[data-label="Temperature"]')).toHaveText(/^(\d+°C|—)$/);
       await expect(added.locator('[data-label="Steal"]')).toHaveText(/^\d+%$/);
       await expect(added.locator('[data-label="Runs now"]')).toHaveText('2');
       await expect(hosts.locator('[data-host="gy-compute@gone"]')).toContainText('Away');
       await expect(hosts.locator('[data-host="gy-compute@gone"] [data-label="State"] span')).toHaveAttribute('title', /is unreachable over SSH/);
-      await expect(page.locator('[data-hosts-note]')).toHaveText('Merge trials send test shards to added hosts too; previews run on this machine.');
       const width = await page.evaluate(() => document.documentElement.scrollWidth);
       expect(width).toBeLessThanOrEqual(viewport.width);
     } finally { await page.close(); await close(); }

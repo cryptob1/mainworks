@@ -70,11 +70,11 @@ const lastWords: Record<string, string> = { passed: 'passed', failed: 'failed', 
 /**
  * GY-3296: where the app under test runs — one line per environment with where it runs, when it is
  * used and its last run; the lifecycle, waits and cleanup folded. The tests themselves always run on
- * this host.
+ * this host. Since GY-3485 the whole block sits in the page's Details fold.
  */
 export function WhereTestsRun({ environments }: { environments: EnvironmentRow[] }) {
   const named = environments.filter(row => row.lifecycle);
-  return <section className="panel where-tests-run" aria-label="Where tests run"><h2>Where tests run</h2>
+  return <details className="panel more-details"><summary>Details</summary><section className="where-tests-run" aria-label="Where tests run"><h3>Where tests run</h3>
     <p className="muted">Where the app under test runs. The test runner itself always runs on this host.</p>
     <ul>{environments.map(row => <li key={row.name} data-environment={row.name}><strong className="mono">{row.name}</strong> · {row.where} · {row.when} · last run{' '}
       {row.last ? <><span className={row.last.outcome === 'passed' ? 'pass' : row.last.outcome === 'failed' ? 'fail' : 'amber'}>{lastWords[row.last.outcome] ?? row.last.outcome}</span> {ago(row.last.at)}{row.last.ms !== null ? ` in ${Math.round(row.last.ms / 1000)} s` : ''}</> : 'never'}</li>)}</ul>
@@ -83,7 +83,7 @@ export function WhereTestsRun({ environments }: { environments: EnvironmentRow[]
       {named.length > 0 && <ul>{named.map(row => <li key={row.name} data-environment-detail={row.name}><strong className="mono">{row.name}</strong>: at most {row.limit} at once, {row.inUse} in use · up <code>{row.lifecycle!.up}</code> · down <code>{row.lifecycle!.down}</code>{row.lifecycle!.list ? <> · list <code>{row.lifecycle!.list}</code></> : null}
         {row.last?.commit && <><br/><small>last on <Commit sha={row.last.commit}/>{row.last.runId ? ` · run ${row.last.runId}` : ''}{row.last.url ? ` · ${row.last.url}` : ''}</small></>}
         {row.last?.detail && <><br/><small className="amber">{row.last.detail}</small></>}</li>)}</ul>}
-    </details></section>;
+    </details></section></details>;
 }
 
 /** One case's older runs, paged from the run ledger on request. */
@@ -158,7 +158,7 @@ const folded = (count: number) => `${count} ${count === 1 ? 'proof' : 'proofs'} 
 /**
  * The environment matrix (GY-3278 AC-3), the page's default view: each E2E case by category, and
  * its latest result in each place it runs, in delivery order. A place with no record of the case
- * reads 'not run here', neutrally.
+ * reads '—', neutrally; a place where no case ran is not shown, nor is grouping when one category exists (GY-3485).
  */
 type TestsViewMode = 'matrix' | 'cases';
 export interface MatrixFilter { failing: boolean; category: string; column: MatrixColumn | 'all'; required?: 'all' | 'required' | 'optional' }
@@ -179,7 +179,7 @@ const count = (cells: (MatrixCell | undefined)[], result: MatrixCell['result']) 
 const tally = (cells: (MatrixCell | undefined)[]) =>
   [`${count(cells, 'pass')} passed`, `${count(cells, 'fail')} failed`, ...count(cells, 'skipped') ? [`${count(cells, 'skipped')} skipped`] : []].join(' · ');
 function Cell({ id, column, cell, openItem, showHistory }: { id: string; column: MatrixColumn; cell: MatrixCell | undefined; openItem: OpenItem; showHistory?(id: string): void }) {
-  if (!cell) return <td data-column={column} className="matrix-cell result-none">not run here</td>;
+  if (!cell) return <td data-column={column} className="matrix-cell result-none" title="not run here">—</td>;
   const r = resultLabel[cell.result], label = <>{r.mark} {r.word}</>, link = cell.link;
   return <td data-column={column} className={`matrix-cell result-${r.tone}`} title={cell.detail ?? undefined}>
     {link && 'url' in link ? <a href={link.url} target="_blank" rel="noopener noreferrer">{label}</a>
@@ -192,10 +192,10 @@ const Chip = ({ on, onClick, children }: { on: boolean; onClick(): void; childre
   <button type="button" className={on ? 'chip active' : 'chip'} aria-pressed={on} onClick={onClick}>{children}</button>;
 
 /** Categories by place (GY-3278 AC-4): each cell coloured by its worst case, with its counts, a dot where no case of the category runs there; a click filters the matrix to it. */
-function CoverageGrid({ cases, categories, filter, setFilter }: { cases: TrackedCase[]; categories: string[]; filter: MatrixFilter; setFilter(filter: MatrixFilter): void }) {
+function CoverageGrid({ cases, categories, columns, filter, setFilter }: { cases: TrackedCase[]; categories: string[]; columns: readonly MatrixColumn[]; filter: MatrixFilter; setFilter(filter: MatrixFilter): void }) {
   return <table className="sessions-table coverage-grid" aria-label="Coverage by category">
-    <thead><tr><th scope="col">Category</th>{matrixColumns.map(column => <th key={column} scope="col">{places[column].label}</th>)}</tr></thead>
-    <tbody>{categories.map(category => <tr key={category}><th scope="row">{category}</th>{matrixColumns.map(column => {
+    <thead><tr><th scope="col">Category</th>{columns.map(column => <th key={column} scope="col">{places[column].label}</th>)}</tr></thead>
+    <tbody>{categories.map(category => <tr key={category}><th scope="row">{category}</th>{columns.map(column => {
       const cells = cases.filter(entry => categoryOf(entry) === category).map(entry => entry.matrix?.[column]).filter(Boolean);
       const worst = !cells.length ? 'none' : count(cells, 'fail') ? 'fail' : count(cells, 'skipped') ? 'skipped' : 'pass';
       const words = cells.length ? tally(cells) : 'no case runs here';
@@ -206,28 +206,29 @@ function CoverageGrid({ cases, categories, filter, setFilter }: { cases: Tracked
 }
 
 export function MatrixView({ cases, filter, setFilter, collapsed, toggle, openItem, showHistory, viewChips }: { cases: TrackedCase[]; filter: MatrixFilter; setFilter(filter: MatrixFilter): void; collapsed: ReadonlySet<string>; toggle(category: string): void; openItem: OpenItem; showHistory?(id: string): void; viewChips?: React.ReactNode }) {
-  const columns = filter.column === 'all' ? matrixColumns : [filter.column];
+  const ran = matrixColumns.filter(column => cases.some(entry => entry.matrix?.[column]));
+  const columns = filter.column === 'all' ? ran : [filter.column];
   const required = filter.required ?? 'all';
   const kept = cases.filter(entry => required === 'all' || (required === 'required') === !!entry.e2e?.required);
-  const categories = [...new Set(cases.map(categoryOf))].sort();
+  const categories = [...new Set(cases.map(categoryOf))].sort(), grouped = categories.length > 1;
   const inCategory = kept.filter(entry => filter.category === 'all' || categoryOf(entry) === filter.category);
   const rows = inCategory.filter(entry => !filter.failing || caseState(entry, columns) === 'fail');
   const groups = [...new Set(rows.map(categoryOf))].sort();
   const states = inCategory.map(entry => caseState(entry, columns));
   return <>
     <p className="matrix-summary" data-summary="">{inCategory.length} {inCategory.length === 1 ? 'case' : 'cases'} · {inCategory.filter(entry => entry.e2e?.required).length} required · {states.filter(state => state === 'pass').length} passing · {states.filter(state => state === 'fail').length} failing · {states.filter(state => state === 'none').length} not run{filter.column === 'all' ? '' : ` in ${places[filter.column].label}`}</p>
-    {categories.length > 0 && <CoverageGrid cases={kept} categories={categories} filter={filter} setFilter={setFilter}/>}
+    {grouped && <CoverageGrid cases={kept} categories={categories} columns={ran} filter={filter} setFilter={setFilter}/>}
     <details className="matrix-help"><summary>How this works</summary><p>Trial is the merge trial, which runs an item's bound cases against its candidate merged onto main before it lands. Main is the batch gate, which runs the merged batch's cases on main's tip before anything serves it, and Served is a <code>graphyard e2e run</code> against the release this install serves. Nightly is the daily full run of every case on the last verified commit, which never blocks a merge.</p></details>
     <div className="case-filters" role="group" aria-label="Filter the matrix">{viewChips}
       <Chip on={filter.failing} onClick={() => setFilter({ ...filter, failing: !filter.failing })}>Only failing</Chip>
       {(['required', 'optional'] as const).map(value => <Chip key={value} on={required === value} onClick={() => setFilter({ ...filter, required: required === value ? 'all' : value })}>{value === 'required' ? 'Required' : 'Optional'}</Chip>)}
       {(filter.category !== 'all' || filter.column !== 'all') && <Chip on onClick={() => setFilter({ ...filter, category: 'all', column: 'all' })}>{filter.category === 'all' ? 'Every category' : filter.category} in {filter.column === 'all' ? 'every place' : places[filter.column].label} ×</Chip>}</div>
     {rows.length ? <table className="sessions-table test-matrix" aria-label="Where each case runs">
-      <thead><tr><th scope="col">Case</th>{columns.map(column => <th key={column} scope="col" title={places[column].place}>{places[column].label}<br/><small className="muted">{places[column].place}</small></th>)}</tr>
+      <thead><tr><th scope="col">Case</th>{columns.map(column => <th key={column} scope="col" title={places[column].place}>{places[column].label}</th>)}</tr>
         <tr className="matrix-totals"><th scope="row">All cases</th>{columns.map(column => <td key={column} data-column={column}>{tally(rows.map(entry => entry.matrix?.[column]))}</td>)}</tr></thead>
-      {groups.map(category => { const members = rows.filter(entry => categoryOf(entry) === category), open = !collapsed.has(category), state = members.map(entry => caseState(entry, columns));
+      {groups.map(category => { const members = rows.filter(entry => categoryOf(entry) === category), open = !grouped || !collapsed.has(category), state = members.map(entry => caseState(entry, columns));
         return <tbody key={category} data-category={category}>
-          <tr className="matrix-group"><th scope="rowgroup" colSpan={columns.length + 1}><button type="button" className="text-button" aria-expanded={open} onClick={() => toggle(category)}>{open ? '▾' : '▸'} {category}</button> <span className="muted">{state.filter(s => s === 'pass').length} passing · {state.filter(s => s === 'fail').length} failing</span></th></tr>
+          {grouped && <tr className="matrix-group"><th scope="rowgroup" colSpan={columns.length + 1}><button type="button" className="text-button" aria-expanded={open} onClick={() => toggle(category)}>{open ? '▾' : '▸'} {category}</button> <span className="muted">{state.filter(s => s === 'pass').length} passing · {state.filter(s => s === 'fail').length} failing</span></th></tr>}
           {open && members.map(entry => <tr key={entry.id} data-case={entry.id}><th scope="row"><span className="mono">{entry.id}</span>{entry.title ? <><br/><small>{entry.title}</small></> : null}</th>
             {columns.map(column => <Cell key={column} id={entry.id} column={column} cell={entry.matrix?.[column]} openItem={openItem} showHistory={showHistory}/>)}</tr>)}
         </tbody>; })}
@@ -257,11 +258,9 @@ export function TestsView({ data, error, loading, filter, setFilter, item = '', 
     <button key={id} type="button" className={view === id ? 'chip active' : 'chip'} aria-pressed={view === id} onClick={() => setTestsView(id)}>{label}</button>);
   return <section className="tests-page" aria-label="Tests">
     <PageHeader title="Tests" fact={data ? total ? `${failing ? `${failing} failing` : 'Nothing failing'}${flaky ? ` · ${flaky} flaky` : ''} · ${total} ${total === 1 ? 'proof' : 'proofs'} tracked.` : 'Nothing is tested yet.' : error ? 'Tests could not be read.' : 'Reading tests…'}
-      actions={canEdit && setView && <button type="button" onClick={() => setView('scenarios')}>Define test cases</button>}>
-      Every proof an item must pass, with the item and criterion it proves and its latest trusted result. A result is recorded only from a trusted run bound to its commit; a builder cannot record one.</PageHeader>
+      actions={canEdit && setView && <button type="button" onClick={() => setView('scenarios')}>Define test cases</button>}/>
     {error && <div role="alert" className="notice danger">{error} <button type="button" disabled={loading} onClick={retry}>Retry loading tests</button>{data ? <p>Previously loaded results are shown; they may be stale.</p> : null}</div>}
     {loading && !data && <p role="status">Loading tests…</p>}
-    {data?.environments?.length ? <WhereTestsRun environments={data.environments}/> : null}
     {data && !cases.length && !manual.length && <EmptyState title="No test cases yet.">Add a case as <code>e2e/cases/ID.json</code> in the repository, register it with <code>graphyard e2e sync</code>, and <code>graphyard e2e run</code> records its runs here.</EmptyState>}
     {view === 'matrix' && (cases.length > 0 || manual.length > 0) && <Matrix cases={matrixCases} filter={matrix} setFilter={setMatrix} openItem={openItem} showHistory={() => setTestsView('cases')} viewChips={viewChips}/>}
     {view === 'cases' && (cases.length > 0 || manual.length > 0) && <>
@@ -276,5 +275,6 @@ export function TestsView({ data, error, loading, filter, setFilter, item = '', 
         {unbuiltProofs.length > 0 && <details className="unbuilt-proofs"><summary>{folded(unbuiltProofs.length)}</summary><ProofTable proofs={unbuiltProofs} label="Manual proofs of items not built yet" openItem={openItem}/></details>}
         {!proofs.length && <p className="muted">No manual proof matches this filter.</p>}</section>}
     </>}
+    {data?.environments?.length ? <WhereTestsRun environments={data.environments}/> : null}
   </section>;
 }

@@ -6,8 +6,8 @@ import { useEffect, useState } from 'react';
  * confirmed `false`, so a feature nobody uses is not an empty explainer and an outage never
  * hides a page that has data.
  */
-export interface Features { validation: boolean | null; releases: boolean | null; automation: boolean | null }
-export const unknownFeatures: Features = { validation: null, releases: null, automation: null };
+export interface Features { validation: boolean | null; releases: boolean | null; automation: boolean | null; scenarios: boolean | null }
+export const unknownFeatures: Features = { validation: null, releases: null, automation: null, scenarios: null };
 
 type Read = (path: string) => Promise<any>;
 /**
@@ -19,13 +19,14 @@ export interface Probe { features: Features; operatorAgents: any[]; operatorAgen
 export async function probeFeatures(read: Read, admin: boolean, hasScenarios: boolean): Promise<Probe> {
   const settle = async <T,>(path: string, decide: (value: any) => T) => { try { return decide(await read(path)); } catch { return null; } };
   const attempt = async (path: string) => { try { return { value: await read(path), error: null }; } catch (e) { return { value: null, error: (e as Error).message || 'The read failed.' }; } };
-  const [releases, automation] = await Promise.all([
+  const [releases, automation, scenarios] = await Promise.all([
     settle('delivery', value => (value?.environments?.length ?? 0) + (value?.releases?.length ?? 0) > 0),
     admin ? attempt('operator-agents') : Promise.resolve({ value: [], error: null }),
+    settle('scenarios', value => Array.isArray(value) && value.length > 0),
   ]);
   const agents = Array.isArray(automation.value) ? automation.value : null;
   return {
-    features: { releases, validation: false, automation: admin ? agents === null ? null : agents.length > 0 : false },
+    features: { releases, scenarios, validation: false, automation: admin ? agents === null ? null : agents.length > 0 : false },
     operatorAgents: agents ?? [], operatorAgentsError: admin ? automation.error ?? (agents === null ? 'The control plane answered with something other than a list of identities.' : null) : null,
   };
 }

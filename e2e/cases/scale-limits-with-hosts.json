@@ -1,0 +1,22 @@
+{
+  "id": "scale-limits-with-hosts",
+  "title": "Heavy-job slots scale with the ready machines, and the Workers page and master status show the budget and each machine's load",
+  "description": "With no limit file the heavy-job budget is floor(cores / 6) for this machine and every ready compute host, at least two: a 24-core machine with ready hosts of 24 and 32 cores admits 4 local jobs and 9 host-placed shards at once, and 4 with the hosts away. A worker verification's slot is freed within one loop cycle once its request finished or its lease is gone, and kept while a child or an active request runs. Master status and the Workers page show '13 heavy-job slots (this machine 4, vish-msi 4, omarchypc 5)' and each machine's cores busy of total and temperature in one short line, with no SSH targets, at 1280 px and 390 px.",
+  "tags": ["dashboard", "hosts", "heavy-jobs"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "the budget scales with the ready machines, host shards take their host's share, settled verification slots are freed, and master status shows the budget and each machine's load",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/scale-limits-with-hosts.test.ts",
+      "timeoutSeconds": 300
+    },
+    {
+      "kind": "command",
+      "name": "the Workers page shows the budget and each machine's load in one short line at 1280 px and 390 px",
+      "run": "npm run test:browser -- browser-tests/scale-limits-with-hosts.spec.ts",
+      "timeoutSeconds": 420
+    }
+  ]
+}
