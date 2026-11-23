@@ -124,8 +124,8 @@ test('e2e:role-account-builds — master.json names no worker profile; the stub 
   assert.match(await readFile(join(homes.get('stub-a')!, 'starts'), 'utf8'), /GY-9900/, 'the stub runtime started for the item');
   assert.equal(await readFile(join(homes.get('other-b')!, 'starts'), 'utf8').catch(() => ''), '', 'the account second in the role did not start');
   const config = await loadMasterConfig(root);
-  assert.equal(config.workers.length, 1, 'the loop minted the one worker identity itself');
-  assert.equal(config.workers[0].kind, undefined, 'the minted profile names no runtime');
+  assert.equal(config.workers.length, 2, 'the loop minted the worker identities itself, one per worker the role allows');
+  assert.ok(config.workers.every(profile => profile.minted && profile.kind === undefined), 'every profile is the loop\'s own and names no runtime');
   assert.match(actions, /Dispatched GY-9900 to stub-a \(stub-a\)/, 'the dispatch line names the account that builds');
 
   for (let tries = 0; tries < 600 && liveRuns().some(entry => entry.role === 'worker'); tries++) await new Promise(resolve => setTimeout(resolve, 50));
