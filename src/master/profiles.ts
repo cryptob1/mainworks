@@ -442,16 +442,20 @@ export function withReviewerDefaults<T extends Pick<MasterConfig, 'reviewers' | 
  * The reviewer profile that answers automatic requests: the configured one, else the only one.
  * The configured one runs `automaticReviewerConcurrency` sessions when it declares none (GY-1072).
  */
+/** Default reviewer profile when master.json names none: the registry's reviewer role picks the account (GY-3748). */
+export const defaultReviewerProfile: ReviewerProfile = {
+  name: 'reviewer', agentName: 'reviewer', kind: 'claude', approvals: 'auto', agentArgs: [], environment: {}, concurrency: automaticReviewerConcurrency,
+};
 export function selectReviewerProfile(input: Pick<MasterConfig, 'reviewers' | 'run'>): { profile: ReviewerProfile | null; reason: string | null } {
   // Every review posts through the API under a one-time token (GY-1525): it needs a profile, not a reviewer App.
   const config = withReviewerDefaults(input);
   if (config.run.reviewerProfile) {
     const profile = config.reviewers.find(item => item.name === config.run.reviewerProfile) ?? null;
-    return profile ? { profile, reason: null } : { profile: null, reason: `run.reviewerProfile names ${config.run.reviewerProfile}, which is not a configured reviewer profile` };
+    if (profile) return { profile, reason: null };
   }
-  // GY-3421: the registry chooses the account (an independent provider first); the profile is only
-  // where the launch starts, and the others are its failover, so several profiles never hold a review.
-  return config.reviewers.length ? { profile: config.reviewers[0], reason: null } : { profile: null, reason: 'no reviewer profile is configured; add one with master reviewer add' };
+  // GY-3421 / GY-3748: the registry's reviewer role chooses the eligible account; whatever profile names
+  // exist in master.json (or none at all), a review launch always has a profile to start from.
+  return { profile: config.reviewers[0] ?? defaultReviewerProfile, reason: null };
 }
 export function withProducerDefaults<T extends Pick<MasterConfig, 'producers'>>(config: T): T {
   if (!config.producers.some(profile => profile.concurrency === undefined)) return config;

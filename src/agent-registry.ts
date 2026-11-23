@@ -7,7 +7,7 @@ import type { Store } from './store.js';
 import { unownedFamilySql } from './store/tables/work.js';
 import { fleetRoles, RegistryError, chooseSession, emptyRegistry, fleetView, foldObservations, liveSessions, endRegistrySession, runOutcomes, refusalHistoryLimit, settleSessions, type AgentRegistry as RegistryDocument, type FleetSession, type RegistryMutation } from './model/registry.js';
 import { applyRegistryMutation, registryMutationSchemas, observationRequestSchema, selectionRequestSchema } from './model-boundary/registry.js';
-import { implementerProvider, type ReviewDiversity } from './model/review-diversity.js';
+import { implementerAccount, implementerProvider, type ReviewDiversity } from './model/review-diversity.js';
 import { recordSessionModel, requestLimitNoticeCheck } from './model/account-quota.js';
 
 /**
@@ -255,7 +255,8 @@ export class AgentRegistry {
           AND payload->'change'->'session'->>'role' = 'worker' AND payload->'change'->'session'->>'work' = $1 ORDER BY created_at DESC, seq DESC LIMIT 1`, [request.work])).rows.map(row => row.session);
     const work = ledger.length ? null : (await db.query('SELECT w.document FROM work_index i JOIN work_items w ON w.id = i.id WHERE i.key = $1', [request.work])).rows[0]?.document;
     const provider = implementerProvider(registry, request.work, ledger, work?.lastAssignment);
-    return provider ? { work: request.work, provider } : null;
+    const account = implementerAccount(registry, request.work, ledger);
+    return provider || account ? { work: request.work, provider, account } : null;
   }
 
   /** An executor whose launch failed gives the session back at once instead of waiting out the grace. */

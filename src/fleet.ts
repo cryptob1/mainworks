@@ -260,7 +260,12 @@ export async function observeAccount(account: FleetAccount, runtime: FleetRuntim
   if (home && await readdir(home).then(entries => !entries.length && !!setting(masterConfinementVariable), (error: NodeJS.ErrnoException) => error.code === 'EACCES'))
     return { quota: cached?.quota ?? { loggedIn: null, state: 'unknown', usage: [], resetsAt: null, reason: null }, health: null };
 
-  if (!home && account.quota.since && nextLiveCheck(account.quota) > now) {
+  if ((!home || !cached && account.quota.state !== 'available') && account.quota.since && nextLiveCheck(account.quota) > now) {
+    const { source: _source, observedAt: _at, observedBy: _by, ...quota } = account.quota;
+    return { quota, health: null };
+  }
+  // GY-3748: an account marked exhausted in the registry until a future reset stays exhausted until that reset.
+  if (account.quota.source === 'operator' && account.quota.state === 'exhausted' && account.quota.resetsAt && Date.parse(account.quota.resetsAt) > now) {
     const { source: _source, observedAt: _at, observedBy: _by, ...quota } = account.quota;
     return { quota, health: null };
   }

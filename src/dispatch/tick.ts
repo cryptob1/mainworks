@@ -88,7 +88,24 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
   // GY-3234: read once per tick — a pending review whose pane and registry session are both gone
   // settles here, and the registry sweep below judges the same document.
   const registry = herdr && effects.registry ? await effects.registry() : null;
-  const { reviews, released } = await effects.reconcileReviews(snapshot.work, herdr, registry);
+  const { reviews, released, notLive } = await effects.reconcileReviews(snapshot.work, herdr, registry);
+  // GY-3748: a review whose session was not live 2 minutes after launch is released (its registry
+  // session ended and its release recorded in the item's history) before the same tick relaunches it.
+  for (const entry of notLive ?? []) {
+    if (entry.session && effects.endRegistrySession) {
+      await effects.endRegistrySession({ id: entry.session, role: 'reviewer', work: entry.key, pane: null, agentName: entry.agentName }, entry.resolution).catch(() => {});
+    }
+    const item = snapshot.work.find(work => work.key === entry.key);
+    if (item && effects.recordSession) {
+      const existing = (item.sessions ?? []).find(handle => handle.id === (entry.requestId ?? `review:${entry.sha}`) && handle.kind === 'review');
+      await effects.recordSession(item, {
+        id: existing?.id ?? entry.requestId ?? `review:${entry.sha}`, kind: 'review', role: 'review', head: entry.sha,
+        runtime: existing?.runtime ?? 'claude', host: existing?.host ?? config.hostId,
+        subject: existing?.subject ?? `${item.key}: review ${entry.sha.slice(0, 12)}`,
+        state: 'finished', outcome: entry.resolution.slice(0, 500),
+      }).catch(() => {});
+    }
+  }
   const { producers } = await effects.reconcileProducers(snapshot.work, herdr);
   // Session liveness, swept on this same bounded interval (GY-113): a session that died reports
   // nothing, so nothing but a sweep ever contradicts a record that says it is running. The judgment

@@ -42,8 +42,13 @@ export function implementerProvider(registry: Pick<AgentRegistry, 'models' | 'ru
   return runtimeProvider(registry, lastAssignment?.runtime);
 }
 
-/** What a reviewer choice knows about the item it reviews: its key and the provider that implemented it. */
-export interface ReviewDiversity { work: string; provider: string }
+/** The registry account that built an item, or null when no worker session is recorded for it. */
+export function implementerAccount(registry: Pick<AgentRegistry, 'sessions'>, key: string, ledger: readonly WorkerSession[] = []): string | null {
+  return (newest(registry.sessions, key) ?? newest(ledger, key))?.account ?? null;
+}
+
+/** What a reviewer choice knows about the item it reviews: its key, the provider that implemented it, and the builder account. */
+export interface ReviewDiversity { work: string; provider: string | null; account?: string | null }
 
 /** The skip recorded for an eligible account passed over because it shares the implementer's provider. */
 export const sharedProviderSkip = (account: string, diversity: ReviewDiversity): SessionSkip =>
