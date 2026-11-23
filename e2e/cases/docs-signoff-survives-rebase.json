@@ -1,0 +1,15 @@
+{
+  "id": "docs-signoff-survives-rebase",
+  "title": "A docs sign-off still counts after main moves and the merged head is resubmitted",
+  "description": "A fixture control plane: the master attests a manual:docs-updated/ proof, main moves with an unrelated change, the worker merges main and resubmits, and the acceptance gate passes on the merged head without a second attestation, because the documentation files it judged are unchanged (GY-3716).",
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "the merged head passes acceptance on the standing docs sign-off",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/docs-attestation-follows-content.test.ts",
+      "timeoutSeconds": 600
+    }
+  ]
+}

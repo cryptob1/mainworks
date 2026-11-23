@@ -232,7 +232,9 @@ export function proofPreview(work: Work, all: Work[], now: Date) {
     const revoked = !evidence && work.evidence.some(e => e.proof === proof && e.trusted && !!e.revocation && evidenceBindsCandidate(work, e) && e.policyRevision === work.policyRevision);
     const status = deferred ? 'deferred' : revoked ? 'revoked'
       : !evidence ? 'unmeasured' : evidence.executed < 1 || evidence.skipped > 0 ? 'incomplete' : evidence.result === 'fail' ? 'failed' : 'passed';
-    return { criterion, proof, status, scenario: pin, producer: evidence?.producer, evidenceId: evidence?.id, bootstrap: deferred ?? inherited };
+    // A docs sign-off standing from an earlier head (GY-3716) says which.
+    const stands = evidence && work.candidate && evidence.sha !== work.candidate.sha ? `stands from ${evidence.sha.slice(0, 12)}` : undefined;
+    return { criterion, proof, status, scenario: pin, producer: evidence?.producer, evidenceId: evidence?.id, bootstrap: deferred ?? inherited, ...(stands ? { stands } : {}) };
   };
   const own = work.criteria.flatMap(ac => ac.proofs.map(proof => measure(ac.id, proof,
     ac.bootstrap ? { key: work.key, workId: work.id, criterionId: ac.id, proof, ...ac.bootstrap } : undefined)));
