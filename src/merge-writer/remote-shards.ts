@@ -10,7 +10,7 @@ import { basename, dirname, join } from 'node:path';
 import { availableParallelism, homedir, hostname, tmpdir } from 'node:os';
 import type { ChildRun } from '../child-runner.js';
 import { shellQuote } from '../shell-quote.js';
-import { probeHost, readHosts, sshTarget, type HostReading as HostProbe } from '../hosts.js';
+import { hostKnownHostsFile, probeHost, readHosts, sshTarget, type HostReading as HostProbe } from '../hosts.js';
 import { trialImage } from './trial-container.js';
 import { trialContainerFault, trialHotCelsius } from './trial-load.js';
 
@@ -173,17 +173,20 @@ export const connectionsPerHost = 3;
  * Keep connection and host-key settings; commands, forwarding and system includes do not travel.
  * Sessions to a host share at most `connectionsPerHost` multiplexed connections (ControlMaster), their
  * sockets in this session's private directory, which is removed, the connections closed, when it ends. */
-export function shardSshSession(run: ChildRun) {
+export function shardSshSession(run: ChildRun, knownHosts = hostKnownHostsFile()) {
   let directory: Promise<string> | undefined, opened = 0;
   type Connection = { path: string; open: Promise<unknown>; sessions: number };
   const hosts = new Map<string, { config: Promise<string>; connections: Connection[]; waiting: (() => void)[] }>();
   const host = (target: string) => {
     if (!hosts.has(target)) hosts.set(target, { connections: [], waiting: [], config: (async () => {
+      if (!existsSync(dirname(knownHosts))) await mkdir(dirname(knownHosts), { recursive: true }).catch(() => {});
       const userConfig = join(homedir(), '.ssh', 'config');
       const resolved = String(await run('ssh', ['-G', '-F', existsSync(userConfig) ? userConfig : '/dev/null', ...sshTarget(target)], { timeoutMs: 5_000 }));
-      const settings = resolved.split('\n').filter(line => /^(hostname|user|port|identityfile|certificatefile|userknownhostsfile|globalknownhostsfile|hostkeyalias|stricthostkeychecking) /i.test(line));
+      const settings = resolved.split('\n').filter(line => /^(hostname|user|port|identityfile|certificatefile|globalknownhostsfile|hostkeyalias) /i.test(line));
       const path = join(await (directory ??= mkdtemp(join(tmpdir(), 'graphyard-shard-ssh-'))), `${randomUUID()}.conf`);
-      await writeFile(path, ['Host *', 'BatchMode yes', 'ConnectTimeout 10', 'IdentitiesOnly yes', 'ControlPersist 15m', ...settings, ''].join('\n'), { mode: 0o600 });
+      const knownHostsValue = knownHosts.includes(' ') ? `"${knownHosts}"` : knownHosts;
+      await writeFile(path, ['Host *', 'BatchMode yes', 'ConnectTimeout 10', 'IdentitiesOnly yes', 'ControlPersist 15m',
+        `UserKnownHostsFile ${knownHostsValue}`, 'StrictHostKeyChecking accept-new', ...settings, ''].join('\n'), { mode: 0o600 });
       return path;
     })() });
     return hosts.get(target)!;
