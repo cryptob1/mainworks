@@ -50,13 +50,13 @@ import { refusedBodyDetail, type DaemonEffects } from './effects.js';
 import { composeServer } from './compose-recovery.js';
 import { leftoverDisk, pathsBytes } from './leftovers.js';
 import { cpuCelsius } from './cpu-pressure.js';
-import { repairCliStamp, servedCliRelease, sweepCliReleases } from '../install/cli-release.js';
+import { cliReleasePath, repairCliStamp, servedCliRelease, sweepCliReleases } from '../install/cli-release.js';
 import { declarationSlot, heavyJobLimit, heavyJobsDirectory, heldSlots, readHeavyDrain, writeMachines } from '../master/verification-slots.js';
 import { collectUsage } from '../usage-capture.js';
 import { fileFlakyCheck, upstreamFiler } from './control-plane.js';
 import { trialRunsDirectory } from '../merge-writer/trial-run.js';
 import { deployRecordPath, readDeployRecord } from '../deploy-watch.js';
-import { mainworksVolumes, reclaimMainworksLeftovers, reclaimJobLeftovers, stopOrphanTrialContainers, trialContainerMaxAgeMs } from './disk-headroom.js';
+import { mainworksVolumes, measureDiskUseByKind, reclaimMainworksLeftovers, reclaimJobLeftovers, stopOrphanTrialContainers, trialContainerMaxAgeMs } from './disk-headroom.js';
 import { dataDirectory } from '../install/worktree-root.js';
 import { durableTemporaryRoot, trialCheckoutRoots } from '../merge-writer/trial.js';
 import { installDirectory, readInstallRecord } from '../install/secrets.js';
@@ -203,6 +203,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     sweepCheckouts: () => sweepManagedCheckouts(root, current()),
     stopOrphanedProcesses: () => stopOrphansOfRemovedWorktrees(workingCopyRoots()),
     diskVolumes: () => mainworksVolumes([root, dataDirectory(), worktreeRoot(root, current()), ...trialCheckoutRoots(), durableTemporaryRoot()]),
+    diskUseByKind: () => measureDiskUseByKind({ worktrees: workingCopyRoots(), trialRuns: [trialRunsDirectory(root)], cliReleases: [dirname(cliReleasePath(installDirectory(installIdFor(current().repository)), 'x'))] }, run),
     reclaimDisk: () => reclaimMainworksLeftovers(run),
     // GY-3553: the readings that clear environment blockers, the stamp repair, and the unblock itself.
     repairCliStamp: () => repairCliStamp(installDirectory(installIdFor(current().repository))),

@@ -6,6 +6,7 @@ import { readSessionScreenOrError } from '../master/prompt-delivery.js';
 import type { Work } from '../model/work.js';
 import { type ChildRun, defaultChildRun } from '../child-runner.js';
 import { daemonSummary } from '../daemon/run.js';
+import { diskHeadroomSummary } from '../daemon/disk-headroom.js';
 import { emptyMasterSession, masterSummary, readDaemonState } from '../daemon/state.js';
 import { standingStepFailures, testQueueStatus, workerGrowthKey, masterLaunchKey, masterLaunchBackoffAfter } from '../daemon/cycle.js';
 import { fetchRefusalKey, gateStallKey } from '../daemon/cycle-batch-gate.js';
@@ -276,8 +277,8 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     alerts: master.run.alertUrl
       ? { on: true, url: master.run.alertUrl, minutes: alertMinutesOf(master.run), stoppedAt: state?.alerts.stoppedAt ?? null, lastAlertAt: state?.alerts.lastAlertAt ?? null }
       : { on: false },
-    // GY-3122: free space below the floor after the loop reclaimed its own leftovers: no new trial or worker starts.
-    diskHeadroom: state?.diskHeadroom ?? null,
+    // GY-3122, GY-3743: coordinator free disk, 24h change and the five largest kinds of Mainworks disk use (plus shortage fields when below the floor).
+    diskHeadroom: diskHeadroomSummary(state?.diskHeadroom ?? null, state?.diskUse ?? null),
     heavyDrain: drain,
     // GY-3447: who holds the host's heavy-job slots (trials, gates, whole suites, deploy builds) and the limit they share.
     // GY-3528: the budget across this machine and every ready host, and each machine's load, one line each; GY-3704: with its last check fallback.

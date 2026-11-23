@@ -177,6 +177,13 @@ export type LeftoverCounts = z.infer<typeof leftoverCountsSchema>;
 const bytes = z.number().min(0).nullable();
 const leftoverDiskSchema = z.object({ trialRuns: bytes, worktrees: bytes, trialCheckouts: bytes, trialImages: bytes, buildCache: bytes }).strict();
 export type LeftoverDisk = z.infer<typeof leftoverDiskSchema>;
+/** GY-3743: one kind of Mainworks disk use, one hourly free-byte sample, and the stored reading. */
+const diskKindSchema = z.object({ kind: z.string().max(200), bytes: z.number().min(0) }).strict();
+const diskSampleSchema = z.object({ at: z.string().max(64), freeBytes: z.number().min(0) }).strict();
+const diskUseSchema = z.object({ at: z.string(), freeBytes: z.number().min(0), readings: z.array(diskSampleSchema).max(48), top: z.array(diskKindSchema).max(5) }).strict();
+export type DiskKind = z.infer<typeof diskKindSchema>;
+export type DiskSample = z.infer<typeof diskSampleSchema>;
+export type DiskUse = z.infer<typeof diskUseSchema>;
 
 export const daemonStateSchema = z.object({
   version: z.literal(1), url: z.string(), repository: z.string(),
@@ -206,6 +213,8 @@ export const daemonStateSchema = z.object({
   controlPlane: z.object({ unreachableSince: z.string(), error: z.string().max(1000), restartedAt: z.string().nullable(), restart: z.string().max(1000).nullable(), exitReason: z.string().max(1000).nullable(), freeDisk: z.string().max(500).nullable() }).strict().nullable().default(null),
   /** A disk shortage the headroom step could not reclaim (GY-3122): while set, no new merge trial or worker starts; null with room above the floor. */
   diskHeadroom: z.object({ at: z.string(), floorBytes: z.number(), volumes: z.array(z.object({ path: z.string().max(1000), freeBytes: z.number() }).strict()).max(20), shortage: z.string().max(2000) }).strict().nullable().default(null),
+  /** GY-3743: the coordinator's free disk readings (last 48, at most hourly) and the five largest kinds of Mainworks disk use. */
+  diskUse: diskUseSchema.nullable().default(null),
   /**
    * GY-3348: the host's CPU as the last cycle read it — 'some avg60' from /proc/pressure/cpu, the
    * steal percent since the cycle before, and the /proc/stat counters the next reading measures
