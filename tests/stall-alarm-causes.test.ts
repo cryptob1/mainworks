@@ -30,7 +30,7 @@ function ready(key = 'GY-1', updatedAt = new Date(start).toISOString()): Work {
     criteria: [{ id: 'AC-1', text: 'Works', proofs: ['e2e:fixture'] }], dependencies: [], evidence: [], gates: [], workspaces: [], sessions: [], createdAt: updatedAt, updatedAt } as unknown as Work;
 }
 
-async function fixture(options: { work?: Work[]; launches?: boolean; dispatchTick?: () => Promise<void>; pressure?: string; registry?: Pick<AgentRegistry, 'accounts' | 'roles'>; serving?: string } = {}) {
+async function fixture(options: { work?: Work[]; launches?: boolean; dispatchTick?: () => Promise<void>; pressure?: string; registry?: Pick<AgentRegistry, 'accounts' | 'roles'> & Partial<Pick<AgentRegistry, 'runtimes'>>; serving?: string } = {}) {
   const directory = await temporaryDirectory('stall-alarm');
   const profile = { name: 'w1', principal: 'worker-a', agentName: 'agent-w1', mode: 'launch', kind: 'claude', credentialFile: '/outside/w1.token', agentArgs: [], environment: {} } as unknown as WorkerProfile;
   const config: MasterConfig = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', repository: 'owner/stall', credentialFile: join(directory, 'coordinator.token'),
@@ -113,7 +113,8 @@ test(`${proof} — every eligible worker account out of quota is the named cause
   const resets = new Date(start + 5 * 3_600_000).toISOString();
   const quota = { loggedIn: true, state: 'exhausted', usage: [], resetsAt: resets, reason: 'weekly limit', since: new Date(start).toISOString(), identity: null, observedAt: null, observedBy: null, source: 'probe' };
   const alarm = await stalled(await fixture({ registry: {
-    accounts: [{ name: 'claude-a', enabled: true, quota }, { name: 'codex-b', enabled: true, quota }, { name: 'spare', enabled: false, quota: { ...quota, state: 'available' } }] as any,
+    runtimes: [{ name: 'claude', launch: { kind: 'claude' } }, { name: 'codex', launch: { kind: 'codex' } }] as any,
+    accounts: [{ name: 'claude-a', runtime: 'claude', enabled: true, quota }, { name: 'codex-b', runtime: 'codex', enabled: true, quota }, { name: 'spare', runtime: 'claude', enabled: false, quota: { ...quota, state: 'available' } }] as any,
     roles: [{ name: 'worker', accounts: ['claude-a', 'codex-b', 'spare'], concurrency: 2 }] as any,
   } }));
   assert.match(alarm, new RegExp(`every worker account is out of quota: claude-a \\(weekly limit; resets ${resets}\\), codex-b`));
