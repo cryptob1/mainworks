@@ -1,6 +1,6 @@
 import { COMMAND_NAME, PRODUCT_NAME } from '../model/product.js';
 
-export default `${PRODUCT_NAME} runs on a Linux host. Check each prerequisite; \`${COMMAND_NAME} doctor\` (or \`npx @cryptob1/graphyard doctor\`) in the repository's checkout checks credentials, agent logins, confinement, the kernel and services in one pass, and each failed check prints its fix. The \`graphyard\` command and \`GRAPHYARD_*\` settings still work.
+export default `${PRODUCT_NAME} runs on a Linux host. Check each prerequisite; \`${COMMAND_NAME} doctor\` (or \`npx @cryptob1/graphyard doctor\`) in the repository's checkout checks credentials, agent logins, confinement, the kernel and services in one pass, and each failed check prints its fix. The old \`graphyard\` command and \`GRAPHYARD_*\` settings still work.
 
 - Linux 7.0+ with Landlock ABI 9+ enabled: \`uname -r\` (doctor checks the ABI).
 - Node.js 24+ and npm: \`node --version && npm --version\`.

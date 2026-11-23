@@ -47,7 +47,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
   await expect(main.getByText('Open the first-run Setup checklist')).toHaveCount(0);
   await fits(page, 'Agents');
 
-  // AC-2: Setup has no Done badge and no Coordinator; the loop step says Mainworks (GY-3572's name for Graphyard) is handing out work.
+  // AC-2: Setup has no Done badge and no Coordinator; the loop step says Mainworks is handing out work.
   await openTab(page, 'Settings', 'Setup', 'Set up Mainworks');
   await expect(main.locator('[data-setup-item="master-loop"]')).toContainText('Mainworks is handing out work');
   const setup = await main.innerText();
