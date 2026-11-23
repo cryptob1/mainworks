@@ -40,7 +40,7 @@ export const warmImagePattern = /^graphyard-warm:[0-9a-f]{12}-(?:[0-9a-f]{12}|no
  * changes what it does in a way a trial relies on, and add a new verb here; any other change to the
  * shim (its launcher, limits, wording) leaves this list alone, so hosts on the older shim keep taking shards.
  */
-export const hostShimVerbs = ['probe:1', 'receive-pack:1', 'receive-image:1', 'prepare-run:1', 'run-shard:2', 'fetch-records:1', 'clean:1'];
+export const hostShimVerbs = ['probe:1', 'receive-pack:1', 'receive-image:2', 'prepare-run:2', 'run-shard:2', 'fetch-records:1', 'clean:1'];
 /** GY-3645: `run-check` is no trial verb: a host takes a whole check once its probe names a Compose plugin, which only a shim with the verb prints. */
 /** The verbs a merge trial uses: a host whose shim lacks any of them takes no shards until prepare runs again there. */
 export const trialVerbs = hostShimVerbs;

@@ -20,6 +20,14 @@ for (let attempt = 0; ; attempt++) {
   // The check lives in the selected artifact, so a launcher copied alone or an older artifact runs from source.
   const check = join(selected, 'bin', 'built-entry.mjs');
   const built = existsSync(check) && (await import(pathToFileURL(check).href)).builtEntry(selected, 'cli');
+  // GY-3627: when NODE_COMPILE_CACHE is already active and no release-handover pointer is in use,
+  // load the built CLI directly instead of paying a second Node process start.
+  if (built && process.env.NODE_COMPILE_CACHE && selected === root) {
+    process.argv[1] = built;
+    process.env.GRAPHYARD_LAUNCHER = '1';
+    await import(pathToFileURL(built).href);
+    break;
+  }
   const entry = built ? [built] : ['--import', createRequire(join(selected, 'package.json')).resolve('tsx'), join(selected, 'src/cli.ts')];
   // Node's compile cache spares the built CLI recompiling its one large file on every start.
   const cache = built ? { NODE_COMPILE_CACHE: process.env.NODE_COMPILE_CACHE ?? join(tmpdir(), 'node-compile-cache') } : {};
