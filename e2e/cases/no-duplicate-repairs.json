@@ -1,0 +1,14 @@
+{
+  "id": "no-duplicate-repairs",
+  "title": "A stuck control-plane upgrade files one repair item and adds notes on repeat cycles",
+  "description": "Drives a stub loop through a control-plane upgrade that stays stuck at restart for five cycles against a served control plane on temporary Postgres, asserting exactly one open repair item exists with its fault key set and its note count rising on each repeat cycle.",
+  "tags": ["deployment", "regression"],
+  "target": "any",
+  "required": false,
+  "steps": [{
+    "kind": "command",
+    "name": "Run five cycles of a stuck control-plane upgrade and verify one open repair item with rising notes",
+    "run": "node --import tsx tests/helpers/run-tests.ts tests/no-duplicate-repairs.test.ts",
+    "timeoutSeconds": 300
+  }]
+}
