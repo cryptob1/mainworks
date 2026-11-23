@@ -25,4 +25,4 @@ export const workerFastGatesPresent = (root: string) => workerFastGates.tests.ev
 /** The one command line the gates run as: the test files through the suite's own harness (run-tests.ts reserves the port window a bare run lacks). */
 export const workerFastGatesCommand = `node --import tsx tests/helpers/run-tests.ts ${workerFastGates.tests.join(' ')}`;
 /** The one sentence item 2 of the pre-submit list adds (GY-3489): the gates and their one command line. */
-export const workerFastGatesSentence = `Then the fast gates: \`${workerFastGatesCommand}\`. `;
+export const workerFastGatesSentence = `Then fast gates: \`${workerFastGatesCommand}\`. `;
