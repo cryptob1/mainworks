@@ -14,6 +14,7 @@ import type { DaemonEffects } from './effects.js';
 import { record, type DaemonAction, type DaemonState, type DiskKind, type DiskSample, type DiskUse } from './state.js';
 import { workerVerificationPrefix, workerVerificationRoot, workerVerificationTimeoutMs } from '../merge-writer/worker-verification.js';
 import { trialBuilder } from '../install/trial-image.js';
+import { warmImagesInUse } from '../merge-writer/remote-shards.js';
 import { composeProjectPrefix, sweepComposePreviews } from '../compose-preview.js';
 import { trialShareAllowance } from './cycle-merge-writer.js';
 import { defaultMergeWriterParallel } from '../master/merge-writer-settings.js';
@@ -176,10 +177,32 @@ export async function reclaimJobLeftovers(run: ChildRun, roots: { temporary?: st
       try { await docker(['network', 'rm', name]); removed.push(`network ${name}`); } catch { /* attached since, or already gone */ }
     }
   } catch { /* no Docker on this host */ }
+  removed.push(...await pruneWarmImages(run));
   try {
     const pruned = (await docker(['buildx', 'prune', '--builder', trialBuilder, '--filter', 'until=24h', '--force'])).find(line => /^Total:/i.test(line));
     if (pruned && !/:\s*0\s*B?$/i.test(pruned)) removed.push(`trial build cache older than a day (${pruned.replace(/^Total:\s*/i, '')})`);
   } catch { /* no trial builder on this host yet */ }
+  return removed;
+}
+
+/**
+ * GY-3745: the warm images remote shard hosts are sent, one per trial image digest and lockfile, are
+ * removed except those for the current trial image's digest, the two newest and any a running trial uses
+ * (never forced: Docker also keeps one a container uses). What was removed, by name.
+ */
+export async function pruneWarmImages(run: ChildRun): Promise<string[]> {
+  const docker = async (args: string[]) => String(await run('docker', args, { timeoutMs: 60_000 })).split('\n').map(line => line.trim()).filter(Boolean);
+  const removed: string[] = [];
+  try {
+    const digest = (await docker(['image', 'inspect', '--format', '{{.Id}}', trialImage()]).catch(() => []))[0]?.replace(/^sha256:/, '').slice(0, 12);
+    const images = (await docker(['images', 'graphyard-warm', '--format', '{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}']))
+      .map(line => line.split('\t')).filter(([, image]) => image?.startsWith('graphyard-warm:') && !image.endsWith(':<none>'))
+      .sort(([a = ''], [b = '']) => b.localeCompare(a)).map(([, image]) => image!);
+    for (const image of images.slice(2)) {
+      if ((digest && image.startsWith(`graphyard-warm:${digest}-`)) || warmImagesInUse.has(image)) continue;
+      try { await docker(['image', 'rm', image]); removed.push(`image ${image}`); } catch { /* in use, or already gone */ }
+    }
+  } catch { /* no Docker on this host */ }
   return removed;
 }
 
