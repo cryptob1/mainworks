@@ -33,12 +33,20 @@ export function readDeployRecord(file: string): DeployRecord | null {
 }
 async function writeDeployRecord(file: string, record: Omit<DeployRecord, 'at'>) {
   const at = new Date().toISOString();
+  const history = join(dirname(file), 'deploy-history.jsonl');
   await mkdir(dirname(file), { recursive: true });
+  // Preserve the last healthy deploy's timestamp before a later write rewrites deploy.json.
+  if (!existsSync(history)) {
+    const previous = readDeployRecord(file);
+    if (previous?.tip && !previous.failed && !previous.restore) {
+      await appendFile(history, `${JSON.stringify({ commit: previous.tip, at: previous.at, repository: previous.repository ?? null })}\n`).catch(() => {});
+    }
+  }
   await writeFile(`${file}.tmp`, `${JSON.stringify({ ...record, reason: record.reason?.slice(0, 2000) ?? null, at }, null, 2)}\n`);
   await rename(`${file}.tmp`, file);
   // GY-3725: keep a history of serving deploys so flow numbers measure each merge to the first deploy that contains it.
   if (record.tip && !record.failed && !record.restore) {
-    await appendFile(join(dirname(file), 'deploy-history.jsonl'), `${JSON.stringify({ commit: record.tip, at, repository: record.repository ?? null })}\n`).catch(() => {});
+    await appendFile(history, `${JSON.stringify({ commit: record.tip, at, repository: record.repository ?? null })}\n`).catch(() => {});
   }
 }
 
