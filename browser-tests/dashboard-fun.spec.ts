@@ -100,6 +100,8 @@ test('e2e:dashboard-fun — a goal whose last task ships gets a larger burst', a
 });
 
 test('e2e:dashboard-fun — an empty board shows the playful empty-state line', async ({ page }) => {
+  // GY-3719: a loaded batch-gate host spends over 30 s on sign-in alone, so this test gets its siblings' budget.
+  test.setTimeout(60_000);
   await serve(page, []);
   await expect(page.getByRole('heading', { name: 'The yard is quiet. File a goal and wake the crew.' })).toBeVisible();
 });
