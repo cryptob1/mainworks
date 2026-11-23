@@ -46,11 +46,11 @@ async function fillLocal(directory: string, label: string) {
 }
 async function takeAll(directory: string, host: string) {
   const held: HeldSlot[] = [];
-  for (let shard = 1; shard <= 20; shard++) { const slot = await takeHostSlot(directory, host, `test merge GY-1 shard ${shard}`, 'acme/app'); if (!slot) break; held.push(slot); }
+  for (let shard = 1; shard <= 40; shard++) { const slot = await takeHostSlot(directory, host, `test merge GY-1 shard ${shard}`, 'acme/app'); if (!slot) break; held.push(slot); }
   return held;
 }
 
-test('integration:scale-limits-with-hosts — a 24-core machine with ready hosts of 24 and 32 cores admits 4 local jobs and 9 host-placed shards at once; with the hosts away it admits 4; a limit file still sets the budget', { timeout: 120_000 }, async () => {
+test('integration:scale-limits-with-hosts — a 24-core machine with ready hosts of 24 and 32 cores admits 4 local jobs and 37 host-placed shards at once; with the hosts away it admits 4; a limit file still sets the budget', { timeout: 120_000 }, async () => {
   const directory = join(await temporaryDirectory('scale-limits-with-hosts'), 'heavy-jobs');
   mkdirSync(directory);
   const localJobs = () => heldSlots(directory).filter(entry => entry.slot < gateSlot).length;
@@ -64,13 +64,13 @@ test('integration:scale-limits-with-hosts — a 24-core machine with ready hosts
   assert.equal(budgetLine(budget.machines), '13 heavy-job slots (this machine 4, vish-msi 4, omarchypc 5)');
   assert.equal(heavyJobLimit(directory), 4, 'this machine runs at most floor(24 / 6)');
 
-  // Four local jobs run and the fifth waits; nine shards go to the hosts at once beside them.
+  // Four local jobs run and the fifth waits; shards go to the hosts by free cores beside them (GY-3706).
   const first = await fillLocal(directory, 'merge trial');
   assert.equal(first.held.length, 4);
   const onMsi = await takeAll(directory, msi), onOmarchy = await takeAll(directory, omarchy);
-  assert.equal(onMsi.length, 4, 'vish-msi takes its share of four');
-  assert.equal(onOmarchy.length, 5, 'omarchypc takes its share of five');
-  assert.equal(heldSlots(directory).filter(entry => entry.slot >= hostSlot).length, 9);
+  assert.equal(onMsi.length, 19, 'vish-msi takes 24 cores less 2 less 3 busy');
+  assert.equal(onOmarchy.length, 18, 'omarchypc takes 32 cores less 2 less 12.2 busy');
+  assert.equal(heldSlots(directory).filter(entry => entry.slot >= hostSlot).length, 37);
   assert.equal(localJobs(), 4, 'host-placed shards never count against this machine');
   // A freed host slot is that host's again; a freed local slot admits the waiting local job.
   onMsi.pop()!.release();
@@ -222,7 +222,7 @@ test('integration:scale-limits-with-hosts — master status shows the budget and
   try {
     const shown = await masterStatusReport(root, master, async () => ({ work: [], now: new Date().toISOString() }), async () => { throw new Error('no git in the fixture'); });
     assert.equal(shown.heavyJobs.budget, '13 heavy-job slots (this machine 4, vish-msi 4, omarchypc 5)');
-    assert.deepEqual(shown.heavyJobs.machines, ['this machine: 6 of 24 cores busy, 61°C', 'vish-msi: 3 of 24 cores busy, 58°C', 'omarchypc: 12 of 32 cores busy, 70°C']);
+    assert.deepEqual(shown.heavyJobs.machines, ['this machine: 6 of 24 cores busy, 61°C', 'vish-msi: 3 of 24 cores busy, 0 shards, 58°C', 'omarchypc: 12 of 32 cores busy, 0 shards, 70°C']);
     for (const line of [shown.heavyJobs.budget, ...shown.heavyJobs.machines]) { assert.doesNotMatch(line, /gy-compute|@|:\d{4}/); assert.ok(line.length <= 80, line); }
   } finally { if (previous === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = previous; }
 });

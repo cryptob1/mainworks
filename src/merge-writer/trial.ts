@@ -1789,8 +1789,8 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const release = await declareTrialFiles(slotsDirectory, input.key ?? input.mergeSha.slice(0, 12), lanes * breadth);
     try {
       // A lane takes the next shard until none is left or another lane's shard ended the trial; a running shard is always awaited, never orphaned.
-      const budget = slotsDirectory ? slots.heavyJobBudget(slotsDirectory) : null;
-      const hostShare = (host: string) => budget?.hostsBounded ? (budget.machines.find(machine => !machine.local && machine.name === host)?.slots ?? 0) : Infinity;
+      // GY-3706: a host takes as many shards as it has free cores, less two.
+      const hostShare = (host: string) => slotsDirectory ? slots.hostShardRoom(slotsDirectory, host) : Infinity;
       const local: PlacedHost<string> = { name: readings[0]?.name ?? 'local', room: lanes, reading: readings[0] ?? { name: 'local', cores, busy: 0, steal: 0, celsius: null, limit: Infinity, away: false } };
       const placed = [local, ...hosts.map((host, index) => ({ name: host, remote: host, reading: readings[index + 1]!, room: Math.min(Math.floor(realFreeCores(readings[index + 1]!) / breadth), hostShare(host)) }))];
       const placement = await runShardsOnHosts({ count: shards.length, hosts: placed, breadth, pinned, stopped: () => stopped !== null,

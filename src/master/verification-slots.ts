@@ -7,7 +7,7 @@ import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { availableParallelism } from 'node:os';
 import { cpuCelsius, heatReading, heatWindowMs, trialHotCelsius } from '../merge-writer/trial-load.js';
-import { budgetLine } from '../model/machine-load.js';
+import { budgetLine, machineName } from '../model/machine-load.js';
 
 /**
  * The host heavy-job budget (GY-612, GY-3290).
@@ -60,11 +60,27 @@ const ordinaryLimit = (directory: string) => limitFile(directory) ?? heavyJobBud
  */
 export interface Machine { name: string; local?: boolean; away: boolean; cores: number | null; busy: number | null; celsius: number | null }
 export const machinesFile = (directory: string) => join(directory, 'machines.json');
-export function writeMachines(directory: string, machines: readonly Machine[]) {
+export function writeMachines(directory: string, machines: readonly Machine[], now = new Date()) {
   const pending = `${machinesFile(directory)}.${randomUUID()}`;
   mkdirSync(directory, { recursive: true });
   writeFileSync(pending, JSON.stringify(machines.map(({ name, local, away, cores, busy, celsius }) => ({ name, ...(local ? { local } : {}), away, cores, busy, celsius }))));
   renameSync(pending, machinesFile(directory));
+  // GY-3706: since when this machine is above its cores in load while a ready host has more than half its cores free.
+  const local = machines[0], idle = machines.slice(1).find(host => !host.away && host.cores && host.busy !== null && host.cores - host.busy > host.cores / 2);
+  const since = local?.cores && local.busy !== null && local.busy > local.cores && idle ? readImbalance(directory)?.since ?? now.toISOString() : null;
+  if (since) writeFileSync(imbalanceFile(directory), JSON.stringify({ since })); else rmSync(imbalanceFile(directory), { force: true });
+}
+const imbalanceFile = (directory: string) => join(directory, 'imbalance.json');
+function readImbalance(directory: string): { since: string } | null {
+  try { return JSON.parse(readFileSync(imbalanceFile(directory), 'utf8')); } catch { return null; }
+}
+/** GY-3706: one line once this machine has been above its cores in load for 5 minutes while a ready host had more than half its cores free. */
+export function imbalanceLine(directory: string, now = Date.now()): string | null {
+  const since = Date.parse(readImbalance(directory)?.since ?? ''), machines = readMachines(directory);
+  if (!(now - since >= 5 * 60_000) || !machines) return null;
+  const local = machines[0]!, idle = machines.slice(1).filter(host => !host.away && host.cores && host.busy !== null).sort((a, b) => (b.cores! - b.busy!) - (a.cores! - a.busy!))[0];
+  if (!idle) return null;
+  return `This machine is at load ${Math.round(local.busy!)} on ${local.cores} cores while ${machineName(idle.name)} has ${Math.round(idle.cores! - idle.busy!)} of ${idle.cores} cores free, for ${Math.floor((now - since) / 60_000)} minutes.`;
 }
 export function readMachines(directory: string): Machine[] | null {
   try { const machines = JSON.parse(readFileSync(machinesFile(directory), 'utf8')); return Array.isArray(machines) && machines[0]?.local ? machines : null; } catch { return null; }
@@ -327,18 +343,31 @@ export const hostsWithSlots = <H extends { host: string; local?: boolean }>(host
 
 /** Slot numbers from here up are shards placed on hosts (GY-3528): each counts against its host's share, never this machine's. */
 export const hostSlot = 3000;
+/** The shards every install on this machine has placed on `host` now. */
+export const shardsOnHost = (directory: string, host: string) => heldSlots(directory).filter(entry => entry.slot >= hostSlot && entry.owner?.host === host).length;
+/**
+ * GY-3706: the shards `host` accepts at once — while its last read busy cores plus the shards placed
+ * there stay under its cores less two. Unbounded with a `limit` file or before the loop read the
+ * machines; none for a host away or never read.
+ */
+export function hostShardRoom(directory: string, host: string): number {
+  if (limitFile(directory) !== null) return Infinity;
+  const machines = readMachines(directory);
+  if (!machines) return Infinity;
+  const reading = machines.slice(1).find(machine => machine.name === host);
+  return reading && !reading.away && reading.cores ? Math.max(0, Math.ceil(reading.cores - 2 - (reading.busy ?? 0))) : 0;
+}
 /**
  * GY-3528: a slot on `host`'s share for one shard placed there, or null when its share is spent. It
  * never waits: the trial places the shard elsewhere. Where hosts are unbounded (a `limit` file, or no
  * reading yet) it holds nothing.
  */
 export async function takeHostSlot(directory: string, host: string, label: string, project?: string): Promise<HeldSlot | null> {
-  const budget = heavyJobBudget(directory);
-  if (!budget.hostsBounded) return { slot: -1, path: '', release: () => {} };
-  const share = budget.machines.find(machine => !machine.local && machine.name === host)?.slots ?? 0;
+  const share = hostShardRoom(directory, host);
+  if (share === Infinity) return { slot: -1, path: '', release: () => {} };
   const onHost = async () => {
     for (const entry of heldSlots(directory)) if (entry.slot >= hostSlot) await reclaimStale(join(directory, `slot-${entry.slot}`));
-    return heldSlots(directory).filter(entry => entry.slot >= hostSlot && entry.owner?.host === host).length;
+    return shardsOnHost(directory, host);
   };
   if (await onHost() >= share) return null;
   const held = await tryTake(directory, 1000, { identity, locked: true, pid: process.pid, label, host, ...(project ? { project } : {}), cwd: process.cwd(), at: new Date().toISOString() }, hostSlot);
