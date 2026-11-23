@@ -114,8 +114,8 @@ test('unit:tests/leftovers-report.test.ts — master status shows the latest rep
   assert.equal(report?.day, '2030-04-01');
   assert.deepEqual(report?.counts, { processes: 4, trialContainers: 2, reclaimed: 3, panes: 1, worktrees: 1, networks: 0, cliReleases: 0, cliReleaseBytes: 0 });
   assert.equal(report?.at, '2030-04-02T00:10:00.000Z');
-  assert.deepEqual(Object.keys(report!.disk), ['trialRuns', 'worktrees', 'trialCheckouts', 'trialImages', 'buildCache']);
-  assert.ok(report!.disk.trialRuns! >= 2048, String(report!.disk.trialRuns));
-  assert.deepEqual([report!.disk.worktrees, report!.disk.trialCheckouts, report!.disk.trialImages, report!.disk.buildCache], [null, null, null, null]);
+  assert.deepEqual(Object.keys(report!.disk!), ['trialRuns', 'worktrees', 'trialCheckouts', 'trialImages', 'buildCache']);
+  assert.ok(report!.disk!.trialRuns! >= 2048, String(report!.disk!.trialRuns));
+  assert.deepEqual([report!.disk!.worktrees, report!.disk!.trialCheckouts, report!.disk!.trialImages, report!.disk!.buildCache], [null, null, null, null]);
   assert.ok(existsSync(kept), 'the report removes nothing');
 });

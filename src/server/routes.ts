@@ -11,6 +11,7 @@ import type { ProductionWatch } from '../production-watch.js';
 import type { Principal } from '../model.js';
 import type { Responder } from '../closed-question.js';
 import type { RawOpenIssue } from '../model/first-run.js';
+import type { InfraProviders } from '../infra-access.js';
 
 /** Everything the assembled control plane owns, handed to every route. */
 export interface Services {
@@ -36,6 +37,8 @@ export interface Services {
   teamAccess?: { port: string | null };
   /** GY-3603: optional open-issues reader for tests/embedders; defaults to `gh api`. */
   listOpenIssues?: (repository: string) => Promise<RawOpenIssue[]>;
+  /** GY-3515: the provider endpoints and tokens scoped infra access calls with (infra-access.ts). */
+  infra?: InfraProviders;
 }
 
 /** The response was written by the handler itself (raw bytes, or a status other than 200). */

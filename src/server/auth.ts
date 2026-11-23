@@ -18,6 +18,7 @@ import { leaseCommandRequest } from './routes/work.js';
 import { launchTokenActor } from './review-verdict.js';
 import { signinClaimFromEnv } from './routes/signin.js';
 import { endTerminals } from './terminal.js';
+import { infraProviders } from '../infra-access.js';
 
 /**
  * Resolve the bearer token to a principal: a configured credential first, then a human session a
@@ -399,5 +400,5 @@ export function assembleServices(engine: Engine, credentials: Credential[], opti
     ...(options.clock ? { clock: options.clock } : {}),
     ...(options.listOpenIssues ? { listOpenIssues: options.listOpenIssues } : {}),
     // GY-3294: the port the dashboard is published on, which its tailnet address and invites name.
-    teamAccess: { port: env.GRAPHYARD_LOCAL_VIEW_PORT || null } };
+    teamAccess: { port: env.GRAPHYARD_LOCAL_VIEW_PORT || null }, infra: infraProviders(env) };
 }
