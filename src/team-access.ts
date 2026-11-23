@@ -11,8 +11,9 @@ import { promisify } from 'node:util';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { setting } from './setting.js';
 
-export const machineDirectory = (config = process.env.GRAPHYARD_CONFIG_HOME ?? join(homedir(), '.config', 'graphyard')) => join(config, 'machine');
+export const machineDirectory = (config = setting('CONFIG_HOME') ?? join(homedir(), '.config', 'graphyard')) => join(config, 'machine');
 const machineFile = (dir: string) => join(dir, 'tailnet.json');
 
 /**

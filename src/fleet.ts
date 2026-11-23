@@ -20,6 +20,7 @@ import type { SmokeResult } from './runner/pi.js';
 import { accountIneligibility, lastGoodUsage, windowHold, deriveAccountPlan, pinnedInstall, fleetRoles, liveSessions, roleLimit, proposedConcurrency, proposedRuntimeRoles, proposedRuntimes, rolePolicy, roleRuntimeKinds, roleRuntimeRefusal, smokeFailureDue, smokeTestedKinds, type AccountKey, type AgentRegistry, type RolePolicy, type FleetAccount, type FleetAccountInput, type FleetModel, type FleetRole, type FleetRoleName, type FleetRuntime, type FleetSession, type LaunchContract, type QuotaObservation, type RunOutcome, type SessionSkip, type SmokeObservation } from './model/registry.js';
 import { parseProbeFailure } from './model/account-quota.js';
 import { hostAccountCheck, hostAccountUsage, recordHostAccountCheck, recordHostAccountUsage, withHostAccountUsageLock, clearEndedHostAccountSessions, clearHostAccountSession, hostAccountSessions, registerHostAccountSession } from './host-accounts.js';
+import { setting } from './setting.js';
 export { exhaustionTail, outOfCreditsScreen } from './exhaustion-screen.js';
 
 /**
@@ -256,7 +257,7 @@ export async function observeAccount(account: FleetAccount, runtime: FleetRuntim
   const cached = saved && JSON.stringify(saved.key ?? null) === JSON.stringify(account.credential.key ?? null) ? saved : null;
   // Preserve the confined master's unreadable-home rule: only the host executor can test these logins.
   const home = account.credential.home;
-  if (home && await readdir(home).then(entries => !entries.length && !!process.env[masterConfinementVariable], (error: NodeJS.ErrnoException) => error.code === 'EACCES'))
+  if (home && await readdir(home).then(entries => !entries.length && !!setting(masterConfinementVariable), (error: NodeJS.ErrnoException) => error.code === 'EACCES'))
     return { quota: cached?.quota ?? { loggedIn: null, state: 'unknown', usage: [], resetsAt: null, reason: null }, health: null };
 
   if (!home && account.quota.since && nextLiveCheck(account.quota) > now) {

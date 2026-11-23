@@ -37,6 +37,7 @@ import { reportTrialHostFault, reportTrialImageFault, reportTrialNetworkFault, r
 import { reworkReasonMax } from './rework.js';
 import type { Cycle } from './cycle.js';
 import { heavyJobsDirectory, readHeavyDrain, type HeavyDrain } from '../master/verification-slots.js';
+import { setting } from '../setting.js';
 
 /** The merge writer's ports (merge-writer/executor.ts). */
 export interface MergeWriterReads extends MergePorts {
@@ -108,7 +109,7 @@ const output = (error: unknown) => { const failed = error as { stdout?: unknown;
  * project on the host shares, naming the holders as its step, before anything of it starts.
  */
 export const heavyTrial = <T>(key: string, onStep: ((step: string) => void) | undefined, signal: AbortSignal | undefined, trial: () => Promise<T>, until?: AbortSignal, gate?: boolean) =>
-  withHeavyJob(testMergeLabel(key), trial, { onWait: () => onStep?.(waitStep(process.env[slotsDirectoryVariable]!)), signal, until, reserved: gate });
+  withHeavyJob(testMergeLabel(key), trial, { onWait: () => onStep?.(waitStep(setting(slotsDirectoryVariable)!)), signal, until, reserved: gate });
 
 /**
  * The reads over the coordinator checkout `root` (its object store holds every submitted head,

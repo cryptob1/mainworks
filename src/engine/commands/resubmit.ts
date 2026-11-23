@@ -8,6 +8,7 @@ import { observeBaseHold } from '../../model/behind-base.js';
 import { workIdByRef } from '../../store/locked-read.js';
 import { beginAttempt, recordSubmission } from '../../pipeline-speed.js';
 import type { Ctx, Prepare } from './types.js';
+import { setting } from '../../setting.js';
 
 /**
  * GY-3335: the loop resubmits, as the item's next attempt, the finished head a worker named in a
@@ -61,7 +62,7 @@ export async function prepare({ engine, actor, id, key, data }: Prepare) {
   const record = work?.finishedBlockerHead;
   const workspace = record && record.head === data.head ? work.workspaces.find(entry => entry.epoch === record.epoch) : undefined;
   if (!record || !workspace || work.stage === 'done') return null;
-  if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd());
+  if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(setting('REPOSITORY_ROOT') ?? process.cwd());
   demand(engine.gitRunner, 'The control plane has no checkout to read a resubmitted head from; a head submission needs the merge writer checkout', 503);
   return observeLocalHead(engine.gitRunner, { head: data.head, base: engine.baseBranch, branch: workspace.branch, author: record.owner });
 }

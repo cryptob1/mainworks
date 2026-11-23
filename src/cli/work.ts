@@ -10,6 +10,7 @@ import { handoff } from '../repository-setup.js';
 import { eventHistoryLimits, parseEventHistoryFlags } from '../events-history.js';
 import { defineCommands } from './registry.js';
 import { withRisk } from '../model-boundary/risk-class.js';
+import { setting } from '../setting.js';
 
 /** Reading work: control-plane status, the ledger, diagnosis, creation and history. */
 export const workCommands = defineCommands([
@@ -83,10 +84,10 @@ export const workCommands = defineCommands([
         const text = args[0] === '-' ? readFileSync(0, 'utf8') : readFileSync(args[0], 'utf8');
         return print(await api('caretaker/reports', { lines: text.split('\n').map(line => line.trim()).filter(Boolean) }));
       }
-      if (id === 'registry') return print(await registryCommand({ hostId: process.env.GRAPHYARD_HOST_ID ?? '' }, args, { read: path => api(path), write: (path, data) => api(path, data) }));
+      if (id === 'registry') return print(await registryCommand({ hostId: setting('HOST_ID') ?? '' }, args, { read: path => api(path), write: (path, data) => api(path, data) }));
       const reason = args.join(' ').trim(), [key, profile] = args;
-      if ((id === 'restart' && reason || id === 'dispatch' && key && profile) && process.env.GRAPHYARD_TOKEN_FILE) {
-        const file = caretakerRequestsFile(process.env.GRAPHYARD_TOKEN_FILE);
+      if ((id === 'restart' && reason || id === 'dispatch' && key && profile) && setting('TOKEN_FILE')) {
+        const file = caretakerRequestsFile(setting('TOKEN_FILE')!);
         const requests: CaretakerRequest[] = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : [];
         requests.push(id === 'restart' ? { command: 'restart', reason } : { command: 'dispatch', key: key!, profile: profile! });
         writeFileSync(file, JSON.stringify(requests), { mode: 0o600 });

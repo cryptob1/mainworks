@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { stopProcessesUnder } from '../session-processes.js';
+import { setting } from '../setting.js';
 
 /**
  * The managed worktree root: the one directory on this host under which Graphyard creates every
@@ -28,7 +29,7 @@ export interface WorktreeRootSettings { repository: string; run?: { worktreeRoot
  * account home, and a root that moved with the caller would not be one root.
  */
 export function dataDirectory(environment: Environment = process.env) {
-  const configured = environment.GRAPHYARD_DATA_HOME;
+  const configured = setting('DATA_HOME', environment);
   if (configured && !isAbsolute(configured)) throw new Error('GRAPHYARD_DATA_HOME must be an absolute path');
   return resolve(configured || resolve(homedir(), '.local/share/graphyard'));
 }

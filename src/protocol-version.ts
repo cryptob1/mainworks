@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { setting } from './setting.js';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { managedBlockConfined } from './master/profiles.js';
@@ -34,7 +35,7 @@ const commitPattern = /^[0-9a-f]{40}$/i;
  */
 export function buildIdentity(env: Record<string, string | undefined> = process.env): BuildIdentity {
   for (const source of ['GRAPHYARD_BUILD_SHA', 'RAILWAY_GIT_COMMIT_SHA', 'SOURCE_COMMIT', 'GRAPHYARD_BUILD_REVISION'] as const) {
-    const value = env[source]?.trim();
+    const value = (source.startsWith('GRAPHYARD_') ? setting(source, env) : env[source])?.trim();
     if (value && commitPattern.test(value)) return { commit: value.toLowerCase(), protocol: MERGE_PROTOCOL, source };
   }
   return { commit: null, protocol: MERGE_PROTOCOL, source: null };

@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { setting } from '../setting.js';
 
 /**
  * The host's memory (GY-612, GY-1832): what a merge trial's shards and the suite's runner may
@@ -14,7 +15,7 @@ export const hostMemoryVariable = 'GRAPHYARD_HOST_MEMORY';
 
 /** This host's memory from /proc/meminfo; null where it cannot be read. */
 export async function readHostMemory(): Promise<HostMemoryReading | null> {
-  if (process.env[hostMemoryVariable] === 'unreadable') return null;
+  if (setting(hostMemoryVariable) === 'unreadable') return null;
   let meminfo: string;
   try { meminfo = await readFile('/proc/meminfo', 'utf8'); } catch { return null; }
   const field = (name: string) => { const match = new RegExp(`^${name}:\\s+(\\d+) kB`, 'm').exec(meminfo); return match ? Number(match[1]) * 1024 : null; };
