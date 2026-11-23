@@ -103,7 +103,8 @@ export function flowNumbers(items: readonly FlowItem[], hours: number, now: numb
   const events = items.flatMap(item => item.events.filter(event => inWindow(ms(event.at))));
   const rework = Object.fromEntries(reworkCauses.map(cause => [cause, 0])) as Record<ReworkCause, number>;
   for (const event of events) if (event.kind === 'rework') rework[reworkCause(event.reason ?? '', event.binding)] += 1;
-  const stays = items.flatMap(item => visits(item, now).filter(visit => visit.end > from).map(visit => ({ item, visit, ms: visit.end - visit.start })));
+  // GY-3732: like merges an hour, the live station counts only merges made inside the window.
+  const stays = items.flatMap(item => visits(item, now).filter(visit => visit.station === 'live' ? inWindow(visit.start) : visit.end > from).map(visit => ({ item, visit, ms: visit.end - visit.start })));
   const stations = Object.fromEntries(flowStations.map(station => {
     const here = stays.filter(stay => stay.visit.station === station);
     const wait = spread(here.map(stay => stay.ms));
