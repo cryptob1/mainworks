@@ -55,11 +55,13 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
   expect(setup).not.toContain('Coordinator');
   await fits(page, 'Setup');
 
-  // AC-1: Delivery names no config file, no Mode row, and says there is no app to preview.
+  // AC-1: Delivery shows no delivery.applications text and no Mode row, and says there is no app to preview;
+  // Where it runs still names the one setting to add (e2e:where-it-runs).
   await openTab(page, 'Settings', 'Delivery', 'Delivery');
   await expect(main.getByText('No app to preview yet.', { exact: true })).toBeVisible();
   const deliveryText = await main.innerText();
-  for (const word of ['graphyard.json', 'delivery.applications']) expect(deliveryText).not.toContain(word);
+  expect(deliveryText).not.toContain('delivery.applications');
+  await expect(main.locator('[data-app-missing]')).toContainText('graphyard.json');
   await expect(main.locator('dt', { hasText: /^Mode$/ })).toHaveCount(0);
   await fits(page, 'Delivery');
 

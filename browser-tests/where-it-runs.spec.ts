@@ -84,16 +84,17 @@ test('e2e:where-it-runs — Open app and the Where it runs card link to main\'s 
   } finally { await page.close(); await close(); }
 });
 
-test('e2e:where-it-runs — with no app.url declared neither the card nor Open app shows, and nothing names graphyard.json', async ({ page, context }) => {
+test('e2e:where-it-runs — with no app.url declared the card names the one setting to add and no Open app shows', async ({ page, context }) => {
   test.setTimeout(90_000);
   const { root } = await repository({});
   const { url, close } = await plane(context, root);
   try {
     await openWork(page, url);
     await openDelivery(page);
-    await expect(page.getByText('No app to preview yet.', { exact: true })).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole('region', { name: 'Where it runs' })).toHaveCount(0);
-    await expect(page.getByRole('main')).not.toContainText('graphyard.json');
+    const card = page.getByRole('region', { name: 'Where it runs' });
+    await expect(card).toHaveAttribute('data-where-it-runs', 'missing', { timeout: 15_000 });
+    await expect(card.locator('[data-app-missing]')).toContainText('"app": { "url"');
+    await expect(card.locator('[data-app-missing]')).toContainText('graphyard.json');
     await expect(page.locator('[data-open-app]')).toHaveCount(0);
   } finally { await page.close(); await close(); }
 });
