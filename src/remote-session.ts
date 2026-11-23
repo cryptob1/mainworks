@@ -93,7 +93,8 @@ def send():
         index = os.path.join(session, 'index')
         shutil.copyfile(out('rev-parse', '--path-format=absolute', '--git-path', 'index'), index)
         env = dict(os.environ, GIT_INDEX_FILE=index, GIT_AUTHOR_NAME='Graphyard', GIT_AUTHOR_EMAIL='graphyard@localhost', GIT_COMMITTER_NAME='Graphyard', GIT_COMMITTER_EMAIL='graphyard@localhost')
-        git('add', '-A', env=env)
+        # The helper links the warm image's node_modules into the checkout: a symlink no node_modules/ rule ignores, never the session's work.
+        git('add', '-A', '--', '.', ':(exclude)node_modules', env=env)
         tree = out('write-tree', env=env)
         if sent.get('state') == (head, tree):
             return
@@ -228,7 +229,7 @@ export async function runRemoteSession(input: RemoteSession): Promise<number> {
         await rm(path, { force: true });
       }
       await git('reset', '-q', '--hard', head);
-      await git('clean', '-fdq');
+      await git('clean', '-fdq', '-e', 'node_modules');
       if (work !== head) { await git('read-tree', '-u', '--reset', work); await git('reset', '-q'); }
     };
     const code = await transport.session(input.target, words => new Promise<number>(resolve => {
