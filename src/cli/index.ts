@@ -1,3 +1,4 @@
+import { honourMainworksNames } from '../mainworks-names.js';
 import { createContext, resolveWork } from './context.js';
 import type { CliCommand } from './registry.js';
 import { installCommands } from './install.js';
@@ -46,6 +47,7 @@ Never share an operator or producer credential with an implementation agent.`;
 
 export async function main(argv = process.argv.slice(2)) {
   try { process.loadEnvFile(); } catch (error: any) { if (error.code !== 'ENOENT') throw error; }
+  honourMainworksNames();
   const [command, id, ...args] = argv;
   if (!command || command === 'help' || command === '--help') { console.log(renderHelp()); return; }
   const selected = commands.find(entry => entry.name === command);

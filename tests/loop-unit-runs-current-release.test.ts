@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readlinkSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { installLauncherPath, publishCliRelease, resolvedLauncher, writeInstallLauncher } from '../src/install/cli-release.js';
 import { installLoopSupervisor } from '../src/install/loop-unit.js';
@@ -155,6 +155,14 @@ test('unit:loop-unit-runs-current-release — the unit names the install\'s stab
     lines = await doctor();
     assert.deepEqual(lines.map(line => line.status), ['pass'], `the install's own launcher holds no fault: ${JSON.stringify(lines)}`);
     assert.ok(lines[0]!.detail.includes(unit));
+
+    // GY-3573: an existing install whose units record sits at .graphyard/units.json keeps both doctor lines.
+    await rename(join(root, '.mainworks'), join(root, '.graphyard'));
+    const legacy = (await setupFromZeroChecks({ root, env: { ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, '.config'), GRAPHYARD_CONFIG_HOME: configHome }, status: null, reachable: true,
+      environments: join(home, 'agents'), sandbox: () => null, trialSandbox: () => null, systemctl: async () => '' }))
+      .filter(line => line.id === 'loop-unit-release' || line.id === 'unit-overrides');
+    assert.deepEqual(legacy.map(line => `${line.id} ${line.status}`).sort(), ['loop-unit-release pass', 'unit-overrides pass'], `the .graphyard layout is still judged: ${JSON.stringify(legacy)}`);
+    await rename(join(root, '.graphyard'), join(root, '.mainworks'));
 
     const crash = { holder: { pid: 4242, host: 'this-host', startedAt: null }, refusedAt: new Date().toISOString(), count: 3 };
     lines = await doctor(crash);

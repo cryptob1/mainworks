@@ -10,7 +10,7 @@ import { checkAgentEnvironment, discoverAgentEnvironments } from './master/envir
 import type { AgentEnvironment } from './master/profiles.js';
 import { sharedGitPaths, workerPaths } from './worker-sandbox.js';
 import type { LoopCodeReading } from './repository-setup.js';
-import { installUnitsFile, parseInstallUnits, systemdCommandLineWords, unitCheckout, userUnitDirectory } from './install/units.js';
+import { parseInstallUnits, unitsFileOf, systemdCommandLineWords, unitCheckout, userUnitDirectory } from './install/units.js';
 import { installDirectory } from './install/secrets.js';
 import { installIdFor } from './install/types.js';
 import { unitLauncherFault } from './install/cli-release.js';
@@ -221,7 +221,7 @@ async function loopCodeCheck(root: string, injected: LoopCodeReading | null | un
 async function unitOverridesChecks(root: string, systemctl: UserSystemctl, platform: NodeJS.Platform): Promise<SetupCheck[]> {
   if (platform !== 'linux') return [];
   let units;
-  try { units = parseInstallUnits(await readFile(resolve(root, installUnitsFile), 'utf8'), installUnitsFile, () => { throw new Error('absent'); }); } catch { return []; }
+  try { units = parseInstallUnits(await readFile(unitsFileOf(root), 'utf8'), unitsFileOf(root), () => { throw new Error('absent'); }); } catch { return []; }
   const check = (status: SetupCheck['status'], detail: string): SetupCheck => ({ id: 'unit-overrides', status, step: setupSteps.unitOverrides, detail });
   const herdr = herdrServerUnit(null);
   const overrides = new Map<string, string>();
@@ -262,7 +262,7 @@ const unitLauncher = (text: string, home: string): string | null => {
 async function loopUnitReleaseChecks(root: string, env: NodeJS.ProcessEnv): Promise<SetupCheck[]> {
   const check = (status: SetupCheck['status'], detail: string): SetupCheck => ({ id: 'loop-unit-release', status, step: setupSteps.loopUnitRelease, detail });
   let units, repository;
-  try { units = parseInstallUnits(await readFile(resolve(root, installUnitsFile), 'utf8'), installUnitsFile, () => { throw new Error('absent'); }); } catch { return []; }
+  try { units = parseInstallUnits(await readFile(unitsFileOf(root), 'utf8'), unitsFileOf(root), () => { throw new Error('absent'); }); } catch { return []; }
   try { repository = JSON.parse(await readFile(resolve(stateDir(root), 'master.json'), 'utf8'))?.repository; } catch { /* no configuration: nothing to judge against */ }
   if (typeof repository !== 'string' || !repository) return [];
   let installDir: string;

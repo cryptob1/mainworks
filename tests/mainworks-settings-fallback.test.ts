@@ -69,6 +69,12 @@ test('e2e:mainworks-settings-fallback — MAINWORKS_* settings win over GRAPHYAR
     const both = await status(outside, bare, { MAINWORKS_URL: url, GRAPHYARD_URL: 'http://127.0.0.1:9', MAINWORKS_TOKEN: token('b'), GRAPHYARD_TOKEN: token('x') });
     assert.equal(both.code, 0, `the MAINWORKS_ names win when both are set: ${both.stderr}`);
     assert.ok(seen.includes(`Bearer ${token('b')}`) && !seen.includes(`Bearer ${token('x')}`));
+    // MAINWORKS_* settings that arrive through the checkout's .env are honoured too.
+    const dotenv = join(base, 'dotenv'); await mkdir(dotenv);
+    await writeFile(join(dotenv, '.env'), `MAINWORKS_URL=${url}\nMAINWORKS_TOKEN=${token('e')}\n`);
+    const byEnvFile = await status(dotenv, bare, {});
+    assert.equal(byEnvFile.code, 0, `status with MAINWORKS_URL only in .env succeeds: ${byEnvFile.stderr}`);
+    assert.ok(seen.includes(`Bearer ${token('e')}`), 'the .env MAINWORKS_TOKEN reached the control plane');
 
     // AC-2, fresh: the install directory, the checkout's state directory and the units take the mainworks names only.
     const fresh = join(base, 'fresh-home'); await mkdir(fresh);

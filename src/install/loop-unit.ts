@@ -9,7 +9,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir, userInfo } from 'node:os';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { deployUnitOf, installUnitsFile, legacyLoopUnit, proposedInstallUnits, readInstallUnits, resolveInstallUnits, systemdCommandLineWords } from './units.js';
+import { deployUnitOf, legacyLoopUnit, proposedInstallUnits, readInstallUnits, resolveInstallUnits, systemdCommandLineWords, unitsFileOf } from './units.js';
 import { knownGoodCli, knownGoodState } from '../master/known-good.js';
 import { installDirectory } from './secrets.js';
 import { installIdFor } from './types.js';
@@ -362,7 +362,7 @@ export async function installLoopSupervisor(input: LoopUnitInput, host: LoopSupe
   const home = host.home ?? ((host.env ?? process.env).HOME?.trim() || homedir());
   // Before the record is written, an unrecorded install beside another checkout's legacy unit names
   // the units it is about to record, never that install's (GY-1452).
-  let loopUnit = input.unit ?? (existsSync(resolve(input.root, installUnitsFile)) ? loopUnitOf(input.root, unitDirectory, home) : proposedInstallUnits(input.root, input.repository, unitDirectory, home).master);
+  let loopUnit = input.unit ?? (existsSync(unitsFileOf(input.root)) ? loopUnitOf(input.root, unitDirectory, home) : proposedInstallUnits(input.root, input.repository, unitDirectory, home).master);
   let unitPath = join(unitDirectory, loopUnit);
   if (!support.supported) return { supported: false, unit: loopUnit, unitPath: null, installed: false, enabled: null, active: null, linger: null,
     wrote: 'none', refused: null, performed: [], reason: support.reason, instruction: unsupervisedInstruction(input) };
