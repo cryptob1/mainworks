@@ -11,7 +11,7 @@ import { tempOwnerMarker, writeTempOwner } from '../tmp-reclaim.js';
 import { npmCiEnvironment } from '../cli/test-isolation.js';
 import { installArgv, packageManager } from '../package-manager.js';
 import { pinnedNodePath } from '../node-pin.js';
-import { withHeavyJob } from '../master/verification-slots.js';
+import { withHeavyJob, workerVerificationLabel } from '../master/verification-slots.js';
 import { maskSecrets } from '../redaction.js';
 import type { WorkerVerificationResult } from '../cli/worker-verification.js';
 import type { Work } from '../model.js';
@@ -27,7 +27,8 @@ export const workerVerificationPrefix = 'verify-';
  * they happen, and a start that gave up waiting fails in the launcher's own words, never as a bare failed command.
  * GY-3506: any other failure keeps its exit status/signal and masked stdout/stderr before cleanup removes the allocation.
  */
-export async function verificationStep(command: string, args: string[], options: ChildRunOptions, progress: (line: string) => void): Promise<string> {
+export async function verificationStep(command: string, args: string[], options: ChildRunOptions, progress: (line: string) => void, key?: string): Promise<string> {
+  if (key) runningVerificationChildren.set(key, (runningVerificationChildren.get(key) ?? 0) + 1);
   try { return await defaultChildRun(command, args, { ...options, onStderr: launcherLines(progress) }); }
   catch (error) {
     const failed = error as Partial<ChildProcessError>;
@@ -43,8 +44,12 @@ export async function verificationStep(command: string, args: string[], options:
     const stdout = maskSecrets(String(failed.stdout ?? '')).trim().slice(-4000);
     const streams = [stderr ? `stderr:\n${stderr}` : '', stdout ? `stdout:\n${stdout}` : ''].filter(Boolean).join('\n');
     throw new Error(`${header} (${ended})${streams ? `\n${streams}` : ''}`);
+  } finally {
+    if (key) { const left = runningVerificationChildren.get(key)! - 1; if (left) runningVerificationChildren.set(key, left); else runningVerificationChildren.delete(key); }
   }
 }
+/** GY-3528: each item's worker verification children running now in this process; their slot is kept while any runs. */
+export const runningVerificationChildren = new Map<string, number>();
 
 /**
  * `progress` receives each launcher line (waiting, starting) as it happens, for the worker's optional `verify` to show (GY-3332).
@@ -52,7 +57,7 @@ export async function verificationStep(command: string, args: string[], options:
  */
 export const runWorkerVerification = (root: string, work: Work, input: WorkerVerificationInput, baseBranch: string, parent = workerVerificationRoot(),
   progress: (line: string) => void = () => {}): Promise<WorkerVerificationResult> =>
-  withHeavyJob(`worker verification ${work.key}`, () => verifyOnHost(root, work, input, baseBranch, parent, progress), { onWait: progress, strictOnly: true });
+  withHeavyJob(workerVerificationLabel(work.key), () => verifyOnHost(root, work, input, baseBranch, parent, progress), { onWait: progress, strictOnly: true });
 
 async function verifyOnHost(root: string, work: Work, input: WorkerVerificationInput, baseBranch: string, parent: string,
   progress: (line: string) => void): Promise<WorkerVerificationResult> {
@@ -75,13 +80,13 @@ async function verifyOnHost(root: string, work: Work, input: WorkerVerificationI
     delete env.NODE_TEST_CONTEXT;
     const wrapper = trialContainerWords([allocation], trialContainerDependencies(root), undefined, undefined, deadline, await trialLoad(root, 'verification'));
     // GY-3207: the candidate's install and checks run under the Node major it declares.
-    env.PATH = (await pinnedNodePath(tree, env.PATH, (command, args) => verificationStep(command, args, { cwd: tree, env: npmCiEnvironment(env), wrapper, timeoutMs: remaining() }, progress)))!;
+    env.PATH = (await pinnedNodePath(tree, env.PATH, (command, args) => verificationStep(command, args, { cwd: tree, env: npmCiEnvironment(env), wrapper, timeoutMs: remaining() }, progress, work.key)))!;
     const lock = (path: string) => readFile(join(path, 'package-lock.json'), 'utf8').catch(() => null);
     const [own, candidate] = await Promise.all([lock(root), lock(tree)]);
     if (own !== null && own === candidate && existsSync(join(root, 'node_modules'))) await symlink(join(root, 'node_modules'), join(tree, 'node_modules'));
     else if (candidate !== null || packageManager(tree).name === 'pnpm') {
       const [command, ...args] = installArgv(packageManager(tree));
-      await verificationStep(command!, args, { cwd: tree, env: npmCiEnvironment(env), wrapper, timeoutMs: remaining() }, progress);
+      await verificationStep(command!, args, { cwd: tree, env: npmCiEnvironment(env), wrapper, timeoutMs: remaining() }, progress, work.key);
     }
     const result = join(allocation, 'result.json'), script = join(allocation, 'verify.mjs');
     await writeFile(script, `
@@ -93,7 +98,7 @@ const record = await verifyWorkingTree(work, ${JSON.stringify(tree)}, undefined,
 const rerun = ${input.mode === 'complete' ? `await completionRerun(${JSON.stringify(tree)}, work)` : '{ flaked: [], baseFailures: [] }'};
 writeFileSync(${JSON.stringify(result)}, JSON.stringify({ record, rerun }));
 `);
-    await verificationStep('node', ['--import', `${trialHarness}/node_modules/tsx/dist/loader.mjs`, script], { cwd: tree, env, wrapper, timeoutMs: remaining(), group: true }, progress);
+    await verificationStep('node', ['--import', `${trialHarness}/node_modules/tsx/dist/loader.mjs`, script], { cwd: tree, env, wrapper, timeoutMs: remaining(), group: true }, progress, work.key);
     return JSON.parse(await readFile(result, 'utf8'));
   } finally { await rm(allocation, { recursive: true, force: true }); await rm(tempOwnerMarker(allocation), { force: true }); }
 }
