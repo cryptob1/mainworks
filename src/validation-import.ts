@@ -33,12 +33,12 @@ import type { GitRunner } from './merge-writer/local-observation.js';
  * hold is the candidate's own: runs bound to another candidate cut at the same commit never count.
  * `sealImports` closes a released candidate to imports.
  */
-export const importEventKind = 'validation.import';
+const importEventKind = 'validation.import';
 
 /** One imported run as the ledger keeps it: the normalised run, the candidate it bound to, and who imported it when. */
 export interface ImportedRunRecord { run: ExternalRunResult; candidate: { id: string; sha: string }; importedBy: string; importedAt: string }
 /** A case holding the candidate, and the imported run whose verdict holds it. */
-export interface HeldCase extends ImportedBlockingCase { runId: string }
+interface HeldCase extends ImportedBlockingCase { runId: string }
 /** The candidate's hold as its imported runs leave it: held while any case's newest verdict blocks. */
 export interface ImportedHold { held: boolean; cases: HeldCase[]; runs: number }
 
@@ -50,7 +50,7 @@ export interface ImportedHold { held: boolean; cases: HeldCase[]; runs: number }
  * import at the candidate reported it required, so a later report that drops the flag cannot release
  * a required failure without a pass.
  */
-export function importedHold(records: readonly ImportedRunRecord[], acceptances: readonly FlakyAcceptance[] = [], pendingCases: readonly string[] = []): ImportedHold {
+function importedHold(records: readonly ImportedRunRecord[], acceptances: readonly FlakyAcceptance[] = [], pendingCases: readonly string[] = []): ImportedHold {
   // A case any import at this candidate reported required stays required: a later report leaving the flag out releases it only by passing.
   const required = new Set(records.flatMap(record => record.run.cases.filter(entry => entry.required).map(entry => entry.id)));
   const seen = new Set<string>(), cases: HeldCase[] = [];
@@ -121,7 +121,7 @@ async function candidateRecord(ledger: LedgerReader, ref: TagRef): Promise<Candi
  * first (candidate ids are compact instants, so the tag name orders them): tags are dereferenced
  * only until the first match, which is the newest.
  */
-export async function candidatesAtHead(ledger: LedgerReader, sha: string): Promise<CandidateRecord[]> {
+async function candidatesAtHead(ledger: LedgerReader, sha: string): Promise<CandidateRecord[]> {
   const refs = (await ledger.tags(candidateTagPrefix)).filter(entry => entry.ref.startsWith(`refs/tags/${candidateTagPrefix}`) && !!entry.object.sha);
   for (const ref of refs.sort((a, b) => b.ref.localeCompare(a.ref))) {
     const record = await candidateRecord(ledger, ref);
@@ -140,7 +140,7 @@ const importedRuns = async (db: Db, candidate: { id: string; sha: string }): Pro
   return records.filter(record => record.importedBy === records[0].importedBy);
 };
 /** The event that seals a candidate's released hold for promotion: no import binds to it afterwards. */
-export const importSealEventKind = 'validation.import.seal';
+const importSealEventKind = 'validation.import.seal';
 export interface ImportSeal { candidate: { id: string; sha: string }; sealedBy: string; sealedAt: string; runs: number }
 const importSeal = async (db: Db, candidate: { id: string; sha: string }): Promise<ImportSeal | undefined> =>
   (await db.query(`SELECT payload FROM events WHERE kind=$1 AND payload->'candidate'->>'sha'=$2 AND payload->'candidate'->>'id'=$3 ORDER BY seq LIMIT 1`, [importSealEventKind, candidate.sha, candidate.id])).rows[0]?.payload as ImportSeal | undefined;
@@ -214,13 +214,13 @@ export async function readImports(plane: Pick<ImportPlane, 'store'>, sha: string
 }
 
 /** The roles that may seal a candidate's imports for promotion: an admin, or an operator agent (the release-filing identity). */
-export const sealRoles = ['admin', 'operator-agent'] as const;
+const sealRoles = ['admin', 'operator-agent'] as const;
 export type SealAuthority = { mayseal: true; role: string } | { mayseal: false; role: string; needed: string[] };
 /**
  * GY-1882: whether `actor` may seal, answered without sealing anything or writing an event, so a
  * sealing checks the caller's credential before writing a seal.
  */
-export const sealAuthority = (actor: Principal): SealAuthority =>
+const sealAuthority = (actor: Principal): SealAuthority =>
   (sealRoles as readonly string[]).includes(actor.role) ? { mayseal: true, role: actor.role } : { mayseal: false, role: actor.role, needed: [...sealRoles] };
 /**
  * Read candidate `id`'s hold at `sha` for promotion and, when it is released, seal it in the same

@@ -35,7 +35,7 @@ export const graphyardTools = { evidence: 'graphyard_submit_evidence' } as const
  * (today's terminal session, and what an absent setting means) or `pi` (the headless runner).
  * `run.pi` names the environment wrapper and model the Pi runs use.
  */
-export const narrowRoleRuntimes = ['herdr', 'pi'] as const;
+const narrowRoleRuntimes = ['herdr', 'pi'] as const;
 export type NarrowRoleRuntime = typeof narrowRoleRuntimes[number];
 export const narrowRoleRuntimeSchema = z.object({
   producer: z.enum(narrowRoleRuntimes).optional(),

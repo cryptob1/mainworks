@@ -1,11 +1,11 @@
-import { actionRecordLimit, claimLive, settling } from '../model/action-progress.js';
+import { claimLive, settling } from '../model/action-progress.js';
 import type { NextActionKind, NextAction } from '../model/action-kinds.js';
 import { createHash } from 'node:crypto';
 import type { Work } from '../model/work.js';
 import { type ActionTransition, actionQueue, type ActionRow, actionHistoryLimit, record } from '../model/actions.js';
 import { nextAction } from './next-action.js';
 import { sameAction } from '../model/next-action.js';
-export { actionRecordLimit };
+;
 
 export const actionId = (kind: NextActionKind, workId: string, binding: string) =>
   createHash('sha256').update(['action', kind, workId, binding].join('\0')).digest('hex').slice(0, 32);

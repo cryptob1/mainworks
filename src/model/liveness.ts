@@ -31,11 +31,11 @@ import { submittedAtOf } from './merge-queue.js';
 export const livenessRetryLimit = 8;
 /** How long an item may wait on an event nobody else is named as owing before the wait is stale. */
 export const livenessWaitBoundMs = 30 * 60_000;
-export const mergeWriterWaitBoundMs = 2 * 60 * 60_000;
+const mergeWriterWaitBoundMs = 2 * 60 * 60_000;
 
-export type ObligationKind = 'session' | 'action' | 'wait';
-export interface Obligation { kind: ObligationKind; owner: string | null; dueAt: string; detail: string; action?: { id: string; kind: ActionRow['kind']; state: ActionRow['state'] } }
-export const violationClasses = ['stranded-merge', 'failed-proof', 'stale-wait', 'stalled-action', 'unaccounted', 'unowned-action'] as const;
+type ObligationKind = 'session' | 'action' | 'wait';
+interface Obligation { kind: ObligationKind; owner: string | null; dueAt: string; detail: string; action?: { id: string; kind: ActionRow['kind']; state: ActionRow['state'] } }
+const violationClasses = ['stranded-merge', 'failed-proof', 'stale-wait', 'stalled-action', 'unaccounted', 'unowned-action'] as const;
 export type ViolationClass = typeof violationClasses[number];
 export interface LivenessViolation {
   work: string; key: string; class: ViolationClass;

@@ -23,14 +23,13 @@ export interface ObservedQuota extends QuotaObservation { observedAt: string | n
 export const unobservedQuota: ObservedQuota = { loggedIn: null, state: 'unknown', usage: [], resetsAt: null, reason: null, identity: null, observedAt: null, observedBy: null, source: null };
 export type FleetAccountInput = z.infer<typeof accountSchema>;
 /** An operator's latest quota decision on an account (GY-3117): kept through probes and account changes, so no exhaustion observed before it is applied again. */
-export interface QuotaDecision { state: QuotaObservation['state']; at: string }
+interface QuotaDecision { state: QuotaObservation['state']; at: string }
 export interface FleetAccount extends FleetAccountInput { quota: ObservedQuota; quotaDecision?: QuotaDecision; smoke?: AccountSmoke | null; unjudged?: Partial<Record<FleetRoleName, UnjudgedRuns>> }
 
 /** The roles a configured registry is expected to name. Setup proposes every one of them, master included (GY-2939); an operator re-names any role's accounts. */
 // GY-3593: the caretaker keeps the install healthy on a schedule, apart from the master that builds.
 export const fleetRoles = ['worker', 'reviewer', 'producer', 'master', 'caretaker'] as const;
-export const registryRoles = fleetRoles;
-export type FleetRoleName = typeof registryRoles[number];
+export type FleetRoleName = typeof fleetRoles[number];
 /**
  * Which launch kinds each role can run — the role's declared runtime capability. A role not
  * declared here runs any registered runtime. The master resumes a durable native conversation
@@ -113,7 +112,7 @@ export * from './provider-usage.js';
 export const versionName = /^v?\d+(?:\.\d+)*(?:[-+][\w.]+)?$/;
 const versionParts = (name: string) => { const [core, pre] = name.replace(/^v/, '').split(/[-+](.*)/s); return { core: core.split('.').map(Number), pre: pre ?? null }; };
 /** Orders version names: by their numeric parts, then a release above its prereleases. */
-export function compareVersions(a: string, b: string) {
+function compareVersions(a: string, b: string) {
   const x = versionParts(a), y = versionParts(b);
   for (let at = 0; at < Math.max(x.core.length, y.core.length); at++) { const delta = (x.core[at] ?? 0) - (y.core[at] ?? 0); if (delta) return delta; }
   return x.pre === y.pre ? 0 : x.pre === null ? 1 : y.pre === null ? -1 : x.pre.localeCompare(y.pre);

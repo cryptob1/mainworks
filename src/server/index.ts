@@ -33,7 +33,7 @@ export type { ServerOptions } from './auth.js';
 export { assembleServices } from './auth.js';
 
 /** Routes that answer without a bearer token. */
-export const publicRoutes: readonly RouteModule[] = [healthRoutes, signinRoutes, infraActRoutes];
+const publicRoutes: readonly RouteModule[] = [healthRoutes, signinRoutes, infraActRoutes];
 /**
  * Every authenticated `/api/` route, in matching order. A resource adds its module here;
  * modules ahead of the operator-agent guard authorize their callers themselves.

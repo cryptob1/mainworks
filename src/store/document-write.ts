@@ -18,17 +18,6 @@ export async function saveDocument(db: pg.PoolClient, work: Work, now: Date): Pr
   return text;
 }
 
-/**
- * Write bookkeeping onto an item in place (GY-1124): no new revision and no ledger entry, so a
- * reader resolving an older revision from the ledger (`onlyActionsMovedSince`) still counts saves
- * exactly. Only for a caller holding the item's lock — the lock a heartbeat takes alone — so no
- * renewal can commit between its read and this write; the revision guard refuses one that did.
- */
-export async function rewriteDocument(db: pg.PoolClient, work: Work) {
-  assertSavable(work);
-  await guardedWrite(db, work.id, JSON.stringify(work), work.revision);
-}
-
 async function guardedWrite(db: pg.PoolClient, id: string, text: string, revision: number | undefined) {
   const written = await db.query("UPDATE work_items SET document=$2 WHERE id=$1 AND (document->>'revision')::numeric IS NOT DISTINCT FROM $3::numeric", [id, text, revision ?? null]);
   if (!written.rowCount && (await db.query('SELECT 1 FROM work_items WHERE id=$1', [id])).rowCount) throw new StaleWrite(id, revision as number);

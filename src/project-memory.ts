@@ -8,8 +8,8 @@ import { thisWeek, type ThisWeek } from './model/lessons-to-code.js';
 import { gateRecordPath, readGateRecord } from './batch-gate.js';
 import { stateDirectory } from './install/layout.js';
 
-export { emptyProjectMemory, isNoteRoleRelevant, masterBriefSection, masterLessonCharacterLimit, masterLessonKind, masterLessonWordTotal, masterLessons, masterLessonsSection, productBriefExcerpt, productBriefHeadings, productBriefSectionWords, productBriefWordLimit, productBriefWorkingHeadings, projectMemoryDigest, projectMemoryWordBudget, recentChangesWindowMs, recordChangeInMemory, recordMasterLesson, recordNoteInMemory, reconcileMasterMemory, removeMasterLesson, retainedMasterLessons, retainedMemoryChanges, retainedMemoryNotes, retainedProductBriefChanges, setProductBrief, boundMemoryNotes, updateProjectMemoryFromWork, type MemoryChange, type MemoryNote, type ProjectMemory, type ProductBrief, type ProductBriefChange, type SessionRole } from './model/project-memory.js';
-export { projectMemorySchema, productBriefSchema, productBriefChangeSchema } from './model-boundary/project-memory.js';
+export { emptyProjectMemory,      masterLessons,       projectMemoryDigest,     recordNoteInMemory,           type MemoryNote, type ProjectMemory, type ProductBrief,   } from './model/project-memory.js';
+;
 
 export const projectMemoryPath = (root: string) => resolve(stateDirectory(root), 'project-memory.json');
 

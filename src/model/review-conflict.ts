@@ -42,11 +42,11 @@ export const conflictingVerdictStates = ['APPROVED', 'CHANGES_REQUESTED'];
  * it: the latest word stands and blocks or passes the gate untouched, so a change request a person
  * posted after approving is never withheld or overridden by a fresh reviewer verdict.
  */
-export const reviewerIdentity = (login: string) => /\[bot\]$/i.test(login);
+const reviewerIdentity = (login: string) => /\[bot\]$/i.test(login);
 /** Verdicts kept per binding; a head collecting more than this is already conflicted many times over. */
-export const verdictHistoryLimit = 20;
+const verdictHistoryLimit = 20;
 
-export interface ObservedVerdict {
+interface ObservedVerdict {
   id: number; reviewer: string; state: string; submittedAt: string | null; observedAt: string;
   /** The review request the verdict answered: the live one when it was observed, else the latest one for the head. */
   requestId: string | null;
@@ -57,7 +57,7 @@ export interface ObservedVerdict {
   /** One of a conflict a fresh review resolved: kept on the record, never acted on. */
   superseded?: boolean;
 }
-export interface ReviewVerdicts { sha: string; baseSha: string; policyRevision: number; verdicts: ObservedVerdict[] }
+interface ReviewVerdicts { sha: string; baseSha: string; policyRevision: number; verdicts: ObservedVerdict[] }
 export interface ReviewConflict {
   state: 'conflicted' | 'resolved' | 'superseded';
   key: string; pr: number; sha: string; baseSha: string; policyRevision: number;

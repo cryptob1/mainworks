@@ -9,10 +9,10 @@ import type { ProbedHome } from './runtimes.js';
 /** One reading of a shared plan's quota, with the limit flag its provider reported (GY-1260). */
 export type PlanReading = ProviderUsageResult & { reached?: boolean };
 
-export async function readJsonFile(file: string): Promise<any> {
+async function readJsonFile(file: string): Promise<any> {
   try { return JSON.parse(await readFile(file, 'utf8')); } catch { return null; }
 }
-export const windowName = (minutes: number) => minutes >= 1440 && minutes % 1440 === 0 ? `${minutes / 1440}d` : minutes >= 60 && minutes % 60 === 0 ? `${minutes / 60}h` : `${minutes}m`;
+const windowName = (minutes: number) => minutes >= 1440 && minutes % 1440 === 0 ? `${minutes / 1440}d` : minutes >= 60 && minutes % 60 === 0 ? `${minutes / 60}h` : `${minutes}m`;
 
 // Claude Code keeps its subscription login in the environment's .credentials.json. The usage the
 // provider meters against it is read from the same endpoint Claude Code's /usage reads; the token
@@ -46,7 +46,7 @@ export async function claudeAccount(environment: ProbedHome, probe: EnvironmentP
 
 // Codex records the provider's rate-limit windows in every session it writes; the newest record
 // is the account's last reported usage.
-export async function newestCodexRateLimits(home: string) {
+async function newestCodexRateLimits(home: string) {
   const directories = async (directory: string) => { try { return (await readdir(directory)).filter(name => /^\d+$/.test(name)).sort().reverse().map(name => resolve(directory, name)); } catch { return []; } };
   const files: { file: string; modified: number }[] = [];
   for (const year of await directories(resolve(home, 'sessions'))) {
@@ -86,7 +86,7 @@ export async function codexAccount(environment: ProbedHome, probe: EnvironmentPr
 }
 
 /** GY-3516: a key named by a short digest, so a reading says whose key answered without ever recording the key. */
-export const keyFingerprint = (key: string) => createHash('sha256').update(key).digest('hex').slice(0, 12);
+const keyFingerprint = (key: string) => createHash('sha256').update(key).digest('hex').slice(0, 12);
 export async function zaiAccount(environment: ProbedHome, probe: EnvironmentProbe, plan: { id: string | null; now: number }): Promise<{ loggedIn: boolean; usage: AccountUsage[]; note: string | null; reached?: boolean; shared?: boolean; plan?: PlanReading; key?: string }> {
   const opencodeAuth = await readJsonFile(resolve(environment.home, 'opencode/auth.json'));
   const zaiKey = opencodeAuth?.['zai-coding-plan']?.key ?? opencodeAuth?.['z.ai']?.key ?? opencodeAuth?.zai?.key;

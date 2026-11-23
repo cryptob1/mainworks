@@ -30,7 +30,7 @@ export const credentialFailure = (text: string | null | undefined) => !!text && 
  * not cure — an App permission the push needs and lacks, say — is relaunched after a backoff and
  * held at the cap for the master instead of ending and relaunching for ever.
  */
-export const credentialBlockedMarker = 'credential-blocked attempt';
+const credentialBlockedMarker = 'credential-blocked attempt';
 /** Why the attempt is ended: the blocker it reported, and that the next attempt gets a freshly minted credential. */
 export function credentialBlockedReason(item: Pick<Work, 'key'>, epoch: number, blocker: string) {
   return `${credentialBlockedMarker} on epoch ${epoch}: a GitHub credential failure ("${blocker.length > 300 ? `${blocker.slice(0, 299)}…` : blocker}") lives in its session's credential rather than in the item, so the attempt ends with its committed work kept and ${item.key} is launched again`;

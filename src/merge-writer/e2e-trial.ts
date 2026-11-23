@@ -52,7 +52,7 @@ export async function keptScreenshot(outcome: Pick<CaseOutcome, 'attemptResults'
 }
 
 /** Why a case cannot run and the trial refuses the head: the declaration to add. */
-export const noServeRefusal = 'no way to serve the head: declare "e2e": { "serve": { "command", "url", "readySeconds" } } in graphyard.json, or declare a previewable application in delivery.applications';
+const noServeRefusal = 'no way to serve the head: declare "e2e": { "serve": { "command", "url", "readySeconds" } } in graphyard.json, or declare a previewable application in delivery.applications';
 
 /** GY-3343: the file a serve command's whole output is kept in, beside the trial's run. */
 export const serveOutputName = (id: string, sha: string) => `serve-${id}-${sha.slice(0, 12)}.log`;

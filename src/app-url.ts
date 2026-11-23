@@ -7,10 +7,10 @@
 import type { GitRead, ServingReport } from './deploy-watch.js';
 
 /** What master status and the dashboard say while main declares no app.url. */
-export const appUrlMissing = 'No app address set: add "app": { "url": "https://..." } to graphyard.json with the tailnet or public address teammates open';
+const appUrlMissing = 'No app address set: add "app": { "url": "https://..." } to graphyard.json with the tailnet or public address teammates open';
 
 /** Why a declared app.url cannot be shared, or null when it can. */
-export function appUrlRefusal(url: string): string | null {
+function appUrlRefusal(url: string): string | null {
   let parsed: URL;
   try { parsed = new URL(url); } catch { return `app.url "${url}" is not a web address`; }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return `app.url "${url}" must start with http:// or https://`;

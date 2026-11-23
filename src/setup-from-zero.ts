@@ -88,7 +88,7 @@ const readJson = async (file: string) => { try { return JSON.parse(await readFil
 const rewritable = async (file: string) => { try { await stat(file); return writable(file); } catch { return writable(dirname(file)); } };
 
 /** Bubblewrap's own probe, as the worker confinement runs it, with PATHS bound writable. */
-export function bubblewrapProbe(paths: string[]): string | null {
+function bubblewrapProbe(paths: string[]): string | null {
   const binds = paths.flatMap(path => ['--bind', path, path]);
   try {
     execFileSync('bwrap', ['--ro-bind', '/', '/', ...binds, '--dev', '/dev', '--proc', '/proc', '--unshare-all', '--share-net', '--die-with-parent', '--', 'sh', '-c', paths.map(path => `test -w '${path.replace(/'/g, `'\\''`)}'`).join(' && ')], { stdio: 'ignore', timeout: 20_000 });
@@ -97,7 +97,7 @@ export function bubblewrapProbe(paths: string[]): string | null {
 }
 
 /** GY-3339: a trial container, as merge trials create it, starting the nested sandbox its tests start. */
-export function trialSandboxProbe(): string | null {
+function trialSandboxProbe(): string | null {
   const [command, ...args] = trialContainerLaunch({ image: trialImage(), mounts: [], network: 'none' });
   try {
     execFileSync(command!, [...args, 'bwrap', '--ro-bind', '/', '/', '--dev', '/dev', '--unshare-user', '--unshare-pid', 'true'], { cwd: '/', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000 });
@@ -280,7 +280,7 @@ async function loopUnitReleaseChecks(root: string, env: NodeJS.ProcessEnv): Prom
 }
 
 /** GY-3337: how recent a lock refusal doctor still blames; a crash-looping war refreshes it every RestartSec. */
-export const loopCrashLoopWindowMs = 5 * 60_000;
+const loopCrashLoopWindowMs = 5 * 60_000;
 
 /**
  * GY-3337: the loop-lock line. A `master run` that keeps exiting on another live loop's lock is a

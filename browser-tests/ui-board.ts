@@ -121,7 +121,7 @@ export function boardApi(path: string, role = 'admin') {
 }
 
 /** What `GET /api/tests` answers over this board: every case with its latest result and history. */
-export function testsSummary() {
+function testsSummary() {
   const sha = (n: number) => `${n}`.repeat(40).slice(0, 40);
   const run = (seq: number, result: 'pass' | 'fail' | 'skipped', commit: number, scenarioId = 'checkout-pays') => ({ seq, scenarioId, proof: `e2e:${scenarioId}`, result, scenarioRevision: 1, environment: 'staging',
     executed: 4, skipped: result === 'skipped' ? 1 : 0, sha: sha(commit), baseSha: sha(9), policyRevision: 1, workId: 'w', workKey: 'GY-16', pr: 40 + commit,

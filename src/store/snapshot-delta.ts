@@ -31,12 +31,12 @@ import { DELIVERY_EVENT_PREDICATE } from './tables/production.js';
  * no `ops`); both readers still resolve them.
  */
 export const snapshotEvery = 50;
-export const deltaSizeFraction = 0.25;
+const deltaSizeFraction = 0.25;
 /** The save kinds that store only what changed, never a whole document (GY-979). */
 export const routineSaveKinds = ['github.observed', 'heartbeat', 'reconciled', 'action.claimed', 'action.failed', 'session'] as const;
 const routineSave: ReadonlySet<string> = new Set(routineSaveKinds);
 
-export type DeltaPath = (string | number)[];
+type DeltaPath = (string | number)[];
 /** `[path, value]` sets a value (appending when the index is an array's length); `[path]` removes an object key. */
 export type DeltaOp = [DeltaPath, unknown] | [DeltaPath];
 export interface WorkDelta {
@@ -90,7 +90,7 @@ export function workDiff(base: Work, next: Work): DeltaOp[] {
   diff(base, next, [], ops);
   return ops;
 }
-export function workDelta(baseSeq: number, base: Work, work: Work): WorkDelta {
+function workDelta(baseSeq: number, base: Work, work: Work): WorkDelta {
   return { base: baseSeq, revision: work.revision, updatedAt: work.updatedAt, lease: work.lease ?? null, submission: work.submission ?? null, ops: workDiff(base, work) };
 }
 
@@ -177,7 +177,7 @@ export const resolvedPayloadSql = (alias = 'events') =>
   `CASE WHEN ${alias}.payload ? 'delta' THEN (${alias}.payload - 'delta') || jsonb_build_object('work', ${eventWorkSql(alias)}) ELSE ${alias}.payload END`;
 
 /** The one ledger read a save makes: the item's last full snapshot and how many rows followed it. */
-export const snapshotBaseSql = `SELECT b.seq, b.payload->'work' AS work, (SELECT count(*)::int FROM events n WHERE n.work_id=$1 AND n.seq>b.seq) AS since
+const snapshotBaseSql = `SELECT b.seq, b.payload->'work' AS work, (SELECT count(*)::int FROM events n WHERE n.work_id=$1 AND n.seq>b.seq) AS since
     FROM events b WHERE b.work_id=$1 AND b.payload ? 'work' ORDER BY b.seq DESC LIMIT 1`;
 /**
  * Append one save to the ledger: a delta on the item's last full snapshot when it is small

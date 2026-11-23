@@ -10,7 +10,7 @@ import { agentStartCeilingMs, launchStartMs } from './launch.js';
  * nothing: on 6 October 2026 the claude runtime on one host dropped every session, each launch hung
  * on it, and the dispatcher's tick waited on them all, so no reviewer or producer launched anywhere.
  */
-export const launchBoundSlackMs = 120_000;
+const launchBoundSlackMs = 120_000;
 export const launchBoundMs = (config: { run: Pick<MasterRun, 'launchStartSeconds'> }) => Math.max(launchStartMs(config), agentStartCeilingMs) + launchBoundSlackMs;
 
 /**

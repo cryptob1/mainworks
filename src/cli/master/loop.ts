@@ -6,7 +6,7 @@ import { daemonEffects, retriedSnapshot } from '../../daemon/effects.js';
 import { readDaemonState } from '../../daemon/state.js';
 import { runDaemon } from '../../daemon/run.js';
 import { coordinationViewHeader } from '../../server/work-view.js';
-import { encodeLoopCheckoutTrust, encodeLoopCpu, encodeLoopHosts, loopHostsHeader, encodeLoopSessions, loopSessionsHeader, encodeLoopPanes, encodeLoopStepFailure, loopAlertsHeader, loopCheckoutTrustHeader, loopCpuHeader, loopFetchRefusalHeader, loopStallAlarmHeader, loopStepFailureHeader, loopSupervisionHeader, loopWorkerGrowthHeader, loopPanesHeader, loopPresenceHeader } from '../../model/loop-presence.js';
+import { encodeLoopCheckoutTrust, encodeLoopCpu, encodeLoopHosts, loopHostsHeader, encodeLoopSessions, loopSessionsHeader, encodeLoopPanes, loopAlertsHeader, loopCheckoutTrustHeader, loopCpuHeader, loopFetchRefusalHeader, loopStallAlarmHeader, loopStepFailureHeader, loopSupervisionHeader, loopWorkerGrowthHeader, loopPanesHeader, loopPresenceHeader } from '../../model/loop-presence.js';
 import { cpuWaiting } from '../../daemon/cpu-pressure.js';
 import { encodeLoopWhere, loopWhereHeader } from '../../model/where-things-run.js';
 import { loopWhereReport } from '../../master/where.js';
@@ -29,7 +29,7 @@ import { heavyJobBudget, heavyJobsDirectory, hostsWithSlots, joinHostHeavyBudget
 import { lastHostFallbacks } from '../../merge-writer/trial-run.js';
 
 /** The Herdr server the loop names on each read (GY-1511): the instance its herdr calls target, its host, whether it last answered, and the master's pane (GY-3211). */
-export const loopHerdrReport = (host: string | null, master: string | null = null) => encodeLoopPanes({ configHome: herdrTarget()?.configHome ?? null, session: herdrTarget()?.session ?? null, host, running: herdrServerSeen(), master });
+const loopHerdrReport = (host: string | null, master: string | null = null) => encodeLoopPanes({ configHome: herdrTarget()?.configHome ?? null, session: herdrTarget()?.session ?? null, host, running: herdrServerSeen(), master });
 
 export async function loopCommand(session: MasterSession): Promise<unknown> {
   const { id, args, print, root, master, masterToken, masterApi, masterMutation, coordinator, assertProtocol } = session;
@@ -67,7 +67,7 @@ export async function loopCommand(session: MasterSession): Promise<unknown> {
     // GY-3277: and names where this install's parts run — its units, containers, port, URL and directories — for the Setup page's panel.
     // GY-3348: and names the host's CPU ('some avg60' and steal percent), for the Workers page's two figures; GY-3416: and its launches-waiting word.
     const where = await loopWhereReport(root, master);
-    const stepFailureLine = (failure: Parameters<typeof encodeLoopStepFailure>[0] | undefined) => failure ? encodeLoopStepFailure(failure) : 'off';
+    const stepFailureLine = (failure: Parameters<typeof encodeLoopCheckoutTrust>[0] | undefined) => failure ? encodeLoopCheckoutTrust(failure) : 'off';
     // GY-3407, GY-3528: the hosts the loop read, with their heavy-job slots; GY-3704: and each one's last check fallback, for the Workers page.
     const hostsHeader = () => {
       if (!state.hosts.length) return 'off';

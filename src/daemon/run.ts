@@ -59,7 +59,7 @@ export async function noteConfigReload(state: DaemonState, reload: ConfigReload,
 }
 
 /** Take back the headless runs a restart left running (GY-453). */
-export async function adoptHeadlessRuns(effects: DaemonEffects, log: (line: string) => void) {
+async function adoptHeadlessRuns(effects: DaemonEffects, log: (line: string) => void) {
   if (!effects.adoptRuns) return [];
   try {
     const adopted = await effects.adoptRuns();
@@ -71,10 +71,10 @@ export async function adoptHeadlessRuns(effects: DaemonEffects, log: (line: stri
 /** The request a confined master files with `master restart`: the loop restarts through its unit once it reads it. */
 
 /** The restart cause a confined master's `master restart` request gives; it never waits for the handover window. */
-export const restartRequestedCause = 'a master restart was requested';
+const restartRequestedCause = 'a master restart was requested';
 
 /** GY-3165: minutes the loop runs before it adopts a newly served release when master.json sets no `run.handoverMinutes`. */
-export const defaultHandoverMinutes = 15;
+const defaultHandoverMinutes = 15;
 
 /**
  * Why the loop should restart now, or null: the deploy unit serves a commit other than the one this
@@ -90,7 +90,7 @@ export function restartCause(config: Pick<MasterConfig, 'credentialFile' | 'cliP
 }
 
 /** `systemctl --user --no-block restart` of the unit this loop runs under, ended by the stop it causes. */
-export async function restartThroughUnit() {
+async function restartThroughUnit() {
   const unit = detectLoopSupervisorUnit();
   if (!unit) throw new Error('this loop runs under no graphyard-master supervisor unit, so it cannot restart itself through one');
   try { await awaitSupervisorRestart(() => defaultChildRun('systemctl', ['--user', '--no-block', 'restart', unit])); }
@@ -138,7 +138,7 @@ export function readDeployUnitProcess(read: (file: string) => string = file => r
  * the deploy-watch twin of restartCause. Once per served commit: `restarted` names the commits
  * already restarted for, so a unit that still runs old code after its restart is not restarted again.
  */
-export function deployRestartCause(root: string, running: DeployUnitProcess | null, restarted: (serving: string) => boolean): { serving: string; reason: string } | null {
+function deployRestartCause(root: string, running: DeployUnitProcess | null, restarted: (serving: string) => boolean): { serving: string; reason: string } | null {
   const serving = readDeployRecord(deployRecordPath(root))?.tip ?? null;
   if (!serving || !running?.commit || running.busy || running.commit === serving || restarted(serving)) return null;
   return { serving, reason: `${running.unit} runs ${running.commit.slice(0, 12)}, older code than ${serving.slice(0, 12)} it serves` };

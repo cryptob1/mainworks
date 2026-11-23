@@ -11,7 +11,7 @@ import { commandFailure, type CommandResult } from './transport.js';
 /** The private key's name under the install directory; `merge-writer-settings.ts` reads it from the same place. */
 export const DEPLOY_KEY_FILE = 'deploy-key';
 /** The registered key's title names the host whose merge writer pushes with it. */
-export const deployKeyTitle = (host: string) => `graphyard-merge-writer-${host}`;
+const deployKeyTitle = (host: string) => `graphyard-merge-writer-${host}`;
 
 export interface DeployKeyOptions {
   /** Runs `ssh-keygen` with ARGS; the default spawns the host's. Tests substitute a fake that writes the pair. */
@@ -50,7 +50,7 @@ function sshProbeRun(args: string[]): Promise<CommandResult> {
  * GitHub shows a registered key, or null for a line that holds no key. Two keys with one
  * fingerprint are one key whatever their comments, so registration compares these, not lines.
  */
-export function publicKeyFingerprint(publicKey: string): string | null {
+function publicKeyFingerprint(publicKey: string): string | null {
   const body = publicKey.trim().split(/\s+/)[1];
   if (!body || !/^[A-Za-z0-9+/]+=*$/.test(body)) return null;
   const blob = Buffer.from(body, 'base64');
@@ -99,7 +99,7 @@ export async function ensureDeployKey(installDir: string, repository: string, gh
  * a refusal stops with the one command an admin must run. Every other list failure still fails as
  * the gh error it is.
  */
-export async function registerDeployKey(publicKeyFile: string, repository: string, gh: GitHubCli, title: string, options: Pick<DeployKeyOptions, 'ssh'> = {}) {
+async function registerDeployKey(publicKeyFile: string, repository: string, gh: GitHubCli, title: string, options: Pick<DeployKeyOptions, 'ssh'> = {}) {
   const fingerprint = publicKeyFingerprint(await readFile(publicKeyFile, 'utf8'));
   if (!fingerprint) throw new Error(`${publicKeyFile} holds no OpenSSH public key`);
   const listed = await gh(['repo', 'deploy-key', 'list', '-R', repository, '--json', 'id,key,title'], { allowFailure: true });

@@ -10,7 +10,7 @@ import { stateDirectory } from '../install/layout.js';
 
 const inputReferenceSchema = z.object({ record: z.string(), runtime: z.string(), event: z.string() }).strict();
 type InputReference = z.infer<typeof inputReferenceSchema>;
-export const conversationSchema = z.object({
+const conversationSchema = z.object({
   launch: z.string(), runtime: z.string(), account: z.string().nullable(), nativeId: z.string(),
   transcript: z.string(), record: z.string(), origins: z.string(),
   predecessor: z.string().nullable(), supersededBy: z.string().nullable().default(null),
@@ -179,7 +179,7 @@ export async function continuationContext(previous: Conversation) {
 export async function conversationHandover(previous: Conversation) { return (await continuationContext(previous)).handover; }
 
 /** Claude names its id before launch; Codex writes session_meta with its native id and cwd. */
-export async function discoverConversation(kind: string, environment: Record<string, string>, root: string, since: number, nativeId: string | null, initialInput?: string): Promise<{ nativeId: string; transcript: string } | null> {
+async function discoverConversation(kind: string, environment: Record<string, string>, root: string, since: number, nativeId: string | null, initialInput?: string): Promise<{ nativeId: string; transcript: string } | null> {
   assertConversationRuntime(kind);
   if (kind === 'claude') {
     const home = environment.CLAUDE_CONFIG_DIR ?? process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude');

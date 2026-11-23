@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { genericChoiceIssues, humanDecisionKinds } from '../model/human-request.js';
 import { shortAskIssues } from '../model/human-ask.js';
-import { hostDoableAsk, hostDoableRefusal, HostDoableAsk } from '../model/park-refusal.js';
 /**
  * One ready-made answer the requester offers (GY-738): a button on the card. `text` asks for the
  * operator's own words beside it (a different cap); `secret` asks for a value that is sealed to
@@ -35,4 +34,4 @@ export const humanRequestSchema = z.object({
     for (const message of [...shortAskIssues(data), ...genericChoiceIssues(data.choices)]) context.addIssue({ code: 'custom', message });
   });
 // The park-refusal classifier (GY-1395, GY-1416, GY-1692) lives in park-refusal.ts; `parkRefusal` here refuses a criterion-rewrite question first (GY-1816).
-export { hostDoableAsk, hostDoableRefusal, type HostDoableAsk };
+;

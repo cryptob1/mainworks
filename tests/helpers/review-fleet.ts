@@ -17,8 +17,8 @@ import { temporaryDirectory } from './temp-dirs.js';
 // review requests for it, shared by tests/automatic-review-concurrency.test.ts and the soak.
 
 const launcher = fileURLToPath(new URL('../../bin/graphyard.mjs', import.meta.url));
-export const sha40 = (label: string) => label.replace(/[^a-f0-9]/g, '0').padEnd(40, 'f').slice(0, 40);
-export const B = sha40('b1');
+const sha40 = (label: string) => label.replace(/[^a-f0-9]/g, '0').padEnd(40, 'f').slice(0, 40);
+const B = sha40('b1');
 const at = '2026-10-01T10:00:00.000Z';
 export const requestId = (n: number) => createHash('sha256').update(`gy-1072-review-${n}`).digest('hex').slice(0, 32);
 

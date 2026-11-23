@@ -18,7 +18,7 @@ import type { Work } from './work.js';
  * itself. Everything else is `normal`. A delta nobody can see (no files at all) is sensitive: until
  * the class can see what a change touches, it is treated as the worst case.
  */
-export const riskClasses = ['sensitive', 'normal'] as const;
+const riskClasses = ['sensitive', 'normal'] as const;
 export type RiskClass = typeof riskClasses[number];
 
 export const compiled = new WeakMap<RepositoryPolicy, CompiledRule[]>();
@@ -46,7 +46,7 @@ export const sensitiveReason = (path: string, rule: string) => `${path}: ${rule}
 export const unknownChangeReason = 'unknown change';
 
 /** GY-3635: paths whose edits can weaken the repository's own checks. */
-export const isTestSelectorPath = (path: string) => path === 'scripts/ci-tests.mjs';
+const isTestSelectorPath = (path: string) => path === 'scripts/ci-tests.mjs';
 export const isTestHelperPath = (path: string) => path.startsWith('tests/helpers/') && !path.includes('*');
 export const isE2eCasePath = (path: string) => path.startsWith('e2e/cases/') && path.endsWith('.json');
 export const isTestFilePath = (path: string) =>

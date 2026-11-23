@@ -18,7 +18,7 @@ export const loopStateContext = new AsyncLocalStorage<(scope: string) => LoopSta
 type Config = Pick<MasterConfig, 'url' | 'credentialFile' | 'repository' | 'hostId'>;
 const scopeOf = (config: Config) => createHash('sha256').update(`${config.repository.toLowerCase()}\n${config.hostId ?? hostname()}\n${config.credentialFile}`).digest('hex');
 /** A conflicted write is retried this many times in all, backing off 250 ms more each time (about 10 s overall). */
-export const loopStateWriteAttempts = 9;
+const loopStateWriteAttempts = 9;
 export async function loopStateClient(rootOrConfig: string | Config): Promise<LoopStateClient> {
   const injected = loopStateContext.getStore();
   if (injected) return injected(typeof rootOrConfig === 'string' ? resolve(rootOrConfig) : scopeOf(rootOrConfig));

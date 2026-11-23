@@ -5,7 +5,7 @@ import type { ChildRun } from './child-runner.js';
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** A proof's cases are the ones whose title is the proof id, alone or followed by a space. */
-export const proofTitle = (proof: string) => new RegExp(`^${escape(proof)}(\\s|$)`);
+const proofTitle = (proof: string) => new RegExp(`^${escape(proof)}(\\s|$)`);
 
 /** The proof's cases in a TAP stream, attributed by title prefix. */
 export function countProofCases(tap: string, proof: string) {
@@ -20,7 +20,7 @@ export function countProofCases(tap: string, proof: string) {
 }
 
 /** The one pytest function that proves `proof`: `unit:report` is `test_unit_report`, and `test_unit_report_ready` is another proof's. */
-export const pytestCase = (proof: string) => `test_${proof.replace(/\W/g, '_')}`;
+const pytestCase = (proof: string) => `test_${proof.replace(/\W/g, '_')}`;
 
 const entities: Record<string, string> = { lt: '<', gt: '>', quot: '"', apos: "'", amp: '&' };
 const unescapeXml = (text: string) => text.replace(/&(lt|gt|quot|apos|amp|#\d+|#x[\da-f]+);/gi, (_, name: string) =>

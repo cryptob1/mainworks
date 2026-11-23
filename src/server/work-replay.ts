@@ -1,10 +1,8 @@
 import type pg from 'pg';
 import type { Work } from '../model.js';
 import { servedFor } from '../model/release.js';
-
-export const replayColumns = ['Up next', 'Building', 'Review', 'Trial', 'Merged', 'Shipped'] as const;
-export interface ReplayPoint { at: number; column: number; runner: string | null }
-export interface ReplayItem { id: string; key: string; points: ReplayPoint[] }
+interface ReplayPoint { at: number; column: number; runner: string | null }
+interface ReplayItem { id: string; key: string; points: ReplayPoint[] }
 export interface WorkReplay { start: number; end: number; items: ReplayItem[] }
 function column(work: Work) {
   if (work.closure) return -1;

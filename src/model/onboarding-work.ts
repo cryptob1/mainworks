@@ -11,7 +11,7 @@ import { COMMAND_NAME, PRODUCT_NAME } from './product.js';
 /** The branch `graphyard up` publishes the onboarding files on, and the workspace its work item registers. */
 export const onboardingBranch = 'graphyard/onboarding';
 /** The work item's title: what the Setup page and `up` find it by, with its branch. */
-export const onboardingWorkTitle = `Add ${PRODUCT_NAME} onboarding`;
+const onboardingWorkTitle = `Add ${PRODUCT_NAME} onboarding`;
 /** The title installs onboarded before the rename filed it under. */
 const formerOnboardingWorkTitle = 'Add Graphyard onboarding';
 /**
@@ -41,7 +41,7 @@ export const isPlaceholderServe = (serve: { command?: string } | null | undefine
 export const placeholderServeRefusal = 'e2e.serve is onboarding\'s placeholder serve, which answers with graphyard.json and runs none of the application: declare the command that serves the application in graphyard.json "e2e": { "serve": { "command", "url", "readySeconds" } }, or a previewable application in delivery.applications';
 
 /** The application's short map: a URL on the served app or a command, plus known traps. */
-export interface AppFeature { name: string; url?: string; command?: string; traps: string[] }
+interface AppFeature { name: string; url?: string; command?: string; traps: string[] }
 export interface AppOnboarding { onboarded: boolean; fault: string | null; features: AppFeature[] }
 export function appOnboarding(config: any): AppOnboarding {
   const serve = config?.e2e?.serve;
@@ -90,7 +90,7 @@ export function waitedFor(ms: number) {
   return hours ? `${hours} h${minutes % 60 ? ` ${minutes % 60} min` : ''}` : `${minutes} min`;
 }
 
-export type OnboardingWaitingFor = 'checks' | 'review' | 'merge';
+type OnboardingWaitingFor = 'checks' | 'review' | 'merge';
 export interface OnboardingWait {
   key: string;
   /** What the item still waits for; empty once the change merged or was closed. */

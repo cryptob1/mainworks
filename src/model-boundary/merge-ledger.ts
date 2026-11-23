@@ -19,7 +19,7 @@ export const previewVerdictSchema = z.object({
   failed: z.array(z.string().min(1).max(200)).max(500),
 }).strict();
 /** `merge.trial`: the trial of `head` on `mergeSha`, with each `unit:`/`integration:` proof's executed and failed cases, its build verdict and test-file count (GY-2091), and its preview when it had one. */
-export const mergeTrialSchema = z.object({ head: sha, mergeSha: sha, proofs: proofCounts, build: z.enum(['pass', 'fail']).optional(),
+const mergeTrialSchema = z.object({ head: sha, mergeSha: sha, proofs: proofCounts, build: z.enum(['pass', 'fail']).optional(),
   tests: z.object({ files: z.number().int().min(0) }).passthrough().optional() }).passthrough();
 const passingTrialSchema = mergeTrialSchema.extend({
   outcome: z.literal('verdict'), baseTip: sha, build: z.literal('pass'),
@@ -33,7 +33,7 @@ export const trialCountsSchema = z.object({ passed: z.number().int().min(0), fai
  * `merge.trial-step`: the trial of `head` reported `step` at `at` (GY-2963). GY-3599: the same step is
  * sent again as each test shard ends, with what the trial printed so far and its test counts so far.
  */
-export const mergeTrialStepSchema = z.object({ head: sha, step: z.string().min(1).max(100), at: instant, output: z.string().max(4000).optional(), tests: trialCountsSchema.optional() }).strict();
+const mergeTrialStepSchema = z.object({ head: sha, step: z.string().min(1).max(100), at: instant, output: z.string().max(4000).optional(), tests: trialCountsSchema.optional() }).strict();
 /**
  * GY-1834: a trial's flake — the failing test files that passed on their immediate rerun of the same
  * merge commit, and the failing cases the rerun did not repeat, none of them the item's proofs.

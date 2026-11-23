@@ -445,7 +445,7 @@ export async function producerCommand(root: string, args: string[], verify: (tok
  * master agent — cannot change under it: such a change is refused by name and the loop keeps the
  * settings it loaded until it is restarted.
  */
-export const masterBoundSettings = ['version', 'url', 'credentialFile', 'cliPath', 'repository', 'baseBranch', 'githubAppId', 'hostId', 'masterAgentName'] as const;
+const masterBoundSettings = ['version', 'url', 'credentialFile', 'cliPath', 'repository', 'baseBranch', 'githubAppId', 'hostId', 'masterAgentName'] as const;
 export function masterConfigChanges(current: MasterConfig, next: MasterConfig) {
   const flatten = (config: MasterConfig) => {
     const { run, ...rest } = config;

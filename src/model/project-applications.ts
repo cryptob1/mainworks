@@ -9,7 +9,7 @@ export const previewable = (applications: readonly Application[]) => application
 export const boundCaseId = /^[a-z0-9][a-z0-9._-]{0,99}$/;
 
 export const previewModes = ['local', 'off'] as const;
-export type PreviewMode = (typeof previewModes)[number];
+type PreviewMode = (typeof previewModes)[number];
 /** The most changes one candidate holds. */
 export const maxCandidateChanges = 5;
 

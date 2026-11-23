@@ -40,9 +40,9 @@ export interface CaseSummary {
   /** The newest runs, newest first, `historyWindow` at most; older runs page through `runHistory`. */
   history: ScenarioRun[];
 }
-export const historyWindow = flakyWindow;
+const historyWindow = flakyWindow;
 /** An item a proof belongs to: its id (to open it), key, title, stage and the criteria naming the proof. */
-export interface ProofLink { id: string; key: string; title: string; stage: string; criteria: { id: string; text: string }[] }
+interface ProofLink { id: string; key: string; title: string; stage: string; criteria: { id: string; text: string }[] }
 /** A manual or closed-question proof (GY-3278): its item and criterion, and the latest trusted record of it, or null while it waits. */
 export interface JudgedProof { proof: string; link: ProofLink; record: { result: 'pass' | 'fail'; producer: string; at: string } | null }
 

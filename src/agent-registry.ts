@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { demand, type Principal } from './model.js';
 import type { Store } from './store.js';
 import { unownedFamilySql } from './store/tables/work.js';
-import { registryRoles, RegistryError, chooseSession, emptyRegistry, fleetView, foldObservations, liveSessions, endRegistrySession, runOutcomes, refusalHistoryLimit, settleSessions, type AgentRegistry as RegistryDocument, type FleetSession, type RegistryMutation } from './model/registry.js';
+import { fleetRoles, RegistryError, chooseSession, emptyRegistry, fleetView, foldObservations, liveSessions, endRegistrySession, runOutcomes, refusalHistoryLimit, settleSessions, type AgentRegistry as RegistryDocument, type FleetSession, type RegistryMutation } from './model/registry.js';
 import { applyRegistryMutation, registryMutationSchemas, observationRequestSchema, selectionRequestSchema } from './model-boundary/registry.js';
 import { implementerProvider, type ReviewDiversity } from './model/review-diversity.js';
 import { recordSessionModel, requestLimitNoticeCheck } from './model/account-quota.js';
@@ -23,7 +23,7 @@ import { recordSessionModel, requestLimitNoticeCheck } from './model/account-quo
  * poll. Every write happens inside the store's coordination transaction, so a selection is
  * serialized against every other selection and mutation, across replicas and executor hosts.
  */
-export const registryEventPrefix = 'agent-registry.';
+const registryEventPrefix = 'agent-registry.';
 const configurators = ['admin', 'coordinator'] as const;
 const readers = ['admin', 'coordinator', 'reader', 'slice-lead', 'caretaker'] as const;
 
@@ -39,7 +39,7 @@ const perAccountWorkerReason = 'master workers ';
  * and a value conversion cannot change (one account, or a count of one or none) reads back
  * exactly as stored; the first registry event any code appends persists the marker.
  */
-export function upgradeWorkerConcurrency(registry: RegistryDocument, lastWorkerSetReason: string | null = null): RegistryDocument {
+function upgradeWorkerConcurrency(registry: RegistryDocument, lastWorkerSetReason: string | null = null): RegistryDocument {
   if (registry.workerConcurrencyPerAccount === true) return registry;
   const worker = registry.roles.find(role => role.name === 'worker');
   const perAccount = worker && worker.accounts.length > 0 && worker.concurrency > 1 && !lastWorkerSetReason?.startsWith(perAccountWorkerReason)
@@ -68,9 +68,9 @@ const appendRegistry = async (db: Pick<pg.PoolClient, 'query'>, actor: Principal
   // GY-3293: every registry this code appends means the worker role's concurrency per account
   // (upgradeWorkerConcurrency converts a document an older release wrote on read).
   registry.workerConcurrencyPerAccount = true;
-  const removedRoles = registry.roles.filter(role => !registryRoles.includes(role.name)).map(role => role.name);
+  const removedRoles = registry.roles.filter(role => !fleetRoles.includes(role.name)).map(role => role.name);
   if (removedRoles.length) {
-    registry.roles = registry.roles.filter(role => registryRoles.includes(role.name));
+    registry.roles = registry.roles.filter(role => fleetRoles.includes(role.name));
     await db.query('INSERT INTO events(work_id,actor,kind,payload) VALUES(NULL,$1,$2,$3)', [actor.id, `${registryEventPrefix}roles-retired`, JSON.stringify({ change: { removedRoles }, registry })]);
   }
   await db.query('INSERT INTO events(work_id,actor,kind,payload) VALUES(NULL,$1,$2,$3)', [actor.id, `${registryEventPrefix}${kind}`, JSON.stringify({ change, registry })]);

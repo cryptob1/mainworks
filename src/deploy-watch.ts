@@ -72,9 +72,9 @@ export async function writeControlPlaneRecord(file: string, record: Omit<Partial
 /** The longest wait before a failed verified commit is tried again (GY-3199). */
 export const controlPlaneRetryMs = 60 * 60_000;
 /** GY-3703: waits before each retry of a failed verified commit; the last repeats. */
-export const deployRetryBackoffMs = [5 * 60_000, 15 * 60_000, 30 * 60_000, controlPlaneRetryMs];
+const deployRetryBackoffMs = [5 * 60_000, 15 * 60_000, 30 * 60_000, controlPlaneRetryMs];
 /** How old a check, or a first sighting of an unrun verified commit, may be before the daily diagnostics reports it (GY-3199). */
-export const controlPlaneStaleAfterMs = 24 * 60 * 60_000;
+const controlPlaneStaleAfterMs = 24 * 60 * 60_000;
 
 /** The control plane's staleness, as the daily diagnostics reports it: a check over a day old, or a verified commit first seen over a day ago that the install still does not run. */
 export function controlPlaneStaleLines(record: ControlPlaneRecord | null, now: number): string[] {
@@ -163,12 +163,14 @@ export interface StoppedPlanePorts {
 }
 
 /** A compose `up` failure that means the old Docker network is gone, so the containers must be recreated rather than started. */
-export function networkMissing(text: string) {
+function networkMissing(text: string) {
   return /\bnetwork\b[^\n]*?\b(?:not found|needs to be (?:recreated|removed)|was found but has incorrect label)\b/i.test(text);
 }
 
 /** GY-3347: how many times one pass tries to bring a stopped plane back before recording one failure reason, the pause before the first retry, and how long health may take to answer after `up`. */
-export const stoppedPlaneAttempts = 3, stoppedPlaneRetryMs = 5_000, stoppedPlaneHealthMs = 30_000;
+export const stoppedPlaneAttempts = 3;
+const stoppedPlaneRetryMs = 5_000;
+const stoppedPlaneHealthMs = 30_000;
 
 /**
  * GY-3347: a stopped control plane comes back without a new commit. A pass that deploys nothing
@@ -178,7 +180,7 @@ export const stoppedPlaneAttempts = 3, stoppedPlaneRetryMs = 5_000, stoppedPlane
  * reason beside the serving tip — where master status and the alert path already read deploy
  * failures — and a plane that answers again clears it. Returns whether the plane was down.
  */
-export async function recoverStoppedPlane(record: DeployRecord, ports: StoppedPlanePorts, write: (entry: Omit<DeployRecord, 'at' | 'repository'>) => Promise<void>, log: (line: string) => void): Promise<boolean> {
+async function recoverStoppedPlane(record: DeployRecord, ports: StoppedPlanePorts, write: (entry: Omit<DeployRecord, 'at' | 'repository'>) => Promise<void>, log: (line: string) => void): Promise<boolean> {
   try { await ports.health(); return false; } catch { /* the plane is down: bring it back */ }
   const tip = record.tip!;
   const waitHealthy = async () => {
@@ -216,7 +218,7 @@ export async function recoverStoppedPlane(record: DeployRecord, ports: StoppedPl
 // Publication follows strict server health; production ports atomically select a retained artifact.
 const steps = ['build', 'restart', 'health', 'checkout', 'pin'] as const;
 /** Rollback attempts before the watch stops retrying one and waits for the base to move. */
-export const rollbackAttempts = 5;
+const rollbackAttempts = 5;
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
@@ -503,7 +505,7 @@ export async function servingReport(root: string | null | undefined, repository:
 }
 
 /** The health URL graphyard.json declares as `app.healthUrl` (GY-3452): an install that deploys elsewhere answers its live commit there. */
-export function declaredHealthUrl(root: string | null | undefined): string | null {
+function declaredHealthUrl(root: string | null | undefined): string | null {
   if (!root) return null;
   try {
     const url = JSON.parse(readFileSync(join(root, 'graphyard.json'), 'utf8'))?.app?.healthUrl;

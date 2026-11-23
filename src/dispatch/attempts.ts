@@ -8,7 +8,7 @@ export const requestSessions = (records: DispatchedSession[], requestId: string)
  * GY-1227. The resolution `describeAttempts` gives a failed or expired session that recorded none and
  * was never acknowledged: it never took up its request, so it acted on nothing.
  */
-export const unacknowledgedReason = 'never acknowledged';
+const unacknowledgedReason = 'never acknowledged';
 const retriedSession = (record: Pick<DispatchedSession, 'state'>) => record.state === 'failed' || record.state === 'expired';
 const sessionResolution = (record: DispatchedSession) => record.resolution
   ?? (retriedSession(record) && !record.acknowledgedAt ? `${unacknowledgedReason}: the session ended without a recorded resolution before it took up its request` : undefined);

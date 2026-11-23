@@ -14,10 +14,10 @@ import type { Work } from './model/work.js';
 // evidence and satisfies no proof. Pure and browser-safe: Work details reads it.
 // ---------------------------------------------------------------------------
 
-export const itemPreviewStates = ['starting', 'running', 'failed', 'cleaned'] as const;
+const itemPreviewStates = ['starting', 'running', 'failed', 'cleaned'] as const;
 export type ItemPreviewState = (typeof itemPreviewStates)[number];
 /** Why a preview ended: a newer head replaced it, the item was closed or delivered, a case failed, the loop that served it restarted, the server did not confirm its record, it ran its configured lifetime, or nobody used it for the idle period (GY-3291; opening its link restarts it). */
-export const previewEndReasons = ['superseded', 'cancelled', 'delivered', 'failed', 'restarted', 'unconfirmed', 'expired', 'idle'] as const;
+const previewEndReasons = ['superseded', 'cancelled', 'delivered', 'failed', 'restarted', 'unconfirmed', 'expired', 'idle'] as const;
 export type PreviewEndReason = (typeof previewEndReasons)[number];
 /** How many ended previews an item keeps beside its current one, newest last. */
 export const previewHistoryLimit = 5;
@@ -25,7 +25,7 @@ export const previewHistoryLimit = 5;
 const sha = z.string().regex(/^[0-9a-f]{40}$/, 'a lower-case 40-character commit');
 const instant = z.string().max(64).refine(value => Number.isFinite(Date.parse(value)), 'an ISO 8601 instant');
 /** One declared case's result on the preview, as the item shows it. */
-export const previewCaseResultSchema = z.object({ case: z.string().min(1).max(200), result: z.enum(['pass', 'fail', 'unrun']), reason: z.string().max(500).optional() }).strict();
+const previewCaseResultSchema = z.object({ case: z.string().min(1).max(200), result: z.enum(['pass', 'fail', 'unrun']), reason: z.string().max(500).optional() }).strict();
 export type PreviewCaseResult = z.infer<typeof previewCaseResultSchema>;
 
 /** The preview link of an item. */
@@ -33,7 +33,7 @@ export const previewPath = (key: string) => `/preview/${key}`;
 /** Where the link serves the site: a directory URL, so the site's relative assets and links resolve under it. */
 export const previewSiteUrl = (key: string) => `${previewPath(key)}/`;
 
-export const itemPreviewSchema = z.object({
+const itemPreviewSchema = z.object({
   /** The preview's own id: a new head, or a restarted loop, starts a new preview under a new id. */
   id: z.string().uuid(),
   path: z.string().regex(/^\/preview\/[A-Za-z0-9._-]{1,100}$/),
@@ -68,7 +68,7 @@ export const previewSiteFileLimit = 1000, previewSiteByteLimit = 20 * 1024 * 102
 export const previewSitePathSchema = z.string().min(1).max(500)
   .refine(path => !/[\0-\x1f\\]/.test(path) && path.split('/').every(segment => segment !== '' && segment !== '.' && segment !== '..'), 'a relative path inside the site');
 /** One file of the built site a running preview publishes: its path, media type and base64 content. */
-export const previewSiteFileSchema = z.object({ path: previewSitePathSchema, mediaType: z.string().min(1).max(100), content: z.string().max(Math.ceil(previewSiteByteLimit / 3) * 4) }).strict();
+const previewSiteFileSchema = z.object({ path: previewSitePathSchema, mediaType: z.string().min(1).max(100), content: z.string().max(Math.ceil(previewSiteByteLimit / 3) * 4) }).strict();
 export type PreviewSiteFile = z.infer<typeof previewSiteFileSchema>;
 /**
  * The loop's record of a preview: `POST /api/work/:id/merge-record` with this body. A `running`

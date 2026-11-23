@@ -26,7 +26,8 @@ import { handoffWaitBound, waitReason } from './action-kinds.js';
  */
 export const actionSettleMs = 10 * 60_000;
 /** A failed attempt backs off on a widening interval, never below the first step or above the last. */
-export const actionRetryMinMs = 30_000, actionRetryMaxMs = 10 * 60_000;
+const actionRetryMinMs = 30_000;
+const actionRetryMaxMs = 10 * 60_000;
 /** How many records one row keeps of its own history, newest last (`actions.ts` trims to it on every write). */
 export const actionRecordLimit = 20;
 /** A row nobody has claimed for longer than this is idle while it is actionable; see `idleActionable`. */
@@ -49,7 +50,7 @@ export const actionStallThreshold = 3;
  * outlive it: a row that stalls starts again from this recheck instead of waiting out a ceiling
  * computed from attempts that could not have succeeded.
  */
-export const actionStallRecheckMs = 60_000;
+const actionStallRecheckMs = 60_000;
 /**
  * The longest a stalled row waits between attempts (GY-185).
  *
@@ -65,7 +66,7 @@ export const actionStallMaxMs = 30 * 60_000;
 export const actionStallDelay = (failures: number) =>
   Math.min(actionStallRecheckMs * 2 ** Math.max(0, failures - actionStallThreshold), actionStallMaxMs);
 
-export const actionRetryDelay = (attempts: number) => Math.min(actionRetryMinMs * 2 ** Math.max(0, attempts - 1), actionRetryMaxMs);
+const actionRetryDelay = (attempts: number) => Math.min(actionRetryMinMs * 2 ** Math.max(0, attempts - 1), actionRetryMaxMs);
 
 /**
  * Why a row is making no progress: the classification a row carries once its recent attempts all
@@ -142,7 +143,7 @@ export const actionRetryAt = (row: ActionRow, now: Date) => {
  * it has had `sessionRetryLimit` sessions ("no further automatic attempt"). Both begin with the
  * request id (`Request <id> ...`), and an executor settles its row failed with that message.
  */
-export const producerLaunchStops = ['; one session per request', '; no further automatic attempt'] as const;
+const producerLaunchStops = ['; one session per request', '; no further automatic attempt'] as const;
 
 /**
  * Why no executor may launch a producer request again, read from the durable action rows rather
@@ -170,7 +171,7 @@ export const waitingToRetry = (row: ActionRow, now: Date) => !!row.retryAt && Da
 export const claimable = (row: ActionRow, now: Date) => !settling(row, now) && !waitingToRetry(row, now) && (row.state === 'pending' || !claimLive(row, now));
 
 /** One row as a reader sees it: what it is for, how long it has waited, and what it last did. */
-export interface QueueEntry {
+interface QueueEntry {
   key: string; work: string; id: string; kind: NextActionKind; reason: string;
   /** How long since the row was requested, and what its attempts have come to. */
   waitedMs: number; attempts: number; lastFailure: string | null;

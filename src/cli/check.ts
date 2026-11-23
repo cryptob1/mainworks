@@ -4,7 +4,7 @@ import type { CliCommand } from './registry.js';
 import type { WorkerCheckResult } from '../merge-writer/worker-check.js';
 
 /** GY-3283: the host runs the declared check on this exact committed HEAD; the worker never needs Docker. */
-export async function requestWorkerCheck(context: Pick<CliContext, 'api' | 'repositoryRoot'>, work: any, check: string): Promise<WorkerCheckResult> {
+async function requestWorkerCheck(context: Pick<CliContext, 'api' | 'repositoryRoot'>, work: any, check: string): Promise<WorkerCheckResult> {
   const git = (...args: string[]) => execFileSync('git', args, { cwd: context.repositoryRoot(), encoding: 'utf8' }).trim();
   if (git('status', '--porcelain')) throw new Error('Commit the working tree first: the check runs on exact HEAD');
   return context.api(`work/${work.id}/worker-verification`, { mode: 'check', check, head: git('rev-parse', 'HEAD'), epoch: work.lease?.epoch });

@@ -6,7 +6,7 @@ import { encodeLoopCheckoutTrust, loopPresenceHeader, loopStallAlarmHeader, loop
 import { coordinationViewHeader } from '../src/server/work-view';
 import { emptyDaemonState } from '../src/daemon/state';
 import { stallAlarm } from '../src/daemon/stall-alarm';
-import { implementationWaiting } from '../src/daemon/cpu-pressure';
+import { cpuWaiting } from '../src/daemon/cpu-pressure';
 import type { Work } from '../src/model';
 import { serveXterm } from './xterm';
 
@@ -54,7 +54,7 @@ test('e2e:stall-alarm — the Lead page shows the stall alarm with its cause whi
     state.cpuPressure = { at: new Date(start).toISOString(), avg60: 96, steal: 0, stat: null, celsius: 96, samples: [], testBudget: null, trialCap: null };
     const item = { key: 'GY-1', stage: 'ready', ready: true, updatedAt: new Date(start).toISOString(), sessions: [], dependencies: [] } as unknown as Work;
     // GY-3473: the cause is dispatch's own hold this cycle, as the loop passes it.
-    const holds = [implementationWaiting(state)!];
+    const holds = [cpuWaiting(state)!];
     const alarm = stallAlarm({ now: start + 11 * 60_000, open: [item], ready: [item], freeSlots: 1, holds, state, registry: null, serving: null });
     expect(alarm).toContain('Cause: launches waiting: CPU pressure 96 percent');
     await loopRead(url, alarm);
