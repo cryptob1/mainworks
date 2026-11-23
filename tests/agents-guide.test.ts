@@ -64,7 +64,8 @@ test('unit:agents-block-short-and-rules-reachable-by-guide — the AGENTS.md blo
   const block = managedInstructions('');
   assert.ok(words(block) < 250, `the block is ${words(block)} words, under 250`);
   assert.match(block, /`node \$GRAPHYARD_CLI guide TOPIC`/);
-  for (const topic of guideTopicList) assert.ok(block.includes(topic), `the block lists the topic: ${topic}`);
+  // GY-3493: the block names each role's topics; `guide` alone lists the rest.
+  for (const topic of ['claim', 'sync', 'complete', 'park', 'blocked', 'review', 'proof']) assert.ok(block.includes(topic), `the block lists the topic: ${topic}`);
   const topicText = new Map(guideTopicList.map(topic => [topic, norm(guideText(topic))]));
   for (const sentence of baseBlockSentences) {
     const sought = norm(sentence);
@@ -101,7 +102,7 @@ const roleTopics = {
   worker: ['guide park', 'guide complete'],
   reviewer: ['guide review'],
   producer: ['guide proof'],
-  master: ['guide master'],
+  master: ['master guide'],
 };
 
 test('unit:role-briefs-name-guide-topics-and-shrink — the worker, reviewer, producer and master briefs name the guide topics for their role and are each at least 30 percent shorter than at the base commit', () => {
