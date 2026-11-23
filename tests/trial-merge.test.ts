@@ -23,8 +23,8 @@ import { trialFailureReason } from '../src/merge-writer/executor.js';
 
 // GY-3715: the cases share no state, so they run at once under one suite, each titled as before; one at
 // a time, the file spent minutes starting trial children one after another.
-const cases: [string, () => Promise<void>][] = [];
-const test = (name: string, run: () => Promise<void>) => { cases.push([name, run]); };
+const cases: [string, { timeout?: number }, () => Promise<void>][] = [];
+function test(name: string, ...rest: [() => Promise<void>] | [{ timeout?: number }, () => Promise<void>]) { cases.push(rest.length === 1 ? [name, {}, rest[0]] : [name, ...rest]); }
 
 // GY-1522: the merge writer's trial merge — the exact merge commit made in the object store, and its
 // build and affected tests run in a detached, credential-free checkout that is always removed.
@@ -891,4 +891,4 @@ test('unit:trial-declared-policy-refusal — a head whose graphyard.json is malf
   assert.equal(trialFailureReason({ run: { build: 'pass', tests: { passed: 0, failed: ['graphyard.json'], files: 0 }, failingCase: reason } }), `${trialFailurePrefix}: tests graphyard.json: ${reason}`);
 });
 
-describe('trial-merge', { concurrency: true }, () => { for (const [name, run] of cases) nodeTest(name, run); });
+describe('trial-merge', { concurrency: true }, () => { for (const [name, options, run] of cases) nodeTest(name, options, run); });

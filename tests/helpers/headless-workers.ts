@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -40,6 +40,8 @@ const launcher = fileURLToPath(new URL('../../bin/graphyard.mjs', import.meta.ur
 export interface HeadlessWorkers {
   /** The coordinator root the dispatch launches from; `workerRunsDirectory(root)` holds each run's record. */
   root: string;
+  /** The launch profile's agent name, distinct per fixture so fixtures can run at once in one process. */
+  agentName: string;
   url: string;
   hostId: string;
   herdrCalls: string;
@@ -62,7 +64,7 @@ export interface HeadlessWorkers {
 export type HeadlessWorkersHandle = () => HeadlessWorkers;
 
 /** Builds one file's fixture: its database, served control plane, coordinator root and bridge. */
-export async function headlessWorkers(label: string, leaseSeconds = 120): Promise<HeadlessWorkers> {
+export async function headlessWorkers(label: string, leaseSeconds = 120, agentName = 'eng-a'): Promise<HeadlessWorkers> {
   const store: Store = await withDatabase(label); await store.init();
   await mkdir(join(process.cwd(), '.graphyard'), { recursive: true });
   const scratch = await temporaryDirectory(label, join(process.cwd(), '.graphyard'));
@@ -86,7 +88,7 @@ export async function headlessWorkers(label: string, leaseSeconds = 120): Promis
   const hostId = (await loadMasterConfig(root)).hostId;
   const credentialFile = join(credentials, 'worker-a.token');
   await writeFile(credentialFile, token(worker), { mode: 0o600 });
-  await saveWorkerProfile(root, { name: 'launch', principal: worker.id, agentName: 'eng-a', mode: 'launch', kind: 'claude', credentialFile }, async () => ({ actor: worker }));
+  await saveWorkerProfile(root, { name: 'launch', principal: worker.id, agentName, mode: 'launch', kind: 'claude', credentialFile }, async () => ({ actor: worker }));
   const registry = new AgentRegistry(store);
   const homes = new Map<string, string>();
   // The loop's host bridge, which serves run logs to the item page.
@@ -162,7 +164,7 @@ if (${JSON.stringify(entry.failure ?? '')}) { console.error(${JSON.stringify(ent
     const config = await loadMasterConfig(root);
     // GY-3715: a short startup observation. Every fixture run that ends at once (a limit exit) has
     // ended well inside it, and a live successor no longer holds each dispatch for the full ten seconds.
-    return dispatchWork(root, work, config.workers[0]!, { allWork: [work], observedAt: now(), headless: spawnHeadless, startupMs: 2000,
+    return dispatchWork(root, work, config.workers[0]!, { allWork: [work], observedAt: now(), headless: spawnHeadless, startupMs: 5000,
       prepare: (at, key, profile, _run, claimBy, keep, cycle) => prepareWorkerLaunch(at, key, profile, (command, args, options) => command === 'git' && args[0] === 'fetch' ? '' : workerCommand(command, args, options), claimBy, keep, cycle),
       capacity: async event => { const result = await api(coordinator, 'POST', `work/${work.id}/capacity`, event); assert.equal(result.status, 200, JSON.stringify(result.body)); },
       // The loop records each run on the item as it starts (daemon/cycle.ts), as the coordinator.
@@ -171,14 +173,14 @@ if (${JSON.stringify(entry.failure ?? '')}) { console.error(${JSON.stringify(ent
   async function submitted(id: string, epoch: number) {
     for (let tries = 0; tries < 600; tries++) {
       const item = await stored(id);
-      if (item.submission?.epoch === epoch && !liveRun('eng-a')) return item;
+      if (item.submission?.epoch === epoch && !liveRun(agentName)) return item;
       await new Promise(resolve => setTimeout(resolve, 50));
     }
     assert.fail(`${id} epoch ${epoch} was never submitted by its worker: ${JSON.stringify((await stored(id)).lease)}`);
   }
   const started = async (name: string) => JSON.parse(await readFile(join(homes.get(name)!, 'started.json'), 'utf8'));
   const runLog = async (work: Work, run: string) => api(reader, 'GET', `work/${work.key}/runs/${run}/log`);
-  return { root, url, hostId, herdrCalls, homes, registry, api, stored, readyItem, configure, dispatch, submitted, started, runLog,
+  return { root, agentName, url, hostId, herdrCalls, homes, registry, api, stored, readyItem, configure, dispatch, submitted, started, runLog,
     stop: async () => {
       bridge.abort();
       await new Promise<void>(resolve => { http.closeAllConnections?.(); http.close(() => resolve()); });
@@ -190,6 +192,20 @@ if (${JSON.stringify(entry.failure ?? '')}) { console.error(${JSON.stringify(ent
 export const contractKinds = runtimeKinds.slice(0, runtimeKinds.indexOf('devin'));
 /** The kinds launched only through an agent-registry contract (tests/headless-workers-registry-kinds.test.ts). */
 export const registryKinds = runtimeKinds.slice(runtimeKinds.indexOf('devin'));
+
+/**
+ * The per-kind matrix tests for `kinds`, as both matrix files declare them (GY-3715): `groups` fixtures,
+ * each with its own agent name, run their share of the kinds in turn, and the groups run at once
+ * inside the caller's concurrent suite.
+ */
+export function headlessWorkerKindGroups(label: string, kinds: readonly RuntimeKind[], groups = 2) {
+  for (let group = 0; group < groups; group++) describe(`${label} ${group + 1}`, { concurrency: 1 }, () => {
+    let workers: HeadlessWorkers;
+    before(async () => { workers = await headlessWorkers(`${label}-${group + 1}`, 120, `eng-${group + 1}`); });
+    after(async () => { await workers.stop(); });
+    for (const kind of kinds.filter((_, index) => index % groups === group)) headlessWorkerKindTest(() => workers, kind);
+  });
+}
 
 /** One per-kind matrix test, as both files declare it: the kind claims, commits and completes as one headless run. */
 export function headlessWorkerKindTest(workers: HeadlessWorkersHandle, kind: RuntimeKind) {
