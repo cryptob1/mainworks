@@ -27,7 +27,7 @@ let processInstance: HerdrInstance | null = null;
 export function targetHerdr(instance: HerdrInstance | null | undefined) { processInstance = instance ?? null; }
 export const herdrTarget = () => processInstance;
 /** The herdr binary: on PATH, else where Herdr's own installer puts it (~/.local/bin), which a user unit's PATH may lack. */
-export function herdrBinary(env: NodeJS.ProcessEnv = process.env, home: string = homedir()) {
+function herdrBinary(env: NodeJS.ProcessEnv = process.env, home: string = homedir()) {
   if ((env.PATH ?? '').split(delimiter).some(directory => directory && existsSync(join(directory, 'herdr')))) return 'herdr';
   const installed = join(home, '.local', 'bin', 'herdr');
   return existsSync(installed) ? installed : 'herdr';
@@ -135,13 +135,13 @@ export function herdrWorkspaceOf(entry: { workspace_id?: string; pane_id?: strin
   return herdrWorkspaceOf(entry.pane_id ?? entry.tab_id ?? '');
 }
 /** Whether ENTRY is this install's to act on: within SCOPE, or attributed to no workspace at all. */
-export function inHerdrScope(entry: Parameters<typeof herdrWorkspaceOf>[0], scope: string | null = processScope) {
+function inHerdrScope(entry: Parameters<typeof herdrWorkspaceOf>[0], scope: string | null = processScope) {
   if (!scope) return true;
   const workspace = herdrWorkspaceOf(entry);
   return workspace === null || workspace === scope;
 }
 /** Refuses, by name, a pane or tab another install's workspace holds. */
-export function assertHerdrScope(target: string, scope: string | null = processScope) {
+function assertHerdrScope(target: string, scope: string | null = processScope) {
   if (!inHerdrScope(target, scope)) throw new Error(`Herdr ${target} belongs to workspace ${herdrWorkspaceOf(target)}, not this installation's workspace ${scope}; Graphyard never closes, pastes into or reclaims another install's pane`);
 }
 /**

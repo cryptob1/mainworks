@@ -121,7 +121,7 @@ async function opencodeCommand(home: string, args: string[]) {
 export const opencodeAuthList = (home: string) => opencodeCommand(home, ['auth', 'list']);
 export const opencodeModels = (home: string) => opencodeCommand(home, ['models']);
 /** GY-3329: where cursor-agent keeps its sign-in on a host with no desktop keyring: `$XDG_CONFIG_HOME/cursor/auth.json`. */
-export const cursorSignInFile = 'cursor/auth.json';
+const cursorSignInFile = 'cursor/auth.json';
 /** GY-3414: the file cursor-agent records its login in, under `CURSOR_CONFIG_DIR`: its `authInfo` names the signed-in user. */
 export const cursorLoginFile = 'cli-config.json';
 /** Cursor is logged in when cli-config.json in the account home names a signed-in user, or a keyring-less sign-in sits at `cursor/auth.json` (GY-3329). It exposes no quota. */

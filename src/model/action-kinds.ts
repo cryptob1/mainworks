@@ -95,20 +95,14 @@ export interface NextAction {
  * raises its attention item naming the item and that condition — at once for a failed or
  * missing job, and for a job merely scheduled only once the run outlasts `observationWaitBoundMs`.
  */
-export const resyncUnobservedPrefix = 'no observation newer than the claim was saved';
+const resyncUnobservedPrefix = 'no observation newer than the claim was saved';
 /** The item's durable observation job, as `POST /api/work/:id/resync` reports it. */
 export interface ObservationJobState {
   availableAt: string | null; lockedUntil: string | null; attempts: number;
   error: string | null;
 }
 /** The clause for a job the claim woke that is scheduled with no error: due, and waiting for an observation worker. */
-export const observationJobScheduled = 'its observation job is scheduled and records no error, yet saved no observation';
-/** The observation job's condition in one clause, identical for as long as the condition stands. */
-export function describeObservationJob(job: ObservationJobState | null | undefined): string {
-  if (!job) return 'the item has no observation job, so nothing observes it';
-  if (job.error) return `its observation job last failed: ${job.error}`;
-  return observationJobScheduled;
-}
+const observationJobScheduled = 'its observation job is scheduled and records no error, yet saved no observation';
 
 /**
  * How long a woken observation job may take to save its observation before a `resync` waiting on
@@ -124,7 +118,7 @@ export function describeObservationJob(job: ObservationJobState | null | undefin
  * the one the liveness rules give any wait on an event (`livenessWaitBoundMs`, src/model/liveness.ts):
  * a wait that outlasts it is a stall again, whatever it waits for.
  */
-export const observationWaitBoundMs = 30 * 60_000;
+const observationWaitBoundMs = 30 * 60_000;
 
 /**
  * How long a dispatch may wait for an available worker profile before a `dispatch` waiting for a
@@ -136,7 +130,7 @@ export const observationWaitBoundMs = 30 * 60_000;
  * on an external event (`livenessWaitBoundMs`, src/model/liveness.ts): a wait that outlasts it
  * stalls again.
  */
-export const workerSlotWaitBoundMs = 30 * 60_000;
+const workerSlotWaitBoundMs = 30 * 60_000;
 
 /**
  * Whether a dispatch refusal names a wait for a worker profile to free (GY-1108).

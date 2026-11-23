@@ -30,7 +30,7 @@ export const installArgv = (manager: PackageManager): string[] =>
   manager.name === 'npm' ? ['npm', ...npmCiArgs] : pnpm(manager.version, 'install', '--frozen-lockfile');
 
 /** A change to one of these root files builds and tests the whole workspace. */
-export const rootTrigger = (file: string) => /^(?:package\.json|pnpm-workspace\.yaml|pnpm-lock\.yaml|turbo\.json|\.npmrc|tsconfig[^/]*\.json)$/.test(file);
+const rootTrigger = (file: string) => /^(?:package\.json|pnpm-workspace\.yaml|pnpm-lock\.yaml|turbo\.json|\.npmrc|tsconfig[^/]*\.json)$/.test(file);
 
 /** GY-3250: the workspace packages a change selects: null when a root trigger selects all. */
 export interface AffectedPackages { packages: string[] | null; summary: string }

@@ -3,7 +3,7 @@ import { cliRelease, type Release } from '../release.js';
 import { setting } from '../setting.js';
 
 /** How long `graphyard version` waits for the server's /healthz before reporting it unreachable. */
-export const versionProbeTimeoutMs = 5_000;
+const versionProbeTimeoutMs = 5_000;
 
 export interface VersionReport {
   cli: { version: string; commit: string };

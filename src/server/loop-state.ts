@@ -4,10 +4,10 @@ import type { Store } from '../store.js';
 import { reviewRecordSchema } from '../reviewer.js';
 import { producerRecordSchema } from '../producer.js';
 import { dispatchCursorSchema } from '../dispatch/cursor.js';
-import type { LoopStateClient, LoopStateKind } from '../loop-state.js';
+import type { LoopStateClient } from '../loop-state.js';
 
 /** How long a loop-state write waits for another writer of the same record before it answers a conflict. */
-export const loopStateLockWaitMs = 2_000;
+const loopStateLockWaitMs = 2_000;
 const schemas = { reviews: reviewRecordSchema, producers: producerRecordSchema, dispatch: dispatchCursorSchema };
 /** Coordinator-only bookkeeping; these records never grant a work lease, review or proof. */
 export function storedLoopState(store: Store, actor: Principal, scope: string): LoopStateClient {
@@ -52,4 +52,3 @@ export function storedLoopState(store: Store, actor: Principal, scope: string): 
   };
 }
 export const loopStateWriteSchema = z.object({ records: z.array(z.record(z.string(), z.unknown())), removed: z.array(z.string()).default([]), migrate: z.boolean().default(false) }).strict();
-export const loopStateKinds: LoopStateKind[] = ['reviews', 'producers', 'dispatch'];

@@ -27,18 +27,18 @@ export const stateLabel: Record<StateId, string> = { todo: 'Not started', doing:
  * four states above — but a recorded step move keeps this vocabulary, so it says exactly which
  * gate changed.
  */
-export const stepIds = ['build', 'validate', 'test', 'review', 'prove', 'merge'] as const;
+const stepIds = ['build', 'validate', 'test', 'review', 'prove', 'merge'] as const;
 export type StepId = typeof stepIds[number];
 /** One recorded move of an item between recorded steps. */
 export interface StepTransition { key: string; from: StepId | null; to: StepId | null; at: string }
-export type StepState = 'done' | 'current' | 'pending';
+type StepState = 'done' | 'current' | 'pending';
 /** The gate each recorded step after Build reads. */
 export const stepGate: Partial<Record<StepId, string>> = { validate: 'build', test: 'test', review: 'review', prove: 'acceptance', merge: 'merge' };
 /** The recorded steps folded into the Checking state, in the order the control plane evaluates them. */
 const checkingSteps: StepId[] = ['validate', 'test', 'review', 'prove', 'merge'];
 
 /** One of the four states as the bar draws it: done, current or pending. */
-export interface PrStep { id: StateId; label: string; state: StepState }
+interface PrStep { id: StateId; label: string; state: StepState }
 export interface PrSteps {
   steps: PrStep[];
   /** The current state: todo, doing or checking while it moves, done once merged; null for work closed without merging. */

@@ -26,7 +26,7 @@ import { stateDirectory } from '../install/layout.js';
  */
 
 /** The Graphyard Pi extension this checkout ships. */
-export const piExtensionPath = fileURLToPath(new URL('../../integrations/pi/index.ts', import.meta.url));
+const piExtensionPath = fileURLToPath(new URL('../../integrations/pi/index.ts', import.meta.url));
 export const defaultPiModel = 'zai/glm-5.3-flash';
 
 /**
@@ -72,7 +72,7 @@ const credentialPattern = /((?:authorization\s*:\s*)?bearer\s+|(?:token|password
 const redactCredentials = (value: string) => value.replace(credentialPattern, (_match, label?: string, scheme?: string) => label ? `${label}[redacted]` : scheme ? `${scheme}[redacted]@` : '[redacted]');
 
 /** One Pi JSONL record as a runner event; null for the streaming noise a record does not keep. */
-export function piEvent(record: any, at: string): RunEvent | null {
+function piEvent(record: any, at: string): RunEvent | null {
   switch (record?.type) {
     case 'session': return { kind: 'session', at, id: String(record.id ?? '') };
     case 'message_end': return { kind: 'message', at, role: String(record.message?.role ?? 'unknown'), text: bounded(text(record.message?.content)), stopReason: record.message?.stopReason ?? null, error: record.message?.errorMessage ?? null };
@@ -156,7 +156,7 @@ export const runFiles = (directory: string) => ({
   exit: join(directory, 'exit'), stopped: join(directory, 'stopped.json'), stdin: join(directory, 'stdin.txt'),
   prompt: join(directory, 'prompt.txt'),
 });
-export const runMetaSchema = z.object({
+const runMetaSchema = z.object({
   version: z.literal(1), id: z.string().min(1).max(80), command: z.string().max(4000), pid: z.number().int().positive().nullable(),
   /** The process's start time (/proc/PID/stat), so a reused pid is never taken for the run. */
   identity: z.string().max(40).nullable(), containment: z.enum(['systemd', 'setsid']), unit: z.string().max(200).nullable(),

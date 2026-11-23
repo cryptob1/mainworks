@@ -171,7 +171,7 @@ export async function answerHumanProof(services: Services, actor: Principal, id:
  * the host's RSA public key wraps that key (OAEP, SHA-256), so only the host holding the private
  * key reads it (`graphyard unseal`). The value itself is never written anywhere.
  */
-export function sealToHost(publicKey: string, secret: string) {
+function sealToHost(publicKey: string, secret: string) {
   const key = randomBytes(32), iv = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', key, iv);
   const data = Buffer.concat([cipher.update(secret, 'utf8'), cipher.final()]);

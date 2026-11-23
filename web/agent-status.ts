@@ -8,9 +8,9 @@ import { formatDuration } from '../src/model/duration';
  * the `FleetView` `GET /api/agent-registry` serves, so a test renders exactly what the browser does.
  */
 
-export const accountChips = ['disabled', 'no-role', 'spent', 'not-configured', 'launch-failing', 'unavailable', 'working', 'idle'] as const;
+const accountChips = ['disabled', 'no-role', 'spent', 'not-configured', 'launch-failing', 'unavailable', 'working', 'idle'] as const;
 export type AccountChip = typeof accountChips[number];
-export const chipLabels: Record<AccountChip, string> = {
+const chipLabels: Record<AccountChip, string> = {
   disabled: 'Disabled', 'no-role': 'No role', spent: 'Spent', 'not-configured': 'Not configured', 'launch-failing': 'Launch failing', unavailable: 'Unavailable', working: 'Working', idle: 'Idle',
 };
 /** The tone each chip draws with, from the dashboard's own status tokens (web/style.css). */
@@ -27,12 +27,12 @@ export const whenText = (iso: string, now: number) => `${localTime(iso)} (${coun
 /** A day alone, e.g. "Oct 3". */
 export const monthDay = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 /** A clock time alone in the viewer's own time zone, e.g. "10:00 PM". */
-export const clockTime = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+const clockTime = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 /** When a held account is back, e.g. "back Nov 23 at 10:00 PM". */
 export const backAt = (iso: string) => `back ${monthDay(iso)} at ${clockTime(iso)}`;
 
 /** A provider limit in a raw failure: an HTTP 429, a rate or usage limit, a spent quota. */
-export const limitPattern = /\b429\b|rate.?limit|usage.?limit|quota|too many requests|resource.?exhausted/i;
+const limitPattern = /\b429\b|rate.?limit|usage.?limit|quota|too many requests|resource.?exhausted/i;
 /**
  * A raw failure (a provider error body, an HTTP code) as one short phrase an owner reads (GY-3482);
  * the raw text belongs in the element's title. A short plain reason passes through unchanged.
@@ -45,9 +45,9 @@ export function plainReason(raw: string, fallback = 'Launch failed'): string {
 }
 
 /** How long a failed launch keeps its account marked as launch failing. */
-export const launchFailureWindowMs = 60 * 60_000;
+const launchFailureWindowMs = 60 * 60_000;
 /** The end reasons an executor records when a session never started (src/producer.ts, src/master/autonomy.ts, src/daemon/cycle-sessions.ts). */
-export const launchFailurePattern = /launch failed|failed (?:to start|before it started)|refused before it started|closed as failed/i;
+const launchFailurePattern = /launch failed|failed (?:to start|before it started)|refused before it started|closed as failed/i;
 
 export interface AccountStatus {
   chip: AccountChip; label: string;

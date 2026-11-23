@@ -27,8 +27,8 @@ import type { NextAction } from './action-kinds.js';
  *   the loop (`on: 'loop'`, GY-1779) it is the loop's own reading, recorded in its
  *   deployment-verification step, never a dispatch.
  */
-export const waitKinds = ['dependency', 'session', 'human', 'settled', 'window'] as const;
-export type WaitKind = typeof waitKinds[number];
+const waitKinds = ['dependency', 'session', 'human', 'settled', 'window'] as const;
+type WaitKind = typeof waitKinds[number];
 export interface ActionWait {
   kind: WaitKind;
   /** Who moves it: an item key, the session owner holding it, the operator; null when nobody is named. */
@@ -65,7 +65,7 @@ export interface ActionAccount {
  * executor runs and one that is a judgment owed — `actionJudgment` on the kind tells them apart,
  * and both are answers, because both name somebody who can complete them.
  */
-export const accountOutcomes = ['action', 'waiting-on', 'human', 'settled', 'unaccounted'] as const;
+const accountOutcomes = ['action', 'waiting-on', 'human', 'settled', 'unaccounted'] as const;
 export type AccountOutcome = typeof accountOutcomes[number];
 export function accountOutcome(account: Pick<ActionAccount, 'action' | 'wait' | 'defect'>): AccountOutcome {
   if (account.defect) return 'unaccounted';

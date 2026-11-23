@@ -31,9 +31,9 @@ import { stateDirectory } from '../install/layout.js';
 
 /** The registry role and profile name the master session launches under. */
 export const masterProfile = 'master';
-export const masterSetupCommand = 'graphyard master registry role set master ACCOUNT[,ACCOUNT…] --reason REASON';
+const masterSetupCommand = 'graphyard master registry role set master ACCOUNT[,ACCOUNT…] --reason REASON';
 /** The unconfigured-role refusal, carrying its own flag so the loop records the setup wait, not a launch failure. */
-export const masterRoleUnconfigured = (reason: string) =>
+const masterRoleUnconfigured = (reason: string) =>
   Object.assign(new Error(`${reason}; the durable loop launches no master session until the registry names its accounts: ${masterSetupCommand} (registry accounts + concurrency, like worker/reviewer, pinned to one live session)`), { masterRoleUnconfigured: true });
 
 /**

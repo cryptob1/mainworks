@@ -185,7 +185,7 @@ export function reconcileRoster(planned: RosterPrincipal[], recorded: RosterPrin
   return [...planned, ...kept];
 }
 
-export const principalIdPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/;
+const principalIdPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/;
 /** Proof patterns `principal add --proof` accepts: the same lanes the installer seeds with `--producer-proof`. */
 const proofPattern = /^(unit|integration|e2e|manual):[A-Za-z0-9._*:/-]+$/;
 /**

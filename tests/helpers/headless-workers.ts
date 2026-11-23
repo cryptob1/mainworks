@@ -215,7 +215,7 @@ export function headlessWorkerKindGroups(label: string, kinds: readonly RuntimeK
 }
 
 /** One per-kind matrix test, as both files declare it: the kind claims, commits and completes as one headless run. */
-export function headlessWorkerKindTest(workers: HeadlessWorkersHandle, kind: RuntimeKind) {
+function headlessWorkerKindTest(workers: HeadlessWorkersHandle, kind: RuntimeKind) {
   test(`e2e:headless-workers — ${kind} claims, commits and completes as one headless run`, async () => {
     const f = workers();
     await f.configure([{ name: kind, kind }]);

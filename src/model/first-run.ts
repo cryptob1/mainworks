@@ -11,7 +11,7 @@ import type { Work } from './work.js';
 export const hasMergedWork = (work: readonly Pick<Work, 'stage' | 'delivery' | 'observation'>[]): boolean =>
   work.some(item => item.stage === 'done' && !!(item.delivery?.mergedAt ?? item.observation?.mergedAt));
 
-export interface FirstRunBuilderAccount {
+interface FirstRunBuilderAccount {
   name: string;
   runtime: string;
   modelId: string | null;

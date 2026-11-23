@@ -16,7 +16,7 @@ import { setting } from '../setting.js';
 /** How long one CLI request waits (2026-09-27: the full work snapshot reached 19 MB and ~31 s, so a 30 s bound failed every read of it, including workers' sync and complete; GY-864 bounds those reads). */
 export const cliRequestTimeoutMs = 120_000;
 /** How long the per-invocation release probe waits for /healthz before the invocation proceeds unread: an unreachable or slow health endpoint is not evidence of skew (GY-1960). */
-export const releaseProbeTimeoutMs = 5_000;
+const releaseProbeTimeoutMs = 5_000;
 const commitPattern = /^[0-9a-f]{40}$/i;
 
 /** The refusal a CLI and a server at different releases name: both releases, and the remedy (GY-1960). */
@@ -29,13 +29,13 @@ export const versionSkewMessage = (cliRelease: string, serverRelease: string) =>
  * protocol is checked by the server's own request validation, so a stopped heartbeat, claim,
  * complete, blocked or defer loses an attempt to nothing but the skew.
  */
-export const leaseCommands = new Set(['heartbeat', 'claim', 'complete', 'blocked', 'defer']);
+const leaseCommands = new Set(['heartbeat', 'claim', 'complete', 'blocked', 'defer']);
 
 /** What each side of a CLI request runs: the stamped release version, and the commit an unreleased build runs. */
 export interface ReleaseIdentity { version: string; released: boolean; commit: string | null; unreadable?: string }
 
 /** GY-3317: the refusal of a CLI that can read no release of its own: the file it looked for, and the command that records it. */
-export const unreadableReleaseMessage = (root: string) => {
+const unreadableReleaseMessage = (root: string) => {
   const file = releaseIdentityPath(root);
   return `This CLI cannot read its own release: ${root} is no readable Git checkout and ${file} is missing or invalid; repair it with: ${shellQuote(process.execPath)} ${shellQuote(join(root, 'bin', 'graphyard.mjs'))} upgrade --repair-identity`;
 };
@@ -78,7 +78,7 @@ const readServerRelease = async (base: string): Promise<{ version?: unknown; com
   } catch { return null; }
 };
 
-export type Connection = Awaited<ReturnType<typeof loadConnection>>;
+type Connection = Awaited<ReturnType<typeof loadConnection>>;
 
 /**
  * What every command module receives: the parsed invocation, the resolved server and

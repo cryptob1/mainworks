@@ -43,7 +43,7 @@ export function staleSession(handle: Pick<SessionHandle, 'state' | 'updatedAt' |
  * for work merged before those records existed): merged work the production
  * watch still holds at Deploy, or a smoke-gated merge without its passing check, is still moving.
  */
-export const endedItemIdleMs = 60 * 60_000;
+const endedItemIdleMs = 60 * 60_000;
 
 /**
  * The pane a recorded Herdr attach command names. The launchers record
@@ -51,7 +51,7 @@ export const endedItemIdleMs = 60 * 60_000;
  * exits 2 on it, so that form is read for its pane and never copied as it stands. A command that
  * is not Herdr's names no pane here and is offered verbatim.
  */
-export function recordedHerdrPane(attach: string | null): string | null {
+function recordedHerdrPane(attach: string | null): string | null {
   const match = /^herdr\s+(?:pane|agent)\s+attach\s+(\S+)(?:\s+--workspace\s+\S+)?\s*$/.exec(attach?.trim() ?? '');
   return match && !match[1].startsWith('-') ? match[1] : null;
 }
@@ -87,7 +87,7 @@ export function remoteAttachCommand(handle: Pick<SessionHandle, 'state' | 'attac
 
 /** The role a session plays, as an operator names it: worker, reviewer, producer or master. */
 export type SessionRoleKind = 'worker' | 'reviewer' | 'producer' | 'master';
-export function sessionRoleKind(handle: Pick<SessionHandle, 'kind' | 'role'>): SessionRoleKind {
+function sessionRoleKind(handle: Pick<SessionHandle, 'kind' | 'role'>): SessionRoleKind {
   if (handle.kind === 'implementation') return 'worker';
   if (handle.kind === 'review') return 'reviewer';
   if (handle.kind === 'proof') return 'producer';
@@ -165,7 +165,7 @@ export function sessionState(row: WorkerRow, item: Work | undefined, now: number
 
 const parsed = (iso: string | null) => { const at = Date.parse(iso ?? ''); return Number.isFinite(at) ? at : null; };
 /** One handle as a tab row: how long it has spent, its two attach forms, and whether it is stale or was reconciled. */
-export function workerRow(work: Pick<Work, 'id' | 'key'> & Partial<Work>, handle: SessionHandle, now: Date, thresholdMs = sessionStaleThresholdMs, release: ReleaseView = noRelease): WorkerRow {
+function workerRow(work: Pick<Work, 'id' | 'key'> & Partial<Work>, handle: SessionHandle, now: Date, thresholdMs = sessionStaleThresholdMs, release: ReleaseView = noRelease): WorkerRow {
   const startedAt = parsed(handle.startedAt) ?? now.getTime();
   const view = sessionView(handle, now, thresholdMs);
   const stale = staleSession(handle, now, thresholdMs);

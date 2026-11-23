@@ -13,7 +13,7 @@ import { workMutation, type CliCommand } from './registry.js';
 import { parkCommand, parkInput } from './park-command.js';
 import { setting } from '../setting.js';
 import { stateDirectory } from '../install/layout.js';
-export { parkArgs, parkCommand } from './park-command.js';
+;
 
 /**
  * The commands a session runs about its own item, rather than about the fleet: the two halves of a human-only wait — the worker parks the item, the
@@ -115,7 +115,7 @@ const sealLockStaleMs = 10_000, sealLockWaitMs = 20_000;
 const noHardLinks = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS']);
 
 /** Open a value sealed to this host (server/waits.ts `sealToHost`). */
-export async function unsealOnHost(sealed: string, hostId: string, home = configHome()) {
+async function unsealOnHost(sealed: string, hostId: string, home = configHome()) {
   const box = JSON.parse(Buffer.from(sealed, 'base64').toString('utf8')) as { key: string; iv: string; tag: string; data: string };
   const key = privateDecrypt({ key: await readFile(join(home, 'seal', `${hostId}.pem`), 'utf8'), padding: cryptoConstants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' }, Buffer.from(box.key, 'base64'));
   const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(box.iv, 'base64'));
@@ -124,7 +124,7 @@ export async function unsealOnHost(sealed: string, hostId: string, home = config
 }
 
 /** The worker half of a sealed answer: print the value the human provided, on the host it was sealed to. */
-export const unsealCommand: CliCommand = {
+const unsealCommand: CliCommand = {
   name: 'unseal',
   scope: 'work',
   help: ['  unseal GY-N                  Print the value the human provided for the item\'s last', '                                answered request, on the host it was sealed to'],
@@ -136,7 +136,7 @@ export const unsealCommand: CliCommand = {
 };
 
 /** The human half: list what waits on you, and answer it. The answer is what resumes the item. */
-export const humanRequestsCommand: CliCommand = {
+const humanRequestsCommand: CliCommand = {
   name: 'human-requests',
   help: ['  human-requests               List every open human-only request: what is needed, why, how', '                                long it has waited, and the command that answers it'],
   async run({ api, print }) {
@@ -145,7 +145,7 @@ export const humanRequestsCommand: CliCommand = {
       requestedBy: row.request.requestedBy, requestedAt: row.request.at, waited: waitedText(row.waitedMs), answer: row.answer.cli, decline: row.answer.decline })) });
   },
 };
-export const answerHumanCommand: CliCommand = {
+const answerHumanCommand: CliCommand = {
   name: 'answer',
   scope: 'work',
   help: [
@@ -180,7 +180,7 @@ export const answerHumanCommand: CliCommand = {
  * the human admin; a self-contained host writes only the tokens, its loop's GRAPHYARD_CONFIG_HOME
  * being <install> itself, and the operator is the planned `<install>-operator`. Null when neither is here.
  */
-export async function recordedOperator(root: string): Promise<{ token: string; reachableUrl: string | null } | null> {
+async function recordedOperator(root: string): Promise<{ token: string; reachableUrl: string | null } | null> {
   let repository: string | null;
   try { repository = repositoryFromRemote(execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })); } catch { return null; }
   if (!repository) return null;
@@ -249,10 +249,10 @@ function servedTailnetUrl(base: string): string | null {
   } catch { return null; }
 }
 /** A wait as a person reads it: minutes under an hour, then hours, then days. */
-export const waitedText = (ms: number) => ms < 3_600_000 ? `${Math.max(1, Math.round(ms / 60_000))}m` : ms < 172_800_000 ? `${Math.round(ms / 3_600_000)}h` : `${Math.round(ms / 86_400_000)}d`;
+const waitedText = (ms: number) => ms < 3_600_000 ? `${Math.max(1, Math.round(ms / 60_000))}m` : ms < 172_800_000 ? `${Math.round(ms / 3_600_000)}h` : `${Math.round(ms / 86_400_000)}d`;
 
 /** The blocker a refused host-doable park records: the master's owed action, its route and command, and the ask as written. */
-export const owedMasterAction = (ask: HostDoableAsk, needed: string) =>
+const owedMasterAction = (ask: HostDoableAsk, needed: string) =>
   `Owed master action (a park refused as host-doable, GY-1416): ${ask.what}. ${ask.route} — ${ask.command}. Asked as: ${needed}`.slice(0, 2000);
 /**
  * `park` with the GY-1416 route: a NEEDED an agent identity on the host can do never parks on the

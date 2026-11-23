@@ -44,8 +44,8 @@ export function observationWindowFor(work: Pick<Work, 'key' | 'delivery'>, crite
     : `${work.key}'s serving release was first observed at ${iso(live!)} and ${criterion.id} names a ${windowHours}-hour live window`;
   return { notBefore: iso(fromMerge), basis: 'criterion-window', detail: `${origin}, so the reading can first exist at ${iso(fromMerge)}`.slice(0, 2000) };
 }
-export const postDeployMarker = 'Post-deploy follow-up: ';
-export const followUpOf = (item: Pick<Work, 'description'>) => item.description?.startsWith(postDeployMarker) ? item.description.slice(postDeployMarker.length).split('\n', 1)[0] : null;
+const postDeployMarker = 'Post-deploy follow-up: ';
+const followUpOf = (item: Pick<Work, 'description'>) => item.description?.startsWith(postDeployMarker) ? item.description.slice(postDeployMarker.length).split('\n', 1)[0] : null;
 /** A follow-up's request id read back into what it was filed for, or null for any other item. */
 export function followUpRequest(item: Pick<Work, 'description'>): { work: string; criterion: string; proof: string; release: string } | null {
   const match = /^post-deploy:([0-9a-f-]{36}):([^:]+):(.+):([0-9a-f]{40})$/.exec(followUpOf(item) ?? '');

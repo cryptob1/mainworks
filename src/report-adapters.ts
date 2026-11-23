@@ -11,11 +11,10 @@ import { runnerReport, verifyRunnerReport } from './runner-report.js';
  */
 export const reportFormats = ['graphyard-playwright-v1', 'junit-xml-v1'] as const;
 export type ReportFormat = (typeof reportFormats)[number];
-export const defaultReportFormat: ReportFormat = 'graphyard-playwright-v1';
 
-export type ArtifactKindName = 'inventory' | 'report';
-export type ReportVerification = { passed: boolean; inventoryComplete: boolean; executed: number; skipped: number; reasons: string[] };
-export type ParsedArtifact = {
+type ArtifactKindName = 'inventory' | 'report';
+type ReportVerification = { passed: boolean; inventoryComplete: boolean; executed: number; skipped: number; reasons: string[] };
+type ParsedArtifact = {
   /** The normalised, data-minimised document the verifier judges. */
   document: unknown;
   /** The bytes a collector may durably publish for this artifact. For a format whose raw
@@ -131,7 +130,7 @@ export function parseXml(input: string): XmlNode {
 
 // --- JUnit XML ------------------------------------------------------------------------
 type JunitStatus = 'passed' | 'failed' | 'error' | 'skipped';
-export const junitReport = z.object({
+const junitReport = z.object({
   format: z.literal('junit-xml-v1'),
   tests: z.array(z.object({ id: hex64, status: z.enum(['passed', 'failed', 'error', 'skipped']), retried: z.boolean(), timeMs: z.number().int().min(0).nullable() }).strict()).max(maxTests),
   suites: z.number().int().min(0),

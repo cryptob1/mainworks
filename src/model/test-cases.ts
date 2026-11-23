@@ -36,7 +36,7 @@ export const scenarioOf = (proof: string) => proof.startsWith('e2e:') && proof !
 export const caseResult = (evidence: Pick<Evidence, 'result' | 'executed' | 'skipped'>): CaseResult =>
   evidence.result === 'fail' ? 'fail' : evidence.executed === 0 || evidence.skipped > 0 ? 'skipped' : 'pass';
 
-export function runIdentity(evidence: Evidence): RunIdentity {
+function runIdentity(evidence: Evidence): RunIdentity {
   if (evidence.provenance) return { kind: 'github-actions', id: evidence.provenance.runId, attempt: evidence.provenance.runAttempt, url: evidence.provenance.artifact.url };
   if (evidence.validation) return { kind: 'validation', id: evidence.validation.requestId, attempt: evidence.validation.attemptId, url: null };
   return { kind: 'producer', id: evidence.id, attempt: null, url: evidence.url ?? null };
@@ -71,7 +71,7 @@ export function flakiness(runs: readonly ScenarioRun[]): { flaky: boolean; reaso
   return changes >= 2 ? { flaky: true, reason: `result changed ${changes} times in its last ${judged.length} runs` } : { flaky: false, reason: null };
 }
 
-export type HeadResult = CaseResult | 'not-run' | 'no-pr';
+type HeadResult = CaseResult | 'not-run' | 'no-pr';
 export interface LinkedCase {
   id: string; proof: string; criteria: string[]; title: string | null;
   pinned: { revision: number; environment: string } | null;

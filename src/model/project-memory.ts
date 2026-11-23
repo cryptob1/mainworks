@@ -7,26 +7,26 @@ export const retainedMemoryChanges = 30;
 export const recentChangesWindowMs = 24 * 3_600_000;
 export const projectMemoryWordBudget = 500;
 /** The master's own lessons (GY-3274): notes of this kind the master records and every master launch prompt carries. */
-export const masterLessonKind = 'master-lesson';
-export const retainedMasterLessons = 40;
-export const masterLessonCharacterLimit = 300;
+const masterLessonKind = 'master-lesson';
+const retainedMasterLessons = 40;
+const masterLessonCharacterLimit = 300;
 /** The stored lessons' total stays under this many words, by dropping the oldest. */
-export const masterLessonWordTotal = 1200;
+const masterLessonWordTotal = 1200;
 export type MemoryNote = z.infer<typeof memoryNoteSchema>;
-export type MemoryChange = z.infer<typeof memoryChangeSchema>; // not strict: a memory written before GY-2873 carries `pitfalls`, and one before GY-2874 its retired records, which parsing drops
+type MemoryChange = z.infer<typeof memoryChangeSchema>; // not strict: a memory written before GY-2873 carries `pitfalls`, and one before GY-2874 its retired records, which parsing drops
 export type ProjectMemory = z.infer<typeof projectMemorySchema>;
 
 /** The install's one product brief, kept in project memory (GY-3274). */
-export const productBriefWordLimit = 800;
-export const retainedProductBriefChanges = 20;
+const productBriefWordLimit = 800;
+const retainedProductBriefChanges = 20;
 /** The brief's required Markdown sections, in order. */
-export const productBriefHeadings = ['Problem', 'Users', 'What success looks like', 'Current bets', 'Open questions'] as const;
+const productBriefHeadings = ['Problem', 'Users', 'What success looks like', 'Current bets', 'Open questions'] as const;
 /** The sections worker and reviewer prompts carry, so they build and judge for the user. */
-export const productBriefWorkingHeadings = ['Problem', 'Users', 'What success looks like'] as const;
+const productBriefWorkingHeadings = ['Problem', 'Users', 'What success looks like'] as const;
 /** How many words of each working section a worker or reviewer prompt carries. */
-export const productBriefSectionWords = 100;
+const productBriefSectionWords = 100;
 export type ProductBrief = z.infer<typeof productBriefSchema>;
-export type ProductBriefChange = z.infer<typeof productBriefChangeSchema>;
+type ProductBriefChange = z.infer<typeof productBriefChangeSchema>;
 
 export function emptyProjectMemory(now: string): ProjectMemory {
   return { version: 1, updatedAt: now, notes: [], changes: [], brief: null };
@@ -40,7 +40,7 @@ const noteRoles: Record<SessionRole, string[]> = {
   reviewer: ['post-merge-review', 'product-answer'],
   producer: ['product-answer'],
 };
-export function isNoteRoleRelevant(note: MemoryNote, role: SessionRole): boolean {
+function isNoteRoleRelevant(note: MemoryNote, role: SessionRole): boolean {
   return noteRoles[role]?.includes(note.kind.toLowerCase()) ?? true;
 }
 
@@ -147,7 +147,7 @@ export function masterBriefSection(memory: ProjectMemory | null | undefined): st
 }
 
 /** The brief's problem, users and success sections as worker and reviewer prompts carry them, each trimmed. */
-export function productBriefExcerpt(memory: ProjectMemory | null | undefined): string {
+function productBriefExcerpt(memory: ProjectMemory | null | undefined): string {
   const brief = memory?.brief;
   if (!brief) return '';
   const trim = (text: string) => {

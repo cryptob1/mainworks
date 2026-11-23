@@ -22,7 +22,7 @@ function modules(from: string): string {
 const trees = new Map<string, Promise<string>>();
 
 /** The extracted tree of `commit` (a full sha), made once per test file. */
-export function sourceTree(commit: string): Promise<string> {
+function sourceTree(commit: string): Promise<string> {
   let tree = trees.get(commit);
   if (!tree) trees.set(commit, tree = (async () => {
     const root = process.cwd();

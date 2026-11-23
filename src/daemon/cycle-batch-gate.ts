@@ -156,7 +156,7 @@ export const repairedProof = 'manual:batch-gate-repaired';
  * when the check is one, else a new case named like the pinning proof, which the fix adds to that
  * repository's catalog.
  */
-export const gateFiledE2e = (key: string, repository: string): { proof: string; clause: string } => {
+const gateFiledE2e = (key: string, repository: string): { proof: string; clause: string } => {
   if (repository.toLowerCase() === graphyardRepository) return { proof: 'e2e:create-work-item', clause: 'creating a work item still works' };
   const check = key.slice(key.indexOf(':') + 1);
   return check.startsWith('e2e:')

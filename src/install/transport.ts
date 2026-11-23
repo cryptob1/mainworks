@@ -79,7 +79,7 @@ export function localTransport(): Transport {
 
 export const shellQuote = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
 
-export interface RecordedCommand { program: string; args: string[]; input?: string; cwd?: string }
+interface RecordedCommand { program: string; args: string[]; input?: string; cwd?: string }
 export interface BundleFileRecord { content: string; mode: number; owner?: string }
 export interface FakeTransportOptions {
   /** First match wins; a response is stdout, a full result, or a thunk for stateful fakes. */

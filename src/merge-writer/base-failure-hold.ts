@@ -32,7 +32,7 @@ export async function standingBaseFailure(git: Git, ledger: Readonly<Record<stri
  * (scripts/ci-tests.mjs `fileEdges`, imports and data reads followed transitively): a change to none of them cannot
  * repair the failure. Without that script only the test files themselves count.
  */
-export async function baseFailureScope(git: Git, tip: string, tests: readonly string[]): Promise<Set<string>> {
+async function baseFailureScope(git: Git, tip: string, tests: readonly string[]): Promise<Set<string>> {
   const tracked = (await git(['ls-tree', '-r', '--name-only', tip])).split('\n').map(line => line.trim()).filter(Boolean);
   const files = new Set(tracked), directories = new Map<string, string[]>();
   for (const file of tracked) {

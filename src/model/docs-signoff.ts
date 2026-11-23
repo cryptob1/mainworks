@@ -5,7 +5,7 @@ import type { ScopeFile } from './work.js';
 /** A proof whose attestation judges the candidate's documentation: `manual:docs-updated/…`. */
 export const docsSignoffProof = (proof: string) => proof.startsWith('manual:docs-updated/');
 /** The documentation files: README.md, docs/**, the Guide page and the glossary source. */
-export const documentationFile = (path: string) => path === 'README.md' || path.startsWith('docs/') || path === 'web/pages/guide.tsx' || path === 'web/glossary.ts';
+const documentationFile = (path: string) => path === 'README.md' || path.startsWith('docs/') || path === 'web/pages/guide.tsx' || path === 'web/glossary.ts';
 /** What the digest of a candidate's documentation is taken over: each changed doc file with its blob, sorted. */
 export const documentationDigestInput = (files: readonly Pick<ScopeFile, 'path' | 'sha'>[]) =>
   files.filter(file => documentationFile(file.path)).map(file => `${file.path}\t${file.sha ?? 'removed'}`).sort().join('\n');

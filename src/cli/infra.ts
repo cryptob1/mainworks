@@ -14,7 +14,7 @@ import { stateDirectory } from '../install/layout.js';
  * and its environments through the control plane, which records each call.
  */
 const usage = 'Usage: graphyard infra approve OWNER/NAME --project NAME [--from OLD] | take | repo create OWNER/NAME | repo push OWNER/NAME [DIR] | project create NAME | env create PROJECT ENV | log';
-export const infraCredentialFile = (root: string) => join(stateDirectory(root), 'infra-credential');
+const infraCredentialFile = (root: string) => join(stateDirectory(root), 'infra-credential');
 
 async function act(context: CliContext, body: Record<string, unknown>) {
   let token: string;

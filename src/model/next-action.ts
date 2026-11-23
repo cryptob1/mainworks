@@ -17,10 +17,10 @@ import { formatAge } from './duration.js';
 // one place. `action-account.ts` is the one exception: it imports the computation below, so it
 // is imported from directly rather than re-exported through the module it depends on.
 export { actionJudgment, executorRunnableKinds, llmRoles, mechanicalActionKinds, nextActionKinds, nextActionLlmRoles } from './action-kinds.js';
-export type { LlmRole, NextAction, NextActionInputs, NextActionKind } from './action-kinds.js';
+export type {  NextAction,  NextActionKind } from './action-kinds.js';
 // What stands beside an action lives in `concerns.ts`, re-exported here likewise.
-export { carriedAction, dispatchHold, humanNeeded, humanNeededActions, openAction } from './concerns.js';
-export type { HumanNeeded, HumanNeededRow, OpenAction } from './concerns.js';
+export {   humanNeeded, humanNeededActions,  } from './concerns.js';
+;
 
 /**
  * The typed next action.
@@ -307,7 +307,7 @@ const refusalRules: { gate: string | null; match: RegExp; kind: NextActionKind }
  * reviews a session answers — so this mapping is exhaustive over `ReviewState` and the only state
  * it leaves to `request-review` is the one a launched reviewer can actually answer.
  */
-export function reviewStandstill(work: Work, all: Work[] = [work], now: Date): { kind: NextActionKind; reason: string } | null {
+function reviewStandstill(work: Work, all: Work[] = [work], now: Date): { kind: NextActionKind; reason: string } | null {
   if (!work.candidate || !work.observation) return null;
   const need = reviewNeed(work, all, now);
   switch (need.state) {

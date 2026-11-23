@@ -51,7 +51,7 @@ import { actionStallDelay, actionStallThreshold } from '../model/action-progress
 import { syncProjectMemory } from '../project-memory.js';
 import { reconcileMasterMemory } from '../model/project-memory.js';
 import { diskHeadroomStep } from './disk-headroom.js';
-import { cpuPressureStep, cpuWaiting, heatClear, implementationWaiting, sessionUsageStep } from './cpu-pressure.js';
+import { cpuPressureStep, cpuWaiting, heatClear, sessionUsageStep } from './cpu-pressure.js';
 import { causeCleared, environmentCause } from './environment-blockers.js';
 import { leftoversStep, tallyLeftovers } from './leftovers.js';
 import { yardAlertStep } from './yard-alerts.js';
@@ -94,8 +94,8 @@ export const masterLaunchBackoffAfter = 3;
 /** How long the loop waits before retrying the master launch after its `attempts`-th same-way failure: one minute doubling, capped at fifteen. */
 export const masterLaunchRetryMs = (attempts: number) => Math.min(60_000 * 2 ** Math.max(0, attempts - masterLaunchBackoffAfter), 15 * 60_000);
 /** GY-3519: two identical launch failures for the master on one account mark that account unusable for an hour and move to the next. */
-export const masterAccountFailoverAfter = 2;
-export const masterAccountHoldMs = 3_600_000;
+const masterAccountFailoverAfter = 2;
+const masterAccountHoldMs = 3_600_000;
 const masterLaunchFailureReason = (error: unknown) =>
   normalizeFailureReason(message(error).replace(/\bin pane\s+\S+/g, 'in pane'));
 const activeUnusableAccounts = (master: DaemonState['master'], now: number) =>
@@ -313,7 +313,7 @@ function reconciledAttempt(item: Work, hostId: string): Pick<NonNullable<Work['l
 }
 
 /** The ended attempts' worktrees on this host: no live lease and no running session holds their epoch. */
-export function endedAttemptWorktrees(work: Work[], hostId: string, now: number) {
+function endedAttemptWorktrees(work: Work[], hostId: string, now: number) {
   return work.flatMap(item => (item.workspaces ?? []).filter(space => space.host === hostId
     // GY-3632: a rework that reused the path owns it now.
     && !(item.workspaces ?? []).some(later => later.epoch > space.epoch && later.host === hostId && later.path === space.path)
@@ -737,7 +737,7 @@ async function dispatchStep(cycle: Cycle) {
   // GY-3473: each hold named once, so the stall alarm reports the reason dispatch itself has this cycle.
   const holds = [
     state.diskHeadroom && `implementation launches waiting: disk below its floor: ${state.diskHeadroom.shortage}`,
-    implementationWaiting(state),
+    cpuWaiting(state),
     refusedRoles.has('worker') && 'worker launches held: the checkout is not trusted for the worker accounts (see master status)',
   ].filter((hold): hold is string => !!hold);
   if (!holds.length) for (const item of claimable) {
@@ -818,7 +818,7 @@ async function dispatchStep(cycle: Cycle) {
 /**
  * GY-3694: available merge-trial slots — the host's local heavy-job limit plus ready remote hosts.
  */
-export function availableTrialSlots(hosts: readonly { local?: boolean; away: boolean }[] = [], localLimit = heavyJobLimit(heavyJobsDirectory())): number {
+function availableTrialSlots(hosts: readonly { local?: boolean; away: boolean }[] = [], localLimit = heavyJobLimit(heavyJobsDirectory())): number {
   return localLimit + hosts.filter(host => !host.local && !host.away).length;
 }
 
@@ -826,7 +826,7 @@ export function availableTrialSlots(hosts: readonly { local?: boolean; away: boo
  * GY-3694: heads waiting for or running a merge trial, deduplicated across the live snapshot and
  * the merge writer's cursor state (excluding items already done or returned for rework).
  */
-export function testQueueCount(work: readonly Work[], mergeWriter: Pick<MergeWriterState, 'queue' | 'inFlight' | 'inFlights'> | null | undefined, now: number): number {
+function testQueueCount(work: readonly Work[], mergeWriter: Pick<MergeWriterState, 'queue' | 'inFlight' | 'inFlights'> | null | undefined, now: number): number {
   const byKey = new Map(work.map(item => [item.key, item]));
   const active = (key: string) => {
     const item = byKey.get(key);

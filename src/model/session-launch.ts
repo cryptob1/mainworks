@@ -22,7 +22,8 @@ import { coordinateOwed } from './launch-sentinel.js';
  * briefly unreachable. Should every attempt fail, the handle has no coordinate the report can
  * match, and the report loses and closes it after the launch grace rather than leaving it open.
  */
-export const coordinateAttempts = 3, coordinateRetryMs = 500;
+const coordinateAttempts = 3;
+const coordinateRetryMs = 500;
 export interface LaunchedCoordinates { pane?: string | null; agentName?: string | null }
 export async function registeredLaunch<T>(record: ((handle: SessionHandleInput) => Promise<unknown>) | undefined, handle: SessionHandleInput,
   start: () => Promise<T>, coordinates: (launched: T) => LaunchedCoordinates | undefined = launched => launched as LaunchedCoordinates | undefined,
