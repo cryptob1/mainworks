@@ -1,6 +1,7 @@
 // Concern: GY-3624 — the ledger rows the flow numbers read, turned into item histories, and the numbers for each window.
 import type { Work } from '../model.js';
 import { baseFailurePrefix } from '../model/merge-queue.js';
+import type { DeployHistoryEntry, GitRead } from '../deploy-watch.js';
 import { flowAttention, flowNumbers, flowWindows, type FlowEvent, type FlowItem, type FlowNumbers, type FlowWindow } from '../flow-numbers.js';
 
 interface Queryable { query: (text: string, values: unknown[]) => Promise<{ rows: any[] }> }
@@ -58,7 +59,7 @@ type Flowed = Pick<Work, 'id' | 'key' | 'title' | 'stage' | 'stageEnteredAt' | '
  * next refusal, of the same head — finds its failing tests fail on the base too. A head held for a
  * red base is refused without a trial of its own, so that refusal flags none.
  */
-export function flowItems(work: readonly Flowed[], ledger: readonly any[], attempts: Attempts = new Map()): FlowItem[] {
+export function flowItems(work: readonly Flowed[], ledger: readonly any[], attempts: Attempts = new Map(), deployed: ReadonlyMap<string, string | null> = new Map()): FlowItem[] {
   const events = new Map<string, FlowEvent[]>(), unanswered = new Map<string, FlowEvent>();
   for (const row of ledger) {
     const list = events.get(row.work_id) ?? [];
@@ -78,15 +79,71 @@ export function flowItems(work: readonly Flowed[], ledger: readonly any[], attem
   }
   return work.map(item => ({ key: item.key, title: item.title, stage: item.stage, stageEnteredAt: item.stageEnteredAt,
     mergedAt: item.delivery?.mergedAt ?? item.observation?.mergedAt ?? null,
+    ...(deployed.has(item.id) ? { deployedAt: deployed.get(item.id) } : {}),
     attempts: (attempts.get(item.id) ?? []).map(attempt => ({ claimedAt: attempt.claimedAt, endedAt: attempt.endedAt, end: attempt.end ?? null })),
     events: events.get(item.id) ?? [] }));
 }
 
+/**
+ * GY-3725: each merge's first serving deploy, fixed once found, so a read walks only the merges not
+ * yet serving and only the deploys since the oldest of them. A merge found missing from the newest
+ * deploy is not walked again until a newer deploy lands.
+ */
+const served = new Map<string, string | { missingFrom: string }>();
+async function resolveDeployedAt(work: readonly Flowed[], deploys: readonly DeployHistoryEntry[], git: GitRead | null | undefined, now: number): Promise<Map<string, string | null>> {
+  const result = new Map<string, string | null>();
+  const newest = deploys.at(-1);
+  if (!newest || !git) return result;
+  const from = now - readSpanMs;
+  const candidates = work.flatMap(item => {
+    const mergedAt = item.delivery?.mergedAt ?? item.observation?.mergedAt ?? null;
+    const sha = item.delivery?.mergeSha?.toLowerCase();
+    const at = mergedAt ? Date.parse(mergedAt) : Number.NaN;
+    return sha && /^[0-9a-f]{40}$/.test(sha) && Number.isFinite(at) && at > from && at <= now ? [{ id: item.id, sha, at }] : [];
+  });
+  const inWindow = new Set(candidates.map(candidate => candidate.sha));
+  for (const sha of served.keys()) if (!inWindow.has(sha)) served.delete(sha);
+  const pending = candidates.filter(candidate => {
+    const hit = served.get(candidate.sha);
+    return hit === undefined || (typeof hit !== 'string' && hit.missingFrom !== newest.commit);
+  });
+  if (pending.length) {
+    const since = Math.min(...pending.map(candidate => candidate.at)) - 60_000;
+    const recent = deploys.filter(entry => Date.parse(entry.at) >= since);
+    const unmatched = new Set(pending.map(candidate => candidate.sha));
+    const walked: string[] = [];
+    for (const deploy of recent.length ? recent : [newest]) {
+      if (!unmatched.size) break;
+      try {
+        const output = await git(['rev-list', ...(walked.length ? [] : ['--max-count=5000']), deploy.commit, ...walked.map(commit => `^${commit}`)]);
+        for (const line of output.split('\n')) {
+          const sha = line.trim().toLowerCase();
+          if (unmatched.delete(sha)) served.set(sha, deploy.at);
+        }
+        walked.push(deploy.commit);
+      } catch { /* commit missing in this checkout */ }
+    }
+    if (walked.length) for (const sha of unmatched) {
+      try { await git(['cat-file', '-e', `${sha}^{commit}`]); served.set(sha, { missingFrom: newest.commit }); } catch { /* not in this checkout */ }
+    }
+  }
+  for (const candidate of candidates) {
+    const hit = served.get(candidate.sha);
+    if (typeof hit === 'string') result.set(candidate.id, hit);
+    else if (hit) result.set(candidate.id, null);
+  }
+  return result;
+}
+
+interface FlowLiveOptions { deploys?: readonly DeployHistoryEntry[]; git?: GitRead | null }
 export type Flow = Record<FlowWindow, FlowNumbers> & { attention: ReturnType<typeof flowAttention> };
 /** The flow numbers for 6 hours, 24 hours and 7 days over `work`, and the attention line the 24 hours raise. */
-export async function readFlow(pool: Queryable, work: readonly Flowed[], now: number): Promise<Flow> {
-  const { ledger, attempts } = await rows(pool, now);
-  const items = flowItems(work, ledger, attempts);
+export async function readFlow(pool: Queryable, work: readonly Flowed[], now: number, live?: FlowLiveOptions): Promise<Flow> {
+  const [{ ledger, attempts }, deployed] = await Promise.all([
+    rows(pool, now),
+    live?.deploys?.length && live.git ? resolveDeployedAt(work, live.deploys, live.git, now) : Promise.resolve(new Map<string, string | null>()),
+  ]);
+  const items = flowItems(work, ledger, attempts, deployed);
   const windows = Object.fromEntries(Object.entries(flowWindows).map(([name, hours]) => [name, flowNumbers(items, hours, now)])) as Record<FlowWindow, FlowNumbers>;
   return { ...windows, attention: flowAttention(windows['24h']) };
 }
