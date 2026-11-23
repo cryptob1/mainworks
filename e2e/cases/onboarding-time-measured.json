@@ -1,0 +1,16 @@
+{
+  "id": "onboarding-time-measured",
+  "title": "The daily diagnostics time a fresh repository from connect to first merge",
+  "description": "Running the onboarding diagnostic once starts a scratch install on its own Postgres, connects a fixture repository and a stub Builder, starts the first task as the first-run page does, merges it, and master status's batch gate shows the run's first-merge minutes, result and date. A run over 15 minutes or needing a hand fix files an item.",
+  "tags": ["onboarding", "diagnostics"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "run the onboarding diagnostic once and read its first-merge time in master status",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/onboarding-time-measured.test.ts",
+      "timeoutSeconds": 600
+    }
+  ]
+}

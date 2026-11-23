@@ -39,6 +39,7 @@ import { formatAge } from './model/duration.js';
 import type { Work } from './model.js';
 import { baseStillFails, type ServeLanding } from './merge-writer/serve-revert.js';
 import type { PreviewCaseRun } from './merge-writer/served-previews.js';
+import { onboardingFailure, type OnboardingRun } from './onboarding-time.js';
 import { trialFileTimeoutMs } from './merge-writer/trial-load.js';
 import { stateDirectory } from './install/layout.js';
 
@@ -140,6 +141,8 @@ export interface GateRecord {
   diagnosticFailures?: Record<string, DiagnosticFailure>;
   /** Each preview case's last daily run and verdict, by case (GY-3193). Optional only for records an older loop wrote. */
   previewCases?: Record<string, PreviewCaseRun>;
+  /** GY-3747: the last daily onboarding run: minutes from connect to first merge in a scratch install. */
+  onboarding?: OnboardingRun;
   /**
    * The items the gate filed, per filing key — the case binding a later run reuses instead of
    * filing again (GY-3147). Optional only for records an older loop wrote.
@@ -610,16 +613,20 @@ interface DiagnosticFailure { commit: string; detail: string | null; at: string 
  * catalog's duration, the preview cases' runs and, per failing check, the trial's failing-step text
  * and the last lines of its output (GY-3265), which only the filing carries.
  */
-export type DiagnosePort = (commit: string) => Promise<{ failed: string[]; catalogMs: number; previewCases?: PreviewCaseRun[]; details?: Record<string, string>; outputs?: Record<string, string[]> }>;
+export type DiagnosePort = (commit: string) => Promise<{ failed: string[]; catalogMs: number; previewCases?: PreviewCaseRun[]; onboarding?: OnboardingRun; details?: Record<string, string>; outputs?: Record<string, string[]> }>;
+
+const onboardingCheck = 'onboarding:first-merge';
 
 /** The scheduled diagnostics, when due: each failure files an item; nothing here touches the gate. */
 export async function runDiagnostics(ports: Pick<GatePorts, 'now' | 'file'> & { diagnose: DiagnosePort }, record: GateRecord): Promise<string[] | null> {
   const verified = record.verified;
   if (!verified || (record.diagnosticsAt && ports.now() - Date.parse(record.diagnosticsAt) < diagnosticsIntervalMs)) return null;
-  const { failed: checks, catalogMs, previewCases = [], details = {}, outputs = {} } = await ports.diagnose(verified);
+  const { failed: checks, catalogMs, previewCases = [], onboarding, details: found = {}, outputs = {} } = await ports.diagnose(verified);
   const at = new Date(ports.now()).toISOString();
+  // GY-3747: an onboarding run over 15 minutes or needing a hand fix reaches an owner like any failing check.
+  const slowOnboarding = onboarding && onboardingFailure(onboarding), details = slowOnboarding ? { ...found, [onboardingCheck]: slowOnboarding } : found;
   // A preview case that failed or was not covered reaches an owner like any failing check.
-  const failed = [...new Set([...checks, ...previewCases.filter(run => run.verdict !== 'passed').map(run => `e2e:${run.case}`)])];
+  const failed = [...new Set([...checks, ...previewCases.filter(run => run.verdict !== 'passed').map(run => `e2e:${run.case}`), ...(slowOnboarding ? [onboardingCheck] : [])])];
   // GY-3264: each failure's commit and failing step are recorded before filing, so a check filed
   // before — whose item is reused, never re-filed — still has its newest detail readable in status.
   record.diagnosticFailures = Object.fromEntries(failed.map(check => [check, { commit: verified, detail: details[check]?.slice(0, 1000) ?? null, at }]));
@@ -631,6 +638,7 @@ export async function runDiagnostics(ports: Pick<GatePorts, 'now' | 'file'> & { 
   record.catalogMs = catalogMs;
   record.diagnosticsAt = at;
   if (previewCases.length) record.previewCases = Object.fromEntries(previewCases.map(run => [run.case, run]));
+  if (onboarding) record.onboarding = onboarding;
   return failed;
 }
 
@@ -655,6 +663,8 @@ export function gateSummary(record: GateRecord | null) {
     held: record.held, revertRate: `${rate.reverted}/${rate.merges}`, diagnosticsAt: record.diagnosticsAt, catalogMs: measuredCatalogMs(record, Date.now()),
     // GY-3193: each preview case's last daily run and verdict; `not covered` when it did not run.
     previewCases: Object.values(record.previewCases ?? {}).map(run => ({ ...run, commit: run.commit.slice(0, 12) })),
+    // GY-3747: the last daily onboarding run: minutes from connect to first merge, its result and date.
+    onboarding: record.onboarding ? { minutes: record.onboarding.minutes, result: record.onboarding.result, at: record.onboarding.at, commit: record.onboarding.commit.slice(0, 12), handFixes: record.onboarding.handFixes } : null,
     // GY-3264: the latest diagnostic failures with the exact commit, failing step and the item that owns each.
     diagnosticFailures: Object.entries(record.diagnosticFailures ?? {}).map(([check, failure]) => ({ check, ...failure, item: record.filed?.[`diagnostic:${check}`]?.item ?? null })),
     // GY-3147: the filing failures that never aborted a run, newest last.

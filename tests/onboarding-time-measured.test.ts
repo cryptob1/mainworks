@@ -82,10 +82,16 @@ test(`${own} — the host run checks the commit out and reads its scratch instal
   assert.equal(missing.handFixes.length, 1);
 });
 
-test(`${own} — the gate record keeps the run, so master status reads it from disk`, async () => {
+test(`${own} — running the diagnostic once, with the real scratch install, shows a first-merge time in master status`, async () => {
   const root = await temporaryDirectory('onboarding-time-record');
-  const { record } = await diagnosed(run(7.3));
-  await mkdir(join(root, '.graphyard'), { recursive: true });
-  writeGateRecord(gateRecordPath(root), record);
-  assert.equal(gateSummary(readGateRecord(gateRecordPath(root)))!.onboarding!.minutes, 7.3);
+  const record = bootstrapGate('o/r', commit);
+  await runDiagnostics({ now: Date.now, file: async () => ({ item: null }), diagnose: async sha => {
+    const output = await defaultChildRun(process.execPath, ['--import', 'tsx', 'scripts/onboarding-time.ts', sha], { timeoutMs: 300_000 });
+    return { failed: [], catalogMs: 1, onboarding: JSON.parse(output.trim().split('\n').at(-1)!) as OnboardingRun };
+  } }, record);
+  await writeGateRecord(gateRecordPath(root), record);
+  const shown = gateSummary(readGateRecord(gateRecordPath(root)))!.onboarding!;
+  assert.equal(shown.result, 'passed', JSON.stringify(shown));
+  assert.equal(shown.commit, commit.slice(0, 12));
+  assert.ok(typeof shown.minutes === 'number' && shown.minutes < 15 && Date.parse(shown.at) > 0);
 });
