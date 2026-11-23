@@ -27,7 +27,7 @@ export function initialView(pages: readonly string[]): string {
   if (opened !== undefined) return opened;
   const requested = requestedView(location.hash, pages);
   if (requested.hash !== location.hash) history.replaceState(null, '', `${location.pathname}${location.search}${requested.hash}`);
-  return opened = requested.view ?? 'work';
+  return opened = requested.view ?? 'home'; // GY-3603: an unhashed visit opens Home, which is the first-run page until work merges
 }
 
 function ItemAction({ item, onConnect }: { item: SetupItem; onConnect: () => void }) {

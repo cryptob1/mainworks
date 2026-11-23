@@ -37,7 +37,7 @@ async function open(page: Page, width: number) {
     if (/\/work\/[^/]+$/.test(path)) return route.fulfill({ json: work.find(item => path.endsWith(item.id) || path.endsWith(item.key)) });
     return route.fulfill({ json: [] });
   });
-  await page.goto('/?sign-in');
+  await page.goto('/?sign-in#work');
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible();

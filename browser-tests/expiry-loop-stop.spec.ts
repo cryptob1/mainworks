@@ -36,7 +36,7 @@ test('e2e:expiry-loop-stop — three startup deaths read as one plain line with 
     });
     const { code } = await f.ok('sign-in-links', {});
     await page.setViewportSize({ width: 1280, height: 900 });
-    await page.goto('/#sign-in=' + code);
+    await page.goto('/#sign-in=' + code + '&work');
     await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible(settled);
     await page.locator(`[data-row="${item.key}"]`).click();
 

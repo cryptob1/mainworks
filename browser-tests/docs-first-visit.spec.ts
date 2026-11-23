@@ -19,7 +19,7 @@ async function signedIn(page: Page) {
     if (path.endsWith('/board')) return route.fulfill({ json: { groups: [], now } });
     return route.fulfill({ json: [] });
   });
-  await page.goto('/?sign-in');
+  await page.goto('/?sign-in#work');
   await page.getByLabel('Access token').fill('browser-fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.getByRole('heading', { name: 'Work', exact: true })).toBeVisible({ timeout: 15_000 });

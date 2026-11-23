@@ -99,7 +99,7 @@ test('e2e:item-page-plate — the item page opens on why, the proof screenshot a
     });
     const { code } = await (await fetch(`${plane.url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string };
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/#sign-in=' + code);
+    await page.goto('/#sign-in=' + code + '&work');
     await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
 
     await page.locator(`[data-row="${filed.key}"]`).click();

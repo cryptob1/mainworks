@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test';
 const roof = 'M12 50V24L26 34V24L40 34V24L54 34V50Z';
 
 test('e2e:logo-is-the-works — sign-in shows the Mainworks mark from /favicon.svg', async ({ page }) => {
-  await page.goto('/?sign-in');
+  await page.goto('/?sign-in#work');
   const svg = await (await page.request.get('/favicon.svg')).text();
   expect(svg).toContain(roof);
   expect(svg).toContain('<title>Mainworks</title>');

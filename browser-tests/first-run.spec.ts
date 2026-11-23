@@ -114,7 +114,8 @@ test('e2e:first-run — walks a fresh install through steps 1 to 4 to a first me
     });
 
     await page.setViewportSize({ width: 1280, height: 900 });
-    await page.goto('/?sign-in#home');
+    // The install's own address, with no page named: a fresh install opens on the first-run page.
+    await page.goto('/?sign-in');
     await page.getByLabel('Access token').fill(adminToken);
     await page.getByRole('button', { name: 'Open control plane' }).click();
     await expect(page.locator('header.main-top-bar')).toBeVisible({ timeout: 15_000 });
@@ -288,9 +289,12 @@ test('e2e:first-run — walks a fresh install through steps 1 to 4 to a first me
     await expect(page.getByRole('heading', { name: 'Home', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('list', { name: 'Steps' })).toHaveCount(0);
 
-    // Reloading #home now opens Home directly.
-    await page.reload();
+    // Reopening the install at its root, with no page named, now opens Home; #work still opens Work.
+    await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Home', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('list', { name: 'Steps' })).toHaveCount(0);
+    await page.goto('/#work');
+    await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
   } finally {
     hostBridge.close();
     await page.unrouteAll().catch(() => {});
