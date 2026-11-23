@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import type { MasterConfig } from '../master.js';
 import { discoverHostLogins, installDirectory, proposeFleet, type FleetLaunchAccount } from '../fleet.js';
-import { smokeRegistryAccount } from '../runner/roles.js';
+import { smokePiWorker } from '../master/pi-launch.js';
 import type { SmokeResult } from '../runner/pi.js';
 import { seedPrices } from '../model/price-sheet.js';
 import { emptyRolePolicy, quotaStates, fleetRoles, roleLimit, rolePolicy, type AgentRegistry } from '../model/registry.js';
@@ -49,7 +49,7 @@ const number = (value: string | undefined, flag: string) => { if (value === unde
  * holds the coordinator credential. A `set` names the entry and only what changes; the rest of an
  * existing entry stands. Every change carries a reason and appends to the registry's history.
  */
-export async function registryCommand(master: Pick<MasterConfig, 'hostId'>, args: string[], api: RegistryCommandApi, options: { directory?: string; home?: string; executables?: (name: string) => boolean; install?: (program: string) => string | null; smoke?: (account: FleetLaunchAccount) => Promise<SmokeResult> } = {}) {
+export async function registryCommand(master: Pick<MasterConfig, 'hostId'> & Parameters<typeof smokePiWorker>[0], args: string[], api: RegistryCommandApi, options: { directory?: string; home?: string; executables?: (name: string) => boolean; install?: (program: string) => string | null; smoke?: (account: FleetLaunchAccount) => Promise<SmokeResult> } = {}) {
   const [collection, action, ...rest] = args;
   if (!collection) return api.read(`agent-registry?host=${encodeURIComponent(master.hostId)}`);
   if (collection === 'history') {
@@ -158,14 +158,14 @@ export async function registryCommand(master: Pick<MasterConfig, 'hostId'>, args
   // The policy is changed only where a flag names it; --clear-policy starts it from empty. `--model none` drops the override.
   const base = values['clear-policy'] ? emptyRolePolicy() : rolePolicy(existing);
   const policy = { ...base, ...defined({ args: values.arg, tools: values.tool?.flatMap(entry => entry.split(',').map(tool => tool.trim()).filter(Boolean)), model: values.model === undefined ? undefined : values.model === 'none' ? null : values.model }) };
-  if (name === 'worker') await smokeNewPiWorkers(master.hostId, current, accounts.filter(account => !existing?.accounts.includes(account)), options.smoke ?? smokeRegistryAccount);
+  if (name === 'worker') await smokeNewPiWorkers(master.hostId, current, accounts.filter(account => !existing?.accounts.includes(account)), options.smoke ?? (account => smokePiWorker(master, account)));
   const empty = !policy.args.length && !policy.tools.length && policy.model === null;
   return api.write('agent-registry/roles', { role: { name, accounts, concurrency, ...(empty && !existing?.policy ? {} : { policy }) }, reason: values.reason });
 }
 
 /**
- * GY-3721: a Pi account on this host joins the worker role only once one prompt, launched as its
- * worker is (its home on PI_CODING_AGENT_DIR, provider and model from the registry id), answers.
+ * GY-3721: a Pi account on this host joins the worker role only once one prompt, on the launch its
+ * worker gets (GY-3738: smokePiWorker, the same launch and sandbox as dispatch), answers.
  */
 async function smokeNewPiWorkers(host: string, registry: AgentRegistry, added: string[], smoke: (account: FleetLaunchAccount) => Promise<SmokeResult>) {
   for (const name of added) {
