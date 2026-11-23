@@ -680,6 +680,7 @@ header.main-top-bar{height:auto;min-height:60px;display:flex;flex-wrap:wrap;alig
 .first-run-own input{min-height:48px;width:100%;box-sizing:border-box;padding:0 14px;border-radius:10px}
 .first-run-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
 .first-run-cta{min-height:48px;padding:0 22px;border-radius:12px;font-weight:600}
+.first-run-secondary{min-height:48px;padding:0 18px;border-radius:12px;background:var(--surface);border:1px solid var(--border);color:var(--text);font-weight:500}
 .first-run-terminal{padding:12px 14px;border-radius:10px;background:var(--surface);font-size:var(--type-small);color:var(--text-2);overflow-wrap:anywhere}
 .first-run-builder-card .facts{margin:0 0 var(--space-3)}
 @media(max-width:650px){.first-run{margin-top:var(--space-3);gap:var(--space-4)}.first-run-steps{max-width:none;flex-basis:100%}.first-run-body{flex-basis:100%}.first-run-body h1{font-size:26px}}

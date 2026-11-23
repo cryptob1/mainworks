@@ -1,4 +1,5 @@
-import { isClosed, type Work } from '../model.js';
+import { isClosed } from './closure.js';
+import type { Work } from './work.js';
 
 /**
  * First-run onboarding state (GY-3603): an install with no merged work opens on the four-step

@@ -1,8 +1,14 @@
 import { test, expect, type Page } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { withDatabase } from '../tests/helpers/postgres';
+import { temporaryDirectory } from '../tests/helpers/temp-dirs';
 import { Engine } from '../src/engine';
 import { server } from '../src/server';
+import { gitRunnerFor } from '../src/merge-writer/local-observation';
+import { loopFetchRefusalHeader, loopPresenceHeader } from '../src/model/loop-presence';
 import { proposedRuntimes } from '../src/model/registry';
 import { friendlyName } from '../web/fun';
 
@@ -22,14 +28,26 @@ const seededIssues = [
 
 const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
 
+const git = (cwd: string, ...args: string[]) =>
+  execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).trim();
+
 test('e2e:first-run — walks a fresh install through steps 1 to 4 to a first merged PR, shipped toast, and Home', async ({ page }) => {
   test.setTimeout(120_000);
   const store = await withDatabase(`first_run_${randomUUID().slice(0, 8)}`);
   await store.init();
-  const engine = new Engine(store, 120, 'fixture/first-run');
-  engine.gitRunner = null;
+  const repoDir = await temporaryDirectory('first-run-git');
+  git(repoDir, 'init', '-b', 'main');
+  git(repoDir, 'config', 'user.name', 'Stub Builder');
+  git(repoDir, 'config', 'user.email', 'builder@example.test');
+  writeFileSync(join(repoDir, 'README.md'), '# First-run fixture\nRun `mainworks up`.\n');
+  git(repoDir, 'add', 'README.md');
+  git(repoDir, 'commit', '-m', 'Initial commit');
+  const baseTip = git(repoDir, 'rev-parse', 'HEAD');
+  git(repoDir, 'update-ref', 'refs/remotes/origin/main', baseTip);
 
-  let repoConnected = false;
+  const engine = new Engine(store, 120, 'fixture/first-run');
+  engine.gitRunner = gitRunnerFor(repoDir);
+
   const runId = randomUUID();
   const http = server(engine, [
     { id: 'operator', displayName: 'Avery', role: 'admin', sessionKind: 'human', token: adminToken },
@@ -37,47 +55,63 @@ test('e2e:first-run — walks a fresh install through steps 1 to 4 to a first me
     { id: 'loop', role: 'coordinator', sessionKind: 'ai', token: coordinatorToken },
   ], { listOpenIssues: async () => seededIssues });
   await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const port = (http.address() as { port: number }).port;
+  const url = `http://127.0.0.1:${port}`;
+
+  // Connect the real host-supervisor bridge (/api/terminal-host) so /api/work/:id/runs/:runId/log
+  // serves the stub Builder's live session log end-to-end with no browser route mocking.
+  const hostBridge = new WebSocket(`ws://127.0.0.1:${port}/api/terminal-host`, ['graphyard', coordinatorToken]);
+  await new Promise<void>((resolve, reject) => {
+    hostBridge.addEventListener('open', () => resolve(), { once: true });
+    hostBridge.addEventListener('error', reject, { once: true });
+  });
+  hostBridge.addEventListener('message', event => {
+    const message = JSON.parse(String(event.data));
+    if (message.type === 'log' && message.run === runId) {
+      hostBridge.send(JSON.stringify({
+        id: message.id,
+        answer: {
+          run: { account: 'builder-stub', kind: 'implementation' },
+          lines: [
+            { at: new Date().toISOString(), stream: 'stdout', text: 'Branching from main and writing the E2E test for #88...' },
+            { at: new Date().toISOString(), stream: 'stdout', text: 'Tests passed. Submitting head to the control plane.' },
+          ],
+          cursor: 2,
+          ended: false,
+        },
+      }));
+    }
+  });
 
   try {
+    // Forward the built dashboard's /api/** requests straight to this test's real control plane without altering any response.
     await page.route('**/api/**', async route => {
       try {
         const reqUrl = new URL(route.request().url());
-        const { pathname, search } = reqUrl;
-        if (/\/runs\/[^/]+\/log$/.test(pathname)) {
-          return await route.fulfill({
-            json: {
-              run: { account: 'builder-stub', kind: 'implementation' },
-              lines: [
-                { at: new Date().toISOString(), stream: 'stdout', text: 'Branching from main and writing the E2E test for #88...' },
-                { at: new Date().toISOString(), stream: 'stdout', text: 'Tests passed. Opening pull request.' },
-              ],
-              cursor: 2,
-              ended: false,
-            },
-          });
-        }
-        const response = await route.fetch({ url: url + pathname + search });
-        if (pathname.endsWith('/status') && !repoConnected) {
-          const body = await response.json();
-          return await route.fulfill({ status: response.status(), json: { ...body, repository: null } });
-        }
+        const response = await route.fetch({ url: url + reqUrl.pathname + reqUrl.search });
         return await route.fulfill({ response });
       } catch {
         await route.abort().catch(() => {});
       }
     });
 
-    const api = async (path: string, token: string, data?: unknown) => {
+    const api = async (path: string, token: string, data?: unknown, extraHeaders: Record<string, string> = {}) => {
       const response = await fetch(`${url}/api/${path}`, {
         method: data === undefined ? 'GET' : 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID(), ...extraHeaders },
         body: data === undefined ? undefined : JSON.stringify(data),
       });
       const body = await response.json();
       expect(response.status, `${path}: ${JSON.stringify(body)}`).toBe(200);
       return body;
     };
+
+    // Report a real repository fetch refusal through the coordinator's status poll so Step 1 starts genuinely not done.
+    const fetchError = 'Deploy key for fixture/first-run was rejected by GitHub.';
+    await api('work-snapshot', coordinatorToken, undefined, {
+      [loopPresenceHeader]: '5',
+      [loopFetchRefusalHeader]: fetchError,
+    });
 
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto('/?sign-in#home');
@@ -92,23 +126,25 @@ test('e2e:first-run — walks a fresh install through steps 1 to 4 to a first me
     const stepItems = stepsList.locator('> li');
     await expect(stepItems).toHaveCount(4);
 
-    // Step 1 is current, steps 2-4 are pending, and terminal equivalent is stated.
+    // Step 1 is current, steps 2-4 are pending, the real refusal is shown, and its true terminal equivalent is stated.
     await expect(stepItems.nth(0)).toHaveAttribute('aria-current', 'step');
     await expect(stepItems.nth(0)).toHaveAttribute('data-step-state', 'current');
     await expect(stepItems.nth(1)).toHaveAttribute('data-step-state', 'pending');
     await expect(stepItems.nth(2)).toHaveAttribute('data-step-state', 'pending');
     await expect(stepItems.nth(3)).toHaveAttribute('data-step-state', 'pending');
-    await expect(page.locator('[data-terminal-equivalent]')).toContainText('npx mainworks up');
+    await expect(page.getByRole('alert')).toContainText(fetchError);
+    await expect(page.locator('[data-terminal-equivalent]')).toContainText('mainworks up --repo fixture/first-run');
+    await expect(page.locator('[data-terminal-equivalent]')).not.toContainText('npx mainworks');
 
-    // Connect repository -> Step 1 ticks with repository name, Step 2 becomes current.
-    repoConnected = true;
+    // Repository connection succeeds -> coordinator poll clears fetchRefusal -> Step 1 ticks with repository name, Step 2 becomes current.
+    await api('work-snapshot', coordinatorToken, undefined, { [loopPresenceHeader]: '5' });
     await page.getByRole('button', { name: 'Check connection' }).click();
     await expect(stepItems.nth(0)).toHaveAttribute('data-step-state', 'done');
     await expect(stepItems.nth(0)).toContainText('✓');
     await expect(stepItems.nth(0)).toContainText('fixture/first-run');
     await expect(stepItems.nth(1)).toHaveAttribute('aria-current', 'step');
     await expect(stepItems.nth(1)).toHaveAttribute('data-step-state', 'current');
-    await expect(page.locator('[data-terminal-equivalent]')).toContainText('npx mainworks up');
+    await expect(page.locator('[data-terminal-equivalent]')).toContainText('mainworks master registry propose --apply');
 
     // Register a stub Builder account with a concrete registered model id.
     const modelId = 'claude-opus-5-5';
@@ -130,7 +166,7 @@ test('e2e:first-run — walks a fresh install through steps 1 to 4 to a first me
         smoke: { result: 'fail', reason: 'Your Anthropic API key was rejected.' },
       }],
     });
-    await page.getByRole('button', { name: 'Check Builder' }).click();
+    await page.getByRole('button', { name: 'Refresh status' }).click();
     await expect(stepItems.nth(1)).toHaveAttribute('data-step-state', 'current');
     await expect(page.getByRole('alert')).toContainText('Your Anthropic API key was rejected.');
     await expect(page.locator('main')).toContainText(modelId);
@@ -144,7 +180,7 @@ test('e2e:first-run — walks a fresh install through steps 1 to 4 to a first me
         smoke: { result: 'pass', reason: null },
       }],
     });
-    await page.getByRole('button', { name: 'Check Builder' }).click();
+    await page.getByRole('button', { name: 'Refresh status' }).click();
     await expect(stepItems.nth(1)).toHaveAttribute('data-step-state', 'done');
     await expect(stepItems.nth(1)).toContainText('✓');
     await expect(stepItems.nth(1)).toContainText(builderFriendly);
@@ -153,12 +189,14 @@ test('e2e:first-run — walks a fresh install through steps 1 to 4 to a first me
     // AC-2: Step 3 lists up to three small open issues and a free-text box.
     await expect(stepItems.nth(2)).toHaveAttribute('aria-current', 'step');
     await expect(stepItems.nth(2)).toHaveAttribute('data-step-state', 'current');
-    await expect(page.locator('[data-terminal-equivalent]')).toContainText('npx mainworks up');
+    await expect(page.locator('[data-terminal-equivalent]')).toContainText('mainworks create task.json');
+    await expect(page.locator('[data-terminal-equivalent]')).toContainText('mainworks ready');
     await expect(page.getByRole('radio')).toHaveCount(3);
     await expect(page.locator('main')).toContainText('#88');
     await expect(page.locator('main')).toContainText('#91');
     await expect(page.locator('main')).toContainText('#94');
     await expect(page.locator('main')).not.toContainText('#99');
+    await expect(page.locator('main')).not.toContainText('#100');
     await expect(page.getByLabel('Or describe your own')).toBeVisible();
 
     // Select issue #88 and start the Builder on it.
@@ -169,7 +207,6 @@ test('e2e:first-run — walks a fresh install through steps 1 to 4 to a first me
     await expect(stepItems.nth(2)).toHaveAttribute('data-step-state', 'done');
     await expect(stepItems.nth(3)).toHaveAttribute('aria-current', 'step');
     await expect(stepItems.nth(3)).toHaveAttribute('data-step-state', 'current');
-    await expect(page.locator('[data-terminal-equivalent]')).toContainText('npx mainworks up');
 
     // Verify the created task in the control plane has an e2e: proof criterion and is ready (dispatched).
     const snapshot = await api('work-snapshot', adminToken);
@@ -178,10 +215,12 @@ test('e2e:first-run — walks a fresh install through steps 1 to 4 to a first me
     expect(created.ready).toBe(true);
     expect(created.criteria.length).toBeGreaterThanOrEqual(1);
     expect(created.criteria.some((ac: { proofs: string[] }) => ac.proofs.some(p => p.startsWith('e2e:')))).toBe(true);
+    await expect(page.locator('[data-terminal-equivalent]')).toContainText(`mainworks status ${created.key}`);
 
-    // Stub Builder claims the task and records a live implementation session.
-    const claimedAt = new Date(Date.now() - 3 * 60_000).toISOString();
+    // Stub Builder claims the task, registers its workspace, and records a live implementation session.
+    const branch = `graphyard/${created.key.toLowerCase()}-1`;
     await api(`work/${created.id}/claim`, workerToken, {});
+    await api(`work/${created.id}/workspace`, workerToken, { epoch: 1, host: 'build-host', path: repoDir, branch });
     await api(`work/${created.id}/session`, workerToken, {
       id: 'builder-stub:1',
       kind: 'implementation',
@@ -193,7 +232,7 @@ test('e2e:first-run — walks a fresh install through steps 1 to 4 to a first me
       epoch: 1,
     });
 
-    // Step 4 shows both the pipeline and the Builder's live session output.
+    // Step 4 shows both the pipeline and the Builder's live session output streamed through /api/terminal-host.
     await expect(page.getByRole('region', { name: 'Pipeline' })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('tabpanel', { name: 'Live session' })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('tabpanel', { name: 'Live session' })).toContainText('Branching from main and writing the E2E test for #88', { timeout: 15_000 });
@@ -205,24 +244,45 @@ test('e2e:first-run — walks a fresh install through steps 1 to 4 to a first me
     }
     await page.setViewportSize({ width: 1280, height: 900 });
 
-    // Stub Builder completes and merges the task (3 minutes after claim).
-    const mergedAt = new Date().toISOString();
-    await store.pool.query(
-      `UPDATE work_items SET document = document || $2::jsonb WHERE id=$1`,
-      [created.id, JSON.stringify({
-        stage: 'done',
-        revision: (created.revision ?? 0) + 10,
-        stageEnteredAt: mergedAt,
-        updatedAt: mergedAt,
-        implementers: ['builder-stub'],
-        lastAssignment: { owner: 'builder-stub', epoch: 1, claimedAt, startedAt: claimedAt },
-        delivery: { mergedAt, mergeSha: 'a'.repeat(40) },
-      })],
-    );
+    // Stub Builder commits the fix on its branch and submits its head through the real /submit route.
+    git(repoDir, 'checkout', '-b', branch);
+    writeFileSync(join(repoDir, 'README.md'), '# First-run fixture\nRun `mainworks up --port 4310`.\n');
+    git(repoDir, 'add', 'README.md');
+    git(repoDir, 'commit', '-m', 'Add --port flag to README install command');
+    const headSha = git(repoDir, 'rev-parse', 'HEAD');
+    await api(`work/${created.id}/submit`, workerToken, { epoch: 1, head: headSha });
 
-    // AC-2: Shipped toast appears with time from start to merge, and the install switches to Home.
+    // Independent product review approves the submitted head before the merge writer delivers it.
+    await api(`work/${created.id}/product-review`, coordinatorToken, {
+      sha: headSha, baseSha: baseTip, verdict: 'approved', reviewer: 'review-stub', findings: 'Verified #88 fix end to end.',
+    });
+
+    // Merge writer merges the branch onto main and delivers through the real /merge-record ledger.
+    git(repoDir, 'checkout', 'main');
+    git(repoDir, 'merge', '--no-ff', '-m', `Merge ${created.key}`, branch);
+    const mergeSha = git(repoDir, 'rev-parse', 'HEAD');
+    git(repoDir, 'update-ref', 'refs/remotes/origin/main', mergeSha);
+
+    const pushedAt = new Date(Date.now() + 3 * 60_000).toISOString();
+    await api(`work/${created.id}/merge-record`, coordinatorToken, {
+      kind: 'intent', head: headSha, baseTip, mergeSha, risk: 'normal', at: new Date().toISOString(),
+    });
+    await api(`work/${created.id}/merge-record`, coordinatorToken, {
+      kind: 'trial', head: headSha, baseTip, mergeSha, outcome: 'verdict', build: 'pass',
+      tests: { passed: 1, failed: [], files: 1 }, files: ['README.md'],
+      proofs: { 'e2e:issue-88': { executed: 1, failed: 0 } }, durationMs: 5, attempts: [],
+    });
+    await api(`work/${created.id}/merge-record`, coordinatorToken, {
+      kind: 'pushed', mergeSha, pushedAt,
+    });
+    await api(`work/${created.id}/merge-record`, coordinatorToken, {
+      kind: 'reconciled', mergeSha, observedTip: mergeSha,
+    });
+
+    // AC-2: Shipped toast appears with Builder name and time from start to merge, and the install switches to Home.
     const toast = page.locator(`[data-toast="${created.key}"]`);
     await expect(toast).toBeVisible({ timeout: 15_000 });
+    await expect(toast).toContainText(builderFriendly);
     await expect(toast).toContainText(created.title);
     await expect(toast).toContainText(/in \d+ min/);
     await expect(page.getByRole('heading', { name: 'Home', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
@@ -232,8 +292,10 @@ test('e2e:first-run — walks a fresh install through steps 1 to 4 to a first me
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Home', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
   } finally {
+    hostBridge.close();
     await page.unrouteAll().catch(() => {});
     await new Promise<void>(resolve => http.close(() => resolve()));
     await store.close();
+    rmSync(repoDir, { recursive: true, force: true });
   }
 });

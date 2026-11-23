@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { draftFirstRunTask, firstRunState, type SmallIssue } from '../../src/model/first-run';
+import { COMMAND_NAME } from '../../src/model/product';
 import { friendlyName } from '../fun';
 import type { Dashboard } from './dashboard';
 import WorkDetails from './work-details';
@@ -8,7 +9,7 @@ import WorkDetails from './work-details';
  * First-run page (GY-3603): shown instead of an empty Home when an install has no merged work.
  * Walks a new person through four steps — connect repository, confirm Builder via live request,
  * pick one small open issue or type a one-line fix, and watch the task merge — each stating its
- * terminal equivalent (`npx mainworks up`). Matches the approved Start prototype.
+ * own terminal equivalent. Matches the approved Start prototype.
  */
 export default function FirstRunPage(dashboard: Dashboard) {
   const { status, work, api, refresh, sessionEpoch, setView } = dashboard;
@@ -103,7 +104,7 @@ export default function FirstRunPage(dashboard: Dashboard) {
           <span className="muted">First merged PR in about 10 minutes.</span>
         </div>
         <div className="first-run-terminal" data-terminal-equivalent>
-          Prefer a terminal? <code>npx mainworks up</code> connects your repository and configures its deploy key or scoped token.
+          Prefer a terminal? <code>{COMMAND_NAME} up --repo {state.repository ?? 'OWNER/NAME'}</code> connects this repository and configures its deploy key or scoped token.
         </div>
       </>}
 
@@ -123,13 +124,20 @@ export default function FirstRunPage(dashboard: Dashboard) {
               : <p className="muted">Waiting for a live request to answer on <span className="mono">{state.builder.modelId}</span>…</p>}
         </div> : <p className="muted">No Builder account is connected yet.</p>}
         <div className="first-run-actions">
-          <button type="button" className="first-run-cta" disabled={checking} onClick={() => void recheck()}>
-            {checking ? 'Checking Builder…' : 'Check Builder'}
-          </button>
-          <button type="button" onClick={() => { location.hash = 'connect'; setView('agents'); }}>Connect Builder account</button>
+          {(!state.builder || state.builder.error || !state.builder.modelId) ? <>
+            <button type="button" className="first-run-cta" onClick={() => { location.hash = 'connect'; setView('agents'); }}>Connect Builder account</button>
+            <button type="button" className="first-run-secondary" disabled={checking} onClick={() => void recheck()}>
+              {checking ? 'Refreshing status…' : 'Refresh status'}
+            </button>
+          </> : <>
+            <button type="button" className="first-run-cta" disabled={checking} onClick={() => void recheck()}>
+              {checking ? 'Refreshing status…' : 'Refresh status'}
+            </button>
+            <button type="button" className="first-run-secondary" onClick={() => { location.hash = 'connect'; setView('agents'); }}>Connect Builder account</button>
+          </>}
         </div>
         <div className="first-run-terminal" data-terminal-equivalent>
-          Prefer a terminal? <code>npx mainworks up</code> connects your Builder and runs the live model check.
+          Prefer a terminal? <code>{COMMAND_NAME} master registry propose --apply</code> registers your host's logged-in Builder accounts in the control plane.
         </div>
       </>}
 
@@ -160,14 +168,14 @@ export default function FirstRunPage(dashboard: Dashboard) {
           <span className="muted">Nothing merges until its tests and a second agent's review pass.</span>
         </div>
         <div className="first-run-terminal" data-terminal-equivalent>
-          Prefer a terminal? <code>npx mainworks up</code> does steps 1 to 3 and prints the PR link.
+          Prefer a terminal? <code>{COMMAND_NAME} create task.json</code> files a task and <code>{COMMAND_NAME} ready GY-1 "First run"</code> dispatches it.
         </div>
       </>}
 
       {state.currentStep === 4 && state.activeTask && <>
         <WorkDetails key={state.activeTask.id} {...dashboard} item={state.activeTask} embedded defaultTab="Live session"/>
         <div className="first-run-terminal" data-terminal-equivalent>
-          Prefer a terminal? <code>npx mainworks up</code> watches the task until its pull request merges.
+          Prefer a terminal? <code>{COMMAND_NAME} status {state.activeTask.key}</code> shows this task's gates and merge pipeline.
         </div>
       </>}
     </section>
