@@ -71,12 +71,15 @@ export async function publishCliRelease(directory: string, source: string, commi
   for (const root of new Set([source, join(directory, 'deploy', 'build'), target])) {
     if (!existsSync(join(root, 'bin', 'graphyard.mjs'))) continue;
     // Bring old launchers onto the pointer protocol without replacing their dependencies or code.
+    // GY-3742: the release's whole bin set, graphyard.mjs last, so a shim never lands without the entry it imports.
     if (root !== target) {
-      const launcher = join(root, 'bin', 'graphyard.mjs');
-      // GY-3594: the launcher's code moved to bin/mainworks.mjs; an older release still holds it in graphyard.mjs.
-      const code = ['mainworks.mjs', 'graphyard.mjs'].map(name => join(target, 'bin', name)).find(path => existsSync(path))!;
-      await copyFile(code, `${launcher}.tmp`);
-      await rename(`${launcher}.tmp`, launcher);
+      const names = (await readdir(join(target, 'bin'), { withFileTypes: true })).filter(entry => entry.isFile()).map(entry => entry.name)
+        .sort((a, b) => Number(a === 'graphyard.mjs') - Number(b === 'graphyard.mjs'));
+      for (const name of names) {
+        const file = join(root, 'bin', name);
+        await copyFile(join(target, 'bin', name), `${file}.tmp`);
+        await rename(`${file}.tmp`, file);
+      }
     }
     await mkdir(stateDirectory(root), { recursive: true });
     const pointer = join(stateDirectory(root), 'cli-current');
