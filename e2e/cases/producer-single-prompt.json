@@ -1,0 +1,15 @@
+{
+  "id": "producer-single-prompt",
+  "title": "Every producer runtime receives one request, differing only in how it submits evidence",
+  "description": "Renders the CLI and headless producer requests for a unit and a live-install proof: both come from one builder, differ only in the submit-evidence instruction, stay within 450 words beside their data, and carry the credential, run-it-again-without-the-behaviour and live-install rules; the shared paragraphs are written once in src/.",
+  "target": "any",
+  "required": true,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "the CLI and headless producer requests share one builder",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/producer-single-prompt.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}
