@@ -9,3 +9,5 @@ export const budgetLine = (machines: readonly { name: string; local?: boolean; s
 export const machineLine = (machine: { name: string; local?: boolean; away: boolean; cores: number | null; busy?: number | null; celsius: number | null }) =>
   `${machine.local ? 'this machine' : machineName(machine.name)}: ${machine.away && !machine.local ? 'away'
     : `${machine.busy == null ? '—' : Math.round(machine.busy)} of ${machine.cores ?? '—'} cores busy${machine.celsius === null ? '' : `, ${Math.round(machine.celsius)}°C`}`}`;
+/** GY-3704: a host's last check fallback, shown beside its load: `last check fell back to this machine at 2026-11-22T07:00:00Z: host … dropped a shard: …`. */
+export const fallbackLine = (fallback: { reason: string; at: string }) => `last check fell back to this machine at ${fallback.at}: ${fallback.reason}`;
