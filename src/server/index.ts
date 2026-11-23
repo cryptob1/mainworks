@@ -12,6 +12,7 @@ import { healthRoutes } from './routes/health.js';
 import { signinRoutes } from './routes/signin.js';
 import { operatorAgentRoutes } from './routes/operator-agents.js';
 import { teamAccessRoutes } from './routes/team-access.js';
+import { infraActRoutes, infraRoutes } from './routes/infra.js';
 import { agentRegistryRoutes } from './routes/agent-registry.js';
 import { delegationRoutes } from './routes/delegation.js';
 import { validationRoutes } from './routes/validation.js';
@@ -31,13 +32,13 @@ export type { ServerOptions } from './auth.js';
 export { assembleServices } from './auth.js';
 
 /** Routes that answer without a bearer token. */
-export const publicRoutes: readonly RouteModule[] = [healthRoutes, signinRoutes];
+export const publicRoutes: readonly RouteModule[] = [healthRoutes, signinRoutes, infraActRoutes];
 /**
  * Every authenticated `/api/` route, in matching order. A resource adds its module here;
  * modules ahead of the operator-agent guard authorize their callers themselves.
  */
 export const apiRoutes: readonly RouteModule[] = [
-  operatorAgentRoutes, teamAccessRoutes,
+  operatorAgentRoutes, teamAccessRoutes, infraRoutes,
   { name: 'operator-agent-scope', routes: [operatorAgentRouteGuard] },
   loopStateRoutes, agentRegistryRoutes, delegationRoutes, validationRoutes, deliveryRoutes, emblemRoutes, usageRoutes, scenarioRoutes, actionRoutes, statusRoutes, workRoutes, productBriefRoutes, homeVisitRoutes, masterMessageRoutes, caretakerRoutes,
 ];

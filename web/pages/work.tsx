@@ -143,9 +143,14 @@ export default function WorkPage({ work, board, status, query, setQuery, setSele
     // GY-2963: a merge whose trial is advancing names its step and how long it has run.
     const merging = group === 'moving' ? currentMergeStep(item, now) : null;
     if (merging?.fresh) return `Merging: ${merging.step}, ${minutes(merging.atMs, now)}`;
-    if (group === 'blocked') return (item.blocker ? blockerSummary(item.blocker, now, item).sentence : null) ?? (stalls.has(item.id) ? `Nothing is happening: ${stalls.get(item.id)}` : plainStatus(item, now).blocking) ?? plainWords(entry?.does ?? '');
+    const age = minutes(Date.parse(entry?.since ?? item.stageEnteredAt), now);
+    // GY-3558: a blocked row is its state, its age and one next step.
+    if (group === 'blocked') {
+      const why = (item.blocker ? blockerSummary(item.blocker, now, item).sentence : null) ?? (stalls.has(item.id) ? `${stalls.get(item.id)}; the master picks the next step.` : plainStatus(item, now).blocking) ?? plainWords(entry?.does ?? '');
+      return `Blocked ${age}: ${/^[A-Z](?![A-Z0-9])/.test(why) ? why.charAt(0).toLowerCase() + why.slice(1) : why}`;
+    }
     if (entry?.who === 'Nobody yet') return entry.does;
-    return group === 'up-next' ? 'Waiting for a builder' : group === 'backlog' ? 'Not released yet' : plainWords(entry?.does ?? '');
+    return group === 'up-next' ? `Waiting for a worker · ${age}` : group === 'backlog' ? 'Not released yet' : plainWords(entry?.does ?? '');
   };
   const table = (list: Row[]) => <table className="sessions-table work-table">
     <thead><tr><th scope="col">State</th><th scope="col">Task</th><th scope="col">Now</th><th scope="col">Builder</th><th scope="col"><Term term="pull request" focusable={false}>PR</Term></th><th scope="col">Time</th></tr></thead>
@@ -161,8 +166,8 @@ export default function WorkPage({ work, board, status, query, setQuery, setSele
         <td data-col="now">{doing}</td>
         <td data-col="builder"><Builder item={item} now={now}/></td>
         <td data-col="pr">{item.candidate ? <CandidatePr repository={status?.repository} candidate={item.candidate} workKey={item.key} observation={item.observation as never}/> : '—'}</td>
-        {/* Moving and stuck rows carry the step's clock, marked overdue past the one threshold (GY-108); a head queued for its merge is never overdue for that wait. */}
-        <td data-col="time">{timedGroups.has(group) ? <StatusAge held={{ ...stepHeld(item, now, null, release), ...(entry?.queue ? { overdue: false } : {}) }}/> : minutes(since, now)}</td>
+        {/* Moving and stuck rows carry the step's clock; a row waiting for a worker says its age under Now, so not twice (GY-3558); marked overdue past the one threshold (GY-108); a head queued for its merge is never overdue for that wait. */}
+        <td data-col="time">{timedGroups.has(group) ? <StatusAge held={{ ...stepHeld(item, now, null, release), ...(entry?.queue ? { overdue: false } : {}) }}/> : group === 'up-next' && entry?.who !== 'Nobody yet' ? '—' : minutes(since, now)}</td>
       </tr>;
     })}</tbody>
   </table>;
