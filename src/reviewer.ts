@@ -23,12 +23,13 @@ import { loadMasterConfig, loadStoredMasterConfig, } from './master/config.js';
 import { closeHerdrPane, type HerdrAgent } from './master/herdr.js';
 import { holdRepeatedLimitAccount } from './master/launch-account.js';
 import { prepareSessionHarness } from './master/harness.js';
-import { profileConcurrency, reviewerProfileSchema, selectReviewerProfile, sessionAgentName, type MasterConfig, type ReviewerProfile } from './master/profiles.js';
+import { defaultReviewerProfile, profileConcurrency, reviewerProfileSchema, selectReviewerProfile, sessionAgentName, type MasterConfig, type ReviewerProfile } from './master/profiles.js';
 import { sessionSlotsGrant } from './master/harness.js';
 import { launcherCoordinatorRoot, sessionConfinement } from './master/launch.js';
 import { credentialMaskFor, insideMasterConfinement, reviewerCredentialDirectory, type CredentialMask } from './master/confinement.js';
 import { runtimeLoginHomes } from './master/profiles.js';
 import { moveOffLoggedOutAccount } from './master/logged-out.js';
+import { NoHealthyAccountError } from './master/environments.js';
 import { underTestRunner } from './runtime-environment.js';
 import { runtimeSandboxes, sessionWritablePaths, verifyWorkerSandbox, type SandboxExec } from './worker-sandbox.js';
 import { withVerificationPath } from './master/verification-slots.js';
@@ -58,6 +59,7 @@ import { startReviewServe, stopReviewServe } from './review-serve.js';
 import { freePort } from './serve-app.js';
 import { runEnvironment } from './runner/pi.js';
 import { browserInstallCommand, browserToolName, provisionBrowserTool } from './browser-tool.js';
+import { endRegistrySessionById } from './master/registry-slot.js';
 import { stateDirectory } from './install/layout.js';
 export { controlPlaneFindingSection } from './review-prompt.js';
 export { reviewStandard, reviewStandards, repetitionReviewSection, repeatingPaths, touchesRepeatingPath } from './review-prompt.js';
@@ -83,6 +85,8 @@ export const reviewRecordSchema = z.object({
   attempt: z.number().int().min(1).max(50).optional(),
   /** The agent registry session the launch was chosen under (GY-205): ended once this record settles, so the role's slot frees with it. */
   session: z.string().min(1).max(200).optional(),
+  /** The agent registry account the launch ran on (GY-3748): skipped when a non-live review relaunches. */
+  account: z.string().min(1).max(120).optional(),
   /** When the loop saw the control plane no longer request `requestId`; until then the record is pinned (retainSessionRecords). */
   requestClosedAt: z.string().min(1).max(40).optional(),
   /** When the loop saw `sha` stop being the undelivered candidate of `key`; until then a record with a verdict is pinned (retainSessionRecords). */
@@ -304,6 +308,8 @@ async function saveChangedRecords(root: string, mine: ReviewRecord[], before: Ma
 
 /** A reservation whose launcher never confirmed the runtime within this long died mid-launch. */
 export const reviewLaunchReservationMs = 10 * 60_000;
+/** GY-3748: a review session not live this long after launch is released and relaunched on the next eligible account. */
+export const reviewNotLiveMs = 2 * 60_000;
 
 /**
  * The Herdr session already serving this request, when there is one: a session a record of the
@@ -968,6 +974,8 @@ export async function launchReview(root: string, work: Work, profileName: string
   registerLaunch?: (work: Work, launch: ControlPlaneLaunchInput) => Promise<{ launch: string }>;
   /** The one-task model executor; the host's by default. */
   headless?: HeadlessExec | null;
+  /** GY-3748: `master review GY-N PROFILE` replaces a pending reviewer session that is not live instead of refusing. */
+  replaceDead?: boolean;
 } = {}) {
   dependencies = { ...dependencies, coordinatorRoot: sessionCoordinatorRoot(root, dependencies) };
   const now = dependencies.now ?? (() => new Date());
@@ -978,7 +986,7 @@ export async function launchReview(root: string, work: Work, profileName: string
   const postMerge = dependencies.postMerge;
   const product = !!dependencies.product;
   if (product && postMerge) throw new Error('A product review judges a candidate head, never a delivered merge commit');
-  const profile: ReviewerProfile | undefined = profileName ? config.reviewers.find(item => item.name === profileName) : selectReviewerProfile(config).profile ?? undefined;
+  const profile: ReviewerProfile | undefined = profileName ? config.reviewers.find(item => item.name === profileName) : selectReviewerProfile(config).profile ?? defaultReviewerProfile;
   if (!profile) {
     // GY-1850: a launch naming a profile no configured one carries is a configuration fault, not a
     // failing candidate: left to the dispatcher's widening retries it was knocked out every cycle
@@ -1018,14 +1026,27 @@ export async function launchReview(root: string, work: Work, profileName: string
     // Only a record for the exact current candidate holds the key: one session per candidate.
     const pendings = ledger.reviews.filter(record => record.state === 'pending' && record.key === work.key);
     const current = pendings.find(pending => !staleReviewReason(pending, [work]));
-    if (current) return { refusal: new ReviewSessionPending(`A reviewer session for ${work.key} is already ${current.launching ? 'being launched' : 'pending'} on ${current.sha.slice(0, 7)} (${current.agentName}${current.requestId ? `, request ${current.requestId}` : ''}); one review request is answered by one session, so no second one is launched`,
-      work.key, { sha: current.sha, agentName: current.agentName, ...(current.requestId ? { requestId: current.requestId } : {}) }) };
+    let replacedSession: string | undefined;
+    if (current) {
+      const currentLive = agents.some(agent => agent.name === current.agentName) || (!current.pane && !!liveRun(current.agentName));
+      if (dependencies.replaceDead && !currentLive) {
+        replacedSession = current.session;
+        await closeReviewSession(root, current, { run: dependencies.run, now }, { state: 'failed', resolution: 'replaced by master review: the reviewer session was not live', force: true });
+      } else {
+        return { refusal: new ReviewSessionPending(`A reviewer session for ${work.key} is already ${current.launching ? 'being launched' : 'pending'} on ${current.sha.slice(0, 7)} (${current.agentName}${current.requestId ? `, request ${current.requestId}` : ''}); one review request is answered by one session, so no second one is launched`,
+          work.key, { sha: current.sha, agentName: current.agentName, ...(current.requestId ? { requestId: current.requestId } : {}) }) };
+      }
+    }
     // A request a settled session already answered is answered (GY-1083): its verdict awaits only the
     // control plane's observation, and a second session's verdict would conflict with it.
     const answered = dependencies.requestId ? answeringRecord(ledger.reviews, dependencies.requestId, binding.sha, work.observation) : null;
     if (answered) return { refusal: new ReviewSessionPending(`Reviewer session ${answered.agentName} already answered ${work.key} review request ${dependencies.requestId} on ${binding.sha.slice(0, 7)} with ${answered.verdict!.state} (review ${answered.verdict!.reviewId}); one request yields one verdict, so no second session is launched and the control plane settles the request once it observes that verdict`,
       work.key, { sha: binding.sha, agentName: answered.agentName, requestId: dependencies.requestId!, answered: { state: answered.verdict!.state, reviewId: answered.verdict!.reviewId, at: answered.closedAt ?? answered.verdict!.submittedAt } }) };
-    for (const pending of pendings) await closeReviewSession(root, pending, { run: dependencies.run, now }, { state: 'cancelled', resolution: staleReviewReason(pending, [work])!, force: true });
+    for (const pending of pendings) if (pending.state === 'pending') await closeReviewSession(root, pending, { run: dependencies.run, now }, { state: 'cancelled', resolution: staleReviewReason(pending, [work])!, force: true });
+    // GY-3748: accounts whose previous attempt for this request failed (e.g. never went live) are skipped so the relaunch moves to the next eligible account.
+    const failedAccounts = dependencies.requestId
+      ? [...new Set(ledger.reviews.filter(entry => entry.requestId === dependencies.requestId && entry.state === 'failed' && entry.account).map(entry => entry.account!))]
+      : [];
     // A Herdr session already serving this request is the same launch twice, whatever the ledger says.
     const serving = requestSessionInHerdr(ledger.reviews, agents, config.reviewers, { key: work.key, sha: binding.sha, requestId: dependencies.requestId });
     if (serving) return { refusal: new ReviewSessionPending(`Reviewer session ${serving} is already visible in Herdr for ${work.key}${dependencies.requestId ? ` review request ${dependencies.requestId}` : ` on ${binding.sha.slice(0, 7)}`}; one review request is answered by one session`,
@@ -1048,10 +1069,15 @@ export async function launchReview(root: string, work: Work, profileName: string
       // Only the token's hash is ever recorded (GY-1525); the token itself lives in the session's binding alone.
       mode: 'control-plane', verdictTokenHash, ...(postMerge ? { postMerge: true } : {}), ...(product ? { product: true } : {}) });
     ledger.reviews.push(record);
-    return { record };
+    return { record, failedAccounts, replacedSession };
   });
   if ('refusal' in reservation) throw reservation.refusal;
   const { agentName } = reservation.record;
+  const excludeAccounts = [...new Set([...(dependencies.probe?.exclude ?? []), ...reservation.failedAccounts])];
+  if (reservation.replacedSession) {
+    const end = dependencies.probe?.registry ? (id: string, reason: string) => dependencies.probe!.registry!.end(id, reason) : (id: string, reason: string) => endRegistrySessionById(config, id, reason);
+    await end(reservation.replacedSession, 'replaced by master review: the reviewer session was not live').catch(() => {});
+  }
   // A launch that never became a session gives its reservation back; one whose tab Herdr could
   // not confirm closed keeps it, settled as failed with the reason, so the session it may have
   // left behind is still on the record.
@@ -1066,7 +1092,14 @@ export async function launchReview(root: string, work: Work, profileName: string
       throw new Error(`${work.key}'s last reviewer sessions each ended on one account's limit notice, and the hold that keeps the next launch off it could not be placed: ${error instanceof Error ? error.message : String(error)}`.slice(0, 500), { cause: error });
     });
     // Before a token is minted: an exhausted or logged-out account is skipped for the profile's next.
-    const selected = await selectAccount(config, 'reviewer', profile, { ...dependencies.probe, work: work.key });
+    // GY-3748: prefer accounts that have not already failed on this request; fall back to them only if no other eligible account exists.
+    let selected: Awaited<ReturnType<typeof selectAccount>>;
+    try {
+      selected = await selectAccount(config, 'reviewer', profile, { ...dependencies.probe, ...(excludeAccounts.length ? { exclude: excludeAccounts } : {}), work: work.key });
+    } catch (error) {
+      if (!reservation.failedAccounts.length || !(error instanceof NoHealthyAccountError)) throw error;
+      selected = await selectAccount(config, 'reviewer', profile, { ...dependencies.probe, work: work.key });
+    }
     // Everything past the choice can fail; the session it chose is given back at once when it does.
     return await onSelectedSession(selected, `reviewer launch for ${work.key} failed`, async () => {
       // GY-2995: a launch whose sandbox cannot reach the CLI its prompt names starts nothing —
@@ -1208,7 +1241,7 @@ export async function launchReview(root: string, work: Work, profileName: string
             contract: launch.contract, coordinatorRoot: dependencies.coordinatorRoot, credentialMask, role: harness.role, exec: headless, moveAccount,
             onRun: async run => {
               headlessContext!.kind = run.kind;
-              await updateReviewLedger(root, ledger => { const record = ledger.reviews.find(entry => entry.id === id); if (record) { record.headless = run; record.session = registrySessionOf(on.current); } });
+              await updateReviewLedger(root, ledger => { const record = ledger.reviews.find(entry => entry.id === id); if (record) { record.headless = run; record.session = registrySessionOf(on.current); if (on.current.account?.name) record.account = on.current.account.name; } });
             },
             holdAccount: notice => recordObservedExhaustion(config, on.current.account?.name ?? profileAccount(profile.name), { at: now().toISOString(), resetsAt: notice.resetsAt, reason: notice.reason, role: 'reviewer', profile: profile.name, work: binding.key }, now().getTime(), { registry: dependencies.probe?.registry, smoke: dependencies.probe?.smoke }),
             prompt: request(`${await reviewDiff(root, binding.baseSha, binding.sha, dependencies.run)}\n${headlessReviewAnswer(binding.key, product, headlessContext.screenshots)}`),
@@ -1232,7 +1265,7 @@ export async function launchReview(root: string, work: Work, profileName: string
           const index = ledger.reviews.findIndex(entry => entry.id === id);
           const { launching: _launching, ...reserved } = index >= 0 ? ledger.reviews[index] : reservation.record;
           // A headless run holds its request from its first instant: there is nothing to acknowledge or re-prompt.
-          const settled: ReviewRecord = reviewRecordSchema.parse({ ...reserved, pane: null, tokenExpiresAt: minted.expiresAt, delivery, ...(registrySessionOf(on.current) ? { session: registrySessionOf(on.current) } : {}), checkout: checkout.directory, ...(serving ? { serve: serving.directory } : {}), criteriaOnly: true, ...(registered ? { launch: registered.launch } : {}), acknowledgedAt: reserved.acknowledgedAt ?? now().toISOString() });
+          const settled: ReviewRecord = reviewRecordSchema.parse({ ...reserved, pane: null, tokenExpiresAt: minted.expiresAt, delivery, ...(registrySessionOf(on.current) ? { session: registrySessionOf(on.current) } : {}), ...(on.current.account?.name ? { account: on.current.account.name } : {}), checkout: checkout.directory, ...(serving ? { serve: serving.directory } : {}), criteriaOnly: true, ...(registered ? { launch: registered.launch } : {}), acknowledgedAt: reserved.acknowledgedAt ?? now().toISOString() });
           if (index >= 0) ledger.reviews[index] = settled; else ledger.reviews.push(settled);
           return settled;
         });
@@ -1312,7 +1345,7 @@ export async function reviewCommand(root: string, args: string[], snapshot: { wo
   const work = snapshot.work.find(item => item.id === args[0] || item.key === args[0]);
   if (!work) throw new Error(`Unknown work item ${args[0]}`);
   const request = liveReviewRequest(work);
-  return launchReview(root, work, args[1], agents, snapshot.now, { ...dependencies, ...(request ? { requestId: request.id } : {}) });
+  return launchReview(root, work, args[1], agents, snapshot.now, { ...dependencies, replaceDead: true, ...(request ? { requestId: request.id } : {}) });
 }
 
 
@@ -1481,7 +1514,8 @@ export async function reconcileReviews(root: string, config: MasterConfig, depen
   registry?: Pick<AgentRegistry, 'sessions'> | null;
 } = {}) {
   const ledger = await readReviewLedger(root);
-  if (!ledger.reviews.length) return { reviews: ledger.reviews, changed: 0, released: [] as { pane: string; agentName: string }[] };
+  const notLive: { key: string; sha: string; requestId?: string; id: string; agentName: string; account?: string; session?: string; resolution: string }[] = [];
+  if (!ledger.reviews.length) return { reviews: ledger.reviews, changed: 0, released: [] as { pane: string; agentName: string }[], notLive };
   const before = new Map(ledger.reviews.map(record => [record.id, JSON.stringify(record)]));
   const reviewer = 'control-plane';
   const readVerdict = dependencies.observe;
@@ -1505,9 +1539,12 @@ export async function reconcileReviews(root: string, config: MasterConfig, depen
     // A reservation whose launcher is still starting the runtime is not a session yet; one that
     // never confirmed within the bound belongs to a launcher that died mid-launch.
     if (record.launching) {
-      if (now.getTime() - Date.parse(record.requestedAt) < reviewLaunchReservationMs) continue;
+      const launchingLive = (!record.pane && !!liveRun(record.agentName)) || !!dependencies.agents?.some(a => a.name === record.agentName);
+      if (now.getTime() - Date.parse(record.requestedAt) < (launchingLive ? reviewLaunchReservationMs : reviewNotLiveMs)) continue;
       delete record.launching;
-      await closeReviewSession(root, record, { run: dependencies.run, now: () => now }, { state: 'failed', resolution: `the launch reserved at ${record.requestedAt} never confirmed its runtime started`, force: true });
+      const resolution = `${lostRunReason}: the launch reserved at ${record.requestedAt} never confirmed its runtime started and was not live 2 minutes after launch (${record.agentName}${record.account ? ` on ${record.account}` : ''}); released and relaunched on the next eligible account`;
+      await closeReviewSession(root, record, { run: dependencies.run, now: () => now }, { state: 'failed', resolution, force: true });
+      notLive.push({ key: record.key, sha: record.sha, requestId: record.requestId, id: record.id, agentName: record.agentName, account: record.account, session: record.session, resolution });
       changed++;
       continue;
     }
@@ -1548,9 +1585,14 @@ export async function reconcileReviews(root: string, config: MasterConfig, depen
       // GY-3234: a session gone from Herdr whose registry session is ended too is dead, not idle:
       // no reminder can reach it, so it settles on this pass and its request relaunches on the
       // same tick as a lost run, rather than waiting out the idle grace or the token.
+      // GY-3748: a review session not live 2 minutes after launch is released and relaunched on the next eligible account.
+      const headlessLive = !record.pane && !!liveRun(record.agentName);
       if (!agent && record.session && dependencies.registry && !liveSessions(dependencies.registry).some(session => session.id === record.session))
         failed = `${lostRunReason}: the reviewer ${record.pane ? `pane ${record.pane}` : 'headless run'} (${record.agentName}) exited and its registry session ${record.session} is ended, without a verdict on ${record.sha.slice(0, 12)}; it is relaunched at once`;
-      else if (!agent || ['done', 'idle', 'blocked'].includes(agent.agent_status ?? '')) {
+      else if (!record.pane && !agent && !headlessLive && now.getTime() - Date.parse(record.requestedAt) >= reviewNotLiveMs) {
+        failed = `${lostRunReason}: the reviewer session (${record.agentName}${record.account ? ` on ${record.account}` : ''}) was not live 2 minutes after launch without a verdict on ${record.sha.slice(0, 12)}; released and relaunched on the next eligible account`;
+        notLive.push({ key: record.key, sha: record.sha, requestId: record.requestId, id: record.id, agentName: record.agentName, account: record.account, session: record.session, resolution: failed });
+      } else if (!agent || ['done', 'idle', 'blocked'].includes(agent.agent_status ?? '')) {
         if (!record.idleSince) {
           record.idleSince = now.toISOString(); changed++;
           if (agent && !record.repromptedAt) markReprompted(record, now.getTime());
@@ -1639,7 +1681,7 @@ export async function reconcileReviews(root: string, config: MasterConfig, depen
   // A request the control plane no longer holds open releases its records to the retention window.
   if (dependencies.work) changed += releaseClosedRequests(ledger.reviews, dependencies.work, now);
   if (changed) await saveChangedRecords(root, ledger.reviews, before, dependencies.ledgerLock);
-  return { reviews: changed ? (await readReviewLedger(root)).reviews : ledger.reviews, changed, released };
+  return { reviews: changed ? (await readReviewLedger(root)).reviews : ledger.reviews, changed, released, notLive };
 }
 
 /** Errors under which the existing host lock runs lockless. */

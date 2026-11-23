@@ -1,0 +1,16 @@
+{
+  "id": "review-moves-off-spent-account",
+  "title": "A review moves off an exhausted account and another account posts the verdict",
+  "description": "Marks the first reviewer account exhausted after a review launch is requested and verifies the review launches on another eligible account in the registry's reviewer role and posts the verdict.",
+  "tags": ["review"],
+  "target": "any",
+  "required": true,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "review moves off spent account and completes on another",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/review-moves-off-spent-account.test.ts",
+      "timeoutSeconds": 600
+    }
+  ]
+}

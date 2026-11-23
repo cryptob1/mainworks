@@ -12,6 +12,8 @@ import { validateAssertionRulings } from '../model/changed-assertions.js';
 import { productVerdicts, type ProductReview } from '../model/product-review.js';
 import { save } from '../store.js';
 import { decisionWork } from '../store/decision-read.js';
+import { sessionView } from '../model/session-state.js';
+import { recordSession } from '../model/sessions.js';
 import type { Services } from './routes.js';
 
 /**
@@ -174,7 +176,13 @@ export async function renewReviewRequest(services: Services, actor: Principal, i
     demand(operatorScopeIncludes(actor, work!), 'Work item is outside this operator-agent scope', 403);
     const previous = liveReviewRequest(work!);
     demand(previous, `${work!.key} has no standing review request to renew`, 409);
-    demand(!work!.sessions?.some(handle => handle.kind === 'review' && handle.state === 'running' && handle.head === previous!.sha), `A reviewer session for ${work!.key} is running on ${previous!.sha.slice(0, 12)}; it answers the request`, 409);
+    const running = (work!.sessions ?? []).filter(handle => handle.kind === 'review' && handle.state === 'running' && handle.head === previous!.sha);
+    demand(!running.some(handle => sessionView(handle, now).live), `A reviewer session for ${work!.key} is running on ${previous!.sha.slice(0, 12)}; it answers the request`, 409);
+    // GY-3748: a reviewer session that is not live is replaced instead of refusing `master review`.
+    for (const dead of running) {
+      recordSession(work!, { id: dead.id, kind: dead.kind, runtime: dead.runtime, host: dead.host, subject: dead.subject, state: 'finished',
+        outcome: 'replaced by master review: the reviewer session was not live' }, actor.id, now);
+    }
     const resolved = { ...previous!, state: 'cancelled' as const, resolvedAt: now.toISOString(), resolution: 'renewed by master review: the request is asked afresh' };
     work!.autoDispatch = { ...work!.autoDispatch!, review: null, history: [...work!.autoDispatch!.history, resolved].slice(-dispatchHistoryLimit) };
     await record(db, work!, actor.id, 'dispatch.cancelled', { details: { ...resolved, at: now.toISOString() } });

@@ -442,6 +442,10 @@ export function withReviewerDefaults<T extends Pick<MasterConfig, 'reviewers' | 
  * The reviewer profile that answers automatic requests: the configured one, else the only one.
  * The configured one runs `automaticReviewerConcurrency` sessions when it declares none (GY-1072).
  */
+/** Default reviewer profile when master.json names none: the registry's reviewer role picks the account (GY-3748). */
+export const defaultReviewerProfile: ReviewerProfile = {
+  name: 'reviewer', agentName: 'reviewer', kind: 'claude', approvals: 'auto', agentArgs: [], environment: {}, concurrency: automaticReviewerConcurrency,
+};
 export function selectReviewerProfile(input: Pick<MasterConfig, 'reviewers' | 'run'>): { profile: ReviewerProfile | null; reason: string | null } {
   // Every review posts through the API under a one-time token (GY-1525): it needs a profile, not a reviewer App.
   const config = withReviewerDefaults(input);
