@@ -14,7 +14,7 @@ import { heatReading } from '../merge-writer/trial-load.js';
 import { overloadAlarm, overloaded, sessionFigures } from '../session-share.js';
 import { profileHealth, repeatedLaunchFailures } from '../daemon/sessions.js';
 import { workersAllowed } from '../master/worker-pool.js';
-import { fixedHeavyJobLimit, heavyDrainLine, heavyJobBudget, heavyJobLimit, heavyJobsDirectory, readHeavyDrain, readMachines, readStrictCap, slotHolders } from '../master/verification-slots.js';
+import { fixedHeavyJobLimit, heavyDrainLine, heavyJobBudget, heavyJobLimit, heavyJobsDirectory, imbalanceLine, readHeavyDrain, readMachines, readStrictCap, shardsOnHost, slotHolders } from '../master/verification-slots.js';
 import { budgetLine, fallbackLine, machineLine } from '../model/machine-load.js';
 import { lastHostFallbacks } from '../merge-writer/trial-run.js';
 import { standingLimit } from '../master/profiles.js';
@@ -89,7 +89,7 @@ export async function npmPublishedVersion(run: ChildRun): Promise<string> {
 /** The `master status` page. `run` reads main's tip from the checkout's remote-tracking ref; the deploy unit fetches it. */
 
 /** GY-3704: each machine's load line, a compute host's with its last check fallback until a check next runs there. */
-const hostFallbackLines = (root: string) => { const fallbacks = lastHostFallbacks(root); return (readMachines(heavyJobsDirectory()) ?? []).map(machine => { const fallback = fallbacks.get(machine.name); return fallback ? `${machineLine(machine)} · ${fallbackLine(fallback)}` : machineLine(machine); }); };
+const hostFallbackLines = (root: string) => { const fallbacks = lastHostFallbacks(root); return (readMachines(heavyJobsDirectory()) ?? []).map(read => read.local ? read : { ...read, shards: shardsOnHost(heavyJobsDirectory(), read.name) }).map(machine => { const fallback = fallbacks.get(machine.name); return fallback ? `${machineLine(machine)} · ${fallbackLine(fallback)}` : machineLine(machine); }); };
 
 export async function masterStatusReport(root: string, master: MasterConfig, masterApi: (path: string) => Promise<any>, run: ChildRun = defaultChildRun) {
   // An unreachable control plane (GY-2966) is reported, not thrown: since when, the server's last exit and the free disk space, as the loop recorded them.
@@ -209,6 +209,9 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   const standing = (limit: { value: number; until: string } | undefined) => standingLimit(limit, now) === undefined ? null : limit!;
   const fixedLimit = fixedHeavyJobLimit(heavyJobsDirectory());
   // GY-3701: a leftover limit file switches off the budget's scaling with the ready hosts.
+  // GY-3706: this machine overloaded for 5 minutes while a ready host sits more than half free.
+  const imbalance = imbalanceLine(heavyJobsDirectory(), now);
+  const imbalanceAttention = imbalance ? [{ subject: 'shard placement', text: imbalance, next: 'See where the latest trial placed its shards under remoteShards; file a fix if hosts stay idle' }] : [];
   const fixedLimitAttention = fixedLimit ? [{ subject: 'heavy-job budget', text: `The heavy-job budget is fixed at ${fixedLimit.fixed} by ${fixedLimit.file}; without it the ready machines give ${fixedLimit.scaled}.`, next: 'graphyard master config hostHeavyJobs=auto' }] : [];
   const drained = drain ? [{ subject: 'heavy work', text: heavyDrainLine(drain), next: 'graphyard master resume once the quiet window is over' }] : [];
   const growth = state?.actions[workerGrowthKey]?.state === 'failed' ? [{ subject: 'worker pool', text: state.actions[workerGrowthKey]!.detail, next: 'Fix the cause named; the next loop cycle adds the missing worker profiles and clears this' }] : [];
@@ -255,7 +258,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     caretaker: state?.caretaker ? `Last ran ${formatAge(Date.parse(state.caretaker.at), now)} ago: ${state.caretaker.result}` : 'Not run yet',
     // GY-3095: the pipeline has stopped where a role cannot launch; each line names the role, the refusal, how long it has lasted and the next command.
     // GY-3204: and each application whose versionUrl lags main or fails to answer.
-    attention: [...humanAttention, ...reworkCaps, ...leaseLosses, ...blockerAttention, ...drained, ...fixedLimitAttention, ...growth, ...trialImageFault, ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now) : []), ...backedOff, ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...wrongModelAttention(fleet), ...allowanceAttention(fleet, now), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(readRemoteShardRuns(root)), ...gateStalled, ...overloadAttention, ...flowAttention, ...linkAttention, ...(bench?.attention ? [bench.attention] : []), ...repeatedFailureAttention(snapshot.work, now), ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
+    attention: [...humanAttention, ...reworkCaps, ...leaseLosses, ...blockerAttention, ...drained, ...fixedLimitAttention, ...imbalanceAttention, ...growth, ...trialImageFault, ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now) : []), ...backedOff, ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...wrongModelAttention(fleet), ...allowanceAttention(fleet, now), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(readRemoteShardRuns(root)), ...gateStalled, ...overloadAttention, ...flowAttention, ...linkAttention, ...(bench?.attention ? [bench.attention] : []), ...repeatedFailureAttention(snapshot.work, now), ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
     // GY-3199: the control plane's own update record — the Graphyard commit this install runs, its
     // last check and last update, the step of a failed upgrade, and the staleness the daily
     // diagnostics reports (a check over a day old, or a verified commit first seen over a day ago
