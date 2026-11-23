@@ -66,8 +66,8 @@
   <!-- The files -->
   <rect class="box" x="20" y="440" width="286" height="72" rx="10"/>
   <text class="t-title" x="32" y="459">The files</text>
-  <text class="t-sub" x="32" y="475">checkout .graphyard/ · worktrees</text>
-  <text class="t-sub" x="32" y="491">~/.config/graphyard/&lt;install&gt;/ (0600, CLI)</text>
+  <text class="t-sub" x="32" y="475">checkout .mainworks/ · worktrees</text>
+  <text class="t-sub" x="32" y="491">~/.config/mainworks/&lt;install&gt;/ (0600, CLI)</text>
 
   <!-- Docker containers -->
   <rect class="group" x="344" y="58" width="288" height="304" rx="12"/>
