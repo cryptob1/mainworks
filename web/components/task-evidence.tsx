@@ -25,7 +25,7 @@ export function useEvidence<T>(api: Api, path: string | null, key: unknown): T |
 export const shortDuration = (ms: number) => ms < 60_000 ? `${Math.round(ms / 1000)} s` : plainDuration(ms / 60_000);
 
 export interface Stage { id: 'built' | 'reviewed' | 'queued' | 'trial' | 'ship'; label: string; state: 'done' | 'current' | 'failed' | 'pending'; ms: number | null }
-const stageLabels: [Stage['id'], string][] = [['built', 'Built'], ['reviewed', 'Reviewed'], ['queued', 'Queued'], ['trial', 'Merge trial'], ['ship', 'Ship']];
+const stageLabels: [Stage['id'], string][] = [['built', 'Built'], ['reviewed', 'Reviewed'], ['queued', 'Queued'], ['trial', 'Test merge'], ['ship', 'Ship']];
 /**
  * The five stages a task passes, each with the time this task spent in it, from instants the item
  * and its ledger already record: released, handed in, approved, trial started, trial ended, merged.
@@ -68,7 +68,7 @@ export function Checks({ trial, output }: { trial: TrialTimings | null; output: 
   return <section className="task-checks" aria-label="Checks">
     {trial?.steps.length ? <ul>{trial.steps.map((step, index) => <li key={index} className={`check-${step.result}`} data-check={step.step}>
       <span aria-hidden="true">{marks[step.result]}</span><span className="check-name">{step.step}</span><span className="check-result">{step.result}</span><span className="check-time">{shortDuration(step.durationMs)}</span></li>)}</ul>
-      : <p className="muted">No merge trial has run on this change yet.</p>}
+      : <p className="muted">No test merge has run on this change yet.</p>}
     {output && <pre className="run-log" aria-label="Test output">{output}</pre>}
     {!output && trial?.steps.at(-1)?.result === 'running' && <p className="muted">No test output yet: it shows as each group of tests ends.</p>}
   </section>;
