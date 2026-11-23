@@ -2,6 +2,7 @@
 // idle period and temporary stacks whose owning process is gone — without touching anything else.
 import { composeOwnerLabel, composeProjectPrefix, defaultDocker, dockerEnvironment, type Docker } from './compose-preview.js';
 import { tempOwnerGone, tempOwnerJudgeable, tmpReclaimMinAgeMs, type TempOwner } from './tmp-reclaim.js';
+import { setting } from './setting.js';
 
 // ---------------------------------------------------------------------------
 // Only Compose projects named `graphyard-preview-…` whose containers carry Mainworks's owner label
@@ -15,7 +16,7 @@ import { tempOwnerGone, tempOwnerJudgeable, tmpReclaimMinAgeMs, type TempOwner }
 
 /** How long a preview may go unused before it is stopped: `GRAPHYARD_PREVIEW_IDLE_MINUTES`, 30 by default. */
 export const previewIdleMs = (env: NodeJS.ProcessEnv = process.env) => {
-  const minutes = Number(env.GRAPHYARD_PREVIEW_IDLE_MINUTES);
+  const minutes = Number(setting('PREVIEW_IDLE_MINUTES', env));
   return (Number.isFinite(minutes) && minutes >= 1 ? minutes : 30) * 60_000;
 };
 

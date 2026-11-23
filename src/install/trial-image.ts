@@ -4,6 +4,7 @@ import type { PlanAction } from './types.js';
 import { legacyTrialContainerImage, pulledTrialImageFile, trialContainerImage, trialImage } from '../merge-writer/trial-container.js';
 import { localTransport, shellQuote } from './transport.js';
 import { appArmorEnabled, trialAppArmorLoadCommand, trialAppArmorProfile, trialAppArmorProfilePath, trialAppArmorProfileText } from '../merge-writer/trial-apparmor.js';
+import { setting } from '../setting.js';
 
 /** GY-3188: trial images build on Mainworks's own builder, so its cache is pruned without touching another project's. */
 export const trialBuilder = 'mainworks-trial';
@@ -51,7 +52,7 @@ let provisioning: Promise<void> | null = null;
  * cache) — pulled, else built, by the install's own code. Concurrent callers wait on one provision.
  */
 export function ensureTrialImage(root = fileURLToPath(new URL('../..', import.meta.url))): Promise<void> {
-  if (process.env.GRAPHYARD_TRIAL_IMAGE) return Promise.resolve();
+  if (setting('TRIAL_IMAGE')) return Promise.resolve();
   return provisioning ??= (async () => {
     const transport = localTransport(), image = trialImage(root);
     if ((await transport.exec('docker', ['image', 'inspect', image], { allowFailure: true })).code === 0) return;

@@ -13,6 +13,7 @@ import { underTestRunner } from '../runtime-environment.js';
 import { WorkerSandboxError } from '../worker-sandbox.js';
 import { runtimeStateRoots } from './runtimes.js';
 import { checkoutGitDirectory, checkoutGitProblem, checkoutWorktreeAdminDirectory, gitPointerAdminDirectory } from './checkout-git.js';
+import { setting } from '../setting.js';
 
 // Every runtime carries the same outer namespace, including runtimes with their own sandbox:
 // a runtime's file policy alone does not hide host devices or command-launch sockets. The host
@@ -197,7 +198,7 @@ const keptCli = (config: MaskConfig, operatorHome: string): string[] =>
 // Reviewer session bindings live beside the coordinator credential, outside every worktree.
 export function reviewerCredentialDirectory(config?: { credentialFile: string }, input?: string) {
   if (input) return resolve(input);
-  return config ? resolve(config.credentialFile, '../..', 'reviewers') : resolve(process.env.GRAPHYARD_CONFIG_HOME ?? resolve(homedir(), '.config/graphyard'), 'reviewers');
+  return config ? resolve(config.credentialFile, '../..', 'reviewers') : resolve(setting('CONFIG_HOME') ?? resolve(homedir(), '.config/graphyard'), 'reviewers');
 }
 /** Every absolute path a configuration names, at any depth. */
 const namedPaths = (value: unknown): string[] => typeof value === 'string' ? (isAbsolute(value) ? [value] : [])
@@ -351,7 +352,7 @@ const keptCredentialPaths = (mask: CredentialMask | undefined): string[] =>
   [...new Set((mask?.own ?? []).filter(path => isAbsolute(path) && existsSync(path)).map(canonicalPath))];
 /** Where `graphyard-secrets-bus.socket` listens: `$GRAPHYARD_SECRETS_BUS`, else `graphyard-secrets-bus` in the user's runtime directory. */
 export const secretsBusPath = (uid: number | undefined = process.getuid?.(), env: NodeJS.ProcessEnv = process.env): string | null =>
-  env.GRAPHYARD_SECRETS_BUS || (env.XDG_RUNTIME_DIR ? join(env.XDG_RUNTIME_DIR, 'graphyard-secrets-bus') : uid === undefined ? null : `/run/user/${uid}/graphyard-secrets-bus`);
+  setting('SECRETS_BUS', env) || (env.XDG_RUNTIME_DIR ? join(env.XDG_RUNTIME_DIR, 'graphyard-secrets-bus') : uid === undefined ? null : `/run/user/${uid}/graphyard-secrets-bus`);
 /**
  * The host's own process-launch channels that exist here: the systemd manager directories and
  * session-bus sockets of the user's runtime directory (`/run/user/<uid>`, `$XDG_RUNTIME_DIR`) and
@@ -365,7 +366,7 @@ export const hostProcessLaunchTargets = (uid: number | undefined = process.getui
       join(home, '.config', 'herdr', 'sessions'), join(home, '.docker', 'run'), join(home, '.docker', 'desktop'), join(home, '.local', 'share', 'docker')]),
     ...[
       env.XDG_CONFIG_HOME && join(env.XDG_CONFIG_HOME, 'herdr', 'sessions'),
-      env.GRAPHYARD_HERDR_CONFIG_HOME && join(env.GRAPHYARD_HERDR_CONFIG_HOME, 'herdr', 'sessions'),
+      setting('HERDR_CONFIG_HOME', env) && join(setting('HERDR_CONFIG_HOME', env)!, 'herdr', 'sessions'),
       herdrTarget()?.configHome && join(herdrTarget()!.configHome, 'herdr', 'sessions')].filter((path): path is string => !!path)];
   return { directories, busSockets: [...runtimeDirectories.map(directory => join(directory, 'bus')),
     ...[env.DOCKER_HOST, env.CONTAINER_HOST, env.BUILDKIT_HOST].flatMap(value => value?.startsWith('unix://') ? [value.slice(7)] : []),
@@ -450,7 +451,7 @@ export function readOnlyMountWrapper(input: { coordinatorRoot: string; sessionDi
   const fetchHead = join(checkoutWorktreeAdminDirectory(root) ?? gitDir, 'FETCH_HEAD');
   const shared = [...sharedDirectories, ...(existsSync(fetchHead) && !isDirectoryPath(fetchHead) ? [fetchHead] : [])];
   const own = directory !== root ? [directory] : [];
-  const writable = [...(input.writable ?? []), ...(process.env[slotsDirectoryVariable] ? [process.env[slotsDirectoryVariable]!] : [])].filter(existsSync);
+  const writable = [...(input.writable ?? []), ...(setting(slotsDirectoryVariable) ? [setting(slotsDirectoryVariable)!] : [])].filter(existsSync);
   const writableDirectories = writable.filter(isDirectoryPath);
   const scratch = join(directory, '.graphyard', 'scratch');
   mkdirSync(scratch, { recursive: true, mode: 0o700 });
@@ -544,7 +545,7 @@ export const confinementRefusalText = (kind: string, coordinatorRoot: string, pr
 /** The variable the master session's wrapper sets: its `master restart` then asks the loop to restart itself instead of the host's systemd, which the confinement hides. */
 export const masterConfinementVariable = 'GRAPHYARD_CONFINEMENT';
 /** Whether this process runs inside the master session's confinement (GY-3237). */
-export const insideMasterConfinement = (env: NodeJS.ProcessEnv = process.env) => env[masterConfinementVariable] === 'master';
+export const insideMasterConfinement = (env: NodeJS.ProcessEnv = process.env) => setting(masterConfinementVariable, env) === 'master';
 /** Whether bubblewrap can build the mount namespace here; a host may refuse unprivileged namespaces. Probed through the asynchronous runner once per executable and cached; the probe asks for the pid namespace and a fresh /proc too, because that is what the wrapper itself requires. */
 export async function sessionMountNamespaceWorks(bwrap = 'bwrap'): Promise<boolean> {
   // GY-3237: inside the master session's own confinement the host's bubblewrap already built this

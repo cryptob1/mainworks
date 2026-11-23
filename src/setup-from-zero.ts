@@ -24,6 +24,7 @@ import { landlockRefusal } from './landlock.js';
 import { MINIMUM_NODE_MAJOR } from './install/local.js';
 import { appArmorEnabled, trialAppArmorFix, trialAppArmorProfile } from './merge-writer/trial-apparmor.js';
 import { trialContainerLaunch, trialImage } from './merge-writer/trial-container.js';
+import { setting } from './setting.js';
 
 /**
  * The prerequisites that `mainworks doctor` can check from this machine (GY-1352).
@@ -110,7 +111,7 @@ export function trialSandboxProbe(): string | null {
  * already chose a credential, or no 0600 master credential is recorded for this server.
  */
 export async function masterCredential(root: string, base: string, env: NodeJS.ProcessEnv = process.env): Promise<{ file: string; token: string } | null> {
-  if (env.GRAPHYARD_TOKEN_FILE || env.GRAPHYARD_TOKEN) return null;
+  if (setting('TOKEN_FILE', env) || setting('TOKEN', env)) return null;
   try {
     const config = JSON.parse(await readFile(resolve(root, '.graphyard/master.json'), 'utf8'));
     if (new URL(config.url).origin !== new URL(base).origin) return null;
@@ -146,12 +147,12 @@ export function setupNext(readiness: { next: string; items: { id: string; status
 
 async function credentialsCheck(root: string, env: NodeJS.ProcessEnv, master?: string | null): Promise<SetupCheck> {
   if (master) return { id: 'credentials-file', status: 'pass', step: setupSteps.install, detail: `the master credential ${master} (.graphyard/master.json) is present with mode 0600` };
-  const named = env.GRAPHYARD_TOKEN_FILE ? resolve(env.GRAPHYARD_TOKEN_FILE) : null;
+  const named = setting('TOKEN_FILE', env) ? resolve(setting('TOKEN_FILE', env)!) : null;
   const file = named ?? resolve(root, '.graphyard/connection.json');
   const check = (status: SetupCheck['status'], detail: string): SetupCheck => ({ id: 'credentials-file', status, detail, step: setupSteps.install });
   let info;
   try { info = await lstat(file); } catch {
-    return check('fail', named ? `GRAPHYARD_TOKEN_FILE ${file} does not exist` : env.GRAPHYARD_TOKEN ? 'the credential is only in GRAPHYARD_TOKEN; no credentials file holds it' : `${file} does not exist and GRAPHYARD_TOKEN_FILE is unset`);
+    return check('fail', named ? `GRAPHYARD_TOKEN_FILE ${file} does not exist` : setting('TOKEN', env) ? 'the credential is only in GRAPHYARD_TOKEN; no credentials file holds it' : `${file} does not exist and GRAPHYARD_TOKEN_FILE is unset`);
   }
   if (!info.isFile()) return check('fail', `${file} is not a regular file`);
   if (info.mode & 0o077) return check('fail', `${file} has mode 0${(info.mode & 0o777).toString(8)}; it must be 0600`);
@@ -265,7 +266,7 @@ async function loopUnitReleaseChecks(root: string, env: NodeJS.ProcessEnv): Prom
   try { repository = JSON.parse(await readFile(resolve(root, '.graphyard/master.json'), 'utf8'))?.repository; } catch { /* no configuration: nothing to judge against */ }
   if (typeof repository !== 'string' || !repository) return [];
   let installDir: string;
-  try { installDir = installDirectory(installIdFor(repository), env.GRAPHYARD_CONFIG_HOME); } catch { return []; }
+  try { installDir = installDirectory(installIdFor(repository), setting('CONFIG_HOME', env)); } catch { return []; }
   const unitDirectory = userUnitDirectory(env);
   if (!readableUnitDirectory(unitDirectory)) return [];
   const text = await readFile(join(unitDirectory, units.master), 'utf8').catch(() => null);
@@ -339,7 +340,7 @@ export async function setupFromZeroChecks(input: SetupFromZeroInput): Promise<Se
   const lines: SetupCheck[] = [];
   // Reachable and authenticated are separate facts (GY-1412): a plane whose /healthz answered is
   // never reported as unreachable because the credential is missing or refused.
-  const credential = env.GRAPHYARD_TOKEN_FILE || env.GRAPHYARD_TOKEN || input.masterCredential ? 'refused' : 'missing';
+  const credential = setting('TOKEN_FILE', env) || setting('TOKEN', env) || input.masterCredential ? 'refused' : 'missing';
   lines.push({ id: 'control-plane', status: status ? 'pass' : 'fail', step: setupSteps.install,
     detail: status ? `answered as role ${status.actor?.role ?? 'unknown'}` : `${input.reachable ? `reachable, credential ${credential}` : 'not reachable'}: ${input.failure ?? 'no answer'}` });
   const node = input.nodeVersion ?? process.versions.node;

@@ -8,6 +8,7 @@ import { maskSecrets } from './redaction.js';
 import { sessionScopeProperties } from './session-share.js';
 import { setTimeout as delay } from 'node:timers/promises';
 import { unknownWorkCode } from './model/refusal.js';
+import { setting } from './setting.js';
 
 interface Renewal { lease: { epoch: number; expiresAt: string } | null; updatedAt: string }
 
@@ -132,7 +133,7 @@ async function postAssignment(url: string, token: string, path: string, body: un
  */
 export function assignmentSurrender(epoch: number, argv: string[] = process.argv, env: NodeJS.ProcessEnv = process.env, post = postAssignment) {
   const assignment = watchAssignment(argv);
-  const url = env.GRAPHYARD_URL, token = env.GRAPHYARD_TOKEN;
+  const url = setting('URL', env), token = setting('TOKEN', env);
   if (!assignment || Number(assignment.epoch) !== epoch || !url || !token) return undefined;
   return async (cause: string) => {
     const body = { epoch, cause: `Watch supervisor ended attempt ${epoch}: ${cause}`.slice(0, 2000) };
@@ -227,7 +228,7 @@ type ControlPlaneApi = (path: string, data?: unknown, requestId?: string) => Pro
  * connection dropped is answered from its receipt rather than applied twice.
  */
 export function restartTolerantApi(api: ControlPlaneApi, until: () => number, options: { retryMs?: number; retryMaxMs?: number } = {}): ControlPlaneApi {
-  return (path, data, requestId = process.env.GRAPHYARD_REQUEST_ID ?? randomUUID()) => throughRestart(() => api(path, data, requestId), until(), options);
+  return (path, data, requestId = setting('REQUEST_ID') ?? randomUUID()) => throughRestart(() => api(path, data, requestId), until(), options);
 }
 
 /**
@@ -328,7 +329,7 @@ export async function supervise(command: string, args: string[], epoch: number, 
   // control-plane restart for the restart window instead (GY-1506); a definite refusal still stops it.
   await throughRestart(heartbeatAttempt, performance.now() + (options.startupWindowMs ?? controlPlaneRestartWindowMs), { retryMs, retryMaxMs });
   const env = { ...process.env };
-  for (const key of ['GRAPHYARD_PRINCIPALS', 'DATABASE_URL', 'GITHUB_PRIVATE_KEY', 'GITHUB_PRIVATE_KEY_FILE', 'GITHUB_WEBHOOK_SECRET']) delete env[key];
+  for (const key of ['GRAPHYARD_PRINCIPALS', 'MAINWORKS_PRINCIPALS', 'DATABASE_URL', 'GITHUB_PRIVATE_KEY', 'GITHUB_PRIVATE_KEY_FILE', 'GITHUB_WEBHOOK_SECRET']) delete env[key];
   const platform = options.platform ?? process.platform;
   const detached = options.detached ?? platform !== 'win32';
   if (!detached && platform !== 'linux' && !options.containment) throw new Error(`Foreground worker supervision requires durable containment and is not supported on ${platform}`);

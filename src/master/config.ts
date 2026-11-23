@@ -20,6 +20,7 @@ import { migrateHerdr } from '../herdr-migration.js';
 import { controlPlaneAttention } from './attention.js';
 import { defaultMergeWriterParallel } from './merge-writer-settings.js';
 import { trialHotCelsius } from '../merge-writer/trial-load.js';
+import { setting } from '../setting.js';
 
 /** The config names a CLI launcher no launch could run — an absolute path this host does not hold (GY-2995). Every session the config would start is refused before it starts, and the launcher and the loop name the fix as configuration attention instead of relaunching. */
 export class LauncherUnavailableError extends Error {}
@@ -185,7 +186,7 @@ export async function setupMaster(root: string, input: { url: string; token: str
   const managedRoot = worktreeRoot(root, { repository: detected.repository, run: { ...previous?.run, ...input.run } });
   await assertOutsideWorktrees(root, managedRoot, 'The managed worktree root', { create: true });
   const verifiedRoot = await verifyWorktreeRoot(managedRoot, { minFreeBytes: worktreeRootMinFreeBytes({ run: { ...previous?.run, ...input.run } }), probe: dependencies.probe });
-  const requestedCredentialDirectory = resolve(input.credentialDirectory ?? process.env.GRAPHYARD_CONFIG_HOME ?? resolve(homedir(), '.config/graphyard'), 'masters');
+  const requestedCredentialDirectory = resolve(input.credentialDirectory ?? setting('CONFIG_HOME') ?? resolve(homedir(), '.config/graphyard'), 'masters');
   if (requestedCredentialDirectory === resolve(root) || requestedCredentialDirectory.startsWith(`${resolve(root)}/`)) throw new Error('Coordinator credentials must be stored outside the managed repository');
   await mkdir(requestedCredentialDirectory, { recursive: true, mode: 0o700 });
   const credentialDirectory = await realpath(requestedCredentialDirectory);

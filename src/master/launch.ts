@@ -26,6 +26,7 @@ import { createdHerdrTab, type HerdrAgent, herdrCall, herdrJson, herdrRun, stopC
 import { herdrErrorText, nameRefusedByRuntime, sessionWords, type PromptDelivery } from './prompt-delivery.js';
 import { keyringEndpointWarning, keyringProbeBackoff } from './launch-keyring.js';
 import { masterRecords } from './conversation.js';
+import { setting } from '../setting.js';
 // Prompt delivery moved to prompt-delivery.ts (GY-1863) with the screen a stalled delivery is
 // judged by; the names below are the one address every existing import has always had.
 export { promptAttempts, promptAcceptMs, promptRetryPauseMs, noticeSettleMs, PromptNotAcceptedError, herdrErrorCode, herdrErrorText, nameRefusedByRuntime, deliverPrompt, readSessionScreen, sessionWords, type PromptDelivery } from './prompt-delivery.js';
@@ -142,7 +143,7 @@ export const launcherCoordinatorRoot = (argv1: string | undefined = process.argv
   if (!argv1 || testRunner || !cliEntry(argv1)) return null;
   // GY-1790: an entry the restart started from the held snapshot is handed the checkout it serves
   // in the environment; confinement guards that checkout, not the snapshot's own tree.
-  const handed = process.env.GRAPHYARD_CHECKOUT_ROOT?.trim();
+  const handed = setting('CHECKOUT_ROOT')?.trim();
   const root = handed || coordinatorCheckoutRoot(resolve(argv1));
   return root && root !== '/' ? root : null;
 };
@@ -150,7 +151,7 @@ export const launcherCoordinatorRoot = (argv1: string | undefined = process.argv
 export const launcherRootUndetermined = (argv1: string | undefined = process.argv[1], testRunner: boolean = underTestRunner()): string | null => {
   if (!argv1 || testRunner || !cliEntry(argv1)) return null;
   // GY-1790: a snapshot entry is handed its checkout in the environment, so its root is determined.
-  if (process.env.GRAPHYARD_CHECKOUT_ROOT?.trim()) return null;
+  if (setting('CHECKOUT_ROOT')?.trim()) return null;
   const root = coordinatorCheckoutRoot(resolve(argv1));
   return root && root !== '/' ? null : `this launcher's coordinator checkout could not be derived from its entry ${argv1}`;
 };
@@ -201,7 +202,7 @@ export async function masterSessionConfinement(kind: string, root: string, probe
   // GY-3445: and the host-wide heavy-jobs folder, whose drain record `master drain` and `master resume` write.
   const heavyJobs = heavyJobsDirectory();
   // GY-3698: the machine's compute known-hosts and host list files, so `host add` works from the confined master while the rest of machine/ stays hidden.
-  const config = configHome(environment?.GRAPHYARD_CONFIG_HOME);
+  const config = configHome(environment && setting('CONFIG_HOME', environment));
   const knownHosts = hostKnownHostsFile(config), hosts = hostsFile(config);
   for (const path of [ledgerLocks, heavyJobs, dirname(knownHosts)]) mkdirSync(path, { recursive: true });
   if (!existsSync(knownHosts)) writeFileSync(knownHosts, '', { mode: 0o600 });
@@ -243,7 +244,7 @@ export async function sessionConfinement(kind: string, args: readonly string[], 
     return null;
   }
   const workspaceRoot = resolve(options.cwd ?? options.directory), allocated = resolve(options.directory);
-  const input: ConfinementInput = { kind, args, environment: options.environment, coordinatorRoot: root, writable: [...(options.writable ?? []), ...(options.environment?.[slotsDirectoryVariable] ? [options.environment[slotsDirectoryVariable]] : [])], sessionDirectory: workspaceRoot, ...(allocated === workspaceRoot ? {} : { allocatedDirectory: allocated }), ...(options.ownGitHubCredential ? { ownGitHubCredential: true } : {}), ...(options.secretsBus === null ? { secretsBus: null } : {}), ...(options.credentialMask ? { credentialMask: options.credentialMask } : {}), ...(options.maskProbe !== undefined ? { maskProbe: options.maskProbe } : {}) };
+  const input: ConfinementInput = { kind, args, environment: options.environment, coordinatorRoot: root, writable: [...(options.writable ?? []), ...(options.environment && setting(slotsDirectoryVariable, options.environment) ? [setting(slotsDirectoryVariable, options.environment)!] : [])], sessionDirectory: workspaceRoot, ...(allocated === workspaceRoot ? {} : { allocatedDirectory: allocated }), ...(options.ownGitHubCredential ? { ownGitHubCredential: true } : {}), ...(options.secretsBus === null ? { secretsBus: null } : {}), ...(options.credentialMask ? { credentialMask: options.credentialMask } : {}), ...(options.maskProbe !== undefined ? { maskProbe: options.maskProbe } : {}) };
   const refusal = await coordinatorConfinementRefusal(input);
   if (refusal) throw new Error(refusal);
   prepareConfinedGitPaths(root);

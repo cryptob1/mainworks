@@ -11,6 +11,7 @@ import { installIdFor } from '../install/types.js';
 import { repositoryFromRemote } from '../onboarding.js';
 import { workMutation, type CliCommand } from './registry.js';
 import { parkCommand, parkInput } from './park-command.js';
+import { setting } from '../setting.js';
 export { parkArgs, parkCommand } from './park-command.js';
 
 /**
@@ -224,7 +225,7 @@ export const openCommand: CliCommand = {
 };
 /** With no credential named, the install's recorded operator credential stands in for GRAPHYARD_TOKEN (the request helper reads it on first use). */
 export async function asRecordedOperator(root: string) {
-  const recorded = process.env.GRAPHYARD_TOKEN_FILE || process.env.GRAPHYARD_TOKEN ? null : await recordedOperator(root);
+  const recorded = setting('TOKEN_FILE') || setting('TOKEN') ? null : await recordedOperator(root);
   if (recorded) process.env.GRAPHYARD_TOKEN = recorded.token;
   return recorded;
 }

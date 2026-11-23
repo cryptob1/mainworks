@@ -11,6 +11,7 @@ import { cliRelease, recordedCommit, releaseIdentityPath } from '../release.js';
 import { shellQuote } from '../shell-quote.js';
 import { cliCommit } from '../protocol-version.js';
 import { verificationRequest } from './verification-request.js';
+import { setting } from '../setting.js';
 
 /** How long one CLI request waits (2026-09-27: the full work snapshot reached 19 MB and ~31 s, so a 30 s bound failed every read of it, including workers' sync and complete; GY-864 bounds those reads). */
 export const cliRequestTimeoutMs = 120_000;
@@ -114,7 +115,7 @@ export const cliPath = fileURLToPath(new URL('../../bin/graphyard.mjs', import.m
 export async function createContext(command: string, id: string | undefined, args: string[], readsConnection: boolean): Promise<CliContext> {
   let connection: Connection = null;
   if (readsConnection) try { connection = await loadConnection(process.cwd()); } catch { console.error('Invalid or insecure Mainworks connection file. Inspect local configuration; credential values are omitted.'); process.exit(1); }
-  const base = process.env.GRAPHYARD_URL ?? connection?.url ?? 'http://127.0.0.1:4310';
+  const base = setting('URL') ?? connection?.url ?? 'http://127.0.0.1:4310';
   let savedToken: string | undefined;
   try { if (connection && new URL(base).origin === connection.url) savedToken = connection.token; } catch { /* request validation reports an invalid URL */ }
   let resolvedToken: string | undefined; let tokenResolved = false;
@@ -136,12 +137,12 @@ export async function createContext(command: string, id: string | undefined, arg
   })();
   const individualToken = async () => {
     if (!tokenResolved) {
-      resolvedToken = process.env.GRAPHYARD_TOKEN_FILE ? await readCredentialFile(resolve(process.env.GRAPHYARD_TOKEN_FILE)) : process.env.GRAPHYARD_TOKEN ?? savedToken;
+      resolvedToken = setting('TOKEN_FILE') ? await readCredentialFile(resolve(setting('TOKEN_FILE')!)) : setting('TOKEN') ?? savedToken;
       tokenResolved = true;
     }
     return resolvedToken;
   };
-  const api = async (path: string, data?: unknown, requestId = process.env.GRAPHYARD_REQUEST_ID ?? randomUUID()) => {
+  const api = async (path: string, data?: unknown, requestId = setting('REQUEST_ID') ?? randomUUID()) => {
     await checkRelease();
     const token = await individualToken();
     if (!token) throw new Error('Set GRAPHYARD_TOKEN to your individual credential');
@@ -187,9 +188,9 @@ export async function createContext(command: string, id: string | undefined, arg
     command, id, args, rest: process.argv.slice(3), base, connection, api,
     print: value => console.log(JSON.stringify(value, null, 2)),
     individualToken,
-    individualHostId: () => hostIdSchema.parse(process.env.GRAPHYARD_HOST_ID ?? connection?.hostId ?? hostname()),
+    individualHostId: () => hostIdSchema.parse(setting('HOST_ID') ?? connection?.hostId ?? hostname()),
     activeCliPath: async () => {
-      const selected = process.env.GRAPHYARD_CLI ?? cliPath;
+      const selected = setting('CLI') ?? cliPath;
       if (!selected.trim()) throw new Error('GRAPHYARD_CLI must name an existing launcher');
       try {
         const path = await realpath(resolve(selected));
@@ -198,7 +199,7 @@ export async function createContext(command: string, id: string | undefined, arg
       } catch { throw new Error('The active Mainworks CLI launcher is unavailable; select an existing launcher'); }
     },
     // GY-866: a session started in its own checkout is handed the coordinator's root by its launch.
-    repositoryRoot: () => process.env.GRAPHYARD_REPOSITORY_ROOT?.trim() ? resolve(process.env.GRAPHYARD_REPOSITORY_ROOT) : execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim(),
+    repositoryRoot: () => setting('REPOSITORY_ROOT')?.trim() ? resolve(setting('REPOSITORY_ROOT')!) : execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim(),
   };
 }
 

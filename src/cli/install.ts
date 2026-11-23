@@ -10,6 +10,7 @@ import { defineCommands } from './registry.js';
 import { readSecretFromStdin } from './context.js';
 import { moveInstall } from '../install/move.js';
 import { upCommand } from '../up.js'; import { runDoctor } from './install-doctor.js';
+import { setting } from '../setting.js';
 
 /** GY-2009: install registers no GitHub App, so `up --reuse-app` would reuse nothing; it is refused rather than silently ignored. */
 export const upAppReuseRefusal = 'mainworks up --reuse-app is refused: install registers no GitHub App and the merge writer\'s deploy key is its only GitHub access (GY-2009); rerun without --reuse-app';
@@ -214,7 +215,7 @@ export const installCommands = defineCommands([
       if (workerToken !== undefined && !workerToken.trim()) throw new Error('Worker credential must be nonempty; setup has not changed local configuration');
       const selectedUrl = values.url ?? base;
       // Never silently send a saved credential to a newly selected server.
-      if (values.url && connection && new URL(values.url).origin !== connection.url && !process.env.GRAPHYARD_TOKEN && !values['token-stdin']) workerToken = undefined;
+      if (values.url && connection && new URL(values.url).origin !== connection.url && !setting('TOKEN') && !values['token-stdin']) workerToken = undefined;
       return print(await setupRepository(root, { url: selectedUrl, cliPath: resolve(values['cli-path'] ?? await context.activeCliPath()), hostId: values['host-id'] ?? context.individualHostId(), ...(workerToken ? { token: workerToken } : {}) }, { herdr: values.herdr }));
     },
   },

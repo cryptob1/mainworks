@@ -16,6 +16,7 @@ import { trialTimeoutMinutes } from '../master/merge-writer-settings.js';
 import { workerFastGates, workerFastGatesPresent } from '../master/worker-fast-gates.js';
 import { criterionProofs, e2eProofsOf, featureCaseFailure, proofTestFiles, requiredProofFailure, trialFailureReason } from '../merge-writer/executor.js';
 import { trialHomeVariables, trialTemporaryMode, trialTemporaryVariables } from '../merge-writer/trial.js';
+import { setting } from '../setting.js';
 
 /**
  * A submission is observed on GitHub before it is accepted, so while the control plane's GitHub
@@ -528,7 +529,7 @@ export const completeCommand: CliCommand = {
     completeArgs(context.args);
     await checkoutRoot(context, `mainworks complete ${work.key}`);
     const root = context.repositoryRoot();
-    const body = completionBody(context.args, () => worktreeHead(root)), requestId = process.env.GRAPHYARD_REQUEST_ID ?? `complete:${work.id}:${body.epoch}:${body.head}`;
+    const body = completionBody(context.args, () => worktreeHead(root)), requestId = setting('REQUEST_ID') ?? `complete:${work.id}:${body.epoch}:${body.head}`;
     await completePreflight(root, work, body.head);
     let verification: Awaited<ReturnType<typeof selfVerification>> | { state: 'unavailable'; reason: string };
     try { verification = await selfVerification(root, work.key); } catch (error: any) { verification = { state: 'unavailable', reason: `the worktree could not be read: ${error.message}` }; }

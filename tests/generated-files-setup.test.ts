@@ -135,7 +135,7 @@ test('integration:generated-files-setup — the server refuses an unparseable va
   // configured value, and parses the declaration before anything else starts.
   const main = await readFile(new URL('../src/server/main.ts', import.meta.url), 'utf8');
   assert.match(main, /const generatedFiles = configuredGeneratedFiles\(\);/);
-  assert.match(main, /delegationLimits\.deployed\[generatedFilesVariable\] = process\.env\.GRAPHYARD_GENERATED_FILES/);
+  assert.match(main, /delegationLimits\.deployed\[generatedFilesVariable\] = setting\('GENERATED_FILES'\)/);
   const setup = await readFile(new URL('../src/repository-setup.ts', import.meta.url), 'utf8');
   assert.match(setup, /generatedFilesAssignment\(root\)/);
 });

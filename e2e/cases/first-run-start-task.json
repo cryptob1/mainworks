@@ -1,0 +1,18 @@
+{
+  "id": "first-run-start-task",
+  "title": "First run steps 3 and 4: start the first task from a small issue and watch it merge",
+  "description": "A real browser on the built dashboard opens a fresh install whose repository and Builder are connected and whose loop reported open issues. Step 3 lists the small-labelled issue, then the shortest bodies, three in all, and a free-text box. Starting the seeded issue creates one released task with an E2E-proof criterion drafted from it. Step 4 shows that task's pipeline and the stub Builder's live session; when the task merges the shipped toast names the time from start to merge and the install opens on Home.",
+  "tags": [
+    "dashboard"
+  ],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "first-run start task to Home",
+      "run": "npm run test:browser -- browser-tests/first-run-start-task.spec.ts",
+      "timeoutSeconds": 420
+    }
+  ]
+}

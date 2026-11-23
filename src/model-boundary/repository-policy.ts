@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { setting } from '../setting.js';
 import { pendingOutcomeRules, releaseFailureActions, type RepositoryPolicy, type SensitiveEntry, defaultRepositoryPolicy, genericSensitiveRules, type Source, policySections, repositoryPolicyVariable, gitToplevel, configFile } from '../model/repository-policy.js';
 // ---- Per-repository policy (GY-1843) -------------------------------------------------------------
 
@@ -111,7 +112,7 @@ export function repositoryPolicyAssignment(config: Record<string, unknown> | nul
 export function loadRepositoryPolicy(env?: Record<string, string | undefined>, root?: string, cwd?: string): { policy: RepositoryPolicy; source: Source } {
   const host = (globalThis as { process?: { env: Record<string, string | undefined>; cwd(): string; getBuiltinModule?(name: string): any } }).process;
   const variables = env ?? host?.env;
-  const raw = variables?.[repositoryPolicyVariable]?.trim();
+  const raw = (variables && setting(repositoryPolicyVariable, variables))?.trim();
   if (raw) {
     let value: unknown;
     try { value = JSON.parse(raw); } catch { throw new Error(`${repositoryPolicyVariable} must be JSON of graphyard.json's risk, e2e and release sections, e.g. {"e2e":{"pendingOutcomes":"blocking"}}`); }
@@ -120,7 +121,7 @@ export function loadRepositoryPolicy(env?: Record<string, string | undefined>, r
   const fs = host?.getBuiltinModule?.('node:fs'), path = host?.getBuiltinModule?.('node:path');
   if (!fs || !path) return { policy: defaultRepositoryPolicy, source: 'default' };
   let text: string;
-  const checkout = root ?? (variables?.GRAPHYARD_REPOSITORY_ROOT?.trim() ? path.resolve(variables.GRAPHYARD_REPOSITORY_ROOT.trim()) : gitToplevel(fs, path, path.resolve(cwd ?? host!.cwd())));
+  const checkout = root ?? (variables && setting('REPOSITORY_ROOT', variables)?.trim() ? path.resolve(setting('REPOSITORY_ROOT', variables)!.trim()) : gitToplevel(fs, path, path.resolve(cwd ?? host!.cwd())));
   try { text = fs.readFileSync(path.resolve(checkout, configFile), 'utf8'); } catch (error: any) {
     if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return { policy: defaultRepositoryPolicy, source: 'default' };
     throw error;

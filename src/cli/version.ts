@@ -1,5 +1,6 @@
 import { defineCommands } from './registry.js';
 import { cliRelease, type Release } from '../release.js';
+import { setting } from '../setting.js';
 
 /** How long `mainworks version` waits for the server's /healthz before reporting it unreachable. */
 export const versionProbeTimeoutMs = 5_000;
@@ -44,7 +45,7 @@ export const versionCommands = defineCommands([{
     '                                release and commit from its /healthz',
   ],
   async run(context) {
-    const connected = process.env.GRAPHYARD_URL || context.connection?.url ? context.base : null;
+    const connected = setting('URL') || context.connection?.url ? context.base : null;
     const report = await versionReport(cliRelease(), connected);
     console.log([context.id, ...context.args].includes('--json') ? JSON.stringify(report, null, 2) : renderVersion(report));
   },

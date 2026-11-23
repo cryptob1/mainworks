@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
+import { setting } from './setting.js';
 
 /**
  * `package.json`'s version. It is no longer the release: every candidate production promotes is
@@ -32,7 +33,7 @@ export const mainworksVerifiedRef = 'refs/graphyard/verified';
  * install pulls instead of building. GRAPHYARD_IMAGE_REGISTRY names another registry (a mirror).
  */
 export const publishedImages = (commit: string, env: NodeJS.ProcessEnv = process.env) => {
-  const registry = env.GRAPHYARD_IMAGE_REGISTRY?.trim() || imageRepository.slice(0, imageRepository.lastIndexOf('/'));
+  const registry = setting('IMAGE_REGISTRY', env)?.trim() || imageRepository.slice(0, imageRepository.lastIndexOf('/'));
   return { server: `${registry}/graphyard:${commit}`, trial: `${registry}/graphyard-trial:${commit}` };
 };
 
@@ -83,11 +84,11 @@ export function checkoutRelease(cwd: string, fallbackRevision = 'unknown'): Rele
  * `vX.Y.Z` tag carried. The Dockerfile's `0.0.0-dev` default is no release.
  */
 export function stampedRelease(env: NodeJS.ProcessEnv, revisionOf: () => string): Release | null {
-  const version = env.GRAPHYARD_VERSION?.trim();
+  const version = setting('VERSION', env)?.trim();
   if (!version) return null;
   const released = datedVersionPattern.test(version) || /^\d+\.\d+\.\d+$/.test(version);
   if (!released && !/^unreleased [0-9a-f]{7,40}$/.test(version)) return null;
-  const stamped = env.GRAPHYARD_BUILD_REVISION;
+  const stamped = setting('BUILD_REVISION', env);
   return { version, revision: stamped && stamped !== 'unknown' ? stamped : revisionOf(), released };
 }
 
@@ -110,7 +111,7 @@ export const recordCommit = (root: string, commit: string) => {
   return file;
 };
 let ownCheckout: Release | undefined;
-const checkout = () => ownCheckout ??= checkoutRelease(installationRoot, recordedCommit(installationRoot) || process.env.GRAPHYARD_BUILD_REVISION || 'unknown');
+const checkout = () => ownCheckout ??= checkoutRelease(installationRoot, recordedCommit(installationRoot) || setting('BUILD_REVISION') || 'unknown');
 /**
  * This process's release, which `mainworks version`, `/healthz` and the install defaults all report:
  * the build's stamp when it has one, else the checkout's dated tag or `unreleased <sha>` (read once).
@@ -124,7 +125,7 @@ export const cliRelease = (): Release => stampedRelease(process.env, () => check
  */
 export const releaseInfo = () => {
   const stamped = stampedRelease(process.env, () => 'unknown');
-  return { version: (stamped ?? cliRelease()).version, revision: stamped?.revision ?? (process.env.GRAPHYARD_BUILD_REVISION || 'unknown') };
+  return { version: (stamped ?? cliRelease()).version, revision: stamped?.revision ?? (setting('BUILD_REVISION') || 'unknown') };
 };
 
 export { schemaGenerations, schemaVersion } from './store/schema-lineage.js';

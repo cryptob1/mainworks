@@ -31,6 +31,7 @@ import { addressPoolsSpent, checkServiceVariables, dockerEnvironment, previewNet
 import { diskFloorBytes, gateTrialKey, trialFileTimeoutMs, heatWaitSeconds, TrialHeatError, trialContainerFault, trialLoad, trialShardLanes, trialStartOwner } from './trial-load.js';
 import { nestedSandboxDenied, trialAppArmorFix } from './trial-apparmor.js';
 import { maskSecrets } from '../redaction.js';
+import { setting } from '../setting.js';
 
 /** One git call in the coordinator's object store: the arguments after `git -C <root>`, the child's stdout. */
 export type TrialGit = (args: string[], env?: Record<string, string>) => Promise<string>;
@@ -147,7 +148,7 @@ export const credentialTrialVariable = (name: string) =>
   || /(?:TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE_KEY|API_KEY|ACCESS_KEY|CREDENTIAL)/i.test(name);
 /** The trial child's environment: the isolated test one, with every credential and Mainworks control removed and git's global configuration off. */
 export function trialEnvironment(environment: NodeJS.ProcessEnv = process.env): Record<string, string> {
-  const kept = Object.fromEntries(Object.entries(isolatedTestEnvironment(environment)).filter(([name]) => !/^(GRAPHYARD_|MAINWORKS_|HERDR_|LC_)/.test(name) && name !== 'LANG' && !credentialTrialVariable(name)));
+  const kept = Object.fromEntries(Object.entries(isolatedTestEnvironment(environment)).filter(([name]) => !/^(GRAPHYARD|MAINWORKS|HERDR|LC)_/.test(name) && name !== 'LANG' && !credentialTrialVariable(name)));
   // Use the running Node installation before host version-manager shims: the trial's empty
   // home intentionally cannot supply the host's mise trust/configuration to those shims.
   // The private image supplies C.UTF-8, not the service manager's host locales.
@@ -179,7 +180,7 @@ export const ghConfigDirectory = (environment: NodeJS.ProcessEnv = process.env) 
   environment.GH_CONFIG_DIR || join(environment.XDG_CONFIG_HOME || join(environment.HOME ?? homedir(), '.config'), 'gh');
 /** GY-2997: what a trial child must not read by its absolute path: the operator config home (coordinator credentials, the deploy key's default place), the operator's gh config directory (the gh login), the deploy key wherever it is configured, and the loop's runtime directory (its session bus and sockets). */
 export const trialHiddenPaths = (credentialFile: string | undefined, environment: NodeJS.ProcessEnv = process.env, uid = process.getuid?.()): string[] =>
-  [...new Set([configHome(environment.GRAPHYARD_CONFIG_HOME), ghConfigDirectory(environment), credentialFile, environment.XDG_RUNTIME_DIR, uid === undefined ? undefined : `/run/user/${uid}`].filter((path): path is string => !!path && isAbsolute(path)))];
+  [...new Set([configHome(setting('CONFIG_HOME', environment)), ghConfigDirectory(environment), credentialFile, environment.XDG_RUNTIME_DIR, uid === undefined ? undefined : `/run/user/${uid}`].filter((path): path is string => !!path && isAbsolute(path)))];
 /**
  * The bubblewrap words every trial child runs under: a read-only host, private devices and
  * scratch, host launch sockets hidden, credential masks, then only the trial's allocated
@@ -1737,7 +1738,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     for (const pool of [{ files: split.remoteable, lanes: trialShardLanes(cores) + remoteLanes, local: false }, { files: split.localOnly, lanes: trialShardLanes(cores), local: true }])
       for (const group of input.groupSize === undefined ? shardTestFiles(pool.files, pool.lanes, durations) : groupTestFiles(pool.files, input.groupSize)) { shards.push(group); pinned.push(pool.local); }
     const slots = await import('../master/verification-slots.js');
-    const slotsDirectory = process.env[slots.slotsDirectoryVariable];
+    const slotsDirectory = setting(slots.slotsDirectoryVariable);
     const { lanes, breadth } = trialShardBreadth(cores, shards.length, await trialAffordableFiles(input.memory));
     input.onTiming?.(`tests: ${lanes} lanes, breadth ${breadth}`, 0);
     const settledShards: ({ group: TrialGroup; entries: string[]; unattributed: TrialRunnerError | null; passed: string[]; records: string } | undefined)[] = [];
@@ -1758,7 +1759,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         try {
           if (remote) {
             // GY-3528: a shard placed on a host takes a slot on that host's share, never this machine's; a spent share tries another host until one frees.
-            const held = slotsDirectory ? await slots.takeHostSlot(slotsDirectory, remote, `${slots.testMergeLabel(input.key ?? input.mergeSha.slice(0, 12))} shard ${index + 1}`, process.env[slots.projectVariable]) : null;
+            const held = slotsDirectory ? await slots.takeHostSlot(slotsDirectory, remote, `${slots.testMergeLabel(input.key ?? input.mergeSha.slice(0, 12))} shard ${index + 1}`, setting(slots.projectVariable)) : null;
             if (slotsDirectory && !held) throw new HostBusyError(remote);
             const ended = await session!.run(remote, index, group, (list, records) => [check.argv[0]!, ...argv(list, records)], breadth).finally(() => held?.release());
             entries.push(`$ [${remote}] ${check.argv.join(' ')} (shard ${index + 1})\n${ended.out}`);

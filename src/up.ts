@@ -612,7 +612,7 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
    */
   const child = async (args: string[], options: { stdin?: string; env?: Record<string, string>; onLine?: (line: string) => void; signal?: AbortSignal } = {}) => {
     const server = args[0] === 'install' ? null : await deps.serverUrl();
-    return deps.cli(args, server ? { ...options, env: { GRAPHYARD_URL: server, ...options.env } } : options);
+    return deps.cli(args, server ? { ...options, env: { GRAPHYARD_URL: server, MAINWORKS_URL: server, ...options.env } } : options);
   };
   const run = async (step: UpStep, args: string[], options: { stdin?: string; env?: Record<string, string>; onLine?: (line: string) => void } = {}) => {
     const result = await child(args, options);

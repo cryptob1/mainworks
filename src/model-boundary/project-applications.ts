@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { previewModes, maxCandidateChanges, boundCaseId, applicationProblems, declarationKeys, projectDeliveryVariable, type ProjectDelivery, effectiveDelivery } from '../model/project-applications.js';
+import { setting } from '../setting.js';
 // ---------------------------------------------------------------------------
 // What a managed repository declares about the applications its cases exercise, in graphyard.json's
 // `delivery` beside the merge gate: each application (a static site, a Compose project or a Node app), and
@@ -63,7 +64,7 @@ export function projectDeliveryAssignment(policy: Record<string, unknown>) {
  * A declaration that does not parse, or binds a case to an undeclared application, refuses with the reason.
  */
 export function loadProjectDelivery(env: Record<string, string | undefined> = process.env, root?: string): ProjectDelivery {
-  const raw = env[projectDeliveryVariable]?.trim();
+  const raw = setting(projectDeliveryVariable, env)?.trim();
   if (raw) {
     let value: unknown;
     try { value = JSON.parse(raw); } catch { throw new Error(`${projectDeliveryVariable} must be JSON of graphyard.json's delivery mode, previews, candidateMaxChanges, productionVerification, applications and cases`); }
@@ -73,7 +74,7 @@ export function loadProjectDelivery(env: Record<string, string | undefined> = pr
   const fs = host?.getBuiltinModule?.('node:fs'), path = host?.getBuiltinModule?.('node:path');
   if (!fs || !path) return effectiveDelivery(null);
   let text: string;
-  try { text = fs.readFileSync(path.resolve(root ?? env.GRAPHYARD_REPOSITORY_ROOT?.trim() ?? host!.cwd(), 'graphyard.json'), 'utf8'); } catch (error: any) {
+  try { text = fs.readFileSync(path.resolve(root ?? setting('REPOSITORY_ROOT', env)?.trim() ?? host!.cwd(), 'graphyard.json'), 'utf8'); } catch (error: any) {
     if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return effectiveDelivery(null);
     throw error;
   }

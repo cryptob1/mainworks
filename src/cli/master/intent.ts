@@ -8,6 +8,7 @@ import { postDeployCriterionRefusal, postDeployOnlyRefusal, type Work } from '..
 import { readSecretFromStdin } from '../context.js';
 import { closeRequest } from '../master-close.js';
 import { unhandled, type MasterSession } from './session.js';
+import { setting } from '../../setting.js';
 
 /**
  * `master create FILE REASON` and `master requirements GY-N FILE REASON`: the intent file is posted
@@ -28,7 +29,7 @@ export async function derivedIntent(id: 'create' | 'requirements', args: string[
   const intent = work ? intentInput('requirements', work, input) : input;
   const postDeploy = postDeployCriterionRefusal(intent.criteria ?? []) ?? postDeployOnlyRefusal(intent.criteria ?? []);
   if (postDeploy) throw new Error(postDeploy);
-  return deps.mutate(work ? `work/${work.id}/requirements` : 'work', { ...intent, reason }, process.env.GRAPHYARD_REQUEST_ID ?? randomUUID(), await deps.token());
+  return deps.mutate(work ? `work/${work.id}/requirements` : 'work', { ...intent, reason }, setting('REQUEST_ID') ?? randomUUID(), await deps.token());
 }
 
 /** The master's own intent, applied at once with its operator-agent identity. */

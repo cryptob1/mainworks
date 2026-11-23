@@ -11,6 +11,7 @@ import { save } from '../store.js';
 import type { Services } from './routes.js';
 import { decisionWork } from '../store/decision-read.js';
 import { gitRunnerFor } from '../merge-writer/local-observation.js';
+import { setting } from '../setting.js';
 
 /**
  * Judging a closed-question proof (GY-109). The control plane binds the state the declaration
@@ -41,7 +42,7 @@ function refusal(work: Work | undefined, data: { proof: string; sha: string; bas
 function checkoutReaders(services: Services): StateReaders {
   const git = () => {
     const { engine } = services;
-    if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd());
+    if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(setting('REPOSITORY_ROOT') ?? process.cwd());
     demand(engine.gitRunner, 'The control plane has no checkout to read the state a closed question is asked against', 503);
     return engine.gitRunner!;
   };

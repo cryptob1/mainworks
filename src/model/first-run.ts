@@ -4,7 +4,7 @@ import type { Work } from './work.js';
 /**
  * First-run onboarding state (GY-3603): an install with no merged work opens on the four-step
  * first-run page instead of an empty Home, driven by the existing setup checks and the fleet's
- * live-request status. Starting the first task from the page is a separate item.
+ * live-request status. Step 3 starts the first task from a small open issue or a typed change (GY-3709).
  */
 
 /** Whether this install has at least one merged work item. */
@@ -86,4 +86,30 @@ export function firstRunState(status: any, work: readonly Work[]): FirstRunState
   const currentStep: 1 | 2 | 3 | 4 = !step1Done ? 1 : !step2Done ? 2 : !activeTask ? 3 : 4;
 
   return { currentStep, repository, fetchRefusal, step1Done, builder, step2Done, activeTask, step3Done };
+}
+
+/** An open issue as the loop reads it with `gh issue list` (GY-3709). */
+export interface FirstRunIssue { number: number; title: string; body: string; labels: string[]; url: string }
+
+/** Up to three issues for a first task: those labelled small first, then the shortest bodies. */
+export function smallIssues(issues: readonly FirstRunIssue[]): FirstRunIssue[] {
+  const small = (issue: FirstRunIssue) => issue.labels.some(label => /small|good first issue/i.test(label));
+  return [...issues].sort((a, b) => Number(small(b)) - Number(small(a)) || a.body.length - b.body.length || a.number - b.number).slice(0, 3);
+}
+
+const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48).replace(/-+$/, '') || 'change';
+
+/** The create input for the first task, drafted from an issue or a typed change, with one E2E-proof criterion. */
+export function firstTaskInput(source: FirstRunIssue | string) {
+  const typed = typeof source === 'string';
+  const title = (typed ? source.trim().split('\n')[0]! : source.title).trim().slice(0, 200);
+  const name = typed ? `first-task-${slug(title)}` : `issue-${source.number}-${slug(title)}`;
+  return {
+    type: 'feature' as const,
+    title,
+    why: (typed ? `The owner asked for it on the first run: ${title}` : `Issue #${source.number} asks for it: ${title}`).slice(0, 300),
+    simplest: (typed ? 'The smallest change that does what the owner asked.' : `The smallest change that closes issue #${source.number}.`),
+    description: (typed ? source.trim() : `${source.url}\n\n${source.body}`).slice(0, 20_000),
+    criteria: [{ id: 'AC-1', text: `${title}: shown working in the running app by e2e/cases/${name}.json`, proofs: [`e2e:${name}`] }],
+  };
 }

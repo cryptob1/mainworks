@@ -7,6 +7,7 @@ import { readCredentialFile } from '../../private-file.js';
 import { cliCommit } from '../../protocol-version.js';
 import { executorHostHeader } from '../../model/registry.js';
 import type { CliContext } from '../context.js';
+import { setting } from '../../setting.js';
 
 /** What a subcommand group returns when the id is not one of its own, so the next group is asked. */
 export const unhandled = Symbol('unhandled master subcommand');
@@ -15,7 +16,7 @@ export const unhandled = Symbol('unhandled master subcommand');
 export async function openMasterSession(context: CliContext, root: string) {
   const { id, args, print } = context;
   const stored = await loadMasterConfig(root);
-  const person = process.env.GRAPHYARD_FOR_PERSON;
+  const person = setting('FOR_PERSON');
   const master = person ? { ...stored, forPerson: person, masterAgentName: sessionName(stored.masterAgentName, person) } : stored;
   const masterToken = await readCredentialFile(master.credentialFile);
   const masterApi = async (path: string, credential = masterToken, timeoutMs = 30_000, headers: Record<string, string> = {}) => {

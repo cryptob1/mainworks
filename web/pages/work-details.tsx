@@ -311,7 +311,7 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
         </div>
       </div>
       <div className="item-meta">
-        <span data-task-state>{trialFailed ? <StatusBadge group="blocked">Stuck</StatusBadge> : group && <StatusBadge group={group}/>} <strong>{trialFailed ? 'Merge trial failed' : stageLabel(item, now, release, serve)}</strong>{inState && <> · <StatusAge held={inState}/></>}</span>
+        <span data-task-state>{trialFailed ? <StatusBadge group="blocked">Stuck</StatusBadge> : group && <StatusBadge group={group}/>} <strong>{trialFailed ? 'Test merge failed' : stageLabel(item, now, release, serve)}</strong>{inState && <> · <StatusAge held={inState}/></>}</span>
         {builderName && <span data-builder title={builder!}>Builder {builderName}</span>}
         {model && <span data-model={model.differs ? 'differs' : 'same'} className={model.differs ? 'amber' : undefined}>Model <span className="mono">{model.model}</span>{model.differs ? ` ▲ not the account's ${model.accountModel}` : ''}</span>}
         {files && files.length > 0 && <span className="mono" data-diff-stats>+{add} −{del} · {files.length} {files.length === 1 ? 'file' : 'files'}</span>}

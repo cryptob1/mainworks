@@ -6,6 +6,7 @@ import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { previewSiteByteLimit, previewSiteFileLimit, previewSitePathSchema, type PreviewSiteFile } from './project-previews.js';
 import { processPidNamespace, processStartTicks, tempOwnerGone, tempOwnerJudgeable, tmpReclaimMinAgeMs, type TempOwner } from './tmp-reclaim.js';
+import { setting } from './setting.js';
 
 // ---------------------------------------------------------------------------
 // A declared Compose application (project-applications.ts) is previewed as its own Compose project:
@@ -50,9 +51,9 @@ const bounded = (value: string | undefined, fallback: number, min: number, max: 
  * (4) Compose previews served at once, and GRAPHYARD_PREVIEW_SERVICES (16) services, so containers, one preview declares.
  */
 export const composeBounds = (env: NodeJS.ProcessEnv = process.env): ComposeBounds => ({
-  cpus: bounded(env.GRAPHYARD_PREVIEW_CPUS, 1, 0.1, 16), memoryMb: Math.round(bounded(env.GRAPHYARD_PREVIEW_MEMORY_MB, 512, 32, 65536)),
-  pids: Math.round(bounded(env.GRAPHYARD_PREVIEW_PIDS, 256, 16, 32768)), lifetimeMs: bounded(env.GRAPHYARD_PREVIEW_LIFETIME_MINUTES, 720, 1, 10080) * 60_000,
-  concurrent: Math.round(bounded(env.GRAPHYARD_PREVIEW_COMPOSE_LIMIT, 4, 1, 32)), services: Math.round(bounded(env.GRAPHYARD_PREVIEW_SERVICES, 16, 1, 64)),
+  cpus: bounded(setting('PREVIEW_CPUS', env), 1, 0.1, 16), memoryMb: Math.round(bounded(setting('PREVIEW_MEMORY_MB', env), 512, 32, 65536)),
+  pids: Math.round(bounded(setting('PREVIEW_PIDS', env), 256, 16, 32768)), lifetimeMs: bounded(setting('PREVIEW_LIFETIME_MINUTES', env), 720, 1, 10080) * 60_000,
+  concurrent: Math.round(bounded(setting('PREVIEW_COMPOSE_LIMIT', env), 4, 1, 32)), services: Math.round(bounded(setting('PREVIEW_SERVICES', env), 16, 1, 64)),
 });
 
 /** Runs `docker ARGS`, answering stdout; rejects naming stderr. */

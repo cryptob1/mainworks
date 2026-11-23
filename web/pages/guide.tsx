@@ -10,18 +10,18 @@ const flow: [string, string][] = [
   ['Goal', 'You or the Master files a work item with required criteria.'],
   ['Build', 'A worker writes it in its own worktree, a private copy of the repository.'],
   ['Review', 'A different agent checks it against every criterion.'],
-  ['Merge trial', 'Tested on the latest main.'],
+  ['Test merge', 'Tested on the latest main.'],
   ['Merge', 'The loop merges it to main; no pull request.'],
   ['Deploy and verify', 'Verified in batches; a failing batch reverts its culprit. Main deploys.'],
 ];
 
 /** Where each part runs: the same parts `mainworks guide infra` lists, in two panels instead of one wiring diagram. */
 const host: [string, string, string][] = [
-  ['The loop', 'graphyard-master-OWNER-NAME.service', 'Hands out work, trials, merges.'],
+  ['The loop', 'graphyard-master-OWNER-NAME.service', 'Hands out work, tests, merges.'],
   ['Deploy watch', 'graphyard-deploy-OWNER-NAME.service', 'Deploys and rolls back.'],
   ['Server and dashboard', 'graphyard-OWNER-NAME-server-1', 'Docker, on 127.0.0.1:4310.'],
   ['Database', 'graphyard-OWNER-NAME-db-1', 'Postgres 17 in Docker.'],
-  ['Merge trials', 'mainworks-trial-…', 'One container per trial.'],
+  ['Test merges', 'Docker containers', 'One per test merge.'],
   ['Agent sessions', 'Workers, reviewers, the Master', 'Confined, one worktree, fair CPU.'],
   ['Hosts', `${COMMAND_NAME} host prepare`, 'Test shards; local-only tests stay here.'],
 ];
@@ -47,7 +47,7 @@ const faq: [string, string, ReactNode][] = [
   ['faq-master', 'What does the Master do, versus the loop?', <>The Master is the install’s AI coordinator. It learns the product, keeps the product brief (Settings → Product), turns goals into ranked work items, answers when an item needs judgement and files fixes for recurring faults. It does not write the code; workers do. The loop is plain code, no AI: it runs every delivery step in cycles, so work keeps moving while the Master thinks.</>],
   ['faq-context', 'How do agents share context?', <>Three places. The <strong>product brief</strong> (Settings → Product) says what the product is for; the Master keeps it and every session’s request carries it. <strong>AGENTS.md</strong> in your repository holds the project’s rules, plus a short block {PRODUCT_NAME} writes naming its guide topics. The <strong>work item</strong> holds the goal, criteria and history; when an attempt ends, the next worker continues from its committed work. The Master also keeps short lessons every Master session reads; one a lint rule, type or test could enforce becomes a work item, and once that item ships the lesson is removed. The header counts these as gates removed this week, beside reverts this week.</>],
   ['faq-delivery', 'How are changes tested, reviewed, merged and deployed?', <>A worker submits a commit. A different agent reviews it, and every criterion needs a passing proof from someone other than the builder. The merge writer trials the commit on the latest main, running the tests the change affects, then merges it to main itself. Merged changes are verified together as a batch; a failing batch reverts the change that broke it. Verified main deploys, and a failed health check rolls back. Work’s header line shows the pace — merges an hour over 6 hours, and the median time from review to live. See {link('docs-flow', 'How a change ships')}.</>],
-  ['faq-cpu', 'Why are trials fast?', <>They reuse installed dependencies and skip tests that passed on the same code. <code>{COMMAND_NAME} master status</code> shows CPU-seconds per merged item.</>],
+  ['faq-cpu', 'Why are test merges fast?', <>They reuse installed dependencies and skip tests that passed on the same code. <code>{COMMAND_NAME} master status</code> shows CPU-seconds per merged item.</>],
   ['faq-deploy', 'How do I deploy my app to Railway or AWS?', <>{PRODUCT_NAME} does not deploy your app to Railway or AWS and holds no credentials for them. Let the platform deploy from your main branch: Railway does this from git; on AWS, set up CodePipeline or App Runner to deploy from it. Then add the app to <code>delivery.applications</code> in <code>graphyard.json</code> with a <code>versionUrl</code> that answers the commit it serves, and <code>{COMMAND_NAME} master status</code> shows it as current, deploying, lagging or failed.</>],
   ['faq-app-url', 'How do teammates open my app?', <>Add its address to <code>graphyard.json</code> on main: <code>{'{"app": {"url": "https://my-box.tailnet.ts.net:8088"}}'}</code>. Use a tailnet or public address; the master refuses <code>127.0.0.1</code> and <code>localhost</code>, which open only on that machine. The top bar then shows <strong>Open app</strong>, and the <strong>Where it runs</strong> card under Settings → Delivery shows the link, machine, serving commit, deploy time and this dashboard's link. <code>{COMMAND_NAME} master status</code> lists it under applications, or names the missing setting.</>],
   ['faq-failure', 'What if a worker fails, work stalls or quota runs out?', <>A session that goes quiet gets one re-prompt. One that still fails ends its attempt, and the loop starts another that continues from the committed work. When a provider says an account hit its limit, {PRODUCT_NAME} holds that account until the reset (an hour if none is named) and uses the next account in the same role. Settings → Agents shows every account and its state. A <strong>stall alarm</strong> fires when work is ready and slots are free but nothing launched for 10 minutes, or an item had no change and no worker for an hour. It names the cause (dispatch error, hot CPU, quota, stale loop code, or an item nobody took) atop the Master page and <code>master status</code>, and wakes the master, which clears it by fixing the cause.</>],
@@ -90,7 +90,7 @@ export default function GuidePage() {
       <ul>
         <li><strong>You, the owner</strong>: goals and priorities, money and accounts, and sign-ins for people. Tell agents your decision; reverse their answer under Needs you.</li>
         <li><strong>The Master</strong>: keeps the brief, plans work and unsticks it.</li>
-        <li><strong>The loop</strong>: plain code, no AI. It hands out work, runs merge trials, merges and deploys.</li>
+        <li><strong>The loop</strong>: plain code, no AI. It hands out work, runs test merges, merges and deploys.</li>
         <li><strong>Workers and reviewers</strong>: AI coding sessions. Nobody reviews their own work.</li>
       </ul>
       <p>Your repository is the <strong>managed app</strong>. {PRODUCT_NAME} has its own server, dashboard and database.</p>

@@ -4,6 +4,7 @@
 // under a dedicated profile that is unconfined and grants userns; every other container keeps docker-default.
 import { readFileSync } from 'node:fs';
 import { shellQuote } from '../install/transport.js';
+import { setting } from '../setting.js';
 
 export const trialAppArmorProfile = 'graphyard-trial';
 /** Under /etc/apparmor.d the host's apparmor service loads it again on every boot. */
@@ -18,7 +19,7 @@ profile ${trialAppArmorProfile} flags=(unconfined) {
 }
 `;
 /** Whether the host enforces AppArmor; GRAPHYARD_APPARMOR_ENABLED_FILE stands in for the kernel's answer. */
-export function appArmorEnabled(file = process.env.GRAPHYARD_APPARMOR_ENABLED_FILE || '/sys/module/apparmor/parameters/enabled'): boolean {
+export function appArmorEnabled(file = setting('APPARMOR_ENABLED_FILE') || '/sys/module/apparmor/parameters/enabled'): boolean {
   try { return readFileSync(file, 'utf8').trim().startsWith('Y'); } catch { return false; }
 }
 /** The commands that install and load the trial profile, as one shell line. */

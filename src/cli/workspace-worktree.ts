@@ -12,6 +12,7 @@ import { gitOrThrow, reclaimBranchHolders, type ReclaimedHolder } from '../workt
 import type { CliContext } from './context.js';
 import { installUnderLease } from './install-under-lease.js';
 import { workMutation } from './registry.js';
+import { setting } from '../setting.js';
 
 /** `restore-branch GY-N EPOCH`: replace the leased attempt's own branch with HEAD. */
 export async function restoreBranchWork(context: CliContext, work: any) {
@@ -47,7 +48,7 @@ export const reworkWorktreePath = (work: { submission?: unknown; workspaces: { h
 export async function createWorktree(context: CliContext, work: any) {
   const { args, api, print } = context;
   // GY-1059: under GRAPHYARD_REQUEST_ID each write keys off it by name, so the failure release never replays the reservation.
-  const request = process.env.GRAPHYARD_REQUEST_ID;
+  const request = setting('REQUEST_ID');
   const mutate = (name: string, data: unknown) => api(`work/${work.id}/${name}`, data, request && name !== 'heartbeat' ? `${request}:worktree-${name}` : randomUUID());
   const epoch = Number(args[0]); const root = context.repositoryRoot();
   const status = await api('status');

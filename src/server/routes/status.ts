@@ -33,6 +33,7 @@ import { pipelineItems, pipelineTime } from '../../pipeline-speed.js';
 import { releaseCheckSince } from '../../model/incidents.js';
 import { readFlow } from '../flow.js';
 import { publicLinkOff } from './team-access.js';
+import { setting } from '../../setting.js';
 
 
 /** Control-plane status and the work reads every client polls. */
@@ -72,16 +73,16 @@ export const statusRoutes = defineRoutes('status', [
       // shared checkout holds is ahead. This process's build and the production watch observe the
       // control plane's own code, never another repository's release, so its header reads from here;
       // an install managing Mainworks itself keeps the production watch's release line.
-      const runner = engine.gitRunner === undefined ? engine.gitRunner = gitRunnerFor(process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd()) : engine.gitRunner;
+      const runner = engine.gitRunner === undefined ? engine.gitRunner = gitRunnerFor(setting('REPOSITORY_ROOT') ?? process.cwd()) : engine.gitRunner;
       const deploy = repository && repository.toLowerCase() !== mainworksRepository
-        ? await managedDeploy(repository, engine.baseBranch, process.env.GRAPHYARD_REPOSITORY_ROOT, runner)
+        ? await managedDeploy(repository, engine.baseBranch, setting('REPOSITORY_ROOT'), runner)
         : null;
       // Master status's serving block over the API (GY-2976): what the deploy record naming this
       // repository, or the repository's declared serve, serves — the served commit, whether it is
       // main, the URL and the last build failure, with the serve fields null when nothing is
       // declared. Read from the checkout this process serves from: GRAPHYARD_REPOSITORY_ROOT, else
       // its own working directory's git toplevel, so a served head reports its own serving.
-      const servingRoot = process.env.GRAPHYARD_REPOSITORY_ROOT?.trim() ? resolve(process.env.GRAPHYARD_REPOSITORY_ROOT) : repositoryToplevel(process.cwd());
+      const servingRoot = setting('REPOSITORY_ROOT')?.trim() ? resolve(setting('REPOSITORY_ROOT')!) : repositoryToplevel(process.cwd());
       const read = runner ? async (args: readonly string[]) => { const result = await runner(args); if (result.status !== 0) throw new Error(result.stderr); return result.stdout; } : null;
       const serving = await servingReport(servingRoot, repository ?? '', engine.baseBranch, read && (async args => (await read(args)).trim()));
       // GY-3452: what users have — the commit app.healthUrl answers, else the one served here or
