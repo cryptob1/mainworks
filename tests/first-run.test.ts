@@ -81,6 +81,10 @@ test('unit:first-run — FirstRunPage renders each step with its terminal equiva
 
   const step1 = renderStep({ repository: null, actor: { id: 'op', role: 'admin' } });
   assert.match(step1, /Connect a repository/);
+  // The shared page shell (ui-shell-all-pages): one h1 inside .page-heading with its .page-fact, content in a .panel.
+  assert.equal(step1.match(/<h1/g)?.length, 1);
+  assert.match(step1, /<div class="page-heading"><div><h1>Connect a repository<\/h1><p class="page-fact">Step 1 of 4 · 0 done<\/p>/);
+  assert.match(step1, /class="panel first-run-body"/);
   assert.match(step1, /mainworks up --repo OWNER\/NAME/);
   assert.doesNotMatch(step1, /npx mainworks/);
 

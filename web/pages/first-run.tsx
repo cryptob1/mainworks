@@ -3,6 +3,7 @@ import { firstRunState } from '../../src/model/first-run';
 import { COMMAND_NAME } from '../../src/model/product';
 import { friendlyName } from '../fun';
 import type { Dashboard } from './dashboard';
+import { PageHeader } from '../components/page-layout';
 
 /**
  * First-run page (GY-3603): shown instead of an empty Home when an install has no merged work.
@@ -31,7 +32,10 @@ export default function FirstRunPage(dashboard: Dashboard) {
   const stepState = (step: typeof steps[number]): 'done' | 'current' | 'pending' =>
     step.done ? 'done' : state.currentStep === step.number ? 'current' : 'pending';
 
-  return <div className="first-run" data-first-run-step={state.currentStep}>
+  const current = steps[state.currentStep - 1];
+  return <>
+  <PageHeader title={current.label} fact={`Step ${state.currentStep} of 4 · ${steps.filter(step => step.done).length} done`}/>
+  <div className="first-run" data-first-run-step={state.currentStep}>
     <ol className="first-run-steps" aria-label="Steps">
       {steps.map(step => {
         const current = state.currentStep === step.number;
@@ -46,9 +50,8 @@ export default function FirstRunPage(dashboard: Dashboard) {
       })}
     </ol>
 
-    <section className="first-run-body" aria-labelledby="first-run-title">
+    <div className="panel first-run-body">
       {state.currentStep === 1 && <>
-        <h1 id="first-run-title">Connect a repository</h1>
         <p className="first-run-lead">Give Mainworks one deploy key or repository-scoped token so it can branch, push, and merge pull requests.</p>
         {state.fetchRefusal && <p role="alert" className="notice danger">{state.fetchRefusal}</p>}
         <div className="first-run-actions">
@@ -63,9 +66,8 @@ export default function FirstRunPage(dashboard: Dashboard) {
       </>}
 
       {state.currentStep === 2 && <>
-        <h1 id="first-run-title">Confirm your Builder</h1>
         <p className="first-run-lead">A live request checks that your Builder account answers on its registered model before it starts work.</p>
-        {state.builder ? <div className="panel first-run-builder-card">
+        {state.builder ? <div className="first-run-builder-card">
           <dl className="facts">
             <div><dt>Builder</dt><dd>{builderName} <span className="muted mono">({state.builder.name})</span></dd></div>
             <div><dt>Registered model</dt><dd><code data-model-id>{state.builder.modelId ?? 'No model id registered'}</code></dd></div>
@@ -96,7 +98,6 @@ export default function FirstRunPage(dashboard: Dashboard) {
       </>}
 
       {state.currentStep === 3 && <>
-        <h1 id="first-run-title">Ship one small change</h1>
         <p className="first-run-lead">Describe one small change. {builderName} will branch, write a test, and open a pull request you can read before it merges.</p>
         <div className="first-run-actions">
           <button type="button" className="first-run-cta" onClick={() => setCreating(true)}>New task</button>
@@ -108,7 +109,6 @@ export default function FirstRunPage(dashboard: Dashboard) {
       </>}
 
       {state.currentStep === 4 && state.activeTask && <>
-        <h1 id="first-run-title">Watch it merge</h1>
         <p className="first-run-lead">{builderName} is working on {state.activeTask.title}. This page becomes Home when it merges.</p>
         <div className="first-run-actions">
           <button type="button" className="first-run-cta" onClick={() => setSelected(state.activeTask!.id)}>Open the task</button>
@@ -117,6 +117,7 @@ export default function FirstRunPage(dashboard: Dashboard) {
           Prefer a terminal? <code>{COMMAND_NAME} status {state.activeTask.key}</code> shows this task's gates and merge pipeline.
         </div>
       </>}
-    </section>
-  </div>;
+    </div>
+  </div>
+  </>;
 }
