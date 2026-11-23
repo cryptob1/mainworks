@@ -46,7 +46,7 @@ export const askCommands = defineCommands([{
     if (!question) throw new Error('Use ask GY-N QUESTION');
     const head: string = work.candidate?.sha ?? work.workspaces?.at(-1)?.branch ?? 'HEAD';
     const kind = setting('ASK_RUNTIME') ?? 'claude', bound = Number(setting('ASK_TIMEOUT_SECONDS') ?? 600);
-    if (!readOnlyArgs[kind]) throw new Error(`GRAPHYARD_ASK_RUNTIME must be one of ${Object.keys(readOnlyArgs).join(', ')}`);
+    if (!readOnlyArgs[kind]) throw new Error(`MAINWORKS_ASK_RUNTIME must be one of ${Object.keys(readOnlyArgs).join(', ')}`);
     const request = `You are a read-only investigator on a copy of ${work.key} (${work.title}) at ${head}. Read the files here to answer one question; change nothing. Question: ${question}\nEnd with one JSON object: {"summary": "the plain answer in at most five sentences", "evidence": ["path/file.ts:LINE"]}.`;
     const checkout = mkdtempSync(join(tmpdir(), 'graphyard-ask-'));
     let note: Note;
