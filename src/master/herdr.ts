@@ -51,7 +51,7 @@ export function herdrInvocation(args: string[], instance: HerdrInstance | null =
     const { HERDR_SOCKET_PATH: _socket, GRAPHYARD_HERDR_CONFIG_HOME: _home, GRAPHYARD_HERDR_SESSION: _session, MAINWORKS_HERDR_CONFIG_HOME: _newHome, MAINWORKS_HERDR_SESSION: _newSession, ...env } = process.env;
     return { command, args, env: { ...env, ...(setting('HERDR_CONFIG_HOME') ? { XDG_CONFIG_HOME: join(homedir(), '.config') } : {}) } };
   }
-  const { HERDR_SOCKET_PATH: _socket, ...env } = process.env;
+  const { HERDR_SOCKET_PATH: _socket, MAINWORKS_HERDR_CONFIG_HOME: _newHome, MAINWORKS_HERDR_SESSION: _newSession, ...env } = process.env;
   return { command, args: ['--session', instance.session, ...args], env: { ...env, XDG_CONFIG_HOME: instance.configHome, [herdrInstanceEnv.configHome]: instance.configHome, [herdrInstanceEnv.session]: instance.session } };
 }
 /** Runs herdr ARGS through RUN (a ChildRun, or a synchronous stub) against INSTANCE. */
