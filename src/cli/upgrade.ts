@@ -9,7 +9,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeBackupFile } from '../backup.js';
 import { Store } from '../store.js';
-import { checkoutRelease, compareDateVersions, datedVersionPattern, mainworksBaseBranch, mainworksUpstreamUrl, mainworksVerifiedRef, imageRepository, installationRoot, recordCommit, type Release } from '../release.js';
+import { checkoutRelease, compareDateVersions, datedVersionPattern, graphyardBaseBranch, mainworksUpstreamUrl, mainworksVerifiedRef, imageRepository, installationRoot, recordCommit, type Release } from '../release.js';
 import { repositoryFromRemote } from '../onboarding.js';
 import { installDirectory, readInstallRecord, type InstallRecord } from '../install/secrets.js';
 import { installIdFor } from '../install/types.js';
@@ -151,10 +151,10 @@ function revisionSchema(cliRoot: string, revision: string): number | null {
 /** The dated release `--to` names, or without one Mainworks's fetched origin/main tip, from the CLI checkout's refs. */
 export function resolveTarget(cliRoot: string, to?: string): UpgradeTarget {
   if (to !== undefined && !datedVersionPattern.test(to)) throw new Error('Use upgrade --to VERSION (a dated release such as 2026.10.17), or no --to for Mainworks\'s main');
-  const ref = to === undefined ? `refs/remotes/origin/${mainworksBaseBranch}` : `refs/tags/${to}`;
+  const ref = to === undefined ? `refs/remotes/origin/${graphyardBaseBranch}` : `refs/tags/${to}`;
   let revision: string;
   try { revision = git(cliRoot, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`); }
-  catch { throw new Error(`The CLI checkout has no ${ref}; run git -C ${JSON.stringify(cliRoot)} fetch --tags origin ${mainworksBaseBranch} (upgrade without --plan fetches it)`); }
+  catch { throw new Error(`The CLI checkout has no ${ref}; run git -C ${JSON.stringify(cliRoot)} fetch --tags origin ${graphyardBaseBranch} (upgrade without --plan fetches it)`); }
   const version = to ?? releaseOfCommit(cliRoot, revision).version;
   return { version, revision, schema: revisionSchema(cliRoot, revision) };
 }
@@ -254,7 +254,7 @@ const oneFetchAtATime = <T>(fetch: () => Promise<T>) => {
 export function gitWatchPorts(cliRoot: string, run: ChildRun): Pick<DeployWatchPorts, 'fetch' | 'head' | 'checkout' | 'contains'> {
   const git = async (...args: string[]) => String(await run('git', ['-C', cliRoot, ...args])).trim();
   return {
-    fetch: async () => { await oneFetchAtATime(() => git('fetch', '--quiet', 'origin', mainworksBaseBranch)); return git('rev-parse', `refs/remotes/origin/${mainworksBaseBranch}`); },
+    fetch: async () => { await oneFetchAtATime(() => git('fetch', '--quiet', 'origin', graphyardBaseBranch)); return git('rev-parse', `refs/remotes/origin/${graphyardBaseBranch}`); },
     head: () => git('rev-parse', 'HEAD'),
     contains: async (ancestor, commit) => { try { await git('merge-base', '--is-ancestor', ancestor, commit); return true; } catch { return false; } },
     checkout: async commit => { await git('checkout', '--detach', '--quiet', commit); recordCommit(cliRoot, commit); },
@@ -645,7 +645,7 @@ export const upgradeCommands = defineCommands([{
     const toIndex = flags.indexOf('--to');
     const to = toIndex >= 0 ? flags[toIndex + 1] ?? '' : undefined;
     const cliRoot = installationRoot, repoRoot = context.repositoryRoot();
-    if (!flags.includes('--plan')) git(cliRoot, 'fetch', '--tags', '--force', 'origin', mainworksBaseBranch);
+    if (!flags.includes('--plan')) git(cliRoot, 'fetch', '--tags', '--force', 'origin', graphyardBaseBranch);
     const repository = repositoryFromRemote(git(repoRoot, 'remote', 'get-url', 'origin'));
     const directory = repository ? installDirectory(installIdFor(repository)) : null;
     const url = setting('URL') || context.connection?.url ? context.base : null;

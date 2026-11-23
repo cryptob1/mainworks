@@ -23,9 +23,9 @@ import { remoteShardSession, shardSshSession } from './merge-writer/remote-shard
 import { trialImage } from './merge-writer/trial-container.js';
 
 /** Runtimes the worker image holds (the Dockerfile's trial stage): only their sessions run on a host. */
-export const remoteRuntimes = ['codex'];
+const remoteRuntimes = ['codex'];
 /** The files of a login home that hold its sign-in and settings: what is handed over, and handed back when changed. */
-export const loginFiles = ['.credentials.json', '.claude.json', 'settings.json', 'auth.json', 'config.toml', 'opencode/auth.json', 'cursor/auth.json', 'cli-config.json'];
+const loginFiles = ['.credentials.json', '.claude.json', 'settings.json', 'auth.json', 'config.toml', 'opencode/auth.json', 'cursor/auth.json', 'cli-config.json'];
 const sessionDirectory = '/tmp/mainworks-session';
 const marker = '\u001emainworks-';
 /** How often the session's checkout state is sent here while it runs. */
@@ -171,7 +171,7 @@ sys.exit(code)
 `;
 
 /** The `mainworks` the session calls, at the CLI's own path: each call goes to this machine, after the checkout's state, and its answer comes back. */
-export const sessionRelay = `import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+const sessionRelay = `import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 const session = ${JSON.stringify(sessionDirectory)}, id = randomUUID();
 writeFileSync(session + '/calls', JSON.stringify({ id, argv: process.argv.slice(2) }) + '\\n', { flag: 'a' });
@@ -194,7 +194,7 @@ export interface RemoteSession {
 }
 
 /** The exit code a dropped host gives: SSH's own. */
-export const droppedExit = 255;
+const droppedExit = 255;
 
 /** Run one agent session on `target` and return its exit code; the commits it made are in the worktree after. */
 export async function runRemoteSession(input: RemoteSession): Promise<number> {

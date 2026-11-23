@@ -29,7 +29,7 @@ const faultCooldownMs = 24 * 60 * 60_000;
  * binds that repository's own case instead (GY-3568). Every item carries a `faultKey` so repeats
  * add an observation note to the existing item instead of filing duplicates.
  */
-export const faultItem = (input: { faultKey: string; title: string; description: string; proof: string; reason: string; repaired?: { text: string; proof: string }; e2e?: { proof: string; clause: string } }) => {
+const faultItem = (input: { faultKey: string; title: string; description: string; proof: string; reason: string; repaired?: { text: string; proof: string }; e2e?: { proof: string; clause: string } }) => {
   const e2e = input.e2e ?? { proof: 'e2e:create-work-item', clause: 'creating a work item still works' };
   return {
   faultKey: input.faultKey,
