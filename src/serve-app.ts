@@ -15,7 +15,7 @@
 // its own as BASELINE_URL, so a compare case judges a new build against what was live (GY-2985).
 // A repository that declares no node application is untouched.
 import { existsSync, readFileSync } from 'node:fs';
-import { mkdir, rename, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, rename, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -66,9 +66,13 @@ export function readServeRecord(file: string): ServeRecord | null {
 }
 async function writeServeRecord(file: string, record: Omit<ServeRecord, 'at'>) {
   const cut = (reason: string | null | undefined) => reason?.slice(0, 2000) ?? null;
+  const at = new Date().toISOString();
   await mkdir(dirname(file), { recursive: true });
-  await writeFile(`${file}.tmp`, `${JSON.stringify({ ...record, reason: cut(record.reason), check: record.check ? { ...record.check, reason: cut(record.check.reason) } : null, baseline: record.baseline ?? null, at: new Date().toISOString() }, null, 2)}\n`);
+  await writeFile(`${file}.tmp`, `${JSON.stringify({ ...record, reason: cut(record.reason), check: record.check ? { ...record.check, reason: cut(record.check.reason) } : null, baseline: record.baseline ?? null, at }, null, 2)}\n`);
   await rename(`${file}.tmp`, file);
+  if (record.commit && !record.failed) {
+    await appendFile(join(dirname(file), 'serve-history.jsonl'), `${JSON.stringify({ commit: record.commit, at })}\n`).catch(() => {});
+  }
 }
 
 /** Whether an HTTP URL answers at all (any status counts: an app may 404 its root and still be served). */

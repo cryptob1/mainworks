@@ -284,6 +284,9 @@ export function remoteShardSession(input: { root: string; sha: string; image: st
   };
   const ready = new Map<string, Promise<string>>();
   return {
+    /** GY-3405: the run directory on `target` holding the commit's checkout, made once: what a remote agent session runs in. */
+    ready(target: string) { if (!ready.has(target)) ready.set(target, prepare(target)); return ready.get(target)!; },
+    shim,
     /** Run one shard on `target` through the shim: its files, `argv(list, records)` run by the trial launcher there with `cpus` CPUs, the output and records brought back. */
     async run(target: string, index: number, files: readonly string[], argv: (list: string, records: string) => string[], cpus: number): Promise<RemoteShardEnd> {
       if (!ready.has(target)) ready.set(target, prepare(target));
