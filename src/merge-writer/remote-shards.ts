@@ -374,9 +374,11 @@ export function remoteShardSummary(runs: readonly RemoteShardRun[], probes?: rea
   };
 }
 
-/** GY-3476, GY-3517: one attention line for each host the latest probe reads away because its shim lacks a verb trials use; it clears on the first probe that reads it ready. */
-export const outdatedShimAttention = (probes: readonly Pick<HostProbe, 'host' | 'away' | 'update'>[]) => probes.filter(probe => probe.away && probe.update).map(probe =>
-  ({ subject: `host ${probe.host}`, text: `${probe.host} takes no trial shards: its graphyard-host-shim is older than this release`, next: `Run mainworks host prepare and, with sudo on ${probe.host}, the script it prints` }));
+/** GY-3476, GY-3517: one attention line for each host the latest probe reads away because its shim lacks a verb trials use, or (GY-3744) reads ready on an older helper; it clears with the probe. */
+export const outdatedShimAttention = (probes: readonly Pick<HostProbe, 'host' | 'away' | 'update' | 'older'>[]) => probes.flatMap(probe =>
+  probe.away && probe.update ? [{ subject: `host ${probe.host}`, text: `${probe.host} takes no trial shards: its graphyard-host-shim is older than this release`, next: `Run mainworks host prepare and, with sudo on ${probe.host}, the script it prints` }]
+  // GY-3744: a ready host on another release's helper keeps taking shards; one line says how to update it.
+  : !probe.away && probe.older ? [{ subject: `host ${probe.host}`, text: `${probe.host} runs an older helper: run host prepare there to update it`, next: `Run mainworks host prepare and, with sudo on ${probe.host}, the script it prints` }] : []);
 
 /** GY-3534: one attention line for each host the latest trial left away because its SSH server reset the connection. */
 export const connectionResetAttention = (runs: readonly RemoteShardRun[]) => (runs.at(-1)?.hosts ?? []).filter(host => host.away && /connection reset|kex_exchange_identification/i.test(host.reason ?? '')).map(host =>
