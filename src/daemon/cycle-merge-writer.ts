@@ -263,13 +263,14 @@ function cancellableTrials(ports: MergeWriterReads, trials: Set<RunningTrial>): 
     return Promise.race([trial, cancelled]).finally(() => trials.delete(running));
   } };
 }
-/** GY-3099: why a running trial carrying `key`'s `head` no longer counts: the item is gone, was returned for rework, or carries a new head. */
+/** GY-3099: why a running trial carrying `key`'s `head` no longer counts: the item is gone, was returned for rework, was held, or carries a new head. */
 function carriedHeadStale(work: readonly Work[], key: string, head: string): string | null {
   const item = work.find(entry => entry.key === key);
   if (!item) return `${key} is no longer available`;
   const current = item.candidate?.sha.toLowerCase() ?? null;
   if (current !== head) return `${key}'s head ${head.slice(0, 12)} was replaced by ${current ? current.slice(0, 12) : 'no candidate'}`;
   if (item.reworkRequested) return `${key}'s head ${head.slice(0, 12)} was returned for rework`;
+  if (item.hold) return `${key} was held`; // GY-3728: a held item cannot merge, so its trial frees its slot
   return null;
 }
 /** Resolves once the merge in flight for `state` has settled; for the step's tests. */
