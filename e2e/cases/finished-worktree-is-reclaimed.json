@@ -1,0 +1,13 @@
+{
+  "id": "finished-worktree-is-reclaimed",
+  "title": "The loop removes a finished item's working copy within two cycles and reports the disk it freed",
+  "description": "Runs the loop's real close step over real Git worktrees a stub Builder left 5 MB of scratch in: once a later attempt holds an item its earlier attempt's copy goes, a copy a live lease and session use stays, and once the item is done its copy is gone within two cycles while the working copies' disk use master status reports falls by at least 5 MB (GY-3691).",
+  "target": "any",
+  "required": false,
+  "steps": [{
+    "kind": "command",
+    "name": "Reclaim a finished item's working copy",
+    "run": "node --import tsx tests/helpers/run-tests.ts tests/finished-worktree-is-reclaimed.test.ts",
+    "timeoutSeconds": 300
+  }]
+}

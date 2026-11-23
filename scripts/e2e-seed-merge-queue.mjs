@@ -4,13 +4,13 @@
 //   node --import tsx scripts/e2e-seed-merge-queue.mjs
 //
 // Run from the checkout scripts/e2e-serve.mjs serves: it reads the database URL that serve wrote to
-// .graphyard/e2e-serve.json. Re-running refreshes the flight's step instant.
+// .graphyard/e2e-serve-PORT.json. Re-running refreshes the flight's step instant.
 import { readFile } from 'node:fs/promises';
 import pg from 'pg';
 import { mergeHeads, mergeRecordKinds } from '../src/merge-writer/executor.ts';
 import { foldMergeLedger } from '../src/model-boundary/merge-ledger.ts';
 
-const { databaseUrl } = JSON.parse(await readFile('.graphyard/e2e-serve.json', 'utf8'));
+const { databaseUrl } = JSON.parse(await readFile(`.graphyard/e2e-serve-${new URL(process.env.TARGET_URL ?? 'http://127.0.0.1:4391').port}.json`, 'utf8'));
 const now = new Date().toISOString(), filed = '2020-01-01T00:00:00.000Z', base = 'b'.repeat(40);
 const head = n => String(n).repeat(40);
 const item = (n, key, fields = {}) => ({

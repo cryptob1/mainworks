@@ -11,7 +11,7 @@ import { connectDefaultRoles, connectProvider, fleetRequest, redactKey, relaySub
 import { type EnvironmentKind, type MasterConfig } from './profiles.js';
 import { atomicPrivateText } from '../private-file.js';
 import { failureText } from '../disk-space.js';
-import { agentEnvironmentRoot, createAgentEnvironment, discoverAgentEnvironments } from './environments.js';
+import { agentEnvironmentRoot, createAgentEnvironment, discoverAgentEnvironments, prepareAgentEnvironment } from './environments.js';
 import { accountHomeEnvironment } from './runtimes.js';
 
 // Connect an account from the UI (GY-409).
@@ -129,7 +129,7 @@ export interface ConnectWorkerReport { id: string; provider: string; state: 'hea
 export interface ConnectAccountOptions {
   fetch?: typeof fetch; now?: () => number;
   /** Test overrides: the smoke prompt's runner, where login homes, the host key and the master file live, and every bound. */
-  runner?: ChildRun; root?: string; keyFile?: string; masterFile?: string; pollMs?: number; loginTimeoutMs?: number; smokeTimeoutMs?: number;
+  runner?: ChildRun; root?: string; checkouts?: readonly string[]; keyFile?: string; masterFile?: string; pollMs?: number; loginTimeoutMs?: number; smokeTimeoutMs?: number;
 }
 const connectOpen = (state: string) => state === 'pending' || state === 'claimed' || state === 'connecting' || state === 'waiting-login';
 /**
@@ -157,7 +157,7 @@ export async function processConnectAccounts(config: Pick<MasterConfig, 'url' | 
       // A request this host already started keeps the login home it created.
       const environment = provider.runtime === 'pi' ? await createPiHome(root, connect.name)
         : (connect.name ? discovered.find(entry => entry.name === connect.name) : undefined)
-          ?? await createAgentEnvironment(root, provider.runtime as EnvironmentKind, discovered);
+          ?? await createAgentEnvironment(root, provider.runtime as EnvironmentKind, discovered, options.checkouts);
       const name = environment.name, home = environment.home;
       const report = async (healthy: boolean, error: string | null) => {
         await fleetRequest(config, `agent-registry/connect/${connect.id}/result`, { body: healthy ? { state: 'healthy', name, home } : { state: 'failed', name, error: error!.slice(0, 2000) }, fetch: fetcher });
@@ -169,6 +169,7 @@ export async function processConnectAccounts(config: Pick<MasterConfig, 'url' | 
         const key = unsealToHost(privateKey, connect.sealed!);
         held = key;
         await writeProviderAuthFile(provider, home, key);
+        if (provider.runtime !== 'pi') await prepareAgentEnvironment({ name, kind: provider.runtime as EnvironmentKind, home }, options.checkouts);
         await fleetRequest(config, `agent-registry/connect/${connect.id}/progress`, { body: { state: 'connecting', name }, fetch: fetcher });
         const smoke = await runSmokePrompt(provider, home, options);
         if (!smoke.healthy) { await report(false, redactKey(smoke.error!, key)); continue; }
@@ -191,6 +192,7 @@ export async function processConnectAccounts(config: Pick<MasterConfig, 'url' | 
         await Promise.allSettled(announced);
         if (!announced.length && (relay.url || relay.code)) await waiting(relay);
         if (!relay.loggedIn) { await report(false, relay.error ?? 'the login did not complete'); continue; }
+        if (provider.runtime !== 'pi') await prepareAgentEnvironment({ name, kind: provider.runtime as EnvironmentKind, home }, options.checkouts);
         const smoke = await runSmokePrompt(provider, home, options);
         await report(smoke.healthy, smoke.healthy ? null : smoke.error);
       }
