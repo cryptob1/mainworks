@@ -227,7 +227,10 @@ export interface RemoteShardEnd { ok: boolean; out: string; status: number | nul
 /** The name of this checkout's mirror on a host (~/.graphyard/mirrors/NAME.git): one per checkout this install trials from. */
 export const mirrorName = (root: string) => `${createHash('sha1').update(root).digest('hex').slice(0, 8)}-${basename(root).replace(/[^A-Za-z0-9._-]/g, '-')}`.slice(0, 100);
 /** The warm image for a trial image's digest and a lockfile's hash (`none` without one): dependencies installed once, then reused. */
-const warmImageTag = (digest: string, lockHash: string) => `graphyard-warm:${digest.replace(/^sha256:/, '').slice(0, 12)}-${lockHash.slice(0, 12)}`;
+export const warmImageTag = (digest: string, lockHash: string) => `graphyard-warm:${digest.replace(/^sha256:/, '').slice(0, 12)}-${lockHash.slice(0, 12)}`;
+
+/** GY-3745: where a running trial marks the warm image it uses (`TAG.PID.ID`, removed when it ends): the leftovers sweep keeps those images while PID lives. */
+export const warmInUseDirectory = (home = homedir()) => join(home, '.graphyard', 'warm-in-use');
 
 /**
  * One trial's remote hosts. The warm image — the trial image with the commit's locked dependencies
@@ -253,7 +256,7 @@ export function remoteShardSession(input: { root: string; sha: string; image: st
       throw new HostDroppedError(target, (String(failed.stderr ?? '').trim() || String(failed.message ?? error)).slice(-500));
     }
   };
-  let warm: Promise<string> | null = null;
+  let warm: Promise<string> | null = null, marker: string | null = null;
   const warmImage = async () => {
     const digest = await local('docker', ['image', 'inspect', '--format', '{{.Id}}', input.image]);
     const lock = await local('git', ['-C', input.root, 'show', `${input.sha}:package-lock.json`]).catch(() => null);
@@ -268,7 +271,11 @@ export function remoteShardSession(input: { root: string; sha: string; image: st
     return tag;
   };
   const prepare = async (target: string) => {
-    const image = await (warm ??= warmImage());
+    const image = await (warm ??= warmImage().then(async tag => {
+      await mkdir(warmInUseDirectory(), { recursive: true });
+      await writeFile(marker = join(warmInUseDirectory(), `${tag.slice('graphyard-warm:'.length)}.${process.pid}.${randomUUID().slice(0, 8)}`), '');
+      return tag;
+    }));
     for (let step = 0; step < 3; step++) {
       const answer = (await shim(target, `prepare-run ${repo} ${input.sha} ${image}`)).trim().split('\n').at(-1) ?? '';
       if (answer.startsWith('run ')) return answer.slice(4);
@@ -321,6 +328,7 @@ export function remoteShardSession(input: { root: string; sha: string; image: st
         if (run) await shim(target, `clean ${run}`).catch(() => {});
       }));
       await transport.close();
+      if (marker) await rm(marker, { force: true });
     },
   };
 }
