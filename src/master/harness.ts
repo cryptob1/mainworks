@@ -116,6 +116,10 @@ export function sessionHarnessPlan(input: SessionHarnessInput): HarnessPlan {
     { rule: 'Read(./.graphyard/connection.json)', why: 'Holds an individual Graphyard credential.' },
     { rule: 'Read(./.graphyard/credentials.json)', why: 'Holds local principal credentials.' },
     { rule: 'Read(./.graphyard/github-app.json)', why: 'Holds the control-plane App private key.' },
+    // GY-3711: a fresh install keeps the same files in .mainworks.
+    { rule: 'Read(./.mainworks/connection.json)', why: 'Holds an individual Graphyard credential.' },
+    { rule: 'Read(./.mainworks/credentials.json)', why: 'Holds local principal credentials.' },
+    { rule: 'Read(./.mainworks/github-app.json)', why: 'Holds the control-plane App private key.' },
     { rule: 'Read(**/*.pem)', why: 'App private keys are never read into a session transcript.' },
     { rule: 'Read(**/*.token)', why: 'Token files are never read into a session transcript.' },
     { rule: 'Bash(gh pr merge:*)', why: 'Delivery happens only through the guarded merge.' },
