@@ -307,7 +307,7 @@ test('unit:product-review-gates-features — a failed product reviewer attempt s
 test('unit:product-review-gates-features — the product prompt walks the preview and the served app when one runs, and the served app against the diff when none does', () => {
   const prompt = reviewPrompt({ repository: 'owner/project', cliPath: '/bin/graphyard' }, { key: 'GY-23', pr: 0, sha: H, baseSha: B, policyRevision: 1 }, undefined, undefined, undefined, undefined, undefined, null, null, null, { head: H, baseTip: B, product: true, previewUrl: 'https://graphyard.example/preview/GY-23/' });
   assert.match(prompt, /product reviewer/);
-  assert.match(prompt, /https:\/\/mainworks\.example\/preview\/GY-23\//);
+  assert.match(prompt, /https:\/\/graphyard\.example\/preview\/GY-23\//);
   assert.match(prompt, /agent-browser/);
   assert.match(prompt, /serving\.serve\.url/);
   assert.match(prompt, /--event REJECT/);

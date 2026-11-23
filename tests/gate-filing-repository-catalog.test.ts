@@ -28,7 +28,7 @@ test('unit:gate-filing-repository-catalog — a filing outside Mainworks binds t
   assert.equal(filing('known-red:test:secret-scan').criteria[1]!.text, 'The batch gate passes again and a new E2E case test-secret-scan-pinned passes', 'the criterion says what the case is');
   assert.equal(filing('known-red:e2e:sign-in').criteria[1]!.text, 'The batch gate passes again and the E2E case sign-in passes again');
   // Mainworks's own filings stay unchanged.
-  const own = gateFiledItem({ key: 'known-red:test:tests/board-queue.test.ts', title: 'Known red on main: test:tests/board-queue.test.ts', description: 'Red.' }, 'main', 'cryptob1/Mainworks');
+  const own = gateFiledItem({ key: 'known-red:test:tests/board-queue.test.ts', title: 'Known red on main: test:tests/board-queue.test.ts', description: 'Red.' }, 'main', 'cryptob1/Graphyard');
   assert.deepEqual(own.criteria[1]!.proofs, [repaired, 'e2e:create-work-item']);
   assert.equal(own.criteria[1]!.text, 'The batch gate passes again and creating a work item still works');
   // The control plane's own faults are filed to Mainworks and keep create-work-item.

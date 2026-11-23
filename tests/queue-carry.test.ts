@@ -10,7 +10,7 @@ import { diagnose } from '../src/coordination.js';
 const sha40 = (label: string) => label.replace(/[^a-f0-9]/g, '0').padEnd(40, 'f').slice(0, 40);
 const H = sha40('a1'), B = sha40('b1'), P = sha40('c1'), TIP = sha40('d1');
 const at = '2026-09-19T08:00:00.000Z';
-const authored = (overrides: Partial<TipMerge> = {}): TipMerge => ({ from: H, parents: [H, P], author: 'mainworks[bot]', authoredByApp: true, conflicts: false, baseChanges: ['src/other.ts', 'docs/other.md'], ...overrides });
+const authored = (overrides: Partial<TipMerge> = {}): TipMerge => ({ from: H, parents: [H, P], author: 'graphyard[bot]', authoredByApp: true, conflicts: false, baseChanges: ['src/other.ts', 'docs/other.md'], ...overrides });
 const evidenceRecord = (proof: string, overrides: Partial<Evidence> = {}): Evidence => ({ id: `ev-${proof}`, proof, sha: H, baseSha: B, policyRevision: 1, producer: 'ci-runner', trusted: true, result: 'pass', executed: 3, skipped: 0, at, ...overrides });
 function input(overrides: Partial<CarryInput> = {}): CarryInput {
   return { from: { sha: H, baseSha: B }, to: { sha: TIP, baseSha: P }, policyRevision: 1, at, merge: authored(), predecessor: { key: 'GY-1', validated: true },
@@ -52,7 +52,7 @@ test('unit:queue-authored-tip-carry — every refusal case requires fresh review
   refused({ merge: authored({ parents: [H, P, sha40('e1')] }) }, /carries commits Mainworks did not produce/);
   refused({ merge: authored({ parents: [sha40('a9'), P] }) }, /rather than exactly the approved head/);
   refused({ merge: authored({ parents: [H] }) }, /carries commits Mainworks did not produce/);
-  refused({ merge: authored({ authoredByApp: false, author: 'worker' }) }, /authored by worker, not by the mainworks App/);
+  refused({ merge: authored({ authoredByApp: false, author: 'worker' }) }, /authored by worker, not by the graphyard App/);
   refused({ merge: authored({ conflicts: true }) }, /needed conflict resolution/);
   refused({ predecessor: { key: 'GY-1', validated: false } }, /predecessor GY-1 is not fully validated/);
   refused({ merge: authored({ baseChanges: null }) }, /could not be listed completely/);

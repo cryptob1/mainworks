@@ -92,3 +92,10 @@ pathname = '/graphyard'
 (doesNotMatch|not\.toContain(Text)?|!.*includes)\(.*Graphyard.*
 graphyard\\/
 graphyard\\.mjs
+graphyard\\\.(example|json|mjs)
+ghcr\\\.io\\/cryptob1\\/graphyard
+the graphyard App
+\bgraphyard\[bot\]
+cryptob1/Graphyard
+\[trial, 'graphyard-trial'\]
+mirror/graphyard:

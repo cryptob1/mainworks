@@ -45,7 +45,7 @@ test('unit:tests/publish-verified.test.ts — a verified commit is pushed as bot
   assert.deepEqual(outcome, { version, images: [`ghcr.io/cryptob1/graphyard:${commit}`, 'ghcr.io/cryptob1/graphyard:verified', `ghcr.io/cryptob1/graphyard-trial:${commit}`, 'ghcr.io/cryptob1/graphyard-trial:verified'] },
     'the version is the commit\'s UTC day and short sha; each image is tagged by the commit and as verified');
   const build = calls.find(call => call.startsWith('docker build '))!, trial = calls.find(call => call.startsWith('docker buildx build '))!;
-  for (const [call, image] of [[build, 'graphyard'], [trial, 'mainworks-trial']] as const) {
+  for (const [call, image] of [[build, 'graphyard'], [trial, 'graphyard-trial']] as const) {
     assert.match(call, new RegExp(`--build-arg GRAPHYARD_BUILD_SHA=${commit} `), `${image} is stamped with the commit`);
     assert.match(call, new RegExp(`--tag ghcr\\.io/cryptob1/${image}:${commit} --tag ghcr\\.io/cryptob1/${image}:verified `));
   }
@@ -66,7 +66,7 @@ test('unit:tests/publish-verified.test.ts — a verified commit is pushed as bot
   // Another registry (a mirror, or a test's local one) is named by the environment.
   const mirror = stubs();
   const mirrored = await publishVerified(commit, { root, run: mirror.run, env: { NPM_TOKEN: 'npm-secret', GRAPHYARD_IMAGE_REGISTRY: '127.0.0.1:5000/mirror', npm_config_registry: 'http://127.0.0.1:4873/' } }) as { images: string[] };
-  assert.equal(mirrored.images[0], `127.0.0.1:5000/mirror/mainworks:${commit}`);
+  assert.equal(mirrored.images[0], `127.0.0.1:5000/mirror/graphyard:${commit}`);
   assert.match(mirror.published[0]!.npmrc, /^registry=http:\/\/127\.0\.0\.1:4873\/\n\/\/127\.0\.0\.1:4873\/:_authToken=\$\{NPM_TOKEN\}$/m);
 });
 
