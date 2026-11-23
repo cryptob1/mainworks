@@ -21,7 +21,8 @@ const waitFor = async <T>(read: () => Promise<T>, ready: (value: T) => boolean, 
 };
 
 test('e2e:trial-survives-loop-restart — one and three SIGTERM restarts retain the running trial while main moves', { timeout: 240000 }, async () => {
-  for (const restarts of [0, 1, 3]) {
+  // GY-3715: the three worlds are independent, so they run at once.
+  await Promise.all([0, 1, 3].map(async restarts => {
     const world = await pipelineWorld('trial-loop-restart');
     const cursor = join(world.root, 'cursor.json');
     await mkdir(world.trials, { recursive: true });
@@ -88,5 +89,5 @@ test('e2e:trial-survives-loop-restart — one and three SIGTERM restarts retain 
         await stopTrialRun({ directory: join(trialRunsDirectory(world.checkout), name) });
       await world.close();
     }
-  }
+  }));
 });

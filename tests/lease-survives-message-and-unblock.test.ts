@@ -24,7 +24,7 @@ const exec = promisify(execFile);
 // GY-3715: the cases run at once, each on its own fixture and agent name, so the file finishes inside 30 seconds.
 describe('lease-survives-message-and-unblock', { concurrency: true }, () => {
   test('e2e:lease-survives-message-and-unblock — a headless rework holder syncs messages with its own epoch and completes after a full lease period', async () => {
-    const f = await headlessWorkers('lease-survives-message', 12);
+    const f = await headlessWorkers('lease-survives-message', 9, 'eng-a', false);
     try {
       await f.configure([{ name: 'first', kind: 'codex' }]);
       const work = await f.readyItem('GY-9700');
@@ -40,14 +40,15 @@ describe('lease-survives-message-and-unblock', { concurrency: true }, () => {
       });
       await master('rework', work.key, 'Exercise a successor on the same branch');
       await f.configure([{ name: 'second', kind: 'codex', wait: true }]);
-      const launched = await f.dispatch(await f.stored(work.id));
+      // The successor waits, so there is no limit exit for a long startup observation to catch.
+    const launched = await f.dispatch(await f.stored(work.id), 1000);
       assert.equal(launched.epoch, 2);
       const before = await f.stored(work.id);
       assert.equal(before.workspaces[0].branch, before.workspaces[1].branch, 'rework reuses the submitted branch');
       await master('message', work.key, 'Keep this change small');
       await master('unblock', work.key, 'The dependency is available');
       // No command from the agent during this interval: watch alone renews the lease (every third of it).
-      await new Promise(resolve => setTimeout(resolve, 13_000));
+      await new Promise(resolve => setTimeout(resolve, 10_000));
       const live = await f.stored(work.id);
       assert.equal(live.lease?.epoch, 2);
       assert.ok(Date.parse(live.lease!.expiresAt) > Date.now());

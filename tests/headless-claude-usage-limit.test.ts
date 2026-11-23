@@ -22,9 +22,10 @@ const staleReset = new Date(Math.floor(Date.now() / 1000) * 1000 - 7_200_000).to
 const staleWall = new Date(Date.parse(staleReset) + 8 * 3_600_000).toISOString().slice(0, 19).replace('T', ' ');
 const staleQuota = JSON.stringify({ type: 'provider.quota', message: `Weekly/Monthly Limit Exhausted. Your limit will reset at ${staleWall}`, status: 429 });
 
-// GY-3715: two fixtures run their cases in turn, and the two groups run at once, so the file finishes inside 30 seconds.
+// GY-3715: each dispatching case has its own fixture and agent name, and the cases run at once, so the file
+// finishes inside 30 seconds.
 describe('headless-claude-usage-limit', { concurrency: true }, () => {
-  describe('headless-claude-usage-limit claude, reviewer and passed reset', { concurrency: 1 }, () => {
+  describe('headless-claude-usage-limit claude and reviewer', { concurrency: 1 }, () => {
     let workers: HeadlessWorkers;
     before(async () => { workers = await headlessWorkers('headless-claude-usage-limit'); });
     after(async () => { await workers.stop(); });
@@ -66,6 +67,12 @@ describe('headless-claude-usage-limit', { concurrency: true }, () => {
       assert.equal(holds[0]!.resetsAt, zaiReset);
       assert.deepEqual(moves.map(move => move.split(':')[0]), ['limit']);
     });
+  });
+
+  describe('headless-claude-usage-limit passed reset', () => {
+    let workers: HeadlessWorkers;
+    before(async () => { workers = await headlessWorkers('headless-claude-usage-limit-stale', 120, 'eng-c', false); });
+    after(async () => { await workers.stop(); });
 
     test('e2e:headless-claude-usage-limit — a headless opencode worker exiting on the Z.AI quota line after its named reset has passed keeps that reset on the record', async () => {
       await workers.configure([{ name: 'opencode-spent', kind: 'opencode', printed: staleQuota }, { name: 'next-stale', kind: 'codex', wait: true }]);
@@ -85,12 +92,12 @@ describe('headless-claude-usage-limit', { concurrency: true }, () => {
     });
   });
 
-  describe('headless-claude-usage-limit opencode quota exits', { concurrency: 1 }, () => {
+  for (const [shape, printed, key] of [['quota line', zaiQuota, 'GY-9671'], ['quota error event', zaiQuotaEvent, 'GY-9674']] as const) describe(`headless-claude-usage-limit opencode ${shape}`, () => {
     let opencode: HeadlessWorkers;
-    before(async () => { opencode = await headlessWorkers('headless-claude-usage-limit-opencode', 120, 'eng-b'); });
+    before(async () => { opencode = await headlessWorkers(`headless-claude-usage-limit-${key.slice(3)}`, 120, `eng-${key.slice(3)}`, false); });
     after(async () => { await opencode.stop(); });
 
-    for (const [shape, printed, key] of [['quota line', zaiQuota, 'GY-9671'], ['quota error event', zaiQuotaEvent, 'GY-9674']] as const) test(`e2e:headless-claude-usage-limit — a headless opencode worker exiting on the Z.AI ${shape} is held until its reset and the same dispatch moves on`, async () => {
+    test(`e2e:headless-claude-usage-limit — a headless opencode worker exiting on the Z.AI ${shape} is held until its reset and the same dispatch moves on`, async () => {
       await opencode.configure([{ name: 'opencode-spent', kind: 'opencode', printed }, { name: 'next-z', kind: 'codex', wait: true }]);
       const work = await opencode.readyItem(key);
       const launched = await opencode.dispatch(work);
