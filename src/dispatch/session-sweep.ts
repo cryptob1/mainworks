@@ -186,3 +186,28 @@ export async function sweepRegistrySessions(hostId: string, cursor: DispatchCurs
   }
   cursor.registryMisses = misses;
 }
+
+/**
+ * GY-3748: release review sessions that were not live 2 minutes after launch — end their registry
+ * session and record the release on the item's session handle (item history) before the same tick relaunches.
+ */
+export async function releaseNotLiveReviews(
+  notLive: readonly { key: string; sha: string; requestId?: string; id: string; agentName: string; account?: string; session?: string; resolution: string }[] | undefined,
+  work: readonly Work[], hostId: string, effects: Pick<DispatchEffects, 'endRegistrySession' | 'recordSession'>,
+) {
+  for (const entry of notLive ?? []) {
+    if (entry.session && effects.endRegistrySession) {
+      await effects.endRegistrySession({ id: entry.session, role: 'reviewer', work: entry.key, pane: null, agentName: entry.agentName }, entry.resolution).catch(() => {});
+    }
+    const item = work.find(candidate => candidate.key === entry.key);
+    if (item && effects.recordSession) {
+      const existing = (item.sessions ?? []).find(handle => handle.id === (entry.requestId ?? `review:${entry.sha}`) && handle.kind === 'review');
+      await effects.recordSession(item, {
+        id: existing?.id ?? entry.requestId ?? `review:${entry.sha}`, kind: 'review', role: 'review', head: entry.sha,
+        runtime: existing?.runtime ?? 'claude', host: existing?.host ?? hostId,
+        subject: existing?.subject ?? `${item.key}: review ${entry.sha.slice(0, 12)}`,
+        state: 'finished', outcome: entry.resolution.slice(0, 500),
+      }).catch(() => {});
+    }
+  }
+}

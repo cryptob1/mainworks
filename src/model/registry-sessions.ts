@@ -276,8 +276,9 @@ export function chooseSession(registry: AgentRegistry, request: Pick<SelectionRe
     // GY-3333: the live sessions other installs on this host hold on the account count toward its limit.
     const foreign = request.hostSessions?.filter(entry => entry.account === name) ?? [];
     // An unsupported runtime stored before the refusal existed is passed over with its reason, never launched.
+    const isBuilder = !!diverse?.account && name === diverse.account;
     const refusal = request.exclude?.includes(name) ? `${name} already failed to start a session under this dispatch`
-      : diverse?.account && name === diverse.account ? `${name} built ${diverse.work}`
+      : isBuilder && !diverse?.provider ? `${name} built ${diverse!.work}`
       : account ? accountIneligibility(registry, account, now, request.host, { hostSessions: foreign }) ?? roleIneligibility(account, role.name, now) ?? roleRuntimeRefusal(registry, account, role.name) ?? roleUnsupported(registry, role, name) : `${name} is not a registered account`;
     const differs = !!diverse?.provider && !!account && accountProvider(registry, account) !== diverse.provider;
     if (refusal) {
@@ -286,7 +287,14 @@ export function chooseSession(registry: AgentRegistry, request: Pick<SelectionRe
       if (differs && account!.maxSessions !== null && !accountIneligibility(registry, { ...account!, maxSessions: null }, now, request.host) && !roleIneligibility(account!, role.name, now) && !roleRuntimeRefusal(registry, account!, role.name)) busy.push({ account: name, reason: refusal });
       continue;
     }
-    if (diverse?.provider && !differs) { const skip = sharedProviderSkip(name, diverse); skipped.push(skip); shared.add(skip); fallback ??= { account: account!, index: order.indexOf(name), skip }; continue; }
+    if (diverse?.provider && !differs) {
+      const skip = sharedProviderSkip(name, diverse);
+      skipped.push(skip);
+      shared.add(skip);
+      if (!isBuilder) fallback ??= { account: account!, index: order.indexOf(name), skip };
+      continue;
+    }
+    if (isBuilder) { skipped.push({ account: name, reason: `${name} built ${diverse!.work}` }); continue; }
     const window = expiring.get(name), soon = window && order.indexOf(name) > 0 ? `; chosen first: its ${window.window} window resets at ${window.resetsAt} with ${100 - window.percent}% unused` : '';
     const room = near.size && !near.has(name) ? `; chosen for room left: ${[...near].map(([other, peak]) => `${other} at ${peak}%`).join(', ')} of its allowance trail${near.size === 1 ? 's' : ''}` : '';
     return chosen(account!, order.indexOf(name), skipped, `${soon}${room}${diverse?.provider ? ` on provider ${accountProvider(registry, account!)}, not the implementer's ${diverse.provider}` : ''}`);

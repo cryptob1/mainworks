@@ -1,6 +1,5 @@
 import { activeLease, demand } from '../../model.js';
 import { liveDispatchHandleIds } from '../../model/dispatch.js';
-import { sessionView } from '../../model/session-state.js';
 import { recordSession, sessionObservationFields } from '../../model/sessions.js';
 import type { Ctx } from './types.js';
 
@@ -45,7 +44,7 @@ export function run(c: Ctx) {
   // launcher then refuses must neither close nor re-coordinate the session the other started.
   // So a launch writes only a handle no other live attempt holds; an attempt whose runtime did
   // start after its registration was refused supersedes the record, since the launcher let it run.
-  demand(!data.launch || data.supersede || existing?.state !== 'running' || !existing.launch || existing.launch === data.launch || !sessionView(existing, now).live,
+  demand(!data.launch || data.supersede || existing?.state !== 'running' || !existing.launch || existing.launch === data.launch,
     `Session handle ${data.id} is held by another launch attempt that is still recorded running`, 409);
   // An observation dated ahead of this clock would read fresh for good, so it is stored as of now.
   const observedAt = data.observedAt && Date.parse(data.observedAt) > now.getTime() ? now.toISOString() : data.observedAt;

@@ -5,7 +5,7 @@ import { type SessionHandleInput } from '../model/sessions.js';
 import { runtimeEndedStates } from '../harness.js';
 import { type DispatchRequest } from '../model/dispatch.js';
 import { profileAccount } from '../master/environments.js';
-import { profileConcurrency, sessionAgentName, withReviewerDefaults, type MasterConfig, type ProducerProfile, type ReviewerProfile } from '../master/profiles.js';
+import { defaultReviewerProfile, profileConcurrency, sessionAgentName, withReviewerDefaults, type MasterConfig, type ProducerProfile, type ReviewerProfile } from '../master/profiles.js';
 import { withLaunchedRuntime } from '../master/launch.js';
 import { boundedLaunch, launchBoundMs } from '../master/launch-bound.js';
 import { capacityRefusal } from '../fleet.js';
@@ -17,7 +17,7 @@ import { unexercisedFindings } from '../model/mechanical-proofs.js';
 import { cursorTextLimit, bounded, closeFailureReasons, type DispatchLaunch, type DispatchWait, dispatchAttemptCeiling, type DispatchFailure, type DispatchCursor, dispatchRetryMinMs, dispatchRetryMaxMs, capacityRecheckMs, dispatchReadTimeoutMs, attributePersistFailure, tickWaits, capacityReasonLimit, dispatchFailureReasonLimit, closureFailureReasonLimit, dispatchFailureLimit, verdictIngestGraceMs, backedOffProfiles, probeBackoffFailures, probeBackoffMs } from './cursor.js';
 import { describeAttempts, unactedProducerSession, requestSpentAt, preferFreshProfiles, requestSessions, limitNoticeExit, type DispatchedSession } from './attempts.js';
 import { selectReviewerProfile, launchWithFailover, type InstantExit } from './launch-failover.js';
-import { launchedSessionHandle, type SessionClosure, sessionHandleKey, reconcileSessionLiveness, reportClosure, sweepRegistrySessions } from './session-sweep.js';
+import { launchedSessionHandle, type SessionClosure, sessionHandleKey, reconcileSessionLiveness, releaseNotLiveReviews, reportClosure, sweepRegistrySessions } from './session-sweep.js';
 import { postMergeWaitReason, reviewedAfterMerge, postMergeRequest, filePostMergeFollowUps } from './post-merge.js';
 import type { DispatchEffects } from './effects.js';
 
@@ -67,11 +67,7 @@ export interface DispatchTick { at: string; launched: DispatchLaunch[]; refused:
   woken?: string[] }
 
 
-/**
- * One tick: settle the sessions the ledgers hold against the snapshot, then launch a session for
- * every open request that has none. Each launch is recorded by the launcher's own ledger before
- * the tick moves on, so a kill between two launches leaves nothing to repeat.
- */
+/** One tick: settle the sessions the ledgers hold against the snapshot, then launch a session for every open request that has none. */
 export async function runDispatchTick(config: MasterConfig, cursor: DispatchCursor, effects: DispatchEffects, now: () => number = Date.now, readTimeoutMs = dispatchReadTimeoutMs, launchBound = launchBoundMs(config), held?: string): Promise<DispatchTick> {
   return dispatchTick(config, cursor, effects, now, readTimeoutMs, launchBound, held);
 }
@@ -89,23 +85,7 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
   // settles here, and the registry sweep below judges the same document.
   const registry = herdr && effects.registry ? await effects.registry() : null;
   const { reviews, released, notLive } = await effects.reconcileReviews(snapshot.work, herdr, registry);
-  // GY-3748: a review whose session was not live 2 minutes after launch is released (its registry
-  // session ended and its release recorded in the item's history) before the same tick relaunches it.
-  for (const entry of notLive ?? []) {
-    if (entry.session && effects.endRegistrySession) {
-      await effects.endRegistrySession({ id: entry.session, role: 'reviewer', work: entry.key, pane: null, agentName: entry.agentName }, entry.resolution).catch(() => {});
-    }
-    const item = snapshot.work.find(work => work.key === entry.key);
-    if (item && effects.recordSession) {
-      const existing = (item.sessions ?? []).find(handle => handle.id === (entry.requestId ?? `review:${entry.sha}`) && handle.kind === 'review');
-      await effects.recordSession(item, {
-        id: existing?.id ?? entry.requestId ?? `review:${entry.sha}`, kind: 'review', role: 'review', head: entry.sha,
-        runtime: existing?.runtime ?? 'claude', host: existing?.host ?? config.hostId,
-        subject: existing?.subject ?? `${item.key}: review ${entry.sha.slice(0, 12)}`,
-        state: 'finished', outcome: entry.resolution.slice(0, 500),
-      }).catch(() => {});
-    }
-  }
+  await releaseNotLiveReviews(notLive, snapshot.work, config.hostId, effects);
   const { producers } = await effects.reconcileProducers(snapshot.work, herdr);
   // Session liveness, swept on this same bounded interval (GY-113): a session that died reports
   // nothing, so nothing but a sweep ever contradicts a record that says it is running. The judgment
@@ -361,6 +341,7 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
       return result;
     }), exhausted);
   };
+  const reviewerProfile = () => { const s = selectReviewerProfile(config), profile = s.profile ?? (registry?.roles.some(r => r.name === 'reviewer') ? defaultReviewerProfile : null); return { profile, reason: profile ? null : s.reason }; };
   const dispatchReview = async (item: Work, review: DispatchRequest) => {
     // A product review (GY-2989) launches like a review on the same reviewer lanes — one session per
     // head, reviewer concurrency and capacity.
@@ -372,7 +353,7 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
     else if (!retryable(review)) wait('review', item, review, `launch refused ${cursor.failures[review.id].attempts} time(s): ${cursor.failures[review.id].reason}; ${cursor.failures[review.id].attempts >= dispatchFailureLimit ? 'no further automatic attempt, launch it with master review once the cause is fixed' : `next attempt at ${cursor.failures[review.id].nextAt}`}`);
     else {
       // Every review is a control-plane review (GY-1525): it posts through the API under a one-time token, so a profile answers it with no reviewer App.
-      const { profile, reason } = selectReviewerProfile(config);
+      const { profile, reason } = reviewerProfile();
       // The selected profile answers; the other reviewer profiles are its failover when none of
       // its accounts can launch. A profile with no slot left is passed over for one with room,
       // and a request no profile has room for waits on the limit it names.
@@ -430,7 +411,7 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
     else if (!effects.launchProductReview) wait('review', item, request, 'this dispatcher launches no product reviews');
     else if (!retryable(request)) wait('review', item, request, `launch refused ${cursor.failures[request.id].attempts} time(s): ${cursor.failures[request.id].reason}; ${cursor.failures[request.id].attempts >= dispatchFailureLimit ? 'no further automatic attempt, launch it with master review once the cause is fixed' : `next attempt at ${cursor.failures[request.id].nextAt}`}`);
     else {
-      const { profile, reason } = selectReviewerProfile(config);
+      const { profile, reason } = reviewerProfile();
       const candidates = profile ? [profile, ...withReviewerDefaults(config).reviewers.filter(other => other.name !== profile.name)] : [];
       const withRoom = () => preferFreshProfiles(candidates, reviews, request.id);
       const busy = () => wait('review', item, request, `product review: ${launchWaitWording.busy}: registry slots are occupied`);
@@ -555,7 +536,7 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
         wait('review', item, request, `launch refused ${failure.attempts} time(s): ${failure.reason}; ${failure.attempts >= dispatchFailureLimit ? `probed again every ${postMergeRefusalProbeMs / 60_000} minutes (next at ${new Date(Date.parse(failure.at) + postMergeRefusalProbeMs).toISOString()}): the request launches once the refusal's cause is gone` : `next attempt at ${failure.nextAt}`}`);
         continue;
       }
-      const { profile, reason } = selectReviewerProfile(config);
+      const { profile, reason } = reviewerProfile();
       const candidates = profile ? [profile, ...withReviewerDefaults(config).reviewers.filter(other => other.name !== profile.name)] : [];
       const withRoom = () => preferFreshProfiles(candidates, reviews, request.id);
       const busy = () => wait('review', item, request, `${launchWaitWording.busy}: registry slots are occupied; set concurrency on the registry reviewer role`);

@@ -23,12 +23,13 @@ import { loadMasterConfig, loadStoredMasterConfig, } from './master/config.js';
 import { closeHerdrPane, type HerdrAgent } from './master/herdr.js';
 import { holdRepeatedLimitAccount } from './master/launch-account.js';
 import { prepareSessionHarness } from './master/harness.js';
-import { profileConcurrency, reviewerProfileSchema, selectReviewerProfile, sessionAgentName, type MasterConfig, type ReviewerProfile } from './master/profiles.js';
+import { defaultReviewerProfile, profileConcurrency, reviewerProfileSchema, selectReviewerProfile, sessionAgentName, type MasterConfig, type ReviewerProfile } from './master/profiles.js';
 import { sessionSlotsGrant } from './master/harness.js';
 import { launcherCoordinatorRoot, sessionConfinement } from './master/launch.js';
 import { credentialMaskFor, insideMasterConfinement, reviewerCredentialDirectory, type CredentialMask } from './master/confinement.js';
 import { runtimeLoginHomes } from './master/profiles.js';
 import { moveOffLoggedOutAccount } from './master/logged-out.js';
+import { NoHealthyAccountError } from './master/environments.js';
 import { underTestRunner } from './runtime-environment.js';
 import { runtimeSandboxes, sessionWritablePaths, verifyWorkerSandbox, type SandboxExec } from './worker-sandbox.js';
 import { withVerificationPath } from './master/verification-slots.js';
@@ -985,7 +986,7 @@ export async function launchReview(root: string, work: Work, profileName: string
   const postMerge = dependencies.postMerge;
   const product = !!dependencies.product;
   if (product && postMerge) throw new Error('A product review judges a candidate head, never a delivered merge commit');
-  const profile: ReviewerProfile | undefined = profileName ? config.reviewers.find(item => item.name === profileName) : selectReviewerProfile(config).profile ?? undefined;
+  const profile: ReviewerProfile | undefined = profileName ? config.reviewers.find(item => item.name === profileName) : selectReviewerProfile(config).profile ?? defaultReviewerProfile;
   if (!profile) {
     // GY-1850: a launch naming a profile no configured one carries is a configuration fault, not a
     // failing candidate: left to the dispatcher's widening retries it was knocked out every cycle
@@ -1091,7 +1092,14 @@ export async function launchReview(root: string, work: Work, profileName: string
       throw new Error(`${work.key}'s last reviewer sessions each ended on one account's limit notice, and the hold that keeps the next launch off it could not be placed: ${error instanceof Error ? error.message : String(error)}`.slice(0, 500), { cause: error });
     });
     // Before a token is minted: an exhausted or logged-out account is skipped for the profile's next.
-    const selected = await selectAccount(config, 'reviewer', profile, { ...dependencies.probe, ...(excludeAccounts.length ? { exclude: excludeAccounts } : {}), work: work.key });
+    // GY-3748: prefer accounts that have not already failed on this request; fall back to them only if no other eligible account exists.
+    let selected: Awaited<ReturnType<typeof selectAccount>>;
+    try {
+      selected = await selectAccount(config, 'reviewer', profile, { ...dependencies.probe, ...(excludeAccounts.length ? { exclude: excludeAccounts } : {}), work: work.key });
+    } catch (error) {
+      if (!reservation.failedAccounts.length || !(error instanceof NoHealthyAccountError)) throw error;
+      selected = await selectAccount(config, 'reviewer', profile, { ...dependencies.probe, work: work.key });
+    }
     // Everything past the choice can fail; the session it chose is given back at once when it does.
     return await onSelectedSession(selected, `reviewer launch for ${work.key} failed`, async () => {
       // GY-2995: a launch whose sandbox cannot reach the CLI its prompt names starts nothing —
@@ -1534,7 +1542,7 @@ export async function reconcileReviews(root: string, config: MasterConfig, depen
       const launchingLive = (!record.pane && !!liveRun(record.agentName)) || !!dependencies.agents?.some(a => a.name === record.agentName);
       if (now.getTime() - Date.parse(record.requestedAt) < (launchingLive ? reviewLaunchReservationMs : reviewNotLiveMs)) continue;
       delete record.launching;
-      const resolution = `${lostRunReason}: the reviewer session (${record.agentName}${record.account ? ` on ${record.account}` : ''}) was not live 2 minutes after launch (reserved at ${record.requestedAt}); released and relaunched on the next eligible account`;
+      const resolution = `${lostRunReason}: the launch reserved at ${record.requestedAt} never confirmed its runtime started and was not live 2 minutes after launch (${record.agentName}${record.account ? ` on ${record.account}` : ''}); released and relaunched on the next eligible account`;
       await closeReviewSession(root, record, { run: dependencies.run, now: () => now }, { state: 'failed', resolution, force: true });
       notLive.push({ key: record.key, sha: record.sha, requestId: record.requestId, id: record.id, agentName: record.agentName, account: record.account, session: record.session, resolution });
       changed++;
@@ -1581,7 +1589,7 @@ export async function reconcileReviews(root: string, config: MasterConfig, depen
       const headlessLive = !record.pane && !!liveRun(record.agentName);
       if (!agent && record.session && dependencies.registry && !liveSessions(dependencies.registry).some(session => session.id === record.session))
         failed = `${lostRunReason}: the reviewer ${record.pane ? `pane ${record.pane}` : 'headless run'} (${record.agentName}) exited and its registry session ${record.session} is ended, without a verdict on ${record.sha.slice(0, 12)}; it is relaunched at once`;
-      else if (!agent && !headlessLive && now.getTime() - Date.parse(record.requestedAt) >= reviewNotLiveMs) {
+      else if (!record.pane && !agent && !headlessLive && now.getTime() - Date.parse(record.requestedAt) >= reviewNotLiveMs) {
         failed = `${lostRunReason}: the reviewer session (${record.agentName}${record.account ? ` on ${record.account}` : ''}) was not live 2 minutes after launch without a verdict on ${record.sha.slice(0, 12)}; released and relaunched on the next eligible account`;
         notLive.push({ key: record.key, sha: record.sha, requestId: record.requestId, id: record.id, agentName: record.agentName, account: record.account, session: record.session, resolution: failed });
       } else if (!agent || ['done', 'idle', 'blocked'].includes(agent.agent_status ?? '')) {

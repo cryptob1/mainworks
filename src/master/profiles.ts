@@ -451,11 +451,11 @@ export function selectReviewerProfile(input: Pick<MasterConfig, 'reviewers' | 'r
   const config = withReviewerDefaults(input);
   if (config.run.reviewerProfile) {
     const profile = config.reviewers.find(item => item.name === config.run.reviewerProfile) ?? null;
-    if (profile) return { profile, reason: null };
+    return profile ? { profile, reason: null } : { profile: null, reason: `run.reviewerProfile names ${config.run.reviewerProfile}, which is not a configured reviewer profile` };
   }
-  // GY-3421 / GY-3748: the registry's reviewer role chooses the eligible account; whatever profile names
-  // exist in master.json (or none at all), a review launch always has a profile to start from.
-  return { profile: config.reviewers[0] ?? defaultReviewerProfile, reason: null };
+  // GY-3421: the registry chooses the account (an independent provider first); the profile is only
+  // where the launch starts, and the others are its failover, so several profiles never hold a review.
+  return config.reviewers.length ? { profile: config.reviewers[0], reason: null } : { profile: null, reason: 'no reviewer profile is configured; add one with master reviewer add' };
 }
 export function withProducerDefaults<T extends Pick<MasterConfig, 'producers'>>(config: T): T {
   if (!config.producers.some(profile => profile.concurrency === undefined)) return config;

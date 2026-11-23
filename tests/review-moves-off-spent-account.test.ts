@@ -65,10 +65,14 @@ before(async () => {
   await mkdir(homeB); await writeFile(join(homeB, 'settings.json'), JSON.stringify({ env: { ANTHROPIC_API_KEY: 'stub-b' } }));
   const bin = join(scratch, 'bin');
   await mkdir(bin);
-  // Stub claude: logs which account home ran and posts a valid review verdict JSON.
+  // Stub claude: homeA is exhausted (refuses with usage limit); homeB answers with a valid review verdict JSON.
   await writeFile(join(bin, 'claude'), `#!${process.execPath}
 const { appendFileSync } = require('node:fs');
 const dir = process.env.CLAUDE_CONFIG_DIR || '';
+if (dir === ${JSON.stringify(homeA)}) {
+  console.error('Usage limit reached; resets at ' + new Date(Date.now() + 3_600_000).toISOString());
+  process.exit(1);
+}
 if (process.argv.includes('Reply with the single word OK.')) {
   console.log('OK');
   process.exit(0);
