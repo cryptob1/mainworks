@@ -53,8 +53,8 @@ test('unit:check-fallback-reason-is-recorded — a host whose SSH fails leaves i
   process.env[slotsDirectoryVariable] = heavy;
   try {
     assert.deepEqual(await machines(), ['this machine: 2 of 24 cores busy',
-      `box: 1 of 8 cores busy · last check fell back to this machine at 2026-11-22T07:00:00.000Z: host ${target} dropped a shard: ${stderr}`]);
+      `box: 1 of 8 cores busy, 0 shards · last check fell back to this machine at 2026-11-22T07:00:00.000Z: host ${target} dropped a shard: ${stderr}`]);
     appendFileSync(steps, `${JSON.stringify({ check: 'db', host: target, at: '2026-11-22T07:10:00.000Z' })}\n`);
-    assert.deepEqual(await machines(), ['this machine: 2 of 24 cores busy', 'box: 1 of 8 cores busy'], 'a check that next runs there clears it');
+    assert.deepEqual(await machines(), ['this machine: 2 of 24 cores busy', 'box: 1 of 8 cores busy, 0 shards'], 'a check that next runs there clears it');
   } finally { if (previous === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = previous; }
 });
