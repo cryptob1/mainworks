@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { boardFromStatus } from '../src/model/board';
 import { LINES, friendlyName } from '../web/fun';
+import { VERIFY_TIMEOUT_MS } from '../web/pages/login';
 
 // This spec proves motion, so it asks for it over the suite's reduced-motion default.
 test.use({ reducedMotion: 'no-preference' });
@@ -34,7 +35,8 @@ async function serve(page: Page, work: any[]) {
   await page.goto('/?sign-in#work');
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
-  await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible();
+  // GY-3719: sign-in may take as long as the page itself allows it; a loaded gate host spent past the 5 s default.
+  await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible({ timeout: VERIFY_TIMEOUT_MS });
   return state;
 }
 const live = { timeout: 15_000 };
