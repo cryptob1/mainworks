@@ -90,7 +90,7 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
   const why = main.locator('[data-account-row="spent-a"] td.why');
   await expect(why).toHaveText(`Limit reached · back ${day(NOW + 20 * minute)}`);
   await expect(why).toHaveAttribute('title', /\{"code":"rate_limit_exceeded"/);
-  await expect(main.locator('details.more-details > summary')).toContainText(['Account details', 'Roles', 'Runtimes']);
+  await expect(main.locator('details.more-details > summary')).toContainText(['Account details', 'Advanced']);
   await plain(page, 'Agents');
   await main.locator('details.more-details > summary', { hasText: 'Account details' }).click();
   await expect(main.locator('details.more-details', { hasText: 'Account details' })).toContainText('/home/agent/.coding_agents/spent-a');

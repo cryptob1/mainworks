@@ -40,7 +40,6 @@ export function DeliveryDefaults({ status }: { status: any }) {
         <dt>Candidate size</dt><dd>{delivery.candidateMaxChanges ? `At most ${delivery.candidateMaxChanges} changes per candidate` : 'Any number of changes'}</dd>
         <dt>Production verification</dt><dd>{delivery.productionVerification ? 'Required: the exact live release is verified' : 'Not required'}</dd>
         <dt>Merge writer</dt><dd>The control plane (GitHub only a mirror)</dd>
-        <dt>Mode</dt><dd className="mono">{delivery.mode}</dd>
       </dl>}
       {status?.deploy && status.deploy.configured !== true && <p className="muted" data-deploy="none">No deploy configured{typeof status.deploy.main === 'string' && status.deploy.main ? <> · main <span className="mono" title={status.deploy.main}>{status.deploy.main.slice(0, 8)}</span></> : null}</p>}
     </section>
@@ -48,6 +47,6 @@ export function DeliveryDefaults({ status }: { status: any }) {
       {delivery.applications.length ? <ul>{delivery.applications.map((application: any) => {
         const cases = Object.entries(delivery.cases ?? {}).filter(([, id]) => id === application.id).map(([id]) => id);
         return <li key={application.id}><strong>{application.id}</strong> · {application.kind === 'static' ? `static site in ${application.directory}` : `Compose ${application.file}, service ${application.service}:${application.port}`} · cases: {cases.length ? cases.join(', ') : 'none bound'}</li>;
-      })}</ul> : <p className="muted">No application is declared; declare them under delivery.applications in graphyard.json.</p>}
+      })}</ul> : <p className="muted">No app to preview yet.</p>}
     </section>}</>;
 }
