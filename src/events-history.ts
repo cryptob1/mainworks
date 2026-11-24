@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import { z } from 'zod';
-import { demand } from './model.js';
+import { demand, Refusal } from './model.js';
 import { resolvedPayloadSql } from './store/snapshot-delta.js';
 
 /**
@@ -98,8 +98,10 @@ export function eventHistorySql(query: EventHistoryQuery): Sql {
   if (query.until) where.push(`created_at<${param(query.until)}::timestamptz`);
   if (query.cursor) where.push(`seq${query.order === 'asc' ? '>' : '<'}${param(query.cursor)}::bigint`);
   const columns = query.payload === 'none' ? '' : query.payload === 'details' ? ", payload->'details' AS details" : `, ${resolvedPayloadSql()} AS payload`;
-  // One row beyond the page proves whether another page exists without a second count.
-  return { text: `SELECT seq,work_id,actor,kind,created_at${columns} FROM events${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY seq ${query.order === 'asc' ? 'ASC' : 'DESC'} LIMIT ${param(query.limit + 1)}`, values };
+  const order = query.order === 'asc' ? 'ASC' : 'DESC';
+  // GY-3761: the page's seq values first, by key with the filters and limit, then payloads for
+  // those rows only. One row beyond the page proves whether another page exists without a count.
+  return { text: `SELECT seq,work_id,actor,kind,created_at${columns} FROM (SELECT seq FROM events${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY seq ${order} LIMIT ${param(query.limit + 1)}) page JOIN events USING (seq) ORDER BY seq ${order}`, values };
 }
 
 /**
@@ -156,6 +158,23 @@ export interface EventHistoryPage {
   routine: RoutineSummary | null;
 }
 
+/** A history read past this fails fast instead of loading the database (GY-3761). */
+export const eventHistoryTimeoutMs = 5000;
+async function timed(pool: pg.Pool, query: EventHistoryQuery, sql: Sql) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`SET LOCAL statement_timeout = ${eventHistoryTimeoutMs}`);
+    const result = await client.query(sql.text, sql.values);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    if ((error as { code?: string }).code !== '57014') throw error;
+    throw new Refusal(`The history read ran past ${eventHistoryTimeoutMs / 1000} s. ${query.work ? 'Narrow it with since and until, or kind.' : 'Narrow it to one item with work, or with since and until.'}`, 422);
+  } finally { client.release(); }
+}
+
 /**
  * One bounded page of history and the disclosure of what the filter left out. Paging with
  * `order=asc` and the returned `nextCursor` walks an item's whole lifetime, however old, in
@@ -167,8 +186,8 @@ export async function readEventHistory(pool: pg.Pool, query: EventHistoryQuery, 
   const summary = query.view === 'history' ? routineSummarySql(query, scan) : null;
   const [clock, rows, routineRows] = await Promise.all([
     pool.query('SELECT clock_timestamp() AS now'),
-    pool.query(page.text, page.values),
-    summary ? pool.query(summary.text, summary.values) : Promise.resolve({ rows: [] as any[] }),
+    timed(pool, query, page),
+    summary ? timed(pool, query, summary) : Promise.resolve({ rows: [] as any[] }),
   ]);
   const hasMore = rows.rows.length > query.limit;
   const events = rows.rows.slice(0, query.limit).map(row => ({ ...row, seq: String(row.seq) }));

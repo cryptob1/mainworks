@@ -133,7 +133,7 @@ export const workCommands = defineCommands([
       '                               them, and --all follows the cursor to the end of the range,',
       '                               so an item of any age can be read in full',
     ],
-    unscoped: async ({ api, print }) => print(await api('events')),
+    unscoped: async ({ api, print }) => print(await api('events?payload=details')),
     async run({ api, print, args }, work) {
       const { eventHistoryLimits, parseEventHistoryFlags } = await import('../events-history.js');
       const { params, all } = parseEventHistoryFlags(args);

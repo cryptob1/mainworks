@@ -65,7 +65,7 @@ export async function itemLedger(masterApi: (path: string) => Promise<any>, id: 
   let cursor: string | null = null;
   try {
     do {
-      const page: { events: SpeedEvent[]; page: { nextCursor: string | null } } = await masterApi(`events?work=${id}&order=asc&limit=1000&view=page${cursor ? `&cursor=${cursor}` : ''}`);
+      const page: { events: SpeedEvent[]; page: { nextCursor: string | null } } = await masterApi(`events?work=${id}&order=asc&limit=1000&view=page&payload=full${cursor ? `&cursor=${cursor}` : ''}`);
       events.push(...page.events);
       cursor = page.page.nextCursor;
     } while (cursor);
