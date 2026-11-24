@@ -1,0 +1,12 @@
+{
+  "id": "account-check-environment-fault",
+  "title": "A live check's own environment fault leaves the account usable and names the check's fault in one line",
+  "description": "A live account check that fails because of its own environment (a read-only Pi home hitting EROFS on settings.json.lock, an agy scratch home failure, or a missing model alias in the launch) leaves the account's quota mark unchanged and records the fault once as attention instead of marking the account broken; a real provider limit sentence still holds the account. On the served dashboard at 1280 px and 390 px, the Workers page shows a logged-in Pi account whose check hit a read-only home as usable, with one plain line naming the check's fault, not as broken.",
+  "tags": ["accounts", "quota", "dashboard"],
+  "target": "any",
+  "required": true,
+  "steps": [
+    { "kind": "command", "name": "environment faults leave accounts eligible and record attention once", "run": "node --import tsx tests/helpers/run-tests.ts tests/account-check-environment-fault.test.ts", "timeoutSeconds": 300 },
+    { "kind": "command", "name": "the Workers page shows a Pi account with a read-only check fault as usable with one plain line at 1280 and 390 px", "run": "npm run test:browser -- browser-tests/account-check-environment-fault.spec.ts", "timeoutSeconds": 420 }
+  ]
+}

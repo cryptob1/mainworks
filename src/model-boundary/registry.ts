@@ -94,7 +94,7 @@ export const quotaObservationSchema = z.object({
   since: z.string().datetime().optional(),
   /** GY-3516: the fingerprint of the key the probe read this account's quota with; never the key. */
   key: z.string().regex(/^[0-9a-f]{12}$/).optional(),
-  /** GY-3516: no longer written (GY-3555: the account's own live request decides); kept so stored readings still parse. */
+  /** GY-3788: the live check's own environment fault (read-only home, failed scratch home, missing model alias); leaves quota unchanged and clears on a real check answer. */
   fault: text(300).nullable().optional(),
   /** GY-3497: the extra-usage line the provider's answer gave when spend is enabled (`extra usage on: $3.21 of $10.00 used`); shown, never changed. */
   spend: text(120).optional(),

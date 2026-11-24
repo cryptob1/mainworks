@@ -257,7 +257,7 @@ export async function recordObservedExhaustion(config: Pick<MasterConfig, 'crede
   await registry.observe({ host: config.hostId, observations: [{ account: environment, quota }] });
   // GY-3561: a live check that can only guess a reset never erases the one the notice itself named —
   // the account's own event stays on the record while the hold's bound stays the recheck window.
-  return { ...observed, available: quota.state === 'available', at: quota.since!, reason: quota.reason ?? 'The live request passed', resetsAt: quota.session === 'guessed' ? observed.resetsAt ?? null : quota.resetsAt, until: quota.state === 'broken' ? new Date(nextLiveCheck(quota)).toISOString() : quota.resetsAt ?? new Date(now).toISOString() };
+  return { ...observed, available: quota.state === 'available', at: quota.since ?? new Date(now).toISOString(), reason: quota.fault ?? quota.reason ?? 'The live request passed', resetsAt: quota.session === 'guessed' ? observed.resetsAt ?? null : quota.resetsAt, until: quota.state === 'broken' ? new Date(nextLiveCheck(quota)).toISOString() : quota.resetsAt ?? new Date(now).toISOString() };
 }
 /** Current exhaustion is read from the registry, never from the executor's environment log. */
 export async function observedExhaustions(config: Pick<MasterConfig, 'credentialFile'> & Partial<Pick<MasterConfig, 'url' | 'hostId'>>, now = Date.now(), registry?: Pick<FleetClient, 'document'>): Promise<Record<string, ObservedExhaustion>> {

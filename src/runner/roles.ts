@@ -4,7 +4,7 @@ import { ChildProcessError, runChild } from '../child-runner.js';
 import { randomUUID } from 'node:crypto';
 import { confinedRuntimeArgs } from '../worker-sandbox.js';
 import { spawn, type SpawnOptions } from 'node:child_process';
-import { lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { accessSync, constants, copyFileSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { defaultPiModel, piRunner, piSmoke, runEnvironment, type SmokeResult } from './pi.js';
@@ -147,8 +147,31 @@ export async function smokeRegistryAccount(account: FleetLaunchAccount, options:
       return { ok: false, error: Object.values(key).reduce((text, secret) => text.replaceAll(secret, '[redacted]'), parseProbeFailure(message).reason) };
     }
   }
-  return piSmoke({ command: options.command ?? launch.command, commandArgs: options.commandArgs, model: launch.model, args: launch.args, environment: { ...launch.environment, ...key } },
-    { cwd: options.cwd ?? account.home ?? undefined, timeoutMs: options.timeoutMs, redact: Object.values(key) });
+  // GY-3788: Pi creates settings.json.lock in PI_CODING_AGENT_DIR; when the account home is read-only
+  // during the check, give Pi a writable scratch home carrying its login and a writable settings copy.
+  const homeVariable = account.fleet.contract.homeVariable ?? 'PI_CODING_AGENT_DIR';
+  const piHome = launch.environment[homeVariable] ?? account.home;
+  let scratchHome: string | null = null;
+  if (piHome) {
+    try { accessSync(piHome, constants.W_OK); }
+    catch {
+      scratchHome = mkdtempSync(join(tmpdir(), 'mainworks-pi-smoke-'));
+      try {
+        for (const entry of readdirSync(piHome)) {
+          const source = join(piHome, entry), target = join(scratchHome, entry);
+          if (entry === 'settings.json') copyFileSync(source, target);
+          else symlinkSync(resolve(source), target);
+        }
+      } catch { /* unreadable entries leave an empty scratch dir so Pi reports its own error */ }
+    }
+  }
+  const env = { ...launch.environment, ...key, ...(scratchHome ? { [homeVariable]: scratchHome } : {}) };
+  try {
+    return await piSmoke({ command: options.command ?? launch.command, commandArgs: options.commandArgs, model: launch.model, args: launch.args, environment: env },
+      { cwd: options.cwd ?? scratchHome ?? account.home ?? undefined, timeoutMs: options.timeoutMs, redact: Object.values(key) });
+  } finally {
+    if (scratchHome) rmSync(scratchHome, { recursive: true, force: true });
+  }
 }
 /**
  * The agy account's smoke test (GY-3108): one print-mode prompt on the account's login, which agy

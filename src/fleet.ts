@@ -14,11 +14,10 @@ import { environmentKinds, type AgentEnvironment, type EnvironmentKind, type Mas
 import { readCredentialFile } from './private-file.js';
 import { masterConfinementVariable } from './master/confinement.js';
 import { planModelUnused, smokeRegistryAccount } from './runner/roles.js';
-import { wrongModel } from './model/account-quota.js';
+import { checkEnvironmentFault, parseProbeFailure, wrongModel } from './model/account-quota.js';
 import { fleetOrder, roleUnsupported } from './model/worker-preference.js';
 import type { SmokeResult } from './runner/pi.js';
 import { accountIneligibility, lastGoodUsage, windowHold, deriveAccountPlan, pinnedInstall, fleetRoles, liveSessions, roleLimit, proposedConcurrency, proposedRuntimeRoles, proposedRuntimes, rolePolicy, roleRuntimeKinds, roleRuntimeRefusal, smokeFailureDue, smokeTestedKinds, type AccountKey, type AgentRegistry, type RolePolicy, type FleetAccount, type FleetAccountInput, type FleetModel, type FleetRole, type FleetRoleName, type FleetRuntime, type FleetSession, type LaunchContract, type QuotaObservation, type RunOutcome, type SessionSkip, type SmokeObservation } from './model/registry.js';
-import { parseProbeFailure } from './model/account-quota.js';
 import { hostAccountCheck, hostAccountUsage, recordHostAccountCheck, recordHostAccountUsage, withHostAccountUsageLock, clearEndedHostAccountSessions, clearHostAccountSession, hostAccountSessions, registerHostAccountSession } from './host-accounts.js';
 import { setting } from './setting.js';
 ;
@@ -222,6 +221,14 @@ export async function checkAccountLive(account: FleetAccount, runtime: FleetRunt
     const limited = !!parsed && !unused && (parsed.apiError === 'usage_limit_reached' || liveLimitNotices().some(notice => notice.test(parsed.reason)));
     const reset = limited ? parsed.resetsAt : null;
     const since = new Date(now).toISOString();
+    // GY-3788: a failure from the check's own environment leaves the account's quota mark unchanged and records the fault.
+    const fault = !result.ok && !limited && !unused ? checkEnvironmentFault(reason) : null;
+    if (fault) {
+      const { source: _source, observedAt: _at, observedBy: _by, ...previous } = account.quota;
+      const quota: QuotaObservation = { ...previous, usage: usage.length ? usage : previous.usage, fault, ...(ownKey ? { key: ownKey } : {}) };
+      if (home) recordHostAccountCheck(home, { key: account.credential.key ?? null, at: since, nextCheck: new Date(now + accountCheckIntervalMs).toISOString(), quota });
+      return quota;
+    }
     // A refusal that names no reset is held for one check interval, shown as reset unknown.
     const quota: QuotaObservation = { loggedIn: result.ok || !detectLoggedOut(reason ?? ''), state: result.ok ? 'available' : limited ? 'exhausted' : 'broken', usage, since,
       resetsAt: limited ? reset ?? new Date(now + accountCheckIntervalMs).toISOString() : null, reason, ...(limited ? { session: reset ? 'named' as const : 'guessed' as const } : {}), ...ownKey ? { key: ownKey } : {} };
@@ -280,8 +287,10 @@ export async function observeAccount(account: FleetAccount, runtime: FleetRuntim
   // metering window never holds by itself. A window of the provider's own limit list does hold,
   // past even a passing request (windowHold, GY-3497): the provider stops sessions on that list.
   const spent = reading.quota.state === 'exhausted' || usage.some(window => window.percent >= ceiling && !!window.resetsAt && Date.parse(window.resetsAt) > now);
-  if (cached || signalled || spent || needsSmoke(account, runtime, now))
-    return { ...reading, quota: windowHold({ ...await checkAccountLive(account, runtime, probe, model, usage, reading.quota.key), ...reading.quota.spend ? { spend: reading.quota.spend } : {} }, ceiling, now) };
+  if (cached || signalled || spent || needsSmoke(account, runtime, now)) {
+    const live = await checkAccountLive(account, runtime, probe, model, usage, reading.quota.key);
+    return { ...reading, quota: windowHold({ ...live, ...(live.fault && live.loggedIn === null && reading.quota.loggedIn !== null ? { loggedIn: reading.quota.loggedIn } : {}), ...reading.quota.spend ? { spend: reading.quota.spend } : {} }, ceiling, now) };
+  }
   return { ...reading, quota: windowHold({ ...reading.quota, usage }, ceiling, now) };
 }
 
