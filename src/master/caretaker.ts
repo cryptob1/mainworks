@@ -70,7 +70,7 @@ export async function startCaretakerProbeServer(
     srv.listen(0, '127.0.0.1', () => resolve());
   });
   const port = (srv.address() as { port: number }).port;
-  return { url: `http://127.0.0.1:${port}`, close: () => new Promise<void>(resolve => srv.close(() => resolve())) };
+  return { url: `http://127.0.0.1:${port}`, close: () => new Promise<void>(resolve => { srv.closeAllConnections?.(); srv.close(() => resolve()); }) };
 }
 
 /**
