@@ -203,7 +203,18 @@ test('integration:backfill-faster — on 500,000 stageless delta rows, the backf
       AND payload->>'stage' IS DISTINCT FROM graphyard_event_work(work_id, payload)->>'stage'`);
     assert.equal(Number(differing.rows[0].count), 0);
 
-    // A slow batch under host load does not collapse batch size below the 250-row floor, while a timeout still backs off.
+    // A slow batch under host load does not collapse batch size below the 250-row floor, while a non-recount timeout backs off.
+    // A first-cycle timeout (on the one-time count) neither shrinks the batch nor re-requests recount on the next cycle.
+    const firstTimeoutCalls: { limit: number; recount?: boolean }[] = [];
+    const firstTimeout = eventStageBackfill(async (limit, recount) => {
+      firstTimeoutCalls.push({ limit, recount });
+      if (firstTimeoutCalls.length === 1) throw new Error('The operation was aborted due to timeout');
+      return { filled: limit, remaining: 10_000, updateMs: 50 };
+    });
+    await assert.rejects(() => firstTimeout(() => {}), /aborted due to timeout/);
+    await firstTimeout(() => {});
+    assert.deepEqual(firstTimeoutCalls, [{ limit: 50, recount: true }, { limit: 50, recount: false }]);
+
     const spikedLimits: number[] = [];
     let shouldFail = false;
     const spiked = eventStageBackfill(async limit => {

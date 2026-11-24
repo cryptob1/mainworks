@@ -16,8 +16,13 @@ export function eventStageBackfill(post: (limit: number, recount?: boolean) => P
   return async (log: (line: string) => void) => {
     if (done) return;
     const started = now();
+    const recount = first;
     let batch: number, remaining: number | undefined, updateMs: number | undefined;
-    try { ({ filled: batch, remaining, updateMs } = await post(limit, first)); } catch (error) { limit = Math.max(1, Math.floor(limit / 4)); floor = Math.min(floor, limit); throw error; }
+    try { ({ filled: batch, remaining, updateMs } = await post(limit, recount)); } catch (error) {
+      if (!recount) { limit = Math.max(1, Math.floor(limit / 4)); floor = Math.min(floor, limit); }
+      else first = false;
+      throw error;
+    }
     first = false;
     const ms = Math.max(1, updateMs ?? (now() - started));
     filled += batch;

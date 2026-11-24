@@ -44,6 +44,7 @@ import { setting } from '../../setting.js';
 let stageBackfill: { remaining: number; at: string } | null = null;
 /** GY-3777: per-pool remaining count, counted once per loop start and decremented by each batch's filled rows. */
 const stageBackfillCounts = new WeakMap<object, number>();
+const stageBackfillCounting = new WeakMap<object, Promise<number>>();
 
 export const statusRoutes = defineRoutes('status', [
   { method: 'GET', path: '/api/work-replay', async handle({ services, url, operatorVisible }) {
@@ -294,8 +295,13 @@ export const statusRoutes = defineRoutes('status', [
       } else {
         const cached = stageBackfillCounts.get(pool);
         if (cached === undefined || recount) {
-          remaining = await countStagelessDeltas(pool);
-          stageBackfillCounts.set(pool, remaining);
+          let pending = stageBackfillCounting.get(pool);
+          if (!pending) {
+            pending = countStagelessDeltas(pool).then(count => { stageBackfillCounts.set(pool, count); return count; })
+              .finally(() => { if (stageBackfillCounting.get(pool) === pending) stageBackfillCounting.delete(pool); });
+            stageBackfillCounting.set(pool, pending);
+          }
+          remaining = await pending;
         } else {
           remaining = Math.max(0, cached - batch.filled);
           stageBackfillCounts.set(pool, remaining);
