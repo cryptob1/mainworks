@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { join } from 'node:path';
 import { withDatabase } from './helpers/postgres.js';
+import { explainAnalyzeBuffers } from './helpers/query-plan.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import type { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
@@ -13,7 +14,6 @@ import { flowAttemptsSql, flowLedgerSql, forgetFlow } from '../src/server/flow.j
 import { masterConfigSchema } from '../src/master.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import { queryName } from '../src/store/slow-queries.js';
 import { workTables } from '../src/store/tables/work.js';
 
 // GY-3765: on the live install the flow's ledger read took about 9 s every minute: each of the
@@ -87,19 +87,21 @@ test('integration:flow-ledger-fast — on two million events over 7 days with la
   assert.ok(previous.length > EVENTS / WHOLE_EVERY, 'the window\'s saves and flow kinds');
   assert.ok(previous.some(row => row.kind === 'rework' && row.reason && row.stage));
 
-  // GY-3767: on the plain client, so the cold first read, which may pass 3 s under load, never enters the server's slowest-query report the e2e test reads.
-  await fixture.query(`SET statement_timeout = '15s'`);
-  try {
-    await fixture.query(flowLedgerSql, [since, flowKinds]);
-    const started = performance.now();
-    const result = await fixture.query(flowLedgerSql, [since, flowKinds]);
-    const ms = performance.now() - started;
-    assert.ok(ms < 3000, `the ledger read took ${Math.round(ms)} ms`);
-    assert.deepEqual(plain(result.rows), previous);
-  } finally { await fixture.query('RESET statement_timeout'); }
+  // GY-3767: on the plain client, so the test's own ledger read never enters the server's slowest-query report the e2e test reads.
+  const result = await fixture.query(flowLedgerSql, [since, flowKinds]);
+  assert.deepEqual(plain(result.rows), previous);
+  const ledgerPlan = await explainAnalyzeBuffers(fixture, flowLedgerSql, [since, flowKinds]);
+  assert.ok(!ledgerPlan.seqScans.includes('events'), `flowLedgerSql must not sequentially scan events: ${ledgerPlan.summary}`);
+  assert.ok(ledgerPlan.indexes.includes('events_work_flow'), `flowLedgerSql must use events_work_flow: ${ledgerPlan.summary}`);
+  assert.ok(ledgerPlan.indexes.some(name => name === 'events_kind_created' || name === 'events_history'), `flowLedgerSql must use events_kind_created or events_history: ${ledgerPlan.summary}`);
+  const maxRows = Math.ceil(previous.length * 1.5);
+  assert.ok(ledgerPlan.rowsScanned('events') <= maxRows, `flowLedgerSql scanned ${ledgerPlan.rowsScanned('events')} event rows (limit ${maxRows}): ${ledgerPlan.summary}`);
+  // Without GY-3765's stage column, detoasting every whole-document row (~50k × 80 kB) reads far more TOAST buffers.
+  const maxBuffers = Math.ceil(previous.length * 2.2);
+  assert.ok(ledgerPlan.buffers <= maxBuffers, `flowLedgerSql touched ${ledgerPlan.buffers} buffers (limit ${maxBuffers}): ${ledgerPlan.summary}`);
 });
 
-test('e2e:flow-ledger-fast — master status on the seeded install shows the flow numbers and no flow query over 3 s', { timeout: 600_000 }, async () => {
+test('e2e:flow-ledger-fast — master status on the seeded install shows the flow numbers and its flow queries use indexes without scanning events whole', { timeout: 600_000 }, async () => {
   forgetFlow(store);
   const directory = await temporaryDirectory('flow-ledger-fast');
   const config = masterConfigSchema.parse({ version: 1, url, repository: 'owner/project', credentialFile: join(directory, 'coordinator.token'), cliPath: '/bin/graphyard', hostId: 'test-host', baseBranch: 'main',
@@ -114,10 +116,13 @@ test('e2e:flow-ledger-fast — master status on the seeded install shows the flo
   };
   const status = await masterStatusReport(root, config, masterApi, async (command, args) => isHerdrCommand(command) ? (herdrSubcommand(args)[1] === 'list' ? JSON.stringify({ agents: [] }) : '') : `${'b'.repeat(40)}\n`);
   assert.ok(status.flow, `flow is shown (${status.flowError})`);
-  for (const sql of [flowAttemptsSql, flowLedgerSql]) {
-    const slow = await masterApi(`slowest-query?name=${encodeURIComponent(queryName(sql).slice(0, 60))}`);
-    assert.equal(slow.slowest, null, `a flow query over 3 s: ${JSON.stringify(slow.slowest)}`);
-  }
-  const slowest = await masterApi('slowest-query');
-  assert.ok(!String(slowest.slowest?.caller ?? '').includes('/api/flow'), `a /api/flow query over 3 s: ${JSON.stringify(slowest.slowest)}`);
+  const since = new Date(Date.now() - 7 * 86_400_000);
+  const attemptsPlan = await explainAnalyzeBuffers(fixture, flowAttemptsSql, [since]);
+  assert.ok(!attemptsPlan.seqScans.includes('events'), `flowAttemptsSql must not scan events: ${attemptsPlan.summary}`);
+  assert.equal(attemptsPlan.rowsScanned('events'), 0, `flowAttemptsSql must read 0 event rows: ${attemptsPlan.summary}`);
+  assert.ok(attemptsPlan.rowsScanned('work_index') <= ITEMS + 5, `flowAttemptsSql scanned ${attemptsPlan.rowsScanned('work_index')} work_index rows: ${attemptsPlan.summary}`);
+  const ledgerPlan = await explainAnalyzeBuffers(fixture, flowLedgerSql, [since, flowKinds]);
+  assert.ok(!ledgerPlan.seqScans.includes('events'), `flowLedgerSql must not sequentially scan events: ${ledgerPlan.summary}`);
+  assert.ok(ledgerPlan.indexes.includes('events_work_flow'), `flowLedgerSql must use events_work_flow: ${ledgerPlan.summary}`);
+  assert.ok(ledgerPlan.indexes.some(name => name === 'events_kind_created' || name === 'events_history'), `flowLedgerSql must use events_kind_created or events_history: ${ledgerPlan.summary}`);
 });

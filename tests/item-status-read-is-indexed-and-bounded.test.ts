@@ -2,7 +2,9 @@ import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { withDatabase } from './helpers/postgres.js';
+import { explainAnalyzeBuffers } from './helpers/query-plan.js';
 import type { Store } from '../src/store.js';
+import { coordinationDocumentSql, coordinationRelevance, coordinationTail, coordinationTrimSql, detoasted } from '../src/store/coordination-sql.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { workDocumentSql } from '../src/store/bounded-snapshot.js';
@@ -17,12 +19,16 @@ const adminToken = `operator-${'a'.repeat(32)}`, coordinatorToken = `coordinator
 const ITEMS = 2000, EVENTS = 2_000_000, ITEM_ROWS = 3000;
 let store: Store, http: ReturnType<typeof server>, url: string, id: string, key: string;
 
+const coordinationLiveSql = `SELECT d.number, x.document, ${coordinationTrimSql('x.document', coordinationTail)} AS trimmed
+  FROM (SELECT w.number, ${detoasted('w.document')} AS document FROM work_items w WHERE NOT EXISTS (SELECT 1 FROM work_index i WHERE i.id = w.id AND i.settled) OFFSET 0) d
+  CROSS JOIN ${coordinationRelevance(coordinationTail)} CROSS JOIN LATERAL (SELECT ${coordinationDocumentSql} AS document OFFSET 0) x`;
+const coordinationSettledSql = 'SELECT number, summary AS document, trimmed FROM work_index WHERE settled';
+
 const get = async (token: string, path: string, headers: Record<string, string> = {}) => {
-  const started = performance.now();
   const response = await fetch(`${url}/api/${path}`, { headers: { Authorization: `Bearer ${token}`, ...headers }, signal: AbortSignal.timeout(60_000) });
   const body = await response.json();
   assert.equal(response.status, 200, `${path}: ${JSON.stringify(body).slice(0, 300)}`);
-  return { body, ms: performance.now() - started, age: response.headers.get('age') };
+  return { body, age: response.headers.get('age') };
 };
 
 before(async () => {
@@ -47,11 +53,18 @@ before(async () => {
     jsonb_build_object('delta', jsonb_build_object('base', $2::bigint, 'revision', 1, 'ops', jsonb_build_array(jsonb_build_array(jsonb_build_array('title'), 'Watched item ' || d))), 'details', jsonb_build_object('reason', 'step ' || d))
     FROM generate_series(1, ${ITEM_ROWS}) d`, [id, base]);
   // The rest of the ledger: two million rows across every other item, in one statement; unlogged, so seeding writes no WAL.
-  await store.pool.query('ALTER TABLE events SET UNLOGGED');
-  await store.pool.query(`INSERT INTO events(work_id, actor, kind, payload, created_at)
-    SELECT ids[1 + d % array_length(ids, 1)], 'fixture', (ARRAY['heartbeat','github.observed','reconciled'])[1 + d % 3], '{"details":{"n":1}}'::jsonb, now() - interval '30 days' + d * interval '1 millisecond'
-    FROM (SELECT array_agg(id) AS ids FROM work_items WHERE id <> $1) i, generate_series(1, ${EVENTS}) d`, [id]);
-  await store.pool.query('ANALYZE');
+  const seed = await store.pool.connect();
+  try {
+    await seed.query('SET statement_timeout = 0');
+    await seed.query('ALTER TABLE events SET UNLOGGED');
+    await seed.query(`INSERT INTO events(work_id, actor, kind, payload, created_at)
+      SELECT ids[1 + d % array_length(ids, 1)], 'fixture', (ARRAY['heartbeat','github.observed','reconciled'])[1 + d % 3], '{"details":{"n":1}}'::jsonb, now() - interval '30 days' + d * interval '1 millisecond'
+      FROM (SELECT array_agg(id) AS ids FROM work_items WHERE id <> $1) i, generate_series(1, ${EVENTS}) d`, [id]);
+    await seed.query('ANALYZE');
+  } finally {
+    await seed.query('RESET statement_timeout').catch(() => {});
+    seed.release();
+  }
 });
 
 after(async () => {
@@ -59,30 +72,29 @@ after(async () => {
   await store?.close();
 });
 
-const plan = async (text: string, values: unknown[]) => (await store.pool.query(`EXPLAIN ${text}`, values)).rows.map(row => row['QUERY PLAN']).join('\n');
-
-test('integration:item-status-read-is-indexed-and-bounded — status GY-N and the item page answer from indexes in under a second on two million events; four history reads at once, later ones get the last answer with its age, and the loop snapshot still answers', { timeout: 600_000 }, async () => {
+test('integration:item-status-read-is-indexed-and-bounded — status GY-N and the item page answer from indexes with bounded rows and buffers on two million events; four history reads at once, later ones get the last answer with its age, and the loop snapshot still answers', { timeout: 600_000 }, async () => {
   assert.ok(Number((await store.pool.query('SELECT count(*) FROM events')).rows[0].count) >= EVENTS);
-  // The plans: the item by display key and by id through the work index's indexes; its history page through events_work.
+  // The plans (with EXPLAIN (ANALYZE, BUFFERS)): the item by display key and by id through the work index's indexes; its history page through events_work.
   for (const value of [key, id]) {
-    const text = await plan(workDocumentSql(value), [value]);
-    assert.doesNotMatch(text, /Seq Scan/, `status ${value} reads no table whole:\n${text}`);
-    assert.match(text, /work_index_key|work_index_pkey/, text);
+    const docPlan = await explainAnalyzeBuffers(store.pool, workDocumentSql(value), [value]);
+    assert.equal(docPlan.seqScans.length, 0, `status ${value} reads no table whole: ${docPlan.summary}`);
+    assert.ok(docPlan.indexes.some(name => name === 'work_index_key' || name === 'work_index_pkey'), `status ${value} uses work_index: ${docPlan.summary}`);
+    assert.ok(docPlan.rowsScanned() <= 4, `status ${value} scanned ${docPlan.rowsScanned()} rows: ${docPlan.summary}`);
+    assert.ok(docPlan.buffers <= 50, `status ${value} touched ${docPlan.buffers} buffers: ${docPlan.summary}`);
   }
   const page = eventHistorySql(parseEventHistoryQuery(new URLSearchParams({ work: id, payload: 'details' })));
-  const pagePlan = await plan(page.text, page.values);
-  assert.doesNotMatch(pagePlan, /Seq Scan/, pagePlan);
-  assert.match(pagePlan, /events_work/, pagePlan);
+  const pagePlan = await explainAnalyzeBuffers(store.pool, page.text, page.values);
+  assert.ok(!pagePlan.seqScans.includes('events'), `history page must not sequentially scan events: ${pagePlan.summary}`);
+  assert.ok(pagePlan.indexes.some(name => name.startsWith('events_work')), `history page must use events_work*: ${pagePlan.summary}`);
+  assert.ok(pagePlan.rowsScanned('events') <= 700, `history page scanned ${pagePlan.rowsScanned('events')} event rows: ${pagePlan.summary}`);
+  assert.ok(pagePlan.buffers <= 5000, `history page touched ${pagePlan.buffers} buffers: ${pagePlan.summary}`);
 
-  // Each read answers in under a second (after one warm read of the connection and caches).
-  await get(adminToken, `work/${key}`); await get(adminToken, `events?work=${id}&payload=details`);
+  // Each read returns the expected payload.
   const status = await get(adminToken, `work/${key}`);
   assert.equal(status.body.key, key);
-  assert.ok(status.ms < 1000, `status ${key} took ${Math.round(status.ms)} ms`);
   const history = await get(adminToken, `events?work=${id}&payload=details`);
   assert.equal(history.body.length, 300);
   assert.equal(history.body[0].details.reason, `step ${ITEM_ROWS}`);
-  assert.ok(history.ms < 1000, `the item page's history took ${Math.round(history.ms)} ms`);
 
   // Thirty readers watch the item at once — the full-document history read old clients send, and status.
   const monitor = await store.pool.connect();
@@ -99,7 +111,15 @@ test('integration:item-status-read-is-indexed-and-bounded — status GY-N and th
     await new Promise(resolve => setTimeout(resolve, 200));
     const loop = await get(coordinatorToken, 'work-snapshot', { [coordinationViewHeader]: 'coordination' });
     assert.ok(loop.body.work.some((item: { id: string }) => item.id === id));
-    assert.ok(loop.ms < 2000, `the loop's snapshot read took ${Math.round(loop.ms)} ms while thirty readers watched one item`);
+    const livePlan = await explainAnalyzeBuffers(store.pool, coordinationLiveSql);
+    const settledPlan = await explainAnalyzeBuffers(store.pool, coordinationSettledSql);
+    for (const snapPlan of [livePlan, settledPlan]) {
+      assert.ok(!snapPlan.seqScans.includes('events'), `coordination snapshot must not scan events: ${snapPlan.summary}`);
+      assert.equal(snapPlan.rowsScanned('events'), 0, `coordination snapshot must read 0 event rows: ${snapPlan.summary}`);
+    }
+    assert.ok(livePlan.rowsScanned('work_items') <= ITEMS, `coordination live query scanned ${livePlan.rowsScanned('work_items')} work_items (limit ${ITEMS}): ${livePlan.summary}`);
+    assert.ok(livePlan.buffers <= ITEMS * 5, `coordination live query touched ${livePlan.buffers} buffers: ${livePlan.summary}`);
+    assert.ok(settledPlan.rowsScanned('work_index') <= ITEMS, `coordination settled query scanned ${settledPlan.rowsScanned('work_index')} work_index rows: ${settledPlan.summary}`);
     const answers = await Promise.all(readers);
     for (const answer of answers) assert.ok(Array.isArray(answer.body) ? answer.body.length === 300 : answer.body.key === key);
   } finally { sampling = false; await sampler; monitor.release(); }
