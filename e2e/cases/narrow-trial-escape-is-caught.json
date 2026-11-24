@@ -1,0 +1,14 @@
+{
+  "id": "narrow-trial-escape-is-caught",
+  "title": "A failing test a narrowed trial skipped is caught by the release check, which names and reverts the culprit",
+  "description": "Over a real git origin, an item edits only a function body; its trial selection (scripts/ci-tests.mjs with the importer narrowing) runs only the test importing that function and skips a test reaching it through another module. Once merged, the batch gate's unchanged selection sweeps that test, runs it, finds it failing, names the culprit item and reverts its merge while the innocent merge stays.",
+  "tags": ["trial", "batch-gate"],
+  "target": "any",
+  "required": false,
+  "steps": [{
+    "kind": "command",
+    "name": "A narrowed trial's escape is caught and reverted by the release check",
+    "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:narrow-trial-escape-is-caught tests/narrow-trial-escape-is-caught.test.ts",
+    "timeoutSeconds": 300
+  }]
+}
