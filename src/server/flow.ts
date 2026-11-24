@@ -6,7 +6,7 @@ import type { DeployHistoryEntry, GitRead } from '../deploy-watch.js';
 import { flowAttention, flowNumbers, flowWindows, type FlowEvent, type FlowItem, type FlowNumbers, type FlowWindow } from '../flow-numbers.js';
 
 interface Queryable { query: (text: string, values: unknown[]) => Promise<{ rows: any[] }> }
-const flowKinds = ['rework', 'merge.intent', 'merge.trial', 'merge.refused', 'merge.serve-revert'];
+export const flowKinds = ['rework', 'merge.intent', 'merge.trial', 'merge.refused', 'merge.serve-revert'];
 /** GY-3763: the longest window the flow reports; nothing older is read. */
 const readSpanMs = 7 * 24 * 3_600_000;
 const columns = `work_id, kind, created_at, seq, stage,

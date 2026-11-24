@@ -8,7 +8,7 @@ import { coordinationDocumentSql, coordinationRelevance, coordinationTail, coord
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { workDocumentSql } from '../src/store/bounded-snapshot.js';
-import { eventHistorySql, parseEventHistoryQuery } from '../src/events-history.js';
+import { eventHistorySql, parseEventHistoryQuery, routineEventKinds } from '../src/events-history.js';
 import { boundedHistoryRead, historyReadSlots } from '../src/server/history-reads.js';
 import { coordinationViewHeader } from '../src/server/work-view.js';
 
@@ -66,7 +66,7 @@ after(async () => {
   await store?.close();
 });
 
-test('integration:item-status-read-is-indexed-and-bounded — status GY-N and the item page answer from indexes with bounded rows and buffers planned as on two million events; four history reads at once, later ones get the last answer with its age, and the loop snapshot still answers', { timeout: 600_000 }, async () => {
+test('integration:item-status-read-is-indexed-and-bounded — status GY-N and the item page answer from indexes with bounded rows and buffers planned as on two million events, with the rows of the plain query; four history reads at once, later ones get the last answer with its age, and the loop snapshot still answers', { timeout: 600_000 }, async () => {
   assert.ok(Number((await store.pool.query('SELECT count(*) FROM events')).rows[0].count) >= EVENTS);
   // The plans (with EXPLAIN (ANALYZE, BUFFERS)): the item by display key and by id through the work index's indexes; its history page through events_work.
   for (const value of [key, id]) {
@@ -89,6 +89,8 @@ test('integration:item-status-read-is-indexed-and-bounded — status GY-N and th
   const history = await get(adminToken, `events?work=${id}&payload=details`);
   assert.equal(history.body.length, 300);
   assert.equal(history.body[0].details.reason, `step ${ITEM_ROWS}`);
+  const reference = await store.pool.query(`SELECT seq FROM events WHERE work_id=$1 AND kind <> ALL($2::text[]) ORDER BY seq DESC LIMIT 300`, [id, routineEventKinds]);
+  assert.deepEqual(history.body.map((row: { seq: unknown }) => String(row.seq)), reference.rows.map(row => String(row.seq)));
 
   // Thirty readers watch the item at once — the full-document history read old clients send, and status.
   const monitor = await store.pool.connect();
