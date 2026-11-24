@@ -359,9 +359,13 @@ export async function batchGateStep(cycle: Pick<Cycle, 'state' | 'effects' | 'sn
   const trial: MergeWriterReads['trial'] = async (sha, files, item, base, step, timing, heads, _share, signal, timeout) => {
     const share = Math.max(1, busyTrialSlots(cycle.state)), flight = gated.inFlight, proofs = criterionProofs(item), run = ended.signal;
     const input = createHash('sha256').update(JSON.stringify([proofs, files])).digest('hex');
-    // The diagnostics (no signal) trial another commit and take an ordinary slot; so do the gate's probes and bisects, which
-    // stop with its run. The gate's own check takes the reserved one (GY-3450).
-    if (flight?.tip !== sha) return reads.trial(sha, files, item, base, step, timing, heads, share, signal && AbortSignal.any([signal, run]), timeout);
+    // The diagnostics (no signal) trial another commit and take an ordinary slot. The gate's own check takes the reserved
+    // one (GY-3450); so do its probes and bisects, which stop with its run: the step after a stopped run starts on the slot
+    // that run freed instead of queueing behind merge trials (GY-3800).
+    if (flight?.tip !== sha) {
+      const other = () => reads.trial(sha, files, item, base, step, timing, heads, share, signal && AbortSignal.any([signal, run]), timeout);
+      return signal ? heavyTrial(gateKey, step, signal, other, run, true) : other();
+    }
     // GY-3474: what the check is doing now — its wait, then its run's own steps — rides the record for status.
     const progress = (line: string) => {
       step?.(line);

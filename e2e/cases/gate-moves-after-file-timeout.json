@@ -1,0 +1,15 @@
+{
+  "id": "gate-moves-after-file-timeout",
+  "title": "A batch gate whose test file hangs reaches an outcome without a loop restart",
+  "description": "Runs the loop's real gate step over a test install whose rerun of a failing test file never ends, while a merge trial holds every ordinary host slot: the rerun stops at the five-minute per-file timeout, frees its slot, the probe on the verified commit starts on that slot, and the gate verifies with the file a known red (GY-3800).",
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "a hanging test file stops at the per-file timeout and the gate reaches an outcome",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:gate-moves-after-file-timeout tests/gate-moves-after-file-timeout.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}

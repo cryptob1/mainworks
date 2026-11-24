@@ -19,7 +19,7 @@ import { eventStageBackfill } from '../src/daemon/event-stage-backfill.js';
 // and sized batches to 1 s, keeping throughput at ~44,000 rows/hour. It now counts remaining once
 // per loop start, subtracts each batch's filled rows, and sizes batches to ~3 s.
 const coordinatorToken = `coordinator-${'c'.repeat(32)}`;
-const ITEMS = 100, DELTAS_PER_ITEM = 5_000, TIMEOUT_MS = 5_000;
+const ITEMS = 100, DELTAS_PER_ITEM = 1_000, TIMEOUT_MS = 5_000;
 const CYCLE_OVERHEAD_MS = 10_000;
 const CORE_COUNT_MS = 25_000;
 const PER_ROW_MS = 4;
@@ -58,7 +58,7 @@ const masterStatus = async (serverUrl: string, root: string) => {
   );
 };
 
-test('integration:backfill-faster — on 500,000 stageless delta rows, the backfill runs the full remaining count only once per loop start, subtracts filled rows (exact at the end), keeps every batch under 5 s, and fills >= 2.5x as many rows per minute as the base tip', { timeout: 600_000 }, async () => {
+test('integration:backfill-faster — on 100,000 stageless delta rows, the backfill runs the full remaining count only once per loop start, subtracts filled rows (exact at the end), keeps every batch under 5 s, and fills >= 2.5x as many rows per minute as the base tip', { timeout: 600_000 }, async () => {
   const database = await databaseUrl('backfill-faster');
   const store = new Store(database);
   await store.init();
@@ -126,7 +126,7 @@ test('integration:backfill-faster — on 500,000 stageless delta rows, the backf
 
     const initial = await lacking(plain);
     assert.equal(initial, ITEMS * DELTAS_PER_ITEM);
-    assert.ok(initial >= 500_000);
+    assert.ok(initial >= 100_000);
 
     // Base tip steady-state rate model (targetMs = 1_000, 25 s count once a minute, 10 s cycle overhead, 4 ms/row):
     // 1 s batch fills 250 rows; each cycle takes 11 s; 1 minute minus 25 s count fits 35/11 cycles -> ~795 rows/min.

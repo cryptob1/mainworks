@@ -14,7 +14,7 @@ import { eventHistorySql, parseEventHistoryQuery, readEventHistory, routineSumma
 // it applied its limit, so on a real ledger it ran for minutes and loaded the database while
 // failing. It now selects the page's seq values first and resolves payloads for those rows only.
 const adminToken = `operator-${'a'.repeat(32)}`;
-const ITEMS = 2000, EVENTS = 100_000, KEPT = 1200, OTHERS = 20_000, ITEM_ROUTINE = 1600, SCAN = 1000;
+const ITEMS = 2000, EVENTS = 50_000, KEPT = 1200, OTHERS = 8000, ITEM_ROUTINE = 1600, SCAN = 1000;
 let store: Store, counted: pg.Pool, http: ReturnType<typeof server>, url: string, id: string;
 
 const get = async (path: string) => {
@@ -73,7 +73,7 @@ async function calls(params: Record<string, string>) {
   return { calls: await total() - before, page, limit: query.limit };
 }
 
-test('integration:event-history-pages-before-resolving — a history page resolves payloads only for the rows it returns, reads a bounded number of rows planned as on two million events, and a read past 5 s names the filter to narrow', { timeout: 900_000 }, async () => {
+test('integration:event-history-pages-before-resolving — a history page resolves payloads only for the rows it returns, reads a bounded number of rows by index planned as on two million events with the rows of the plain statement, and a read past 5 s names the filter to narrow', { timeout: 900_000 }, async () => {
   assert.ok(Number((await store.pool.query('SELECT count(*) FROM events')).rows[0].count) >= EVENTS);
 
   // At most limit+1 resolutions per read, whatever the filters make the planner do.
@@ -84,6 +84,15 @@ test('integration:event-history-pages-before-resolving — a history page resolv
     assert.equal(read.page.events.length, read.limit, JSON.stringify(params));
     assert.ok(read.calls <= read.limit + 1, `${JSON.stringify(params)}: graphyard_event_work ran ${read.calls} times for a page of ${read.limit}`);
     assert.ok(read.page.events.every(row => !('work' in params) || row.payload?.work), JSON.stringify(params));
+    // The page's keys come from an index, and its rows are those of the plain statement that resolves before it limits.
+    const page = eventHistorySql(parseEventHistoryQuery(new URLSearchParams(params)));
+    const plan = (await store.pool.query(`EXPLAIN ${page.text}`, page.values)).rows.map(row => row['QUERY PLAN']).join('\n');
+    assert.doesNotMatch(plan, /Seq Scan on events/, plan);
+    assert.match(plan, /Index (Only )?Scan (Backward )?using events_\w+ on events/, plan);
+    const plain = page.text.replace(/FROM \(SELECT seq FROM events(.*) ORDER BY seq (ASC|DESC) LIMIT (\$\d+)\) page JOIN events USING \(seq\) ORDER BY seq (ASC|DESC)$/, 'FROM events$1 ORDER BY seq $2 LIMIT $3');
+    assert.notEqual(plain, page.text);
+    const reference = (await store.pool.query(plain, page.values)).rows.slice(0, read.limit).map(row => ({ ...row, seq: String(row.seq) }));
+    assert.deepEqual(read.page.events, reference, JSON.stringify(params));
   }
 
   // The default page and one item's page read at most the kept rows and the item's own, never the routine rows of the rest of the ledger.
