@@ -377,10 +377,12 @@ async function knownFailures(ports: Pick<MergePorts, 'flaky' | 'note'>, run: Mer
 /**
  * GY-3735: each test file that failed a trial and passed its rerun on the same tree is flaky: the open
  * "Flaky check on main: test:FILE" item gains a note, else the batch gate's item is filed. A filing that
- * fails never touches the trial's verdict.
+ * fails never touches the trial's verdict. GY-3759: a file the merge adds (`added`) is absent at the base
+ * tip, so it is the item's own test and nothing is filed for it.
  */
-async function fileFlakes(ports: Pick<MergePorts, 'flaky' | 'note' | 'fileFlaky'>, run: MergeTrialRun, key: string, mergeSha: string) {
+async function fileFlakes(ports: Pick<MergePorts, 'flaky' | 'note' | 'fileFlaky'>, run: MergeTrialRun, key: string, mergeSha: string, added: readonly string[]) {
   for (const file of run.flaked?.files ?? []) {
+    if (added.includes(file)) continue;
     const check = `test:${file}`, text = `${file} failed in ${key}'s merge trial on ${mergeSha.slice(0, 12)} and passed on its rerun of the same tree. Make it deterministic.`;
     const open = await ports.flaky?.(check).catch(() => null);
     await (open ? ports.note?.(open, text, `trial-flaky:${open.key}:${mergeSha}:${file}`) : ports.fileFlaky?.(check, text))?.catch(() => null);
@@ -777,7 +779,7 @@ function caseFiles(tap: string, files: readonly string[]): Map<string, string | 
 // ---- One merge, step by step against the ledger ------------------------------------------------------
 
 /** The trial merge of one head onto one tip: the commit to land (the head itself when it fast-forwards the tip, else its merge commit), the files it changes against the tip and which of them it adds or modifies, or the conflicting paths. */
-type MergeOutcomeOfTrial = { mergeSha: string; files: string[]; addedOrModified?: string[] } | { conflict: string[] };
+type MergeOutcomeOfTrial = { mergeSha: string; files: string[]; addedOrModified?: string[]; /** GY-3759: the files absent at the tip that the merge adds. */ added?: string[] } | { conflict: string[] };
 /** Everything `mergeOne` and `reconcileIntents` touch outside the process: git in the coordinator checkout, the deploy-key push, and the coordinator's ledger. */
 export interface MergePorts {
   baseBranch: string;
@@ -908,7 +910,7 @@ export async function mergeOne(ports: MergePorts, item: Work): Promise<MergeOutc
       for (const { file, item: flakyItem } of known.flaky) await ports.note?.(flakyItem, `${file} failed in ${item.key}'s merge trial on ${mergeSha.slice(0, 12)}; it has this open flaky item, so ${item.key} was not sent back.`, `trial-flaky:${flakyItem.key}:${mergeSha}:${file}`);
       if (known.red.length) await ports.note?.(item, `Known red: ${known.red.slice(0, 10).join(', ')}${known.red.length > 10 ? ` and ${known.red.length - 10} more` : ''} also fail on main (${baseTip.slice(0, 12)}), so they were not counted against this change.`, `trial-known-red:${mergeSha}`);
     }
-    await fileFlakes(ports, run, item.key, mergeSha);
+    await fileFlakes(ports, run, item.key, mergeSha, merged.added ?? []);
     // GY-1834: a flake rides on the trial record, refused or not, so it is durable before anything else happens.
     const flaked = run.flaked ? trialFlaked(run.flaked, at()) : null;
     await ports.record(item, { kind: 'trial', head, baseTip, mergeSha, outcome: 'verdict', build: run.build, tests: { ...recordedTests(run.tests), ...(run.slowest ? { slowest: run.slowest } : {}) }, files: run.files, proofs: run.proofs, durationMs: run.durationMs,
@@ -1050,12 +1052,12 @@ async function trialBatch(ports: MergePorts, items: readonly Work[], onStep?: (i
     const opening = ports.holdOpening ? await ports.holdOpening(item) : ports.hold ? await ports.hold(item) : null;
     if (opening) return null;
   }
-  const merges: { head: string; baseTip: string; mergeSha: string; files: string[]; addedOrModified: string[] }[] = [];
+  const merges: { head: string; baseTip: string; mergeSha: string; files: string[]; addedOrModified: string[]; added: string[] }[] = [];
   let tip = baseTip;
   for (const item of items) {
     const head = item.candidate!.sha.toLowerCase(), merged = await ports.merge(head, tip, item);
     if ('conflict' in merged) return null;
-    merges.push({ head, baseTip: tip, mergeSha: merged.mergeSha, files: merged.files, addedOrModified: merged.addedOrModified ?? [] });
+    merges.push({ head, baseTip: tip, mergeSha: merged.mergeSha, files: merged.files, addedOrModified: merged.addedOrModified ?? [], added: merged.added ?? [] });
     tip = merged.mergeSha;
   }
   const files = [...new Set(merges.flatMap(merge => merge.files))];
@@ -1065,7 +1067,7 @@ async function trialBatch(ports: MergePorts, items: readonly Work[], onStep?: (i
   // A feature or bug head whose every proof already passes on the base proves nothing: the batch splits, so its own trial refuses it.
   const notReproduced = items.some(item => { const own = [...criterionProofs(item), ...e2eProofsOf(item)]; return item.type !== 'chore' && own.length && own.every(proof => run.passingOnBase?.includes(proof)); });
   if (notReproduced || trialFailureReason({ run }) || requiredProofFailure(together, run) || items.some((item, index) => featureCaseFailure(item, merges[index]!.addedOrModified))) return null;
-  await fileFlakes(ports, run, keys.join(', '), tip);
+  await fileFlakes(ports, run, keys.join(', '), tip, merges.flatMap(merge => merge.added));
   const results: HeadResult[] = [];
   for (const [index, item] of items.entries()) {
     const { head, baseTip: base, mergeSha } = merges[index]!, own = new Set([...criterionProofs(item), ...e2eProofsOf(item)]);
