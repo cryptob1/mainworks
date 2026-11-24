@@ -34,7 +34,12 @@ export const benchCommands = defineCommands([{
   async run(context) {
     if (context.id === 'reads') {
       const { benchReadEvents, benchReadsScratch } = await import('../bench-reads.js');
-      console.log(JSON.stringify(await benchReadsScratch(Number(flagValue(context.args, '--events') ?? benchReadEvents))));
+      const raw = flagValue(context.args, '--events');
+      const events = raw === undefined ? benchReadEvents : Number(raw);
+      if (!Number.isInteger(events) || events < 1) {
+        throw new Error('Usage: mainworks bench reads [--events N] (N must be a positive integer)');
+      }
+      console.log(JSON.stringify(await benchReadsScratch(events)));
       return;
     }
     if (context.id !== 'trial') {

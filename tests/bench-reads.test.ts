@@ -12,4 +12,8 @@ test('unit:bench-has-large-table-read-run — bench reads seeds two million even
   assert.equal(result.events, 2000);
   assert.deepEqual(Object.keys(result.reads).sort(), ['eventHistoryPage', 'flowComputation', 'flowLedger', 'itemStatus']);
   for (const ms of Object.values(result.reads)) assert.ok(Number.isInteger(ms) && ms >= 0);
+  await assert.rejects(
+    () => benchCommands[0].run({ id: 'reads', args: ['--events', 'abc'] } as Parameters<typeof benchCommands[0]['run']>[0], undefined),
+    /Usage: mainworks bench reads/,
+  );
 });
