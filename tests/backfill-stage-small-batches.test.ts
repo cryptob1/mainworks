@@ -11,10 +11,10 @@ import { eventWorkSql } from '../src/store/snapshot-delta.js';
 import { eventStageBackfill } from '../src/daemon/event-stage-backfill.js';
 
 // GY-3769: GY-3768's 1,000-row batches of long-chain rows ran past the statement timeout and stored nothing, again
-// each cycle. The loop now starts at 50 rows and sizes each batch from the last one's time to take about 2 s.
-// The seed's statement timeout is 5 s; a 1,000-row batch of these rows takes longer.
+// each cycle. The loop now starts at 50 rows and sizes each batch from the last one's time to take about 1 s (GY-3771).
+// The seed's statement timeout is 5 s; a 1,000-row batch of these rows takes > 10 s.
 const coordinatorToken = `coordinator-${'c'.repeat(32)}`;
-const ITEMS = 3, ROWS = 800, KB = 180, EVERY = 100, OPS = 64, TIMEOUT_MS = 5_000;
+const ITEMS = 2, ROWS = 800, KB = 180, EVERY = 100, OPS = 128, TIMEOUT_MS = 5_000;
 let store: Store, plain: pg.Pool, http: ReturnType<typeof server>, url: string;
 const call = async (path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, { method: body ? 'POST' : 'GET', signal: AbortSignal.timeout(120_000),
@@ -28,14 +28,7 @@ const lacking = async () => Number((await store.pool.query(`SELECT count(*) FROM
 before(async () => {
   const database = await databaseUrl('backfill-stage-small');
   store = new Store(database); await store.init();
-  await store.pool.end();
-  store.pool = namedPool(database, 12, 10_000, TIMEOUT_MS);
-  // The test's own probe and check run beside the server's pool, so master status never names them.
-  plain = new pg.Pool({ connectionString: database, statement_timeout: TIMEOUT_MS }).on('error', () => {});
-  const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
-  http = server(engine, [{ id: 'master', role: 'coordinator', token: coordinatorToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  // GY-3771: seed before applying the 5 s statement timeout and namedPool so fixture setup never times out under load or enters slow-queries.
   await store.pool.query('ALTER TABLE events SET UNLOGGED');
   // Each item: 800 rows of the older shape on a 180 KB document, a full snapshot opening each run of EVERY rows with
   // its own stage and deltas of OPS edits without a stored stage after it.
@@ -54,6 +47,14 @@ before(async () => {
       END LOOP; END $$`);
   }
   await store.pool.query('ANALYZE events');
+  await store.pool.end();
+  store.pool = namedPool(database, 12, 10_000, TIMEOUT_MS);
+  // The test's own probe and check run beside the server's pool, so master status never names them.
+  plain = new pg.Pool({ connectionString: database, statement_timeout: TIMEOUT_MS }).on('error', () => {});
+  const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
+  http = server(engine, [{ id: 'master', role: 'coordinator', token: coordinatorToken }]);
+  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
+  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
 });
 
 after(async () => {
