@@ -6,8 +6,8 @@ import { flowAttention, flowNumbers, flowWindows, type FlowEvent, type FlowItem,
 
 interface Queryable { query: (text: string, values: unknown[]) => Promise<{ rows: any[] }> }
 const flowKinds = ['rework', 'merge.intent', 'merge.trial', 'merge.refused', 'merge.serve-revert'];
-/** The 7-day window and a day before it, so a stay that began before the window is timed from its start. */
-const readSpanMs = 8 * 24 * 3_600_000;
+/** GY-3763: the longest window the flow reports; nothing older is read. */
+const readSpanMs = 7 * 24 * 3_600_000;
 const columns = `work_id, kind, created_at, seq,
     CASE WHEN payload ? 'work' THEN payload->'work'->>'stage' END AS stage,
     CASE WHEN kind = 'rework' THEN COALESCE(payload->'details'->>'reason', payload->'details'->'intent'->>'reason')
@@ -18,38 +18,29 @@ const columns = `work_id, kind, created_at, seq,
     CASE WHEN kind = 'merge.trial' THEN payload ? 'flaked' END AS flaked,
     CASE WHEN kind = 'merge.serve-revert' THEN payload->>'outcome' = 'reverted' END AS reverted`;
 /**
- * GY-3699: the window's first row, by its insertion-time index. The whole-document rows from it are
- * read through their partial index and the flow kinds through theirs: testing `payload ? 'work'` on
- * every row of the window detoasted 750,000 payloads and ran past the 60 s statement timeout.
+ * GY-3763: the window's rows, each half a range scan on insertion time: the whole-document rows
+ * through events_work_flow, the flow kinds through events_kind_created. Neither tests a payload
+ * outside the window.
  */
-const firstSql = 'SELECT seq FROM events WHERE created_at > $1 ORDER BY created_at LIMIT 1';
-const sql = `SELECT ${columns} FROM events WHERE work_id IS NOT NULL AND seq >= $1 AND payload ? 'work'
-  UNION ALL SELECT ${columns} FROM events WHERE work_id IS NOT NULL AND created_at > $2 AND kind = ANY($3::text[]) AND NOT (payload ? 'work')
+export const flowLedgerSql = `SELECT ${columns} FROM events WHERE work_id IS NOT NULL AND created_at > $1 AND payload ? 'work'
+  UNION ALL SELECT ${columns} FROM events WHERE work_id IS NOT NULL AND created_at > $1 AND kind = ANY($2::text[]) AND NOT (payload ? 'work')
   ORDER BY seq`;
 
 /**
  * Each item's attempts from its own document, only the three fields the flow reads: the fleet serves
  * a settled delivery as the work index's summary, without its timeline, and a hot path returns no
- * settled document's history. Only items open, or written to within the read span, are read.
+ * settled document's history. Only items open, merged or written to within the window are read.
  */
-const attemptsSql = `SELECT w.id, (SELECT jsonb_agg(jsonb_build_object('claimedAt', a->'claimedAt', 'endedAt', a->'endedAt', 'end', a->'end'))
+export const flowAttemptsSql = `SELECT w.id, (SELECT jsonb_agg(jsonb_build_object('claimedAt', a->'claimedAt', 'endedAt', a->'endedAt', 'end', a->'end'))
     FROM jsonb_array_elements(CASE WHEN jsonb_typeof(w.document->'pipeline'->'attempts') = 'array' THEN w.document->'pipeline'->'attempts' ELSE '[]'::jsonb END) a) AS attempts
   FROM work_items w JOIN work_index i ON i.id = w.id
-  WHERE NOT i.settled OR i.merged_at > $1 OR EXISTS (SELECT 1 FROM events e WHERE e.work_id = w.id AND e.seq >= $2)`;
+  WHERE NOT i.settled OR i.merged_at > $1 OR w.id IN (SELECT work_id FROM events WHERE created_at > $1 AND work_id IS NOT NULL)`;
 type Attempts = Map<string, { claimedAt: string; endedAt: string | null; end?: string | null }[]>;
 
-/** The rows are read at most once a minute per database: master status and the Work page poll /api/flow. */
-const cache = new WeakMap<object, { at: number; rows: Promise<{ ledger: any[]; attempts: Attempts }> }>();
-function rows(pool: Queryable, now: number) {
-  const hit = cache.get(pool);
-  if (hit && now - hit.at < 60_000 && now >= hit.at) return hit.rows;
+async function rows(pool: Queryable, now: number) {
   const since = new Date(now - readSpanMs);
-  const read = pool.query(firstSql, [since]).then(first => first.rows[0]?.seq ?? '9223372036854775807')
-    .then(seq => Promise.all([pool.query(sql, [seq, since, flowKinds]), pool.query(attemptsSql, [since, seq])])).then(([ledger, attempts]) => ({ ledger: ledger.rows,
-    attempts: new Map(attempts.rows.filter(row => Array.isArray(row.attempts)).map(row => [row.id, row.attempts])) as Attempts }));
-  cache.set(pool, { at: now, rows: read });
-  read.catch(() => cache.delete(pool));
-  return read;
+  const [ledger, attempts] = await Promise.all([pool.query(flowLedgerSql, [since, flowKinds]), pool.query(flowAttemptsSql, [since])]);
+  return { ledger: ledger.rows, attempts: new Map(attempts.rows.filter(row => Array.isArray(row.attempts)).map(row => [row.id, row.attempts])) as Attempts };
 }
 
 type Flowed = Pick<Work, 'id' | 'key' | 'title' | 'stage' | 'stageEnteredAt' | 'delivery' | 'observation'>;
@@ -137,13 +128,43 @@ async function resolveDeployedAt(work: readonly Flowed[], deploys: readonly Depl
 
 interface FlowLiveOptions { deploys?: readonly DeployHistoryEntry[]; git?: GitRead | null }
 export type Flow = Record<FlowWindow, FlowNumbers> & { attention: ReturnType<typeof flowAttention> };
+/** The flow as every reader gets it: the stored numbers, when they were computed and how long ago. */
+export type FlowReport = Flow & { asOf: string; ageSeconds: number };
+
+function numbers(items: readonly FlowItem[], now: number): Flow {
+  const windows = Object.fromEntries(Object.entries(flowWindows).map(([name, hours]) => [name, flowNumbers(items, hours, now)])) as Record<FlowWindow, FlowNumbers>;
+  return { ...windows, attention: flowAttention(windows['24h']) };
+}
+
 /** The flow numbers for 6 hours, 24 hours and 7 days over `work`, and the attention line the 24 hours raise. */
-export async function readFlow(pool: Queryable, work: readonly Flowed[], now: number, live?: FlowLiveOptions): Promise<Flow> {
+export async function readFlow(pool: Queryable, work: readonly Flowed[], now: number, live?: FlowLiveOptions): Promise<Flow & { items: FlowItem[] }> {
   const [{ ledger, attempts }, deployed] = await Promise.all([
     rows(pool, now),
     live?.deploys?.length && live.git ? resolveDeployedAt(work, live.deploys, live.git, now) : Promise.resolve(new Map<string, string | null>()),
   ]);
   const items = flowItems(work, ledger, attempts, deployed);
-  const windows = Object.fromEntries(Object.entries(flowWindows).map(([name, hours]) => [name, flowNumbers(items, hours, now)])) as Record<FlowWindow, FlowNumbers>;
-  return { ...windows, attention: flowAttention(windows['24h']) };
+  return { ...numbers(items, now), items };
+}
+
+type Stored = { at: number; work: readonly (Flowed & { reportedBy?: string })[]; flow: Flow & { items: FlowItem[] } };
+const jobs = new WeakMap<object, { last?: Stored; running?: Promise<Stored> }>();
+/**
+ * GY-3763: one computation per server at most once a minute, shared by every reader. A reader gets
+ * the stored result with its age; one that finds it a minute old starts the next computation and
+ * still answers from the stored one. Only the first read ever waits.
+ */
+export async function sharedFlow(key: object, now: number, compute: (now: number) => Promise<Stored>,
+  visible: <T extends { id: string; key: string }>(items: T[]) => T[] = items => items): Promise<FlowReport> {
+  let job = jobs.get(key);
+  if (!job) jobs.set(key, job = {});
+  if (!job.running && (!job.last || now - job.last.at >= 60_000)) {
+    const own = job, running = compute(now).then(result => (own.last = result));
+    own.running = running;
+    running.finally(() => { if (own.running === running) own.running = undefined; }).catch(() => {});
+  }
+  const stored = job.last ?? await job.running!;
+  // A reporter sees only its own items: its numbers come from the stored histories, not a new read.
+  const keys = new Set(visible([...stored.work]).map(item => item.key));
+  const { items: _items, ...flow } = keys.size === stored.work.length ? stored.flow : { ...numbers(stored.flow.items.filter(item => keys.has(item.key)), stored.at), items: [] };
+  return { ...flow, asOf: new Date(stored.at).toISOString(), ageSeconds: Math.max(0, Math.round((now - stored.at) / 1000)) };
 }

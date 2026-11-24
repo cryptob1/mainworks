@@ -64,6 +64,9 @@ CREATE INDEX IF NOT EXISTS events_work_delivery ON events(work_id,seq)
 -- hold only the rows the page returns, newest first, for the whole ledger and for one item.
 CREATE INDEX IF NOT EXISTS events_history ON events(seq) WHERE NOT (kind = ANY ('{github.observed,heartbeat}'::text[]));
 CREATE INDEX IF NOT EXISTS events_work_history ON events(work_id,seq) WHERE NOT (kind = ANY ('{github.observed,heartbeat}'::text[]));
+-- GY-3763: the flow numbers read the last 7 days' whole-document rows as a range on insertion time,
+-- never testing a payload outside the window.
+CREATE INDEX IF NOT EXISTS events_work_flow ON events(created_at) WHERE payload ? 'work' AND work_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS events_unowned_family ON events(split_part(kind,'.',1),seq) WHERE work_id IS NULL;
 ${eventWorkFunctions}
 -- Append-only but for the audited compaction of routine rows (store/compaction.ts, GY-979).

@@ -37,7 +37,7 @@ import { alertMinutesOf } from '../daemon/yard-alerts.js';
 import { stallAlarmKey } from '../daemon/stall-alarm.js';
 import { stoppedRoles, type StoppedRole } from '../master/stopped-roles.js';
 import { deliverySpeed, type MergedItem, type SpeedEvent } from '../pipeline-speed.js';
-import type { Flow } from '../server/flow.js';
+import type { FlowReport } from '../server/flow.js';
 import { unspecifiedModel, type FleetView } from '../model/registry.js';
 import { observeApplications } from '../production-watch.js';
 import { appRelease } from '../app-url.js';
@@ -103,7 +103,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   // An unreachable control plane (GY-2966) is reported, not thrown: since when, the server's last exit and the free disk space, as the loop recorded them.
   let unreachable: string | null = null;
   // GY-3699: the flow numbers come from their own route, read beside the other reads so a slow or failed read delays nothing; a failure carries its reason.
-  const flowRead: Promise<Flow | { error: string }> = Promise.resolve().then(() => masterApi('flow')).catch(error => ({ error: `The flow numbers could not be read: ${error instanceof Error ? error.message : String(error)}` }));
+  const flowRead: Promise<FlowReport | { error: string }> = Promise.resolve().then(() => masterApi('flow')).catch(error => ({ error: `The flow numbers could not be read: ${error instanceof Error ? error.message : String(error)}` }));
   const [snapshot, runtime, credentials, state] = await Promise.all([(masterApi('work-snapshot') as Promise<{ work: Work[]; now: string; workerVerifications?: ReturnType<typeof pendingWorkerVerifications> }>).catch(error => {
     if (typeof error?.status === 'number') throw error;
     unreachable = error instanceof Error ? error.message : String(error);
@@ -315,6 +315,8 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     deliverySpeed: deliverySpeed(merged, open, now),
     flow: flow ? { '6h': flow['6h'], '24h': flow['24h'], '7d': flow['7d'] } : null,
     flowError: 'error' in flowAnswer ? flowAnswer.error : null,
+    // GY-3763: the server computes flow at most once a minute; this is how old the numbers above are.
+    flowAgeSeconds: flow?.ageSeconds ?? null,
     // GY-3418: the host's busy CPU-seconds per merged item over the last 7 days, with the target: half the first measured day's figure.
     cpuPerMergedItem: cpuPerMergedItem(state?.cpuSeconds?.days ?? {}, mergedAt, now),
     // GY-3634: the latest trial benchmark beside the median of the previous ten on the same file list.

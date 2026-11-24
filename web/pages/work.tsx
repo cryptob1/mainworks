@@ -17,7 +17,7 @@ import { EmptyState } from '../components/page-layout';
 import type { Dashboard } from './dashboard';
 import { plainDuration } from '../../src/pipeline-speed';
 import { flowStations, percent, reworkCauses } from '../../src/flow-numbers';
-import type { Flow as FlowReport } from '../../src/server/flow';
+import type { FlowReport } from '../../src/server/flow';
 
 /** GY-3600: the Work list's filters, each a query parameter (`?filter=stuck`). */
 export const workFilters = ['in-flight', 'stuck', 'up-next', 'shipped-today'] as const;
@@ -76,12 +76,12 @@ function Flow({ api }: { api: Dashboard['api'] }) {
   return <FlowLine flow={flow}/>;
 }
 
-function FlowLine({ flow }: { flow?: FlowReport | null }) {
+export function FlowLine({ flow }: { flow?: FlowReport | null }) {
   const day = flow?.['24h'];
   if (!day) return null;
   const cap = (text: string) => text[0].toUpperCase() + text.slice(1);
   return <>
-    <div className="flow-line">Last 24 hours: <span data-flow-attempts>{day.attemptsPerHour.toFixed(1)} attempts an hour</span> · <span data-flow-yield>{percent(day.firstPassYield)} first pass</span>{' '}
+    <div className="flow-line">Last 24 hours: <span data-flow-attempts>{day.attemptsPerHour.toFixed(1)} attempts an hour</span> · <span data-flow-yield>{percent(day.firstPassYield)} first pass</span> · <span className="muted" data-flow-age>as of {flow!.ageSeconds} s ago</span>{' '}
       <details className="flow-details"><summary>Flow details →</summary><div className="flow-fold">
         <table className="sessions-table compact-table flow-table" aria-label="Wait at each station, last 24 hours">
           <thead><tr><th scope="col">Station</th><th scope="col">Median</th><th scope="col">Slowest tenth</th><th scope="col">Oldest</th></tr></thead>

@@ -16,7 +16,7 @@ const seeded: FlowItem[] = [
 ];
 const now = Date.now();
 const windows = Object.fromEntries(Object.entries(flowWindows).map(([name, hours]) => [name, flowNumbers(seeded, hours, now)]));
-const flow = { ...windows, attention: flowAttention(windows['24h'] as ReturnType<typeof flowNumbers>) };
+const flow = { ...windows, attention: flowAttention(windows['24h'] as ReturnType<typeof flowNumbers>), asOf: new Date(now - 12_000).toISOString(), ageSeconds: 12 };
 const work = seeded.map(item => ({ dependencies: [], scenarioRequirements: [], id: `fixture-${item.key}`, key: item.key, title: item.title, description: item.key, type: 'feature', priority: 2,
   stage: item.stage, stageEnteredAt: item.stageEnteredAt, ready: true, policy: { review: true, checks: ['test'] }, policyRevision: 1, revision: 1, violations: [], workspaces: [], criteria: [], evidence: [], gates: [], sessions: [],
   ...(item.mergedAt ? { delivery: { mergedAt: item.mergedAt, mergeSha: 'a'.repeat(40), authorizationRevision: 1 } } : {}) }));
@@ -46,6 +46,7 @@ for (const width of [390, 1280]) {
     await expect(page.locator('[data-work-header]')).toContainText('0.5 merges/hour (6h)');
     await expect(page.locator('[data-flow-attempts]')).toHaveText('0.2 attempts an hour');
     await expect(page.locator('[data-flow-yield]')).toHaveText('75% first pass');
+    await expect(page.locator('[data-flow-age]')).toHaveText('as of 12 s ago');
     await expect(page.locator('[data-flow-attention]')).toHaveText('Review is slow: the slowest tenth waited 2 h over the last 24 hours. Oldest: GY-5 Waiting in review, 2 h.');
     await page.getByText('Flow details →').click();
     const review = page.locator('[data-station="review"]');

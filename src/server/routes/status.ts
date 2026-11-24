@@ -31,7 +31,7 @@ import { boundedSnapshot, workDocument } from '../../store/bounded-snapshot.js';
 import { snapshotPage } from '../../store/paged-snapshot.js';
 import { pipelineItems, pipelineTime } from '../../pipeline-speed.js';
 import { releaseCheckSince } from '../../model/incidents.js';
-import { readFlow } from '../flow.js';
+import { readFlow, sharedFlow } from '../flow.js';
 import { boundedHistoryRead } from '../history-reads.js';
 import { slowestQuery } from '../../store/slow-queries.js';
 import { publicLinkOff } from './team-access.js';
@@ -47,15 +47,16 @@ export const statusRoutes = defineRoutes('status', [
     return { ...replay, items: operatorVisible(replay.items) };
   } },
   // GY-3624: the flow numbers, for master status and the Work page; /api/status does not carry them (GY-3677).
-  { method: 'GET', path: '/api/flow', async handle({ services, operatorVisible }) {
+  // GY-3763: computed at most once a minute and served from memory with its age.
+  { method: 'GET', path: '/api/flow', handle: ({ services, operatorVisible }) => sharedFlow(services.engine, Date.now(), async now => {
     const { engine, repository } = services;
-    const now = (await engine.store.pool.query('SELECT clock_timestamp() AS now')).rows[0].now as Date;
     const runner = engine.gitRunner === undefined ? engine.gitRunner = gitRunnerFor(setting('REPOSITORY_ROOT') ?? process.cwd()) : engine.gitRunner;
     const servingRoot = setting('REPOSITORY_ROOT')?.trim() ? resolve(setting('REPOSITORY_ROOT')!) : repositoryToplevel(process.cwd());
     const read = runner ? async (args: readonly string[]) => { const result = await runner(args); if (result.status !== 0) throw new Error(result.stderr); return result.stdout; } : null;
     const deploys = servingRoot ? readDeployHistory(servingRoot, repository ?? null) : [];
-    return readFlow(engine.store.pool, operatorVisible(await engine.store.fleet()), now.getTime(), { deploys, git: read });
-  } },
+    const work = await engine.store.fleet();
+    return { at: now, work, flow: await readFlow(engine.store.pool, work, now, { deploys, git: read }) };
+  }, operatorVisible) },
   // GY-3757: the slowest database query of the last 10 minutes when it ran past 3 s, for master status; `name` keeps the queries whose name starts with it.
   { method: 'GET', path: '/api/slowest-query', handle: async ({ url }) => ({ slowest: slowestQuery(Date.now(), url.searchParams.get('name') ?? '') }) },
   {
