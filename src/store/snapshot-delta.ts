@@ -180,18 +180,22 @@ export const eventWorkSql = (alias = 'events') => `graphyard_event_work(${alias}
 export const resolvedPayloadSql = (alias = 'events') =>
   `CASE WHEN ${alias}.payload ? 'delta' THEN (${alias}.payload - 'delta' - 'stage') || jsonb_build_object('work', ${eventWorkSql(alias)}) ELSE ${alias}.payload END`;
 
-/** GY-3768: how many older delta rows one loop cycle gives their stage. */
-export const stageBackfillBatch = 1000;
-/** Stores the stage on the oldest batch of delta rows that lack it (by the events_stageless_delta index); `filled` is 0 once none is left. */
-export async function backfillEventStage(pool: pg.Pool) {
+/** GY-3769: the most older delta rows one backfill batch may take; the loop sizes each batch to finish in about 2 s. */
+export const stageBackfillMax = 1000;
+/**
+ * Stores the stage on the oldest `limit` delta rows that lack it (by the events_stageless_delta index), resolving them
+ * by item and seq so one chain's rows run together; `filled` is 0 once none is left.
+ */
+export async function backfillEventStage(pool: pg.Pool, limit: number) {
   const db = await pool.connect();
   try {
     await db.query('BEGIN');
     // The events trigger lets this one update through: a delta row lacking its stage gains it (compaction.ts).
     await db.query("SET LOCAL graphyard.stage_backfill = 'on'");
-    const { rows } = await db.query(`UPDATE events e SET payload = e.payload || jsonb_build_object('stage', ${eventWorkSql('e')}->>'stage')
-      FROM (SELECT seq FROM events WHERE payload ? 'delta' AND NOT payload ? 'stage' ORDER BY seq LIMIT ${stageBackfillBatch}) b
-      WHERE e.seq = b.seq RETURNING e.seq`);
+    const { rows } = await db.query(`UPDATE events e SET payload = e.payload || jsonb_build_object('stage', b.stage)
+      FROM (SELECT x.seq, ${eventWorkSql('x')}->>'stage' AS stage FROM events x
+        WHERE x.seq IN (SELECT seq FROM events WHERE payload ? 'delta' AND NOT payload ? 'stage' ORDER BY seq LIMIT $1) ORDER BY x.work_id, x.seq) b
+      WHERE e.seq = b.seq RETURNING e.seq`, [Math.max(1, Math.min(stageBackfillMax, Math.floor(limit) || 1))]);
     await db.query('COMMIT');
     return { filled: rows.length };
   } catch (error) {

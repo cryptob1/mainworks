@@ -246,7 +246,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     // GY-3188: hourly, so the builder and Docker are not asked every cycle.
     reclaimJobLeftovers: async () => { if (Date.now() - leftoversSweptAt < 3_600_000) return []; leftoversSweptAt = Date.now(); return reclaimJobLeftovers(run); },
     usage: master => collectUsage(root, current(), master),
-    backfillEventStage: eventStageBackfill(() => mutate('events/backfill-stage', {}, randomUUID())),
+    backfillEventStage: eventStageBackfill(limit => mutate('events/backfill-stage', { limit }, randomUUID())),
     // GY-3334: hourly, like the job leftovers: the walk reads /proc and every release copy.
     sweepCliReleases: async () => {
       if (Date.now() - releasesSweptAt < 3_600_000) return { removed: [], bytes: 0, left: [] };

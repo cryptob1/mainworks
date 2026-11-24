@@ -1,0 +1,11 @@
+{
+  "id": "backfill-stage-small-batches",
+  "title": "The stage backfill stores small batches that each finish well under the statement timeout",
+  "description": "On a running test install seeded with 800-row delta chains on 180 KB documents, where one 1,000-row batch runs past the statement timeout, the loop's stage backfill starts at 50 rows, sizes each batch to take about 2 seconds, reports progress each cycle, and finishes; master status names no backfill statement over 5 seconds.",
+  "tags": ["api", "events", "regression"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "the backfill reports progress each cycle and master status names no backfill statement over 5 s", "run": "node --import tsx tests/helpers/run-tests.ts tests/backfill-stage-small-batches.test.ts", "timeoutSeconds": 900 }
+  ]
+}

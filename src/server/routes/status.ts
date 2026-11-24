@@ -11,7 +11,7 @@ import { loopWhere, loopWhereHeader, loopWhereRegistry } from '../../model/where
 import { releaseInfo, schemaVersion } from '../../release.js';
 import { openHumanOnly } from '../../model/human-request.js';
 import { humanOnlySubjects } from '../waits.js';
-import { defineRoutes } from '../routes.js';
+import { defineRoutes, parseJson } from '../routes.js';
 import { backfillEventStage } from '../../store/snapshot-delta.js';
 import { coordinationSnapshot, coordinationViewHeader } from '../work-view.js';
 import { executorHost } from './agent-registry.js';
@@ -270,11 +270,11 @@ export const statusRoutes = defineRoutes('status', [
     },
   },
   {
-    // GY-3768: the loop's backfill of the stage on delta rows written before GY-3766, one batch a call, outside any coordination transaction.
+    // GY-3768: the loop's backfill of the stage on delta rows written before GY-3766, one batch a call of the size the loop asks (GY-3769), outside any coordination transaction.
     method: 'POST', path: '/api/events/backfill-stage',
-    async handle({ actor, services }) {
-      demand(actor.role === 'coordinator' || actor.role === 'admin', 'The stage backfill is run by the loop (a coordinator identity)', 403);
-      return backfillEventStage(services.engine.store.pool);
+    async handle(context) {
+      demand(context.actor.role === 'coordinator' || context.actor.role === 'admin', 'The stage backfill is run by the loop (a coordinator identity)', 403);
+      return backfillEventStage(context.services.engine.store.pool, Number((await parseJson(context, undefined, '{}')).limit) || 50);
     },
   },
 ]);

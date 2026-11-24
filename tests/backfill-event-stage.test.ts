@@ -73,11 +73,13 @@ test('integration:backfill-event-stage — loop cycles fill the stage on at most
   const before = await lacking();
   assert.equal(before, ITEMS * (ROWS - ROWS / EVERY));
   const done: string[] = [];
-  const cycle = eventStageBackfill(() => call('events/backfill-stage', coordinatorToken, {}));
+  // GY-3769: the loop sends each batch's size and logs every batch's progress; `done` keeps the line that ends it.
+  const cycle = eventStageBackfill(limit => call('events/backfill-stage', coordinatorToken, { limit }));
+  const push = (line: string) => { if (!/stored \d+ rows in/.test(line)) done.push(line); };
   let cycles = 0, left = before;
   while (!done.length) {
     assert.ok(++cycles <= Math.ceil(before / 1000) + 2, `the backfill had not finished after ${cycles - 1} cycles`);
-    await cycle(line => done.push(line));
+    await cycle(push);
     const now = await lacking();
     assert.ok(left - now <= 1000, `one cycle filled ${left - now} rows`);
     left = now;
@@ -85,7 +87,7 @@ test('integration:backfill-event-stage — loop cycles fill the stage on at most
   assert.equal(left, 0);
   assert.match(done[0], /backfill is done/);
   // Once done, a cycle asks nothing more.
-  await cycle(line => done.push(line));
+  await cycle(push);
   assert.equal(done.length, 1);
   const differing = await store.pool.query(`SELECT count(*) FROM events WHERE payload ? 'delta' AND payload->>'stage' IS DISTINCT FROM graphyard_event_work(work_id, payload)->>'stage'`);
   assert.equal(Number(differing.rows[0].count), 0);
