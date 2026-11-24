@@ -1,6 +1,7 @@
 import { AsyncResource } from 'node:async_hooks';
 import type pg from 'pg';
-import { recordQuery } from './slow-queries.js';
+import { lockHolderName, queryCaller, recordLockHold, recordQuery } from './slow-queries.js';
+import { advisoryLocks } from './locks.js';
 
 /** A failed statement's SQL, as `namedStatements` attaches it to the error the driver raised. */
 export const failedStatement = (error: unknown): string | null =>
@@ -10,11 +11,13 @@ export const failedStatement = (error: unknown): string | null =>
  * a request that fails on "canceling statement due to statement timeout" is logged with the
  * statement that ran out of time, not only the driver's sentence. Each connection's `query` is
  * wrapped once, when the pool opens it; `pool.query` runs through the same connections. Each
- * statement is timed for the slowest-query report (slow-queries.ts, GY-3757).
+ * statement is timed for the slowest-query report (slow-queries.ts, GY-3757), and each hold of the
+ * coordination lock, from the lock to its COMMIT or ROLLBACK, for the longest-hold report (GY-3799).
  */
 export function namedStatements(pool: pg.Pool) {
   pool.on('connect', client => {
     const query = client.query.bind(client) as (...args: any[]) => any;
+    let held: { at: number; by: Error; caller?: string } | null = null;
     const name = (error: unknown, config: unknown) => {
       const text = typeof config === 'string' ? config : (config as { text?: unknown } | null)?.text;
       if (error && typeof error === 'object' && typeof text === 'string' && !failedStatement(error)) Object.defineProperty(error, 'statement', { value: text, enumerable: false, configurable: true });
@@ -23,11 +26,18 @@ export function namedStatements(pool: pg.Pool) {
     (client as unknown as { query: (...args: any[]) => any }).query = (...args: any[]) => {
       const config = args[0];
       if (config && typeof config === 'object' && typeof config.submit === 'function') return query(...args);
-      const last = args.length - 1, started = performance.now();
-      const timed = () => { const text = typeof config === 'string' ? config : config?.text; if (typeof text === 'string') recordQuery(text, performance.now() - started); };
-      if (typeof args[last] === 'function') { const done = args[last]; args[last] = AsyncResource.bind((error: unknown, result: unknown) => { timed(); done(error ? name(error, config) : error, result); }); return query(...args); }
+      const last = args.length - 1, started = performance.now(), text = typeof config === 'string' ? config : config?.text;
+      const values = Array.isArray(args[1]) ? args[1] : config?.values;
+      const locking = text === 'SELECT pg_advisory_xact_lock($1)' && values?.[0] === advisoryLocks.coordination ? new Error() : null;
+      const timed = (failed?: unknown) => {
+        const now = performance.now();
+        if (typeof text === 'string') recordQuery(text, now - started);
+        if (locking && !failed) held = { at: now, by: locking, caller: queryCaller.getStore() };
+        else if (held && (text === 'COMMIT' || text === 'ROLLBACK')) { recordLockHold(lockHolderName(held.by, held.caller), now - held.at); held = null; }
+      };
+      if (typeof args[last] === 'function') { const done = args[last]; args[last] = AsyncResource.bind((error: unknown, result: unknown) => { timed(error); done(error ? name(error, config) : error, result); }); return query(...args); }
       const result = query(...args);
-      return result && typeof result.then === 'function' ? result.then((value: unknown) => { timed(); return value; }, (error: unknown) => { timed(); throw name(error, config); }) : result;
+      return result && typeof result.then === 'function' ? result.then((value: unknown) => { timed(); return value; }, (error: unknown) => { timed(error); throw name(error, config); }) : result;
     };
   });
   // GY-3762: `pool.query` waits for a connection, and the driver answers, by callbacks called from other contexts; bound, a statement keeps its caller.

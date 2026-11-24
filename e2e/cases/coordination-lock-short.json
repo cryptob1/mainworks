@@ -1,0 +1,16 @@
+{
+  "id": "coordination-lock-short",
+  "title": "Master status names the longest coordination-lock hold, and per-item and connect writes never wait on it",
+  "description": "On a running test install, a transaction holding the coordination lock 3 s is named with its duration as the longest hold of the last 10 minutes, and a preview record, an agent connect and a host key answer in under 1 s while another transaction holds the lock.",
+  "tags": ["database", "status", "locks"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "names the longest coordination-lock hold and answers lock-free writes in under 1 s",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/coordination-lock-short.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}

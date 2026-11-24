@@ -16,7 +16,7 @@ import { runStartupMigration } from './migration-locks.js';
 import { coordinationDocumentSql, coordinationRelevance, coordinationTail, coordinationTrimSql, detoasted, type CoordinationTrim } from './coordination-sql.js';
 import { recentChangesWindowMs } from '../model/project-memory.js';
 import { namedPool, reportPool, type ReportPoolOptions } from './report-pool.js';
-import { closePool, leasePoolConnections, trackedPool } from './pools.js';
+import { closePool, leasePoolConnections } from './pools.js';
 
 export * from './snapshot-delta.js';
 
@@ -88,7 +88,7 @@ export class Store {
   constructor(url: string, options: { max?: number; leaseMax?: number } & ReportPoolOptions = {}) {
     const max = Math.max(2, Math.floor(options.max ?? 12));
     this.pool = namedPool(url, max, storeConnectionTimeoutMs, storeStatementTimeoutMs);
-    this.leasePool = trackedPool(new pg.Pool({ connectionString: url, max: Math.max(1, Math.floor(options.leaseMax ?? leasePoolConnections)), connectionTimeoutMillis: storeConnectionTimeoutMs, statement_timeout: storeStatementTimeoutMs }));
+    this.leasePool = namedPool(url, Math.max(1, Math.floor(options.leaseMax ?? leasePoolConnections)), storeConnectionTimeoutMs, storeStatementTimeoutMs);
     this.background = new BackgroundLane(Math.max(1, Math.floor(max / 2))); this.reportPool = reportPool(url, options, storeConnectionTimeoutMs, storeStatementTimeoutMs);
   }
   /**
