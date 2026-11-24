@@ -70,8 +70,10 @@ ON CONFLICT (id) DO UPDATE SET number = EXCLUDED.number, key = EXCLUDED.key, sta
 $work_index$;
 CREATE OR REPLACE FUNCTION graphyard_work_index_sync() RETURNS trigger LANGUAGE plpgsql AS $work_index$
 BEGIN PERFORM graphyard_index_work(NEW.id, NEW.number, NEW.document); RETURN NULL; END $work_index$;`;
-/** Changes whenever the projection does, so the migration knows to rebuild every row. */
-const workIndexDigest = `work-index sha256:${createHash('sha256').update(projection).digest('hex')}`;
+/** GY-3757: \`status GY-N\` and the item page find the item by display key in one probe. */
+const keyIndex = 'CREATE INDEX IF NOT EXISTS work_index_key ON work_index(key);';
+/** Changes whenever the projection or its indexes do, so the migration knows to rebuild every row. */
+const workIndexDigest = `work-index sha256:${createHash('sha256').update(projection + keyIndex).digest('hex')}`;
 
 const workIndex = defineTable({
   name: 'work_index', orderBy: 'id', cache: true,
@@ -98,6 +100,7 @@ DO $work_index$ BEGIN
     ALTER TABLE work_index DROP COLUMN IF EXISTS owner, DROP COLUMN IF EXISTS epoch, DROP COLUMN IF EXISTS next_action;
     CREATE INDEX IF NOT EXISTS work_index_due ON work_index(due_at) WHERE due_at IS NOT NULL;
     CREATE INDEX IF NOT EXISTS work_index_number ON work_index(number);
+    ${keyIndex}
     DROP TRIGGER IF EXISTS work_index_sync ON work_items;
     CREATE TRIGGER work_index_sync AFTER INSERT OR UPDATE ON work_items FOR EACH ROW EXECUTE FUNCTION graphyard_work_index_sync();
     PERFORM graphyard_index_work(id, number, document) FROM work_items;
