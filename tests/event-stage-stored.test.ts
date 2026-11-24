@@ -144,4 +144,8 @@ test('e2e:event-stage-stored — after an item changes stage on a running test i
   assert.deepEqual(status.deliverySpeed.unmeasured, []);
   assert.equal(status.deliverySpeed.readyToMerge?.samples, 50);
   assert.equal((await masterApi('slowest-query?name=SELECT%20seq%2Cwork_id%2Cactor%2Ckind%2Ccreated_at')).slowest, null);
+  // GY-3809: the stage is written at insert only; there is no backfill to run or report.
+  assert.ok(!('stageBackfill' in status));
+  const backfill = await fetch(`${url}/api/events/backfill-stage`, { method: 'POST', headers: { Authorization: `Bearer ${coordinatorToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: '{}' });
+  assert.equal(backfill.status, 404);
 });

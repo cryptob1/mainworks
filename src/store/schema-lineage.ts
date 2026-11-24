@@ -83,6 +83,8 @@ export const schemaGenerations: readonly (string | null)[] = [
   'sha256:1b6fb63b9ac162fd425c426a2fcfae8522e465611dfc30c7eed31866ce85816f',
   // GY-3768: the events trigger lets the stage backfill add a missing stage to a delta row, found by a partial index.
   'sha256:cefe302b733ea489e9242037aaf602f43c1389eea075783e9ae3b58adcc85c0b',
+  // GY-3809: the stage backfill's trigger allowance and partial index are gone.
+  'sha256:f6983055b8df13e1bcb3efb196d9cc092064ce109949cddcedbb853c5fd91715',
 ];
 /** The schema generation the code in this process expects: its table definitions' place in the lineage. */
 export const schemaVersion = schemaGenerations.length - 1;
