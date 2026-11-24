@@ -7,8 +7,8 @@ import { eventStageBackfill } from '../src/daemon/event-stage-backfill.js';
 // 1. eventStageBackfill targeted 2 s batches, leaving only 2.5x headroom under the test's 5 s statement timeout
 //    (so a batch-gate CPU spike timed out a resized batch) and 1.5x under master status's 3 s slow-query mark.
 // 2. The test's 1,000-row timeout probe ran at ~5.3 s vs 5.0 s (OPS = 64), and seeded on the 5 s timed pool.
-test('unit:backfill-stage-small-batches-pinned — stage backfill targets <= 1 s batches for 5x timeout headroom and the test seeds outside the 5 s pool with > 2x probe margin', async () => {
-  // Steady-state sizing on slow rows (10 ms/row): 50 rows take 500 ms -> next batch targets <= 1,000 ms (<= 100 rows).
+test('unit:backfill-stage-small-batches-pinned — stage backfill targets <= 3 s batches under the 5 s timeout and the test seeds outside the 5 s pool with > 2x probe margin', async () => {
+  // Steady-state sizing on slow rows (10 ms/row): 50 rows take 500 ms -> next batch targets <= 3,000 ms (<= 300 rows, GY-3777).
   let clock = 0;
   const limits: number[] = [];
   const slow = eventStageBackfill(async limit => {
@@ -19,7 +19,7 @@ test('unit:backfill-stage-small-batches-pinned — stage backfill targets <= 1 s
   await slow(() => {});
   await slow(() => {});
   assert.equal(limits[0], 50);
-  assert.ok(limits[1] <= 100, `expected next batch <= 100 rows (<= 1 s at 10 ms/row), got ${limits[1]}`);
+  assert.ok(limits[1] <= 300, `expected next batch <= 300 rows (<= 3 s at 10 ms/row), got ${limits[1]}`);
 
   // Fast rows (0.5 ms/row) still reach the 1,000-row cap on the second batch.
   clock = 0;
