@@ -75,7 +75,7 @@ test('integration:event-history-pages-before-resolving — a history page resolv
   assert.ok(Number((await store.pool.query('SELECT count(*) FROM events')).rows[0].count) >= EVENTS);
 
   // At most limit+1 resolutions per read, whatever the filters make the planner do.
-  for (const params of [{ payload: 'full' }, { work: id, payload: 'full' }, { work: id, payload: 'full', kind: 'reconciled' },
+  for (const params of <Record<string, string>[]>[{ payload: 'full' }, { work: id, payload: 'full' }, { work: id, payload: 'full', kind: 'reconciled' },
     { work: id, payload: 'full', routine: 'include', limit: '1000' }, { payload: 'full', kind: 'session', since: new Date(Date.now() - 86_400_000).toISOString() },
     { work: id, payload: 'full', order: 'asc' }]) {
     const read = await calls(params);
