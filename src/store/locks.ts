@@ -8,6 +8,7 @@
  * backup never stalls a claim. Two migrations still serialize on theirs; DDL that must not run beside a write
  * waits on that table's own lock, bounded by the migration's deadline. The flow projection's id is listed so
  * none reuses it, and the ledger compaction's (compaction.ts) keeps two replicas from compacting at once.
+ * Agent-account connect requests and host keys serialize on their own (GY-3799), never queuing behind coordination work.
  */
 export const advisoryLocks = {
   item: 71490320,
@@ -16,4 +17,5 @@ export const advisoryLocks = {
   migration: 71490323,
   backup: 71490324,
   ledgerCompaction: 71490325,
+  agentConnect: 71490326,
 } as const;
