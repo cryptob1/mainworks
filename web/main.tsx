@@ -129,7 +129,7 @@ function App() {
   useEffect(() => { setEvents([]); setEditingRequirements(false); window.scrollTo?.(0, 0); }, [selected, token]);
   // A read answered while the same item is still open is kept even when a work poll re-ran the effect meanwhile, so a later failed read never leaves history empty.
   const selectedRef = useRef(selected); selectedRef.current = selected;
-  useEffect(() => { const epoch = sessionEpoch.current, current = () => selectedRef.current === selected && epoch === sessionEpoch.current; if (selected) void api(`events?work=${selected}&payload=details`).then((rows: any[]) => { if (current()) setEvents(rows.map(({ details, ...row }) => ({ ...row, payload: { details } }))); }).catch(e => { if (current()) setError(e.message); }); }, [selected, work]);
+  useEffect(() => { const epoch = sessionEpoch.current, current = () => selectedRef.current === selected && epoch === sessionEpoch.current; if (selected) void api(`events?work=${selected}&payload=details`).then((rows: any[]) => { if (current()) setEvents(rows.map(row => 'details' in row ? (({ details, ...rest }) => ({ ...rest, payload: { details } }))(row) : row)); }).catch(e => { if (current()) setError(e.message); }); }, [selected, work]);
   // GY-3268: an item that goes live while the page is open gets a toast naming its builder, and confetti;
   // GY-3601: live means merged and carried by the live commit, when one is known.
   const merged = useRef<Map<string, boolean> | null>(null);
