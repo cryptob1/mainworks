@@ -4,7 +4,7 @@ import { ChildProcessError, runChild } from '../child-runner.js';
 import { randomUUID } from 'node:crypto';
 import { confinedRuntimeArgs } from '../worker-sandbox.js';
 import { spawn, type SpawnOptions } from 'node:child_process';
-import { accessSync, constants, copyFileSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { accessSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { defaultPiModel, piRunner, piSmoke, runEnvironment, type SmokeResult } from './pi.js';
@@ -119,6 +119,31 @@ export function planModelUnused(output: string, modelId: string | null | undefin
   const ran = wrongModelBanner.exec(output)?.[1];
   return /\bfree usage limit reached\b|\bFreeUsageLimitError\b/i.test(output) || !!ran && ran !== modelId && ran !== modelId.split('/').pop();
 }
+const writableDirectory = (path: string) => { try { accessSync(path, constants.W_OK); return true; } catch { return false; } };
+
+/** Copy top-level files from a read-only account home into a writable scratch directory and link subdirectories. */
+function populateWritableCopy(sourceDir: string, targetDir: string) {
+  mkdirSync(targetDir, { recursive: true, mode: 0o700 });
+  try {
+    for (const entry of readdirSync(sourceDir)) {
+      const source = join(sourceDir, entry), target = join(targetDir, entry);
+      try {
+        if (statSync(source).isFile()) copyFileSync(source, target);
+        else symlinkSync(resolve(source), target);
+      } catch { /* unreadable entries leave the runtime to report its own error */ }
+    }
+  } catch { /* unreadable directory leaves an empty writable dir so the runtime reports its own error */ }
+}
+
+/** Unique scratch layout for one live account check, matching the writable scratch dirs a real launch gets. */
+function smokeScratch(prefix: string) {
+  const root = mkdtempSync(join(tmpdir(), prefix));
+  const work = join(root, 'work'), home = join(root, 'home'), tmp = join(root, 'tmp');
+  const cache = join(root, 'cache'), config = join(root, 'config'), data = join(root, 'data'), state = join(root, 'state'), runtime = join(root, 'runtime');
+  for (const dir of [work, home, tmp, cache, config, data, state, runtime]) mkdirSync(dir, { recursive: true, mode: 0o700 });
+  return { root, work, home, env: { TMPDIR: tmp, TMP: tmp, TEMP: tmp, XDG_CACHE_HOME: cache, XDG_CONFIG_HOME: config, XDG_DATA_HOME: data, XDG_STATE_HOME: state, XDG_RUNTIME_DIR: runtime } };
+}
+
 /**
  * The one-prompt smoke test of a registry account (GY-446): its runtime, login home, key and model,
  * none of a role's policy. A key file that cannot be read fails the test with that reason.
@@ -147,51 +172,55 @@ export async function smokeRegistryAccount(account: FleetLaunchAccount, options:
       return { ok: false, error: Object.values(key).reduce((text, secret) => text.replaceAll(secret, '[redacted]'), parseProbeFailure(message).reason) };
     }
   }
-  // GY-3788: Pi creates settings.json.lock in PI_CODING_AGENT_DIR; when the account home is read-only
-  // during the check, give Pi a writable scratch home carrying its login and a writable settings copy.
+  // GY-3788, GY-3806: give Pi a writable scratch environment and, when the account home is read-only
+  // under confinement, a writable copy of its home files so locks and config writes succeed.
   const homeVariable = account.fleet.contract.homeVariable ?? 'PI_CODING_AGENT_DIR';
   const piHome = launch.environment[homeVariable] ?? account.home;
-  let scratchHome: string | null = null;
-  if (piHome) {
-    try { accessSync(piHome, constants.W_OK); }
-    catch {
-      scratchHome = mkdtempSync(join(tmpdir(), 'mainworks-pi-smoke-'));
-      try {
-        for (const entry of readdirSync(piHome)) {
-          const source = join(piHome, entry), target = join(scratchHome, entry);
-          if (entry === 'settings.json') copyFileSync(source, target);
-          else symlinkSync(resolve(source), target);
-        }
-      } catch { /* unreadable entries leave an empty scratch dir so Pi reports its own error */ }
-    }
+  const scratch = smokeScratch('mainworks-pi-smoke-');
+  let writableHome: string | null = null;
+  if (piHome && existsSync(piHome) && !writableDirectory(piHome)) {
+    writableHome = join(scratch.root, 'pi-home');
+    populateWritableCopy(piHome, writableHome);
   }
-  const env = { ...launch.environment, ...key, ...(scratchHome ? { [homeVariable]: scratchHome } : {}) };
+  const env = { ...scratch.env, ...(!process.env.HOME || !writableDirectory(process.env.HOME) ? { HOME: scratch.home } : {}), ...launch.environment, ...key, ...(writableHome ? { [homeVariable]: writableHome } : {}) };
   try {
     return await piSmoke({ command: options.command ?? launch.command, commandArgs: options.commandArgs, model: launch.model, args: launch.args, environment: env },
-      { cwd: options.cwd ?? scratchHome ?? account.home ?? undefined, timeoutMs: options.timeoutMs, redact: Object.values(key) });
+      { cwd: options.cwd ?? scratch.work, timeoutMs: options.timeoutMs, redact: Object.values(key) });
   } finally {
-    if (scratchHome) rmSync(scratchHome, { recursive: true, force: true });
+    rmSync(scratch.root, { recursive: true, force: true });
   }
 }
 /**
- * The agy account's smoke test (GY-3108): one print-mode prompt on the account's login, which agy
- * reads only from `$HOME/.gemini/antigravity-cli`, so the run's HOME is a fresh directory that
- * links there. It passes only when agy answers; a run that starts but never answers — waiting at a
- * login, or silent — fails at the bound, as a session that never acts would hold its slot.
- * The scratch HOME is the account's own, cleared before the run, so a home an interrupted test left
- * behind is never reused, and removed after it, pass or fail (GY-3338). A failure that names the
- * scratch HOME is the harness's, said so, not the account's login.
+ * The agy account's smoke test (GY-3108, GY-3806): one print-mode prompt on the account's login,
+ * which agy reads from `$HOME/.gemini/antigravity-cli`. Uses a unique scratch directory (never a
+ * fixed `/tmp` path) with separate `HOME` and `cwd` plus writable XDG dirs like a real launch, and
+ * copies the account home's files into a writable directory when the account home is read-only.
  */
 export function agySmoke(account: Pick<FleetLaunchAccount, 'name' | 'home' | 'fleet'>, options: { cwd?: string; timeoutMs?: number; command?: string } = {}): Promise<SmokeResult> {
   const timeoutMs = options.timeoutMs ?? 120_000, command = options.command ?? account.fleet.contract.kind;
-  const home = join(tmpdir(), `mainworks-agy-smoke-${account.name.replace(/[^A-Za-z0-9._-]/g, '_')}`);
-  rmSync(home, { recursive: true, force: true });
-  mkdirSync(home);
-  if (account.home) { mkdirSync(join(home, '.gemini')); symlinkSync(resolve(account.home), join(home, '.gemini', 'antigravity-cli')); }
+  // Best-effort cleanup of any leftover legacy fixed smoke directory; never fail if another owner holds it.
+  try { rmSync(join(tmpdir(), `mainworks-agy-smoke-${account.name.replace(/[^A-Za-z0-9._-]/g, '_')}`), { recursive: true, force: true }); } catch { /* ignore */ }
+  const scratch = smokeScratch('mainworks-agy-smoke-');
+  const agyConfigDir = join(scratch.home, '.gemini', 'antigravity-cli');
+  let effectiveConfigDir: string | null = null;
+  if (account.home) {
+    mkdirSync(join(scratch.home, '.gemini'), { recursive: true, mode: 0o700 });
+    if (existsSync(account.home) && !writableDirectory(account.home)) {
+      populateWritableCopy(account.home, agyConfigDir);
+      effectiveConfigDir = agyConfigDir;
+    } else {
+      symlinkSync(resolve(account.home), agyConfigDir);
+      effectiveConfigDir = resolve(account.home);
+    }
+  }
   const model = withModel('agy', [], account.fleet.contract, account.fleet.modelId);
   return new Promise<SmokeResult>(settle => {
     let output = '';
-    const child = spawn(command, [...model, '--print', 'Reply with the single word OK.'], { cwd: options.cwd ?? home, env: { ...process.env, ...account.fleet.contract.environment, HOME: home }, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(command, [...model, '--print', 'Reply with the single word OK.'], {
+      cwd: options.cwd ?? scratch.work,
+      env: { ...process.env, ...scratch.env, ...account.fleet.contract.environment, HOME: scratch.home, ...(effectiveConfigDir ? { AGY_CONFIG_DIR: effectiveConfigDir } : {}) },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
     const bound = setTimeout(() => { child.kill('SIGKILL'); settle({ ok: false, error: `${command} started but gave no answer within ${Math.round(timeoutMs / 1000)}s${/authentication/i.test(output) ? ': it is waiting for a login' : ''}` }); }, timeoutMs);
     child.stdout!.on('data', chunk => { output = (output + chunk).slice(-4000); });
     child.stderr!.on('data', chunk => { output = (output + chunk).slice(-4000); });
@@ -199,9 +228,10 @@ export function agySmoke(account: Pick<FleetLaunchAccount, 'name' | 'home' | 'fl
     child.on('close', code => {
       clearTimeout(bound);
       const error = output.trim().split('\n').slice(-3).join(' ').slice(0, 400) || `${command} exited with code ${code} without answering`;
-      settle(code === 0 && /\bOK\b/.test(output) ? { ok: true, error: null } : { ok: false, error: output.includes(home) ? `the smoke test's scratch home ${home} failed, not the account's login: ${error}` : error });
+      const scratchFailure = output.includes(scratch.root) && /\b(?:ENOENT|EACCES|EPERM|EROFS|EEXIST|ENOSPC)\b/i.test(output);
+      settle(code === 0 && /\bOK\b/.test(output) ? { ok: true, error: null } : { ok: false, error: scratchFailure ? `the smoke test's scratch home ${scratch.home} failed, not the account's login: ${error}` : error });
     });
-  }).finally(() => rmSync(home, { recursive: true, force: true }));
+  }).finally(() => rmSync(scratch.root, { recursive: true, force: true }));
 }
 /**
  * How a headless run ended, as the registry counts it (GY-446): with a result, without one, or —

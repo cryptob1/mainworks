@@ -11,7 +11,7 @@ import { emptyDaemonState } from '../src/daemon/state.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import { TrialHeatError } from '../src/merge-writer/trial-load.js';
 import { serializeTrialError } from '../src/merge-writer/trial-run.js';
-import { acquireVerificationSlot, projectVariable, setStrictCap, slotsDirectoryVariable } from '../src/master/verification-slots.js';
+import { acquireVerificationSlot, projectVariable, slotsDirectoryVariable } from '../src/master/verification-slots.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3803: the batch gate takes the next freed heavy-job slot ahead of merge trials, and a batch
@@ -35,6 +35,16 @@ after(() => {
   if (previousSlots === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = previousSlots;
   if (previousProject === undefined) delete process.env[projectVariable]; else process.env[projectVariable] = previousProject;
 });
+
+// GY-3808: every slot held, the deploy path's reserved one by a deploy, so the batch gate queues for
+// an ordinary slot. Not a strict cap: under one each acquisition reads the host's CPU sensors and
+// waits as long as the host runs hot, so the test hung on a hot merge-trial host.
+async function holdEverySlot(slots: string) {
+  const deploy = await acquireVerificationSlot({ directory: slots, label: 'deploy build', project: repository, reserved: true });
+  const held1 = await acquireVerificationSlot({ directory: slots, label: 'test merge GY-1', project: repository });
+  const held2 = await acquireVerificationSlot({ directory: slots, label: 'test merge GY-2', project: repository });
+  return { held1, release: () => { for (const slot of [deploy, held1, held2]) slot.release(); } };
+}
 
 async function repoWorld(label: string, onLaunch: (request: { key: string; mergeSha: string; changedFiles: string[]; proofs: string[]; e2eProofs: string[] }) => Promise<MergeTrialRun>) {
   const base = await temporaryDirectory(label);
@@ -81,8 +91,8 @@ async function repoWorld(label: string, onLaunch: (request: { key: string; merge
 }
 
 test('e2e:batch-gate-slot-priority — with every heavy-job slot held by merge trials and a batch gate waiting, the first freed slot goes to the batch gate and no new merge trial starts before it; a heat-slowed batch gate reruns only its failed files on the next cycle and verifies when they pass', { timeout: 120_000 }, async () => {
-  // Part 1: every heavy-job slot held by merge trials (under a strict cap of 2 so the batch gate
-  // shares the queue), another project's merge trial and a same-project merge trial waiting too:
+  // Part 1: every heavy-job slot held by merge trials (and the reserved one by a deploy, so the batch
+  // gate shares the queue), another project's merge trial and a same-project merge trial waiting too:
   // when a slot frees, the batch gate takes it first and no new merge trial starts before it.
   {
     const order: string[] = [];
@@ -90,9 +100,7 @@ test('e2e:batch-gate-slot-priority — with every heavy-job slot held by merge t
       order.push('batch-gate');
       return passing;
     });
-    setStrictCap(yard.slots, { value: 2, until: iso(Date.now() + 3600_000) }, 'graphyard-master');
-    const held1 = await acquireVerificationSlot({ directory: yard.slots, label: 'test merge GY-1', project: repository });
-    const held2 = await acquireVerificationSlot({ directory: yard.slots, label: 'test merge GY-2', project: repository });
+    const { held1, release } = await holdEverySlot(yard.slots);
 
     const stop = new AbortController();
     let otherWaiting = false, sameWaiting = false;
@@ -114,7 +122,7 @@ test('e2e:batch-gate-slot-priority — with every heavy-job slot held by merge t
       await gateFlight;
       assert.equal(readGateRecord(yard.file)?.verified, yard.tip, 'the batch gate verified main');
     } finally {
-      held2.release();
+      release();
       stop.abort();
       for (const pending of [otherTrial, sameTrial]) (await pending.catch(() => null))?.release();
     }
@@ -158,4 +166,35 @@ test('unit:trial-heat-error-serialization — TrialHeatError carries its failed 
   const serialized = serializeTrialError(error, []);
   assert.equal(serialized.name, 'TrialHeatError');
   assert.deepEqual(serialized.files, ['tests/a.test.ts', 'tests/b.test.ts']);
+});
+
+test('unit:batch-gate-slot-priority-pinned — the slot world never waits on host heat: with the CPU at 95C the deploy-path waiter still queues for a slot and takes the first freed one ahead of an older merge trial', { timeout: 30_000 }, async () => {
+  const base = await temporaryDirectory('gate-slot-hot-host');
+  const slots = join(base, 'heavy-jobs'), hwmon = join(base, 'hwmon');
+  await mkdir(join(hwmon, 'hwmon0'), { recursive: true });
+  await writeFile(join(hwmon, 'hwmon0', 'name'), 'k10temp\n');
+  await writeFile(join(hwmon, 'hwmon0', 'temp1_input'), '95000\n');
+  await mkdir(slots, { recursive: true });
+  await writeFile(join(slots, 'limit'), '2\n');
+  const { held1, release } = await holdEverySlot(slots);
+  const order: string[] = [], lines: string[] = [];
+  const stop = new AbortController();
+  const trial = acquireVerificationSlot({ directory: slots, label: 'test merge GY-3', project: repository, pollMs: 20, hwmon, signal: stop.signal })
+    .then(slot => { order.push('GY-3'); return slot; });
+  trial.catch(() => {});
+  await sleep(50);
+  const gate = acquireVerificationSlot({ directory: slots, label: 'test merge main', project: repository, pollMs: 20, hwmon, reserved: true, signal: stop.signal, onWait: line => lines.push(line) })
+    .then(slot => { order.push('gate'); return slot; });
+  gate.catch(() => {});
+  try {
+    await until(() => lines.length > 0, 'the gate waits');
+    assert.match(lines[0]!, /waits for a host heavy-job slot/, 'the gate waits for a slot, not for host heat');
+    held1.release();
+    await until(() => order.length > 0, 'first freed slot is taken');
+    assert.deepEqual(order, ['gate']);
+  } finally {
+    release();
+    stop.abort();
+    for (const pending of [gate, trial]) (await pending.catch(() => null))?.release();
+  }
 });
