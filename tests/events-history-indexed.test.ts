@@ -64,11 +64,11 @@ test('integration:events-history-indexed — the default events page and one ite
   const all = eventHistorySql(parseEventHistoryQuery(new URLSearchParams()));
   const allPlan = await plan(all.text, all.values);
   assert.doesNotMatch(allPlan, /Seq Scan/, allPlan);
-  assert.match(allPlan, /Index Scan Backward using events_history /, allPlan);
+  assert.match(allPlan, /Index (Only )?Scan Backward using events_history /, allPlan);
   const item = eventHistorySql(parseEventHistoryQuery(new URLSearchParams({ work: id })));
   const itemPlan = await plan(item.text, item.values);
   assert.doesNotMatch(itemPlan, /Seq Scan/, itemPlan);
-  assert.match(itemPlan, /Index Scan Backward using events_(work_)?history /, itemPlan);
+  assert.match(itemPlan, /Index (Only )?Scan Backward using events_(work_)?history /, itemPlan);
 
   // Warm the connection and caches once, then each page answers in under a second.
   await get('events'); await get(`events?work=${id}`);
