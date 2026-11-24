@@ -59,13 +59,14 @@ import { repeatedFailureAttention } from '../model/incidents.js';
 import { readImagePulls, slowPullAttention } from '../install/image-pulls.js';
 import type { SlowQuery } from '../store/slow-queries.js';
 
-/** GY-3105: an item's whole non-routine ledger, oldest first, paged by cursor to the end; null when any page cannot be read. */
+/** GY-3105: an item's whole non-routine ledger, oldest first, paged by cursor to the end; null when any page cannot be read.
+ *  GY-3762: each row's stage alone; the whole documents were 580 MB a run on the live install. */
 export async function itemLedger(masterApi: (path: string) => Promise<any>, id: string): Promise<SpeedEvent[] | null> {
   const events: SpeedEvent[] = [];
   let cursor: string | null = null;
   try {
     do {
-      const page: { events: SpeedEvent[]; page: { nextCursor: string | null } } = await masterApi(`events?work=${id}&order=asc&limit=1000&view=page${cursor ? `&cursor=${cursor}` : ''}`);
+      const page: { events: SpeedEvent[]; page: { nextCursor: string | null } } = await masterApi(`events?work=${id}&order=asc&limit=1000&view=page&payload=stage${cursor ? `&cursor=${cursor}` : ''}`);
       events.push(...page.events);
       cursor = page.page.nextCursor;
     } while (cursor);
@@ -348,7 +349,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
 }
 /** GY-3757: one line naming the slowest database query of the last 10 minutes, when the server reports one past 3 s. */
 export const slowQueryAttention = (slowest: SlowQuery | null, now: number) => slowest ? [{ subject: 'database',
-  text: `The slowest database query of the last 10 minutes took ${(slowest.ms / 1000).toFixed(1)} s, ${formatAge(slowest.at, now)} ago: ${slowest.name}`,
+  text: `The slowest database query of the last 10 minutes took ${(slowest.ms / 1000).toFixed(1)} s, ${formatAge(slowest.at, now)} ago${slowest.caller ? `, asked by ${slowest.caller}` : ''}: ${slowest.name}`,
   next: 'File a fix for the query it names if it repeats' }] : [];
 /**
  * GY-3421: an item whose review request the loop could not launch — every launch refused, its

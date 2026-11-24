@@ -1,0 +1,37 @@
+{
+  "id": "events-history-live-fast",
+  "title": "Master status's ledger read answers with each event's stage, and no events-history query ran over 3 seconds",
+  "description": "The read master status makes for each merged item (one item's events, oldest first, the stage alone) answers with the item's stage, and the slowest-query read that master status shows names no events-history query over 3 seconds in the last 10 minutes.",
+  "tags": ["api", "events"],
+  "target": "uat",
+  "required": true,
+  "steps": [
+    {
+      "kind": "http", "name": "create an item to read", "method": "POST", "path": "/api/work",
+      "body": {"why": "The E2E case reads an item's ledger as master status does.", "simplest": "One item with the fields the case needs.",
+        "title": "E2E case {{case}} run {{run}}",
+        "description": "Created by the events-history-live-fast E2E case.",
+        "type": "chore", "priority": 3,
+        "criteria": [{ "id": "AC-1", "text": "Its ledger reads fast", "proofs": ["manual:e2e-case-created", "e2e:create-work-item"] }],
+        "policy": { "checks": ["test"], "review": true }
+      },
+      "status": 200,
+      "save": { "id": "id" }
+    },
+    {
+      "kind": "http", "name": "read the ledger as master status does", "method": "GET",
+      "path": "/api/events?work={{id}}&order=asc&limit=1000&view=page&payload=stage", "status": 200,
+      "expect": [
+        { "path": "events", "type": "array" },
+        { "path": "events.0.stage", "equals": "backlog" },
+        { "path": "filters.payload", "equals": "stage" },
+        { "path": "page.hasMore", "equals": false }
+      ]
+    },
+    {
+      "kind": "http", "name": "master status names no slow events-history query", "method": "GET",
+      "path": "/api/slowest-query?name=SELECT%20seq%2Cwork_id%2Cactor%2Ckind%2Ccreated_at", "status": 200,
+      "expect": [{ "path": "slowest", "equals": null }]
+    }
+  ]
+}

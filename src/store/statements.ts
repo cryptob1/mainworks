@@ -1,3 +1,4 @@
+import { AsyncResource } from 'node:async_hooks';
 import type pg from 'pg';
 import { recordQuery } from './slow-queries.js';
 
@@ -24,10 +25,13 @@ export function namedStatements(pool: pg.Pool) {
       if (config && typeof config === 'object' && typeof config.submit === 'function') return query(...args);
       const last = args.length - 1, started = performance.now();
       const timed = () => { const text = typeof config === 'string' ? config : config?.text; if (typeof text === 'string') recordQuery(text, performance.now() - started); };
-      if (typeof args[last] === 'function') { const done = args[last]; args[last] = (error: unknown, result: unknown) => { timed(); done(error ? name(error, config) : error, result); }; return query(...args); }
+      if (typeof args[last] === 'function') { const done = args[last]; args[last] = AsyncResource.bind((error: unknown, result: unknown) => { timed(); done(error ? name(error, config) : error, result); }); return query(...args); }
       const result = query(...args);
       return result && typeof result.then === 'function' ? result.then((value: unknown) => { timed(); return value; }, (error: unknown) => { timed(); throw name(error, config); }) : result;
     };
   });
+  // GY-3762: `pool.query` waits for a connection, and the driver answers, by callbacks called from other contexts; bound, a statement keeps its caller.
+  const connect = pool.connect.bind(pool) as (...args: any[]) => any;
+  (pool as unknown as { connect: (...args: any[]) => any }).connect = (...args: any[]) => typeof args[0] === 'function' ? connect(AsyncResource.bind(args[0])) : connect(...args);
   return pool;
 }

@@ -2,8 +2,12 @@
  * GY-3757: the slowest database statement of the last ten minutes, when it ran past three seconds,
  * named by its SQL, for master status. Every statement the named pools run is timed (statements.ts).
  */
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 const slowMs = 3_000, windowMs = 10 * 60_000;
-export interface SlowQuery { name: string; ms: number; at: number }
+/** GY-3762: who asked: the route and principal, and the CLI command when the client names it. */
+export interface SlowQuery { name: string; ms: number; at: number; caller?: string }
+export const queryCaller = new AsyncLocalStorage<string>();
 let slow: SlowQuery[] = [];
 
 /** A statement's name: its SQL on one line, cut to 120 characters. */
@@ -12,7 +16,8 @@ export const queryName = (text: string) => text.replace(/\s+/g, ' ').trim().slic
 export function recordQuery(text: string, ms: number, now = Date.now()) {
   if (ms <= slowMs) return;
   slow = slow.filter(query => now - query.at <= windowMs);
-  slow.push({ name: queryName(text), ms, at: now });
+  const caller = queryCaller.getStore();
+  slow.push({ name: queryName(text), ms, at: now, ...(caller ? { caller } : {}) });
 }
 
 /** The slowest of the window, or of the statements whose name starts with `prefix`. */
