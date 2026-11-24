@@ -2,9 +2,10 @@
 // Each loop cycle asks the control plane to store the stage on the next batch of them; the batch that finds none
 // left ends the backfill, and the loop asks nothing more until it restarts. A loop that filled rows says it is done.
 // GY-3769: 1,000 long-chain rows took past the 60 s statement timeout and saved nothing, so the first batch is 50
-// rows and each later one is sized from the last batch's time to take about 2 s.
+// rows and each later one is sized from the last batch's time to take about 1 s (GY-3771: leaves 5x headroom under
+// the 5 s test timeout and 3x under the 3 s slow-query threshold).
 
-const firstBatch = 50, targetMs = 2_000, maxBatch = 1_000;
+const firstBatch = 50, targetMs = 1_000, maxBatch = 1_000;
 
 /** One loop process's backfill: `post` fills one batch of at most `limit` rows and answers how many it filled. */
 export function eventStageBackfill(post: (limit: number) => Promise<{ filled: number }>, now = () => performance.now()) {
