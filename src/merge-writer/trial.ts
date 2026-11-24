@@ -25,6 +25,7 @@ import type { GateCheck } from '../model/delivery-policy.js';
 import { containerTrialE2e, trialContainerBoundary, trialContainerDependencies, trialImage } from './trial-container.js';
 import { cachedPasses, commitDependencies, dependencyKey, recordPasses, testResultKeys, warmDependencies } from './trial-caches.js';
 import { shellQuote } from '../shell-quote.js';
+import { recordTestSelection, selectionCounts } from './test-selection.js';
 import { HostBusyError, HostDroppedError, readShardHosts, shardSshSession, type ShardSshSession, runShardsOnHosts, realFreeCores, recordRemoteShardRun, remoteShardSession, shardHosts, splitLocalOnlyTests, trialImageHasBrowser, underHeatLimit, type HostReading, type PlacedHost } from './remote-shards.js';
 import { repositoryTrialImage, trialDockerfile, TrialRepositoryImageError } from './repository-trial-image.js';
 import { addressPoolsSpent, checkServiceVariables, dockerEnvironment, previewNetworkCount, startCheckServices, tcpAcceptProbe, type CheckServices } from '../compose-preview.js';
@@ -797,6 +798,8 @@ export interface RunTrialInput {
   /** GY-3418: keep the dependency image and test-result caches in the repository's git directory (the detached merge trial and batch gate do); absent, a trial caches nothing. */
   caches?: boolean;
   key?: string;
+  /** GY-3750: a rerun of failing files or of proofs on the base tip, which neither narrows its selection nor counts as a trial's. */
+  rerun?: boolean;
   run?: ChildRun;
   /** Add criterion files to a declared selector's output before sharding. */
   selectFiles?: (files: string[], timeoutMs: number) => Promise<string[]>;
@@ -1684,13 +1687,17 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       }
     }
     let selection: Ended;
+    // GY-3750: an item's trial narrows a body-only change to the importers of what it reaches; the batch gate and reruns keep today's selection.
+    const narrow = input.key !== gateTrialKey && !input.rerun;
     try {
-      selection = await child('selection', selector[0]!, [...selector.slice(1), ...input.changedFiles], input.baseTip ? { env: { ...env, GRAPHYARD_SELECTION_BASE: input.baseTip } } : {});
+      selection = await child('selection', selector[0]!, [...selector.slice(1), ...input.changedFiles], input.baseTip ? { env: { ...env, GRAPHYARD_SELECTION_BASE: input.baseTip, ...(narrow ? { GRAPHYARD_SELECTION_IMPORTERS: '1' } : {}) } } : {});
     } finally {
       if (restoreSelector) await restoreSelector().catch(() => {});
     }
     if (hostEnded(selection)) throw runnerFailure('selection', selection);
     if (!selection.ok) return result({ passed: 0, failed: [strategy.command], files: 0 });
+    const counts = narrow ? selectionCounts(selection.out.split('\n')[0] ?? '') : null;
+    if (counts) await recordTestSelection(input.root, counts).catch(() => {});
     const pattern = new RegExp(strategy.pattern);
     let selected = selection.out.split('\n').map(line => line.trim()).filter(line => pattern.test(line));
     // GY-3418: a selected file that passed in an earlier trial with the same content, imports, data
