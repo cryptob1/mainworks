@@ -39,8 +39,8 @@ export const hostProbeScript = [
   'echo "runs $(docker ps -q --filter name=^mainworks-trial- | wc -l)"',
 ].join('\n');
 
-/** The warm image a host runs shards in: the trial image's digest and the lockfile's hash (`none` without one). */
-const warmImagePattern = /^graphyard-warm:[0-9a-f]{12}-(?:[0-9a-f]{12}|none)$/;
+/** The warm image a host runs shards in: the trial image's digest, the lockfile's hash (`none` without one), and the commit it was built from (optional for older tags). */
+const warmImagePattern = /^graphyard-warm:[0-9a-f]{12}-(?:[0-9a-f]{12}|none)(?:-[0-9a-f]{12})?$/;
 
 /** GY-3405: no agent session runs longer on a host; Mainworks ends every session well before. */
 const sessionHours = 8;
@@ -49,7 +49,7 @@ const sessionHours = 8;
  * changes what it does in a way a trial relies on, and add a new verb here; any other change to the
  * shim (its launcher, limits, wording) leaves this list alone, so hosts on the older shim keep taking shards.
  */
-export const hostShimVerbs = ['probe:1', 'receive-pack:1', 'receive-image:1', 'prepare-run:1', 'run-shard:2', 'fetch-records:1', 'clean:1', 'run-session:1', 'update-shim:1'];
+export const hostShimVerbs = ['probe:1', 'receive-pack:1', 'receive-image:2', 'prepare-run:2', 'run-shard:2', 'fetch-records:1', 'clean:1', 'run-session:1', 'update-shim:1'];
 /** GY-3645: `run-check` is no trial verb: a host takes a whole check once its probe names a Compose plugin, which only a shim with the verb prints. */
 /** The verbs a merge trial uses: a host whose shim lacks any of them takes no shards until prepare runs again there. */
 export const trialVerbs = hostShimVerbs.filter(verb => !/^(?:run-session|update-shim):/.test(verb));
@@ -124,9 +124,15 @@ elif verb == 'receive-image':
     subprocess.check_call(['docker', 'load', '-q'], stdout=subprocess.DEVNULL)
     if not has_image(args[0]):
         sys.exit('graphyard-host-shim: the image stream does not hold ' + args[0])
-    # One warm image is kept: the others go unless a running shard still uses one.
+    # The two newest warm images of this trial image and lockfile are kept (a trial on the older base may
+    # still be starting); the others go unless a running shard still uses one. Docker lists newest first.
+    family, kept = (args[0].rsplit('-', 1)[0] + '-' if args[0].split(':', 1)[1].count('-') == 2 else args[0]), [args[0]]
     for image in subprocess.run(['docker', 'images', 'graphyard-warm', '--format', '{{.Repository}}:{{.Tag}}'], capture_output=True, text=True).stdout.split():
-        if image != args[0]:
+        if image in kept:
+            continue
+        if len(kept) < 2 and image.startswith(family):
+            kept.append(image)
+        else:
             quiet('docker', 'image', 'rm', image)
 elif verb == 'prepare-run':
     if not has_commit(args[1]):
@@ -146,7 +152,8 @@ elif verb == 'prepare-run':
     # Keep history, but copy objects: per-run permissions must never change the mirror.
     subprocess.check_call(['git', 'clone', '-q', '--local', '--no-hardlinks', '--no-checkout', mirror, checkout])
     subprocess.check_call(['git', '-C', checkout, '-c', 'advice.detachedHead=false', 'checkout', '-q', '--detach', args[1]])
-    if not args[2].endswith('-none') and not os.path.lexists(os.path.join(checkout, 'node_modules')):
+    parts = args[2].split(':', 1)[1].split('-')
+    if parts[1] != 'none' and not os.path.lexists(os.path.join(checkout, 'node_modules')):
         os.symlink('/deps/node_modules', os.path.join(checkout, 'node_modules'))
     with open(os.path.join(run, 'image'), 'w') as file:
         file.write(args[2])
@@ -256,8 +263,29 @@ else:
                 'apparmor': '${trialAppArmorProfile}' if 'apparmor' in subprocess.run(['docker', 'info', '--format', '{{json .SecurityOptions}}'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True).stdout else None,
                 'load': {'slots': os.path.join(home, '.gy', 'trial-slots'), 'cap': cap, 'order': ${trialStartOrder.merge}, 'hotCelsius': ${trialHotCelsius},
                          'floorBytes': float(os.environ.get('GRAPHYARD_HOST_FLOOR_GB', ${defaultDiskFloorGb})) * 1e9, 'hwmon': '/sys/class/hwmon', 'pressureBoundSeconds': ${trialPressureBoundSeconds}}}
-        # Keep new files removable by the host's mapped group too.
-        command = ['/bin/sh', '-c', 'umask 0002; exec "$@"', 'sh'] + command
+        # Keep new files removable by the host's mapped group too, point Node at the warm image's compile cache,
+        # and overlay its built CLI/server entries when src/ matches its commit (or rebuild them when the head changed src/).
+        # Shards of one trial on this host share run/repo from separate PID namespaces: each takes a lock on a shared
+        # file before reading dist/, and only the first links or rebuilds it, so nothing writes there once any shard runs.
+        prelude = (
+            'umask 0002; '
+            'warm="\${GRAPHYARD_WARM_DIR:-/warm}"; '
+            'if [ -d "$warm/compile-cache" ] && [ -z "\${NODE_COMPILE_CACHE:-}" ]; then export NODE_COMPILE_CACHE="$warm/compile-cache"; fi; '
+            'if [ -f "$warm/commit" ] && [ -f "$warm/dist/cli.mjs" ]; then '
+            '  mkdir -p dist; exec 9>dist/.warm-lock; flock 9; '
+            '  if [ ! -f dist/.warm-done ]; then '
+            '    if git diff --quiet "$(cat "$warm/commit")" HEAD -- src bin/built-entry.mjs package.json 2>/dev/null; then '
+            '      for f in "$warm"/dist/*.mjs; do [ -f "$f" ] || continue; ln -sf "$f" "dist/$(basename "$f")"; done; '
+            '    elif [ -f bin/built-entry.mjs ]; then '
+            '      node bin/built-entry.mjs; '
+            '    fi; '
+            '    : > dist/.warm-done; '
+            '  fi; '
+            '  exec 9>&-; '
+            'fi; '
+            'exec "$@"'
+        )
+        command = ['/bin/sh', '-c', prelude, 'sh'] + command
         os.chdir(os.path.join(run, 'repo'))
         sys.stdout.flush()
         return subprocess.call([sys.executable, '-I', '-S', '-c', LAUNCHER, json.dumps(spec)] + command, **options,

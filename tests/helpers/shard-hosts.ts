@@ -20,7 +20,7 @@ const executable = async (path: string, text: string) => { await writeFile(path,
 
 /** A Docker CLI keeping its state under `state`. */
 const dockerStandIn = (state: string) => `#!/usr/bin/python3
-import fcntl, hashlib, json, os, subprocess, sys
+import fcntl, hashlib, io, json, os, re, shutil, subprocess, sys, tarfile
 STATE = ${JSON.stringify(state)}
 args = sys.argv[1:]
 if args[:1] == ['--host']:
@@ -29,7 +29,9 @@ os.makedirs(STATE, exist_ok=True)
 lock = open(os.path.join(STATE, 'lock'), 'w')
 fcntl.flock(lock, fcntl.LOCK_EX)
 path = os.path.join(STATE, 'state.json')
-s = json.load(open(path)) if os.path.exists(path) else {'images': {}, 'containers': {}}
+s = json.load(open(path)) if os.path.exists(path) else {'images': {}, 'containers': {}, 'warm': {}, 'deps': {}}
+s.setdefault('warm', {})
+s.setdefault('deps', {})
 def save():
     json.dump(s, open(path, 'w'))
 def log(word):
@@ -69,30 +71,111 @@ elif command == 'info':
     print('fixture')
 elif command == 'ps':
     pass
+elif command == 'images':
+    repo = args[1] if len(args) > 1 and not args[1].startswith('-') else None
+    for name in reversed(list(s['images'].keys())):
+        if repo is None or name.split(':', 1)[0] == repo:
+            print(name)
 elif command == 'image':
-    name = args[-1]
-    if name not in s['images']:
-        sys.exit('Error: No such image: ' + name)
-    print(s['images'][name])
+    if len(args) > 1 and args[1] == 'rm':
+        for name in args[2:]:
+            s['images'].pop(name, None)
+            s['warm'].pop(name, None)
+        save()
+    else:
+        name = args[-1]
+        if name not in s['images']:
+            sys.exit('Error: No such image: ' + name)
+        print(s['images'][name])
 elif command == 'tag':
     s['images'][args[2]] = s['images'][args[1]]
+    if args[1] in s['warm']:
+        s['warm'][args[2]] = s['warm'][args[1]]
     save()
 elif command == 'save':
     log('save')
-    print(json.dumps({'name': args[-1], 'id': s['images'][args[-1]]}))
+    print(json.dumps({'name': args[-1], 'id': s['images'][args[-1]], 'warm': s['warm'].get(args[-1]), 'deps': s['deps'].get(args[-1])}))
 elif command == 'load':
     log('load')
     data = json.loads(sys.stdin.read())
     s['images'][data['name']] = data['id']
+    if data.get('warm') and os.path.isdir(data['warm']):
+        dest = os.path.join(STATE, 'warm', hashlib.sha256(data['name'].encode()).hexdigest()[:16])
+        if os.path.exists(dest):
+            shutil.rmtree(dest)
+        shutil.copytree(data['warm'], dest, symlinks=True)
+        # Stand-in Docker has no container rootfs, so /warm/dist/cli.mjs would change path across
+        # host state dirs; keep dist/ pointing at the warmed realpath just as /warm/dist does in Docker.
+        for entry in ('cli.mjs', 'server.mjs'):
+            src = os.path.realpath(os.path.join(data['warm'], 'dist', entry))
+            dst = os.path.join(dest, 'dist', entry)
+            if os.path.isfile(src) and os.path.exists(dst):
+                os.unlink(dst)
+                os.symlink(src, dst)
+        s['warm'][data['name']] = dest
+    if data.get('deps') and os.path.isdir(data['deps']):
+        s['deps'][data['name']] = data['deps']
     save()
 elif command == 'run':
     log('install')
-    sys.stdin.read()
-    s['containers'][args[args.index('--name') + 1]] = {}
+    data = sys.stdin.buffer.read()
+    name = args[args.index('--name') + 1]
+    warm_dir = None
+    if data:
+        try:
+            with tarfile.open(fileobj=io.BytesIO(data), mode='r:*') as tar:
+                names = tar.getnames()
+                if 'bin/built-entry.mjs' in names:
+                    cdir = os.path.join(STATE, 'containers', name)
+                    build = os.path.join(cdir, 'build')
+                    warm_dir = os.path.join(cdir, 'warm')
+                    os.makedirs(build, exist_ok=True)
+                    os.makedirs(os.path.join(warm_dir, 'dist'), exist_ok=True)
+                    os.makedirs(os.path.join(warm_dir, 'compile-cache'), exist_ok=True)
+                    tar.extractall(build)
+                    nm = os.environ.get('GRAPHYARD_STANDIN_NODE_MODULES')
+                    if nm and os.path.isdir(nm):
+                        if not os.path.lexists(os.path.join(build, 'node_modules')):
+                            os.symlink(nm, os.path.join(build, 'node_modules'))
+                        if not os.path.lexists(os.path.join(warm_dir, 'node_modules')):
+                            os.symlink(nm, os.path.join(warm_dir, 'node_modules'))
+                    subprocess.check_call(['node', 'bin/built-entry.mjs'], cwd=build)
+                    for entry in ('cli.mjs', 'server.mjs'):
+                        src = os.path.join(build, 'dist', entry)
+                        if os.path.isfile(src):
+                            dst = os.path.join(warm_dir, 'dist', entry)
+                            shutil.move(src, dst)
+                            os.symlink(dst, src)
+                    m = re.search(r"printf '%s\\\\n' '?([0-9a-f]{40})'? > /warm/commit", ' '.join(args))
+                    if m:
+                        open(os.path.join(warm_dir, 'commit'), 'w').write(m.group(1) + '\\n')
+                    subprocess.check_call(['node', 'bin/graphyard.mjs', '--help'], cwd=build, stdout=subprocess.DEVNULL,
+                                          env={**os.environ, 'NODE_COMPILE_CACHE': os.path.join(warm_dir, 'compile-cache')})
+                    shutil.rmtree(build, ignore_errors=True)
+        except tarfile.TarError:
+            pass
+    s['containers'][name] = {'warm': warm_dir, 'deps': os.environ.get('GRAPHYARD_STANDIN_NODE_MODULES')}
     save()
 elif command == 'commit':
     log('commit')
-    s['images'][args[2]] = 'sha256:' + hashlib.sha256(args[2].encode()).hexdigest()
+    cname, tag = args[-2], args[-1]
+    s['images'][tag] = 'sha256:' + hashlib.sha256(tag.encode()).hexdigest()
+    warm_dir = s['containers'].get(cname, {}).get('warm')
+    if warm_dir and os.path.isdir(warm_dir):
+        dest = os.path.join(STATE, 'warm', hashlib.sha256(tag.encode()).hexdigest()[:16])
+        if os.path.exists(dest):
+            shutil.rmtree(dest)
+        shutil.copytree(warm_dir, dest, symlinks=True)
+        for entry in ('cli.mjs', 'server.mjs'):
+            src = os.path.realpath(os.path.join(warm_dir, 'dist', entry))
+            dst = os.path.join(dest, 'dist', entry)
+            if os.path.isfile(src) and os.path.exists(dst):
+                os.unlink(dst)
+                os.symlink(src, dst)
+        s['warm'][tag] = dest
+    deps_dir = s['containers'].get(cname, {}).get('deps')
+    if deps_dir and os.path.isdir(deps_dir):
+        s['deps'][tag] = deps_dir
     save()
 elif command == 'rm':
     for name in args[1:]:
@@ -110,6 +193,12 @@ elif command == 'create':
         env['HOSTALIASES'] = os.path.join(STATE, 'aliases-' + joined)
         with open(env['HOSTALIASES'], 'w') as aliases:
             aliases.write(''.join(name + ' localhost\\n' for name in s.get('projects', {}).get(joined, {})))
+    image_name = args[at + 2]
+    warm_dir = s['warm'].get(image_name)
+    if warm_dir and os.path.isdir(warm_dir):
+        env['GRAPHYARD_WARM_DIR'] = warm_dir
+        if os.path.isdir(os.path.join(warm_dir, 'compile-cache')) and 'NODE_COMPILE_CACHE' not in env:
+            env['NODE_COMPILE_CACHE'] = os.path.join(warm_dir, 'compile-cache')
     if '--read-only' in args and os.path.exists(os.path.join(STATE, 'read-only-root')):
         # Docker's --read-only, for a host that asks: only the container's tmpfs and bind mounts are writable.
         isolate = ['bwrap', '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc'] + (['--unshare-net'] if isolate else [])
@@ -120,11 +209,16 @@ elif command == 'create':
                 mount = dict(part.split('=', 1) for part in value.split(',') if '=' in part)
                 isolate += ['--ro-bind' if value.endswith(',readonly') else '--bind', mount['src'], mount['dst']]
         isolate += ['--chdir', workdir, '--']
-    s['containers'][args[args.index('--name') + 1]] = {'workdir': workdir, 'env': env, 'image': args[at + 2], 'command': isolate + [args[at + 1]] + args[at + 3:]}
+    s['containers'][args[args.index('--name') + 1]] = {'workdir': workdir, 'env': env, 'image': image_name, 'deps': s['deps'].get(image_name), 'command': isolate + [args[at + 1]] + args[at + 3:]}
     open(os.path.join(STATE, 'creates.jsonl'), 'a').write(json.dumps(sys.argv[1:]) + '\\n')
     save()
 elif command == 'start':
     container = s['containers'][args[-1]]
+    nm = container.get('deps') or os.environ.get('GRAPHYARD_STANDIN_NODE_MODULES')
+    nm_link = os.path.join(container['workdir'], 'node_modules')
+    if nm and os.path.isdir(nm) and os.path.islink(nm_link) and os.readlink(nm_link) == '/deps/node_modules':
+        os.unlink(nm_link)
+        os.symlink(nm, nm_link)
     fcntl.flock(lock, fcntl.LOCK_UN)
     sys.exit(subprocess.call(container['command'], cwd=container['workdir'], env=container['env']))
 `;

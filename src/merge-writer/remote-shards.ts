@@ -4,15 +4,16 @@
 // there through graphyard-host-shim (src/host-shim.ts), whose fixed verbs are all this machine's key
 // may run. A host that drops or turns away a shard has it re-queued on another host: capacity, never a fault.
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { homedir, hostname, tmpdir } from 'node:os';
+import { availableParallelism, homedir, hostname, tmpdir } from 'node:os';
 import type { ChildRun } from '../child-runner.js';
 import { shellQuote } from '../shell-quote.js';
 import { hostShimDigest } from '../host-shim.js';
 import { heavyJobsDirectory, readMachines } from '../master/verification-slots.js';
 import { hostKnownHostsFile, probeHost, readHosts, sshTarget, type HostReading as HostProbe } from '../hosts.js';
+import { trialImage } from './trial-container.js';
 import { trialContainerFault, trialHotCelsius } from './trial-load.js';
 import { stateDirectory } from '../install/layout.js';
 
@@ -231,20 +232,163 @@ export interface RemoteShardEnd { ok: boolean; out: string; status: number | nul
 
 /** The name of this checkout's mirror on a host (~/.graphyard/mirrors/NAME.git): one per checkout this install trials from. */
 export const mirrorName = (root: string) => `${createHash('sha1').update(root).digest('hex').slice(0, 8)}-${basename(root).replace(/[^A-Za-z0-9._-]/g, '-')}`.slice(0, 100);
-/** The warm image for a trial image's digest and a lockfile's hash (`none` without one): dependencies installed once, then reused. */
-export const warmImageTag = (digest: string, lockHash: string) => `graphyard-warm:${digest.replace(/^sha256:/, '').slice(0, 12)}-${lockHash.slice(0, 12)}`;
+/** GY-3627: where the warm image stores its filled Node compile cache, built CLI/server entries and the commit they were built from. */
+export const warmCompileCacheDirectory = '/warm/compile-cache';
+export const warmDistDirectory = '/warm/dist';
+export const warmCommitFile = '/warm/commit';
+
+/** The warm image for a trial image's digest, a lockfile's hash (`none` without one), and the commit it was built from. */
+export const warmImageTag = (digest: string, lockHash: string, commit?: string) =>
+  `graphyard-warm:${digest.replace(/^sha256:/, '').slice(0, 12)}-${lockHash.slice(0, 12)}${commit ? `-${commit.slice(0, 12)}` : ''}`;
+
+/** Parse a `graphyard-warm:` tag into its trial image digest prefix, lockfile hash (or `none`), and commit prefix (if tagged with one). */
+export function parseWarmImageTag(tag: string): { digest: string; lock: string; commit: string | null } | null {
+  const match = /^graphyard-warm:([0-9a-f]{12})-([0-9a-f]{12}|none)(?:-([0-9a-f]{12}))?$/.exec(tag);
+  return match ? { digest: match[1]!, lock: match[2]!, commit: match[3] ?? null } : null;
+}
+
+/** GY-3745: the warm images a running trial on this machine marks as in use (its marker's pid still alive). */
+export async function warmImagesInUse(directory = warmInUseDirectory()): Promise<Set<string>> {
+  const inUse = new Set<string>();
+  for (const name of await readdir(directory).catch(() => [] as string[])) {
+    const [tag, pid] = name.split('.');
+    try { process.kill(Number(pid), 0); inUse.add(`graphyard-warm:${tag}`); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'EPERM') inUse.add(`graphyard-warm:${tag}`); else await rm(join(directory, name), { force: true }); }
+  }
+  return inUse;
+}
+
+/**
+ * GY-3627: after a new warm image is built, keep the two newest of its trial image and lockfile (Docker
+ * lists newest first) and remove the older ones a running trial does not use, never forced.
+ */
+async function pruneWarmImageFamily(tag: string, local: (command: string, args: string[]) => Promise<string>) {
+  const family = tag.slice(0, tag.lastIndexOf('-') + 1), inUse = await warmImagesInUse();
+  const images = (await local('docker', ['images', 'graphyard-warm', '--format', '{{.Repository}}:{{.Tag}}']).catch(() => ''))
+    .split('\n').map(line => line.trim()).filter(image => image.startsWith(family) && image !== tag);
+  for (const image of images.slice(1)) if (!inUse.has(image)) await local('docker', ['image', 'rm', image]).catch(() => {});
+}
+
+const buildingWarmImages = new Map<string, Promise<{ tag: string; built: boolean }>>();
+
+const lockfileHash = async (local: (command: string, args: string[]) => Promise<string>, root: string, commit: string) => {
+  const lock = await local('git', ['-C', root, 'show', `${commit}:package-lock.json`]).catch(() => null);
+  return { lock, hash: lock === null ? 'none' : createHash('sha256').update(lock).digest('hex') };
+};
+
+/**
+ * GY-3627: build the warm image at most once for `(image, lockfile, commit)`, holding `/deps/node_modules`,
+ * that commit's `dist/cli.mjs` and `dist/server.mjs`, and a filled Node compile cache pointed at by
+ * `NODE_COMPILE_CACHE`. Concurrent callers for the same tag share the single build.
+ */
+export async function ensureWarmImage(input: { root: string; commit: string; image: string; run: ChildRun; deadline: number }): Promise<{ tag: string; built: boolean }> {
+  const remaining = () => Math.max(1_000, input.deadline - Date.now());
+  const local = async (command: string, args: string[]) => String(await input.run(command, args, { timeoutMs: remaining() })).trim();
+  const digest = await local('docker', ['image', 'inspect', '--format', '{{.Id}}', input.image]);
+  const { lock, hash } = await lockfileHash(local, input.root, input.commit);
+  const tag = warmImageTag(digest, hash, input.commit);
+  if (await local('docker', ['image', 'inspect', '--format', '{{.Id}}', tag]).then(() => true, () => false)) return { tag, built: false };
+  const active = buildingWarmImages.get(tag);
+  if (active) return active;
+  const build = (async (): Promise<{ tag: string; built: boolean }> => {
+    const hasBuiltEntry = await local('git', ['-C', input.root, 'cat-file', '-e', `${input.commit}:bin/built-entry.mjs`]).then(() => true, () => false);
+    if (lock === null && !hasBuiltEntry) { await local('docker', ['tag', input.image, tag]); return { tag, built: true }; }
+    const name = `graphyard-warm-${randomUUID().slice(0, 8)}`;
+    const script = [
+      'set -e',
+      'mkdir -p /deps /warm/build /warm/dist /warm/compile-cache',
+      'cd /warm/build && tar -xf -',
+      'if [ -f package-lock.json ]; then cp package.json package-lock.json /deps/ && (cd /deps && npm ci --no-audit --no-fund >/dev/null) && ln -s /deps/node_modules /warm/build/node_modules && ln -s /deps/node_modules /warm/node_modules; fi',
+      `if [ -f bin/built-entry.mjs ] && [ -d node_modules ]; then node bin/built-entry.mjs && mv dist/cli.mjs /warm/dist/cli.mjs && mv dist/server.mjs /warm/dist/server.mjs && ln -s /warm/dist/cli.mjs dist/cli.mjs && ln -s /warm/dist/server.mjs dist/server.mjs && printf '%s\\n' ${shellQuote(input.commit)} > /warm/commit && chmod -R a+rX /warm && chmod 777 /warm/compile-cache && python3 -c 'import os, subprocess; (os.setuid(1000) if os.getuid() == 0 else None); subprocess.check_call(["node", "bin/graphyard.mjs", "--help"], stdout=subprocess.DEVNULL, env={**os.environ, "HOME": "/tmp", "NODE_COMPILE_CACHE": "/warm/compile-cache"})'; fi`,
+      'rm -rf /warm/build',
+    ].join(' && ');
+    try {
+      await local('sh', ['-c', `set -o pipefail 2>/dev/null; git -C ${shellQuote(input.root)} archive ${shellQuote(input.commit)} | docker run -i --name ${name} --user 0:0 --entrypoint /bin/sh ${shellQuote(input.image)} -c ${shellQuote(script)}`]);
+      await local('docker', ['commit', '--change', `ENV NODE_COMPILE_CACHE=${warmCompileCacheDirectory}`, name, tag]);
+    } finally { await local('docker', ['rm', '-f', name]).catch(() => {}); }
+    return { tag, built: true };
+  })().then(async result => { await pruneWarmImageFamily(tag, local); return result; });
+  buildingWarmImages.set(tag, build);
+  try { return await build; } finally { buildingWarmImages.delete(tag); }
+}
+
+/**
+ * GY-3627: choose the warm image for a trial of `sha` (on `baseTip`, if given): an exact match for
+ * `baseTip`, else the newest existing warm image for the same trial image digest and lockfile hash
+ * (so a trial whose base is newer than any image reuses the newest one and rebuilds what differs),
+ * else build one once for the base (or `sha` when the candidate changed the lockfile).
+ */
+export async function selectWarmImage(input: { root: string; sha: string; baseTip?: string; image: string; run: ChildRun; deadline: number }): Promise<string> {
+  const remaining = () => Math.max(1_000, input.deadline - Date.now());
+  const local = async (command: string, args: string[]) => String(await input.run(command, args, { timeoutMs: remaining() })).trim();
+  const digest = await local('docker', ['image', 'inspect', '--format', '{{.Id}}', input.image]);
+  const { lock, hash } = await lockfileHash(local, input.root, input.sha);
+  const prefix = warmImageTag(digest, hash);
+  if (input.baseTip) {
+    const exact = warmImageTag(digest, hash, input.baseTip);
+    if (await local('docker', ['image', 'inspect', '--format', '{{.Id}}', exact]).then(() => true, () => false)) return exact;
+  }
+  const existing = (await local('docker', ['images', 'graphyard-warm', '--format', '{{.Repository}}:{{.Tag}}']).catch(() => ''))
+    .split('\n').map(line => line.trim()).filter(tag => tag.startsWith(`${prefix}-`));
+  if (existing.length) {
+    const target = input.baseTip ?? input.sha;
+    for (const tag of existing) {
+      const parsed = parseWarmImageTag(tag);
+      if (parsed?.commit && await local('git', ['-C', input.root, 'merge-base', '--is-ancestor', parsed.commit, target]).then(() => true, () => false)) return tag;
+    }
+    return existing[0]!;
+  }
+  let commit = input.sha;
+  if (input.baseTip) {
+    const baseLock = await lockfileHash(local, input.root, input.baseTip);
+    if (baseLock.lock === lock) commit = input.baseTip;
+  }
+  return (await ensureWarmImage({ root: input.root, commit, image: input.image, run: input.run, deadline: input.deadline })).tag;
+}
+
+/**
+ * GY-3627: build the warm image once for a verified commit and push it to every ready compute host,
+ * so each ready host holds it before any trial places a shard there.
+ */
+export async function warmCommitOnHosts(input: {
+  root: string; commit: string; image?: string; hosts?: readonly string[];
+  read?: (targets: readonly string[], transport: ShardSshSession) => Promise<HostReading[]>;
+  run: ChildRun; deadline?: number;
+}): Promise<{ tag: string; built: boolean; pushed: string[]; failed: { host: string; reason: string }[] }> {
+  const deadline = input.deadline ?? Date.now() + 10 * 60_000;
+  const remaining = () => Math.max(1_000, deadline - Date.now());
+  const built = await ensureWarmImage({ root: input.root, commit: input.commit, image: input.image ?? trialImage(), run: input.run, deadline });
+  const targets = input.hosts ? [...input.hosts] : await shardHosts();
+  if (!targets.length) return { ...built, pushed: [], failed: [] };
+  const transport = shardSshSession(input.run);
+  const pushed: string[] = [], failed: { host: string; reason: string }[] = [];
+  try {
+    const readings = (await (input.read ?? ((named, shared) => readShardHosts(named, input.run, availableParallelism(), shared)))(targets, transport)).slice(1);
+    await Promise.all(readings.filter(reading => !reading.away).map(async reading => {
+      try {
+        await transport.session(reading.name, words => input.run('sh', ['-c', `set -o pipefail 2>/dev/null; docker save ${shellQuote(built.tag)} | ${['ssh', ...words, `receive-image ${built.tag}`].map(shellQuote).join(' ')}`], { timeoutMs: remaining() }));
+        pushed.push(reading.name);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        failed.push({ host: reading.name, reason: message.slice(-300) });
+      }
+    }));
+  } finally { await transport.close(); }
+  return { ...built, pushed, failed };
+}
 
 /** GY-3745: where a running trial marks the warm image it uses (`TAG.PID.ID`, removed when it ends): the leftovers sweep keeps those images while PID lives. */
 export const warmInUseDirectory = (home = homedir()) => join(home, '.graphyard', 'warm-in-use');
 
 /**
  * One trial's remote hosts. The warm image — the trial image with the commit's locked dependencies
- * installed in /deps — is built once on this machine, so hosts never need the network. Each host is
- * made ready once through the shim: `prepare-run` answers what it lacks — the commit, sent as a pack of
- * only what its mirror lacks, or the warm image, sent once per tag — then clones the commit into a run
- * directory. Shards run there through the shim's `run-shard`; `close` cleans every run directory.
+ * in /deps, its built CLI/server entries in /warm/dist and a filled compile cache in /warm/compile-cache —
+ * is built once on this machine, so hosts never need the network. Each host is made ready once through
+ * the shim: `prepare-run` answers what it lacks — the commit, sent as a pack of only what its mirror
+ * lacks, or the warm image, sent once per tag — then clones the commit into a run directory. Shards run
+ * there through the shim's `run-shard`; `close` cleans every run directory.
  */
-export function remoteShardSession(input: { root: string; sha: string; image: string; run: ChildRun; deadline: number; signal?: AbortSignal; transport?: ShardSshSession }) {
+export function remoteShardSession(input: { root: string; sha: string; baseTip?: string; image: string; run: ChildRun; deadline: number; signal?: AbortSignal; transport?: ShardSshSession }) {
   const repo = mirrorName(input.root);
   const remaining = () => Math.max(1_000, input.deadline - Date.now());
   const local = async (command: string, args: string[]) => String(await input.run(command, args, { timeoutMs: remaining() })).trim();
@@ -262,19 +406,7 @@ export function remoteShardSession(input: { root: string; sha: string; image: st
     }
   };
   let warm: Promise<string> | null = null, marker: string | null = null;
-  const warmImage = async () => {
-    const digest = await local('docker', ['image', 'inspect', '--format', '{{.Id}}', input.image]);
-    const lock = await local('git', ['-C', input.root, 'show', `${input.sha}:package-lock.json`]).catch(() => null);
-    const tag = warmImageTag(digest, lock === null ? 'none' : createHash('sha256').update(lock).digest('hex'));
-    if (await local('docker', ['image', 'inspect', '--format', '{{.Id}}', tag]).then(() => true, () => false)) return tag;
-    if (lock === null) { await local('docker', ['tag', input.image, tag]); return tag; }
-    const name = `graphyard-warm-${randomUUID().slice(0, 8)}`, install = 'mkdir -p /deps && cd /deps && tar -xf - && npm ci --no-audit --no-fund >/dev/null';
-    try {
-      await local('sh', ['-c', `set -o pipefail 2>/dev/null; git -C ${shellQuote(input.root)} archive ${input.sha} package.json package-lock.json | docker run -i --name ${name} --user 0:0 --entrypoint /bin/sh ${shellQuote(input.image)} -c ${shellQuote(install)}`]);
-      await local('docker', ['commit', name, tag]);
-    } finally { await local('docker', ['rm', '-f', name]).catch(() => {}); }
-    return tag;
-  };
+  const warmImage = () => selectWarmImage({ root: input.root, sha: input.sha, baseTip: input.baseTip, image: input.image, run: input.run, deadline: input.deadline });
   const prepare = async (target: string) => {
     const image = await (warm ??= warmImage().then(async tag => {
       await mkdir(warmInUseDirectory(), { recursive: true });
