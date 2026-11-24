@@ -34,8 +34,9 @@ before(async () => {
   const created = await fetch(`${url}/api/work`, { method: 'POST', headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
     body: JSON.stringify({ title: 'Watched item', why: 'Many readers watch it.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] }) });
   ({ id, key } = await created.json() as { id: string; key: string });
-  // A long-lived document: production items carry hundreds of kilobytes of evidence and sessions.
-  await store.pool.query(`UPDATE work_items SET document = document || jsonb_build_object('padding', repeat('x', 200000)) WHERE id=$1`, [id]);
+  // A long-lived document carrying evidence: each full history page resolves 300 copies of it in the database.
+  // Kept at 20 kB so the test process's own JSON work never stalls the server it shares an event loop with.
+  await store.pool.query(`UPDATE work_items SET document = document || jsonb_build_object('padding', repeat('x', 20000)) WHERE id=$1`, [id]);
   const template = (await store.pool.query('SELECT document FROM work_items WHERE id=$1', [id])).rows[0].document;
   delete template.padding;
   await store.pool.query(`INSERT INTO work_items(id, document) SELECT g.id, $1::jsonb || jsonb_build_object('id', g.id::text, 'key', 'GY-' || (g.n + 100))
@@ -45,7 +46,8 @@ before(async () => {
   await store.pool.query(`INSERT INTO events(work_id, actor, kind, payload) SELECT $1, 'fixture', (ARRAY['reconciled','session','action.claimed'])[1 + d % 3],
     jsonb_build_object('delta', jsonb_build_object('base', $2::bigint, 'revision', 1, 'ops', jsonb_build_array(jsonb_build_array(jsonb_build_array('title'), 'Watched item ' || d))), 'details', jsonb_build_object('reason', 'step ' || d))
     FROM generate_series(1, ${ITEM_ROWS}) d`, [id, base]);
-  // The rest of the ledger: two million rows across every other item.
+  // The rest of the ledger: two million rows across every other item, in one statement; unlogged, so seeding writes no WAL.
+  await store.pool.query('ALTER TABLE events SET UNLOGGED');
   await store.pool.query(`INSERT INTO events(work_id, actor, kind, payload, created_at)
     SELECT ids[1 + d % array_length(ids, 1)], 'fixture', (ARRAY['heartbeat','github.observed','reconciled'])[1 + d % 3], '{"details":{"n":1}}'::jsonb, now() - interval '30 days' + d * interval '1 millisecond'
     FROM (SELECT array_agg(id) AS ids FROM work_items WHERE id <> $1) i, generate_series(1, ${EVENTS}) d`, [id]);
