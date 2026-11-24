@@ -1,0 +1,16 @@
+{
+  "id": "registry-observe-lock-short",
+  "title": "Recording agent-registry observations never holds the coordination lock over 1 s",
+  "description": "On a running test install seeded with 20 accounts and 50 sessions, POST /api/agent-registry/observe carrying every account's observations completes in under 1 s without holding the coordination lock, and master status names no observe request among coordination-lock holds over 1 s.",
+  "tags": ["database", "status", "locks", "agent-registry"],
+  "target": "any",
+  "required": true,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "observes all 20 accounts under 1 s without holding the coordination lock",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/registry-observe-lock-short.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}
