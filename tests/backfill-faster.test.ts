@@ -202,6 +202,24 @@ test('integration:backfill-faster — on 500,000 stageless delta rows, the backf
     const differing = await plain.query(`SELECT count(*) FROM events WHERE payload ? 'delta' AND payload ? 'stage'
       AND payload->>'stage' IS DISTINCT FROM graphyard_event_work(work_id, payload)->>'stage'`);
     assert.equal(Number(differing.rows[0].count), 0);
+
+    // A slow batch under host load does not collapse batch size below the 250-row floor, while a timeout still backs off.
+    const spikedLimits: number[] = [];
+    let shouldFail = false;
+    const spiked = eventStageBackfill(async limit => {
+      spikedLimits.push(limit);
+      if (shouldFail) throw new Error('statement timeout');
+      return { filled: limit, remaining: 10_000, updateMs: 12_000 };
+    });
+    await spiked(() => {});
+    await spiked(() => {});
+    assert.equal(spikedLimits[0], 50);
+    assert.ok(spikedLimits[1] >= 250, `expected load-spike batch floor >= 250, got ${spikedLimits[1]}`);
+    shouldFail = true;
+    await assert.rejects(() => spiked(() => {}), /statement timeout/);
+    shouldFail = false;
+    await spiked(() => {});
+    assert.ok(spikedLimits[3] < 250, `expected backoff after timeout error, got ${spikedLimits[3]}`);
   } finally {
     Date.now = realNow;
     http.closeAllConnections();
