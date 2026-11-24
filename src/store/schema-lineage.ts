@@ -73,6 +73,8 @@ export const schemaGenerations: readonly (string | null)[] = [
   'sha256:5603670d13084fca2b151de4b97bec3448c744b41853859ccbd62ec47ef7dda5',
   // GY-3757: per-item status reads answer from an index on the work index's item key.
   'sha256:9d89fe4556a2dc117ee1a906ec2946544dcf00871a0e53f28c3850fc15ceb6ac',
+  // GY-3760: the events history page reads its rows by partial indexes on the kinds that are not routine.
+  'sha256:1e9ef1b8da475b417f9997ee1c93ce1a4058463c3c937c4b959c49f180b9ed5c',
 ];
 /** The schema generation the code in this process expects: its table definitions' place in the lineage. */
 export const schemaVersion = schemaGenerations.length - 1;

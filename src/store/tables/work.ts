@@ -59,6 +59,11 @@ CREATE INDEX IF NOT EXISTS events_work_delivery ON events(work_id,seq)
 -- GY-3402: the install-wide records (agent registry, connect requests, team access) are the newest
 -- events of one kind family with no item. A LIKE on kind cannot use a btree under the database's
 -- collation, so each read scanned the whole ledger; this answers them newest-first in one probe.
+-- GY-3760: the events history page leaves the routine kinds (events-history.ts) out; on a ledger of
+-- millions of heartbeats a filter on the primary key read millions of rows to fill one page. These
+-- hold only the rows the page returns, newest first, for the whole ledger and for one item.
+CREATE INDEX IF NOT EXISTS events_history ON events(seq) WHERE NOT (kind = ANY ('{github.observed,heartbeat}'::text[]));
+CREATE INDEX IF NOT EXISTS events_work_history ON events(work_id,seq) WHERE NOT (kind = ANY ('{github.observed,heartbeat}'::text[]));
 CREATE INDEX IF NOT EXISTS events_unowned_family ON events(split_part(kind,'.',1),seq) WHERE work_id IS NULL;
 ${eventWorkFunctions}
 -- Append-only but for the audited compaction of routine rows (store/compaction.ts, GY-979).
