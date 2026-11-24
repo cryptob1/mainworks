@@ -142,6 +142,6 @@ test('e2e:event-stage-stored — after an item changes stage on a running test i
   const status = await masterStatusReport(root, config, masterApi, async (command, args) => isHerdrCommand(command) ? (herdrSubcommand(args)[1] === 'list' ? JSON.stringify({ agents: [] }) : '') : `${'b'.repeat(40)}\n`);
   // Master status reads the newest 50 merged items: the one just merged and 49 seeded ones, every one measured.
   assert.deepEqual(status.deliverySpeed.unmeasured, []);
-  assert.equal(status.deliverySpeed.readyToMerge.samples, 50);
+  assert.equal(status.deliverySpeed.readyToMerge?.samples, 50);
   assert.equal((await masterApi('slowest-query?name=SELECT%20seq%2Cwork_id%2Cactor%2Ckind%2Ccreated_at')).slowest, null);
 });
