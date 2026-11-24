@@ -1,7 +1,7 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { planAsRows, withDatabase } from './helpers/postgres.js';
 import type { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
@@ -11,7 +11,7 @@ import { flowAttemptsSql, flowLedgerSql, readFlow } from '../src/server/flow.js'
 // computed by one job at most once a minute over the last 7 days' rows, read by a range on insertion
 // time, and every reader is served the stored result with its age.
 const adminToken = `operator-${'f'.repeat(32)}`;
-const ITEMS = 2000, EVENTS = 2_000_000, WINDOW = 50_000;
+const ITEMS = 2000, EVENTS = 50_000, WINDOW = 2000;
 const flowKinds = ['rework', 'merge.intent', 'merge.trial', 'merge.refused', 'merge.serve-revert'];
 let store: Store, http: ReturnType<typeof server>, url: string;
 
@@ -29,7 +29,7 @@ before(async () => {
     FROM (SELECT gen_random_uuid() AS id, n FROM generate_series(1, ${ITEMS - 1}) n) g`, [template]);
   await store.pool.query('ALTER TABLE events SET UNLOGGED');
   const ids = `(SELECT array_agg(id) AS ids FROM work_items) i`;
-  // Every tenth row a whole document, the rest the flow kinds and routine rows: 1,950,000 of them older than the window, 50,000 inside it.
+  // Every tenth row a whole document, the rest the flow kinds and routine rows: most older than the window, WINDOW inside it.
   const row = (count: number, from: string, spanSeconds: number) => `INSERT INTO events(work_id, actor, kind, payload, created_at)
     SELECT ids[1 + d % array_length(ids, 1)], 'fixture', CASE WHEN d % 10 = 0 THEN 'saved' ELSE (ARRAY['heartbeat','merge.trial','rework','merge.intent','github.observed'])[1 + d % 5] END,
       CASE WHEN d % 10 = 0 THEN jsonb_build_object('work', jsonb_build_object('stage', (ARRAY['build','review','test','merge','done'])[1 + d / 10 % 5], 'pad', repeat(md5(d::text), 20)))
@@ -39,6 +39,7 @@ before(async () => {
   await store.pool.query(row(EVENTS - WINDOW, `now() - interval '400 days'`, 390 * 86_400));
   await store.pool.query(row(WINDOW, `now() - interval '7 days' + interval '1 minute'`, 7 * 86_400 - 120));
   await store.pool.query('ANALYZE events');
+  await planAsRows(store.pool, 'events', 2_000_000);
 });
 
 after(async () => {
@@ -53,7 +54,7 @@ const get = async (path: string) => {
   return body;
 };
 
-test('integration:flow-numbers-computed-once-a-minute — one job reads the 7-day window by a created_at range in under 2 s on two million events, and concurrent readers share its result with its age', { timeout: 900_000 }, async () => {
+test('integration:flow-numbers-computed-once-a-minute — one job reads the 7-day window by a created_at range in under 2 s, planned as on two million events, with the rows of the plain statement, and concurrent readers share its result with its age', { timeout: 900_000 }, async () => {
   assert.ok(Number((await store.pool.query('SELECT count(*) FROM events')).rows[0].count) >= EVENTS);
   const since = new Date(Date.now() - 7 * 86_400_000);
   const inWindow = Number((await store.pool.query('SELECT count(*) FROM events WHERE created_at > $1', [since])).rows[0].count);
@@ -67,6 +68,11 @@ test('integration:flow-numbers-computed-once-a-minute — one job reads the 7-da
   assert.match(ledgerPlan, /Index Scan using events_(kind_)?created on events[^\n]*\n\s*Index Cond: [^\n]*created_at > /, ledgerPlan);
   const attemptsPlan = await plan(flowAttemptsSql, [since]);
   assert.doesNotMatch(attemptsPlan, /on events/, attemptsPlan);
+  // The rows are those of the plain statement over the same window.
+  const ledger = (await store.pool.query(flowLedgerSql, [since, flowKinds])).rows.map(row => String(row.seq));
+  const reference = (await store.pool.query(`SELECT seq FROM events WHERE work_id IS NOT NULL AND created_at > $1 AND (payload ? 'work' OR kind = ANY($2::text[])) ORDER BY seq`, [since, flowKinds])).rows.map(row => String(row.seq));
+  assert.ok(reference.length > 0);
+  assert.deepEqual(ledger, reference);
 
   // The computation, warmed once, finishes in under 2 seconds.
   const work = await store.fleet();

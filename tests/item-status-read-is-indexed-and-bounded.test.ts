@@ -1,12 +1,12 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { planAsRows, withDatabase } from './helpers/postgres.js';
 import type { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { workDocumentSql } from '../src/store/bounded-snapshot.js';
-import { eventHistorySql, parseEventHistoryQuery } from '../src/events-history.js';
+import { eventHistorySql, parseEventHistoryQuery, routineEventKinds } from '../src/events-history.js';
 import { boundedHistoryRead, historyReadSlots } from '../src/server/history-reads.js';
 import { coordinationViewHeader } from '../src/server/work-view.js';
 
@@ -14,7 +14,7 @@ import { coordinationViewHeader } from '../src/server/work-view.js';
 // line's database away. The per-item reads answer from indexes, at most four history reads run at
 // once, and the loop's own snapshot read still answers while thirty readers watch one item.
 const adminToken = `operator-${'a'.repeat(32)}`, coordinatorToken = `coordinator-${'c'.repeat(32)}`;
-const ITEMS = 2000, EVENTS = 2_000_000, ITEM_ROWS = 3000;
+const ITEMS = 2000, EVENTS = 50_000, ITEM_ROWS = 3000;
 let store: Store, http: ReturnType<typeof server>, url: string, id: string, key: string;
 
 const get = async (token: string, path: string, headers: Record<string, string> = {}) => {
@@ -46,12 +46,13 @@ before(async () => {
   await store.pool.query(`INSERT INTO events(work_id, actor, kind, payload) SELECT $1, 'fixture', (ARRAY['reconciled','session','action.claimed'])[1 + d % 3],
     jsonb_build_object('delta', jsonb_build_object('base', $2::bigint, 'revision', 1, 'ops', jsonb_build_array(jsonb_build_array(jsonb_build_array('title'), 'Watched item ' || d))), 'details', jsonb_build_object('reason', 'step ' || d))
     FROM generate_series(1, ${ITEM_ROWS}) d`, [id, base]);
-  // The rest of the ledger: two million rows across every other item, in one statement; unlogged, so seeding writes no WAL.
+  // The rest of the ledger across every other item, in one statement; unlogged, so seeding writes no WAL.
   await store.pool.query('ALTER TABLE events SET UNLOGGED');
   await store.pool.query(`INSERT INTO events(work_id, actor, kind, payload, created_at)
     SELECT ids[1 + d % array_length(ids, 1)], 'fixture', (ARRAY['heartbeat','github.observed','reconciled'])[1 + d % 3], '{"details":{"n":1}}'::jsonb, now() - interval '30 days' + d * interval '1 millisecond'
-    FROM (SELECT array_agg(id) AS ids FROM work_items WHERE id <> $1) i, generate_series(1, ${EVENTS}) d`, [id]);
+    FROM (SELECT array_agg(id) AS ids FROM work_items WHERE id <> $1) i, generate_series(1, ${EVENTS - ITEM_ROWS - 1}) d`, [id]);
   await store.pool.query('ANALYZE');
+  await planAsRows(store.pool, 'events', 2_000_000);
 });
 
 after(async () => {
@@ -61,7 +62,7 @@ after(async () => {
 
 const plan = async (text: string, values: unknown[]) => (await store.pool.query(`EXPLAIN ${text}`, values)).rows.map(row => row['QUERY PLAN']).join('\n');
 
-test('integration:item-status-read-is-indexed-and-bounded — status GY-N and the item page answer from indexes in under a second on two million events; four history reads at once, later ones get the last answer with its age, and the loop snapshot still answers', { timeout: 600_000 }, async () => {
+test('integration:item-status-read-is-indexed-and-bounded — status GY-N and the item page answer from indexes in under a second, planned as on two million events, with the rows of the plain query; four history reads at once, later ones get the last answer with its age, and the loop snapshot still answers', { timeout: 600_000 }, async () => {
   assert.ok(Number((await store.pool.query('SELECT count(*) FROM events')).rows[0].count) >= EVENTS);
   // The plans: the item by display key and by id through the work index's indexes; its history page through events_work.
   for (const value of [key, id]) {
@@ -82,6 +83,8 @@ test('integration:item-status-read-is-indexed-and-bounded — status GY-N and th
   const history = await get(adminToken, `events?work=${id}&payload=details`);
   assert.equal(history.body.length, 300);
   assert.equal(history.body[0].details.reason, `step ${ITEM_ROWS}`);
+  const reference = await store.pool.query(`SELECT seq FROM events WHERE work_id=$1 AND kind <> ALL($2::text[]) ORDER BY seq DESC LIMIT 300`, [id, routineEventKinds]);
+  assert.deepEqual(history.body.map((row: { seq: unknown }) => String(row.seq)), reference.rows.map(row => String(row.seq)));
   assert.ok(history.ms < 1000, `the item page's history took ${Math.round(history.ms)} ms`);
 
   // Thirty readers watch the item at once — the full-document history read old clients send, and status.

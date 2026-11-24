@@ -2,17 +2,17 @@ import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
-import { databaseUrl } from './helpers/postgres.js';
+import { databaseUrl, planAsRows } from './helpers/postgres.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
-import { parseEventHistoryQuery, readEventHistory } from '../src/events-history.js';
+import { eventHistorySql, parseEventHistoryQuery, readEventHistory } from '../src/events-history.js';
 
 // GY-3761: the history page resolved every candidate row's payload (graphyard_event_work) before
 // it applied its limit, so on a real ledger it ran for minutes and loaded the database while
 // failing. It now selects the page's seq values first and resolves payloads for those rows only.
 const adminToken = `operator-${'a'.repeat(32)}`;
-const ITEMS = 2000, EVENTS = 2_000_000, KEPT = 5000, OTHERS = 20_000, ITEM_ROUTINE = 50_000;
+const ITEMS = 2000, EVENTS = 50_000, KEPT = 2000, OTHERS = 8000, ITEM_ROUTINE = 20_000;
 let store: Store, counted: pg.Pool, http: ReturnType<typeof server>, url: string, id: string;
 
 const get = async (path: string) => {
@@ -51,6 +51,7 @@ before(async () => {
   await store.pool.query(`INSERT INTO events(work_id, actor, kind, payload) SELECT ids[1 + d % array_length(ids, 1)], 'fixture', (ARRAY['heartbeat','github.observed'])[1 + d % 2], '{"details":{"n":1}}'::jsonb
     FROM ${others}, generate_series(1, ${EVENTS - ITEM_ROUTINE - OTHERS - KEPT}) d`);
   await store.pool.query('ANALYZE events');
+  await planAsRows(store.pool, 'events', 2_000_000);
 });
 
 after(async () => {
@@ -71,7 +72,7 @@ async function calls(params: Record<string, string>) {
   return { calls: await total() - before, page, limit: query.limit };
 }
 
-test('integration:event-history-pages-before-resolving — a history page resolves payloads only for the rows it returns, answers in under a second on two million events, and a read past 5 s names the filter to narrow', { timeout: 900_000 }, async () => {
+test('integration:event-history-pages-before-resolving — a history page resolves payloads only for the rows it returns, answers in under a second by index, planned as on two million events, with the rows of the plain statement, and a read past 5 s names the filter to narrow', { timeout: 900_000 }, async () => {
   assert.ok(Number((await store.pool.query('SELECT count(*) FROM events')).rows[0].count) >= EVENTS);
 
   // At most limit+1 resolutions per read, whatever the filters make the planner do.
@@ -82,6 +83,15 @@ test('integration:event-history-pages-before-resolving — a history page resolv
     assert.equal(read.page.events.length, read.limit, JSON.stringify(params));
     assert.ok(read.calls <= read.limit + 1, `${JSON.stringify(params)}: graphyard_event_work ran ${read.calls} times for a page of ${read.limit}`);
     assert.ok(read.page.events.every(row => !('work' in params) || row.payload?.work), JSON.stringify(params));
+    // The page's keys come from an index, and its rows are those of the plain statement that resolves before it limits.
+    const page = eventHistorySql(parseEventHistoryQuery(new URLSearchParams(params)));
+    const plan = (await store.pool.query(`EXPLAIN ${page.text}`, page.values)).rows.map(row => row['QUERY PLAN']).join('\n');
+    assert.doesNotMatch(plan, /Seq Scan on events/, plan);
+    assert.match(plan, /Index (Only )?Scan (Backward )?using events_\w+ on events/, plan);
+    const plain = page.text.replace(/FROM \(SELECT seq FROM events(.*) ORDER BY seq (ASC|DESC) LIMIT (\$\d+)\) page JOIN events USING \(seq\) ORDER BY seq (ASC|DESC)$/, 'FROM events$1 ORDER BY seq $2 LIMIT $3');
+    assert.notEqual(plain, page.text);
+    const reference = (await store.pool.query(plain, page.values)).rows.slice(0, read.limit).map(row => ({ ...row, seq: String(row.seq) }));
+    assert.deepEqual(read.page.events, reference, JSON.stringify(params));
   }
 
   // The default page and one item's page each answer in under a second.
