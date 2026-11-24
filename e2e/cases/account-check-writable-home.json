@@ -1,0 +1,16 @@
+{
+  "id": "account-check-writable-home",
+  "title": "An agy and Pi live account check runs with a writable account home and scratch directory and reports a login verdict",
+  "description": "On a running test install, an agy account with a read-only account home and a colliding fixed /tmp smoke path still gets a writable account home and scratch directory and records a login verdict in master status rather than a check environment fault.",
+  "tags": ["accounts", "quota", "confinement"],
+  "target": "any",
+  "required": true,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "agy account check shows a login verdict in master status on a running test install",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:account-check-writable-home tests/account-check-writable-home.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}
