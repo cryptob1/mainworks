@@ -1,0 +1,15 @@
+{
+  "id": "gate-revert-starts",
+  "title": "A gate revert whose trial cannot start gives its slot back and lands on the next gate run",
+  "description": "Runs the real batch gate over a scratch Git remote with one seeded culprit landing and a host heavy-job budget of one: the revert's first trial takes the slot and never gets past its checkout, so the gate gives the slot back within the start bound and says so in its step text; the next gate run in the same process trials the revert, pushes it onto main and files the re-land (GY-3802).",
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "a stuck revert trial frees its slot and the next gate run reverts the culprit",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:gate-revert-starts tests/gate-revert-starts.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}
