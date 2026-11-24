@@ -259,13 +259,16 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   const linkAttention = linkOff ? [{ subject: 'team access', text: `${publicLinkOffLine}. ${lastPublic(linkOff.lastPublic, now)} ${linkOff.doing}`, next: 'Do what the line names if the loop cannot; it clears once the link is public' }] : [];
   const overloadAttention = overloaded(state?.sessions ?? [], now).map(session => ({ subject: session.name ?? session.unit, text: `Overload: ${overloadAlarm(session, now)}`, next: 'The session is only held to its share, not stopped; see what it runs on the Workers page' }));
   // GY-3757: the slowest database query of the last 10 minutes, by name, when it ran past 3 s.
-  const slowest: SlowQuery | null = unreachable ? null : await Promise.resolve().then(() => masterApi('slowest-query')).then(body => body?.slowest ?? null, () => null);
+  const slowRead: { slowest?: SlowQuery | null; stageBackfill?: { remaining: number; at: string } | null } = unreachable ? {} : await Promise.resolve().then(() => masterApi('slowest-query')).then(body => body ?? {}, () => ({}));
+  const slowest = slowRead.slowest ?? null;
   // GY-3634: the latest trial benchmark beside the median of the previous ten on the same file list, with one attention line on >25% wall regression.
   const bench = benchStatus(readBenchResults(benchResultsPath(root)));
   return {
     // GY-3432: the stall alarm the loop raised, first, until a launch starts or the item is acted on.
     stallAlarm: state?.actions[stallAlarmKey]?.detail ?? null,
     // GY-3593: when the caretaker last ran, and its result line.
+    // GY-3772: the delta rows the stage backfill's last batch left lacking the stage; null before a batch since the control plane started.
+    stageBackfill: slowRead.stageBackfill ?? null,
     caretaker: state?.caretaker ? `Last ran ${formatAge(Date.parse(state.caretaker.at), now)} ago: ${state.caretaker.result}` : 'Not run yet',
     // GY-3095: the pipeline has stopped where a role cannot launch; each line names the role, the refusal, how long it has lasted and the next command.
     // GY-3204: and each application whose versionUrl lags main or fails to answer.

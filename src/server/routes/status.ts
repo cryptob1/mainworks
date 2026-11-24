@@ -40,6 +40,9 @@ import { setting } from '../../setting.js';
 
 
 /** Control-plane status and the work reads every client polls. */
+/** GY-3772: the rows the stage backfill's last batch left, for master status. */
+let stageBackfill: { remaining: number; at: string } | null = null;
+
 export const statusRoutes = defineRoutes('status', [
   { method: 'GET', path: '/api/work-replay', async handle({ services, url, operatorVisible }) {
     const hours = Number(url.searchParams.get('hours') ?? 24);
@@ -59,7 +62,8 @@ export const statusRoutes = defineRoutes('status', [
     return { at: now, work, flow: await readFlow(engine.store.pool, work, now, { deploys, git: read }) };
   }, operatorVisible) },
   // GY-3757: the slowest database query of the last 10 minutes when it ran past 3 s, for master status; `name` keeps the queries whose name starts with it.
-  { method: 'GET', path: '/api/slowest-query', handle: async ({ url }) => ({ slowest: slowestQuery(Date.now(), url.searchParams.get('name') ?? '') }) },
+  // GY-3772: with the delta rows the stage backfill's last batch left lacking the stage, null until a batch runs.
+  { method: 'GET', path: '/api/slowest-query', handle: async ({ url }) => ({ slowest: slowestQuery(Date.now(), url.searchParams.get('name') ?? ''), stageBackfill }) },
   {
     method: 'GET', path: '/api/status',
     async handle({ actor, req, url, services, operatorVisible }) {
@@ -274,7 +278,9 @@ export const statusRoutes = defineRoutes('status', [
     method: 'POST', path: '/api/events/backfill-stage',
     async handle(context) {
       demand(context.actor.role === 'coordinator' || context.actor.role === 'admin', 'The stage backfill is run by the loop (a coordinator identity)', 403);
-      return backfillEventStage(context.services.engine.store.pool, Number((await parseJson(context, undefined, '{}')).limit) || 50);
+      const batch = await backfillEventStage(context.services.engine.store.pool, Number((await parseJson(context, undefined, '{}')).limit) || 50);
+      stageBackfill = { remaining: batch.remaining, at: new Date().toISOString() };
+      return batch;
     },
   },
 ]);
