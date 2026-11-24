@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { boardFromStatus } from '../src/model/board';
+import { VERIFY_TIMEOUT_MS } from '../web/pages/login';
 
 // GY-2011: an item page opens on its plain summary and folds description and criteria under Details.
 
@@ -21,12 +22,14 @@ async function fixture(page: Page) {
 }
 
 test('integration:item-details — an item page opens on its plain summary and folds Details', async ({ page }) => {
+  // GY-3798: a loaded batch-gate host can spend past the 5 s expect default (and near 30 s) on sign-in alone.
+  test.setTimeout(2 * VERIFY_TIMEOUT_MS);
   await page.setViewportSize({ width: 1280, height: 900 });
   await fixture(page);
   await page.goto('/?sign-in#work');
   await page.getByLabel('Access token').fill('browser-fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
-  await expect(page.getByRole('heading', { name: 'Work', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Work', exact: true })).toBeVisible({ timeout: VERIFY_TIMEOUT_MS });
 
   await page.getByRole('link', { name: /Signup API.*GY-10/ }).click();
   const item = page.locator('article.item-page');
