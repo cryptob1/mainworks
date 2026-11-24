@@ -77,6 +77,8 @@ export const schemaGenerations: readonly (string | null)[] = [
   'sha256:1e9ef1b8da475b417f9997ee1c93ce1a4058463c3c937c4b959c49f180b9ed5c',
   // GY-3763: the flow numbers read the window's whole-document rows by an index on insertion time.
   'sha256:f1d3cc7339c568bbaafae395d7797b12269dca54f4857e53044ceb8429aa5169',
+  // GY-3764: the work index carries each item's attempts and when they or its stage last changed, for the flow.
+  'sha256:07eba85cc444266e130cecaea2e8864cd68ce7faa3dffd18a2f62442cfb87adb',
 ];
 /** The schema generation the code in this process expects: its table definitions' place in the lineage. */
 export const schemaVersion = schemaGenerations.length - 1;
