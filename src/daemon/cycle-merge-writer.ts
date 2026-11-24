@@ -55,6 +55,8 @@ export interface MergeWriterReads extends MergePorts {
   parallel?: number;
   /** Host resources; injectable for trial scheduling tests. */
   cores?: number;
+  /** GY-3802: how soon a gate revert's trial must start after taking its slot; absent, serve-revert.ts `revertStartMs`. */
+  revertStartMs?: number;
   memory?: Parameters<typeof trialAffordableFiles>[0];
   /** GY-1902: the item previews' ports (merge-writer/preview.ts `itemPreviewStep`); absent, no item is previewed. */
   itemPreviews?: ItemPreviewPorts;

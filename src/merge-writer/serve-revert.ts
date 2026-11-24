@@ -172,7 +172,7 @@ export interface ServeRevertPorts {
    * case that is failing on the served app, so trialling the revert as the culprit's head would
    * hold every real revert (a case the revert removes reads as missing; one it keeps still fails).
    */
-  trial(revertSha: string, files: readonly string[], item: Pick<Work, 'key' | 'criteria'> & { type?: Work['type'] }): Promise<MergeTrialRun>;
+  trial(revertSha: string, files: readonly string[], item: Pick<Work, 'key' | 'criteria'> & { type?: Work['type'] }, options?: { onStep?: (step: string) => void; signal?: AbortSignal }): Promise<MergeTrialRun>;
   /** The leased push of the revert commit onto the tip it was trialled on. */
   push(revertSha: string, baseTip: string): Promise<'pushed' | 'rejected'>;
   /** Files the re-land item; answers what the control plane filed, or null when this loop cannot file. */
@@ -217,10 +217,32 @@ export const baseStillFails = 'the base tip fails the same checks, so the revert
 const revertTrialItem = (culpritKey: string): Pick<Work, 'key' | 'criteria'> & { type?: Work['type'] } =>
   ({ key: culpritKey, criteria: [] });
 
-/** The revert commit's trial and leased push: pass, a held trial failure, or a retry (a failing base, or a push the base move rejected). */
+/** GY-3802: a revert's trial creates its run this soon after taking its heavy-job slot, or gives the slot back. */
+export const revertStartMs = 60_000;
+
+/**
+ * The revert commit's trial and leased push: pass, a held trial failure, or a retry (a failing base,
+ * a push the base move rejected, or a trial that did not start). GY-3802: the trial's first step
+ * after its heavy-job slot is `checkout`; a trial still there `startMs` later is stopped, its slot
+ * freed, and the retry says so. `onStep` hears every step, the wait for the slot included.
+ */
 export async function trialAndPushRevert(ports: Pick<ServeRevertPorts, 'trial' | 'push'>,
-  input: { revertSha: string; files: readonly string[]; baseTip: string; culpritKey: string; mergeSha: string }): Promise<{ ok: true } | { held: string } | { retry: string }> {
-  const verdict = revertTrialVerdict(await ports.trial(input.revertSha, input.files, revertTrialItem(input.culpritKey)));
+  input: { revertSha: string; files: readonly string[]; baseTip: string; culpritKey: string; mergeSha: string; onStep?: (step: string) => void; startMs?: number }): Promise<{ ok: true } | { held: string } | { retry: string }> {
+  const stop = new AbortController(), startMs = input.startMs ?? revertStartMs;
+  let timer: ReturnType<typeof setTimeout> | undefined, started = false, settled = false;
+  const stuck = new Promise<{ retry: string }>(resolve => stop.signal.addEventListener('abort', () => resolve({
+    retry: `the revert of ${input.culpritKey}'s merge ${input.mergeSha.slice(0, 12)} did not start its trial within ${Math.round(startMs / 1000)} s of taking its heavy-job slot: it was still creating its checkout, so it gave the slot back` })));
+  const onStep = (step: string) => {
+    if (settled) return;
+    input.onStep?.(step);
+    if (started || step.startsWith('waiting')) return;
+    if (step === 'checkout') timer ??= setTimeout(() => stop.abort(), startMs);
+    else { started = true; clearTimeout(timer); }
+  };
+  const trial = ports.trial(input.revertSha, input.files, revertTrialItem(input.culpritKey), { onStep, signal: stop.signal });
+  const run = await Promise.race([trial, stuck]).finally(() => { settled = true; clearTimeout(timer); });
+  if ('retry' in run) { input.onStep?.(`gave its heavy-job slot back: its trial was still creating its checkout after ${Math.round(startMs / 1000)} s`); return run; }
+  const verdict = revertTrialVerdict(run);
   if (verdict && 'retry' in verdict) return { retry: verdict.retry };
   if (verdict) return { held: `the revert of ${input.culpritKey}'s merge ${input.mergeSha.slice(0, 12)} failed its trial: ${verdict.held}` };
   if (await ports.push(input.revertSha, input.baseTip) !== 'pushed') return { retry: `the leased push of the revert of ${input.culpritKey}'s merge was rejected; the base moved` };

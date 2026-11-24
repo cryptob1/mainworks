@@ -200,7 +200,7 @@ export interface GatePorts {
   /** GY-3629: `commit` with `reverted` landings taken back out (without touching any ref), so a re-bisect tests prefixes without earlier culprits; null on conflict. */
   without?(commit: string, reverted: readonly ServeLanding[]): Promise<string | null>;
   /** Reverts the landing (stacked after any `prior` culprits) from main through the serve-revert path (trial, leased push, re-land filed); answers the revert, why it is held, or a retry (main moved under the push, or `baseStillFails` with the reverted tip commit). */
-  revert(landing: ServeLanding & { item: Work }, tip: string, check: string, prior?: readonly (ServeLanding & { item: Work })[]): Promise<{ revertSha: string } | { held: string } | { retry: string; revertSha?: string }>;
+  revert(landing: ServeLanding & { item: Work }, tip: string, check: string, prior?: readonly (ServeLanding & { item: Work })[], onStep?: (step: string) => void): Promise<{ revertSha: string } | { held: string } | { retry: string; revertSha?: string }>;
   /** Files an item owning a failure, once per `key`; answers the item it filed, when it names one. */
   file(input: { title: string; description: string; key: string }): Promise<{ item: string | null } | void>;
   /** GY-3693: when true for `key`, `file` checks existing items (open or done within 24h) and notes instead of re-filing. */
@@ -578,12 +578,14 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
       let settledFlaky = false;
       while (culprit) {
         await step(`reverting ${culprit.item.key} for ${check}`);
-        let reverted = await ports.revert(culprit, tip, check, pendingReverts), fallback: string | undefined;
+        // GY-3802: what the revert's trial is doing or waiting on rides the step text.
+        const reverting = (label: string) => (line: string) => void step(`${label}: ${line}`).catch(() => undefined);
+        let reverted = await ports.revert(culprit, tip, check, pendingReverts, reverting(`reverting ${culprit.item.key} for ${check}`)), fallback: string | undefined;
         if ('held' in reverted && introduced && introduced !== culprit && !pendingReverts.length) {
           fallback = `${reverted.held}; reverted ${introduced.item.key}, which added ${check}, instead`;
           culprit = introduced;
           await step(`reverting ${culprit.item.key}, which added ${check}`);
-          reverted = await ports.revert(culprit, tip, check, pendingReverts);
+          reverted = await ports.revert(culprit, tip, check, pendingReverts, reverting(`reverting ${culprit.item.key}, which added ${check}`));
         }
         if ('held' in reverted) return hold(reverted.held);
         if ('retry' in reverted && reverted.retry === baseStillFails) {
