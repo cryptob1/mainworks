@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { detachedLaunch, processIdentity, readRunMeta, runAlive, runContainment, runEnvironment, runFiles, signalRun, type RunMeta } from '../runner/pi.js';
 import { setTrialAttempts, TrialCancelledError, TrialTimeoutError, TrialRunnerError, type TrialNoVerdict, type TrialStepReport } from './trial.js';
+import { TrialHeatError } from './trial-load.js';
 import { harnessModules } from './trial-container.js';
 import { heldJobEnvironment } from '../master/verification-slots.js';
 import type { MergeTrialRun } from './executor.js';
@@ -30,7 +31,7 @@ export interface TrialRunSpec extends TrialRunRequest { version: 1; root: string
 type TrialRunOutcome = { ok: true; run: MergeTrialRun } | { ok: false; error: SerializedTrialError };
 /** A run's failure as it crosses the process boundary: the error's class, message and fields, with every attempt the run made (GY-1832). */
 export interface SerializedTrialError { name: string; message: string; attempts: TrialNoVerdict[];
-  phase?: TrialPhaseText; durationMs?: number; logTail?: string; status?: number | null; signal?: string | null; files?: string[]; finished?: number; outputTail?: string; mergeSha?: string; reason?: string }
+  phase?: TrialPhaseText; durationMs?: number; logTail?: string; status?: number | null; signal?: string | null; files?: string[]; finished?: number; outputTail?: string; mergeSha?: string; reason?: string; step?: string; seconds?: number }
 type TrialPhaseText = TrialTimeoutError['phase'];
 
 /** A detached trial run, watched from its directory (GY-3159): the same files answer the loop that started it and the loop that adopts it after a restart. */
@@ -81,6 +82,7 @@ export function serializeTrialError(error: unknown, attempts: readonly TrialNoVe
   if (error instanceof TrialTimeoutError) return { ...base, name: 'TrialTimeoutError', phase: error.phase, durationMs: error.durationMs, logTail: error.logTail };
   if (error instanceof TrialRunnerError) return { ...base, name: 'TrialRunnerError', phase: error.phase, status: error.status, signal: error.signal, files: [...error.files], finished: error.finished, outputTail: error.outputTail, mergeSha: error.mergeSha, durationMs: error.durationMs };
   if (error instanceof TrialCancelledError) return { ...base, name: 'TrialCancelledError', reason: error.reason };
+  if (error instanceof TrialHeatError) return { ...base, name: 'TrialHeatError', step: error.step, seconds: error.seconds, files: [...error.files] };
   return base;
 }
 
@@ -90,7 +92,9 @@ function reconstructTrialError(serialized: SerializedTrialError): Error {
     ? new TrialTimeoutError(serialized.phase, serialized.durationMs, serialized.logTail ?? '')
     : serialized.name === 'TrialRunnerError' && serialized.phase !== undefined
       ? new TrialRunnerError(serialized.phase, serialized.status ?? null, serialized.signal ?? null, serialized.files ?? [], serialized.finished ?? 0, serialized.outputTail ?? '', serialized.mergeSha ?? '', serialized.durationMs ?? 0)
-      : serialized.name === 'TrialCancelledError' ? new TrialCancelledError(serialized.reason ?? serialized.message) : new Error(serialized.message);
+      : serialized.name === 'TrialCancelledError' ? new TrialCancelledError(serialized.reason ?? serialized.message)
+      : serialized.name === 'TrialHeatError' && serialized.step !== undefined && typeof serialized.seconds === 'number'
+        ? new TrialHeatError(serialized.step, serialized.seconds, serialized.files ?? []) : new Error(serialized.message);
   setTrialAttempts(error, serialized.attempts ?? []);
   return error;
 }

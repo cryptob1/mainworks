@@ -431,16 +431,19 @@ function queuedProjects(directory: string) {
   return readdirSync(queueDirectory(directory)).sort().flatMap(name => { try { return [readFileSync(join(queueDirectory(directory), name), 'utf8')]; } catch { return []; } });
 }
 /**
- * GY-3487: who the `free` slots go to. Each goes to the oldest waiter whose project holds none, else to
- * the oldest waiter: a project that holds a slot never takes another while a project holding none
- * waits. With one project waiting this is plain arrival order.
+ * GY-3487, GY-3803: who the `free` slots go to. Reserved deploy-path waiters (`0-...`, batch gate
+ * and deploy build) always go ahead of ordinary jobs (`1-...`). Within the same tier, each slot
+ * goes to the oldest waiter whose project holds none, else to the oldest waiter.
  */
 function admitted(waiters: { name: string; project: string }[], holders: string[], free: number) {
   const holding = new Map<string, number>();
   for (const project of holders) holding.set(project, (holding.get(project) ?? 0) + 1);
   const queue = [...waiters], chosen: string[] = [];
   for (let slot = 0; slot < free && queue.length; slot++) {
-    const index = Math.max(0, queue.findIndex(waiter => !holding.get(waiter.project)));
+    const reserved = queue.some(waiter => waiter.name.startsWith('0-'));
+    const eligible = (waiter: { name: string }) => !reserved || waiter.name.startsWith('0-');
+    const fair = queue.findIndex(waiter => eligible(waiter) && !holding.get(waiter.project));
+    const index = fair >= 0 ? fair : Math.max(0, queue.findIndex(eligible));
     const [next] = queue.splice(index, 1);
     chosen.push(next.name);
     holding.set(next.project, (holding.get(next.project) ?? 0) + 1);
@@ -482,7 +485,7 @@ export async function acquireVerificationSlot(options: AcquireOptions): Promise<
       const holders = await running(options.directory), free = limit - holders.length;
       const waiters = free > 0 && ticket ? await liveWaiters(options.directory, !!readHeavyDrain(options.directory)) : [];
       const project = options.project ?? '', holderProjects = holders.map(entry => entry.owner?.project ?? '');
-      if (ticket && !blocked && holderProjects.includes(project)) {
+      if (ticket && !options.reserved && !blocked && holderProjects.includes(project)) {
         const next = queuedProjects(options.directory).find(other => other !== project && !holderProjects.includes(other));
         if (next !== undefined) { blocked = true; options.onWait?.(`mainworks: ${options.label} waiting: ${next} holds none and is next`); }
       }

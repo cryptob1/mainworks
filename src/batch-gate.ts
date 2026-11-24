@@ -40,7 +40,7 @@ import type { Work } from './model.js';
 import { baseStillFails, type ServeLanding } from './merge-writer/serve-revert.js';
 import type { PreviewCaseRun } from './merge-writer/served-previews.js';
 import { onboardingFailure, type OnboardingRun } from './onboarding-time.js';
-import { trialFileTimeoutMs } from './merge-writer/trial-load.js';
+import { TrialHeatError, trialFileTimeoutMs } from './merge-writer/trial-load.js';
 import { stateDirectory } from './install/layout.js';
 
 /** How long one gate may run before it counts as failed (gate timeout). */
@@ -345,10 +345,11 @@ export function runGate(ports: GatePorts, record: GateRecord): Promise<GateOutco
   // batch from main with a fresh run. The run's outcome is the record's last (GY-3141). A loop stop
   // writes nothing, so a restart still adopts the batch as last checkpointed.
   const finishedAt = () => new Date(ports.now()).toISOString();
-  return gateFlight(ports, record).then(
+  let keepInFlight = false;
+  return gateFlight(ports, record, () => { keepInFlight = true; }).then(
     outcome => {
       const cases = gatedCases(record.inFlight);
-      record.inFlight = null;
+      if (!keepInFlight) record.inFlight = null;
       if (outcome.outcome !== 'idle') record.lastOutcome = { tip: outcome.tip, outcome: outcome.outcome, reason: gateOutcomeReason(outcome), finishedAt: finishedAt(), ...(cases ? { cases } : {}) };
       return outcome;
     },
@@ -359,7 +360,7 @@ export function runGate(ports: GatePorts, record: GateRecord): Promise<GateOutco
     });
 }
 
-async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOutcome> {
+async function gateFlight(ports: GatePorts, record: GateRecord, keepInFlight: () => void): Promise<GateOutcome> {
   const verified = record.verified;
   if (!verified) return { outcome: 'idle' };
   // An adopted batch keeps its candidate tip: the main tip is not fetched, so merges that landed
@@ -618,6 +619,15 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
   } catch (error) {
     // GY-3296: a wait for environment capacity or an environment fault blames, fails and reverts nothing: the next cycle gates again.
     if (error instanceof EnvironmentFault) return { outcome: 'retry', tip, reason: error.message };
+    // GY-3803: a heat-slowed run that names its failed test files keeps the batch narrowed to those files for the next cycle.
+    if (error instanceof TrialHeatError && error.files.length) {
+      const rerunChecks = [...new Set(error.files.map(file => `test:${file}`))];
+      record.inFlight = mainKey in finished
+        ? { tip, startedAt: at(), files, checks, results: finished, whole }
+        : { tip, startedAt: at(), files, checks: rerunChecks, results: {}, whole: false };
+      keepInFlight();
+      return { outcome: 'retry', tip, reason: error.message };
+    }
     if (!(error instanceof GateTimeout)) throw error;
     if (!(mainKey in finished)) measure(ports.now() - Date.parse(record.inFlight.startedAt));
     // A timeout blames nobody and never holds: the loop recuts the batch from main's newest tip at once (GY-3444).
