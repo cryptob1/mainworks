@@ -9,7 +9,7 @@ gate, deployment, credential or token was touched, read or changed, and no perso
 ## Result
 
 **The push token is linked to a GitHub CLI OAuth grant for one organization member. It is not
-linked to any Graphyard install, host or merge ledger.** No source review or proof decision was
+linked to any Mainworks install, host or merge ledger.** No source review or proof decision was
 found for `1239175b099c` (candidate `f52351f`) or `e23dda776c12` in any ledger read here. The
 writer and the historical authorization of those heads stay **unresolved**: the install inventory
 read here is incomplete, so not finding a `pushAuth: "gh"` install proves neither an outside
@@ -57,11 +57,11 @@ Later peer reports relayed by the core Master on GY-3505 (also not re-read here)
    not a deploy key, a GitHub App installation token or a fine-grained token.
 
 Nothing else is directly linked. No record read here connects token 6230811737 to a host, a
-Graphyard install, an install ID, a daemon record or a merge-ledger row.
+Mainworks install, an install ID, a daemon record or a merge-ledger row.
 
 ### What the source code says a GitHub CLI token means (verified in this repository)
 
-A Graphyard merge writer pushes with a GitHub CLI token only under `--push-auth gh` (GY-3269,
+A Mainworks merge writer pushes with a GitHub CLI token only under `--push-auth gh` (GY-3269,
 merged `322d249306`, 2026-11-12T22:29:27Z). In that mode the install records `pushAuth: 'gh'`
 (`src/install/index.ts:78`, `:956`), and `gh auth token` supplies the credential at each push.
 The token is never stored (`src/install/index.ts:641-643`). Every other install mode pushes
@@ -70,7 +70,7 @@ grant.
 
 So a GitHub CLI token on Lumina main fits exactly two writers:
 
-- **(a)** a Graphyard install that runs under that member's gh login with `--push-auth gh`; or
+- **(a)** a Mainworks install that runs under that member's gh login with `--push-auth gh`; or
 - **(b)** any `git push` that used that member's gh credential helper outside a merge writer,
   whether by a person or by a session.
 
@@ -80,13 +80,13 @@ The records read here do not tell (a) from (b).
 
 - The grant (2026-11-12T14:14:22Z) is about 7 hours **before** GY-3269 (`--push-auth gh`)
   existed. Its first commit was 21:20Z and it merged at 22:29Z. So the grant was not made by a
-  Graphyard `--push-auth gh` install. It fits a `gh auth login`/refresh against the
+  Mainworks `--push-auth gh` install. It fits a `gh auth login`/refresh against the
   organization's SSO. The token could still have been used by such an install later.
 - The pushes (2026-11-18T02:28:46Z and later) come after both the grant and GY-3269. They also
   come about 3.5 days after the last cycle of the only named candidate install, the
   `rexera-remote` daemon record (2026-11-14T20:29Z, reported by Lumina). That record's last
   cycle cannot explain these pushes unless the install was later restarted.
-- The merge titles (GY-3, GY-5, GY-2 lineage) still fit a second, young Graphyard board
+- The merge titles (GY-3, GY-5, GY-2 lineage) still fit a second, young Mainworks board
   (GY-3471). Timing and titles together are consistent with (a). Nothing excludes (b).
 
 ## Access limits (exact; nothing here is claimed as authorized)
@@ -97,7 +97,7 @@ The records read here do not tell (a) from (b).
 | `which gh` | not installed in the worker environment |
 | `ls -la /home/vish/.config/graphyard/workers /home/vish/.config/graphyard/cryptob1-graphyard` (install records that would show `pushAuth`) | refused by the harness: "Permission to use Bash with command … has been denied" |
 | `ssh -o BatchMode=yes -o ConnectTimeout=6 rexera-remote true`, 2026-11-18T07:29Z | `connect to host rexera-remote port 22: Connection timed out` |
-| `graphyard audit-merge-admission`, 2026-11-18T07:29:59Z | core install: 1672 merges enumerated, 584 audited, **0** occurrences of `lumina`, `1239175`, `f52351f`, `e23dda7` or `6230811737`. Install discovery: "Configured install list unavailable; only the current connection could be discovered." |
+| `mainworks audit-merge-admission`, 2026-11-18T07:29:59Z | core install: 1672 merges enumerated, 584 audited, **0** occurrences of `lumina`, `1239175`, `f52351f`, `e23dda7` or `6230811737`. Install discovery: "Configured install list unavailable; only the current connection could be discovered." |
 | GitHub organization audit log, repository activity log | no access from this identity. Only the peer's bounded query above. |
 
 `HOME` for this worker is `/tmp/home`, so `~/.config/gh` resolves to an empty, absent directory.
@@ -117,8 +117,8 @@ provenance, and neither is used as provenance here.
    signed in can find it. That means this host's `/home/vish/.config/graphyard/` (refused to
    this worker), `rexera-remote` once it is reachable, and any Lumina host. Reading
    `pushAuth` means no token is read.
-2. **That install's own ledger** for the exact heads: `graphyard audit-merge-admission` and
-   `graphyard events` with that install's reader identity, which show whether its merge writer
+2. **That install's own ledger** for the exact heads: `mainworks audit-merge-admission` and
+   `mainworks events` with that install's reader identity, which show whether its merge writer
    recorded review and proof for `f52351f` and `e23dda776c12`. Not finding such an install in a
    bounded inventory (the known Lumina install has no `pushAuth` key, peer-reported) does not
    show the pushes were writer (b) or that no gate decision exists; attribution stays unresolved

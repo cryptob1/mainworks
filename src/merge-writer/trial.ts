@@ -25,12 +25,15 @@ import type { GateCheck } from '../model/delivery-policy.js';
 import { containerTrialE2e, trialContainerBoundary, trialContainerDependencies, trialImage } from './trial-container.js';
 import { cachedPasses, commitDependencies, dependencyKey, recordPasses, testResultKeys, warmDependencies } from './trial-caches.js';
 import { shellQuote } from '../shell-quote.js';
+import { recordTestSelection, selectionCounts } from './test-selection.js';
 import { HostBusyError, HostDroppedError, readShardHosts, shardSshSession, type ShardSshSession, runShardsOnHosts, realFreeCores, recordRemoteShardRun, remoteShardSession, shardHosts, splitLocalOnlyTests, trialImageHasBrowser, underHeatLimit, type HostReading, type PlacedHost } from './remote-shards.js';
 import { repositoryTrialImage, trialDockerfile, TrialRepositoryImageError } from './repository-trial-image.js';
 import { addressPoolsSpent, checkServiceVariables, dockerEnvironment, previewNetworkCount, startCheckServices, tcpAcceptProbe, type CheckServices } from '../compose-preview.js';
 import { diskFloorBytes, gateTrialKey, trialFileTimeoutMs, heatWaitSeconds, TrialHeatError, trialContainerFault, trialLoad, trialShardLanes, trialStartOwner } from './trial-load.js';
 import { nestedSandboxDenied, trialAppArmorFix } from './trial-apparmor.js';
 import { maskSecrets } from '../redaction.js';
+import { setting } from '../setting.js';
+import { stateDirectory } from '../install/layout.js';
 
 /** One git call in the coordinator's object store: the arguments after `git -C <root>`, the child's stdout. */
 export type TrialGit = (args: string[], env?: Record<string, string>) => Promise<string>;
@@ -48,13 +51,13 @@ export const ansiEscape = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
  * The line a trial's log tail puts where it cut a failing group's output (GY-1639): what follows may
  * be the middle of a `failing tests:` summary whose heading was cut, so it reopens summary reading.
  */
-export const trialCutLine = "… (this group's earlier output was cut)";
+const trialCutLine = "… (this group's earlier output was cut)";
 /**
  * The runner's last `failing tests:` summary in one group's output (GY-1645): its heading through
  * the last line of its entries (each `test at` line, its `✖` test and the indented error), or null
  * when the output carries none. ANSI escapes are ignored when reading where it starts and ends.
  */
-export function failingSummary(output: string): string | null {
+function failingSummary(output: string): string | null {
   const lines = output.split('\n'), plain = lines.map(line => line.replace(ansiEscape, ''));
   // Only the runner's own heading, at column zero: a child run's summary a failing test printed is indented under it.
   const start = plain.findLastIndex(line => /^✖ failing tests:\s*$/.test(line));
@@ -145,9 +148,9 @@ export const withheldTrialVariables = ['GH_CONFIG_DIR', 'GH_TOKEN', 'GITHUB_TOKE
 export const credentialTrialVariable = (name: string) =>
   (withheldTrialVariables as readonly string[]).includes(name)
   || /(?:TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE_KEY|API_KEY|ACCESS_KEY|CREDENTIAL)/i.test(name);
-/** The trial child's environment: the isolated test one, with every credential and Graphyard control removed and git's global configuration off. */
+/** The trial child's environment: the isolated test one, with every credential and Mainworks control removed and git's global configuration off. */
 export function trialEnvironment(environment: NodeJS.ProcessEnv = process.env): Record<string, string> {
-  const kept = Object.fromEntries(Object.entries(isolatedTestEnvironment(environment)).filter(([name]) => !/^(GRAPHYARD|HERDR|LC)_/.test(name) && name !== 'LANG' && !credentialTrialVariable(name)));
+  const kept = Object.fromEntries(Object.entries(isolatedTestEnvironment(environment)).filter(([name]) => !/^(GRAPHYARD_|MAINWORKS_|HERDR_|LC_)/.test(name) && name !== 'LANG' && !credentialTrialVariable(name)));
   // Use the running Node installation before host version-manager shims: the trial's empty
   // home intentionally cannot supply the host's mise trust/configuration to those shims.
   // The private image supplies C.UTF-8, not the service manager's host locales.
@@ -179,7 +182,7 @@ export const ghConfigDirectory = (environment: NodeJS.ProcessEnv = process.env) 
   environment.GH_CONFIG_DIR || join(environment.XDG_CONFIG_HOME || join(environment.HOME ?? homedir(), '.config'), 'gh');
 /** GY-2997: what a trial child must not read by its absolute path: the operator config home (coordinator credentials, the deploy key's default place), the operator's gh config directory (the gh login), the deploy key wherever it is configured, and the loop's runtime directory (its session bus and sockets). */
 export const trialHiddenPaths = (credentialFile: string | undefined, environment: NodeJS.ProcessEnv = process.env, uid = process.getuid?.()): string[] =>
-  [...new Set([configHome(environment.GRAPHYARD_CONFIG_HOME), ghConfigDirectory(environment), credentialFile, environment.XDG_RUNTIME_DIR, uid === undefined ? undefined : `/run/user/${uid}`].filter((path): path is string => !!path && isAbsolute(path)))];
+  [...new Set([configHome(setting('CONFIG_HOME', environment)), ghConfigDirectory(environment), credentialFile, environment.XDG_RUNTIME_DIR, uid === undefined ? undefined : `/run/user/${uid}`].filter((path): path is string => !!path && isAbsolute(path)))];
 /**
  * The bubblewrap words every trial child runs under: a read-only host, private devices and
  * scratch, host launch sockets hidden, credential masks, then only the trial's allocated
@@ -245,7 +248,7 @@ export const trialTemporaryRoot = (sessionDirectory: string, roots: readonly str
 export function trialTemporaryRootReport(root: string, { roots = trialTemporaryRoots(), exists = existsSync, volatile = volatileFilesystem,
   size = path => { try { const info = statfsSync(path); return Number(info.blocks) * Number(info.bsize); } catch { return null; } } }: {
   roots?: readonly string[]; exists?: (path: string) => boolean; volatile?: (path: string) => string | null; size?: (path: string) => number | null } = {}) {
-  const floor = diskFloorBytes({ run: (() => { try { return JSON.parse(readFileSync(join(root, '.graphyard', 'master.json'), 'utf8')).run ?? {}; } catch { return {}; } })() });
+  const floor = diskFloorBytes({ run: (() => { try { return JSON.parse(readFileSync(join(stateDirectory(root), 'master.json'), 'utf8')).run ?? {}; } catch { return {}; } })() });
   const chosen = trialTemporaryRoot('the trial session directory', roots, exists, volatile);
   const skipped = roots.filter(path => exists(path) && volatile(path)).map(path => `${path} is a ${volatile(path)}, so trials do not use it`);
   const bytes = exists(chosen) ? size(chosen) : null;
@@ -330,14 +333,14 @@ export async function clearTrialCheckout(directory: string, remove: (path: strin
 }
 /**
  * The name prefix of a trial's temporary directory. It stays this short, as CI's /tmp is
- * (`graphyard-trial-` lengthened master-agent-envs' and master-loop-resilience's launch lines past
+ * (`mainworks-trial-` lengthened master-agent-envs' and master-loop-resilience's launch lines past
  * their bound).
  */
 export const trialTemporaryPrefix = 'gy-t';
 /**
  * The name prefix of the short directory a trial's checkout is made in, beside its temporary one
  * (GY-1565). The managed session directory's path (~/.local/share/graphyard/worktrees/<repo>/
- * graphyard-trial-<key>-<sha>-<id>/checkout, 116 bytes on vishrog) put the launch lines
+ * mainworks-trial-<key>-<sha>-<id>/checkout, 116 bytes on vishrog) put the launch lines
  * master-agent-envs and master-loop-resilience type past `launchCommandLimit`, which CI's
  * 37-byte checkout never reaches: two of GY-1535's ten shadow-only-fails. The session directory
  * still holds the trial's lists and records, and is removed and reclaimed as before.
@@ -354,8 +357,8 @@ export const trialCheckoutPrefix = 'gy-c';
  * by the pass building it, and each pass using it holds `<entry>.use-<id>`. The `keptBuildLimit`
  * most recently used idle trees stay; older ones are taken back.
  */
-export const keptBaseBuildPrefix = 'graphyard-base-build-';
-export const keptBuildPlacePrefix = 'gy-b';
+const keptBaseBuildPrefix = 'mainworks-base-build-';
+const keptBuildPlacePrefix = 'gy-b';
 export const keptBuildLimit = 4;
 /** The kept built tree's entry for commit `sha` under the trial worktree root `base`. */
 export const keptBaseBuild = (base: string, sha: string) => join(base, `${keptBaseBuildPrefix}${sha.toLowerCase()}`);
@@ -447,15 +450,15 @@ export type TrialPhaseDurations = Record<TrialPhase, number>;
 export type TrialNoVerdictOutcome = 'timeout' | 'cancelled' | 'host-failure';
 export interface TrialNoVerdict { outcome: TrialNoVerdictOutcome; phase: TrialPhase; reason: string; phases: TrialPhaseDurations }
 /** The signals that end a runner child as cancelled rather than failed: a stop, an interrupt or a hangup sent from outside the trial. */
-export const trialCancelSignals: readonly string[] = ['SIGTERM', 'SIGINT', 'SIGHUP'];
+const trialCancelSignals: readonly string[] = ['SIGTERM', 'SIGINT', 'SIGHUP'];
 /** GY-3099: a trial the merge writer stopped because a head it carries was refused or replaced; it is never retried and its heads stay queued. */
 export class TrialCancelledError extends Error {
   constructor(readonly reason: string) { super(`The trial was cancelled: ${reason}`); this.name = 'TrialCancelledError'; }
 }
 /** How many times a trial that reached no verdict is tried again before its outcome is final (GY-1832). */
-export const trialRetries = 1;
+const trialRetries = 1;
 /** One runner process of a trial (GY-1548): the files it ran, how it ended, and the failing files its records or log named. */
-export interface TrialGroup { files: string[]; status: number | null; signal: string | null; failed: string[] }
+interface TrialGroup { files: string[]; status: number | null; signal: string | null; failed: string[] }
 /** Whether a verdict's log tail is worth recording: the build did not pass, a test file failed, or the runner did not exit 0. */
 export const trialNeedsLog = (run: Pick<TrialRun, 'build' | 'tests' | 'runnerExit'>) => run.build !== 'pass' || run.tests.failed.length > 0 || (run.runnerExit != null && run.runnerExit !== 0);
 /**
@@ -535,7 +538,7 @@ export function shardTestFiles(files: readonly string[], lanes: number, duration
   return shards.map(shard => shard.files).filter(shard => shard.length);
 }
 /** Where a passing trial saves its per-file durations (GY-3542): beside the install's other local state, never in a checkout. */
-export const refreshedDurationsPath = (root: string, path: string) => join(root, '.graphyard', basename(path));
+export const refreshedDurationsPath = (root: string, path: string) => join(stateDirectory(root), basename(path));
 const durationsIn = (text: string): Record<string, number> => { try { const files = (JSON.parse(text) as { files?: unknown } | null)?.files; return files && typeof files === 'object' ? files as Record<string, number> : {}; } catch { return {}; } };
 /** The timings a trial plans its shards from: the base commit's baseline when selectorApproved is false (GY-3635) or the merge's own baseline in its checkout when approved, under what passing trials on this install measured since; `{}` when neither exists. */
 const checkoutDurations = async (worktree: string, root: string, path?: string, options?: { baseTip?: string; selectorApproved?: boolean; run?: ChildRun }): Promise<Record<string, number>> => {
@@ -570,7 +573,7 @@ export function slowestFile(records: string): { file: string; durationMs: number
  * of every file the trial runs, those that have passed and those that have failed so far, and the
  * file that has run longest so far.
  */
-export interface TrialCounts { passed: number; failed: number; files: number; slowest?: { file: string; durationMs: number } }
+interface TrialCounts { passed: number; failed: number; files: number; slowest?: { file: string; durationMs: number } }
 /** GY-3599: what a trial sends beside its step as each test shard ends: its counts so far, and what it printed so far. */
 export interface TrialStepReport { output?: string; tests?: TrialCounts }
 /** How much of a failing runner child's output its diagnostic record keeps: enough to read the exit, little enough for one daemon action. */
@@ -629,7 +632,7 @@ export class TrialHostFaultError extends Error {
  * GY-3339: a trial step whose nested sandbox AppArmor denied — the trial host's AppArmor, not the
  * head's. Like a fetch fault it reaches no verdict, is not retried, and the loop reports it upstream.
  */
-export const trialSandboxFaultLead = `${trialHostFaultPrefix}: a nested sandbox could not start in the trial container`;
+const trialSandboxFaultLead = `${trialHostFaultPrefix}: a nested sandbox could not start in the trial container`;
 export class TrialSandboxFaultError extends Error {
   constructor(readonly phase: string, readonly line: string) {
     super(`${trialSandboxFaultLead} during the ${phase} step (${line}); this is the trial host's AppArmor, not the head's: ${trialAppArmorFix}`);
@@ -648,13 +651,13 @@ export const trialHostFaultHost = (error: unknown): string | null =>
  */
 export class TrialNetworkPoolError extends Error {
   constructor(readonly networks: number | null) {
-    super(`${trialHostFaultPrefix}: Docker could not create the trial's network (${addressPoolsSpent}); ${networks ?? 'an unknown number of'} Graphyard preview networks are on the trial host`);
+    super(`${trialHostFaultPrefix}: Docker could not create the trial's network (${addressPoolsSpent}); ${networks ?? 'an unknown number of'} Mainworks preview networks are on the trial host`);
     this.name = 'TrialNetworkPoolError';
   }
 }
 /** The preview-network count a network-pool fault names, from the error or the message it crossed a process boundary as; null for any other error. */
 export const trialNetworkPoolFault = (error: unknown): string | null =>
-  new RegExp(`^${trialHostFaultPrefix}: Docker could not create the trial's network .*; (.+) Graphyard preview networks`).exec(error instanceof Error ? error.message : '')?.[1] ?? null;
+  new RegExp(`^${trialHostFaultPrefix}: Docker could not create the trial's network .*; (.+) Mainworks preview networks`).exec(error instanceof Error ? error.message : '')?.[1] ?? null;
 /** `error` as a network-pool fault when Docker refused a network for spent address pools, else null. */
 const networkPoolFault = async (error: unknown, env: Record<string, string>) => (error instanceof Error ? error.message : String(error)).includes(addressPoolsSpent)
   ? new TrialNetworkPoolError((error as { previewNetworks?: number | null }).previewNetworks ?? await previewNetworkCount(dockerEnvironment(env, { DOCKER_HOST: 'unix:///var/run/docker.sock' }))) : null;
@@ -717,7 +720,7 @@ export type RepositoryTrialCheck = { check: string; argv: string[]; paths?: stri
 const touchesPaths = (files: readonly string[], paths: readonly string[]) =>
   files.some(file => paths.some(path => file === path || (path.endsWith('/') && file.startsWith(path))));
 /** `npm run test` → `['npm','run','test']`; empty or whitespace-only commands yield null. */
-export const checkCommandArgv = (command: string): string[] | null => {
+const checkCommandArgv = (command: string): string[] | null => {
   const parts = command.trim().split(/\s+/).filter(Boolean);
   return parts.length ? parts : null;
 };
@@ -795,6 +798,8 @@ export interface RunTrialInput {
   /** GY-3418: keep the dependency image and test-result caches in the repository's git directory (the detached merge trial and batch gate do); absent, a trial caches nothing. */
   caches?: boolean;
   key?: string;
+  /** GY-3750: a rerun of failing files or of proofs on the base tip, which neither narrows its selection nor counts as a trial's. */
+  rerun?: boolean;
   run?: ChildRun;
   /** Add criterion files to a declared selector's output before sharding. */
   selectFiles?: (files: string[], timeoutMs: number) => Promise<string[]>;
@@ -851,10 +856,12 @@ export interface RunTrialInput {
   services?: typeof startCheckServices;
   /** GY-3577: the merge trial's proof count: every test shard, on this machine or a host, runs with `args` before its file list, and its output goes to `output`. */
   reporter?: { args: readonly string[]; output: (out: string) => void };
-  /** GY-3283: run only the declared check of this name, whatever paths it is limited to (a worker's `graphyard check NAME`). */
+  /** GY-3283: run only the declared check of this name, whatever paths it is limited to (a worker's `mainworks check NAME`). */
   only?: string;
-  /** GY-3412: the hosts a selection's shards fan out to — those `graphyard host add` recorded unless a test names others — and how they are read. */
-  remote?: { hosts: readonly string[]; read?: (hosts: readonly string[], transport: ShardSshSession) => Promise<HostReading[]> };
+  /** GY-3412: the hosts a selection's shards fan out to — those `mainworks host add` recorded unless a test names others — and how they are read. */
+  remote?: { hosts: readonly string[]; read?: (hosts: readonly string[], transport: ShardSshSession) => Promise<HostReading[]>; transport?: ShardSshSession };
+  /** GY-3704: a check with services ran on `host`, or fell back from it to this machine for `fallback` (at most 500 characters). */
+  onHostCheck?: (entry: { check: string; host: string; fallback?: string }) => void;
   /** GY-3526: a worker verification's label: it holds a host heavy-job slot under it only while a test shard or check runs on this machine, never while its shards run on other hosts. */
   localSlot?: string;
   /** GY-3634: optional benchmark metrics callback receiving shards per host, host temperatures at start, and per-file durations. */
@@ -936,9 +943,9 @@ const playwrightCounts = /^\s*\d+ (?:passed|failed|flaky|skipped|interrupted|did
  * shutdown warnings, pool-end errors) crowds the log's tail. Only the numbered summary headings
  * name the file; the run's `✘` progress lines carry the title alone.
  */
-export interface PlaywrightFailure { file: string; line: number; title: string; error: string | null }
+interface PlaywrightFailure { file: string; line: number; title: string; error: string | null }
 /** Every failure a Playwright run's output names, in log order, deduplicated by file, line and title. */
-export function playwrightFailures(log: string): PlaywrightFailure[] {
+function playwrightFailures(log: string): PlaywrightFailure[] {
   const lines = log.split('\n').map(line => line.replace(ansiEscape, ''));
   const failures: PlaywrightFailure[] = [];
   for (let at = 0; at < lines.length; at++) {
@@ -967,7 +974,7 @@ export function playwrightFailures(log: string): PlaywrightFailure[] {
  * the files the runner ran, only those count (GY-1645): a name printed inside a test's own output,
  * such as a fixture's `test at example.test.ts:1:1` in an assertion message, is no failing file.
  */
-export function failingFilesInLog(out: string, ran?: readonly string[]): string[] {
+function failingFilesInLog(out: string, ran?: readonly string[]): string[] {
   const files = new Set<string>();
   for (const line of out.split('\n')) {
     if (/not ok|✖|FAIL/.test(line)) for (const file of line.match(testFile) ?? []) files.add(file);
@@ -1028,7 +1035,7 @@ const attemptContext = new WeakMap<object, { phase: TrialPhase; phases: TrialPha
  * host failure, with the phase it was in, the reason and the phases' times. A runner child ended
  * by `trialCancelSignals` is cancelled; every other rejection, whatever its class, is the host's.
  */
-export function trialNoVerdict(error: unknown): TrialNoVerdict {
+function trialNoVerdict(error: unknown): TrialNoVerdict {
   const context = typeof error === 'object' && error ? attemptContext.get(error) : undefined;
   const phases = context?.phases ?? { install: 0, build: 0, selection: 0, tests: 0 }, reason = (error instanceof Error ? error.message : String(error)).slice(0, 900);
   if (error instanceof TrialTimeoutError) return { outcome: 'timeout', phase: error.phase, reason, phases };
@@ -1551,24 +1558,29 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
   // the commit sent as a shard's is, the services started there, the command run on their network. With no host
   // ready, or one that drops the check, null: the check runs on this machine as before, the reason in the log.
   const onHost = async (check: RepositoryTrialCheck): Promise<Ended | null> => {
-    const here = (reason: string) => { log.push(`[remote] check ${check.check} runs on this machine: ${reason}`); return null; };
+    const here = (reason: string, from: readonly string[] = []) => {
+      log.push(`[remote] check ${check.check} runs on this machine: ${reason}`);
+      for (const host of from) input.onHostCheck?.({ check: check.check, host, fallback: reason.slice(0, 500) });
+      return null;
+    };
     const hosts = input.remote?.hosts ?? await shardHosts();
     if (!hosts.length) return here('no compute host is added');
-    const transport = shardSshSession(run);
+    const transport = input.remote?.transport ?? shardSshSession(run);
     const session = remoteShardSession({ root: input.root, sha: input.mergeSha, baseTip: input.baseTip, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport });
     try {
       const readings = (await (input.remote?.read ?? ((named, shared) => readShardHosts(named, run, cpu.cores(), shared)))(hosts, transport)).slice(1);
       const host = readings.filter(reading => underHeatLimit(reading) && reading.compose).sort((a, b) => realFreeCores(b) - realFreeCores(a))[0];
-      if (!host) return here(`no host is ready (${readings.map(reading => `${reading.name}: ${reading.away ? reading.reason ?? 'away' : reading.compose ? 'too hot' : 'no Docker Compose plugin, see graphyard host prepare'}`).join('; ')})`);
+      if (!host) return here(`no host is ready (${readings.map(reading => `${reading.name}: ${reading.away ? reading.reason ?? 'away' : reading.compose ? 'too hot' : 'no Docker Compose plugin, see mainworks host prepare'}`).join('; ')})`, readings.map(reading => reading.name));
       enterStep(`tests: ${check.check} on ${host.name}`);
       const probe = tcpAcceptProbe(check.services!.map(({ service, port }) => ({ host: service, port })), 120_000);
       const ended = await session.check(host.name, { file: check.services![0]!.file, services: check.services!.map(({ service, port }) => ({ service, port })), cpus: Math.max(1, host.cores),
         argv: ['/bin/sh', '-c', `${probe.map(shellQuote).join(' ')} && exec ${check.argv.map(shellQuote).join(' ')}`] });
+      input.onHostCheck?.({ check: check.check, host: host.name });
       for (const { step, ms } of ended.steps) input.onTiming?.(`${step}: ${check.check} on ${host.name}`, ms);
       log.push(`[remote] check ${check.check} ran on ${host.name}: ${ended.steps.map(({ step, ms }) => `${step} ${stepSeconds(ms)}`).join(', ')}`, `$ [${host.name}] ${check.argv.join(' ')}\n${ended.out}`);
       return { ok: ended.status === 0, out: ended.out, status: ended.status, signal: null, cause: undefined };
     } catch (error) {
-      if (error instanceof HostDroppedError) return here(error.message);
+      if (error instanceof HostDroppedError) return here(error.message, [error.host]);
       if ((error as { timedOut?: boolean }).timedOut) throw new TrialTimeoutError('tests', Math.max(0, now() - startedAt), tail());
       throw error;
     } finally { await session.close(); }
@@ -1675,13 +1687,17 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       }
     }
     let selection: Ended;
+    // GY-3750: an item's trial narrows a body-only change to the importers of what it reaches; the batch gate and reruns keep today's selection.
+    const narrow = input.key !== gateTrialKey && !input.rerun;
     try {
-      selection = await child('selection', selector[0]!, [...selector.slice(1), ...input.changedFiles], input.baseTip ? { env: { ...env, GRAPHYARD_SELECTION_BASE: input.baseTip } } : {});
+      selection = await child('selection', selector[0]!, [...selector.slice(1), ...input.changedFiles], input.baseTip ? { env: { ...env, GRAPHYARD_SELECTION_BASE: input.baseTip, ...(narrow ? { GRAPHYARD_SELECTION_IMPORTERS: '1' } : {}) } } : {});
     } finally {
       if (restoreSelector) await restoreSelector().catch(() => {});
     }
     if (hostEnded(selection)) throw runnerFailure('selection', selection);
     if (!selection.ok) return result({ passed: 0, failed: [strategy.command], files: 0 });
+    const counts = narrow ? selectionCounts(selection.out.split('\n')[0] ?? '') : null;
+    if (counts) await recordTestSelection(input.root, counts).catch(() => {});
     const pattern = new RegExp(strategy.pattern);
     let selected = selection.out.split('\n').map(line => line.trim()).filter(line => pattern.test(line));
     // GY-3418: a selected file that passed in an earlier trial with the same content, imports, data
@@ -1730,7 +1746,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     for (const pool of [{ files: split.remoteable, lanes: trialShardLanes(cores) + remoteLanes, local: false }, { files: split.localOnly, lanes: trialShardLanes(cores), local: true }])
       for (const group of input.groupSize === undefined ? shardTestFiles(pool.files, pool.lanes, durations) : groupTestFiles(pool.files, input.groupSize)) { shards.push(group); pinned.push(pool.local); }
     const slots = await import('../master/verification-slots.js');
-    const slotsDirectory = process.env[slots.slotsDirectoryVariable];
+    const slotsDirectory = setting(slots.slotsDirectoryVariable);
     const { lanes, breadth } = trialShardBreadth(cores, shards.length, await trialAffordableFiles(input.memory));
     input.onTiming?.(`tests: ${lanes} lanes, breadth ${breadth}`, 0);
     const settledShards: ({ group: TrialGroup; entries: string[]; unattributed: TrialRunnerError | null; passed: string[]; records: string } | undefined)[] = [];
@@ -1751,7 +1767,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         try {
           if (remote) {
             // GY-3528: a shard placed on a host takes a slot on that host's share, never this machine's; a spent share tries another host until one frees.
-            const held = slotsDirectory ? await slots.takeHostSlot(slotsDirectory, remote, `${slots.testMergeLabel(input.key ?? input.mergeSha.slice(0, 12))} shard ${index + 1}`, process.env[slots.projectVariable]) : null;
+            const held = slotsDirectory ? await slots.takeHostSlot(slotsDirectory, remote, `${slots.testMergeLabel(input.key ?? input.mergeSha.slice(0, 12))} shard ${index + 1}`, setting(slots.projectVariable)) : null;
             if (slotsDirectory && !held) throw new HostBusyError(remote);
             const ended = await session!.run(remote, index, group, (list, records) => [check.argv[0]!, ...argv(list, records)], breadth).finally(() => held?.release());
             entries.push(`$ [${remote}] ${check.argv.join(' ')} (shard ${index + 1})\n${ended.out}`);
@@ -1789,8 +1805,8 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const release = await declareTrialFiles(slotsDirectory, input.key ?? input.mergeSha.slice(0, 12), lanes * breadth);
     try {
       // A lane takes the next shard until none is left or another lane's shard ended the trial; a running shard is always awaited, never orphaned.
-      const budget = slotsDirectory ? slots.heavyJobBudget(slotsDirectory) : null;
-      const hostShare = (host: string) => budget?.hostsBounded ? (budget.machines.find(machine => !machine.local && machine.name === host)?.slots ?? 0) : Infinity;
+      // GY-3706: a host takes as many shards as it has free cores, less two.
+      const hostShare = (host: string) => slotsDirectory ? slots.hostShardRoom(slotsDirectory, host) : Infinity;
       const local: PlacedHost<string> = { name: readings[0]?.name ?? 'local', room: lanes, reading: readings[0] ?? { name: 'local', cores, busy: 0, steal: 0, celsius: null, limit: Infinity, away: false } };
       const placed = [local, ...hosts.map((host, index) => ({ name: host, remote: host, reading: readings[index + 1]!, room: Math.min(Math.floor(realFreeCores(readings[index + 1]!) / breadth), hostShare(host)) }))];
       const placement = await runShardsOnHosts({ count: shards.length, hosts: placed, breadth, pinned, stopped: () => stopped !== null,

@@ -2,9 +2,40 @@ import { readFile } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { defineCommands, workMutation } from './registry.js';
-import { verifyCommand } from './verify.js';
-import { checkCommand } from './check.js';
-import { completeCommand } from './complete.js';
+import { setting } from '../setting.js';
+
+export const verifyHelp = [
+  '  verify GY-N                  Run exactly the unit and integration proofs the item\'s',
+  '                                criteria name on committed HEAD in a private trial, name others as',
+  '                                outstanding, and record the result complete reports.',
+  '                                A passing proof is run again against the base\'s sources',
+  '                                with this change\'s tests; one that still passes there is',
+  '                                reported unexercised and fails verify. A base run not',
+  '                                made is recorded as indeterminate, with its reason',
+  '                                --preserves PROOF  the proof guards behaviour that predates',
+  '                                the change: it is not run against the base (repeatable)',
+];
+
+export const checkHelp = [
+  '  check NAME [GY-N]             Run the declared pre-merge check NAME on committed HEAD on the',
+  '                                host, with its Compose services, as the merge trial runs it;',
+  '                                prints its output and exits 1 when it fails. GY-N defaults to',
+  '                                the item of the assigned graphyard/<key>-<epoch> branch',
+];
+
+export const completeHelp = [
+  '  complete GY-N EPOCH [--head [SHA]]  Submit the commit (the worktree\'s HEAD when no SHA is',
+  '                                given) and end the lease; gates decide completion. The shared',
+  '                                object store already holds it, so nothing is pushed. A submission',
+  '                                the control plane does not answer (its 120 s request bound, a',
+  '                                dropped connection) is resent under one idempotency key for up',
+  '                                to 10 minutes, so a slow plane strands no finished head. Reports',
+  '                                what mainworks verify ran on HEAD and its outcome. Refused while',
+  '                                GitHub requests are paused, it waits for the named reset and',
+  '                                submits again (bounded). Preflight refuses a missing proof id,',
+  '                                a missing feature E2E case, a base conflict, or a failing fast',
+  '                                gate before submitting; the merge trial decides the rest.',
+];
 
 /**
  * Keeps what a blocked attempt had not committed (GY-1008), run from its own worktree: when the
@@ -24,7 +55,7 @@ export function keepBlockedWork(work: { key: string; workspaces?: { epoch: numbe
   const head = () => git('rev-parse', 'HEAD').stdout.trim();
   if (!git('status', '--porcelain').stdout?.trim()) return { state: 'clean' as const, commit: head(), ...described, detail: 'the worktree held no uncommitted change; every commit of the attempt is on its branch' };
   const added = git('add', '-A');
-  const committed = added.status === 0 ? git('-c', 'user.name=Graphyard', '-c', 'user.email=graphyard@localhost', '-c', 'commit.gpgsign=false', 'commit', '--no-verify', '-m', `WIP: ${work.key} attempt ${epoch} blocked`) : added;
+  const committed = added.status === 0 ? git('-c', 'user.name=Mainworks', '-c', 'user.email=graphyard@localhost', '-c', 'commit.gpgsign=false', 'commit', '--no-verify', '-m', `WIP: ${work.key} attempt ${epoch} blocked`) : added;
   if (committed.status === 0) return { state: 'committed' as const, commit: head(), ...described, detail: 'uncommitted changes were committed on the attempt branch, unpushed' };
   const tip = head();
   return { state: 'not-applicable' as const, ...(/^[0-9a-f]{40}$/.test(tip) ? { commit: tip } : {}), ...described,
@@ -45,8 +76,8 @@ export type TestedBinding = { source: string; sha: string; baseSha?: string; pol
  * key@sha@baseSha@policyRevision in GRAPHYARD_PRODUCER_BINDING (src/producer.ts); any other caller
  * tested the commit its checkout holds.
  */
-export function testedBinding(key: string, env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()): TestedBinding | null {
-  const request = /^([^@]+)@([0-9a-f]{40})@([0-9a-f]{40})@(\d+)$/.exec(env.GRAPHYARD_PRODUCER_BINDING ?? '');
+function testedBinding(key: string, env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()): TestedBinding | null {
+  const request = /^([^@]+)@([0-9a-f]{40})@([0-9a-f]{40})@(\d+)$/.exec(setting('PRODUCER_BINDING', env) ?? '');
   if (request && request[1] === key) return { source: `the producer request for ${key}`, sha: request[2], baseSha: request[3], policyRevision: Number(request[4]) };
   const head = spawnSync('git', ['rev-parse', '-q', '--verify', 'HEAD^{commit}'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
   return head.status === 0 && /^[0-9a-f]{40}$/.test(head.stdout.trim()) ? { source: `the checkout HEAD in ${cwd}`, sha: head.stdout.trim() } : null;
@@ -62,7 +93,7 @@ export function testedBinding(key: string, env: NodeJS.ProcessEnv = process.env,
  * A value the file carries is sent as written, and the control plane still refuses evidence for
  * anything but the current candidate.
  */
-export function bindEvidence(input: unknown, work: { key: string; candidate?: { sha?: string | null; baseSha?: string | null } | null; policyRevision?: number }, tested: TestedBinding | null) {
+function bindEvidence(input: unknown, work: { key: string; candidate?: { sha?: string | null; baseSha?: string | null } | null; policyRevision?: number }, tested: TestedBinding | null) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Evidence must be a JSON object');
   const evidence = { ...input as Record<string, unknown> };
   const missing = (name: string) => evidence[name] === undefined || evidence[name] === null || evidence[name] === '';
@@ -140,9 +171,23 @@ export const leaseCommands = defineCommands([
       return context.print(await workMutation(context, work)('defer', { epoch: Number(epoch), notBefore, reason: reason.join(' ') }));
     },
   },
-  verifyCommand,
-  checkCommand,
-  completeCommand,
+  {
+    name: 'verify',
+    scope: 'work',
+    help: verifyHelp,
+    run: async (context, work) => (await import('./verify.js')).verifyCommand.run(context, work),
+  },
+  {
+    name: 'check',
+    help: checkHelp,
+    run: async (context, work) => (await import('./check.js')).checkCommand.run(context, work),
+  },
+  {
+    name: 'complete',
+    scope: 'work',
+    help: completeHelp,
+    run: async (context, work) => (await import('./complete.js')).completeCommand.run(context, work),
+  },
   {
     name: 'evidence',
     scope: 'work',

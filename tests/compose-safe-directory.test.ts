@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { composeBundle, type AdapterContext } from '../src/install/adapters.js';
 
 const serverEnv = (values: { name: string; value: string }[]) => {
-  const ctx = { workdir: '/fixture', installId: 'test', image: 'graphyard:test', port: 4310 } as AdapterContext;
+  const ctx = { workdir: '/fixture', installId: 'test', image: 'mainworks:test', port: 4310 } as AdapterContext;
   return composeBundle(ctx, values as any).find(file => file.path.endsWith('/server.env'))!.content.split('\n');
 };
 

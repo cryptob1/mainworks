@@ -69,6 +69,20 @@ export const schemaGenerations: readonly (string | null)[] = [
   'sha256:547e64f90d1c902e7774b34320e359616bf0e72c91e536b7e2807131c58ad5c3',
   // GY-3671: each person's last look at Home (home_visits).
   'sha256:4e8e9cd523874b3e522c8c2142b9cca07e18b3a6ec672c53c94e8036567ed8e3',
+  // GY-3716: the coordination view keeps every docs sign-off, which stands across heads of its item.
+  'sha256:5603670d13084fca2b151de4b97bec3448c744b41853859ccbd62ec47ef7dda5',
+  // GY-3757: per-item status reads answer from an index on the work index's item key.
+  'sha256:9d89fe4556a2dc117ee1a906ec2946544dcf00871a0e53f28c3850fc15ceb6ac',
+  // GY-3760: the events history page reads its rows by partial indexes on the kinds that are not routine.
+  'sha256:1e9ef1b8da475b417f9997ee1c93ce1a4058463c3c937c4b959c49f180b9ed5c',
+  // GY-3763: the flow numbers read the window's whole-document rows by an index on insertion time.
+  'sha256:f1d3cc7339c568bbaafae395d7797b12269dca54f4857e53044ceb8429aa5169',
+  // GY-3764: the work index carries each item's attempts and when they or its stage last changed, for the flow.
+  'sha256:07eba85cc444266e130cecaea2e8864cd68ce7faa3dffd18a2f62442cfb87adb',
+  // GY-3765: events carry a whole-document row's stage, so the flow reads it without the document.
+  'sha256:1b6fb63b9ac162fd425c426a2fcfae8522e465611dfc30c7eed31866ce85816f',
+  // GY-3768: the events trigger lets the stage backfill add a missing stage to a delta row, found by a partial index.
+  'sha256:cefe302b733ea489e9242037aaf602f43c1389eea075783e9ae3b58adcc85c0b',
 ];
 /** The schema generation the code in this process expects: its table definitions' place in the lineage. */
 export const schemaVersion = schemaGenerations.length - 1;

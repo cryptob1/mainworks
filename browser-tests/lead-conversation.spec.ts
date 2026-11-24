@@ -24,8 +24,8 @@ const crossInstall = 'Cross-install note for the Lead conversation.';
 test('e2e:lead-conversation — the Lead is a conversation of messages and cards you can act on, at 1280 and 390 px, for the operator, a Watch viewer and a Steer maintainer', async ({ browser }) => {
   test.setTimeout(420_000);
   const database = await signInDatabase();
-  const site = await mkdtemp(join(tmpdir(), 'graphyard-lead-conversation-'));
-  await symlink(resolve('.graphyard/browser-dist'), join(site, 'dist'));
+  const site = await mkdtemp(join(tmpdir(), 'mainworks-lead-conversation-'));
+  await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
   const child = fork(resolve('tests/helpers/lead-conversation-server.ts'), [database.url, site], { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
     env: { ...process.env, PATH: `${resolve('fixtures/herdr-terminal-stub')}${delimiter}${process.env.PATH}`, HERDR_STUB_LOG: join(site, 'herdr.log'), HERDR_STUB_STATE: join(site, 'master.daemon.json'), GRAPHYARD_HERDR_CONFIG_HOME: '', GRAPHYARD_HERDR_SESSION: '' } });
   const [{ url, items }] = await once(child, 'message') as [{ url: string; items: { watch: string; fix: string; fixKey: string } }];

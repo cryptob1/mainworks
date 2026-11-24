@@ -225,7 +225,7 @@ exit 0
   await chmod(join(bin, 'docker'), 0o755); await chmod(join(bin, 'df'), 0o755);
   const launch = async (owner: string) => {
     const load = { ...await trialLoad(join(base, 'install'), 'gate'), slots, cap: 1, hotCap: 1, hwmon, floorBytes: 30e9, owner };
-    const [program, ...words] = trialContainerLaunch({ image: 'graphyard-trial:local', mounts: [[base, '/scratch', false]], network: 'none', load });
+    const [program, ...words] = trialContainerLaunch({ image: 'mainworks-trial:local', mounts: [[base, '/scratch', false]], network: 'none', load });
     const child = spawn(program!, [...words, 'sleep', '600'], { cwd: base, env: { PATH: `${bin}:/usr/bin:/bin` }, stdio: ['ignore', 'ignore', 'pipe'] });
     let said = '';
     child.stderr!.on('data', chunk => { said += chunk; });

@@ -5,22 +5,18 @@ import { readFile, realpath, writeFile } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import type { Work } from '../model.js';
-import { controlPlaneRestartWindowMs, restartTolerantApi, setupLine, supervise } from '../session-watch.js';
-import { attributeConflicts, hasConflictMarkers, parseLocalScopeDiff, regenerateManagedBlocks } from '../sync.js';
-import { resolveTimingBaseline, timedTestFile, timingBaselinePath } from '../model/timing-companion.js';
-import { environmentBlocker, environmentFailure } from '../worker-sandbox.js';
-import { resolveWork, type CliContext } from './context.js';
-import { installUnderLease } from './install-under-lease.js';
+import type { CliContext } from './context.js';
 import { defineCommands, workMutation } from './registry.js';
-import { keepBlockedWork } from './lease.js';
-import { agentsRenderers, agentsTemplateSources, localGeneratedManifest, regenerateGenerated } from './workspace-generated.js';
-import { createWorktree, restoreBranchWork } from './workspace-worktree.js';
+import { setting } from '../setting.js';
 
-export { installUnderLease };
+export const installUnderLease: typeof import('./install-under-lease.js').installUnderLease = async (...args) => (await import('./install-under-lease.js')).installUnderLease(...args);
 
 const quietBranch = () => spawnSync('git', ['symbolic-ref', '--short', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).stdout.trim();
 
 export async function syncWork({ api, print }: CliContext, work: any) {
+  const [{ attributeConflicts, hasConflictMarkers, parseLocalScopeDiff, regenerateManagedBlocks }, { resolveTimingBaseline, timedTestFile, timingBaselinePath }, { agentsRenderers, agentsTemplateSources, localGeneratedManifest, regenerateGenerated }] = await Promise.all([
+    import('../sync.js'), import('../model/timing-companion.js'), import('./workspace-generated.js'),
+  ]);
   // The canonical way to take the base branch: a merge keeps the worker's history and makes every
   // resolution visible. Files the repository declares generated are rendered afresh from the
   // merged sources rather than merged by hand; every other conflict is the worker's, reported with
@@ -143,9 +139,10 @@ export const workspaceCommands = defineCommands([
       // A write the worker's sandbox refused is recorded as that, naming the sandbox and the path,
       // so the item never presents as a ready-gate refusal or an unexplained lapse (GY-134).
       try { await syncWork(context, work); } catch (error) {
+        const [{ environmentBlocker, environmentFailure }, { keepBlockedWork }] = await Promise.all([import('../worker-sandbox.js'), import('./lease.js')]);
         const failure = environmentFailure(error); const epoch = [...work.workspaces].reverse().find((w: any) => w.branch === quietBranch())?.epoch ?? work.lease?.epoch;
         if (!failure || epoch === undefined) throw error;
-        const reason = environmentBlocker(`sync ${work.key}`, process.env.GRAPHYARD_HERDR_AGENT_KIND, failure);
+        const reason = environmentBlocker(`sync ${work.key}`, setting('HERDR_AGENT_KIND'), failure);
         const partialWork = keepBlockedWork(work, epoch); await workMutation(context, work)('blocked', { epoch, reason, ...(partialWork ? { partialWork } : {}) });
         throw new Error(`${reason} Recorded as the blocker on ${work.key}.`);
       }
@@ -159,19 +156,22 @@ export const workspaceCommands = defineCommands([
       '                                contaminated branch: a lease push to that one branch,',
       '                                conditional on the tip just fetched; run after reset and sync',
     ],
-    run: restoreBranchWork,
+    run: async (context, work) => (await import('./workspace-worktree.js')).restoreBranchWork(context, work),
   },
   {
     name: 'worktree',
     scope: 'work',
     help: ['  worktree GY-N EPOCH [BASE]    Reserve and create a local isolated worktree; an earlier attempt\'s hold on the branch is preserved and released'],
-    run: createWorktree,
+    run: async (context, work) => (await import('./workspace-worktree.js')).createWorktree(context, work),
   },
   {
     name: 'watch',
     help: ['  watch GY-N EPOCH -- COMMAND   Run a worker, heartbeat, stop on lease loss'],
     // Not work-scoped (GY-1033): the setup line comes from argv before any control-plane call, even the item lookup, once the epoch is checked (GY-1184).
     async run(context) {
+      const [{ controlPlaneRestartWindowMs, restartTolerantApi, setupLine, supervise }, { resolveWork }] = await Promise.all([
+        import('../session-watch.js'), import('./context.js'),
+      ]);
       const { id, args, api, base } = context; const epoch = Number(args[0]); const separator = args.indexOf('--');
       if (!id || !Number.isSafeInteger(epoch) || epoch <= 0 || separator < 0 || !args[separator + 1]) throw new Error('Usage: watch GY-N EPOCH -- command args');
       console.error(setupLine(id, epoch));
@@ -184,8 +184,9 @@ export const workspaceCommands = defineCommands([
       if (!workspace || workspace.host !== hostId || await realpath(process.cwd()) !== await realpath(workspace.path)) throw new Error('Run watch from the assigned workspace on its registered host');
       const workerStatus = await setupApi('status'); if (workerStatus.actor?.role !== 'worker') throw new Error('watch requires a worker credential; never pass operator or producer credentials to implementation processes');
       const watchToken = await context.individualToken();
-      process.env.GRAPHYARD_URL = base; process.env.GRAPHYARD_TOKEN = watchToken;
-      process.env.GRAPHYARD_CLI = await context.activeCliPath(); process.env.GRAPHYARD_HOST_ID = hostId;
+      // Under both names, so a MAINWORKS_* value this shell carried never shadows the worker's own (GY-3573).
+      const own = { URL: base, TOKEN: watchToken, CLI: await context.activeCliPath(), HOST_ID: hostId };
+      for (const [name, value] of Object.entries(own)) process.env[`GRAPHYARD_${name}`] = process.env[`MAINWORKS_${name}`] = value;
       // `complete` ends the lease, so the renewal after a submission is refused by design: say
       // so before the supervisor stops the session, so the stop reads as the end of the attempt
       // rather than as a lost assignment.
@@ -199,7 +200,7 @@ export const workspaceCommands = defineCommands([
       // The agent leads its own process group inside the headless run's own scope (GY-3259), and its output goes to the run log.
       process.exitCode = await supervise(args[separator + 1], args.slice(separator + 2), epoch, renew, {
           detached: true,
-          ...(process.env.GRAPHYARD_RUN_LOG ? { log: process.env.GRAPHYARD_RUN_LOG } : {}),
+          ...(setting('RUN_LOG') ? { log: setting('RUN_LOG') } : {}),
         });
     },
   },

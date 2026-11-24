@@ -63,7 +63,7 @@ export const commands = {
   // GY-860: what this allocation released before it could create its worktree — an earlier
   // attempt's worktree that still held the branch, with the refs and uncommitted diff it carried.
   // The record is the item's preserved-attempt history, kept on the ledger.
-  workspace: z.object({ epoch, host: z.string().trim().min(1).max(200), path: z.string().startsWith('/').max(1000).refine(p => !/[\u0000-\u001f]/.test(p), 'Invalid path').transform(workspacePath), branch: z.string().max(255).refine(validBranch, 'Invalid Graphyard branch name'),
+  workspace: z.object({ epoch, host: z.string().trim().min(1).max(200), path: z.string().startsWith('/').max(1000).refine(p => !/[\u0000-\u001f]/.test(p), 'Invalid path').transform(workspacePath), branch: z.string().max(255).refine(validBranch, 'Invalid Mainworks branch name'),
     preserved: z.object({ path: z.string().min(1).max(1000), head: z.string().regex(/^[0-9a-f]{40}$/i), branchTip: z.string().regex(/^[0-9a-f]{40}$/i), op: z.enum(['rebase', 'merge', 'cherry-pick']).nullable(), refs: z.string().max(20000), diff: z.string().max(100000), at: z.iso.datetime() }).strict().optional() }).strict(),
   // GY-1523: exactly one of `pr` (accepted only where GitHub observed it) or `head` (the control plane's own observation).
   // GY-2968: what complete's automatic rerun set aside when it accepted the head — the failing
@@ -116,7 +116,7 @@ export const commands = {
   // The coordinator — the master loop's operator-agent identity — asking the control plane to merge
   // the base tip it names into a candidate a repaired base failure held (GY-528). The reconciliation
   // job runs it and records it on `baseRefresh`, where the binding carry decides what the head keeps.
-  // No `mergerefused`: GitHub merges on every passing gate (GY-1235) and Graphyard keeps no guarded
+  // No `mergerefused`: GitHub merges on every passing gate (GY-1235) and Mainworks keeps no guarded
   // merge (GY-1236), so nothing reports a merge refusal and none sends a candidate back (GY-1391).
 } as const;
 const executorName = z.string().trim().min(1).max(200).regex(/^[^\u0000-\u001f\u007f]+$/);

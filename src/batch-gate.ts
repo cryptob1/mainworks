@@ -2,7 +2,7 @@
 // before anything serves it. The loop cuts a batch from the main tip whenever merges landed since
 // the last verified commit and no gate is in flight, and gates the tip in the private trial
 // container (never the served instance): the build, the bound E2E cases of every item in the batch,
-// the core cases graphyard.json names in gate.core (Graphyard's: create-work-item and the deploy
+// the core cases graphyard.json names in gate.core (Mainworks's: create-work-item and the deploy
 // smoke, the `smoke` case: the built candidate serves and answers healthy), and the tests the
 // affected selection picks for the changed files — the whole E2E catalog in place of the subset
 // only when its measured gate-run time fits half the 45-minute limit (GY-3144). A passing gate records the tip as
@@ -39,7 +39,9 @@ import { formatAge } from './model/duration.js';
 import type { Work } from './model.js';
 import { baseStillFails, type ServeLanding } from './merge-writer/serve-revert.js';
 import type { PreviewCaseRun } from './merge-writer/served-previews.js';
+import { onboardingFailure, type OnboardingRun } from './onboarding-time.js';
 import { trialFileTimeoutMs } from './merge-writer/trial-load.js';
+import { stateDirectory } from './install/layout.js';
 
 /** How long one gate may run before it counts as failed (gate timeout). */
 export const gateLimitMs = 45 * 60_000;
@@ -64,14 +66,16 @@ export const diagnosticsIntervalMs = 24 * 60 * 60_000;
 /** The gate runs the whole catalog only when its measured time fits this share of the limit. */
 export const catalogBudgetMs = gateLimitMs / 2;
 /** The whole-catalog gate runs the measure reads: the last few, within a week (older ones age out so the catalog is tried again). */
-export const gateRunsWindow = 5, gateRunsMaxAgeMs = 7 * 24 * 60 * 60_000;
+const gateRunsWindow = 5;
+export const gateRunsMaxAgeMs = 7 * 24 * 60 * 60_000;
 /** The merges the revert rate reads, and the rate above which the master is woken. */
-export const revertRateWindow = 20, revertRateLimit = 1 / 5;
+const revertRateWindow = 20;
+const revertRateLimit = 1 / 5;
 
 /** One merge the gate judged: its landing commit, its item, and whether the gate reverted it. */
-export interface GateMerge { sha: string; item: string; reverted: boolean }
+interface GateMerge { sha: string; item: string; reverted: boolean }
 /** What the last settled gate run came to (GY-3141): why the verified commit has not moved, at a glance. */
-export interface GateLastOutcome {
+interface GateLastOutcome {
   /** The tip the run gated; null when the run failed before it cut a batch. */
   tip: string | null;
   outcome: 'verified' | 'reverted' | 'timeout' | 'retry' | 'held' | 'error';
@@ -102,7 +106,7 @@ export interface GateRecord {
   /** The current batch's recuts after a revert and its timeouts; cleared when a gate passes. */
   attempt: { recuts: number; timeouts: number };
   /**
-   * GY-3199: the commit last published at `refs/graphyard/verified` on Graphyard's own repository,
+   * GY-3199: the commit last published at `refs/graphyard/verified` on Mainworks's own repository,
    * which every install's deploy watch reads. Optional only for records an older loop wrote; the
    * gate publishes each newly verified commit, and a loop that adopted a record whose publication
    * never landed catches it up.
@@ -137,6 +141,8 @@ export interface GateRecord {
   diagnosticFailures?: Record<string, DiagnosticFailure>;
   /** Each preview case's last daily run and verdict, by case (GY-3193). Optional only for records an older loop wrote. */
   previewCases?: Record<string, PreviewCaseRun>;
+  /** GY-3747: the last daily onboarding run: minutes from connect to first merge in a scratch install. */
+  onboarding?: OnboardingRun;
   /**
    * The items the gate filed, per filing key — the case binding a later run reuses instead of
    * filing again (GY-3147). Optional only for records an older loop wrote.
@@ -149,7 +155,7 @@ export interface GateRecord {
   at: string;
 }
 
-export const gateRecordPath = (root: string) => join(root, '.graphyard', 'main-gate.json');
+export const gateRecordPath = (root: string) => join(stateDirectory(root), 'main-gate.json');
 export function readGateRecord(file: string): GateRecord | null {
   if (!existsSync(file)) return null;
   try { return JSON.parse(readFileSync(file, 'utf8')) as GateRecord; } catch { return null; }
@@ -199,9 +205,9 @@ export interface GatePorts {
   /** GY-3431: the key of the open "Flaky check on main" item for `check`, or null when none is open. */
   flaky?(check: string): string | null;
   /**
-   * GY-3199: publishes `commit` at `refs/graphyard/verified` on Graphyard's own repository through
+   * GY-3199: publishes `commit` at `refs/graphyard/verified` on Mainworks's own repository through
    * the merge writer's deploy key, where every install's deploy watch reads it. Absent on an
-   * install that does not gate Graphyard itself; a publish that fails never undoes the
+   * install that does not gate Mainworks itself; a publish that fails never undoes the
    * verification — it is one gate note, caught up on a later cycle.
    */
   publish?(commit: string): Promise<void>;
@@ -213,7 +219,7 @@ export interface GatePorts {
 }
 
 /** How many filing notes the record keeps. */
-export const filingNotesWindow = 5;
+const filingNotesWindow = 5;
 
 /** Whether a filing was refused because its key was filed before with different wording (GY-3147). */
 const reusedFilingKey = (error: unknown) => /Idempotency key reused with different input/.test(error instanceof Error ? error.message : String(error));
@@ -600,23 +606,27 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
 }
 
 /** One diagnostic failure as the record keeps it (GY-3264). */
-export interface DiagnosticFailure { commit: string; detail: string | null; at: string }
+interface DiagnosticFailure { commit: string; detail: string | null; at: string }
 
 /**
  * The diagnostics' run: the full suite and the whole catalog on the commit, their failures, the
  * catalog's duration, the preview cases' runs and, per failing check, the trial's failing-step text
  * and the last lines of its output (GY-3265), which only the filing carries.
  */
-export type DiagnosePort = (commit: string) => Promise<{ failed: string[]; catalogMs: number; previewCases?: PreviewCaseRun[]; details?: Record<string, string>; outputs?: Record<string, string[]> }>;
+export type DiagnosePort = (commit: string) => Promise<{ failed: string[]; catalogMs: number; previewCases?: PreviewCaseRun[]; onboarding?: OnboardingRun; details?: Record<string, string>; outputs?: Record<string, string[]> }>;
+
+const onboardingCheck = 'onboarding:first-merge';
 
 /** The scheduled diagnostics, when due: each failure files an item; nothing here touches the gate. */
 export async function runDiagnostics(ports: Pick<GatePorts, 'now' | 'file'> & { diagnose: DiagnosePort }, record: GateRecord): Promise<string[] | null> {
   const verified = record.verified;
   if (!verified || (record.diagnosticsAt && ports.now() - Date.parse(record.diagnosticsAt) < diagnosticsIntervalMs)) return null;
-  const { failed: checks, catalogMs, previewCases = [], details = {}, outputs = {} } = await ports.diagnose(verified);
+  const { failed: checks, catalogMs, previewCases = [], onboarding, details: found = {}, outputs = {} } = await ports.diagnose(verified);
   const at = new Date(ports.now()).toISOString();
+  // GY-3747: an onboarding run over 15 minutes or needing a hand fix reaches an owner like any failing check.
+  const slowOnboarding = onboarding && onboardingFailure(onboarding), details = slowOnboarding ? { ...found, [onboardingCheck]: slowOnboarding } : found;
   // A preview case that failed or was not covered reaches an owner like any failing check.
-  const failed = [...new Set([...checks, ...previewCases.filter(run => run.verdict !== 'passed').map(run => `e2e:${run.case}`)])];
+  const failed = [...new Set([...checks, ...previewCases.filter(run => run.verdict !== 'passed').map(run => `e2e:${run.case}`), ...(slowOnboarding ? [onboardingCheck] : [])])];
   // GY-3264: each failure's commit and failing step are recorded before filing, so a check filed
   // before — whose item is reused, never re-filed — still has its newest detail readable in status.
   record.diagnosticFailures = Object.fromEntries(failed.map(check => [check, { commit: verified, detail: details[check]?.slice(0, 1000) ?? null, at }]));
@@ -628,6 +638,7 @@ export async function runDiagnostics(ports: Pick<GatePorts, 'now' | 'file'> & { 
   record.catalogMs = catalogMs;
   record.diagnosticsAt = at;
   if (previewCases.length) record.previewCases = Object.fromEntries(previewCases.map(run => [run.case, run]));
+  if (onboarding) record.onboarding = onboarding;
   return failed;
 }
 
@@ -652,6 +663,8 @@ export function gateSummary(record: GateRecord | null) {
     held: record.held, revertRate: `${rate.reverted}/${rate.merges}`, diagnosticsAt: record.diagnosticsAt, catalogMs: measuredCatalogMs(record, Date.now()),
     // GY-3193: each preview case's last daily run and verdict; `not covered` when it did not run.
     previewCases: Object.values(record.previewCases ?? {}).map(run => ({ ...run, commit: run.commit.slice(0, 12) })),
+    // GY-3747: the last daily onboarding run: minutes from connect to first merge, its result and date.
+    onboarding: record.onboarding ? { minutes: record.onboarding.minutes, result: record.onboarding.result, at: record.onboarding.at, commit: record.onboarding.commit.slice(0, 12), handFixes: record.onboarding.handFixes } : null,
     // GY-3264: the latest diagnostic failures with the exact commit, failing step and the item that owns each.
     diagnosticFailures: Object.entries(record.diagnosticFailures ?? {}).map(([check, failure]) => ({ check, ...failure, item: record.filed?.[`diagnostic:${check}`]?.item ?? null })),
     // GY-3147: the filing failures that never aborted a run, newest last.

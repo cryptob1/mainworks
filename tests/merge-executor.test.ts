@@ -207,7 +207,7 @@ function recordingRun(answers: (command: string, args: string[], options?: { env
 }
 const childFailure = (status: number, stdout: string, stderr: string) => Object.assign(new Error(`exit ${status}`), { status, stdout, stderr });
 
-test('unit:executor-push-leased-deploy-key-only — the push is `git push origin --force-with-lease=refs/heads/BASE:<baseTip> <mergeSha>:refs/heads/BASE` with GIT_SSH_COMMAND naming the deploy key alone (IdentitiesOnly, accept-new) and an allowlisted child environment: no token, askpass, cloud secret, agent socket or Graphyard variable reaches it; only git\'s stale-lease wording (`stale info`) answers rejected, a remote\'s own rejection (a branch rule, a hook) and any other failure throw', async () => {
+test('unit:executor-push-leased-deploy-key-only — the push is `git push origin --force-with-lease=refs/heads/BASE:<baseTip> <mergeSha>:refs/heads/BASE` with GIT_SSH_COMMAND naming the deploy key alone (IdentitiesOnly, accept-new) and an allowlisted child environment: no token, askpass, cloud secret, agent socket or Mainworks variable reaches it; only git\'s stale-lease wording (`stale info`) answers rejected, a remote\'s own rejection (a branch rule, a hook) and any other failure throw', async () => {
   const mergeSha = sha('merge1');
   const environment = { PATH: '/usr/bin', HOME: '/home/loop', LANG: 'C.UTF-8', GH_TOKEN: 'gh', GITHUB_TOKEN: 'ghs', GH_ENTERPRISE_TOKEN: 'ghe', GIT_ASKPASS: '/usr/bin/leak-askpass', AWS_SECRET_ACCESS_KEY: 'aws', NPM_TOKEN: 'npm', SSH_AUTH_SOCK: '/run/agent.sock', GIT_SSH_COMMAND: 'ssh -i /home/loop/.ssh/id_ed25519', GRAPHYARD_TOKEN_FILE: '/outside/token', GRAPHYARD_COORDINATOR_URL: 'https://x', HERDR_ENV: '1', GH_CONFIG_DIR: '/home/loop/.config/gh' };
   const env = pushEnvironment('/keys/deploy', environment);
@@ -304,7 +304,7 @@ test('unit:base-failure-reason-carries-crash-detail — a trial whose base run e
   const head = sha('head-crash'), baseTip = sha('base-crash');
   const file = 'tests/registry.test.ts', caseTitle = 'integration:registry-model — the control plane stores runtimes with launch contracts';
   const crashLine = 'Process 672520 (postgres) of user 1000 dumped core.';
-  const assertion = 'Error: listen EINVAL: invalid argument /var/tmp/gy-t/graphyard-keyring-probe-backoff-x/graphyard-secrets-bus';
+  const assertion = 'Error: listen EINVAL: invalid argument /var/tmp/gy-t/mainworks-keyring-probe-backoff-x/graphyard-secrets-bus';
   const refused = (error: string) => `TAP version 13\n# Subtest: ${file}\n    not ok 1 - ${caseTitle}\n      ---\n      failureType: \'testCodeFailure\'\n      error: \'${error}\'\n      ...\n    1..1\nnot ok 2 - ${file}\n  ---\n  error: \'1 test failed\'\n  ...\n1..2\n`;
   const first: MergeTrialRun = { build: 'pass', tests: { passed: 0, failed: [file], files: 1 }, durationMs: 1, logTail: '', files: [file], proofs: {} };
   const runs: string[] = [];
@@ -463,7 +463,7 @@ test('integration:executor-trial-failure-rework-no-approver — a rework the pla
   waiting.mergeWriter.reworks = [{ key: 'GY-1', id: 'w1', head: sha('head1'), reason: `${trialFailurePrefix}: tests tests/item.test.ts`, refusedAt: iso(start), attempts: 0, lastError: null }];
   const waited = await runCycle(config, waiting, effectsFor({ work: () => [submitted(1, 30)], now, mergeWriter: fakePorts().ports }), now);
   assert.equal(waiting.mergeWriter.reworks[0]?.lastError, 'this loop runs without the master identity');
-  assert.ok(waited.actions.some(action => action.state === 'failed' && /graphyard master rework GY-1 REASON/.test(action.detail)), JSON.stringify(waited.actions.map(action => action.detail)));
+  assert.ok(waited.actions.some(action => action.state === 'failed' && /mainworks master rework GY-1 REASON/.test(action.detail)), JSON.stringify(waited.actions.map(action => action.detail)));
 });
 
 test('unit:merge-writer-status — master status and the daemon summary show mergeWriter.queue (oldest first), inFlight, lastMergeAt and refusals; the loop\'s own effects wire the reads with the merge-record post under one key per step; docs/delivery-redesign.md Merge writer states the sequence and the reconcile rule within 80 net words', async () => {
@@ -599,7 +599,7 @@ test('integration:control-plane-merge-end-to-end — a worker commit under a lea
   assert.equal(pushes.length, 1);
   assert.deepEqual(pushes[0]!.args.slice(2), ['push', 'origin', `--force-with-lease=refs/heads/main:${baseTip}`, `${mergeSha}:refs/heads/main`]);
   assert.equal(pushes[0]!.env?.GIT_SSH_COMMAND, deployKeySshCommand(join(fixtureRoot, 'deploy-key')));
-  assert.equal(pushes[0]!.env?.GRAPHYARD_TEST_PORT, undefined, 'no Graphyard variable reaches the push child');
+  assert.equal(pushes[0]!.env?.GRAPHYARD_TEST_PORT, undefined, 'no Mainworks variable reaches the push child');
   assert.equal(trials.length, 1);
   assert.deepEqual([trials[0]!.mergeSha, trials[0]!.changedFiles, trials[0]!.proofs, trials[0]!.proofFiles], [mergeSha, ['src/app.ts'], ['unit:app-works'], ['tests/app.test.ts']], 'the trial runs on the exact merge commit with the file carrying the item\'s proof');
   const trialRow = (await store.pool.query("SELECT payload FROM events WHERE work_id=$1 AND kind='merge.trial'", [w.id])).rows[0].payload;

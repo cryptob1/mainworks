@@ -47,7 +47,7 @@ export function launchedSessionHandle(kind: 'review' | 'proof', request: Dispatc
  * that runs them. It is pure over the snapshot: the caller writes each closure back through the
  * coordinator mutation, so one sweep answers a status reader and this loop alike.
  */
-export type ClosureCause = 'vanished' | 'ended' | 'superseded' | 'duplicate';
+type ClosureCause = 'vanished' | 'ended' | 'superseded' | 'duplicate';
 export interface SessionClosure { workId: string; key: string; id: string; kind: SessionKind; role: string; runtime: string; host: string; subject: string; cause: ClosureCause; outcome: string;
   /** The session report entry that closed it, when the runtime's observation did rather than the item. */
   report?: SessionReportEntry }
@@ -185,4 +185,29 @@ export async function sweepRegistrySessions(hostId: string, cursor: DispatchCurs
     catch (error) { tick.closeFailures.push({ work: orphan.work ?? '', id: orphan.id, reason: bounded(error instanceof Error ? error.message : String(error), closureFailureReasonLimit) }); }
   }
   cursor.registryMisses = misses;
+}
+
+/**
+ * GY-3748: release review sessions that were not live 2 minutes after launch — end their registry
+ * session and record the release on the item's session handle (item history) before the same tick relaunches.
+ */
+export async function releaseNotLiveReviews(
+  notLive: readonly { key: string; sha: string; requestId?: string; id: string; agentName: string; account?: string; session?: string; resolution: string }[] | undefined,
+  work: readonly Work[], hostId: string, effects: Pick<DispatchEffects, 'endRegistrySession' | 'recordSession'>,
+) {
+  for (const entry of notLive ?? []) {
+    if (entry.session && effects.endRegistrySession) {
+      await effects.endRegistrySession({ id: entry.session, role: 'reviewer', work: entry.key, pane: null, agentName: entry.agentName }, entry.resolution).catch(() => {});
+    }
+    const item = work.find(candidate => candidate.key === entry.key);
+    if (item && effects.recordSession) {
+      const existing = (item.sessions ?? []).find(handle => handle.id === (entry.requestId ?? `review:${entry.sha}`) && handle.kind === 'review');
+      await effects.recordSession(item, {
+        id: existing?.id ?? entry.requestId ?? `review:${entry.sha}`, kind: 'review', role: 'review', head: entry.sha,
+        runtime: existing?.runtime ?? 'claude', host: existing?.host ?? hostId,
+        subject: existing?.subject ?? `${item.key}: review ${entry.sha.slice(0, 12)}`,
+        state: 'finished', outcome: entry.resolution.slice(0, 500),
+      }).catch(() => {});
+    }
+  }
 }

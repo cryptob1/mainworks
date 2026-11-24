@@ -3,12 +3,11 @@ import { basename, dirname, resolve } from 'node:path';
 import { z } from 'zod';
 import { readEnvironmentLog, type EnvironmentLog } from '../master/environments.js';
 import { type MasterConfig } from '../master/profiles.js';
-import { reviewVerdictReminderMs } from '../reviewer.js';
 import { requestAttemptLimit } from '../producer.js';
 /** Keep status summaries readable; persisted strings have no length cap. */
 export const launchWaitLimit = 50;
 export const cursorTextLimit = 500, capacityReasonLimit = 1000, dispatchFailureReasonLimit = 300, closureFailureReasonLimit = 300;
-export const ellipsis = '…';
+const ellipsis = '…';
 /** Never cuts a surrogate pair in half (GY-3424): a lone surrogate is invalid jsonb and fails the cursor's save. */
 export const bounded = (text: string, limit: number) => text.length > limit ? `${text.slice(0, Math.max(0, limit - ellipsis.length)).replace(/[\ud800-\udbff]$/, '')}${ellipsis}` : text;
 /** The latest closure failures shown in status. */
@@ -18,7 +17,7 @@ export interface DispatchLaunch { kind: 'review' | 'producer'; work: string; req
 export interface DispatchWait { kind: 'review' | 'producer'; work: string; requestId: string; sha: string; reason: string; group?: string; requestedAt?: string; answeredAt?: string }
 /** The highest refusal count a stored failure may carry: the ceiling the probes are clamped to and the schema enforces, kept one constant so they cannot drift apart. */
 export const dispatchAttemptCeiling = 1000;
-export const dispatchFailureSchema = z.object({
+const dispatchFailureSchema = z.object({
   kind: z.enum(['review', 'producer']), work: z.string().min(1), sha: z.string().min(1),
   attempts: z.number().int().min(1).max(dispatchAttemptCeiling), reason: z.string(), at: z.string(), nextAt: z.string(),
 }).strict();
@@ -28,14 +27,14 @@ export type DispatchFailure = z.infer<typeof dispatchFailureSchema>;
  * request ended without answering it. Kept until the request resolves, and raised as one attention
  * item naming the request and every attempt.
  */
-export const abandonedRequestSchema = z.object({
+const abandonedRequestSchema = z.object({
   kind: z.enum(['review', 'producer']), work: z.string().min(1), sha: z.string().min(1), at: z.string(),
   reason: z.string(), attempts: z.array(z.string()).max(30),
   /** Producer only (GY-496): the proof group and proofs the request stood for, which the attention and the rework name. */
   group: z.string().min(1).optional(), proofs: z.array(z.string().min(1)).max(50).optional(),
 }).strict();
 const capacityHoldSchema = z.object({ at: z.string(), recheckAt: z.string(), reason: z.string() }).strict();
-export const profileBackoffSchema = z.object({ role: z.enum(['reviewer', 'producer']), profile: z.string().min(1), path: z.string(), cause: z.string(),
+const profileBackoffSchema = z.object({ role: z.enum(['reviewer', 'producer']), profile: z.string().min(1), path: z.string(), cause: z.string(),
   failures: z.number().int().min(1).max(dispatchAttemptCeiling), at: z.string(), until: z.string().nullable() }).strict();
 /** GY-3235: how many launches in a row must fail the same sandbox probe before a profile is skipped, and for how long. */
 export const probeBackoffFailures = 2, probeBackoffMs = 30 * 60_000;
@@ -47,7 +46,7 @@ export const backedOffProfiles = (cursor: Pick<DispatchCursor, 'profileBackoff'>
  * and the request and item it was composed for, so `master status` attributes the failure to a
  * request rather than to the dispatcher as a whole.
  */
-export const tickFailureSchema = z.object({ at: z.string(), reason: z.string(),
+const tickFailureSchema = z.object({ at: z.string(), reason: z.string(),
   field: z.string().optional(), kind: z.enum(['review', 'producer']).optional(), request: z.string().optional(), work: z.string().optional() }).strict();
 export const dispatchCursorSchema = z.object({
   version: z.literal(1), url: z.string(), repository: z.string(),
@@ -116,13 +115,7 @@ export type DispatchCursor = z.infer<typeof dispatchCursorSchema>;
  * The failure limit also bounds how many sessions one request gets in all, however each ended (GY-193).
  */
 export const dispatchRetryMinMs = 30_000, dispatchRetryMaxMs = 600_000, dispatchFailureLimit = requestAttemptLimit;
-/**
- * GY-193. A reviewer that judged the head but did not post is reminded once to post (reviewer.ts
- * reconcileReviews) and relaunched when no verdict follows within this bound. A session that settled
- * on a verdict the control plane has not read yet is given this long before the request, still
- * standing, is attempted again: a second verdict on the same request is otherwise withheld with the first.
- */
-export const reviewerReminderBoundMs = reviewVerdictReminderMs, verdictIngestGraceMs = 5 * 60_000;
+export const verdictIngestGraceMs = 5 * 60_000;
 /** How often the dispatcher wakes one item's observation for an answered review request (GY-1429). */
 export const observationWakeIntervalMs = 60_000;
 /** How long a role with no account left is not launched before its accounts are read again. */
@@ -132,7 +125,7 @@ export const capacityRecheckMs = 60_000;
  * interval later, never faster than the first step and never slower than the interval. The read
  * itself is bounded so a hung request cannot hold the loop past the dispatch bound.
  */
-export const dispatchReadTimeoutMs = 8_000, tickRetryMinMs = 1_000;
+export const dispatchReadTimeoutMs = 8_000;
 
 export function emptyDispatchCursor(config: MasterConfig): DispatchCursor {
   return dispatchCursorSchema.parse({ version: 1, url: config.url, repository: config.repository });
@@ -143,23 +136,23 @@ export function dispatchCursorPath(config: MasterConfig) {
   return resolve(dirname(file), `${basename(file).replace(/\.token$/, '')}.dispatch.json`);
 }
 /** A schema path for a failed dispatch persistence operation. */
-export const cursorPath = (path: readonly PropertyKey[]) => path.reduce<string>((text, segment) => typeof segment === 'number' ? `${text}[${segment}]` : text ? `${text}.${String(segment)}` : String(segment), '');
+const cursorPath = (path: readonly PropertyKey[]) => path.reduce<string>((text, segment) => typeof segment === 'number' ? `${text}[${segment}]` : text ? `${text}.${String(segment)}` : String(segment), '');
 export async function readDispatchCursor(root: string, config: MasterConfig): Promise<DispatchCursor> {
   const client = await loopStateClient(config);
   await migrateLoopFile(client, 'dispatch', dispatchCursorPath(config), value => {
     const { botReviewers: _retired, ...stored } = value as Record<string, unknown>;
     const cursor = dispatchCursorSchema.parse(stored);
-    if (cursor.url !== config.url || cursor.repository.toLowerCase() !== config.repository.toLowerCase()) throw new Error('Master dispatch cursor belongs to another Graphyard server or repository');
+    if (cursor.url !== config.url || cursor.repository.toLowerCase() !== config.repository.toLowerCase()) throw new Error('Master dispatch cursor belongs to another Mainworks server or repository');
     return [cursor];
   });
   const stored = (await client.read('dispatch'))[0];
   const cursor = stored ? dispatchCursorSchema.parse(stored) : emptyDispatchCursor(config);
-  if (cursor.url !== config.url || cursor.repository.toLowerCase() !== config.repository.toLowerCase()) throw new Error('Master dispatch cursor belongs to another Graphyard server or repository');
+  if (cursor.url !== config.url || cursor.repository.toLowerCase() !== config.repository.toLowerCase()) throw new Error('Master dispatch cursor belongs to another Mainworks server or repository');
   const log: EnvironmentLog = await readEnvironmentLog(config);
   return Object.keys(log.environments).length || log.skipped.length ? { ...cursor, accounts: { environments: log.environments, skipped: log.skipped } } : cursor;
 }
 /** GY-3424: the launch failures a save keeps per item, newest first; a relaunch churn otherwise leaves thousands on one item. */
-export const dispatchFailuresPerItem = 20;
+const dispatchFailuresPerItem = 20;
 const latestFailuresPerItem = (failures: DispatchCursor['failures']) => {
   const kept: DispatchCursor['failures'] = {}, counts = new Map<string, number>();
   for (const [id, failure] of Object.entries(failures).sort(([, a], [, b]) => b.at.localeCompare(a.at))) {

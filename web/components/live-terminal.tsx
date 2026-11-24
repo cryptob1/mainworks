@@ -9,8 +9,10 @@ export interface TerminalHandle {
   /** Upload files (an image to attach) and paste their saved path into the pane, waiting out a
    *  (re)connect; resolves false when this session cannot type into the pane. */
   attach(files: File[]): Promise<boolean>;
+  /** Focus the terminal when writable and nothing else holds focus (e.g. after unhiding the Live session tab). */
+  focus(): void;
 }
-const noHandle: TerminalHandle = { typeLine: () => false, attach: async () => false };
+const noHandle: TerminalHandle = { typeLine: () => false, attach: async () => false, focus: () => {} };
 
 // xterm.js loads from the CDN at a pinned exact version, checked by its hash, only on a page that
 // shows a terminal: never an npm dependency of the dashboard bundle.
@@ -189,6 +191,7 @@ export default function LiveTerminal({ token, label, onSession, handle }: { toke
           if (viewOnly || gone) return Promise.resolve(false);
           return new Promise(done => { held.push({ files, done }); });
         },
+        focus: () => { if (writable && (!document.activeElement || document.activeElement === document.body)) terminal.focus(); },
       };
       handle?.(handleRef.current);
       const readClipboard = async () => {

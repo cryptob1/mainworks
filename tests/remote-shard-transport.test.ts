@@ -12,7 +12,7 @@ import { commitFile, dockerCalls, dockerCount, dockerCreates, git, shardHosts, s
 // warm image — the trial image with the locked dependencies installed, built once on this machine —
 // is loaded there once per tag; the shard runs through the trial launcher there; output and records come back.
 
-const image = 'graphyard-trial:remote-fixture', digest = `sha256:${'ab12'.repeat(16)}`;
+const image = 'mainworks-trial:remote-fixture', digest = `sha256:${'ab12'.repeat(16)}`;
 const files = Array.from({ length: 4 }, (_, index) => `tests/file-${index}.test.ts`);
 const box = 'gy-compute@box:2222';
 const argv = (list: string, records: string) => ['node', 'scripts/tests.mjs', '--files-from', list, '--durations', records];

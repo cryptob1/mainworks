@@ -1,14 +1,17 @@
 import { execFileSync } from 'node:child_process';
 import { controlPlaneWeight } from '../session-share.js';
+import { imageLock, withHostLock } from '../host-lock.js';
 import { fingerprint, Vault } from './secrets.js';
 import { SERVER_CONTAINER_UID, shellQuote, type Transport } from './transport.js';
 import { SERVER_PORT, type EnvValue, type PlanAction, type PreflightItem, type Provider } from './types.js';
 import { checkoutRelease, publishedImages } from '../release.js';
 import { localAdapter } from './local.js';
 import { provisionTrialAppArmor, provisionTrialImage, trialAppArmorPlan, trialImagePlan } from './trial-image.js';
+import { setting } from '../setting.js';
+import { timedPull } from './image-pulls.js';
 
 /** GY-3438: Docker's cpu_shares for the server and database: CPUWeight 1000 (controlPlaneWeight) under cgroup v2 (weight = 1 + (shares - 2) * 9999 / 262142), above every trial container's default. */
-export const composeCpuShares = Math.ceil((controlPlaneWeight - 1) * 262142 / 9999) + 2;
+const composeCpuShares = Math.ceil((controlPlaneWeight - 1) * 262142 / 9999) + 2;
 
 export interface AdapterContext {
   provider: Provider;
@@ -95,11 +98,11 @@ export async function tool(ctx: AdapterContext, transport: Transport, program: s
 export interface BundleFile { path: string; content: string; mode: number; /** The `UID:GID` the transport gives the file, so the container user can read it. */ owner?: string }
 
 /** The GitHub private key is multi-line, and an env file cannot carry it: these move it into a mounted file. */
-export const PRIVATE_KEY_FILE_VARIABLE = 'GITHUB_PRIVATE_KEY_FILE';
-export const PRIVATE_KEY_CONTAINER_PATH = '/run/graphyard/github-private-key.pem';
+const PRIVATE_KEY_FILE_VARIABLE = 'GITHUB_PRIVATE_KEY_FILE';
+const PRIVATE_KEY_CONTAINER_PATH = '/run/graphyard/github-private-key.pem';
 const PRIVATE_KEY_BUNDLE_NAME = 'github-private-key.pem';
 /** The main guard's revert approver App key (GY-1352), mounted the same way as the control-plane App's. */
-export const REVERT_APPROVER_KEY_CONTAINER_PATH = '/run/graphyard/revert-approver-private-key.pem';
+const REVERT_APPROVER_KEY_CONTAINER_PATH = '/run/graphyard/revert-approver-private-key.pem';
 const mountedKeys = [
   { variable: 'GITHUB_PRIVATE_KEY', file: PRIVATE_KEY_FILE_VARIABLE, bundle: PRIVATE_KEY_BUNDLE_NAME, container: PRIVATE_KEY_CONTAINER_PATH },
   { variable: 'GRAPHYARD_REVERT_APPROVER_PRIVATE_KEY', file: 'GRAPHYARD_REVERT_APPROVER_PRIVATE_KEY_FILE', bundle: 'revert-approver-private-key.pem', container: REVERT_APPROVER_KEY_CONTAINER_PATH },
@@ -177,7 +180,7 @@ volumes:
 /**
  * Docker names a container's endpoint that outlived the container: a reinstall after the
  * containers and data volume were removed failed with `endpoint with name
- * graphyard-…-db-1 already exists in network graphyard-…_default` (GY-1840). Only an
+ * mainworks-…-db-1 already exists in network mainworks-…_default` (GY-1840). Only an
  * endpoint in this project's own network is read, so another project's state is never touched.
  */
 export function staleComposeEndpoints(message: string, project: string) {
@@ -203,7 +206,7 @@ async function composeUp(ctx: AdapterContext, transport: Transport, pull: boolea
   }
 }
 
-export async function composeRunning(transport: Transport, ctx: AdapterContext) {
+async function composeRunning(transport: Transport, ctx: AdapterContext) {
   const result = await transport.exec('docker', ['compose', '--project-directory', ctx.workdir, '-f', `${ctx.workdir}/compose.yaml`, 'ps', '--format', 'json'], { allowFailure: true, timeout: 120_000 });
   if (result.code !== 0) return { database: false, app: false };
   const rows = result.stdout.split('\n').map(line => line.trim()).filter(Boolean).flatMap(line => { try { const parsed = JSON.parse(line); return Array.isArray(parsed) ? parsed : [parsed]; } catch { return []; } });
@@ -217,7 +220,7 @@ export async function readRemote(transport: Transport, path: string) {
 }
 
 /** Observed env values map through the same marker, so drift compares without reading secrets. */
-export function markersFromEnvFile(content: string) {
+function markersFromEnvFile(content: string) {
   const markers: Record<string, string> = {};
   for (const line of content.split('\n')) {
     const index = line.indexOf('=');
@@ -231,7 +234,7 @@ export function markersFromEnvFile(content: string) {
 function composeActions(ctx: AdapterContext, observation: AdapterObservation): PlanAction[] {
   return [
     { id: 'provider.provision.database', target: 'provider', title: 'Start Postgres 17 with a durable volume on this machine', state: observation.database ? 'satisfied' : 'create', command: `docker compose --project-directory ${ctx.workdir} up -d db` },
-    { id: 'provider.provision.app', target: 'provider', title: `Start the Graphyard application container (${ctx.image}) on this machine${ctx.repoCheckout ? `, with ${ctx.repoCheckout} mounted at /repo` : ''}`, state: observation.app ? 'satisfied' : 'create', command: `docker compose --project-directory ${ctx.workdir} up -d server` },
+    { id: 'provider.provision.app', target: 'provider', title: `Start the Mainworks application container (${ctx.image}) on this machine${ctx.repoCheckout ? `, with ${ctx.repoCheckout} mounted at /repo` : ''}`, state: observation.app ? 'satisfied' : 'create', command: `docker compose --project-directory ${ctx.workdir} up -d server` },
   ];
 }
 
@@ -243,7 +246,7 @@ function composeActions(ctx: AdapterContext, observation: AdapterObservation): P
 export const PORT_CANDIDATES = 20;
 
 /** Whether 127.0.0.1:PORT can be bound on the transport's machine: a listener opened and closed again. */
-export async function loopbackPortFree(transport: Transport, port: number) {
+async function loopbackPortFree(transport: Transport, port: number) {
   const probe = `require('net').createServer().once('error',()=>process.exit(1)).listen(${port},'127.0.0.1',function(){this.close()})`;
   return (await transport.exec(process.execPath, ['-e', probe], { allowFailure: true, timeout: 30_000 })).code === 0;
 }
@@ -259,7 +262,7 @@ export const publishedPort = (bundle: string | null) => {
  * server. A taken port the operator did not choose moves to the first free one from SERVER_PORT
  * upward (PORT_CANDIDATES tried); ctx.port then carries it to the bundle, the URL and the record.
  */
-export async function composePort(ctx: AdapterContext): Promise<PreflightItem> {
+async function composePort(ctx: AdapterContext): Promise<PreflightItem> {
   const name = 'Server port';
   // The bundle a previous apply wrote is this install's state too: a run whose record predates the
   // port keeps the one its server already publishes.
@@ -278,7 +281,7 @@ export async function composePort(ctx: AdapterContext): Promise<PreflightItem> {
 }
 
 /** True when a checkout's tracked or unignored files differ from its HEAD. */
-export function sourceTreeDirty(root: string, run: (command: string, args: string[]) => string = (command, args) => execFileSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10_000 })): boolean {
+function sourceTreeDirty(root: string, run: (command: string, args: string[]) => string = (command, args) => execFileSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10_000 })): boolean {
   try { return run('git', ['-C', root, 'status', '--porcelain', '--untracked-files=normal']).trim() !== ''; }
   catch { return true; }
 }
@@ -286,14 +289,14 @@ export function sourceTreeDirty(root: string, run: (command: string, args: strin
 /**
  * The stamp a locally built image carries: the source checkout's release and commit. Without it
  * the Dockerfile's `0.0.0-dev`/`unknown` defaults win and /healthz reports `unreleased unknown`,
- * as the upgrade gate's compose install did after `graphyard upgrade` rebuilt its image (GY-1977).
+ * as the upgrade gate's compose install did after `mainworks upgrade` rebuilt its image (GY-1977).
  * A checkout with changes HEAD does not hold gets no stamp: its bytes are not HEAD's release.
  */
-export function imageBuildArgs(sourceRoot: string, dirty = sourceTreeDirty) {
+function imageBuildArgs(sourceRoot: string, dirty = sourceTreeDirty) {
   // A deploy that names both stamp values vouches the commit it moved onto (GY-2167): they are the
   // build args verbatim, so the tree's untracked files or a failed git read under load cannot
   // leave the image unstamped and /healthz reporting `unreleased unknown` instead of the commit.
-  const named = process.env.GRAPHYARD_VERSION?.trim(), revision = process.env.GRAPHYARD_BUILD_REVISION?.trim();
+  const named = setting('VERSION')?.trim(), revision = setting('BUILD_REVISION')?.trim();
   if (named && revision) return ['--build-arg', `GRAPHYARD_VERSION=${named}`, '--build-arg', `GRAPHYARD_BUILD_REVISION=${revision}`];
   if (dirty(sourceRoot)) return [];
   const release = checkoutRelease(sourceRoot, revision || 'unknown');
@@ -301,14 +304,14 @@ export function imageBuildArgs(sourceRoot: string, dirty = sourceTreeDirty) {
 }
 
 /**
- * GY-3214: the images Graphyard published for the source checkout's commit, which an install pulls
+ * GY-3214: the images Mainworks published for the source checkout's commit, which an install pulls
  * instead of building — the release a deploy vouches (GY-2167), else a clean checkout's HEAD. Null
  * for a checkout with changes HEAD does not hold, whose bytes no published image has, and for a
  * commit released under a date version: the published image is stamped `unreleased <sha>`, and the
  * server must report the release it is deployed as.
  */
 export function publishedSourceImages(sourceRoot: string, dirty = sourceTreeDirty) {
-  const version = process.env.GRAPHYARD_VERSION?.trim(), revision = process.env.GRAPHYARD_BUILD_REVISION?.trim();
+  const version = setting('VERSION')?.trim(), revision = setting('BUILD_REVISION')?.trim();
   const release = version && revision ? { version, revision } : dirty(sourceRoot) ? null : checkoutRelease(sourceRoot);
   return release && /^[0-9a-f]{40}$/.test(release.revision) && release.version === `unreleased ${release.revision.slice(0, 12)}` ? publishedImages(release.revision) : null;
 }
@@ -340,23 +343,25 @@ export const composeAdapter: ProviderAdapter = {
       trialImagePlan(ctx, published?.trial ?? null),
       ...trialAppArmorPlan(),
       published
-        ? { id: 'provider.image', target: 'provider', title: `Pull the Graphyard image ${published.server} as ${ctx.image}, or build it from ${ctx.sourceRoot} when it is not published`, state: 'update', command: `docker image pull ${published.server} && docker tag ${published.server} ${ctx.image} || ${build}` }
-        : { id: 'provider.image', target: 'provider', title: `Build the Graphyard image ${ctx.image} from ${ctx.sourceRoot}`, state: 'update', command: build },
+        ? { id: 'provider.image', target: 'provider', title: `Pull the Mainworks image ${published.server} as ${ctx.image}, or build it from ${ctx.sourceRoot} when it is not published`, state: 'update', command: `docker image pull ${published.server} && docker tag ${published.server} ${ctx.image} || ${build}` }
+        : { id: 'provider.image', target: 'provider', title: `Build the Mainworks image ${ctx.image} from ${ctx.sourceRoot}`, state: 'update', command: build },
       ...composeActions(ctx, observation),
     ];
   },
-  async provision(ctx) {
+  // GY-3710/GY-3718: installs on one host provision under one image lock, which old-image removal also takes; a commit's image (tagged with its 12-hex sha) that already exists is reused and nothing is built.
+  provision: ctx => withHostLock(imageLock, async () => {
+    await provisionTrialAppArmor(ctx);
+    if (/:[0-9a-f]{12}$/.test(ctx.image) && (await ctx.transport.exec('docker', ['image', 'inspect', ctx.image], { allowFailure: true })).code === 0) return;
     const published = publishedSourceImages(ctx.sourceRoot);
     await provisionTrialImage(ctx, published?.trial ?? null);
-    await provisionTrialAppArmor(ctx);
-    if (published && (await ctx.transport.exec('docker', ['image', 'pull', published.server], { allowFailure: true, timeout: 1_800_000 })).code === 0) {
+    if (published && await timedPull(ctx.transport, published.server)) {
       // The install keeps naming, pruning and rolling back its own tag; the registry's name is dropped, the layers stay.
       await ctx.transport.exec('docker', ['tag', published.server, ctx.image]);
       await ctx.transport.exec('docker', ['image', 'rm', published.server], { allowFailure: true });
       return;
     }
     await ctx.transport.exec('docker', ['build', ...imageBuildArgs(ctx.sourceRoot), '--tag', ctx.image, ctx.sourceRoot], { timeout: 1_800_000 });
-  },
+  }),
   async setEnv(ctx, values) {
     for (const file of composeBundle(ctx, values)) await ctx.transport.putFile(file.path, file.content, file.mode, file.owner);
   },
@@ -373,7 +378,7 @@ export const composeAdapter: ProviderAdapter = {
  * Variables whose values are credentials: never echoed, only compared by fingerprint. `DATABASE_URL`
  * is a connection string with a password, and a password must never reach the plan.
  */
-export const secretVariableNames = new Set(['GRAPHYARD_PRINCIPALS', 'GITHUB_PRIVATE_KEY', 'GITHUB_WEBHOOK_SECRET', 'GRAPHYARD_REVERT_APPROVER_PRIVATE_KEY', 'DATABASE_URL']);
+const secretVariableNames = new Set(['GRAPHYARD_PRINCIPALS', 'GITHUB_PRIVATE_KEY', 'GITHUB_WEBHOOK_SECRET', 'GRAPHYARD_REVERT_APPROVER_PRIVATE_KEY', 'DATABASE_URL']);
 export const carriesCredential = (name: string) => secretVariableNames.has(name);
 export const variableMarker = (name: string, value: string) => carriesCredential(name) ? `sha:${fingerprint(value)}` : value;
 

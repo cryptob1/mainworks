@@ -4,11 +4,12 @@ import type { Work } from './model.js';
 import type { BuildIdentity } from './protocol-version.js';
 import type { Application } from './model/project-applications.js';
 import { posix } from 'node:path';
+import { setting } from './setting.js';
 
 /**
  * Production deployment observation for the managed base branch.
  *
- * Graphyard marks work Done when it observes the merge; whether the merged commit ever
+ * Mainworks marks work Done when it observes the merge; whether the merged commit ever
  * reached production is a separate fact that nothing used to record. The watch polls the
  * hosting provider's deployment list for the linked service after every merge, takes what
  * production serves from a fresh endpoint observation of the exact release, the provider's
@@ -19,7 +20,7 @@ import { posix } from 'node:path';
  * equality alone — a delivery counts as deployed only when production serves its exact
  * merge commit — and nothing here rewrites a delivery snapshot.
  */
-export type ProviderDeploymentStatus = 'success' | 'failed' | 'crashed' | 'building' | 'deploying' | 'queued' | 'removed' | 'skipped' | 'unknown';
+type ProviderDeploymentStatus = 'success' | 'failed' | 'crashed' | 'building' | 'deploying' | 'queued' | 'removed' | 'skipped' | 'unknown';
 export interface ProviderDeployment {
   id: string; status: ProviderDeploymentStatus; providerStatus: string;
   commit: string | null; branch: string | null; createdAt: string; updatedAt: string | null; url: string | null;
@@ -32,7 +33,7 @@ const railwayStatus: Record<string, ProviderDeploymentStatus> = {
   BUILDING: 'building', INITIALIZING: 'building', DEPLOYING: 'deploying', QUEUED: 'queued', WAITING: 'queued', NEEDS_APPROVAL: 'queued',
   REMOVED: 'removed', REMOVING: 'removed', SKIPPED: 'skipped',
 };
-const railwayQuery = `query graphyardDeployments($input: DeploymentListInput!, $first: Int) {
+const railwayQuery = `query mainworksDeployments($input: DeploymentListInput!, $first: Int) {
   deployments(input: $input, first: $first) { edges { node { id status createdAt updatedAt url meta } } }
 }`;
 /**
@@ -42,11 +43,11 @@ const railwayQuery = `query graphyardDeployments($input: DeploymentListInput!, $
  * RAILWAY_API_TOKEN (an account or team token) or RAILWAY_TOKEN (a project token). Absent
  * a token the provider is not configured and the watch reports the build identity alone.
  */
-export function railwayProvider(env: Record<string, string | undefined> = process.env, fetcher: typeof fetch = fetch): DeploymentProvider | null {
+function railwayProvider(env: Record<string, string | undefined> = process.env, fetcher: typeof fetch = fetch): DeploymentProvider | null {
   const accountToken = env.RAILWAY_API_TOKEN?.trim(), projectToken = env.RAILWAY_TOKEN?.trim();
-  const serviceId = (env.GRAPHYARD_RAILWAY_SERVICE_ID ?? env.RAILWAY_SERVICE_ID)?.trim(), environmentId = (env.GRAPHYARD_RAILWAY_ENVIRONMENT_ID ?? env.RAILWAY_ENVIRONMENT_ID)?.trim(), projectId = (env.GRAPHYARD_RAILWAY_PROJECT_ID ?? env.RAILWAY_PROJECT_ID)?.trim();
+  const serviceId = (setting('RAILWAY_SERVICE_ID', env) ?? env.RAILWAY_SERVICE_ID)?.trim(), environmentId = (setting('RAILWAY_ENVIRONMENT_ID', env) ?? env.RAILWAY_ENVIRONMENT_ID)?.trim(), projectId = (setting('RAILWAY_PROJECT_ID', env) ?? env.RAILWAY_PROJECT_ID)?.trim();
   if (!(accountToken || projectToken) || !serviceId || !environmentId) return null;
-  const endpoint = env.GRAPHYARD_RAILWAY_API?.trim() || 'https://backboard.railway.com/graphql/v2';
+  const endpoint = setting('RAILWAY_API', env)?.trim() || 'https://backboard.railway.com/graphql/v2';
   return {
     name: 'railway', description: `Railway service ${serviceId}, environment ${environmentId}`,
     async list() {
@@ -102,16 +103,17 @@ export interface ProductionReport {
   incidents: ProductionIncident[];
   attention: string[];
 }
-export const INCIDENT_EVENT = 'delivery.deployment-incident', RECOVERY_EVENT = 'delivery.deployment-recovered';
+export const INCIDENT_EVENT = 'delivery.deployment-incident';
+const RECOVERY_EVENT = 'delivery.deployment-recovered';
 /** A delivery first observed inside the serving release; containment is never asked again for it. */
-export const CONTAINED_EVENT = 'delivery.deployment-contained';
+const CONTAINED_EVENT = 'delivery.deployment-contained';
 /** A merged commit not served within this long is a missing deployment. */
 export const DEPLOYMENT_GRACE_MS = 5 * 60_000;
 /** Deliveries older than this are not re-verified against the provider on every pass. */
-export const DEPLOYMENT_WINDOW_MS = 14 * 86_400_000;
-export const DEPLOYMENT_POLL_MS = 60_000;
+const DEPLOYMENT_WINDOW_MS = 14 * 86_400_000;
+const DEPLOYMENT_POLL_MS = 60_000;
 /** How often the watch's own timer offers it a pass; the pass itself runs at most once per poll interval. */
-export const PRODUCTION_WATCH_TIMER_MS = 5_000;
+const PRODUCTION_WATCH_TIMER_MS = 5_000;
 
 export interface ProductionWatchOptions {
   provider: DeploymentProvider | null;
@@ -270,7 +272,7 @@ export const ENDPOINT_FRESH_MS = 3 * DEPLOYMENT_GRACE_MS;
  * short of that proof leaves the provider's answer standing, so a failed or unserved release is
  * reported as before.
  */
-export function liveEndpointRelease(delivered: Pick<Work, 'delivery'>[], deployments: ProviderDeployment[], newestSuccess: ProviderDeployment | undefined, now: number): string | null {
+function liveEndpointRelease(delivered: Pick<Work, 'delivery'>[], deployments: ProviderDeployment[], newestSuccess: ProviderDeployment | undefined, now: number): string | null {
   const provided = newestSuccess ? Date.parse(newestSuccess.updatedAt ?? newestSuccess.createdAt) : -Infinity;
   let best: { sha: string; at: number } | null = null;
   for (const item of delivered) {
@@ -346,7 +348,7 @@ export async function servedCommit(url: string, fetcher: typeof fetch): Promise<
 
 /**
  * What each application declaring a versionUrl serves, against main's tip in the managed checkout.
- * Railway (or any host) deploys each app from git on its own; Graphyard only reads the endpoint,
+ * Railway (or any host) deploys each app from git on its own; Mainworks only reads the endpoint,
  * with no provider credential. A change to the app's directory counts as on main since its committer date.
  */
 export async function observeApplications(applications: Application[], main: string | null, git: (args: readonly string[]) => Promise<string>, options: { fetcher?: typeof fetch; now?: number } = {}): Promise<ApplicationRelease[]> {

@@ -6,6 +6,7 @@ import type { CliContext } from './context.js';
 import { derivedVariables, installIdFor, prepareInstall, selfProvision, type DerivedVariable, type PendingRedeploy, type PendingSetup, type SelfProvisionAudit } from '../install/index.js';
 import type { AdapterContext, ProviderAdapter } from '../install/adapters.js';
 import { installDirectory, readInstallRecord } from '../install/secrets.js';
+import { stateDirectory } from '../install/layout.js';
 
 /** Replaces a small state file whole, so a process killed mid-write leaves the old file or the new one, never a partial one. */
 async function writeAtomically(file: string, value: unknown) {
@@ -16,7 +17,7 @@ async function writeAtomically(file: string, value: unknown) {
 }
 
 /** Where `master setup --apply` appends one audit line per variable it set: name, source and fingerprint, never a value. */
-export const setupAuditFile = (root: string) => resolve(root, '.graphyard', 'setup-audit.jsonl');
+export const setupAuditFile = (root: string) => resolve(stateDirectory(root), 'setup-audit.jsonl');
 export interface MasterSetupOptions { apply: boolean; service?: string }
 export interface MasterSetupDependencies {
   /** The deployment and the variables its install record derives; the install record's by default (`recordedDeployment`). */
@@ -24,8 +25,8 @@ export interface MasterSetupDependencies {
   now?: () => number;
 }
 
-/** The deployment this host installed, from its install record (`graphyard install`); null without one. */
-export async function recordedDeployment(root: string, master: Pick<MasterConfig, 'repository'>, options: MasterSetupOptions) {
+/** The deployment this host installed, from its install record (`mainworks install`); null without one. */
+async function recordedDeployment(root: string, master: Pick<MasterConfig, 'repository'>, options: MasterSetupOptions) {
   const record = await readInstallRecord(installDirectory(installIdFor(master.repository)));
   if (!record) return null;
   // The service install named (--server-name) is recorded; --service names it for a record written before it was.
@@ -41,11 +42,11 @@ export async function recordedDeployment(root: string, master: Pick<MasterConfig
  * provider adapter with one audit entry each. Nothing is printed but names and fingerprints.
  */
 export async function masterSetup(root: string, master: Pick<MasterConfig, 'repository' | 'url'>, options: MasterSetupOptions, deps: MasterSetupDependencies = {}) {
-  const audit = async (entry: SelfProvisionAudit) => { await mkdir(resolve(root, '.graphyard'), { recursive: true }); await appendFile(setupAuditFile(root), `${JSON.stringify(entry)}\n`, { mode: 0o600 }); };
+  const audit = async (entry: SelfProvisionAudit) => { await mkdir(stateDirectory(root), { recursive: true }); await appendFile(setupAuditFile(root), `${JSON.stringify(entry)}\n`, { mode: 0o600 }); };
   const located = await (deps.locate ?? recordedDeployment)(root, master, options);
   if (!located) return { mode: options.apply ? 'apply' as const : 'plan' as const, target: null, observed: false, canApply: false, missing: [], set: [], redeployed: [] as string[], pendingRedeploy: [] as string[], audit: [],
-    next: `No deployment is recorded for ${master.repository} on this host (no graphyard install record): run graphyard install --provider compose|local --repo ${master.repository} --apply first` };
-  const pendingFile = resolve(root, '.graphyard', `setup-redeploy-${located.context.provider}-${located.context.service}.json`);
+    next: `No deployment is recorded for ${master.repository} on this host (no mainworks install record): run mainworks install --provider compose|local --repo ${master.repository} --apply first` };
+  const pendingFile = resolve(stateDirectory(root), `setup-redeploy-${located.context.provider}-${located.context.service}.json`);
   const pending: PendingRedeploy = {
     read: () => readFile(pendingFile, 'utf8').then(text => JSON.parse(text) as PendingSetup, () => ({ redeploy: [], audit: [] })),
     write: async staged => { await (staged.redeploy.length || staged.audit.length ? writeAtomically(pendingFile, staged) : rm(pendingFile, { force: true })); },

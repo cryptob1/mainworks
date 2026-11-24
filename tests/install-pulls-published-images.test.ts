@@ -8,7 +8,7 @@ import { fakeTransport } from '../src/install/transport.js';
 import { pulledTrialImageFile, trialContainerImage, trialImage } from '../src/merge-writer/trial-container.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-3214: an install pulls the images Graphyard published for its source commit instead of
+// GY-3214: an install pulls the images Mainworks published for its source commit instead of
 // building them, and builds them here as before when that commit is not published.
 
 async function sourceCheckout() {
@@ -20,17 +20,17 @@ async function sourceCheckout() {
   git('add', '.'); git('commit', '-q', '-m', 'release');
   return { root, commit: git('rev-parse', 'HEAD') };
 }
-const context = (sourceRoot: string, transport: ReturnType<typeof fakeTransport>) => ({ sourceRoot, image: 'graphyard-local:owner-project', transport }) as unknown as AdapterContext;
+const context = (sourceRoot: string, transport: ReturnType<typeof fakeTransport>) => ({ sourceRoot, image: 'mainworks-local:owner-project', transport }) as unknown as AdapterContext;
 
 test('unit:tests/install-pulls-published-images.test.ts — a published commit is pulled: the control plane under the install\'s own tag, the trial image named for the release tree\'s trials; nothing is built', async () => {
   const { root, commit } = await sourceCheckout(), transport = fakeTransport();
   const server = `ghcr.io/cryptob1/graphyard:${commit}`, trial = `ghcr.io/cryptob1/graphyard-trial:${commit}`;
   await composeAdapter.provision(context(root, transport), {} as never);
   assert.deepEqual(transport.commands.map((_, index) => transport.line(index)),
-    [`docker image pull ${trial}`, `docker image pull ${server}`, `docker tag ${server} graphyard-local:owner-project`, `docker image rm ${server}`]);
+    [`docker image pull ${trial}`, `docker image pull ${server}`, `docker tag ${server} mainworks-local:owner-project`, `docker image rm ${server}`]);
   assert.equal(transport.files.get(pulledTrialImageFile(root))?.content, `${trial}\n`);
   const actions = composeAdapter.plan(context(root, transport), { database: false, app: false } as never);
-  assert.match(actions.find(action => action.id === 'provider.image')!.title, new RegExp(`^Pull the Graphyard image ${server.replace(/\./g, '\\.')} as graphyard-local:owner-project`));
+  assert.match(actions.find(action => action.id === 'provider.image')!.title, new RegExp(`^Pull the Mainworks image ${server.replace(/\./g, '\\.')} as mainworks-local:owner-project`));
   assert.match(actions.find(action => action.id === 'provider.trial-image')!.title, new RegExp(`^Pull the private-root merge-trial image ${trial.replace(/\./g, '\\.')}`));
 
   // Trials run the image the release tree names, and the one built on this host otherwise.
@@ -47,12 +47,12 @@ test('unit:tests/install-pulls-published-images.test.ts — a commit that is not
   const lines = unpublished.commands.map((_, index) => unpublished.line(index));
   assert.equal(lines.filter(line => line.startsWith('docker image pull ')).length, 2);
   assert.ok(lines.some(line => line.startsWith('docker buildx build ') && line.includes(`--tag ${trialContainerImage} `)), lines.join('\n'));
-  assert.ok(lines.some(line => line.startsWith('docker build ') && line.includes('--tag graphyard-local:owner-project ')), lines.join('\n'));
+  assert.ok(lines.some(line => line.startsWith('docker build ') && line.includes('--tag mainworks-local:owner-project ')), lines.join('\n'));
   assert.equal(unpublished.files.size, 0, 'no pulled trial image is named');
 
   await writeFile(join(root, 'Dockerfile'), 'FROM scratch\n# changed\n');
   const dirty = fakeTransport();
   await composeAdapter.provision(context(root, dirty), {} as never);
   assert.ok(!dirty.commands.some((_, index) => dirty.line(index).startsWith('docker pull ')), 'no published image holds a changed tree');
-  assert.match(composeAdapter.plan(context(root, dirty), { database: false, app: false } as never).find(action => action.id === 'provider.image')!.title, /^Build the Graphyard image /);
+  assert.match(composeAdapter.plan(context(root, dirty), { database: false, app: false } as never).find(action => action.id === 'provider.image')!.title, /^Build the Mainworks image /);
 });

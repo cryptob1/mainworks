@@ -30,13 +30,13 @@ export function unproducedManualProofs(work: Work, all: Work[], now: Date): stri
  * no producer may run with no evidence on this head. The delivery step does not escalate one to an
  * operator while the rest of the candidate settles; a failed attestation is evidence, and stays theirs.
  */
-export function loopAttested(work: Work, proof: string, now: Date): boolean {
+function loopAttested(work: Work, proof: string, now: Date): boolean {
   return proof.startsWith('manual:') && !automatableProof(work, proof) && !currentEvidence(work, proof, now);
 }
 /** Who owns the attestation of an unproduced `manual:` proof: the master, never a person. */
-export const attestationOwner = 'master';
+const attestationOwner = 'master';
 /** The wait an item holding only such proofs is in: the master's attestation, never a person's step. */
 export function attestationWait(work: Work, all: Work[], now: Date): ActionWait | null {
   const proofs = unproducedManualProofs(work, all, now);
-  return proofs.length ? { kind: 'session', on: attestationOwner, detail: `${work.key} waits on the master's attestation of ${proofs.join(', ')} on ${work.candidate!.sha.slice(0, 12)}: graphyard master attest ${work.key} ${proofs[0]} REASON once it verifies the criterion on that head` } : null;
+  return proofs.length ? { kind: 'session', on: attestationOwner, detail: `${work.key} waits on the master's attestation of ${proofs.join(', ')} on ${work.candidate!.sha.slice(0, 12)}: mainworks master attest ${work.key} ${proofs[0]} REASON once it verifies the criterion on that head` } : null;
 }

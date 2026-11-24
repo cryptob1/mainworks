@@ -13,11 +13,11 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { dockerCreates, git, shardHosts, shardRepository, type ShardHostsFixture } from './helpers/shard-hosts.js';
 
 // GY-3549: a shard on a compute host may start nested sandboxes, as a local trial can: its container
-// gets Docker's seccomp and system paths unconfined (and the graphyard-trial AppArmor profile where the
+// gets Docker's seccomp and system paths unconfined (and the mainworks-trial AppArmor profile where the
 // host's Docker uses AppArmor), and keeps rootless Docker, a read-only root, no capabilities, no new
 // privileges, no network and its CPU, memory and process limits. Docker is the fixture's stand-in.
 
-const image = 'graphyard-trial:allow-sandbox';
+const image = 'mainworks-trial:allow-sandbox';
 const source = fileURLToPath(new URL('..', import.meta.url));
 let hosts: ShardHostsFixture;
 before(async () => {

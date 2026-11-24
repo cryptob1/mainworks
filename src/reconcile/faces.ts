@@ -160,7 +160,7 @@ export function faceReach({ move, before, after, between = [] }: FaceMoveSides, 
     resources: new Set(sides.flatMap(work => work.exclusiveResources ?? [])), paths: [...paths] };
 }
 /** The paths other items' evaluations read an item on (GY-1777): the files its candidate was observed to change, and the ones its landing check compared. */
-export function readerPaths(work: Work): string[] {
+function readerPaths(work: Work): string[] {
   return [...work.plannedFiles ?? [], ...work.exclusiveResources ?? [], ...work.observation?.files ?? [], ...(work.observation?.scopeFiles ?? []).map(file => file.path), ...(work.observation?.landing?.files ?? []).map(file => file.path)];
 }
 /** Whether `entry`'s evaluation reads the moved face `reach` describes (GY-1777). */

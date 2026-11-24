@@ -13,7 +13,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 /**
  * A second install on one host gets its own worker credentials (GY-1885). AC-1 is the proof
  * unit:environments-reads-only-own-install-credentials: `master environments` reads the install
- * directory `graphyard install` manages and never another install's token folder. AC-2 is
+ * directory `mainworks install` manages and never another install's token folder. AC-2 is
  * unit:up-issues-install-worker-credentials: up's accounts step issues the install's own worker
  * identities instead of waiting on an account sign-in, and stops naming the files a plane refuses.
  */
@@ -187,7 +187,7 @@ function accountsWorld(checkout: string, installDir: string, options: AccountsWo
         const names = existsSync(folder) ? readdirSync(folder).filter(name => name.endsWith('.token')) : [];
         return { code: 0, stdout: JSON.stringify({
           counts: { environments: 2, loggedIn: typeof options.loggedIn === 'function' ? options.loggedIn() : options.loggedIn ?? 2, workers: names.filter(name => !name.startsWith('refused')).length, reviewers: names.length ? 2 : 0 },
-          skipped: names.filter(name => name.startsWith('refused')).map(name => ({ file: join(folder, name), reason: 'Graphyard rejected the worker credential (401)' })),
+          skipped: names.filter(name => name.startsWith('refused')).map(name => ({ file: join(folder, name), reason: 'Mainworks rejected the worker credential (401)' })),
         }) };
       }
       if (joined === 'master restart') { loop = true; return { code: 0, stdout: '{}' }; }

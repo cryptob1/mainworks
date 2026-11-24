@@ -35,7 +35,7 @@ test('master instructions carry the operating loop the master guide prints first
   const first = masterInstructions;
   assert.match(first, /dedicated, visible master-agent session/);
   assert.match(first, /Keep cycling: status, dispatch ready work, shepherd review, record what the merge\nwriter's trial and push landed\. Repeat until both conditions hold/);
-  assert.match(first, /\(1\) every in-scope item is Done or has a genuinely external blocker recorded in\nGraphyard; and \(2\) the release health line in `master status` is healthy, or a\ngenuinely external deployment blocker is recorded in Graphyard as a follow-up work item/);
+  assert.match(first, /\(1\) every in-scope item is Done or has a genuinely external blocker recorded in\nMainworks; and \(2\) the release health line in `master status` is healthy, or a\ngenuinely external deployment blocker is recorded in Mainworks as a follow-up work item/);
   assert.match(first, /An item is delivered at merge; release health is one status line/);
   assert.doesNotMatch(first, /verify-deployment/);
   for (const condition of ['Ordinary review', 'rework', 'idle workers', 'proof setup', 'Close finished agent\\s+sessions']) assert.match(first, new RegExp(condition));
@@ -45,19 +45,19 @@ test('master instructions carry the operating loop the master guide prints first
 test('master init verifies a coordinator and repository before writing private local configuration', async () => {
   const root = await repository(); const credentialDirectory = await temporaryDirectory('master-credentials');
   try {
-    const result = await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory, herdrWorkspace: 'workspace-graphyard' }, coordinatorStatus as typeof fetch);
+    const result = await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory, herdrWorkspace: 'workspace-mainworks' }, coordinatorStatus as typeof fetch);
     assert.equal(result.role, 'coordinator');
-    assert.deepEqual(result.attention, []); assert.match(result.next, /^Run graphyard master environments --apply .* then graphyard master start/);
+    assert.deepEqual(result.attention, []); assert.match(result.next, /^Run mainworks master environments --apply .* then mainworks master start/);
     assert.equal((await stat(join(root, '.graphyard/master.json'))).mode & 0o777, 0o600);
     assert.equal(execFileSync('git', ['check-ignore', '.graphyard/master.json'], { cwd: root, encoding: 'utf8' }).trim(), '.graphyard/master.json');
     const agents = await readFile(join(root, 'AGENTS.md'), 'utf8');
-    assert.match(agents, /## Graphyard coordination/); assert.doesNotMatch(agents, /Graphyard master agent|graphyard-master -->/, 'master init writes the worker block only');
-    const master = await loadMasterConfig(root); assert.equal(await readFile(master.credentialFile, 'utf8'), coordinatorToken); assert.equal(master.baseBranch, 'main'); assert.equal(master.herdrWorkspace, 'workspace-graphyard'); assert.equal(master.credentialFile.startsWith(`${root}/`), false);
+    assert.match(agents, /## Mainworks coordination/); assert.doesNotMatch(agents, /Mainworks master agent|graphyard-master -->/, 'master init writes the worker block only');
+    const master = await loadMasterConfig(root); assert.equal(await readFile(master.credentialFile, 'utf8'), coordinatorToken); assert.equal(master.baseBranch, 'main'); assert.equal(master.herdrWorkspace, 'workspace-mainworks'); assert.equal(master.credentialFile.startsWith(`${root}/`), false);
     assert.equal((await readFile(join(root, '.graphyard/master.json'), 'utf8')).includes(coordinatorToken), false);
     const workerConnection = JSON.stringify({ url: 'https://graphyard.example', token: workerToken, cliPath: launcher, hostId: 'machine-a' });
     await writeFile(join(root, '.graphyard/connection.json'), workerConnection, { mode: 0o600 });
-    await assert.rejects(setupMaster(root, { url: 'https://other.example', token: coordinatorToken, cliPath: launcher, credentialDirectory }, coordinatorStatus as typeof fetch), /another Graphyard server/);
-    await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory, herdrWorkspace: 'workspace-graphyard' }, coordinatorStatus as typeof fetch);
+    await assert.rejects(setupMaster(root, { url: 'https://other.example', token: coordinatorToken, cliPath: launcher, credentialDirectory }, coordinatorStatus as typeof fetch), /another Mainworks server/);
+    await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory, herdrWorkspace: 'workspace-mainworks' }, coordinatorStatus as typeof fetch);
     assert.equal(await readFile(join(root, '.graphyard/connection.json'), 'utf8'), workerConnection, 'master setup must not replace a worker connection');
     await assert.rejects(setupMaster(root, { url: 'https://graphyard.example', token: workerToken, cliPath: launcher, credentialDirectory }, (async () => new Response(JSON.stringify({ actor: { id: 'worker', role: 'worker' }, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234 }))) as typeof fetch), /coordinator credential/);
     await assert.rejects(setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory }, (async () => new Response(JSON.stringify({ actor: { id: 'master', role: 'coordinator' }, repository: null, baseBranch: 'main', githubAppId: 1234 }))) as typeof fetch), /bound to a GitHub repository/);
@@ -73,7 +73,7 @@ test('master init verifies a coordinator and repository before writing private l
 test('master init refuses a coordinator destination in a sibling worktree before writing a token', async () => {
   const root = await repository(); const siblingParent = await temporaryDirectory('master-sibling'); const sibling = join(siblingParent, 'worktree');
   try {
-    execFileSync('git', ['-c', 'user.name=Graphyard', '-c', 'user.email=graphyard@example.invalid', 'commit', '--allow-empty', '-qm', 'fixture'], { cwd: root });
+    execFileSync('git', ['-c', 'user.name=Mainworks', '-c', 'user.email=graphyard@example.invalid', 'commit', '--allow-empty', '-qm', 'fixture'], { cwd: root });
     execFileSync('git', ['worktree', 'add', '--detach', sibling], { cwd: root, stdio: 'ignore' });
     const destination = join(sibling, 'private');
     await assert.rejects(setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory: destination }, coordinatorStatus as typeof fetch), /outside every worktree/);
@@ -101,9 +101,9 @@ test('Muse launch profiles validate like every other runtime and carry no embedd
   assert.equal(workerProfileSchema.safeParse({ ...muse, kind: 'muse-code' }).success, false);
 });
 
-test('an unavailable Herdr leaves Graphyard work state authoritative', async () => {
+test('an unavailable Herdr leaves Mainworks work state authoritative', async () => {
   const unavailable = await observeHerdrAgents(() => { throw new Error('daemon unavailable'); });
-  assert.equal(unavailable.available, false); assert.deepEqual(unavailable.agents, []); assert.match(unavailable.reason!, /Graphyard work state remains authoritative/);
+  assert.equal(unavailable.available, false); assert.deepEqual(unavailable.agents, []); assert.match(unavailable.reason!, /Mainworks work state remains authoritative/);
 });
 
 test('master commands refuse a changed repository or managed base binding', () => {
@@ -135,7 +135,7 @@ test('dispatch starts one headless run under watch with the instruction as its o
     const result = await dispatch(root, ready(), profile, { prepare: async () => ({ epoch: 4, path: join(root, 'assigned'), base: 'c'.repeat(40) }) });
     assert.match(result.ownership, /supervising/); assert.equal(result.epoch, 4); assert.match(result.run, /^[0-9a-f-]{36}$/);
     const [run] = runs;
-    assert.deepEqual(run.args.slice(0, 5), [launcher, 'watch', 'GY-42', '4', '--'], 'the runtime starts only under graphyard watch');
+    assert.deepEqual(run.args.slice(0, 5), [launcher, 'watch', 'GY-42', '4', '--'], 'the runtime starts only under mainworks watch');
     assert.equal(run.args[5], 'codex'); assert.equal(run.args[6], 'exec', 'the one-task form');
     assert.ok(run.args.at(-1)!.startsWith(`${autonomyContract} Implement GY-42: `), 'the instruction is the session\'s own first request (GY-93, GY-184)');
     assert.equal(run.cwd, join(root, 'assigned'));
@@ -159,7 +159,7 @@ test('a Muse launch profile is saved for its own worker principal, and its claim
     await assert.rejects(saveWorkerProfile(root, { name: 'muse-primary', principal: 'muse-1', agentName: 'engineering-muse-1', mode: 'launch', kind: 'muse', credentialFile: credential }, async () => ({ actor: { id: 'muse-1', role: 'coordinator' } })), /worker role/);
     await assert.rejects(saveWorkerProfile(root, { name: 'muse-primary', principal: 'muse-1', agentName: 'engineering-muse-1', mode: 'launch', kind: 'muse', credentialFile: credential }, async () => ({ actor: { id: 'muse-2', role: 'worker' } })), /profile principal/);
     const saved = await saveWorkerProfile(root, { name: 'muse-primary', principal: 'muse-1', agentName: 'engineering-muse-1', mode: 'launch', kind: 'muse', credentialFile: credential, agentArgs: ['--approval-mode', 'never', '--trust-workspace'] }, async token => ({ actor: { id: token === workerToken ? 'muse-1' : 'wrong', role: 'worker' } }));
-    // Muse's own recipe (GY-184) is exactly the arguments this profile already configures, so Graphyard adds nothing.
+    // Muse's own recipe (GY-184) is exactly the arguments this profile already configures, so Mainworks adds nothing.
     assert.equal(saved.launch!.applied, true); assert.match(saved.launch!.reason!, /already configures the runtime approval flags/); assert.deepEqual(saved.launch!.args, ['--approval-mode', 'never', '--trust-workspace']);
     // The claim runs under the profile's own credential file: the coordinator token in the master's environment never reaches the worker process.
     const prepareCalls: { args: string[]; options: any }[] = []; const base = 'c'.repeat(40);
@@ -186,18 +186,18 @@ test('dispatch claimability permits operator-authorized rework independent of di
 test('master start creates a visible non-focused coordinator session with no credential argument', async () => {
   const root = await repository(); const credentialDirectory = await temporaryDirectory('master-credentials'); const calls: string[][] = [];
   try {
-    await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory, herdrWorkspace: 'workspace-graphyard' }, coordinatorStatus as typeof fetch);
+    await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory, herdrWorkspace: 'workspace-mainworks' }, coordinatorStatus as typeof fetch);
     const result = await startMaster(root, 'codex', ['--model', 'reviewer'], [], (_command, args) => {
       calls.push(args);
       return startedAtOnce(args) ?? JSON.stringify({ result: args[0] === 'tab' ? { type: 'tab_created', root_pane: { pane_id: 'pane-master', tab_id: 'tab-master' }, tab: { tab_id: 'tab-master' } } : {} });
     });
     assert.equal(result.focusChanged, false); assert.equal(result.pane, 'pane-master');
-    assert.ok(calls[0].includes('--no-focus')); assert.deepEqual(calls[0].slice(0, 4), ['tab', 'create', '--workspace', 'workspace-graphyard']);
+    assert.ok(calls[0].includes('--no-focus')); assert.deepEqual(calls[0].slice(0, 4), ['tab', 'create', '--workspace', 'workspace-mainworks']);
     // GY-93: the master's instruction is its own first request, the positional prompt of its
     // start; since GY-121 the shell reads it from the request file the typed line references.
     assert.deepEqual(calls[1].slice(0, 3), ['pane', 'run', 'pane-master']);
     const master = expandTypedCommand(calls[1][3]);
-    assert.equal(master.kind, 'codex'); assert.equal(master.stem, join(root, '.graphyard/launch', (await loadMasterConfig(root)).masterAgentName)); assert.match(master.args.at(-1)!, /dedicated Graphyard master agent/); assert.equal(result.delivery, 'request');
+    assert.equal(master.kind, 'codex'); assert.equal(master.stem, join(root, '.graphyard/launch', (await loadMasterConfig(root)).masterAgentName)); assert.match(master.args.at(-1)!, /dedicated Mainworks master agent/); assert.equal(result.delivery, 'request');
     assert.equal(calls.some(call => call[0] === 'agent' && call[1] === 'prompt'), false, 'nothing is pasted into the master session');
     assert.equal(JSON.stringify(calls).includes(coordinatorToken), false);
     await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory }, coordinatorStatus as typeof fetch);
@@ -238,14 +238,14 @@ test('launch profiles verify a private worker credential and match its principal
     await chmod(credential, 0o600);
     await writeFile(join(root, 'worker-local.token'), workerToken, { mode: 0o600 });
     await assert.rejects(saveWorkerProfile(root, { name: 'local', principal: 'worker-c', agentName: 'eng-c', mode: 'launch', kind: 'codex', credentialFile: join(root, 'worker-local.token') }, async () => ({ actor: { id: 'worker-c', role: 'worker' } })), /outside every worktree/);
-    execFileSync('git', ['-c', 'user.name=Graphyard', '-c', 'user.email=graphyard@example.invalid', 'commit', '--allow-empty', '-qm', 'fixture'], { cwd: root });
+    execFileSync('git', ['-c', 'user.name=Mainworks', '-c', 'user.email=graphyard@example.invalid', 'commit', '--allow-empty', '-qm', 'fixture'], { cwd: root });
     execFileSync('git', ['worktree', 'add', '--detach', sibling], { cwd: root, stdio: 'ignore' });
     const siblingCredential = join(sibling, 'worker.token'); await writeFile(siblingCredential, workerToken, { mode: 0o600 });
     await assert.rejects(saveWorkerProfile(root, { name: 'sibling', principal: 'worker-d', agentName: 'eng-d', mode: 'launch', kind: 'codex', credentialFile: siblingCredential }, async () => ({ actor: { id: 'worker-d', role: 'worker' } })), /every worktree/);
   } finally { try { execFileSync('git', ['worktree', 'remove', '--force', sibling], { cwd: root, stdio: 'ignore' }); } catch {} await rm(root, { recursive: true, force: true }); await rm(credentialDirectory, { recursive: true, force: true }); await rm(siblingParent, { recursive: true, force: true }); }
 });
 
-test('a launch profile token file overrides ambient Graphyard credentials', async () => {
+test('a launch profile token file overrides ambient Mainworks credentials', async () => {
   const root = await repository(); const credential = join(root, 'worker.token'); let authorization = '';
   const http = createServer((request, response) => { authorization = String(request.headers.authorization ?? ''); response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify({ actor: { id: 'worker-a', role: 'worker' } })); });
   await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));

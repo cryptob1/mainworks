@@ -17,7 +17,7 @@ const settled = { timeout: 15_000 };
 
 /** The status a WebSocket handshake to /api/terminal answers with, carrying TOKEN as the dashboard does. */
 const handshake = (url: string, token?: string) => new Promise<number>((done, fail) => {
-  const call = request(`${url}/api/terminal`, { headers: { Connection: 'Upgrade', Upgrade: 'websocket', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': randomBytes(16).toString('base64'), ...(token ? { 'Sec-WebSocket-Protocol': `graphyard, ${token}` } : {}) } });
+  const call = request(`${url}/api/terminal`, { headers: { Connection: 'Upgrade', Upgrade: 'websocket', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': randomBytes(16).toString('base64'), ...(token ? { 'Sec-WebSocket-Protocol': `mainworks, ${token}` } : {}) } });
   call.on('upgrade', (response, socket) => { socket.destroy(); done(response.statusCode!); });
   call.on('response', response => { response.resume(); done(response.statusCode!); });
   call.on('error', fail); call.end();
@@ -32,7 +32,7 @@ test('e2e:master-page-terminal — the operator types into the master pane live;
   const site = await mkdtemp(join(tmpdir(), 'graphyard-master-terminal-'));
   const log = join(site, 'herdr.log');
   // The server serves ./dist: the bundle Playwright's web server built.
-  await symlink(resolve('.graphyard/browser-dist'), join(site, 'dist'));
+  await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
   const child = fork(resolve('tests/helpers/terminal-server.ts'), [database.url, site], { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
     env: { ...process.env, PATH: `${stub}${delimiter}${process.env.PATH}`, HERDR_STUB_LOG: log, GRAPHYARD_HERDR_CONFIG_HOME: '', GRAPHYARD_HERDR_SESSION: '' } });
   const [{ url }] = await once(child, 'message') as [{ url: string }];

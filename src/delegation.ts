@@ -1,4 +1,5 @@
 import { once } from './store/mutations.js';
+import { setting } from './setting.js';
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { z } from 'zod';
@@ -50,7 +51,7 @@ const countLeads = (principals: Roster) => principals.filter(p => p.role === 'sl
 type Roster = readonly Pick<Principal, 'id' | 'role' | 'grants' | 'proofs' | 'deploymentProviders'>[];
 // A reviewer slot is held only by a producer whose roster entry carries proof patterns (GY-1879): a
 // lane-only producer and a producer configured with no proofs hold none.
-export const proofProducer = (p: Pick<Principal, 'role' | 'proofs'>) => p.role === 'producer' && !!p.proofs?.length;
+const proofProducer = (p: Pick<Principal, 'role' | 'proofs'>) => p.role === 'producer' && !!p.proofs?.length;
 const countProducers = (principals: Roster) => principals.filter(proofProducer).length;
 
 /**
@@ -80,7 +81,7 @@ export interface DelegationLimitDrift { variable: DelegationLimitVariable; deplo
 export function delegationLimitDrift(principals: Roster, env: Record<string, string | undefined> = {}): DelegationLimitDrift[] {
   const drift: DelegationLimitDrift[] = [];
   const check = (variable: DelegationLimitVariable, count: number, noun: string) => {
-    const deployed = env[variable] ?? null;
+    const deployed = setting(variable, env) ?? null;
     const limit = deployed === null ? limitDefaults[variable] : Number(deployed);
     if (Number.isInteger(limit) && limit > 0 && count > limit) drift.push({ variable, deployed, required: String(count), principals: count,
       reason: deployed === null
@@ -100,8 +101,8 @@ export function delegationLimitDrift(principals: Roster, env: Record<string, str
  */
 export function delegationLimits(env: NodeJS.ProcessEnv = process.env, principals: Roster = []): DelegationLimits {
   const integer = (name: DelegationLimitVariable, derived: number) => {
-    if (env[name] === undefined) return Math.max(limitDefaults[name], derived);
-    const value = Number(env[name]); demand(Number.isInteger(value) && value > 0, `${name} must be a positive integer`, 500); return value;
+    if (setting(name, env) === undefined) return Math.max(limitDefaults[name], derived);
+    const value = Number(setting(name, env)); demand(Number.isInteger(value) && value > 0, `${name} must be a positive integer`, 500); return value;
   };
   const result = { maxLeads: integer('GRAPHYARD_MAX_SLICE_LEADS', countLeads(principals)), minReviewers: integer('GRAPHYARD_MIN_REVIEWERS', 0), maxReviewers: integer('GRAPHYARD_MAX_REVIEWERS', countProducers(principals)) };
   demand(result.minReviewers <= result.maxReviewers, 'Reviewer minimum cannot exceed maximum', 500);

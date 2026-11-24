@@ -7,13 +7,14 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir, userInfo } from 'node:os';
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { deployUnitOf, installUnitsFile, legacyLoopUnit, proposedInstallUnits, readInstallUnits, resolveInstallUnits, systemdCommandLineWords } from './units.js';
+import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
+import { deployUnitOf, installUnitsPath, legacyLoopUnit, proposedInstallUnits, readInstallUnits, resolveInstallUnits, systemdCommandLineWords } from './units.js';
 import { knownGoodCli, knownGoodState } from '../master/known-good.js';
 import { installDirectory } from './secrets.js';
 import { installIdFor } from './types.js';
-import { installLauncherPath, writeInstallLauncher } from './cli-release.js';
+import { installLauncherPath, unitLauncherFault, writeInstallLauncher } from './cli-release.js';
 import { canonical, temporaryDirectories, underTestRunner } from '../runtime-environment.js';
+import { stateDirectory } from './layout.js';
 export { temporaryDirectories, underTestRunner } from '../runtime-environment.js';
 const detail = (error: unknown) => (error instanceof Error ? error.message : String(error)).replace(/[\x00-\x1f\x7f]+/g, ' ').slice(0, 200);
 
@@ -97,7 +98,7 @@ export interface LoopSupervision {
   active: boolean | null;
   linger: boolean | null;
   reason: string | null;
-  /** What the operator must run to keep the loop alive where Graphyard cannot supervise it. */
+  /** What the operator must run to keep the loop alive where Mainworks cannot supervise it. */
   instruction: string | null;
   /** Unsupported only because this process's `systemctl --user` probe could not reach the user manager (GY-1400): a sandbox masks it. */
   unreachable?: boolean;
@@ -159,7 +160,7 @@ export function testSuiteHomeGuard(unitDirectory: string) {
   const temporary = canonical(tmpdir());
   if (within(canonical(unitDirectory), temporary)) return;
   throw new LoopSupervisorRefusal(`the test suite may not write ${unitDirectory}: under the test runner the loop's unit directory must be rooted in ${temporary}`,
-    'give the test host a home under the system temporary directory (LoopSupervisorHost.home); the real user home is written only by graphyard master init run by an operator');
+    'give the test host a home under the system temporary directory (LoopSupervisorHost.home); the real user home is written only by mainworks master init run by an operator');
 }
 
 /**
@@ -168,7 +169,7 @@ export function testSuiteHomeGuard(unitDirectory: string) {
  * the coordinator, and a checkout without the master configuration is not one this setup wrote.
  */
 function assertCoordinatorCheckout(root: string, host: LoopSupervisorHost) {
-  const operator = 'run graphyard master init from the coordinator checkout on durable storage; that is the only command which installs the unit';
+  const operator = 'run mainworks master init from the coordinator checkout on durable storage; that is the only command which installs the unit';
   if (!isAbsolute(root)) throw new LoopSupervisorRefusal(`the loop's WorkingDirectory must be an absolute path, not ${root}`, operator);
   const checkout = canonical(root);
   const temporary = (host.temporaryDirectories ?? temporaryDirectories()).map(canonical).find(directory => within(checkout, directory));
@@ -177,8 +178,8 @@ function assertCoordinatorCheckout(root: string, host: LoopSupervisorHost) {
   // fixture host the line above has refused it already, and a remote shard keeps the suite's
   // temporary directory inside its run under ~/.graphyard/runs, which is no fixture's worktree.
   const own = canonical(tmpdir());
-  if ((within(checkout, own) ? relative(own, checkout) : checkout).split(sep).includes('.graphyard')) throw new LoopSupervisorRefusal(`the loop's WorkingDirectory ${root} is inside a managed .graphyard directory (an assignment worktree or session checkout), never the coordinator checkout`, operator);
-  if (!existsSync(join(checkout, '.graphyard', 'master.json'))) throw new LoopSupervisorRefusal(`the loop's WorkingDirectory ${root} is not the configured coordinator checkout: it holds no .graphyard/master.json`, operator);
+  if ((within(checkout, own) ? relative(own, checkout) : checkout).split(sep).some(part => part === '.graphyard' || part === '.mainworks')) throw new LoopSupervisorRefusal(`the loop's WorkingDirectory ${root} is inside a managed .graphyard directory (an assignment worktree or session checkout), never the coordinator checkout`, operator);
+  if (!existsSync(join(stateDirectory(checkout), 'master.json'))) throw new LoopSupervisorRefusal(`the loop's WorkingDirectory ${root} is not the configured coordinator checkout: it holds no .graphyard/master.json`, operator);
 }
 /**
  * One setting of a unit file, with systemd's `%h` (the user's home, as the packaged example spells
@@ -221,6 +222,13 @@ function unitDirectoryValue(value: string, field: string) {
 export const inputInstallDir = (input: Pick<LoopUnitInput, 'repository' | 'installDir'>): string | null =>
   input.installDir ?? (() => { try { return installDirectory(installIdFor(input.repository)); } catch { return null; } })();
 
+/** The launcher both units start: the install's stable one, else the known-good pin, else the configured CLI (GY-3337, GY-3756). */
+function unitCliPath(input: Pick<LoopUnitInput, 'cliPath' | 'repository' | 'installDir'>) {
+  const installDir = inputInstallDir(input);
+  if (installDir && existsSync(installLauncherPath(installDir))) return installLauncherPath(installDir);
+  return installDir && knownGoodState(installDir) ? knownGoodCli(installDir) : input.cliPath;
+}
+
 /**
  * The unit, derived from this installation rather than copied from the packaged example: its own
  * checkout, CLI launcher and cycle interval. `Restart=always` with no start limit brings the loop
@@ -230,14 +238,12 @@ export const inputInstallDir = (input: Pick<LoopUnitInput, 'repository' | 'insta
  */
 export function loopUnitText(input: LoopUnitInput) {
   const execPath = input.execPath ?? process.execPath;
-  const installDir = inputInstallDir(input);
   // GY-3337: the unit names the install's one stable launcher, which starts the release the install
   // serves at every start — so an upgrade moves what it runs and never leaves it naming a release
   // path that has gone stale. Before any release is published (or once `up` lifted the launcher
   // onto this CLI), the known-good pin (GY-1529) and then the configured CLI stand in, as before.
-  const serving = installDir && existsSync(installLauncherPath(installDir)) ? installLauncherPath(installDir) : null;
-  const cliPath = serving ?? (installDir && knownGoodState(installDir) ? knownGoodCli(installDir) : input.cliPath);
-  return `# Generated by graphyard master init, run by an operator from the coordinator checkout below; nothing
+  const cliPath = unitCliPath(input);
+  return `# Generated by mainworks master init, run by an operator from the coordinator checkout below; nothing
 # else writes it. Re-running master init from that checkout rewrites this file and edits are replaced;
 # a unit that runs another checkout or launcher is replaced only with master init --replace-supervisor.
 #
@@ -245,7 +251,7 @@ export function loopUnitText(input: LoopUnitInput) {
 # worker, producer, or operator credential here: the coordinator must not be able to claim work,
 # publish evidence, or revise requirements.
 [Unit]
-Description=Graphyard master coordination loop (${input.repository.replace(/[\r\n\0]/g, ' ')})
+Description=Mainworks master coordination loop (${input.repository.replace(/[\r\n\0]/g, ' ')})
 After=network-online.target
 Wants=network-online.target
 # Never give up restarting it. Under the default start limit a loop that crashed five times inside
@@ -285,13 +291,13 @@ WantedBy=default.target
 /** The checkout an install's deploy unit builds and deploys from (GY-2942): its own, under the install directory, never one another install or a person moves. */
 export const deployCheckoutOf = (installDir: string) => join(installDir, 'deploy', 'src');
 
-/** The deploy unit beside the loop's (GY-2877): `upgrade --watch` from the same launcher, in the install's own checkout, restarted whenever it stops. */
+/** The deploy unit beside the loop's (GY-2877): `upgrade --watch` from the same launcher, in the install's own checkout, restarted whenever it stops. GY-3756: the launcher is the install's stable one, so every start runs the served release. */
 export function deployUnitText(input: Pick<LoopUnitInput, 'root' | 'cliPath' | 'repository' | 'execPath' | 'installDir'>) {
   const installDir = input.installDir ?? installDirectory(installIdFor(input.repository));
-  return `# Generated by graphyard master init beside the master loop's unit; edits are replaced.
+  return `# Generated by mainworks master init beside the master loop's unit; edits are replaced.
 # Deploy implementation: immutable CLI releases (GY-3057).
 [Unit]
-Description=Graphyard continuous deploy (${input.repository.replace(/[\r\n\0]/g, ' ')})
+Description=Mainworks continuous deploy (${input.repository.replace(/[\r\n\0]/g, ' ')})
 After=network-online.target
 Wants=network-online.target
 StartLimitIntervalSec=0
@@ -299,7 +305,7 @@ StartLimitIntervalSec=0
 [Service]
 Type=simple
 WorkingDirectory=${unitDirectoryValue(input.root, 'checkout')}
-ExecStart=${unitValue(input.execPath ?? process.execPath, 'Node executable')} ${unitValue(input.cliPath, 'CLI path')} upgrade --watch --checkout ${unitValue(deployCheckoutOf(installDir), 'deploy checkout')}
+ExecStart=${unitValue(input.execPath ?? process.execPath, 'Node executable')} ${unitValue(unitCliPath(input), 'CLI path')} upgrade --watch --checkout ${unitValue(deployCheckoutOf(installDir), 'deploy checkout')}
 Restart=always
 RestartSec=${loopRestartSeconds}
 StandardOutput=journal
@@ -310,22 +316,48 @@ WantedBy=default.target
 `;
 }
 
+/**
+ * GY-3756: a deploy unit whose ExecStart names an old release or another install's launcher is
+ * rewritten onto the install's stable launcher and systemd reloaded, so its next start runs the
+ * served release. Null when the unit starts the served release (now or already); else why not.
+ * Under the test runner a unit outside the temporary directory is never touched.
+ */
+export async function repointDeployUnit(input: { unitPath: string; installDir: string; run?: (command: string, args: string[]) => unknown }): Promise<string | null> {
+  if (underTestRunner() && !within(canonical(dirname(input.unitPath)), canonical(tmpdir()))) return null;
+  const unit = basename(input.unitPath);
+  let text: string;
+  try { text = await readFile(input.unitPath, 'utf8'); }
+  catch (error: any) { return error?.code === 'ENOENT' ? null : `${unit} could not be read: ${detail(error)}`; }
+  const line = /^ExecStart=(.*)$/m.exec(text);
+  const old = line ? systemdCommandLineWords(line[1]!).find(word => /bin\/(?:graphyard|mainworks)\.mjs$/.test(word)) : undefined;
+  if (!line || !old || !unitLauncherFault({ unit, launcher: old, installDir: input.installDir })) return null;
+  try {
+    const launcher = await writeInstallLauncher(input.installDir);
+    if (!launcher) return `${unit} still starts ${old}: this install has published no release to point it at`;
+    const temporary = `${input.unitPath}.${randomUUID()}.tmp`;
+    await writeFile(temporary, text.replace(line[0], `ExecStart=${line[1]!.replace(old, unitValue(launcher, 'CLI path'))}`), { mode: 0o644, flag: 'wx' });
+    await rename(temporary, input.unitPath);
+    (input.run ?? supervisorRun({}))('systemctl', ['--user', 'daemon-reload']);
+    return null;
+  } catch (error) { return `${unit} still starts ${old}: ${detail(error)}`; }
+}
+
 /** Whether this host can be given a supervisor at all, and why not when it cannot. */
 /** `unreachable`: the platform has systemd, but this process's `systemctl --user` probe could not reach the user manager (GY-1400). */
 export function supervisorSupport(host: LoopSupervisorHost = {}): { supported: boolean; reason: string | null; unreachable?: boolean } {
   const platform = host.platform ?? process.platform;
-  if (platform !== 'linux') return { supported: false, reason: `Graphyard supervises the loop with a systemd user unit, and this host reports ${platform}` };
+  if (platform !== 'linux') return { supported: false, reason: `Mainworks supervises the loop with a systemd user unit, and this host reports ${platform}` };
   try { supervisorRun(host)('systemctl', ['--user', 'show-environment']); return { supported: true, reason: null }; }
   catch (error) { return { supported: false, unreachable: true, reason: `This host has no reachable systemd user manager, so no unit can be installed or enabled: ${detail(error)}` }; }
 }
 
 /**
- * What the operator must run where Graphyard cannot install a supervisor. It states the
+ * What the operator must run where Mainworks cannot install a supervisor. It states the
  * consequence first: the self-healing the loop's own attention item promises does not happen here.
  */
 export function unsupervisedInstruction(input: Pick<LoopUnitInput, 'root' | 'cliPath'> & { execPath?: string }) {
   const command = `${input.execPath ?? process.execPath} ${input.cliPath} master run`;
-  return `Graphyard cannot install a supervisor for the loop on this host, so its self-healing does not apply here: a crashed, killed, or rebooted loop stays down until a person starts it, and no restart follows the attention item that reports it. Keep it alive yourself - run "${command}" from ${input.root} under this platform's own always-restart supervisor (launchd on macOS, an init service or a container restart policy elsewhere), configure that supervisor to start at boot, and read the loop line in graphyard master status to confirm it is cycling.`;
+  return `Mainworks cannot install a supervisor for the loop on this host, so its self-healing does not apply here: a crashed, killed, or rebooted loop stays down until a person starts it, and no restart follows the attention item that reports it. Keep it alive yourself - run "${command}" from ${input.root} under this platform's own always-restart supervisor (launchd on macOS, an init service or a container restart policy elsewhere), configure that supervisor to start at boot, and read the loop line in mainworks master status to confirm it is cycling.`;
 }
 
 /** The user whose manager runs the unit, as `loginctl` must be told it: by uid, or by name where there is none. */
@@ -361,7 +393,7 @@ export async function installLoopSupervisor(input: LoopUnitInput, host: LoopSupe
   const home = host.home ?? ((host.env ?? process.env).HOME?.trim() || homedir());
   // Before the record is written, an unrecorded install beside another checkout's legacy unit names
   // the units it is about to record, never that install's (GY-1452).
-  let loopUnit = input.unit ?? (existsSync(resolve(input.root, installUnitsFile)) ? loopUnitOf(input.root, unitDirectory, home) : proposedInstallUnits(input.root, input.repository, unitDirectory, home).master);
+  let loopUnit = input.unit ?? (existsSync(installUnitsPath(input.root)) ? loopUnitOf(input.root, unitDirectory, home) : proposedInstallUnits(input.root, input.repository, unitDirectory, home).master);
   let unitPath = join(unitDirectory, loopUnit);
   if (!support.supported) return { supported: false, unit: loopUnit, unitPath: null, installed: false, enabled: null, active: null, linger: null,
     wrote: 'none', refused: null, performed: [], reason: support.reason, instruction: unsupervisedInstruction(input) };
@@ -405,7 +437,7 @@ export async function installLoopSupervisor(input: LoopUnitInput, host: LoopSupe
     const differs = (['WorkingDirectory', 'ExecStart'] as const).filter(key => !(key === 'ExecStart' && (pinMove || launcherMove)) && unitSetting(existing!, key, home) !== unitSetting(text, key, home));
     if (differs.length) return refused(new LoopSupervisorRefusal(
       `${unitPath} already runs a different loop (${differs.map(key => `${key}=${unitSetting(existing!, key, home) ?? '(missing)'}`).join(', ')}), not this checkout's (${differs.map(key => `${key}=${unitSetting(text, key, home)}`).join(', ')})`,
-      `graphyard master init --token-stdin --replace-supervisor from this checkout, only if that unit is the coordinator you mean to replace`));
+      `mainworks master init --token-stdin --replace-supervisor from this checkout, only if that unit is the coordinator you mean to replace`));
   }
   let wrote: LoopSupervisorInstallation['wrote'] = 'unchanged';
   if (existing !== text) {
@@ -465,7 +497,7 @@ export async function alignLoopUnit(input: LoopUnitInput, host: LoopSupervisorHo
   const unitPath = join(loopUnitDirectory(host), input.unit ?? loopUnitOf(input.root, loopUnitDirectory(host), host.home));
   let existing: string | null = null;
   try { existing = await readFile(unitPath, 'utf8'); } catch { existing = null; }
-  if (existing === null) return { wrote: 'none', reason: `${unitPath} is not installed; graphyard master init installs it`, unitPath };
+  if (existing === null) return { wrote: 'none', reason: `${unitPath} is not installed; mainworks master init installs it`, unitPath };
   const wanted = loopUnitText(input);
   // An install upgraded past GY-2877 has a matching loop unit and no deploy unit, or (GY-2942) one
   // that deploys from a shared checkout: install or rewrite it too.
@@ -513,7 +545,7 @@ export async function loopSupervision(input: Pick<LoopUnitInput, 'root' | 'cliPa
  * looks busy, which is the whole gap between GY-84's promise and what it delivered.
  */
 export function loopSupervisionAttention(supervision: LoopSupervision, evidence?: LoopSupervisorEvidence | null): { text: string; next: string }[] {
-  const reinstall = 'graphyard master init --token-stdin on this host reinstalls and enables the loop unit; repository setup is what installs it';
+  const reinstall = 'mainworks master init --token-stdin on this host reinstalls and enables the loop unit; repository setup is what installs it';
   // A probe that cannot reach the user manager — inside a worker's or the doctor's sandbox, where
   // the user bus is masked — says nothing about the host while the cursor records the loop running
   // under its unit (GY-1400): it is a vantage that could not verify, never a host-supervision fault.
@@ -531,11 +563,11 @@ export function loopSupervisionAttention(supervision: LoopSupervision, evidence?
 }
 
 /** The supervisor unit the loop itself runs under, when systemd supervises it: read from the process's own cgroup, like an executor's. */
-export const loopUnitPattern = /^graphyard-master(?:[@.-][A-Za-z0-9@._:-]*)?\.service$/;
+export const loopUnitPattern = /^(?:graphyard|mainworks)-master(?:[@.-][A-Za-z0-9@._:-]*)?\.service$/;
 export function detectLoopSupervisorUnit(options: { cgroup?: string | null } = {}): string | null {
   let cgroup = options.cgroup;
   if (cgroup === undefined) { try { cgroup = readFileSync('/proc/self/cgroup', 'utf8'); } catch { cgroup = null; } }
-  const match = cgroup?.match(/\/(graphyard-master[^/\s]*\.service)(?:\/|$)/m);
+  const match = cgroup?.match(/\/((?:graphyard|mainworks)-master[^/\s]*\.service)(?:\/|$)/m);
   return match && loopUnitPattern.test(match[1]) ? match[1] : null;
 }
 

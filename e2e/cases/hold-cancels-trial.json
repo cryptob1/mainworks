@@ -1,0 +1,16 @@
+{
+  "id": "hold-cancels-trial",
+  "title": "Holding an item ends its merge trial and frees the slot for the next item",
+  "description": "The merge writer with one trial lane: an item held while its trial runs has the trial cancelled the next cycle, master status shows no trial in flight for it, and the next queued item takes the freed slot.",
+  "tags": ["regression"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "a hold cancels the trial and the next item takes the slot",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:hold-cancels-trial tests/hold-cancels-trial.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}

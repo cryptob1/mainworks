@@ -17,17 +17,17 @@ test('unit:tests/trial-container-orphan-stop.test.ts — the sweep stops a runni
   const calls: string[][] = [];
   const run = (async (_command: string, args: string[]) => {
     calls.push(args);
-    if (args[0] === 'ps') return 'graphyard-trial-current\ngraphyard-trial-gone\ngraphyard-trial-old\n';
+    if (args[0] === 'ps') return 'mainworks-trial-current\nmainworks-trial-gone\nmainworks-trial-old\n';
     if (args[0] === 'inspect') return [
-      `/graphyard-trial-current\t${started(10)}\t${live}`,
-      `/graphyard-trial-gone\t${started(10)}\t${join(base, 'verify-deleted')}`,
-      `/graphyard-trial-old\t${started(23 * 60)}\t${live}`,
+      `/mainworks-trial-current\t${started(10)}\t${live}`,
+      `/mainworks-trial-gone\t${started(10)}\t${join(base, 'verify-deleted')}`,
+      `/mainworks-trial-old\t${started(23 * 60)}\t${live}`,
     ].join('\n');
     return '';
   }) as ChildRun;
   const stopped = await stopOrphanTrialContainers(run, maxAgeMs, now);
-  assert.deepEqual(stopped, ['container graphyard-trial-gone', 'container graphyard-trial-old']);
-  assert.deepEqual(calls.filter(args => args[0] === 'rm'), [['rm', '--force', '--volumes', 'graphyard-trial-gone'], ['rm', '--force', '--volumes', 'graphyard-trial-old']], 'a current trial\'s container is left alone');
+  assert.deepEqual(stopped, ['container mainworks-trial-gone', 'container mainworks-trial-old']);
+  assert.deepEqual(calls.filter(args => args[0] === 'rm'), [['rm', '--force', '--volumes', 'mainworks-trial-gone'], ['rm', '--force', '--volumes', 'mainworks-trial-old']], 'a current trial\'s container is left alone');
   assert.ok(calls[0]!.includes('status=running'), 'running trial containers are what it judges');
 });
 
@@ -46,7 +46,7 @@ async function launched(base: string, deadline?: number) {
   await mkdir(bin);
   await writeFile(join(bin, 'docker'), fakeDocker(log));
   await chmod(join(bin, 'docker'), 0o755);
-  const [program, ...words] = trialContainerLaunch({ image: 'graphyard-trial:local', mounts: [], network: 'none', deadline });
+  const [program, ...words] = trialContainerLaunch({ image: 'mainworks-trial:local', mounts: [], network: 'none', deadline });
   const child = spawn(program!, [...words, 'sleep', '600'], { cwd: base, env: { PATH: `${bin}:/usr/bin:/bin` }, stdio: 'ignore' });
   const calls = async () => (await readFile(log, 'utf8').catch(() => '')).split('\n').filter(Boolean);
   for (let waited = 0; !(await calls()).some(line => line.includes(' start ')); waited += 50) {
@@ -61,13 +61,13 @@ test('unit:tests/trial-container-orphan-stop.test.ts — a trial container stops
   const deadline = Date.now() + 90_000;
   const { child, calls } = await launched(base, deadline);
   const create = (await calls()).find(line => line.includes(' create '))!;
-  const bounded = / --entrypoint \/usr\/bin\/env graphyard-trial:local \/usr\/bin\/timeout --kill-after=10 (\d+) sleep 600$/.exec(create);
+  const bounded = / --entrypoint \/usr\/bin\/env mainworks-trial:local \/usr\/bin\/timeout --kill-after=10 (\d+) sleep 600$/.exec(create);
   assert.ok(bounded, `the container's command is bounded by the trial deadline: ${create}`);
   assert.ok(Number(bounded[1]) >= 85 && Number(bounded[1]) <= 90, 'the bound is the time left to the deadline');
   // Aborting the trial (its runner signals the launcher) leaves no container running.
   const exited = new Promise(resolve => child.once('exit', resolve));
   child.kill('SIGTERM');
   await exited;
-  const name = /--name (graphyard-trial-[0-9a-f]+)/.exec(create)![1]!;
+  const name = /--name (mainworks-trial-[0-9a-f]+)/.exec(create)![1]!;
   assert.ok((await calls()).some(line => line.endsWith(`rm --force --volumes ${name}`)), 'the aborted trial\'s container is removed');
 });

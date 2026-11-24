@@ -25,7 +25,7 @@ import { dockerCreates, dockerEveryCall, killTrees, shardHosts, shardRepository,
 // the same shim in the same host folders.
 
 const proof = 'e2e:two-host-trial';
-const image = 'graphyard-trial:two-host';
+const image = 'mainworks-trial:two-host';
 const files = Array.from({ length: 8 }, (_, index) => `tests/math-${index}.test.ts`);
 let hosts: ShardHostsFixture, second: { target: string; kill(): void; start(): Promise<void> }, target: string, repository: { root: string; sha: string }, answers: string, slow: string;
 const previous = process.env.GRAPHYARD_TRIAL_IMAGE;
@@ -133,7 +133,7 @@ test(`${proof} — over the second host's key a plain shell command, a read outs
   const docker = join(hosts.root, 'hosts', 'loopback', 'docker');
   const calls = dockerEveryCall(docker).length, creates = (await dockerCreates(docker)).length;
   const asks: Array<[string, string?]> = [
-    ['echo graphyard-plain-shell'],
+    ['echo mainworks-plain-shell'],
     ['cat /etc/passwd'],
     [`fetch-records ${run}/../../.. 1`],
     ['fetch-records ../../.ssh 1'],

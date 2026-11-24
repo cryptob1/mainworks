@@ -4,7 +4,7 @@ import { z } from 'zod';
  * The headless runner (GY-169). The approver and the proof producer only need a structured
  * result, so they do not need a terminal: a runner starts an agent on one prompt, streams its
  * structured events, can be cancelled, and resolves to what the agent submitted through a typed
- * Graphyard tool, or to a typed failure. It reports; it never judges. What the agent submitted is
+ * Mainworks tool, or to a typed failure. It reports; it never judges. What the agent submitted is
  * applied by the loop through the same routes a terminal session uses, so the gates decide.
  */
 
@@ -29,8 +29,8 @@ export type RunEvent =
  * no result on disk (GY-453) — killed from outside, or its host rebooted — so it judged nothing and
  * its caller retries it without spending an attempt.
  */
-export const runFailureReasons = ['timeout', 'exit', 'invalid-payload', 'no-payload', 'cancelled', 'spawn', 'lost'] as const;
-export type RunFailureReason = typeof runFailureReasons[number];
+const runFailureReasons = ['timeout', 'exit', 'invalid-payload', 'no-payload', 'cancelled', 'spawn', 'lost'] as const;
+type RunFailureReason = typeof runFailureReasons[number];
 export interface RunFailure { reason: RunFailureReason; detail: string; code?: number | null }
 
 /** `payload` is the first accepted submission; `payloads` every accepted one, in order. */
@@ -43,7 +43,7 @@ export interface RunOptions<T> {
   cwd: string;
   /** Added to the runner's environment; the environment wrapper reads its account from here. */
   env?: Record<string, string>;
-  /** The Graphyard tool whose successful calls are this run's submission. */
+  /** The Mainworks tool whose successful calls are this run's submission. */
   tool: string;
   /** Parses one submission into the payload type, throwing on a malformed one. */
   validate: (payload: unknown) => T;
@@ -86,7 +86,7 @@ export interface Runner {
  * A run's record as a session keeps it: its last events, its outcome, and what the loop did with
  * each submission (`applied`: the route accepted it; `refused`: the server refused it and why).
  */
-export const runRecordEventLimit = 40;
+const runRecordEventLimit = 40;
 export const runRecordSchema = z.object({
   runtime: z.string().max(40), startedAt: z.string().max(40), endedAt: z.string().max(40).nullable(),
   events: z.array(z.object({ kind: z.string().max(20), at: z.string().max(40) }).passthrough()).max(runRecordEventLimit),

@@ -2,17 +2,17 @@
 import { createHash } from 'node:crypto';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { getCachedPlanUsage, parseZaiUsage, type ProviderUsageResult } from '../provider-usage.js';
+import { claudeLimitWindows, claudeSpendLine, getCachedPlanUsage, parseZaiUsage, type ProviderUsageResult, type UsageWindow } from '../provider-usage.js';
 import type { AccountUsage, EnvironmentProbe } from './environments.js';
 import type { ProbedHome } from './runtimes.js';
 
 /** One reading of a shared plan's quota, with the limit flag its provider reported (GY-1260). */
 export type PlanReading = ProviderUsageResult & { reached?: boolean };
 
-export async function readJsonFile(file: string): Promise<any> {
+async function readJsonFile(file: string): Promise<any> {
   try { return JSON.parse(await readFile(file, 'utf8')); } catch { return null; }
 }
-export const windowName = (minutes: number) => minutes >= 1440 && minutes % 1440 === 0 ? `${minutes / 1440}d` : minutes >= 60 && minutes % 60 === 0 ? `${minutes / 60}h` : `${minutes}m`;
+const windowName = (minutes: number) => minutes >= 1440 && minutes % 1440 === 0 ? `${minutes / 1440}d` : minutes >= 60 && minutes % 60 === 0 ? `${minutes / 60}h` : `${minutes}m`;
 
 // Claude Code keeps its subscription login in the environment's .credentials.json. The usage the
 // provider meters against it is read from the same endpoint Claude Code's /usage reads; the token
@@ -23,7 +23,7 @@ export async function claudeAccount(environment: ProbedHome, probe: EnvironmentP
   const oauth = (await readJsonFile(resolve(environment.home, '.credentials.json')))?.claudeAiOauth;
   if (!oauth || typeof oauth !== 'object' || !(oauth.accessToken || oauth.refreshToken)) {
     const settings = await readJsonFile(resolve(environment.home, 'settings.json'));
-    if (typeof settings?.env?.ANTHROPIC_API_KEY === 'string' && settings.env.ANTHROPIC_API_KEY) return { loggedIn: true, usage: [], note: 'an API-key account: the provider exposes no usage Graphyard can read' };
+    if (typeof settings?.env?.ANTHROPIC_API_KEY === 'string' && settings.env.ANTHROPIC_API_KEY) return { loggedIn: true, usage: [], note: 'an API-key account: the provider exposes no usage Mainworks can read' };
     return { loggedIn: false, usage: [], note: null };
   }
   if (probe.quota === false) return { loggedIn: true, usage: [], note: 'quota not read' };
@@ -32,15 +32,21 @@ export async function claudeAccount(environment: ProbedHome, probe: EnvironmentP
     const response = await (probe.fetch ?? fetch)('https://api.anthropic.com/api/oauth/usage', { headers: { Authorization: `Bearer ${oauth.accessToken}`, 'anthropic-beta': 'oauth-2025-04-20' }, signal: AbortSignal.timeout(probe.timeoutMs ?? 5_000) });
     if (!response.ok) return { loggedIn: response.status !== 401 || !!oauth.refreshToken, usage: [], note: `the provider usage endpoint answered ${response.status}` };
     const body: any = await response.json();
-    const usage = (['five_hour', 'seven_day'] as const).flatMap(key => typeof body?.[key]?.utilization === 'number'
-      ? [{ window: key === 'five_hour' ? '5h' : '7d', percent: body[key].utilization, resetsAt: typeof body[key].resets_at === 'string' ? new Date(body[key].resets_at).toISOString() : null }] : []);
-    return { loggedIn: true, usage, note: null };
+    // GY-3497: the answer's own limit list is the windows — the session, weekly and each
+    // model-scoped weekly allowance — when it carries one; the five_hour/seven_day utilization
+    // stands only for an answer with no list. Spend is read as the one line it shows, never changed.
+    const listed = claudeLimitWindows(body);
+    const usage: UsageWindow[] = Array.isArray(body?.limits) ? listed
+      : (['five_hour', 'seven_day'] as const).flatMap(key => typeof body?.[key]?.utilization === 'number'
+        ? [{ window: key === 'five_hour' ? '5h' : '7d', percent: body[key].utilization, resetsAt: typeof body[key].resets_at === 'string' && !Number.isNaN(Date.parse(body[key].resets_at)) ? new Date(body[key].resets_at).toISOString() : null }] : []);
+    const spend = claudeSpendLine(body?.spend);
+    return { loggedIn: true, usage, note: null, ...(spend ? { spend } : {}) };
   } catch (error) { return { loggedIn: true, usage: [], note: `the provider usage endpoint is unreachable: ${error instanceof Error ? error.message : 'unknown reason'}` }; }
 }
 
 // Codex records the provider's rate-limit windows in every session it writes; the newest record
 // is the account's last reported usage.
-export async function newestCodexRateLimits(home: string) {
+async function newestCodexRateLimits(home: string) {
   const directories = async (directory: string) => { try { return (await readdir(directory)).filter(name => /^\d+$/.test(name)).sort().reverse().map(name => resolve(directory, name)); } catch { return []; } };
   const files: { file: string; modified: number }[] = [];
   for (const year of await directories(resolve(home, 'sessions'))) {
@@ -80,7 +86,7 @@ export async function codexAccount(environment: ProbedHome, probe: EnvironmentPr
 }
 
 /** GY-3516: a key named by a short digest, so a reading says whose key answered without ever recording the key. */
-export const keyFingerprint = (key: string) => createHash('sha256').update(key).digest('hex').slice(0, 12);
+const keyFingerprint = (key: string) => createHash('sha256').update(key).digest('hex').slice(0, 12);
 export async function zaiAccount(environment: ProbedHome, probe: EnvironmentProbe, plan: { id: string | null; now: number }): Promise<{ loggedIn: boolean; usage: AccountUsage[]; note: string | null; reached?: boolean; shared?: boolean; plan?: PlanReading; key?: string }> {
   const opencodeAuth = await readJsonFile(resolve(environment.home, 'opencode/auth.json'));
   const zaiKey = opencodeAuth?.['zai-coding-plan']?.key ?? opencodeAuth?.['z.ai']?.key ?? opencodeAuth?.zai?.key;
@@ -119,7 +125,7 @@ export async function zaiAccount(environment: ProbedHome, probe: EnvironmentProb
       return { loggedIn, usage: [], note: loggedIn ? 'quota not read' : null };
     }
     if (!hasZaiKey) {
-      return { loggedIn, usage: [], note: 'OpenCode exposes no provider quota Graphyard can read; its providers report their own limits in the session' };
+      return { loggedIn, usage: [], note: 'OpenCode exposes no provider quota Mainworks can read; its providers report their own limits in the session' };
     }
   }
   // Accounts on one shared plan read one quota: a fresh plan reading answers without another call

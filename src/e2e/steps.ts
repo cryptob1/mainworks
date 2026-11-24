@@ -18,10 +18,10 @@ import type { E2eStep } from './case.js';
  *   with; the screenshot it takes afterwards is recorded by path.
  *
  * A step's process holds `TARGET_URL`, the case's declared secrets and the host basics a process
- * needs (PATH, HOME, locale, temp), and nothing else Graphyard holds: no worker, reviewer, GitHub
+ * needs (PATH, HOME, locale, temp), and nothing else Mainworks holds: no worker, reviewer, GitHub
  * or deploy credential. Every secret value is redacted from what is recorded.
  */
-export const keptOutputLines = 50;
+const keptOutputLines = 50;
 /** Host variables a step's process keeps: what a command needs to run at all, never a credential. */
 export const hostPassthrough = ['PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'LC_ALL', 'TERM', 'TMPDIR', 'TZ', 'DISPLAY', 'XDG_RUNTIME_DIR', 'PLAYWRIGHT_BROWSERS_PATH', 'CI', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0'] as const;
 
@@ -36,7 +36,7 @@ export function stepEnvironment(url: string, secrets: Record<string, string>, ho
 }
 
 /** `notStarted`: the process never ran (a spawn error, a confined session host that is gone), which says nothing of the case (GY-3180). */
-export interface ProcessResult { code: number | null; output: string; timedOut: boolean; notStarted?: boolean }
+interface ProcessResult { code: number | null; output: string; timedOut: boolean; notStarted?: boolean }
 /** A browser or step process that could not start (GY-3180): the host's failure, never the case's. */
 export class E2eHostError extends Error {}
 const started = (result: ProcessResult, failure: string) => { if (result.notStarted) throw new E2eHostError(`${failure}: ${result.output}`); return result; };
@@ -196,7 +196,7 @@ export function agentPrompt(step: Extract<E2eStep, { kind: 'agent' }>, url: stri
 }
 
 /** What the judge of a compare step is given for each of the two runs (GY-2985): where it ran, what the agent answered, and the screenshots kept. */
-export interface CompareRun { url: string; transcript: readonly string[]; screenshots: readonly string[] }
+interface CompareRun { url: string; transcript: readonly string[]; screenshots: readonly string[] }
 /** What a compare step hands its judge (GY-2985): the goal and criteria, and both runs — the candidate build's and the baseline's. */
 export interface CompareInput { goal: string; success: readonly string[]; target: CompareRun; baseline: CompareRun }
 /** How a compare step's judge answers (GY-2985): the candidate is the same, better, or worse than what was live. */
@@ -230,7 +230,7 @@ export async function runCommandStep(step: Extract<E2eStep, { kind: 'command' }>
 }
 
 /** GY-3267: where a command step's browser leaves its screenshots (the Playwright config reads it). */
-export const screenshotsDirectoryVariable = 'E2E_SCREENSHOTS_DIR';
+const screenshotsDirectoryVariable = 'E2E_SCREENSHOTS_DIR';
 /** The most recently written PNG anywhere under `directory`; none when it holds none. */
 async function newestPng(directory: string): Promise<string | undefined> {
   let newest: { file: string; at: number } | undefined;
@@ -258,7 +258,7 @@ export function compareJudgePrompt(input: CompareInput) {
 }
 
 /** The default compare judge (GY-2985): one agent-browser call in its own session within the step's remaining time. */
-export function agentBrowserJudge(context: GeneralStepContext, session: string, deadline: number): CompareJudge {
+function agentBrowserJudge(context: GeneralStepContext, session: string, deadline: number): CompareJudge {
   return async input => {
     const result = await context.run('agent-browser', ['--session', session, 'chat', compareJudgePrompt(input)], { cwd: context.root, env: context.env, timeoutMs: Math.max(1, deadline - Date.now()), shell: false, signal: context.signal });
     const judged = parseCompareVerdict(result.output);

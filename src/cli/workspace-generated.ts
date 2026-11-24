@@ -11,7 +11,7 @@ import { parseGeneratedManifest, type GeneratedManifest } from '../sync.js';
  * The generated files a repository declares for sync: `scripts/check-docs.mjs --manifest` names
  * the paths its `--write` renders in full. A repository without the script declares none.
  */
-export const generatedManifestScript = 'scripts/check-docs.mjs';
+const generatedManifestScript = 'scripts/check-docs.mjs';
 
 export async function localGeneratedManifest(cwd: string): Promise<GeneratedManifest | null> {
   if (!existsSync(resolve(cwd, generatedManifestScript))) return null;
@@ -27,7 +27,7 @@ export function regenerateGenerated(cwd: string, manifest: GeneratedManifest) {
 }
 
 /**
- * Graphyard's own repository renders the AGENTS.md worker block with the templates the merged
+ * Mainworks's own repository renders the AGENTS.md worker block with the templates the merged
  * tree carries, so the result matches what its drift test expects; any other repository, and a
  * tree whose sources will not load, use the templates this CLI ships. A graphyard-master block an
  * earlier master init wrote is dropped, not rendered: the master reads it from master guide.

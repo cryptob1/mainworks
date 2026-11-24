@@ -14,7 +14,7 @@ const credential = { ...admin, token: `removal-admin-${'r'.repeat(32)}` };
 let store: Store | null = null, http: ReturnType<typeof server> | null = null;
 after(async () => { http?.close(); await store?.close(); });
 
-test('unit:retired-release-routes — `graphyard release` is no longer a command and /api/candidates answers 404', { timeout: 120_000 }, async () => {
+test('unit:retired-release-routes — `mainworks release` is no longer a command and /api/candidates answers 404', { timeout: 120_000 }, async () => {
   // No command is named release; giving up a lease is `unclaim GY-N EPOCH`.
   const { commands, renderHelp } = await import('../src/cli/index.js');
   assert.deepEqual(commands.filter(command => command.name === 'release'), []);

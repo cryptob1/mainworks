@@ -57,7 +57,7 @@ export interface InstallPlan {
    * The repository's delivery model (GY-1102): its mode, the checks protection requires on pull
    * requests, the per-candidate checks, and the adapter deploying UAT and production.
    * `committed` is false while graphyard.json holds no reviewed policy yet: protection then keeps
-   * the discovered checks until `graphyard init --scan --apply` records the split.
+   * the discovered checks until `mainworks init --scan --apply` records the split.
    */
   delivery: { mode: 'local' | 'release-candidate' | 'per-pr'; committed: boolean; preMerge: string[]; perCandidate: string[] };
   /** `--observe-only` (GY-1846): only the control plane is deployed; every `held` action is left to a later full install. */

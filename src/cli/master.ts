@@ -1,23 +1,8 @@
-import { masterGuide } from '../master/guide.js';
 import { defineCommands } from './registry.js';
-import { checkoutRoot } from './context.js';
-import { masterInit } from './master-init.js';
-import { masterSetupCommand } from './master-setup.js';
-import { loadStoredMasterConfig, masterInstructions } from '../master.js';
 import { sessionCommands } from './session-commands.js';
 import { inviteCommand } from './invite.js';
-import { registryHelp } from './master-registry.js';
+import { registryHelp } from './master-registry-help.js';
 import { closeHelp } from './master-close.js';
-import { openMasterSession, unhandled } from './master/session.js';
-import { intentCommand } from './master/intent.js';
-import { peerCommand } from './master/peers.js';
-import { fleetCommand } from './master/fleet.js';
-import { emblemCommand } from './master/emblem.js';
-import { confinedMaster, operationsCommand } from './master/operations.js';
-import { lessonsCommand } from './master/lessons.js';
-import { briefCommand } from './master/brief.js';
-import { loopCommand } from './master/loop.js';
-import { usageCommand } from './master/usage.js';
 
 /** Every master subcommand authenticates with the coordinator credential the master keeps for itself, never the repository connection file. */
 export const masterCommands = defineCommands([
@@ -48,6 +33,8 @@ export const masterCommands = defineCommands([
       '                                gate, declared check, worker verification or session suite on',
       '                                this host until master resume (another project\'s quiet window)',
       '  master resume                 Lift the drain: queued heavy jobs start again with all their gates',
+      '  master update now             Take the newest verified build on the deploy watch\'s next pass,',
+      '                                without waiting for a quiet moment',
       '  master dispatch GY-N PROFILE  Invite a worker to claim ready work in a visible tab',
       '  master lesson add TEXT [--for workers] [--enforceable] | remove ID | list',
       '                                Record a durable lesson the master reads on every launch;',
@@ -97,11 +84,41 @@ export const masterCommands = defineCommands([
     ],
     async run(context) {
       const { id } = context;
-      const root = await checkoutRoot(context, `graphyard master ${id ?? ''}`.trimEnd());
+      const { checkoutRoot } = await import('./context.js');
+      const root = await checkoutRoot(context, `mainworks master ${id ?? ''}`.trimEnd());
       // The master's role instructions lead the guide.
-      if (id === 'guide') return console.log(`${masterInstructions}\n${masterGuide}`);
+      if (id === 'guide') {
+        const [{ masterInstructions }, { masterGuide }] = await Promise.all([import('../master.js'), import('../master/guide.js')]);
+        return console.log(`${masterInstructions}\n${masterGuide}`);
+      }
       if (id === 'init') return masterInit(context, root);
-      if (id === 'setup') return masterSetupCommand(context, root, await loadStoredMasterConfig(root));
+      if (id === 'setup') {
+        const [{ masterSetupCommand }, { loadStoredMasterConfig }] = await Promise.all([import('./master-setup.js'), import('../master.js')]);
+        return masterSetupCommand(context, root, await loadStoredMasterConfig(root));
+      }
+      const [
+        { openMasterSession, unhandled },
+        { intentCommand },
+        { peerCommand },
+        { fleetCommand },
+        { emblemCommand },
+        { confinedMaster, operationsCommand },
+        { lessonsCommand },
+        { briefCommand },
+        { loopCommand },
+        { usageCommand },
+      ] = await Promise.all([
+        import('./master/session.js'),
+        import('./master/intent.js'),
+        import('./master/peers.js'),
+        import('./master/fleet.js'),
+        import('./master/emblem.js'),
+        import('./master/operations.js'),
+        import('./master/lessons.js'),
+        import('./master/brief.js'),
+        import('./master/loop.js'),
+        import('./master/usage.js'),
+      ]);
       const session = await openMasterSession(context, root);
       // Each concern under ./master/ answers its own subcommands; the first that knows the id handles it.
       // A confined master's `restart` is operations' loop request (GY-1658), not an act on the host's systemd it cannot reach.
@@ -114,4 +131,6 @@ export const masterCommands = defineCommands([
   inviteCommand,
 ]);
 
-export { derivedIntent } from './master/intent.js';
+const masterInit: typeof import('./master-init.js').masterInit = async (...args) => (await import('./master-init.js')).masterInit(...args);
+
+export const derivedIntent: typeof import('./master/intent.js').derivedIntent = async (...args) => (await import('./master/intent.js')).derivedIntent(...args);

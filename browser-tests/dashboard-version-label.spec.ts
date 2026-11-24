@@ -49,7 +49,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
     test.setTimeout(120_000);
     const database = await signInDatabase();
     const site = await temporaryDirectory('version-label');
-    await symlink(resolve('.graphyard/browser-dist'), join(site, 'dist'));
+    await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
     // Both planes listen on one port, as one URL does across a deploy; the page talks to whichever is serving it.
     const port = await freePort();
     let http = await plane(database.url, site, first, port);
@@ -58,7 +58,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
       const served = async () => (await (await fetch(`${http.url}/api/status`, { headers: { Authorization: 'Bearer test-human-operator' } })).json() as { build: { commit: string } }).build.commit.slice(0, 7);
       expect(await served()).toBe(first.slice(0, 7));
       const { code } = await (await fetch(`${http.url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string };
-      await page.goto(`${http.url}/#sign-in=${code}`);
+      await page.goto(`${http.url}/#sign-in=${code}&work`);
       await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible(settled);
       await expect(page.locator('.version-label')).toContainText(await served());
       await checkCorner(page);

@@ -18,15 +18,15 @@ const settled = { timeout: 15_000 };
 test('e2e:workers-page-live-session — one compact row per agent; opening it shows the run\'s live output, read-only; the master\'s row opens the Master page', async ({ browser }) => {
   test.setTimeout(120_000);
   const database = await signInDatabase();
-  const site = await mkdtemp(join(tmpdir(), 'graphyard-workers-page-'));
-  await symlink(resolve('.graphyard/browser-dist'), join(site, 'dist'));
+  const site = await mkdtemp(join(tmpdir(), 'mainworks-workers-page-'));
+  await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
   const child = fork(resolve('tests/helpers/workers-page-server.ts'), [database.url, site], { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
   const [{ url, first, session, master }] = await once(child, 'message') as [{ url: string; first: string; session: string; master: string }];
   const signIn = async () => (await (await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string }).code;
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     await serveXterm(page);
-    await page.goto(`${url}/#sign-in=${await signIn()}`);
+    await page.goto(`${url}/#sign-in=${await signIn()}&work`);
     await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings', exact: true }).click();
     await page.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: 'Workers', exact: true }).click();
     const table = page.getByRole('table', { name: 'Agent sessions' });
@@ -93,7 +93,7 @@ test('e2e:workers-page-live-session — one compact row per agent; opening it sh
     // On a phone each agent is one card, and the page does not scroll sideways.
     const phone = await browser.newPage({ viewport: { width: 390, height: 844 } });
     await serveXterm(phone);
-    await phone.goto(`${url}/#sign-in=${await signIn()}`);
+    await phone.goto(`${url}/#sign-in=${await signIn()}&work`);
     await phone.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings', exact: true }).click();
     await phone.getByRole('navigation', { name: 'Pages in this section' }).getByRole('button', { name: 'Workers', exact: true }).click();
     const cards = phone.locator('tr[data-session]');

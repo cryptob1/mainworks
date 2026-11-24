@@ -13,7 +13,7 @@ import { overloadFactor, saturatedPressure, type SessionUsage } from './model/se
 export * from './model/session-usage.js';
 
 /** A session's share is never under this many cores. */
-export const minimumShareCores = 2;
+const minimumShareCores = 2;
 /** Every session's CPUWeight and IOWeight: equal, systemd's default. */
 export const sessionWeight = 100;
 /** The loop, its master, the server and the database: ten sessions' weight, so they answer under full load. */
@@ -26,7 +26,7 @@ export interface SessionScope { unit: string; usec: number; memory: number; memo
 
 const read = (path: string) => { try { return readFileSync(path, 'utf8').trim(); } catch { return null; } };
 
-/** Every Graphyard scope under `slice` that carries a MemoryHigh: the live agent sessions (trials carry none). */
+/** Every Mainworks scope under `slice` that carries a MemoryHigh: the live agent sessions (trials carry none). */
 export function sessionScopes(slice = sessionSlice()): SessionScope[] {
   let names: string[];
   try { names = readdirSync(slice).filter(name => name.startsWith('graphyard-') && name.endsWith('.scope')); } catch { return []; }

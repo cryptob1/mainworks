@@ -1,6 +1,6 @@
 // The local provider's supervised process (GY-1500): the control plane on this machine against an
 // embedded Postgres cluster, with no Docker. One process owns both: it starts the cluster under the
-// install directory, migrates through the same Store `graphyard db migrate` uses, then serves. On
+// install directory, migrates through the same Store `mainworks db migrate` uses, then serves. On
 // SIGTERM or SIGINT it awaits store.close() before it stops the cluster, so no pooled connection is
 // cut by the database going away under it.
 //
@@ -110,7 +110,7 @@ export async function initialiseCluster(paths: LocalPaths, binaries?: PostgresBi
   await mkdir(paths.postgres, { recursive: true, mode: 0o700 });
   await chmod(paths.postgres, 0o700);
   if (clusterExists(paths)) return false;
-  if (!existsSync(paths.passwordFile)) throw new Error(`The cluster password file ${paths.passwordFile} is missing; rerun graphyard install --provider local --apply`);
+  if (!existsSync(paths.passwordFile)) throw new Error(`The cluster password file ${paths.passwordFile} is missing; rerun mainworks install --provider local --apply`);
   const bin = binaries ?? await postgresBinaries();
   await run(bin.initdb, [`--pgdata=${paths.data}`, '--auth=scram-sha-256', `--username=${LOCAL_USER}`, `--pwfile=${paths.passwordFile}`, '--encoding=UTF8', '--locale=C']);
   return true;
@@ -141,7 +141,7 @@ export async function startCluster(paths: LocalPaths, port: number, binaries?: P
   };
 }
 
-/** Creates the graphyard database on a fresh cluster, as a copy of `template` when named; an existing one is kept. */
+/** Creates the mainworks database on a fresh cluster, as a copy of `template` when named; an existing one is kept. */
 export async function ensureDatabase(password: string, port: number, template?: string) {
   const client = new pg.Client({ host: '127.0.0.1', port, user: LOCAL_USER, password, database: 'postgres' });
   await client.connect();
@@ -151,7 +151,7 @@ export async function ensureDatabase(password: string, port: number, template?: 
   } finally { await client.end(); }
 }
 
-/** Migrates through the same Store `graphyard db migrate` runs, then closes it. */
+/** Migrates through the same Store `mainworks db migrate` runs, then closes it. */
 export async function migrate(url: string) {
   const store = new Store(url, { max: 2 });
   try { return await store.init(); } finally { await store.close(); }
@@ -191,7 +191,7 @@ export interface LocalRuntime { url: string; databaseUrl: string; cluster: Runni
 export async function startLocalRuntime(directory: string, options: { serve?: Serve; log?: (line: string) => void; template?: string } = {}): Promise<LocalRuntime> {
   const paths = localPaths(directory);
   const environment = await readLocalEnvironment(paths);
-  if (!environment) throw new Error(`${paths.environment} is missing; run graphyard install --provider local --apply first`);
+  if (!environment) throw new Error(`${paths.environment} is missing; run mainworks install --provider local --apply first`);
   const password = (await readFile(paths.passwordFile, 'utf8')).trim();
   const port = Number((await readFile(paths.portFile, 'utf8')).trim());
   if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error(`${paths.portFile} does not hold a port`);
@@ -215,7 +215,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const directory = process.argv[2];
   if (!directory) { console.error('Usage: local-runtime INSTALL_DIRECTORY'); process.exit(2); }
   startLocalRuntime(directory, { log: line => process.stderr.write(line) }).then(runtime => {
-    console.log(`Graphyard serving at ${runtime.url} on embedded Postgres 127.0.0.1:${runtime.cluster.port}`);
+    console.log(`Mainworks serving at ${runtime.url} on embedded Postgres 127.0.0.1:${runtime.cluster.port}`);
     let stopping = false;
     const shutdown = () => {
       stopping = true;

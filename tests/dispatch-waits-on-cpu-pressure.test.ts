@@ -106,7 +106,7 @@ function effects(config: MasterConfig, herdr: { agents: HerdrAgent[] }, reading:
   return { daemon, seen };
 }
 
-/** `graphyard master status` over this fixture's snapshot and daemon state, as the CLI reads it. */
+/** `mainworks master status` over this fixture's snapshot and daemon state, as the CLI reads it. */
 async function status(config: MasterConfig, state: DaemonState) {
   await writeFile(daemonStatePath(config), JSON.stringify(state));
   const root = await temporaryDirectory('cpu-pressure-status');

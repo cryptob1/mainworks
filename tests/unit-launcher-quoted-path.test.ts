@@ -86,7 +86,7 @@ test('unit:unit-launcher-quoted-path — a loop unit whose ExecStart quotes a CL
   const base = await temporaryDirectory('unit-launcher-quoted-path');
   const home = join(base, 'home'), unitDirectory = join(base, 'units'), installDir = join(base, 'install'), root = join(base, 'repo');
   const cliCheckout = join(base, 'My Apps', 'graphyard'), cliPath = join(cliCheckout, 'bin', 'graphyard.mjs');
-  const oldCheckout = join(base, 'My Apps', 'graphyard-old'), oldCliPath = join(oldCheckout, 'bin', 'graphyard.mjs');
+  const oldCheckout = join(base, 'My Apps', 'mainworks-old'), oldCliPath = join(oldCheckout, 'bin', 'graphyard.mjs');
   for (const directory of [home, unitDirectory, installDir, join(cliCheckout, 'bin'), join(oldCheckout, 'bin'), root]) await mkdir(directory, { recursive: true });
   const unitFile = join(unitDirectory, units.master);
 
@@ -113,7 +113,7 @@ test('unit:unit-launcher-quoted-path — a loop unit whose ExecStart quotes a CL
   assert.equal(reading.loopStale, null, 'a current quoted launcher is not other code');
   assert.equal(reading.loopReplace, null);
 
-  // Setup (the master-loop step of `graphyard up`) reports it current and rewrites nothing: no
+  // Setup (the master-loop step of `mainworks up`) reports it current and rewrites nothing: no
   // `master init --replace-supervisor`, no restart — where the bare split rewrote this very unit on
   // every rerun and timed out waiting for a restart that changed nothing.
   const settled = world();
@@ -156,7 +156,7 @@ test('unit:unit-launcher-quoted-path — a loop unit whose ExecStart quotes a CL
   // the CLI checkout's executor reads back as exactly that checkout, never as the working
   // directory's own.
   const scriptPath = join(cliCheckout, 'scripts', 'graphyard-executor.mjs');
-  const executor = (execStart: string) => `[Unit]\nDescription=Graphyard executor\n\n[Service]\nWorkingDirectory=${root}\nExecStart=${execStart}\n`;
+  const executor = (execStart: string) => `[Unit]\nDescription=Mainworks executor\n\n[Service]\nWorkingDirectory=${root}\nExecStart=${execStart}\n`;
   assert.equal(foreignUnitText(executor(`/usr/bin/node "${scriptPath}" --slot %i`), root), cliCheckout, 'a double-quoted executor script reads back as exactly its checkout');
   assert.equal(foreignUnitText(executor(`/usr/bin/node '${scriptPath}' --slot %i`), root), cliCheckout, 'and so does a single-quoted one');
 

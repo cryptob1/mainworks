@@ -65,11 +65,11 @@ export default function HumanRequestsPage({ work, status, observedAt, action, bu
 }
 
 /** Who this session is, as the Needs you page says it: the operator's human session, or what else it is. */
-export function signedInAs(actor: { role?: string | null; sessionKind?: string | null }) {
+function signedInAs(actor: { role?: string | null; sessionKind?: string | null }) {
   return actor.role === 'admin' && actor.sessionKind === 'human' ? 'human operator' : `${actor.role ?? 'unknown role'} (${actor.sessionKind ?? 'undeclared'} session)`;
 }
 /** The one action a session that may not answer is offered (GY-738): sign in as the operator, never a command to run. */
-export const signInAction = 'Sign in as the operator';
+const signInAction = 'Sign in as the operator';
 
 /**
  * One waiting action, read like a short note from a colleague (GY-1408): the ask as its heading,

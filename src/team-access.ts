@@ -1,6 +1,6 @@
 // GY-3294: team access across the installs on one Tailscale machine.
 //
-// One machine runs many Graphyard installs, one port each, all served on the tailnet by
+// One machine runs many Mainworks installs, one port each, all served on the tailnet by
 // `tailscale serve --bg --http=PORT` (up.ts). The machine's Tailscale facts live in one host-owned
 // directory (`~/.config/graphyard/machine`) that only the host reads: `up` records the node there and
 // each install's master loop (master/team-access.ts) keeps the machine's teammate roster in it.
@@ -9,10 +9,11 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { setting } from './setting.js';
+import { defaultConfigHome } from './install/layout.js';
 
-export const machineDirectory = (config = process.env.GRAPHYARD_CONFIG_HOME ?? join(homedir(), '.config', 'graphyard')) => join(config, 'machine');
+export const machineDirectory = (config = setting('CONFIG_HOME') ?? defaultConfigHome()) => join(config, 'machine');
 const machineFile = (dir: string) => join(dir, 'tailnet.json');
 
 /**
@@ -56,7 +57,7 @@ export async function readTailnet(): Promise<{ dnsName: string | null; ip: strin
 }
 type ServeStatus = { TCP?: Record<string, { HTTPS?: boolean }>; Web?: Record<string, { Handlers?: Record<string, { Proxy?: string }> }>; AllowFunnel?: Record<string, boolean> };
 /** The public ports Tailscale Funnel accepts. */
-export const funnelPorts = ['443', '8443', '10000'];
+const funnelPorts = ['443', '8443', '10000'];
 /** Whether a handler at ADDRESS proxies to this install's loopback PORT, or its serve socket on that port (GY-3486). */
 const servesInstall = (address: string, proxy: string | undefined, port: string) => {
   try { if (new URL(proxy!).port === port) return true; } catch { /* not a URL */ }
@@ -112,4 +113,4 @@ export async function servedUrl(port: string, now = Date.now(), allowFunnel = tr
   return { ...result, doing: error ? `Turning Funnel on for port ${at} failed: ${error}. The loop retries every 10 minutes.` : `The loop turns Funnel on for port ${at} every 10 minutes.` };
 }
 
-export const missingTailnetGuidance = (port: string) => `Tailscale is not serving this machine's port ${port}, where this install runs, so nobody else can open it. Install Tailscale (https://tailscale.com/download), sign in, and rerun graphyard up.`;
+export const missingTailnetGuidance = (port: string) => `Tailscale is not serving this machine's port ${port}, where this install runs, so nobody else can open it. Install Tailscale (https://tailscale.com/download), sign in, and rerun mainworks up.`;

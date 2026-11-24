@@ -12,12 +12,12 @@ import type { RelandInput } from '../merge-writer/serve-revert.js';
  */
 export async function lessonsToCode(memory: ProjectMemory, work: readonly Work[], now: number,
   createWork: ((input: RelandInput, key: string) => Promise<{ key?: string } | null>) | undefined, log: (line: string) => void) {
-  for (const removed of removeDeliveredLessons(memory, work, now)) log(`[graphyard-master] ${removed.key} delivered: removed the lesson it turned into code: ${removed.text}`);
+  for (const removed of removeDeliveredLessons(memory, work, now)) log(`[mainworks-master] ${removed.key} delivered: removed the lesson it turned into code: ${removed.text}`);
   if (!createWork) return;
   for (const lesson of lessonsToFile(memory)) {
     try {
       const created = await createWork(lessonCodeItem(lesson), `lesson-to-code:${lesson.id}`);
-      if (created?.key) { lesson.filedAs = created.key; log(`[graphyard-master] filed ${created.key} to turn a lesson into code: ${lesson.text}`); }
-    } catch (error) { log(`[graphyard-master] the lesson-to-code item for lesson ${lesson.id} was not filed and is filed again next cycle: ${error instanceof Error ? error.message : String(error)}`); }
+      if (created?.key) { lesson.filedAs = created.key; log(`[mainworks-master] filed ${created.key} to turn a lesson into code: ${lesson.text}`); }
+    } catch (error) { log(`[mainworks-master] the lesson-to-code item for lesson ${lesson.id} was not filed and is filed again next cycle: ${error instanceof Error ? error.message : String(error)}`); }
   }
 }

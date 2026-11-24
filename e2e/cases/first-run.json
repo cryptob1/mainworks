@@ -1,0 +1,18 @@
+{
+  "id": "first-run",
+  "title": "A fresh install opens on the four-step first-run page and walks steps 1 to 3",
+  "description": "A real browser on the built dashboard opens a seeded fresh install at its root and lands on the first-run page, then walks steps 1 to 3 with a stub Builder account: step 1 repository connection (refused, then ticked with the repository name), step 2 live model check failing with the provider's sentence, then passing and ticked with the Builder name and registered model id, and step 3 current with its terminal equivalent.",
+  "tags": [
+    "dashboard"
+  ],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "first-run steps 1 to 3",
+      "run": "npm run test:browser -- browser-tests/first-run.spec.ts",
+      "timeoutSeconds": 420
+    }
+  ]
+}

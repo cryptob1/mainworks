@@ -18,7 +18,7 @@ const settled = { timeout: 15_000 };
 
 const open = async (page: Page) => {
   // The sign-in page is the pre-identity state: the plain fallback every install shares.
-  await page.goto('/?sign-in');
+  await page.goto('/?sign-in#work');
   await expect(page).toHaveTitle('Mainworks');
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
@@ -39,7 +39,7 @@ async function tabNamesTheProject(page: Page, repository: string) {
   await expect(page.getByRole('heading', { name: item, level: 1 })).toBeVisible();
   await expect(page).toHaveTitle(title);
   await page.getByRole('button', { name: '← Back' }).click();
-  // A reload restarts from the page's own Graphyard fallback and lands on the same project again.
+  // A reload restarts from the page's own Mainworks fallback and lands on the same project again.
   await page.reload();
   await expect(page.locator('.top-bar .project-name')).toHaveText(repository, settled);
   await expect(page).toHaveTitle(title);

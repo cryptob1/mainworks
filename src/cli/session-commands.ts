@@ -6,12 +6,12 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type { Work } from '../model.js';
 import { answerableHumanProof } from '../model/human-proof.js';
 import { hostDoableAsk, hostDoableRefusal, parkRefusal, type HostDoableAsk, type HumanRequestRow } from '../model/human-request.js';
-import { configHome, installDirectory, readInstallRecord, readToken } from '../install/secrets.js';
 import { installIdFor } from '../install/types.js';
-import { repositoryFromRemote } from '../onboarding.js';
 import { workMutation, type CliCommand } from './registry.js';
 import { parkCommand, parkInput } from './park-command.js';
-export { parkArgs, parkCommand } from './park-command.js';
+import { setting } from '../setting.js';
+import { stateDirectory } from '../install/layout.js';
+;
 
 /**
  * The commands a session runs about its own item, rather than about the fleet: the two halves of a human-only wait — the worker parks the item, the
@@ -20,7 +20,7 @@ export { parkArgs, parkCommand } from './park-command.js';
  */
 
 /**
- * This host's sealing key: an RSA key pair kept under the Graphyard configuration home, mode 0600;
+ * This host's sealing key: an RSA key pair kept under the Mainworks configuration home, mode 0600;
  * the public half is returned. The private key is the authority: the public half is derived from it
  * on every use, and the `.pub` copy beside it is rewritten whenever it differs, so a copy an older
  * version left truncated, or one a lost concurrent first use wrote, never outlives the key it names.
@@ -28,8 +28,9 @@ export { parkArgs, parkCommand } from './park-command.js';
  * mid-write never leaves a partial key under the real name; a key file left truncated is replaced.
  * `linkKey` is the hard-link primitive, replaceable so a test can stand in for a filesystem without one.
  */
-export async function hostSealKey(hostId: string, home = configHome(), linkKey: typeof link = link) {
-  const path = join(home, 'seal', `${hostId}.pem`);
+export async function hostSealKey(hostId: string, home?: string, linkKey: typeof link = link) {
+  const resolvedHome = home ?? (await import('../install/secrets.js')).configHome();
+  const path = join(resolvedHome, 'seal', `${hostId}.pem`);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const publicKey = (await sealPublicHalf(path) ?? await createSealKey(path, linkKey)).trim();
   const stored = await readFile(`${path}.pub`, 'utf8').then(text => text.trim(), () => undefined);
@@ -113,16 +114,17 @@ const sealLockStaleMs = 10_000, sealLockWaitMs = 20_000;
 const noHardLinks = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS']);
 
 /** Open a value sealed to this host (server/waits.ts `sealToHost`). */
-export async function unsealOnHost(sealed: string, hostId: string, home = configHome()) {
+async function unsealOnHost(sealed: string, hostId: string, home?: string) {
+  const resolvedHome = home ?? (await import('../install/secrets.js')).configHome();
   const box = JSON.parse(Buffer.from(sealed, 'base64').toString('utf8')) as { key: string; iv: string; tag: string; data: string };
-  const key = privateDecrypt({ key: await readFile(join(home, 'seal', `${hostId}.pem`), 'utf8'), padding: cryptoConstants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' }, Buffer.from(box.key, 'base64'));
+  const key = privateDecrypt({ key: await readFile(join(resolvedHome, 'seal', `${hostId}.pem`), 'utf8'), padding: cryptoConstants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' }, Buffer.from(box.key, 'base64'));
   const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(box.iv, 'base64'));
   decipher.setAuthTag(Buffer.from(box.tag, 'base64'));
   return Buffer.concat([decipher.update(Buffer.from(box.data, 'base64')), decipher.final()]).toString('utf8');
 }
 
 /** The worker half of a sealed answer: print the value the human provided, on the host it was sealed to. */
-export const unsealCommand: CliCommand = {
+const unsealCommand: CliCommand = {
   name: 'unseal',
   scope: 'work',
   help: ['  unseal GY-N                  Print the value the human provided for the item\'s last', '                                answered request, on the host it was sealed to'],
@@ -134,7 +136,7 @@ export const unsealCommand: CliCommand = {
 };
 
 /** The human half: list what waits on you, and answer it. The answer is what resumes the item. */
-export const humanRequestsCommand: CliCommand = {
+const humanRequestsCommand: CliCommand = {
   name: 'human-requests',
   help: ['  human-requests               List every open human-only request: what is needed, why, how', '                                long it has waited, and the command that answers it'],
   async run({ api, print }) {
@@ -143,7 +145,7 @@ export const humanRequestsCommand: CliCommand = {
       requestedBy: row.request.requestedBy, requestedAt: row.request.at, waited: waitedText(row.waitedMs), answer: row.answer.cli, decline: row.answer.decline })) });
   },
 };
-export const answerHumanCommand: CliCommand = {
+const answerHumanCommand: CliCommand = {
   name: 'answer',
   scope: 'work',
   help: [
@@ -173,12 +175,15 @@ export const answerHumanCommand: CliCommand = {
 };
 /**
  * GY-2171: the operator's admin credential this machine's install of ROOT's repository recorded, and
- * the tailnet address `graphyard up` served the dashboard on, if any. The token sits under
+ * the tailnet address `mainworks up` served the dashboard on, if any. The token sits under
  * <install>/tokens/: a local install keeps <install> under the config home with install.json naming
  * the human admin; a self-contained host writes only the tokens, its loop's GRAPHYARD_CONFIG_HOME
  * being <install> itself, and the operator is the planned `<install>-operator`. Null when neither is here.
  */
-export async function recordedOperator(root: string): Promise<{ token: string; reachableUrl: string | null } | null> {
+async function recordedOperator(root: string): Promise<{ token: string; reachableUrl: string | null } | null> {
+  const [{ configHome, installDirectory, readInstallRecord, readToken }, { repositoryFromRemote }] = await Promise.all([
+    import('../install/secrets.js'), import('../onboarding.js'),
+  ]);
   let repository: string | null;
   try { repository = repositoryFromRemote(execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })); } catch { return null; }
   if (!repository) return null;
@@ -190,7 +195,7 @@ export async function recordedOperator(root: string): Promise<{ token: string; r
     if ((token = await readToken(directory, operator).catch(() => null))) break;
   }
   if (!token) return null;
-  const up = await readFile(join(root, '.graphyard/up.json'), 'utf8').then(JSON.parse, () => null);
+  const up = await readFile(join(stateDirectory(root), 'up.json'), 'utf8').then(JSON.parse, () => null);
   return { token, reachableUrl: typeof up?.tailnetUrl === 'string' && up.tailnetUrl ? up.tailnetUrl : null };
 }
 /**
@@ -224,7 +229,7 @@ export const openCommand: CliCommand = {
 };
 /** With no credential named, the install's recorded operator credential stands in for GRAPHYARD_TOKEN (the request helper reads it on first use). */
 export async function asRecordedOperator(root: string) {
-  const recorded = process.env.GRAPHYARD_TOKEN_FILE || process.env.GRAPHYARD_TOKEN ? null : await recordedOperator(root);
+  const recorded = setting('TOKEN_FILE') || setting('TOKEN') ? null : await recordedOperator(root);
   if (recorded) process.env.GRAPHYARD_TOKEN = recorded.token;
   return recorded;
 }
@@ -247,10 +252,10 @@ function servedTailnetUrl(base: string): string | null {
   } catch { return null; }
 }
 /** A wait as a person reads it: minutes under an hour, then hours, then days. */
-export const waitedText = (ms: number) => ms < 3_600_000 ? `${Math.max(1, Math.round(ms / 60_000))}m` : ms < 172_800_000 ? `${Math.round(ms / 3_600_000)}h` : `${Math.round(ms / 86_400_000)}d`;
+const waitedText = (ms: number) => ms < 3_600_000 ? `${Math.max(1, Math.round(ms / 60_000))}m` : ms < 172_800_000 ? `${Math.round(ms / 3_600_000)}h` : `${Math.round(ms / 86_400_000)}d`;
 
 /** The blocker a refused host-doable park records: the master's owed action, its route and command, and the ask as written. */
-export const owedMasterAction = (ask: HostDoableAsk, needed: string) =>
+const owedMasterAction = (ask: HostDoableAsk, needed: string) =>
   `Owed master action (a park refused as host-doable, GY-1416): ${ask.what}. ${ask.route} — ${ask.command}. Asked as: ${needed}`.slice(0, 2000);
 /**
  * `park` with the GY-1416 route: a NEEDED an agent identity on the host can do never parks on the

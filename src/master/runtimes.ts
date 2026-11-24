@@ -1,4 +1,4 @@
-// Concern: one adapter record per agent runtime kind — everything Graphyard knows of a runtime, in one place (GY-3034).
+// Concern: one adapter record per agent runtime kind — everything Mainworks knows of a runtime, in one place (GY-3034).
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
@@ -14,6 +14,8 @@ import type { AccountUsage, EnvironmentProbe } from './environments.js';
 export interface ProbedHome { name: string; kind: string; home: string; plan?: string | null; declaredPlan?: string | null; keyFile?: string; keyVariable?: string; model?: string }
 /** What a usage reader reports of one account home: its login, the provider's usage windows, and a shared plan reading when it took one. */
 export interface AccountReading { loggedIn: boolean; usage: AccountUsage[]; note: string | null; reached?: boolean; shared?: boolean; plan?: PlanReading;
+  /** GY-3497: the extra-usage line the provider's answer gave when spend is enabled; shown, never changed. */
+  spend?: string;
   /** Why a logged-out reading is logged out, when the probe can say more than that. */
   loggedOutReason?: string;
   /** GY-3414: why a logged-in account still cannot run (its configured model is unavailable). */
@@ -21,7 +23,7 @@ export interface AccountReading { loggedIn: boolean; usage: AccountUsage[]; note
   /** GY-3516: the fingerprint of the key the reading was taken with. */
   key?: string }
 /**
- * Everything Graphyard knows of one runtime kind. Every field is optional but `kind`: a kind with
+ * Everything Mainworks knows of one runtime kind. Every field is optional but `kind`: a kind with
  * no `recipe` is still a kind profiles may name, and is refused at launch unless an agent-registry
  * contract brings its own no-approval arguments.
  *
@@ -40,7 +42,8 @@ export interface RuntimeAdapter {
   kind: string;
   recipe?: LaunchRecipe;
   /** `optional`: flags passed only when the installed runtime's `BEFORE --help` lists them (acceptedFlags). */
-  headless?: { program?: string; before: string[]; flags: string[]; drop?: string[]; optional?: string[] };
+  /** `stdin`: the words that replace a prompt too large for argv, which the runtime then reads on stdin (GY-3713). */
+  headless?: { program?: string; before: string[]; flags: string[]; drop?: string[]; optional?: string[]; stdin?: string[] };
   /** GY-3632: the words that make the one-task form continue runtime session `session`, placed before the request. */
   continue?: (session: string) => string[];
   request?: (reference: string) => string;
@@ -118,7 +121,7 @@ async function opencodeCommand(home: string, args: string[]) {
 export const opencodeAuthList = (home: string) => opencodeCommand(home, ['auth', 'list']);
 export const opencodeModels = (home: string) => opencodeCommand(home, ['models']);
 /** GY-3329: where cursor-agent keeps its sign-in on a host with no desktop keyring: `$XDG_CONFIG_HOME/cursor/auth.json`. */
-export const cursorSignInFile = 'cursor/auth.json';
+const cursorSignInFile = 'cursor/auth.json';
 /** GY-3414: the file cursor-agent records its login in, under `CURSOR_CONFIG_DIR`: its `authInfo` names the signed-in user. */
 export const cursorLoginFile = 'cli-config.json';
 /** Cursor is logged in when cli-config.json in the account home names a signed-in user, or a keyring-less sign-in sits at `cursor/auth.json` (GY-3329). It exposes no quota. */
@@ -126,7 +129,7 @@ async function cursorAccount(environment: ProbedHome): Promise<AccountReading> {
   const config = await readFile(resolve(environment.home, cursorLoginFile), 'utf8').then(text => JSON.parse(text), () => null);
   const signIn = await readFile(resolve(environment.home, cursorSignInFile), 'utf8').then(text => text.trim(), () => '');
   const loggedIn = !!(config?.authInfo?.userId || config?.authInfo?.email) || !!signIn;
-  return { loggedIn, usage: [], note: 'Cursor exposes no quota Graphyard can read; the session reports its own limit', ...(loggedIn ? {} : { loggedOutReason: `${resolve(environment.home, cursorLoginFile)} names no signed-in user` }) };
+  return { loggedIn, usage: [], note: 'Cursor exposes no quota Mainworks can read; the session reports its own limit', ...(loggedIn ? {} : { loggedOutReason: `${resolve(environment.home, cursorLoginFile)} names no signed-in user` }) };
 }
 /**
  * GY-3329: the login-home variables an account's home is applied to beyond its home variable.
@@ -164,13 +167,13 @@ const piModel = (output: string) => jsonRows(output).filter(row => row?.type ===
 export const reportedModel = (kind: string | null | undefined, output: string) => runtimeAdapter(kind)?.model?.(output) ?? null;
 
 // Per-runtime startup contracts that remove the approval and workspace-trust prompts a freshly
-// launched session blocks on. These are runtime CLI contracts, not Graphyard authority: a session
+// launched session blocks on. These are runtime CLI contracts, not Mainworks authority: a session
 // that never asks can still only act inside its own assigned worktree and its own credentials.
 const builtInAdapters = {
   claude: {
     modelFlag: '--model',
     // `--output-format json`: the run ends with one `result` object carrying its reply and the tokens it used by model (GY-3289).
-    headless: { before: [], flags: ['-p', '--output-format', 'json'] },
+    headless: { before: [], flags: ['-p', '--output-format', 'json'], stdin: [] },
     continue: session => ['--resume', session],
     recipe: { args: ['--permission-mode', 'bypassPermissions'], environment: {}, equivalents: ['--dangerously-skip-permissions'], trust: trustClaudeFolder, verify: verifyClaudeTrust, prompts: 'tool-approval prompts on first use of each command class, and the folder-trust dialog in a folder it has not been trusted in',
       tradeoff: 'Claude Code stops classifying commands for this session and trusts its working directory without asking wherever that loads none of the repository\'s own Claude settings; everything the agent proposes runs without asking.' },
@@ -188,7 +191,7 @@ const builtInAdapters = {
   codex: {
     modelFlag: '--model',
     // `--json`: events on standard output, the last a `turn.completed` with the tokens the turn used (GY-3289).
-    headless: { before: ['exec'], flags: ['--skip-git-repo-check', '--json'], drop: ['--ask-for-approval', '-a'] },
+    headless: { before: ['exec'], flags: ['--skip-git-repo-check', '--json'], drop: ['--ask-for-approval', '-a'], stdin: ['-'] },
     continue: session => ['resume', session],
     // No Codex flag skips its "Trust this folder?" dialog in a folder its config does not list, so
     // the folder is recorded trusted first (trustCodexFolder, GY-1306).
@@ -222,7 +225,7 @@ const builtInAdapters = {
     // unless `--standalone`, and that service answers with its own login — none — whatever the
     // account's XDG_DATA_HOME, so the run fell back to the free model and stopped at once. An
     // OpenCode without it rejects the flag, so it is passed only where `run --help` lists it (GY-3425).
-    headless: { before: ['run'], flags: ['--format', 'json'], optional: ['--standalone'] },
+    headless: { before: ['run'], flags: ['--format', 'json'], optional: ['--standalone'], stdin: [] },
     continue: session => ['--session', session],
     // GY-3592: the interactive launch needs it too, or the pane runs on the service's login and its free model.
     recipe: { args: ['--standalone'], environment: { OPENCODE_PERMISSION: '{"edit":"allow","bash":"allow","webfetch":"allow"}' }, permits: { OPENCODE_PERMISSION: asksNothing }, prompts: 'edit, bash, and webfetch permission prompts',
@@ -292,7 +295,7 @@ type WithHome<K extends RuntimeKind> = typeof builtInAdapters[K] extends { home:
 export type EnvironmentKind = { [K in RuntimeKind]: WithHome<K> }[RuntimeKind];
 /** Every runtime kind a profile may name: the one list the profile schema, the environment kinds and the launch tables read. */
 export const runtimeKinds = Object.keys(builtInAdapters) as [RuntimeKind, ...RuntimeKind[]];
-/** The kinds whose account homes Graphyard creates, probes and selects: those whose adapter names a login home. */
+/** The kinds whose account homes Mainworks creates, probes and selects: those whose adapter names a login home. */
 export const environmentKinds = runtimeKinds.filter(kind => 'home' in builtInAdapters[kind]) as [EnvironmentKind, ...EnvironmentKind[]];
 
 const adapters = new Map<string, RuntimeAdapter>(Object.entries(builtInAdapters).map(([kind, adapter]) => [kind, { kind, ...adapter } as RuntimeAdapter]));
@@ -306,9 +309,14 @@ export function withModel(kind: string, args: readonly string[], contract: { mod
   const flag = contract?.modelFlag ?? runtimeAdapter(kind)?.modelFlag;
   if (!flag) return [...args];
   const kept = args.filter((arg, index) => arg !== flag && !arg.startsWith(`${flag}=`) && args[index - 1] !== flag);
-  return modelId ? [...kept, flag, modelId] : kept;
+  return modelId ? [...kept, ...(kind === 'pi' ? piModelArgs(modelId) : [flag, modelId])] : kept;
 }
-/** The adapter for `kind`, or undefined for a kind Graphyard knows nothing of. */
+/** GY-3721: Pi takes a registry id `zai/glm-5.3` as `--provider zai --model glm-5.3`, the words its connect smoke authenticates with. */
+export const piModelArgs = (modelId: string) => {
+  const at = modelId.indexOf('/');
+  return at > 0 ? ['--provider', modelId.slice(0, at), '--model', modelId.slice(at + 1)] : ['--model', modelId];
+};
+/** The adapter for `kind`, or undefined for a kind Mainworks knows nothing of. */
 /** The remedy for a session stuck on its runtime's first-run screen, or null when the screen is not one. */
 export const runtimeAdapter = (kind: string | null | undefined): RuntimeAdapter | undefined => kind ? adapters.get(kind) : undefined;
 /** Every adapter, built-in and registered. */

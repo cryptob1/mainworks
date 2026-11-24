@@ -26,7 +26,7 @@ import { setRepositoryPolicy } from '../src/model-boundary/repository-policy.js'
 setRepositoryPolicy({ ...defaultRepositoryPolicy, e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-1351: the E2E case repository. Cases are files under e2e/cases/, registered as scenario
-// revisions, run against a base URL by `graphyard e2e run`, and tracked on the Tests page.
+// revisions, run against a base URL by `mainworks e2e run`, and tracked on the Tests page.
 const operator: Principal = { id: 'operator', role: 'admin' };
 const worker: Principal = { id: 'implementer', role: 'worker' };
 const principals = [operator, worker];
@@ -175,7 +175,7 @@ test('unit:e2e-runner-results — e2e run runs passing and failing cases against
   assert.ok(cases.every(entry => entry.definition.steps.every(step => step.kind === 'http' || step.kind === 'command')));
   await syncCases(apiAs(operator), cases);
   const report = join(dir, 'report.json');
-  const { GRAPHYARD_TOKEN_FILE: _file, ...inherited } = process.env;
+  const { GRAPHYARD_TOKEN_FILE: _file, MAINWORKS_TOKEN_FILE: _mwFile, MAINWORKS_URL: _mwUrl, MAINWORKS_TOKEN: _mwToken, ...inherited } = process.env;
   const env = { ...inherited, GRAPHYARD_URL: url, GRAPHYARD_TOKEN: tokens.get(operator.id)!, GRAPHYARD_REPOSITORY_ROOT: dir };
   const runCli = (...args: string[]) => new Promise<{ code: number; stdout: string; stderr: string }>(resolve =>
     execFile(process.execPath, [cli, 'e2e', 'run', ...args], { cwd: dir, env, timeout: 120_000 }, (error, stdout, stderr) => resolve({ code: error ? Number((error as any).code ?? 1) : 0, stdout, stderr })));
@@ -226,7 +226,7 @@ test('unit:e2e-runner-results — e2e run runs passing and failing cases against
   const unsynced: CaseFile = { file: 'e2e/cases/unsynced.json', definition: parseCase('e2e/cases/unsynced.json', JSON.stringify(http200('unsynced'))) };
   const local = await runCases([unsynced], { url, token: tokens.get(operator.id)! });
   await recordRuns(apiAs(operator), [unsynced], local);
-  assert.deepEqual(local.cases[0].recorded, { error: 'no registered revision matches e2e/cases/unsynced.json; run graphyard e2e sync' });
+  assert.deepEqual(local.cases[0].recorded, { error: 'no registered revision matches e2e/cases/unsynced.json; run mainworks e2e sync' });
   assert.match(summarize(local), /not recorded: no registered revision/);
 });
 
@@ -244,7 +244,7 @@ test('unit:e2e-runner-results — browser steps open, fill, click and expect tex
   const health = (async () => new Response('{}')) as typeof fetch;
   const ok = await runCases(signIn, { url: 'https://uat.example.test', token: 'uat-token', launcher: launcher('nothing'), fetcher: health });
   assert.equal(ok.cases[0].outcome, 'pass', JSON.stringify(ok.cases[0].failingStep));
-  assert.deepEqual(actions, ['open https://uat.example.test/?sign-in', 'fill Access token=uat-token', 'click button:Open control plane:false', 'see navigation:Main:true', 'see heading:Work:true']);
+  assert.deepEqual(actions, ['open https://uat.example.test/?sign-in#work', 'fill Access token=uat-token', 'click button:Open control plane:false', 'see navigation:Main:true', 'see heading:Work:true']);
   assert.equal(launches, 1);
   const bad = await runCases(signIn, { url: 'https://uat.example.test', token: 'uat-token', launcher: launcher('heading:Work'), fetcher: health });
   assert.deepEqual(bad.cases[0].failingStep, { index: 4, name: 'expect heading "Work"', reason: 'Timeout waiting for heading:Work:true' });
@@ -431,9 +431,9 @@ async function fakeAgentBrowser(dir: string) {
   await writeFile(join(dir, 'exit.txt'), '0');
   return { bin, log, invocations: async () => (await readFile(log, 'utf8').catch(() => '')).split('\n---\n').filter(Boolean), reply: (text: string) => writeFile(reply, text), exit: (code: number) => writeFile(join(dir, 'exit.txt'), String(code)) };
 }
-/** Run options for a scratch checkout: a host environment that holds every credential Graphyard could, which no step may see. */
-const generalOptions = (root: string, extra: Partial<Parameters<typeof runCases>[1]> = {}) => ({ url: 'http://target.test:4310', token: 'graphyard-token-value', fetcher: (async () => new Response('{}')) as typeof fetch, root, secretsDirectory: join(root, 'install'), artifactsDirectory: join(root, 'shots'),
-  hostEnvironment: { PATH: process.env.PATH, HOME: process.env.HOME, LANG: 'C.UTF-8', GRAPHYARD_TOKEN: 'graphyard-token-value', GRAPHYARD_TOKEN_FILE: '/x/token', GRAPHYARD_URL: 'https://plane.test', GRAPHYARD_UAT_TOKEN: 'uat-token-value', GH_TOKEN: 'gh-token-value', GITHUB_TOKEN: 'github-token-value', RAILWAY_TOKEN: 'railway-token-value', HERDR_SESSION: 'h', ANTHROPIC_API_KEY: 'anthropic-key-value' }, ...extra });
+/** Run options for a scratch checkout: a host environment that holds every credential Mainworks could, which no step may see. */
+const generalOptions = (root: string, extra: Partial<Parameters<typeof runCases>[1]> = {}) => ({ url: 'http://target.test:4310', token: 'mainworks-token-value', fetcher: (async () => new Response('{}')) as typeof fetch, root, secretsDirectory: join(root, 'install'), artifactsDirectory: join(root, 'shots'),
+  hostEnvironment: { PATH: process.env.PATH, HOME: process.env.HOME, LANG: 'C.UTF-8', GRAPHYARD_TOKEN: 'mainworks-token-value', GRAPHYARD_TOKEN_FILE: '/x/token', GRAPHYARD_URL: 'https://plane.test', GRAPHYARD_UAT_TOKEN: 'uat-token-value', GH_TOKEN: 'gh-token-value', GITHUB_TOKEN: 'github-token-value', RAILWAY_TOKEN: 'railway-token-value', HERDR_SESSION: 'h', ANTHROPIC_API_KEY: 'anthropic-key-value' }, ...extra });
 const secretsFile = async (root: string, target: string, content: string, mode = 0o600) => { await mkdir(join(root, 'install'), { recursive: true }); const file = join(root, 'install', secretsFileName(target)); await writeFile(file, content, { mode }); await chmod(file, mode); return file; };
 
 test('unit:e2e-command-and-agent-steps — a case accepts command and agent steps with a 600-second default timeout, declared secrets, and nothing else changes: the existing kinds and their refusals hold', async () => {
@@ -607,7 +607,7 @@ test('unit:e2e-agent-step-verdict — an agent step opens the target URL plus pa
   assert.match(none.cases[0].failingStep!.reason, /agent-browser could not open http:\/\/target\.test:4310\/games\/tic-tac-toe: spawn agent-browser ENOENT/);
 });
 
-test('unit:e2e-step-environment-isolated — a step\'s process holds TARGET_URL, the case\'s declared secrets and the host basics, and no Graphyard, GitHub, deploy or provider credential', async () => {
+test('unit:e2e-step-environment-isolated — a step\'s process holds TARGET_URL, the case\'s declared secrets and the host basics, and no Mainworks, GitHub, deploy or provider credential', async () => {
   const dir = await repository({});
   await secretsFile(dir, 'any', 'PLAYER_PASSWORD=hunter2-value\nOTHER_SECRET=never-declared\n');
   const cases = await loadCases(await repository({ 'env.json': commandCase('env', 'env | sort', { secrets: ['PLAYER_PASSWORD'] }), 'bare.json': commandCase('bare', 'env | sort') }));
@@ -731,4 +731,14 @@ test('integration:e2e-cases — the shipped catalog loads and every case parses;
   const oneLink = shipped.find(entry => entry.definition.id === 'one-link-invite')!;
   assert.deepEqual(invite.definition.steps.map(step => (step as { run?: string }).run), oneLink.definition.steps.map(step => (step as { run?: string }).run));
   assert.match((invite.definition.steps[0] as { run: string }).run, /tests\/one-link-invite\.test\.ts/);
+});
+
+test('unit:e2e-cases-pinned — create-work-item runs in a scratch case-only repository without failing on absent checkout test files', async () => {
+  const dir = await repository({});
+  await cp(join(root, caseDirectory, 'create-work-item.json'), join(dir, caseDirectory, 'create-work-item.json'));
+  const cases = await loadCases(dir);
+  const step = cases[0].definition.steps.find(s => s.kind === 'command' && s.run.includes('tests/managed-worktree-root.test.ts'));
+  assert.ok(step, 'create-work-item still runs the GY-3773 test in a real checkout');
+  const report = await runCases(cases, { url, token: tokens.get(operator.id)!, root: dir });
+  assert.equal(report.cases[0].outcome, 'pass', JSON.stringify(report.cases[0].failingStep));
 });

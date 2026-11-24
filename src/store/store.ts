@@ -8,11 +8,11 @@ import { advisoryLocks } from './locks.js';
 import { StaleWrite, lockItem, staleWriteAttempts, type StoreTransactionOptions } from './item-lock.js';
 import { saveDocument } from './document-write.js';
 import { workDocument } from './bounded-snapshot.js';
-export { saveDocument, rewriteDocument } from './document-write.js';
+;
 import { runStartupMigration } from './migration-locks.js';
 // The startup migration's engine lives beside its locks and its recorded state (migration-locks.ts);
 // the lock budget stays exported here with the store that applies it.
-export { migrationAttemptLockTimeoutMs, migrationLockTimeoutMs } from './migration-locks.js';
+;
 import { coordinationDocumentSql, coordinationRelevance, coordinationTail, coordinationTrimSql, detoasted, type CoordinationTrim } from './coordination-sql.js';
 import { recentChangesWindowMs } from '../model/project-memory.js';
 import { namedPool, reportPool, type ReportPoolOptions } from './report-pool.js';
@@ -21,9 +21,9 @@ import { closePool, leasePoolConnections, trackedPool } from './pools.js';
 export * from './snapshot-delta.js';
 
 /** How long a prioritized wake keeps its job ahead of polled jobs before it is dropped from the front (the job stays due). */
-export const prioritizedWakeTtlMs = 10 * 60_000;
+const prioritizedWakeTtlMs = 10 * 60_000;
 /** How long a due observation job may wait behind the claim-priority list before it is claimed first. */
-export const observationStarvedAfterMs = 5 * 60_000;
+const observationStarvedAfterMs = 5 * 60_000;
 
 /** The job wakes a `Store.transaction` has asked for and not yet taken, per connection, each with whether it is prioritized (GY-1115). */
 const pendingWakes = new WeakMap<object, Map<string, boolean>>();
@@ -100,7 +100,7 @@ export class Store {
    * the coordination lock (GY-203), only for the tables whose DDL is not yet recorded. Every lock
    * wait shares one `lockTimeoutMs` deadline, each attempt waiting at most `attemptLockTimeoutMs`
    * (3 s) before it rolls back and retries, so startup fails naming the lock inside the health
-   * window. The migration's own work is not timed: a long backfill (the offline `graphyard db
+   * window. The migration's own work is not timed: a long backfill (the offline `mainworks db
    * migrate` Job) still completes.
    */
   async init(options: { lockTimeoutMs?: number; attemptLockTimeoutMs?: number } = {}) { return runStartupMigration(this.pool, options); }

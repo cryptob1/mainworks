@@ -55,7 +55,7 @@ test('integration:real-app-onboarding — main declares a real app and feature m
   } finally { await new Promise<void>(resolve => app.close(() => resolve())); }
 });
 
-test('integration:real-app-onboarding — Graphyard maps its real dashboard and APIs', async () => {
+test('integration:real-app-onboarding — Mainworks maps its real dashboard and APIs', async () => {
   const { withDatabase } = await import('./helpers/postgres.js');
   const { Engine } = await import('../src/engine.js');
   const { server } = await import('../src/server.js');
@@ -64,7 +64,7 @@ test('integration:real-app-onboarding — Graphyard maps its real dashboard and 
   const { parseRepositoryConfig } = await import('../src/model-boundary/documentation.js');
   const { readFile } = await import('node:fs/promises');
   assert.ok(parseRepositoryConfig(await readFile('graphyard.json', 'utf8')).featureMap?.length, 'the installer accepts the feature map');
-  const store = await withDatabase('real_app_graphyard');
+  const store = await withDatabase('real_app_mainworks');
   await store.init();
   const http = server(new Engine(store, 120, 'cryptob1/graphyard'), [{ id: 'fixture-operator', role: 'admin', sessionKind: 'human', token: 'fixture-operator-token' }]);
   await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
@@ -72,7 +72,7 @@ test('integration:real-app-onboarding — Graphyard maps its real dashboard and 
   const repo = process.cwd(), served = await temporaryDirectory('real-app-dist');
   const { mkdir } = await import('node:fs/promises');
   await mkdir(join(served, 'dist'));
-  await writeFile(join(served, 'dist', 'index.html'), '<!doctype html><title>Graphyard</title>');
+  await writeFile(join(served, 'dist', 'index.html'), '<!doctype html><title>Mainworks</title>');
   process.chdir(served);
   try {
     const mapped = featureMapCase(repo);

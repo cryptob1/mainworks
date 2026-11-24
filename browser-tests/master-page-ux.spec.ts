@@ -1,7 +1,7 @@
 import { test, expect, type Browser, type Page } from '@playwright/test';
 import { fork } from 'node:child_process';
 import { once } from 'node:events';
-import { readFile, symlink, writeFile } from 'node:fs/promises';
+import { readFile, symlink } from 'node:fs/promises';
 import { delimiter, join, resolve } from 'node:path';
 import { withDatabase } from '../tests/helpers/postgres';
 import { temporaryDirectory } from '../tests/helpers/temp-dirs';
@@ -9,11 +9,12 @@ import { bridgeTerminals } from '../src/master/terminal-bridge';
 import { terminalSessionReader } from '../src/master/terminal-session';
 import type { MasterConfig } from '../src/master/profiles';
 import { serveXterm } from './xterm';
+import { saveMasterState } from './master-state';
 
 const settled = { timeout: 15_000 };
 async function fixture(browser: Browser, phone = false) {
   const site = await temporaryDirectory('master-ux');
-  await symlink(resolve('.graphyard/browser-dist'), join(site, 'dist'));
+  await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
   const database = await withDatabase('master_ux'); await database.init();
   const child = fork(resolve('tests/helpers/terminal-server.ts'), [(database.pool.options as { connectionString: string }).connectionString, site], {
     execArgv: ['--import', 'tsx'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
@@ -26,7 +27,7 @@ async function fixture(browser: Browser, phone = false) {
   process.env.HERDR_STUB_STATE = join(site, 'master.daemon.json');
   process.env.GRAPHYARD_HERDR_CONFIG_HOME = ''; process.env.GRAPHYARD_HERDR_SESSION = '';
   const current = { master: { agentName: 'master', pane: 'w1:master' as string | null, account: 'test-account', runtime: 'codex' }, status: 'idle', gap: '' };
-  const save = () => writeFile(join(site, 'master.daemon.json'), JSON.stringify(current));
+  const save = () => saveMasterState(join(site, 'master.daemon.json'), current);
   await save();
   const stopping = new AbortController();
   await new Promise<void>(done => bridgeTerminals(url, 'test-coordinator', stopping.signal, done, terminalSessionReader(() => ({ credentialFile: join(site, 'master.token') }) as MasterConfig)));
@@ -94,6 +95,10 @@ test('e2e:master-page-ux — history, fitting, native input, clipboard, reconnec
       return Array.from({ length: buffer.length }, (_, i) => buffer.getLine(i)?.translateToString()).filter(line => String(line).startsWith('earlier line ')).length;
     })).toBe(1000);
     await page.evaluate(() => (window as any).testTerminal.scrollToBottom());
+    // GY-3731: the pane mounts hidden under the Conversation tab; a hello that lands before the switch
+    // to #master/live cannot focus it, so keys went to the page body. Focus it as a user does, and wait.
+    await page.locator('.terminal-host').click();
+    await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
     await page.keyboard.type('hello master'); await page.keyboard.press('Enter');
     for (const key of ['Control+c', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Escape', 'Alt+x']) await page.keyboard.press(key);
     await expect.poll(f.inputs).toEqual(expect.arrayContaining(['\x03', '\x1b[A', '\x1b[B', '\x1b[D', '\x1b[C', '\x1b', '\x1bx']));
@@ -115,14 +120,14 @@ test('e2e:master-page-ux — history, fitting, native input, clipboard, reconnec
     // written after the drop could miss that read (GY-3261).
     f.current.gap = 'output produced during the gap'; await f.save();
     f.child.send('drop-terminals');
-    await expect.poll(f.reconnects).toBe(1);
+    await expect.poll(f.reconnects, settled).toBe(1);
     await expect(page.locator('.xterm-rows')).toContainText(f.current.gap, settled);
     expect(await page.evaluate(() => (window as any).survivedDrop)).toBe(true);
     // A failed reconnect while offline must keep retrying once the network returns.
     await page.context().setOffline(true);
     f.current.gap = 'output while offline'; await f.save();
     f.child.send('drop-terminals');
-    await expect.poll(f.reconnects).toBe(2);
+    await expect.poll(f.reconnects, settled).toBe(2);
     await page.waitForTimeout(1000);
     await page.context().setOffline(false);
     await expect(page.locator('.xterm-rows')).toContainText(f.current.gap, settled);

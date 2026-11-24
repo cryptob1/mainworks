@@ -103,6 +103,7 @@ test('unit:deploy-builds-from-its-own-worktree — a watch pass over a fixture i
       await writeFile(join(pusher, 'vendor/tsx/index.mjs'), '');
       await mkdir(join(pusher, 'bin'), { recursive: true });
       await writeFile(join(pusher, 'bin/graphyard.mjs'), await readFile(new URL('../bin/graphyard.mjs', import.meta.url)));
+      await writeFile(join(pusher, 'bin/mainworks.mjs'), await readFile(new URL('../bin/mainworks.mjs', import.meta.url)));
       await mkdir(join(pusher, 'src'), { recursive: true });
       await writeFile(join(pusher, 'src', 'cli.ts'), `import { appendFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';

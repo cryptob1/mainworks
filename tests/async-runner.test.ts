@@ -131,7 +131,7 @@ test('unit:no-sync-child-processes — the loop, the dispatcher, the merge broke
     return true;
   });
   assert.ok(Date.now() - started < 5_000, 'a timed-out child is killed at its bound, not waited out');
-  await assert.rejects(runChild('graphyard-no-such-command-125', []), (error: unknown) => error instanceof ChildProcessError && /could not be started/.test(error.message));
+  await assert.rejects(runChild('mainworks-no-such-command-125', []), (error: unknown) => error instanceof ChildProcessError && /could not be started/.test(error.message));
 
 });
 

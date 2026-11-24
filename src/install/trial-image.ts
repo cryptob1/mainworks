@@ -1,15 +1,17 @@
 import { fileURLToPath } from 'node:url';
 import { publishedSourceImages, type AdapterContext } from './adapters.js';
 import type { PlanAction } from './types.js';
-import { pulledTrialImageFile, trialContainerImage, trialImage } from '../merge-writer/trial-container.js';
+import { legacyTrialContainerImage, pulledTrialImageFile, trialContainerImage, trialImage } from '../merge-writer/trial-container.js';
 import { localTransport, shellQuote } from './transport.js';
 import { appArmorEnabled, trialAppArmorLoadCommand, trialAppArmorProfile, trialAppArmorProfilePath, trialAppArmorProfileText } from '../merge-writer/trial-apparmor.js';
+import { setting } from '../setting.js';
+import { timedPull } from './image-pulls.js';
 
-/** GY-3188: trial images build on Graphyard's own builder, so its cache is pruned without touching another project's. */
-export const trialBuilder = 'graphyard-trial';
-export const trialBuilderCreateArgs = ['buildx', 'create', '--name', trialBuilder, '--driver', 'docker-container'];
+/** GY-3188: trial images build on Mainworks's own builder, so its cache is pruned without touching another project's. */
+export const trialBuilder = 'mainworks-trial';
+const trialBuilderCreateArgs = ['buildx', 'create', '--name', trialBuilder, '--driver', 'docker-container'];
 export const trialImageBuildArgs = (root: string) => ['buildx', 'build', '--builder', trialBuilder, '--load', '--target', 'trial', '--tag', trialContainerImage, root];
-/** `published` (GY-3214) is the trial image Graphyard published for the source checkout's commit, null for a tree no published image holds. */
+/** `published` (GY-3214) is the trial image Mainworks published for the source checkout's commit, null for a tree no published image holds. */
 export const trialImagePlan = (ctx: Pick<AdapterContext, 'sourceRoot'>, published: string | null): PlanAction => ({
   id: 'provider.trial-image', target: 'provider', state: 'update',
   title: published ? `Pull the private-root merge-trial image ${published}, or build it here when it is not published (Docker is required for trials)` : 'Build the private-root merge-trial image (Docker is required for trials)',
@@ -19,7 +21,7 @@ export const trialImagePlan = (ctx: Pick<AdapterContext, 'sourceRoot'>, publishe
 /** Pulls the published trial image and names it for the release tree's trials (trial-container.ts `trialImage`); builds it here otherwise. The marker is removed through the transport, so it goes where the image is provisioned — the target of a move, not the machine that ran it. */
 export const provisionTrialImage = async (ctx: Pick<AdapterContext, 'transport' | 'sourceRoot'>, published: string | null) => {
   const marker = pulledTrialImageFile(ctx.sourceRoot);
-  if (published && (await ctx.transport.exec('docker', ['image', 'pull', published], { allowFailure: true, timeout: 1_800_000 })).code === 0) return ctx.transport.putFile(marker, `${published}\n`, 0o644);
+  if (published && await timedPull(ctx.transport, published)) return ctx.transport.putFile(marker, `${published}\n`, 0o644);
   await ctx.transport.exec('rm', ['-f', marker], { allowFailure: true });
   if ((await ctx.transport.exec('docker', ['buildx', 'inspect', trialBuilder], { allowFailure: true })).code !== 0) await ctx.transport.exec('docker', trialBuilderCreateArgs);
   await ctx.transport.exec('docker', trialImageBuildArgs(ctx.sourceRoot), { timeout: 1_800_000 });
@@ -40,7 +42,7 @@ export const provisionTrialAppArmor = async (ctx: AdapterContext, enabled = appA
 };
 
 /** GY-3328: the trial image could not be provisioned on this host — the trial host's fault, never a head's: no verdict, no rework. */
-export const trialImageMissingPrefix = 'Trial-host fault: the trial image ';
+const trialImageMissingPrefix = 'Trial-host fault: the trial image ';
 export const trialImageMissingFault = (error: unknown): string | null => {
   const message = error instanceof Error ? error.message : String(error);
   return message.startsWith(trialImageMissingPrefix) ? message : null;
@@ -51,10 +53,14 @@ let provisioning: Promise<void> | null = null;
  * cache) — pulled, else built, by the install's own code. Concurrent callers wait on one provision.
  */
 export function ensureTrialImage(root = fileURLToPath(new URL('../..', import.meta.url))): Promise<void> {
-  if (process.env.GRAPHYARD_TRIAL_IMAGE) return Promise.resolve();
+  if (setting('TRIAL_IMAGE')) return Promise.resolve();
   return provisioning ??= (async () => {
     const transport = localTransport(), image = trialImage(root);
     if ((await transport.exec('docker', ['image', 'inspect', image], { allowFailure: true })).code === 0) return;
+    // GY-3594: a host from before the rename holds the same image under its old name.
+    if (image === trialContainerImage
+      && (await transport.exec('docker', ['image', 'inspect', legacyTrialContainerImage], { allowFailure: true })).code === 0
+      && (await transport.exec('docker', ['tag', legacyTrialContainerImage, image], { allowFailure: true })).code === 0) return;
     try { await provisionTrialImage({ sourceRoot: root, transport }, publishedSourceImages(root)?.trial ?? null); }
     catch (error) { throw new Error(`${trialImageMissingPrefix}${image} is missing on this host and could not be provisioned: ${error instanceof Error ? error.message : String(error)}`); }
   })().finally(() => { provisioning = null; });

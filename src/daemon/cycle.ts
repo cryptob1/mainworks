@@ -51,7 +51,7 @@ import { actionStallDelay, actionStallThreshold } from '../model/action-progress
 import { syncProjectMemory } from '../project-memory.js';
 import { reconcileMasterMemory } from '../model/project-memory.js';
 import { diskHeadroomStep } from './disk-headroom.js';
-import { cpuPressureStep, cpuWaiting, heatClear, implementationWaiting, sessionUsageStep } from './cpu-pressure.js';
+import { cpuPressureStep, cpuWaiting, heatClear, sessionUsageStep } from './cpu-pressure.js';
 import { causeCleared, environmentCause } from './environment-blockers.js';
 import { leftoversStep, tallyLeftovers } from './leftovers.js';
 import { yardAlertStep } from './yard-alerts.js';
@@ -94,8 +94,8 @@ export const masterLaunchBackoffAfter = 3;
 /** How long the loop waits before retrying the master launch after its `attempts`-th same-way failure: one minute doubling, capped at fifteen. */
 export const masterLaunchRetryMs = (attempts: number) => Math.min(60_000 * 2 ** Math.max(0, attempts - masterLaunchBackoffAfter), 15 * 60_000);
 /** GY-3519: two identical launch failures for the master on one account mark that account unusable for an hour and move to the next. */
-export const masterAccountFailoverAfter = 2;
-export const masterAccountHoldMs = 3_600_000;
+const masterAccountFailoverAfter = 2;
+const masterAccountHoldMs = 3_600_000;
 const masterLaunchFailureReason = (error: unknown) =>
   normalizeFailureReason(message(error).replace(/\bin pane\s+\S+/g, 'in pane'));
 const activeUnusableAccounts = (master: DaemonState['master'], now: number) =>
@@ -218,7 +218,7 @@ export async function runCycle(config: MasterConfig, state: DaemonState, effects
       settled();
       noteStep(name, error);
       if (name === 'snapshot') throw error;
-      log(`[graphyard-master] cycle ${state.cycle}: the ${name} step failed and runs again next cycle: ${message(error)}`);
+      log(`[mainworks-master] cycle ${state.cycle}: the ${name} step failed and runs again next cycle: ${message(error)}`);
       return undefined;
     } finally { clearTimeout(timer); }
   };
@@ -270,7 +270,9 @@ export async function runCycle(config: MasterConfig, state: DaemonState, effects
     if (!config.forPerson) await controlPlaneStep(cycle, stalled);
     if (!config.forPerson) await leftoversStep(state, clock, effects.leftoverDisk, log);
     // GY-3289: what this host's sessions spent, reported at most once a minute; a failed report is made again.
-    if (!config.forPerson) await effects.usage?.(state.master.continuity?.current ?? null).catch(error => log(`[graphyard-master] token usage was not reported and is reported again: ${message(error)}`));
+    if (!config.forPerson) await effects.usage?.(state.master.continuity?.current ?? null).catch(error => log(`[mainworks-master] token usage was not reported and is reported again: ${message(error)}`));
+    // GY-3768: older delta rows get their stage stored, one batch a cycle, until none lack it.
+    if (!config.forPerson) await effects.backfillEventStage?.(log).catch(error => log(`[mainworks-master] the event stage backfill failed and runs again next cycle: ${message(error)}`));
   });
   const metrics = cycleMetricsSchema.parse({ cycle: state.cycle, at: new Date(clock).toISOString(), open: read.snapshot.work.filter(item => item.stage !== 'done').length, actions: performed.length, steps });
   state.metrics.push(metrics);
@@ -313,7 +315,7 @@ function reconciledAttempt(item: Work, hostId: string): Pick<NonNullable<Work['l
 }
 
 /** The ended attempts' worktrees on this host: no live lease and no running session holds their epoch. */
-export function endedAttemptWorktrees(work: Work[], hostId: string, now: number) {
+function endedAttemptWorktrees(work: Work[], hostId: string, now: number) {
   return work.flatMap(item => (item.workspaces ?? []).filter(space => space.host === hostId
     // GY-3632: a rework that reused the path owns it now.
     && !(item.workspaces ?? []).some(later => later.epoch > space.epoch && later.host === hostId && later.path === space.path)
@@ -483,7 +485,7 @@ async function closeStep(cycle: Cycle) {
       await note(cycle, key, 'close', item.key, 'done', `Released ${session.id}'s agent-registry session (${ended ?? 'none recorded'}): ${reason}`, session.principal ?? null);
     } catch (error) { await note(cycle, key, 'close', item.key, 'failed', `Could not release ${session.id}'s agent-registry session: ${message(error)}`, session.principal ?? null); }
   }
-  // GY-3188: a pane Graphyard launched is closed once its session has ended (its item done, or its
+  // GY-3188: a pane Mainworks launched is closed once its session has ended (its item done, or its
   // session no longer running) unless its agent is still working, and so is one whose runtime exited
   // in a worktree since removed. A live session's pane is never touched.
   const launched = new Set(snapshot.work.flatMap(item => (item.sessions ?? []).map(session => session.pane)));
@@ -502,7 +504,7 @@ async function closeStep(cycle: Cycle) {
     const cwd = (agent.cwd ?? '').replace(/ \(deleted\)$/, '');
     const pane = agent.pane_id;
     if (!pane || attemptedPanes.has(pane) || masters.has(pane) || live.has(pane) || agent.agent_status === 'working') continue;
-    if (!cwd.includes('/.graphyard/worktrees/') && !managedRoots.some(root => cwd.startsWith(root + sep))) continue;
+    if (!/\/\.(graphyard|mainworks)\/worktrees\//.test(cwd) && !managedRoots.some(root => cwd.startsWith(root + sep))) continue;
     const gone = !existsSync(cwd), exited = !agent.agent || endedRuntimeStates.includes(agent.agent_status ?? '');
     const due = () => ended.has(pane) || (gone && exited && launched.has(pane));
     // Finished sessions disappear from coordination, and old launch actions are pruned.
@@ -532,15 +534,15 @@ async function closeStep(cycle: Cycle) {
   tallyLeftovers(state, 'reclaimed', leftovers.length - networks);
   tallyLeftovers(state, 'networks', networks);
   if (leftovers.length) await note(cycle, `job-leftovers:${state.cycle}`, 'reclaim', null, 'done', `Removed ${leftovers.join(', ')}: left behind by jobs that have ended`);
-  const releases = await effects.sweepCliReleases?.().catch(error => { cycle.log(`[graphyard-master] the CLI release sweep failed: ${message(error)}`); return null; });
+  const releases = await effects.sweepCliReleases?.().catch(error => { cycle.log(`[mainworks-master] the CLI release sweep failed: ${message(error)}`); return null; });
   if (releases?.removed.length) {
     tallyLeftovers(state, 'cliReleases', releases.removed.length);
     tallyLeftovers(state, 'cliReleaseBytes', releases.bytes);
     await note(cycle, `cli-releases:${state.cycle}`, 'reclaim', null, 'done', `Removed ${releases.removed.length} CLI release copies (${Math.round(releases.bytes / 1e6)} MB) nothing serves or runs: ${releases.removed.join(', ')}`);
   }
-  if (releases?.left.length) cycle.log(`[graphyard-master] CLI release copies left in place: ${releases.left.join('; ')}`);
+  if (releases?.left.length) cycle.log(`[mainworks-master] CLI release copies left in place: ${releases.left.join('; ')}`);
   // GY-3553: a served CLI release whose commit stamp names another commit than it holds is restamped.
-  const restamped = await cycle.effects.repairCliStamp?.().catch(error => { cycle.log(`[graphyard-master] the CLI release stamp check failed: ${message(error)}`); return null; });
+  const restamped = await cycle.effects.repairCliStamp?.().catch(error => { cycle.log(`[mainworks-master] the CLI release stamp check failed: ${message(error)}`); return null; });
   if (restamped) await note(cycle, `cli-stamp:${restamped.commit}`, 'reclaim', null, 'done', `Restored the CLI release commit stamp ${restamped.file} to ${restamped.commit.slice(0, 12)}, the commit checked out in it (was ${restamped.was?.slice(0, 12) ?? 'missing'})`);
   // GY-3122: with ended worktrees and settled checkouts gone, the volumes are measured against the floor.
   await diskHeadroomStep(cycle);
@@ -551,7 +553,7 @@ async function closeStep(cycle: Cycle) {
   // GY-3438: and every agent session's use against its CPU and memory caps.
   sessionUsageStep(cycle);
   // GY-3407: every host is read for the Workers page; one that does not answer reads away until it does.
-  if (cycle.effects.hostReadings) cycle.state.hosts = await cycle.effects.hostReadings(cycle.state.hosts).catch(error => { cycle.log(`[graphyard-master] the host readings failed: ${message(error)}`); return cycle.state.hosts; });
+  if (cycle.effects.hostReadings) cycle.state.hosts = await cycle.effects.hostReadings(cycle.state.hosts).catch(error => { cycle.log(`[mainworks-master] the host readings failed: ${message(error)}`); return cycle.state.hosts; });
 }
 
 /**
@@ -693,7 +695,7 @@ async function dispatchStep(cycle: Cycle) {
   const wait = (item: Work, why: string) => { if (!gates.has(item.key)) gates.set(item.key, `${item.key} waits: ${why}`); };
   const refused = (item: Work, resource: string, holder: string) => {
     const line = `${item.key} waits: exclusive resource ${resource} is held by ${holder}`;
-    if (!before.has(line) && !standing.has(line)) cycle.log(`[graphyard-master] cycle ${state.cycle}: ${line}`);
+    if (!before.has(line) && !standing.has(line)) cycle.log(`[mainworks-master] cycle ${state.cycle}: ${line}`);
     standing.add(line);
     wait(item, `exclusive resource ${resource} is held by ${holder}`);
   };
@@ -737,7 +739,7 @@ async function dispatchStep(cycle: Cycle) {
   // GY-3473: each hold named once, so the stall alarm reports the reason dispatch itself has this cycle.
   const holds = [
     state.diskHeadroom && `implementation launches waiting: disk below its floor: ${state.diskHeadroom.shortage}`,
-    implementationWaiting(state),
+    cpuWaiting(state),
     refusedRoles.has('worker') && 'worker launches held: the checkout is not trusted for the worker accounts (see master status)',
   ].filter((hold): hold is string => !!hold);
   if (!holds.length) for (const item of claimable) {
@@ -804,7 +806,7 @@ async function dispatchStep(cycle: Cycle) {
     const repeating = repeatingItems(state.failureRuns), unheld = (item: Work) => !repeating.has(item.key) && !reworkCapHeld(item);
     const alarm = stallAlarm({ now: clock, open: open.filter(unheld), ready: claimable.filter(unheld), freeSlots: allowed - running, holds, gates,
       state, registry, serving: await Promise.resolve(effects.servingCommit?.()).catch(() => null) ?? null });
-    if (recordStallAlarm(state, alarm, clock)) { cycle.log(`[graphyard-master] cycle ${state.cycle}: ${alarm ?? 'the stall alarm cleared'}`); await effects.persist(state); }
+    if (recordStallAlarm(state, alarm, clock)) { cycle.log(`[mainworks-master] cycle ${state.cycle}: ${alarm ?? 'the stall alarm cleared'}`); await effects.persist(state); }
   }
   // A dispatch tick that fails (its state cannot be saved) still wakes the master.
   // GY-3605: the tick's session launches each have the launch bound — minutes, when a product review
@@ -818,7 +820,7 @@ async function dispatchStep(cycle: Cycle) {
 /**
  * GY-3694: available merge-trial slots — the host's local heavy-job limit plus ready remote hosts.
  */
-export function availableTrialSlots(hosts: readonly { local?: boolean; away: boolean }[] = [], localLimit = heavyJobLimit(heavyJobsDirectory())): number {
+function availableTrialSlots(hosts: readonly { local?: boolean; away: boolean }[] = [], localLimit = heavyJobLimit(heavyJobsDirectory())): number {
   return localLimit + hosts.filter(host => !host.local && !host.away).length;
 }
 
@@ -826,7 +828,7 @@ export function availableTrialSlots(hosts: readonly { local?: boolean; away: boo
  * GY-3694: heads waiting for or running a merge trial, deduplicated across the live snapshot and
  * the merge writer's cursor state (excluding items already done or returned for rework).
  */
-export function testQueueCount(work: readonly Work[], mergeWriter: Pick<MergeWriterState, 'queue' | 'inFlight' | 'inFlights'> | null | undefined, now: number): number {
+function testQueueCount(work: readonly Work[], mergeWriter: Pick<MergeWriterState, 'queue' | 'inFlight' | 'inFlights'> | null | undefined, now: number): number {
   const byKey = new Map(work.map(item => [item.key, item]));
   const active = (key: string) => {
     const item = byKey.get(key);
@@ -958,12 +960,14 @@ async function launchWorker(cycle: Cycle, item: Work, key: string, profile: Work
   try {
     // Every run the dispatch starts is recorded on the item as it starts, a handed-off or failed one with how it ended (GY-3259).
     const onRun = async (run: WorkerRun) => effects.recordSession?.(item, workerRunHandle(item, profile, config.hostId, run));
-    const launched = await effects.dispatch(item, profile, herdr.agents, snapshot, { diagnosis: diagnosisSection(state.failureRuns[item.id]), canaries, exclude, onRuntime: kind => { runtime = kind; }, onRun }) as { run?: string; epoch?: number; runtime?: string | null; initialHead?: string | null; runtimeStartedAt?: string | null; canary?: { runtime: string; failed: string | null } | null } | undefined;
+    const launched = await effects.dispatch(item, profile, herdr.agents, snapshot, { diagnosis: diagnosisSection(state.failureRuns[item.id]), canaries, exclude, onRuntime: kind => { runtime = kind; }, onRun }) as { run?: string; epoch?: number; runtime?: string | null; initialHead?: string | null; runtimeStartedAt?: string | null; canary?: { runtime: string; failed: string | null } | null; account?: { environment: string } | null } | undefined;
     await settle(launched?.canary, launched?.epoch, launched?.runtimeStartedAt);
     // The session's handle is what the close step reads to end it once its attempt does: the run's, with when it started and from which commit.
     if (launched?.run && launched.epoch) await effects.recordSession?.(item, { ...workerRunHandle(item, profile, config.hostId, { epoch: launched.epoch, run: launched.run, runtime: launched.runtime ?? profile.kind ?? profile.mode, account: null, outcome: null }),
       ...(launched.runtimeStartedAt ? { runtimeStartedAt: launched.runtimeStartedAt } : {}), ...(launched.initialHead ? { initialHead: launched.initialHead } : {}) })?.catch(() => undefined);
-    sink.push(await entry('done', `Dispatched ${item.key} to ${profile.name}; the worker launcher claimed under ${profile.principal}`));
+    // GY-3730: the line names the registry account that builds and its runtime; the profile is only the identity it claims under.
+    const builder = launched?.account ? `${launched.account.environment} (${launched.runtime ?? 'unknown runtime'})` : profile.name;
+    sink.push(await entry('done', `Dispatched ${item.key} to ${builder}; the worker launcher claimed under ${profile.principal}`));
   } catch (error) {
     await settle(null, undefined, undefined);
     const full = capacityRefusal(error);
@@ -1043,7 +1047,7 @@ async function masterSession(cycle: Cycle, open: Work[]) {
   // GY-3345: and each unanswered message another install's Master sent this one. An unreadable list
   // keeps the messages already delivered, so none is delivered twice.
   const messages = config.forPerson ? [] : await Promise.resolve(effects.masterMessages?.() ?? []).catch(() => null);
-  const causes = [...masterCauses(open, state.actions, state.failureRuns), ...(await sessions.pendingCauses?.(open) ?? []), ...messageCauses(messages ?? [], config.cliPath, config.peers?.map(peer => peer.name) ?? [])];
+  const causes = [...masterCauses(open, state.actions, state.failureRuns, cycle.now()), ...(await sessions.pendingCauses?.(open) ?? []), ...messageCauses(messages ?? [], config.cliPath, config.peers?.map(peer => peer.name) ?? [])];
   const current = new Set(causes.map(cause => cause.key));
   if (!messages) for (const key of Object.keys(state.master.subjects)) if (key.startsWith('message:')) current.add(key);
   // A retrial temporarily replaces its refusal with an intent. Keep the same base's wake
@@ -1051,6 +1055,7 @@ async function masterSession(cycle: Cycle, open: Work[]) {
   for (const item of open) if (item.mergeLedger?.state === 'intent' && item.mergeLedger.head === item.candidate?.sha && item.mergeLedger.baseTip)
     current.add(`base:${item.mergeLedger.baseTip}`);
   for (const key of Object.keys(state.master.subjects)) if (!current.has(key)) delete state.master.subjects[key];
+  for (const key of Object.keys(state.master.subjectWakes)) if (!current.has(key)) delete state.master.subjectWakes[key];
   const master = state.master;
   const handle = herdr.agents.find(agent => agent.name === (master.agentName ?? config.masterAgentName));
   const recoveryKey = config.forPerson ? `master:continuity:${config.forPerson}` : 'master:continuity';
@@ -1079,18 +1084,27 @@ async function masterSession(cycle: Cycle, open: Work[]) {
   if (handle.pane_id) state.master.pane = handle.pane_id;
   if (!state.master.startedAt) state.master.startedAt = cycle.snapshot.now;
   if (!recoveryFailed && await masterPaneFailover(cycle, handle, open)) return;
-  const changed = causes.filter(cause => !cause.quiet && state.master.subjects[cause.key] !== cause.digest);
+  const repeatDue = (cause: { key: string; repeatMs?: number }) => {
+    if (!cause.repeatMs) return false;
+    const last = Date.parse(state.master.subjectWakes[cause.key] ?? '');
+    return !Number.isFinite(last) || cycle.now() - last >= cause.repeatMs;
+  };
+  const changed = causes.filter(cause => !cause.quiet && (state.master.subjects[cause.key] !== cause.digest || repeatDue(cause)));
   const target = handle.pane_id ?? state.master.pane ?? handle.name;
   const since = Date.parse(state.master.lastWake?.at ?? state.master.startedAt ?? cycle.snapshot.now);
   const heartbeat = !changed.length && open.length > 0 && cycle.now() - since >= (config.run.masterHeartbeatMinutes ?? 30) * 60_000;
   if ((!changed.length && !heartbeat) || !target || !sessions.wake) return;
-  const prompt = changed.length ? masterCausePrompt(changed) : `Graphyard coordinator heartbeat: open in-scope work remains. Continue from node ${config.cliPath} master status, diagnose stalled work and advance typed agent actions with every gate intact. Act without asking for routine human approval.`;
+  const prompt = changed.length ? masterCausePrompt(changed) : `Mainworks coordinator heartbeat: open in-scope work remains. Continue from node ${config.cliPath} master status, diagnose stalled work and advance typed agent actions with every gate intact. Act without asking for routine human approval.`;
   const key = config.forPerson ? `master:wake:${config.forPerson}` : 'master:wake';
   cycle.launcher.submit(key, [], async sink => {
     try {
       await sessions.wake!(target, prompt, state.master.continuity);
-      for (const cause of changed) state.master.subjects[cause.key] = cause.digest;
-      state.master.lastWake = { at: new Date(cycle.now()).toISOString(), causes: changed.map(cause => cause.key).slice(0, 20), heartbeat };
+      const at = new Date(cycle.now()).toISOString();
+      for (const cause of changed) {
+        state.master.subjects[cause.key] = cause.digest;
+        if (cause.repeatMs) state.master.subjectWakes[cause.key] = at;
+      }
+      state.master.lastWake = { at, causes: changed.map(cause => cause.key).slice(0, 20), heartbeat };
       sink.push(await record(state, key, { kind: 'wake', work: null, principal: null, state: 'done', detail: prompt, attempts: 1, cycle: state.cycle }, cycle.now(), effects.persist));
     } catch (error) { sink.push(await record(state, key, { kind: 'wake', work: null, principal: null, state: 'failed', detail: `Could not wake the master: ${message(error)}`, attempts: (state.actions[key]?.attempts ?? 0) + 1, cycle: state.cycle }, cycle.now(), effects.persist)); }
   });
@@ -1170,7 +1184,7 @@ function submitMasterLaunch(cycle: Cycle, open: Work[], recoveryError?: string, 
       const exclude = Object.keys(unusable);
       try {
         await endPreviousMasterSessions(cycle, closedPane);
-        const causes = [...masterCauses(open, state.actions, state.failureRuns), ...(await sessions.pendingCauses?.(open) ?? [])];
+        const causes = [...masterCauses(open, state.actions, state.failureRuns, cycle.now()), ...(await sessions.pendingCauses?.(open) ?? [])];
         const { recoveryFailures, ...oldMaster } = state.master;
         const failures = recoveryError ? [...recoveryFailures, { at: new Date(cycle.now()).toISOString(), error: recoveryError, master: oldMaster }] : recoveryFailures;
         const previous = recoveryError ? null : state.master.continuity;
@@ -1180,6 +1194,7 @@ function submitMasterLaunch(cycle: Cycle, open: Work[], recoveryError?: string, 
         state.master = { ...emptyMasterSession(), ...launched, continuity: launched.continuity ?? previous, recoveryFailures: failures, startedAt: at,
           unusableAccounts: activeUnusableAccounts(state.master, cycle.now()),
           subjects: Object.fromEntries(causes.map(cause => [cause.key, cause.digest])),
+          subjectWakes: Object.fromEntries(causes.filter(cause => cause.repeatMs).map(cause => [cause.key, at])),
           lastWake: causes.length ? { at, causes: causes.map(cause => cause.key).slice(0, 20), heartbeat: false } : null };
         if (pendingFailover) {
           sink.push(await record(state, failoverKey, { kind: 'failover', work: null, principal: null, state: 'done', detail: pendingFailover.detail, attempts: pendingFailover.count, cycle: state.cycle }, cycle.now(), effects.persist));

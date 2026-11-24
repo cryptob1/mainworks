@@ -67,7 +67,7 @@ const connectEventPrefix = 'connect-account.';
 const base64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const hostKeySchema = z.object({ host: z.string().trim().min(1).max(200).refine(value => !/[\u0000-\u001f\u007f]/.test(value), 'A host id cannot contain control characters'),
   publicKey: z.string().trim().regex(base64, 'A public key is base64').length(124, 'A host public key is the 91-byte SPKI of a P-256 key, base64') }).strict();
-export const sealedSchema = z.object({
+const sealedSchema = z.object({
   ephemeral: z.string().regex(base64, 'The ephemeral key is base64').length(124, 'The ephemeral key is the 91-byte SPKI of a P-256 key, base64'),
   iv: z.string().regex(base64, 'The nonce is base64').length(16, 'The nonce is 12 bytes, base64'),
   ciphertext: z.string().regex(base64, 'The ciphertext is base64').min(16).max(4096),
@@ -98,7 +98,7 @@ const resultSchema = z.object({
 }).strict();
 
 /** How a connect request stands, folded from its events. */
-export interface ConnectView {
+interface ConnectView {
   id: string; at: string; updatedAt: string; host: string; provider: string;
   state: 'pending' | 'claimed' | 'connecting' | 'waiting-login' | 'healthy' | 'failed' | 'cancelled';
   /** The account name and home the host's executor assigned once it started. */
@@ -117,7 +117,7 @@ export interface ConnectView {
   answerSealed?: { ephemeral: string; iv: string; ciphertext: string };
 }
 /** How long an open connect may sit before another claim may take it: a subscription login can wait for the operator, so it gets far longer than a key paste. */
-export const connectStaleMs = { login: 2 * 3_600_000, work: 30 * 60_000 };
+const connectStaleMs = { login: 2 * 3_600_000, work: 30 * 60_000 };
 const openState = (state: ConnectView['state']) => state === 'pending' || state === 'claimed' || state === 'connecting' || state === 'waiting-login';
 
 /** The public fields of a connect: the sealed payload never leaves the executor path. */
@@ -128,7 +128,7 @@ const withoutSealed = (view: ConnectView): ConnectView => { const { sealed: _sea
  * Events are applied oldest to newest so the latest state wins; every view carries the whole life
  * of the request: the state, what the host's executor reported, and the placement it joined.
  */
-export function foldConnectEvents(rows: { actor: string; kind: string; payload: any; created_at: Date }[]): ConnectView[] {
+function foldConnectEvents(rows: { actor: string; kind: string; payload: any; created_at: Date }[]): ConnectView[] {
   const byId = new Map<string, ConnectView>();
   for (const row of [...rows].reverse()) {
     const connect = row.payload?.connect;
@@ -271,12 +271,12 @@ function connectAccountRoutes(): import('../routes.js').Route[] {
         const current = await readRegistry(db);
         demand(!current.accounts.some(account => account.name === result.name!), `Account ${result.name} is already registered`, 409);
         const fleetRoleNames = fleetRoles as readonly string[];
-        const registryRoles = placement.filter(role => fleetRoleNames.includes(role));
+        const placedRoles = placement.filter(role => fleetRoleNames.includes(role));
         const proposal = {
           runtimes: current.runtimes.some(runtime => runtime.name === provider.runtime) ? [] : [proposedRuntimes.find(runtime => runtime.name === provider.runtime)!],
           models: current.models.some(model => model.name === provider.model) ? [] : [{ name: provider.model, id: null, cost: { inputPerMTok: null, outputPerMTok: null }, capability: { tier: provider.tier === 'fast' ? 'fast' as const : 'strong' as const, contextTokens: null, notes: `The ${provider.label} account's own default model; name the real model and its cost with the registry's model editor` } }],
           accounts: [{ name: result.name!, runtime: provider.runtime, model: provider.model, credential: { host: connect.host, home: result.home! }, enabled: true, maxSessions: null }],
-          roles: registryRoles.flatMap(roleName => {
+          roles: placedRoles.flatMap(roleName => {
             const existing = current.roles.find(role => role.name === roleName);
             if (existing) return existing.accounts.includes(result.name!) ? [] : [{ ...existing, accounts: [...existing.accounts, result.name!] }];
             return [{ name: roleName, accounts: [result.name!], concurrency: proposedConcurrency[roleName as keyof typeof proposedConcurrency] ?? 1 }];

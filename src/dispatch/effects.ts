@@ -27,7 +27,7 @@ export interface DispatchEffects {
   agents: () => RuntimeSession[] | null | Promise<RuntimeSession[] | null>;
   credentials: (profiles: ProducerProfile[]) => Promise<Record<string, { available: boolean; reason: string | null }>>;
   /** `released` names the panes, with their names, of settled sessions the pass closed (GY-1072): those names are free for this tick's launches. */
-  reconcileReviews: (work: Work[], agents: RuntimeSession[] | null, registry?: AgentRegistry | null) => Promise<{ reviews: ReviewRecord[]; released?: { pane: string; agentName: string }[] }>;
+  reconcileReviews: (work: Work[], agents: RuntimeSession[] | null, registry?: AgentRegistry | null) => Promise<{ reviews: ReviewRecord[]; released?: { pane: string; agentName: string }[]; notLive?: { key: string; sha: string; requestId?: string; id: string; agentName: string; account?: string; session?: string; resolution: string }[] }>;
   reconcileProducers: (work: Work[], agents: RuntimeSession[] | null) => Promise<{ producers: ProducerRecord[] }>;
   launchReview: (work: Work, request: DispatchRequest, profile: ReviewerProfile, agents: RuntimeSession[], observedAt: string) => Promise<unknown>;
   /** GY-2989: the product review of a user-facing feature, launched like a review on the same reviewer lanes. A dispatcher wired without it waits the request instead. */
@@ -105,7 +105,7 @@ export function dispatchEffects(root: string, config: MasterConfig | (() => Mast
     inventory: () => sessionInventory(run),
     agents: () => listHerdrAgents(run).then(herdrSessionListing).catch(() => null),
     credentials: profiles => inspectProducerCredentials(root, profiles),
-    reconcileReviews: (work, agents, registry) => reconcileReviews(root, current(), { run, work, agents, registry }),
+    reconcileReviews: (work, agents, registry) => reconcileReviews(root, current(), { run, work, agents, registry, ...(deps.now ? { now: () => new Date(deps.now!()) } : {}) }),
     reconcileProducers: (work, agents) => reconcileProducers(root, current(), work, agents, { run }),
     wakeObservation: async work => {
       const at = (deps.now ?? Date.now)(), previous = observationWakes.get(work.id);
@@ -125,7 +125,7 @@ export function dispatchEffects(root: string, config: MasterConfig | (() => Mast
     launchPostMergeReview: (work, request, profile, agents, observedAt) => launchReview(root, work, profile.name, agents, observedAt, { run, headless: deps.headless, coordinatorRoot: deps.coordinatorRoot, requestId: request.id, postMerge: { mergeSha: request.sha, ...(request.baseSha !== unknownParent ? { baseTip: request.baseSha } : {}) } }),
     createWork: async (body, requestId) => {
       const config = current();
-      if (!config.operatorAgent) throw new Error('No master operator-agent identity is provisioned; run graphyard master autonomy --admin-token-stdin --apply so the loop can file follow-up items');
+      if (!config.operatorAgent) throw new Error('No master operator-agent identity is provisioned; run mainworks master autonomy --admin-token-stdin --apply so the loop can file follow-up items');
       return postFollowUpItem(config.url, await agentToken(root, config, 'operatorAgent'), body, requestId);
     },
     recordFindings: async (work, record, findings) => {
@@ -136,7 +136,7 @@ export function dispatchEffects(root: string, config: MasterConfig | (() => Mast
       await writeProjectMemory(root, memory);
     },
     settlePostMerge: (record, outcome) => updateReviewLedger(root, ledger => { const entry = ledger.reviews.find(candidate => candidate.id === record.id); if (entry) entry.postMergeFollowUps = outcome; }),
-    // The handle goes where every Graphyard reader already looks, so watching a reviewer or
+    // The handle goes where every Mainworks reader already looks, so watching a reviewer or
     // producer session the loop launched never means reading this host's own ledger.
     recordSession: (work: Work, handle: SessionHandleInput) => mutate(`work/${work.id}/session`, handle, randomUUID()),
     // And ends one when the sweep finds it over. The same coordinator mutation: a record that says

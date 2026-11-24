@@ -41,7 +41,7 @@ function maskedFixture(base: string) {
   mkdirSync(checkout, { recursive: true });
   // The install under the config home: its deploy checkout with the CLI launcher, its coordinator
   // credential, its reviewer App credential, and the session's own binding directory.
-  const configHome = join(base, 'config-home'), install = join(configHome, 'acme-graphyard');
+  const configHome = join(base, 'config-home'), install = join(configHome, 'acme-mainworks');
   const deployCheckout = join(install, 'deploy', 'build'), cli = join(deployCheckout, 'bin', 'graphyard.mjs');
   mkdirSync(dirname(cli), { recursive: true });
   writeFileSync(cli, [
@@ -142,7 +142,7 @@ async function cliMaster(label: string) {
   const root = await temporaryDirectory(label), credentials = await temporaryDirectory(`${label}-cred`);
   spawnSync('git', ['init', '-q', root]);
   spawnSync('git', ['-C', root, 'remote', 'add', 'origin', 'https://github.com/owner/project.git']);
-  const deployCheckout = join(credentials, 'acme-graphyard', 'deploy', 'build');
+  const deployCheckout = join(credentials, 'acme-mainworks', 'deploy', 'build');
   const cli = join(deployCheckout, 'bin', 'graphyard.mjs');
   mkdirSync(dirname(cli), { recursive: true });
   writeFileSync(cli, '#!/usr/bin/env node\n');
@@ -194,7 +194,7 @@ test('integration:masked-session-missing-cli-refused — a review launch whose s
       });
     // Nothing started: no Herdr pane, no session directory material, no pending review record.
     assert.deepEqual(calls, [], 'no Herdr call was made');
-    const sessions = join(master.credentials, 'acme-graphyard', 'reviewers', 'sessions');
+    const sessions = join(master.credentials, 'acme-mainworks', 'reviewers', 'sessions');
     assert.ok(!existsSync(sessions) || readdirSync(sessions).length === 0, 'no reviewer session directory was written');
     assert.equal((await readReviewLedger(master.root)).reviews.length, 0, 'the review reservation was given back');
 
@@ -206,7 +206,7 @@ test('unit:masked-cli-refusal-waits-not-fails — the dispatcher turns the refus
   try {
     const config = await loadMasterConfig(host.root);
     const items = [requested(1)];
-    const refusal = 'the CLI the prompt names (node /gone/graphyard.mjs) is not on this host, so no session could post its verdict; restore the deploy checkout it names, or set cliPath with graphyard master setup';
+    const refusal = 'the CLI the prompt names (node /gone/graphyard.mjs) is not on this host, so no session could post its verdict; restore the deploy checkout it names, or set cliPath with mainworks master setup';
     const effects = {
       ...host.effects(() => items, () => config),
       launchReview: async () => { throw new LauncherUnavailableError(refusal); },

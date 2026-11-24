@@ -14,7 +14,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
  */
 
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
-const git = (root: string, ...args: string[]) => execFileSync('git', ['-C', root, '-c', 'user.name=Graphyard', '-c', 'user.email=graphyard@example.com', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+const git = (root: string, ...args: string[]) => execFileSync('git', ['-C', root, '-c', 'user.name=Mainworks', '-c', 'user.email=graphyard@example.com', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
 test('unit:optimistic-merge-removed — a master.json carrying mergeQueue.optimistic still loads', async () => {
   const root = await temporaryDirectory('optimistic-removed');

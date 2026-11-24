@@ -17,9 +17,9 @@ const sha = (text: string) => createHash('sha256').update(text).digest('hex').sl
 export const dependencyKey = (image: string, lockfile: string) => sha(`${image}\0${lockfile}`);
 
 /** Where the committed dependency images live in the cache root (the repository's git directory, never the worktree root a trial must leave empty). */
-export const dependencyImagesDirectory = (cacheRoot: string) => resolve(cacheRoot, 'graphyard-dependency-images');
+export const dependencyImagesDirectory = (cacheRoot: string) => resolve(cacheRoot, 'mainworks-dependency-images');
 /** How many dependency images stay: a lockfile change commits a new one and the oldest goes. */
-export const keptDependencyImages = 3;
+const keptDependencyImages = 3;
 
 /** The committed node_modules for `key`, or null when none is committed yet. */
 export function warmDependencies(cacheRoot: string, key: string): string | null {
@@ -123,7 +123,7 @@ export function testResultKeys(worktree: string, files: readonly string[], depen
 }
 
 /** Where passing results live: one directory per UTC day, the last seven read and kept. */
-export const testResultsDirectory = (cacheRoot: string) => resolve(cacheRoot, 'graphyard-test-results');
+const testResultsDirectory = (cacheRoot: string) => resolve(cacheRoot, 'graphyard-test-results');
 const keptDays = 7;
 const days = (now: number) => Array.from({ length: keptDays }, (_, index) => new Date(now - index * 86_400_000).toISOString().slice(0, 10));
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
-import { hostShimDigest, hostShimScript, legacyShimVerbs, trialVerbs } from '../src/host-shim.js';
+import { hostShimDigest, hostShimScript, hostShimVerbs, legacyShimVerbs, trialVerbs } from '../src/host-shim.js';
 import { readHostReadings } from '../src/hosts.js';
 import { encodeLoopHosts, loopHosts } from '../src/model/loop-presence.js';
 import { outdatedShimAttention, readRemoteShardRuns, readShardHosts, recordRemoteShardRun, remoteShardSummary } from '../src/merge-writer/remote-shards.js';
@@ -24,7 +24,7 @@ before(async () => {
   await writeFile(file, JSON.stringify([{ target, addedAt: '2026-11-19T00:00:00.000Z' }]));
 });
 const run: ChildRun = (command, args, options) => defaultChildRun(command, args, { ...options, env: { ...process.env, ...options?.env, PATH: `${hosts.bin}:${process.env.PATH}` } });
-const verbsLine = `verbs ${trialVerbs.join(' ')}`;
+const verbsLine = `verbs ${hostShimVerbs.join(' ')}`;
 const install = (script: string) => writeFile(hosts.shim, script);
 const probe = async () => (await readHostReadings([], { file, run, local: 'here' })).find(reading => reading.host === target)!;
 const trialReading = async () => (await readShardHosts([target], run, 2)).find(reading => reading.name === target)!;
@@ -50,7 +50,7 @@ test(`${proof} — a shim from another release that speaks every trial verb stay
   const stale = await probe();
   assert.equal(stale.away, true);
   assert.equal(stale.update, true);
-  assert.match(stale.reason ?? '', new RegExp(`older than this release: run graphyard host prepare .*lacks ${older}`));
+  assert.match(stale.reason ?? '', new RegExp(`older than this release: run mainworks host prepare .*lacks ${older}`));
   const trial = await trialReading();
   assert.equal(trial.away, true, 'a trial sends it no shard');
   assert.match(trial.reason ?? '', /older than this release/);
@@ -70,7 +70,7 @@ test(`${proof} — master status reads each host's latest probe with when it was
   await install(hostShimScript.replace(hostShimDigest, 'e'.repeat(64)).replace(verbsLine, 'verbs probe:1'));
   const away = await readHostReadings([], { file, run, local: 'here' });
   assert.equal(outdatedShimAttention(away).length, 1, 'an attention line names the host while it waits');
-  assert.match(outdatedShimAttention(away)[0]!.next, /graphyard host prepare/);
+  assert.match(outdatedShimAttention(away)[0]!.next, /mainworks host prepare/);
   const reading = await trialReading();
   await recordRemoteShardRun(root, { at: new Date().toISOString(), wallMs: 1000, shards: 2, remote: 0, queuedWhileIdle: 0, host: 'here', celsius: null,
     hosts: [{ name: target, away: true, reason: reading.reason, celsius: null, freeCores: 0 }] });

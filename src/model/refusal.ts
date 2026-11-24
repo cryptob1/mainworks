@@ -15,7 +15,7 @@ export class RefusedResponse extends Error {
   constructor(message: string, public status: number, public body: unknown) { super(message); }
 }
 export class ReconciliationRetry extends Refusal {}
-/** GitHub refused a merge Graphyard asked for because it conflicts (409). */
+/** GitHub refused a merge Mainworks asked for because it conflicts (409). */
 export class MergeConflict extends Refusal {}
 export function requireCurrent(value: unknown, message: string): asserts value {
   if (!value) throw new ReconciliationRetry(message, 409);
@@ -61,7 +61,7 @@ export function planeUnavailable(error: unknown): boolean {
 
 // A memory failure is the control plane's only when it names the server: a worker's own build or
 // test running out of memory is about the item, not the plane.
-const planeMemory = String.raw`\b(?:server|postgres(?:ql)?|database|control plane)\b[^.\n]*\b(?:out of memory|ENOMEM)\b|\b(?:out of memory|ENOMEM)\b[^.\n]*\b(?:on|in|from|at) (?:the )?(?:graphyard )?(?:server|postgres(?:ql)?|database|control plane)\b`;
+const planeMemory = String.raw`\b(?:server|postgres(?:ql)?|database|control plane)\b[^.\n]*\b(?:out of memory|ENOMEM)\b|\b(?:out of memory|ENOMEM)\b[^.\n]*\b(?:on|in|from|at) (?:the )?(?:mainworks )?(?:server|postgres(?:ql)?|database|control plane)\b`;
 const planeWideShape = new RegExp(String.raw`\bHTTP 50[234]\b|\(50[234]\)|\b50[234] (?:Bad Gateway|Service Unavailable|Gateway)|"(?:status|code)":\s*50[234]\b|ECONNREFUSED|ECONNRESET|socket hang up|(?<!git )fetch failed|Application failed to respond|server (?:is )?(?:down|unavailable|unreachable)|${planeMemory}`, 'i');
 // A server call that ran into its own timeout: while the plane is slow, every call does.
 const serverCallTimeout = /\bThe operation was aborted due to timeout\b/;

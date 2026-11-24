@@ -23,7 +23,7 @@ setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocki
 
 /**
  * GY-172 AC-1: one session state. The loop reports, on every dispatch tick, what it observes of
- * every Graphyard-launched session it can see — working, idle, ended, lost — and the control plane
+ * every Mainworks-launched session it can see — working, idle, ended, lost — and the control plane
  * stores it on the session record with the observation time. A pane whose agent exited to a shell
  * is `ended`; a session absent from two consecutive reports is `lost`; both are closed with their
  * reason. A tick whose runtime listing could not be read is a gap, not a report.

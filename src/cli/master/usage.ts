@@ -1,4 +1,4 @@
-// Concern: `graphyard master usage [--days N]` (GY-3289) — the tokens the project's agents spent and what they cost.
+// Concern: `mainworks master usage [--days N]` (GY-3289) — the tokens the project's agents spent and what they cost.
 import { parseArgs } from 'node:util';
 import { costReport, type CostSummary } from '../../model/token-costs.js';
 import { unhandled, type MasterSession } from './session.js';

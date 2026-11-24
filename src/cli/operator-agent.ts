@@ -1,6 +1,5 @@
 import { readFile } from 'node:fs/promises';
 import { defineCommands } from './registry.js';
-import { readSecretFromStdin } from './context.js';
 
 /** Scoped operator automation identities; secrets travel on stdin, never in argv. */
 export const operatorAgentCommands = defineCommands([
@@ -17,6 +16,7 @@ export const operatorAgentCommands = defineCommands([
       if (!id || id === 'list') return print(await api('operator-agents'));
       if (id === 'setup') {
         if (!args[0] || args[1] !== '--token-stdin') throw new Error('Use operator-agent setup FILE --token-stdin');
+        const { readSecretFromStdin } = await import('./context.js');
         const secret = await readSecretFromStdin(10000);
         if (!secret) throw new Error('Operator-agent credential is required; setup made no changes');
         return print(await api('operator-agents', { ...JSON.parse(await readFile(args[0], 'utf8')), token: secret }));
@@ -27,6 +27,7 @@ export const operatorAgentCommands = defineCommands([
       }
       if (id === 'rotate') {
         const marker = args.indexOf('--token-stdin'); if (!args[0] || marker < 0 || marker < 2) throw new Error('Use operator-agent rotate ID SECONDS REASON --token-stdin');
+        const { readSecretFromStdin } = await import('./context.js');
         const secret = await readSecretFromStdin(10000);
         if (!secret) throw new Error('New operator-agent credential is required; rotation made no changes');
         return print(await api(`operator-agents/${encodeURIComponent(args[0])}/rotate`, { token: secret, transitionSeconds: Number(args[1]), reason: args.slice(2, marker).join(' ') }));

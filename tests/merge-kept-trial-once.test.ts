@@ -17,7 +17,7 @@ test('e2e:merge-kept-trial-once — a trial that passes ahead of review, settled
     const post = async (token: string, path: string, body: unknown, key: string) => {
       const response = await fetch(`${world.url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(body) });
       const text = await response.text();
-      if (!response.ok) throw new Error(`Graphyard refused ${path} (${response.status}): ${text}`);
+      if (!response.ok) throw new Error(`Mainworks refused ${path} (${response.status}): ${text}`);
       return JSON.parse(text);
     };
     const current = async () => (await world.work()).find(entry => entry.key === item.key)!;

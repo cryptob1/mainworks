@@ -11,17 +11,17 @@ import { behindBaseHold } from './behind-base.js';
  * none binds the head, and one producer request per group of automatable proofs that no trusted
  * evidence binds. Each request is bound to head, base and policy revision, so a head change
  * cancels it (with the reason) and a fresh head requests again — unless the merge queue carried
- * the approval or the proof across a Graphyard-authored tip, in which case nothing is asked for.
+ * the approval or the proof across a Mainworks-authored tip, in which case nothing is asked for.
  * The master loop launches at most one session per request id; the record here is what makes
  * that idempotent, and the resolved requests kept in `history` are what `master status` reads
  * back. Nothing in this file authorizes progression: a request is a fact about what is missing,
  * and the gates still decide from evidence and verdicts alone.
  */
 
-export const dispatchKinds = ['review', 'producer', 'product'] as const;
-export type DispatchKind = typeof dispatchKinds[number];
-export const dispatchStates = ['requested', 'satisfied', 'cancelled'] as const;
-export type DispatchState = typeof dispatchStates[number];
+const dispatchKinds = ['review', 'producer', 'product'] as const;
+type DispatchKind = typeof dispatchKinds[number];
+const dispatchStates = ['requested', 'satisfied', 'cancelled'] as const;
+type DispatchState = typeof dispatchStates[number];
 
 export interface DispatchRequest {
   id: string; kind: DispatchKind;
@@ -41,14 +41,14 @@ export interface AutoDispatch {
   /** Resolved requests, newest last, bounded; the events ledger holds the complete sequence. */
   history: DispatchRequest[];
 }
-export type DispatchEvent = 'dispatch.requested' | 'dispatch.satisfied' | 'dispatch.cancelled';
+type DispatchEvent = 'dispatch.requested' | 'dispatch.satisfied' | 'dispatch.cancelled';
 export interface DispatchTransition { event: DispatchEvent; request: DispatchRequest }
 export const dispatchHistoryLimit = 50;
 
 // Which proofs a machine settles and what the head's evidence says of them live in a module the
 // browser bundle can load (the gates read them); re-exported here for every existing reader.
 export { behindBaseHold } from './behind-base.js';
-export { automatableOutcomes, automatableProof, dispatchIneligibility, mechanicalFailure, mechanicalHold, mechanicalProof, mechanicalVerdicts, openProducerRequest, producerGroupDecisions, producerGroupOf, producerGroups, type MechanicalVerdict, type ProducerGroup, type ProducerGroupDecision, type ProducerGroupState, type ProofOutcome } from './mechanical-proofs.js';
+export {      mechanicalProof,  openProducerRequest, producerGroupDecisions,    type ProducerGroup,    } from './mechanical-proofs.js';
 
 
 export const short = (sha: string) => sha.slice(0, 12);
@@ -111,13 +111,6 @@ export const liveDispatchHandleIds = (work: Work): string[] =>
   [work.autoDispatch?.review ?? null, work.autoDispatch?.product ?? null, ...(work.autoDispatch?.producers ?? [])]
     .filter((request): request is DispatchRequest => !!request && request.state === 'requested')
     .map(request => request.id);
-
-/** Every request the record holds for one head, live first, for readers that report per candidate. */
-export function dispatchRequestsFor(work: Pick<Work, 'autoDispatch'>, sha: string): DispatchRequest[] {
-  const state = work.autoDispatch;
-  if (!state) return [];
-  return [...(state.review ? [state.review] : []), ...(state.product ? [state.product] : []), ...state.producers, ...state.history].filter(request => request.sha === sha);
-}
 
 /**
  * The live review request the current candidate holds, or null. A launch by hand answers this

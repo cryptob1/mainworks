@@ -166,6 +166,7 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
   const incidents = Array.isArray(status?.production?.incidents) ? status.production.incidents : [];
   const entries = leadFeed({ typed, requests, ledger, registry, incidents: incidents as never, work });
   useEffect(() => { if (feed.current) feed.current.scrollTop = feed.current.scrollHeight; }, [entries.length, activeTab]);
+  useEffect(() => { if (activeTab === 'live') terminal.current?.focus(); }, [activeTab]);
   const prefill = (text: string) => { setDraft(text); box.current?.focus(); };
   const send = () => {
     const line = draft.trim();

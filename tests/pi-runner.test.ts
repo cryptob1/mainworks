@@ -107,7 +107,7 @@ test('unit:runner-pi-events a run with no terminal event within the bound is sto
 test('unit:runner-pi-events an invalid submitted payload is a typed invalid-payload failure, never a result', async () => {
   const { scenario, runner, options, cleanup } = await fixture();
   try {
-    // A payload the extension let through but Graphyard's own schema refuses.
+    // A payload the extension let through but Mainworks's own schema refuses.
     const { file } = await scenario([...recorded, decompose({ reason: 'fine', children: 'none' }), ...settled]);
     const result = await runner(file).start('Judge decision-1', options).result();
     assert.equal(!result.ok && result.failure.reason, 'invalid-payload');
@@ -152,7 +152,7 @@ test('unit:runner-pi-events cancel stops the run and resolves it as cancelled; t
     const result = await run.result();
     assert.deepEqual(!result.ok && result.failure, { reason: 'cancelled', detail: 'the request was withdrawn' });
     const launched = JSON.parse(await readFile(argsFile, 'utf8'));
-    assert.deepEqual(launched.env.filter((name: string) => /^(GRAPHYARD_|HERDR_)/.test(name)), [], 'no inherited Graphyard or Herdr variable');
+    assert.deepEqual(launched.env.filter((name: string) => /^(GRAPHYARD_|HERDR_)/.test(name)), [], 'no inherited Mainworks or Herdr variable');
     assert.deepEqual(Object.keys(runEnvironment({ GRAPHYARD_TOKEN_FILE: '/x', HERDR_PANE: 'p', PATH: '/bin' }, { GRAPHYARD_URL: 'u' })).sort(), ['GRAPHYARD_URL', 'PATH']);
   } finally { await cleanup(); }
 });

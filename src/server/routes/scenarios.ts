@@ -6,10 +6,11 @@ import { gitRunnerFor } from '../../merge-writer/local-observation.js';
 import { defineRoutes, parseJson } from '../routes.js';
 import { gateRecordPath, readGateRecord } from '../../batch-gate.js';
 import { environmentRows } from '../../app-environments.js';
+import { setting } from '../../setting.js';
 
 /** The case ids with a file under e2e/cases/ on the base branch the checkout serves, or null with no checkout to read (GY-3278). */
 async function mainCases(engine: Engine): Promise<Set<string> | null> {
-  if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd());
+  if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(setting('REPOSITORY_ROOT') ?? process.cwd());
   if (!engine.gitRunner) return null;
   const listed = await engine.gitRunner(['ls-tree', '--name-only', `refs/remotes/origin/${engine.baseBranch}`, `${caseDirectory}/`]);
   if (listed.status !== 0) return null;
@@ -18,7 +19,7 @@ async function mainCases(engine: Engine): Promise<Set<string> | null> {
 
 /** The batch gate's record in the checkout the control plane serves (GY-3278 AC-3), when it gates this repository: the Main and Nightly columns. */
 function servedGate(repository: string | null | undefined) {
-  const record = readGateRecord(gateRecordPath(process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd()));
+  const record = readGateRecord(gateRecordPath(setting('REPOSITORY_ROOT') ?? process.cwd()));
   return record && record.repository?.toLowerCase() === repository?.toLowerCase() ? record : null;
 }
 
@@ -26,7 +27,7 @@ function servedGate(repository: string | null | undefined) {
  * The versioned E2E test-case registry, and its run history (GY-162): every case with its latest
  * result, and one case's runs paged by sequence. Trusted evidence runs are written only by the
  * evidence command and the validation collector; the one run route appends an operator's
- * `graphyard e2e run` of a repository case (GY-1351) to the revision it measured. The summary reads
+ * `mainworks e2e run` of a repository case (GY-1351) to the revision it measured. The summary reads
  * at most `historyWindow` runs per case, and older runs page. Operator agents are refused here by
  * the route guard, as they are for the registry itself.
  */
@@ -38,7 +39,7 @@ export const scenarioRoutes = defineRoutes('scenarios', [
     const gate = servedGate(services.repository);
     // GY-3296: where the app under test runs, beside the cases: local and each declared environment.
     return { ...await trackedCases(services.engine.store.pool, services.repository, await mainCases(services.engine), gate),
-      environments: environmentRows(process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd(), gate?.lastOutcome ? { ...gate.lastOutcome, tip: gate.lastOutcome.tip ?? null, reason: gate.lastOutcome.reason ?? null } : null) };
+      environments: environmentRows(setting('REPOSITORY_ROOT') ?? process.cwd(), gate?.lastOutcome ? { ...gate.lastOutcome, tip: gate.lastOutcome.tip ?? null, reason: gate.lastOutcome.reason ?? null } : null) };
   } },
   { method: 'GET', path: /^\/api\/tests\/([^/]+)\/runs$/, handle: ({ services, url }, [id]) => runHistory(services.engine.store.pool, decodeURIComponent(id), url.searchParams) },
 ]);

@@ -11,7 +11,7 @@ import type { CaseOutcome, CaseVerdict, FlakyAcceptance } from '../src/e2e/runne
 
 /**
  * The modules under test, imported inside each test so that run against a tree without the import
- * (graphyard verify's exercise) each case fails on its own assertion instead of the file failing to load.
+ * (mainworks verify's exercise) each case fails on its own assertion instead of the file failing to load.
  */
 const load = async () => {
   const [report, evidence, runner] = await Promise.all([import('../src/runner-report.js'), import('../src/model/evidence.js'), import('../src/e2e/runner.js')]);

@@ -13,7 +13,7 @@ source merge-ledger review or proof decision was located**, for any of:
 | Commit | What it is |
 | --- | --- |
 | `1239175b099cf2c06ff7bdce260dae8467677047` | merge on Lumina main, 2026-11-18T02:28:46Z, parents `3e375f7` / `f52351f`, title "Merge GY-3 …" |
-| `f52351ff59f93077e40979e4f8680a3242eaac71` | its candidate, authored "Lumina Graphyard Worker" |
+| `f52351ff59f93077e40979e4f8680a3242eaac71` | its candidate, authored "Lumina Mainworks Worker" |
 | `e23dda776c12` | later external main, "Merge GY-5: Add MIME-sniffing protection to diagnostic endpoints" |
 
 Nothing here supports calling the merges authorized, and nothing supports calling them
@@ -22,7 +22,7 @@ unauthorized. Lumina's deployment decision should stay pending on the blocker be
 ## Verified (read by this worker, reproducible)
 
 1. **The core install's merge ledger holds no decision for these commits.**
-   `graphyard audit-merge-admission` enumerated 1665 merges and audited 577 on
+   `mainworks audit-merge-admission` enumerated 1665 merges and audited 577 on
    `http://127.0.0.1:4311`; none of `1239175`, `f52351f`, `e23dda7`, `3e375f7`, `4281a517`
    or the word "lumina" appears in its output. The core install did not merge them.
 2. **The only core-ledger rows naming the commits are reports about them**, not merge, review,
@@ -61,10 +61,10 @@ GY-2 lineage (`4281a517`), that launcher transcript `841acad3` has no matching m
 
 - The merge titles use item keys GY-3 and GY-5 with a GY-2 lineage, while the Lumina board on
   this host is at GY-27..GY-31 and its GY-3 is other work. That pattern fits a **second
-  Graphyard install with its own young board and its own write credential for the same
+  Mainworks install with its own young board and its own write credential for the same
   repository**. The rexera-remote daemon record is the only named candidate, and it is four
   days stale and unreachable.
-- The author name "Lumina Graphyard Worker" and a passing batch on `1239175` say nothing about
+- The author name "Lumina Mainworks Worker" and a passing batch on `1239175` say nothing about
   who was authorized to push. The candidate commit's own claim of local validation is not an
   independent review or proof decision.
 
@@ -93,6 +93,6 @@ unknown gates.
 
 ## Reporting
 
-A worker identity cannot message the Master or a peer (`graphyard message`: "Only a reporter or
+A worker identity cannot message the Master or a peer (`mainworks message`: "Only a reporter or
 the operator messages the Master"), so this record is the worker's report; the core Master
 relays it to `lumina-investor` (`master send`, thread `45da1d46-c2ca-4df7-93fb-be82f69ec478`).

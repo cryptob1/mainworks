@@ -21,7 +21,7 @@ import { acquireVerificationSlot, heavyJobLimit, heldSlots, hostHeavyJobsDirecto
 import type { Cycle } from '../src/daemon/cycle.js';
 import type { Work } from '../src/model.js';
 
-// GY-3446: when another project on the host asks Graphyard to back off overnight (Huck: at most 2
+// GY-3446: when another project on the host asks Mainworks to back off overnight (Huck: at most 2
 // trials, throttle at 80C), the master sets a temporary trial cap and heat limit for its install,
 // and a host-wide strict heavy-job cap every install shares; each reverts on its own at its expiry.
 // GY-3501: the heat limit halves merge trials sooner; it holds no launch.

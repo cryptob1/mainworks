@@ -40,7 +40,7 @@ async function holder(context: RouteContext) {
 
 async function act(context: RouteContext) {
   const found = await holder(context);
-  demand(found, 'This infra credential is not valid; run graphyard infra take for a new one.', 401);
+  demand(found, 'This infra credential is not valid; run mainworks infra take for a new one.', 401);
   const { who, grant } = found!;
   const request = actSchema.parse(await parseJson(context, 150_000_000));
   const target = 'repository' in request ? request.repository : request.action === 'environment.create' ? `${request.project}/${request.environment}` : request.project;
@@ -69,7 +69,7 @@ async function run(context: RouteContext, providers: ReturnType<typeof infraProv
     case 'project.create': return `created project ${(await createProject(providers, grant.project)).id}`;
     case 'environment.create': {
       const created = (await rows(context, 'action')).find(row => row.payload.grant === grant.id && row.payload.action === 'project.create' && row.payload.outcome === 'done');
-      if (!created) throw new Error(`Create the hosting project first: graphyard infra project create ${grant.project}`);
+      if (!created) throw new Error(`Create the hosting project first: mainworks infra project create ${grant.project}`);
       const environment = (request as { environment: string }).environment;
       return `created environment ${environment} ${(await createEnvironment(providers, String(created.payload.detail).split(' ').pop()!, environment)).id}`;
     }
@@ -78,7 +78,7 @@ async function run(context: RouteContext, providers: ReturnType<typeof infraProv
 }
 
 /** What was done with infra credentials, newest first: who, what and when. */
-export async function infraLog(context: RouteContext) {
+async function infraLog(context: RouteContext) {
   return (await rows(context, 'action')).map(row => ({ who: row.actor, at: new Date(row.at).toISOString(), action: row.payload.action as string, target: row.payload.target as string, outcome: row.payload.outcome as string, detail: row.payload.detail as string }));
 }
 
@@ -92,7 +92,7 @@ export const infraRoutes = defineRoutes('infra', [
     const input = grantSchema.parse(await parseJson(context));
     const grant: Grant = { id: randomUUID(), repository: input.repository, project: input.project, from: input.from ?? null, approvedBy: context.actor.id };
     await record(context, context.actor.id, 'grant', grant);
-    return { approved: grant, next: 'The master runs graphyard infra take, then the infra commands.' };
+    return { approved: grant, next: 'The master runs mainworks infra take, then the infra commands.' };
   } },
   // The master takes a credential for the newest grant; it is shown once and only its digest is kept.
   { method: 'POST', path: '/api/infra/credential', handle: async context => {

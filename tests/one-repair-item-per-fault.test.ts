@@ -17,7 +17,7 @@ import { controlPlaneRecordPath, writeControlPlaneRecord } from '../src/deploy-w
 import type { MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import type { MasterConfig } from '../src/master/profiles.js';
 import type { Work } from '../src/model.js';
-import { graphyardRepository } from '../src/scenarios.js';
+import { mainworksRepository } from '../src/scenarios.js';
 
 const sha = (n: number) => String(n).padStart(40, 'a');
 const hour = 3_600_000;
@@ -76,9 +76,9 @@ test('unit:one-repair-item-per-fault — every loop-filed and release-check item
     'trial-image-fault:owner/game': trialImageFaultItem('owner/game') as { faultKey?: string },
     'trial-sandbox-fault:owner/game': trialSandboxFaultItem('owner/game') as { faultKey?: string },
     'trial-network-fault:owner/game': trialNetworkFaultItem('owner/game', '31') as { faultKey?: string },
-    'flake:test:tests/a.test.ts': gateFiledItem({ key: 'flake:test:tests/a.test.ts', title: 'Flaky check on main: test:tests/a.test.ts', description: 'Flaked.' }, 'main', graphyardRepository) as { faultKey?: string },
-    'known-red:test:tests/b.test.ts': gateFiledItem({ key: 'known-red:test:tests/b.test.ts', title: 'Known red on main: test:tests/b.test.ts', description: 'Red.' }, 'main', graphyardRepository) as { faultKey?: string },
-    'diagnostic:e2e:board': gateFiledItem({ key: 'diagnostic:e2e:board', title: 'Diagnostic failure on main: e2e:board', description: 'Failed.' }, 'main', graphyardRepository) as { faultKey?: string },
+    'flake:test:tests/a.test.ts': gateFiledItem({ key: 'flake:test:tests/a.test.ts', title: 'Flaky check on main: test:tests/a.test.ts', description: 'Flaked.' }, 'main', mainworksRepository) as { faultKey?: string },
+    'known-red:test:tests/b.test.ts': gateFiledItem({ key: 'known-red:test:tests/b.test.ts', title: 'Known red on main: test:tests/b.test.ts', description: 'Red.' }, 'main', mainworksRepository) as { faultKey?: string },
+    'diagnostic:e2e:board': gateFiledItem({ key: 'diagnostic:e2e:board', title: 'Diagnostic failure on main: e2e:board', description: 'Failed.' }, 'main', mainworksRepository) as { faultKey?: string },
   };
   for (const [expectedKey, item] of Object.entries(items)) {
     assert.equal(item.faultKey, expectedKey, `expected faultKey ${expectedKey}`);
@@ -89,7 +89,7 @@ test('unit:one-repair-item-per-fault — filing the control-plane-upgrade fault 
   const root = await temporaryDirectory('one-repair-control-plane');
   let clock = Date.parse('2026-11-22T00:00:00Z');
   const board = fakeBoard(() => clock);
-  const config = { url: 'http://127.0.0.1:5', repository: graphyardRepository, hostId: 'test-host' } as unknown as MasterConfig;
+  const config = { url: 'http://127.0.0.1:5', repository: mainworksRepository, hostId: 'test-host' } as unknown as MasterConfig;
   const state = emptyDaemonState(config);
 
   for (let i = 0; i < 5; i++) {
@@ -110,7 +110,7 @@ test('unit:one-repair-item-per-fault — filing the control-plane-upgrade fault 
       snapshot: { work: board.work(), now: new Date(clock).toISOString() },
       effects: {
         mergeWriter: {
-          gate: { root, repository: graphyardRepository },
+          gate: { root, repository: mainworksRepository },
           createWork: board.createWork,
           note: board.note,
         },
@@ -133,7 +133,7 @@ test('unit:one-repair-item-per-fault — flaky-check fault files no second item 
   const verified = sha(1);
 
   const fileOnce = async (tip: string) => {
-    const record = bootstrapGate(graphyardRepository, verified);
+    const record = bootstrapGate(mainworksRepository, verified);
     let runs = 0;
     const reads = {
       now: () => clock,
@@ -155,7 +155,7 @@ test('unit:one-repair-item-per-fault — flaky-check fault files no second item 
           e2e: [],
         };
       },
-      gate: { root: '/unused', repository: graphyardRepository },
+      gate: { root: '/unused', repository: mainworksRepository },
       createWork: board.createWork,
       note: board.note,
     } as unknown as MergeWriterReads & { git: NonNullable<MergeWriterReads['git']> };
@@ -179,7 +179,7 @@ test('unit:one-repair-item-per-fault — flaky-check fault files no second item 
     baseBranch: 'main',
     fetch: async () => sha(3),
     git: async () => '',
-    gate: { root: '/unused', repository: graphyardRepository },
+    gate: { root: '/unused', repository: mainworksRepository },
     createWork: board.createWork,
     note: board.note,
   } as unknown as MergeWriterReads & { git: NonNullable<MergeWriterReads['git']> };

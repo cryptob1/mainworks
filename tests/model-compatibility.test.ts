@@ -6,7 +6,7 @@ import { type Observation, type Work } from '../src/model.js';
 
 // GY-406 gave the control-plane App a ruleset bypass the main guard still lands its reverts with.
 // GY-1234 removed the repair lane built on it: under GitHub delivery GitHub merges on its own
-// branch protection, so there is no Graphyard merge path left to repair.
+// branch protection, so there is no Mainworks merge path left to repair.
 
 const head = 'a'.repeat(40), base = 'b'.repeat(40);
 

@@ -32,6 +32,7 @@ import { localPaths } from './local-runtime.js';
 import { durableCheckoutPreflight } from './loop-unit.js';
 import { underTestRunner } from '../runtime-environment.js';
 import { deployUnitOf, perInstallUnits, proposedInstallUnits, userUnitDirectory } from './units.js';
+import { unitPrefix } from './layout.js';
 import { installIdFor, providers, REDACTED, SERVER_PORT, type EnvValue, type InstallInputs, type InstallPlan, type PlanAction, type PlanDrift, type PlanValue, type PreflightItem, type Provider } from './types.js';
 
 export * from './types.js';
@@ -145,14 +146,14 @@ export function installRequestFromArgs(args: string[]) {
 }
 
 /**
- * The `install` flags that redeploy a recorded installation's server at `image` (GY-1962, `graphyard
+ * The `install` flags that redeploy a recorded installation's server at `image` (GY-1962, `mainworks
  * upgrade`): its repository, provider, base branch, service, domain and port, and the choices the
  * record carries — its installer-created workers and producer grants, review policy or
  * observation-only mode — so the full apply plans the roster it has and revokes nothing. An
  * installation with no installer-created worker and no own Herdr instance was applied with --observe-only.
  *
  * `sourceRoot` (GY-2168) names the checkout the image builds from, instead of the running CLI's
- * own code root: a redeploy the loop or `graphyard upgrade` starts may target another commit,
+ * own code root: a redeploy the loop or `mainworks upgrade` starts may target another commit,
  * and the image it builds must hold the deployed commit's tree, stamped with that
  * commit, so `/healthz?strict` reports the deployed commit after the step.
  */
@@ -245,7 +246,7 @@ const CORE_HUMAN_STEPS = [
 
 export function repositoryRoot(cwd: string) {
   try { return execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); }
-  catch { throw new Error('Run graphyard install from the checkout of the repository being managed'); }
+  catch { throw new Error('Run mainworks install from the checkout of the repository being managed'); }
 }
 
 
@@ -305,7 +306,7 @@ export async function prepareInstall(cwd: string, rawInputs: InstallRequest & Ob
   assertOutsideRepository(directory, root);
   const record = await readInstallRecord(directory);
   // Observation-only plans no worker principal (nor a producer, a standing CI credential). The
-  // recorded roster is reconciled in, never rewritten (GY-1879): a principal `graphyard principal
+  // recorded roster is reconciled in, never rewritten (GY-1879): a principal `mainworks principal
   // add` registered, or one an earlier apply registered that observation-only cannot plan, keeps
   // its entry and its credential.
   const principals = reconcileRoster(plannedPrincipals(installId, { workers: rawInputs.workers, producerProofs: rawInputs.producerProofs })
@@ -344,7 +345,7 @@ export async function prepareInstall(cwd: string, rawInputs: InstallRequest & Ob
     provider, repository: inputs.repository, installId,
     service: inputs.serverName ?? `graphyard-${installId}`,
     domain: inputs.domain ?? null,
-    image: inputs.image ?? `graphyard-local:${installId}`,
+    image: inputs.image ?? `mainworks-local:${installId}`,
     workdir: provider === 'compose' ? `${directory}/compose` : directory,
     sourceRoot: dependencies.sourceRoot ?? fileURLToPath(new URL('../..', import.meta.url)),
     repoCheckout, repoGitDir,
@@ -496,11 +497,11 @@ export async function selfProvision(target: { adapter: ProviderAdapter; context:
   const report: SelfProvisionReport = {
     provider: context.provider, service: context.service, mode: options.apply ? 'apply' : 'plan', observed, canApply,
     missing: missing.map(value => ({ ...planValue(value, true), source: value.source })), set: [], redeployed: [], pendingRedeploy: pending, audit: [],
-    next: !observation.app ? `The ${context.service} service was not observed on ${context.provider}; run graphyard install --provider ${context.provider} --repo ${context.repository} --apply, then rerun`
+    next: !observation.app ? `The ${context.service} service was not observed on ${context.provider}; run mainworks install --provider ${context.provider} --repo ${context.repository} --apply, then rerun`
       : !observed ? `The ${context.service} service's variables could not be read on ${context.provider}; nothing is applied from an unread listing. Rerun once the provider CLI lists them`
       : !missing.length && !pending.length && !staged.audit.length ? null
-      : !canApply ? `The ${context.provider} adapter rewrites the whole environment: graphyard install --provider ${context.provider} --repo ${context.repository} --apply sets these with the rest`
-      : options.apply ? null : 'graphyard master setup --apply',
+      : !canApply ? `The ${context.provider} adapter rewrites the whole environment: mainworks install --provider ${context.provider} --repo ${context.repository} --apply sets these with the rest`
+      : options.apply ? null : 'mainworks master setup --apply',
   };
   if (options.apply && canApply && (missing.length || pending.length || staged.audit.length)) {
     const at = new Date((options.now ?? Date.now)()).toISOString();
@@ -631,7 +632,7 @@ export async function repositoryOriginPreflight(root: string, repository: string
 
 /**
  * The plan's step for the merge writer's deploy key (GY-1551, GY-2010), the only credential a full
- * install gives Graphyard on GitHub: generated beside the install and registered read-write through
+ * install gives Mainworks on GitHub: generated beside the install and registered read-write through
  * the gh login.
  */
 function deployKeyAction(session: InstallSession): PlanAction {
@@ -730,12 +731,12 @@ export async function buildPlan(session: InstallSession): Promise<InstallPlan> {
   if (observeOnly) actions.push(
     held({ id: 'local.workers', target: 'local', title: 'Generate worker principals and their credentials' }, 'no worker principal is installed'),
     held({ id: 'local.profiles', target: 'local', title: 'Register master, reviewer, and worker profiles for authenticated agent runtimes on this machine' }, 'no profile, supervisor unit or master loop is installed or started'),
-    held({ id: 'local.herdr', target: 'local', title: "Link and enable Herdr's graphyard plugin for this repository" }, 'Herdr is left untouched'));
+    held({ id: 'local.herdr', target: 'local', title: "Link and enable Herdr's mainworks plugin for this repository" }, 'Herdr is left untouched'));
   else {
     actions.push({ id: 'local.profiles', target: 'local', state: record?.profiles.length ? 'satisfied' : 'create', title: 'Register master, reviewer, and worker profiles for authenticated agent runtimes on this machine' });
     // GY-2877: the master loop and the continuous deploy run in two user units, both installed by master init.
     if (context.provider === 'compose' || context.provider === 'local') {
-    const units = (() => { try { return proposedInstallUnits(session.root, session.inputs.repository, userUnitDirectory()); } catch { return perInstallUnits(session.inputs.repository); } })();
+    const units = (() => { try { return proposedInstallUnits(session.root, session.inputs.repository, userUnitDirectory()); } catch { return perInstallUnits(session.inputs.repository, unitPrefix(session.root)); } })();
     actions.push({ id: 'local.units', target: 'local', state: existsSync(join(userUnitDirectory(), deployUnitOf(units))) ? 'satisfied' : 'create',
       title: 'Run the master loop under graphyard-master.service (master run) and the continuous deploy under graphyard-deploy.service (upgrade --watch: each new base tip built, restarted, health-checked, rolled back on failure); master init installs both',
       values: [{ name: 'graphyard-master.service', value: units.master, secret: false }, { name: 'graphyard-deploy.service', value: deployUnitOf(units), secret: false }] });
@@ -780,7 +781,7 @@ function deliverySummary(session: InstallSession): InstallPlan['delivery'] {
 
 
 
-/** Herdr on this machine and the server its graphyard plugin is bound to, when it is. */
+/** Herdr on this machine and the server its mainworks plugin is bound to, when it is. */
 async function observeHerdr(session: InstallSession) {
   const { deps, context } = session;
   const state = await (deps.detectHerdr ?? detectHerdr)(context.transport);
@@ -792,10 +793,10 @@ async function observeHerdr(session: InstallSession) {
 /** The plan line for Herdr: link, keep, relink (named, with the server it is bound to now), or leave alone. */
 function herdrAction(session: InstallSession, herdr: Awaited<ReturnType<typeof observeHerdr>> | null): PlanAction {
   const steps = 'herdr plugin link, write the plugin config.json installs entry, herdr plugin enable';
-  if (session.inputs.herdr === 'skip') return { id: 'local.herdr', target: 'local', state: 'satisfied', title: 'Leave Herdr untouched (--no-herdr): the graphyard plugin is neither linked nor reconfigured' };
+  if (session.inputs.herdr === 'skip') return { id: 'local.herdr', target: 'local', state: 'satisfied', title: 'Leave Herdr untouched (--no-herdr): the mainworks plugin is neither linked nor reconfigured' };
   if (!herdr?.state.available) return { id: 'local.herdr', target: 'local', state: 'satisfied', title: 'Herdr is not installed on this machine; nothing to link, and workers start from the CLI' };
-  if (herdr.binding) return { id: 'local.herdr', target: 'local', state: 'satisfied', title: `Herdr's graphyard plugin is already bound to ${herdr.binding.bound}; it keeps that server` };
-  return { id: 'local.herdr', target: 'local', state: 'create', title: `Link and enable Herdr's graphyard plugin for this repository (${steps})` };
+  if (herdr.binding) return { id: 'local.herdr', target: 'local', state: 'satisfied', title: `Herdr's mainworks plugin is already bound to ${herdr.binding.bound}; it keeps that server` };
+  return { id: 'local.herdr', target: 'local', state: 'create', title: `Link and enable Herdr's mainworks plugin for this repository (${steps})` };
 }
 
 
@@ -819,14 +820,14 @@ export interface InstallSummary {
 }
 
 /**
- * The roster this apply reconciled was read before it took the lock. A `graphyard principal` edit that
+ * The roster this apply reconciled was read before it took the lock. A `mainworks principal` edit that
  * held the lock in between changed install.json, so this apply refuses rather than deploy a roster
  * missing that edit's entry (GY-1879); planning again reconciles with it.
  */
 async function refuseMovedRoster(session: InstallSession) {
   const roster = (record: InstallRecord | null) => JSON.stringify(record?.principals ?? []);
   const current = await readInstallRecord(session.directory).catch(() => null);
-  if (roster(current) !== roster(session.record ?? null)) throw new Error(`The principal roster in ${session.directory}/install.json changed after this apply was planned (a graphyard principal add or remove ran); this apply wrote nothing. Run install --apply again to reconcile with it`);
+  if (roster(current) !== roster(session.record ?? null)) throw new Error(`The principal roster in ${session.directory}/install.json changed after this apply was planned (a mainworks principal add or remove ran); this apply wrote nothing. Run install --apply again to reconcile with it`);
 }
 
 /**
@@ -975,7 +976,7 @@ async function performInstall(session: InstallSession, plan: InstallPlan): Promi
   await writeInstallRecord(session.directory, record, vault);
 
   const gh = githubCli(context.transport);
-  // The merge writer's deploy key (GY-2010): the only credential Graphyard holds on GitHub — unless
+  // The merge writer's deploy key (GY-2010): the only credential Mainworks holds on GitHub — unless
   // the merge writer pushes with a piped token (GY-3220) or the operator's gh login (GY-3269).
   const ensure = deps.ensureDeployKey ?? ((installDir: string, repository: string, cli: GitHubCli) => ensureDeployKey(installDir, repository, cli));
   const token = !observeOnly && session.inputs.mergeToken;
@@ -1050,7 +1051,7 @@ export function resumeCommand(session: Pick<InstallSession, 'inputs'>) {
 
 
 /**
- * `graphyard principal add|remove` (GY-1879): deploy `roster`, the installation's recorded roster
+ * `mainworks principal add|remove` (GY-1879): deploy `roster`, the installation's recorded roster
  * with one entry upserted or removed, as the one variable it renders. The deployment is handed
  * GRAPHYARD_PRINCIPALS alone where its adapter merges (`applyVariables`: local); the Compose
  * bundle is rewritten with every other value as it stands. The record then
@@ -1060,13 +1061,13 @@ export function resumeCommand(session: Pick<InstallSession, 'inputs'>) {
  */
 export async function applyRosterChange(session: InstallSession, record: InstallRecord, roster: RosterPrincipal[], change: { id: string; changed: boolean; entry: RosterPrincipal | null }) {
   const { adapter, context, deps, vault } = session;
-  if (!record.url) throw new Error(`The installation record under ${session.directory} names no server URL; rerun graphyard install --apply first`);
+  if (!record.url) throw new Error(`The installation record under ${session.directory} names no server URL; rerun mainworks install --apply first`);
   // An unchanged add mints nothing: the deployment keeps the credential it holds, so a lost token file is refused, not replaced.
   const standing = change.changed ? roster.filter(principal => principal.id !== change.id) : roster;
   for (const [principal, token] of await ensureTokens(session.directory, standing, vault, false)) session.tokens.set(principal, token);
-  if (change.entry && !change.changed && !session.tokens.has(change.id)) throw new Error(`No credential is saved for ${change.id} under ${session.directory}, though the deployment serves it unchanged; nothing was minted or written. To issue it a new credential, run graphyard principal remove ${change.id}, then add it again`);
+  if (change.entry && !change.changed && !session.tokens.has(change.id)) throw new Error(`No credential is saved for ${change.id} under ${session.directory}, though the deployment serves it unchanged; nothing was minted or written. To issue it a new credential, run mainworks principal remove ${change.id}, then add it again`);
   const missing = standing.filter(principal => !session.tokens.has(principal.id));
-  if (missing.length) throw new Error(`No credential is saved for ${missing.map(principal => principal.id).join(', ')} under ${session.directory}; rerun graphyard install --apply before editing the roster`);
+  if (missing.length) throw new Error(`No credential is saved for ${missing.map(principal => principal.id).join(', ')} under ${session.directory}; rerun mainworks install --apply before editing the roster`);
   if (change.entry && change.changed) for (const [principal, token] of await ensureTokens(session.directory, [change.entry], vault, true)) session.tokens.set(principal, token);
   session.principals = roster;
   const merges = typeof adapter.applyVariables === 'function';
@@ -1116,7 +1117,7 @@ const LEGACY_APP_VARIABLE = /^(GITHUB_(APP_ID|INSTALLATION_ID|PRIVATE_KEY(_FILE)
 async function deployedBundle(session: InstallSession): Promise<EnvValue[]> {
   const { context } = session;
   const text = await readRemote(context.transport, `${context.workdir}/server.env`);
-  if (text === null) throw new Error(`${context.workdir}/server.env could not be read; the roster is not edited blind. Rerun graphyard install --apply`);
+  if (text === null) throw new Error(`${context.workdir}/server.env could not be read; the roster is not edited blind. Rerun mainworks install --apply`);
   const values: EnvValue[] = [];
   for (const line of text.split('\n')) {
     const index = line.indexOf('=');
@@ -1199,10 +1200,10 @@ function observeOnlySteps(session: InstallSession, url: string, plan: InstallPla
 function nextSteps(session: InstallSession, url: string, profiles: ProfileRegistration) {
   const steps = [
     `Open ${url} and sign in with the credential in ${tokenFile(session.directory, principalOfRole(session.principals, 'admin').id)}.`,
-    'Create the first work item: write it like examples/work.json and run "graphyard master create FILE"; the supervised master loop dispatches, reviews and merges it.',
+    'Create the first work item: write it like examples/work.json and run "mainworks master create FILE"; the supervised master loop dispatches, reviews and merges it.',
   ];
-  steps.push(`The merge writer trial-merges each submitted head and pushes ${session.inputs.baseBranch} with ${session.inputs.pushAuth ? "the operator's gh login (--push-auth gh)" : 'the deploy key alone'}; no GitHub App, webhook, pull request or branch protection is involved, and reviews run as control-plane reviewer sessions (graphyard master environments --apply writes their profiles).`);
-  if (!profiles.workers.length) steps.push('No authenticated agent runtime was found on this machine; sign in to a supported runtime and rerun --apply, or add a worker profile with "graphyard master worker add".');
+  steps.push(`The merge writer trial-merges each submitted head and pushes ${session.inputs.baseBranch} with ${session.inputs.pushAuth ? "the operator's gh login (--push-auth gh)" : 'the deploy key alone'}; no GitHub App, webhook, pull request or branch protection is involved, and reviews run as control-plane reviewer sessions (mainworks master environments --apply writes their profiles).`);
+  if (!profiles.workers.length) steps.push('No authenticated agent runtime was found on this machine; sign in to a supported runtime and rerun --apply, or add a worker profile with "mainworks master worker add".');
   if (!session.principals.some(principal => principal.role === 'producer')) steps.push('No proof producer was created. Add one with --producer-proof NAME for each proof that CI may submit; a producer must never be given to an implementation worker.');
   steps.push('Never copy an admin, coordinator, or producer credential into a worker session.');
   return steps;

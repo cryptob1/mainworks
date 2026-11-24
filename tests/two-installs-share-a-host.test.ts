@@ -4,7 +4,9 @@ import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fakeHosts } from './helpers/fake-hosts.js';
 import { hostShimDigest, hostShimScript } from '../src/host-shim.js';
-import { addHost, probeHost } from '../src/hosts.js';
+import { addHost, probeHost, readHostReadings } from '../src/hosts.js';
+import { outdatedShimAttention } from '../src/merge-writer/remote-shards.js';
+import { encodeLoopHosts, loopHosts } from '../src/model/loop-presence.js';
 
 // GY-3688 AC-2: a fake host prepared for install A at this release's helper and install B at another
 // answers each install's probe through its own helper, and both installs' `host add` checks pass.
@@ -37,6 +39,13 @@ test(`${proof} — each install's probe answers through its own helper, both hos
   assert.equal(b.ok && b.shim, digestB, "B's probe answers through B's helper");
   assert.equal((await as(undefined, () => addHost('gy-compute@box', { file: join(hosts.root, 'a-hosts.json') }))).added, true);
   assert.equal((await as(keyB, () => addHost('gy-compute@box', { file: join(hosts.root, 'b-hosts.json') }))).added, true);
+
+  // GY-3744: master status names B's host as on an older helper in one line; the host stays ready. A's reads nothing.
+  const readings = async (key: string | undefined, file: string) => loopHosts(encodeLoopHosts(await as(key, () => readHostReadings([], { file, local: 'here' }))))!;
+  const older = await readings(keyB, join(hosts.root, 'b-hosts.json'));
+  assert.equal(older.find(reading => reading.host === 'gy-compute@box')!.away, false, "B's host stays ready");
+  assert.deepEqual(outdatedShimAttention(older).map(line => line.text), ['gy-compute@box runs an older helper: run host prepare there to update it']);
+  assert.deepEqual(outdatedShimAttention(await readings(undefined, join(hosts.root, 'a-hosts.json'))), [], "A's host runs this release's helper");
 
   const keys = join(hosts.home('box'), '.ssh', 'authorized_keys');
   await writeFile(keys, (await readFile(keys, 'utf8')).split('\n').filter(line => !line.includes(keyB)).join('\n'));

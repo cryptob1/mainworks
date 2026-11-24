@@ -7,12 +7,12 @@ import { formatAge, statusDuration, type StatusDuration } from './duration.js';
 import { humanRequestBlocker } from './human-request.js';
 // GY-3280: the escalation clock of a recorded blocker (model/work.ts `blockedAt`), re-exported
 // beside the blocker's own plain sentences — the one blocker concern readers import.
-export { blockerSince } from './work.js';
+;
 import { deliveryOutcome, shortShas } from './format.js';
 import { isFilingRefusal } from './user-facing.js';
 
 /**
- * Plain-English status for people who have never read the Graphyard docs. Every sentence is
+ * Plain-English status for people who have never read the Mainworks docs. Every sentence is
  * derived from the first refusing gate (the same order the control plane evaluates), so the
  * dashboard never says anything the gates do not. Internal vocabulary stays out of this copy;
  * `jargon` lists the words a test keeps out of every generated sentence.
@@ -20,13 +20,13 @@ import { isFilingRefusal } from './user-facing.js';
 export const jargon = ['epoch', 'lease', 'candidate', 'policy revision', 'producer', 'attestation', 'trusted evidence'] as const;
 
 /** Where an item is, in the order work moves. Delivered work is `shipped`. */
-export const phases = ['not-started', 'needs-worker', 'building', 'review', 'checks', 'proof', 'merging', 'shipped'] as const;
+const phases = ['not-started', 'needs-worker', 'building', 'review', 'checks', 'proof', 'merging', 'shipped'] as const;
 export type Phase = typeof phases[number];
 export const phaseLabel: Record<Phase, string> = {
   'not-started': 'Not started', 'needs-worker': 'Needs a worker', building: 'Being built', review: 'In review',
   checks: 'Automated checks', proof: 'Proving it works', merging: 'Merging', shipped: 'Shipped',
 };
-export type Tone = 'stuck' | 'waiting' | 'working' | 'shipped';
+type Tone = 'stuck' | 'waiting' | 'working' | 'shipped';
 export interface PlainStatus { sentence: string; tone: Tone; phase: Phase; who: string | null; blocking: string | null
   /**
    * GY-1845: the item's outcome once it has merged — the production state from `deliveryOutcome`,
@@ -71,7 +71,7 @@ export function plainReason(reason: string, gate: string, now: number, work?: Wo
     [/^The merge writer has not observed the current candidate$/, () => `${PRODUCT_NAME} is re-reading the latest code`],
     [mergeWriterTrialPattern, () => `Waiting for ${PRODUCT_NAME} to build and test the merge`],
     [mergeWriterPushPattern, () => `Waiting for ${PRODUCT_NAME} to merge it`],
-    [/^Required Graphyard check and merge-queue branch protection/, () => 'GitHub merge protection is not confirmed yet', true],
+    [/^Required Mainworks check and merge-queue branch protection/, () => 'GitHub merge protection is not confirmed yet', true],
     [/^Pull request is not mergeable against the current base$/, () => 'The pull request conflicts with the main branch', true],
     [/^Slice lead (\S+) ruled \S+ under rule \S+; delivery is blocked until the authorized recovery: (.*)$/s, m => `Held by team lead ${m[1]}: ${m[2]}`, true],
   ];
@@ -102,7 +102,7 @@ const itemWait = /\b(?:[Ww]ait(?:s|ing)?\s+(?:on|for)|[Dd]epends\s+on|[Bb]locked
  * (`not before X`, `window opens … X`), never every timestamp in the text — a recorded retry or
  * observation time is not the deadline. A reason naming several reads as its latest.
  */
-export function notBeforeInstants(text: string): number[] {
+function notBeforeInstants(text: string): number[] {
   let from = 0;
   return [...text.matchAll(instant)].flatMap(m => {
     // The words since the previous instant and the last clause break, at most 48 characters back.
@@ -154,7 +154,7 @@ const stepWords: Record<string, string> = {
  * has been trying. The reason itself stays out: it is written for an operator reading
  * `master status`, in vocabulary this page keeps out of its copy.
  */
-export function stalledStep(work: Work, now: number): string | null {
+function stalledStep(work: Work, now: number): string | null {
   const stalled = (work.actionQueue?.actions ?? []).flatMap(row => row.stall ? [{ row, stall: row.stall }] : []);
   if (!stalled.length) return null;
   const worst = stalled.sort((a, b) => Date.parse(a.stall.since) - Date.parse(b.stall.since))[0];
@@ -181,7 +181,7 @@ export function phaseOf(work: Work, now: number): Phase {
 }
 
 /** Lower-cases a leading common word so a reason reads mid-sentence; names stay capitalized. */
-const lowerFirst = (text: string) => new RegExp(`^(Graphyard|${PRODUCT_NAME}|GitHub|Codex|AC-|GY-)`).test(text) ? text : text[0].toLowerCase() + text.slice(1);
+const lowerFirst = (text: string) => new RegExp(`^(Mainworks|${PRODUCT_NAME}|GitHub|Codex|AC-|GY-)`).test(text) ? text : text[0].toLowerCase() + text.slice(1);
 /**
  * What the item's sentences name it by. The merge writer opens no pull request, so an item the
  * control plane observed itself is named by its commit — the merge commit once merged, the head

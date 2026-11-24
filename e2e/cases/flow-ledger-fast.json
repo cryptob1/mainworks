@@ -1,0 +1,11 @@
+{
+  "id": "flow-ledger-fast",
+  "title": "Master status shows flow numbers with no slow ledger read",
+  "description": "On a test install seeded with two million events over 7 days, one in forty a save carrying a large stored document, master status shows the flow numbers and the server reports no /api/flow query over 3 seconds.",
+  "tags": ["api", "regression"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "master status on a seeded install shows flow numbers and no /api/flow query over 3 s", "run": "node --import tsx tests/helpers/run-tests.ts tests/flow-ledger-fast.test.ts", "timeoutSeconds": 900 }
+  ]
+}

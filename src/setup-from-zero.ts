@@ -9,7 +9,7 @@ import { checkAgentEnvironment, discoverAgentEnvironments } from './master/envir
 import type { AgentEnvironment } from './master/profiles.js';
 import { sharedGitPaths, workerPaths } from './worker-sandbox.js';
 import type { LoopCodeReading } from './repository-setup.js';
-import { installUnitsFile, parseInstallUnits, systemdCommandLineWords, unitCheckout, userUnitDirectory } from './install/units.js';
+import { installUnitsFile, installUnitsPath, parseInstallUnits, systemdCommandLineWords, unitCheckout, userUnitDirectory } from './install/units.js';
 import { installDirectory } from './install/secrets.js';
 import { installIdFor } from './install/types.js';
 import { unitLauncherFault } from './install/cli-release.js';
@@ -24,26 +24,28 @@ import { landlockRefusal } from './landlock.js';
 import { MINIMUM_NODE_MAJOR } from './install/local.js';
 import { appArmorEnabled, trialAppArmorFix, trialAppArmorProfile } from './merge-writer/trial-apparmor.js';
 import { trialContainerLaunch, trialImage } from './merge-writer/trial-container.js';
+import { setting } from './setting.js';
+import { stateDirectory } from './install/layout.js';
 
 /**
- * The prerequisites that `graphyard doctor` can check from this machine (GY-1352).
+ * The prerequisites that `mainworks doctor` can check from this machine (GY-1352).
  * Each is a named pass/fail line naming the command that fixes it, so an
- * agent setting Graphyard up from nothing reads the next step off doctor's output instead of guessing.
+ * agent setting Mainworks up from nothing reads the next step off doctor's output instead of guessing.
  */
 export const setupSteps = {
-  install: 'run graphyard up from this checkout',
-  environments: 'run graphyard up and connect agent accounts at the Setup link it prints',
+  install: 'run mainworks up from this checkout',
+  environments: 'run mainworks up and connect agent accounts at the Setup link it prints',
   sandbox: 'install bubblewrap: sudo apt install bubblewrap (Debian/Ubuntu) or sudo pacman -S bubblewrap (Arch)',
   herdr: `install Herdr as the README's Herdr prerequisite says: ${herdrInstaller}`,
   kernel: 'boot Linux 7.0 or later, which offers Landlock ABI 9 (Ubuntu 26.04: sudo apt install linux-image-oem-7.3, then reboot)',
   trialAppArmor: trialAppArmorFix,
-  loopCode: 'rerun graphyard up --agent from this checkout',
-  unitOverrides: 'remove the conflicting systemd drop-in this line names, then rerun graphyard up',
-  loopUnitRelease: 'run graphyard master init --token-stdin --replace-supervisor from this checkout so the unit starts the release this install serves',
-  loopLock: 'run graphyard master restart on that host: it restarts the loop through its unit, or stops the unit before a detached one, so a single loop remains',
-  deploySource: 'restart this install\'s deploy unit (graphyard upgrade --watch), which replaces the worktree with a standalone clone at the same commit',
+  loopCode: 'rerun mainworks up --agent from this checkout',
+  unitOverrides: 'remove the conflicting systemd drop-in this line names, then rerun mainworks up',
+  loopUnitRelease: 'run mainworks master init --token-stdin --replace-supervisor from this checkout so the unit starts the release this install serves',
+  loopLock: 'run mainworks master restart on that host: it restarts the loop through its unit, or stops the unit before a detached one, so a single loop remains',
+  deploySource: 'restart this install\'s deploy unit (mainworks upgrade --watch), which replaces the worktree with a standalone clone at the same commit',
   node: `install Node ${MINIMUM_NODE_MAJOR} or newer (the README prerequisites give the command for your distribution), then rerun doctor with it`,
-  serve: 'restart this install\'s deploy unit so it checks main out, builds and serves it again (graphyard upgrade --watch)',
+  serve: 'restart this install\'s deploy unit so it checks main out, builds and serves it again (mainworks upgrade --watch)',
 } as const;
 
 export interface SetupCheck { id: string; status: 'pass' | 'fail'; detail: string; step: string }
@@ -86,7 +88,7 @@ const readJson = async (file: string) => { try { return JSON.parse(await readFil
 const rewritable = async (file: string) => { try { await stat(file); return writable(file); } catch { return writable(dirname(file)); } };
 
 /** Bubblewrap's own probe, as the worker confinement runs it, with PATHS bound writable. */
-export function bubblewrapProbe(paths: string[]): string | null {
+function bubblewrapProbe(paths: string[]): string | null {
   const binds = paths.flatMap(path => ['--bind', path, path]);
   try {
     execFileSync('bwrap', ['--ro-bind', '/', '/', ...binds, '--dev', '/dev', '--proc', '/proc', '--unshare-all', '--share-net', '--die-with-parent', '--', 'sh', '-c', paths.map(path => `test -w '${path.replace(/'/g, `'\\''`)}'`).join(' && ')], { stdio: 'ignore', timeout: 20_000 });
@@ -95,7 +97,7 @@ export function bubblewrapProbe(paths: string[]): string | null {
 }
 
 /** GY-3339: a trial container, as merge trials create it, starting the nested sandbox its tests start. */
-export function trialSandboxProbe(): string | null {
+function trialSandboxProbe(): string | null {
   const [command, ...args] = trialContainerLaunch({ image: trialImage(), mounts: [], network: 'none' });
   try {
     execFileSync(command!, [...args, 'bwrap', '--ro-bind', '/', '/', '--dev', '/dev', '--unshare-user', '--unshare-pid', 'true'], { cwd: '/', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000 });
@@ -110,9 +112,9 @@ export function trialSandboxProbe(): string | null {
  * already chose a credential, or no 0600 master credential is recorded for this server.
  */
 export async function masterCredential(root: string, base: string, env: NodeJS.ProcessEnv = process.env): Promise<{ file: string; token: string } | null> {
-  if (env.GRAPHYARD_TOKEN_FILE || env.GRAPHYARD_TOKEN) return null;
+  if (setting('TOKEN_FILE', env) || setting('TOKEN', env)) return null;
   try {
-    const config = JSON.parse(await readFile(resolve(root, '.graphyard/master.json'), 'utf8'));
+    const config = JSON.parse(await readFile(resolve(stateDirectory(root), 'master.json'), 'utf8'));
     if (new URL(config.url).origin !== new URL(base).origin) return null;
     const file = resolve(config.credentialFile), info = await lstat(file);
     const token = (await readFile(file, 'utf8')).trim();
@@ -146,12 +148,12 @@ export function setupNext(readiness: { next: string; items: { id: string; status
 
 async function credentialsCheck(root: string, env: NodeJS.ProcessEnv, master?: string | null): Promise<SetupCheck> {
   if (master) return { id: 'credentials-file', status: 'pass', step: setupSteps.install, detail: `the master credential ${master} (.graphyard/master.json) is present with mode 0600` };
-  const named = env.GRAPHYARD_TOKEN_FILE ? resolve(env.GRAPHYARD_TOKEN_FILE) : null;
-  const file = named ?? resolve(root, '.graphyard/connection.json');
+  const named = setting('TOKEN_FILE', env) ? resolve(setting('TOKEN_FILE', env)!) : null;
+  const file = named ?? resolve(stateDirectory(root), 'connection.json');
   const check = (status: SetupCheck['status'], detail: string): SetupCheck => ({ id: 'credentials-file', status, detail, step: setupSteps.install });
   let info;
   try { info = await lstat(file); } catch {
-    return check('fail', named ? `GRAPHYARD_TOKEN_FILE ${file} does not exist` : env.GRAPHYARD_TOKEN ? 'the credential is only in GRAPHYARD_TOKEN; no credentials file holds it' : `${file} does not exist and GRAPHYARD_TOKEN_FILE is unset`);
+    return check('fail', named ? `GRAPHYARD_TOKEN_FILE ${file} does not exist` : setting('TOKEN', env) ? 'the credential is only in GRAPHYARD_TOKEN; no credentials file holds it' : `${file} does not exist and GRAPHYARD_TOKEN_FILE is unset`);
   }
   if (!info.isFile()) return check('fail', `${file} is not a regular file`);
   if (info.mode & 0o077) return check('fail', `${file} has mode 0${(info.mode & 0o777).toString(8)}; it must be 0600`);
@@ -207,7 +209,7 @@ async function loopCodeCheck(root: string, injected: LoopCodeReading | null | un
   if (code.error) return check('fail', `the units this install records are unreadable: ${code.error}`);
   if (!code.loop) return null;
   const stale = code.loopStale;
-  if (stale) return check('fail', `${stale}: rerun graphyard up${code.repository ? ` --repo ${code.repository}` : ''} --agent from this checkout (${code.cli.root}); its master-loop step rewrites the units to it and restarts them`);
+  if (stale) return check('fail', `${stale}: rerun mainworks up${code.repository ? ` --repo ${code.repository}` : ''} --agent from this checkout (${code.cli.root}); its master-loop step rewrites the units to it and restarts them`);
   return check('pass', `the loop${code.loop ? ` (${code.loop.unit} at ${code.loop.path})` : ''}${code.loopCommit ? ` at ${code.loopCommit.slice(0, 12)}` : ''} runs this checkout (${code.cli.root})`);
 }
 
@@ -220,7 +222,7 @@ async function loopCodeCheck(root: string, injected: LoopCodeReading | null | un
 async function unitOverridesChecks(root: string, systemctl: UserSystemctl, platform: NodeJS.Platform): Promise<SetupCheck[]> {
   if (platform !== 'linux') return [];
   let units;
-  try { units = parseInstallUnits(await readFile(resolve(root, installUnitsFile), 'utf8'), installUnitsFile, () => { throw new Error('absent'); }); } catch { return []; }
+  try { units = parseInstallUnits(await readFile(installUnitsPath(root), 'utf8'), installUnitsFile, () => { throw new Error('absent'); }); } catch { return []; }
   const check = (status: SetupCheck['status'], detail: string): SetupCheck => ({ id: 'unit-overrides', status, step: setupSteps.unitOverrides, detail });
   const herdr = herdrServerUnit(null);
   const overrides = new Map<string, string>();
@@ -248,24 +250,24 @@ const readableUnitDirectory = (directory: string) => {
 /** The launcher a loop unit's ExecStart names, worded by systemd's own quoting rules, null when it names none. */
 const unitLauncher = (text: string, home: string): string | null => {
   const start = unitCheckout(text, home).execStart;
-  return start ? systemdCommandLineWords(start).find(part => /(?:bin\/graphyard\.mjs|dist\/cli\.js)$/.test(part)) ?? null : null;
+  return start ? systemdCommandLineWords(start).find(part => /(?:bin\/(?:graphyard|mainworks)\.mjs|dist\/cli\.js)$/.test(part)) ?? null : null;
 };
 
 /**
  * GY-3337: the loop unit's release line. The unit's ExecStart must resolve to the release this
  * install serves — never a release that has gone stale, never another install's launcher. One FAIL
  * names the unit and the init that rewrites it; a healthy unit records one PASS. A checkout
- * recording no units, a host holding no unit file, or a unit naming no Graphyard launcher records
+ * recording no units, a host holding no unit file, or a unit naming no Mainworks launcher records
  * no line: those are other lines' facts (loop-code, unit-overrides).
  */
 async function loopUnitReleaseChecks(root: string, env: NodeJS.ProcessEnv): Promise<SetupCheck[]> {
   const check = (status: SetupCheck['status'], detail: string): SetupCheck => ({ id: 'loop-unit-release', status, step: setupSteps.loopUnitRelease, detail });
   let units, repository;
-  try { units = parseInstallUnits(await readFile(resolve(root, installUnitsFile), 'utf8'), installUnitsFile, () => { throw new Error('absent'); }); } catch { return []; }
-  try { repository = JSON.parse(await readFile(resolve(root, '.graphyard/master.json'), 'utf8'))?.repository; } catch { /* no configuration: nothing to judge against */ }
+  try { units = parseInstallUnits(await readFile(installUnitsPath(root), 'utf8'), installUnitsFile, () => { throw new Error('absent'); }); } catch { return []; }
+  try { repository = JSON.parse(await readFile(resolve(stateDirectory(root), 'master.json'), 'utf8'))?.repository; } catch { /* no configuration: nothing to judge against */ }
   if (typeof repository !== 'string' || !repository) return [];
   let installDir: string;
-  try { installDir = installDirectory(installIdFor(repository), env.GRAPHYARD_CONFIG_HOME); } catch { return []; }
+  try { installDir = installDirectory(installIdFor(repository), setting('CONFIG_HOME', env)); } catch { return []; }
   const unitDirectory = userUnitDirectory(env);
   if (!readableUnitDirectory(unitDirectory)) return [];
   const text = await readFile(join(unitDirectory, units.master), 'utf8').catch(() => null);
@@ -278,7 +280,7 @@ async function loopUnitReleaseChecks(root: string, env: NodeJS.ProcessEnv): Prom
 }
 
 /** GY-3337: how recent a lock refusal doctor still blames; a crash-looping war refreshes it every RestartSec. */
-export const loopCrashLoopWindowMs = 5 * 60_000;
+const loopCrashLoopWindowMs = 5 * 60_000;
 
 /**
  * GY-3337: the loop-lock line. A `master run` that keeps exiting on another live loop's lock is a
@@ -339,11 +341,11 @@ export async function setupFromZeroChecks(input: SetupFromZeroInput): Promise<Se
   const lines: SetupCheck[] = [];
   // Reachable and authenticated are separate facts (GY-1412): a plane whose /healthz answered is
   // never reported as unreachable because the credential is missing or refused.
-  const credential = env.GRAPHYARD_TOKEN_FILE || env.GRAPHYARD_TOKEN || input.masterCredential ? 'refused' : 'missing';
+  const credential = setting('TOKEN_FILE', env) || setting('TOKEN', env) || input.masterCredential ? 'refused' : 'missing';
   lines.push({ id: 'control-plane', status: status ? 'pass' : 'fail', step: setupSteps.install,
     detail: status ? `answered as role ${status.actor?.role ?? 'unknown'}` : `${input.reachable ? `reachable, credential ${credential}` : 'not reachable'}: ${input.failure ?? 'no answer'}` });
   const node = input.nodeVersion ?? process.versions.node;
-  lines.push({ id: 'node', status: Number(node.split('.')[0]) >= MINIMUM_NODE_MAJOR ? 'pass' : 'fail', step: setupSteps.node, detail: `Node ${node}; Graphyard needs Node ${MINIMUM_NODE_MAJOR} or newer` });
+  lines.push({ id: 'node', status: Number(node.split('.')[0]) >= MINIMUM_NODE_MAJOR ? 'pass' : 'fail', step: setupSteps.node, detail: `Node ${node}; Mainworks needs Node ${MINIMUM_NODE_MAJOR} or newer` });
   lines.push(await credentialsCheck(input.root, env, input.masterCredential));
   lines.push(...await environmentChecks(input.environments));
   lines.push(await sandboxCheck(input.root, input.sandbox ?? bubblewrapProbe));

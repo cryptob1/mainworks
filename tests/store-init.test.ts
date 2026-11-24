@@ -161,7 +161,7 @@ test('integration:migration-lock-bounded a migration whose watchdog loses its co
   const merges = await liveReplica('watchdog', async db => { await db.query('SELECT count(*) FROM work_items'); });
   let released: Promise<void> | undefined;
   const handoff = setTimeout(() => { released = observations(); }, 1200);
-  const cut = setTimeout(() => { void deployed.pool.query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=current_database() AND application_name='graphyard migration watchdog'"); }, 300);
+  const cut = setTimeout(() => { void deployed.pool.query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=current_database() AND application_name='mainworks migration watchdog'"); }, 300);
   const next = new Store(url('watchdog'));
   try {
     const boot = await timed(() => next.init({ lockTimeoutMs: 1500 }));

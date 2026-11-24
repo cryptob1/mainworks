@@ -1,0 +1,25 @@
+{
+  "id": "events-history-indexed",
+  "title": "The events page answers its first page, and no events-history query ran over 3 seconds",
+  "description": "GET /api/events with the defaults (routine kinds left out, newest first, payload resolved) answers its first page with its cursor, and the slowest-query read that master status shows names no events-history query over 3 seconds in the last 10 minutes.",
+  "tags": ["api", "events"],
+  "target": "uat",
+  "required": true,
+  "steps": [
+    {
+      "kind": "http", "name": "read the first events page", "method": "GET", "path": "/api/events?view=history", "status": 200,
+      "expect": [
+        { "path": "events", "type": "array" },
+        { "path": "page.returned", "type": "number" },
+        { "path": "filters.routine", "equals": "exclude" },
+        { "path": "filters.order", "equals": "desc" },
+        { "path": "routine.excluded", "equals": ["github.observed", "heartbeat"] }
+      ]
+    },
+    {
+      "kind": "http", "name": "master status names no slow events-history query", "method": "GET",
+      "path": "/api/slowest-query?name=SELECT%20seq%2Cwork_id%2Cactor%2Ckind%2Ccreated_at", "status": 200,
+      "expect": [{ "path": "slowest", "equals": null }]
+    }
+  ]
+}

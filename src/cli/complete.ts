@@ -16,6 +16,8 @@ import { trialTimeoutMinutes } from '../master/merge-writer-settings.js';
 import { workerFastGates, workerFastGatesPresent } from '../master/worker-fast-gates.js';
 import { criterionProofs, e2eProofsOf, featureCaseFailure, proofTestFiles, requiredProofFailure, trialFailureReason } from '../merge-writer/executor.js';
 import { trialHomeVariables, trialTemporaryMode, trialTemporaryVariables } from '../merge-writer/trial.js';
+import { setting } from '../setting.js';
+import { stateDirectory } from '../install/layout.js';
 
 /**
  * A submission is observed on GitHub before it is accepted, so while the control plane's GitHub
@@ -160,7 +162,7 @@ const boundText = (ms: number) => ms % 60_000 === 0 ? `${ms / 60_000} min` : `${
 /**
  * GY-2974: the command that runs exactly `files` in `root`. `npm test -- FILES` ran the whole suite
  * wherever the test script already globs every file (Open City's GY-101 hung 24 minutes on it), so
- * the files go straight to a runner: Graphyard's own suite runner, which runs just the files it is
+ * the files go straight to a runner: Mainworks's own suite runner, which runs just the files it is
  * given under the suite's isolation, else node's test runner, through tsx when the tree installs it.
  */
 export function rerunCommand(root: string, files: readonly string[]): [string, string[]] {
@@ -271,7 +273,7 @@ export function rerunFailingCases(output: string, files: readonly string[]): Rer
  */
 export async function rerunBaseFiles(root: string, base: string, files: readonly string[], run: ChildRun = defaultChildRun, deadline = Date.now() + rerunBound.ms): Promise<{ ok: boolean; output: string } | null> {
   let scratch: string;
-  try { await mkdir(join(root, '.graphyard', 'verify'), { recursive: true }); scratch = await mkdtemp(join(root, '.graphyard', 'verify', 'rerun-')); } catch { return null; }
+  try { await mkdir(join(stateDirectory(root), 'verify'), { recursive: true }); scratch = await mkdtemp(join(stateDirectory(root), 'verify', 'rerun-')); } catch { return null; }
   const tree = join(scratch, 'tree');
   try {
     await mkdir(tree);
@@ -355,7 +357,7 @@ export async function judgeRerun(root: string, work: { key: string; criteria?: {
 /**
  * `complete GY-N EPOCH [--head [SHA]]` (GY-1523): submit the commit and end the lease; nothing is
  * pushed, since the shared object store already holds it. Beside the control plane's answer it
- * reports the worker's own verification of HEAD (`graphyard verify GY-N`): which
+ * reports the worker's own verification of HEAD (`mainworks verify GY-N`): which
  * mechanical proofs were run and their outcome, which proofs are outstanding, or that none was run.
  * The report never changes what is submitted — the gates decide from trusted evidence alone — but a
  * head whose proof failed here is the head the control plane returns before review.
@@ -502,22 +504,12 @@ export async function completePreflight(
   }
 }
 
+import { completeHelp } from './lease.js';
+
 export const completeCommand: CliCommand = {
   name: 'complete',
   scope: 'work',
-  help: [
-    '  complete GY-N EPOCH [--head [SHA]]  Submit the commit (the worktree\'s HEAD when no SHA is',
-    '                                given) and end the lease; gates decide completion. The shared',
-    '                                object store already holds it, so nothing is pushed. A submission',
-    '                                the control plane does not answer (its 120 s request bound, a',
-    '                                dropped connection) is resent under one idempotency key for up',
-    '                                to 10 minutes, so a slow plane strands no finished head. Reports',
-    '                                what graphyard verify ran on HEAD and its outcome. Refused while',
-    '                                GitHub requests are paused, it waits for the named reset and',
-    '                                submits again (bounded). Preflight refuses a missing proof id,',
-    '                                a missing feature E2E case, a base conflict, or a failing fast',
-    '                                gate before submitting; the merge trial decides the rest.',
-  ],
+  help: completeHelp,
   run: async (context, work) => {
     // GY-3330: one idempotency key for this attempt and head — a caller's GRAPHYARD_REQUEST_ID,
     // else derived — so every retry of a submission the control plane did not answer repeats the
@@ -526,9 +518,9 @@ export const completeCommand: CliCommand = {
     // a checkout (another install's Master, which may only file items and message this Master) is
     // told so plainly, before git's raw error, whatever way --head was given.
     completeArgs(context.args);
-    await checkoutRoot(context, `graphyard complete ${work.key}`);
+    await checkoutRoot(context, `mainworks complete ${work.key}`);
     const root = context.repositoryRoot();
-    const body = completionBody(context.args, () => worktreeHead(root)), requestId = process.env.GRAPHYARD_REQUEST_ID ?? `complete:${work.id}:${body.epoch}:${body.head}`;
+    const body = completionBody(context.args, () => worktreeHead(root)), requestId = setting('REQUEST_ID') ?? `complete:${work.id}:${body.epoch}:${body.head}`;
     await completePreflight(root, work, body.head);
     let verification: Awaited<ReturnType<typeof selfVerification>> | { state: 'unavailable'; reason: string };
     try { verification = await selfVerification(root, work.key); } catch (error: any) { verification = { state: 'unavailable', reason: `the worktree could not be read: ${error.message}` }; }

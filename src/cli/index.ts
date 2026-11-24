@@ -1,10 +1,10 @@
-import { createContext, resolveWork } from './context.js';
 import type { CliCommand } from './registry.js';
 import { installCommands } from './install.js';
 import { dbCommands } from './db.js';
 import { masterCommands } from './master.js';
 import { admissionAuditCommands } from './merge-admission-audit.js';
 import { workCommands } from './work.js';
+import { askCommands } from './ask.js';
 import { policyCommands } from './policy.js';
 import { deliveryCommands } from './delivery.js';
 import { scenarioCommands } from './scenarios.js';
@@ -14,7 +14,7 @@ import { workspaceCommands } from './workspace.js';
 import { reviewCommands } from './review.js';
 import { guideCommands } from './guide.js';
 import { versionCommands } from './version.js';
-import { upgradeCommands } from './upgrade.js';
+import { upgradeCommands } from './upgrade-commands.js';
 import { hostCommands } from './hosts.js';
 import { benchCommands } from './bench.js';
 import { teamAccessCommands } from './team-access.js';
@@ -26,7 +26,7 @@ import { COMMAND_NAME, PRODUCT_NAME } from '../model/product.js';
  * one module, or adds a module here; nothing else in the launcher changes.
  */
 export const commands: readonly CliCommand[] = [
-  ...installCommands, ...dbCommands, ...masterCommands, ...workCommands, ...admissionAuditCommands, ...policyCommands,
+  ...installCommands, ...dbCommands, ...masterCommands, ...workCommands, ...askCommands, ...admissionAuditCommands, ...policyCommands,
   ...deliveryCommands, ...scenarioCommands,
   ...operatorAgentCommands, ...leaseCommands, ...workspaceCommands,
   ...reviewCommands, ...guideCommands, ...versionCommands, ...upgradeCommands, ...hostCommands, ...benchCommands, ...teamAccessCommands, ...infraCommands,
@@ -35,7 +35,7 @@ export const commands: readonly CliCommand[] = [
 export function renderHelp() {
   return `${PRODUCT_NAME} 0.1 — distributed work, explicit proof
 
-Usage: ${COMMAND_NAME} COMMAND (the graphyard command still works)
+Usage: ${COMMAND_NAME} COMMAND (the old graphyard command still works)
 Environment: GRAPHYARD_URL, GRAPHYARD_TOKEN (individual role-scoped credential)
 ${commands.flatMap(entry => entry.help).join('\n')}
 
@@ -49,8 +49,9 @@ export async function main(argv = process.argv.slice(2)) {
   if (!command || command === 'help' || command === '--help') { console.log(renderHelp()); return; }
   const selected = commands.find(entry => entry.name === command);
   // A subcommand's help flag is answered by the launcher before any command runs, so
-  // `graphyard login --help` prints login's help instead of minting a sign-in link (GY-3172).
+  // `mainworks login --help` prints login's help instead of minting a sign-in link (GY-3172).
   if (selected && [id, ...args].some(word => word === '--help' || word === '-h')) { console.log(selected.help.join('\n')); return; }
+  const { createContext, resolveWork } = await import('./context.js');
   const context = await createContext(command, id, args, selected?.readsConnection?.(id) ?? true);
   if (selected && selected.scope !== 'work') return selected.run(context, undefined);
   if (selected?.unscoped && !id) return selected.unscoped(context);

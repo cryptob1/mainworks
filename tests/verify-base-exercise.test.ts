@@ -9,7 +9,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // GY-1174: three nonexercising-proof faults in 24 hours (GY-1132, GY-1131, GY-1142) shared one
 // cause — a proof bound to a criterion it cannot exercise was found only when the producer's
 // stripped run survived, after a full validation cycle. Each instance is rebuilt here in a
-// throwaway repository: its proof passes on the head, as the base's `graphyard verify` reported,
+// throwaway repository: its proof passes on the head, as the base's `mainworks verify` reported,
 // and the candidate's verify now runs it against the base's sources with the change's tests and
 // reports it unexercised before submission. A proof that does exercise the change still passes.
 

@@ -1,4 +1,4 @@
-// Concern: `graphyard master` intent subcommands — autonomy, promote, adopt, close — applied at once with the master's identity.
+// Concern: `mainworks master` intent subcommands — autonomy, promote, adopt, close — applied at once with the master's identity.
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { agentToken, intentInput, autonomySubcommands, runAutonomyCommand, listHerdrAgents, promoteToAutonomy, assertPromotionRoute } from '../../master.js';
@@ -8,6 +8,7 @@ import { postDeployCriterionRefusal, postDeployOnlyRefusal, type Work } from '..
 import { readSecretFromStdin } from '../context.js';
 import { closeRequest } from '../master-close.js';
 import { unhandled, type MasterSession } from './session.js';
+import { setting } from '../../setting.js';
 
 /**
  * `master create FILE REASON` and `master requirements GY-N FILE REASON`: the intent file is posted
@@ -28,7 +29,7 @@ export async function derivedIntent(id: 'create' | 'requirements', args: string[
   const intent = work ? intentInput('requirements', work, input) : input;
   const postDeploy = postDeployCriterionRefusal(intent.criteria ?? []) ?? postDeployOnlyRefusal(intent.criteria ?? []);
   if (postDeploy) throw new Error(postDeploy);
-  return deps.mutate(work ? `work/${work.id}/requirements` : 'work', { ...intent, reason }, process.env.GRAPHYARD_REQUEST_ID ?? randomUUID(), await deps.token());
+  return deps.mutate(work ? `work/${work.id}/requirements` : 'work', { ...intent, reason }, setting('REQUEST_ID') ?? randomUUID(), await deps.token());
 }
 
 /** The master's own intent, applied at once with its operator-agent identity. */
@@ -38,7 +39,7 @@ export async function intentCommand(session: MasterSession): Promise<unknown> {
     if (!args[0] || !/^[0-3]$/.test(args[1] ?? '') || !args.slice(2).join(' ').trim()) throw new Error('Use master priority GY-N 0|1|2|3 REASON');
     return print(await masterMutation(`work/${encodeURIComponent(args[0])}/priority`, { priority: Number(args[1]), reason: args.slice(2).join(' ') }, randomUUID(), await agentToken(root, master, 'operatorAgent')));
   }
-  // GY-3344: the Master answers a message a reporter sent it; the reporter reads it with graphyard messages.
+  // GY-3344: the Master answers a message a reporter sent it; the reporter reads it with mainworks messages.
   if (id === 'reply') {
     if (!/^\d+$/.test(args[0] ?? '') || !args.slice(1).join(' ').trim()) throw new Error('Use master reply MESSAGE-ID TEXT');
     return print(await masterMutation(`master/messages/${args[0]}/reply`, { text: args.slice(1).join(' ') }));

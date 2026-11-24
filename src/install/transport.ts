@@ -72,14 +72,14 @@ export function localTransport(): Transport {
       // server that restarts forever on EACCES.
       const fixed = await local('docker', ['run', '--rm', '-v', `${dirname(path)}:/fix`, 'alpine:3', 'chown', `${uid}:${gid}`, `/fix/${path.split('/').pop()}`], { allowFailure: true, timeout: 300_000 }).catch(() => ({ stdout: '', stderr: 'docker is unavailable', code: 1 }));
       if (fixed.code === 0) return;
-      throw new Error(`The server container runs as uid ${uid} and must be able to read ${path}, but it could not be given to ${owner} and the Docker daemon could not either: ${fixed.stderr.trim().slice(-300)}. Run the installer as root or as uid ${uid}, or chown ${owner} ${path} yourself, then rerun graphyard install --apply.`);
+      throw new Error(`The server container runs as uid ${uid} and must be able to read ${path}, but it could not be given to ${owner} and the Docker daemon could not either: ${fixed.stderr.trim().slice(-300)}. Run the installer as root or as uid ${uid}, or chown ${owner} ${path} yourself, then rerun mainworks install --apply.`);
     },
   };
 }
 
 export const shellQuote = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
 
-export interface RecordedCommand { program: string; args: string[]; input?: string; cwd?: string }
+interface RecordedCommand { program: string; args: string[]; input?: string; cwd?: string }
 export interface BundleFileRecord { content: string; mode: number; owner?: string }
 export interface FakeTransportOptions {
   /** First match wins; a response is stdout, a full result, or a thunk for stateful fakes. */

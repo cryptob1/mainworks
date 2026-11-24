@@ -34,7 +34,7 @@ test(`${proof} — a file naming docker stays local-only; one whose text cannot 
 });
 
 test(`${proof} — in a trial with a remote host registered, files marked local-only are always placed on this machine and the rest may go remote, so the verdict carries no false failure`, { timeout: 120_000 }, async () => {
-  const image = 'graphyard-trial:local-only-fixture';
+  const image = 'mainworks-trial:local-only-fixture';
   const hosts = await shardHosts('local-only-trial', ['box'], { [image]: `sha256:${'31d9'.repeat(16)}` });
   const pure = Array.from({ length: 4 }, (_, index) => `tests/plain-${index}.test.ts`);
   const docker = Array.from({ length: 4 }, (_, index) => `tests/uses-docker-${index}.test.ts`);

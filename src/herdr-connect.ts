@@ -1,12 +1,12 @@
 import type { PaneServer } from './model/setup-checklist.js';
 
-// The commands that open an install's agents in Herdr (GY-1511), shared by `graphyard up`, master
+// The commands that open an install's agents in Herdr (GY-1511), shared by `mainworks up`, master
 // status, host installs and the dashboard's Setup page. Pure: the page bundles it.
 
 export type HerdrWatch = PaneServer;
 const shellWord = (value: string) => /^[\w@%+=:,./-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
 /** Where a remote command names a host it does not know: the operator puts their own in. */
-export const herdrHostPlaceholder = 'HOST';
+const herdrHostPlaceholder = 'HOST';
 /**
  * On this host, through SSH, and through Herdr's own remote attach. Its own instance is attached by
  * its XDG_CONFIG_HOME and session name; the default instance by plain `herdr`.

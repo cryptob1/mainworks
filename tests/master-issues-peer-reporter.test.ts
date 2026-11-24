@@ -86,7 +86,7 @@ test(`e2e:master-issues-peer-reporter — a confined Master session issues anoth
     git('add', '.'); git('commit', '-qm', 'base');
     await setupMaster(root, { url, token: token(coordinator), cliPath: cli, hostId: 'fixture-host', herdrWorkspace: `w-${name}`,
       credentialDirectory: join(process.env.GRAPHYARD_CONFIG_HOME!, name), run: { worktreeRoot: await temporaryDirectory(`peer-issue-${name}-worktrees`, scratch) } });
-    /** The real `graphyard master peer|send` subcommand, as this install's Master runs it in its own session. */
+    /** The real `mainworks master peer|send` subcommand, as this install's Master runs it in its own session. */
     const command = async (id: 'peer' | 'send', ...args: string[]) => {
       const printed: any[] = [];
       await peerCommand({ id, args, print: (value: unknown) => printed.push(value), root, master: await loadMasterConfig(root), masterApi: (path: string) => api(path), masterMutation: (path: string, data: unknown, key?: string) => api(path, data, key) } as unknown as MasterSession);
@@ -134,7 +134,7 @@ test(`e2e:master-issues-peer-reporter — a confined Master session issues anoth
       return shellAnswers(args) ?? JSON.stringify({ result: {} });
     };
     const launched = await launchSession({ name: config.masterAgentName, kind: process.execPath, args: [script, '{request}'],
-      text: 'Issue the peer install its reporter identity.', workspace: config.herdrWorkspace, label: `Graphyard master · ${config.repository}`,
+      text: 'Issue the peer install its reporter identity.', workspace: config.herdrWorkspace, label: `Mainworks master · ${config.repository}`,
       environment: { GRAPHYARD_MASTER: '1', ...paneEnvironment }, run, onPane: () => undefined,
       start: { directory: a.root, cwd: a.root, coordinatorRoot: a.root, environment: paneEnvironment, confinement: 'master', timeoutMs: 240_000,
         contract: { args: [script, '{request}'] },
@@ -176,7 +176,7 @@ test(`e2e:master-issues-peer-reporter — a confined Master session issues anoth
     assert.deepEqual((await a.command('peer', 'list')).peers.map((peer: { name: string }) => peer.name), ['install-b']);
     assert.deepEqual((await b.command('peer', 'list')).peers.map((peer: { name: string }) => peer.name), ['install-a']);
 
-    // The peer's Master reaches the first install through Graphyard, authenticated as the identity
+    // The peer's Master reaches the first install through Mainworks, authenticated as the identity
     // the confined session issued: its send is stored on the first install's plane.
     const sent = await b.command('send', 'install-a', 'GY-7', 'here', 'fails', 'on', 'your', 'trial', 'image;', 'can', 'you', 'add', 'Go', '1.23?');
     assert.equal(sent.sent, 'install-a');

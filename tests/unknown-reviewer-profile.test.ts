@@ -52,7 +52,7 @@ function work(clock: number): Work {
   } as unknown as Work;
 }
 
-test('unit:unknown-profile-escalates — three review launches refused for an unknown reviewer profile are counted, later attempts back off to once per five minutes naming graphyard master environments --apply until the profiles change', async () => {
+test('unit:unknown-profile-escalates — three review launches refused for an unknown reviewer profile are counted, later attempts back off to once per five minutes naming mainworks master environments --apply until the profiles change', async () => {
   const root = await reviewerMaster('unknown-reviewer-profile');
   // Late-bound so the file loads, and its cases fail, on a tree without the change (the proof's exercise).
   const { readReviewerProfileRefusal } = await import('../src/reviewer.js');
@@ -72,7 +72,7 @@ test('unit:unknown-profile-escalates — three review launches refused for an un
 
   // Inside five minutes the launch boundary refuses the knock without making an attempt: nothing is recounted, the last attempt stands.
   clock += 60_000;
-  await assert.rejects(launch('review-codex'), /refused 3 launches in a row.*backing off to one attempt every 5 minutes until the profiles change — write them with graphyard master environments --apply/);
+  await assert.rejects(launch('review-codex'), /refused 3 launches in a row.*backing off to one attempt every 5 minutes until the profiles change — write them with mainworks master environments --apply/);
   const held = await readReviewerProfileRefusal(config);
   assert.equal(held?.refusals, 3, 'a knock inside the window counts no attempt');
   assert.equal(held?.at, counted?.at);
@@ -217,7 +217,7 @@ test('unit:up-writes-profiles — up\'s accounts step runs the profile write mas
     const item = held.checklist.find(entry => entry.id === id);
     assert.equal(item?.done, false, `${id} is not green while its profile is missing`);
     assert.match(item?.line ?? '', /no agent profile/, `${id} says what is missing in plain language`);
-    assert.doesNotMatch(item?.line ?? '', /graphyard|master\.json|--apply/, `${id} names no command or path: the checklist is plain language`);
+    assert.doesNotMatch(item?.line ?? '', /mainworks|master\.json|--apply/, `${id} names no command or path: the checklist is plain language`);
   }
   assert.ok(emptyEvents.some(event => event.kind === 'step' && event.step === 'accounts' && event.state === 'waiting'), 'the accounts step is a wait, not a failure');
   assert.ok(!held.completed.includes('accounts'), 'the accounts step did not complete');

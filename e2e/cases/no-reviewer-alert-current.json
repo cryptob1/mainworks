@@ -1,0 +1,9 @@
+{
+  "id": "no-reviewer-alert-current",
+  "title": "A running reviewer clears the 'has no reviewer' line",
+  "description": "GY-3729: after a failed reviewer launch master status lists the item as having no reviewer; once a reviewer session runs on the item's current head, the line goes. A session on an older head does not clear it.",
+  "tags": ["review"],
+  "target": "any",
+  "required": false,
+  "steps": [{ "kind": "command", "name": "no-reviewer line follows the live reviewer", "run": "node --import tsx tests/helpers/run-tests.ts tests/no-reviewer-alert-current.test.ts", "timeoutSeconds": 300 }]
+}

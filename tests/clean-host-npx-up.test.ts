@@ -10,12 +10,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { databaseUrl } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-3214: a host that holds no Graphyard checkout goes from `npx @cryptob1/graphyard up` to a working
+// GY-3214: a host that holds no Mainworks checkout goes from `npx @cryptob1/graphyard up` to a working
 // install. The npm registry and the image registry are local ones standing in for npm and GHCR,
-// Graphyard's upstream is a local repository Git is pointed at, and docker, gh and the dependency
+// Mainworks's upstream is a local repository Git is pointed at, and docker, gh and the dependency
 // install are stand-ins on PATH (a trial has no Docker daemon, GitHub or network); everything
 // else — npm publish, npx, the launcher, the clone, `up` and the control plane — is the real thing,
-// run as subprocesses of a fresh home that never names a Graphyard path.
+// run as subprocesses of a fresh home that never names a Mainworks path.
 
 const source = fileURLToPath(new URL('..', import.meta.url));
 const servers: Server[] = [];
@@ -95,7 +95,7 @@ else if (args[0] === 'compose') {
   else if (args.includes('up')) {
     if (running()) { process.kill(Number(readFileSync(pid, 'utf8'))); while (running()) await new Promise(accept => setTimeout(accept, 50)); }
     const bundle = readFileSync(join(project, 'compose.yaml'), 'utf8');
-    const image = /image: (graphyard-local\\S*)/.exec(bundle)[1];
+    const image = /image: (mainworks-local\\S*)/.exec(bundle)[1];
     if (!images[image]) fail('pull access denied for ' + image);
     const env = Object.fromEntries(readFileSync(join(project, 'server.env'), 'utf8').split('\\n').filter(Boolean).map(line => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]));
     const log = openSync(join(project, 'server.log'), 'a');
@@ -157,7 +157,7 @@ test('e2e:clean-host-npx-up — a fresh account runs npx @cryptob1/graphyard up 
   const upstream = join(base, 'upstream'), home = join(base, 'home'), stubs = join(base, 'bin'), repository = join(base, 'scratch'), origin = join(base, 'origin.git');
   for (const directory of [upstream, home, stubs, repository]) await mkdir(directory);
 
-  // Graphyard's upstream: this checkout's tracked files as one commit, which is the commit the gate verified.
+  // Mainworks's upstream: this checkout's tracked files as one commit, which is the commit the gate verified.
   for (const file of execFileSync('git', ['-C', source, 'ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).split('\0').filter(Boolean)) {
     if (existsSync(join(source, file))) await cp(join(source, file), join(upstream, file), { recursive: true, verbatimSymlinks: true });
   }
@@ -185,11 +185,11 @@ test('e2e:clean-host-npx-up — a fresh account runs npx @cryptob1/graphyard up 
   git(repository, 'add', '.'); git(repository, 'commit', '-q', '-m', 'first'); git(repository, 'push', '-q', origin, 'main'); git(repository, 'remote', 'add', 'origin', 'git@github.com:owner/scratch.git');
   const env = { HOME: home, PATH: tools.path, LANG: 'C.UTF-8', TMPDIR: process.env.TMPDIR ?? '/tmp', ...published };
 
-  const graphyard = (...args: string[]) => run('npx', ['--yes', '@cryptob1/graphyard', ...args], { cwd: repository, env });
-  after(() => { for (const pid of [join(home, '.config', 'graphyard', 'owner-scratch', 'compose', 'server.pid')]) { try { process.kill(Number(readFileSync(pid, 'utf8'))); } catch { /* never started */ } } });
+  const mainworks = (...args: string[]) => run('npx', ['--yes', '@cryptob1/graphyard', ...args], { cwd: repository, env });
+  after(() => { for (const pid of [join(home, '.config', 'mainworks', 'owner-scratch', 'compose', 'server.pid')]) { try { process.kill(Number(readFileSync(pid, 'utf8'))); } catch { /* never started */ } } });
 
   // The README's one command, with the agent flags a session without a terminal passes.
-  const up = await graphyard('up', '--repo', 'owner/scratch', '--agent', '--wait', '1');
+  const up = await mainworks('up', '--repo', 'owner/scratch', '--agent', '--wait', '1');
   const result = JSON.parse(up.stdout.slice(up.stdout.indexOf('{')));
   const events = up.stderr.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line));
   assert.deepEqual(result.completed, ['preflight', 'control-plane', 'host-supervisor', 'deploy-key', 'master-autonomy', 'onboarding'], `${up.stderr.slice(-4000)}\n${result.next}`);
@@ -198,17 +198,17 @@ test('e2e:clean-host-npx-up — a fresh account runs npx @cryptob1/graphyard up 
   assert.match(result.next, /Still waiting on An agent account that writes code/);
 
   // The code it runs is a Git clone of the upstream at the published commit, under the install — so the loop, upgrade and the deploy watch move it with Git.
-  const release = join(home, '.config', 'graphyard', 'owner-scratch', 'deploy', 'build', '.graphyard', 'cli-releases', commit);
+  const release = join(home, '.config', 'mainworks', 'owner-scratch', 'deploy', 'build', '.graphyard', 'cli-releases', commit);
   assert.deepEqual(readdirSync(dirname(release)), [commit]);
   assert.equal(git(release, 'rev-parse', 'HEAD'), commit);
   assert.equal(git(release, 'config', '--get', 'remote.origin.url'), 'https://github.com/cryptob1/graphyard');
-  assert.equal(JSON.parse(readFileSync(join(repository, '.graphyard', 'master.json'), 'utf8')).cliPath, join(release, 'bin', 'graphyard.mjs'), 'the loop is recorded to run from the release tree, not from the npm cache');
+  assert.equal(JSON.parse(readFileSync(join(repository, '.mainworks', 'master.json'), 'utf8')).cliPath, join(release, 'bin', 'graphyard.mjs'), 'the loop is recorded to run from the release tree, not from the npm cache');
 
   // Both images were pulled by that commit from the registry; nothing was built on this host.
   assert.ok(images.pulls.includes(`cryptob1/graphyard:${commit}`) && images.pulls.includes(`cryptob1/graphyard-trial:${commit}`), images.pulls.join(', '));
   const installing = tools.log('docker').slice(tools.log('docker').findIndex(line => line.startsWith('image pull ')));
   assert.deepEqual(installing.filter(line => /^(build|buildx) /.test(line)), [], 'the install builds no image');
-  assert.equal(tools.images()['graphyard-local:owner-scratch'], commit, 'the control plane runs the pulled image');
+  assert.equal(tools.images()['mainworks-local:owner-scratch'], commit, 'the control plane runs the pulled image');
   assert.equal(readFileSync(join(release, '.graphyard', 'trial-image'), 'utf8').trim(), `${images.host}/cryptob1/graphyard-trial:${commit}`, 'merge trials run the pulled trial image');
 
   // The dashboard is served, by the published commit.
@@ -224,15 +224,15 @@ test('e2e:clean-host-npx-up — a fresh account runs npx @cryptob1/graphyard up 
   // Setup filed the onboarding change as the install's first work item, and a later `npx @cryptob1/graphyard` runs the installed release.
   const onboarding = events.find(event => event.step === 'onboarding' && event.state === 'done');
   assert.match(onboarding.detail, /filed as GY-1 for the loop to review and merge/);
-  const status = await graphyard('status', 'GY-1');
+  const status = await mainworks('status', 'GY-1');
   assert.equal(status.code, 0, status.stderr);
   const item = JSON.parse(status.stdout);
   assert.deepEqual([item.key, item.stage !== 'done', !!item.submission], ['GY-1', true, true], 'the onboarding change is submitted and waits for review');
-  assert.ok(!status.stderr.includes('Fetching Graphyard'), 'the release is fetched once');
+  assert.ok(!status.stderr.includes('Fetching Mainworks'), 'the release is fetched once');
   // The README's next commands work the same way, and upgrading stays a Git move of that tree.
-  const master = await graphyard('master', 'status');
+  const master = await mainworks('master', 'status');
   assert.equal(JSON.parse(master.stdout).controlPlane.reachable, true, master.stderr);
-  const plan = await graphyard('upgrade', '--plan');
+  const plan = await mainworks('upgrade', '--plan');
   assert.equal(plan.code, 0, plan.stderr);
   assert.ok(plan.stdout.includes(`git -C "${release}/" checkout --detach`), plan.stdout);
 });

@@ -1,16 +1,19 @@
 // Concern: the merge writer's local observation (GY-1523) — a submitted head read from the coordinator's own object store, never from GitHub.
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { demand, type Observation } from '../model.js';
 import type {} from '../model/gates.js'; // Observation.source
-import { graphyardChecksChanged } from '../model/risk-class.js';
+import { mainworksChecksChanged } from '../model/risk-class.js';
 import { parseLocalScopeDiff } from '../sync.js';
+import { documentationDigestInput } from '../model/docs-signoff.js';
+import { setting } from '../setting.js';
 
 /** What one git invocation returned; a non-zero exit is an answer here, never a throw. */
 export interface GitResult { status: number | null; stdout: string; stderr: string }
 /** Runs `git` with `args` in the checkout whose object store holds the submitted heads; `timeoutMs` kills a run that outlasts it. */
 export type GitRunner = (args: readonly string[], options?: { timeoutMs?: number }) => Promise<GitResult>;
 /** The install's checkout: the directory the control plane reads submitted heads from, where nothing is pushed and a head is reached by its commit (GY-3599). */
-export const checkoutRoot = () => process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd();
+export const checkoutRoot = () => setting('REPOSITORY_ROOT') ?? process.cwd();
 
 /** The default runner: `git -C root`, the coordinator checkout the control plane serves from. */
 export function gitRunnerFor(root: string): GitRunner {
@@ -100,12 +103,12 @@ export async function observeHead(git: GitRunner, input: HeadObservationInput): 
     };
     const before = configFile.status === 'added' ? null : await show(mergeBase, configFile.previousPath ?? configFile.path);
     const after = configFile.status === 'removed' ? null : await show(head, configFile.path);
-    configFile.checksChanged = graphyardChecksChanged(before, after);
+    configFile.checksChanged = mainworksChecksChanged(before, after);
   }
   return {
     source: 'control-plane',
     candidate: { sha: head, baseSha: baseTip, pr: 0, branch, author },
-    files: scopeFiles.map(file => file.path), scopeFiles, baseTip, mergeBase, baseTipContained,
+    files: scopeFiles.map(file => file.path), scopeFiles, docsDigest: createHash('sha256').update(documentationDigestInput(scopeFiles)).digest('hex'), baseTip, mergeBase, baseTipContained,
     protected: false, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true,
     at: (input.at ?? new Date()).toISOString(),
   };

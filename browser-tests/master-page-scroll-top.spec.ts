@@ -32,7 +32,7 @@ const onlyTerminalScrolls = (page: Page) => page.evaluate(() => {
  */
 async function fixture(browser: Browser, width: 1280 | 390) {
   const site = await temporaryDirectory('master-scroll');
-  await symlink(resolve('.graphyard/browser-dist'), join(site, 'dist'));
+  await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
   const database = await withDatabase('master_scroll'); await database.init();
   const child = fork(resolve('tests/helpers/terminal-server.ts'), [(database.pool.options as { connectionString: string }).connectionString, site], {
     execArgv: ['--import', 'tsx'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'],

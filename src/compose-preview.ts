@@ -6,6 +6,7 @@ import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { previewSiteByteLimit, previewSiteFileLimit, previewSitePathSchema, type PreviewSiteFile } from './project-previews.js';
 import { processPidNamespace, processStartTicks, tempOwnerGone, tempOwnerJudgeable, tmpReclaimMinAgeMs, type TempOwner } from './tmp-reclaim.js';
+import { setting } from './setting.js';
 
 // ---------------------------------------------------------------------------
 // A declared Compose application (project-applications.ts) is previewed as its own Compose project:
@@ -50,9 +51,9 @@ const bounded = (value: string | undefined, fallback: number, min: number, max: 
  * (4) Compose previews served at once, and GRAPHYARD_PREVIEW_SERVICES (16) services, so containers, one preview declares.
  */
 export const composeBounds = (env: NodeJS.ProcessEnv = process.env): ComposeBounds => ({
-  cpus: bounded(env.GRAPHYARD_PREVIEW_CPUS, 1, 0.1, 16), memoryMb: Math.round(bounded(env.GRAPHYARD_PREVIEW_MEMORY_MB, 512, 32, 65536)),
-  pids: Math.round(bounded(env.GRAPHYARD_PREVIEW_PIDS, 256, 16, 32768)), lifetimeMs: bounded(env.GRAPHYARD_PREVIEW_LIFETIME_MINUTES, 720, 1, 10080) * 60_000,
-  concurrent: Math.round(bounded(env.GRAPHYARD_PREVIEW_COMPOSE_LIMIT, 4, 1, 32)), services: Math.round(bounded(env.GRAPHYARD_PREVIEW_SERVICES, 16, 1, 64)),
+  cpus: bounded(setting('PREVIEW_CPUS', env), 1, 0.1, 16), memoryMb: Math.round(bounded(setting('PREVIEW_MEMORY_MB', env), 512, 32, 65536)),
+  pids: Math.round(bounded(setting('PREVIEW_PIDS', env), 256, 16, 32768)), lifetimeMs: bounded(setting('PREVIEW_LIFETIME_MINUTES', env), 720, 1, 10080) * 60_000,
+  concurrent: Math.round(bounded(setting('PREVIEW_COMPOSE_LIMIT', env), 4, 1, 32)), services: Math.round(bounded(setting('PREVIEW_SERVICES', env), 16, 1, 64)),
 });
 
 /** Runs `docker ARGS`, answering stdout; rejects naming stderr. */
@@ -89,7 +90,7 @@ const insideCheckout = (path: string, checkout: string) => {
  * links, an external network, volume, secret or config (shared with something outside the preview),
  * or no `service` to serve.
  */
-export function composeMountProblems(config: Json, checkout: string, service: string): string[] {
+function composeMountProblems(config: Json, checkout: string, service: string): string[] {
   const problems: string[] = [], root = followed(resolve(checkout));
   const inside = (path: unknown) => { if (typeof path !== 'string') return false; const real = followed(resolve(root, path)); return real === root || real.startsWith(`${root}${sep}`); };
   const services: Json = config.services ?? {};
@@ -171,7 +172,7 @@ const keyed = (value: unknown): Record<string, unknown> => Array.isArray(value)
  * any resolved configuration can be checked. Read as text before Compose reads it, so it fails closed:
  * the words anywhere (or a YAML escape that could spell them) refuse the file.
  */
-export async function composeSourceProblems(checkout: string, file: string, isolatedTrial = false): Promise<string[]> {
+async function composeSourceProblems(checkout: string, file: string, isolatedTrial = false): Promise<string[]> {
   const root = followed(resolve(checkout)), real = followed(resolve(root, file));
   if (real !== root && !real.startsWith(`${root}${sep}`)) return [`the Compose file ${file} is outside the change's checkout`];
   const text = await readFile(real, 'utf8');
@@ -183,7 +184,7 @@ export async function composeSourceProblems(checkout: string, file: string, isol
 }
 
 /** This process, as the owner label records it. */
-export const currentOwner = (now = Date.now()): TempOwner => ({ pid: process.pid, startedAt: processStartTicks(process.pid), pidNamespace: processPidNamespace(), at: new Date(now).toISOString() });
+const currentOwner = (now = Date.now()): TempOwner => ({ pid: process.pid, startedAt: processStartTicks(process.pid), pidNamespace: processPidNamespace(), at: new Date(now).toISOString() });
 
 /** A preview's running Compose project: `start` brings it up and answers its loopback origin; `close` removes it, volumes and networks with it. */
 export interface ComposeStack { project: string; url: string | null; start(signal: AbortSignal, timeoutMs: number): Promise<string>; close(): Promise<void> }
@@ -393,7 +394,7 @@ export async function removeComposeProject(project: string, options: { docker?: 
 const lines = (text: string) => text.split('\n').map(line => line.trim()).filter(Boolean);
 /** GY-3316: Docker's refusal of a new network once leaked networks have spent its address pools. */
 export const addressPoolsSpent = 'all predefined address pools have been fully subnetted';
-/** GY-3316: how many Graphyard preview networks the daemon holds; null when it cannot be read. */
+/** GY-3316: how many Mainworks preview networks the daemon holds; null when it cannot be read. */
 export async function previewNetworkCount(env: Record<string, string>, docker: Docker = defaultDocker): Promise<number | null> {
   try { return lines(await docker(['network', 'ls', '--format', '{{.Name}}', '--filter', `name=${composeProjectPrefix}`], { env, timeoutMs: 30_000 })).filter(name => name.startsWith(composeProjectPrefix)).length; }
   catch { return null; }
@@ -414,7 +415,7 @@ export async function composeLeftovers(project: string, options: { docker?: Dock
  * The restart recovery (GY-1903): every preview Compose project on the daemon whose owner process is
  * gone — or one this reader cannot judge and older than `tmpReclaimMinAgeMs` — removed with its
  * volumes and networks. A project whose owner still runs is left serving, and one naming no owner is
- * not known to be Graphyard's, so it is left alone (GY-3291). Answers the removed projects.
+ * not known to be Mainworks's, so it is left alone (GY-3291). Answers the removed projects.
  * GY-3679: it also removes the images previews built more than `composeImageKeepHours` ago that no container uses.
  */
 export async function sweepComposePreviews(options: { docker?: Docker; env?: Record<string, string>; procRoot?: string; now?: () => number } = {}): Promise<string[]> {
@@ -446,9 +447,9 @@ export async function sweepComposePreviews(options: { docker?: Docker; env?: Rec
 }
 
 /** The most pages and assets a Compose preview publishes. */
-export const composeSnapshotPages = 200;
+const composeSnapshotPages = 200;
 /** The most requests one publication makes, whatever they answer: a page naming endless unpublishable links ends here. */
-export const composeSnapshotFetches = 400;
+const composeSnapshotFetches = 400;
 /**
  * The served application's pages as its link publishes them: `/` and every same-origin page and
  * asset its HTML and CSS name by relative path (`href`, `src`, `url(...)`), fetched from the running

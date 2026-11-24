@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { setting } from '../setting.js';
 import { pendingOutcomeRules, releaseFailureActions, type RepositoryPolicy, type SensitiveEntry, defaultRepositoryPolicy, genericSensitiveRules, type Source, policySections, repositoryPolicyVariable, gitToplevel, configFile } from '../model/repository-policy.js';
 // ---- Per-repository policy (GY-1843) -------------------------------------------------------------
 
@@ -6,9 +7,9 @@ import { pendingOutcomeRules, releaseFailureActions, type RepositoryPolicy, type
  * What a repository declares about its own changes in `graphyard.json`, beside its documentation and
  * delivery policy: which paths are sensitive (`risk.sensitive`), whether a required E2E case bound to an outcome not yet
  * delivered blocks (`e2e.pendingOutcomes`), and what a failed release candidate does
- * (`release.onFailure`, `release.revertUnmatched`). Nothing here names Graphyard's own layout: a
+ * (`release.onFailure`, `release.revertUnmatched`). Nothing here names Mainworks's own layout: a
  * repository that declares no `risk` gets `genericSensitiveRules`, common sensitive surfaces
- * anywhere in a tree, and Graphyard's own graphyard.json declares its list like any other repository.
+ * anywhere in a tree, and Mainworks's own graphyard.json declares its list like any other repository.
  *
  * A sensitive entry is one glob (documentation-glob syntax: `dir/` a tree, `*` within a segment,
  * `**` across segments) and the rule a reason cites; several entries may share a rule. A glob
@@ -108,10 +109,10 @@ export function repositoryPolicyAssignment(config: Record<string, unknown> | nul
  * subdirectory reads the root's declaration. A value or file that does not parse refuses, rather than
  * silently judging every change by the default. Browser-safe: with no process, the default.
  */
-export function loadRepositoryPolicy(env?: Record<string, string | undefined>, root?: string, cwd?: string): { policy: RepositoryPolicy; source: Source } {
+function loadRepositoryPolicy(env?: Record<string, string | undefined>, root?: string, cwd?: string): { policy: RepositoryPolicy; source: Source } {
   const host = (globalThis as { process?: { env: Record<string, string | undefined>; cwd(): string; getBuiltinModule?(name: string): any } }).process;
   const variables = env ?? host?.env;
-  const raw = variables?.[repositoryPolicyVariable]?.trim();
+  const raw = (variables && setting(repositoryPolicyVariable, variables))?.trim();
   if (raw) {
     let value: unknown;
     try { value = JSON.parse(raw); } catch { throw new Error(`${repositoryPolicyVariable} must be JSON of graphyard.json's risk, e2e and release sections, e.g. {"e2e":{"pendingOutcomes":"blocking"}}`); }
@@ -120,7 +121,7 @@ export function loadRepositoryPolicy(env?: Record<string, string | undefined>, r
   const fs = host?.getBuiltinModule?.('node:fs'), path = host?.getBuiltinModule?.('node:path');
   if (!fs || !path) return { policy: defaultRepositoryPolicy, source: 'default' };
   let text: string;
-  const checkout = root ?? (variables?.GRAPHYARD_REPOSITORY_ROOT?.trim() ? path.resolve(variables.GRAPHYARD_REPOSITORY_ROOT.trim()) : gitToplevel(fs, path, path.resolve(cwd ?? host!.cwd())));
+  const checkout = root ?? (variables && setting('REPOSITORY_ROOT', variables)?.trim() ? path.resolve(setting('REPOSITORY_ROOT', variables)!.trim()) : gitToplevel(fs, path, path.resolve(cwd ?? host!.cwd())));
   try { text = fs.readFileSync(path.resolve(checkout, configFile), 'utf8'); } catch (error: any) {
     if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return { policy: defaultRepositoryPolicy, source: 'default' };
     throw error;
@@ -134,7 +135,7 @@ export function loadRepositoryPolicy(env?: Record<string, string | undefined>, r
  * The policy a checkout itself declares, read from its own graphyard.json and never from the
  * process's GRAPHYARD_REPOSITORY_POLICY: a release candidate's checkout at its exact SHA is the
  * policy that candidate is validated under, though the plane validating it was installed with
- * another (an older declaration, or Graphyard's own).
+ * another (an older declaration, or Mainworks's own).
  */
 export const checkoutRepositoryPolicy = (root: string): RepositoryPolicy => loadRepositoryPolicy({}, root).policy;
 

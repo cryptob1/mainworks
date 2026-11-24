@@ -2,7 +2,7 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { mergeLedgerKinds, mergeTrialKind } from '../model/merge-ledger.js';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { ConfigReload } from '../master/config.js';
 import type { MasterConfig } from '../master/profiles.js';
 import { defaultChildRun } from '../child-runner.js';
@@ -12,7 +12,10 @@ export { actionLine } from './state.js';
 import { boundedPersist, cycleFailureCeiling, describeFailingCall, loopHeartbeat, loopLiveness, markedEffects, namedEffects, noteCycleFailure, noteCycleSuccess, noteUnhandled, watchdogPlan, type LoopHeartbeat } from './liveness.js';
 import type { DaemonEffects } from './effects.js';
 import { Launcher, defaultLaunchConcurrency, runCycle } from './cycle.js';
-import { awaitSupervisorRestart, detectLoopSupervisorUnit, restartEndedBySupervisorStop } from '../install/loop-unit.js';
+import { awaitSupervisorRestart, detectLoopSupervisorUnit, loopUnitDirectory, repointDeployUnit, restartEndedBySupervisorStop } from '../install/loop-unit.js';
+import { installDirectory } from '../install/secrets.js';
+import { installIdFor } from '../install/types.js';
+import { noteDeployRelease } from './deploy-release.js';
 import { mergeWriterInFlight, mergeWriterSummary } from './cycle-merge-writer.js';
 import { noteBatchGateStopping } from './cycle-batch-gate.js';
 import { detachRuns } from '../runner/registry.js';
@@ -24,7 +27,7 @@ import { activeCliRoot } from '../install/cli-release.js';
 import { loopCodeRoot } from './checkout-state.js';
 import { noteControlPlane } from './compose-recovery.js';
 
-/** The compact daemon view `master status` joins onto Graphyard truth. */
+/** The compact daemon view `master status` joins onto Mainworks truth. */
 export function daemonSummary(state: DaemonState, now: number, intervalMs: number, hostId?: string, masterAgent?: { agent_status?: string }) {
   const lastCycleAt = state.lastCycleAt ? Date.parse(state.lastCycleAt) : Number.NaN;
   const lagMs = Number.isFinite(lastCycleAt) ? now - lastCycleAt : null;
@@ -59,22 +62,22 @@ export async function noteConfigReload(state: DaemonState, reload: ConfigReload,
 }
 
 /** Take back the headless runs a restart left running (GY-453). */
-export async function adoptHeadlessRuns(effects: DaemonEffects, log: (line: string) => void) {
+async function adoptHeadlessRuns(effects: DaemonEffects, log: (line: string) => void) {
   if (!effects.adoptRuns) return [];
   try {
     const adopted = await effects.adoptRuns();
-    if (adopted.length) log(`[graphyard-master] adopted ${adopted.length} headless run(s): ${adopted.map(run => `${run.name} (${run.role} for ${run.work})`).join(', ')}`);
+    if (adopted.length) log(`[mainworks-master] adopted ${adopted.length} headless run(s): ${adopted.map(run => `${run.name} (${run.role} for ${run.work})`).join(', ')}`);
     return adopted;
-  } catch (error) { log(`[graphyard-master] could not adopt the headless runs a restart left: ${message(error)}`); return []; }
+  } catch (error) { log(`[mainworks-master] could not adopt the headless runs a restart left: ${message(error)}`); return []; }
 }
 
 /** The request a confined master files with `master restart`: the loop restarts through its unit once it reads it. */
 
 /** The restart cause a confined master's `master restart` request gives; it never waits for the handover window. */
-export const restartRequestedCause = 'a master restart was requested';
+const restartRequestedCause = 'a master restart was requested';
 
 /** GY-3165: minutes the loop runs before it adopts a newly served release when master.json sets no `run.handoverMinutes`. */
-export const defaultHandoverMinutes = 15;
+const defaultHandoverMinutes = 15;
 
 /**
  * Why the loop should restart now, or null: the deploy unit serves a commit other than the one this
@@ -90,7 +93,7 @@ export function restartCause(config: Pick<MasterConfig, 'credentialFile' | 'cliP
 }
 
 /** `systemctl --user --no-block restart` of the unit this loop runs under, ended by the stop it causes. */
-export async function restartThroughUnit() {
+async function restartThroughUnit() {
   const unit = detectLoopSupervisorUnit();
   if (!unit) throw new Error('this loop runs under no graphyard-master supervisor unit, so it cannot restart itself through one');
   try { await awaitSupervisorRestart(() => defaultChildRun('systemctl', ['--user', '--no-block', 'restart', unit])); }
@@ -117,7 +120,7 @@ export interface DeployUnitProcess { unit: string; commit: string | null; busy: 
  */
 export function readDeployUnitProcess(read: (file: string) => string = file => readFileSync(file, 'utf8'), commitOf: (root: string) => string | null = cliCommit): DeployUnitProcess | null {
   try {
-    const own = read('/proc/self/cgroup').match(/^0::(\/.*\/)(graphyard-master[^/\s]*\.service)(?:\/.*)?$/m);
+    const own = read('/proc/self/cgroup').match(/^0::(\/.*\/)((?:graphyard|mainworks)-master[^/\s]*\.service)(?:\/.*)?$/m);
     if (!own) return null;
     const unit = deployUnitOf({ master: own[2] });
     let commit: string | null = null, busy = false;
@@ -138,7 +141,7 @@ export function readDeployUnitProcess(read: (file: string) => string = file => r
  * the deploy-watch twin of restartCause. Once per served commit: `restarted` names the commits
  * already restarted for, so a unit that still runs old code after its restart is not restarted again.
  */
-export function deployRestartCause(root: string, running: DeployUnitProcess | null, restarted: (serving: string) => boolean): { serving: string; reason: string } | null {
+function deployRestartCause(root: string, running: DeployUnitProcess | null, restarted: (serving: string) => boolean): { serving: string; reason: string } | null {
   const serving = readDeployRecord(deployRecordPath(root))?.tip ?? null;
   if (!serving || !running?.commit || running.busy || running.commit === serving || restarted(serving)) return null;
   return { serving, reason: `${running.unit} runs ${running.commit.slice(0, 12)}, older code than ${serving.slice(0, 12)} it serves` };
@@ -167,6 +170,8 @@ export async function runDaemon(config: MasterConfig, state: DaemonState, raw: D
   /** Reads what runs in the deploy unit (GY-3136); defaults to its cgroup. */
   deployUnit?: () => DeployUnitProcess | null;
   restartDeploy?: (unit: string) => Promise<unknown>;
+  /** GY-3756: points the deploy unit at the served release before its restart; null when it starts it, else why not. */
+  repointDeploy?: (unit: string) => Promise<string | null>;
   delay?: (ms: number, signal: AbortSignal) => Promise<void>;
   /**
    * The control plane's event ledger, newest first. Polled during the wait: an event another actor
@@ -190,8 +195,8 @@ export async function runDaemon(config: MasterConfig, state: DaemonState, raw: D
     // that settles, every cycle that completes — so a slow but progressing cycle outlasts its
     // watchdog window without being killed, and only a loop that makes no progress at all goes silent.
     const watchdog = watchdogPlan(options.environment ?? process.env, interval());
-    if (watchdog.refusal) log(`[graphyard-master] ${watchdog.refusal}`);
-    const supervisorNotify = async (beat: 'ready' | 'alive') => { if (!watchdog.supervised) return; try { await raw.notify?.(beat); } catch (error) { log(`[graphyard-master] supervisor notification failed: ${message(error)}`); } };
+    if (watchdog.refusal) log(`[mainworks-master] ${watchdog.refusal}`);
+    const supervisorNotify = async (beat: 'ready' | 'alive') => { if (!watchdog.supervised) return; try { await raw.notify?.(beat); } catch (error) { log(`[mainworks-master] supervisor notification failed: ${message(error)}`); } };
     // Progress, once the loop has told its supervisor it is ready (systemd takes WATCHDOG=1 only
     // after READY=1): recorded on the lock — persisted at each step's settle, so `master status`
     // reads it — and told to the supervisor as a keep-alive.
@@ -212,7 +217,7 @@ export async function runDaemon(config: MasterConfig, state: DaemonState, raw: D
     await adoptHeadlessRuns(effects, log);
     const unhandled = (origin: 'unhandledRejection' | 'uncaughtException') => (error: unknown) => {
       const entry = noteUnhandled(state, error, origin, now());
-      log(`[graphyard-master] ${origin} caught at the process level during cycle ${entry.cycle} (${state.failures.unhandled} so far); the loop keeps running: ${entry.reason}`);
+      log(`[mainworks-master] ${origin} caught at the process level during cycle ${entry.cycle} (${state.failures.unhandled} so far); the loop keeps running: ${entry.reason}`);
       effects.persist(state).catch(() => {});
     };
     const onRejection = unhandled('unhandledRejection'), onException = unhandled('uncaughtException');
@@ -251,7 +256,7 @@ export async function runDaemon(config: MasterConfig, state: DaemonState, raw: D
       while (!stopping) {
         let phase: 'reload' | 'cycle' = 'reload', wait = interval();
         try {
-          if (options.reload) for (const action of await noteConfigReload(state, await options.reload().then(reload => { config = reload.config; movedCli = reload.cliPath ?? null; return reload; }), effects.persist)) log(`[graphyard-master] ${action.kind} ${action.state}: ${action.detail}`);
+          if (options.reload) for (const action of await noteConfigReload(state, await options.reload().then(reload => { config = reload.config; movedCli = reload.cliPath ?? null; return reload; }), effects.persist)) log(`[mainworks-master] ${action.kind} ${action.state}: ${action.detail}`);
           phase = 'cycle';
           cycling = true;
           const result = await runCycle(config, state, effects, now, launcher, log, progress);
@@ -263,11 +268,11 @@ export async function runDaemon(config: MasterConfig, state: DaemonState, raw: D
           if (recovered) await effects.persist(state);
           cycles.push({ cycle: result.metrics.cycle, actions: result.actions.length });
           for (const action of result.actions) log(actionLine(result.metrics.cycle, action));
-          log(`[graphyard-master] cycle ${result.metrics.cycle} complete with ${result.metrics.open} open and ${result.actions.length} action(s)${recovered ? `; recovered after ${recovered} failed cycle(s)` : ''}`);
+          log(`[mainworks-master] cycle ${result.metrics.cycle} complete with ${result.metrics.open} open and ${result.actions.length} action(s)${recovered ? `; recovered after ${recovered} failed cycle(s)` : ''}`);
         } catch (error) {
           const failure = await noteCycleFailure(state, error, phase, { now: now(), intervalMs: interval(), ceilingMs: cycleFailureCeiling(watchdog.windowMs), persist: effects.persist });
           failed.push({ cycle: failure.cycle, call: failure.call, reason: failure.reason, delayMs: failure.delayMs });
-          log(`[graphyard-master] cycle ${failure.cycle} failed in ${describeFailingCall(failure)}: ${failure.reason}; ${state.failures.consecutive} consecutive failure(s), the next cycle runs in ${Math.round(failure.delayMs / 1000)}s`);
+          log(`[mainworks-master] cycle ${failure.cycle} failed in ${describeFailingCall(failure)}: ${failure.reason}; ${state.failures.consecutive} consecutive failure(s), the next cycle runs in ${Math.round(failure.delayMs / 1000)}s`);
           wait = failure.delayMs;
           await noteControlPlane(state, { ...failure, answered: typeof (error as { status?: unknown })?.status === 'number' }, now(), effects.composeServer, log);
           if (state.controlPlane) await effects.persist(state).catch(() => {});
@@ -276,13 +281,20 @@ export async function runDaemon(config: MasterConfig, state: DaemonState, raw: D
         // The cycle ended, failed or completed: either way the loop is alive and moving (GY-3341).
         progress();
         const deploy = options.root && !stopping ? (options.deployUnit ?? readDeployUnitProcess)() : null;
+        // GY-3756: the watch's release, read from its process, against the served one; status warns past 10 minutes apart.
+        if (deploy) noteDeployRelease(state, deploy.commit, readDeployRecord(deployRecordPath(options.root!))?.tip ?? null, now());
         const deployCause = deploy && deployRestartCause(options.root!, deploy, serving => state.actions[`deploy-unit-restart:${serving}`]?.state === 'done');
         if (deploy && deployCause) {
           const { serving, reason } = deployCause;
-          log(`[graphyard-master] restarting ${deploy.unit}: ${reason}`);
           let detail = `Restarted ${deploy.unit} through systemd: ${reason}`, outcome: 'done' | 'failed' = 'done';
-          try { await (options.restartDeploy ?? (unit => defaultChildRun('systemctl', ['--user', '--no-block', 'restart', unit])))(deploy.unit); }
-          catch (error) { outcome = 'failed'; detail = `Could not restart ${deploy.unit} (${reason}): ${message(error)}`; log(`[graphyard-master] ${detail}`); }
+          // A unit naming an old release would restart onto it again: it is pointed at the served release first, and left running when that fails.
+          const refused = await (options.repointDeploy ?? (async unit => repointDeployUnit({ unitPath: join(loopUnitDirectory(), unit), installDir: installDirectory(installIdFor(config.repository)) })))(deploy.unit).catch(message);
+          if (refused) { outcome = 'failed'; detail = `Did not restart ${deploy.unit} (${reason}): ${refused}`; log(`[mainworks-master] ${detail}`); }
+          else {
+            log(`[mainworks-master] restarting ${deploy.unit}: ${reason}`);
+            try { await (options.restartDeploy ?? (unit => defaultChildRun('systemctl', ['--user', '--no-block', 'restart', unit])))(deploy.unit); }
+            catch (error) { outcome = 'failed'; detail = `Could not restart ${deploy.unit} (${reason}): ${message(error)}`; log(`[mainworks-master] ${detail}`); }
+          }
           storeAction(state, `deploy-unit-restart:${serving}`, { kind: 'deployment', work: null, principal: null, state: outcome, detail: detail.slice(0, 1000), attempts: 1, epoch: null, cycle: state.cycle, at: new Date(now()).toISOString() });
           await effects.persist(state).catch(() => {});
         }
@@ -299,27 +311,27 @@ export async function runDaemon(config: MasterConfig, state: DaemonState, raw: D
         const cause = found && (immediate || now() - startedAt >= windowMs) ? found : null;
         if (found && !cause && !handoverLogged) {
           handoverLogged = true;
-          log(`[graphyard-master] a handover is pending: ${found}; the loop adopts the newest served release once it has run ${windowMs / 60_000} minute(s), at ${new Date(startedAt + windowMs).toISOString()}`);
+          log(`[mainworks-master] a handover is pending: ${found}; the loop adopts the newest served release once it has run ${windowMs / 60_000} minute(s), at ${new Date(startedAt + windowMs).toISOString()}`);
         }
         const trialsInFlight = mergeWriterInFlight(state);
         if (!cause || !trialsInFlight) restartWaitedFrom = null;
         if (cause && (!trialsInFlight || movedCli || now() - (restartWaitedFrom ??= now()) >= releaseAdoptionBoundMs)) {
           const running = state.mergeWriter.inFlights?.map(entry => entry.key) ?? [];
-          log(`[graphyard-master] restarting through the supervisor unit${running.length ? `; the merge trial(s) of ${running.join(', ')} run on, detached, and the next loop adopts them` : ''}: ${cause}`);
+          log(`[mainworks-master] restarting through the supervisor unit${running.length ? `; the merge trial(s) of ${running.join(', ')} run on, detached, and the next loop adopts them` : ''}: ${cause}`);
           try { rmSync(loopRestartRequestPath(config), { force: true }); await (options.restartLoop ?? restartThroughUnit)(); }
-          catch (error) { restartWaitedFrom = null; log(`[graphyard-master] the restart could not be asked: ${message(error)}`); }
+          catch (error) { restartWaitedFrom = null; log(`[mainworks-master] the restart could not be asked: ${message(error)}`); }
         }
         if (options.once || stopping) break;
         try { await sleep(wait); } catch { /* woken to stop */ }
       }
     } finally {
-      if (launcher.pending) log(`[graphyard-master] waiting for ${launcher.pending} launch(es) in flight before stopping`);
+      if (launcher.pending) log(`[mainworks-master] waiting for ${launcher.pending} launch(es) in flight before stopping`);
       await launcher.idle();
-      for (const action of launcher.drain()) log(`[graphyard-master] launch ${action.kind} ${action.state}: ${action.detail}`);
+      for (const action of launcher.drain()) log(`[mainworks-master] launch ${action.kind} ${action.state}: ${action.detail}`);
       heartbeat?.stop();
       unlisten();
       host.off('unhandledRejection', onRejection); host.off('uncaughtException', onException);
-      log(`[graphyard-master] stopping: left ${detachRuns()} headless run(s) running, detached, for the next loop to adopt`);
+      log(`[mainworks-master] stopping: left ${detachRuns()} headless run(s) running, detached, for the next loop to adopt`);
       state.lock = null;
       await effects.persist(state).catch(() => {});
     }

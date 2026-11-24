@@ -47,7 +47,7 @@ const sensitiveSamples: [string, string][] = [
   ['src/merge-writer/commit.ts', 'merge writer'],
 ];
 // Retired policy paths are normal; active sensitive surfaces remain covered above.
-const normalSamples = ['compose.yml', 'src/merge-queue.ts', 'src/main-guard.ts', 'migrations/0042-risk.sql', 'src/model/policy.ts', 'src/cli/work.ts', 'web/pages/work-details.tsx', 'docs/how-graphyard-works.md', 'tests/risk-class.test.ts', 'README.md',
+const normalSamples = ['compose.yml', 'src/merge-queue.ts', 'src/main-guard.ts', 'migrations/0042-risk.sql', 'src/model/policy.ts', 'src/cli/work.ts', 'web/pages/work-details.tsx', 'docs/how-mainworks-works.md', 'tests/risk-class.test.ts', 'README.md',
   'src/server/lane-rework.ts', 'src/server/static.ts', 'src/merge-queue-report.ts', 'packages/x/package.json', 'compose.override.yaml', 'scripts/Dockerfile', 'src/installer.ts'];
 
 test('unit:risk-class-paths — every sensitive rule of the criterion classifies its paths sensitive with a reason naming the path and the rule, and paths outside the rules are normal with no reason', () => {
@@ -145,7 +145,7 @@ function dashboard(work: Work[], role = 'admin'): Dashboard {
   return { ...d, board: boardFromStatus(d.work, d.observedAt, d.status) };
 }
 
-test('unit:risk-class-shown — graphyard status GY-N prints risk, its reasons and its source right after the key, and the item page shows Risk with its reasons, both computed on read', async () => {
+test('unit:risk-class-shown — mainworks status GY-N prints risk, its reasons and its source right after the key, and the item page shows Risk with its reasons, both computed on read', async () => {
   const status = workCommands.find(command => command.name === 'status')!;
   const printed: any[] = [];
   const context = { api: async (path: string) => { if (path === 'retro/standing') throw Object.assign(new Error('not found'), { status: 404 }); throw new Error(`unexpected ${path}`); }, print: (value: unknown) => { printed.push(value); } } as unknown as CliContext;

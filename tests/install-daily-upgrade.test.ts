@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { graphyardRepository } from '../src/scenarios.js';
-import { graphyardVerifiedRef } from '../src/release.js';
+import { mainworksRepository } from '../src/scenarios.js';
+import { mainworksVerifiedRef } from '../src/release.js';
 import { fetchVerifiedRef } from '../src/cli/upgrade.js';
 import { controlPlaneRecordPath, controlPlaneStaleLines, controlPlaneSummary, controlPlaneRetryMs, deployOnce, deployRecordPath, readControlPlaneRecord, readDeployRecord, writeControlPlaneRecord, type ControlPlaneRecord, type DeployWatchPorts } from '../src/deploy-watch.js';
 import { controlPlaneStep } from '../src/daemon/control-plane.js';
@@ -15,10 +15,10 @@ import { gateRecordPath, readGateRecord } from '../src/batch-gate.js';
 import { cycleUntil, git, pipelineWorld, rollout, worldLoop } from './helpers/pipeline-world.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-3199: every install updates its own control plane — the Graphyard server, loop and CLI — to
+// GY-3199: every install updates its own control plane — the Mainworks server, loop and CLI — to
 // the latest batch-gate-verified commit at least daily, on the deploy watch's own pass. The unit
 // cases prove the record, the failed upgrade's behaviour and what master status and the daily
-// diagnostics read; the e2e case runs the real loop for Graphyard's own repository (the gate
+// diagnostics read; the e2e case runs the real loop for Mainworks's own repository (the gate
 // publishing refs/graphyard/verified) and a second install's watch upgrading to exactly that
 // commit, never an unverified main tip.
 
@@ -39,6 +39,12 @@ function ports(input: { head: string; verified: string | null; fetched?: string;
   };
 }
 
+/** GY-3746: the last update, moved back past the hour a following install waits between updates. */
+async function ageUpdate(root: string, hours: number) {
+  const file = controlPlaneRecordPath(root), record = readControlPlaneRecord(file)!;
+  await writeControlPlaneRecord(file, { ...record, updatedAt: new Date(Date.now() - hours * 3_600_000).toISOString() });
+}
+
 /** The control-plane record's failedAt, moved back past the retry window so the next pass retries. */
 async function ageFailedStep(root: string, hours: number) {
   const file = controlPlaneRecordPath(root), record = readControlPlaneRecord(file)!;
@@ -47,7 +53,7 @@ async function ageFailedStep(root: string, hours: number) {
 
 test('unit:tests/install-daily-upgrade.test.ts — an install for another repository adopts exactly the latest verified commit, never an unverified main tip, and keeps its control-plane record beside the deploy record', async () => {
   const root = await temporaryDirectory('install-daily-upgrade-record');
-  const outcome = await deployOnce(deployRecordPath(root), ports({ head: a, verified: b }), () => {}, graphyardRepository);
+  const outcome = await deployOnce(deployRecordPath(root), ports({ head: a, verified: b }), () => {}, mainworksRepository);
   assert.equal(outcome, 'deployed');
   assert.equal(readDeployRecord(deployRecordPath(root))?.tip, b, 'the verified commit is served');
   const control = readControlPlaneRecord(controlPlaneRecordPath(root));
@@ -60,15 +66,15 @@ test('unit:tests/install-daily-upgrade.test.ts — an install for another reposi
 
   // With no verified ref published, nothing deploys — the fetched main tip is never a substitute.
   const quiet = await temporaryDirectory('install-daily-upgrade-none');
-  assert.equal(await deployOnce(deployRecordPath(quiet), ports({ head: a, verified: null }), () => {}, graphyardRepository), 'unchanged');
+  assert.equal(await deployOnce(deployRecordPath(quiet), ports({ head: a, verified: null }), () => {}, mainworksRepository), 'unchanged');
   assert.notEqual(readDeployRecord(deployRecordPath(quiet))?.tip ?? null, unverified, 'an unverified main tip is never adopted');
   assert.ok(readControlPlaneRecord(controlPlaneRecordPath(quiet))?.checkedAt, 'the check itself is still recorded');
 
-  // An install gating Graphyard itself keeps following its own gate's verified commit (GY-3119).
+  // An install gating Mainworks itself keeps following its own gate's verified commit (GY-3119).
   const own = await temporaryDirectory('install-daily-upgrade-own');
   await mkdir(join(own, '.graphyard'), { recursive: true });
-  await writeFile(join(own, '.graphyard', 'main-gate.json'), JSON.stringify({ repository: graphyardRepository, verified: c, verifiedAt: new Date().toISOString(), inFlight: null, attempt: { recuts: 0, timeouts: 0 }, held: null, lastOutcome: null, results: {}, merges: [], catalogMs: null, diagnosticsAt: null, at: new Date().toISOString() }));
-  assert.equal(await deployOnce(deployRecordPath(own), ports({ head: a, verified: b, fetched: unverified }), () => {}, graphyardRepository), 'deployed');
+  await writeFile(join(own, '.graphyard', 'main-gate.json'), JSON.stringify({ repository: mainworksRepository, verified: c, verifiedAt: new Date().toISOString(), inFlight: null, attempt: { recuts: 0, timeouts: 0 }, held: null, lastOutcome: null, results: {}, merges: [], catalogMs: null, diagnosticsAt: null, at: new Date().toISOString() }));
+  assert.equal(await deployOnce(deployRecordPath(own), ports({ head: a, verified: b, fetched: unverified }), () => {}, mainworksRepository), 'deployed');
   assert.equal(readDeployRecord(deployRecordPath(own))?.tip, c, 'the gate\'s verified commit wins over both the upstream ref and the fetched tip');
 });
 
@@ -78,36 +84,37 @@ test('unit:tests/install-daily-upgrade.test.ts — a failed upgrade keeps the pr
   const watch = (verified: string, head: string) => ports({ head, verified, onHealth: commit => { if (failing.failing && commit === verified) throw new Error('/healthz reports the server unhealthy'); } });
   const record = () => readControlPlaneRecord(controlPlaneRecordPath(root))!;
 
-  assert.equal(await deployOnce(deployRecordPath(root), watch(b, a), () => {}, graphyardRepository), 'deployed');
+  assert.equal(await deployOnce(deployRecordPath(root), watch(b, a), () => {}, mainworksRepository), 'deployed');
+  await ageUpdate(root, 2);
   const firstUpdate = record().updatedAt;
   failing.failing = true;
-  assert.equal(await deployOnce(deployRecordPath(root), watch(c, b), () => {}, graphyardRepository), 'rolled-back');
-  assert.equal(readDeployRecord(deployRecordPath(root))?.tip, b, 'the install keeps its previous Graphyard version');
+  assert.equal(await deployOnce(deployRecordPath(root), watch(c, b), () => {}, mainworksRepository), 'rolled-back');
+  assert.equal(readDeployRecord(deployRecordPath(root))?.tip, b, 'the install keeps its previous Mainworks version');
   assert.deepEqual(
     { commit: record().commit, failedStep: record().failedStep, updatedAt: record().updatedAt, reason: record().failedReason?.includes('unhealthy') },
     { commit: b, failedStep: 'health', updatedAt: firstUpdate, reason: true },
     'the failed step and its reason are recorded, and the update clock stands still');
 
   // Within the retry window the pass leaves the failure alone; past it, the upgrade runs again.
-  assert.equal((await deployOnce(deployRecordPath(root), watch(c, b), () => {}, graphyardRepository) as string), 'unchanged', 'a fresh failure is not retried at once');
+  assert.equal((await deployOnce(deployRecordPath(root), watch(c, b), () => {}, mainworksRepository) as string), 'unchanged', 'a fresh failure is not retried at once');
   await ageFailedStep(root, 2);
-  assert.equal(await deployOnce(deployRecordPath(root), watch(c, b), () => {}, graphyardRepository), 'rolled-back', 'the upgrade is retried on a later daily pass');
+  assert.equal(await deployOnce(deployRecordPath(root), watch(c, b), () => {}, mainworksRepository), 'rolled-back', 'the upgrade is retried on a later daily pass');
   assert.ok(record().failedAt && Date.now() - Date.parse(record().failedAt!) < controlPlaneRetryMs, 'the retry records its own failure time');
 
   await ageFailedStep(root, 2);
   failing.failing = false;
-  assert.equal(await deployOnce(deployRecordPath(root), watch(c, b), () => {}, graphyardRepository), 'deployed');
+  assert.equal(await deployOnce(deployRecordPath(root), watch(c, b), () => {}, mainworksRepository), 'deployed');
   assert.deepEqual(
     { commit: record().commit, failedStep: record().failedStep, updated: record().updatedAt !== firstUpdate },
     { commit: c, failedStep: null, updated: true },
     'a passing upgrade moves the commit, clears the failed step and advances the update clock');
 });
 
-test('unit:tests/install-daily-upgrade.test.ts — the master loop of Graphyard\'s own install files one item naming the failed step, not one per retry', async () => {
+test('unit:tests/install-daily-upgrade.test.ts — the master loop of Mainworks\'s own install files one item naming the failed step, not one per retry', async () => {
   const root = await temporaryDirectory('install-daily-upgrade-filing');
   await writeControlPlaneRecord(controlPlaneRecordPath(root), { commit: b, verified: c, verifiedSeenAt: new Date().toISOString(), failedStep: 'health', failedReason: 'health failed: /healthz reports the server unhealthy', failedAt: new Date().toISOString() });
   const filed: { title: string; description: string; key: string }[] = [];
-  const config = { url: 'http://127.0.0.1:5', repository: graphyardRepository, hostId: 'test-host' } as unknown as MasterConfig;
+  const config = { url: 'http://127.0.0.1:5', repository: mainworksRepository, hostId: 'test-host' } as unknown as MasterConfig;
   const cycle = { config, state: emptyDaemonState(config), clock: Date.now(), log: () => {}, effects: { mergeWriter: { gate: { root }, createWork: async (input: { title: string; description: string }, key: string) => { filed.push({ ...input, key }); return { key: 'GY-999' }; } } } } as unknown as Parameters<typeof controlPlaneStep>[0];
   await controlPlaneStep(cycle);
   await controlPlaneStep(cycle); // the retry reads the same record and files nothing
@@ -124,7 +131,7 @@ test('unit:tests/install-daily-upgrade.test.ts — master status shows the contr
   assert.deepEqual(controlPlaneStaleLines(null, now), [], 'no record reports nothing');
   assert.deepEqual(controlPlaneStaleLines(record({}), now), [], 'a current install passes the diagnostics silently');
   assert.deepEqual(controlPlaneStaleLines(record({ checkedAt: hoursAgo(25) }), now).length, 1, 'a check over 24 hours old is reported');
-  assert.match(controlPlaneStaleLines(record({ checkedAt: hoursAgo(25) }), now)[0]!, /last check for a verified Graphyard commit is 25 hours old/);
+  assert.match(controlPlaneStaleLines(record({ checkedAt: hoursAgo(25) }), now)[0]!, /last check for a verified Mainworks commit is 25 hours old/);
   assert.deepEqual(controlPlaneStaleLines(record({ verified: c, verifiedSeenAt: hoursAgo(2) }), now), [], 'a verified commit first seen recently is not yet stale');
   assert.match(controlPlaneStaleLines(record({ verified: c, verifiedSeenAt: hoursAgo(26) }), now)[0]!, new RegExp(`still runs ${b.slice(0, 12)} while the verified commit ${c.slice(0, 12)} was first seen 26 hours ago`), 'the install\'s first sighting of the verified commit is the staleness clock');
   assert.deepEqual(controlPlaneStaleLines(record({ commit: c, verified: c, verifiedSeenAt: hoursAgo(26) }), now), [], 'an install running the verified commit is never stale, however long ago it first saw it');
@@ -143,18 +150,18 @@ test('unit:tests/install-daily-upgrade.test.ts — master status shows the contr
   await mkdir(join(root, '.graphyard'), { recursive: true });
   await writeFile(daemonStatePath(config), JSON.stringify(emptyDaemonState(config)));
   const report = await masterStatusReport(root, config, async () => ({ work: [], now: new Date().toISOString() }), async () => `${b}\n`);
-  assert.equal(report.controlPlaneUpdate?.commit, b.slice(0, 12), 'master status shows the control plane\'s Graphyard commit');
+  assert.equal(report.controlPlaneUpdate?.commit, b.slice(0, 12), 'master status shows the control plane\'s Mainworks commit');
   assert.equal(report.controlPlaneUpdate?.verified, c.slice(0, 12), 'and the latest verified commit it has seen');
   assert.ok(report.controlPlaneUpdate?.checkedAt && report.controlPlaneUpdate.updatedAt, 'with its last check and last update times');
   assert.equal(report.controlPlaneUpdate?.stale.length, 1, 'and the diagnostics line for a commit over a day behind');
 });
 
-test('e2e:install-daily-upgrade — an install for another repository upgrades its control plane on its own to the gate-verified commit Graphyard publishes, never an unverified main tip, keeping its previous version through a failed upgrade and retrying', { timeout: 560_000 }, async () => {
-  // Graphyard's own install: the world gates Graphyard itself, so its gate publishes the verified ref.
-  const yard = await pipelineWorld('install-daily-upgrade', {}, graphyardRepository);
-  // The install for another repository: its own records root, and a CLI checkout cloned from Graphyard's origin.
+test('e2e:install-daily-upgrade — an install for another repository upgrades its control plane on its own to the gate-verified commit Mainworks publishes, never an unverified main tip, keeping its previous version through a failed upgrade and retrying', { timeout: 560_000 }, async () => {
+  // Mainworks's own install: the world gates Mainworks itself, so its gate publishes the verified ref.
+  const yard = await pipelineWorld('install-daily-upgrade', {}, mainworksRepository);
+  // The install for another repository: its own records root, and a CLI checkout cloned from Mainworks's origin.
   const install = await temporaryDirectory('install-daily-upgrade-install');
-  const root = join(install, 'game'), cli = join(install, 'graphyard-cli');
+  const root = join(install, 'game'), cli = join(install, 'mainworks-cli');
   await mkdir(root, { recursive: true });
   execFileSync('git', ['clone', '-q', yard.origin, cli], { stdio: 'ignore' });
   git(cli, 'checkout', '-q', '--detach', yard.base);
@@ -170,9 +177,9 @@ test('e2e:install-daily-upgrade — an install for another repository upgrades i
     health: async commit => { if (health.failing && commit === verifiedRef()) throw new Error('/healthz reports the server unhealthy'); },
     schema: async () => 7, database: async () => 7,
   });
-  const pass = () => deployOnce(deployRecordPath(root), watch(), () => {}, graphyardRepository);
+  const pass = () => deployOnce(deployRecordPath(root), watch(), () => {}, mainworksRepository);
   const control = () => readControlPlaneRecord(controlPlaneRecordPath(root));
-  const verifiedRef = () => git(yard.origin, 'rev-parse', '--verify', graphyardVerifiedRef);
+  const verifiedRef = () => git(yard.origin, 'rev-parse', '--verify', mainworksVerifiedRef);
   try {
     await rollout(yard);
     const loop = worldLoop(yard, { gate: true });
@@ -205,6 +212,7 @@ test('e2e:install-daily-upgrade — an install for another repository upgrades i
     const verified2 = yard.main();
     assert.equal(verifiedRef(), verified2);
     health.failing = true;
+    await ageUpdate(root, 2);
     assert.equal(await pass(), 'rolled-back');
     assert.equal(readDeployRecord(deployRecordPath(root))?.tip, verified, 'a failing upgrade keeps the previous version serving');
     assert.equal(control()?.commit, verified);

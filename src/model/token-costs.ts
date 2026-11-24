@@ -105,7 +105,7 @@ export function transcriptUsage(kind: string) {
 // ---- The price sheet -------------------------------------------------------------------------------
 
 /** The registry model a session's model names: by id or name, or the longest registered id it starts with (a dated or `[1m]` variant). */
-export function pricedModel(models: readonly FleetModel[], name: string | null): FleetModel | null {
+function pricedModel(models: readonly FleetModel[], name: string | null): FleetModel | null {
   if (!name) return null;
   const bare = name.replace(/\[[^\]]*\]$/, '');
   return models.find(model => model.id === bare || model.name === bare)
@@ -116,14 +116,14 @@ export function pricedModel(models: readonly FleetModel[], name: string | null):
  * sheet's price for its id or name, then the bundled sheet's own models, so a session on a model
  * the sheet knows is priced without first running `master registry model seed`.
  */
-export function priceModels(models: readonly FleetModel[]): FleetModel[] {
+function priceModels(models: readonly FleetModel[]): FleetModel[] {
   const sheet = seedPrices.map(price => ({ name: price.id, id: price.id, provider: price.provider, cost: price.cost }) as FleetModel);
   const filled = models.map(model => model.cost.inputPerMTok != null && model.cost.outputPerMTok != null ? model
     : { ...model, cost: pricedModel(sheet, model.id ?? model.name)?.cost ?? model.cost });
   return [...filled, ...sheet];
 }
 /** US dollars for these tokens at a model's prices; null — price unknown — when a rate the tokens need was never recorded. */
-export function tokenCost(model: FleetModel | null, tokens: Tokens): number | null {
+function tokenCost(model: FleetModel | null, tokens: Tokens): number | null {
   if (!model) return null;
   const rates: [number, number | null | undefined][] = [[tokens.input, model.cost.inputPerMTok], [tokens.output, model.cost.outputPerMTok], [tokens.cacheRead, model.cost.cacheReadPerMTok], [tokens.cacheWrite, model.cost.cacheWritePerMTok]];
   if (model.cost.inputPerMTok == null || model.cost.outputPerMTok == null || rates.some(([used, rate]) => used > 0 && rate == null)) return null;
@@ -141,14 +141,18 @@ export interface CostLine extends Tokens {
   apiEquivalent: number;
   /** Tokens on a model without a price: their cost is unknown, never zero. */
   unpriced: number;
+  /** GY-3496: tokens without a per-token price on an account with a monthly fee: the plan's fee covers them. */
+  flatTokens: number;
   /** Sessions whose runtime reported no usage. */
   notReported: number;
   /** A flat plan's monthly fee, on an account line. */
   monthlyFee?: number | null;
   flat?: boolean;
+  /** An account line's cost as one figure: 'flat plan', dollars or 'price unknown'. */
+  figure?: string;
 }
 export const costWindows = [['today', 'Today'], ['week', '7 days'], ['month', '30 days'], ['all', 'All time']] as const;
-export type CostWindow = typeof costWindows[number][0];
+type CostWindow = typeof costWindows[number][0];
 export interface CostSummary {
   windows: Record<CostWindow, CostLine & { shipped: number; perShipped: number | null }>;
   /** The breakdowns over `days` (null: all time). */
@@ -158,12 +162,14 @@ export interface CostSummary {
   prices: { name: string; id: string | null; input: number | null; output: number | null; cacheRead: number | null; cacheWrite: number | null; asOf: string | null }[];
   /** The monthly fees of every flat-plan account: the real spend beside the API-equivalent figure. */
   monthlyFees: number;
+  /** GY-3496: one line per account whose sessions reported no tokens over `days`, naming the runtime. */
+  notMetered: string[];
 }
 
-const line = (name: string): CostLine => ({ name, ...zero(), cost: 0, apiEquivalent: 0, unpriced: 0, notReported: 0 });
+const line = (name: string): CostLine => ({ name, ...zero(), cost: 0, apiEquivalent: 0, unpriced: 0, flatTokens: 0, notReported: 0 });
 const total = (tokens: Tokens) => tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite;
 /** An account on a flat plan is not billed per token: its figure is API-equivalent. */
-export const flatPlan = (account: { plan?: string; monthlyFee?: number } | undefined) => !!account && (!!account.plan || account.monthlyFee !== undefined);
+const flatPlan = (account: { plan?: string; monthlyFee?: number } | undefined) => !!account && (!!account.plan || account.monthlyFee !== undefined);
 const roleNames: Record<string, string> = { worker: 'Workers', reviewer: 'Reviewers', producer: 'Producers', master: 'Master' };
 
 /**
@@ -183,9 +189,9 @@ export function costSummary(rows: readonly UsageRow[], registry: Pick<AgentRegis
   const tally = (into: CostLine, row: UsageRow) => {
     if (!row.reported) { into.notReported++; return null; }
     add(into, row);
-    const cost = tokenCost(pricedModel(models, row.model), row);
-    if (cost === null) into.unpriced += total(row);
-    else { into.cost += cost; if (flatPlan(registry.accounts.find(account => account.name === row.account))) into.apiEquivalent += cost; }
+    const cost = tokenCost(pricedModel(models, row.model), row), account = registry.accounts.find(entry => entry.name === row.account);
+    if (cost === null) { if (account?.monthlyFee != null) into.flatTokens += total(row); else into.unpriced += total(row); }
+    else { into.cost += cost; if (flatPlan(account)) into.apiEquivalent += cost; }
     return cost;
   };
   const windows = Object.fromEntries(costWindows.map(([window]) => {
@@ -204,16 +210,23 @@ export function costSummary(rows: readonly UsageRow[], registry: Pick<AgentRegis
     for (const row of within) { const key = name(row); if (!lines.has(key)) lines.set(key, line(key)); tally(lines.get(key)!, row); }
     return [...lines.values()].sort((a, b) => b.cost - a.cost || total(b) - total(a));
   };
+  const unmetered = new Map<string, { sessions: number; runtimes: Set<string> }>();
+  for (const row of within) if (!row.reported) {
+    const entry = unmetered.get(row.account ?? 'account not recorded') ?? { sessions: 0, runtimes: new Set<string>() };
+    entry.sessions++; entry.runtimes.add(row.runtime); unmetered.set(row.account ?? 'account not recorded', entry);
+  }
   return {
     windows, days,
     roles: group(row => roleNames[row.role] ?? row.role),
     models: group(row => pricedModel(models, row.model)?.name ?? row.model ?? 'model not reported'),
     accounts: group(row => row.account ?? 'account not recorded').map(entry => {
       const account = registry.accounts.find(candidate => candidate.name === entry.name);
-      return { ...entry, flat: flatPlan(account), monthlyFee: account?.monthlyFee ?? null };
+      const withFee = { ...entry, flat: flatPlan(account), monthlyFee: account?.monthlyFee ?? null };
+      return { ...withFee, figure: costFigure(withFee) };
     }),
     prices: models.slice(0, registry.models.length).map(model => ({ name: model.name, id: model.id, input: model.cost.inputPerMTok, output: model.cost.outputPerMTok, cacheRead: model.cost.cacheReadPerMTok ?? null, cacheWrite: model.cost.cacheWritePerMTok ?? null, asOf: model.cost.asOf ?? null })),
     monthlyFees: registry.accounts.reduce((sum, account) => sum + (account.monthlyFee ?? 0), 0),
+    notMetered: [...unmetered].map(([account, { sessions, runtimes }]) => `${account}: ${sessions} session${sessions === 1 ? '' : 's'} not metered by ${[...runtimes].join(', ')}`),
   };
 }
 
@@ -222,21 +235,21 @@ export function costSummary(rows: readonly UsageRow[], registry: Pick<AgentRegis
 export const tokenCount = (value: number) => value >= 1_000_000 ? `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 1 : 2)}M` : value >= 10_000 ? `${Math.round(value / 1000)}k` : value.toLocaleString('en-US');
 export const dollars = (value: number) => `$${value >= 100 ? Math.round(value).toLocaleString('en-US') : value.toFixed(2)}`;
 export const lineTokens = (entry: Tokens) => total(entry);
-/** A line's cost as one figure: dollars, 'at least' dollars when some of its tokens have no price, 'price unknown' when none do. */
+/** A line's cost as one figure: dollars, 'at least' dollars when some of its tokens have no price, 'flat plan' or 'price unknown' when none do. */
 export function costFigure(entry: CostLine): string {
   const tokens = total(entry);
-  if (tokens && entry.unpriced >= tokens) return 'price unknown';
+  if (tokens && entry.unpriced + entry.flatTokens >= tokens) return entry.unpriced ? 'price unknown' : 'flat plan';
   const amount = `${entry.unpriced ? 'at least ' : ''}${dollars(entry.cost)}`;
   return entry.apiEquivalent > 0 ? entry.apiEquivalent >= entry.cost ? `${amount} API-equivalent` : `${amount} (${dollars(entry.apiEquivalent)} API-equivalent)` : amount;
 }
-/** A line's cost in words: its figure, the tokens no price covers, its plan's fee and the sessions that reported nothing. */
+/** A line's cost in words: its figure, the tokens no price or plan covers, and its plan's fee. Unmetered sessions have their own lines. */
 export function costText(entry: CostLine): string {
-  const tokens = total(entry);
+  const tokens = total(entry), figure = tokens ? costFigure(entry) : null;
   const parts = [
-    ...(tokens ? [costFigure(entry)] : []),
-    ...(entry.unpriced && entry.unpriced < tokens ? [`price unknown for ${tokenCount(entry.unpriced)} tokens`] : []),
+    ...(figure ? [figure] : []),
+    ...(entry.unpriced && figure !== 'price unknown' ? [`price unknown for ${tokenCount(entry.unpriced)} tokens`] : []),
+    ...(entry.flatTokens && figure !== 'flat plan' ? [`flat plan for ${tokenCount(entry.flatTokens)} tokens`] : []),
     ...(entry.monthlyFee != null ? [`plan ${dollars(entry.monthlyFee)}/month`] : []),
-    ...(entry.notReported ? [`${entry.notReported} session${entry.notReported === 1 ? '' : 's'} not reported`] : []),
   ];
   return parts.join(' · ') || 'no usage reported';
 }
@@ -254,9 +267,10 @@ export function costReport(summary: CostSummary, now: number): string {
     'Tokens the project\'s agents spent, and what they cost at the price sheet\'s rates:',
     ...costWindows.map(([window, label]) => { const entry = summary.windows[window]; return `  ${label}: ${tokensText(entry)} · ${costText(entry)}${entry.perShipped === null ? '' : ` · ${dollars(entry.perShipped)} per shipped item (${entry.shipped})`}`; }),
     ...(summary.monthlyFees ? [`  Flat plans are not billed per token: their figures are API-equivalent, and the plans cost ${dollars(summary.monthlyFees)}/month.`] : []),
-    ...([['By role', summary.roles], ['By model', summary.models], ['By account', summary.accounts]] as const).flatMap(([title, lines]) => lines.length ? [`${title}${summary.days === null ? '' : `, last ${summary.days} day${summary.days === 1 ? '' : 's'}`}:`, ...lines.map(row)] : []),
+    ...([['By role', summary.roles], ['By model', summary.models], ['By account', summary.accounts]] as const).flatMap(([title, lines]) => lines.some(entry => total(entry)) ? [`${title}${summary.days === null ? '' : `, last ${summary.days} day${summary.days === 1 ? '' : 's'}`}:`, ...lines.filter(entry => total(entry)).map(row)] : []),
+    ...(summary.notMetered.length ? ['Not metered (their runtime reports no tokens):', ...summary.notMetered.map(text => `  ${text}`)] : []),
     'Price sheet (US dollars per million tokens: input / output / cache read / cache write):',
     ...summary.prices.map(price => `  ${price.name}${price.id ? ` (${price.id})` : ''}: ${price.input === null || price.output === null ? 'price unknown' : `${price.input} / ${price.output} / ${price.cacheRead ?? '?'} / ${price.cacheWrite ?? '?'} as of ${price.asOf ?? 'an unrecorded day'}`}`),
-    ...(due.length ? [`Check against the providers' price pages (monthly): ${due.join(', ')} — graphyard master registry model set NAME --input-cost USD --output-cost USD --cache-read-cost USD --cache-write-cost USD --reason REASON`] : []),
+    ...(due.length ? [`Check against the providers' price pages (monthly): ${due.join(', ')} — mainworks master registry model set NAME --input-cost USD --output-cost USD --cache-read-cost USD --cache-write-cost USD --reason REASON`] : []),
   ].join('\n');
 }

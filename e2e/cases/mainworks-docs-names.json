@@ -1,0 +1,16 @@
+{
+  "id": "mainworks-docs-names",
+  "title": "README and the CLI guide name the Mainworks settings and paths",
+  "description": "README.md and 'guide master' show MAINWORKS_URL and name GRAPHYARD_URL only in the one line saying the legacy names are still honoured; every guide topic names only MAINWORKS_* settings and Mainworks paths.",
+  "tags": ["guide", "readme"],
+  "target": "any",
+  "required": true,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "README and guide topics name the Mainworks settings and paths",
+      "run": "node --import tsx --test tests/mainworks-docs-names.test.ts",
+      "timeoutSeconds": 180
+    }
+  ]
+}

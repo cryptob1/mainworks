@@ -6,8 +6,9 @@ import { readdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import { availableParallelism, homedir } from 'node:os';
 import { join } from 'node:path';
+import { stateDirectory } from '../install/layout.js';
 
-/** The free space every volume Graphyard writes keeps, when master.json sets no `run.diskFloorGb`. */
+/** The free space every volume Mainworks writes keeps, when master.json sets no `run.diskFloorGb`. */
 export const defaultDiskFloorGb = 30;
 export const diskFloorBytes = (config: { run: { diskFloorGb?: number } }) => (config.run.diskFloorGb ?? defaultDiskFloorGb) * 1e9;
 
@@ -26,7 +27,7 @@ export const cpuSensorNames = ['coretemp', 'k10temp', 'zenpower', 'cpu_thermal']
 export const trialHotCelsius = 85;
 /** GY-3532: the heat rule compares the mean of the package samples over this window with the limit, once it holds `heatMinSamples`. */
 export const heatWindowMs = 120_000;
-export const heatMinSamples = 4;
+const heatMinSamples = 4;
 /** The [epoch ms, degrees] samples of the window as the heat rule reads them: the rounded mean with at least 4 samples, else the latest sample; null with none. */
 export function heatReading(samples: readonly (readonly [number, number])[]): { latest: number; mean: number | null; celsius: number } | null {
   if (!samples.length) return null;
@@ -71,17 +72,19 @@ export interface TrialLoad { slots: string; cap: number; order: number; /** GY-3
 /** The load of one start for `root`'s install; `run.diskFloorGb` is the one setting it reads. */
 const hostCpu = trialCpuMonitor();
 export async function trialLoad(root: string, who: keyof typeof trialStartOrder, usable = hostCpu.cores(), cores = availableParallelism()): Promise<TrialLoad> {
-  const run = await readFile(join(root, '.graphyard', 'master.json'), 'utf8').then(text => JSON.parse(text).run ?? {}, () => ({}));
+  const run = await readFile(join(stateDirectory(root), 'master.json'), 'utf8').then(text => JSON.parse(text).run ?? {}, () => ({}));
   return { slots: trialSlots(), cap: trialContainerCap(cores, usable), order: trialStartOrder[who], ...(who === 'gate' ? { cpuShares: gateCpuShares, hotCap: Math.max(1, Math.floor(trialContainerCap(cores, usable) / 2)) } : {}), hotCelsius: trialHotCelsius, floorBytes: diskFloorBytes({ run }), hwmon: '/sys/class/hwmon',
     pressureBoundSeconds: trialPressureBoundSeconds };
 }
-export const trialSlots = (home = homedir()) => join(home, '.gy', 'trial-slots');
+const trialSlots = (home = homedir()) => join(home, '.gy', 'trial-slots');
 
-const launcherLine = 'graphyard trial container: ', waitingLine = `${launcherLine}waiting`, startingLine = `${launcherLine}starting`;
+const launcherLine = 'mainworks trial container: ', waitingLine = `${launcherLine}waiting`, startingLine = `${launcherLine}starting`;
+/** GY-3744: a host helper prepared before the rename prints these words under the old name; both are the launcher's. */
+const launcherWords = '(?:graphyard|mainworks) trial container: ', launcherPattern = new RegExp(`^${launcherWords}`);
 /** GY-3535: the line a launcher prints when a heat wait ends, followed by its seconds. */
 const heatLine = `${waitingLine}: a CPU sensor held this start `;
 /** GY-3535: the seconds every container start in `output` waited for the CPU to cool, summed. */
-export const heatWaitSeconds = (output: string) => [...output.matchAll(new RegExp(`${heatLine}(\\d+)s`, 'g'))].reduce((sum, match) => sum + Number(match[1]), 0);
+export const heatWaitSeconds = (output: string) => [...output.matchAll(new RegExp(`${launcherWords}waiting: a CPU sensor held this start (\\d+)s`, 'g'))].reduce((sum, match) => sum + Number(match[1]), 0);
 /** GY-3535: a step that failed or timed out after its containers waited over a minute on heat: the host's overload, so the same head is trialled again, never reworked. */
 export class TrialHeatError extends Error {
   constructor(step: string, seconds: number) {
@@ -242,16 +245,16 @@ export function launcherLines(line: (text: string) => void): (chunk: string) => 
   return chunk => {
     const lines = (rest + chunk).split('\n');
     rest = lines.pop()!;
-    for (const text of lines) if (text.startsWith(launcherLine)) line(text.slice(launcherLine.length));
+    for (const text of lines) { const words = launcherPattern.exec(text); if (words) line(text.slice(words[0].length)); }
   };
 }
 /** The trial-host fault a launcher gave up waiting with, from its output; null when it never did. */
 export const trialContainerFault = (output: string): string | null => {
-  const at = output.lastIndexOf(faultLine);
-  return at < 0 ? null : output.slice(at + launcherLine.length).split('\n')[0]!;
+  const fault = [...output.matchAll(new RegExp(`${launcherWords}(Trial-host fault: [^\\n]*)`, 'g'))].at(-1);
+  return fault ? fault[1]! : null;
 };
 /** GY-3332: the disk-floor readings live launchers on this machine wait on now, one per start. */
-export function trialFloorWaits(slots = trialSlots()): string[] {
+function trialFloorWaits(slots = trialSlots()): string[] {
   let names: string[];
   try { names = readdirSync(slots); } catch { return []; }
   return names.flatMap(name => {

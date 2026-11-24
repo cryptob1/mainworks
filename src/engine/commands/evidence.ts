@@ -7,6 +7,7 @@ import type { Evidence } from '../../model.js';
 import { attestedProof } from '../../model/mechanical-proofs.js';
 import { producerIndependenceRefusal } from '../../delegation.js';
 import type { Ctx } from './types.js';
+import { docsSignoffProof } from '../../model/docs-signoff.js';
 
 export async function run(c: Ctx) {
   const { engine, db, actor, data, all, now, work } = c;
@@ -17,7 +18,7 @@ export async function run(c: Ctx) {
   const attest = actor.role === 'operator-agent';
   demand(attest || actor.role === 'producer' || actor.role === 'worker' || actor.role === 'admin', 'Evidence submission is not permitted', 403);
   demand(!(actor.role === 'worker' && attestedProof(data.proof)),
-    `A manual: proof is the master's attestation, never a worker's record: graphyard master attest ${work.key} ${data.proof} REASON`, 403);
+    `A manual: proof is the master's attestation, never a worker's record: mainworks master attest ${work.key} ${data.proof} REASON`, 403);
   // Workers may still record their own untrusted assertions; every identity
   // that could mint trust must be independent of the implementation and the lead.
   const dependent = actor.role === 'worker' ? null : producerIndependenceRefusal(actor, work, engine.principals);
@@ -27,12 +28,12 @@ export async function run(c: Ctx) {
   const trusted = attest || authorizedForProof(actor, data.proof);
   if (data.proof === deploySmokeProof) {
     // Post-deployment proof is a trust boundary with no untrusted tier: it is accepted only
-    // from a producer granted the proof, only once Graphyard has observed the deployment,
+    // from a producer granted the proof, only once Mainworks has observed the deployment,
     // and only bound to that observed serving commit and this item's merge commit.
     demand(trusted, `${deploySmokeProof} evidence is accepted only from a producer authorized for that proof`, 403);
     demand(deploySmokeRequired(work.policy), `Work policy does not require ${deploySmokeProof}`);
     demand(work.stage === 'done' && !!work.delivery, `${deploySmokeProof} evidence is accepted only after delivery`);
-    demand(!!work.delivery!.deployment, 'Graphyard has not observed a deployment covering this delivery');
+    demand(!!work.delivery!.deployment, 'Mainworks has not observed a deployment covering this delivery');
     demand(data.sha === work.delivery!.deployment!.sha && data.baseSha === work.delivery!.mergeSha,
       `${deploySmokeProof} evidence must name the observed deployed commit ${work.delivery!.deployment!.sha} as sha and merge commit ${work.delivery!.mergeSha} as baseSha`);
     demand(data.policyRevision === work.policyRevision, 'Policy revision does not match this delivery');
@@ -40,7 +41,8 @@ export async function run(c: Ctx) {
   // GY-135: a pass is trusted only beside a recorded run that fails with the criterion's
   // behaviour removed; otherwise it is kept, untrusted, as not exercising its criterion.
   const unexercised = trusted && data.proof !== deploySmokeProof ? exerciseRefusal(work, all, data) : null;
-  const evidence: Evidence = { ...data, id: randomUUID(), producer: actor.id, trusted: trusted && !unexercised, at: now.toISOString(), ...(unexercised ? { unexercised } : {}) };
+  const docsDigest = attest && docsSignoffProof(data.proof) && work.observation?.candidate.sha === data.sha ? work.observation?.docsDigest : undefined;
+  const evidence: Evidence = { ...data, id: randomUUID(), producer: actor.id, trusted: trusted && !unexercised, at: now.toISOString(), ...(unexercised ? { unexercised } : {}), ...(docsDigest ? { docsDigest } : {}) };
   if (unexercised) await record(db, work, actor.id, 'evidence.exercise.refused', { details: { proof: data.proof, criteria: attachedCriteria(work, all, data.proof), behaviour: data.exercise?.behaviour ?? null, sha: data.sha, reason: unexercised } });
   await appendEvidence(work, evidence, db);
   // GY-162: a trusted e2e: record is also a run of its test case, appended to the case's history.

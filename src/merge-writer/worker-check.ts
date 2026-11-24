@@ -1,4 +1,4 @@
-// GY-3283: a worker's `graphyard check NAME` runs on the host, as the merge trial runs that check:
+// GY-3283: a worker's `mainworks check NAME` runs on the host, as the merge trial runs that check:
 // the same image, Compose services and GRAPHYARD_SERVICE_* variables, under the trial load cap.
 // The worker sandbox never gets Docker; it gets the check's output and whether it passed.
 import { defaultChildRun } from '../child-runner.js';

@@ -10,9 +10,9 @@ import { actionDetailMax, storeAction, type DaemonState } from './state.js';
 
 export const stallAlarmKey = 'stall-alarm';
 /** Free capacity and ready work with no launch this long raise the alarm. */
-export const stallIdleMs = 10 * 60_000;
+const stallIdleMs = 10 * 60_000;
 /** An open item with no change and no actor this long raises it too. */
-export const noActorMs = 60 * 60_000;
+const noActorMs = 60 * 60_000;
 
 export interface StallReadings {
   now: number;
@@ -37,7 +37,7 @@ const live = (item: Work, now: number) => (!!item.lease && Date.parse(item.lease
  * progress, or a dispatch the loop recorded done; else the loop's own start. A launch that failed
  * and exited is not one.
  */
-export function lastLaunchAt(state: StallReadings['state'], work: readonly Work[]): number | null {
+function lastLaunchAt(state: StallReadings['state'], work: readonly Work[]): number | null {
   const times: number[] = [];
   for (const item of work) for (const session of item.sessions ?? []) {
     if (session.kind !== 'implementation') continue;
@@ -67,7 +67,7 @@ export function stallCauses({ now, open, ready, holds = [], gates, state, regist
   const spent = accounts.map(account => [account.name, exhaustionEvidence(account.quota, now)] as const);
   if (spent.length && spent.every(([, evidence]) => evidence)) causes.push(`every worker account is out of quota: ${spent.map(([name, evidence]) => `${name} (${evidence})`).join(', ')}`);
   const loaded = state.release?.commit ?? null;
-  if (serving && loaded && serving !== loaded) causes.push(`the loop runs ${loaded.slice(0, 12)}, older than the served ${serving.slice(0, 12)}; restart it with graphyard master restart`);
+  if (serving && loaded && serving !== loaded) causes.push(`the loop runs ${loaded.slice(0, 12)}, older than the served ${serving.slice(0, 12)}; restart it with mainworks master restart`);
   if (!causes.length) causes.push(...ready.slice(0, 5).map(item => gates?.get(item.key) ?? `${item.key} has no actor: ready, with no lease and no session`));
   return causes;
 }

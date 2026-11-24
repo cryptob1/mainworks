@@ -57,7 +57,7 @@ test('integration:deploy-and-uat-alerts — newly served items are announced onc
   const work = [done('GY-0', 'Old', first), done('GY-1', 'Login page', a), done('GY-2', 'Board filters', b)];
   const state = await step(root, config, b, work, webhook);
   assert.equal(posts.length, 1, 'one deployed message');
-  assert.equal(posts[0], `Graphyard owner/project: deployed ${b.slice(0, 12)}\nGY-1 Login page (${a.slice(0, 12)})\nGY-2 Board filters (${b.slice(0, 12)})`);
+  assert.equal(posts[0], `Mainworks owner/project: deployed ${b.slice(0, 12)}\nGY-1 Login page (${a.slice(0, 12)})\nGY-2 Board filters (${b.slice(0, 12)})`);
   assert.equal(state.deliveryAlerts.served, b, 'the announced commit is on the cursor');
   // A restarted loop reads the cursor and says nothing again.
   await step(root, config, b, work, webhook);
@@ -67,7 +67,7 @@ test('integration:deploy-and-uat-alerts — newly served items are announced onc
   await failedGate(root, b, candidate);
   await step(root, config, b, work, webhook);
   assert.equal(posts.length, 2, 'one UAT-failed message');
-  assert.equal(posts[1], `Graphyard owner/project: UAT failed on candidate ${candidate.slice(0, 12)}; ${b.slice(0, 12)} stays served. Failed: e2e:login, e2e:checkout`);
+  assert.equal(posts[1], `Mainworks owner/project: UAT failed on candidate ${candidate.slice(0, 12)}; ${b.slice(0, 12)} stays served. Failed: e2e:login, e2e:checkout`);
   assert.doesNotMatch(posts.at(-1)!, /\n/, 'one short line');
   await step(root, config, b, work, webhook);
   assert.equal(posts.length, 2, 'not repeated for the same candidate, across a restart');
@@ -82,7 +82,7 @@ test('integration:deploy-and-uat-alerts — without a declared serve, the deploy
   const merged = commit(root, 'GY-4');
   const work = [done('GY-4', 'Deploy watch', merged)];
   await step(root, config, merged, work, webhook, 'deploy');
-  assert.deepEqual(posts, [`Graphyard owner/project: deployed ${merged.slice(0, 12)}\nGY-4 Deploy watch (${merged.slice(0, 12)})`]);
+  assert.deepEqual(posts, [`Mainworks owner/project: deployed ${merged.slice(0, 12)}\nGY-4 Deploy watch (${merged.slice(0, 12)})`]);
   await step(root, config, merged, work, webhook, 'deploy');
   assert.equal(posts.length, 1, 'not repeated after a restart');
 });
@@ -90,11 +90,11 @@ test('integration:deploy-and-uat-alerts — without a declared serve, the deploy
 test('integration:deploy-and-uat-alerts — a Slack incoming webhook gets {"text": ...}; any other receiver keeps the plain-text body', async () => {
   const sent: { url: string; init: RequestInit }[] = [];
   const fetcher = (async (url: string, init: RequestInit) => { sent.push({ url, init }); return new Response('ok'); }) as unknown as typeof fetch;
-  await postAlert(fetcher, 'https://hooks.slack.com/services/T0/B0/x', 'Graphyard owner/project: deployed abc');
-  await postAlert(fetcher, 'https://ntfy.example/yard', 'Graphyard owner/project: deployed abc');
-  assert.deepEqual(JSON.parse(sent[0].init.body as string), { text: 'Graphyard owner/project: deployed abc' });
+  await postAlert(fetcher, 'https://hooks.slack.com/services/T0/B0/x', 'Mainworks owner/project: deployed abc');
+  await postAlert(fetcher, 'https://ntfy.example/yard', 'Mainworks owner/project: deployed abc');
+  assert.deepEqual(JSON.parse(sent[0].init.body as string), { text: 'Mainworks owner/project: deployed abc' });
   assert.equal((sent[0].init.headers as Record<string, string>)['Content-Type'], 'application/json');
-  assert.equal(sent[1].init.body, 'Graphyard owner/project: deployed abc');
+  assert.equal(sent[1].init.body, 'Mainworks owner/project: deployed abc');
   assert.equal((sent[1].init.headers as Record<string, string>)['Content-Type'], 'text/plain');
 });
 
@@ -113,7 +113,7 @@ test('e2e:deploy-and-uat-alerts — a fake webhook receives the deployed message
     const work = [done('GY-7', 'Faster search', merged)];
     // The promotion: the delivery watch now serves the merged commit.
     await step(root, config, merged, work, webhook);
-    assert.deepEqual(received, [`Graphyard owner/project: deployed ${merged.slice(0, 12)}\nGY-7 Faster search (${merged.slice(0, 12)})`]);
+    assert.deepEqual(received, [`Mainworks owner/project: deployed ${merged.slice(0, 12)}\nGY-7 Faster search (${merged.slice(0, 12)})`]);
     const candidate = commit(root, 'GY-8');
     await failedGate(root, merged, candidate);
     await step(root, config, merged, work, webhook);

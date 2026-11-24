@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { stateSourceKinds, untrustedSourceKinds, defaultClosedQuestionThreshold, type ClosedQuestion, type StatePart, type StateSource, type StateSourceKind } from './model/closed-question.js';
 import type { Work } from './model.js';
+import { setting } from './setting.js';
 
 // ---------------------------------------------------------------------------
 // The responder that answers closed questions (GY-109), and the state it is asked against.
@@ -30,21 +31,21 @@ const common = {
   timeoutMs: z.number().int().min(100).max(120_000).default(30_000),
   exclude: exclusionSchema.default({ sources: [...untrustedSourceKinds], paths: [] }),
 };
-export const responderConfigSchema = z.discriminatedUnion('kind', [
+const responderConfigSchema = z.discriminatedUnion('kind', [
   /** A local program: argv[0] is executed without a shell, reads the request on stdin, writes the answer on stdout. */
   z.object({ kind: z.literal('command'), command: z.array(z.string().min(1).max(1000)).min(1).max(50), ...common }).strict(),
   /** An HTTP endpoint; the bearer token, if any, is read from the named environment variable, never stored here. */
   z.object({ kind: z.literal('http'), url: z.url().max(2000), tokenVariable: z.string().regex(/^[A-Z_][A-Z0-9_]*$/).optional(), ...common }).strict(),
 ]);
-export type ResponderConfig = z.infer<typeof responderConfigSchema>;
+type ResponderConfig = z.infer<typeof responderConfigSchema>;
 
 /** What a responder is given: the question, the closed set of answers, and the bound state. */
-export interface ResponderRequest {
+interface ResponderRequest {
   question: string; criteria: string[];
   state: { kind: StateSourceKind; path?: string; text: string }[];
   stateHash: string;
 }
-export interface ResponderAnswer { answer: string; probability: number }
+interface ResponderAnswer { answer: string; probability: number }
 /** Any responder: the configured ones below, or an embedder's own (tests pass one in-process). */
 export interface Responder {
   id: string; version: string; threshold: number;
@@ -72,7 +73,7 @@ function runCommand(argv: string[], input: string, timeoutMs: number): Promise<s
 }
 
 /** Build the responder a configuration names. */
-export function configuredResponder(config: ResponderConfig, env: NodeJS.ProcessEnv = process.env): Responder {
+function configuredResponder(config: ResponderConfig, env: NodeJS.ProcessEnv = process.env): Responder {
   const base = { id: config.id, version: config.version, threshold: config.threshold, exclude: { sources: [...config.exclude.sources], paths: [...config.exclude.paths] } };
   if (config.kind === 'command') return { ...base, ask: async request => answerSchema.parse(JSON.parse(await runCommand(config.command, JSON.stringify(request), config.timeoutMs))) };
   return {
@@ -87,13 +88,13 @@ export function configuredResponder(config: ResponderConfig, env: NodeJS.Process
 }
 /** The responder `GRAPHYARD_RESPONDER` configures, or null when none is: closed questions then take their ordinary path. */
 export function responderFromEnv(env: NodeJS.ProcessEnv = process.env): Responder | null {
-  const raw = env.GRAPHYARD_RESPONDER?.trim();
+  const raw = setting('RESPONDER', env)?.trim();
   return raw ? configuredResponder(responderConfigSchema.parse(JSON.parse(raw)), env) : null;
 }
 
 const excludedPath = (path: string, paths: readonly string[]) => paths.some(entry => entry.endsWith('/') ? path.startsWith(entry) : path === entry);
 /** Why the responder may not be given this source, or null. */
-export function excludedSource(source: StateSource, responder: Pick<Responder, 'exclude'>): string | null {
+function excludedSource(source: StateSource, responder: Pick<Responder, 'exclude'>): string | null {
   if (responder.exclude.sources.includes(source.kind)) return `${source.kind} is excluded by the responder configuration${untrustedSourceKinds.includes(source.kind) ? ': an untrusted party may author it' : ''}`;
   if (source.kind === 'file' && excludedPath(source.path, responder.exclude.paths)) return `${source.path} is excluded by the responder configuration`;
   return null;

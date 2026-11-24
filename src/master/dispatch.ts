@@ -17,13 +17,15 @@ import type { MasterConfig, WorkerProfile } from './profiles.js';
 import { runtimeLoginHomes } from './profiles.js';
 import { loadMasterConfig, readWorkerCredential } from './config.js';
 import { atomicPrivateWrite, readCredentialFile } from '../private-file.js';
-import { credentialMaskFor, CredentialMaskError, type MaskProbe } from './confinement.js';
-import { accountLaunch, agentLaunchPlan, NoHealthyAccountError, onSelectedSession, recordObservedExhaustion, selectAccount, sharedGitDirectory } from './environments.js';
+import { CredentialMaskError, type MaskProbe } from './confinement.js';
+import { agentLaunchPlan, NoHealthyAccountError, onSelectedSession, recordObservedExhaustion, selectAccount, sharedGitDirectory } from './environments.js';
+import { workerSessionLaunch } from '../runner/pi-launch.js';
 import type { FleetProbe } from '../fleet.js';
 import { repinPath, type CanaryOffer } from '../model/registry.js';
 import { criteriaListing, featureCaseRule, reviewStandards } from '../review-prompt.js';
 import { launcherCoordinatorRoot, preservePartialWork, prepareConfinedGitPaths, sessionConfinement } from './launch.js';
-import { continuable, defaultHeadlessExec, HeadlessConfigurationError, runSessionId, startHeadlessWorker, type HeadlessExec } from '../headless-session.js';
+import { continuable, defaultHeadlessExec, HeadlessConfigurationError, liveWorkerHosts, runSessionId, startHeadlessWorker, type HeadlessExec } from '../headless-session.js';
+import { remoteSessionHost } from '../remote-session.js';
 import { readAttemptLaunch } from './session-resume.js';
 import { liveRun } from '../runner/registry.js';
 import { releaseOfPath, resolvedLauncher } from '../install/cli-release.js';
@@ -42,6 +44,7 @@ import { namedPaths } from '../model/documentation-glob.js';
 import { appliedReworkBrief, reworkBriefSection, type AppliedRework } from './rework-brief.js';
 import { workerFastGatesPresent, workerFastGatesSentence } from './worker-fast-gates.js';
 import { attemptBoundMs, attemptCeilingMs } from './attempt-bound.js';
+import { stateDirectory } from '../install/layout.js';
 
 /** The launcher's own runner: the CLI as a child, and git. `stdio` is honoured for the streams a child may inherit; the rest is captured. */
 type WorkerCommand = (command: string, args: string[], options?: { cwd?: string; env?: NodeJS.ProcessEnv; stdio?: ('ignore' | 'pipe' | 'inherit')[] }) => string | Buffer | Promise<string | Buffer>;
@@ -128,7 +131,7 @@ export function assertClaimDeadline(key: string, claimBy: number | undefined, no
 export const describeOverlap = (overlap: ReturnType<typeof concurrentOverlap>) => overlap.map(ahead => `${ahead.key} (${ahead.state}, ${ahead.stage}) on ${ahead.paths.join(', ')}`).join('; ');
 export function assertDispatchable(work: Work, allWork: Work[], observedAt: string) {
   const now = Date.parse(observedAt);
-  if (!Number.isFinite(now)) throw new Error('Dispatch requires a valid Graphyard snapshot clock');
+  if (!Number.isFinite(now)) throw new Error('Dispatch requires a valid Mainworks snapshot clock');
   if (parkedOnHuman(work)) throw new Error(`${dispatchHumanWait} (${humanDecisionLabel[work.humanRequest!.kind]}); ${answerCommand(work.key, work.humanRequest!)} resumes it`);
   if (!work.criteria.length) throw new Error('Waiting on the master: writing the criteria');
   if (!work.ready || work.blocker) throw new Error('Dispatch requires released work without a blocker');
@@ -166,7 +169,7 @@ export async function dispatchWork(root: string, work: Work, profile: WorkerProf
   // The served repository can differ from the CLI release checkout (Huck's install).
   // Confine its Git store, not the launcher's code. Injected preparers retain the test boundary.
   const coordinatorRoot = options.coordinatorRoot ?? (prepare === prepareWorkerLaunch ? root : undefined);
-  let selected: Awaited<ReturnType<typeof selectAccount>> | undefined, launched: ReturnType<typeof accountLaunch> | undefined;
+  let selected: Awaited<ReturnType<typeof selectAccount>> | undefined, launched: Awaited<ReturnType<typeof workerSessionLaunch>> | undefined;
   // GY-1772: which runtimes the worker is tried on first, never judged from its path lane; recorded with the selection it ordered.
   let prefer: 'fast' | 'strong' | null = null;
   let result: Awaited<ReturnType<typeof launchWorker>> | undefined;
@@ -176,7 +179,7 @@ export async function dispatchWork(root: string, work: Work, profile: WorkerProf
   // The repository's true root, through the common Git directory: a coordinator checkout that is
   // itself a linked worktree still derives the root every sibling worktree sits under (GY-2959).
   const repositoryRoot = dirname(await sharedGitDirectory(root) ?? root);
-  if (profile.mode === 'existing') throw new Error('Existing sessions are observable but cannot be safely adopted for new work; use a launch profile so Graphyard supervises the agent process');
+  if (profile.mode === 'existing') throw new Error('Existing sessions are observable but cannot be safely adopted for new work; use a launch profile so Mainworks supervises the agent process');
   await readCredentialFile(profile.credentialFile!);
   // One headless run per profile name: a live one holds the profile (GY-3259).
   if (liveRun(profile.agentName)) throw new DispatchReservedError('profile', profile.name, `Launch profile agent name ${profile.agentName} is already running a worker; pick another profile`);
@@ -224,7 +227,7 @@ export async function dispatchWork(root: string, work: Work, profile: WorkerProf
     // The repository root rides the choice, so an opencode launch derives its repository-tree
     // permission from the checkout the dispatch serves (GY-2959).
     const chosen = selected;
-    let launch = await onSelectedSession(chosen, `worker launch for ${work.key} failed`, async () => accountLaunch(profile, chosen.account, { repositoryRoot, headless: true }));
+    let launch = await onSelectedSession(chosen, `worker launch for ${work.key} failed`, async () => workerSessionLaunch(config, profile, chosen.account, { repositoryRoot }));
     const offer: CanaryOffer | undefined = !canary && chosen.account && 'fleet' in chosen.account ? options.canaries?.find(entry => entry.runtime === (chosen.account as { fleet: { runtime: string } }).fleet.runtime) : undefined;
     if (offer) {
       launch = { ...launch, environment: { ...launch.environment, PATH: repinPath(launch.environment.PATH ?? '', offer.entry) } };
@@ -255,7 +258,7 @@ export async function dispatchWork(root: string, work: Work, profile: WorkerProf
     }
     // History supports status; it never grants or reserves a slot.
     const at = new Date().toISOString();
-    await mkdir(resolve(root, '.graphyard/dispatch'), { recursive: true }).catch(() => {});
+    await mkdir(resolve(stateDirectory(root), 'dispatch'), { recursive: true }).catch(() => {});
     await writeFile(dispatchedFile(root, work.key), JSON.stringify({ epoch: result.epoch, at, runtime: launch.kind ?? null, account: chosen.account?.name ?? null, run: result.run, path: result.path,
       ...(result.resumedFrom ? { resumedFrom: result.resumedFrom } : {}), ...(fresh ? { fresh } : {}) }), { mode: 0o600 }).catch(() => {});
     // The dispatch record names the runtime and account the session runs on, the preference
@@ -340,7 +343,7 @@ export async function readProfileLaunchRecords(root: string, profiles: { name: s
 
 
 interface WorkerLaunchOptions { probe?: FleetProbe; settleReservation?: (reason: string) => Promise<unknown>; onRun?: DispatchOptions['onRun']; sandboxProbe: SandboxExec | 'host' | null; claimBy?: number; coordinatorRoot?: string; renew: LeaseRenewer | null; renewIntervalMs?: number; verificationMaps: NonNullable<DispatchOptions['verificationMaps']>; rework: AppliedRework | null; cycle?: string; diagnosis: string; maskProbe?: MaskProbe; headless: HeadlessExec; startupMs?: number; capacity?: DispatchOptions['capacity']; continuing?: Builder | null }
-async function launchWorker(root: string, config: MasterConfig, work: Work, profile: WorkerProfile, launch: ReturnType<typeof accountLaunch>, prepare: WorkerPreparer, release: (root: string, key: string, epoch: number, profileName: string, blocker?: string) => Promise<void>, { probe, settleReservation, onRun, sandboxProbe, claimBy, coordinatorRoot, renew, renewIntervalMs, verificationMaps, rework, cycle, diagnosis, maskProbe, headless, startupMs, capacity, continuing }: WorkerLaunchOptions) {
+async function launchWorker(root: string, config: MasterConfig, work: Work, profile: WorkerProfile, launch: Awaited<ReturnType<typeof workerSessionLaunch>>, prepare: WorkerPreparer, release: (root: string, key: string, epoch: number, profileName: string, blocker?: string) => Promise<void>, { probe, settleReservation, onRun, sandboxProbe, claimBy, coordinatorRoot, renew, renewIntervalMs, verificationMaps, rework, cycle, diagnosis, maskProbe, headless, startupMs, capacity, continuing }: WorkerLaunchOptions) {
   const mergeWriter = 'control-plane' as const;
   // The lease is the launch's to keep alive until the supervisor's first heartbeat (GY-1287), from
   // the claim itself (GY-1373): building the worktree of a large repository on a loaded host took
@@ -360,7 +363,7 @@ async function launchWorker(root: string, config: MasterConfig, work: Work, prof
     const confinementCredential = { ownGitHubCredential: false, secretsBus: null };
     // The operator's credential locations are hidden from this session (GY-1856): the config home
     // wholesale, the deployment and configured mask paths, while its own token and runtime login stay.
-    const credentialMask = credentialMaskFor(config, { credentialFile: profile.credentialFile, runtimeHomes: runtimeLoginHomes(launch.environment, launch.contract?.homeVariable, launch.kind) });
+    const credentialMask = launch.credentialMask;
     // The worker writes its worktree, the worktree's own Git admin directory, the common Git
     // directory (GY-2977: packed-refs lock) and the shared Git paths the coordinator confinement
     // re-exposes; each is granted to the runtime's sandbox, and the grant is proved below before
@@ -396,7 +399,7 @@ async function launchWorker(root: string, config: MasterConfig, work: Work, prof
         if (sandboxProbe) sandbox = verifyWorkerSandbox({ ...launch, args, ...(confinement?.wrapper.length ? { confinement: confinement.wrapper } : {}) }, prepared.path, writable, sandboxProbe === 'host' ? undefined : sandboxProbe);
       }
       const initialHead = await Promise.resolve().then(() => defaultChildRun('git', ['-C', prepared.path, 'rev-parse', 'HEAD'])).then(value => /^[0-9a-f]{40,64}$/.test(String(value).trim()) ? String(value).trim() : null, () => null);
-      // GY-3259: the worker is one headless run of its runtime's one-task form under `graphyard
+      // GY-3259: the worker is one headless run of its runtime's one-task form under `mainworks
       // watch`, which heartbeats this claim under the worker's own credential and stops the runtime
       // on lease loss. The instruction is its own first request on the command line, never pasted;
       // a worker never reaches the operator's keyring, and no Herdr pane is opened for it.
@@ -404,9 +407,14 @@ async function launchWorker(root: string, config: MasterConfig, work: Work, prof
       const sameTree = !!continuing && resolve(continuing.path) === resolve(prepared.path);
       let resume = continuing && rework && sameTree && continuable(launch.kind, launch.contract) ? continuing : null;
       let fresh = continuing && !resume ? (sameTree ? `the ${launch.kind} launch contract has no continue form` : `the worktree moved from ${continuing.path} to ${prepared.path}`) : null;
-      const start = (session: string | null) => startHeadlessWorker({ name: profile.agentName, work: work.key, subject: `${work.key}: ${work.title}`, epoch: prepared.epoch, principal: profile.principal, account: launch.account ?? null,
+      // GY-3405: an added host open to sessions takes the run when it has room; its login is handed over for this session only.
+      const environment = { GRAPHYARD_URL: config.url, GRAPHYARD_TOKEN_FILE: profile.credentialFile!, GRAPHYARD_HOST_ID: config.hostId, GRAPHYARD_HERDR_AGENT_KIND: launch.kind!, ...(process.env.XDG_RUNTIME_DIR ? { XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR } : {}), ...(process.env.DBUS_SESSION_BUS_ADDRESS ? { DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS } : {}), ...withVerificationPath(sessionHarness.environment, launch.environment) };
+      const host = await remoteSessionHost(launch.kind!, () => liveWorkerHosts(root)).catch(() => null);
+      const forwarded = [...Object.keys(environment), 'VITEST_MAX_WORKERS', 'PLAYWRIGHT_WORKERS'].filter(name => !['GRAPHYARD_TOKEN_FILE', 'GRAPHYARD_TOKEN', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'PATH'].includes(name));
+      const remote = host ? { host, words: [process.execPath, config.cliPath, 'host', 'session', host, ...runtimeLoginHomes(launch.environment, launch.contract?.homeVariable, launch.kind).flatMap(home => ['--home', home]), ...forwarded.flatMap(name => ['--env', name]), '--cli', config.cliPath, '--'] } : undefined;
+      const start = (session: string | null) => startHeadlessWorker({ remote, name: profile.agentName, work: work.key, subject: `${work.key}: ${work.title}`, epoch: prepared.epoch, principal: profile.principal, account: launch.account ?? null,
         kind: launch.kind!, args: [...args, ...sessionHarness.args], contract: launch.contract, credentialMask, role: sessionHarness.role, directory: prepared.path, prompt: session ? continuedPrompt(config, work, prepared.epoch, rework!) : prompt, session, root, exec: headless, coordinatorRoot,
-        environment: { GRAPHYARD_URL: config.url, GRAPHYARD_TOKEN_FILE: profile.credentialFile!, GRAPHYARD_HOST_ID: config.hostId, GRAPHYARD_HERDR_AGENT_KIND: launch.kind!, ...(process.env.XDG_RUNTIME_DIR ? { XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR } : {}), ...(process.env.DBUS_SESSION_BUS_ADDRESS ? { DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS } : {}), ...withVerificationPath(sessionHarness.environment, launch.environment) },
+        environment,
         supervisor: [process.execPath, config.cliPath, 'watch', work.key, String(prepared.epoch), '--'], timeoutMs: attemptCeilingMs(config.run), startupMs,
         settle: async ({ output, ok }) => { await stoppedOnLimit(output, ok).catch(() => null); await settleReservation?.(`the ${launch.kind} worker run ended`); } });
       let started = await start(resume?.session ?? null);
@@ -429,7 +437,7 @@ async function launchWorker(root: string, config: MasterConfig, work: Work, prof
       catch (releaseError) {
         // A lease that is already gone has handed its epoch back — a run that exited released it
         // through its supervisor — so the launch's own failure is reported as it is (GY-860, GY-1287).
-        if (!(releaseError instanceof Error && /Lease missing, expired, or superseded/.test(releaseError.message))) throw new Error(`${failureText(error)}; Graphyard could not release epoch ${prepared.epoch}`);
+        if (!(releaseError instanceof Error && /Lease missing, expired, or superseded/.test(releaseError.message))) throw new Error(`${failureText(error)}; Mainworks could not release epoch ${prepared.epoch}`);
       }
       throw error;
     }
@@ -534,8 +542,8 @@ export function workerPrompt(
   const installed = dependencies?.shared.length ? `The assigned worktree needs no dependency install: ${dependencies.shared.map(entry => `${entry.name} ${entry.how === 'reachable' ? 'already resolves to' : 'is shared with'} the install at ${entry.source}`).join(', ')}, for this exact lockfile. Do not install dependencies again unless you change the lockfile. ` : '';
   const memoryDigest = projectMemoryDigest(memory, 'worker', { baseSha: baseSha ?? undefined });
   const standards = reviewStandards(work), criteria = criteriaListing(work.criteria, work.scenarioRequirements);
-  return `Implement ${work.key}: ${work.title}. ${workerLeadSection(work)}Done when every criterion below holds on a commit on your assigned branch, submitted with node ${config.cliPath} complete ${work.key} ${epoch} --head as your last action; on lease loss stop at once (node ${config.cliPath} guide complete). `
-    + `Run node ${config.cliPath} status ${work.key} before editing, and never weaken criteria. Write the bound proof first and see it fail without the change. `
+  return `Implement ${work.key}: ${work.title}. ${workerLeadSection(work)}Done when every criterion below holds on a commit on your assigned branch, submitted with node ${config.cliPath} complete ${work.key} ${epoch} --head as your last action; on lease loss, stop (node ${config.cliPath} guide complete). `
+    + `Run node ${config.cliPath} status ${work.key} before editing, node ${config.cliPath} ask ${work.key} QUESTION to investigate, and never weaken criteria. Write the bound proof first and see it fail without the change. `
     + attemptBoundSection(config.run, work, epoch)
     + installed
     + (memoryDigest || '')
@@ -555,7 +563,7 @@ export function workerPrompt(
     + (work.messages?.some(message => !message.acknowledged) ? `Unread messages from the master (your next sync ${work.key} acknowledges them): ${work.messages.filter(message => !message.acknowledged).map(message => `[${message.at} ${message.by}] ${message.text}`).join(' ')} ` : '')
     // GY-1726: a follow-up whose reading cannot exist yet waits for it rather than escalating.
     + (work.criteria?.some(criterion => criterion.proofs.some(servingReleaseProof)) ? `If the observation this item owes cannot exist yet (its window has not elapsed on the serving release), do not record a blocker: defer it with node ${config.cliPath} defer ${work.key} ${epoch} NOT-BEFORE REASON (NOT-BEFORE is the ISO instant the reading can first exist, at most 30 days away), which ends your lease and holds dispatch until then, then stop. ` : '')
-    + `Park a decision only a human may make (${humanOnlyDecisions.join('; ')}) with node ${config.cliPath} park ${work.key} ${epoch} and stop; guide park names the fields. `
+    + `Park a human-only decision (${humanOnlyDecisions.join('; ')}) with node ${config.cliPath} park ${work.key} ${epoch} and stop; guide park names the fields. `
     // GY-3166: the criteria the reviewers judge; review self prints the rest of their standards.
     + (work.criteria?.length ? `Criteria: ${criteria.listed}. ${criteria.proofs ? `Proof bindings: ${criteria.proofs}. ${featureCaseRule}` : ''}` : '')
     // GY-3489: the one pre-submit list; GY-1987: review self judges the diff by the reviewer's standard, so a blocking finding costs a push, not a review round.
@@ -594,9 +602,11 @@ function resumedAttempt(work: Partial<Pick<Work, 'capacity' | 'humanRequests'>>)
 function workerEnvironment(config: MasterConfig, profile: WorkerProfile) {
   const env: NodeJS.ProcessEnv = { ...process.env, GRAPHYARD_URL: config.url, GRAPHYARD_TOKEN_FILE: profile.credentialFile, GRAPHYARD_HOST_ID: config.hostId };
   delete env.GRAPHYARD_TOKEN; delete env.GRAPHYARD_MASTER_TOKEN; delete env.GRAPHYARD_REQUEST_ID;
+  // The worker's copy drops the master's credentials and request id, and any MAINWORKS_* name that would shadow the worker's own settings.
+  for (const name of ['TOKEN', 'MASTER_TOKEN', 'REQUEST_ID', 'URL', 'TOKEN_FILE', 'HOST_ID']) delete env[`MAINWORKS_${name}`];
   return env;
 }
-// A worker launch runs the Graphyard CLI to claim and to build the assigned worktree, which on a
+// A worker launch runs the Mainworks CLI to claim and to build the assigned worktree, which on a
 // large repository is the slowest thing the dispatcher waits on; it is bounded well above the
 // runtime bound, so a slow checkout is never mistaken for a hung one (GY-114).
 export const workerLaunchTimeoutMs = 600_000;
@@ -621,12 +631,12 @@ export function worktreeFailure(key: string, epoch: number, error: unknown, cliP
 /** The launch's renewal of its claim (GY-1287): the worker's own `heartbeat`, under the profile's credential. */
 export async function renewWorkerLaunch(root: string, key: string, epoch: number, profileName: string, run: WorkerCommand = workerCommand) {
   const config = await loadMasterConfig(root); const profile = config.workers.find(worker => worker.name === profileName);
-  if (!profile || profile.mode !== 'launch' || !profile.kind || !profile.credentialFile) throw new Error('A complete launch profile is required');
+  if (!profile || profile.mode !== 'launch' || !profile.credentialFile) throw new Error('A complete launch profile is required');
   await run(process.execPath, [config.cliPath, 'heartbeat', key, String(epoch)], { cwd: root, env: workerEnvironment(config, profile) });
 }
 export async function releaseWorkerLaunch(root: string, key: string, epoch: number, profileName: string, blocker?: string, run: WorkerCommand = workerCommand) {
   const config = await loadMasterConfig(root); const profile = config.workers.find(worker => worker.name === profileName);
-  if (!profile || profile.mode !== 'launch' || !profile.kind || !profile.credentialFile) throw new Error('A complete launch profile is required');
+  if (!profile || profile.mode !== 'launch' || !profile.credentialFile) throw new Error('A complete launch profile is required');
   await readWorkerCredential(root, profile.credentialFile);
   await run(process.execPath, [config.cliPath, ...(blocker ? ['blocked', key, String(epoch), blocker] : ['unclaim', key, String(epoch)])], { cwd: root, env: workerEnvironment(config, profile) });
 }
@@ -638,7 +648,7 @@ export async function releaseWorkerLaunch(root: string, key: string, epoch: numb
  */
 export async function prepareWorkerLaunch(root: string, key: string, profileName: string, run: WorkerCommand = workerCommand, claimBy?: number, onClaimed?: ClaimedHook, cycle?: string): Promise<PreparedWorker> {
   const config = await loadMasterConfig(root); const profile = config.workers.find(worker => worker.name === profileName);
-  if (!profile || profile.mode !== 'launch' || !profile.kind || !profile.credentialFile) throw new Error('A complete launch profile is required');
+  if (!profile || profile.mode !== 'launch' || !profile.credentialFile) throw new Error('A complete launch profile is required');
   await readWorkerCredential(root, profile.credentialFile);
   const detected = await discover(root);
   if (!detected.repository) throw new Error('Worker launcher requires a recognized GitHub origin');
@@ -678,7 +688,7 @@ export async function prepareWorkerLaunch(root: string, key: string, profileName
         // could not build the workspace, which hands the epoch back; a release refused because
         // that already happened changes nothing, and only one that could not reach the server wraps.
         if (releaseError instanceof Error && /Lease missing, expired, or superseded/.test(releaseError.message)) throw error;
-        throw new Error(`${error instanceof Error ? error.message : 'Workspace preparation failed'}; Graphyard could not release epoch ${claimedEpoch}`);
+        throw new Error(`${error instanceof Error ? error.message : 'Workspace preparation failed'}; Mainworks could not release epoch ${claimedEpoch}`);
       }
     }
     throw error;

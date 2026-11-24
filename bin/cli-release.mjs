@@ -15,7 +15,7 @@ export const installLauncherPath = directory => join(directory, 'bin', 'graphyar
 
 /**
  * Create once, install once. A failed install can be retried without touching any published tree.
- * `source` is a Graphyard checkout, which gains a detached worktree at `commit`, or — on a host
+ * `source` is a Mainworks checkout, which gains a detached worktree at `commit`, or — on a host
  * that holds no checkout — a clone URL, cloned at `commit` so later releases are worktrees of it.
  */
 export async function prepareCliRelease(directory, source, commit, run) {

@@ -80,12 +80,12 @@ test('unit:disk-headroom-floor — above the floor the cycle changes nothing: no
 });
 
 test('unit:disk-headroom-floor — below the floor after reclaiming, no trial or worker starts, the shortage is named for master status and wakes the master; once room returns both start again', async () => {
-  const { work, effects, seen } = fixture([12, 14], ['container graphyard-trial-abc']);
+  const { work, effects, seen } = fixture([12, 14], ['container mainworks-trial-abc']);
   const state = emptyDaemonState(config);
   await runCycle(config, state, effects, () => start);
   await mergeWriterIdle(state);
-  assert.equal(seen.reclaims, 1, 'Graphyard\'s own leftovers are reclaimed first');
-  assert.ok(Object.values(state.actions).some(action => action.kind === 'reclaim' && action.detail.includes('container graphyard-trial-abc')), 'the reclaim is recorded');
+  assert.equal(seen.reclaims, 1, 'Mainworks\'s own leftovers are reclaimed first');
+  assert.ok(Object.values(state.actions).some(action => action.kind === 'reclaim' && action.detail.includes('container mainworks-trial-abc')), 'the reclaim is recorded');
   assert.deepEqual(seen.dispatched, [], 'no worker starts below the floor');
   assert.equal(seen.trials, 0, 'no merge trial starts below the floor');
   assert.equal(state.mergeWriter.inFlight, null);
@@ -152,7 +152,7 @@ test('unit:disk-headroom-floor — below the floor a failing serve starts no rev
 });
 
 test('unit:disk-headroom-floor — a reclaim that restores the floor holds nothing', async () => {
-  const { effects, seen } = fixture([20, 45], ['image graphyard-trial:old']);
+  const { effects, seen } = fixture([20, 45], ['image mainworks-trial:old']);
   const state = emptyDaemonState(config);
   await runCycle(config, state, effects, () => start);
   await mergeWriterIdle(state);
@@ -163,7 +163,7 @@ test('unit:disk-headroom-floor — a reclaim that restores the floor holds nothi
   assert.equal(seen.trials, 1);
 });
 
-test('unit:disk-headroom-floor — the reclaim removes only Graphyard-created leftovers: dead trials\' scratch, stopped trial containers and unused trial images', async () => {
+test('unit:disk-headroom-floor — the reclaim removes only Mainworks-created leftovers: dead trials\' scratch, stopped trial containers and unused trial images', async () => {
   const root = mkdtempSync(join(tmpdir(), 'headroom-')), temporary = join(root, 'tmp'), checkouts = join(root, 'trials');
   try {
     const marker = (directory: string, pid: number) => { mkdirSync(directory, { recursive: true }); writeFileSync(`${directory}.owner`, JSON.stringify({ pid, startedAt: pid === process.pid ? processStartTicks(pid) : null, pidNamespace: processPidNamespace(), at: iso(start) })); };
@@ -178,16 +178,16 @@ test('unit:disk-headroom-floor — the reclaim removes only Graphyard-created le
     const run = async (command: string, args: string[]) => {
       assert.equal(command, 'docker');
       docker.push(args);
-      if (args[0] === 'ps') return 'graphyard-trial-1a2b\npostgres-dev\n';
-      if (args[0] === 'images') return 'graphyard-trial:local\ngraphyard-trial:old\n';
+      if (args[0] === 'ps') return 'mainworks-trial-1a2b\npostgres-dev\n';
+      if (args[0] === 'images') return 'mainworks-trial:local\nmainworks-trial:old\n';
       return '';
     };
-    const { reclaimGraphyardLeftovers } = await headroom();
-    const removed = await reclaimGraphyardLeftovers(run, { temporary: [temporary], checkouts: [checkouts], verification: [] });
+    const { reclaimMainworksLeftovers } = await headroom();
+    const removed = await reclaimMainworksLeftovers(run, { temporary: [temporary], checkouts: [checkouts], verification: [] });
     assert.ok(!existsSync(join(temporary, 'gy-tdead')) && !existsSync(join(temporary, 'gy-hdead')) && !existsSync(join(checkouts, 'gy-cdead')), 'a dead trial\'s scratch goes');
     assert.ok(existsSync(join(temporary, 'gy-tlive')), 'a live trial\'s scratch stays');
-    assert.ok(existsSync(join(temporary, 'someone-else')) && existsSync(join(temporary, 'gy-tunmarked')), 'what Graphyard did not mark as its own stays');
-    assert.deepEqual(docker.filter(args => args[0] === 'rm' || (args[0] === 'image' && args[1] === 'rm')).map(args => args.join(' ')), ['rm --volumes graphyard-trial-1a2b', 'image rm graphyard-trial:old'], 'only stopped trial containers and unused trial images, never forced');
-    assert.ok(removed.includes('container graphyard-trial-1a2b') && removed.includes('image graphyard-trial:old'));
+    assert.ok(existsSync(join(temporary, 'someone-else')) && existsSync(join(temporary, 'gy-tunmarked')), 'what Mainworks did not mark as its own stays');
+    assert.deepEqual(docker.filter(args => args[0] === 'rm' || (args[0] === 'image' && args[1] === 'rm')).map(args => args.join(' ')), ['rm --volumes mainworks-trial-1a2b', 'image rm mainworks-trial:old'], 'only stopped trial containers and unused trial images, never forced');
+    assert.ok(removed.includes('container mainworks-trial-1a2b') && removed.includes('image mainworks-trial:old'));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

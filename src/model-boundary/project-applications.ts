@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { previewModes, maxCandidateChanges, boundCaseId, applicationProblems, declarationKeys, projectDeliveryVariable, type ProjectDelivery, effectiveDelivery } from '../model/project-applications.js';
+import { setting } from '../setting.js';
 // ---------------------------------------------------------------------------
 // What a managed repository declares about the applications its cases exercise, in graphyard.json's
 // `delivery` beside the merge gate: each application (a static site, a Compose project or a Node app), and
@@ -11,20 +12,20 @@ import { previewModes, maxCandidateChanges, boundCaseId, applicationProblems, de
 
 const relativePath = (what: string) => z.string().trim().min(1).max(300)
   .refine(path => !path.startsWith('/') && !path.split('/').some(segment => segment === '..') && !/[\s\u0000-\u001f]/.test(path), `${what} is a repository-relative path without .. segments or whitespace`);
-/** Where the deployed application answers the commit it serves (JSON `commit` or `sha`, or plain text); Graphyard only reads it. */
+/** Where the deployed application answers the commit it serves (JSON `commit` or `sha`, or plain text); Mainworks only reads it. */
 const versionUrl = z.string().trim().url().max(500).refine(url => /^https?:/.test(url), 'A versionUrl is an http or https URL').optional();
-/** Where the application, wherever Graphyard serves it, answers the commit it serves (JSON `commit`, `revision`, `sha` or `version`, or plain text): a path on its own origin, read by an e2e run against it before /healthz. */
+/** Where the application, wherever Mainworks serves it, answers the commit it serves (JSON `commit`, `revision`, `sha` or `version`, or plain text): a path on its own origin, read by an e2e run against it before /healthz. */
 const versionPath = z.string().trim().max(300).regex(/^\/(?!\/)[^?#\s]*$/, "A versionPath is a path starting with '/', without a query").optional();
 const applicationId = z.string().trim().regex(/^[a-z0-9][a-z0-9-]{0,39}$/, 'An application id is 1-40 lowercase letters, digits or hyphens, starting with a letter or digit');
 
 /** A static site: the directory its build writes, and the command that builds it (null: the directory is served as committed). */
-export const staticApplicationSchema = z.object({ id: applicationId, kind: z.literal('static'), directory: relativePath('A static application directory'), build: z.string().trim().min(1).max(500).nullable().default(null), versionUrl, versionPath }).strict();
+const staticApplicationSchema = z.object({ id: applicationId, kind: z.literal('static'), directory: relativePath('A static application directory'), build: z.string().trim().min(1).max(500).nullable().default(null), versionUrl, versionPath }).strict();
 /** A Compose project: its file, the service that answers HTTP and that service's container port. */
-export const composeApplicationSchema = z.object({ id: applicationId, kind: z.literal('compose'), file: relativePath('A Compose file'), service: z.string().trim().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/, 'A Compose service name'), port: z.number().int().min(1).max(65535), versionUrl, versionPath }).strict();
-/** A Node application (GY-3201): its directory, the command that builds it there (null: none) and the command that starts it there, listening on the PORT Graphyard assigns; the repository's install runs at its root first. */
+const composeApplicationSchema = z.object({ id: applicationId, kind: z.literal('compose'), file: relativePath('A Compose file'), service: z.string().trim().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/, 'A Compose service name'), port: z.number().int().min(1).max(65535), versionUrl, versionPath }).strict();
+/** A Node application (GY-3201): its directory, the command that builds it there (null: none) and the command that starts it there, listening on the PORT Mainworks assigns; the repository's install runs at its root first. */
 export const nodeApplicationSchema = z.object({ id: applicationId, kind: z.literal('node'), directory: relativePath('A node application directory'), build: z.string().trim().min(1).max(500).nullable().default(null), start: z.string().trim().min(1).max(500), versionUrl, versionPath }).strict();
-/** A service deployed elsewhere (a Go service on Railway, say) that Graphyard only observes (GY-3459): its directory and the versionUrl it answers; never previewed. Declared without a kind. */
-export const externalApplicationSchema = z.object({ id: applicationId, kind: z.literal('external'), directory: relativePath('An application directory'), versionUrl: versionUrl.unwrap() }).strict();
+/** A service deployed elsewhere (a Go service on Railway, say) that Mainworks only observes (GY-3459): its directory and the versionUrl it answers; never previewed. Declared without a kind. */
+const externalApplicationSchema = z.object({ id: applicationId, kind: z.literal('external'), directory: relativePath('An application directory'), versionUrl: versionUrl.unwrap() }).strict();
 export const applicationSchema = z.preprocess(
   value => value && typeof value === 'object' && !Array.isArray(value) && !('kind' in value) ? { ...value, kind: 'external' } : value,
   z.discriminatedUnion('kind', [staticApplicationSchema, composeApplicationSchema, nodeApplicationSchema, externalApplicationSchema]));
@@ -63,7 +64,7 @@ export function projectDeliveryAssignment(policy: Record<string, unknown>) {
  * A declaration that does not parse, or binds a case to an undeclared application, refuses with the reason.
  */
 export function loadProjectDelivery(env: Record<string, string | undefined> = process.env, root?: string): ProjectDelivery {
-  const raw = env[projectDeliveryVariable]?.trim();
+  const raw = setting(projectDeliveryVariable, env)?.trim();
   if (raw) {
     let value: unknown;
     try { value = JSON.parse(raw); } catch { throw new Error(`${projectDeliveryVariable} must be JSON of graphyard.json's delivery mode, previews, candidateMaxChanges, productionVerification, applications and cases`); }
@@ -73,7 +74,7 @@ export function loadProjectDelivery(env: Record<string, string | undefined> = pr
   const fs = host?.getBuiltinModule?.('node:fs'), path = host?.getBuiltinModule?.('node:path');
   if (!fs || !path) return effectiveDelivery(null);
   let text: string;
-  try { text = fs.readFileSync(path.resolve(root ?? env.GRAPHYARD_REPOSITORY_ROOT?.trim() ?? host!.cwd(), 'graphyard.json'), 'utf8'); } catch (error: any) {
+  try { text = fs.readFileSync(path.resolve(root ?? setting('REPOSITORY_ROOT', env)?.trim() ?? host!.cwd(), 'graphyard.json'), 'utf8'); } catch (error: any) {
     if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return effectiveDelivery(null);
     throw error;
   }

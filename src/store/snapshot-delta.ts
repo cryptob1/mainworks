@@ -27,16 +27,18 @@ import { DELIVERY_EVENT_PREDICATE } from './tables/production.js';
  * kinds were 8 GB of a 9 GB ledger in production. The `snapshotEvery` and size rules now apply to
  * the other kinds alone, so a routine delta can sit any number of rows after its base.
  *
+ * A delta row also carries `stage`, the item's stage, so reading stages never resolves documents (GY-3766).
+ *
  * Rows written before this generalisation carry a clock-only delta (`observation`, `lease`,
  * no `ops`); both readers still resolve them.
  */
 export const snapshotEvery = 50;
-export const deltaSizeFraction = 0.25;
+const deltaSizeFraction = 0.25;
 /** The save kinds that store only what changed, never a whole document (GY-979). */
 export const routineSaveKinds = ['github.observed', 'heartbeat', 'reconciled', 'action.claimed', 'action.failed', 'session'] as const;
 const routineSave: ReadonlySet<string> = new Set(routineSaveKinds);
 
-export type DeltaPath = (string | number)[];
+type DeltaPath = (string | number)[];
 /** `[path, value]` sets a value (appending when the index is an array's length); `[path]` removes an object key. */
 export type DeltaOp = [DeltaPath, unknown] | [DeltaPath];
 export interface WorkDelta {
@@ -90,7 +92,7 @@ export function workDiff(base: Work, next: Work): DeltaOp[] {
   diff(base, next, [], ops);
   return ops;
 }
-export function workDelta(baseSeq: number, base: Work, work: Work): WorkDelta {
+function workDelta(baseSeq: number, base: Work, work: Work): WorkDelta {
   return { base: baseSeq, revision: work.revision, updatedAt: work.updatedAt, lease: work.lease ?? null, submission: work.submission ?? null, ops: workDiff(base, work) };
 }
 
@@ -170,14 +172,64 @@ BEGIN
   RETURN found;
 END $fn$;`;
 
+/** An event's stage in SQL: stored on a delta row since GY-3766, else from its document, resolving only older delta rows. */
+export const eventStageSql = (alias = 'events') => `COALESCE(${alias}.payload->>'stage', ${alias}.payload->'work'->>'stage', ${eventWorkSql(alias)}->>'stage')`;
 /** An event's full document in SQL, for a row of `events` under `alias`. */
 export const eventWorkSql = (alias = 'events') => `graphyard_event_work(${alias}.work_id, ${alias}.payload)`;
 /** An event's payload with a delta replaced by the document it stands for: the shape every full row has. */
 export const resolvedPayloadSql = (alias = 'events') =>
-  `CASE WHEN ${alias}.payload ? 'delta' THEN (${alias}.payload - 'delta') || jsonb_build_object('work', ${eventWorkSql(alias)}) ELSE ${alias}.payload END`;
+  `CASE WHEN ${alias}.payload ? 'delta' THEN (${alias}.payload - 'delta' - 'stage') || jsonb_build_object('work', ${eventWorkSql(alias)}) ELSE ${alias}.payload END`;
+
+/** GY-3769: the most older delta rows one backfill batch may take; the loop sizes each batch to finish in about 2 s. */
+export const stageBackfillMax = 1000;
+/**
+ * Stores the stage on the oldest `limit` delta rows that lack it (by the events_stageless_delta index); `filled` is 0
+ * once none is left and `updateMs` times the UPDATE alone (GY-3774). GY-3772: a row's stage is its base's stage after
+ * the row's own edits of `stage`, the value graphyard_event_work's document would hold, read once per base and never by
+ * rebuilding the document (a root edit is a no-op in graphyard_event_work).
+ */
+export async function backfillEventStage(pool: pg.Pool, limit: number) {
+  const db = await pool.connect();
+  try {
+    await db.query('BEGIN');
+    // The events trigger lets this one update through: a delta row lacking its stage gains it (compaction.ts).
+    await db.query("SET LOCAL graphyard.stage_backfill = 'on'");
+    const started = performance.now();
+    const { rows } = await db.query(`WITH batch AS (SELECT seq, work_id, payload->'delta' AS d FROM events WHERE payload ? 'delta' AND NOT payload ? 'stage' ORDER BY seq LIMIT $1),
+      bases AS MATERIALIZED (SELECT b.seq, b.work_id, b.payload->'work'->>'stage' AS stage FROM events b
+        WHERE b.seq IN (SELECT DISTINCT (d->>'base')::bigint FROM batch) AND b.payload ? 'work')
+      UPDATE events e SET payload = e.payload || jsonb_build_object('stage', CASE WHEN bases.seq IS NULL THEN NULL
+          WHEN edit.op IS NULL THEN bases.stage WHEN jsonb_array_length(edit.op) = 1 THEN NULL ELSE edit.op->1 #>> '{}' END)
+      FROM batch LEFT JOIN bases ON bases.seq = (batch.d->>'base')::bigint AND bases.work_id = batch.work_id
+        LEFT JOIN LATERAL (SELECT o.value AS op FROM jsonb_array_elements(CASE WHEN jsonb_typeof(batch.d->'ops') = 'array' THEN batch.d->'ops' ELSE '[]' END) WITH ORDINALITY o(value, n)
+          WHERE o.value->0 = '["stage"]' ORDER BY o.n DESC LIMIT 1) edit ON true
+      WHERE e.seq = batch.seq RETURNING e.seq`, [Math.max(1, Math.min(stageBackfillMax, Math.floor(limit) || 1))]);
+    const updateMs = Math.max(1, performance.now() - started);
+    await db.query('COMMIT');
+    return { filled: rows.length, updateMs };
+  } catch (error) {
+    await db.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally { db.release(); }
+}
+
+/** Counts delta rows still lacking a stored stage through the `events_stageless_delta` partial index (GY-3774). */
+export async function countStagelessDeltas(pool: pg.Pool): Promise<number> {
+  const db = await pool.connect();
+  try {
+    await db.query('BEGIN READ ONLY');
+    await db.query('SET LOCAL enable_seqscan = off');
+    const { rows } = await db.query(`SELECT count(*) FROM events WHERE payload ? 'delta' AND NOT payload ? 'stage'`);
+    await db.query('COMMIT');
+    return Number(rows[0].count);
+  } catch (error) {
+    await db.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally { db.release(); }
+}
 
 /** The one ledger read a save makes: the item's last full snapshot and how many rows followed it. */
-export const snapshotBaseSql = `SELECT b.seq, b.payload->'work' AS work, (SELECT count(*)::int FROM events n WHERE n.work_id=$1 AND n.seq>b.seq) AS since
+const snapshotBaseSql = `SELECT b.seq, b.payload->'work' AS work, (SELECT count(*)::int FROM events n WHERE n.work_id=$1 AND n.seq>b.seq) AS since
     FROM events b WHERE b.work_id=$1 AND b.payload ? 'work' ORDER BY b.seq DESC LIMIT 1`;
 /**
  * Append one save to the ledger: a delta on the item's last full snapshot when it is small
@@ -193,7 +245,8 @@ export async function appendSave(db: pg.PoolClient, work: Work, actor: string, k
   const document: Work | undefined = base?.work && JSON.parse(text);
   if (base?.work && document && (routine || base.since < snapshotEvery) && base.work.stage === document.stage && equal(base.work.delivery ?? null, document.delivery ?? null)
     && !(kind === 'github.observed' && document.delivery?.mergedAt && !(await db.query(`SELECT 1 FROM events WHERE work_id=$1 AND ${DELIVERY_EVENT_PREDICATE} LIMIT 1`, [work.id])).rows.length)) {
-    const delta = JSON.stringify({ delta: workDelta(Number(base.seq), base.work, document), details });
+    // The stage rides beside the delta so a stage read never rebuilds the document (GY-3766).
+    const delta = JSON.stringify({ delta: workDelta(Number(base.seq), base.work, document), stage: document.stage, details });
     if (routine || delta.length <= full.length * deltaSizeFraction) row = delta;
   }
   await db.query('INSERT INTO events(work_id,actor,kind,payload) VALUES($1,$2,$3,$4)', [work.id, actor, kind, row]);

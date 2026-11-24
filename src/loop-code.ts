@@ -12,12 +12,13 @@ import { installDirectory } from './install/secrets.js';
 import { installIdFor } from './install/types.js';
 import { knownGoodDirectory } from './master/known-good.js';
 import { currentCliPath } from './install/cli-release.js';
+import { stateDirectory } from './install/layout.js';
 
 export interface UnitCode {
   unit: string; path: string;
   /** The checkout the unit loads its code from: the directory above the launcher its ExecStart starts, else its WorkingDirectory. */
   checkout: string | null;
-  /** The checkout above the Graphyard launcher its ExecStart starts; null when it names none and `checkout` fell back to the WorkingDirectory. */
+  /** The checkout above the Mainworks launcher its ExecStart starts; null when it names none and `checkout` fell back to the WorkingDirectory. */
   launcher?: string | null;
 }
 /** GY-1859: the loop code this install's units run, against the CLI running the command. */
@@ -47,15 +48,15 @@ function unitCodeCheckout(text: string, home: string): string | null {
 }
 /** The one ExecStart wording both readers share, defined beside `unitCheckout` in `src/install/units.ts` (GY-1880). */
 export { systemdCommandLineWords };
-/** The checkout whose Graphyard launcher a unit's ExecStart starts, null when it names none: the executable alone, never the rest of the unit (GY-1859). The line is worded by systemd's own quoting rules (GY-1880), so a launcher `loopUnitText` spelled quoted for a path holding whitespace reads back as exactly that checkout. */
+/** The checkout whose Mainworks launcher a unit's ExecStart starts, null when it names none: the executable alone, never the rest of the unit (GY-1859). The line is worded by systemd's own quoting rules (GY-1880), so a launcher `loopUnitText` spelled quoted for a path holding whitespace reads back as exactly that checkout. */
 export function unitLauncherCheckout(text: string, home: string): string | null {
   const start = unitCheckout(text, home).execStart;
-  const launcher = start ? systemdCommandLineWords(start).find(part => /(?:bin\/graphyard\.mjs|dist\/cli\.js)$/.test(part)) : undefined;
+  const launcher = start ? systemdCommandLineWords(start).find(part => /(?:bin\/(?:graphyard|mainworks)\.mjs|dist\/cli\.js)$/.test(part)) : undefined;
   if (!launcher) return null;
   // GY-3337: the install's launcher is itself a symlink to the release's own; the checkout whose
   // code the loop starts is the release tree that symlink resolves into.
   const resolved = canonicalPath(launcher);
-  return dirname(dirname(/(?:bin\/graphyard\.mjs|dist\/cli\.js)$/.test(resolved) ? resolved : launcher));
+  return dirname(dirname(/(?:bin\/(?:graphyard|mainworks)\.mjs|dist\/cli\.js)$/.test(resolved) ? resolved : launcher));
 }
 /** Under the test runner only a unit directory under the system temporary directory is read, as legacyUnitFiles guards: the operator's real units belong to no checkout a test made. */
 const readableUnitsDirectory = (unitDirectory: string) => {
@@ -121,7 +122,7 @@ export function judgeLoopCode(facts: LoopCodeFacts): LoopCodeReading {
   {
     // The loop always starts a CLI, never the repository's own entry, so a launcher its ExecStart
     // names must be this CLI's (or the install's pinned snapshot, GY-2937): one in the managed
-    // checkout (Graphyard managing itself from a second checkout) loads that checkout's code on
+    // checkout (Mainworks managing itself from a second checkout) loads that checkout's code on
     // every restart, so only a rewrite moves it. The repository checkout is accepted only as the
     // WorkingDirectory of a unit naming no launcher.
     const foreign = !pinned && (loop.launcher ? canonical(loop.launcher) !== canonical(cli.root) : !!loop.checkout && !own.has(canonical(loop.checkout)));
@@ -163,7 +164,7 @@ export async function readLoopCode(root: string, options: {
   const cliCommit = head(cliRoot);
   const primary = await (async () => { try { return connectionRoots(root)[0]; } catch { return root; } })();
   let master = options.master !== undefined ? options.master : null;
-  if (options.master === undefined) { try { master = JSON.parse(await readFile(resolve(root, '.graphyard', 'master.json'), 'utf8')); } catch { master = null; } }
+  if (options.master === undefined) { try { master = JSON.parse(await readFile(resolve(stateDirectory(root), 'master.json'), 'utf8')); } catch { master = null; } }
   const repository = typeof master?.repository === 'string' ? master.repository : null;
   const failed = (failure: unknown): LoopCodeReading => ({ loop: null, loopCommit: null, cli: { root: cliRoot, commit: cliCommit }, repository, loopStale: null, loopReplace: null, host: null, error: failureText(failure) });
   let units: InstallUnits | null;

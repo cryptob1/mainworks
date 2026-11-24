@@ -18,11 +18,11 @@ import { continuitySchema } from '../master/conversation.js';
 // 'diagnosis' stays a kind a cursor may hold: the diagnostician's rows (GY-439, retired by GY-2186) still load, and nothing new records one.
 // A cursor's rows of the retired 'decision' and 'escalation' kinds (GY-2874) load as 'judgement' and 'attention'.
 const retiredActionKinds: Record<string, string> = { decision: 'judgement', escalation: 'attention' };
-export const daemonActionKinds = ['close', 'dispatch', 'review', 'refresh', 'proof', 'merge', 'deployment', 'smoke', 'attention', 'config', 'session', 'reclaim', 'judgement', 'scope', 'settle', 'failover', 'capacity', 'human', 'preserve', 'fault', 'diagnosis', 'wake', 'blocker'] as const;
+const daemonActionKinds = ['close', 'dispatch', 'review', 'refresh', 'proof', 'merge', 'deployment', 'smoke', 'attention', 'config', 'session', 'reclaim', 'judgement', 'scope', 'settle', 'failover', 'capacity', 'human', 'preserve', 'fault', 'diagnosis', 'wake', 'blocker'] as const;
 export type DaemonActionKind = typeof daemonActionKinds[number];
 /** The most an action's detail may carry: daemonActionSchema's bound, which record() enforces. */
 export { actionDetailMax } from './text.js';
-export const daemonActionSchema = z.object({
+const daemonActionSchema = z.object({
   kind: z.preprocess(kind => retiredActionKinds[kind as string] ?? kind, z.enum(daemonActionKinds)),
   work: z.string().nullable().default(null),
   principal: z.string().nullable().default(null),
@@ -47,7 +47,6 @@ export const cycleMetricsSchema = z.object({
   /** The steps the cycle ran, in order: snapshot, close, dispatch, merge writer, persist. A cursor written before recorded step costs here, which read as absent. */
   steps: z.preprocess(steps => Array.isArray(steps) && steps.every(step => typeof step === 'string') ? steps : undefined, z.array(z.string().max(40)).max(10).optional()),
 }).strip();
-export type CycleMetrics = z.infer<typeof cycleMetricsSchema>;
 
 /**
  * The loop's own failures (GY-119). A cycle that throws — a control-plane read that timed out, a runtime call that failed, a
@@ -56,7 +55,7 @@ export type CycleMetrics = z.infer<typeof cycleMetricsSchema>;
  * anywhere in the process — a detached promise in the dispatcher, a Herdr read — is caught at the process level and
  * counted here too. The supervisor's restart is reserved for a process that hangs, which the watchdog detects; nothing here ends the process.
  */
-export const cycleFailureSchema = z.object({
+const cycleFailureSchema = z.object({
   /** Failed cycles since the last one that completed; the backoff and the attention item read it. */
   consecutive: z.number().int().min(0).default(0),
   /** Every failed cycle this cursor has seen, so a loop that fails and recovers still says so. */
@@ -78,7 +77,7 @@ export const cycleFailureSchema = z.object({
 export type CycleFailures = z.infer<typeof cycleFailureSchema>;
 
 /** The release this loop's own process loaded, read once at its startup (GY-437) and overwritten by every new process: what every action it takes runs, until its supervisor replaces it. */
-export const loopReleaseSchema = z.object({ commit: z.string().regex(/^[0-9a-f]{40}$/).nullable(), dirty: z.boolean().nullable() }).strict();
+const loopReleaseSchema = z.object({ commit: z.string().regex(/^[0-9a-f]{40}$/).nullable(), dirty: z.boolean().nullable() }).strict();
 export type LoopRelease = z.infer<typeof loopReleaseSchema>;
 
 /**
@@ -122,6 +121,8 @@ const masterSessionRecordSchema = z.object({
    * subject and wake the session every cycle with no event.
    */
   subjects: z.record(z.string().max(60), z.string().max(40)).default({}),
+  /** GY-3770: per repeating subject key, the ISO instant it last woke the master session. */
+  subjectWakes: z.record(z.string().max(60), z.string().max(64)).default({}),
   /**
    * Registry sessions an ended or failed launch could not give back: the master role runs one
    * session at a time, so a leaked row would refuse every relaunch. Each is ended again every cycle
@@ -170,7 +171,7 @@ const failureRunSchema = z.object({
 }).strict();
 export type FailureRun = z.infer<typeof failureRunSchema>;
 
-/** GY-3190: what the close step's sweeps stopped or removed, by kind, and the disk Graphyard's leftovers hold. */
+/** GY-3190: what the close step's sweeps stopped or removed, by kind, and the disk Mainworks's leftovers hold. */
 const leftoverCountsSchema = z.object({ processes: z.number().int().min(0), trialContainers: z.number().int().min(0), reclaimed: z.number().int().min(0), panes: z.number().int().min(0), worktrees: z.number().int().min(0), networks: z.number().int().min(0).default(0),
   /** GY-3334: the CLI release copies removed and the bytes they held. */
   cliReleases: z.number().int().min(0).default(0), cliReleaseBytes: z.number().int().min(0).default(0) }).strict();
@@ -178,6 +179,13 @@ export type LeftoverCounts = z.infer<typeof leftoverCountsSchema>;
 const bytes = z.number().min(0).nullable();
 const leftoverDiskSchema = z.object({ trialRuns: bytes, worktrees: bytes, trialCheckouts: bytes, trialImages: bytes, buildCache: bytes }).strict();
 export type LeftoverDisk = z.infer<typeof leftoverDiskSchema>;
+/** GY-3743: one kind of Mainworks disk use, one hourly free-byte sample, and the stored reading. */
+const diskKindSchema = z.object({ kind: z.string().max(200), bytes: z.number().min(0) }).strict();
+const diskSampleSchema = z.object({ at: z.string().max(64), freeBytes: z.number().min(0) }).strict();
+const diskUseSchema = z.object({ at: z.string(), freeBytes: z.number().min(0), readings: z.array(diskSampleSchema).max(48), top: z.array(diskKindSchema).max(5) }).strict();
+export type DiskKind = z.infer<typeof diskKindSchema>;
+export type DiskSample = z.infer<typeof diskSampleSchema>;
+export type DiskUse = z.infer<typeof diskUseSchema>;
 
 export const daemonStateSchema = z.object({
   version: z.literal(1), url: z.string(), repository: z.string(),
@@ -207,6 +215,8 @@ export const daemonStateSchema = z.object({
   controlPlane: z.object({ unreachableSince: z.string(), error: z.string().max(1000), restartedAt: z.string().nullable(), restart: z.string().max(1000).nullable(), exitReason: z.string().max(1000).nullable(), freeDisk: z.string().max(500).nullable() }).strict().nullable().default(null),
   /** A disk shortage the headroom step could not reclaim (GY-3122): while set, no new merge trial or worker starts; null with room above the floor. */
   diskHeadroom: z.object({ at: z.string(), floorBytes: z.number(), volumes: z.array(z.object({ path: z.string().max(1000), freeBytes: z.number() }).strict()).max(20), shortage: z.string().max(2000) }).strict().nullable().default(null),
+  /** GY-3743: the coordinator's free disk readings (last 48, at most hourly) and the five largest kinds of Mainworks disk use. */
+  diskUse: diskUseSchema.nullable().default(null),
   /**
    * GY-3348: the host's CPU as the last cycle read it — 'some avg60' from /proc/pressure/cpu, the
    * steal percent since the cycle before, and the /proc/stat counters the next reading measures
@@ -293,7 +303,8 @@ const toleratedStateSchema = () => tolerated ??= forwardTolerant(daemonStateSche
  * the undeclared ones of `previous` survive under it; a null `next` clears the record as before.
  */
 export const carryUndeclared = <T extends object | null>(previous: object | null | undefined, next: T): T => previous && next ? { ...previous, ...next } : next;
-export const retainedActions = 500, retainedMetrics = 100, maxProofAttempts = 3;
+export const retainedActions = 500;
+const retainedMetrics = 100;
 
 export function emptyDaemonState(config: MasterConfig): DaemonState {
   return daemonStateSchema.parse({ version: 1, url: config.url, repository: config.repository });
@@ -304,7 +315,7 @@ export function daemonStatePath(config: MasterConfig) {
   return besideCursor(config, 'daemon');
 }
 /** A file beside the loop's cursor, under the credential's private directory. */
-export const besideCursor = (config: Pick<MasterConfig, 'credentialFile'>, suffix: string) =>
+const besideCursor = (config: Pick<MasterConfig, 'credentialFile'>, suffix: string) =>
   resolve(dirname(config.credentialFile), `${basename(config.credentialFile).replace(/\.token$/, '')}.${suffix}.json`);
 /** The file a master or caretaker writes to ask the loop to restart after its current cycle. */
 export const loopRestartRequestPath = (config: Pick<MasterConfig, 'credentialFile'>) => besideCursor(config, 'loop-restart');
@@ -322,7 +333,7 @@ export async function readDaemonState(root: string, config: MasterConfig): Promi
   for (const action of Object.values<Record<string, unknown>>(stored.actions ?? {})) delete action.faultClass;
   delete (stored.mergeWriter as Record<string, unknown> | undefined)?.advisory;
   const state = toleratedStateSchema().parse(stored);
-  if (state.url !== config.url || state.repository.toLowerCase() !== config.repository.toLowerCase()) throw new Error('Master daemon state belongs to another Graphyard server or repository; remove it before running the loop');
+  if (state.url !== config.url || state.repository.toLowerCase() !== config.repository.toLowerCase()) throw new Error('Master daemon state belongs to another Mainworks server or repository; remove it before running the loop');
   return state;
 }
 
@@ -364,7 +375,7 @@ export function pruneDaemonState(state: DaemonState) {
  * Truncation loses the tail of a long string or the oldest entries of a long list; failing the
  * write loses the cycle. Counts are clamped, never reset, so a backoff keeps its place.
  */
-export const clampCount = (value: number, max: number) => Math.min(max, Math.max(0, Math.floor(Number.isFinite(value) ? value : 0)));
+const clampCount = (value: number, max: number) => Math.min(max, Math.max(0, Math.floor(Number.isFinite(value) ? value : 0)));
 
 /**
  * Every write of an action goes through here. The detail is bounded here, before the schema sees
@@ -377,8 +388,15 @@ export function storeAction(state: DaemonState, key: string, action: DaemonActio
   return entry;
 }
 
+/** Put an action on the cursor, through storeAction, which bounds it. */
+export async function record(state: DaemonState, key: string, action: Omit<DaemonAction, 'at' | 'epoch'> & { at?: string; epoch?: number | null }, now: number, persist: (state: DaemonState) => Promise<void>) {
+  const entry = storeAction(state, key, { epoch: null, ...action, at: action.at ?? new Date(now).toISOString() });
+  await persist(state);
+  return entry;
+}
+
 /** The line the loop logs for each action a cycle took; the tests that pin a logged failure build it from here. It lives beside storeAction so a step that settles beside the cycle logs without importing the loop's runner. */
-export const actionLine = (cycle: number, action: Pick<DaemonAction, 'kind' | 'state' | 'detail'>) => `[graphyard-master] cycle ${cycle} ${action.kind} ${action.state}: ${action.detail}`;
+export const actionLine = (cycle: number, action: Pick<DaemonAction, 'kind' | 'state' | 'detail'>) => `[mainworks-master] cycle ${cycle} ${action.kind} ${action.state}: ${action.detail}`;
 /** A refusal that still stands, observed again with the same detail (GY-1086): its row is not rewritten, but its time moves. */
 export function touchStanding(state: DaemonState, key: string, at: string) {
   const row = state.actions[key];
@@ -435,7 +453,7 @@ export function acquireDaemonLock(state: DaemonState, identity: { pid: number; h
     const age = now - Date.parse(lock.heartbeatAt);
     const sameHost = lock.host === identity.host;
     const alive = sameHost ? lock.pid !== identity.pid && liveProcess(lock.pid) : !Number.isFinite(age) || age < staleAfterMs;
-    if (alive) throw new Error(`Another Graphyard master loop holds this repository (pid ${lock.pid} on ${lock.host}, last cycle ${lock.heartbeatAt}); stop it before starting a second daemon`);
+    if (alive) throw new Error(`Another Mainworks master loop holds this repository (pid ${lock.pid} on ${lock.host}, last cycle ${lock.heartbeatAt}); stop it before starting a second daemon`);
   }
   state.lock = { id: randomUUID(), pid: identity.pid, host: identity.host, startedAt: new Date(now).toISOString(), heartbeatAt: new Date(now).toISOString(), pidNamespace: pidNamespace() };
   return state.lock;

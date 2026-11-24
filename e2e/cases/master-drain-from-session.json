@@ -1,7 +1,7 @@
 {
   "id": "master-drain-from-session",
   "title": "The master drains and resumes heavy work from its own confined session",
-  "description": "From a confined master session, graphyard master drain REASON writes the drain into the host-wide heavy-jobs folder, where another install's session sees it, and master resume lifts it; worker sessions read the drain but cannot write it.",
+  "description": "From a confined master session, mainworks master drain REASON writes the drain into the host-wide heavy-jobs folder, where another install's session sees it, and master resume lifts it; worker sessions read the drain but cannot write it.",
   "target": "any",
   "required": false,
   "steps": [

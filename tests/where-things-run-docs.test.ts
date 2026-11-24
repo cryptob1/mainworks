@@ -12,7 +12,7 @@ import { composeContainer, loopWhereReport } from '../src/master/where.js';
 import { WhereThingsRunPanel } from '../web/pages/setup.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-3277: the docs, the walkthrough video and the Setup page show where every part of Graphyard
+// GY-3277: the docs, the walkthrough video and the Setup page show where every part of Mainworks
 // runs — one diagram embedded in the README section and the dashboard Guide, the guide topic `infra`
 // listing its every unit, container, port and log command, and the Setup page's panel naming this
 // install's own values as its loop reports them.
@@ -31,8 +31,8 @@ const diagramFacts = [
   'graphyard-OWNER-NAME-db-1',
   'docker logs graphyard-OWNER-NAME-db-1',
   '4310',
-  'graphyard-trial-',
-  '~/.config/graphyard/<install>/',
+  'mainworks-trial-',
+  '~/.config/mainworks/<install>/',
 ];
 
 test('unit:tests/where-things-run-docs.test.ts — the README\'s Where things run section embeds the diagram, whose every unit, container, port and log command shows there, and points to guide infra', () => {
@@ -50,17 +50,18 @@ test('unit:tests/where-things-run-docs.test.ts — guide infra prints the same f
   for (const word of ['| Part | Runs as | Where | Port | Logs |', 'OWNER-NAME', '--provider local', 'GitHub Actions']) assert.ok(infra.includes(word), `guide infra carries ${word}`);
   for (const fact of diagramFacts) assert.ok(infra.includes(fact), `guide infra lists ${fact}`);
   const printed = execFileSync('node', ['--import', 'tsx', 'src/cli.ts', 'guide', 'infra'], { cwd: root, encoding: 'utf8' });
-  assert.equal(printed.trim(), infra.trim(), 'graphyard guide infra prints the topic');
+  assert.equal(printed.trim(), infra.trim(), 'mainworks guide infra prints the topic');
 });
 
 test('unit:tests/where-things-run-docs.test.ts — the diagram SVG exists, names the same units and containers, and the dashboard Guide draws them as readable panels', () => {
   const svg = read('docs/diagrams/where-things-run.svg');
   assert.ok(svg.startsWith('<svg'), 'the diagram is an SVG');
-  for (const fact of ['graphyard-master-OWNER-NAME.service', 'graphyard-deploy-OWNER-NAME.service', 'graphyard-OWNER-NAME-server-1', 'graphyard-OWNER-NAME-db-1', 'graphyard-trial-', '4310', 'YOUR HOST', 'DOCKER', 'GitHub', 'Agent providers', 'npm + GHCR', 'Your browser', 'Herdr'])
+  for (const fact of ['graphyard-master-OWNER-NAME.service', 'graphyard-deploy-OWNER-NAME.service', 'graphyard-OWNER-NAME-server-1', 'graphyard-OWNER-NAME-db-1', 'mainworks-trial-', '4310', 'YOUR HOST', 'DOCKER', 'GitHub', 'Agent providers', 'npm + GHCR', 'Your browser', 'Herdr'])
     assert.ok(svg.includes(fact), `the diagram names ${fact}`);
-  // GY-3295: the Guide shows where things run as HTML panels, readable at any width, naming the same parts.
+  // GY-3295: the Guide shows where things run as HTML panels, readable at any width, naming the same parts
+  // (test merges in plain words, not by their container name, GY-3714).
   const guidePage = read('web/pages/guide.tsx');
-  for (const fact of ['graphyard-master-OWNER-NAME.service', 'graphyard-deploy-OWNER-NAME.service', 'graphyard-OWNER-NAME-server-1', 'graphyard-OWNER-NAME-db-1', 'graphyard-trial-', '4310', 'Your Linux host', 'GitHub', 'Agent providers', 'npm and GHCR', 'Your browser'])
+  for (const fact of ['graphyard-master-OWNER-NAME.service', 'graphyard-deploy-OWNER-NAME.service', 'graphyard-OWNER-NAME-server-1', 'graphyard-OWNER-NAME-db-1', 'Test merges', '4310', 'Your Linux host', 'GitHub', 'Agent providers', 'npm and GHCR', 'Your browser'])
     assert.ok(guidePage.includes(fact), `the Guide's Where things run panels name ${fact}`);
 });
 

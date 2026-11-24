@@ -14,7 +14,7 @@ import { checkoutRelease } from '../src/release.js';
 import { startPostgres } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-3524: `graphyard upgrade` backs up the install's own database, read from its recorded deploy
+// GY-3524: `mainworks upgrade` backs up the install's own database, read from its recorded deploy
 // settings, so an agent identity that cannot read DATABASE_URL can still run it.
 const now = new Date(0).toISOString();
 const localRecord = { version: 1, installId: 'acme-app', repository: 'acme/app', provider: 'local', baseBranch: 'main', reviewPolicy: 'agent', principals: [], noGithubApp: true,
@@ -73,7 +73,7 @@ test('integration:upgrade-finds-own-database — with no DATABASE_URL, upgrade b
       assert.equal(await installDatabaseUrl(null, null), null);
       assert.equal(await installDatabaseUrl(directory, null), null);
       const bare = inputsFor({ install: null, backupFile: join(directory, 'backups', 'never.json'), databaseUrl: null });
-      await assert.rejects(liveEffects(bare, recordFile).run(upgradePlan(bare).steps.find(step => step.id === 'backup')!), /^Error: Set DATABASE_URL to the Graphyard database so the upgrade can back it up before the server migrates it$/);
+      await assert.rejects(liveEffects(bare, recordFile).run(upgradePlan(bare).steps.find(step => step.id === 'backup')!), /^Error: Set DATABASE_URL to the Mainworks database so the upgrade can back it up before the server migrates it$/);
       assert.ok(!existsSync(bare.backupFile));
     });
     // An explicit DATABASE_URL still wins over the record.
@@ -131,7 +131,7 @@ test('e2e:upgrade-finds-own-database — a clean install upgrades to a newer com
         backupFile: join(directory, 'backups', 'before-newer.json'), cliChanges: cliChangesOf(cliRoot), databaseUrl };
       const plan = upgradePlan(inputs);
       const live = liveEffects(inputs, join(directory, 'upgrade.json'));
-      // checkout, the backup and the strict /healthz check run as graphyard upgrade runs them; the
+      // checkout, the backup and the strict /healthz check run as mainworks upgrade runs them; the
       // redeploy restarts the install's server on the checked-out code. npm ci, the loop restart and
       // the generated-file refresh need a network or a host supervisor and change nothing /healthz serves.
       const result = await runUpgrade(plan, { record: live.record, async run(step) {

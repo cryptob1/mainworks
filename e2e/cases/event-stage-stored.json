@@ -1,0 +1,11 @@
+{
+  "id": "event-stage-stored",
+  "title": "Master status shows delivery speed with no slow events query after an item changes stage",
+  "description": "On a running test install seeded with 50 merged items of 800-row delta chains on 180 KB documents, an item changes stage and merges; master status shows its delivery speed and the server reports no events query over 3 seconds.",
+  "tags": ["api", "events", "regression"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "master status after a stage change shows delivery speed and no events query over 3 s", "run": "node --import tsx tests/helpers/run-tests.ts tests/event-stage-stored.test.ts", "timeoutSeconds": 900 }
+  ]
+}

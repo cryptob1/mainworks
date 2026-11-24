@@ -1,4 +1,4 @@
-// Concern: `graphyard master status` — one page: the managed repository's served commit against its base tip (only what a deployment provider records; unconfigured when none does), each open item, the merge writer, live sessions and free worker profiles.
+// Concern: `mainworks master status` — one page: the managed repository's served commit against its base tip (only what a deployment provider records; unconfigured when none does), each open item, the merge writer, live sessions and free worker profiles.
 import type { pendingWorkerVerifications } from '../server/worker-verification-queue.js';
 import { latestReleaseNote, releaseNotesPath } from '../release-notes.js';
 import { type MasterConfig, inspectWorkerCredentials, observeHerdrAgents } from '../master.js';
@@ -6,16 +6,20 @@ import { readSessionScreenOrError } from '../master/prompt-delivery.js';
 import type { Work } from '../model/work.js';
 import { type ChildRun, defaultChildRun } from '../child-runner.js';
 import { daemonSummary } from '../daemon/run.js';
+import { diskHeadroomSummary } from '../daemon/disk-headroom.js';
 import { emptyMasterSession, masterSummary, readDaemonState } from '../daemon/state.js';
+import { deployReleaseAttention } from '../daemon/deploy-release.js';
 import { standingStepFailures, testQueueStatus, workerGrowthKey, masterLaunchKey, masterLaunchBackoffAfter } from '../daemon/cycle.js';
 import { fetchRefusalKey, gateStallKey } from '../daemon/cycle-batch-gate.js';
-import { cpuPerMergedItem, implementationWaiting } from '../daemon/cpu-pressure.js';
+import { cpuPerMergedItem, cpuWaiting } from '../daemon/cpu-pressure.js';
+import { readTestSelections, testSelectionSummary } from '../merge-writer/test-selection.js';
 import { heatReading } from '../merge-writer/trial-load.js';
 import { overloadAlarm, overloaded, sessionFigures } from '../session-share.js';
 import { profileHealth, repeatedLaunchFailures } from '../daemon/sessions.js';
-import { workersAllowed } from '../master/worker-pool.js';
-import { fixedHeavyJobLimit, heavyDrainLine, heavyJobBudget, heavyJobLimit, heavyJobsDirectory, readHeavyDrain, readMachines, readStrictCap, slotHolders } from '../master/verification-slots.js';
-import { budgetLine, machineLine } from '../model/machine-load.js';
+import { unlaunchableLine, unlaunchableNext, workerAccounts, workersAllowed } from '../master/worker-pool.js';
+import { fixedHeavyJobLimit, heavyDrainLine, heavyJobBudget, heavyJobLimit, heavyJobsDirectory, imbalanceLine, readHeavyDrain, readMachines, readStrictCap, shardsOnHost, slotHolders } from '../master/verification-slots.js';
+import { budgetLine, fallbackLine, machineLine } from '../model/machine-load.js';
+import { lastHostFallbacks } from '../merge-writer/trial-run.js';
 import { standingLimit } from '../master/profiles.js';
 import { attemptBoundSummary } from '../master/attempt-bound.js';
 import { mergeWriterSummary, trialImageKey } from '../daemon/cycle-merge-writer.js';
@@ -26,14 +30,14 @@ import { trialTestGateStatus } from '../merge-writer/trial.js';
 import { connectionResetAttention, outdatedShimAttention, readRemoteShardRuns, remoteShardSummary } from '../merge-writer/remote-shards.js';
 import { attemptLabel, readAttemptLaunch, type AttemptLaunch } from '../master/session-resume.js';
 import { plainStage, waitingReason } from '../model/plain-stage.js';
-import { stalledDelivery, stalledDeliveryAction } from '../daemon/master-stalled-delivery.js';
+import { signoffAttention, stalledDelivery, stalledDeliveryAction } from '../daemon/master-stalled-delivery.js';
 import { failureHeld, repeatedFailureCause } from '../daemon/repeated-failure.js';
 import { reworkCapCause, reworkCapHeld } from '../model/rework-ground.js';
 import { alertMinutesOf } from '../daemon/yard-alerts.js';
 import { stallAlarmKey } from '../daemon/stall-alarm.js';
 import { stoppedRoles, type StoppedRole } from '../master/stopped-roles.js';
 import { deliverySpeed, type MergedItem, type SpeedEvent } from '../pipeline-speed.js';
-import type { Flow } from '../server/flow.js';
+import type { FlowReport } from '../server/flow.js';
 import { unspecifiedModel, type FleetView } from '../model/registry.js';
 import { observeApplications } from '../production-watch.js';
 import { appRelease } from '../app-url.js';
@@ -47,16 +51,22 @@ import { formatAge } from '../model/duration.js';
 import { loadProjectDelivery, parseProjectDelivery } from '../model-boundary/project-applications.js';
 import { backedOffProfiles, readDispatchCursor, type DispatchCursor } from '../dispatch/cursor.js';
 import { liveReviewRequest } from '../model/dispatch.js';
+import { remoteWorkerRuns } from '../headless-session.js';
+import { readReviewLedger, staleReviewReason, type ReviewRecord } from '../reviewer.js';
 import { allowanceSentence, allowanceWarning } from '../model/allowance.js';
 import { benchResultsPath, benchStatus, readBenchResults } from '../bench.js';
+import { repeatedFailureAttention } from '../model/incidents.js';
+import { readImagePulls, slowPullAttention } from '../install/image-pulls.js';
+import type { SlowQuery } from '../store/slow-queries.js';
 
-/** GY-3105: an item's whole non-routine ledger, oldest first, paged by cursor to the end; null when any page cannot be read. */
+/** GY-3105: an item's whole non-routine ledger, oldest first, paged by cursor to the end; null when any page cannot be read.
+ *  GY-3762: each row's stage alone; the whole documents were 580 MB a run on the live install. */
 export async function itemLedger(masterApi: (path: string) => Promise<any>, id: string): Promise<SpeedEvent[] | null> {
   const events: SpeedEvent[] = [];
   let cursor: string | null = null;
   try {
     do {
-      const page: { events: SpeedEvent[]; page: { nextCursor: string | null } } = await masterApi(`events?work=${id}&order=asc&limit=1000&view=page${cursor ? `&cursor=${cursor}` : ''}`);
+      const page: { events: SpeedEvent[]; page: { nextCursor: string | null } } = await masterApi(`events?work=${id}&order=asc&limit=1000&view=page&payload=stage${cursor ? `&cursor=${cursor}` : ''}`);
       events.push(...page.events);
       cursor = page.page.nextCursor;
     } while (cursor);
@@ -86,9 +96,14 @@ export async function npmPublishedVersion(run: ChildRun): Promise<string> {
 
 /** The `master status` page. `run` reads main's tip from the checkout's remote-tracking ref; the deploy unit fetches it. */
 
+/** GY-3704: each machine's load line, a compute host's with its last check fallback until a check next runs there. */
+const hostFallbackLines = (root: string) => { const fallbacks = lastHostFallbacks(root); return (readMachines(heavyJobsDirectory()) ?? []).map(read => read.local ? read : { ...read, shards: shardsOnHost(heavyJobsDirectory(), read.name) }).map(machine => { const fallback = fallbacks.get(machine.name); return fallback ? `${machineLine(machine)} · ${fallbackLine(fallback)}` : machineLine(machine); }); };
+
 export async function masterStatusReport(root: string, master: MasterConfig, masterApi: (path: string) => Promise<any>, run: ChildRun = defaultChildRun) {
   // An unreachable control plane (GY-2966) is reported, not thrown: since when, the server's last exit and the free disk space, as the loop recorded them.
   let unreachable: string | null = null;
+  // GY-3699: the flow numbers come from their own route, read beside the other reads so a slow or failed read delays nothing; a failure carries its reason.
+  const flowRead: Promise<FlowReport | { error: string }> = Promise.resolve().then(() => masterApi('flow')).catch(error => ({ error: `The flow numbers could not be read: ${error instanceof Error ? error.message : String(error)}` }));
   const [snapshot, runtime, credentials, state] = await Promise.all([(masterApi('work-snapshot') as Promise<{ work: Work[]; now: string; workerVerifications?: ReturnType<typeof pendingWorkerVerifications> }>).catch(error => {
     if (typeof error?.status === 'number') throw error;
     unreachable = error instanceof Error ? error.message : String(error);
@@ -106,7 +121,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   // and only a record that names this repository as the one it serves. The control plane's deploy
   // unit writes the same file for the revision its loop restarts onto; for an install managing a
   // different repository that record names the control plane's code, not the game's, and neither it
-  // nor the control plane's own build revision (state.release, the Graphyard build this loop
+  // nor the control plane's own build revision (state.release, the Mainworks build this loop
   // loaded) ever stands in as the game's release health (GY-2951, GY-2955). What the repository's
   // declared serve serves (GY-2976) is its own serving truth instead: the served commit, whether it
   // is main, the URL and the last build failure (servingReport reads main's tip from the checkout's
@@ -155,7 +170,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   const blockerAttention = open.filter(item => item.blocker && !parkedOnHuman(item)).map(item => {
     const since = blockerSince(item);
     return { subject: item.key, text: `${item.key}'s blocker${since !== null ? ` has waited ${formatAge(since, now)}` : ''}: ${item.blocker}`,
-      next: `Clear the cause, then graphyard master unblock ${item.key} REASON` };
+      next: `Clear the cause, then mainworks master unblock ${item.key} REASON` };
   });
   // GY-3503: every open human request once, with its age and the exact answer; past an hour it is overdue.
   const humanAttention = openHumanRequests(open, now).map(row => ({ subject: row.work,
@@ -163,7 +178,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   const leaseLosses = open.flatMap(item => {
     const run = state?.failureRuns[item.id];
     return run?.kind === 'lease' && failureHeld(run)
-      ? [{ subject: item.key, text: repeatedFailureCause(run)!.detail, next: `Diagnose the lease loss, then graphyard master rework ${item.key} REASON` }] : [];
+      ? [{ subject: item.key, text: repeatedFailureCause(run)!.detail, next: `Diagnose the lease loss, then mainworks master rework ${item.key} REASON` }] : [];
   });
   const stalled = stalledDelivery(open);
   const launched = await Promise.all(open.map(item => readAttemptLaunch(root, item.key)));
@@ -175,6 +190,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   const stopped = stoppedRoles(fleet, now, master.run.intervalSeconds * 1000, session?.session ?? null);
   // GY-3235: a profile skipped after failing its launch probe twice, with the cause, while its backoff stands.
   const cursor = await readDispatchCursor(root, master).catch(() => null);
+  const reviews = cursor ? (await readReviewLedger(root).catch(() => null))?.reviews ?? [] : [];
   const backedOff = backedOffProfiles(cursor ?? { profileBackoff: {} }, now)
     .map(entry => ({ subject: `${entry.role} profile ${entry.profile}`, text: `Backed off until ${entry.until}, the next profile launches instead: ${entry.cause}`, next: 'Grant the path the launch probe names; the profile is tried again once its backoff ends' }));
   // GY-3413: an item whose worker launch failed the same way twice waits out its backoff, one line naming the reason and the retry.
@@ -185,7 +201,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   });
   const reworkCaps = open.flatMap(item => {
     const cap = reworkCapCause(item);
-    return cap ? [{ subject: item.key, text: cap.detail, next: `Revise requirements (graphyard master requirements ${item.key} FILE REASON), split (graphyard master create FILE), or park (graphyard master hold ${item.key} REASON)` }] : [];
+    return cap ? [{ subject: item.key, text: cap.detail, next: `Revise requirements (mainworks master requirements ${item.key} FILE REASON), split (mainworks master create FILE), or park (mainworks master hold ${item.key} REASON)` }] : [];
   });
   const reworked = reworkAttention(open.filter(item => !reworkCapHeld(item)));
   // GY-3331: a product review that could not run, one line per item — the fault is the launch's
@@ -194,7 +210,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     const review = item.productReview;
     if (!review || review.verdict !== 'could-not-run' || review.sha !== item.candidate?.sha) return [];
     return [{ subject: item.key, text: `${item.key}'s product review could not run on ${review.sha.slice(0, 12)}: ${(review.findings.split('\n')[0] ?? '').slice(0, 300)}; another eligible reviewer is tried, and the item never returns to its worker for this`,
-      next: 'Fix what the review names (its GRAPHYARD_URL, the Graphyard CLI, or a browser tool on the reviewer\'s PATH), or route product review to a runtime that has them' }];
+      next: 'Fix what the review names (its GRAPHYARD_URL, the Mainworks CLI, or a browser tool on the reviewer\'s PATH), or route product review to a runtime that has them' }];
   });
   // GY-3299: worker-pool growth the loop could not do, with the cause and the capacity it leaves, until growth succeeds.
   // GY-3304: a drain stands until master resume; it names why and who asked.
@@ -202,8 +218,11 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   const standing = (limit: { value: number; until: string } | undefined) => standingLimit(limit, now) === undefined ? null : limit!;
   const fixedLimit = fixedHeavyJobLimit(heavyJobsDirectory());
   // GY-3701: a leftover limit file switches off the budget's scaling with the ready hosts.
-  const fixedLimitAttention = fixedLimit ? [{ subject: 'heavy-job budget', text: `The heavy-job budget is fixed at ${fixedLimit.fixed} by ${fixedLimit.file}; without it the ready machines give ${fixedLimit.scaled}.`, next: 'graphyard master config hostHeavyJobs=auto' }] : [];
-  const drained = drain ? [{ subject: 'heavy work', text: heavyDrainLine(drain), next: 'graphyard master resume once the quiet window is over' }] : [];
+  // GY-3706: this machine overloaded for 5 minutes while a ready host sits more than half free.
+  const imbalance = imbalanceLine(heavyJobsDirectory(), now);
+  const imbalanceAttention = imbalance ? [{ subject: 'shard placement', text: imbalance, next: 'See where the latest trial placed its shards under remoteShards; file a fix if hosts stay idle' }] : [];
+  const fixedLimitAttention = fixedLimit ? [{ subject: 'heavy-job budget', text: `The heavy-job budget is fixed at ${fixedLimit.fixed} by ${fixedLimit.file}; without it the ready machines give ${fixedLimit.scaled}.`, next: 'mainworks master config hostHeavyJobs=auto' }] : [];
+  const drained = drain ? [{ subject: 'heavy work', text: heavyDrainLine(drain), next: 'mainworks master resume once the quiet window is over' }] : [];
   const growth = state?.actions[workerGrowthKey]?.state === 'failed' ? [{ subject: 'worker pool', text: state.actions[workerGrowthKey]!.detail, next: 'Fix the cause named; the next loop cycle adds the missing worker profiles and clears this' }] : [];
   // GY-3328: the trial host lacks the trial image and could not provision it, until a trial runs again.
   const trialImageFault = state?.actions[trialImageKey]?.state === 'failed' ? [{ subject: 'trial image', text: state.actions[trialImageKey]!.detail, next: 'Fix Docker on the trial host as the error names; the next merge trial provisions the image again and clears this' }] : [];
@@ -223,7 +242,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   const messages: { id: number; from: string; to?: string; text: string; at: string; replies: unknown[] }[] = unreachable ? [] : await Promise.resolve().then(() => masterApi('master/messages')).then(body => Array.isArray(body?.messages) ? body.messages : [], () => []);
   const messageAttention = messages.filter(message => !message.to && !message.replies.length).reverse().map(message => ({ subject: `message ${message.id} from ${message.from}`,
     text: `${message.from} wrote ${formatAge(message.at, now)} ago: ${message.text}`, next: master.peers?.some(peer => peer.name === message.from)
-      ? `Act on it, then graphyard master send ${message.from} --reply ${message.id} TEXT (or master reply ${message.id} TEXT to dismiss it without sending)` : `Act on it, then graphyard master reply ${message.id} TEXT` }));
+      ? `Act on it, then mainworks master send ${message.from} --reply ${message.id} TEXT (or master reply ${message.id} TEXT to dismiss it without sending)` : `Act on it, then mainworks master reply ${message.id} TEXT` }));
   const stepFailureAttention = standingStepFailures(state ?? { actions: {} }).map(detail => ({ subject: 'the master loop', text: detail, next: 'Read the loop journal for the failing step and repair its cause; the alert clears on the first cycle the step succeeds' }));
   // GY-3383: the gate record once — a held batch gate is one attention line naming the hold and its reason.
   const gateRecord = readGateRecord(gateRecordPath(root));
@@ -232,23 +251,29 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   const gateStalled = state?.actions[gateStallKey]?.state === 'failed' ? [{ subject: 'the batch gate', text: state.actions[gateStallKey]!.detail, next: 'Free a host heavy-job slot (stop the stuck holder it names); the alarm clears once a gate check starts' }] : [];
   // GY-3438: a session using far more than its share of a saturated machine for five minutes raises the overload alarm, naming it.
   // GY-3624: the flow numbers for 6 hours, 24 hours and 7 days, and one attention line when a station's slowest tenth waits over an hour.
-  const flow: Flow | null = unreachable ? null : await Promise.resolve().then(() => masterApi('flow')).catch(() => null);
+  const flowAnswer = await flowRead;
+  const flow = 'error' in flowAnswer ? null : flowAnswer;
   const flowAttention = flow?.attention ? [flow.attention] : [];
   // GY-3690: one line while the owner turned the public link on and someone is invited, but the link is not public.
   const linkOff: { doing: string; lastPublic: string | null } | null = unreachable ? null : await Promise.resolve().then(() => masterApi('team-access/host')).then(body => body?.publicLinkOff ?? null, () => null);
   const linkAttention = linkOff ? [{ subject: 'team access', text: `${publicLinkOffLine}. ${lastPublic(linkOff.lastPublic, now)} ${linkOff.doing}`, next: 'Do what the line names if the loop cannot; it clears once the link is public' }] : [];
   const overloadAttention = overloaded(state?.sessions ?? [], now).map(session => ({ subject: session.name ?? session.unit, text: `Overload: ${overloadAlarm(session, now)}`, next: 'The session is only held to its share, not stopped; see what it runs on the Workers page' }));
+  // GY-3757: the slowest database query of the last 10 minutes, by name, when it ran past 3 s.
+  const slowRead: { slowest?: SlowQuery | null; stageBackfill?: { remaining: number; at: string } | null } = unreachable ? {} : await Promise.resolve().then(() => masterApi('slowest-query')).then(body => body ?? {}, () => ({}));
+  const slowest = slowRead.slowest ?? null;
   // GY-3634: the latest trial benchmark beside the median of the previous ten on the same file list, with one attention line on >25% wall regression.
   const bench = benchStatus(readBenchResults(benchResultsPath(root)));
   return {
     // GY-3432: the stall alarm the loop raised, first, until a launch starts or the item is acted on.
     stallAlarm: state?.actions[stallAlarmKey]?.detail ?? null,
     // GY-3593: when the caretaker last ran, and its result line.
+    // GY-3772: the delta rows the stage backfill's last batch left lacking the stage; null before a batch since the control plane started.
+    stageBackfill: slowRead.stageBackfill ?? null,
     caretaker: state?.caretaker ? `Last ran ${formatAge(Date.parse(state.caretaker.at), now)} ago: ${state.caretaker.result}` : 'Not run yet',
     // GY-3095: the pipeline has stopped where a role cannot launch; each line names the role, the refusal, how long it has lasted and the next command.
     // GY-3204: and each application whose versionUrl lags main or fails to answer.
-    attention: [...humanAttention, ...reworkCaps, ...leaseLosses, ...blockerAttention, ...drained, ...fixedLimitAttention, ...growth, ...trialImageFault, ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now) : []), ...backedOff, ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...wrongModelAttention(fleet), ...allowanceAttention(fleet, now), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(readRemoteShardRuns(root)), ...gateStalled, ...overloadAttention, ...flowAttention, ...linkAttention, ...(bench?.attention ? [bench.attention] : []), ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
-    // GY-3199: the control plane's own update record — the Graphyard commit this install runs, its
+    attention: [...signoffAttention(open, now), ...humanAttention, ...reworkCaps, ...leaseLosses, ...blockerAttention, ...drained, ...fixedLimitAttention, ...imbalanceAttention, ...growth, ...trialImageFault, ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now, reviews) : []), ...backedOff, ...unlaunchableWorkerAttention(fleet), ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...wrongModelAttention(fleet), ...allowanceAttention(fleet, now), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(readRemoteShardRuns(root)), ...gateStalled, ...deployReleaseAttention(state, now), ...overloadAttention, ...flowAttention, ...slowQueryAttention(slowest, now), ...linkAttention, ...(bench?.attention ? [bench.attention] : []), ...slowPullAttention(readImagePulls()), ...repeatedFailureAttention(snapshot.work, now), ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
+    // GY-3199: the control plane's own update record — the Mainworks commit this install runs, its
     // last check and last update, the step of a failed upgrade, and the staleness the daily
     // diagnostics reports (a check over a day old, or a verified commit first seen over a day ago
     // that the install still does not run). Never the managed repository's serving (GY-2955).
@@ -261,12 +286,12 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     alerts: master.run.alertUrl
       ? { on: true, url: master.run.alertUrl, minutes: alertMinutesOf(master.run), stoppedAt: state?.alerts.stoppedAt ?? null, lastAlertAt: state?.alerts.lastAlertAt ?? null }
       : { on: false },
-    // GY-3122: free space below the floor after the loop reclaimed its own leftovers: no new trial or worker starts.
-    diskHeadroom: state?.diskHeadroom ?? null,
+    // GY-3122, GY-3743: coordinator free disk, 24h change and the five largest kinds of Mainworks disk use (plus shortage fields when below the floor).
+    diskHeadroom: diskHeadroomSummary(state?.diskHeadroom ?? null, state?.diskUse ?? null),
     heavyDrain: drain,
     // GY-3447: who holds the host's heavy-job slots (trials, gates, whole suites, deploy builds) and the limit they share.
-    // GY-3528: the budget across this machine and every ready host, and each machine's load, one line each.
-    heavyJobs: { limit: heavyJobLimit(heavyJobsDirectory()), budget: budgetLine(heavyJobBudget(heavyJobsDirectory()).machines), machines: (readMachines(heavyJobsDirectory()) ?? []).map(machineLine), holders: slotHolders(heavyJobsDirectory()) },
+    // GY-3528: the budget across this machine and every ready host, and each machine's load, one line each; GY-3704: with its last check fallback.
+    heavyJobs: { limit: heavyJobLimit(heavyJobsDirectory()), budget: budgetLine(heavyJobBudget(heavyJobsDirectory()).machines), machines: hostFallbackLines(root), holders: slotHolders(heavyJobsDirectory()) },
     // GY-3694: heads waiting for or running a merge trial against twice the available trial slots (local heavy-job limit plus ready hosts).
     testQueue: testQueueStatus(open, state?.mergeWriter, state?.hosts, now),
     // GY-3446: the temporary limits standing now, each with the time it reverts to the default; null once expired or never set.
@@ -278,11 +303,11 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
       ? { at: state.cpuPressure.at, avg60: state.cpuPressure.avg60, steal: state.cpuPressure.steal, celsius: state.cpuPressure.celsius,
         // GY-3532: the latest package sample beside the 120 s mean the heat rule compares (null under 4 samples).
         ...((heat) => ({ latestCelsius: heat?.latest ?? null, meanCelsius: heat?.mean ?? null }))(heatReading(state.cpuPressure.samples)),
-        waiting: implementationWaiting(state), testBudget: state.cpuPressure.testBudget, trialCap: state.cpuPressure.trialCap }
+        waiting: cpuWaiting(state), testBudget: state.cpuPressure.testBudget, trialCap: state.cpuPressure.trialCap }
       : null,
     // GY-3438: every live agent session with its CPU and memory use beside its fair share, as the loop last read its cgroup.
     sessionUsage: (state?.sessions ?? []).map(session => ({ session: session.name ?? session.unit, use: sessionFigures(session), overSince: session.overSince })),
-    // GY-3190: the latest daily report of what the loop's sweeps stopped or removed, and the disk Graphyard's leftovers hold.
+    // GY-3190: the latest daily report of what the loop's sweeps stopped or removed, and the disk Mainworks's leftovers hold.
     // GY-3691: with the working copies' disk use as the loop last read it.
     leftovers: state && (state.leftovers.report || state.leftovers.worktreeDisk) ? { ...state.leftovers.report, worktreeDisk: state.leftovers.worktreeDisk } : null,
     loop: loop ? { state: loop.liveness.state, detail: loop.liveness.detail, cycle: loop.cycle, steps: loop.metrics?.steps ?? null } : { state: 'absent', detail: 'The loop cursor cannot be read' },
@@ -292,6 +317,9 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
       : { state: state?.mergeWriter.inFlight ? 'validating' : 'no shared base failure', reason: null, nextAction: null },
     deliverySpeed: deliverySpeed(merged, open, now),
     flow: flow ? { '6h': flow['6h'], '24h': flow['24h'], '7d': flow['7d'] } : null,
+    flowError: 'error' in flowAnswer ? flowAnswer.error : null,
+    // GY-3763: the server computes flow at most once a minute; this is how old the numbers above are.
+    flowAgeSeconds: flow?.ageSeconds ?? null,
     // GY-3418: the host's busy CPU-seconds per merged item over the last 7 days, with the target: half the first measured day's figure.
     cpuPerMergedItem: cpuPerMergedItem(state?.cpuSeconds?.days ?? {}, mergedAt, now),
     // GY-3634: the latest trial benchmark beside the median of the previous ten on the same file list.
@@ -306,6 +334,8 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     // GY-3412: test shards run on other hosts over the last 20 trials — the share run remotely, trial
     // wall time, waits while a host idled, this machine's peak CPU temperature and each host's latest probe (GY-3517).
     remoteShards: remoteShardSummary(readRemoteShardRuns(root), state?.hosts),
+    // GY-3750: over the last 20 item trials, the median share of reachable test files the trial selected.
+    testSelection: testSelectionSummary(readTestSelections(root)),
     // GY-3119: the batch gate on main — the verified commit that serves, the gate in flight with its current step, the last run's outcome with its reason or failing check (GY-3141), a held batch and the revert rate over the last 20 merges.
     batchGate: gateSummary(gateRecord),
     // GY-3399: the week's reverts beside the week's gates removed (lessons turned into code), with their items.
@@ -315,28 +345,41 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     // GY-3285: worker sessions running of the number the registry worker role allows (master workers N sets it).
     // GY-3499: what each account has left, one plain sentence each.
     accounts: accountAllowances(fleet, now),
-    workers: `${sessions.filter(session => session.kind === 'implementation').length}/${workersAllowed(master, fleet?.roles ? { roles: fleet.roles.map(role => ({ ...role, name: role.role })) } : null)}`,
+    workers: `${sessions.filter(session => session.kind === 'implementation').length}/${workersAllowed(master, workerFleet(fleet))}`,
     sessions,
+    // GY-3405: the latest sessions that ran on an added host, running or ended: which item, where, and how it stands.
+    remoteSessions: remoteWorkerRuns(root).slice(0, 10),
     freeWorkers: health.filter(entry => entry.healthy).map(entry => entry.profile.name),
   };
 }
+/** GY-3757: one line naming the slowest database query of the last 10 minutes, when the server reports one past 3 s. */
+export const slowQueryAttention = (slowest: SlowQuery | null, now: number) => slowest ? [{ subject: 'database',
+  text: `The slowest database query of the last 10 minutes took ${(slowest.ms / 1000).toFixed(1)} s, ${formatAge(slowest.at, now)} ago${slowest.caller ? `, asked by ${slowest.caller}` : ''}: ${slowest.name}`,
+  next: 'File a fix for the query it names if it repeats' }] : [];
 /**
  * GY-3421: an item whose review request the loop could not launch — every launch refused, its
  * attempts spent, or reviewer capacity exhausted — one line naming the item, why no reviewer is
- * eligible and what would make one eligible.
+ * eligible and what would make one eligible. GY-3729: none while a reviewer session is live on the
+ * item's current head — the same pending record master review refuses a second launch for.
  */
-export function reviewLaunchAttention(open: readonly Work[], cursor: Pick<DispatchCursor, 'failures' | 'abandoned' | 'capacity'>, now: number) {
+export function reviewLaunchAttention(open: readonly Work[], cursor: Pick<DispatchCursor, 'failures' | 'abandoned' | 'capacity'>, now: number, reviews: readonly ReviewRecord[] = []) {
   const capacity = cursor.capacity.review && Date.parse(cursor.capacity.review.recheckAt) > now ? cursor.capacity.review : null;
   return open.flatMap(item => {
     const request = liveReviewRequest(item);
-    const reason = request && ((cursor.abandoned[request.id] ?? cursor.failures[request.id])?.reason ?? capacity?.reason);
+    const live = reviews.some(record => record.state === 'pending' && record.key === item.key && !staleReviewReason(record, [...open]));
+    const reason = request && !live && ((cursor.abandoned[request.id] ?? cursor.failures[request.id])?.reason ?? capacity?.reason);
     return reason ? [{ subject: item.key, text: `${item.key}'s review of ${request.sha.slice(0, 12)} has no reviewer: ${reason}`,
-      next: `Make a reviewer account eligible — log it in, wait for its reset, or add one to the reviewer role (graphyard master registry role set reviewer ACCOUNT[,ACCOUNT…] --reason R) — then graphyard master review ${item.key}` }] : [];
+      next: `Make a reviewer account eligible — log it in, wait for its reset, or add one to the reviewer role (mainworks master registry role set reviewer ACCOUNT[,ACCOUNT…] --reason R) — then mainworks master review ${item.key}` }] : [];
   });
 }
 /** GY-3441: each enabled account serving a role that is held as not logged in, with why, so a skipped reviewer is named. */
+/** The registry as the worker count reads it: the view's roles under their role names. */
+const workerFleet = (fleet: FleetView | null) => fleet?.roles ? { runtimes: fleet.runtimes ?? [], accounts: fleet.accounts ?? [], roles: fleet.roles.map(role => ({ ...role, name: role.role })) } : null;
+/** GY-3730: one attention line naming the worker accounts no worker launch can start; they are not counted as workers. */
+const unlaunchableWorkerAttention = (fleet: FleetView | null) => { const fleetView = workerFleet(fleet), line = fleetView && unlaunchableLine(workerAccounts(fleetView).unlaunchable);
+  return line ? [{ subject: 'workers', text: line, next: unlaunchableNext }] : []; };
 export const loggedOutAttention = (fleet: Pick<FleetView, 'accounts'> | null) => (fleet?.accounts ?? []).filter(account => account.enabled && account.roles.length && account.loggedIn === false && account.ineligible).map(account =>
-  ({ subject: `account ${account.name}`, text: `${account.ineligible} — skipped for ${account.roles.map(entry => entry.role).join(', ')}`, next: `Log ${account.name} in again; the hold lifts when its probe reads the new login, or clear it with graphyard master registry account quota ${account.name} available --reason R` }));
+  ({ subject: `account ${account.name}`, text: `${account.ineligible} — skipped for ${account.roles.map(entry => entry.role).join(', ')}`, next: `Log ${account.name} in again; the hold lifts when its probe reads the new login, or clear it with mainworks master registry account quota ${account.name} available --reason R` }));
 /** GY-3499: `NAME: about 24% of this week left, back Sun 22 Nov 05:00`, one line per account. */
 export const accountAllowances = (fleet: Pick<FleetView, 'accounts'> | null, now: number) => (fleet?.accounts ?? []).map(account => `${account.name}: ${allowanceSentence(account.usage, now)}`);
 /** GY-3499: each account with live sessions past 80% of a window; the row goes once the window resets or a reading drops under 80%. */
@@ -347,5 +390,5 @@ export const wrongModelAttention = (fleet: Pick<FleetView, 'accounts'> | null) =
 /** GY-3302: each enabled account serving a role whose model names no concrete id runs its runtime's default, perhaps a free model. */
 export const unspecifiedModelAttention = (fleet: Pick<FleetView, 'accounts'> | null) => (fleet?.accounts ?? []).filter(account => account.enabled && account.roles.length).flatMap(account => {
   const text = unspecifiedModel(account);
-  return text ? [{ subject: `account ${account.name}`, text, next: `graphyard master registry model set ${account.model} --id ID --reason REASON names the model it runs` }] : [];
+  return text ? [{ subject: `account ${account.name}`, text, next: `mainworks master registry model set ${account.model} --id ID --reason REASON names the model it runs` }] : [];
 });

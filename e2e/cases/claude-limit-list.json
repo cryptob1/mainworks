@@ -1,0 +1,14 @@
+{
+  "id": "claude-limit-list",
+  "title": "Claude's own limit list is read: the scoped weekly allowance holds and extra-usage spend shows",
+  "description": "A stub usage answer carries Claude's limits[] — weekly at 40% beside a Fable-scoped weekly at 97% — and spend enabled. Through the real control plane, with the account's own live request passing, the Fable window holds the account with the reason 'Fable weekly allowance 97% used, back <time>', master registry shows the extra-usage line 'extra usage on: $X of $Y used', and Mainworks sends no request that changes spending.",
+  "tags": ["accounts", "quota"],
+  "target": "any",
+  "required": false,
+  "steps": [{
+    "kind": "command",
+    "name": "claude limit list read",
+    "run": "node --import tsx tests/helpers/run-tests.ts tests/claude-limit-list.test.ts",
+    "timeoutSeconds": 300
+  }]
+}

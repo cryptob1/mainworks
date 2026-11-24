@@ -68,7 +68,7 @@ test('unit:post-deploy-criteria — a declared post-deploy verification, a head-
   const unitLive = { id: 'AC-1', text: 'The restarted loop serves the delivered commit', proofs: ['unit:serves'] };
   assert.equal(liveObservationPhrase(unitLive), 'restarted loop');
   assert.equal(createSchema.safeParse(intent([unitLive])).success, false);
-  // The wording Graphyard filed for a recurring intervention pattern (GY-1660's own AC-1) is a post-ship
+  // The wording Mainworks filed for a recurring intervention pattern (GY-1660's own AC-1) is a post-ship
   // outcome: undeclared, it is refused, naming the phrase.
   const shipped = { id: 'AC-1', text: 'The cause of the recurring escalation interventions at the build stage is found and removed: the intervention report shows the escalation rate at the build stage below 3 per 7 days after the change ships, and the linked instances could not recur', proofs: ['manual:intervention-pattern-escalation-build'] };
   assert.equal(liveObservationPhrase(shipped), 'after the change ships');
@@ -98,7 +98,7 @@ const linked = {
   'GY-1657 AC-1': { id: 'AC-1', text: 'With the loop paused, the coordinator checkout /home/vish/code/graphyard reports no modified and no untracked source paths (git status --porcelain empty at head >= e09c849886c3): each of the 6 dirty paths is committed, stashed or discarded by an operator act.', proofs: ['manual:coordinator-checkout-clean'] },
   'GY-1657 AC-2': { id: 'AC-2', text: 'After the paths are clean, the master loop restarts through graphyard-master.service without the dirty-checkout refusal, and escalation:dirty-checkout records no new failed attempt across at least two consecutive daemon cycles (its attempts count stops climbing past 4).', proofs: ['integration:dirty-checkout-escalation-clears'] },
   'GY-1657 AC-3': { id: 'AC-3', text: 'The restarted loop serves a commit newer than e09c849886c3, so fixes delivered while the fault stood are live in coordinator behaviour.', proofs: ['integration:coordinator-serves-current-release'] },
-  'GY-1657 AC-4': { id: 'AC-4', text: 'The two panes pointing at the checkout (agy w1V:pHHY, graphyard-master-graphyard w1V:pN93) are re-attached to the restarted loop or confirmed idle, and no session re-dirties the checkout afterwards (the dirty set stays empty for 24h).', proofs: ['manual:panes-released-or-reattached'] },
+  'GY-1657 AC-4': { id: 'AC-4', text: 'The two panes pointing at the checkout (agy w1V:pHHY, graphyard-master-mainworks w1V:pN93) are re-attached to the restarted loop or confirmed idle, and no session re-dirties the checkout afterwards (the dirty set stays empty for 24h).', proofs: ['manual:panes-released-or-reattached'] },
 };
 
 test('manual:intervention-pattern-escalation-build — GY-1660: each linked build-stage escalation is reproduced against the base rule and cannot recur on the candidate', async () => {
@@ -184,7 +184,7 @@ const escalated = {
   'GY-1662 AC-3': { id: 'AC-3', text: 'After the fix ships and is served, one master cycle on the installation applies the Claude harness contract without an action:config fault on remedy:harness:claude and the following master status reports no harness attention row for it', proofs: ['manual:harness-contract-applied-on-install'], base: 'After the fix ships', phrase: 'After the fix ships' },
 };
 // GY-1662 AC-1 as filed: what its head could show before merge, beside which AC-3 belonged declared.
-const gy1662ac1 = { id: 'AC-1', text: "The loop's remedy:harness:claude apply resolves a checkout that records units (.graphyard/units.json present) and applies the Claude harness contract from the loop's own process without raising the action:config failure; when the resolved checkout records no units the act refuses naming that checkout and the 'graphyard master init' remedy instead of failing opaquely, and the failure does not repeat on the next cycle", proofs: ['unit:harness-apply-checkout-resolution'] };
+const gy1662ac1 = { id: 'AC-1', text: "The loop's remedy:harness:claude apply resolves a checkout that records units (.graphyard/units.json present) and applies the Claude harness contract from the loop's own process without raising the action:config failure; when the resolved checkout records no units the act refuses naming that checkout and the 'mainworks master init' remedy instead of failing opaquely, and the failure does not repeat on the next cycle", proofs: ['unit:harness-apply-checkout-resolution'] };
 
 // The live-observation rule as the base ships it (c531a1d7 src/model/post-merge-proofs.ts, GY-1660 as merged at
 // ccc0a314), pinned verbatim so each instance runs against the base rule and the candidate's in one case. GY-1685

@@ -30,7 +30,7 @@ export async function runWorkerPull(pull: () => Promise<{ assigned: Work | null;
   while (!options.signal?.aborted) {
     polls++;
     last = await pull();
-    if (last.assigned) { log(`[graphyard-worker] claimed ${last.assigned.key} after ${polls} poll(s)`); return done(); }
+    if (last.assigned) { log(`[mainworks-worker] claimed ${last.assigned.key} after ${polls} poll(s)`); return done(); }
     if (options.once || (options.maxPolls !== undefined && polls >= options.maxPolls)) return done();
     try { await delay(intervalMs, undefined, { signal: options.signal }); } catch { /* woken to stop */ }
   }

@@ -204,7 +204,7 @@ test('unit:ui-item-first-screen — an item page says on its first screen what s
   assert.equal(reviewRow(changes), 'Changes requested', 'an approval beside an open change request is not reported as approved');
   // Blocked by a refusal no retry clears (no reviewer left, merge protection unconfirmed): the step's own
   // actor cannot move it, so the master agent acts next, whichever step it is at.
-  for (const reason of ['Every configured reviewer profile is exhausted for this item', 'Required Graphyard check and merge-queue branch protection is not verified']) {
+  for (const reason of ['Every configured reviewer profile is exhausted for this item', 'Required Mainworks check and merge-queue branch protection is not verified']) {
     const base = find('GY-22');
     const failing = base.gates.find(gate => !gate.passed)!.name;
     const refused = { ...base, gates: base.gates.map(gate => gate.name === failing ? { ...gate, reasons: [reason] } : gate) } as Work;

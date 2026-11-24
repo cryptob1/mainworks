@@ -25,7 +25,7 @@ export const capacityLimitRedispatchScenario = 'capacity-limit-redispatch';
  * this repository itself. An install managing another repository registers only the cases synced
  * from that repository's `e2e/cases/`, and its Tests page shows no cases until it has some.
  */
-export const graphyardRepository = 'cryptob1/graphyard';
+export const mainworksRepository = 'cryptob1/graphyard';
 
 /** Query surface used to resolve a scenario revision (pool or a transaction client). */
 type ScenarioDb = { query: (sql: string, params?: unknown[]) => Promise<{ rows: any[] }> };
@@ -76,9 +76,9 @@ export function capacityLimitRedispatchRevision(createdAt = new Date().toISOStri
  * `any`: each runs against a change's preview of the fixture site or app, never UAT itself. The
  * matching files under `e2e/cases/` stay the source e2e sync revises later.
  */
-export const fixtureStaticHomeScenario = 'fixture-static-home';
-export const fixtureComposeAppScenario = 'fixture-compose-app';
-export const fixtureNodeHomeScenario = 'fixture-node-home';
+const fixtureStaticHomeScenario = 'fixture-static-home';
+const fixtureComposeAppScenario = 'fixture-compose-app';
+const fixtureNodeHomeScenario = 'fixture-node-home';
 const fixtureCase = (id: string, what: string, title: string, description: string, heading: string): E2eCase => caseSchema.parse({
   id, title, description, tags: ['fixture', 'preview'], target: 'any', required: false,
   steps: [{ kind: 'browser', name: `open the ${what}'s preview`, action: 'open', path: '/' }, { kind: 'browser', action: 'expectText', text: heading, exact: false }],
@@ -90,22 +90,22 @@ export const fixtureCases = (): E2eCase[] => [
   fixtureCase(fixtureComposeAppScenario, 'compose app', "The fixture compose app's page shows the change",
     "The declared Compose-backed application of the fixture project, served in a change's local preview against its own database: its page shows the running app, and the change on it.", 'Fixture compose app'),
   fixtureCase(fixtureNodeHomeScenario, 'node app', "The fixture node app's page shows the change",
-    "The declared node application of the fixture project, started on the port Graphyard gives it in a change's local preview: its page shows the app, and the change on it.", 'Fixture node app'),
+    "The declared node application of the fixture project, started on the port Mainworks gives it in a change's local preview: its page shows the app, and the change on it.", 'Fixture node app'),
 ];
 
 /** Revision 1 of a case shipped in code: exactly the revision `e2e sync` registers from its file under `e2e/cases/`. The timestamp is real (GY-2964): a seeded revision never reads as the epoch. */
-export function shippedCaseRevision(definition: E2eCase, createdAt = new Date().toISOString(), createdBy = 'graphyard'): Scenario {
+function shippedCaseRevision(definition: E2eCase, createdAt = new Date().toISOString(), createdBy = 'graphyard'): Scenario {
   const scenario = scenarioDefinition({ file: `${caseDirectory}/${definition.id}.json`, definition });
   return { ...scenario, revision: 1, hash: createHash('sha256').update(JSON.stringify(scenario)).digest('hex'), createdAt, createdBy };
 }
 
 /**
  * Every scenario revision this release ships in code (GY-1708, GY-1800), for an install managing
- * Graphyard's own repository. Another managed repository ships none (GY-2964): its cases come from
- * its own `e2e/cases/`, and Graphyard's internal cases never stand in for them.
+ * Mainworks's own repository. Another managed repository ships none (GY-2964): its cases come from
+ * its own `e2e/cases/`, and Mainworks's internal cases never stand in for them.
  */
-export const shippedScenarioRevisions = (repository: string | null | undefined = graphyardRepository): Scenario[] =>
-  repository?.toLowerCase() === graphyardRepository ? [capacityLimitRedispatchRevision(), ...fixtureCases().map(definition => shippedCaseRevision(definition))] : [];
+export const shippedScenarioRevisions = (repository: string | null | undefined = mainworksRepository): Scenario[] =>
+  repository?.toLowerCase() === mainworksRepository ? [capacityLimitRedispatchRevision(), ...fixtureCases().map(definition => shippedCaseRevision(definition))] : [];
 
 /** The shipped revision for `id`, or undefined when this release does not ship one to `repository`. */
 export const shippedScenario = (id: string, repository?: string | null): Scenario | undefined => shippedScenarioRevisions(repository).find(entry => entry.id === id);
@@ -116,7 +116,7 @@ export const shippedScenario = (id: string, repository?: string | null): Scenari
  * revision for sync and `recordCaseRun`, not a virtual GET-only entry that leaves the table empty
  * (GY-1708 AC-3).
  */
-export async function ensureShippedScenarios(db: ScenarioDb, repository: string | null | undefined = graphyardRepository, actor = 'graphyard'): Promise<void> {
+export async function ensureShippedScenarios(db: ScenarioDb, repository: string | null | undefined = mainworksRepository, actor = 'graphyard'): Promise<void> {
   for (const shipped of shippedScenarioRevisions(repository)) {
     const inserted = (await db.query(
       'INSERT INTO scenarios(id,revision,document) VALUES($1,$2,$3) ON CONFLICT (id,revision) DO NOTHING RETURNING document',
@@ -146,7 +146,7 @@ export async function resolveScenario(db: ScenarioDb, id: string, persist?: { at
   return (await db.query('SELECT document FROM scenarios WHERE id=$1 ORDER BY revision DESC LIMIT 1', [id])).rows[0]?.document as Scenario | undefined ?? document;
 }
 
-export const scenarioSchema = z.object({
+const scenarioSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9._-]*$/).max(100),
   title: z.string().min(1).max(200),
   purpose: z.string().min(1).max(5000),
@@ -163,10 +163,10 @@ export const scenarioSchema = z.object({
   expectedRevision: z.number().int().min(0).default(0),
 }).strict();
 export type Scenario = Omit<z.infer<typeof scenarioSchema>, 'expectedRevision'> & { revision: number; hash: string; createdAt: string; createdBy: string };
-export async function scenarios(store: Store, repository: string | null | undefined = graphyardRepository): Promise<Scenario[]> {
+export async function scenarios(store: Store, repository: string | null | undefined = mainworksRepository): Promise<Scenario[]> {
   // GY-1708: materialize shipped revisions into the table so GET never advertises a virtual row
   // that e2e sync would treat as unchanged while leaving recordCaseRun with nothing to look up.
-  // Only Graphyard's own repository install ships them (GY-2964); another managed repository
+  // Only Mainworks's own repository install ships them (GY-2964); another managed repository
   // lists exactly the cases its own e2e sync registered. The revision row and scenario.defined
   // append in one Store.transaction: a failed event write rolls both back so a later listing
   // retries instead of leaving an unaudited durable row.
@@ -211,8 +211,8 @@ export async function defineScenario(store: Store, actor: Principal, input: unkn
   });
 }
 
-/** One E2E case run (GY-1351) as `graphyard e2e run` reports it against a registered revision. */
-export const caseRunSchema = z.object({
+/** One E2E case run (GY-1351) as `mainworks e2e run` reports it against a registered revision. */
+const caseRunSchema = z.object({
   revision: z.number().int().min(1),
   runId: z.string().regex(/^[a-zA-Z0-9._:-]+$/).max(100),
   baseUrl: z.string().url().max(500),
@@ -227,7 +227,7 @@ export const caseRunSchema = z.object({
 }).strict().refine(run => (run.outcome === 'fail') === (run.failingStep !== null), 'A failed run names its failing step, and a passing run names none');
 
 /** The detail an E2E case run adds to a scenario run: where it ran, how long it took, the step that failed. */
-export interface E2eRunDetail { baseUrl: string; durationMs: number; failingStep: { index: number; name: string; reason: string } | null }
+interface E2eRunDetail { baseUrl: string; durationMs: number; failingStep: { index: number; name: string; reason: string } | null }
 /** A scenario run as the Tests page reads it: a trusted evidence run, or an E2E case run (`run.kind` `e2e`). */
 export type CaseRun = Omit<ScenarioRun, 'run'> & { run: Omit<RunIdentity, 'kind'> & { kind: RunIdentity['kind'] | 'e2e' }; e2e?: E2eRunDetail };
 /** One case as the Tests page reads it: its summary, its pass rate, and whether it is a repository E2E case. */
@@ -247,8 +247,8 @@ export type TrackedCase = Omit<CaseSummary, 'latest' | 'lastFailure' | 'history'
 /**
  * The Tests page's read (GY-1351): every case's bounded summary, each with its pass rate over the
  * history window and, for a repository E2E case, its tags, target and required mark from the latest
- * revision. An install managing a repository other than Graphyard's own never lists that release's
- * seeded built-in scenarios (GY-2964): rows an older release seeded there (by `graphyard`, with no
+ * revision. An install managing a repository other than Mainworks's own never lists that release's
+ * seeded built-in scenarios (GY-2964): rows an older release seeded there (by `mainworks`, with no
  * runs of their own) stay in the registry but are not the repository's cases, so they are left out.
  * `mainCases` names the case files on the served main (GY-3278), so a case written there never reads
  * as missing; the read also lists every manual and closed-question proof with its state.
@@ -257,7 +257,7 @@ export async function trackedCases(db: Store['pool'], repository?: string | null
   const summary = await testSummary(db);
   const placed = await placedRuns(db, [...await withdrawnEvidence(db)]), filed = await filedItems(db, gate);
   const definitions = new Map<string, Scenario>((await db.query('SELECT DISTINCT ON (id) document FROM scenarios ORDER BY id, revision DESC')).rows.map(row => [row.document.id, row.document]));
-  const seededElsewhere = repository?.toLowerCase() !== graphyardRepository;
+  const seededElsewhere = repository?.toLowerCase() !== mainworksRepository;
   return { window: summary.window, manual: await judgedProofs(db), cases: summary.cases.filter(entry => !(seededElsewhere && !entry.runs && entry.changed?.by === 'graphyard')).map(entry => {
     const judged = entry.history.filter(run => !run.withdrawn && run.result !== 'skipped');
     const definition = definitions.get(entry.id);
@@ -277,19 +277,19 @@ export async function trackedCases(db: Store['pool'], repository?: string | null
  * the case. The run is bound to the revision it measured, the base URL and the commit that URL
  * served; a retried report of the same run is the same row.
  */
-export async function recordCaseRun(store: Store, actor: Principal, id: string, input: unknown, authorize?: OperatorAuthorizer, repository: string | null | undefined = graphyardRepository): Promise<CaseRun> {
+export async function recordCaseRun(store: Store, actor: Principal, id: string, input: unknown, authorize?: OperatorAuthorizer, repository: string | null | undefined = mainworksRepository): Promise<CaseRun> {
   const recorder = caseRecorder(actor);
   if (!recorder) admin(actor);
   const data = caseRunSchema.parse(input);
   return store.transaction(async (db, now) => {
     if (recorder) await revalidateRecorder(db, now, actor, authorize);
     // GY-1708: a shipped revision must be a real row before lookup, so a fresh install can record
-    // a case run without a prior sync (or a create that happened to persist it). Only Graphyard's
+    // a case run without a prior sync (or a create that happened to persist it). Only Mainworks's
     // own repository install ships them (GY-2964).
     await ensureShippedScenarios(db, repository);
     const scenario: Scenario | undefined = (await db.query('SELECT document FROM scenarios WHERE id=$1 AND revision=$2', [id, data.revision])).rows[0]?.document;
     if (recorder && scenario) repositoryCase(scenario.runner);
-    demand(scenario, `Scenario ${id} has no revision ${data.revision}; run graphyard e2e sync first`, 404);
+    demand(scenario, `Scenario ${id} has no revision ${data.revision}; run mainworks e2e sync first`, 404);
     const run: Omit<CaseRun, 'seq'> = { scenarioId: id, proof: `e2e:${id}`, result: data.outcome, scenarioRevision: data.revision, environment: data.environment,
       executed: data.executed, skipped: 0, sha: data.sha ?? 'unknown', baseSha: '', policyRevision: 0, workId: '', workKey: '', pr: null,
       run: { kind: 'e2e', id: data.runId, attempt: null, url: null }, evidenceId: '', producer: actor.id, at: now.toISOString(),

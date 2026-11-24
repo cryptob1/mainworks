@@ -1,8 +1,8 @@
-// Concern: GY-3407 — the hosts Graphyard watches; merge trials send them test shards (GY-3412). A host lends
-// compute and nothing else: `graphyard host prepare` prints a one-time sudo script that creates the
+// Concern: GY-3407 — the hosts Mainworks watches; merge trials send them test shards (GY-3412). A host lends
+// compute and nothing else: `mainworks host prepare` prints a one-time sudo script that creates the
 // unprivileged gy-compute user (not in the docker group) with linger and rootless Docker, and lets this
 // machine's key run only graphyard-host-shim-DIGEST (restrict,command=…: no shell, pty or forwarding). The shim
-// answers fixed verbs (src/host-shim.ts). `graphyard host add USER@HOST` refuses a key
+// answers fixed verbs (src/host-shim.ts). `mainworks host add USER@HOST` refuses a key
 // that opens a plain shell, root and a docker-group user, then records the host in this machine's hosts
 // file — the one host list. Each loop cycle probes every host — cores, hottest CPU sensor, steal and the
 // trial containers running now — this machine first; a host that does not answer reads away.
@@ -21,19 +21,20 @@ import { hostProbeScript, hostShimDigest, hostShimScript, missingTrialVerbs } fr
 import { trialAppArmorProfilePath, trialAppArmorProfileText } from './merge-writer/trial-apparmor.js';
 import { shellQuote } from './install/transport.js';
 
-export interface HostRecord { target: string; addedAt: string }
+/** `sessions` (GY-3405): how many agent sessions the host takes at once; absent or 0, it takes test shards only. */
+export interface HostRecord { target: string; addedAt: string; sessions?: number }
 /** GY-3517: `at` is when this probe read the host; `update` marks one away only because its shim lacks a trial verb. */
-export interface HostReading { host: string; local?: boolean; at?: string; away: boolean; /** GY-3601: when an away host stopped answering. */ since?: string; update?: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; /** GY-3528: cores busy (the 1-minute load). */ busy?: number | null; stat?: { total: number; steal: number } | null }
+export interface HostReading { host: string; local?: boolean; at?: string; away: boolean; /** GY-3601: when an away host stopped answering. */ since?: string; update?: boolean; /** GY-3744: its helper's digest is not this release's. */ older?: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; /** GY-3528: cores busy (the 1-minute load). */ busy?: number | null; stat?: { total: number; steal: number } | null }
 
 /** Machine-wide, beside the machine-share link (team-access.ts): every install's loop on this machine reads the same hosts. */
 export const hostsFile = (home = configHome()) => join(home, 'machine', 'hosts.json');
 /** GY-3698: compute host keys live beside hosts.json in the machine folder, so a confined master with no ~/.ssh records and verifies them. */
 export const hostKnownHostsFile = (home = configHome()) => join(home, 'machine', 'known_hosts');
 /** SSH options that pin compute host keys to the machine folder with accept-new. */
-export const hostKeySshOptions = (knownHosts = hostKnownHostsFile()) => ['-o', `UserKnownHostsFile=${knownHosts}`, '-o', 'StrictHostKeyChecking=accept-new'];
+const hostKeySshOptions = (knownHosts = hostKnownHostsFile()) => ['-o', `UserKnownHostsFile=${knownHosts}`, '-o', 'StrictHostKeyChecking=accept-new'];
 /** USER@HOST, USER@HOST:PORT, or an ssh-config alias. */
-export const hostTargetPattern = /^(?:[a-z_][a-z0-9_.-]*@[A-Za-z0-9][A-Za-z0-9.-]*(?::\d{1,5})?|[A-Za-z0-9][A-Za-z0-9._-]*)$/;
-export const computePort = 2222;
+const hostTargetPattern = /^(?:[a-z_][a-z0-9_.-]*@[A-Za-z0-9][A-Za-z0-9.-]*(?::\d{1,5})?|[A-Za-z0-9][A-Za-z0-9._-]*)$/;
+const computePort = 2222;
 export const hostUser = 'gy-compute';
 
 export async function readHosts(file = hostsFile()): Promise<HostRecord[]> {
@@ -161,7 +162,7 @@ GRAPHYARD_SSHD
   "$sshd" -t -f /etc/ssh/sshd_graphyard_config
   cat > /etc/systemd/system/graphyard-sshd.service <<GRAPHYARD_UNIT
 [Unit]
-Description=OpenSSH for $user only (Graphyard compute, port ${computePort})
+Description=OpenSSH for $user only (Mainworks compute, port ${computePort})
 After=network.target
 [Service]
 ExecStart=$sshd -D -f /etc/ssh/sshd_graphyard_config
@@ -175,9 +176,9 @@ GRAPHYARD_UNIT
   systemctl restart graphyard-sshd
   if command -v ufw >/dev/null && ufw status | grep -q 'Status: active'; then ufw allow in on tailscale0 to any port ${computePort} proto tcp; fi
   target="$target:${computePort}"
-  echo "Port 22 here is Tailscale SSH, which skips the shim. Tailnet check: in your tailnet policy, every ssh rule reaching this machine needs action check, never accept, so no account here logs in unattended. Graphyard reaches $user on port ${computePort}."
+  echo "Port 22 here is Tailscale SSH, which skips the shim. Tailnet check: in your tailnet policy, every ssh rule reaching this machine needs action check, never accept, so no account here logs in unattended. Mainworks reaches $user on port ${computePort}."
 fi
-echo "Ready. On the Graphyard machine run: graphyard host add $target"
+echo "Ready. On the Mainworks machine run: mainworks host add $target"
 `;
 }
 
@@ -187,11 +188,11 @@ export async function localPublicKey(home = homedir()) {
     const key = await readFile(join(home, '.ssh', name), 'utf8').catch(() => null);
     if (key?.trim()) return key.trim();
   }
-  throw new Error(`No SSH public key in ${join(home, '.ssh')}: create one with ssh-keygen -t ed25519, then run graphyard host prepare again`);
+  throw new Error(`No SSH public key in ${join(home, '.ssh')}: create one with ssh-keygen -t ed25519, then run mainworks host prepare again`);
 }
 
-export function parseHostProbe(text: string) {
-  if (/^graphyard-no-docker$/m.test(text)) return null;
+function parseHostProbe(text: string) {
+  if (/^(?:graphyard|mainworks)-no-docker$/m.test(text)) return null;
   const number = (pattern: RegExp) => { const value = Number(pattern.exec(text)?.[1]); return Number.isFinite(value) ? value : null; };
   const temps = [...text.matchAll(/^temp (\S+) (\d+)$/gm)].filter(match => cpuSensorNames.includes(match[1]!)).map(match => Math.floor(Number(match[2]) / 1000));
   const user = /^user (\d+) ?(.*)$/m.exec(text);
@@ -200,7 +201,7 @@ export function parseHostProbe(text: string) {
     uid: user ? Number(user[1]) : null, groups: user ? user[2]!.split(/\s+/).filter(Boolean) : [] };
 }
 
-export const outdatedShimReason = (target: string, missing: readonly string[] = []) => `${target}'s graphyard-host-shim is older than this release: run graphyard host prepare and the script it prints there${missing.length ? ` (it lacks ${missing.join(', ')})` : ''}`;
+const outdatedShimReason = (target: string, missing: readonly string[] = []) => `${target}'s graphyard-host-shim is older than this release: run mainworks host prepare and the script it prints there${missing.length ? ` (it lacks ${missing.join(', ')})` : ''}`;
 const lastLine = (text: string) => text.trim().split('\n').filter(Boolean).at(-1) ?? '';
 /** ssh's arguments for a host target: USER@HOST:PORT becomes -p PORT USER@HOST; USER@HOST and an alias pass as they are. */
 export const sshTarget = (target: string) => { const port = /^(.+@.+):(\d+)$/.exec(target); return port ? ['-p', port[2]!, port[1]!] : [target]; };
@@ -215,11 +216,11 @@ const sshFailure = (target: string, error: any, knownHosts: string) => hostKeyCh
   : `${target} is unreachable over SSH: ${lastLine(String(error?.stderr ?? '')) || (error?.timedOut ? 'no answer within 15 seconds' : String(error?.message ?? error))}`;
 
 /** GY-3697: the probe's docker-unit line says whether rootless Docker's user unit failed or is not enabled. */
-export function noDockerReason(name: string, output: string) {
+function noDockerReason(name: string, output: string) {
   const [, enabled, active] = /^docker-unit (\S*) ?(\S*)$/m.exec(output) ?? [];
-  if (active === 'failed') return `${name} answers but its Docker failed (docker.service failed): see journalctl --user -u docker.service as ${hostUser} there, or run graphyard host prepare and the script it prints`;
-  if (enabled && enabled !== 'enabled') return `${name} answers but its Docker is not enabled (docker.service is ${enabled}), so it stops at reboot: run graphyard host prepare and the script it prints there`;
-  return `${name} answers but its Docker does not: run graphyard host prepare and the script it prints there`;
+  if (active === 'failed') return `${name} answers but its Docker failed (docker.service failed): see journalctl --user -u docker.service as ${hostUser} there, or run mainworks host prepare and the script it prints`;
+  if (enabled && enabled !== 'enabled') return `${name} answers but its Docker is not enabled (docker.service is ${enabled}), so it stops at reboot: run mainworks host prepare and the script it prints there`;
+  return `${name} answers but its Docker does not: run mainworks host prepare and the script it prints there`;
 }
 
 /** One probe of a host through its shim (null: this machine): its readings, or the plain reason it cannot be read. */
@@ -228,7 +229,7 @@ export async function probeHost(target: string | null, run: ChildRun = defaultCh
   try { output = String(await (target ? ssh(target, 'probe', run, knownHosts) : run('sh', ['-c', hostProbeScript], { timeoutMs: 15_000 }))); }
   catch (error: any) {
     if (!target) return { ok: false as const, reason: `this machine could not be read: ${lastLine(String(error?.stderr ?? '')) || String(error?.message ?? error)}` };
-    return { ok: false as const, reason: error?.status === 255 || error?.timedOut ? sshFailure(target, error, knownHosts) : `${target} does not answer graphyard-host-shim's probe: run graphyard host prepare and the script it prints there` };
+    return { ok: false as const, reason: error?.status === 255 || error?.timedOut ? sshFailure(target, error, knownHosts) : `${target} does not answer graphyard-host-shim's probe: run mainworks host prepare and the script it prints there` };
   }
   const reading = parseHostProbe(output);
   if (!reading) return { ok: false as const, reason: noDockerReason(target ?? 'this machine', output) };
@@ -240,14 +241,14 @@ export async function probeHost(target: string | null, run: ChildRun = defaultCh
 
 /** A host's key must reach only the shim: a plain shell command run through it is refused. */
 async function opensPlainShell(target: string, run: ChildRun, knownHosts: string) {
-  try { return String(await ssh(target, 'echo graphyard-plain-shell', run, knownHosts)).includes('graphyard-plain-shell') ? 'yes' : 'no'; }
+  try { return String(await ssh(target, 'echo mainworks-plain-shell', run, knownHosts)).includes('mainworks-plain-shell') ? 'yes' : 'no'; }
   catch (error: any) { return error?.status === 255 || error?.timedOut ? sshFailure(target, error, knownHosts) : 'no'; }
 }
 
 const targetHost = (target: string) => target.replace(/^.*@/, '').replace(/:\d+$/, '');
 
 /** Read-only: does this machine's own account open a shell on the host's port 22 (Tailscale SSH or a key) with nobody there to approve it? */
-export async function operatorLogin(target: string, run: ChildRun = defaultChildRun, account = userInfo().username, knownHosts = hostKnownHostsFile()) {
+async function operatorLogin(target: string, run: ChildRun = defaultChildRun, account = userInfo().username, knownHosts = hostKnownHostsFile()) {
   const host = /^hostname (\S+)$/m.exec(String(await Promise.resolve(run('ssh', ['-G', ...sshTarget(target)], { timeoutMs: 5_000 })).catch(() => '')))?.[1] ?? targetHost(target);
   const login = `${account}@${host}`;
   try {
@@ -267,12 +268,12 @@ export async function addHost(target: string, options: { file?: string; knownHos
   const host = targetHost(target);
   const refuse = (reason: string) => { throw new Error(`${target} was not added: ${reason}`); };
   const shell = await opensPlainShell(target, run, knownHosts);
-  if (shell === 'yes') refuse(`its SSH key opens a plain shell, so Graphyard could reach everything that user can; run graphyard host prepare and the script it prints there, then add ${hostUser}@${host} (${hostUser}@${host}:${computePort} where port 22 is Tailscale SSH)`);
+  if (shell === 'yes') refuse(`its SSH key opens a plain shell, so Mainworks could reach everything that user can; run mainworks host prepare and the script it prints there, then add ${hostUser}@${host} (${hostUser}@${host}:${computePort} where port 22 is Tailscale SSH)`);
   if (shell !== 'no') refuse(shell);
   const probe = await probeHost(target, run, knownHosts);
   if (!probe.ok) refuse(probe.reason);
-  if (probe.ok && probe.uid === 0) refuse(`it logs in as root; add the unprivileged ${hostUser} user that graphyard host prepare creates`);
-  if (probe.ok && probe.groups.includes('docker')) refuse(`${target.split('@')[0]} is in the docker group, which is root on that host; use ${hostUser} with rootless Docker (graphyard host prepare)`);
+  if (probe.ok && probe.uid === 0) refuse(`it logs in as root; add the unprivileged ${hostUser} user that mainworks host prepare creates`);
+  if (probe.ok && probe.groups.includes('docker')) refuse(`${target.split('@')[0]} is in the docker group, which is root on that host; use ${hostUser} with rootless Docker (mainworks host prepare)`);
   const next = [...hosts, { target, addedAt: new Date().toISOString() }];
   await writeHosts(file, next);
   return { added: true, hosts: next, probe: probe.ok ? probe : null, operator: await operatorLogin(target, run, userInfo().username, knownHosts) };
@@ -287,6 +288,24 @@ export async function removeHost(target: string, options: { file?: string } = {}
   return { removed: true, hosts: next };
 }
 
+/** GY-3405: why `target` cannot take agent sessions now, in one line; null when its helper runs them. */
+export async function sessionHelperProblem(target: string, run: ChildRun = defaultChildRun): Promise<string | null> {
+  const probe = await probeHost(target, run);
+  if (probe.ok && probe.verbs?.includes('run-session:1')) return null;
+  return probe.ok || probe.update ? `${target}'s helper is older than this release and takes no sessions: run mainworks host prepare and its script there first` : probe.reason;
+}
+
+/** GY-3405: open an added host to `sessions` agent sessions at once (0 closes it to them), once its helper runs them. */
+export async function setHostSessions(target: string, sessions: number, options: { file?: string; run?: ChildRun } = {}) {
+  const file = options.file ?? hostsFile();
+  if (!Number.isSafeInteger(sessions) || sessions < 0 || sessions > 64) throw new Error(`Name how many sessions ${target} takes at once, 0 to 64: got ${sessions}`);
+  const hosts = await readHosts(file);
+  if (!hosts.some(host => host.target === target)) throw new Error(`${target} is not added: run mainworks host add ${target} first`);
+  const problem = sessions ? await sessionHelperProblem(target, options.run) : null;
+  if (problem) throw new Error(problem);
+  await writeHosts(file, hosts.map(host => host.target === target ? { ...host, sessions } : host));
+}
+
 /** One cycle's readings: this machine first, then every recorded host; steal is measured from the previous cycle's counters. */
 export async function readHostReadings(previous: HostReading[], options: { file?: string; knownHosts?: string; run?: ChildRun; local?: string } = {}): Promise<HostReading[]> {
   const knownHosts = options.knownHosts ?? (options.file ? join(dirname(options.file), 'known_hosts') : hostKnownHostsFile());
@@ -297,6 +316,6 @@ export async function readHostReadings(previous: HostReading[], options: { file?
     const was = previous.find(reading => reading.host === host);
     if (!probe.ok) return { host, ...(target ? {} : { local: true }), at, away: true, since: was?.away ? was.since ?? was.at ?? at : at, ...('update' in probe ? { update: true } : {}), reason: probe.reason, cores: null, celsius: null, steal: null, runs: null, busy: null, stat: null };
     const before = was?.stat ?? null;
-    return { host, ...(target ? {} : { local: true }), at, away: false, cores: probe.cores, celsius: probe.celsius, steal: stealPercent(before, probe.stat), runs: probe.runs, busy: probe.load, stat: probe.stat };
+    return { host, ...(target ? {} : { local: true }), at, away: false, ...(target && probe.shim !== hostShimDigest ? { older: true } : {}), cores: probe.cores, celsius: probe.celsius, steal: stealPercent(before, probe.stat), runs: probe.runs, busy: probe.load, stat: probe.stat };
   }));
 }

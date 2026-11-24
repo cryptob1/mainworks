@@ -1,5 +1,5 @@
 // Concern: GY-3412 — a trial's test shards fanned out across hosts over SSH. The hosts are the one host
-// list `graphyard host add` keeps (GY-3407); this machine is always one. Each trial reads every host
+// list `mainworks host add` keeps (GY-3407); this machine is always one. Each trial reads every host
 // once, places each shard on the host with the most real free CPU under its heat limit, and runs it
 // there through graphyard-host-shim (src/host-shim.ts), whose fixed verbs are all this machine's key
 // may run. A host that drops or turns away a shard has it re-queued on another host: capacity, never a fault.
@@ -13,11 +13,12 @@ import { shellQuote } from '../shell-quote.js';
 import { hostKnownHostsFile, probeHost, readHosts, sshTarget, type HostReading as HostProbe } from '../hosts.js';
 import { trialImage } from './trial-container.js';
 import { trialContainerFault, trialHotCelsius } from './trial-load.js';
+import { stateDirectory } from '../install/layout.js';
 
 /** One host's reading: cores, cores busy (1-minute load), the share of CPU stolen, and its hottest CPU sensor against the heat limit. */
 export interface HostReading { name: string; cores: number; busy: number; steal: number; celsius: number | null; limit: number; away: boolean; reason?: string; /** GY-3645: its shim runs a check's Compose services. */ compose?: boolean }
 
-/** The targets of the hosts `graphyard host add` recorded; none when it recorded none. */
+/** The targets of the hosts `mainworks host add` recorded; none when it recorded none. */
 export const shardHosts = async () => (await readHosts().catch(() => [])).map(host => host.target);
 
 /** Real free CPU in cores: idle cores less the share the hypervisor steals. */
@@ -32,7 +33,7 @@ export const underHeatLimit = (reading: HostReading) => !reading.away && (readin
  * package registry (npm exec, or the npm cache a trial fixture installs through, npm_config_cache,
  * GY-3604; a shard has no network), /var/tmp (read-only there, GY-3609) or durable storage for a
  * managed worktree root (worktreeRoot, GY-3648: a shard container's writable temporary storage is
- * its tmpfs /tmp, HOME included, and Graphyard refuses a managed root on memory-backed storage).
+ * its tmpfs /tmp, HOME included, and Mainworks refuses a managed root on memory-backed storage).
  * Database tests start the shared warm Postgres cluster inside each remote shard container, and
  * browser tests use the Chromium shipped in the trial image. Servers, sockets and requests on
  * loopback work on a host, so their words do not keep a file local.
@@ -42,8 +43,8 @@ export const localOnlyTestPattern = /docker|bwrap|unshare|landlock|hard-math|del
 export const remoteableTestFile = (text: string) => !localOnlyTestPattern.test(text);
 
 /** GY-3612, GY-3656: a test file that drives a browser — a Playwright spec under browser-tests/, or a file naming playwright, chromium or projectCaseSuite. */
-export const browserTestPattern = /playwright|chromium|projectCaseSuite/i;
-export const isBrowserTestFile = (file: string, text: string) =>
+const browserTestPattern = /playwright|chromium|projectCaseSuite/i;
+const isBrowserTestFile = (file: string, text: string) =>
   /^browser-tests\/.*\.spec\.[cm]?[jt]sx?$/i.test(file) || browserTestPattern.test(text);
 
 /** GY-3612: whether `image` ships a Playwright browser (its ENV names PLAYWRIGHT_BROWSERS_PATH, as the trial image does). */
@@ -167,7 +168,7 @@ export async function runShardsOnHosts<R>(input: { count: number; hosts: readonl
 /** OpenSSH's default MaxSessions: the sessions one connection carries at once. */
 const sessionsPerConnection = 10;
 /** GY-3534: the new SSH connections a trial opens to one host at most; a burst of one per shard reads as resets from the host's sshd. */
-export const connectionsPerHost = 3;
+const connectionsPerHost = 3;
 
 /** A trial owns its SSH config: resolve only the user's aliases, never the system config/includes.
  * Keep connection and host-key settings; commands, forwarding and system includes do not travel.
@@ -183,7 +184,7 @@ export function shardSshSession(run: ChildRun, knownHosts = hostKnownHostsFile()
       const userConfig = join(homedir(), '.ssh', 'config');
       const resolved = String(await run('ssh', ['-G', '-F', existsSync(userConfig) ? userConfig : '/dev/null', ...sshTarget(target)], { timeoutMs: 5_000 }));
       const settings = resolved.split('\n').filter(line => /^(hostname|user|port|identityfile|certificatefile|globalknownhostsfile|hostkeyalias) /i.test(line));
-      const path = join(await (directory ??= mkdtemp(join(tmpdir(), 'graphyard-shard-ssh-'))), `${randomUUID()}.conf`);
+      const path = join(await (directory ??= mkdtemp(join(tmpdir(), 'mainworks-shard-ssh-'))), `${randomUUID()}.conf`);
       const knownHostsValue = knownHosts.includes(' ') ? `"${knownHosts}"` : knownHosts;
       await writeFile(path, ['Host *', 'BatchMode yes', 'ConnectTimeout 10', 'IdentitiesOnly yes', 'ControlPersist 15m',
         `UserKnownHostsFile ${knownHostsValue}`, 'StrictHostKeyChecking accept-new', ...settings, ''].join('\n'), { mode: 0o600 });
@@ -349,6 +350,9 @@ export async function warmCommitOnHosts(input: {
   return { ...built, pushed, failed };
 }
 
+/** GY-3745: where a running trial marks the warm image it uses (`TAG.PID.ID`, removed when it ends): the leftovers sweep keeps those images while PID lives. */
+export const warmInUseDirectory = (home = homedir()) => join(home, '.graphyard', 'warm-in-use');
+
 /**
  * One trial's remote hosts. The warm image — the trial image with the commit's locked dependencies
  * in /deps, its built CLI/server entries in /warm/dist and a filled compile cache in /warm/compile-cache —
@@ -374,10 +378,14 @@ export function remoteShardSession(input: { root: string; sha: string; baseTip?:
       throw new HostDroppedError(target, (String(failed.stderr ?? '').trim() || String(failed.message ?? error)).slice(-500));
     }
   };
-  let warm: Promise<string> | null = null;
+  let warm: Promise<string> | null = null, marker: string | null = null;
   const warmImage = () => selectWarmImage({ root: input.root, sha: input.sha, baseTip: input.baseTip, image: input.image, run: input.run, deadline: input.deadline });
   const prepare = async (target: string) => {
-    const image = await (warm ??= warmImage());
+    const image = await (warm ??= warmImage().then(async tag => {
+      await mkdir(warmInUseDirectory(), { recursive: true });
+      await writeFile(marker = join(warmInUseDirectory(), `${tag.slice('graphyard-warm:'.length)}.${process.pid}.${randomUUID().slice(0, 8)}`), '');
+      return tag;
+    }));
     for (let step = 0; step < 3; step++) {
       const answer = (await shim(target, `prepare-run ${repo} ${input.sha} ${image}`)).trim().split('\n').at(-1) ?? '';
       if (answer.startsWith('run ')) return answer.slice(4);
@@ -393,6 +401,9 @@ export function remoteShardSession(input: { root: string; sha: string; baseTip?:
   };
   const ready = new Map<string, Promise<string>>();
   return {
+    /** GY-3405: the run directory on `target` holding the commit's checkout, made once: what a remote agent session runs in. */
+    ready(target: string) { if (!ready.has(target)) ready.set(target, prepare(target)); return ready.get(target)!; },
+    shim,
     /** Run one shard on `target` through the shim: its files, `argv(list, records)` run by the trial launcher there with `cpus` CPUs, the output and records brought back. */
     async run(target: string, index: number, files: readonly string[], argv: (list: string, records: string) => string[], cpus: number): Promise<RemoteShardEnd> {
       if (!ready.has(target)) ready.set(target, prepare(target));
@@ -411,7 +422,7 @@ export function remoteShardSession(input: { root: string; sha: string; baseTip?:
       // (less the launcher's own waiting lines, which on a hot host would fill it).
       const fault = trialContainerFault(end.out);
       // A session over a shared connection that lost its host prints nothing of its own, so name that loss.
-      const said = end.out.replace(/^graphyard trial container: (waiting|starting).*\n/gm, '').slice(-500).trim();
+      const said = end.out.replace(/^(?:graphyard|mainworks) trial container: (waiting|starting).*\n/gm, '').slice(-500).trim();
       if (!end.ok && (end.status === 255 || end.status === null || fault || !records.trim())) throw new HostDroppedError(target, fault ?? (said || `the SSH connection to ${target} closed mid-shard (exit ${end.status ?? 'signal'})`));
       return { ...end, records };
     },
@@ -419,11 +430,7 @@ export function remoteShardSession(input: { root: string; sha: string; baseTip?:
     async check(target: string, check: { file: string; services: { service: string; port: number }[]; argv: string[]; cpus: number }): Promise<RemoteCheckEnd> {
       if (!ready.has(target)) ready.set(target, prepare(target));
       const run = await ready.get(target)!;
-      const out = await shim(target, `run-check ${run}`, `printf '%s' ${shellQuote(JSON.stringify({ ...check, deadline: input.deadline }))}`);
-      const exit = /\ngraphyard-check exit (\d+)\n?$/.exec(out), fault = trialContainerFault(out);
-      // No exit line, or a launcher that gave up on the host's heat or disk: the host never judged the check.
-      if (!exit || fault) throw new HostDroppedError(target, fault ?? (out.slice(-300).trim() || 'the check ended without an exit code'));
-      return { out: out.replace(/\n(?:graphyard-check .*\n?)+$/, '\n'), status: Number(exit[1]), steps: [...out.matchAll(/^graphyard-check (services|command|teardown) (\d+)$/gm)].map(match => ({ step: match[1]!, ms: Number(match[2]) })) };
+      return remoteCheckEnd(target, await shim(target, `run-check ${run}`, `printf '%s' ${shellQuote(JSON.stringify({ ...check, deadline: input.deadline }))}`));
     },
     async close() {
       await Promise.all([...ready.entries()].map(async ([target, prepared]) => {
@@ -431,13 +438,25 @@ export function remoteShardSession(input: { root: string; sha: string; baseTip?:
         if (run) await shim(target, `clean ${run}`).catch(() => {});
       }));
       await transport.close();
+      if (marker) await rm(marker, { force: true });
     },
   };
 }
 
+/**
+ * GY-3645: a run-check's verdict from the helper's output; GY-3744: a helper prepared before the rename prints
+ * its check lines under the old name, and both names' lines are the host's verdict.
+ */
+export function remoteCheckEnd(target: string, out: string): RemoteCheckEnd {
+  const exit = /\n(?:graphyard|mainworks)-check exit (\d+)\n?$/.exec(out), fault = trialContainerFault(out);
+  // No exit line, or a launcher that gave up on the host's heat or disk: the host never judged the check.
+  if (!exit || fault) throw new HostDroppedError(target, fault ?? (out.slice(-300).trim() || 'the check ended without an exit code'));
+  return { out: out.replace(/\n(?:(?:graphyard|mainworks)-check .*\n?)+$/, '\n'), status: Number(exit[1]), steps: [...out.matchAll(/^(?:graphyard|mainworks)-check (services|command|teardown) (\d+)$/gm)].map(match => ({ step: match[1]!, ms: Number(match[2]) })) };
+}
+
 /** One trial's shard record, for master status: what ran them, wall time, shards run and run remotely, waits while a host idled, and each host's reading. */
 export interface RemoteShardRun { /** GY-3526: the worker verification that ran them; absent for a merge trial. */ label?: string; at: string; wallMs: number; shards: number; remote: number; queuedWhileIdle: number; host: string; celsius: number | null; hosts: { name: string; away: boolean; reason?: string; celsius: number | null; freeCores: number }[] }
-export const remoteShardRecordPath = (root: string) => join(root, '.graphyard', 'remote-shards.json');
+const remoteShardRecordPath = (root: string) => join(stateDirectory(root), 'remote-shards.json');
 const keptRuns = 20;
 
 export async function recordRemoteShardRun(root: string, run: RemoteShardRun): Promise<void> {
@@ -473,9 +492,11 @@ export function remoteShardSummary(runs: readonly RemoteShardRun[], probes?: rea
   };
 }
 
-/** GY-3476, GY-3517: one attention line for each host the latest probe reads away because its shim lacks a verb trials use; it clears on the first probe that reads it ready. */
-export const outdatedShimAttention = (probes: readonly Pick<HostProbe, 'host' | 'away' | 'update'>[]) => probes.filter(probe => probe.away && probe.update).map(probe =>
-  ({ subject: `host ${probe.host}`, text: `${probe.host} takes no trial shards: its graphyard-host-shim is older than this release`, next: `Run graphyard host prepare and, with sudo on ${probe.host}, the script it prints` }));
+/** GY-3476, GY-3517: one attention line for each host the latest probe reads away because its shim lacks a verb trials use, or (GY-3744) reads ready on an older helper; it clears with the probe. */
+export const outdatedShimAttention = (probes: readonly Pick<HostProbe, 'host' | 'away' | 'update' | 'older'>[]) => probes.flatMap(probe =>
+  probe.away && probe.update ? [{ subject: `host ${probe.host}`, text: `${probe.host} takes no trial shards: its graphyard-host-shim is older than this release`, next: `Run mainworks host prepare and, with sudo on ${probe.host}, the script it prints` }]
+  // GY-3744: a ready host on another release's helper keeps taking shards; one line says how to update it.
+  : !probe.away && probe.older ? [{ subject: `host ${probe.host}`, text: `${probe.host} runs an older helper: run host prepare there to update it`, next: `Run mainworks host prepare and, with sudo on ${probe.host}, the script it prints` }] : []);
 
 /** GY-3534: one attention line for each host the latest trial left away because its SSH server reset the connection. */
 export const connectionResetAttention = (runs: readonly RemoteShardRun[]) => (runs.at(-1)?.hosts ?? []).filter(host => host.away && /connection reset|kex_exchange_identification/i.test(host.reason ?? '')).map(host =>

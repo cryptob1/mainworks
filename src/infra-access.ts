@@ -7,8 +7,9 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { setting } from './setting.js';
 
-export const infraActions = ['repo.create', 'repo.push', 'project.create', 'environment.create'] as const;
+const infraActions = ['repo.create', 'repo.push', 'project.create', 'environment.create'] as const;
 export type InfraAction = typeof infraActions[number];
 /** What an infra credential covers: one repository (OWNER/NAME) and one hosting project. */
 export interface InfraScope { repository: string; project: string }
@@ -19,12 +20,12 @@ export const infraRefusal = (scope: InfraScope) => `Refused: this credential cov
 /** The provider endpoints and tokens, from the server's environment. */
 export interface InfraProviders { githubToken?: string; githubApi: string; gitUrl: string; railwayToken?: string; railwayApi: string; railwayTeam?: string }
 export const infraProviders = (env: NodeJS.ProcessEnv): InfraProviders => ({
-  githubToken: env.GRAPHYARD_INFRA_GITHUB_TOKEN || undefined,
-  githubApi: (env.GRAPHYARD_INFRA_GITHUB_API || 'https://api.github.com').replace(/\/+$/, ''),
-  gitUrl: (env.GRAPHYARD_INFRA_GIT_URL || 'https://github.com').replace(/\/+$/, ''),
-  railwayToken: env.GRAPHYARD_INFRA_RAILWAY_TOKEN || undefined,
-  railwayApi: env.GRAPHYARD_INFRA_RAILWAY_API || 'https://backboard.railway.com/graphql/v2',
-  railwayTeam: env.GRAPHYARD_INFRA_RAILWAY_TEAM || undefined,
+  githubToken: setting('INFRA_GITHUB_TOKEN', env) || undefined,
+  githubApi: (setting('INFRA_GITHUB_API', env) || 'https://api.github.com').replace(/\/+$/, ''),
+  gitUrl: (setting('INFRA_GIT_URL', env) || 'https://github.com').replace(/\/+$/, ''),
+  railwayToken: setting('INFRA_RAILWAY_TOKEN', env) || undefined,
+  railwayApi: setting('INFRA_RAILWAY_API', env) || 'https://backboard.railway.com/graphql/v2',
+  railwayTeam: setting('INFRA_RAILWAY_TEAM', env) || undefined,
 });
 
 const missing = (name: string) => new Error(`Set ${name} in the install's .env and restart the server.`);
@@ -45,7 +46,7 @@ export async function createRepository(providers: InfraProviders, repository: st
 /** Push every branch and tag in BUNDLE to OWNER/NAME; the token rides in git's environment, never in a URL, an argument or a file. */
 export async function pushRepository(providers: InfraProviders, repository: string, bundle: Buffer) {
   if (!providers.githubToken) throw missing('GRAPHYARD_INFRA_GITHUB_TOKEN');
-  const dir = await mkdtemp(join(tmpdir(), 'graphyard-infra-push-'));
+  const dir = await mkdtemp(join(tmpdir(), 'mainworks-infra-push-'));
   try {
     const file = join(dir, 'push.bundle'), bare = join(dir, 'repo.git');
     await writeFile(file, bundle);

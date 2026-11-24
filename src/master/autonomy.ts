@@ -25,7 +25,7 @@ type AutonomyFetch = typeof fetch;
 async function adminCall(config: MasterConfig, token: string, fetcher: AutonomyFetch, path: string, body?: unknown) {
   const response = await fetcher(`${config.url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(30_000) });
   const result = await response.json();
-  if (!response.ok) throw new Error(`Graphyard refused ${path} (${response.status}): ${result?.error ?? 'unknown'}`);
+  if (!response.ok) throw new Error(`Mainworks refused ${path} (${response.status}): ${result?.error ?? 'unknown'}`);
   return result;
 }
 async function identityHolds(config: MasterConfig, file: string, id: string, fetcher: AutonomyFetch) {
@@ -43,7 +43,7 @@ export async function setupAutonomy(root: string, input: { adminToken?: string; 
   const identities = [plan.operatorAgent];
   const describe = identities.map(({ id, capabilities, credentialFile, role }) => ({ id, capabilities, credentialFile, role }));
   if (!input.apply) return { applied: false, identities: describe, humanOnly: humanOnlyDecisions, harness: await writeHarnessPermissions(root, masterHarness(root, config, input.harness ?? 'claude'), false),
-    next: 'Rerun with --apply and the admin credential on stdin: graphyard master autonomy --admin-token-stdin --apply' };
+    next: 'Rerun with --apply and the admin credential on stdin: mainworks master autonomy --admin-token-stdin --apply' };
   if (!input.adminToken || input.adminToken.length < 32) throw new Error('Autonomy setup needs the admin credential once, on stdin; it is used to provision the master identity and is never stored');
   const status = await adminCall(config, input.adminToken, fetcher, 'status');
   if (status.actor?.role !== 'admin') throw new Error('Autonomy setup needs the admin credential; it provisions operator-agent identities, which only an admin may create');
@@ -71,17 +71,17 @@ export async function setupAutonomy(root: string, input: { adminToken?: string; 
   await atomicPrivateWrite(resolve(await localDirectory(root), 'master.json'), masterConfigSchema.parse(next));
   const harness = await writeHarnessPermissions(root, masterHarness(root, next, input.harness ?? 'claude'), true);
   return { applied: true, identities: describe, changes, humanOnly: humanOnlyDecisions, harness,
-    next: 'The master now applies every decision with its operator-agent identity: graphyard master create, release, unblock, requirements, rework, attest and close' };
+    next: 'The master now applies every decision with its operator-agent identity: mainworks master create, release, unblock, requirements, rework, attest and close' };
 }
 export async function agentToken(root: string, config: MasterConfig, _which: 'operatorAgent' = 'operatorAgent') {
   const identity = config.operatorAgent;
-  if (!identity) throw new Error('No master operator-agent identity is provisioned; run graphyard master autonomy --admin-token-stdin --apply');
+  if (!identity) throw new Error('No master operator-agent identity is provisioned; run mainworks master autonomy --admin-token-stdin --apply');
   await externalCredential(root, identity.credentialFile, 'Operator-agent');
   return readCredentialFile(identity.credentialFile);
 }
 /**
  * Fill the binding an intent needs from the item's current state, so the master names the change
- * and its reason and Graphyard supplies the exact revision or candidate it binds to.
+ * and its reason and Mainworks supplies the exact revision or candidate it binds to.
  */
 export function intentInput(action: 'requirements' | 'attest', work: Work, input: Record<string, unknown>) {
   if (action === 'requirements') return { expectedPolicyRevision: work.policyRevision, criteria: work.criteria, dependencies: work.dependencies, exclusiveResources: work.exclusiveResources ?? [], producerProofs: work.producerProofs ?? [], ...input };
@@ -142,7 +142,7 @@ export interface AutonomyDependencies {
 const words = (args: string[]) => args.join(' ').trim();
 async function jsonArgument(value: string) { return JSON.parse(value.startsWith('@') ? await readFile(value.slice(1), 'utf8') : value); }
 /**
- * The autonomy subcommands of `graphyard master`: onboarding the master identity, the intent it
+ * The autonomy subcommands of `mainworks master`: onboarding the master identity, the intent it
  * applies at once and the loop restart. Each authenticates as the identity the
  * command belongs to, never as another.
  */

@@ -19,6 +19,7 @@ import { launchTokenActor } from './review-verdict.js';
 import { signinClaimFromEnv } from './routes/signin.js';
 import { endTerminals } from './terminal.js';
 import { infraProviders } from '../infra-access.js';
+import { setting } from '../setting.js';
 
 /**
  * Resolve the bearer token to a principal: a configured credential first, then a human session a
@@ -38,7 +39,7 @@ export async function authenticate(services: Services, authorization: string | u
   const configured = configuredCredential(services, hash);
   if (configured) await services.operatorAgents.assertConfiguredPrincipalSafe({ id: configured.actor.id, tokenHash: hash.toString('hex') }, { lease });
   const actor = configured?.actor ?? await humanSignIn(services).authenticate(token) ?? await mintedWorker(services, token) ?? await mintedReporter(services, token) ?? await mintedCaretaker(services, token) ?? await services.operatorAgents.authenticate(token) ?? await launchTokenActor(services, hash.toString('hex'));
-  demand(actor, 'A valid Graphyard bearer token is required', 401);
+  demand(actor, 'A valid Mainworks bearer token is required', 401);
   if (actor.role === 'operator-agent') demand(actor.scope?.repositories.includes(repository), 'Repository is outside operator-agent scope', 403);
   return actor;
 }
@@ -117,7 +118,7 @@ export async function tailscaleTeammate(services: Services, login: string): Prom
 const visited = new WeakMap<Services, Set<string>>();
 
 /** Whoever reads the dashboard on this machine without signing in: a reader, so every action and human-only decision still needs a signed-in session. */
-export const localViewer: Principal = { id: 'local-viewer', role: 'reader', displayName: 'Local viewer' };
+const localViewer: Principal = { id: 'local-viewer', role: 'reader', displayName: 'Local viewer' };
 const loopbackHost = /^(?:localhost|127\.0\.0\.1|\[::1\])(?::(\d+))?$/i;
 /**
  * A read addressed to the loopback host and served (or Compose-published) port. Another Host header (a
@@ -128,7 +129,7 @@ export function localRead(req: IncomingMessage) {
   const host = loopbackHost.exec(req.headers.host ?? '');
   // Compose publishes only on host loopback, but NAT changes both the port and socket peer.
   // This installer-owned setting declares that boundary; direct servers still require loopback.
-  const publishedPort = process.env.GRAPHYARD_LOCAL_VIEW_PORT;
+  const publishedPort = setting('LOCAL_VIEW_PORT');
   return req.method === 'GET' && !!host && Number(host[1] ?? 80) === (publishedPort ? Number(publishedPort) : req.socket.localPort)
     && (!!publishedPort || ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress ?? ''))
     && !req.headers.forwarded && !req.headers['x-forwarded-for']
@@ -194,7 +195,7 @@ const lanes: Record<PrincipalGrant, Lane> = {
  * route (src/server/index.ts dispatches it ahead of the table): each grant passes or answers its own
  * routes, GET /api/principals answers with its own entry alone, and every other route is refused.
  */
-export const laneProducerRouteGuard: Route = {
+const laneProducerRouteGuard: Route = {
   method: '*', path: /^\/api\//,
   async handle(context) {
     const { actor, url, req } = context;
@@ -213,7 +214,7 @@ export const laneProducerRouteGuard: Route = {
 export const laneProducerScope: RouteModule = { name: 'lane-producer-scope', routes: [laneProducerRouteGuard] };
 
 /**
- * The human operator signs into the dashboard without handling a token (GY-738). `graphyard login`,
+ * The human operator signs into the dashboard without handling a token (GY-738). `mainworks login`,
  * run with the operator's own admin credential, asks for a one-time link; opening it in a browser
  * redeems it for a short-lived session bound to that principal and declared human, so the
  * decisions only a human may make are answered in that browser with one click. A link is single
@@ -399,5 +400,5 @@ export function assembleServices(engine: Engine, credentials: Credential[], opti
   return { signinClaim: signinClaimFromEnv(env, credentials), engine, repository, principals, limits: delegationLimits.limits, delegationLimits, build: buildIdentity(env), production: options.production ?? null, validation, delivery, operatorAgents, agentRegistry: new AgentRegistry(engine.store), responder: options.responder !== undefined ? options.responder : responderFromEnv(env),
     ...(options.clock ? { clock: options.clock } : {}),
     // GY-3294: the port the dashboard is published on, which its tailnet address and invites name.
-    teamAccess: { port: env.GRAPHYARD_LOCAL_VIEW_PORT || null }, infra: infraProviders(env) };
+    teamAccess: { port: setting('LOCAL_VIEW_PORT', env) || null }, infra: infraProviders(env) };
 }

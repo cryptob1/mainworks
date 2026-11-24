@@ -4,11 +4,11 @@ import { demand, type Principal } from './model.js';
 import type { Store } from './store.js';
 
 /**
- * GY-1529: `graphyard master recover` repins the known-good coordinator and records the move on the
+ * GY-1529: `mainworks master recover` repins the known-good coordinator and records the move on the
  * append-only ledger as `policy.coordinator.recovered` {from, to, reason} (no work item), with an
  * admin credential only.
  */
-export const coordinatorRecoveredKind = 'policy.coordinator.recovered';
+const coordinatorRecoveredKind = 'policy.coordinator.recovered';
 const sha = z.string().regex(/^[0-9a-f]{40}$/);
 const schema = z.object({ from: sha.nullable(), to: sha, reason: z.string().trim().min(1).max(1000) }).strict();
 

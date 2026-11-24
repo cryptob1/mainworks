@@ -17,10 +17,10 @@ import { formatAge } from './duration.js';
 // one place. `action-account.ts` is the one exception: it imports the computation below, so it
 // is imported from directly rather than re-exported through the module it depends on.
 export { actionJudgment, executorRunnableKinds, llmRoles, mechanicalActionKinds, nextActionKinds, nextActionLlmRoles } from './action-kinds.js';
-export type { LlmRole, NextAction, NextActionInputs, NextActionKind } from './action-kinds.js';
+export type {  NextAction,  NextActionKind } from './action-kinds.js';
 // What stands beside an action lives in `concerns.ts`, re-exported here likewise.
-export { carriedAction, dispatchHold, humanNeeded, humanNeededActions, openAction } from './concerns.js';
-export type { HumanNeeded, HumanNeededRow, OpenAction } from './concerns.js';
+export {   humanNeeded, humanNeededActions,  } from './concerns.js';
+;
 
 /**
  * The typed next action.
@@ -257,7 +257,7 @@ const refusalRules: { gate: string | null; match: RegExp; kind: NextActionKind }
   // against the bound base — without this rule the refusal fell through to the catch-all and
   // said "no executor step answers it" about the one thing rework is for.
   // A base the control plane cannot merge in cleanly is the worker's to resolve, on a fresh head:
-  // the refusal itself says to run `graphyard sync`, resolve it and push, and that approval and
+  // the refusal itself says to run `mainworks sync`, resolve it and push, and that approval and
   // proofs do not survive the resolution. Re-reading the pull request cannot produce that head, so
   // a conflict is rework — the one kind that says a judgment owes this item a new commit.
   { gate: 'build', match: /conflict/i, kind: 'request-rework' },
@@ -307,7 +307,7 @@ const refusalRules: { gate: string | null; match: RegExp; kind: NextActionKind }
  * reviews a session answers — so this mapping is exhaustive over `ReviewState` and the only state
  * it leaves to `request-review` is the one a launched reviewer can actually answer.
  */
-export function reviewStandstill(work: Work, all: Work[] = [work], now: Date): { kind: NextActionKind; reason: string } | null {
+function reviewStandstill(work: Work, all: Work[] = [work], now: Date): { kind: NextActionKind; reason: string } | null {
   if (!work.candidate || !work.observation) return null;
   const need = reviewNeed(work, all, now);
   switch (need.state) {

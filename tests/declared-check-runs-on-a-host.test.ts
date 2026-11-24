@@ -1,9 +1,17 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { masterStatusReport } from '../src/cli/master-status.js';
+import type { MasterConfig } from '../src/master.js';
+import { slotsDirectoryVariable, writeMachines } from '../src/master/verification-slots.js';
+import { trialRunFiles, trialRunsDirectory, lastHostFallbacks } from '../src/merge-writer/trial-run.js';
+import { encodeLoopHosts, loopHosts } from '../src/model/loop-presence.js';
+import WorkersPage from '../web/pages/workers.js';
 import { rm, writeFile } from 'node:fs/promises';
 import { connect, createServer } from 'node:net';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { readShardHosts } from '../src/merge-writer/remote-shards.js';
 import { runTrial } from '../src/merge-writer/trial.js';
@@ -18,7 +26,7 @@ import { dockerCalls, dockerCreates, shardHosts, shardRepository, type ShardHost
 // Docker is a stand-in (helpers/shard-hosts.ts): its `compose up` starts a real TCP listener for the service.
 
 const proof = 'integration:declared-check-runs-on-a-host';
-const image = 'graphyard-trial:declared-check', target = 'gy-compute@box';
+const image = 'mainworks-trial:declared-check', target = 'gy-compute@box';
 let hosts: ShardHostsFixture, repository: { root: string; sha: string }, port: number, ran: string, fails: string;
 const previous = process.env.GRAPHYARD_TRIAL_IMAGE;
 const freePort = () => new Promise<number>(resolve => { const server = createServer().listen(0, '127.0.0.1', () => { const { port } = server.address() as { port: number }; server.close(() => resolve(port)); }); });
@@ -59,10 +67,13 @@ async function trial() {
   const services: typeof startCheckServices = async request => { started.push(request); return { network: 'container:local-postgres', close: async () => {} }; };
   const result = await runTrial({ root: repository.root, base: await temporaryDirectory('declared-check-base'), mergeSha: repository.sha, changedFiles: ['scripts/needs-postgres.mjs'], timeoutMs: 240_000, cores: 2, run, retries: 0, services,
     onTiming: step => timings.push(step),
+    // GY-3704: as the detached run records it in its steps.jsonl.
+    onHostCheck: entry => { mkdirSync(dirname(steps()), { recursive: true }); appendFileSync(steps(), `${JSON.stringify({ ...entry, at: new Date().toISOString() })}\n`); },
     remote: { hosts: [target], read: async (named, transport) => (await readShardHosts(named, run, 2, transport)).map(reading => ({ ...reading, celsius: null })) } });
   const lines = existsSync(ran) ? readFileSync(ran, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line) as { cwd: string; host: string; port: number }) : [];
   return { result, lines, timings, started, localCheck: local.filter(args => args.includes('scripts/needs-postgres.mjs')) };
 }
+const steps = () => trialRunFiles(join(trialRunsDirectory(repository.root), 'run')).steps;
 const state = () => hosts.state('box');
 const projects = () => JSON.parse(readFileSync(join(state(), 'state.json'), 'utf8')).projects ?? {};
 const runs = () => readdirSync(join(hosts.home('box'), '.graphyard', 'runs'));
@@ -77,7 +88,7 @@ test(`${proof} — the check's Postgres service starts on the host, the script p
   assert.ok(lines[0]!.cwd.startsWith(join(hosts.home('box'), '.graphyard', 'runs', 'trial-')), `the script ran in the host's run directory: ${lines[0]!.cwd}`);
   assert.deepEqual({ host: lines[0]!.host, port: lines[0]!.port }, { host: 'postgres', port }, 'with the service\'s variables');
   const [create] = await dockerCreates(state());
-  assert.match(create!.join(' '), /--network=container:graphyard-check-\w+\.postgres /, 'on the services\' network');
+  assert.match(create!.join(' '), /--network=container:mainworks-check-\w+\.postgres /, 'on the services\' network');
 
   assert.deepEqual(localCheck, [], 'the script did not run on this machine');
   assert.deepEqual(started, [], 'and no services started here');
@@ -107,7 +118,7 @@ test(`${proof} — a script that fails on the host fails the check with its exit
   } finally { await rm(fails, { force: true }); }
 });
 
-test(`${proof} — with no host ready, or a host that drops the check, it runs on this machine as before and the reason is recorded`, { timeout: 300_000 }, async () => {
+test(`${proof} — with no host ready, or a host that drops the check, it runs on this machine as before and the reason is recorded, shown in master status and on the Workers page`, { timeout: 300_000 }, async () => {
   await hosts.down('box', true);
   try {
     const away = await trial();
@@ -125,5 +136,23 @@ test(`${proof} — with no host ready, or a host that drops the check, it runs o
     assert.match(dropped.result.logTail, /\[remote\] check db runs on this machine: host gy-compute@box dropped a shard: .*the services did not start/s);
     assert.deepEqual(projects(), {});
     assert.deepEqual(runs(), []);
+
+    // GY-3704: the reason reaches the Lead — master status's load line for the host, and the Workers page's row for it.
+    const reason = readFileSync(steps(), 'utf8').trim().split('\n').map(line => JSON.parse(line)).at(-1);
+    assert.equal(reason.check, 'db');
+    assert.equal(reason.host, target);
+    assert.match(reason.fallback, /^host gy-compute@box dropped a shard: .*the services did not start/s);
+    const heavy = join(hosts.root, 'heavy-jobs'), previous = process.env[slotsDirectoryVariable];
+    writeMachines(heavy, [{ name: 'this machine', local: true, away: false, cores: 4, busy: 1, celsius: null }, { name: target, away: false, cores: 2, busy: 0, celsius: null }]);
+    const master = { url: 'http://127.0.0.1:5', repository: 'owner/fixture', credentialFile: join(hosts.root, 'coordinator.token'), hostId: 'yard-box', baseBranch: 'main', workers: [], run: { intervalSeconds: 30 } } as unknown as MasterConfig;
+    process.env[slotsDirectoryVariable] = heavy;
+    try {
+      const status = await masterStatusReport(repository.root, master, async () => ({ work: [], now: new Date().toISOString() }), async () => '');
+      assert.deepEqual(status.heavyJobs.machines, ['this machine: 1 of 4 cores busy', `box: 0 of 2 cores busy, 0 shards · last check fell back to this machine at ${reason.at}: ${reason.fallback}`]);
+    } finally { if (previous === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = previous; }
+    const sent = loopHosts(encodeLoopHosts([{ host: target, away: false, cores: 2, celsius: null, steal: null, runs: 0, fallback: lastHostFallbacks(repository.root).get(target) }]))!;
+    const page = renderToStaticMarkup(createElement(WorkersPage, { work: [], observedAt: new Date().toISOString(), setSelected: () => {}, setView: () => {}, token: 'fixture', status: { hosts: sent } } as never));
+    const shown = /data-host-fallback="true">([^<]*)</.exec(page)?.[1];
+    assert.equal(shown?.replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>'), `last check fell back to this machine at ${reason.at}: ${reason.fallback}`, page);
   } finally { await rm(join(state(), 'compose-up-fails'), { force: true }); }
 });

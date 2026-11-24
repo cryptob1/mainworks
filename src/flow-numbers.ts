@@ -1,13 +1,14 @@
 // Concern: GY-3624 flow numbers — attempts and merges an hour, first-pass yield with rework causes, wait per station, flaky rate and reverts, for a window, from item histories and trial ledgers. Nothing is stored.
 import { plainDuration, spread } from './pipeline-speed.js';
 import { mergeWriterTrialGround } from './model/rework-ground.js';
+import { trialAheadOfReviewPrefix } from './model/merge-queue.js';
 
 export const flowWindows = { '6h': 6, '24h': 24, '7d': 168 } as const;
 export type FlowWindow = keyof typeof flowWindows;
-export const flowStations = ['ready', 'build', 'review', 'test queue', 'merge trial', 'acceptance', 'merge'] as const;
-export type FlowStation = typeof flowStations[number];
+export const flowStations = ['ready', 'build', 'review', 'test queue', 'merge trial', 'acceptance', 'waiting for sign-off', 'waiting for the merge writer', 'merge', 'live'] as const;
+type FlowStation = typeof flowStations[number];
 export const reworkCauses = ['review', 'product review', 'merge trial', 'acceptance', 'base moved', 'red base'] as const;
-export type ReworkCause = typeof reworkCauses[number];
+type ReworkCause = typeof reworkCauses[number];
 
 /**
  * One ledger row as the flow reads it: a row carrying the item's whole document names its `stage`;
@@ -18,10 +19,14 @@ export type ReworkCause = typeof reworkCauses[number];
 export interface FlowEvent { kind: string; at: string; stage?: string | null; reason?: string | null; binding?: string | null; head?: string | null; durationMs?: number | null; flaky?: boolean; reverted?: boolean }
 export interface FlowItem {
   key: string; title: string; stage: string; stageEnteredAt: string; mergedAt: string | null;
+  /** First serving deploy containing this merge (`null` when deploy records exist and none contains it yet; `undefined` when deploy tracking is unavailable). */
+  deployedAt?: string | null;
+  /** GY-3770: true when this open item in acceptance currently waits only on Lead-attestable manual proofs. */
+  awaitingSignoff?: boolean;
   attempts: { claimedAt: string; endedAt: string | null; end: string | null }[];
   events: FlowEvent[];
 }
-export interface StationWait { median: number; p90: number; samples: number; oldest: { key: string; title: string; minutes: number; waiting: boolean } }
+interface StationWait { median: number; p90: number; samples: number; oldest: { key: string; title: string; minutes: number; waiting: boolean } }
 export interface FlowNumbers {
   hours: number; attempts: number; attemptsPerHour: number; merges: number; mergesPerHour: number;
   /** Attempts merged with no rework request ÷ attempts ended; null when none ended. */
@@ -33,7 +38,7 @@ export interface FlowNumbers {
 }
 
 /** Which station sent the head back, read from the rework's reason and the ground it binds. */
-export function reworkCause(reason: string, binding: string | null | undefined): ReworkCause {
+function reworkCause(reason: string, binding: string | null | undefined): ReworkCause {
   const ground = binding ?? '';
   if (/:conflict$|:sync:/.test(ground) || /merge conflicts in|The base moved/.test(reason)) return 'base moved';
   if (/base failure|on the base tip too/i.test(reason)) return 'red base';
@@ -45,6 +50,9 @@ export function reworkCause(reason: string, binding: string | null | undefined):
 
 const ms = (iso: string | null | undefined) => iso ? Date.parse(iso) : Number.NaN;
 const stationOf: Record<string, FlowStation> = { ready: 'ready', build: 'build', review: 'review', acceptance: 'acceptance', merge: 'merge' };
+const isSignoffRefusal = (event: FlowEvent) => event.kind === 'merge.refused'
+  && !!event.reason?.startsWith(trialAheadOfReviewPrefix)
+  && /acceptance gate awaits .*manual:/.test(event.reason);
 interface Visit { station: FlowStation; start: number; end: number; open: boolean }
 
 /**
@@ -67,8 +75,27 @@ function visits(item: FlowItem, now: number): Visit[] {
     if (mark.stage === 'test') {
       const started = trials.filter(trial => trial.end >= mark.at && trial.start < end).map(trial => Math.max(trial.start, mark.at));
       out.push(started.length ? { station: 'test queue', start: mark.at, end: Math.min(...started), open: false } : { station: 'test queue', start: mark.at, end, open });
+    } else if (mark.stage === 'acceptance') {
+      out.push({ station: 'acceptance', start: mark.at, end, open });
+      // GY-3770: split acceptance wait into waiting for sign-off vs waiting for the merge writer.
+      const split = item.events.filter(event => isSignoffRefusal(event) && ms(event.at) >= mark.at && ms(event.at) < end).map(event => ms(event.at)).sort((a, b) => a - b)[0];
+      if (split !== undefined) {
+        if (split > mark.at) out.push({ station: 'waiting for the merge writer', start: mark.at, end: split, open: false });
+        out.push({ station: 'waiting for sign-off', start: split, end, open });
+      } else {
+        const prior = item.events.filter(event => (event.kind === 'merge.refused' || event.kind === 'merge.intent') && ms(event.at) <= mark.at).sort((a, b) => ms(a.at) - ms(b.at)).at(-1);
+        const signoff = (open && !!item.awaitingSignoff) || (!!prior && isSignoffRefusal(prior));
+        out.push({ station: signoff ? 'waiting for sign-off' : 'waiting for the merge writer', start: mark.at, end, open });
+      }
     } else if (stationOf[mark.stage]) out.push({ station: stationOf[mark.stage], start: mark.at, end, open });
   });
+  const merged = ms(item.mergedAt);
+  if (Number.isFinite(merged) && item.deployedAt !== undefined) {
+    const deployed = ms(item.deployedAt);
+    out.push(Number.isFinite(deployed)
+      ? { station: 'live', start: merged, end: Math.max(merged, deployed), open: false }
+      : { station: 'live', start: merged, end: now, open: true });
+  }
   return out;
 }
 
@@ -94,7 +121,8 @@ export function flowNumbers(items: readonly FlowItem[], hours: number, now: numb
   const events = items.flatMap(item => item.events.filter(event => inWindow(ms(event.at))));
   const rework = Object.fromEntries(reworkCauses.map(cause => [cause, 0])) as Record<ReworkCause, number>;
   for (const event of events) if (event.kind === 'rework') rework[reworkCause(event.reason ?? '', event.binding)] += 1;
-  const stays = items.flatMap(item => visits(item, now).filter(visit => visit.end > from).map(visit => ({ item, visit, ms: visit.end - visit.start })));
+  // GY-3732: like merges an hour, the live station counts only merges made inside the window.
+  const stays = items.flatMap(item => visits(item, now).filter(visit => visit.station === 'live' ? inWindow(visit.start) : visit.end > from).map(visit => ({ item, visit, ms: visit.end - visit.start })));
   const stations = Object.fromEntries(flowStations.map(station => {
     const here = stays.filter(stay => stay.visit.station === station);
     const wait = spread(here.map(stay => stay.ms));
@@ -125,7 +153,7 @@ export function flowAttention(flow: FlowNumbers): { subject: string; text: strin
   const { oldest } = slow.wait;
   return { subject: slow.station,
     text: `${capital(slow.station)} is slow: the slowest tenth waited ${plainDuration(slow.wait.p90)} over the last ${windowWords(flow.hours)}. ${oldest.waiting ? 'Oldest' : 'Longest'}: ${oldest.key} ${oldest.title}, ${plainDuration(oldest.minutes)}.`,
-    next: `graphyard status ${oldest.key}` };
+    next: `mainworks status ${oldest.key}` };
 }
 
 /** "75%", or a dash when nothing ended. */

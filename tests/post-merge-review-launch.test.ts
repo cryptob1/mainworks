@@ -75,7 +75,7 @@ before(async () => {
   execFileSync('git', ['init', '-q', root]);
   execFileSync('git', ['remote', 'add', 'origin', `https://github.com/${repository}.git`], { cwd: root });
   const coordinatorStatus = async () => new Response(JSON.stringify({ actor: { id: coordinator.id, role: coordinator.role }, repository, baseBranch: 'main', githubAppId: 1234 }));
-  await setupMaster(root, { url, token: tokenOf(coordinator), cliPath: launcher, credentialDirectory, herdrWorkspace: 'workspace-graphyard', run: { worktreeRoot: await temporaryDirectory('post-merge-launch-checkouts', '/var/tmp') } }, coordinatorStatus as typeof fetch);
+  await setupMaster(root, { url, token: tokenOf(coordinator), cliPath: launcher, credentialDirectory, herdrWorkspace: 'workspace-mainworks', run: { worktreeRoot: await temporaryDirectory('post-merge-launch-checkouts', '/var/tmp') } }, coordinatorStatus as typeof fetch);
   await saveReviewerProfile(root, { name: 'reviewer-claude', agentName: 'review-claude-1', kind: 'claude', concurrency: 4 });
   config = await loadMasterConfig(root);
   // GY-3030: the registry is the only authority for a reviewer's slot; each item reviewed here takes one.
@@ -259,7 +259,7 @@ test('integration:review-brief-proof-bindings — real ordinary and post-merge l
       assert.match(brief, /genuine permission, identity, binding or runtime failure prevents judging it/);
       assert.match(brief, /Do not blanket-ignore errors, run builds\/tests\/servers, edit code, expand credentials, guess evidence or weaken a criterion/);
       assert.doesNotMatch(brief, /If a command you need is refused or cannot succeed/);
-      assert.doesNotMatch(brief, /Later data|e2e:wrong-case|graphyard show GY-/);
+      assert.doesNotMatch(brief, /Later data|e2e:wrong-case|mainworks show GY-/);
     }
     assert.deepEqual([record.sha, record.baseSha, record.policyRevision], [postMerge ? M : H, B, 1]);
     assert.equal((await stored(work.id)).reviewLaunch!.reviewer, 'review-claude-1');

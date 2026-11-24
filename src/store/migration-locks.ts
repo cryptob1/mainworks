@@ -25,14 +25,14 @@ import { reserve } from './pools.js';
 type Step = (waiting: string, sql: string, values?: unknown[]) => Promise<{ rows: any[] }>;
 
 /** How long a migrating release may wait for locks in total: well inside Railway's 120-second health check. */
-export const migrationLockTimeoutMs = 30_000;
+const migrationLockTimeoutMs = 30_000;
 /**
  * How long one attempt of the migration may wait for its locks before it rolls back and retries
  * (GY-773). A migration queued for an exclusive lock queues every live writer of that table behind
  * it, so each attempt gives up its place after this long: a writer never waits behind the migration
  * for more than one attempt's budget, while the retries still share `migrationLockTimeoutMs`.
  */
-export const migrationAttemptLockTimeoutMs = 3_000;
+const migrationAttemptLockTimeoutMs = 3_000;
 /** The migration's statements ahead of the first table's DDL: the shared trigger function. */
 const migrationPrelude = migration.slice(0, migration.indexOf(tables[0].ddl));
 
@@ -43,7 +43,7 @@ export const currentSchemaCode = (): SchemaCode => ({ generation: schemaVersion,
 
 const sha256 = (text: string) => `sha256:${createHash('sha256').update(text).digest('hex')}`;
 /** The migration digests `code` records: for this process's code, exactly `migrationDigests()`. */
-export const schemaCodeDigests = (code: SchemaCode): MigrationDigests => ({
+const schemaCodeDigests = (code: SchemaCode): MigrationDigests => ({
   migration: `migration ${sha256(`${code.prelude}${code.tables.map(table => table.ddl).join('\n')}\n`)}`,
   prelude: sha256(code.prelude),
   tables: Object.fromEntries(code.tables.map(table => [table.name, sha256(table.ddl)])),
@@ -55,9 +55,9 @@ export const schemaGenerationDigest = (code: SchemaCode = currentSchemaCode()) =
 };
 
 /** The refusal of a release under a database a newer generation migrated: it names both generations and both releases. */
-export const newerSchema = (recorded: { version: number; release?: string | null }, code: SchemaCode = currentSchemaCode()) => new Error(
-  `Database schema generation ${recorded.version} (migrated by Graphyard ${recorded.release ?? 'unknown'}) is newer than this release supports (generation ${code.generation}, Graphyard ${code.release}); `
-  + `startup refuses instead of re-applying its older table definitions — upgrade to Graphyard ${recorded.release ?? 'the release that migrated it'} or newer, or restore a backup taken at generation ${code.generation} or earlier`);
+const newerSchema = (recorded: { version: number; release?: string | null }, code: SchemaCode = currentSchemaCode()) => new Error(
+  `Database schema generation ${recorded.version} (migrated by Mainworks ${recorded.release ?? 'unknown'}) is newer than this release supports (generation ${code.generation}, Mainworks ${code.release}); `
+  + `startup refuses instead of re-applying its older table definitions — upgrade to Mainworks ${recorded.release ?? 'the release that migrated it'} or newer, or restore a backup taken at generation ${code.generation} or earlier`);
 
 /** What the recorded generation says about the migration that ran; `tables` null before per-table digests were recorded. */
 export interface RecordedMigration { version: number; release?: string | null; migration: string | null; prelude: string | null; tables: Record<string, string> | null }
@@ -66,7 +66,7 @@ const recordedSql = "SELECT COALESCE((SELECT MAX(version) FROM graphyard_schema)
 const recordedRow = (row: { version: unknown; release: string | null; digest: string | null }): RecordedMigration => ({ version: Number(row.version), release: row.release, ...recordedMigrationDigests(row.digest) });
 
 /** The recorded generation and what it says about the migration that ran, read without any lock a replica holds; null before the first migration. */
-export async function recordedMigration(pool: Pool): Promise<RecordedMigration | null> {
+async function recordedMigration(pool: Pool): Promise<RecordedMigration | null> {
   const table = (await pool.query("SELECT to_regclass('graphyard_schema') AS oid")).rows[0].oid;
   if (!table) return null;
   return recordedRow((await pool.query(recordedSql)).rows[0]);
@@ -80,7 +80,7 @@ export async function recordedMigration(pool: Pool): Promise<RecordedMigration |
  * another release recorded a different migration first, so the caller decides again from what is
  * now recorded.
  */
-export async function recordMigrationDigests(pool: Pool, digests: MigrationDigests, timeout: number, code: SchemaCode = currentSchemaCode()): Promise<boolean> {
+async function recordMigrationDigests(pool: Pool, digests: MigrationDigests, timeout: number, code: SchemaCode = currentSchemaCode()): Promise<boolean> {
   const db = await pool.connect();
   try {
     await db.query('BEGIN');
@@ -103,10 +103,10 @@ export async function recordMigrationDigests(pool: Pool, digests: MigrationDiges
 }
 
 /** The tables a DDL rebuilds a trigger on, in DDL order. */
-export const rebuiltTriggerTables = (ddl: string) => [...new Set([...ddl.matchAll(/^DROP TRIGGER IF EXISTS \w+ ON (\w+);/gm)].map(match => match[1]))];
+const rebuiltTriggerTables = (ddl: string) => [...new Set([...ddl.matchAll(/^DROP TRIGGER IF EXISTS \w+ ON (\w+);/gm)].map(match => match[1]))];
 
 /** Lock the existing tables whose triggers `ddl` rebuilds exclusively, before the DDL runs. */
-export async function lockRebuiltTriggerTables(step: Step, waiting: string, ddl: string) {
+async function lockRebuiltTriggerTables(step: Step, waiting: string, ddl: string) {
   const rebuilt = rebuiltTriggerTables(ddl);
   if (!rebuilt.length) return;
   const present: string[] = (await step(waiting, "SELECT COALESCE(array_agg(name ORDER BY ord), '{}') AS names FROM unnest($1::text[]) WITH ORDINALITY AS t(name, ord) WHERE to_regclass(name) IS NOT NULL", [rebuilt])).rows[0].names;
@@ -119,7 +119,7 @@ export async function lockRebuiltTriggerTables(step: Step, waiting: string, ddl:
  * rolls back first — every lock of the failed attempt releases at once, so live requests queue
  * behind it no longer — and backs off before the next attempt (GY-773).
  */
-export const transientLockError = (error: unknown, cancelledLockWait = true) => {
+const transientLockError = (error: unknown, cancelledLockWait = true) => {
   const code = (error as { code?: string }).code;
   return code === '40P01' || code === '55P03' || (code === '57014' && cancelledLockWait);
 };
@@ -231,7 +231,7 @@ export async function runStartupMigration(pool: Pool, options: { lockTimeoutMs?:
     }
   };
   try {
-    await guard.query('SET application_name = \'graphyard migration watchdog\'');
+    await guard.query('SET application_name = \'mainworks migration watchdog\'');
     await guard.query('SET statement_timeout = 5000');
     const pid = Number((await db.query('SELECT pg_backend_pid() AS pid')).rows[0].pid);
     const arm = () => {

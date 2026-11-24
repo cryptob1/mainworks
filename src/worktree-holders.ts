@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import type { Work } from './model.js';
+import { stateDirectory } from './install/layout.js';
 
 /*
  * The branch an assignment worktree is created on can be held by another worktree that git no
@@ -31,7 +32,7 @@ export interface ReclaimedHolder extends BranchHolder { action: string }
 
 const git = (args: string[], cwd?: string) => spawnSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 /** A failed git command as one line: its arguments and what git wrote to stderr. */
-export const gitFailure = (args: string[], result: { stderr?: string | null; stdout?: string | null; status: number | null; error?: Error }) =>
+const gitFailure = (args: string[], result: { stderr?: string | null; stdout?: string | null; status: number | null; error?: Error }) =>
   `git ${args.join(' ')} failed${result.status !== null ? ` (exit ${result.status})` : ''}: ${(result.stderr || result.stdout || result.error?.message || 'no output').trim().replace(/\s*\n\s*/g, ' / ')}`;
 /** Runs git, throwing with git's own stderr when it fails. */
 export function gitOrThrow(args: string[], cwd?: string) {
@@ -79,7 +80,7 @@ export function branchHolders(root: string, branch: string, except: string, keyO
 }
 
 /** The item key and epoch a session worktree's directory name (`GY-N-EPOCH`) says it belongs to. */
-export function sessionOf(path: string): { key: string | null; epoch: number | null } {
+function sessionOf(path: string): { key: string | null; epoch: number | null } {
   const match = /^([A-Z][A-Z0-9]*-\d+)-(\d+)$/.exec(basename(path));
   return match ? { key: match[1], epoch: Number(match[2]) } : { key: null, epoch: null };
 }
@@ -99,14 +100,14 @@ function statusLines(path: string, ignored: boolean, trackedOnly = false) {
  * so it asks without `dirty`.
  */
 export function holderRefusals(root: string, holders: BranchHolder[], work: Pick<Work, 'key' | 'lease'>, now: number, options: { dirty: boolean }): string[] {
-  const sessions = resolve(root, '.graphyard/worktrees');
+  const sessions = resolve(stateDirectory(root), 'worktrees');
   const refusals: string[] = [];
   const live = (holder: BranchHolder) => !!work.lease && work.lease.epoch === holder.epoch && Date.parse(work.lease.expiresAt) > now;
   for (const holder of holders) {
     const name = `${holder.path} (${holder.missing ? 'deleted, still recorded' : holder.via === 'checkout' ? 'checked out' : `${holder.via} in progress`})`;
     const checkout = holder.via === 'checkout' && !holder.missing, session = resolve(dirname(holder.path)) === sessions;
     if (!session && !checkout) refusals.push(`${name} is not a session worktree under ${sessions}`);
-    else if (session && holder.key !== work.key) refusals.push(`${name} belongs to ${holder.key ?? 'no Graphyard item'}, not ${work.key}`);
+    else if (session && holder.key !== work.key) refusals.push(`${name} belongs to ${holder.key ?? 'no Mainworks item'}, not ${work.key}`);
     else if (session && live(holder)) refusals.push(`${name} belongs to ${work.key} epoch ${holder.epoch}, which holds a live lease`);
     else if (!holder.missing && options.dirty) {
       // An unreadable status is not a clean one: the worktree is left alone and named.

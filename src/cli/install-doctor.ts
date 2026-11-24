@@ -14,7 +14,7 @@ import { accountRuntimeChecks, gitRemoteCheck, herdrPluginCheck } from '../host-
 import { remoteFetchProbe } from '../master/worktrees.js';
 import { loadStoredMasterConfig } from '../master/config.js';
 
-/** `graphyard doctor [--profile PROFILE]`: local discovery, live integration readiness and the readiness checklist for a completion profile. */
+/** `mainworks doctor [--profile PROFILE]`: local discovery, live integration readiness and the readiness checklist for a completion profile. */
 export async function runDoctor(context: CliContext) {
   const { base } = context;
   const root = context.repositoryRoot();

@@ -3,13 +3,12 @@
 import { gateRecordPath, readGateRecord } from '../batch-gate.js';
 import type { Work } from '../model.js';
 import type { Cycle } from './cycle.js';
-import { record } from './effects.js';
-import { message } from './state.js';
+import { message, record } from './state.js';
 
 const short = (sha: string) => sha.slice(0, 12);
 
 /** A Slack incoming webhook takes `{"text": ...}`; any other receiver keeps the plain-text body. */
-export function alertRequest(url: string, text: string): { headers: Record<string, string>; body: string } {
+function alertRequest(url: string, text: string): { headers: Record<string, string>; body: string } {
   return new URL(url).hostname === 'hooks.slack.com'
     ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) }
     : { headers: { 'Content-Type': 'text/plain' }, body: text };
@@ -22,12 +21,12 @@ export async function postAlert(fetcher: typeof fetch, url: string, text: string
 }
 
 /** The deployed message: the served commit, then one line per newly served item — key, title and merge commit. */
-export const deployedText = (repository: string, served: string, items: readonly Pick<Work, 'key' | 'title' | 'delivery'>[]) =>
-  [`Graphyard ${repository}: deployed ${short(served)}`, ...items.map(item => `${item.key} ${item.title} (${short(item.delivery!.mergeSha)})`)].join('\n');
+const deployedText = (repository: string, served: string, items: readonly Pick<Work, 'key' | 'title' | 'delivery'>[]) =>
+  [`Mainworks ${repository}: deployed ${short(served)}`, ...items.map(item => `${item.key} ${item.title} (${short(item.delivery!.mergeSha)})`)].join('\n');
 
 /** The UAT-failed message: the candidate, the commit that stays served, and the failed cases in one short line. */
-export const uatFailedText = (repository: string, candidate: string, served: string | null, failed: readonly string[]) =>
-  `Graphyard ${repository}: UAT failed on candidate ${short(candidate)}; ${served ? `${short(served)} stays served` : 'nothing is served'}. Failed: ${failed.join(', ')}`;
+const uatFailedText = (repository: string, candidate: string, served: string | null, failed: readonly string[]) =>
+  `Mainworks ${repository}: UAT failed on candidate ${short(candidate)}; ${served ? `${short(served)} stays served` : 'nothing is served'}. Failed: ${failed.join(', ')}`;
 
 /**
  * GY-3529: with `run.alertUrl` set, one message when the declared serve or the deploy watch serves a commit it had not

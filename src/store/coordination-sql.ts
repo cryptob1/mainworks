@@ -31,7 +31,7 @@ const array = (path: string) => `(CASE WHEN jsonb_typeof(${path}) = 'array' THEN
 const tail = (path: string, keep: number, each = (entry: string) => entry, as = 't') => `(SELECT COALESCE(jsonb_agg(${each(`${as}.entry`)} ORDER BY ${as}.position), '[]'::jsonb) FROM jsonb_array_elements(${array(path)}) WITH ORDINALITY AS ${as}(entry, position) WHERE ${as}.position > jsonb_array_length(${array(path)}) - ${keep})`;
 /** A resolved action row with only its most recent attempt records. */
 const resolvedRow = (row: string) => `CASE WHEN jsonb_typeof(${row}->'history') = 'array' THEN jsonb_set(${row}, '{history}', ${tail(`${row}->'history'`, coordinationRecords, entry => entry, 'records')}) ELSE ${row} END`;
-export const length = (path: string) => `(CASE WHEN jsonb_typeof(${path}) = 'array' THEN jsonb_array_length(${path}) ELSE 0 END)`;
+const length = (path: string) => `(CASE WHEN jsonb_typeof(${path}) = 'array' THEN jsonb_array_length(${path}) ELSE 0 END)`;
 const object = (path: string) => `jsonb_typeof(${path}) = 'object'`;
 const absent = (path: string) => `COALESCE(jsonb_typeof(${path}), 'null') NOT IN ('object', 'array')`;
 const running = (entry: string) => `${entry}->>'state' = 'running'`;
@@ -73,7 +73,7 @@ export const coordinationRelevance = (keep: number) => `LATERAL jsonb_to_record(
  */
 const relevantEvidence = `((entry->>'sha' = r.head AND entry->>'baseSha' IS NOT DISTINCT FROM r.base)
     OR entry->>'id' = ANY(r.carried) OR entry->>'sha' = ANY(r.requested) OR ${object("entry->'reading'")}
-    OR entry->>'proof' LIKE 'manual:post-deploy/%'
+    OR entry->>'proof' LIKE 'manual:post-deploy/%' OR entry->>'proof' LIKE 'manual:docs-updated/%'
     OR (entry->>'sha' = r.head AND entry->>'proof' LIKE 'human:%'))`;
 
 /**

@@ -1,7 +1,7 @@
 {
   "id": "up-preflight-branch-identity",
-  "title": "Up refuses a base branch in Graphyard's namespace and commits without a host git identity",
-  "description": "On a scratch repository with HOME pointing at an empty git config, up refuses --base-branch graphyard and graphyard/x before any action runs naming the branch namespace, onboarding commits are authored by Graphyard's own identity, and a failing step's event and printed error carry the command's stderr.",
+  "title": "Up refuses a base branch in Mainworks's namespace and commits without a host git identity",
+  "description": "On a scratch repository with HOME pointing at an empty git config, up refuses --base-branch mainworks and graphyard/x before any action runs naming the branch namespace, onboarding commits are authored by Mainworks's own identity, and a failing step's event and printed error carry the command's stderr.",
   "target": "any",
   "required": false,
   "steps": [{

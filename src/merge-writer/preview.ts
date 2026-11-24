@@ -18,12 +18,12 @@ import type { PreviewableApplication as Application, ProjectDelivery } from '../
 import type { Work } from '../model/work.js';
 import { heldEntries, heldOpenPaths, readTempOwner, tempOwnerGone, tempOwnerJudgeable, tempOwnerMarker, tmpReclaimMinAgeMs, treeLastWritten, writeTempOwner } from '../tmp-reclaim.js';
 
-export { serveStaticSite, type StaticUat } from './serve-head.js';
+export { serveStaticSite,  } from './serve-head.js';
 
 /** One case's result on the preview; an `unrun` case names why in `reason` (a declared install secret the preview withholds). */
-export interface PreviewCase { case: string; verdict: 'passed' | 'failed' | 'flaky' | 'unrun'; required: boolean; reason?: string }
+interface PreviewCase { case: string; verdict: 'passed' | 'failed' | 'flaky' | 'unrun'; required: boolean; reason?: string }
 /** The preview's verdict: `pass`, `fail` (a declared case failed, the change's cases did not load, or it could not be served; `failed` names them), `timeout`, or `error` (the preview itself could not run). */
-export interface PreviewVerdict { result: 'pass' | 'fail' | 'timeout' | 'error'; mergeSha: string; cases: PreviewCase[]; failed: string[]; detail: string; durationMs: number }
+interface PreviewVerdict { result: 'pass' | 'fail' | 'timeout' | 'error'; mergeSha: string; cases: PreviewCase[]; failed: string[]; detail: string; durationMs: number }
 
 /** How many previews run at once on one host. */
 export const previewConcurrency = 2;
@@ -123,7 +123,7 @@ const previewWithheldHost = new Set(['HOME', 'XDG_RUNTIME_DIR', 'DISPLAY']);
  * cases: the host basics a command needs (e2e/steps.ts's `hostPassthrough`) with `home`, a fresh
  * empty directory of the preview, as HOME and every XDG base directory, and nothing else. So a
  * script the merge brings in reads no coordinator credential: no token variable
- * (`GRAPHYARD_UAT_TOKEN`, GitHub or Graphyard tokens), no file found through HOME or XDG (such as
+ * (`GRAPHYARD_UAT_TOKEN`, GitHub or Mainworks tokens), no file found through HOME or XDG (such as
  * `~/.config/graphyard/`), and no socket under the coordinator's XDG_RUNTIME_DIR. Playwright's
  * browsers are still found where the host keeps them.
  */
@@ -366,7 +366,7 @@ const mediaTypes: Record<string, string> = { '.html': 'text/html; charset=utf-8'
  * the build output is published. A site past `previewSiteFileLimit` files or `previewSiteByteLimit`
  * bytes, or naming a file no link can address, is refused, naming why.
  */
-export async function readPreviewSite(directory: string): Promise<PreviewSiteFile[]> {
+async function readPreviewSite(directory: string): Promise<PreviewSiteFile[]> {
   const files: PreviewSiteFile[] = [];
   let bytes = 0;
   const walk = async (relative: string) => {
@@ -432,7 +432,7 @@ export async function itemPreviewStep(live: Map<string, LivePreview>, work: read
     try { for (const project of await sweepComposePreviews({ docker: ports.docker, env: dockerEnvironment({ PATH: (ports.hostEnvironment ?? process.env).PATH ?? '' }, ports.hostEnvironment ?? process.env) })) notes.push(`Removed the abandoned Compose preview ${project}`); composeSwept = true; }
     catch (error) { notes.push(`Could not sweep abandoned Compose previews: ${error instanceof Error ? error.message : String(error)}`); }
   }
-  // GY-3291: once a minute, a served Compose preview unused for the idle period, and a Graphyard stack whose owner is gone, are stopped (idle-stacks.ts).
+  // GY-3291: once a minute, a served Compose preview unused for the idle period, and a Mainworks stack whose owner is gone, are stopped (idle-stacks.ts).
   const now = (ports.now ?? Date.now)();
   if (delivery?.applications.some(application => application.kind === 'compose') && now - (reconciledAt.get(live) ?? -Infinity) >= 60_000) {
     reconciledAt.set(live, now);

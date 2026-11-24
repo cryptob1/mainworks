@@ -4,8 +4,8 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { autonomyContract } from '../../src/autonomy';
 
 /**
- * The Graphyard Pi extension (GY-169). A Pi session Graphyard starts through its headless runner
- * (src/runner/pi.ts) loads this and nothing else. It gives the agent Graphyard's actions as typed
+ * The Mainworks Pi extension (GY-169). A Pi session Mainworks starts through its headless runner
+ * (src/runner/pi.ts) loads this and nothing else. It gives the agent Mainworks's actions as typed
  * tools, so the session's result is a validated tool call rather than prose; it puts the autonomy
  * contract in the session's system prompt; and it guards the one class of command a session must
  * never run blindly. Nothing here asks a person anything: there is no UI call anywhere in this
@@ -79,17 +79,17 @@ export function schemaErrors(schema: JsonSchema, value: unknown, path = 'input')
 }
 
 /** One accepted result per proof; the control plane independently validates every submission. */
-export function graphyardTools(role: string | undefined = process.env.GRAPHYARD_PI_ROLE): ToolDefinition[] {
+export function mainworksTools(role: string | undefined = process.env.GRAPHYARD_PI_ROLE): ToolDefinition[] {
   if (role && role !== 'producer') return [];
   const submitted = new Set<string>();
   const description = 'Submit one proof result on the exact head, base and policy revision, with its exercise run. Call once per proof, pass or fail.';
-  return [{ name: 'graphyard_submit_evidence', label: 'Graphyard evidence', description, promptSnippet: description, parameters: evidenceParameters,
+  return [{ name: 'graphyard_submit_evidence', label: 'Mainworks evidence', description, promptSnippet: description, parameters: evidenceParameters,
     async execute(_callId, params) {
       const errors = schemaErrors(evidenceParameters, params);
       if (errors.length) throw new Error(`graphyard_submit_evidence was not recorded: ${errors.join('; ')}. Correct the call and make it again.`);
       if (submitted.has(params.proof)) throw new Error(`graphyard_submit_evidence already recorded proof ${params.proof} in this session; the first submission stands`);
       submitted.add(params.proof);
-      return { content: [{ type: 'text', text: `graphyard_submit_evidence recorded proof ${params.proof}. Graphyard applies it and its gates decide; do not repeat it.` }], details: params, terminate: false };
+      return { content: [{ type: 'text', text: `graphyard_submit_evidence recorded proof ${params.proof}. Mainworks applies it and its gates decide; do not repeat it.` }], details: params, terminate: false };
     } }];
 }
 
@@ -220,10 +220,10 @@ export function guardCommand(command: string, context: GuardContext): GuardVerdi
     const name = words[index]?.value.split('/').pop() ?? '';
     if (name === 'cd') { const target = words[index + 1]; cwd = target && !target.dynamic && !target.glob && cwd ? resolve(cwd, target.value.replace(/^~(?=\/|$)/, home)) : null; continue; }
     if (indirect.has(name) && words.slice(index + 1).some(entry => /(^|\/|\s)(rm|mv)(\s|$)/.test(entry.value)))
-      return { allow: false, reason: `Graphyard refused this command: it runs rm or mv through ${name}, so its targets cannot be checked. Run rm or mv directly. ${retry}` };
+      return { allow: false, reason: `Mainworks refused this command: it runs rm or mv through ${name}, so its targets cannot be checked. Run rm or mv directly. ${retry}` };
     // A wrapper whose arguments were not recognised could hide rm or mv behind them: refuse rather than guess.
     if (wrapped && name !== 'rm' && name !== 'mv' && words.slice(index + 1).some(entry => /^(rm|mv)$/.test(entry.value.split('/').pop() ?? '')))
-      return { allow: false, reason: `Graphyard refused this command: it runs rm or mv behind ${words[0].value} with arguments Graphyard cannot parse, so its targets cannot be checked. Run rm or mv directly. ${retry}` };
+      return { allow: false, reason: `Mainworks refused this command: it runs rm or mv behind ${words[0].value} with arguments Mainworks cannot parse, so its targets cannot be checked. Run rm or mv directly. ${retry}` };
     if (name !== 'rm' && name !== 'mv') continue;
     let options = true, redirect = false;
     for (const target of words.slice(index + 1)) {
@@ -233,14 +233,14 @@ export function guardCommand(command: string, context: GuardContext): GuardVerdi
       if (/^\d*(>>?|<)/.test(target.value)) continue;
       if (options && target.value === '--') { options = false; continue; }
       if (options && target.value.startsWith('-') && !target.dynamic) continue;
-      if (target.dynamic) return { allow: false, reason: `Graphyard refused this command: ${name} target "${target.value}" is a variable or expansion whose value cannot be checked before it runs. ${retry}` };
-      if (target.glob) return { allow: false, reason: `Graphyard refused this command: ${name} target "${target.value}" is a glob whose matches cannot be checked before it runs. ${retry}` };
-      if (!cwd && !isAbsolute(target.value) && !target.value.startsWith('~')) return { allow: false, reason: `Graphyard refused this command: ${name} target "${target.value}" is relative to a directory changed through an expansion, so it cannot be resolved. ${retry}` };
+      if (target.dynamic) return { allow: false, reason: `Mainworks refused this command: ${name} target "${target.value}" is a variable or expansion whose value cannot be checked before it runs. ${retry}` };
+      if (target.glob) return { allow: false, reason: `Mainworks refused this command: ${name} target "${target.value}" is a glob whose matches cannot be checked before it runs. ${retry}` };
+      if (!cwd && !isAbsolute(target.value) && !target.value.startsWith('~')) return { allow: false, reason: `Mainworks refused this command: ${name} target "${target.value}" is relative to a directory changed through an expansion, so it cannot be resolved. ${retry}` };
       const lexical = resolve(cwd ?? worktree, target.value.replace(/^~(?=\/|$)/, home));
       // Resolve symbolic links too: `rm -rf link/` on a link to a directory outside deletes outside.
       const path = physical(lexical, /\/\.?$/.test(target.value));
       if (sessions.some(directory => path === directory || inside(path, directory))) continue;
-      if (!inside(path, worktree)) return { allow: false, reason: `Graphyard refused this command: ${name} target "${target.value}" resolves to ${path}, outside the worktree. ${retry}` };
+      if (!inside(path, worktree)) return { allow: false, reason: `Mainworks refused this command: ${name} target "${target.value}" resolves to ${path}, outside the worktree. ${retry}` };
     }
   }
   return { allow: true };
@@ -306,14 +306,14 @@ export function mktempDirectories(command: string, output: string, root = tmpdir
 }
 
 // ---- The extension -----------------------------------------------------------------------------
-/** The section Graphyard adds to every Pi session's system prompt. */
-export const systemPromptSection = `${autonomyContract} You run headless: nobody reads this session while it runs and nothing you print reaches a person. Your answer is the Graphyard tool call your request names, and nothing else counts as an answer. When a command is refused, read the reason and retry safely; never wait for anyone.`;
+/** The section Mainworks adds to every Pi session's system prompt. */
+export const systemPromptSection = `${autonomyContract} You run headless: nobody reads this session while it runs and nothing you print reaches a person. Your answer is the Mainworks tool call your request names, and nothing else counts as an answer. When a command is refused, read the reason and retry safely; never wait for anyone.`;
 
 const outputText = (event: any) => [event?.content, event?.result?.content].flatMap(content => Array.isArray(content) ? content : []).map(part => part?.type === 'text' ? String(part.text ?? '') : '').join('\n');
 
-export default function graphyard(pi: ExtensionApi) {
+export default function mainworks(pi: ExtensionApi) {
   const sessionDirectories = new Set<string>();
-  for (const tool of graphyardTools()) pi.registerTool(tool);
+  for (const tool of mainworksTools()) pi.registerTool(tool);
   pi.on('before_agent_start', event => {
     const options = event?.systemPromptOptions;
     if (options?.sections) options.sections.graphyard_autonomy = systemPromptSection;

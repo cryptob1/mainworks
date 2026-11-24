@@ -49,7 +49,7 @@ async function signIn(page: Page, url: string) {
   const link = await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } });
   expect(link.status).toBe(200);
   const { code } = await link.json() as { code: string };
-  await page.goto(`/#sign-in=${code}`);
+  await page.goto(`/#sign-in=${code}&work`);
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
 }
 
@@ -75,7 +75,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
       await signIn(page, url);
       const line = page.locator('[data-host-update]');
       await expect(line).toHaveCount(1, { timeout: 15_000 });
-      await expect(line).toHaveText('Compute machines need an update: gy-compute@oldbox · run graphyard host prepare, then the script it prints on each with sudo');
+      await expect(line).toHaveText('Compute machines need an update: gy-compute@oldbox · run mainworks host prepare, then the script it prints on each with sudo');
       await expect(line).toBeInViewport();
       await noOverflow(page, viewport.width);
 
@@ -83,7 +83,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
       await expect(page.getByRole('heading', { name: 'Needs you', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
       const item = page.locator('[data-host-update-request]');
       await expect(item).toContainText('Compute machines need an update');
-      await expect(item).toContainText('gy-compute@oldbox takes no trial work until updated. Run graphyard host prepare');
+      await expect(item).toContainText('gy-compute@oldbox takes no trial work until updated. Run mainworks host prepare');
       await expect(item).not.toContainText('newbox');
       await noOverflow(page, viewport.width);
 

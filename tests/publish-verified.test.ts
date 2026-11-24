@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { publishVerified } from '../src/publish-verified.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-3214: each commit Graphyard's batch gate verifies is published as two images and the npm
+// GY-3214: each commit Mainworks's batch gate verifies is published as two images and the npm
 // package `@cryptob1/graphyard` in Actions or local registry tests.
 
 const identity = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
@@ -19,7 +19,7 @@ async function checkout() {
   git(root, ['init', '-q', '-b', 'main']);
   await mkdir(join(root, 'bin'));
   await writeFile(join(root, 'bin', 'graphyard.mjs'), '#!/usr/bin/env node\n');
-  await writeFile(join(root, 'package.json'), JSON.stringify({ name: '@cryptob1/graphyard', version: '0.1.0', private: true, type: 'module', description: 'd', license: 'Apache-2.0', bin: { graphyard: './bin/graphyard.mjs' }, dependencies: { zod: '4.4.3' } }));
+  await writeFile(join(root, 'package.json'), JSON.stringify({ name: '@cryptob1/graphyard', version: '0.1.0', private: true, type: 'module', description: 'd', license: 'Apache-2.0', bin: { mainworks: './bin/graphyard.mjs' }, dependencies: { zod: '4.4.3' } }));
   git(root, ['add', '.']);
   git(root, ['commit', '-q', '-m', 'base'], { ...identity, GIT_COMMITTER_DATE: '2026-11-09T23:30:00-05:00' });
   return { root, commit: git(root, ['rev-parse', 'HEAD']) };
@@ -56,7 +56,7 @@ test('unit:tests/publish-verified.test.ts — a verified commit is pushed as bot
   assert.equal(published.length, 1);
   const { manifest, npmrc } = published[0]!;
   assert.deepEqual({ name: manifest.name, version: manifest.version, graphyardCommit: manifest.graphyardCommit, graphyardUpstream: manifest.graphyardUpstream, private: manifest.private, dependencies: manifest.dependencies, bin: manifest.bin },
-    { name: '@cryptob1/graphyard', version, graphyardCommit: commit, graphyardUpstream: 'https://github.com/cryptob1/graphyard', private: undefined, dependencies: undefined, bin: { graphyard: './bin/graphyard.mjs' } }, 'the package names the commit it fetches and installs nothing itself');
+    { name: '@cryptob1/graphyard', version, graphyardCommit: commit, graphyardUpstream: 'https://github.com/cryptob1/graphyard', private: undefined, dependencies: undefined, bin: { mainworks: './bin/graphyard.mjs' } }, 'the package names the commit it fetches and installs nothing itself');
   assert.match(npmrc, /^\/\/registry\.npmjs\.org\/:_authToken=\$\{NPM_TOKEN\}$/m);
   assert.ok(!calls.some(call => /npm-secret|ghcr-secret/.test(call)), 'no token is a command argument');
   assert.match(calls[0]!, /printf %s "\$GITHUB_TOKEN".*docker login .*--password-stdin/, 'docker reads the environment token on stdin');

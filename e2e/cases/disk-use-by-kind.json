@@ -1,0 +1,15 @@
+{
+  "id": "disk-use-by-kind",
+  "title": "Master status shows a non-null diskHeadroom with free bytes and at least one kind of Mainworks disk use",
+  "description": "Runs the loop's real disk headroom check on a running install with real Mainworks files, persists state, and checks that master status reports a non-null diskHeadroom with positive freeBytes and at least one kind with its size (GY-3743).",
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "master status shows non-null diskHeadroom with at least one kind and its size",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:disk-use-by-kind tests/disk-use-by-kind.test.ts",
+      "timeoutSeconds": 120
+    }
+  ]
+}

@@ -36,7 +36,7 @@ function dashboard(work: Work[], overrides: Partial<Dashboard> = {}): Dashboard 
 const page = (item: Work, all: Work[], overrides: Partial<Dashboard> = {}) => renderToStaticMarkup(createElement(WorkDetails, { ...dashboard(all, overrides), item }));
 
 /**
- * A real-shaped item in the middle of review, as `graphyard status` returns one: handed in, its
+ * A real-shaped item in the middle of review, as `mainworks status` returns one: handed in, its
  * checks passed, waiting for an independent approval, two proofs owed and the merge not yet
  * observed — the control plane's own gate reasons, a running implementation session with its
  * attach command, an open decision request and a computed next action.
@@ -65,7 +65,7 @@ function midReview(base: Work): Work {
     sessions: [{ id: 'graphyard-cursor-1:1', tab: null, head: null, host: 'vishrog', kind: 'implementation', pane: 'w1V:p32M', role: null, epoch: null, state: 'running', attach: 'herdr pane attach w1V:p32M --workspace w1V',
       endedAt: null, outcome: null, runtime: 'claude', subject: 'GY-171: item page hierarchy', agentName: null, principal: 'graphyard-cursor-1', startedAt: at(-20 * minute), updatedAt: at(-20 * minute), workspace: 'w1V', transcript: null }],
     agentRequests: [{ id: 'decision-1', type: 'decision', epoch: 1, requestedBy: 'graphyard-cursor-1', at: at(-10 * minute), reason: 'The browser suite pins the old section name', action: 'requirements',
-      decider: { who: 'Master agent', command: 'graphyard master decisions GY-171' }, releasedLease: false, state: 'open' }],
+      decider: { who: 'Master agent', command: 'mainworks master decisions GY-171' }, releasedLease: false, state: 'open' }],
     nextAction: { kind: 'request-review', gate: 'review', refusal: 'Independent approval of the current commit is required', reason: 'the candidate passed the build gate', llmRole: 'judgment' },
   } as unknown as Work;
 }
@@ -161,7 +161,7 @@ test('unit:item-page-technical-collapsed — gate internals, sessions with attac
   assert.doesNotMatch(inside.slice(0, inside.indexOf('>') + 1), /\sopen/, 'collapsed');
   // Everything technical is inside it, and none of it is above it.
   const technicalParts = ['<h3>Gate decisions</h3>', '<h3>Sessions (1)</h3>', 'herdr pane attach w1V:p32M --workspace w1V', '<h3>Code review</h3>', 'Independent reviewer session',
-    '<h3>Next action</h3>', '<code>request-review</code>', '<h3>Agent requests (1)</h3>', 'graphyard master decisions GY-171', 'graphyard-cursor-1'];
+    '<h3>Next action</h3>', '<code>request-review</code>', '<h3>Agent requests (1)</h3>', 'mainworks master decisions GY-171', 'graphyard-cursor-1'];
   for (const part of technicalParts) {
     assert.ok(inside.includes(part), `inside Technical details: ${part}`);
     assert.ok(!above.includes(part), `not above Technical details: ${part}`);
@@ -230,7 +230,7 @@ test('What is left names who clears each state from the refusal itself: exhauste
   assert.match(page(exhausted, work), /<h3>Testing, review, merge <small>· cleared by Master agent<\/small><\/h3>/);
   // Branch protection not verified, as a later step: the master agent, not the builder.
   const protection = { ...base, gates: [gate('ready', []), gate('build', []), gate('test', []), gate('acceptance', []), gate('review', ['Independent approval of the current commit is required']),
-    gate('merge', ['Required Graphyard check and merge-queue branch protection have not been verified'])] } as unknown as Work;
+    gate('merge', ['Required Mainworks check and merge-queue branch protection have not been verified'])] } as unknown as Work;
   // The folded gates list their lines under one state; the state's clearer is the bar's own reading,
   // and every line still says what is wrong. Checking names the reviewer first in line.
   assert.deepEqual(whatIsLeft(protection, NOW).map(group => [group.label, group.who]), [['Testing, review, merge', 'Reviewer agent']]);

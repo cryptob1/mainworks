@@ -13,7 +13,7 @@ import { killTrees, shardHosts, shardRepository, sshdHost } from './helpers/shar
 // counted 0 executed and the item was refused though its case passed. Every file here holds one proof
 // case; the trial spreads them over this machine and a second host, and every proof must count once.
 
-const image = 'graphyard-trial:remote-proofs';
+const image = 'mainworks-trial:remote-proofs';
 const files = Array.from({ length: 6 }, (_, index) => `tests/proof-${index}.test.ts`);
 const proofs = files.map((_, index) => `unit:remote-proof-${index}`);
 let target: string, kill = () => {}, repository: { root: string; sha: string }, bin: string;

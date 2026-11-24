@@ -7,7 +7,8 @@ import { trackedPool } from './pools.js';
  * waits for its own connections and fails on its own clock, and never takes a connection an
  * observation job, a lease renewal or a merge needs.
  */
-export const reportPoolConnections = 3, reportStatementTimeoutMs = 20_000;
+const reportPoolConnections = 3;
+const reportStatementTimeoutMs = 20_000;
 export interface ReportPoolOptions { reportMax?: number; reportStatementTimeoutMs?: number }
 /** A tracked pool whose failed statements name their SQL (`namedStatements`, GY-422; tracking, GY-483). */
 export const namedPool = (url: string, max: number, connectionTimeoutMillis: number, statementTimeoutMs: number) =>

@@ -4,7 +4,7 @@ import { CopyButton } from '../pages/workers';
 import type { Dashboard } from '../pages/dashboard';
 
 type Teammate = { login: string; role: string };
-type Access = { guidance: string | null; teammates: Teammate[] };
+type Access = { teammates: Teammate[] };
 
 /**
  * GY-3514: Invite, in the top bar for the operator's human session. Name a person, a role and how long
@@ -41,7 +41,7 @@ function InviteDialog({ api, onClose }: Pick<Dashboard, 'api'> & { onClose(): vo
     <h2>Invite</h2>
     {!access ? <p>{error || 'Loading…'}</p> : <>
       <form onSubmit={event => { event.preventDefault(); void invite(event.currentTarget); }}>
-        <label>Name<input name="name" required placeholder="ana@example.com"/></label>
+        <label>Name or email<input name="name" required placeholder="ana@example.com"/></label>
         <label htmlFor="invite-role">Role</label><select id="invite-role" name="role" defaultValue="viewer"><option value="viewer">Viewer</option><option value="maintainer">Maintainer</option></select>
         <label htmlFor="invite-days">Link valid for</label><select id="invite-days" name="days" defaultValue="7"><option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option></select>
         <button disabled={busy}>{busy ? 'Inviting…' : 'Invite'}</button>
@@ -51,7 +51,6 @@ function InviteDialog({ api, onClose }: Pick<Dashboard, 'api'> & { onClose(): vo
         <label htmlFor="invite-link">Invite link · opens once</label><input id="invite-link" className="mono" readOnly value={link.link}/> <CopyButton text={link.link} label="Copy"/>
         {link.note && <p className="amber">{link.note}</p>}
       </div>}
-      {!link && access.guidance && <p className="amber" role="status">{access.guidance}</p>}
       <h3>Teammates</h3>
       {access.teammates.length ? <ul aria-label="Teammates" className="teammates">{access.teammates.map(teammate => <li key={teammate.login}>
         <strong>{teammate.login}</strong> · {teammate.role}{' '}

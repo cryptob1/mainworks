@@ -4,13 +4,14 @@ import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } 
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { defaultChildRun } from '../child-runner.js';
-import { countByRunner, countProofCases, proofTitle } from '../proof-runner.js';
+import { countByRunner, countProofCases } from '../proof-runner.js';
 import { mechanicalProof } from '../model/dispatch.js';
 import type { CliCommand } from './registry.js';
 import { abnormalTestExit, isolatedTestEnvironment, reserveTestPorts, testPortEnvironment, type ReserveOptions } from './test-isolation.js';
+import { stateDirectory } from '../install/layout.js';
 
 /**
- * `graphyard verify GY-N`: the worker's own mechanical check before `complete` (GY-115).
+ * `mainworks verify GY-N`: the worker's own mechanical check before `complete` (GY-115).
  *
  * It runs exactly the unit and integration proofs the item's criteria name, against the working
  * tree as it stands, and names every other proof — manual, e2e, or deferred by a bootstrap
@@ -29,7 +30,7 @@ export interface ProofRun { proof: string; criteria: string[]; result: 'pass' | 
  * still passes against the base cannot fail there, so verify finds that misbinding before
  * submission instead of a producer finding it after a full validation cycle.
  */
-export interface BaseExercise {
+interface BaseExercise {
   base: string | null; executed: number; reverted: string[];
   /**
    * GY-1240: `indeterminate` is a base run that was not made or could not be judged — no base to
@@ -53,8 +54,8 @@ export interface VerifyRecord { key: string; head: string; clean: boolean; at: s
 type Criterion = { id: string; proofs: string[]; bootstrap?: unknown };
 
 const git = (root: string, args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-export { countProofCases, proofTitle };
-export const recordPath = (root: string, key: string) => join(root, '.graphyard', 'verify', `${key}.json`);
+export { countProofCases,  };
+const recordPath = (root: string, key: string) => join(stateDirectory(root), 'verify', `${key}.json`);
 
 /** Which of the item's proofs a worker can run here, and why each of the rest is outstanding. */
 export function classifyProofs(criteria: Criterion[]): { runnable: { proof: string; criteria: string[] }[]; outstanding: Outstanding[] } {
@@ -78,7 +79,7 @@ export function classifyProofs(criteria: Criterion[]): { runnable: { proof: stri
 
 /** Every test file in the tree — tracked or new — whose source names the proof. */
 async function proofFiles(root: string, proof: string) {
-  const files = git(root, ['ls-files', '--cached', '--others', '--exclude-standard']).split('\n').filter(file => /\.test\.(ts|mts|js|mjs|cjs)$/.test(file) && !graphyardState(file));
+  const files = git(root, ['ls-files', '--cached', '--others', '--exclude-standard']).split('\n').filter(file => /\.test\.(ts|mts|js|mjs|cjs)$/.test(file) && !mainworksState(file));
   const named: string[] = [];
   for (const file of files) { try { if ((await readFile(join(root, file), 'utf8')).includes(proof)) named.push(file); } catch { /* deleted in the working tree */ } }
   return named;
@@ -117,8 +118,8 @@ export async function runProof(root: string, proof: string, files: string[], por
  * They are what a proof is, not what it proves.
  */
 export const testSide = (file: string) => /(^|\/)(tests?|__tests__|fixtures?)\//.test(file) || /\.test\.(ts|mts|js|mjs|cjs)$/.test(file);
-/** Graphyard's own state in a worktree (records, the base scratch tree): never part of the change. */
-const graphyardState = (file: string) => file.startsWith('.graphyard/');
+/** Mainworks's own state in a worktree (records, the base scratch tree): never part of the change. */
+const mainworksState = (file: string) => file.startsWith('.graphyard/') || file.startsWith('.mainworks/');
 
 /** The commit the change is measured from: the merge base of HEAD with the base branch's remote tip, or null when it cannot be resolved here. */
 export function changeBase(root: string, baseBranch = 'main') {
@@ -130,7 +131,7 @@ function changedFiles(root: string, base: string) {
   const diff = git(root, ['diff', '--name-status', '--no-renames', base]).split('\n').filter(Boolean)
     .map(line => ({ status: line[0], path: line.slice(line.indexOf('\t') + 1) }));
   const untracked = git(root, ['ls-files', '--others', '--exclude-standard']).split('\n').filter(Boolean).map(path => ({ status: 'A', path }));
-  return [...diff, ...untracked].filter(change => !graphyardState(change.path));
+  return [...diff, ...untracked].filter(change => !mainworksState(change.path));
 }
 
 /**
@@ -150,8 +151,8 @@ export async function baseTree(root: string, base: string): Promise<{ tree: stri
   if (!reverted.length) return null;
   let scratch: string;
   try {
-    await mkdir(join(root, '.graphyard', 'verify'), { recursive: true });
-    scratch = await mkdtemp(join(root, '.graphyard', 'verify', 'base-'));
+    await mkdir(join(stateDirectory(root), 'verify'), { recursive: true });
+    scratch = await mkdtemp(join(stateDirectory(root), 'verify', 'base-'));
   } catch (error: any) { return { tree: null, reverted, reason: `no scratch directory for the base tree: ${error.message}`, release: async () => {} }; }
   const release = () => rm(scratch, { recursive: true, force: true });
   const tree = join(scratch, 'tree');
@@ -239,7 +240,7 @@ export async function verifyWorkingTree(work: { key: string; criteria: Criterion
 }
 
 export async function written(root: string, record: VerifyRecord) {
-  await mkdir(join(root, '.graphyard', 'verify'), { recursive: true });
+  await mkdir(join(stateDirectory(root), 'verify'), { recursive: true });
   await writeFile(recordPath(root, record.key), JSON.stringify(record, null, 2));
   return record;
 }
@@ -248,12 +249,12 @@ export async function written(root: string, record: VerifyRecord) {
 export async function selfVerification(root: string, key: string) {
   let record: VerifyRecord;
   try { record = JSON.parse(await readFile(recordPath(root, key), 'utf8')); } catch {
-    return { state: 'not-run' as const, reason: `graphyard verify ${key} has no saved result in this worktree`, ran: [], outstanding: [] };
+    return { state: 'not-run' as const, reason: `mainworks verify ${key} has no saved result in this worktree`, ran: [], outstanding: [] };
   }
   const head = git(root, ['rev-parse', 'HEAD']);
   const summary = { ran: record.ran.map(({ proof, criteria, result, executed, failed, skipped, abnormal, leftToCi, unexercised, preserved, exercise }) => ({ proof, criteria, result, executed, failed, skipped, ...(abnormal ? { abnormal } : {}), ...(leftToCi ? { leftToCi } : {}), ...(unexercised ? { unexercised } : {}), ...(preserved ? { preserved } : {}), ...(exercise?.result === 'indeterminate' ? { exerciseIndeterminate: exercise.reason } : {}) })),
     outstanding: record.outstanding.map(({ proof, criteria, reason }) => ({ proof, criteria, reason })), verifiedAt: record.at };
-  if (record.head !== head) return { state: 'stale' as const, reason: `verified ${record.head.slice(0, 12)}, not HEAD ${head.slice(0, 12)}; run graphyard verify ${key} again`, ...summary };
+  if (record.head !== head) return { state: 'stale' as const, reason: `verified ${record.head.slice(0, 12)}, not HEAD ${head.slice(0, 12)}; run mainworks verify ${key} again`, ...summary };
   const failing = record.ran.filter(entry => entry.result !== 'pass' && !leftToCiRun(entry));
   const unexercised = record.ran.filter(entry => entry.unexercised);
   const deferred = record.ran.filter(entry => entry.result !== 'pass' && leftToCiRun(entry));
@@ -267,20 +268,12 @@ export async function selfVerification(root: string, key: string) {
       : `every mechanical proof passed on HEAD${clean}${notes}`, ...summary };
 }
 
+import { verifyHelp } from './lease.js';
+
 export const verifyCommand: CliCommand = {
   name: 'verify',
   scope: 'work',
-  help: [
-    '  verify GY-N                  Run exactly the unit and integration proofs the item\'s',
-    '                                criteria name on committed HEAD in a private trial, name others as',
-    '                                outstanding, and record the result complete reports.',
-    '                                A passing proof is run again against the base\'s sources',
-    '                                with this change\'s tests; one that still passes there is',
-    '                                reported unexercised and fails verify. A base run not',
-    '                                made is recorded as indeterminate, with its reason',
-    '                                --preserves PROOF  the proof guards behaviour that predates',
-    '                                the change: it is not run against the base (repeatable)',
-  ],
+  help: verifyHelp,
   run: async (context, work) => {
     const { values } = parseArgs({ args: context.args, options: { preserves: { type: 'string', multiple: true } }, allowPositionals: false });
     const preserves = (values.preserves ?? []).flatMap(value => value.split(',')).map(value => value.trim()).filter(Boolean);

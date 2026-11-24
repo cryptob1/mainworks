@@ -1,7 +1,7 @@
 {
   "id": "fixture-node-home",
   "title": "The fixture node app's page shows the change",
-  "description": "The declared node application of the fixture project, started on the port Graphyard gives it in a change's local preview: its page shows the app, and the change on it.",
+  "description": "The declared node application of the fixture project, started on the port Mainworks gives it in a change's local preview: its page shows the app, and the change on it.",
   "tags": [
     "fixture",
     "preview"

@@ -18,7 +18,7 @@ export interface Diagnostic { kind: string; message: string; next: string }
  * Planned files and observed changed files are advisory: shown, never holding a dispatch — the
  * merge queue and base refresh integrate overlapping edits, and file locks idled ten of twelve workers.
  */
-export const declaredResources = (work: Work) => work.exclusiveResources ?? [];
+const declaredResources = (work: Work) => work.exclusiveResources ?? [];
 export function sharedResources(work: Work, other: Work) {
   const theirs = declaredResources(other);
   return [...new Set(declaredResources(work).filter(name => theirs.some(held => pathScopesOverlap(name, held))))];
@@ -60,7 +60,7 @@ export const inFlight = (work: Work, now: number) => work.stage !== 'done' && (c
  * GY-3503: what holds an item off the pipeline, as assertDispatchable refuses it — an unanswered
  * human request or an unfinished dependency. Such an item fills no concurrency slot and raises no stall.
  */
-export const waitsOffPipeline = (work: Work, all: readonly Work[]) =>
+const waitsOffPipeline = (work: Work, all: readonly Work[]) =>
   parkedOnHuman(work) || work.dependencies.some(id => all.find(item => item.id === id)?.stage !== 'done');
 /** In the pipeline: in flight, or released and not held off it (`waitsOffPipeline`). */
 export const inPipeline = (work: Work, all: readonly Work[], now: number) =>
@@ -140,7 +140,7 @@ const starving = (item: Work, now: number | undefined) => now !== undefined && s
 const reworkRounds = (work: Work & { reworkRounds?: number }) => work.pipeline?.reworkRounds ?? work.reworkRounds ?? 0;
 const attempted = (work: Work & { reworkRounds?: number }) => !!work.submission || !!work.pipeline?.submittedAt || reworkRounds(work) > 0;
 /** From this rework round an attempted item loses the attempted-first rank and sorts with fresh work (GY-3504). */
-export const attemptedRankMaxRounds = 4;
+const attemptedRankMaxRounds = 4;
 function dispatchRank(a: Work, b: Work, hot: ReadonlySet<string>, starvingA: boolean, starvingB: boolean) {
   const hotA = touchesHot(a, hot), hotB = touchesHot(b, hot);
   return a.priority - b.priority
@@ -200,7 +200,7 @@ export function diagnose(work: Work, all: Work[], now: number, jobs: Integration
     `Declared by ${ac.bootstrap.declaredBy} at ${ac.bootstrap.declaredAt}. Review, CI and every other criterion still gate this item; the deferred proof stays owed on ${ac.bootstrap.contractPaths.join(', ')}.`);
   for (const obligation of inheritedObligations(work, all)) add('bootstrap-obligation', `${obligation.proof} is inherited from ${obligation.key} ${obligation.criterionId} because this item's candidate touches ${obligation.contractPaths.join(', ')}`,
     'Produce trusted passing evidence for this proof; a bootstrap deferral cannot be renewed by the change that inherits it.');
-  for (const proof of work.proofGaps ?? []) add('proof-authority-gap', `No principal is authorized to produce ${proof}`, 'Add the proof name to a producer principal\'s roster entry with `graphyard principal add ID --role producer --proof PATTERN`; the acceptance gate cannot be satisfied until someone can produce it.');
+  for (const proof of work.proofGaps ?? []) add('proof-authority-gap', `No principal is authorized to produce ${proof}`, 'Add the proof name to a producer principal\'s roster entry with `mainworks principal add ID --role producer --proof PATTERN`; the acceptance gate cannot be satisfied until someone can produce it.');
   const refreshing = pendingBaseRefresh(work), baseConflict = baseRefreshConflict(work);
   if (baseConflict) add('base-conflict', baseConflict, `${PRODUCT_NAME} cannot bring this head onto the base branch itself. Resolve the conflict on the pull-request branch and push; nothing carries across the resolution, so the item takes a fresh review and fresh proofs.`);
   else if (refreshing) add('base-behind', `Candidate ${work.candidate?.sha.slice(0, 12)} does not contain the base branch tip ${refreshing.baseTip.slice(0, 12)}; it stays bound to ${refreshing.boundBase.slice(0, 12)} while the control plane brings it onto the new tip`,
@@ -209,7 +209,7 @@ export function diagnose(work: Work, all: Work[], now: number, jobs: Integration
   // and GitHub integrates it with the base when it merges (GY-191). Only a head that does
   // not merge cleanly is withheld, and that one needs a sync.
   else if (work.submission && behindBaseHold(work)) add('base-behind', `Candidate ${work.candidate?.sha.slice(0, 12)} does not contain the base branch tip ${work.observation?.baseTip?.slice(0, 12) ?? ''} and GitHub does not report it mergeable`,
-    `No review is requested for it until it merges cleanly: the loop requests a sync rework for ${work.key}, or run graphyard sync ${work.key} and push.`);
+    `No review is requested for it until it merges cleanly: the loop requests a sync rework for ${work.key}, or run mainworks sync ${work.key} and push.`);
   // What the control plane's last base refresh kept and what it re-required, each with its reason.
   const refreshCarry = currentBaseRefreshCarry(work);
   if (refreshCarry) {
@@ -232,7 +232,9 @@ export function proofPreview(work: Work, all: Work[], now: Date) {
     const revoked = !evidence && work.evidence.some(e => e.proof === proof && e.trusted && !!e.revocation && evidenceBindsCandidate(work, e) && e.policyRevision === work.policyRevision);
     const status = deferred ? 'deferred' : revoked ? 'revoked'
       : !evidence ? 'unmeasured' : evidence.executed < 1 || evidence.skipped > 0 ? 'incomplete' : evidence.result === 'fail' ? 'failed' : 'passed';
-    return { criterion, proof, status, scenario: pin, producer: evidence?.producer, evidenceId: evidence?.id, bootstrap: deferred ?? inherited };
+    // A docs sign-off standing from an earlier head (GY-3716) says which.
+    const stands = evidence && work.candidate && evidence.sha !== work.candidate.sha ? `stands from ${evidence.sha.slice(0, 12)}` : undefined;
+    return { criterion, proof, status, scenario: pin, producer: evidence?.producer, evidenceId: evidence?.id, bootstrap: deferred ?? inherited, ...(stands ? { stands } : {}) };
   };
   const own = work.criteria.flatMap(ac => ac.proofs.map(proof => measure(ac.id, proof,
     ac.bootstrap ? { key: work.key, workId: work.id, criterionId: ac.id, proof, ...ac.bootstrap } : undefined)));
@@ -253,5 +255,3 @@ export function proofAuthorization(work: Work, authorities: readonly ProofAuthor
   const required = [...new Set([...work.criteria.flatMap(ac => ac.proofs), ...inheritedObligations(work, all).map(obligation => obligation.proof)])];
   return required.map(proof => ({ proof, producers: authorities.filter(a => grantsAuthorize(a.patterns, proof)).map(a => a.principalId) }));
 }
-export const proofGaps = (work: Work, authorities: readonly ProofAuthority[]) =>
-  proofAuthorization(work, authorities).filter(entry => !entry.producers.length).map(entry => entry.proof);

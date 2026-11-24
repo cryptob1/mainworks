@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * What the Graphyard Pi tools submit, as Graphyard re-validates it (GY-169). The extension under
+ * What the Mainworks Pi tools submit, as Mainworks re-validates it (GY-169). The extension under
  * integrations/pi rejects a malformed call before it becomes a submission; these schemas are the
  * control plane's own check of what the runner hands back, so a submission is never trusted for
  * having passed the agent's side. They are the tool schemas, not the gates: the loop applies a
@@ -28,14 +28,14 @@ export const evidencePayloadSchema = z.object({
 }).strict();
 export type EvidencePayload = z.infer<typeof evidencePayloadSchema>;
 
-export const graphyardTools = { evidence: 'graphyard_submit_evidence' } as const;
+export const mainworksTools = { evidence: 'graphyard_submit_evidence' } as const;
 
 /**
  * The runtime of each narrow role, set in .graphyard/master.json under `run.runtimes`: `herdr`
  * (today's terminal session, and what an absent setting means) or `pi` (the headless runner).
  * `run.pi` names the environment wrapper and model the Pi runs use.
  */
-export const narrowRoleRuntimes = ['herdr', 'pi'] as const;
+const narrowRoleRuntimes = ['herdr', 'pi'] as const;
 export type NarrowRoleRuntime = typeof narrowRoleRuntimes[number];
 export const narrowRoleRuntimeSchema = z.object({
   producer: z.enum(narrowRoleRuntimes).optional(),

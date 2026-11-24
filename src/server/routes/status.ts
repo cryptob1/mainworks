@@ -6,19 +6,20 @@ import { demand, type Work } from '../../model.js';
 import type { IntegrationJob } from '../../coordination.js';
 import { parseEventHistoryQuery, readEventHistory } from '../../events-history.js';
 import { delegationSnapshot } from '../../delegation.js';
-import { loopAlerts, loopAlertsHeader, loopCheckoutTrust, loopCheckoutTrustHeader, loopCpu, loopCpuHeader, loopHosts, loopHostsHeader, loopSessions, loopSessionsHeader, loopFetchRefusal, loopFetchRefusalHeader, loopStallAlarm, loopStallAlarmHeader, loopStepFailure, loopStepFailureHeader, loopSupervision, loopSupervisionHeader, loopWorkerGrowth, loopWorkerGrowthHeader, loopPresenceHeader, loopPresenceInterval, loopPanes, loopPanesHeader, loopPanesRegistry, loopRegistry, reportedLoopMerger } from '../../model/loop-presence.js';
+import { loopAlerts, loopAlertsHeader, loopCheckoutTrust, loopCheckoutTrustHeader, loopCpu, loopCpuHeader, loopHosts, loopHostsHeader, loopSessions, loopSessionsHeader, loopFetchRefusalHeader, loopStallAlarmHeader, loopStepFailureHeader, loopSupervision, loopSupervisionHeader, loopWorkerGrowthHeader, loopPresenceHeader, loopPresenceInterval, loopPanes, loopPanesHeader, loopPanesRegistry, loopRegistry, reportedLoopMerger } from '../../model/loop-presence.js';
 import { loopWhere, loopWhereHeader, loopWhereRegistry } from '../../model/where-things-run.js';
 import { releaseInfo, schemaVersion } from '../../release.js';
 import { openHumanOnly } from '../../model/human-request.js';
 import { humanOnlySubjects } from '../waits.js';
-import { defineRoutes } from '../routes.js';
+import { defineRoutes, parseJson } from '../routes.js';
+import { backfillEventStage, countStagelessDeltas, stageBackfillMax } from '../../store/snapshot-delta.js';
 import { coordinationSnapshot, coordinationViewHeader } from '../work-view.js';
 import { executorHost } from './agent-registry.js';
 import { projectDelivery } from '../../model-boundary/project-applications.js';
 import { repositoryPolicy } from '../../model-boundary/repository-policy.js';
 import { productionEnvironmentFromEnv } from '../../production-environment.js';
-import { liveRelease, managedDeploy, repositoryToplevel, servingReport } from '../../deploy-watch.js';
-import { graphyardRepository } from '../../scenarios.js';
+import { liveRelease, managedDeploy, readDeployHistory, repositoryToplevel, servingReport } from '../../deploy-watch.js';
+import { mainworksRepository } from '../../scenarios.js';
 import { gitRunnerFor } from '../../merge-writer/local-observation.js';
 import { boardFromStatus } from '../../model/board.js';
 import { resolve } from 'node:path';
@@ -31,11 +32,20 @@ import { boundedSnapshot, workDocument } from '../../store/bounded-snapshot.js';
 import { snapshotPage } from '../../store/paged-snapshot.js';
 import { pipelineItems, pipelineTime } from '../../pipeline-speed.js';
 import { releaseCheckSince } from '../../model/incidents.js';
-import { readFlow } from '../flow.js';
+import { readFlow, sharedFlow } from '../flow.js';
+import { boundedHistoryRead } from '../history-reads.js';
+import { slowestQuery } from '../../store/slow-queries.js';
 import { publicLinkOff } from './team-access.js';
+import { setting } from '../../setting.js';
 
 
 /** Control-plane status and the work reads every client polls. */
+/** GY-3772: the rows the stage backfill's last batch left, for master status. */
+let stageBackfill: { remaining: number; at: string } | null = null;
+/** GY-3774: per-pool remaining count cache so the partial-index count runs at most once a minute, outside the batch. */
+const stageBackfillCounts = new WeakMap<object, { remaining: number; countedAt: number }>();
+const stageBackfillCountIntervalMs = 60_000;
+
 export const statusRoutes = defineRoutes('status', [
   { method: 'GET', path: '/api/work-replay', async handle({ services, url, operatorVisible }) {
     const hours = Number(url.searchParams.get('hours') ?? 24);
@@ -44,10 +54,19 @@ export const statusRoutes = defineRoutes('status', [
     return { ...replay, items: operatorVisible(replay.items) };
   } },
   // GY-3624: the flow numbers, for master status and the Work page; /api/status does not carry them (GY-3677).
-  { method: 'GET', path: '/api/flow', async handle({ services, operatorVisible }) {
-    const now = (await services.engine.store.pool.query('SELECT clock_timestamp() AS now')).rows[0].now as Date;
-    return readFlow(services.engine.store.pool, operatorVisible(await services.engine.store.fleet()), now.getTime());
-  } },
+  // GY-3763: computed at most once a minute and served from memory with its age.
+  { method: 'GET', path: '/api/flow', handle: ({ services, operatorVisible }) => sharedFlow(services.engine.store, Date.now(), async now => {
+    const { engine, repository } = services;
+    const runner = engine.gitRunner === undefined ? engine.gitRunner = gitRunnerFor(setting('REPOSITORY_ROOT') ?? process.cwd()) : engine.gitRunner;
+    const servingRoot = setting('REPOSITORY_ROOT')?.trim() ? resolve(setting('REPOSITORY_ROOT')!) : repositoryToplevel(process.cwd());
+    const read = runner ? async (args: readonly string[]) => { const result = await runner(args); if (result.status !== 0) throw new Error(result.stderr); return result.stdout; } : null;
+    const deploys = servingRoot ? readDeployHistory(servingRoot, repository ?? null) : [];
+    const work = await engine.store.fleet();
+    return { at: now, work, flow: await readFlow(engine.store.pool, work, now, { deploys, git: read }) };
+  }, operatorVisible) },
+  // GY-3757: the slowest database query of the last 10 minutes when it ran past 3 s, for master status; `name` keeps the queries whose name starts with it.
+  // GY-3772: with the delta rows the stage backfill's last batch left lacking the stage, null until a batch runs.
+  { method: 'GET', path: '/api/slowest-query', handle: async ({ url }) => ({ slowest: slowestQuery(Date.now(), url.searchParams.get('name') ?? ''), stageBackfill }) },
   {
     method: 'GET', path: '/api/status',
     async handle({ actor, req, url, services, operatorVisible }) {
@@ -68,20 +87,20 @@ export const statusRoutes = defineRoutes('status', [
       const humanOnly = openHumanOnly(await humanOnlySubjects(services, visibleWork), observedAt.getTime());
       const loop = await reportedLoopMerger(loopRegistry(engine), (text, values) => engine.store.pool.query(text, values), observedAt);
       // The managed repository's own serving (GY-2964), for every install managing a repository other
-      // than Graphyard's own: what the deploy record naming it serves and how far the base branch the
+      // than Mainworks's own: what the deploy record naming it serves and how far the base branch the
       // shared checkout holds is ahead. This process's build and the production watch observe the
       // control plane's own code, never another repository's release, so its header reads from here;
-      // an install managing Graphyard itself keeps the production watch's release line.
-      const runner = engine.gitRunner === undefined ? engine.gitRunner = gitRunnerFor(process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd()) : engine.gitRunner;
-      const deploy = repository && repository.toLowerCase() !== graphyardRepository
-        ? await managedDeploy(repository, engine.baseBranch, process.env.GRAPHYARD_REPOSITORY_ROOT, runner)
+      // an install managing Mainworks itself keeps the production watch's release line.
+      const runner = engine.gitRunner === undefined ? engine.gitRunner = gitRunnerFor(setting('REPOSITORY_ROOT') ?? process.cwd()) : engine.gitRunner;
+      const deploy = repository && repository.toLowerCase() !== mainworksRepository
+        ? await managedDeploy(repository, engine.baseBranch, setting('REPOSITORY_ROOT'), runner)
         : null;
       // Master status's serving block over the API (GY-2976): what the deploy record naming this
       // repository, or the repository's declared serve, serves — the served commit, whether it is
       // main, the URL and the last build failure, with the serve fields null when nothing is
       // declared. Read from the checkout this process serves from: GRAPHYARD_REPOSITORY_ROOT, else
       // its own working directory's git toplevel, so a served head reports its own serving.
-      const servingRoot = process.env.GRAPHYARD_REPOSITORY_ROOT?.trim() ? resolve(process.env.GRAPHYARD_REPOSITORY_ROOT) : repositoryToplevel(process.cwd());
+      const servingRoot = setting('REPOSITORY_ROOT')?.trim() ? resolve(setting('REPOSITORY_ROOT')!) : repositoryToplevel(process.cwd());
       const read = runner ? async (args: readonly string[]) => { const result = await runner(args); if (result.status !== 0) throw new Error(result.stderr); return result.stdout; } : null;
       const serving = await servingReport(servingRoot, repository ?? '', engine.baseBranch, read && (async args => (await read(args)).trim()));
       // GY-3452: what users have — the commit app.healthUrl answers, else the one served here or
@@ -127,7 +146,7 @@ export const statusRoutes = defineRoutes('status', [
         fleet: ['admin', 'coordinator', 'reader', 'slice-lead'].includes(actor.role) ? await services.agentRegistry.snapshot(executorHost(url, req)) : null,
         // Delivery defaults, applications and case bindings (GY-1901).
         project: projectDelivery(),
-        // The first-run facts the Setup page and `graphyard up` read beside the App and the fleet (GY-1419):
+        // The first-run facts the Setup page and `mainworks up` read beside the App and the fleet (GY-1419):
         // whether a master loop is live, and who reviews and merges as the live loop names it (GY-1501):
         // `supervised` drops the reviewer App and reviewing account from the Setup checklist.
         setup: { loop: !!loop?.live, supervision: loopRegistry(engine).live(observedAt)?.supervision ?? null,
@@ -176,7 +195,7 @@ export const statusRoutes = defineRoutes('status', [
       const view = z.enum(['bounded', 'full', 'coordination']).parse(Array.isArray(requested) ? requested[0] : requested ?? 'bounded');
       // The loop's own read is its presence (GY-916): it merges while it lives, however long nothing is mergeable.
       const loopInterval = actor.role === 'coordinator' ? loopPresenceInterval(req.headers[loopPresenceHeader.toLowerCase()]) : null;
-      if (loopInterval !== null) loopRegistry(services.engine).observe({ principal: actor.id, intervalSeconds: loopInterval, supervision: loopSupervision(req.headers[loopSupervisionHeader.toLowerCase()]), alerts: loopAlerts(req.headers[loopAlertsHeader.toLowerCase()]), checkoutTrust: loopCheckoutTrust(req.headers[loopCheckoutTrustHeader.toLowerCase()]) ?? undefined, workerGrowth: loopWorkerGrowth(req.headers[loopWorkerGrowthHeader.toLowerCase()]), stepFailure: loopStepFailure(req.headers[loopStepFailureHeader.toLowerCase()]), fetchRefusal: loopFetchRefusal(req.headers[loopFetchRefusalHeader.toLowerCase()]), stallAlarm: loopStallAlarm(req.headers[loopStallAlarmHeader.toLowerCase()]), cpu: loopCpu(req.headers[loopCpuHeader.toLowerCase()]), hosts: loopHosts(req.headers[loopHostsHeader.toLowerCase()]), sessions: loopSessions(req.headers[loopSessionsHeader.toLowerCase()]) }, new Date());
+      if (loopInterval !== null) loopRegistry(services.engine).observe({ principal: actor.id, intervalSeconds: loopInterval, supervision: loopSupervision(req.headers[loopSupervisionHeader.toLowerCase()]), alerts: loopAlerts(req.headers[loopAlertsHeader.toLowerCase()]), checkoutTrust: loopCheckoutTrust(req.headers[loopCheckoutTrustHeader.toLowerCase()]) ?? undefined, workerGrowth: loopCheckoutTrust(req.headers[loopWorkerGrowthHeader.toLowerCase()]), stepFailure: loopCheckoutTrust(req.headers[loopStepFailureHeader.toLowerCase()]), fetchRefusal: loopCheckoutTrust(req.headers[loopFetchRefusalHeader.toLowerCase()]), stallAlarm: loopCheckoutTrust(req.headers[loopStallAlarmHeader.toLowerCase()]), cpu: loopCpu(req.headers[loopCpuHeader.toLowerCase()]), hosts: loopHosts(req.headers[loopHostsHeader.toLowerCase()]), sessions: loopSessions(req.headers[loopSessionsHeader.toLowerCase()]) }, new Date());
       if (loopInterval !== null) loopPanesRegistry(services.engine).observe(loopPanes(req.headers[loopPanesHeader.toLowerCase()]));
       if (loopInterval !== null) loopWhereRegistry(services.engine).observe(loopWhere(req.headers[loopWhereHeader.toLowerCase()]));
       const scope = <T extends { work: Work[]; jobs: IntegrationJob[] }>(snapshot: T) => {
@@ -244,13 +263,45 @@ export const statusRoutes = defineRoutes('status', [
     // and the disclosure of what the filter left out, and `view=page` the cursor alone, for the
     // later pages of one walk. All share one set of defaults.
     method: 'GET', path: '/api/events',
-    async handle({ actor, url, services, operatorVisible }) {
+    async handle({ actor, res, url, services, operatorVisible }) {
       const query = parseEventHistoryQuery(url.searchParams);
       // The master's identity, scoped to every item, reads the ledger whole; every other operator agent names its item.
       const wholeLedger = actor.role === 'operator-agent' && !!actor.scope?.workItems.includes('*');
       if (actor.role === 'operator-agent' && !wholeLedger) { demand(query.work, 'Operator-agent history reads require a scoped work item', 403); const item = await services.engine.store.workDocument(query.work!); demand(item && item.id === query.work && operatorVisible([item]).length, 'Work item is outside this operator-agent scope', 403); }
-      const history = await readEventHistory(services.engine.store.pool, query);
-      return query.view === 'rows' ? history.events : history;
+      // GY-3757: one item's history shares four slots; a read kept waiting gets the last answer, its age in seconds in `Age`.
+      const read = async () => { const history = await readEventHistory(services.engine.store.pool, query); return query.view === 'rows' ? history.events : history; };
+      if (!query.work) return read();
+      const { answer, ageMs } = await boundedHistoryRead(`${url.pathname}${url.search}`, read);
+      if (ageMs !== null) res.setHeader('Age', String(Math.round(ageMs / 1000)));
+      return answer;
+    },
+  },
+  {
+    // GY-3768: the loop's backfill of the stage on delta rows written before GY-3766, one batch a call of the size the loop asks (GY-3769), outside any coordination transaction.
+    // GY-3774: the batch runs and times the UPDATE alone; remaining is counted from events_stageless_delta at most once a minute outside the batch, and decremented in between.
+    method: 'POST', path: '/api/events/backfill-stage',
+    async handle(context) {
+      demand(context.actor.role === 'coordinator' || context.actor.role === 'admin', 'The stage backfill is run by the loop (a coordinator identity)', 403);
+      const limit = Math.max(1, Math.min(stageBackfillMax, Math.floor(Number((await parseJson(context, undefined, '{}')).limit) || 50) || 1));
+      const pool = context.services.engine.store.pool;
+      const batch = await backfillEventStage(pool, limit);
+      const now = Date.now();
+      let remaining: number;
+      if (batch.filled < limit) {
+        remaining = 0;
+        stageBackfillCounts.set(pool, { remaining: 0, countedAt: now });
+      } else {
+        const cached = stageBackfillCounts.get(pool);
+        if (!cached || now - cached.countedAt >= stageBackfillCountIntervalMs) {
+          remaining = await countStagelessDeltas(pool);
+          stageBackfillCounts.set(pool, { remaining, countedAt: now });
+        } else {
+          remaining = Math.max(0, cached.remaining - batch.filled);
+          cached.remaining = remaining;
+        }
+      }
+      stageBackfill = { remaining, at: new Date(now).toISOString() };
+      return { ...batch, remaining };
     },
   },
 ]);

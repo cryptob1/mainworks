@@ -9,7 +9,7 @@ import type { Work } from './work.js';
 // that spent forty minutes reading the repository to answer a yes-or-no question. A criterion may
 // instead declare that its proof is answerable as a closed question: the question, the closed set
 // of answers offered, which answer means the proof passes, and the state it is asked against.
-// Graphyard binds that state to the exact candidate, hashes it, asks the configured responder,
+// Mainworks binds that state to the exact candidate, hashes it, asks the configured responder,
 // and records the answer — with its probability and the threshold applied — as evidence any
 // reader can re-run and disagree with.
 //
@@ -62,7 +62,7 @@ export const closedQuestionFor = (work: Pick<Work, 'closedQuestions'>, proof: st
  */
 export const reservedForAttestation = (work: Pick<Work, 'producerProofs'>, proof: string) => proof.startsWith('manual:') && !(work.producerProofs ?? []).includes(proof);
 /** The path a proof takes when no answer decides it. */
-export const escalationPath = (work: Pick<Work, 'producerProofs'>, proof: string): EscalationPath => reservedForAttestation(work, proof) ? 'attestation-decision' : 'producer-session';
+const escalationPath = (work: Pick<Work, 'producerProofs'>, proof: string): EscalationPath => reservedForAttestation(work, proof) ? 'attestation-decision' : 'producer-session';
 
 /**
  * Why an answer may not be used on this item right now, or null. An answer is evidence for one
@@ -73,7 +73,7 @@ export function closedQuestionRefusal(work: Work, proof: string): string | null 
   if (!declared) return `${work.key} declares no closed question for ${proof}; it is proven by its ordinary path`;
   if (!work.criteria.some(criterion => criterion.id === declared.criterion && criterion.proofs.includes(proof))) return `${declared.criterion} of ${work.key} does not require ${proof}`;
   if (reservedForAttestation(work, proof))
-    return `${proof} is established only by the master's attestation, which an answer never satisfies: graphyard master attest ${work.key} ${proof} REASON`;
+    return `${proof} is established only by the master's attestation, which an answer never satisfies: mainworks master attest ${work.key} ${proof} REASON`;
   if (work.humanRequest && !work.humanRequest.answer)
     return `${work.key} waits on a human-only decision (${work.humanRequest.kind}); an answer never stands in for one, and only the human's answer resumes the item`;
   return null;
@@ -96,30 +96,3 @@ export function judgeAnswer(work: Pick<Work, 'producerProofs'>, question: Closed
     escalation: { path, reason: `The responder answered "${answer.answer}" with probability ${answer.probability} (below the threshold ${threshold}); an answer this unsure is not a verdict, so ${question.proof} escalates to its ${path === 'producer-session' ? 'producer session' : 'attest decision'}` },
   };
 }
-
-// ---------------------------------------------------------------------------
-// The accuracy study (AC-4): the same criteria judged both ways over past candidates whose real
-// outcome is known. Adoption follows from this repository's own numbers, never a vendor's.
-// ---------------------------------------------------------------------------
-
-export interface StudyCase {
-  /** Item and head the case was judged on, for the report. */
-  key: string; sha: string; proof: string;
-  /** What really happened: the outcome the delivered history settled on. */
-  known: 'pass' | 'fail';
-  /** What the producer session concluded on that head, when one ran. */
-  session?: 'pass' | 'fail' | null;
-  /** The responder's answer, mapped through the question's passing answer, and its probability. */
-  answer: 'pass' | 'fail'; probability: number;
-}
-export interface StudyReport {
-  cases: number; threshold: number;
-  /** Confident answers only: those that would have been verdicts. */
-  confident: number; agreement: number; disagreement: number; escalated: number;
-  /** Every case where the fast answer was confident and wrong, in full. */
-  confidentWrong: StudyCase[];
-  /** Sessions judged on the same cases, for the comparison the adoption rests on. */
-  session: { judged: number; agreement: number };
-  recommendation: 'adopt' | 'refuse'; reason: string;
-}
-export const studyMinimumCases = 20;

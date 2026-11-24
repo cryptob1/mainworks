@@ -37,7 +37,7 @@ let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
 before(async () => {
   store = await withDatabase('scenario-capacity-limit-redispatch-registered');
   await store.init();
-  // The shipped scenarios are Graphyard's own repository's cases (GY-2964): this install manages
+  // The shipped scenarios are Mainworks's own repository's cases (GY-2964): this install manages
   // that repository, which is the one whose fresh install materializes them.
   engine = new Engine(store, 120, 'cryptob1/graphyard');
   http = server(engine, [{ ...operator, token: tokens.get(operator.id)! }]);

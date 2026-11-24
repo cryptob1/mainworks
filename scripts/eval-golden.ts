@@ -1,4 +1,4 @@
-// The golden eval (GY-2970): a fixed set of ten golden items replayed against one Graphyard
+// The golden eval (GY-2970): a fixed set of ten golden items replayed against one Mainworks
 // release, twice, on a scratch install — and, between two releases, which items flipped.
 //
 //   node --import tsx scripts/eval-golden.ts --release SHA --runs 2 --repo OWNER/SCRATCH-REPO [--port N] [--bound-minutes 90]
@@ -184,14 +184,14 @@ export class ComposeScratchInstall implements GoldenInstall {
     this.base = `http://127.0.0.1:${input.port}`;
   }
 
-  /** Bring the scratch install up. Its loop (`graphyard master run` against it) releases and dispatches what `file` files. */
+  /** Bring the scratch install up. Its loop (`mainworks master run` against it) releases and dispatches what `file` files. */
   async up(): Promise<this> {
     const cli = this.input.cliPath ?? resolve(dirname(fileURLToPath(import.meta.url)), '../bin/graphyard.mjs');
     await new Promise<void>((pass, fail) => {
       const child = spawn(process.execPath, [cli, 'install', '--provider', 'compose', '--repo', this.input.repository,
         '--port', String(this.input.port), '--apply', '--source-root', this.input.sourceRoot], { stdio: 'inherit' });
       child.on('error', fail);
-      child.on('exit', code => code === 0 ? pass() : fail(new Error(`graphyard install --apply exited ${code}`)));
+      child.on('exit', code => code === 0 ? pass() : fail(new Error(`mainworks install --apply exited ${code}`)));
     });
     return this;
   }
@@ -274,7 +274,7 @@ async function main(argv: string[]): Promise<void> {
   if (!Number.isInteger(runs) || runs < 1) throw new Error('--runs takes a whole number of runs');
   const port = Number(values.port ?? 4390);
   const boundMs = Number(values['bound-minutes'] ?? 90) * 60_000;
-  const scratch = await mkdtemp(join(tmpdir(), 'graphyard-golden-'));
+  const scratch = await mkdtemp(join(tmpdir(), 'mainworks-golden-'));
   const install = new ComposeScratchInstall({ repository, port, sourceRoot: process.cwd() });
   try { await install.up(); } catch (error) { await install.dispose(); throw error; }
   const resultsPath = join(resultsDir(), `${values.release}.json`);

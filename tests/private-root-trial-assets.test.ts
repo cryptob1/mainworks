@@ -24,30 +24,30 @@ test('integration:private-root-trial-assets — empty HOME reproduces the browse
   const home = join(allocation, 'home');
   await mkdir(home);
   const scratch = await temporaryDirectory('scratch', allocation);
-  const postgresHelper = await postgresHarness(allocation, '/graphyard-harness');
+  const postgresHelper = await postgresHarness(allocation, '/mainworks-harness');
   const outerScratch = await temporaryDirectory('outer-scratch', '/var/tmp');
   await writeFile(join(outerScratch, 'sentinel'), 'outside this boundary');
   // Match the canonical service launch: full inherited environment, host LANG,
   // and no interactive-shell LC_ALL override to hide unsupported image locales.
-  const host = { ...process.env, LANG: 'en_US.UTF-8', LC_ALL: undefined, LC_CTYPE: 'graphyard_UNSUPPORTED.UTF-8' };
+  const host = { ...process.env, LANG: 'en_US.UTF-8', LC_ALL: undefined, LC_CTYPE: 'mainworks_UNSUPPORTED.UTF-8' };
   const environment = { ...trialEnvironment(host), ...trialHomeVariables(home, host, true), TMPDIR: scratch, TMP: scratch, TEMP: scratch, PATH: '/usr/local/bin:/usr/bin:/bin' };
   const wrapper = trialContainerWords([allocation]);
   const emptyCache = join(home, '.cache/ms-playwright');
   // Playwright resolves its registry at import time: reproduce the old environment in a fresh process.
   await assert.rejects(defaultChildRun('node', ['--input-type=module', '-e', `
-    import { chromium } from '/graphyard-harness/node_modules/playwright/index.mjs';
+    import { chromium } from '/mainworks-harness/node_modules/playwright/index.mjs';
     await chromium.launch({ headless: true });
   `], { cwd: allocation, wrapper, timeoutMs: 20_000, env: { ...environment, PLAYWRIGHT_BROWSERS_PATH: emptyCache } }),
   (error: any) => /Executable doesn't exist/.test(error.stderr) && error.stderr.includes(emptyCache));
-  const output = await defaultChildRun('node', ['--import', '/graphyard-harness/node_modules/tsx/dist/loader.mjs', '--input-type=module', '-e', `
+  const output = await defaultChildRun('node', ['--import', '/mainworks-harness/node_modules/tsx/dist/loader.mjs', '--input-type=module', '-e', `
     import assert from 'node:assert/strict';
     import { readFile, realpath, lstat, stat, statfs, writeFile, access } from 'node:fs/promises';
     import { dirname, join } from 'node:path';
     import { createRequire } from 'node:module';
     import { execFileSync } from 'node:child_process';
-    import { chromium } from '/graphyard-harness/node_modules/playwright/index.mjs';
+    import { chromium } from '/mainworks-harness/node_modules/playwright/index.mjs';
     import { startPostgres } from ${JSON.stringify(postgresHelper)};
-    import pg from '/graphyard-harness/node_modules/pg/lib/index.js';
+    import pg from '/mainworks-harness/node_modules/pg/lib/index.js';
     assert.equal(process.env.LANG, 'C.UTF-8');
     assert.equal(process.env.LC_ALL, 'C.UTF-8');
     assert.equal(process.env.LC_CTYPE, undefined);
@@ -68,7 +68,7 @@ test('integration:private-root-trial-assets — empty HOME reproduces the browse
       assert.equal(await page.locator('h1').textContent(), 'Installed pinned browser');
       await page.screenshot({ path: 'browser.png' });
     } finally { await browser.close(); }
-    const require = createRequire('/graphyard-harness/node_modules/embedded-postgres/dist/index.js');
+    const require = createRequire('/mainworks-harness/node_modules/embedded-postgres/dist/index.js');
     const packageRoot = dirname(dirname(require.resolve('@embedded-postgres/linux-' + process.arch)));
     const links = JSON.parse(await readFile(join(packageRoot, 'native/pg-symlinks.json'), 'utf8'));
     assert.ok(links.length > 0, 'the installed native package declares library links');
@@ -94,7 +94,7 @@ test('integration:private-root-trial-assets — service-style unsupported host l
   const postgresHelper = await postgresHarness(allocation, new URL('..', import.meta.url).pathname, fileURLToPath(new URL('../../', import.meta.resolve('tsx'))));
   const rejectedDatabase = await temporaryDirectory('unsupported-locale', allocation);
   const home = await temporaryDirectory('home', allocation);
-  const host = { ...process.env, LANG: 'graphyard_UNSUPPORTED.UTF-8', LC_ALL: undefined, LC_CTYPE: 'graphyard_UNSUPPORTED.UTF-8' };
+  const host = { ...process.env, LANG: 'mainworks_UNSUPPORTED.UTF-8', LC_ALL: undefined, LC_CTYPE: 'mainworks_UNSUPPORTED.UTF-8' };
   // An unknown locale reproduces the image's missing en_US even on hosts which
   // install en_US themselves. Exercise the installed native executable directly.
   const { default: binaries } = await import(new URL('./binary.js', import.meta.resolve('embedded-postgres')).href);
@@ -121,9 +121,9 @@ test('integration:private-root-trial-assets — service-style unsupported host l
     console.log('service-style native Postgres passed');
   `], { cwd: allocation, env: environment, timeoutMs: 45_000 });
   assert.match(output, /service-style native Postgres passed/);
-  assert.equal(host.LANG, 'graphyard_UNSUPPORTED.UTF-8');
+  assert.equal(host.LANG, 'mainworks_UNSUPPORTED.UTF-8');
   assert.equal(host.LC_ALL, undefined);
-  assert.equal(host.LC_CTYPE, 'graphyard_UNSUPPORTED.UTF-8');
+  assert.equal(host.LC_CTYPE, 'mainworks_UNSUPPORTED.UTF-8');
 });
 
 test('integration:private-root-trial-assets — bounded failure diagnostics retain the test and first child error before long stacks', () => {

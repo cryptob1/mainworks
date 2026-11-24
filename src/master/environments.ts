@@ -26,10 +26,12 @@ export { describeObservedExhaustion, providerIdentity } from './account-identity
 // The per-provider login and quota probes live in ./environment-quota.ts, reached through each runtime's adapter.
 import type { PlanReading } from './environment-quota.js';
 import { accountHomeEnvironment, runtimeAdapter, withModel, type AccountReading } from './runtimes.js';
+import { setting } from '../setting.js';
+import { stateDirectory } from '../install/layout.js';
 
 /** Where agent environments live: one directory per account, named <agent>-<letter>. */
 export function agentEnvironmentRoot(input?: string) {
-  return resolve(input ?? process.env.GRAPHYARD_AGENT_ENVIRONMENTS ?? resolve(homedir(), '.coding_agents'));
+  return resolve(input ?? setting('AGENT_ENVIRONMENTS') ?? resolve(homedir(), '.coding_agents'));
 }
 const environmentDirectory = /^(claude|codex|opencode|cursor)(?:-([a-z0-9][a-z0-9_-]{0,30}))?$/;
 export async function discoverAgentEnvironments(directory = agentEnvironmentRoot()): Promise<AgentEnvironment[]> {
@@ -97,7 +99,7 @@ export function loginCommand(environment: AgentEnvironment) {
     opencode: `XDG_DATA_HOME=${home} opencode auth login`, cursor: `CURSOR_CONFIG_DIR=${home} XDG_CONFIG_HOME=${home} agent login` }[environment.kind];
 }
 
-export interface AccountUsage { window: string; percent: number; resetsAt: string | null }
+export interface AccountUsage { window: string; percent: number; resetsAt: string | null; /** GY-3497: the provider's own limit list named this window, so the provider enforces it and a reading at its ceiling holds. */ limitList?: true }
 export interface EnvironmentHealth {
   name: string; kind: EnvironmentKind; home: string; variable: string; checkedAt: string;
   loggedIn: boolean; quota: 'available' | 'exhausted' | 'unknown'; usage: AccountUsage[];
@@ -107,6 +109,8 @@ export interface EnvironmentHealth {
   identity?: string | null;
   /** GY-3516: the fingerprint of the key the probe read the quota with; never the key. */
   key?: string;
+  /** GY-3497: the extra-usage line the provider's answer gave when spend is enabled (`extra usage on: $3.21 of $10.00 used`); shown, never changed. */
+  spend?: string;
 }
 export interface EnvironmentProbe {
   fetch?: typeof fetch; now?: () => number; ceilingPercent?: number; timeoutMs?: number; cacheMs?: number;
@@ -133,7 +137,7 @@ export async function checkAgentEnvironment(environment: ProbedEnvironment, prob
   const cacheKey = `${environment.name}\0${environment.home}\0${ceiling}\0${probe.quota !== false}`, cached = healthCache.get(cacheKey);
   if (cached && now - cached.at >= 0 && now - cached.at < (probe.cacheMs ?? 30_000)) return cached.health;
 
-  const account: AccountReading = adapter?.usage ? await adapter.usage(environment, probe, { plan: planId, now }) : { loggedIn: false, usage: [], note: `Graphyard reads no login of the ${environment.kind} runtime` };
+  const account: AccountReading = adapter?.usage ? await adapter.usage(environment, probe, { plan: planId, now }) : { loggedIn: false, usage: [], note: `Mainworks reads no login of the ${environment.kind} runtime` };
 
   if (account.loggedIn && planId && !account.shared) {
     // A reading taken from the plan cache is not re-stamped, so the cache still expires. A provider
@@ -160,7 +164,7 @@ export async function checkAgentEnvironment(environment: ProbedEnvironment, prob
     : exhausted ? `${environment.name} quota is exhausted (${(spent.length ? spent : account.usage).map(usage => `${usage.window} window at ${usage.percent}%${usage.resetsAt ? ` until ${usage.resetsAt}` : ''}`).join(', ')}; ceiling ${ceiling}%)` : null;
   const health: EnvironmentHealth = { name: environment.name, kind: environment.kind, home: environment.home, variable: environmentVariable[environment.kind], checkedAt: new Date(now).toISOString(),
     loggedIn: account.loggedIn, quota, usage: account.usage, healthy: !reason, reason, note: account.note, login: account.loggedIn ? null : loginCommand(environment),
-    identity: account.loggedIn ? await providerIdentity(environment.kind, environment.home) : null, ...account.key ? { key: account.key } : {} };
+    identity: account.loggedIn ? await providerIdentity(environment.kind, environment.home) : null, ...account.key ? { key: account.key } : {}, ...account.spend ? { spend: account.spend } : {} };
   healthCache.set(cacheKey, { at: now, health });
   return health;
 }
@@ -327,11 +331,11 @@ export const openCodeAllowAll = { '*': 'allow', edit: 'allow', bash: 'allow', we
  * person. The explicit `.graphyard` entry keeps the grant readable beside the tree's, whichever
  * glob rules a runtime applies to dot-directories.
  */
-export const openCodeRepositoryGrant = (root: string) => ({ [`${root}/**`]: 'allow', [`${root}/.graphyard/**`]: 'allow', '*': 'deny' });
+export const openCodeRepositoryGrant = (root: string) => ({ [`${root}/**`]: 'allow', [`${stateDirectory(root)}/**`]: 'allow', '*': 'deny' });
 /**
  * An operator's own OpenCode permission document that asks nothing (the recipe's `permits`) is laid
  * over the allow-all rather than replacing it: a key it leaves out (`external_directory`,
- * `doom_loop`, …) keeps Graphyard's `allow` — or, when the repository root is known, the
+ * `doom_loop`, …) keeps Mainworks's `allow` — or, when the repository root is known, the
  * repository-tree grant — instead of falling back to OpenCode's default, which asks.
  */
 function openCodePermission(operator: string | undefined, repositoryRoot?: string) {
@@ -533,7 +537,7 @@ export async function setupAgentEnvironments(root: string, input: { directory?: 
     next.producers.forEach((profile, index) => migrate('producer', profile, index));
     next.reviewers.forEach((profile, index) => migrate('reviewer', profile, index));
     // Worker and producer credentials are per install (GY-1885): they are read only from the
-    // directory `graphyard install` manages for this repository, so a second install on one host
+    // directory `mainworks install` manages for this repository, so a second install on one host
     // never scans — and never refuses — another install's token folder. A master configured with
     // no install of its own (no install.json) keeps reading beside its coordinator credential, as
     // it always has; an install record that exists but cannot be read fails here, never falling
@@ -557,7 +561,7 @@ export async function setupAgentEnvironments(root: string, input: { directory?: 
       return found;
     };
     const profileNameOf = (value: string) => value.replace(/[^a-zA-Z0-9._-]/g, '-').replace(/^[^a-zA-Z0-9]+/, '').slice(0, 80) || 'agent';
-    // A profile name is Graphyard's own label, in its own syntax; the session name onboarding
+    // A profile name is Mainworks's own label, in its own syntax; the session name onboarding
     // generates beside it is what Herdr is asked to launch, so it is built inside the runtime's
     // naming rules (GY-101) rather than taken from the label and refused at the first launch.
     const agentNameOf = (name: string) => sessionName(name);
@@ -589,7 +593,7 @@ export async function setupAgentEnvironments(root: string, input: { directory?: 
     if (next.reviewers.length > 1 && !next.run.reviewerProfile) next.run.reviewerProfile = next.reviewers[0].name;
   }
   const parsed = masterConfigSchema.parse(next);
-  if (input.apply) await atomicPrivateWrite(resolve(root, '.graphyard/master.json'), parsed);
+  if (input.apply) await atomicPrivateWrite(resolve(stateDirectory(root), 'master.json'), parsed);
   const report = health.map(entry => ({ environment: entry.name, kind: entry.kind, home: entry.home, variable: entry.variable, loggedIn: entry.loggedIn, quota: entry.quota, usage: entry.usage, healthy: entry.healthy, reason: entry.reason, note: entry.note, login: entry.login }));
   const loggedOut = report.filter(entry => !entry.loggedIn);
   return { directory, applied: !!input.apply, environments: report, created, prepared, profiles: changes, skipped,

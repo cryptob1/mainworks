@@ -40,7 +40,7 @@ const summaries = new WeakSet<object>(), projections = new WeakSet<object>();
 const cache = new Map<string, Work>();
 /** The version each item's stand-in of each kind is cached under, so a newer version replaces it rather than accumulating beside it. */
 const cachedVersion = new Map<string, string>();
-export const lockedSummaryCacheLimit = 20_000;
+const lockedSummaryCacheLimit = 20_000;
 let cacheLimit = lockedSummaryCacheLimit;
 /** Bound the stand-in cache at `limit` entries instead of `lockedSummaryCacheLimit`: tests reach eviction with it. */
 export function boundLockedCache(limit = lockedSummaryCacheLimit) { cacheLimit = limit; }
@@ -266,7 +266,7 @@ export function coordinationProjection(document: Work): Work {
   // The loop's own post-deploy readings (`reading`, GY-1779) stay whatever head the item carries: its readings step and loopObservation read them here.
   const relevant = (entry: any) => {
     const sha = text(entry?.sha);
-    return (sha !== null && head !== null && sha === head && text(entry?.baseSha) === base) || carried.has(text(entry?.id)!) || (sha !== null && requested.has(sha)) || isObject(entry?.reading) || (typeof entry?.proof === 'string' && (entry.proof.startsWith('manual:post-deploy/') || (sha === head && entry.proof.startsWith('human:'))));
+    return (sha !== null && head !== null && sha === head && text(entry?.baseSha) === base) || carried.has(text(entry?.id)!) || (sha !== null && requested.has(sha)) || isObject(entry?.reading) || (typeof entry?.proof === 'string' && (entry.proof.startsWith('manual:post-deploy/') || entry.proof.startsWith('manual:docs-updated/') || (sha === head && entry.proof.startsWith('human:'))));
   };
   const { pipeline, evidence, observation, queueHistory, actionQueue, autoDispatch, sessions, ...rest } = doc;
   const out: Record<string, any> = { ...rest };

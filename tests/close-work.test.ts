@@ -21,7 +21,7 @@ import type { Dashboard } from '../web/pages/dashboard.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
-// `graphyard master close`: obsolete, duplicate and superseded items leave every open list and
+// `mainworks master close`: obsolete, duplicate and superseded items leave every open list and
 // every delivered count, in one audited transaction, against a real Postgres and the real routes.
 const repository = 'owner/close-work';
 const operator: Principal = { id: 'close-operator', role: 'admin', sessionKind: 'human' };

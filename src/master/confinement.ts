@@ -13,6 +13,8 @@ import { underTestRunner } from '../runtime-environment.js';
 import { WorkerSandboxError } from '../worker-sandbox.js';
 import { runtimeStateRoots } from './runtimes.js';
 import { checkoutGitDirectory, checkoutGitProblem, checkoutWorktreeAdminDirectory, gitPointerAdminDirectory } from './checkout-git.js';
+import { setting } from '../setting.js';
+import { stateDirectory, defaultConfigHome } from '../install/layout.js';
 
 // Every runtime carries the same outer namespace, including runtimes with their own sandbox:
 // a runtime's file policy alone does not hide host devices or command-launch sockets. The host
@@ -136,7 +138,7 @@ const nearestExistingDirectory = (path: string): string | null => {
 
 /**
  * The credential locations a confined session of this install must not read (GY-1856), with the
- * session's own kept: the operator config home wholesale — Graphyard's install, master, worker,
+ * session's own kept: the operator config home wholesale — Mainworks's install, master, worker,
  * reviewer and producer directories all live under it — and every recorded credential path beside
  * it, against the session's own token file and runtime login homes.
  */
@@ -197,7 +199,7 @@ const keptCli = (config: MaskConfig, operatorHome: string): string[] =>
 // Reviewer session bindings live beside the coordinator credential, outside every worktree.
 export function reviewerCredentialDirectory(config?: { credentialFile: string }, input?: string) {
   if (input) return resolve(input);
-  return config ? resolve(config.credentialFile, '../..', 'reviewers') : resolve(process.env.GRAPHYARD_CONFIG_HOME ?? resolve(homedir(), '.config/graphyard'), 'reviewers');
+  return config ? resolve(config.credentialFile, '../..', 'reviewers') : resolve(setting('CONFIG_HOME') ?? defaultConfigHome(), 'reviewers');
 }
 /** Every absolute path a configuration names, at any depth. */
 const namedPaths = (value: unknown): string[] => typeof value === 'string' ? (isAbsolute(value) ? [value] : [])
@@ -351,7 +353,7 @@ const keptCredentialPaths = (mask: CredentialMask | undefined): string[] =>
   [...new Set((mask?.own ?? []).filter(path => isAbsolute(path) && existsSync(path)).map(canonicalPath))];
 /** Where `graphyard-secrets-bus.socket` listens: `$GRAPHYARD_SECRETS_BUS`, else `graphyard-secrets-bus` in the user's runtime directory. */
 export const secretsBusPath = (uid: number | undefined = process.getuid?.(), env: NodeJS.ProcessEnv = process.env): string | null =>
-  env.GRAPHYARD_SECRETS_BUS || (env.XDG_RUNTIME_DIR ? join(env.XDG_RUNTIME_DIR, 'graphyard-secrets-bus') : uid === undefined ? null : `/run/user/${uid}/graphyard-secrets-bus`);
+  setting('SECRETS_BUS', env) || (env.XDG_RUNTIME_DIR ? join(env.XDG_RUNTIME_DIR, 'graphyard-secrets-bus') : uid === undefined ? null : `/run/user/${uid}/graphyard-secrets-bus`);
 /**
  * The host's own process-launch channels that exist here: the systemd manager directories and
  * session-bus sockets of the user's runtime directory (`/run/user/<uid>`, `$XDG_RUNTIME_DIR`) and
@@ -365,7 +367,7 @@ export const hostProcessLaunchTargets = (uid: number | undefined = process.getui
       join(home, '.config', 'herdr', 'sessions'), join(home, '.docker', 'run'), join(home, '.docker', 'desktop'), join(home, '.local', 'share', 'docker')]),
     ...[
       env.XDG_CONFIG_HOME && join(env.XDG_CONFIG_HOME, 'herdr', 'sessions'),
-      env.GRAPHYARD_HERDR_CONFIG_HOME && join(env.GRAPHYARD_HERDR_CONFIG_HOME, 'herdr', 'sessions'),
+      setting('HERDR_CONFIG_HOME', env) && join(setting('HERDR_CONFIG_HOME', env)!, 'herdr', 'sessions'),
       herdrTarget()?.configHome && join(herdrTarget()!.configHome, 'herdr', 'sessions')].filter((path): path is string => !!path)];
   return { directories, busSockets: [...runtimeDirectories.map(directory => join(directory, 'bus')),
     ...[env.DOCKER_HOST, env.CONTAINER_HOST, env.BUILDKIT_HOST].flatMap(value => value?.startsWith('unix://') ? [value.slice(7)] : []),
@@ -450,9 +452,9 @@ export function readOnlyMountWrapper(input: { coordinatorRoot: string; sessionDi
   const fetchHead = join(checkoutWorktreeAdminDirectory(root) ?? gitDir, 'FETCH_HEAD');
   const shared = [...sharedDirectories, ...(existsSync(fetchHead) && !isDirectoryPath(fetchHead) ? [fetchHead] : [])];
   const own = directory !== root ? [directory] : [];
-  const writable = [...(input.writable ?? []), ...(process.env[slotsDirectoryVariable] ? [process.env[slotsDirectoryVariable]!] : [])].filter(existsSync);
+  const writable = [...(input.writable ?? []), ...(setting(slotsDirectoryVariable) ? [setting(slotsDirectoryVariable)!] : [])].filter(existsSync);
   const writableDirectories = writable.filter(isDirectoryPath);
-  const scratch = join(directory, '.graphyard', 'scratch');
+  const scratch = join(stateDirectory(directory), 'scratch');
   mkdirSync(scratch, { recursive: true, mode: 0o700 });
   const bwrap = input.bwrap ?? 'bwrap';
   // GY-1856: the install's credential locations are hidden from the session, and its own — its
@@ -472,7 +474,7 @@ export function readOnlyMountWrapper(input: { coordinatorRoot: string; sessionDi
   // master may ask it to.
   const herdr = [...new Set((input.herdrPaths ?? []).filter(path => isAbsolute(path) && isDirectoryPath(path)).map(canonicalPath))];
   // A masked file is replaced by this unreadable empty one.
-  const blank = join(directory, '.graphyard', 'masked');
+  const blank = join(stateDirectory(directory), 'masked');
   if (mask && !existsSync(blank)) writeFileSync(blank, '', { mode: 0 });
   const masks = credentialMaskWords(mask, [root, directory], blank);
   const environment = { ...process.env, ...input.environment };
@@ -493,7 +495,7 @@ export function readOnlyMountWrapper(input: { coordinatorRoot: string; sessionDi
   // bubblewrap applies the binds in order, and inside a writable directory a read-only bind still
   // lets git take its `.lock` (which the writable directory allows) but refuses the write and the
   // rename that would commit it — so the checkout's index, HEAD, config and hooks and the refs
-  // outside the graphyard namespace keep the protection they had while the directory was read-only.
+  // outside the mainworks namespace keep the protection they had while the directory was read-only.
   const ownGitState = [join(gitDir, 'config'), join(gitDir, 'HEAD'), join(gitDir, 'index'), join(gitDir, 'refs', 'heads'), join(gitDir, 'logs', 'refs', 'heads'), join(gitDir, 'refs', 'tags'), join(gitDir, 'hooks'), ...(adminDirectory ? [join(gitDir, 'worktrees')] : [])]
     .filter(path => existsSync(path));
   const commonGitDir = isDirectoryPath(gitDir) ? [gitDir] : [];
@@ -533,18 +535,18 @@ export function readOnlyMountWrapper(input: { coordinatorRoot: string; sessionDi
 /** The one refusal text for a launch whose coordinator confinement cannot be applied (GY-888): the head names the runtime and the checkout, `problem` says what is missing. */
 export const confinementRefusalText = (kind: string, coordinatorRoot: string, problem: { platform?: string; bwrapMissing?: boolean; namespaces?: boolean; undetermined?: string; gitDirectory?: string }): string => {
   const head = `A ${kind} session cannot be launched with the coordinator checkout at ${coordinatorRoot} unwritable at the OS level`;
-  if (problem.gitDirectory) return `${head}: the Git directory it writes through cannot be resolved — ${problem.gitDirectory}. Graphyard never starts a session unconfined; repair the checkout (git worktree repair) so its .git names its Git directory.`;
-  if (problem.undetermined) return `${head}: ${problem.undetermined} Graphyard never starts a session unconfined; run the launcher through its own bin/graphyard.mjs from the checkout it serves, so every launch carries the confinement.`;
+  if (problem.gitDirectory) return `${head}: the Git directory it writes through cannot be resolved — ${problem.gitDirectory}. Mainworks never starts a session unconfined; repair the checkout (git worktree repair) so its .git names its Git directory.`;
+  if (problem.undetermined) return `${head}: ${problem.undetermined} Mainworks never starts a session unconfined; run the launcher through its own bin/graphyard.mjs from the checkout it serves, so every launch carries the confinement.`;
   const own = 'the outer filesystem and socket boundary is required for every runtime';
-  if (problem.platform) return `${head}: the read-only mount namespace it would run in needs Linux, this host is ${problem.platform}, ${own}. Graphyard never starts a session unconfined; run sessions on a Linux host with bubblewrap available.`;
-  if (problem.bwrapMissing) return `${head}: bubblewrap (bwrap) is not installed ${own}. Graphyard never starts a session unconfined; install bubblewrap (e.g. apt install bubblewrap) with bubblewrap available.`;
-  return `${head}: this host refuses the unprivileged namespaces bubblewrap needs, ${own}. Graphyard never starts a session unconfined; allow unprivileged user namespaces on this host with bubblewrap available.`;
+  if (problem.platform) return `${head}: the read-only mount namespace it would run in needs Linux, this host is ${problem.platform}, ${own}. Mainworks never starts a session unconfined; run sessions on a Linux host with bubblewrap available.`;
+  if (problem.bwrapMissing) return `${head}: bubblewrap (bwrap) is not installed ${own}. Mainworks never starts a session unconfined; install bubblewrap (e.g. apt install bubblewrap) with bubblewrap available.`;
+  return `${head}: this host refuses the unprivileged namespaces bubblewrap needs, ${own}. Mainworks never starts a session unconfined; allow unprivileged user namespaces on this host with bubblewrap available.`;
 };
 
 /** The variable the master session's wrapper sets: its `master restart` then asks the loop to restart itself instead of the host's systemd, which the confinement hides. */
 export const masterConfinementVariable = 'GRAPHYARD_CONFINEMENT';
 /** Whether this process runs inside the master session's confinement (GY-3237). */
-export const insideMasterConfinement = (env: NodeJS.ProcessEnv = process.env) => env[masterConfinementVariable] === 'master';
+export const insideMasterConfinement = (env: NodeJS.ProcessEnv = process.env) => setting(masterConfinementVariable, env) === 'master';
 /** Whether bubblewrap can build the mount namespace here; a host may refuse unprivileged namespaces. Probed through the asynchronous runner once per executable and cached; the probe asks for the pid namespace and a fresh /proc too, because that is what the wrapper itself requires. */
 export async function sessionMountNamespaceWorks(bwrap = 'bwrap'): Promise<boolean> {
   // GY-3237: inside the master session's own confinement the host's bubblewrap already built this

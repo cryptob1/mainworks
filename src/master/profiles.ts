@@ -15,7 +15,7 @@ export { checkoutGitDirectory, checkoutGitProblem, checkoutWorktreeAdminDirector
 
 const safeEnvironment = z.record(
   z.string().regex(/^[A-Z_][A-Z0-9_]*$/)
-    .refine(name => !name.startsWith('GRAPHYARD_'), 'GRAPHYARD_ variables are owned by the launcher and cannot be set in a worker profile')
+    .refine(name => !/^(GRAPHYARD_|MAINWORKS_)/.test(name), 'GRAPHYARD_ variables are owned by the launcher and cannot be set in a worker profile')
     .refine(name => !/(TOKEN|SECRET|PASSWORD|PRIVATE|API_KEY|CREDENTIAL)/.test(name), 'Put secrets in the worker credential file or the agent runtime login, not master profile environment'),
   z.string().min(1).refine(value => !/[\u0000-\u001f\u007f]/.test(value), 'Profile environment values cannot contain control characters'),
 ).default({}).superRefine((values, context) => {
@@ -85,7 +85,7 @@ const profileName = z.string().trim().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/)
 const approvalMode = z.enum(['auto', 'prompt']).default('auto');
 
 // An agent environment is one isolated config and login home for one agent CLI account, such as
-// ~/.coding_agents/claude-b. The Graphyard principal a profile claims under is independent of the
+// ~/.coding_agents/claude-b. The Mainworks principal a profile claims under is independent of the
 // provider account its session runs on: a profile names the accounts it may use, in failover order,
 // and every launch runs on the first of them that is logged in and has provider quota left.
 // The environment kinds are the runtimes whose adapter names a login home (master/runtimes.ts).
@@ -131,7 +131,6 @@ export const workerProfileSchema = z.object({
   /** GY-3293: set on every profile the loop minted itself (worker-pool.ts), so a config that will not load is repaired by removing the loop's own entries, never the operator's. */
   minted: z.literal(true).optional(),
 }).strict().superRefine((profile, context) => {
-  if (profile.mode === 'launch' && !profile.kind) context.addIssue({ code: 'custom', message: 'A launched worker requires kind', path: ['kind'] });
   if (profile.mode === 'launch' && !profile.credentialFile) context.addIssue({ code: 'custom', message: 'A launched worker requires credentialFile', path: ['credentialFile'] });
   if (profile.credentialFile && !isAbsolute(profile.credentialFile)) context.addIssue({ code: 'custom', message: 'credentialFile must be absolute', path: ['credentialFile'] });
 });
@@ -277,7 +276,7 @@ export const masterRunSchema = z.object({
   deploymentShaField: z.string().trim().min(1).max(100).regex(/^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$/).default('commit'),
   // The deployment provider's whole name for the production environment, read from GitHub
   // deployments when no deployment URL is configured. Railway names it `<project> / production`
-  // (`graphyard / production`); unset, GRAPHYARD_PRODUCTION_ENVIRONMENT or `production` applies.
+  // (`mainworks / production`); unset, GRAPHYARD_PRODUCTION_ENVIRONMENT or `production` applies.
   productionEnvironment: z.string().trim().min(1).max(100).optional(),
   smokeWorkflow: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, 'Name the trusted post-deployment smoke workflow file, such as deploy-smoke.yml').optional(),
   // Unused since GY-1983 removed the release-candidate drive it paced; still accepted so an older master.json loads.
@@ -341,7 +340,7 @@ export const masterRunSchema = z.object({
   // required free space, and max size before master status warns.
   worktreeRoot: z.string().trim().min(1).max(1000).refine(isAbsolute, 'worktreeRoot must be an absolute path').optional(),
   worktreeRootMinFreeGb: z.number().min(0.1).max(10_000).optional(),
-  // GY-3122: the free space every volume Graphyard writes keeps; below it the loop reclaims its own leftovers, then starts no trial or worker (default 30).
+  // GY-3122: the free space every volume Mainworks writes keeps; below it the loop reclaims its own leftovers, then starts no trial or worker (default 30).
   diskFloorGb: z.number().min(0).max(100_000).optional(),
   worktreeRootBudgetGb: z.number().min(0.1).max(10_000).optional(),
   // An account whose usage reached this percentage of any window is skipped at launch: a session started just below a hard limit would stall mid-task.
@@ -366,9 +365,9 @@ export const agentIdentitySchema = z.object({ id: z.string().regex(/^[a-zA-Z0-9]
  * the exact head) and GitHub auto-merge merges it; the loop launches no reviewer or
  * session and the master claims no autonomy. `master promote` promotes it (GY-1502).
  */
-export const supervisionModes = ['autonomous', 'supervised'] as const;
+const supervisionModes = ['autonomous', 'supervised'] as const;
 export type Supervision = typeof supervisionModes[number];
-export const promotionCommand = 'graphyard master promote --admin-token-stdin (after graphyard master reviewer add)';
+export const promotionCommand = 'mainworks master promote --admin-token-stdin (after mainworks master reviewer add)';
 export const masterConfigSchema = forwardTolerant(z.object({
   forPerson: z.string().trim().min(1).max(200).optional(),
   people: z.array(z.string().trim().min(1).max(200)).optional(),
@@ -443,6 +442,10 @@ export function withReviewerDefaults<T extends Pick<MasterConfig, 'reviewers' | 
  * The reviewer profile that answers automatic requests: the configured one, else the only one.
  * The configured one runs `automaticReviewerConcurrency` sessions when it declares none (GY-1072).
  */
+/** Default reviewer profile when master.json names none: the registry's reviewer role picks the account (GY-3748). */
+export const defaultReviewerProfile: ReviewerProfile = {
+  name: 'reviewer', agentName: 'reviewer', kind: 'claude', approvals: 'auto', agentArgs: [], environment: {}, concurrency: automaticReviewerConcurrency,
+};
 export function selectReviewerProfile(input: Pick<MasterConfig, 'reviewers' | 'run'>): { profile: ReviewerProfile | null; reason: string | null } {
   // Every review posts through the API under a one-time token (GY-1525): it needs a profile, not a reviewer App.
   const config = withReviewerDefaults(input);
@@ -463,7 +466,7 @@ export function withProducerDefaults<T extends Pick<MasterConfig, 'producers'>>(
  * whatever master.json still records, so the loop applies no rework itself; its reviewer answers in control-plane mode
  * (GY-1978), which needs a profile, not an App. Autonomous configs pass unchanged.
  */
-export function withSupervision<T extends { supervision?: Supervision; operatorAgent?: unknown }>(config: T): T {
+function withSupervision<T extends { supervision?: Supervision; operatorAgent?: unknown }>(config: T): T {
   if (config.supervision !== 'supervised') return config;
   const { operatorAgent: _operatorAgent, ...kept } = config;
   return kept as T;
@@ -477,13 +480,13 @@ export const APP_PENDING = 0;
 export function assertMasterBinding(config: MasterConfig, status: any) {
   if (status.actor?.role !== 'coordinator') throw new Error('Master commands require the configured coordinator identity');
   if (typeof status.repository !== 'string' || status.repository.toLowerCase() !== config.repository.toLowerCase() || status.baseBranch !== config.baseBranch)
-    throw new Error('The Graphyard repository or managed base branch changed; rerun master init before continuing');
+    throw new Error('The Mainworks repository or managed base branch changed; rerun master init before continuing');
 }
 
 // ---- The coordinator checkout guard (GY-857) -----------------------------------------------------
 //
 // Worker confinement is one half of the containment; this is the other: nothing that runs
-// Graphyard's own code — the master loop, an executor — may start, self-upgrade or restart from
+// Mainworks's own code — the master loop, an executor — may start, self-upgrade or restart from
 // a coordinator checkout holding uncommitted work, because that is how unreviewed half-finished
 // files reach the live loop (workers wrote them there by absolute path, and a restart loaded
 // them). The checkout a process runs from is derived from the configured CLI launcher exactly as
@@ -494,15 +497,15 @@ export function assertMasterBinding(config: MasterConfig, status: any) {
 /** The coordinator checkout the CLI launcher at `cliPath` runs from: `<root>/bin/graphyard.mjs`. */
 export const coordinatorCheckoutRoot = (cliPath: string) => dirname(dirname(cliPath));
 /** The checkout areas whose files the loop and the executors load; untracked files under them are uncommitted source, not scratch. */
-export const coordinatorSourcePrefixes = ['src/', 'scripts/', 'bin/', 'tests/', 'docs/'];
-export const coordinatorSourceFiles = ['package.json', 'package-lock.json', 'tsconfig.json'];
-export const isCoordinatorSourcePath = (path: string) => coordinatorSourceFiles.includes(path) || coordinatorSourcePrefixes.some(prefix => path.startsWith(prefix));
+const coordinatorSourcePrefixes = ['src/', 'scripts/', 'bin/', 'tests/', 'docs/'];
+const coordinatorSourceFiles = ['package.json', 'package-lock.json', 'tsconfig.json'];
+const isCoordinatorSourcePath = (path: string) => coordinatorSourceFiles.includes(path) || coordinatorSourcePrefixes.some(prefix => path.startsWith(prefix));
 
 /** How a coordinator checkout stands: its commit, and the paths that make it dirty. */
 export interface CoordinatorCheckout { root: string; commit: string | null; /** Tracked files that differ from HEAD. */ modified: string[]; /** Untracked, not ignored files under the source paths. */ untracked: string[] }
 export type CheckoutRun = (command: string, args: string[]) => Promise<string> | string;
 /** The commit and porcelain status a checkout read produced; both verbatim (`-z`), never trimmed. */
-export function parseCoordinatorCheckout(root: string, commitRead: string, status: string): CoordinatorCheckout {
+function parseCoordinatorCheckout(root: string, commitRead: string, status: string): CoordinatorCheckout {
   const commit = commitRead.trim() || null;
   const modified: string[] = [], untracked: string[] = [];
   // -z: entries verbatim and NUL-separated; a rename or copy carries its old path in a second field.
@@ -521,8 +524,8 @@ export function parseCoordinatorCheckout(root: string, commitRead: string, statu
 const checkoutGitRun: CheckoutRun = (command, args) => defaultChildRun(command, args).then(output => String(output));
 
 // GY-3271: AGENTS.md's managed `<!-- graphyard -->` block (repository-setup.ts renders it) is
-// Graphyard's own writing — the refresh step rewrites the committed block (GY-2240) — and a change
-// Graphyard itself writes must never block Graphyard. The checkout guard and the loop's release
+// Mainworks's own writing — the refresh step rewrites the committed block (GY-2240) — and a change
+// Mainworks itself writes must never block Mainworks. The checkout guard and the loop's release
 // reading both ignore a diff confined to that block; a change outside it still refuses as before.
 const managedBlockStart = '<!-- graphyard -->', managedBlockEnd = '<!-- /graphyard -->';
 /** AGENTS.md's text outside its managed block, or null when its markers are malformed — never judged confined. */
@@ -547,7 +550,7 @@ export async function readCoordinatorCheckout(root: string, run: CheckoutRun = c
   let checkout: CoordinatorCheckout;
   try { checkout = parseCoordinatorCheckout(root, commitRead, await git(['status', '--porcelain', '-z', '--untracked-files=normal'])); }
   catch { return { root, commit: commitRead.trim() || null, modified: [], untracked: [] }; }
-  // GY-3271: AGENTS.md alone changed, and only inside its managed block, is Graphyard's own
+  // GY-3271: AGENTS.md alone changed, and only inside its managed block, is Mainworks's own
   // writing, not uncommitted work. An AGENTS.md that cannot be read stays dirty, as before.
   if (checkout.modified.length === 1 && checkout.modified[0] === 'AGENTS.md' && !checkout.untracked.length) {
     try {

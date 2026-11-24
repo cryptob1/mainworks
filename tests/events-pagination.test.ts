@@ -83,7 +83,7 @@ async function read(path: string, token = tokens.operator) {
   const text = await response.text();
   return { status: response.status, body: text && response.headers.get('content-type')?.includes('json') ? JSON.parse(text) : text };
 }
-/** Walk the whole range through the cursor, exactly as `graphyard events GY-N --all` does. */
+/** Walk the whole range through the cursor, exactly as `mainworks events GY-N --all` does. */
 async function walk(search: string) {
   const pages: any[] = []; const events: any[] = [];
   let cursor: string | null = null;
@@ -99,7 +99,7 @@ const rows = async (sql: string, values: unknown[] = []) => (await store.pool.qu
 
 const exec = promisify(execFile);
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
-/** The command a human runs, against this server and with no ambient Graphyard credential. */
+/** The command a human runs, against this server and with no ambient Mainworks credential. */
 async function cli(...args: string[]) {
   const environment = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('GRAPHYARD_')));
   const { stdout } = await exec(process.execPath, [launcher, 'events', ...args], {

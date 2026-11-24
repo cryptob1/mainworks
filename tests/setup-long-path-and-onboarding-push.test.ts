@@ -108,7 +108,7 @@ test('e2e:setup-long-path-and-onboarding-push — the onboarding branch push lan
   // The door and the install share one directory, so the deploy key the door demands is the one
   // at the install's own path — the file the merge writer's push credential resolves to.
   const fixture = await temporaryDirectory('setup-long-path-push');
-  const configHome = join(fixture, 'graphyard-config'), install = join(configHome, 'owner-project');
+  const configHome = join(fixture, 'mainworks-config'), install = join(configHome, 'owner-project');
   const door = await sshOrigin(install);
   const checkout = join(fixture, 'checkout');
   const through = (extra: Record<string, string> = {}) => ({ ...process.env, PATH: `${door.bin}:${process.env.PATH}`, ...extra });

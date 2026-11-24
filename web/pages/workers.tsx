@@ -11,7 +11,7 @@ import { shortShas } from '../candidate';
 import { Agent } from '../fun';
 import { EmptyState, PageHeader } from '../components/page-layout';
 import { overloadAlarm, overloaded } from '../../src/model/session-usage';
-import { budgetLine, machineName } from '../../src/model/machine-load';
+import { budgetLine, fallbackLine, machineName } from '../../src/model/machine-load';
 import { formatAge } from '../../src/model/duration';
 import type { FleetAccountView } from '../../src/model/registry';
 import { localTime } from '../agent-status';
@@ -40,7 +40,7 @@ export function spent(ms: number) {
   return hours ? `${hours}h ${two(minutes)}m ${two(seconds)}s` : minutes ? `${minutes}m ${two(seconds)}s` : `${seconds}s`;
 }
 /** How long ago an instant was, in the same units: `12s ago`, `4m 30s ago`. Never an absolute timestamp. */
-export function ago(iso: string | null, now: number) {
+function ago(iso: string | null, now: number) {
   const at = Date.parse(iso ?? '');
   return Number.isFinite(at) ? `${spent(now - at)} ago` : 'at an unrecorded time';
 }
@@ -65,7 +65,7 @@ export function CopyButton({ text, label }: { text: string; label: string }) {
  * seconds since it arrived are added on a one-second tick, so a running row counts up between
  * polls without a reload. Rendered without effects (a test, the server) it is exactly the anchor.
  */
-export function useLiveNow(observedAt: number) {
+function useLiveNow(observedAt: number) {
   const anchor = Number.isNaN(observedAt) ? Date.now() : observedAt;
   const receivedAt = useRef({ anchor, at: Date.now() });
   if (receivedAt.current.anchor !== anchor) receivedAt.current = { anchor, at: Date.now() };
@@ -86,7 +86,7 @@ export const roleWords: Record<SessionRoleKind, string> = {
  * observation — one recorded open but not seen since is stale, and one observed ended or lost is
  * ended. Neither of the last two is ever shown as running.
  */
-export function health(row: WorkerRow, now: number): { tone: 'live' | 'stale' | 'ended'; text: string } {
+function health(row: WorkerRow, now: number): { tone: 'live' | 'stale' | 'ended'; text: string } {
   if (row.leftOn && row.stale) return { tone: 'ended', text: `Not seen for ${spent(now - Date.parse(row.stale.since))} · its item is ${row.leftOn}` };
   if (row.stale) return { tone: 'stale', text: `Not seen for ${spent(now - Date.parse(row.stale.since))}` };
   if (row.state === 'running') return { tone: 'live', text: `Seen ${ago(row.seenAt, now)}${row.observed === 'idle' ? ' · at its prompt' : ''}` };
@@ -203,10 +203,10 @@ export function AccountAvailability({ accounts, now }: { accounts: FleetAccountV
   </ul></section>;
 }
 
-type HostRow = { host: string; local?: boolean; at?: string; away: boolean; update?: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; busy?: number | null; slots?: number };
+type HostRow = { host: string; local?: boolean; at?: string; away: boolean; update?: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; busy?: number | null; slots?: number; fallback?: { reason: string; at: string } };
 /**
  * GY-3407: the hosts the loop watches — this machine first, then each one added with
- * `graphyard host add USER@HOST` — as the loop read them this cycle. A host that does not answer
+ * `mainworks host add USER@HOST` — as the loop read them this cycle. A host that does not answer
  * reads Away and is read again next cycle. Merge trials send test shards to added hosts (GY-3412).
  * GY-3517: each row is the latest probe, with how long ago it was read; one away only because its helper is too old says so.
  */
@@ -221,7 +221,8 @@ function Hosts({ hosts, now }: { hosts: HostRow[]; now: number }) {
     <table className="sessions-table hosts" aria-label="Hosts" data-hosts>
     <thead><tr><th scope="col">Host</th><th scope="col">Cores</th><th scope="col">Temperature</th><th scope="col">Steal</th><th scope="col">Runs now</th><th scope="col">Read</th></tr></thead>
     <tbody>{hosts.map(host => <tr key={host.host} data-host={host.host} data-away={host.away || undefined}>
-      <th scope="row" data-label="Host">{machineName(host.host)}{host.local ? <span className="muted"> (this machine)</span> : null}</th>
+      <th scope="row" data-label="Host">{machineName(host.host)}{host.local ? <span className="muted"> (this machine)</span> : null}
+        {host.fallback ? <div className="muted" data-host-fallback>{fallbackLine(host.fallback)}</div> : null}</th>
       {host.away ? <td data-label="State" colSpan={4}><span className="muted" title={host.reason}>{host.update ? 'Away: needs an update, see the line at the top' : 'Away: not answering, tried again each cycle'}</span></td> : <>
         <td data-label="Cores">{cores(host)}</td>
         <td data-label="Temperature">{figure(host.celsius, '°C')}</td>

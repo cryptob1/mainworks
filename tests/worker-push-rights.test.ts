@@ -226,7 +226,7 @@ test('integration:authorized-rework-is-executable — a rework over an ejected, 
   assert.deepEqual(work.observation?.scopeFiles?.map(file => file.path), ['src-own.txt']);
 });
 
-test('integration:unrunnable-remedy-reported — a blocker naming a command no launched session may run is reported in master status as a Graphyard defect', async () => {
+test('integration:unrunnable-remedy-reported — a blocker naming a command no launched session may run is reported in master status as a Mainworks defect', async () => {
   const blocked = async (title: string, reason: (branch: string) => string) => {
     let work: Work = await engine.execute(operator, 'create', null, { type: 'chore',  title, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }] }, randomUUID());
     work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());

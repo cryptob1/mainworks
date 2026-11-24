@@ -17,7 +17,7 @@ import type { DaemonState } from '../src/daemon/state.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-3328: after a host move the trial image graphyard-trial:local did not exist, and every trial
+// GY-3328: after a host move the trial image mainworks-trial:local did not exist, and every trial
 // failed in its container. Now a host missing the image provisions it before a trial launches —
 // pull the published image, else build it — once for every trial waiting on it. A provision that
 // fails is the trial host's fault: no verdict, no rework, and one master status attention line.
@@ -113,7 +113,7 @@ test('e2e:trial-image-self-heal — with the trial image absent, two trials star
     assert.equal(calls.filter(call => call.startsWith('image pull ')).length, 1, `one pull: ${calls.join(' | ')}`);
     assert.equal(calls.filter(call => call.startsWith('buildx build ')).length, 1, `one build once the pull failed: ${calls.join(' | ')}`);
     assert.ok(calls.findIndex(call => call.startsWith('image pull ')) < calls.findIndex(call => call.startsWith('buildx build ')), 'the pull is tried first');
-    assert.ok(calls.find(call => call.startsWith('buildx build '))!.includes('--tag graphyard-trial:local'), 'the build makes the image trials run');
+    assert.ok(calls.find(call => call.startsWith('buildx build '))!.includes('--tag mainworks-trial:local'), 'the build makes the image trials run');
     await mergeWriterIdle(state);
 
     // The image is absent again and the build fails: a trial-host fault, no verdict and no rework on either head.
@@ -133,7 +133,7 @@ test('e2e:trial-image-self-heal — with the trial image absent, two trials star
     const savedConfig = { ...config(root), credentialFile: join(credentials, 'token') };
     await writeDaemonState(savedConfig, faulted);
     const report = await masterStatusReport(root, savedConfig, async () => ({ work: [], now: iso(Date.now()) }), async () => base);
-    const lines = report.attention.filter(line => /graphyard-trial:local/.test(line.text));
+    const lines = report.attention.filter(line => /mainworks-trial:local/.test(line.text));
     assert.equal(lines.length, 1, `one attention line: ${JSON.stringify(report.attention)}`);
     assert.match(lines[0]!.text, /failed to solve: no space left on device/, 'it names the docker error');
   } finally {

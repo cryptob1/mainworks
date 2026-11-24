@@ -8,11 +8,11 @@ const atConcurrency = (reason: string) => /is at its concurrency limit/.test(rea
 
 /** The command that frees the role, by the refusal that stops it. */
 function nextCommand(fleet: FleetView, role: FleetView['roles'][number], reason: string) {
-  if (atConcurrency(reason)) return `graphyard master registry lists the live ${role.role} sessions holding its slots; end one nothing runs with graphyard master registry session end SESSION_ID --reason REASON`;
-  if (/is paused \(concurrency 0\)/.test(reason)) return `graphyard master registry role set ${role.role} ${role.accounts.join(',') || 'ACCOUNT'} --concurrency N --reason REASON`;
-  if (/not configured|names no account/.test(reason)) return `graphyard master registry role set ${role.role} ACCOUNT[,ACCOUNT…] --reason REASON`;
+  if (atConcurrency(reason)) return `mainworks master registry lists the live ${role.role} sessions holding its slots; end one nothing runs with mainworks master registry session end SESSION_ID --reason REASON`;
+  if (/is paused \(concurrency 0\)/.test(reason)) return `mainworks master registry role set ${role.role} ${role.accounts.join(',') || 'ACCOUNT'} --concurrency N --reason REASON`;
+  if (/not configured|names no account/.test(reason)) return `mainworks master registry role set ${role.role} ACCOUNT[,ACCOUNT…] --reason REASON`;
   const resets = fleet.accounts.filter(account => role.accounts.includes(account.name) && account.resetsAt).map(account => account.resetsAt!).sort()[0];
-  return `graphyard master registry names why each of ${role.accounts.join(', ')} is ineligible; log one in, add an account to the role with graphyard master registry role set ${role.role} ACCOUNT[,ACCOUNT…] --reason REASON${resets ? `, or wait for the first quota reset at ${resets}` : ''}`;
+  return `mainworks master registry names why each of ${role.accounts.join(', ')} is ineligible; log one in, add an account to the role with mainworks master registry role set ${role.role} ACCOUNT[,ACCOUNT…] --reason REASON${resets ? `, or wait for the first quota reset at ${resets}` : ''}`;
 }
 
 /**

@@ -4,9 +4,7 @@ import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { defineCommands } from './registry.js';
 import type { CliContext } from './context.js';
-import { readCredentialFile } from '../private-file.js';
-import { loadCases, selectCases, syncCases } from '../e2e/case.js';
-import { recordRuns, runCases, summarize, type E2eReport } from '../e2e/runner.js';
+import type { E2eReport } from '../e2e/runner.js';
 
 const e2eUsage = 'Use e2e list | e2e sync | e2e run CASE|--tag TAG|--target uat|--all --url URL [--token-file FILE] [--environment NAME] [--step-timeout SECONDS] [--retries N] [--report FILE] [--no-record] | e2e record REPORT.json';
 const switches = new Set(['all', 'no-record']);
@@ -30,6 +28,9 @@ const count = (value: string | undefined, name: string, fallback: number, max: n
 
 /** The repository's E2E cases (GY-1351): validate, register, run against a URL, record. */
 async function e2e(context: CliContext) {
+  const [{ readCredentialFile }, { loadCases, selectCases, syncCases }, { recordRuns, runCases, summarize }] = await Promise.all([
+    import('../private-file.js'), import('../e2e/case.js'), import('../e2e/runner.js'),
+  ]);
   const { id: sub, args, api, print } = context;
   const root = context.repositoryRoot();
   const options = flags(args);

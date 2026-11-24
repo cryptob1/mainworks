@@ -9,19 +9,19 @@ import type { PaneServer } from './setup-checklist.js';
  * when something is mergeable, so the window spans many cycles; past it the report is the presence
  * report it always was, never a loop inferred from nothing.
  */
-export const loopMergerLiveMs = 3_600_000;
+const loopMergerLiveMs = 3_600_000;
 /** The master loop that merges on this installation, as the report needs it: live, and named. */
 export interface ReportedLoopMerger { live: boolean; name: string }
 
 /**
- * The header on the master loop's coordination reads (`graphyard master run`): its cycle interval
+ * The header on the master loop's coordination reads (`mainworks master run`): its cycle interval
  * in whole seconds. Only a coordinator's read counts; the loop is the one coordinator that sends it.
  */
 export const loopPresenceHeader = 'X-Graphyard-Loop-Interval';
 /**
  * The header beside it naming who reviews and merges on this installation (GY-1501): the loop's
  * master.json `supervision`, so the dashboard's Setup checklist judges a supervised install as
- * `graphyard up` does. A read without it (an older loop) names none.
+ * `mainworks up` does. A read without it (an older loop) names none.
  */
 export const loopSupervisionHeader = 'X-Graphyard-Loop-Supervision';
 export type LoopSupervision = 'supervised' | 'autonomous';
@@ -31,13 +31,13 @@ export interface LoopCpu { avg60: number | null; steal: number | null; celsius?:
 /** One live agent session as the loop last read its cgroup (GY-3438): its use, its fair share, and since when it has used far more than its share of a saturated machine. */
 export interface LoopSession { session: string; cpu: number | null; cpuShare: number; memory: number; memoryShare: number; overSince: string | null }
 /** One host as the loop last read it (GY-3407): this machine (`local`) or an added one; `away` while it does not answer. */
-export interface LoopHost { host: string; local?: boolean; at?: string; away: boolean; since?: string; update?: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; /** GY-3528: cores busy, and the heavy-job slots its share holds (absent: unbounded by slots). */ busy?: number | null; slots?: number }
+export interface LoopHost { host: string; local?: boolean; at?: string; away: boolean; since?: string; update?: boolean; /** GY-3744: a ready host on another release's helper. */ older?: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; /** GY-3528: cores busy, and the heavy-job slots its share holds (absent: unbounded by slots). */ busy?: number | null; slots?: number; /** GY-3704: its last check fallback to the loop's machine, until a check next runs there. */ fallback?: { reason: string; at: string } }
 /**
  * How long one read keeps the loop live: three of its cycles, never under two minutes —
  * the rule `daemonSummary` applies to the loop's own cursor. The dispatcher beside the cycle reads
  * every few seconds, so a long cycle does not lapse it.
  */
-export const loopPresenceLiveMs = (intervalSeconds: number) => Math.max(3 * intervalSeconds * 1000, 120_000);
+const loopPresenceLiveMs = (intervalSeconds: number) => Math.max(3 * intervalSeconds * 1000, 120_000);
 
 /** The loop as the control plane last saw it read, in memory beside the engine. */
 export class LoopRegistry {
@@ -109,7 +109,6 @@ export function loopCheckoutTrust(header: string | string[] | undefined): string
  * `setup.workerGrowth` and the dashboard's Needs you shows it until the loop grows the pool.
  */
 export const loopWorkerGrowthHeader = 'X-Graphyard-Loop-Worker-Growth';
-export const loopWorkerGrowth = loopCheckoutTrust;
 
 /**
  * The header on the loop's coordination reads naming the standing repeated step failure
@@ -119,9 +118,6 @@ export const loopWorkerGrowth = loopCheckoutTrust;
  * item while it stands — an alert that needs no master session.
  */
 export const loopStepFailureHeader = 'X-Graphyard-Loop-Step-Failure';
-export const encodeLoopStepFailure = encodeLoopCheckoutTrust;
-/** The standing repeated step-failure line a loop read names, or null when it names none, `off`, or one that does not parse. */
-export const loopStepFailure = loopCheckoutTrust;
 /**
  * The header on the loop's coordination reads naming the standing fetch refusal (GY-3336): the
  * remote refuses the base branch's fetch and the loop backs off, URI-encoded, or `off` while none
@@ -129,10 +125,8 @@ export const loopStepFailure = loopCheckoutTrust;
  * item while it stands, quoting the remote's refusal and the fix.
  */
 export const loopFetchRefusalHeader = 'X-Graphyard-Loop-Fetch-Refusal';
-export const loopFetchRefusal = loopCheckoutTrust;
 /** GY-3432: the stall alarm the loop raised, URI-encoded, or `off`; /api/status serves it as `setup.stallAlarm` for the Master page. */
 export const loopStallAlarmHeader = 'X-Graphyard-Loop-Stall-Alarm';
-export const loopStallAlarm = loopCheckoutTrust;
 
 /**
  * The header on the loop's coordination reads naming the host's CPU (GY-3348): 'some avg60' from
@@ -175,7 +169,7 @@ export async function reportedLoopMerger(registry: LoopRegistry, query: (text: s
  * from a `daemon-` merge instance — the instance only the durable loop mints (`daemonExecutor`),
  * inside the window. A range read on the `(kind, created_at)` index.
  */
-export async function ledgerLoopMerger(query: (text: string, values: unknown[]) => Promise<{ rows: any[] }>, now: Date, liveMs = loopMergerLiveMs): Promise<ReportedLoopMerger | null> {
+async function ledgerLoopMerger(query: (text: string, values: unknown[]) => Promise<{ rows: any[] }>, now: Date, liveMs = loopMergerLiveMs): Promise<ReportedLoopMerger | null> {
   const [latest] = (await query("SELECT payload->'details'->>'requestedBy' AS by, created_at FROM events WHERE kind='merge.enqueue.requested' AND created_at > $1 AND payload->'details'->>'requestedBy' LIKE '%#daemon-%' ORDER BY created_at DESC LIMIT 1",
     [new Date(now.getTime() - liveMs)])).rows;
   return latest ? { live: true, name: `the master loop (${String(latest.by).split('#')[0]}, last merge request ${new Date(latest.created_at).toISOString()})` } : null;
@@ -218,7 +212,7 @@ export function loopPanesRegistry(owner: object): LoopPanesRegistry {
  * `off` before the first reading. /api/status serves the latest as `hosts` for the Workers page.
  */
 export const loopHostsHeader = 'X-Graphyard-Loop-Hosts';
-export const encodeLoopHosts = (hosts: LoopHost[]) => encodeURIComponent(JSON.stringify(hosts.map(({ host, local, at, away, since, update, reason, cores, celsius, steal, runs, busy, slots }) => ({ host, ...(local ? { local } : {}), ...(at ? { at } : {}), away, ...(away && since ? { since } : {}), ...(away && update ? { update } : {}), ...(away && reason ? { reason: reason.slice(0, 300) } : {}), cores, celsius, steal, runs, busy: busy ?? null, ...(slots === undefined ? {} : { slots }) }))));
+export const encodeLoopHosts = (hosts: LoopHost[]) => encodeURIComponent(JSON.stringify(hosts.map(({ host, local, at, away, since, update, older, reason, cores, celsius, steal, runs, busy, slots, fallback }) => ({ host, ...(local ? { local } : {}), ...(at ? { at } : {}), away, ...(away && since ? { since } : {}), ...(away && update ? { update } : {}), ...(!away && older ? { older } : {}), ...(away && reason ? { reason: reason.slice(0, 300) } : {}), cores, celsius, steal, runs, busy: busy ?? null, ...(slots === undefined ? {} : { slots }), ...(fallback ? { fallback: { reason: fallback.reason.slice(0, 500), at: fallback.at } } : {}) }))));
 /** The hosts a loop read names, or null when it names none or they do not parse. */
 export function loopHosts(header: string | string[] | undefined): LoopHost[] | null {
   const value = Array.isArray(header) ? header[0] : header;
@@ -228,7 +222,7 @@ export function loopHosts(header: string | string[] | undefined): LoopHost[] | n
     if (!Array.isArray(parsed)) return null;
     const figure = (raw: unknown) => typeof raw === 'number' && Number.isFinite(raw) && raw >= 0 ? raw : null;
     return parsed.filter(entry => typeof entry?.host === 'string').slice(0, 50)
-      .map(entry => ({ host: String(entry.host).slice(0, 300), ...(entry.local === true ? { local: true } : {}), ...(typeof entry.at === 'string' && !Number.isNaN(Date.parse(entry.at)) ? { at: entry.at.slice(0, 40) } : {}), away: entry.away === true, ...(entry.away === true && typeof entry.since === 'string' && !Number.isNaN(Date.parse(entry.since)) ? { since: entry.since.slice(0, 40) } : {}), ...(entry.update === true ? { update: true } : {}), ...(typeof entry.reason === 'string' && entry.reason ? { reason: entry.reason.slice(0, 300) } : {}), cores: figure(entry.cores), celsius: figure(entry.celsius), steal: figure(entry.steal), runs: figure(entry.runs), busy: figure(entry.busy), ...(Number.isInteger(entry.slots) && entry.slots >= 0 ? { slots: entry.slots } : {}) }));
+      .map(entry => ({ host: String(entry.host).slice(0, 300), ...(entry.local === true ? { local: true } : {}), ...(typeof entry.at === 'string' && !Number.isNaN(Date.parse(entry.at)) ? { at: entry.at.slice(0, 40) } : {}), away: entry.away === true, ...(entry.away === true && typeof entry.since === 'string' && !Number.isNaN(Date.parse(entry.since)) ? { since: entry.since.slice(0, 40) } : {}), ...(entry.update === true ? { update: true } : {}), ...(entry.older === true ? { older: true } : {}), ...(typeof entry.reason === 'string' && entry.reason ? { reason: entry.reason.slice(0, 300) } : {}), cores: figure(entry.cores), celsius: figure(entry.celsius), steal: figure(entry.steal), runs: figure(entry.runs), busy: figure(entry.busy), ...(Number.isInteger(entry.slots) && entry.slots >= 0 ? { slots: entry.slots } : {}), ...(typeof entry.fallback?.reason === 'string' && typeof entry.fallback.at === 'string' ? { fallback: { reason: entry.fallback.reason.slice(0, 500), at: entry.fallback.at.slice(0, 40) } } : {}) }));
   } catch { return null; }
 }
 

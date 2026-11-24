@@ -116,7 +116,7 @@ test('e2e:master-lessons — lesson add stores a lesson the next master launch p
     assert.ok(request.includes(shared), 'the launch prompt carries the shared lesson');
     assert.ok(request.includes(plain), 'the launch prompt carries the master-only lesson');
     assert.ok(request.indexOf('Master lessons') < request.indexOf('Handover: continue from master status.'), 'the lessons come before the task handover');
-    assert.ok(request.indexOf('dedicated Graphyard master agent') < request.indexOf('Master lessons'), 'the lessons come after the role text that names AGENTS.md');
+    assert.ok(request.indexOf('dedicated Mainworks master agent') < request.indexOf('Master lessons'), 'the lessons come after the role text that names AGENTS.md');
     assert.equal(result.id, launched.continuity!.current.nativeId, 'the launch really ran the fixture runtime');
   } finally {
     if (hadConfinement === undefined) delete process.env[confinement]; else process.env[confinement] = hadConfinement;

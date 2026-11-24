@@ -3,7 +3,7 @@ import { boundDaemonState, type CycleFailures, type DaemonState, initialPidNames
 import type { DaemonEffects } from './effects.js';
 
 // ---- The loop's own liveness ---------------------------------------------------------------
-export type LoopState = 'running' | 'stalled' | 'absent';
+type LoopState = 'running' | 'stalled' | 'absent';
 export interface LoopLiveness { state: LoopState; lagMs: number | null; stalledAfterMs: number; cycle: number; lock: DaemonState['lock']; detail: string; restart: string }
 
 /**
@@ -22,7 +22,7 @@ export function pidProbeable(lock: Pick<NonNullable<DaemonState['lock']>, 'pidNa
  * can probe the lock's namespace and does not, and null when it cannot probe it (a confined agent
  * session, GY-1369), where a pid it cannot see says nothing about the host.
  */
-export function lockPidProbe(pid: number, namespace: () => string | null = pidNamespace, recorded?: string | null): boolean | null {
+function lockPidProbe(pid: number, namespace: () => string | null = pidNamespace, recorded?: string | null): boolean | null {
   return pidProbeable({ pidNamespace: recorded }, namespace()) ? liveProcess(pid) : null;
 }
 
@@ -50,7 +50,7 @@ export function loopLiveness(state: Pick<DaemonState, 'lock' | 'cycle' | 'lastCy
   // intervals past the retry it announced, so the backoff never reads as a stall to restart.
   const backoff = backingOff(state.failures, now);
   const stalledAfterMs = 2 * intervalMs + (backoff ? Math.max(0, backoff.dueAt - lastCycleAt) : 0);
-  const restart = 'graphyard master restart (a supervised deployment restarts it on its own: systemctl --user restart graphyard-master)';
+  const restart = 'mainworks master restart (a supervised deployment restarts it on its own: systemctl --user restart graphyard-master)';
   const lock = state.lock;
   const alive = !!lock && !!hostId && lock.host === hostId ? probe(lock.pid, lock.pidNamespace) : true;
   const gone = alive === false;
@@ -72,10 +72,7 @@ export function loopLiveness(state: Pick<DaemonState, 'lock' | 'cycle' | 'lastCy
     ? `Cycle ${state.cycle} is in progress, its last step settled ${Math.round(lagMs / 1000)}s ago${unprobed}`
     : `Cycle ${state.cycle} completed ${Math.round(lagMs / 1000)}s ago${unprobed}` };
 }
-
 // ---- A cycle that fails (GY-119) -----------------------------------------------------------
-/** Consecutive failed cycles after which `master status` raises an attention item naming the failing call. */
-export const cycleFailureAttentionAfter = 3;
 /** The backoff ceiling: the delay before the next cycle doubles from its start up to five minutes. */
 export const cycleFailureCeilingMs = 300_000;
 /**
@@ -239,7 +236,7 @@ export function loopHeartbeat(notify: () => void | Promise<void>, windowMs: numb
     const at = now();
     if (Number.isFinite(lastBeat) && at - lastBeat < nudgeMs) return;
     lastBeat = at;
-    void Promise.resolve(notify()).catch(error => options.log?.(`[graphyard-master] supervisor notification failed: ${message(error)}`));
+    void Promise.resolve(notify()).catch(error => options.log?.(`[mainworks-master] supervisor notification failed: ${message(error)}`));
   };
   if (windowMs !== null) {
     timer = setInterval(() => { if (now() - lastProgress <= windowMs) beat(); }, nudgeMs);
@@ -252,4 +249,4 @@ export function loopHeartbeat(notify: () => void | Promise<void>, windowMs: numb
 }
 
 /** The responsive interval a failed cycle's backoff starts from when the configured interval is longer. */
-export const actionableIntervalMs = 30_000;
+const actionableIntervalMs = 30_000;

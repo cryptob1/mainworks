@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { graphyardTools, type EvidencePayload } from '../src/runner/payloads.js';
+import { mainworksTools, type EvidencePayload } from '../src/runner/payloads.js';
 import { cancelScratchRuns, cgroupService, detachedLaunch, piRunner, processIdentity, readRunMeta, runAlive, runContainment, scratchBoundMarginSeconds, scratchRunsDirectory, signalRun, sweepScratchRuns } from '../src/runner/pi.js';
 import { adoptRuns, applyOnce, clearRuns, detachRuns, liveRun, runsDirectory, unendedRunOnDisk, type Applied } from '../src/runner/registry.js';
 import { producerRunOptions, runConfinement, startNarrowRun } from '../src/runner/roles.js';
@@ -100,7 +100,7 @@ test('unit:headless-run-survives-restart a detached run survives a restart of it
 
     await release();
     const record = await adopted[0].settled;
-    assert.deepEqual(record.result, { ok: true, tool: graphyardTools.evidence, submitted: 1 });
+    assert.deepEqual(record.result, { ok: true, tool: mainworksTools.evidence, submitted: 1 });
     assert.deepEqual(applied, [{ subject: 'run-1', ok: true, reason: null }], 'the verdict was applied exactly once');
     assert.equal(liveRun('graphyard-producer-gy-1'), null);
     assert.equal(unendedRunOnDisk(root, 'run-1'), false, 'once applied its record is on disk');
@@ -123,7 +123,7 @@ test('unit:headless-run-survives-restart a run that ended while unwatched is app
     for (let waited = 0; runAlive(finished.meta) && waited < 5_000; waited += 50) await delay(50);
     const [late] = await adoptRuns(root, adopters);
     assert.equal(late.live, false);
-    assert.deepEqual((await late.settled).result, { ok: true, tool: graphyardTools.evidence, submitted: 1 });
+    assert.deepEqual((await late.settled).result, { ok: true, tool: mainworksTools.evidence, submitted: 1 });
     assert.deepEqual(applied, [{ subject: 'run-2', ok: true, reason: null }]);
 
     // Killed from outside while unwatched, shell and all: no exit is recorded, so the run is lost.
@@ -257,7 +257,7 @@ test('unit:restart-leaves-runs a confined run keeps its scope and its shell outs
     await mkdir(cwd, { recursive: true });
     const spawned: { command: string; args: readonly string[] }[] = [];
     const runner = piRunner({ command: 'pi', containment: 'systemd', spawn: capturingSpawn(spawned), confine: runConfinement({ coordinatorRoot: root, bwrap: 'bwrap' }), pollMs: 20 });
-    const run = runner.start('Prove it', { tool: graphyardTools.evidence, validate: value => value, timeoutMs: 60_000, cwd, runs });
+    const run = runner.start('Prove it', { tool: mainworksTools.evidence, validate: value => value, timeoutMs: 60_000, cwd, runs });
     run.cancel('the test only inspects the launch');
     await run.result();
     assert.equal(spawned.length, 1);
@@ -274,7 +274,7 @@ test('unit:restart-leaves-runs a confined run keeps its scope and its shell outs
     // A run without its own scope is its shell, with the same confinement inside it.
     spawned.length = 0;
     const plain = piRunner({ command: 'pi', containment: 'setsid', spawn: capturingSpawn(spawned), confine: runConfinement({ coordinatorRoot: root, bwrap: 'bwrap' }), pollMs: 20 })
-      .start('Prove it', { tool: graphyardTools.evidence, validate: value => value, timeoutMs: 60_000, cwd, runs });
+      .start('Prove it', { tool: mainworksTools.evidence, validate: value => value, timeoutMs: 60_000, cwd, runs });
     plain.cancel('the test only inspects the launch');
     await plain.result();
     assert.equal(spawned[0].command, '/bin/sh');
@@ -282,7 +282,7 @@ test('unit:restart-leaves-runs a confined run keeps its scope and its shell outs
     // A run that cannot be confined fails instead of starting unconfined.
     spawned.length = 0;
     const refused = await piRunner({ command: 'pi', containment: 'setsid', spawn: capturingSpawn(spawned), confine: runConfinement({ coordinatorRoot: root, bwrap: null }), pollMs: 20 })
-      .start('Prove it', { tool: graphyardTools.evidence, validate: value => value, timeoutMs: 60_000, cwd, runs }).result();
+      .start('Prove it', { tool: mainworksTools.evidence, validate: value => value, timeoutMs: 60_000, cwd, runs }).result();
     assert.equal(refused.ok === false && refused.failure.reason, 'spawn');
     assert.equal(spawned.length, 0, 'nothing was started');
   } finally { await rm(base, { recursive: true, force: true }); }
@@ -299,7 +299,7 @@ test('unit:headless-run-survives-restart a confined run whose directory lies und
     await writeFile(join(root, 'scenario-c.json'), JSON.stringify({ release, verdict }));
     const runner = piRunner({ command: process.execPath, commandArgs: [join(root, 'fake-pi.mjs'), join(root, 'scenario-c.json')], containment: 'setsid', pollMs: 50, exitGraceMs: 500,
       confine: runConfinement({ coordinatorRoot: root, bwrap: 'bwrap' }) });
-    const run = runner.start<EvidencePayload>('Prove it', { tool: graphyardTools.evidence, validate: value => value as EvidencePayload, timeoutMs: 60_000, cwd, runs: runsDirectory(root) });
+    const run = runner.start<EvidencePayload>('Prove it', { tool: mainworksTools.evidence, validate: value => value as EvidencePayload, timeoutMs: 60_000, cwd, runs: runsDirectory(root) });
     await writeFile(release, '');
     const result = await run.result();
     assert.equal(result.ok, true, JSON.stringify(result));
@@ -313,7 +313,7 @@ test('unit:restart-leaves-runs a run outside the run registry gets no scope of i
   // Triage and diagnosis runs start without a run registry directory: no owner on disk says what
   // their result is for, so nothing could adopt them after a restart.
   const spawned: { command: string; args: readonly string[]; detached?: boolean }[] = [];
-  const scoped = piRunner({ command: 'pi', containment: 'systemd', spawn: capturingSpawn(spawned), pollMs: 20 }).start('Triage it', { tool: graphyardTools.evidence, validate: value => value, timeoutMs: 60_000, cwd: '/' });
+  const scoped = piRunner({ command: 'pi', containment: 'systemd', spawn: capturingSpawn(spawned), pollMs: 20 }).start('Triage it', { tool: mainworksTools.evidence, validate: value => value, timeoutMs: 60_000, cwd: '/' });
   scoped.cancel('the test only inspects the launch');
   await scoped.result();
   assert.equal(spawned[0].command, '/bin/sh', 'no transient scope: a service stop still ends it with the service');
@@ -323,7 +323,7 @@ test('unit:restart-leaves-runs a run outside the run registry gets no scope of i
     const release = join(root, 'release-scratch');
     await writeFile(join(root, 'scenario-s.json'), JSON.stringify({ release, verdict: evidence('scratch') }));
     const run = piRunner({ command: process.execPath, commandArgs: [join(root, 'fake-pi.mjs'), join(root, 'scenario-s.json')], containment: 'setsid', pollMs: 50 })
-      .start('Triage it', { tool: graphyardTools.evidence, validate: value => value, timeoutMs: 60_000, cwd: root });
+      .start('Triage it', { tool: mainworksTools.evidence, validate: value => value, timeoutMs: 60_000, cwd: root });
     await new Promise<void>(resolve => { const off = run.onEvent(event => { if (event.kind === 'tool-start') { off(); resolve(); } }); });
     const pid = (run.events.find(event => event.kind === 'start') as { pid: number | null }).pid!;
     assert.ok(runAlive({ pid, identity: null }), 'the triage run is live');
@@ -343,7 +343,7 @@ test('unit:restart-leaves-runs a scratch run writes under the loop\'s checkout, 
   try {
     // Its output lies under the checkout it reads, which an over-quota /tmp does not reach.
     const spawned: { command: string; args: readonly string[]; detached?: boolean }[] = [];
-    const run = piRunner({ command: 'pi', spawn: capturingSpawn(spawned), pollMs: 20, exitGraceMs: 1_000 }).start('Triage it', { tool: graphyardTools.evidence, validate: value => value, timeoutMs: 60_000, cwd: root });
+    const run = piRunner({ command: 'pi', spawn: capturingSpawn(spawned), pollMs: 20, exitGraceMs: 1_000 }).start('Triage it', { tool: mainworksTools.evidence, validate: value => value, timeoutMs: 60_000, cwd: root });
     assert.match(spawned[0].args[1], new RegExp(`>'${join(root, '.graphyard', 'scratch-runs')}/[^']+/stdout\\.jsonl'`));
     // Its bound holds without a watcher: coreutils' timeout past the watcher's own bound.
     // Nothing in it ignores TERM around its wait (GY-1432): only the instant it signals its own group.
@@ -386,7 +386,7 @@ test('unit:restart-leaves-runs a scratch run writes under the loop\'s checkout, 
     // The next scratch run sweeps before it starts.
     await mkdir(join(scratchRoot, 'orphan-3'), { recursive: true });
     await writeFile(join(scratchRoot, 'orphan-3', 'run.json'), JSON.stringify({ ...meta, id: 'orphan-3', pid: null, identity: null }));
-    const next = piRunner({ command: 'pi', spawn: capturingSpawn(spawned), pollMs: 20 }).start('Triage it', { tool: graphyardTools.evidence, validate: value => value, timeoutMs: 60_000, cwd: root });
+    const next = piRunner({ command: 'pi', spawn: capturingSpawn(spawned), pollMs: 20 }).start('Triage it', { tool: mainworksTools.evidence, validate: value => value, timeoutMs: 60_000, cwd: root });
     assert.equal(existsSync(join(scratchRoot, 'orphan-3')), false);
     next.cancel('done'); await next.result();
   } finally {

@@ -2,6 +2,7 @@ import type pg from 'pg';
 import { advisoryLocks } from './locks.js';
 import { routineSaveKinds } from './snapshot-delta.js';
 import { DELIVERY_EVENT_PREDICATE } from './tables/production.js';
+import { setting } from '../setting.js';
 
 /**
  * Ledger compaction (GY-979): routine rows past their retention window are deleted, a bounded
@@ -33,13 +34,13 @@ import { DELIVERY_EVENT_PREDICATE } from './tables/production.js';
 export const ledgerRetentionMs = 14 * 24 * 60 * 60 * 1000;
 /** The retention window: `GRAPHYARD_LEDGER_RETENTION_DAYS` (at least one day), else `ledgerRetentionMs`. */
 export function configuredLedgerRetentionMs(env: NodeJS.ProcessEnv = process.env) {
-  const days = Number(env.GRAPHYARD_LEDGER_RETENTION_DAYS);
+  const days = Number(setting('LEDGER_RETENTION_DAYS', env));
   return Number.isFinite(days) && days >= 1 ? Math.floor(days * 24 * 60 * 60 * 1000) : ledgerRetentionMs;
 }
 /** Ledger rows one batch reads (and so deletes at most); each batch is its own short transaction. */
 export const ledgerCompactionBatch = 2_000;
 /** Batches one run takes at most; the saved cursor carries a pass across runs. */
-export const ledgerCompactionBatches = 20;
+const ledgerCompactionBatches = 20;
 /** How often the server's reconciliation tick runs a compaction. */
 export const ledgerCompactionIntervalMs = 10 * 60_000;
 /** The audit row each batch that removed anything appends (never itself compacted: not a routine kind). */
@@ -49,21 +50,24 @@ export const ledgerCompactedKind = 'ledger.compacted';
  * GY-3342: executor bookkeeping rows (no work item). The records themselves live in `loop_state`;
  * the ledger row only names which ids changed, and goes whole once past the retention window.
  */
-export const bookkeepingKinds = ['loop-state.saved', 'loop-state.migrated'] as const;
+const bookkeepingKinds = ['loop-state.saved', 'loop-state.migrated'] as const;
 /** Pause between batches, so a pass never holds the database for more than one short batch at a time. */
-export const ledgerCompactionPauseMs = 100;
+const ledgerCompactionPauseMs = 100;
 
 const literal = (list: readonly string[]) => `ARRAY[${list.map(kind => `'${kind}'`).join(',')}]::text[]`;
 const kinds = literal([...routineSaveKinds, ...bookkeepingKinds]);
 
 /**
- * The events table's own immutability trigger: every UPDATE is refused, and every DELETE unless it
+ * The events table's own immutability trigger: every UPDATE is refused but the stage backfill's
+ * (GY-3768: a delta row lacking `stage` gains it, nothing else changes), and every DELETE unless it
  * is of a routine kind inside a compaction transaction. Installed with the events DDL in place of
  * the shared `graphyard_immutable` trigger.
  */
 export const eventsImmutableDdl = `CREATE OR REPLACE FUNCTION graphyard_events_immutable() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF TG_OP = 'DELETE' AND current_setting('graphyard.ledger_compaction', true) = 'on' AND OLD.kind = ANY(${kinds}) THEN RETURN OLD; END IF;
+  IF TG_OP = 'UPDATE' AND current_setting('graphyard.stage_backfill', true) = 'on' AND OLD.payload ? 'delta' AND NOT OLD.payload ? 'stage'
+    AND NEW.payload - 'stage' = OLD.payload AND (NEW.seq, NEW.work_id, NEW.actor, NEW.kind, NEW.created_at) IS NOT DISTINCT FROM (OLD.seq, OLD.work_id, OLD.actor, OLD.kind, OLD.created_at) THEN RETURN NEW; END IF;
   RAISE EXCEPTION 'The event ledger is append-only';
 END $$;
 DROP TRIGGER IF EXISTS immutable_events ON events;

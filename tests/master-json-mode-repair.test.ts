@@ -26,7 +26,7 @@ test('master.json at 0644 is repaired to 0600 by the loop config load and master
   console.error = (...args: unknown[]) => { logged.push(args.join(' ')); };
   try { assert.equal((await loadMasterConfig(root)).repository, 'owner/project'); } finally { console.error = original; }
   assert.equal(await mode(file), 0o600);
-  assert.deepEqual(logged.filter(line => line.includes(file)), [`[graphyard] ${file} had mode 0644; set it to 0600`]);
+  assert.deepEqual(logged.filter(line => line.includes(file)), [`[mainworks] ${file} had mode 0644; set it to 0600`]);
 
   await chmod(file, 0o644);
   const status = spawnSync(process.execPath, ['--import', createRequire(import.meta.url).resolve('tsx'), join(source, 'src/cli.ts'), 'master', 'status'], { cwd: root, encoding: 'utf8', timeout: 120_000 });

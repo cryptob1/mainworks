@@ -8,25 +8,25 @@ import { HostDroppedError, readShardHosts, realFreeCores, remoteShardSession, ru
 import { trialImage } from '../../src/merge-writer/trial-container.js';
 
 // GY-3610: what `npm run test:affected` runs its selected files with. Workers' own test runs were the
-// largest CPU load on the coordinator, so with a compute host ready (`graphyard host add`, answering
+// largest CPU load on the coordinator, so with a compute host ready (`mainworks host add`, answering
 // and under its heat limit) the files go there through the merge trial's remote-shard runner — the
 // checkout as it stands, committed or not, one shard per ready host. Files naming a local-only word
 // (remote-shards.ts), and a shard every host turned away, run here; with no host ready everything
 // does, under run-tests.ts's narrow, heat-aware breadth on a coordinator.
 
 /** The suite runner, here and on a host. */
-export const suiteCommand = ['node', '--import', 'tsx', 'tests/helpers/run-tests.ts'];
+const suiteCommand = ['node', '--import', 'tsx', 'tests/helpers/run-tests.ts'];
 /** How many files a remote shard runs at once, as a trial shard does on its host. */
 const remoteBreadth = 4;
 
 /** The working tree as a commit (tracked and untracked, ignored files left out), on HEAD, touching no ref or index. */
 async function snapshot(root: string, run: ChildRun) {
-  const directory = await mkdtemp(join(tmpdir(), 'graphyard-affected-'));
+  const directory = await mkdtemp(join(tmpdir(), 'mainworks-affected-'));
   try {
     const env = { ...process.env, GIT_INDEX_FILE: join(directory, 'index') };
     const git = async (...args: string[]) => String(await run('git', ['-C', root, ...args], { env })).trim();
     await git('read-tree', 'HEAD'); await git('add', '-A');
-    return await git('-c', 'user.name=graphyard', '-c', 'user.email=graphyard@localhost', 'commit-tree', await git('write-tree'), '-p', 'HEAD', '-m', 'test:affected snapshot');
+    return await git('-c', 'user.name=mainworks', '-c', 'user.email=graphyard@localhost', 'commit-tree', await git('write-tree'), '-p', 'HEAD', '-m', 'test:affected snapshot');
   } finally { await rm(directory, { recursive: true, force: true }); }
 }
 

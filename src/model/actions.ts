@@ -29,11 +29,11 @@ import { demand } from './refusal.js';
 
 export * from './action-progress.js';
 
-export const actionStates = ['pending', 'claimed', 'done'] as const;
-export type ActionState = typeof actionStates[number];
-export type ActionEvent = 'requested' | 'claimed' | 'reclaimed' | 'completed' | 'failed' | 'cancelled' | 'reopened';
+const actionStates = ['pending', 'claimed', 'done'] as const;
+type ActionState = typeof actionStates[number];
+type ActionEvent = 'requested' | 'claimed' | 'reclaimed' | 'completed' | 'failed' | 'cancelled' | 'reopened';
 
-export interface ActionClaim {
+interface ActionClaim {
   /** The executor identity and the host it runs on; two executors never share a claim. */
   executor: string; host: string;
   /**
@@ -84,7 +84,7 @@ export interface ActionQueue { actions: ActionRow[]; history: ActionRow[] }
 export interface ActionTransition { event: ActionEvent; action: ActionRow }
 
 export const actionHistoryLimit = 50;
-export { actionRecordLimit };
+;
 /** How long a claim holds a row before another executor may take it. */
 export const actionClaimMs = 120_000;
 

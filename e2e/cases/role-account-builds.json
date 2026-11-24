@@ -1,0 +1,11 @@
+{
+  "id": "role-account-builds",
+  "title": "The first account of the worker role builds, with no worker profile in master.json",
+  "description": "A stub-runtime account is first in the registry worker role and master.json names no worker profile. A real loop cycle, control plane, claim and headless dispatch mint the worker identity, and the first released item is claimed and built by a session of that account.",
+  "tags": ["dispatch", "workers"],
+  "target": "any",
+  "required": true,
+  "steps": [
+    { "kind": "command", "name": "the stub account first in the role claims the first item", "run": "node --import tsx tests/helpers/run-tests.ts tests/role-account-builds.test.ts", "timeoutSeconds": 600 }
+  ]
+}

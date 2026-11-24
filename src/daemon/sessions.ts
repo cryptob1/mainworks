@@ -21,7 +21,7 @@ export function profileHealth(profiles: WorkerProfile[], credentials: Record<str
     const credential = credentials[profile.name] ?? { available: true, reason: null };
     const agent = agents.find(candidate => candidate.name === profile.agentName);
     const busy = profile.mode === 'launch' && credential.available && !!agent;
-    const reason = profile.mode !== 'launch' ? 'Existing sessions are observed only; Graphyard will not inject new work into an unsupervised process'
+    const reason = profile.mode !== 'launch' ? 'Existing sessions are observed only; Mainworks will not inject new work into an unsupervised process'
       : !credential.available ? credential.reason ?? 'Worker credential is unavailable'
         : agent ? `${profile.agentName} is running a worker` : null;
     return { profile, healthy: !reason, busy, reason };

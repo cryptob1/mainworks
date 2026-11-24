@@ -25,8 +25,8 @@ test('unit:compose-stale-endpoint-recovered — compose up naming a stale endpoi
   assert.ok(disconnect > lines.indexOf(ups(recovering)[0]) && disconnect < lines.lastIndexOf(ups(recovering)[1]), 'the endpoint is cleared between the two attempts');
 
   // A different compose failure is reported as compose gave it, and never retried.
-  const failing = fakeTransport({ responses: [{ match: ' up -d ', result: { stdout: '', stderr: 'Error response from daemon: pull access denied for graphyard', code: 1 } }] });
-  await assert.rejects(composeAdapter.deploy(contextFor(failing)), { message: 'docker exited with 1: Error response from daemon: pull access denied for graphyard' });
+  const failing = fakeTransport({ responses: [{ match: ' up -d ', result: { stdout: '', stderr: 'Error response from daemon: pull access denied for mainworks', code: 1 } }] });
+  await assert.rejects(composeAdapter.deploy(contextFor(failing)), { message: 'docker exited with 1: Error response from daemon: pull access denied for mainworks' });
   assert.equal(ups(failing).length, 1);
   assert.ok(!failing.commands.some(command => command.args[0] === 'network'), 'no network is touched');
 

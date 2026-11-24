@@ -62,11 +62,11 @@ const vitestProof = (how: 'pass' | 'fail') => `test('unit:declared works', ${how
 /** A merge writer's child runner for a worker that already runs confined: fixture commands run directly. */
 const direct: ChildRun = async (command, args, options) => {
   if (existsSync('/etc/graphyard-trial') || !options?.wrapper?.length) return defaultChildRun(command, args, options);
-  const harness = '/graphyard-harness/node_modules/tsx/dist/loader.mjs';
+  const harness = '/mainworks-harness/node_modules/tsx/dist/loader.mjs';
   if (args.includes(harness)) {
     // The bound E2E's script resolves the trusted harness here; it exits once its server stops.
     const script = args.at(-1)!;
-    await writeFile(script, (await readFile(script, 'utf8')).replaceAll('/graphyard-harness', fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')));
+    await writeFile(script, (await readFile(script, 'utf8')).replaceAll('/mainworks-harness', fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')));
     args = args.map(arg => arg === harness ? fileURLToPath(new URL(import.meta.resolve('tsx'))) : arg);
     options = { ...options, timeoutMs: 15_000 };
   }
@@ -194,7 +194,7 @@ test(`${own} — a repository whose checks print TAP gets identical counts and n
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test(`${own} — graphyard verify counts a vitest proof through the same function: a pass, a failure and a proof no test names`, { timeout: 120_000 }, async () => {
+test(`${own} — mainworks verify counts a vitest proof through the same function: a pass, a failure and a proof no test names`, { timeout: 120_000 }, async () => {
   const root = await temporaryDirectory('proof-runner-verify');
   try {
     const { checkout, write } = await repository(root, { 'package.json': vitestPackage(), 'src/proof.test.ts': vitestProof('pass') });

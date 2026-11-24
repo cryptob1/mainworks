@@ -10,7 +10,7 @@ import { FleetOverview, probeStatus, quotaStaleThresholdMs } from '../web/pages/
 /**
  * GY-945: the fleet panel — Settings › Agents (web/pages/fleet.tsx) — is where the dashboard shows
  * every agent account's limits, quota windows and eligibility. It renders exactly the `FleetView`
- * `GET /api/agent-registry` serves, the same data `graphyard master registry` reports, and marks
+ * `GET /api/agent-registry` serves, the same data `mainworks master registry` reports, and marks
  * each account's probe health, so an operator can tell a real wall from an old probe. Both tests
  * build a registry with the real mutations and render the pure view; no browser, no server.
  */

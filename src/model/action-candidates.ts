@@ -7,7 +7,7 @@ import type { Work } from './work.js';
  * Whether a row is what stands between its item and the merge: a `resync` or `merge` row on an item
  * already at the merge stage. Every other gate has passed, so nothing but this row holds it.
  */
-export const unblocksMerge = (work: Work, row: ActionRow) => work.stage === 'merge' && (row.kind === 'resync' || row.kind === 'merge');
+const unblocksMerge = (work: Work, row: ActionRow) => work.stage === 'merge' && (row.kind === 'resync' || row.kind === 'merge');
 
 /**
  * The order executors claim rows in (GY-1132): the item's priority first, then rows that unblock a

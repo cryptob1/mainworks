@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { AgentRegistry, readRegistry } from '../src/agent-registry.js';
-import { emptyRegistry, unobservedQuota, registryRoles, proposedConcurrency, proposedRuntimeRoles, chooseSession, type AgentRegistry as Registry } from '../src/model/registry.js';
+import { emptyRegistry, unobservedQuota, fleetRoles, proposedConcurrency, proposedRuntimeRoles, chooseSession, type AgentRegistry as Registry } from '../src/model/registry.js';
 import { accountSchema, modelSchema, runtimeSchema, roleSchema, selectionRequestSchema } from '../src/model-boundary/registry.js';
 import { registryCommand } from '../src/cli/master-registry.js';
 import { masterConfigSchema, forwardTolerant } from '../src/master/profiles.js';
@@ -30,16 +30,16 @@ test('e2e:retired-roles-dropped — legacy registry migrates once on a successfu
       selectedAt: now, selectedBy: 'old-master', reason: 'historical', skipped: [], endedAt: null, endReason: null }] } as unknown as Registry;
   await store.pool.query("INSERT INTO events(work_id,actor,kind,payload) VALUES(NULL,$1,'agent-registry.apply',$2)", [admin.id, JSON.stringify({ registry: legacy, change: {} })]);
   assert.equal((await api.document(admin)).roles.length, 10, 'legacy document loads');
-  assert.deepEqual(registryRoles, ['worker', 'reviewer', 'producer', 'master', 'caretaker']);
-  assert.deepEqual(Object.keys(proposedConcurrency), [...registryRoles]);
-  assert.ok(Object.values(proposedRuntimeRoles).flat().every(role => registryRoles.includes(role!)));
+  assert.deepEqual(fleetRoles, ['worker', 'reviewer', 'producer', 'master', 'caretaker']);
+  assert.deepEqual(Object.keys(proposedConcurrency), [...fleetRoles]);
+  assert.ok(Object.values(proposedRuntimeRoles).flat().every(role => fleetRoles.includes(role!)));
   const pi = await import('../integrations/pi/index.js');
-  for (const role of [...retired, 'research', 'decomposition', 'triage']) assert.deepEqual(pi.graphyardTools(role), []);
-  assert.deepEqual(pi.graphyardTools('producer').map(tool => tool.name), ['graphyard_submit_evidence']);
+  for (const role of [...retired, 'research', 'decomposition', 'triage']) assert.deepEqual(pi.mainworksTools(role), []);
+  assert.deepEqual(pi.mainworksTools('producer').map(tool => tool.name), ['graphyard_submit_evidence']);
   const payloads = await import('../src/runner/payloads.js'), settings = await import('../src/master/merge-writer-settings.js');
   assert.equal('diagnosticianSettings' in payloads, false); assert.equal('candidateSettingsSchema' in settings, false);
   // The legacy document predates the caretaker role (GY-3593), so it configures every role but that one.
-  assert.deepEqual((await api.view(admin)).roles.map(role => role.role), registryRoles.filter(role => role !== 'caretaker'));
+  assert.deepEqual((await api.view(admin)).roles.map(role => role.role), fleetRoles.filter(role => role !== 'caretaker'));
   for (const name of retired) {
     assert.equal(roleSchema.safeParse({ name, accounts: [], concurrency: 1 }).success, false);
     assert.equal(selectionRequestSchema.safeParse({ role: name, host: 'fixture' }).success, false);
@@ -54,7 +54,7 @@ test('e2e:retired-roles-dropped — legacy registry migrates once on a successfu
   const first = await command();
   assert.deepEqual(first.attention, [`Removed retired roles: ${retired.join(', ')}`]);
   assert.deepEqual((await readRegistry(store.pool)).sessions, legacy.sessions, 'migration does not free live retired slots');
-  assert.deepEqual((await readRegistry(store.pool)).roles.map(role => role.name), registryRoles.filter(role => role !== 'caretaker'));
+  assert.deepEqual((await readRegistry(store.pool)).roles.map(role => role.name), fleetRoles.filter(role => role !== 'caretaker'));
   assert.match(chooseSession(await readRegistry(store.pool), { role: 'worker', host: 'fixture' }, Date.now()).reason, /legacy is at its session limit/);
   assert.deepEqual((await command()).attention, []);
   assert.ok(!(await api.view(admin)).attention.some(line => line.includes('Removed retired roles')));

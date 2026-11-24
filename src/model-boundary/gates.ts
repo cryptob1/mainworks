@@ -14,7 +14,7 @@ import { keptTrialAheadOfReview } from '../model/merge-queue.js';
 import { leadHoldRefusal } from '../model/delegation.js';
 /**
  * The item's stage and gates, judged from the record alone. The merge writer merges each
- * candidate whose gates pass; nothing here places it in a queue of Graphyard's own.
+ * candidate whose gates pass; nothing here places it in a queue of Mainworks's own.
  */
 export function evaluate(work: Work, all: Work[], now: Date): { stage: Stage; gates: Gate[]; violations: string[]; postMergeReview?: PostMergeReviewState | null } {
   const gates: Gate[] = [];
@@ -49,7 +49,7 @@ export function evaluate(work: Work, all: Work[], now: Date): { stage: Stage; ga
   const reviews = current ? obs!.reviews : [];
   const changesRequested = reviews.some(r => r.state === 'CHANGES_REQUESTED');
   // An approval binds the exact commit: the one the provider approved (see exactApproval), or the
-  // one Graphyard carried it to across its own authored base refresh (see carry.ts). Nothing else counts.
+  // one Mainworks carried it to across its own authored base refresh (see carry.ts). Nothing else counts.
   const reviewPassed = !!exactApproval(work) || !!carriedApproval(work);
   const reviewRefusal = work.formalReviewResetRequired ? 'A new independent approval after the requirement-review baseline is required' : 'Independent approval of the current commit is required';
   // The one merge rule (GY-1525): a head the merge writer observed is judged by the class of its

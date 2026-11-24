@@ -19,7 +19,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
-// GY-3238: `graphyard master attest GY-N manual:NAME REASON` applies the master's attest decision
+// GY-3238: `mainworks master attest GY-N manual:NAME REASON` applies the master's attest decision
 // with its operator-agent identity. The evidence command records the manual: proof as a trusted
 // attestation on the exact current head, the item's proof requirement is met, and a worker
 // identity is still refused for manual: proofs.
@@ -119,7 +119,7 @@ test('integration:master-attest-manual — master attest records the manual: pro
 
   // A worker identity is still refused for a manual: proof, whatever head it names.
   await assert.rejects(engine.execute(worker, 'evidence', item.id, { proof: PROOF, sha: head, baseSha: baseTip, policyRevision: item.policyRevision, result: 'pass', executed: 1, skipped: 0 }, id()),
-    /A manual: proof is the master's attestation, never a worker's record: graphyard master attest/);
+    /A manual: proof is the master's attestation, never a worker's record: mainworks master attest/);
   // The operator-agent identity attests only manual: proofs, and only on the exact current head.
   await assert.rejects(engine.execute(operatorAgent, 'evidence', item.id, { proof: 'e2e:fixture', sha: head, baseSha: baseTip, policyRevision: item.policyRevision, result: 'pass', executed: 1, skipped: 0, reason: 'not a manual proof' }, id()),
     /The master attests only manual: proofs/);

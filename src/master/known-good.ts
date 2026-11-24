@@ -1,11 +1,11 @@
 // Concern: GY-1529 — the known-good coordinator: a pinned checkout at the last promoted SHA that runs the master loop, outside the candidate under test.
 //
-// The loop used to run from the checkout that is also the repository under change, so when Graphyard
+// The loop used to run from the checkout that is also the repository under change, so when Mainworks
 // merged its own broken change the loop that had to act was the broken one. The pin is a detached
 // linked worktree under `<installDir>/coordinator/<sha12>`, built there, and `coordinator/current` is a
 // symlink moved by rename. Only the last good pin is kept, the one this process loaded its modules
 // from (GY-2760), and the one the running loop recorded it loaded from, since the deploy unit pins from
-// its own process; `graphyard master recover` rebuilds an older one.
+// its own process; `mainworks master recover` rebuilds an older one.
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';

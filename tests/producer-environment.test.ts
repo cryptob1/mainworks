@@ -10,8 +10,8 @@ import { loadMasterConfig, masterConfigSchema, saveProducerProfile, setupMaster 
 import { emptyDispatchCursor, dispatchFailureLimit, dispatchRetryMaxMs, dispatchRetryMinMs } from '../src/dispatch/cursor.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import { type DispatchEffects } from '../src/dispatch/effects.js';
-import { ClosedQuestionsDecided, launchProducer, missingProducerEnv, needsProducerEnv, parseEnvValue, producerPrompt, producerSecretsPrefix, readProducerEnvironment, readProducerLedger } from '../src/producer.js';
-import { liveInstallProof, piProducerPrompt } from '../src/runner/roles.js';
+import { piProducerPrompt, ClosedQuestionsDecided, launchProducer, missingProducerEnv, needsProducerEnv, parseEnvValue, producerPrompt, producerSecretsPrefix, readProducerEnvironment, readProducerLedger } from '../src/producer.js';
+import { liveInstallProof } from '../src/runner/roles.js';
 import { clearRuns } from '../src/runner/registry.js';
 import type { RunOptions, Runner } from '../src/runner/types.js';
 import type { FilesystemProbe } from '../src/install/worktree-root.js';
@@ -116,7 +116,7 @@ async function installation(pi = false) {
   const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   git('init', '-q', '-b', 'main'); git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   await writeFile(join(root, 'README.md'), 'producer environment\n');
-  git('add', 'README.md'); git('-c', 'user.name=Graphyard', '-c', 'user.email=graphyard@example.test', 'commit', '-q', '-m', 'initial');
+  git('add', 'README.md'); git('-c', 'user.name=Mainworks', '-c', 'user.email=graphyard@example.test', 'commit', '-q', '-m', 'initial');
   await setupMaster(root, { url: 'https://graphyard.example', token: 'coordinator-token-'.padEnd(40, 'x'), cliPath: launcher, credentialDirectory: credentials, herdrWorkspace: 'workspace', run: { worktreeRoot: managed } }, coordinatorStatus, { probe: durable });
   const credential = join(credentials, 'producer.token'); await writeFile(credential, 'producer-token-'.padEnd(40, 'x'), { mode: 0o600 });
   await saveProducerProfile(root, { name: 'producer-a', principal: 'proof-runner', agentName: 'produce-a', kind: 'codex', credentialFile: credential }, async () => ({ actor: { id: 'proof-runner', role: 'producer', proofs: ['unit:*', 'integration:*', 'manual:*'] } }));
@@ -157,7 +157,7 @@ function producerPrefix(typed: ReturnType<typeof expandTypedCommand>, checkout: 
   assert.ok(prefix.slice(1, secrets).some(word => word.startsWith('PATH=')), 'native runtime PATH is reapplied');
   assert.ok(prefix.slice(1, secrets).includes('MISE_NO_CONFIG=1'));
   assert.equal(typed.kind, 'codex');
-  assert.match(requestOf(typed.kind, typed.args)!, /independent Graphyard proof producer/);
+  assert.match(requestOf(typed.kind, typed.args)!, /independent Mainworks proof producer/);
   return prefix;
 }
 
@@ -358,7 +358,7 @@ test('unit:live-install-ssh-key-available without HETZNER_SSH_KEY the launch is 
     assert.ok(prompt.includes(`hcloud ssh-key create --name ${name} --public-key-from-file ${join(launched.checkout, 'hetzner-ssh-key')}.pub`), 'registered with the provided HCLOUD_TOKEN');
     assert.ok(prompt.includes(`pass --ssh-key ${name}`));
     assert.ok(prompt.includes(`hcloud ssh-key delete ${name}`), 'and deleted afterwards');
-    const pi = piProducerPrompt({ repository: 'owner/project' }, { ...item.autoDispatch!.producers[0] as any, key: 'GY-717' }, item.criteria, { directory: launched.checkout, worktree: join(launched.checkout, 'checkout') }, root);
+    const pi = piProducerPrompt({ repository: 'owner/project' }, { ...item.autoDispatch!.producers[0] as any, key: 'GY-717' }, item.criteria, { directory: launched.checkout, worktree: join(launched.checkout, 'checkout') });
     assert.ok(pi.includes(`hcloud ssh-key delete ${name}`), 'a headless producer prompt reads the same guidance');
   } finally { await cleanup(); }
 });

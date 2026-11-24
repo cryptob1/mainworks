@@ -10,12 +10,13 @@ import { lstat, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path';
 import type { z } from 'zod';
 import { appEnvironmentsSchema, type appEnvironmentSchema } from './model-boundary/repository-policy.js';
+import { stateDirectory } from './install/layout.js';
 
 export type AppEnvironment = z.infer<typeof appEnvironmentSchema>;
 export const localEnvironment = 'local';
 /** The install's lifecycle secrets, mode 0600 under `~/.config/graphyard/<install>/`, handed only to lifecycle commands. */
 export const environmentSecretsFile = 'app-environments.env';
-export const environmentStatePath = (root: string) => join(root, '.graphyard', 'app-environments.json');
+export const environmentStatePath = (root: string) => join(stateDirectory(root), 'app-environments.json');
 
 /** An instance the loop provisioned and has not yet torn down: it counts against its environment's limit until `down` succeeds. */
 export interface EnvironmentInstance { environment: string; runId: string; instance: string; commit: string; url: string; loop: string; at: string }
@@ -33,8 +34,8 @@ export class EnvironmentFault extends Error {
 }
 
 /** The environments graphyard.json declares (`e2e.environments`); none for text that declares none or does not parse. */
-export function declaredEnvironments(graphyardJson: string | null): Record<string, AppEnvironment> {
-  try { return appEnvironmentsSchema.parse(JSON.parse(graphyardJson ?? '{}')?.e2e?.environments ?? {}); } catch { return {}; }
+export function declaredEnvironments(mainworksJson: string | null): Record<string, AppEnvironment> {
+  try { return appEnvironmentsSchema.parse(JSON.parse(mainworksJson ?? '{}')?.e2e?.environments ?? {}); } catch { return {}; }
 }
 
 export function readEnvironmentState(file: string): EnvironmentState {
@@ -194,7 +195,7 @@ export function trustedCheckout(git: (args: string[], env?: Record<string, strin
   return checkouts.get(key)!;
 }
 async function checkOut(git: (args: string[], env?: Record<string, string>) => Promise<string>, root: string, base: string): Promise<string> {
-  const parent = join(root, '.graphyard', 'app-environment-bases'), directory = join(parent, base);
+  const parent = join(stateDirectory(root), 'app-environment-bases'), directory = join(parent, base);
   if (existsSync(join(directory, '.graphyard-ready'))) return directory;
   await rm(parent, { recursive: true, force: true });
   await mkdir(directory, { recursive: true });

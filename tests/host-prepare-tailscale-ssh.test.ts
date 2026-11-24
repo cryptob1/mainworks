@@ -48,13 +48,13 @@ test(`${proof} — on a Tailscale SSH host the printed script runs an OpenSSH fo
   assert.match(log, /^systemctl restart graphyard-sshd$/m, 'a running compute sshd takes the new config');
   // GY-3688: no ForceCommand, so each install's key runs the helper its own line binds; every line is restricted.
   assert.ok(!/^ForceCommand/m.test(sshd));
-  assert.match(await readFile(join(hosts.home('desk'), '.ssh', 'authorized_keys'), 'utf8'), /^restrict,command="graphyard-host-shim-[0-9a-f]{64}" ssh-ed25519 \S+ graphyard-host-fixture\n$/);
+  assert.match(await readFile(join(hosts.home('desk'), '.ssh', 'authorized_keys'), 'utf8'), /^restrict,command="graphyard-host-shim-[0-9a-f]{64}" ssh-ed25519 \S+ mainworks-host-fixture\n$/);
   assert.match(hosts.prepareOutput('desk'), /Port 22 here is Tailscale SSH, which skips the shim\. Tailnet check: in your tailnet policy, every ssh rule reaching this machine needs action check, never accept/);
-  assert.match(hosts.prepareOutput('desk'), /Ready\. On the Graphyard machine run: graphyard host add gy-compute@desk:2222\s*$/);
+  assert.match(hosts.prepareOutput('desk'), /Ready\. On the Mainworks machine run: mainworks host add gy-compute@desk:2222\s*$/);
 
   await assert.rejects(readFile(join(hosts.host('box'), 'etc', 'ssh', 'sshd_graphyard_config')), 'a host without Tailscale SSH gets no second OpenSSH');
   assert.doesNotMatch(hosts.prepareOutput('box'), /Tailscale/);
-  assert.match(hosts.prepareOutput('box'), /graphyard host add gy-compute@box\s*$/);
+  assert.match(hosts.prepareOutput('box'), /mainworks host add gy-compute@box\s*$/);
 });
 
 test(`${proof} — host add takes USER@HOST:PORT and an alias, refuses Tailscale SSH's plain shell, and reports whether ${me}@HOST logs in unattended`, async () => {

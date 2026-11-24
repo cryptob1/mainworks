@@ -130,7 +130,7 @@ test('e2e:worker-verification-request-reuse — an interrupted verify and its re
   const printed: any[] = [];
   const context = { args: [], repositoryRoot: () => f.root,
     api: (path: string, body?: unknown) => f.api(path, body, f.worker.token), print: (value: any) => printed.push(value) } as unknown as CliContext;
-  // The worker's repeat — the same verification inputs from `graphyard verify`, a caller whose key order differs — joins it.
+  // The worker's repeat — the same verification inputs from `mainworks verify`, a caller whose key order differs — joins it.
   const { verifyCommand } = await import('../src/cli/verify.js');
   const verifying = verifyCommand.run(context, f.work).then(() => null, error => error);
   await delay(200);

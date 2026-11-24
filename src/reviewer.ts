@@ -20,16 +20,16 @@ import { allocateManagedCheckout, lockfiles, settleCheckout, shareDependencies }
 import { containedInstall, npmCiEnvironment } from './cli/test-isolation.js';
 import { buildArgv, installArgv, packageManager } from './package-manager.js';
 import { loadMasterConfig, loadStoredMasterConfig, } from './master/config.js';
-import { autonomousSession } from './master/dispatch.js';
 import { closeHerdrPane, type HerdrAgent } from './master/herdr.js';
 import { holdRepeatedLimitAccount } from './master/launch-account.js';
 import { prepareSessionHarness } from './master/harness.js';
-import { profileConcurrency, reviewerProfileSchema, selectReviewerProfile, sessionAgentName, type MasterConfig, type ReviewerProfile } from './master/profiles.js';
+import { defaultReviewerProfile, profileConcurrency, reviewerProfileSchema, selectReviewerProfile, sessionAgentName, type MasterConfig, type ReviewerProfile } from './master/profiles.js';
 import { sessionSlotsGrant } from './master/harness.js';
 import { launcherCoordinatorRoot, sessionConfinement } from './master/launch.js';
 import { credentialMaskFor, insideMasterConfinement, reviewerCredentialDirectory, type CredentialMask } from './master/confinement.js';
 import { runtimeLoginHomes } from './master/profiles.js';
 import { moveOffLoggedOutAccount } from './master/logged-out.js';
+import { NoHealthyAccountError } from './master/environments.js';
 import { underTestRunner } from './runtime-environment.js';
 import { runtimeSandboxes, sessionWritablePaths, verifyWorkerSandbox, type SandboxExec } from './worker-sandbox.js';
 import { withVerificationPath } from './master/verification-slots.js';
@@ -55,10 +55,11 @@ import { LauncherUnavailableError } from './master/config.js';
 import { resolveRepositoryPolicy } from './model-boundary/repository-policy.js';
 import { type E2eServe, policySections } from './model/repository-policy.js';
 import { servingReport } from './deploy-watch.js';
-import { startReviewServe, stopReviewServe } from './review-serve.js';
-import { freePort } from './serve-app.js';
+import { serveReviewHead, stopReviewServe } from './review-serve.js';
 import { runEnvironment } from './runner/pi.js';
 import { browserInstallCommand, browserToolName, provisionBrowserTool } from './browser-tool.js';
+import { endRegistrySessionById } from './master/registry-slot.js';
+import { stateDirectory } from './install/layout.js';
 export { controlPlaneFindingSection } from './review-prompt.js';
 export { reviewStandard, reviewStandards, repetitionReviewSection, repeatingPaths, touchesRepeatingPath } from './review-prompt.js';
 export { simplicityParagraph, blockingStandardSection, postDeployReviewSection, singleCaseReviewSection, criteriaRuleSection, criteriaVerdictRule } from './review-prompt.js';
@@ -83,6 +84,8 @@ export const reviewRecordSchema = z.object({
   attempt: z.number().int().min(1).max(50).optional(),
   /** The agent registry session the launch was chosen under (GY-205): ended once this record settles, so the role's slot frees with it. */
   session: z.string().min(1).max(200).optional(),
+  /** The agent registry account the launch ran on (GY-3748): skipped when a non-live review relaunches. */
+  account: z.string().min(1).max(120).optional(),
   /** When the loop saw the control plane no longer request `requestId`; until then the record is pinned (retainSessionRecords). */
   requestClosedAt: z.string().min(1).max(40).optional(),
   /** When the loop saw `sha` stop being the undelivered candidate of `key`; until then a record with a verdict is pinned (retainSessionRecords). */
@@ -211,7 +214,7 @@ export function releaseClosedRequests(records: LedgerRecord[], work: Work[], now
 
 export async function readReviewLedger(root: string): Promise<ReviewLedger> {
   const client = await loopStateClient(root);
-  await migrateLoopFile(client, 'reviews', resolve(root, reviewLedgerSpec.path), value => reviewLedgerSchema.parse(value).reviews);
+  await migrateLoopFile(client, 'reviews', resolve(stateDirectory(root), 'reviews.json'), value => reviewLedgerSchema.parse(value).reviews);
   const reviews = (await client.read('reviews')).map(record => reviewRecordSchema.parse(record));
   return ledgerSnapshot({ version: 1, reviews }, reviews);
 }
@@ -304,6 +307,8 @@ async function saveChangedRecords(root: string, mine: ReviewRecord[], before: Ma
 
 /** A reservation whose launcher never confirmed the runtime within this long died mid-launch. */
 export const reviewLaunchReservationMs = 10 * 60_000;
+/** GY-3748: a review session not live this long after launch is released and relaunched on the next eligible account. */
+export const reviewNotLiveMs = 2 * 60_000;
 
 /**
  * The Herdr session already serving this request, when there is one: a session a record of the
@@ -346,7 +351,7 @@ export async function saveReviewerProfile(root: string, profileInput: unknown) {
   const config = await loadStoredMasterConfig(root);
   if (config.reviewers.some(item => item.name === profile.name || item.agentName === profile.agentName)) throw new Error('Reviewer profile name and agent name must be unique');
   if (config.workers.some(item => item.agentName === profile.agentName)) throw new Error('A worker profile already uses that Herdr agent name');
-  await atomicPrivateWrite(resolve(root, '.graphyard/master.json'), { ...config, reviewers: [...config.reviewers, profile] });
+  await atomicPrivateWrite(resolve(stateDirectory(root), 'master.json'), { ...config, reviewers: [...config.reviewers, profile] });
   const launch = agentLaunchPlan(profile.kind, profile.approvals, profile.agentArgs, profile.environment);
   return { added: profile.name, agentName: profile.agentName, kind: profile.kind, reviewers: config.reviewers.length + 1, launch };
 }
@@ -359,7 +364,7 @@ export async function removeReviewerProfile(root: string, name: string) {
   const reviewers = config.reviewers.filter(item => item.name !== name);
   const clearedAutomatic = config.run.reviewerProfile === name;
   const run = { ...config.run }; if (clearedAutomatic) delete run.reviewerProfile;
-  await atomicPrivateWrite(resolve(root, '.graphyard/master.json'), { ...config, reviewers, run });
+  await atomicPrivateWrite(resolve(stateDirectory(root), 'master.json'), { ...config, reviewers, run });
   return { removed: name, agentName: removed.agentName, reviewers: reviewers.length, clearedAutomatic,
     automatic: run.reviewerProfile ?? (reviewers.length === 1 ? reviewers[0].name : null),
     next: reviewers.length ? 'master run adopts the change on its next tick' : 'No reviewer profile remains; review requests wait until one is added with master reviewer add' };
@@ -374,7 +379,7 @@ export async function removeReviewerProfile(root: string, name: string) {
 // is the observation scheduler's target, which keeps a requested head's reading recent (GY-1178).
 export function assertReviewCandidate(work: Work, observedAt: string, request?: { sha: string; baseSha: string; policyRevision: number }) {
   const now = Date.parse(observedAt);
-  if (!Number.isFinite(now)) throw new Error('A reviewer launch requires a valid Graphyard snapshot clock');
+  if (!Number.isFinite(now)) throw new Error('A reviewer launch requires a valid Mainworks snapshot clock');
   const candidate = work.candidate, observation = work.observation;
   if (!work.submission || !candidate) throw new Error(`${work.key} has no independently observed pull-request candidate to review`);
   if (work.reworkRequested) throw new Error(`${work.key} is awaiting rework; review the next submitted candidate`);
@@ -387,7 +392,7 @@ export function assertReviewCandidate(work: Work, observedAt: string, request?: 
   // integrates it with the current base when it merges (GY-191).
   // Only a head that conflicts with the base, or whose mergeability GitHub has not computed, waits
   // for a sync.
-  if (behindBaseHold(work)) throw new Error(`${work.key} candidate ${candidate.sha.slice(0, 12)} does not contain the base branch tip ${observation.baseTip?.slice(0, 12) ?? ''}; ${observation.conflicting ? 'GitHub reports a merge conflict with it' : 'GitHub does not report it mergeable'}, so a review would judge a diff the sync will change. Run graphyard sync ${work.key} and push`);
+  if (behindBaseHold(work)) throw new Error(`${work.key} candidate ${candidate.sha.slice(0, 12)} does not contain the base branch tip ${observation.baseTip?.slice(0, 12) ?? ''}; ${observation.conflicting ? 'GitHub reports a merge conflict with it' : 'GitHub does not report it mergeable'}, so a review would judge a diff the sync will change. Run mainworks sync ${work.key} and push`);
   // The binding's base is the head's merge base with the base branch (GY-2948): the delta the
   // reviewer judges is head versus that base, so a file the base branch gained after it — merged
   // while this worker worked — is never part of the reviewed diff, let alone reported as removed.
@@ -529,9 +534,9 @@ export { LauncherUnavailableError } from './master/config.js';
 export function cliUnreachableRefusal(config: Partial<Pick<MasterConfig, 'cliPath'>>, mask?: CredentialMask): string | null {
   const cli = config.cliPath ?? launcherPath;
   const underHome = (path: string) => !!mask && (path === mask.configHome || path.startsWith(`${mask.configHome}${sep}`));
-  if (!cli || !isAbsolute(cli)) return `the config names no absolute CLI path, so the session's prompt would name a CLI no sandbox holds; set cliPath with graphyard master setup`;
-  if (!existsSync(cli)) return `the CLI the prompt names (node ${cli}) is not on this host, so no session could post its verdict; restore the deploy checkout it names, or set cliPath with graphyard master setup`;
-  if (underHome(cli) && !(mask?.cli ?? []).some(kept => cli === kept || cli.startsWith(`${kept}${sep}`))) return `the CLI the prompt names (node ${cli}) sits under the masked config home and this launch's sandbox would not keep it, so no session could post its verdict; set cliPath with graphyard master setup`;
+  if (!cli || !isAbsolute(cli)) return `the config names no absolute CLI path, so the session's prompt would name a CLI no sandbox holds; set cliPath with mainworks master setup`;
+  if (!existsSync(cli)) return `the CLI the prompt names (node ${cli}) is not on this host, so no session could post its verdict; restore the deploy checkout it names, or set cliPath with mainworks master setup`;
+  if (underHome(cli) && !(mask?.cli ?? []).some(kept => cli === kept || cli.startsWith(`${kept}${sep}`))) return `the CLI the prompt names (node ${cli}) sits under the masked config home and this launch's sandbox would not keep it, so no session could post its verdict; set cliPath with mainworks master setup`;
   return null;
 }
 
@@ -544,7 +549,7 @@ export { browserToolName, browserToolOnPath } from './browser-tool.js';
  * attention line; it never becomes a change request and never reaches the item's worker.
  */
 export function productLaunchRefusal(config: Pick<MasterConfig, 'url' | 'cliPath'>, mask: CredentialMask | undefined, tool: string | null, installError?: string | null): string | null {
-  if (!config.url) return 'GRAPHYARD_URL is unset: this launch cannot tell its reviewer the control plane\'s address; set url with graphyard master setup';
+  if (!config.url) return 'GRAPHYARD_URL is unset: this launch cannot tell its reviewer the control plane\'s address; set url with mainworks master setup';
   const unreachable = cliUnreachableRefusal(config, mask);
   if (unreachable) return unreachable;
   if (!tool && installError) return `no browser tool on the session's PATH (agent-browser), and ${installError}; the loop tries the install again in 15 minutes, or run: ${browserInstallCommand()}`;
@@ -556,39 +561,6 @@ export async function recordCouldNotRunReview(config: Pick<MasterConfig, 'url' |
   const token = await readCredentialFile(config.credentialFile);
   const response = await fetch(`${config.url}/api/work/${encodeURIComponent(work.id)}/product-review`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': `product-could-not-run:${review.sha}:${createHash('sha256').update(review.reason).digest('hex').slice(0, 16)}` }, body: JSON.stringify({ reviewer: review.reviewer, sha: review.sha, baseSha: review.baseSha, verdict: 'could-not-run', findings: review.reason.slice(0, 65_536), screenshots: [] }), signal: AbortSignal.timeout(30_000) });
   if (!response.ok) throw new Error(`The control plane refused the could-not-run record for ${work.key} (${response.status})`);
-}
-/** GY-3580: the declared serve addresses product reviews on this host are serving, or waiting their turn on, each with the last turn taken. */
-const serveTurns = new Map<string, Promise<void>>();
-/** The addresses a product review is serving a head on now: another product review launches once its address is free. */
-export const servedReviewAddresses = () => [...serveTurns.keys()];
-/** Waits until no earlier review serves on `url`, then holds it until the returned release is called. */
-async function serveTurn(url: string): Promise<() => void> {
-  const earlier = serveTurns.get(url) ?? Promise.resolve();
-  let release!: () => void;
-  const turn = earlier.then(() => new Promise<void>(resolve => { release = resolve; }));
-  serveTurns.set(url, turn);
-  void turn.then(() => { if (serveTurns.get(url) === turn) serveTurns.delete(url); });
-  await earlier;
-  return release;
-}
-/** GY-3584 / GY-3608: environment variable a serve command reads its free port from. */
-export const servePortVariable = 'GRAPHYARD_E2E_SERVE_PORT';
-/**
- * GY-3608: whether `command` (or a script file it names in `worktree`) reads `GRAPHYARD_E2E_SERVE_PORT`.
- * Commands that honour it serve each product review on its own free port in parallel; commands that
- * cannot keep the GY-3580 take-turns lock on their declared URL.
- */
-async function serveHonoursPort(worktree: string, command: string): Promise<boolean> {
-  if (command.includes(servePortVariable)) return true;
-  for (const token of command.split(/\s+/)) {
-    const file = token.replace(/^['"]|['"]$/g, '');
-    if (!file || file.startsWith('-')) continue;
-    try {
-      const content = await readFile(resolve(worktree, file), 'utf8');
-      if (content.includes(servePortVariable)) return true;
-    } catch { /* not a file in the worktree */ }
-  }
-  return false;
 }
 /** GY-3331: the head's own e2e.serve declaration, read from the graphyard.json its commit holds; null when the head declares none (or its policy does not parse). */
 export async function headServeDeclaration(root: string, sha: string, run: ChildRun = defaultChildRun): Promise<E2eServe | null> {
@@ -616,7 +588,7 @@ export interface ControlPlanePrompt { head: string; baseTip: string; postMerge?:
   /** GY-3635: removed or modified assertion lines in existing tests/cases for the reviewer to rule on. */
   changedAssertions?: readonly ChangedAssertion[] }
 function reviewReadSection(cliPath: string, head: string) {
-  return `Read snapshot paths: git show ${head}:PATH; surrounding code: rg, cat. node ${cliPath} --help lists commands; node ${cliPath} guide review is supported and needs no worker or coordinator credential. No graphyard show command. `;
+  return `Read snapshot paths: git show ${head}:PATH; surrounding code: rg, cat. node ${cliPath} --help lists commands; node ${cliPath} guide review is supported and needs no worker or coordinator credential. No mainworks show command. `;
 }
 /** Recover exploratory mistakes without relaxing the read-only role or hiding real blockers. */
 function reviewRecoverySection() {
@@ -625,14 +597,16 @@ function reviewRecoverySection() {
 function reviewAutonomySection() {
   return `Decide and act on your own: finish judging the diff and post exactly one verdict, APPROVE or REQUEST_CHANGES. Never ask a human for confirmation or end waiting on input. `
     + reviewRecoverySection()
-    + `Record a genuine blocker as one review posted with --event COMMENT (or, when posting is itself refused, as a final line starting BLOCKED:). After posting, stop; Graphyard closes the session.`;
+    + `Record a genuine blocker as one review posted with --event COMMENT (or, when posting is itself refused, as a final line starting BLOCKED:). After posting, stop; Mainworks closes the session.`;
 }
+const codeVerdictChoices = 'Verdict choices: APPROVE (no BLOCKING finding stands) or REQUEST_CHANGES (each as BLOCKING: PATH:LINE - FINDING). ';
+const productVerdictChoices = 'Verdict choices: APPROVE (ship as is), REQUEST_CHANGES (each as BLOCKING: SCREEN OR FLOW - FINDING), REJECT (should not ship), COULD_NOT_RUN (you could not open the app: GRAPHYARD_URL unset, no browser, unreachable; no worker can fix that, so it is never a change request). ';
 export function reviewPrompt(config: Pick<MasterConfig, 'repository'> & Partial<Pick<MasterConfig, 'cliPath'>>, binding: Pick<ReviewBinding, 'key' | 'pr' | 'sha' | 'baseSha' | 'policyRevision'>, checkout?: SessionCheckout, _legacy?: unknown, criteria?: ReviewCriterion[], history?: ReviewHistory, files?: readonly string[] | null, projectMemory?: ProjectMemory | null, memory?: ProjectMemory | null, verification?: { maps: readonly VerificationMap[]; paths: readonly string[] } | null, plane?: ControlPlanePrompt | null, scenarioRequirements: Work['scenarioRequirements'] = []) {
   memory ??= projectMemory;
   if (plane) return controlPlaneReviewPrompt(config, binding, plane, checkout, criteria, history, files, memory, verification, scenarioRequirements);
   const memorySection = projectMemoryDigest(memory, 'reviewer', { baseSha: binding.baseSha });
   const standards = reviewStandards({ key: binding.key, criteria, scenarioRequirements }, binding.sha, files);
-  return `You are the independent Graphyard reviewer for ${config.repository}. Review pull request #${binding.pr} at head ${binding.sha} against base ${binding.baseSha} under policy revision ${binding.policyRevision}, for work item ${binding.key}. `
+  return `You are the independent Mainworks reviewer for ${config.repository}. Review pull request #${binding.pr} at head ${binding.sha} against base ${binding.baseSha} under policy revision ${binding.policyRevision}, for work item ${binding.key}. `
     + `Read the change with: gh pr diff ${binding.pr} --repo ${config.repository}. `
     + (memorySection || '')
     + verificationMapDigest(verification?.maps, verification?.paths, 'reviewer')
@@ -645,7 +619,7 @@ export function reviewPrompt(config: Pick<MasterConfig, 'repository'> & Partial<
     + standards.simplicity
     + standards.repetition
     + (files?.some(file => file.startsWith('web/')) ? standards.ux : '')
-    + (checkout ? `When judging the diff needs the surrounding code, read it from a detached checkout of the exact head, created only at the path Graphyard allocated for this session under its managed worktree root and never under a temporary directory: git fetch --no-write-fetch-head origin ${binding.sha} && git worktree add --detach ${checkout.worktree} ${binding.sha}. Read there and change nothing; Graphyard removes ${checkout.directory} when this session ends. ` : '')
+    + (checkout ? `When judging the diff needs the surrounding code, read it from a detached checkout of the exact head, created only at the path Mainworks allocated for this session under its managed worktree root and never under a temporary directory: git fetch --no-write-fetch-head origin ${binding.sha} && git worktree add --detach ${checkout.worktree} ${binding.sha}. Read there and change nothing; Mainworks removes ${checkout.directory} when this session ends. ` : '')
     + 'Read-only: no edits, Git mutations, work claims or evidence submissions; do not run the project\'s build, tests, or servers. '
     + reviewPostSection(config.cliPath ?? launcherPath, 'only when a BLOCKING finding stands')
     + `Posting that review is granted to this session's role, not a permission to request: post without asking for confirmation. `
@@ -679,7 +653,7 @@ export function productTrialEvidence(work: Work, head: string): string {
  * app it cannot reach) reports COULD_NOT_RUN, never a change request.
  */
 function productReviewPrompt(config: Pick<MasterConfig, 'repository'> & Partial<Pick<MasterConfig, 'cliPath'>>, binding: Pick<ReviewBinding, 'key' | 'policyRevision'>, plane: ControlPlanePrompt, _checkout?: SessionCheckout, criteria?: ReviewCriterion[], scenarioRequirements: Work['scenarioRequirements'] = []) {
-  const unreachable = `If your own environment fails — GRAPHYARD_URL unset, no Graphyard CLI, no browser tool, or an app you cannot reach — report that as COULD_NOT_RUN with the reason, never as a change request: no worker can fix it. `;
+  const unreachable = `If your own environment fails — GRAPHYARD_URL unset, no Mainworks CLI, no browser tool, or an app you cannot reach — report that as COULD_NOT_RUN with the reason, never as a change request: no worker can fix it. `;
   const walk = plane.previewUrl
     ? `Walk it with agent-browser: open the head's built preview at ${plane.previewUrl} and use the feature and the flows around it; also open the app as currently served (its address is the serving.serve.url field of GET $GRAPHYARD_URL/api/status, when one is served) and compare what a user sees there today. ${unreachable}`
     : plane.servedUrl
@@ -687,7 +661,7 @@ function productReviewPrompt(config: Pick<MasterConfig, 'repository'> & Partial<
       : plane.noApp
         ? `This install serves no app and declares no serve command, so no walkthrough is required and none is owed: judge the change from the head's diff (git diff ${plane.baseTip} ${plane.head}), the criteria and the trial evidence, and say in your findings that no app was there to walk — the absence of an app is never a reason to request changes. `
         : `The head itself is not separately previewed, so walk the app as currently served with agent-browser (its address is the serving.serve.url field of GET $GRAPHYARD_URL/api/status, when one is served), use the flows the feature belongs to, and read the head's diff (git diff ${plane.baseTip} ${plane.head}) beside what you see. ${unreachable}`;
-  return `You are the independent Graphyard product reviewer for ${config.repository}. Work item ${binding.key} is a user-facing feature: its head ${plane.head} (judged against base ${plane.baseTip}, policy revision ${binding.policyRevision}) was observed by the control plane. `
+  return `You are the independent Mainworks product reviewer for ${config.repository}. ${productVerdictChoices}Work item ${binding.key} is a user-facing feature: its head ${plane.head} (judged against base ${plane.baseTip}, policy revision ${binding.policyRevision}) was observed by the control plane. `
     + `Judge the feature as a product, in the whole app's context — not only whether the diff is correct. `
     + reviewStandards({ ...binding, criteria, scenarioRequirements }, plane.head).criteria + criteriaVerdictRule
     + (plane.trialEvidence ?? `No trial evidence recorded for head ${plane.head}. `)
@@ -696,28 +670,25 @@ function productReviewPrompt(config: Pick<MasterConfig, 'repository'> & Partial<
     + `Then judge: ${reviewStandards(binding).product}`
     + `${reviewStandards(binding).ux}Request changes on any violation of this UX standard, with a screenshot of it. `
     + (plane.answer ? readOnlySession + plane.answer : productPostSection(config.cliPath ?? launcherPath) + readOnlySession
-    + `Posting that verdict is granted to this session's role, not a permission to request: post it as soon as you have judged the feature, without asking for confirmation. `
-    + `review post sends it to the Graphyard control plane at GRAPHYARD_URL with this launch's one-time token from GH_CONFIG_DIR. `
-    + `Once it has posted, stop; Graphyard closes this session once it observes your verdict. `
-    + autonomousSession('post the verdict yourself, APPROVE, REQUEST_CHANGES, REJECT or COULD_NOT_RUN, as soon as you have judged the feature', 'record a blocker as a final line starting BLOCKED:'));
+    + `review post sends it to the Mainworks control plane at GRAPHYARD_URL with this launch's one-time token from GH_CONFIG_DIR. `
+    + `Decide and act on your own: post your verdict without asking a human or waiting on input (record a blocker as a final line starting BLOCKED:). After posting, stop; Mainworks closes this session.`);
 }
-const readOnlySession = 'This session is read-only: do not edit, stage, commit, push, rebase, or merge anything, do not run the project\'s build, tests, or servers, do not claim Graphyard work, and do not submit evidence. ';
+const readOnlySession = 'This session is read-only: do not edit, stage, commit, push, rebase, or merge anything, do not run the project\'s build, tests, or servers, do not claim Mainworks work, and do not submit evidence. ';
 function productPostSection(cliPath: string) {
-  return `Post exactly one verdict, only through Graphyard, with the body on standard input: node ${cliPath} review post --event EVENT <<'EOF' … EOF. `
-    + `--event APPROVE when the feature should ship as it stands; --event REQUEST_CHANGES when it should ship after concrete changes, each named on its own "BLOCKING: SCREEN OR FLOW — FINDING" line; --event REJECT when it should not ship at all, with the reason in the body — the master closes the item unmerged on it, or files a reshaped one; --event COULD_NOT_RUN when your own environment failed (GRAPHYARD_URL unset, no Graphyard CLI, no browser tool, or an app you cannot reach), the reason in the body — Graphyard retries the review on another reviewer and the item never returns to its worker for it. `
-    + `Open the body by naming the head you judged, and name each screenshot you captured (at most 5, .png or .jpg, each under 2 MiB) on its own "Screenshot: PATH" line, the path of the file you saved: review post uploads each with your verdict, and the item shows your verdict, findings and screenshots together. `;
+  return `Post exactly one verdict, only through Mainworks, with the body on standard input: node ${cliPath} review post --event EVENT <<'EOF' … EOF (--event APPROVE, --event REQUEST_CHANGES, --event REJECT, or --event COULD_NOT_RUN). `
+    + `Open the body by naming the head you judged, and name each screenshot you captured (at most 5, .png or .jpg, each under 2 MiB) on its own "Screenshot: PATH" line: review post uploads each with your verdict. `;
 }
 /**
  * A headless session's answer (in place of `review post`): one JSON object the launcher posts as
  * this launch's verdict through the same route and token, each finding as a BLOCKING: line.
  */
-export function headlessReviewAnswer(key: string, product = false, screenshots?: string) {
+export function headlessReviewAnswer(_key: string, product = false, screenshots?: string) {
   return `Answer in one JSON object, the last thing you print: {"verdict": "APPROVE" or "BLOCKING"${product ? ' or "REJECT" or "COULD_NOT_RUN"' : ''}, "body": "THE REVIEW BODY", "findings": ["${product ? 'SCREEN OR FLOW' : 'PATH:LINE'} — FINDING", …]}. `
-    + `APPROVE when no blocking finding stands, with findings empty; BLOCKING when one does, each in findings${product ? '; REJECT when the feature should not ship at all, the reason in the body: the master closes the item unmerged on it; COULD_NOT_RUN when your own environment failed — GRAPHYARD_URL unset, no Graphyard CLI, no browser tool, or an app you cannot reach — the reason in the body and no findings: Graphyard retries the review on another reviewer and the item never returns to its worker for it' : ''}. `
-    + (product ? (screenshots ? `Save each screenshot in ${screenshots} — the one directory both this session and Graphyard, which posts your answer, can read — and open the body by naming the head you judged, then name each screenshot you saved (at most 5, .png or .jpg, each under 2 MiB) on its own "Screenshot: NAME" line, NAME its file name in that directory: the item shows them beside your verdict. `
-      : 'Open the body by naming the head you judged, and name each screenshot you saved (at most 5, .png or .jpg, each under 2 MiB) on its own "Screenshot: PATH" line: the item shows them beside your verdict. ') : '')
-    + 'Graphyard posts that answer as your verdict under this launch, each finding on a BLOCKING: line, so run no review post. '
-    + `Judge whether this change meets what ${key} requires; never weaken a requirement to let it pass, and never hold a change that meets its criteria over a FOLLOW-UP. Decide on your own: never ask a human or wait on input.`;
+    + `Use findings only with BLOCKING (leave findings empty for APPROVE${product ? ', REJECT or COULD_NOT_RUN' : ''}). `
+    + (product ? (screenshots ? `Save each screenshot in ${screenshots} — open the body by naming the head you judged, then name each screenshot (at most 5, .png or .jpg, each under 2 MiB) on its own "Screenshot: NAME" line. `
+      : 'Open the body by naming the head you judged, and name each screenshot (at most 5, .png or .jpg, each under 2 MiB) on its own "Screenshot: PATH" line. ') : '')
+    + 'Mainworks posts that answer as your verdict, each finding on a BLOCKING: line, so run no review post. '
+    + `Never weaken a requirement to let it pass, and never hold a change that meets its criteria over a FOLLOW-UP. Decide and act on your own: never ask a human or wait on input.`;
 }
 /** The headless answer, checked before it is posted: a BLOCKING verdict names its findings, an approval none. */
 export const headlessVerdictSchema = z.object({ verdict: z.enum(['APPROVE', 'BLOCKING', 'REJECT', 'COULD_NOT_RUN']), body: z.string().trim().min(1).max(60_000), findings: z.array(z.string().trim().min(1).max(2_000)).max(100).default([]) })
@@ -785,22 +756,20 @@ function controlPlaneReviewPrompt(config: Pick<MasterConfig, 'repository'> & Par
   // open with the head and base, and the server records the launch's base beside them.
   const scope = `Open the review body by naming the head and the base you judged against, so the verdict itself records which commits were in scope. `;
   const outcome = plane.postMerge
-    ? 'Name each finding that meets the blocking standard on its own line starting BLOCKING: as PATH:LINE — FINDING; Graphyard files one follow-up item per BLOCKING line, planned on that file, keeps every other finding in project memory, and never reopens the delivered item. Post REQUEST_CHANGES when any BLOCKING line stands and APPROVE otherwise. '
+    ? 'Name each finding that meets the blocking standard on its own line starting BLOCKING: as PATH:LINE — FINDING; Mainworks files one follow-up item per BLOCKING line, planned on that file, keeps every other finding in project memory, and never reopens the delivered item. Post REQUEST_CHANGES when any BLOCKING line stands and APPROVE otherwise. '
     : '';
-  return `You are the independent Graphyard reviewer for ${config.repository}. ${subject}`
+  return `You are the independent Mainworks reviewer for ${config.repository}. ${codeVerdictChoices}${subject}`
     + scope
     + reviewStandard({ key: binding.key, head: plane.head, base: plane.baseTip }, criteria, files, verification, { memory: memorySection || '', round: reviewRoundSection(plane.head, history), scenarioRequirements, changedAssertions: plane.changedAssertions })
     + reviewReadSection(config.cliPath ?? launcherPath, plane.head)
     + `Classify findings by node ${config.cliPath ?? launcherPath} guide review. `
     + outcome
-    + (checkout ? `When judging the diff needs the surrounding code, read it from a detached checkout of the exact head, created only at the path Graphyard allocated for this session under its managed worktree root and never under a temporary directory: git worktree add --detach ${checkout.worktree} ${plane.head}. Read there and change nothing; Graphyard removes ${checkout.directory} when this session ends. ` : '')
+    + (checkout ? `When judging the diff needs the surrounding code, read it from a detached checkout of the exact head, created only at the path Mainworks allocated for this session under its managed worktree root and never under a temporary directory: git worktree add --detach ${checkout.worktree} ${plane.head}. Read there and change nothing; Mainworks removes ${checkout.directory} when this session ends. ` : '')
     + readOnlySession
     + (plane.answer ? reviewRecoverySection() : '')
     + (plane.answer ?? reviewPostSection(config.cliPath ?? launcherPath, 'only when a BLOCKING finding stands')
-    + `Judge whether this diff meets what ${binding.key} requires by that rule; never weaken a requirement to let it pass, and never hold a change that meets its criteria over a FOLLOW-UP. `
-    + `Posting that review is granted to this session's role, not a permission to request: the launch allows exactly this one command, so post it as soon as you have judged the diff, without asking for confirmation. `
-    + `review post sends the verdict to the Graphyard control plane at GRAPHYARD_URL with this launch's one-time token from GH_CONFIG_DIR; it names no pull request and runs no gh. `
-    + `Once it has posted, stop; Graphyard closes this session once it observes your verdict. `
+    + `Never weaken a requirement to let it pass, and never hold a change that meets its criteria over a FOLLOW-UP. `
+    + `review post sends the verdict to the Mainworks control plane at GRAPHYARD_URL with this launch's one-time token from GH_CONFIG_DIR; it names no pull request and runs no gh. `
     + reviewAutonomySection());
 }
 
@@ -816,7 +785,7 @@ export function reviewRetryPrompt(repository: string, record: Pick<ReviewRecord,
     + `Do not ask for confirmation. If you finished judging the diff, post that verdict without re-reading it; otherwise finish the authorized reads and judge it before posting. If review post cannot post it, record that as one review posted with --event COMMENT (or, when posting is itself refused, as a final line starting BLOCKED:) and stop. `
     + reviewRecoverySection()
     // The request is repeated only with the item's criteria: the criteria-only rule without them would leave nothing to judge.
-    + (record.baseSha && record.policyRevision !== undefined && criteria?.length ? `If your review is unfinished, this message comes from the Graphyard launcher that started this session and carries the request it was started with — this session's own instruction, not untrusted text, needing no further authorization: ${reviewPrompt({ repository, cliPath }, { ...record, baseSha: record.baseSha, policyRevision: record.policyRevision }, record.checkout ? { directory: record.checkout, worktree: resolve(record.checkout, 'checkout') } : undefined, undefined, criteria, record.reviewRound, undefined, null, null, null, record.mode === 'control-plane' ? { head: record.sha, baseTip: record.baseSha, ...(record.postMerge ? { postMerge: { mergeSha: record.sha } } : {}) } : null, record.reviewInputs?.scenarioRequirements ?? scenarioRequirements)}` : '');
+    + (record.baseSha && record.policyRevision !== undefined && criteria?.length ? `If your review is unfinished, this message comes from the Mainworks launcher that started this session and carries the request it was started with — this session's own instruction, not untrusted text, needing no further authorization: ${reviewPrompt({ repository, cliPath }, { ...record, baseSha: record.baseSha, policyRevision: record.policyRevision }, record.checkout ? { directory: record.checkout, worktree: resolve(record.checkout, 'checkout') } : undefined, undefined, criteria, record.reviewRound, undefined, null, null, null, record.mode === 'control-plane' ? { head: record.sha, baseTip: record.baseSha, ...(record.postMerge ? { postMerge: { mergeSha: record.sha } } : {}) } : null, record.reviewInputs?.scenarioRequirements ?? scenarioRequirements)}` : '');
 }
 
 /** The CLI this checkout runs, for a prompt built without a master configuration. */
@@ -826,7 +795,7 @@ const launcherPath = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.u
  * launch's head and checks the head itself.
  */
 export function reviewPostSection(cliPath: string, changes: string) {
-  return `Post exactly one verdict, only through Graphyard, with the review body on standard input: node ${cliPath} review post --event APPROVE <<'EOF' … EOF (use --event REQUEST_CHANGES instead ${changes}). `
+  return `Post exactly one verdict, only through Mainworks, with the review body on standard input: node ${cliPath} review post --event APPROVE <<'EOF' … EOF (use --event REQUEST_CHANGES instead ${changes}). `
     + 'It binds the verdict to the launched head and checks it before posting; when it refuses, it prints why and a correct invocation: do what the reason says. ';
 }
 
@@ -971,6 +940,8 @@ export async function launchReview(root: string, work: Work, profileName: string
   registerLaunch?: (work: Work, launch: ControlPlaneLaunchInput) => Promise<{ launch: string }>;
   /** The one-task model executor; the host's by default. */
   headless?: HeadlessExec | null;
+  /** GY-3748: `master review GY-N PROFILE` replaces a pending reviewer session that is not live instead of refusing. */
+  replaceDead?: boolean;
 } = {}) {
   dependencies = { ...dependencies, coordinatorRoot: sessionCoordinatorRoot(root, dependencies) };
   const now = dependencies.now ?? (() => new Date());
@@ -981,7 +952,7 @@ export async function launchReview(root: string, work: Work, profileName: string
   const postMerge = dependencies.postMerge;
   const product = !!dependencies.product;
   if (product && postMerge) throw new Error('A product review judges a candidate head, never a delivered merge commit');
-  const profile: ReviewerProfile | undefined = profileName ? config.reviewers.find(item => item.name === profileName) : selectReviewerProfile(config).profile ?? undefined;
+  const profile: ReviewerProfile | undefined = profileName ? config.reviewers.find(item => item.name === profileName) : selectReviewerProfile(config).profile ?? defaultReviewerProfile;
   if (!profile) {
     // GY-1850: a launch naming a profile no configured one carries is a configuration fault, not a
     // failing candidate: left to the dispatcher's widening retries it was knocked out every cycle
@@ -995,7 +966,7 @@ export async function launchReview(root: string, work: Work, profileName: string
       const at = now().getTime(), known = await readReviewerProfileRefusal(config);
       if (known && known.profile === profileName && known.profiles === configuredProfileFingerprint(config)
         && known.refusals >= reviewerProfileRefusalLimit && at - Date.parse(known.at) < reviewerProfileRetryMs)
-        throw new UnknownReviewerProfileError(profileName, `Unknown reviewer profile ${profileName}: refused ${known.refusals} launches in a row (last at ${known.at}); backing off to one attempt every ${reviewerProfileRetryMs / 60_000} minutes until the profiles change — write them with graphyard master environments --apply`);
+        throw new UnknownReviewerProfileError(profileName, `Unknown reviewer profile ${profileName}: refused ${known.refusals} launches in a row (last at ${known.at}); backing off to one attempt every ${reviewerProfileRetryMs / 60_000} minutes until the profiles change — write them with mainworks master environments --apply`);
       await recordReviewerProfileRefusal(config, profileName, at);
     }
     if (profileName) throw new UnknownReviewerProfileError(profileName, `Unknown reviewer profile ${profileName}`);
@@ -1021,14 +992,27 @@ export async function launchReview(root: string, work: Work, profileName: string
     // Only a record for the exact current candidate holds the key: one session per candidate.
     const pendings = ledger.reviews.filter(record => record.state === 'pending' && record.key === work.key);
     const current = pendings.find(pending => !staleReviewReason(pending, [work]));
-    if (current) return { refusal: new ReviewSessionPending(`A reviewer session for ${work.key} is already ${current.launching ? 'being launched' : 'pending'} on ${current.sha.slice(0, 7)} (${current.agentName}${current.requestId ? `, request ${current.requestId}` : ''}); one review request is answered by one session, so no second one is launched`,
-      work.key, { sha: current.sha, agentName: current.agentName, ...(current.requestId ? { requestId: current.requestId } : {}) }) };
+    let replacedSession: string | undefined;
+    if (current) {
+      const currentLive = agents.some(agent => agent.name === current.agentName) || (!current.pane && !!liveRun(current.agentName));
+      if (dependencies.replaceDead && !currentLive) {
+        replacedSession = current.session;
+        await closeReviewSession(root, current, { run: dependencies.run, now }, { state: 'failed', resolution: 'replaced by master review: the reviewer session was not live', force: true });
+      } else {
+        return { refusal: new ReviewSessionPending(`A reviewer session for ${work.key} is already ${current.launching ? 'being launched' : 'pending'} on ${current.sha.slice(0, 7)} (${current.agentName}${current.requestId ? `, request ${current.requestId}` : ''}); one review request is answered by one session, so no second one is launched`,
+          work.key, { sha: current.sha, agentName: current.agentName, ...(current.requestId ? { requestId: current.requestId } : {}) }) };
+      }
+    }
     // A request a settled session already answered is answered (GY-1083): its verdict awaits only the
     // control plane's observation, and a second session's verdict would conflict with it.
     const answered = dependencies.requestId ? answeringRecord(ledger.reviews, dependencies.requestId, binding.sha, work.observation) : null;
     if (answered) return { refusal: new ReviewSessionPending(`Reviewer session ${answered.agentName} already answered ${work.key} review request ${dependencies.requestId} on ${binding.sha.slice(0, 7)} with ${answered.verdict!.state} (review ${answered.verdict!.reviewId}); one request yields one verdict, so no second session is launched and the control plane settles the request once it observes that verdict`,
       work.key, { sha: binding.sha, agentName: answered.agentName, requestId: dependencies.requestId!, answered: { state: answered.verdict!.state, reviewId: answered.verdict!.reviewId, at: answered.closedAt ?? answered.verdict!.submittedAt } }) };
-    for (const pending of pendings) await closeReviewSession(root, pending, { run: dependencies.run, now }, { state: 'cancelled', resolution: staleReviewReason(pending, [work])!, force: true });
+    for (const pending of pendings) if (pending.state === 'pending') await closeReviewSession(root, pending, { run: dependencies.run, now }, { state: 'cancelled', resolution: staleReviewReason(pending, [work])!, force: true });
+    // GY-3748: accounts whose previous attempt for this request failed (e.g. never went live) are skipped so the relaunch moves to the next eligible account.
+    const failedAccounts = dependencies.requestId
+      ? [...new Set(ledger.reviews.filter(entry => entry.requestId === dependencies.requestId && entry.state === 'failed' && entry.account).map(entry => entry.account!))]
+      : [];
     // A Herdr session already serving this request is the same launch twice, whatever the ledger says.
     const serving = requestSessionInHerdr(ledger.reviews, agents, config.reviewers, { key: work.key, sha: binding.sha, requestId: dependencies.requestId });
     if (serving) return { refusal: new ReviewSessionPending(`Reviewer session ${serving} is already visible in Herdr for ${work.key}${dependencies.requestId ? ` review request ${dependencies.requestId}` : ` on ${binding.sha.slice(0, 7)}`}; one review request is answered by one session`,
@@ -1051,10 +1035,15 @@ export async function launchReview(root: string, work: Work, profileName: string
       // Only the token's hash is ever recorded (GY-1525); the token itself lives in the session's binding alone.
       mode: 'control-plane', verdictTokenHash, ...(postMerge ? { postMerge: true } : {}), ...(product ? { product: true } : {}) });
     ledger.reviews.push(record);
-    return { record };
+    return { record, failedAccounts, replacedSession };
   });
   if ('refusal' in reservation) throw reservation.refusal;
   const { agentName } = reservation.record;
+  const excludeAccounts = [...new Set([...(dependencies.probe?.exclude ?? []), ...reservation.failedAccounts])];
+  if (reservation.replacedSession) {
+    const end = dependencies.probe?.registry ? (id: string, reason: string) => dependencies.probe!.registry!.end(id, reason) : (id: string, reason: string) => endRegistrySessionById(config, id, reason);
+    await end(reservation.replacedSession, 'replaced by master review: the reviewer session was not live').catch(() => {});
+  }
   // A launch that never became a session gives its reservation back; one whose tab Herdr could
   // not confirm closed keeps it, settled as failed with the reason, so the session it may have
   // left behind is still on the record.
@@ -1069,7 +1058,14 @@ export async function launchReview(root: string, work: Work, profileName: string
       throw new Error(`${work.key}'s last reviewer sessions each ended on one account's limit notice, and the hold that keeps the next launch off it could not be placed: ${error instanceof Error ? error.message : String(error)}`.slice(0, 500), { cause: error });
     });
     // Before a token is minted: an exhausted or logged-out account is skipped for the profile's next.
-    const selected = await selectAccount(config, 'reviewer', profile, { ...dependencies.probe, work: work.key });
+    // GY-3748: prefer accounts that have not already failed on this request; fall back to them only if no other eligible account exists.
+    let selected: Awaited<ReturnType<typeof selectAccount>>;
+    try {
+      selected = await selectAccount(config, 'reviewer', profile, { ...dependencies.probe, ...(excludeAccounts.length ? { exclude: excludeAccounts } : {}), work: work.key });
+    } catch (error) {
+      if (!reservation.failedAccounts.length || !(error instanceof NoHealthyAccountError)) throw error;
+      selected = await selectAccount(config, 'reviewer', profile, { ...dependencies.probe, work: work.key });
+    }
     // Everything past the choice can fail; the session it chose is given back at once when it does.
     return await onSelectedSession(selected, `reviewer launch for ${work.key} failed`, async () => {
       // GY-2995: a launch whose sandbox cannot reach the CLI its prompt names starts nothing —
@@ -1142,8 +1138,8 @@ export async function launchReview(root: string, work: Work, profileName: string
           // The tool resolved on the host the confinement mounts read-only; its directory goes
           // first on the session's PATH, so a runtime that declares its own PATH keeps it too.
           own.PATH = [dirname(tool!), own.PATH ?? process.env.PATH ?? ''].filter(Boolean).join(':');
-          own.GRAPHYARD_URL = config.url;
-          own.GRAPHYARD_CLI = config.cliPath ?? launcherPath;
+          own.GRAPHYARD_URL = own.MAINWORKS_URL = config.url;
+          own.GRAPHYARD_CLI = own.MAINWORKS_CLI = config.cliPath ?? launcherPath;
           // What the reviewer walks: the head's preview while it runs, the app the install serves,
           // the head itself served by the install's own e2e.serve command, or — with neither — no
           // walkthrough at all, the absence of an app never a reason to request changes.
@@ -1170,21 +1166,8 @@ export async function launchReview(root: string, work: Work, profileName: string
                   try { await git(build[0]!, build.slice(1), { cwd: checkout.worktree, env: runEnvironment(process.env), timeoutMs: 1_200_000 }); }
                   catch (error: any) { throw new Error(`${build.join(' ')} failed in the review checkout of ${binding.sha.slice(0, 12)}: ${`${error.stdout ?? ''}${error.stderr ?? ''}`.trim().slice(-1500) || error.message}`); }
                 }
-                if (await serveHonoursPort(checkout.worktree, declared.command)) {
-                  // GY-3608 / GY-3662: a serve command that honours GRAPHYARD_E2E_SERVE_PORT serves each product review on its own free port in its own detached unit.
-                  const port = await freePort();
-                  const target = new URL(declared.url);
-                  target.port = String(port);
-                  const served = await startReviewServe({ root, id, worktree: checkout.worktree, serve: { ...declared, url: target.href }, env: runEnvironment(process.env, { [servePortVariable]: String(port) }) });
-                  serving = { url: served.url, directory: served.directory, close: () => stopReviewServe(served.directory) };
-                } else {
-                  // GY-3580 / GY-3662: a review whose head serves on the address another review's head is serving waits its turn; the address frees when that session ends.
-                  const release = await serveTurn(declared.url);
-                  try {
-                    const served = await startReviewServe({ root, id, worktree: checkout.worktree, serve: declared, env: runEnvironment(process.env) });
-                    serving = { url: served.url, directory: served.directory, close: () => stopReviewServe(served.directory).finally(release) };
-                  } catch (error) { release(); throw error; }
-                }
+                // GY-3751: each review serves on its own free port; a command that binds the declared port takes turns on it.
+                serving = await serveReviewHead({ root, id, worktree: checkout.worktree, serve: declared, env: runEnvironment(process.env) });
               } else noApp = true;
             }
           }
@@ -1211,7 +1194,7 @@ export async function launchReview(root: string, work: Work, profileName: string
             contract: launch.contract, coordinatorRoot: dependencies.coordinatorRoot, credentialMask, role: harness.role, exec: headless, moveAccount,
             onRun: async run => {
               headlessContext!.kind = run.kind;
-              await updateReviewLedger(root, ledger => { const record = ledger.reviews.find(entry => entry.id === id); if (record) { record.headless = run; record.session = registrySessionOf(on.current); } });
+              await updateReviewLedger(root, ledger => { const record = ledger.reviews.find(entry => entry.id === id); if (record) { record.headless = run; record.session = registrySessionOf(on.current); if (on.current.account?.name) record.account = on.current.account.name; } });
             },
             holdAccount: notice => recordObservedExhaustion(config, on.current.account?.name ?? profileAccount(profile.name), { at: now().toISOString(), resetsAt: notice.resetsAt, reason: notice.reason, role: 'reviewer', profile: profile.name, work: binding.key }, now().getTime(), { registry: dependencies.probe?.registry, smoke: dependencies.probe?.smoke }),
             prompt: request(`${await reviewDiff(root, binding.baseSha, binding.sha, dependencies.run)}\n${headlessReviewAnswer(binding.key, product, headlessContext.screenshots)}`),
@@ -1235,7 +1218,7 @@ export async function launchReview(root: string, work: Work, profileName: string
           const index = ledger.reviews.findIndex(entry => entry.id === id);
           const { launching: _launching, ...reserved } = index >= 0 ? ledger.reviews[index] : reservation.record;
           // A headless run holds its request from its first instant: there is nothing to acknowledge or re-prompt.
-          const settled: ReviewRecord = reviewRecordSchema.parse({ ...reserved, pane: null, tokenExpiresAt: minted.expiresAt, delivery, ...(registrySessionOf(on.current) ? { session: registrySessionOf(on.current) } : {}), checkout: checkout.directory, ...(serving ? { serve: serving.directory } : {}), criteriaOnly: true, ...(registered ? { launch: registered.launch } : {}), acknowledgedAt: reserved.acknowledgedAt ?? now().toISOString() });
+          const settled: ReviewRecord = reviewRecordSchema.parse({ ...reserved, pane: null, tokenExpiresAt: minted.expiresAt, delivery, ...(registrySessionOf(on.current) ? { session: registrySessionOf(on.current) } : {}), ...(on.current.account?.name ? { account: on.current.account.name } : {}), checkout: checkout.directory, ...(serving ? { serve: serving.directory } : {}), criteriaOnly: true, ...(registered ? { launch: registered.launch } : {}), acknowledgedAt: reserved.acknowledgedAt ?? now().toISOString() });
           if (index >= 0) ledger.reviews[index] = settled; else ledger.reviews.push(settled);
           return settled;
         });
@@ -1315,7 +1298,7 @@ export async function reviewCommand(root: string, args: string[], snapshot: { wo
   const work = snapshot.work.find(item => item.id === args[0] || item.key === args[0]);
   if (!work) throw new Error(`Unknown work item ${args[0]}`);
   const request = liveReviewRequest(work);
-  return launchReview(root, work, args[1], agents, snapshot.now, { ...dependencies, ...(request ? { requestId: request.id } : {}) });
+  return launchReview(root, work, args[1], agents, snapshot.now, { ...dependencies, replaceDead: true, ...(request ? { requestId: request.id } : {}) });
 }
 
 
@@ -1484,7 +1467,8 @@ export async function reconcileReviews(root: string, config: MasterConfig, depen
   registry?: Pick<AgentRegistry, 'sessions'> | null;
 } = {}) {
   const ledger = await readReviewLedger(root);
-  if (!ledger.reviews.length) return { reviews: ledger.reviews, changed: 0, released: [] as { pane: string; agentName: string }[] };
+  const notLive: { key: string; sha: string; requestId?: string; id: string; agentName: string; account?: string; session?: string; resolution: string }[] = [];
+  if (!ledger.reviews.length) return { reviews: ledger.reviews, changed: 0, released: [] as { pane: string; agentName: string }[], notLive };
   const before = new Map(ledger.reviews.map(record => [record.id, JSON.stringify(record)]));
   const reviewer = 'control-plane';
   const readVerdict = dependencies.observe;
@@ -1508,9 +1492,12 @@ export async function reconcileReviews(root: string, config: MasterConfig, depen
     // A reservation whose launcher is still starting the runtime is not a session yet; one that
     // never confirmed within the bound belongs to a launcher that died mid-launch.
     if (record.launching) {
-      if (now.getTime() - Date.parse(record.requestedAt) < reviewLaunchReservationMs) continue;
+      const launchingLive = (!record.pane && !!liveRun(record.agentName)) || !!dependencies.agents?.some(a => a.name === record.agentName);
+      if (now.getTime() - Date.parse(record.requestedAt) < (launchingLive ? reviewLaunchReservationMs : reviewNotLiveMs)) continue;
       delete record.launching;
-      await closeReviewSession(root, record, { run: dependencies.run, now: () => now }, { state: 'failed', resolution: `the launch reserved at ${record.requestedAt} never confirmed its runtime started`, force: true });
+      const resolution = `${lostRunReason}: the launch reserved at ${record.requestedAt} never confirmed its runtime started and was not live 2 minutes after launch (${record.agentName}${record.account ? ` on ${record.account}` : ''}); released and relaunched on the next eligible account`;
+      await closeReviewSession(root, record, { run: dependencies.run, now: () => now }, { state: 'failed', resolution, force: true });
+      notLive.push({ key: record.key, sha: record.sha, requestId: record.requestId, id: record.id, agentName: record.agentName, account: record.account, session: record.session, resolution });
       changed++;
       continue;
     }
@@ -1551,9 +1538,14 @@ export async function reconcileReviews(root: string, config: MasterConfig, depen
       // GY-3234: a session gone from Herdr whose registry session is ended too is dead, not idle:
       // no reminder can reach it, so it settles on this pass and its request relaunches on the
       // same tick as a lost run, rather than waiting out the idle grace or the token.
+      // GY-3748: a review session not live 2 minutes after launch is released and relaunched on the next eligible account.
+      const headlessLive = !record.pane && !!liveRun(record.agentName);
       if (!agent && record.session && dependencies.registry && !liveSessions(dependencies.registry).some(session => session.id === record.session))
         failed = `${lostRunReason}: the reviewer ${record.pane ? `pane ${record.pane}` : 'headless run'} (${record.agentName}) exited and its registry session ${record.session} is ended, without a verdict on ${record.sha.slice(0, 12)}; it is relaunched at once`;
-      else if (!agent || ['done', 'idle', 'blocked'].includes(agent.agent_status ?? '')) {
+      else if (!record.pane && !agent && !headlessLive && now.getTime() - Date.parse(record.requestedAt) >= reviewNotLiveMs) {
+        failed = `${lostRunReason}: the reviewer session (${record.agentName}${record.account ? ` on ${record.account}` : ''}) was not live 2 minutes after launch without a verdict on ${record.sha.slice(0, 12)}; released and relaunched on the next eligible account`;
+        notLive.push({ key: record.key, sha: record.sha, requestId: record.requestId, id: record.id, agentName: record.agentName, account: record.account, session: record.session, resolution: failed });
+      } else if (!agent || ['done', 'idle', 'blocked'].includes(agent.agent_status ?? '')) {
         if (!record.idleSince) {
           record.idleSince = now.toISOString(); changed++;
           if (agent && !record.repromptedAt) markReprompted(record, now.getTime());
@@ -1642,7 +1634,7 @@ export async function reconcileReviews(root: string, config: MasterConfig, depen
   // A request the control plane no longer holds open releases its records to the retention window.
   if (dependencies.work) changed += releaseClosedRequests(ledger.reviews, dependencies.work, now);
   if (changed) await saveChangedRecords(root, ledger.reviews, before, dependencies.ledgerLock);
-  return { reviews: changed ? (await readReviewLedger(root)).reviews : ledger.reviews, changed, released };
+  return { reviews: changed ? (await readReviewLedger(root)).reviews : ledger.reviews, changed, released, notLive };
 }
 
 /** Errors under which the existing host lock runs lockless. */

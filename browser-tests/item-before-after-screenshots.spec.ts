@@ -114,7 +114,7 @@ test('e2e:item-before-after-screenshots — the item page shows a browser case\'
       await route.fulfill({ response }).catch(() => {});
     });
     const { code } = await (await fetch(`${plane.url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string };
-    await page.goto('/#sign-in=' + code);
+    await page.goto('/#sign-in=' + code + '&work');
     await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
 
     // The item whose trial ran a browser case: its page shows the case's screenshots side by side.

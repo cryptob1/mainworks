@@ -77,7 +77,7 @@ test('unit:tests/finished-worktree-removal.test.ts — a settled delivery\'s lef
   // Settled deliveries the loop's snapshot no longer holds, one changed 25 h ago and one 1 h ago; a
   // tree made after the snapshot was read; an open item's tree the snapshot does hold; and a foreign directory.
   const oldSettled = tree('GY-9-1', 25), youngSettled = tree('GY-8-2', 1), newer = tree('GY-6-1', -0.1), open = tree('GY-7-1', 25);
-  const foreign = join(worktreesDirectory(root), 'not-graphyard');
+  const foreign = join(worktreesDirectory(root), 'not-mainworks');
   mkdirSync(foreign);
   const openItem = { id: 'GY-7', key: 'GY-7', stage: 'build', lease: null, sessions: [], updatedAt: new Date(now).toISOString(),
     workspaces: [{ host: 'machine-a', epoch: 1, path: open.path, owner: 'worker', branch: 'graphyard/gy-7-1' }] } as unknown as Work;
@@ -94,7 +94,7 @@ test('unit:tests/finished-worktree-removal.test.ts — a settled delivery\'s lef
   assert.equal(existsSync(youngSettled.path), false, 'and so is one changed an hour ago (GY-3691)');
   assert.equal(existsSync(newer.path), true, 'a tree newer than the snapshot waits for the next cycle');
   assert.equal(existsSync(open.path), true, 'an open item\'s tree is the snapshot pass\'s alone, and it keeps it');
-  assert.equal(existsSync(foreign), true, 'a directory Graphyard did not name is never touched');
+  assert.equal(existsSync(foreign), true, 'a directory Mainworks did not name is never touched');
   assert.ok(Object.values(state.actions).some(action => action.kind === 'reclaim' && action.detail.includes('GY-9')), 'the reclaim says which settled item it removed for');
 });
 

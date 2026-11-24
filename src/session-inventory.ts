@@ -8,7 +8,7 @@ export interface SessionInventory {
   sessions: { name: string | null; runtime: string | null; state: string | null; pane: string | null; workspace: string | null; cwd?: string; foregroundCwd?: string; tokens?: Record<string, string> }[];
   available: boolean;
 }
-export async function herdrInventory(run?: ChildRun): Promise<SessionInventory> {
+async function herdrInventory(run?: ChildRun): Promise<SessionInventory> {
   try {
     return { available: true, sessions: (await listHerdrAgents(run)).map(agent => ({ name: agent.name ?? null, runtime: agent.agent ?? null,
       state: agent.agent_status ?? null, pane: agent.pane_id ?? null, workspace: agent.workspace_id ?? null,

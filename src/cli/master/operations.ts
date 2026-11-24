@@ -1,4 +1,4 @@
-// Concern: `graphyard master` operations subcommands — status, the confined master's restart request, dispatch, recover.
+// Concern: `mainworks master` operations subcommands — status, the confined master's restart request, dispatch, recover.
 import { parseArgs } from 'node:util';
 import { resourceConflicts } from '../../coordination.js';
 import { dispatchWork, readWorkerCredential } from '../../master.js';
@@ -15,12 +15,16 @@ import { alignLoopUnit, loopUnitOf, type LoopSupervisorHost } from '../../instal
 import type { ChildRun } from '../../child-runner.js';
 import { masterConfinementVariable } from '../../master/launch.js';
 import { heavyDrainLine, heavyJobsDirectory, requestHeavyDrain, resumeHeavyDrain } from '../../master/verification-slots.js';
+import { setting } from '../../setting.js';
+import { controlPlaneRecordPath, readControlPlaneRecord, updateNowPath } from '../../deploy-watch.js';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 
 /** Whether this command runs inside the master session's confinement (GY-1658): its wrapper sets the variable. */
-export const confinedMaster = (env: NodeJS.ProcessEnv = process.env) => env[masterConfinementVariable] === 'master';
+export const confinedMaster = (env: NodeJS.ProcessEnv = process.env) => setting(masterConfinementVariable, env) === 'master';
 
 /** `master recover`: repin the known-good coordinator (GY-1529). */
-export const recoverUsage = 'Use master recover [--to SHA] [--reason TEXT] --admin-token-stdin (the admin credential on stdin; the pin returns to the previous known-good SHA without --to)';
+const recoverUsage = 'Use master recover [--to SHA] [--reason TEXT] --admin-token-stdin (the admin credential on stdin; the pin returns to the previous known-good SHA without --to)';
 
 /** What `master recover` does outside this process; a test hands in its own so no real unit is touched. */
 export interface RecoverEffects { run: ChildRun; host: LoopSupervisorHost; restart: (unit: string) => Promise<unknown> }
@@ -44,6 +48,15 @@ export async function operationsCommand(session: MasterSession, effects: Recover
   if (id === 'resume') {
     const lifted = resumeHeavyDrain(heavyJobsDirectory());
     return print({ resumed: !!lifted, lifted, detail: lifted ? 'New heavy jobs start again from the next loop cycle, each with all its gates' : 'Heavy work was not drained' });
+  }
+  // GY-3746: the deploy watch takes the waiting newer build on its next pass instead of waiting for a quiet moment.
+  if (id === 'update') {
+    if (args[0] !== 'now') throw new Error('Use master update now');
+    const file = updateNowPath(root);
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, `${new Date().toISOString()}\n`);
+    const waiting = readControlPlaneRecord(controlPlaneRecordPath(root))?.waiting;
+    return print({ requested: true, detail: waiting ? `The deploy watch takes ${waiting.tip.slice(0, 12)} on its next pass` : 'No build is waiting; the deploy watch takes the next newer verified build at once' });
   }
   if (id === 'dispatch') {
     const { positionals } = parseArgs({ args, options: {}, allowPositionals: true });

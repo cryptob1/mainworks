@@ -185,7 +185,7 @@ test('CLI init from a linked worktree shares credentials with siblings and repla
     assert.equal((await stat(join(root,'.graphyard/connection.json'))).mode&0o777,0o600);
     execFileSync('git',['check-ignore','--quiet','.graphyard/connection.json'],{cwd:root});
     await assert.rejects(stat(join(sibling,'.graphyard/connection.json')));
-    assert.match(await readFile(join(first,'AGENTS.md'),'utf8'),/Graphyard coordination/);
+    assert.match(await readFile(join(first,'AGENTS.md'),'utf8'),/Mainworks coordination/);
     assert.equal(JSON.parse(await runCli(sibling,['doctor'],'',env)).connected,true);
     assert.equal(authorization,`Bearer ${secret}`);
   } finally {await new Promise<void>(r=>http.close(()=>r()));await rm(root,{recursive:true,force:true});}

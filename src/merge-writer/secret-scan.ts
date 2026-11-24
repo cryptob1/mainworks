@@ -8,8 +8,8 @@ import type { ChildRun } from '../child-runner.js';
 
 /** Pinned gitleaks release the former `.github/workflows/ci.yml` secrets job used. */
 export const gitleaksVersion = '8.30.1';
-export const gitleaksArchive = `gitleaks_${gitleaksVersion}_linux_x64.tar.gz`;
-export const gitleaksUrl = `https://github.com/gitleaks/gitleaks/releases/download/v${gitleaksVersion}/${gitleaksArchive}`;
+const gitleaksArchive = `gitleaks_${gitleaksVersion}_linux_x64.tar.gz`;
+const gitleaksUrl = `https://github.com/gitleaks/gitleaks/releases/download/v${gitleaksVersion}/${gitleaksArchive}`;
 export const gitleaksSha256 = '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb';
 export const gitleaksIgnorePath = '.github/gitleaksignore.txt';
 
@@ -17,10 +17,10 @@ export const gitleaksIgnorePath = '.github/gitleaksignore.txt';
 export const secretScanCacheDirectory = (managedRoot: string) => resolve(managedRoot, '.secret-scan', `gitleaks-${gitleaksVersion}-${gitleaksSha256.slice(0, 12)}`);
 
 /** How a gitleaks run that reported no findings ended: its status or signal, the runner's own reason, and whether the deadline killed it. */
-export interface SecretScanExecution { status: number | null; signal: string | null; cause?: unknown; timedOut?: boolean }
+interface SecretScanExecution { status: number | null; signal: string | null; cause?: unknown; timedOut?: boolean }
 
 /** gitleaks' exit status when it found leaks (its default `--exit-code`). Any other ending is no verdict. */
-export const gitleaksFindingsStatus = 1;
+const gitleaksFindingsStatus = 1;
 
 /**
  * The scan's answer: a pass, the merge's failure (`detail` holds gitleaks' report), or no verdict —

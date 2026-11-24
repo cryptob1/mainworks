@@ -1,0 +1,14 @@
+{
+  "id": "remote-agent-session",
+  "title": "A worker session runs on an added host and completes its item; master status shows where it ran",
+  "description": "An added host (the real graphyard-host-shim; Docker's stand-in in its read-only-root form, where --tmpfs is memory) is opened to one session with host sessions. The placement picks it for a runtime the worker image holds, never past its count, and never for one the image lacks. The worker run starts as the loop starts it, with the mainworks host session words in place of this machine's confinement: it runs on the host with its account's login handed over in memory, commits, and calls complete, which runs here on that commit. Its run record names the host, which master status serves as remoteSessions.",
+  "tags": ["hosts", "sessions"],
+  "target": "any",
+  "required": true,
+  "steps": [{
+    "kind": "command",
+    "name": "Open a host to sessions, run a worker there to complete, and read where it ran",
+    "run": "node --import tsx tests/helpers/run-tests.ts tests/remote-agent-session.test.ts",
+    "timeoutSeconds": 600
+  }]
+}

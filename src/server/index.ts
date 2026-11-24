@@ -18,6 +18,7 @@ import { delegationRoutes } from './routes/delegation.js';
 import { validationRoutes } from './routes/validation.js';
 import { deliveryRoutes } from './routes/delivery.js';
 import { emblemRoutes } from './routes/emblem.js';
+import { firstRunRoutes } from './routes/first-run.js';
 import { usageRoutes } from './routes/usage.js';
 import { scenarioRoutes } from './routes/scenarios.js';
 import { statusRoutes } from './routes/status.js';
@@ -27,12 +28,13 @@ import { masterMessageRoutes, reporterScope } from './routes/reporter.js';
 import { caretakerRoutes, caretakerScope } from './routes/caretaker.js';
 import { staticRoutes } from './static.js';
 import { terminalUpgrade } from './terminal.js';
+import { queryCaller } from '../store/slow-queries.js';
 export { principalSchema, type Credential } from './principals.js';
 export type { ServerOptions } from './auth.js';
 export { assembleServices } from './auth.js';
 
 /** Routes that answer without a bearer token. */
-export const publicRoutes: readonly RouteModule[] = [healthRoutes, signinRoutes, infraActRoutes];
+const publicRoutes: readonly RouteModule[] = [healthRoutes, signinRoutes, infraActRoutes];
 /**
  * Every authenticated `/api/` route, in matching order. A resource adds its module here;
  * modules ahead of the operator-agent guard authorize their callers themselves.
@@ -40,7 +42,7 @@ export const publicRoutes: readonly RouteModule[] = [healthRoutes, signinRoutes,
 export const apiRoutes: readonly RouteModule[] = [
   operatorAgentRoutes, teamAccessRoutes, infraRoutes,
   { name: 'operator-agent-scope', routes: [operatorAgentRouteGuard] },
-  loopStateRoutes, agentRegistryRoutes, delegationRoutes, validationRoutes, deliveryRoutes, emblemRoutes, usageRoutes, scenarioRoutes, actionRoutes, statusRoutes, workRoutes, productBriefRoutes, homeVisitRoutes, masterMessageRoutes, caretakerRoutes,
+  loopStateRoutes, agentRegistryRoutes, delegationRoutes, validationRoutes, deliveryRoutes, emblemRoutes, usageRoutes, scenarioRoutes, actionRoutes, statusRoutes, workRoutes, productBriefRoutes, homeVisitRoutes, masterMessageRoutes, caretakerRoutes, firstRunRoutes,
 ];
 
 async function body(req: IncomingMessage, limit = 1_000_000) {
@@ -72,7 +74,10 @@ export function server(engine: Engine, credentials: Credential[], options: Serve
         for (const module of modules) for (const route of module.routes) {
           const params = matchRoute(route, req.method, url.pathname);
           if (!params) continue;
-          const result = await route.handle(context, params);
+          // GY-3762: a slow statement names the route, the principal and the command that asked for it.
+          const command = req.headers['x-mainworks-command'];
+          const caller = `${typeof command === 'string' && command ? `${command.slice(0, 60)} via ` : ''}${req.method} ${typeof route.path === 'string' ? route.path : url.pathname}${context.actor.id ? ` as ${context.actor.id}` : ''}`;
+          const result = await queryCaller.run(caller, () => route.handle(context, params));
           if (result === Next) continue;
           if (result !== Sent) send(200, result);
           return true;

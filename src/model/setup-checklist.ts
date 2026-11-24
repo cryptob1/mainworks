@@ -1,16 +1,17 @@
+import { PRODUCT_NAME } from './product.js';
 /**
  * The first-run checklist (GY-1419): what a new installation needs before it can build anything,
- * read live from the control plane's `/api/status`. `graphyard up` waits on it and the dashboard's
+ * read live from the control plane's `/api/status`. `mainworks up` waits on it and the dashboard's
  * Setup page shows it, so both judge one checklist. Every line is plain language: no sha, file path
  * or command.
  */
 
 /** The roles a first installation needs an agent account for: one writes the code, one reviews it. */
-export const requiredSetupRoles = ['worker', 'reviewer'] as const;
-export type RequiredSetupRole = typeof requiredSetupRoles[number];
+const requiredSetupRoles = ['worker', 'reviewer'] as const;
+type RequiredSetupRole = typeof requiredSetupRoles[number];
 
 /** What the one button on a checklist item does. */
-export type SetupAction =
+type SetupAction =
   | { kind: 'link'; label: string; href: string }
   | { kind: 'connect'; label: string; role: RequiredSetupRole }
   | { kind: 'wait'; label: string };
@@ -25,12 +26,12 @@ export interface SetupItem {
   line: string;
   /** The single action that moves it forward; null once it is done. */
   action: SetupAction | null;
-  /** Steps only a person can do (a click on GitHub, an account sign-in); the rest Graphyard does itself. */
+  /** Steps only a person can do (a click on GitHub, an account sign-in); the rest Mainworks does itself. */
   human: boolean;
 }
 
 /**
- * The address `graphyard up` prints (GY-1419): the dashboard's Setup page, signed in. A one-time
+ * The address `mainworks up` prints (GY-1419): the dashboard's Setup page, signed in. A one-time
  * sign-in link (`#sign-in=CODE`, or a host install's `#claim=CODE`) carries `&setup`, so the person
  * who opens it lands on the Setup page once the link signs them in; without a link it is `#setup`.
  */
@@ -75,7 +76,7 @@ export const statusSupervised = (status: any | null) => status?.setup?.supervisi
  * The checklist for STATUS (the control plane's `/api/status` answer, or null while it does not
  * answer). Items stay in the order a new installation completes them. The control plane is the only
  * merge writer (GY-1553): no GitHub App opens pull requests and no reviewer App signs reviews, so
- * the checklist judges accounts and the coordinator alone.
+ * the checklist judges accounts and the loop alone.
  */
 export function setupChecklist(status: any | null): SetupItem[] {
   return accountItems(status);
@@ -111,8 +112,8 @@ function accountItems(status: any | null): SetupItem[] {
   items.push({ id: 'real-app', title: app?.onboarded ? 'Project onboarded' : `Master fault: ${status?.repository ?? 'this project'} is not onboarded`, done: app?.onboarded === true, human: false,
     line: app?.onboarded ? 'The real application and its feature map are declared.' : `${app?.fault?.startsWith('Placeholder serve:') ? 'Placeholder serve: it runs none of the application.' : 'The real serve or feature map is missing.'} The master will fix it.`, action: null });
   const loop = status?.setup?.loop === true;
-  items.push({ id: 'master-loop', title: 'Coordinator running', done: loop, human: false,
-    line: loop ? 'The coordinator is running and will hand out work.' : 'The setup command starts the coordinator on your machine; this turns green once it runs.',
+  items.push({ id: 'master-loop', title: loop ? `${PRODUCT_NAME} is handing out work` : `${PRODUCT_NAME} is starting`, done: loop, human: false,
+    line: loop ? 'Work starts as soon as you ask for it.' : 'The setup command starts it on your machine; this turns green once it runs.',
     action: loop ? null : { kind: 'wait', label: 'Check again' } });
   return items;
 }

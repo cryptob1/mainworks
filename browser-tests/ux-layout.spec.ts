@@ -17,7 +17,7 @@ for (const role of ['reader', 'admin']) for (const width of [390, 1280]) {
       return route.fulfill({ json: boardApi(url.pathname.slice(1) + url.search, role) });
     });
     await page.routeWebSocket(/\/api\/terminal/, () => {});
-    await page.goto('/?sign-in');
+    await page.goto('/?sign-in#work');
     await page.getByLabel('Access token').fill('fixture');
     await page.getByRole('button', { name: 'Open control plane' }).click();
     await expect(page.getByRole('main').getByRole('heading', { level: 1 }).first()).toBeVisible();

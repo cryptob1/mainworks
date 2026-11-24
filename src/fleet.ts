@@ -2,7 +2,7 @@ import { detectLoggedOut, runtimeResetTime } from './master/runtime-prompt.js';
 import { foldObservations } from './model/registry-sessions.js';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { access, readdir, realpath, stat } from 'node:fs/promises';
+import { access, readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { launchRecipe } from './harness.js';
 import { isMiseShim, onSearchPath, realRuntimeBinary } from './runtime-binary.js';
 import { runtimeAdapter, runtimeAdapters, reportedModel, providerUsageErrors, cursorLoginFile, accountHomeEnvironment } from './master/runtimes.js';
@@ -17,10 +17,11 @@ import { planModelUnused, smokeRegistryAccount } from './runner/roles.js';
 import { wrongModel } from './model/account-quota.js';
 import { fleetOrder, roleUnsupported } from './model/worker-preference.js';
 import type { SmokeResult } from './runner/pi.js';
-import { accountIneligibility, lastGoodUsage, deriveAccountPlan, pinnedInstall, fleetRoles, liveSessions, roleLimit, proposedConcurrency, proposedRuntimeRoles, proposedRuntimes, rolePolicy, roleRuntimeKinds, roleRuntimeRefusal, smokeFailureDue, smokeTestedKinds, type AccountKey, type AgentRegistry, type RolePolicy, type FleetAccount, type FleetAccountInput, type FleetModel, type FleetRole, type FleetRoleName, type FleetRuntime, type FleetSession, type LaunchContract, type QuotaObservation, type RunOutcome, type SessionSkip, type SmokeObservation } from './model/registry.js';
+import { accountIneligibility, lastGoodUsage, windowHold, deriveAccountPlan, pinnedInstall, fleetRoles, liveSessions, roleLimit, proposedConcurrency, proposedRuntimeRoles, proposedRuntimes, rolePolicy, roleRuntimeKinds, roleRuntimeRefusal, smokeFailureDue, smokeTestedKinds, type AccountKey, type AgentRegistry, type RolePolicy, type FleetAccount, type FleetAccountInput, type FleetModel, type FleetRole, type FleetRoleName, type FleetRuntime, type FleetSession, type LaunchContract, type QuotaObservation, type RunOutcome, type SessionSkip, type SmokeObservation } from './model/registry.js';
 import { parseProbeFailure } from './model/account-quota.js';
 import { hostAccountCheck, hostAccountUsage, recordHostAccountCheck, recordHostAccountUsage, withHostAccountUsageLock, clearEndedHostAccountSessions, clearHostAccountSession, hostAccountSessions, registerHostAccountSession } from './host-accounts.js';
-export { exhaustionTail, outOfCreditsScreen } from './exhaustion-screen.js';
+import { setting } from './setting.js';
+;
 
 /**
  * The executor's side of the agent registry (GY-91).
@@ -39,7 +40,7 @@ export interface FleetProbe extends EnvironmentProbe { work?: string; /** Which 
   smoke?: (account: FleetLaunchAccount) => Promise<SmokeResult>;
   smokeTimeoutMs?: number }
 /** What Herdr listed on the executor's own host, and whether it could be read at all. */
-export interface RuntimeInventory { agents: { name?: string | null }[]; available: boolean }
+interface RuntimeInventory { agents: { name?: string | null }[]; available: boolean }
 /** The three calls an executor makes. */
 export interface FleetClient {
   document(): Promise<AgentRegistry>;
@@ -61,7 +62,7 @@ export interface FleetLaunchAccount { name: string; kind: string; home: string |
   key?: AccountKey | null; fleet: { runtime: string; contract: LaunchContract; model: string; modelId: string | null; session: string; reason: string;
   role?: FleetRoleName; policy?: RolePolicy; revision?: number } }
 
-export class FleetUnreachableError extends Error {
+class FleetUnreachableError extends Error {
   /** The status and parsed body of the answer that came back, when one did (GY-1895): planeWideRefusal reads them structurally, the way it reads a RefusedResponse — a bare `answered 502` wording matches no plane-wide pattern. */
   constructor(message: string, public status?: number, public body?: unknown) { super(message); }
 }
@@ -70,7 +71,7 @@ export class FleetUnreachableError extends Error {
  * not a fault of any account and not a decision to give up on: the launch waits for a slot, and the
  * loop makes it again on the first cycle after one frees.
  */
-export const roleAtCapacity = (reason: string) => /^role \S+ (?:is at its concurrency limit|already reserved for)\b/.test(reason);
+const roleAtCapacity = (reason: string) => /^role \S+ (?:is at its concurrency limit|already reserved for)\b/.test(reason);
 /** The refusal's reason when `error` is a launch refused for its role's capacity, else null. (A tag, not a subclass: fleet.ts and master.ts import each other.) */
 export const capacityRefusal = (error: unknown): string | null => { const tag = error instanceof Error ? (error as Error & { roleAtCapacity?: unknown }).roleAtCapacity : null; return typeof tag === 'string' ? tag : null; };
 
@@ -80,7 +81,7 @@ export const capacityRefusal = (error: unknown): string | null => { const tag = 
  * account is something a master fixes in one command, and reporting it as spent would read as a
  * wait for a provider reset that never comes.
  */
-export const skipCause = (reason: string): AccountSkipCause =>
+const skipCause = (reason: string): AccountSkipCause =>
   /is not logged in/.test(reason) ? 'logged-out' : /quota is exhausted/.test(reason) ? 'exhausted' : 'unconfigured';
 
 /**
@@ -129,11 +130,11 @@ export function httpFleetClient(config: Required<Pick<FleetConfig, 'url'>> & Pic
 
 // One failed read is not repeated for every launch of the same cycle.
 const unreachable = new Map<string, { at: number; error: FleetUnreachableError }>();
-export const unreachableRetryMs = 30_000;
+const unreachableRetryMs = 30_000;
 
 export type FleetRead = { managed: true; registry: AgentRegistry; client: FleetClient } | { managed: false; reason: string };
 /** Whether the registry decides `role` for this executor, and the registry when it does. */
-export async function readFleet(config: FleetConfig, role: FleetRoleName, probe: FleetProbe = {}): Promise<FleetRead> {
+async function readFleet(config: FleetConfig, role: FleetRoleName, probe: FleetProbe = {}): Promise<FleetRead> {
   if (!probe.registry && (!config.url || !config.hostId)) return { managed: false, reason: 'this configuration names no control plane' };
   const client = probe.registry ?? httpFleetClient({ url: config.url!, credentialFile: config.credentialFile }, probe.fetch ?? fetch, probe.timeoutMs ?? fleetRequestTimeoutMs);
   const now = probe.now?.() ?? Date.now(), failed = probe.registry ? undefined : unreachable.get(config.url!);
@@ -157,7 +158,7 @@ const builtinProbe = (runtime: FleetRuntime): EnvironmentKind | null =>
   : (environmentKinds as readonly string[]).includes(runtime.launch.kind) ? runtime.launch.kind as EnvironmentKind
   : null;
 /**
- * What this host can see of one account's login: Graphyard's own probe for the runtimes it can
+ * What this host can see of one account's login: Mainworks's own probe for the runtimes it can
  * read a login and a quota from, the contract's login file for any other runtime, and nothing
  * (unknown, which is launchable) when the account names no home.
  */
@@ -174,8 +175,8 @@ async function readAccount(account: FleetAccount, runtime: FleetRuntime, probe: 
     // so the smoke test it gets before first selection decides, with Pi's own error (GY-515, GY-1158).
     if (runtime.launch.kind === 'pi' && !health.loggedIn) return { health, quota: { loggedIn: null, state: 'unknown', usage: [], resetsAt: null, reason: null } };
     // A logged-in account that is not ready (its model is unavailable) is held like a logged-out one, with its reason (GY-3414).
-    return { health, quota: { loggedIn: health.loggedIn && health.quota !== 'exhausted' ? health.healthy : health.loggedIn, state: health.loggedIn ? health.quota : 'unknown', usage: health.usage.map(entry => ({ window: entry.window, percent: entry.percent, resetsAt: entry.resetsAt })),
-      resetsAt: health.quota === 'exhausted' ? resets.at(-1) ?? null : null, reason: (health.reason ?? (health.quota === 'unknown' && health.loggedIn ? health.note : null))?.slice(0, 500) ?? null, identity: health.identity, ...health.key ? { key: health.key } : {} } };
+    return { health, quota: { loggedIn: health.loggedIn && health.quota !== 'exhausted' ? health.healthy : health.loggedIn, state: health.loggedIn ? health.quota : 'unknown', usage: health.usage.map(entry => ({ window: entry.window, percent: entry.percent, resetsAt: entry.resetsAt, ...entry.limitList ? { limitList: true } : {} })),
+      resetsAt: health.quota === 'exhausted' ? resets.at(-1) ?? null : null, reason: (health.reason ?? (health.quota === 'unknown' && health.loggedIn ? health.note : null))?.slice(0, 500) ?? null, identity: health.identity, ...health.key ? { key: health.key } : {}, ...health.spend ? { spend: health.spend } : {} } };
   }
   if (!runtime.launch.loginFile) return unknown;
   const file = resolve(home, runtime.launch.loginFile), loggedIn = await access(file).then(() => true, () => false);
@@ -232,7 +233,7 @@ export async function checkAccountLive(account: FleetAccount, runtime: FleetRunt
 }
 
 /** A provider usage read is shared by every install on the host and taken at most once in this interval per login home (GY-3500). */
-export const usageReadIntervalMs = 5 * 60_000;
+const usageReadIntervalMs = 5 * 60_000;
 /** The account's reading, from the host's record when one was taken within the interval on this login and key; otherwise one provider read, written back. */
 async function readAccountShared(account: FleetAccount, runtime: FleetRuntime, probe: FleetProbe, allAccounts: readonly FleetAccount[], model: string | undefined, now: number): Promise<{ quota: QuotaObservation; health: EnvironmentHealth | null }> {
   const home = account.credential.home, key = account.credential.key ?? null;
@@ -256,7 +257,7 @@ export async function observeAccount(account: FleetAccount, runtime: FleetRuntim
   const cached = saved && JSON.stringify(saved.key ?? null) === JSON.stringify(account.credential.key ?? null) ? saved : null;
   // Preserve the confined master's unreadable-home rule: only the host executor can test these logins.
   const home = account.credential.home;
-  if (home && await readdir(home).then(entries => !entries.length && !!process.env[masterConfinementVariable], (error: NodeJS.ErrnoException) => error.code === 'EACCES'))
+  if (home && await readdir(home).then(entries => !entries.length && !!setting(masterConfinementVariable), (error: NodeJS.ErrnoException) => error.code === 'EACCES'))
     return { quota: cached?.quota ?? { loggedIn: null, state: 'unknown', usage: [], resetsAt: null, reason: null }, health: null };
 
   if (!home && account.quota.since && nextLiveCheck(account.quota) > now) {
@@ -271,15 +272,17 @@ export async function observeAccount(account: FleetAccount, runtime: FleetRuntim
   if (cached && !signalled && Date.parse(cached.nextCheck) > now) {
     if (cached.quota.state !== 'available') return { quota: cached.quota, health: null };
     const reading = await readAccountShared(account, runtime, probe, allAccounts, model, now);
-    return { ...reading, quota: { ...cached.quota, usage: lastGoodUsage(account, reading.quota, now), identity: reading.quota.identity } };
+    return { ...reading, quota: windowHold({ ...cached.quota, usage: lastGoodUsage(account, reading.quota, now), identity: reading.quota.identity, ...reading.quota.spend ? { spend: reading.quota.spend } : {} }, ceiling, now) };
   }
   const reading = await readAccountShared(account, runtime, { ...probe, ...(account.quota.loggedIn === false ? { cacheMs: 0 } : {}) }, allAccounts, model, now);
   const usage = lastGoodUsage(account, reading.quota, now);
-  // A usage window at its ceiling, or a reading of exhausted, only asks for the live request; it never holds by itself.
+  // A usage window at its ceiling, or a reading of exhausted, only asks for the live request; a
+  // metering window never holds by itself. A window of the provider's own limit list does hold,
+  // past even a passing request (windowHold, GY-3497): the provider stops sessions on that list.
   const spent = reading.quota.state === 'exhausted' || usage.some(window => window.percent >= ceiling && !!window.resetsAt && Date.parse(window.resetsAt) > now);
   if (cached || signalled || spent || needsSmoke(account, runtime, now))
-    return { ...reading, quota: await checkAccountLive(account, runtime, probe, model, usage, reading.quota.key) };
-  return { ...reading, quota: { ...reading.quota, usage } };
+    return { ...reading, quota: windowHold({ ...await checkAccountLive(account, runtime, probe, model, usage, reading.quota.key), ...reading.quota.spend ? { spend: reading.quota.spend } : {} }, ceiling, now) };
+  return { ...reading, quota: windowHold({ ...reading.quota, usage }, ceiling, now) };
 }
 
 /**
@@ -368,7 +371,7 @@ export async function fleetRoleHealth(config: FleetConfig, role: FleetRoleName, 
 // Setup: discover what the host already has, and propose a registry from it.
 // ---------------------------------------------------------------------------
 
-export interface HostLogin { name: string; runtime: string; home: string | null; loggedIn: boolean | null; quota: EnvironmentHealth['quota']; reason: string | null; login: string | null; source: 'environment' | 'default-home' | 'executable' }
+export interface HostLogin { name: string; runtime: string; home: string | null; loggedIn: boolean | null; quota: EnvironmentHealth['quota']; reason: string | null; login: string | null; source: 'environment' | 'default-home' | 'executable'; /** A login whose credential is a Z.AI key. */ provider?: 'zai' }
 const onPath = (executable: string) => { try { execFileSync('which', [executable], { stdio: 'ignore' }); return true; } catch { return false; } };
 
 /**
@@ -398,7 +401,7 @@ export function pinRuntime(runtime: FleetRuntime, install: (program: string) => 
 /**
  * The agent CLIs already logged in on this host: every isolated environment under the agent
  * environment directory, each runtime's own default login home, and the executables of proposed
- * runtimes that keep their login somewhere Graphyard does not read (reported, never assumed).
+ * runtimes that keep their login somewhere Mainworks does not read (reported, never assumed).
  */
 export async function discoverHostLogins(options: { directory?: string; home?: string; probe?: EnvironmentProbe; executables?: (name: string) => boolean } = {}): Promise<HostLogin[]> {
   // Discovery answers "what is logged in right now": never a cached look, and never the provider.
@@ -418,8 +421,8 @@ export async function discoverHostLogins(options: { directory?: string; home?: s
     // A default home nobody logged in to is not an account; an isolated environment is kept either way.
     if (health.loggedIn) found.push({ name, runtime: kind, home: location, loggedIn: true, quota: health.quota, reason: health.reason, login: null, source: 'default-home' });
   }
-  // A runtime Graphyard has no probe of its own for (Pi) keeps each login in an `<runtime>-<letter>`
-  // environment too; its readiness is only whether the contract's login file exists — never read.
+  // A runtime Mainworks has no probe of its own for (Pi) keeps each login in an `<runtime>-<letter>`
+  // environment too; its readiness is only whether the contract's login file exists.
   for (const location of await runtimeEnvironments(agentEnvironmentRoot(options.directory))) {
     const loggedIn = await access(resolve(location.home, location.runtime.launch.loginFile!)).then(() => true, () => false);
     found.push({ name: location.name, runtime: location.runtime.name, home: location.home, loggedIn, quota: 'unknown', reason: loggedIn ? null : `${location.name} is not logged in`,
@@ -429,6 +432,13 @@ export async function discoverHostLogins(options: { directory?: string; home?: s
   for (const runtime of proposedRuntimes) {
     if ((environmentKinds as readonly string[]).includes(runtime.name) || found.some(entry => entry.runtime === runtime.name) || !has(runtime.launch.kind)) continue;
     found.push({ name: runtime.name, runtime: runtime.name, home: null, loggedIn: null, quota: 'unknown', reason: null, login: runtime.launch.login, source: 'executable' });
+  }
+  // An OpenCode or Pi login holding a Z.AI key is proposed Z.AI's strong model (GY-3705).
+  for (const login of found) {
+    const loginFile = zaiStrongModels[login.runtime] && login.home && proposedRuntimes.find(runtime => runtime.name === login.runtime)?.launch.loginFile;
+    if (!loginFile) continue;
+    const auth = await readFile(resolve(login.home!, loginFile), 'utf8').then(text => JSON.parse(text) as Record<string, unknown>, () => null);
+    if (auth && ['zai-coding-plan', 'zai', 'z.ai'].some(key => key in auth)) login.provider = 'zai';
   }
   return found;
 }
@@ -453,7 +463,7 @@ const loginAlreadyFound = async (found: HostLogin[], kind: EnvironmentKind, loca
   return false;
 };
 
-/** Environment directories of the proposed runtimes Graphyard has no probe of its own for: `pi`, `pi-a`, `pi-b`. */
+/** Environment directories of the proposed runtimes Mainworks has no probe of its own for: `pi`, `pi-a`, `pi-b`. */
 async function runtimeEnvironments(directory: string) {
   const runtimes = proposedRuntimes.filter(runtime => !(environmentKinds as readonly string[]).includes(runtime.name) && runtime.launch.homeVariable && runtime.launch.loginFile);
   let entries: string[];
@@ -467,6 +477,10 @@ async function runtimeEnvironments(directory: string) {
   }
   return found;
 }
+
+/** Z.AI's strong model as each runtime names it. */
+const zaiStrongModels: Partial<Record<string, FleetModel>> = Object.fromEntries([['opencode', 'zai-coding-plan/glm-5.4'], ['pi', 'zai/glm-5.4']].map(([runtime, id]) =>
+  [runtime, { name: `${runtime}-glm-5.4`, id, cost: { inputPerMTok: null, outputPerMTok: null }, capability: { tier: 'strong' as const, contextTokens: null, notes: 'Z.AI\'s strong model' } }]));
 
 export interface FleetProposal { runtimes: FleetRuntime[]; models: FleetModel[]; accounts: FleetAccountInput[]; roles: FleetRole[] }
 /**
@@ -490,10 +504,11 @@ export function proposeFleet(logins: HostLogin[], host: string, current: Pick<Ag
     let name = login.name; for (let suffix = 2; taken.has(name); suffix++) name = `${login.name}-${suffix}`;
     taken.add(name);
     const used = current.accounts.find(account => account.runtime === login.runtime)?.model;
-    accounts.push({ name, runtime: login.runtime, model: used ?? modelName(login.runtime), credential: { host, home: login.home }, enabled: true, maxSessions: null });
+    const zai = login.provider === 'zai' ? zaiStrongModels[login.runtime]?.name : undefined;
+    accounts.push({ name, runtime: login.runtime, model: used ?? zai ?? modelName(login.runtime), credential: { host, home: login.home }, enabled: true, maxSessions: null });
   }
   const models: FleetModel[] = [...new Set(accounts.map(account => account.model))].filter(name => !current.models.some(model => model.name === name))
-    .map(name => ({ name, id: null, cost: { inputPerMTok: null, outputPerMTok: null }, capability: { tier: 'strong' as const, contextTokens: null, notes: 'The account\'s own default model; name the real model, its cost and capability with master registry model set' } }));
+    .map(name => Object.values(zaiStrongModels).find(model => model!.name === name) ?? ({ name, id: null, cost: { inputPerMTok: null, outputPerMTok: null }, capability: { tier: 'strong' as const, contextTokens: null, notes: 'The account\'s own default model; name the real model, its cost and capability with master registry model set' } }));
   const kindOf = (name: string) => runtimes.find(runtime => runtime.name === name)?.launch.kind ?? current.runtimes.find(runtime => runtime.name === name)?.launch.kind ?? null;
   const serves = (account: FleetAccountInput, role: FleetRoleName) => {
     const capability = roleRuntimeKinds[role];
@@ -567,7 +582,7 @@ const smokePrompt = 'Reply with the single word: ok';
 /** The providers Settings › Agents offers, in the order the picker shows them. */
 export const connectProviders: readonly ConnectProvider[] = [
   {
-    id: 'z.ai', label: 'z.ai (GLM coding plan)', kind: 'api-key', runtime: 'opencode', model: 'opencode-default', tier: 'fast',
+    id: 'z.ai', label: 'z.ai (GLM 5.4 plan)', kind: 'api-key', runtime: 'opencode', model: 'opencode-default', tier: 'fast',
     authFile: 'opencode/auth.json',
     // OpenCode's auth entries are a union discriminated on `type`: without `type: 'api'` it
     // discards the entry, so the pasted key would never be used and the smoke would pass on
@@ -583,8 +598,8 @@ export const connectProviders: readonly ConnectProvider[] = [
     authFile: 'auth.json',
     authDocument: (existing, key) => ({ ...existing, zai: { type: 'api_key', key } }),
     // A registry account launches `pi` with no provider flag, so the home names z.ai as its default.
-    settings: { file: 'settings.json', document: existing => ({ ...existing, defaultProvider: 'zai', defaultModel: 'glm-5.3' }) },
-    smoke: { command: 'pi', args: ['-p', '--no-session', '--provider', 'zai', '--model', 'glm-5.3', smokePrompt], envVariable: 'PI_CODING_AGENT_DIR' },
+    settings: { file: 'settings.json', document: existing => ({ ...existing, defaultProvider: 'zai', defaultModel: 'glm-5.4' }) },
+    smoke: { command: 'pi', args: ['-p', '--no-session', '--provider', 'zai', '--model', 'glm-5.4', smokePrompt], envVariable: 'PI_CODING_AGENT_DIR' },
     help: 'Your z.ai coding-plan key, run by the Pi coding agent. Pi accounts join approval and proofs.',
   },
   {
@@ -628,7 +643,7 @@ export const connectProviders: readonly ConnectProvider[] = [
     // desktop keyring the sign-in lands at ACCOUNT_HOME/cursor/auth.json, where a confined session
     // reads it — never in the operator's own ~/.config.
     login: { command: 'agent', args: ['login'], envVariable: 'CURSOR_CONFIG_DIR', env: { NO_OPEN_BROWSER: '1' } }, loginFile: cursorLoginFile,
-    smoke: { command: 'agent', args: ['-p', smokePrompt], envVariable: 'CURSOR_CONFIG_DIR' },
+    smoke: { command: 'agent', args: ['-p', '--trust', smokePrompt], envVariable: 'CURSOR_CONFIG_DIR' },
     help: 'Your Cursor plan. Finish the sign-in in your own browser.',
   },
 ];

@@ -50,5 +50,5 @@ test('unit:tests/one-click-team-access.test.ts — up serves each install on its
   assert.equal(local.reachableUrl, null, 'without Tailscale the install continues on this machine only');
   assert.ok(!local.notes.some(note => /did not finish/.test(note)));
   assert.ok(local.notes.includes(tailscaleMissingNote), 'a host without Tailscale gets one install instruction');
-  assert.match(tailscaleMissingNote, /install Tailscale \(https:\/\/tailscale\.com\/download\).*rerun graphyard up/);
+  assert.match(tailscaleMissingNote, /install Tailscale \(https:\/\/tailscale\.com\/download\).*rerun mainworks up/);
 });

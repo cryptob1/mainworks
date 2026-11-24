@@ -11,30 +11,31 @@ import { cliRelease, recordedCommit, releaseIdentityPath } from '../release.js';
 import { shellQuote } from '../shell-quote.js';
 import { cliCommit } from '../protocol-version.js';
 import { verificationRequest } from './verification-request.js';
+import { setting } from '../setting.js';
 
 /** How long one CLI request waits (2026-09-27: the full work snapshot reached 19 MB and ~31 s, so a 30 s bound failed every read of it, including workers' sync and complete; GY-864 bounds those reads). */
 export const cliRequestTimeoutMs = 120_000;
 /** How long the per-invocation release probe waits for /healthz before the invocation proceeds unread: an unreachable or slow health endpoint is not evidence of skew (GY-1960). */
-export const releaseProbeTimeoutMs = 5_000;
+const releaseProbeTimeoutMs = 5_000;
 const commitPattern = /^[0-9a-f]{40}$/i;
 
 /** The refusal a CLI and a server at different releases name: both releases, and the remedy (GY-1960). */
-export const versionSkewMessage = (cliRelease: string, serverRelease: string) => `CLI ${cliRelease} and server ${serverRelease} differ: run graphyard upgrade`;
+export const versionSkewMessage = (cliRelease: string, serverRelease: string) => `CLI ${cliRelease} and server ${serverRelease} differ: run mainworks upgrade`;
 
 /**
  * The commands a working attempt runs under its lease (GY-2978). A deploy moves the CLI checkout
- * before the server on installs watched at an older Graphyard, and every other command refuses a
+ * before the server on installs watched at an older Mainworks, and every other command refuses a
  * commit difference by name; these proceed instead with a one-line warning, because the wire
  * protocol is checked by the server's own request validation, so a stopped heartbeat, claim,
  * complete, blocked or defer loses an attempt to nothing but the skew.
  */
-export const leaseCommands = new Set(['heartbeat', 'claim', 'complete', 'blocked', 'defer']);
+const leaseCommands = new Set(['heartbeat', 'claim', 'complete', 'blocked', 'defer']);
 
 /** What each side of a CLI request runs: the stamped release version, and the commit an unreleased build runs. */
 export interface ReleaseIdentity { version: string; released: boolean; commit: string | null; unreadable?: string }
 
 /** GY-3317: the refusal of a CLI that can read no release of its own: the file it looked for, and the command that records it. */
-export const unreadableReleaseMessage = (root: string) => {
+const unreadableReleaseMessage = (root: string) => {
   const file = releaseIdentityPath(root);
   return `This CLI cannot read its own release: ${root} is no readable Git checkout and ${file} is missing or invalid; repair it with: ${shellQuote(process.execPath)} ${shellQuote(join(root, 'bin', 'graphyard.mjs'))} upgrade --repair-identity`;
 };
@@ -60,7 +61,7 @@ export function releaseSkew(cli: ReleaseIdentity, server: { version?: unknown; c
   return !cli.released && cli.unreadable ? cli.unreadable : versionSkewMessage(cli.version, serverVersion);
 }
 
-/** This CLI's own release: the same release `graphyard version` reports and /healthz serves (src/release.ts cliRelease), so both sides compare like with like. Its commit is the checkout this file runs from — Git's reading, else the commit every checkout move records (GY-3569), never an older revision. */
+/** This CLI's own release: the same release `mainworks version` reports and /healthz serves (src/release.ts cliRelease), so both sides compare like with like. Its commit is the checkout this file runs from — Git's reading, else the commit every checkout move records (GY-3569), never an older revision. */
 const thisRelease = (): ReleaseIdentity => {
   const release = cliRelease(), root = resolve(fileURLToPath(new URL('../..', import.meta.url)));
   const commit = cliCommit(root) ?? recordedCommit(root) ?? (commitPattern.test(release.revision) ? release.revision.toLowerCase() : null);
@@ -77,7 +78,7 @@ const readServerRelease = async (base: string): Promise<{ version?: unknown; com
   } catch { return null; }
 };
 
-export type Connection = Awaited<ReturnType<typeof loadConnection>>;
+type Connection = Awaited<ReturnType<typeof loadConnection>>;
 
 /**
  * What every command module receives: the parsed invocation, the resolved server and
@@ -89,7 +90,7 @@ export interface CliContext {
   command: string; id: string | undefined; args: string[];
   /** Every argument after the command word, for commands that parse their own flags. */
   rest: string[];
-  /** The Graphyard origin this invocation talks to. */
+  /** The Mainworks origin this invocation talks to. */
   base: string;
   /** The repository's connection file, or null for commands that must never read it. */
   connection: Connection | null;
@@ -113,8 +114,8 @@ export const cliPath = fileURLToPath(new URL('../../bin/graphyard.mjs', import.m
  */
 export async function createContext(command: string, id: string | undefined, args: string[], readsConnection: boolean): Promise<CliContext> {
   let connection: Connection = null;
-  if (readsConnection) try { connection = await loadConnection(process.cwd()); } catch { console.error('Invalid or insecure Graphyard connection file. Inspect local configuration; credential values are omitted.'); process.exit(1); }
-  const base = process.env.GRAPHYARD_URL ?? connection?.url ?? 'http://127.0.0.1:4310';
+  if (readsConnection) try { connection = await loadConnection(process.cwd()); } catch { console.error('Invalid or insecure Mainworks connection file. Inspect local configuration; credential values are omitted.'); process.exit(1); }
+  const base = setting('URL') ?? connection?.url ?? 'http://127.0.0.1:4310';
   let savedToken: string | undefined;
   try { if (connection && new URL(base).origin === connection.url) savedToken = connection.token; } catch { /* request validation reports an invalid URL */ }
   let resolvedToken: string | undefined; let tokenResolved = false;
@@ -136,12 +137,12 @@ export async function createContext(command: string, id: string | undefined, arg
   })();
   const individualToken = async () => {
     if (!tokenResolved) {
-      resolvedToken = process.env.GRAPHYARD_TOKEN_FILE ? await readCredentialFile(resolve(process.env.GRAPHYARD_TOKEN_FILE)) : process.env.GRAPHYARD_TOKEN ?? savedToken;
+      resolvedToken = setting('TOKEN_FILE') ? await readCredentialFile(resolve(setting('TOKEN_FILE')!)) : setting('TOKEN') ?? savedToken;
       tokenResolved = true;
     }
     return resolvedToken;
   };
-  const api = async (path: string, data?: unknown, requestId = process.env.GRAPHYARD_REQUEST_ID ?? randomUUID()) => {
+  const api = async (path: string, data?: unknown, requestId = setting('REQUEST_ID') ?? randomUUID()) => {
     await checkRelease();
     const token = await individualToken();
     if (!token) throw new Error('Set GRAPHYARD_TOKEN to your individual credential');
@@ -187,18 +188,18 @@ export async function createContext(command: string, id: string | undefined, arg
     command, id, args, rest: process.argv.slice(3), base, connection, api,
     print: value => console.log(JSON.stringify(value, null, 2)),
     individualToken,
-    individualHostId: () => hostIdSchema.parse(process.env.GRAPHYARD_HOST_ID ?? connection?.hostId ?? hostname()),
+    individualHostId: () => hostIdSchema.parse(setting('HOST_ID') ?? connection?.hostId ?? hostname()),
     activeCliPath: async () => {
-      const selected = process.env.GRAPHYARD_CLI ?? cliPath;
+      const selected = setting('CLI') ?? cliPath;
       if (!selected.trim()) throw new Error('GRAPHYARD_CLI must name an existing launcher');
       try {
         const path = await realpath(resolve(selected));
         if (!(await stat(path)).isFile()) throw new Error();
         return path;
-      } catch { throw new Error('The active Graphyard CLI launcher is unavailable; select an existing launcher'); }
+      } catch { throw new Error('The active Mainworks CLI launcher is unavailable; select an existing launcher'); }
     },
     // GY-866: a session started in its own checkout is handed the coordinator's root by its launch.
-    repositoryRoot: () => process.env.GRAPHYARD_REPOSITORY_ROOT?.trim() ? resolve(process.env.GRAPHYARD_REPOSITORY_ROOT) : execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim(),
+    repositoryRoot: () => setting('REPOSITORY_ROOT')?.trim() ? resolve(setting('REPOSITORY_ROOT')!) : execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim(),
   };
 }
 

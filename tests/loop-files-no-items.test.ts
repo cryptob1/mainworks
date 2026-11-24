@@ -153,7 +153,7 @@ function tip40() { return sha('basetip'); }
 test('unit:diagnostician-removed-cursor-loads — the loop launches no diagnostician session, and reports no diagnoses', async () => {
   // The role's tool is gone from the Pi integration, and no module launches its sessions.
   const pi = await import('../integrations/pi/index.js');
-  assert.equal('diagnose' in pi.graphyardTools, false, 'graphyard_diagnose is retired');
+  assert.equal('diagnose' in pi.mainworksTools, false, 'graphyard_diagnose is retired');
   // A daemon summary carries no diagnoses section, so no status line can name a diagnostician run.
   const summary = await import('../src/daemon/run.js');
   const state = emptyDaemonState(config());

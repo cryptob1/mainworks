@@ -22,7 +22,8 @@ export { countProofCases };
 
 // ---- The queue (model/merge-queue.ts) ------------------------------------------------------------
 import { baseFailurePrefix, gate, keptTrialAheadOfReview, open, trialAheadOfReviewReason } from '../model/merge-queue.js';
-export { baseFailureHoldMs, baseFailurePrefix, isBaseRepair, isHotfix, mergeQueue, nextToMerge, submittedAtOf, trialAheadOfReviewPrefix, trialAheadOfReviewReason, trialRefusalHeld, keptTrialAheadOfReview, type MergeQueue, type QueuedMerge } from '../model/merge-queue.js';
+import { setting } from '../setting.js';
+export { baseFailureHoldMs, baseFailurePrefix, isBaseRepair, isHotfix, mergeQueue, nextToMerge,  trialAheadOfReviewPrefix, trialAheadOfReviewReason, trialRefusalHeld, keptTrialAheadOfReview,   } from '../model/merge-queue.js';
 
 /** Whether trial results still belong to this implementation and policy. */
 export function mergeCandidateObsolete(current: Work | undefined, selected: Work = current!): string | null {
@@ -65,7 +66,7 @@ export function mergeCandidateHold(current: Work | undefined, selected: Work = c
 // ---- The ledger events the executor records --------------------------------------------------------
 
 /** The per-proof outcome of a trial: how many of the proof's cases ran on the merge commit, and how many failed. */
-export type ProofCounts = Record<string, { executed: number; failed: number; /** GY-3170: why the repository's own runner counted none of its cases. */ reason?: string }>;
+type ProofCounts = Record<string, { executed: number; failed: number; /** GY-3170: why the repository's own runner counted none of its cases. */ reason?: string }>;
 /** The trial's verdict with the files it ran and the counts of every proof the item's criteria name. */
 export interface MergeTrialRun extends TrialRun {
   files: string[]; proofs: ProofCounts; /** The trial checkout left behind when its removal failed (trial.ts TrialCleanupError); the verdict stands. */ leftover?: string;
@@ -110,7 +111,7 @@ export function mergeTrialShots(into: readonly TrialCaseShot[], from: readonly T
   return [...merged.values()].filter(shot => shot.before !== undefined || shot.after !== undefined).slice(0, trialScreenshotCasesMax);
 }
 /** GY-1834: the flake a trial record carries, bounded as the record's schema bounds it: every name `parseFailedTests` keeps (≤ 500 characters) fits. */
-export const trialFlaked = (flaked: { files: readonly string[]; tests: readonly string[] }, at: string): TrialFlaked =>
+const trialFlaked = (flaked: { files: readonly string[]; tests: readonly string[] }, at: string): TrialFlaked =>
   ({ files: flaked.files.slice(0, 100), tests: flaked.tests.slice(0, 100), at });
 /** What `POST /api/work/:id/merge-record` takes: one of the five steps, with its ledger payload. */
 export type MergeRecordEvent =
@@ -168,7 +169,7 @@ export const mergeRecordKey = (work: Pick<Work, 'id'> & { mergeLedger?: Pick<Mer
 /** Whether a record write failed because the server already holds its key with other input: replaying it can never succeed. */
 export const keyReusedRefusal = (error: unknown) => /Idempotency key reused with different input/.test(error instanceof Error ? error.message : String(error));
 
-/** A failed write's HTTP status: the error's own, or the `Graphyard refused PATH (NNN)` its message names; null for a transport failure or a kill. */
+/** A failed write's HTTP status: the error's own, or the `Mainworks refused PATH (NNN)` its message names; null for a transport failure or a kill. */
 export const mergeRecordStatus = (error: unknown) => {
   const status = (error as { status?: unknown } | null)?.status;
   if (typeof status === 'number') return status;
@@ -184,7 +185,7 @@ export const mergeRecordStatus = (error: unknown) => {
  * (`parseFailedTests`, file-level entries left out) and Playwright's `✘ … › FILE:L:C › title` and
  * `1) [project] › FILE:L:C › title` lines, as `FILE › title`.
  */
-export function failingTestNames(log: string): string[] {
+function failingTestNames(log: string): string[] {
   const names = new Set(parseFailedTests(log).filter(name => !/^[\w./-]+\.(?:test|spec)\.[cm]?[jt]sx?$/.test(name)));
   for (const raw of log.split('\n')) {
     const line = raw.replace(ansiEscape, '').trim();
@@ -360,7 +361,7 @@ export const openFlakyItem = (work: readonly Work[], check: string) =>
  * and every failing test file has an open flaky-check item or fails on the base tip too, case for
  * case (`failureIsBase`) where a `note` can record it as a known red. Null when any failure is the candidate's.
  */
-export async function knownFailures(ports: Pick<MergePorts, 'flaky' | 'note'>, run: MergeTrialRun): Promise<{ flaky: { file: string; item: Pick<Work, 'id' | 'key'> }[]; red: string[] } | null> {
+async function knownFailures(ports: Pick<MergePorts, 'flaky' | 'note'>, run: MergeTrialRun): Promise<{ flaky: { file: string; item: Pick<Work, 'id' | 'key'> }[]; red: string[] } | null> {
   if (run.build !== 'pass' || !run.tests.failed.length || run.tests.failed[0] === 'secret-scan' || run.e2e?.some(entry => entry.missing || entry.failingStep)) return null;
   const onBase = !!ports.note && !!run.base && run.base.cases.length > 0 && run.base.cases.every(test => run.base!.tests.includes(test));
   const flaky: { file: string; item: Pick<Work, 'id' | 'key'> }[] = [], red: string[] = [];
@@ -371,6 +372,21 @@ export async function knownFailures(ports: Pick<MergePorts, 'flaky' | 'note'>, r
     else return null;
   }
   return { flaky, red };
+}
+
+/**
+ * GY-3735: each test file that failed a trial and passed its rerun on the same tree is flaky: the open
+ * "Flaky check on main: test:FILE" item gains a note, else the batch gate's item is filed. A filing that
+ * fails never touches the trial's verdict. GY-3759: a file the merge adds (`added`) is absent at the base
+ * tip, so it is the item's own test and nothing is filed for it.
+ */
+async function fileFlakes(ports: Pick<MergePorts, 'flaky' | 'note' | 'fileFlaky'>, run: MergeTrialRun, key: string, mergeSha: string, added: readonly string[]) {
+  for (const file of run.flaked?.files ?? []) {
+    if (added.includes(file)) continue;
+    const check = `test:${file}`, text = `${file} failed in ${key}'s merge trial on ${mergeSha.slice(0, 12)} and passed on its rerun of the same tree. Make it deterministic.`;
+    const open = await ports.flaky?.(check).catch(() => null);
+    await (open ? ports.note?.(open, text, `trial-flaky:${open.key}:${mergeSha}:${file}`) : ports.fileFlaky?.(check, text))?.catch(() => null);
+  }
 }
 
 /** The refusal of a push the remote rejected while the base tip stood still: not a moved tip, so no re-merge; the head stays queued for a later cycle. */
@@ -396,7 +412,7 @@ export const pushInheritedVariables = ['PATH', 'HOME', 'USER', 'LOGNAME', 'LANG'
  * the token is never on disk, in an argument, a URL or a variable — it crosses from gh to git
  * alone, inside the push child.
  */
-export const ghTokenCredentialHelper = `!f() { test "$1" = get && printf 'username=x-access-token\npassword=%s\n' "$(gh auth token)"; }; f`;
+const ghTokenCredentialHelper = `!f() { test "$1" = get && printf 'username=x-access-token\npassword=%s\n' "$(gh auth token)"; }; f`;
 /**
  * The push child's environment (AC-2): the allowlisted variables above, git's global and system
  * configuration off, no terminal prompt, and the one credential: the deploy key as GIT_SSH_COMMAND,
@@ -429,7 +445,7 @@ export const mergeAskpassName = 'merge-writer-askpass';
  * operator's gh login, the explicit https URL of the repository. GRAPHYARD_MERGE_WRITER_GIT_URL replaces that URL for tests.
  */
 export const mergeWriterRemote = (repository: string, credential: { tokenFile?: string; pushAuth?: string } | undefined, environment: NodeJS.ProcessEnv = process.env) =>
-  credential?.tokenFile || credential?.pushAuth ? environment.GRAPHYARD_MERGE_WRITER_GIT_URL || `https://github.com/${repository}.git` : 'origin';
+  credential?.tokenFile || credential?.pushAuth ? setting('MERGE_WRITER_GIT_URL', environment) || `https://github.com/${repository}.git` : 'origin';
 /** `git push origin --force-with-lease=refs/heads/BASE:<baseTip> <mergeSha>:refs/heads/BASE`: the merge commit lands only on the tip it was tested on. */
 export const pushArgs = (base: string, baseTip: string, mergeSha: string, remote = 'origin') => ['push', remote, `--force-with-lease=refs/heads/${base}:${baseTip}`, `${mergeSha}:refs/heads/${base}`];
 /**
@@ -578,7 +594,7 @@ export async function runMergeTrial(input: MergeTrialInput): Promise<MergeTrialR
   // Only the run on the base tip reads counts: attribution reads failing files, so it spends no runner's time.
   const retest = async (sha: string, failing: string[], e2eProofs: readonly string[] = [], counting?: 'count', e2eFrom?: string) => {
     only = failing;
-    try { const rerun = await runTrial({ ...rerunInput, selectFiles, e2eProofs, ...(e2eFrom ? { e2eFrom } : {}), mergeSha: sha, changedFiles: failing, run, reporter, onAttempt: rerunAttempt, ...(counting ? { countProofs } : {}) }); return { run: rerun, tap, proofs: counted() }; }
+    try { const rerun = await runTrial({ ...rerunInput, rerun: true, selectFiles, e2eProofs, ...(e2eFrom ? { e2eFrom } : {}), mergeSha: sha, changedFiles: failing, run, reporter, onAttempt: rerunAttempt, ...(counting ? { countProofs } : {}) }); return { run: rerun, tap, proofs: counted() }; }
     catch (error) { return error instanceof TrialCleanupError && error.verdict ? { run: error.verdict, tap, proofs: counted() } : null; }
   };
   const ownProofFiles = discovered ?? input.proofFiles;
@@ -644,6 +660,9 @@ function rememberBaseTipCheck(tip: string, key: string, entry: BaseTipCheckEntry
   baseTipCheckCache.set(key, entry);
   while (baseTipCheckCache.size > baseTipCheckCacheLimit) baseTipCheckCache.delete(baseTipCheckCache.keys().next().value!);
 }
+/** GY-3735: a test file a trial reruns on its own: TypeScript or JavaScript under tests/. */
+const testFile = /^tests\/[\w./-]+\.test\.[cm]?[jt]s$/;
+
 /**
  * GY-1834: who a trial's failing test files are charged to. A proof file in which one of the item's
  * proof cases failed is never set aside: it stays failing, and so does every proof file of a run
@@ -662,12 +681,12 @@ function rememberBaseTipCheck(tip: string, key: string, entry: BaseTipCheckEntry
  */
 export async function attributeFailures(first: MergeTrialRun, firstTap: string, input: MergeTrialInput, git: ChildRun,
   retest: (sha: string, files: string[]) => Promise<{ run: TrialRun; tap: string } | null>): Promise<MergeTrialRun> {
-  const failed = first.tests.failed.filter(file => /^tests\/[\w./-]+\.test\.ts$/.test(file));
+  const failed = first.tests.failed.filter(file => testFile.test(file));
   if (first.build !== 'pass' || !failed.length || failed.length !== first.tests.failed.length) return first;
   const own = (test: string) => { const proof = leadingProof(test); return !!proof && input.proofs.includes(proof); };
   // A runner's file-level line (`not ok N - tests/x.test.ts`) names the file, not a case: only cases are named.
   // GY-2960: a repository check may leave its cases only on the verdict's logTail when TAP was not injected.
-  const casesOf = (tap: string, fallback = '') => parseFailedTests(tap || fallback).filter(name => !/^tests\/[\w./-]+\.test\.ts$/.test(name));
+  const casesOf = (tap: string, fallback = '') => parseFailedTests(tap || fallback).filter(name => !testFile.test(name));
   const named = casesOf(firstTap, first.logTail);
   // A proof file is held only for a failing proof case of the item in it (or when the run named no case at all):
   // an unrelated case failing beside the proofs, in that file or another proof file, is attributed like any other file's.
@@ -760,7 +779,7 @@ function caseFiles(tap: string, files: readonly string[]): Map<string, string | 
 // ---- One merge, step by step against the ledger ------------------------------------------------------
 
 /** The trial merge of one head onto one tip: the commit to land (the head itself when it fast-forwards the tip, else its merge commit), the files it changes against the tip and which of them it adds or modifies, or the conflicting paths. */
-export type MergeOutcomeOfTrial = { mergeSha: string; files: string[]; addedOrModified?: string[] } | { conflict: string[] };
+type MergeOutcomeOfTrial = { mergeSha: string; files: string[]; addedOrModified?: string[]; /** GY-3759: the files absent at the tip that the merge adds. */ added?: string[] } | { conflict: string[] };
 /** Everything `mergeOne` and `reconcileIntents` touch outside the process: git in the coordinator checkout, the deploy-key push, and the coordinator's ledger. */
 export interface MergePorts {
   baseBranch: string;
@@ -794,6 +813,8 @@ export interface MergePorts {
   onStep?: (step: string, report?: TrialStepReport) => void;
   /** GY-3545: the open "Flaky check on main" item for `check` (`test:FILE`), or null; absent, no failure is excused as flaky. */
   flaky?(check: string): Promise<Pick<Work, 'id' | 'key'> | null>;
+  /** GY-3735: files the batch gate's "Flaky check on main: CHECK" item, or notes the one the fault key already has; absent, a trial's flake is only recorded on its trial. */
+  fileFlaky?(check: string, text: string): Promise<unknown>;
   /** GY-3545: records `text` as a note on `item` under `idempotencyKey`; absent, nothing is noted and a base-tip failure holds the head as before (GY-1834). */
   note?(item: Pick<Work, 'id' | 'key'>, text: string, idempotencyKey: string): Promise<unknown>;
 }
@@ -889,6 +910,7 @@ export async function mergeOne(ports: MergePorts, item: Work): Promise<MergeOutc
       for (const { file, item: flakyItem } of known.flaky) await ports.note?.(flakyItem, `${file} failed in ${item.key}'s merge trial on ${mergeSha.slice(0, 12)}; it has this open flaky item, so ${item.key} was not sent back.`, `trial-flaky:${flakyItem.key}:${mergeSha}:${file}`);
       if (known.red.length) await ports.note?.(item, `Known red: ${known.red.slice(0, 10).join(', ')}${known.red.length > 10 ? ` and ${known.red.length - 10} more` : ''} also fail on main (${baseTip.slice(0, 12)}), so they were not counted against this change.`, `trial-known-red:${mergeSha}`);
     }
+    await fileFlakes(ports, run, item.key, mergeSha, merged.added ?? []);
     // GY-1834: a flake rides on the trial record, refused or not, so it is durable before anything else happens.
     const flaked = run.flaked ? trialFlaked(run.flaked, at()) : null;
     await ports.record(item, { kind: 'trial', head, baseTip, mergeSha, outcome: 'verdict', build: run.build, tests: { ...recordedTests(run.tests), ...(run.slowest ? { slowest: run.slowest } : {}) }, files: run.files, proofs: run.proofs, durationMs: run.durationMs,
@@ -1005,7 +1027,7 @@ export function mergeBatches(items: readonly Work[]): Work[][] {
  * own trial fails is sent back, with that trial's reason. A second half whose first half landed whole holds
  * the same tree that just failed, so it is split without a trial of its own.
  */
-export async function mergeBatch(ports: MergePorts, items: readonly Work[], onStep?: (index: number, step: string, report?: TrialStepReport) => void, knownFailing = false): Promise<HeadResult[]> {
+async function mergeBatch(ports: MergePorts, items: readonly Work[], onStep?: (index: number, step: string, report?: TrialStepReport) => void, knownFailing = false): Promise<HeadResult[]> {
   const stepOf = (index: number) => onStep ? { onStep: (step: string, report?: TrialStepReport) => onStep(index, step, report) } : {};
   if (items.length === 1) {
     try { return [{ work: items[0]!, outcome: await mergeOne({ ...ports, ...stepOf(0) }, items[0]!) }]; }
@@ -1030,12 +1052,12 @@ async function trialBatch(ports: MergePorts, items: readonly Work[], onStep?: (i
     const opening = ports.holdOpening ? await ports.holdOpening(item) : ports.hold ? await ports.hold(item) : null;
     if (opening) return null;
   }
-  const merges: { head: string; baseTip: string; mergeSha: string; files: string[]; addedOrModified: string[] }[] = [];
+  const merges: { head: string; baseTip: string; mergeSha: string; files: string[]; addedOrModified: string[]; added: string[] }[] = [];
   let tip = baseTip;
   for (const item of items) {
     const head = item.candidate!.sha.toLowerCase(), merged = await ports.merge(head, tip, item);
     if ('conflict' in merged) return null;
-    merges.push({ head, baseTip: tip, mergeSha: merged.mergeSha, files: merged.files, addedOrModified: merged.addedOrModified ?? [] });
+    merges.push({ head, baseTip: tip, mergeSha: merged.mergeSha, files: merged.files, addedOrModified: merged.addedOrModified ?? [], added: merged.added ?? [] });
     tip = merged.mergeSha;
   }
   const files = [...new Set(merges.flatMap(merge => merge.files))];
@@ -1045,6 +1067,7 @@ async function trialBatch(ports: MergePorts, items: readonly Work[], onStep?: (i
   // A feature or bug head whose every proof already passes on the base proves nothing: the batch splits, so its own trial refuses it.
   const notReproduced = items.some(item => { const own = [...criterionProofs(item), ...e2eProofsOf(item)]; return item.type !== 'chore' && own.length && own.every(proof => run.passingOnBase?.includes(proof)); });
   if (notReproduced || trialFailureReason({ run }) || requiredProofFailure(together, run) || items.some((item, index) => featureCaseFailure(item, merges[index]!.addedOrModified))) return null;
+  await fileFlakes(ports, run, keys.join(', '), tip, merges.flatMap(merge => merge.added));
   const results: HeadResult[] = [];
   for (const [index, item] of items.entries()) {
     const { head, baseTip: base, mergeSha } = merges[index]!, own = new Set([...criterionProofs(item), ...e2eProofsOf(item)]);

@@ -34,6 +34,7 @@ import { writeProjectMemory, recordedMasterMemory } from '../project-memory.js';
 import { mergeCandidateHold, mergeOpeningHold, openFlakyItem } from '../merge-writer/executor.js';
 import { mergeRecordKey, mergeWriterReads } from './cycle-merge-writer.js';
 import { runServedPreviewCases } from '../merge-writer/served-previews.js';
+import { runOnboardingTime } from '../onboarding-time.js';
 import { postAlert } from './delivery-alerts.js';
 import { readServeRecord, serveRecordPath } from '../serve-app.js';
 import type { RelandInput } from '../merge-writer/serve-revert.js';
@@ -50,18 +51,19 @@ import { refusedBodyDetail, type DaemonEffects } from './effects.js';
 import { composeServer } from './compose-recovery.js';
 import { leftoverDisk, pathsBytes } from './leftovers.js';
 import { cpuCelsius } from './cpu-pressure.js';
-import { repairCliStamp, servedCliRelease, sweepCliReleases } from '../install/cli-release.js';
+import { cliReleasePath, repairCliStamp, servedCliRelease, sweepCliReleases } from '../install/cli-release.js';
 import { declarationSlot, heavyJobLimit, heavyJobsDirectory, heldSlots, readHeavyDrain, writeMachines } from '../master/verification-slots.js';
 import { collectUsage } from '../usage-capture.js';
-import { upstreamFiler } from './control-plane.js';
+import { fileFlakyCheck, upstreamFiler } from './control-plane.js';
 import { trialRunsDirectory } from '../merge-writer/trial-run.js';
 import { deployRecordPath, readDeployRecord } from '../deploy-watch.js';
-import { graphyardVolumes, reclaimGraphyardLeftovers, reclaimJobLeftovers, stopOrphanTrialContainers, trialContainerMaxAgeMs } from './disk-headroom.js';
+import { mainworksVolumes, measureDiskUseByKind, reclaimMainworksLeftovers, reclaimJobLeftovers, stopOrphanTrialContainers, trialContainerMaxAgeMs } from './disk-headroom.js';
 import { dataDirectory } from '../install/worktree-root.js';
 import { durableTemporaryRoot, trialCheckoutRoots } from '../merge-writer/trial.js';
 import { warmCommitOnHosts } from '../merge-writer/remote-shards.js';
 import { installDirectory, readInstallRecord } from '../install/secrets.js';
 import { installIdFor } from '../install/types.js';
+import { eventStageBackfill } from './event-stage-backfill.js';
 
 /** Effects bound to the real coordinator process; `config` may be a live source the loop reloads. */
 export function daemonEffects(root: string, source: MasterConfig | (() => MasterConfig), deps: {
@@ -90,7 +92,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     const response = await fetcher(`${config.url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(body), signal: AbortSignal.timeout(30_000) });
     const text = await response.text();
     let result: any; try { result = JSON.parse(text); } catch { result = response.ok ? undefined : { text: text.slice(0, 200) }; }
-    if (!response.ok) throw new RefusedResponse(`Graphyard refused ${path} (${response.status}): ${refusedBodyDetail(result)}`, response.status, result);
+    if (!response.ok) throw new RefusedResponse(`Mainworks refused ${path} (${response.status}): ${refusedBodyDetail(result)}`, response.status, result);
     return result;
   };
   const rework: DaemonEffects['rework'] = (work, reason, binding) => asOperatorAgent(`work/${work.id}/rework`, { reason, previousWorkerStopped: true, ...(binding ? { binding } : {}) });
@@ -203,8 +205,9 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     },
     sweepCheckouts: () => sweepManagedCheckouts(root, current()),
     stopOrphanedProcesses: () => stopOrphansOfRemovedWorktrees(workingCopyRoots()),
-    diskVolumes: () => graphyardVolumes([root, dataDirectory(), worktreeRoot(root, current()), ...trialCheckoutRoots(), durableTemporaryRoot()]),
-    reclaimDisk: () => reclaimGraphyardLeftovers(run),
+    diskVolumes: () => mainworksVolumes([root, dataDirectory(), worktreeRoot(root, current()), ...trialCheckoutRoots(), durableTemporaryRoot()]),
+    diskUseByKind: () => measureDiskUseByKind({ worktrees: workingCopyRoots(), trialRuns: [trialRunsDirectory(root)], cliReleases: [dirname(cliReleasePath(installDirectory(installIdFor(current().repository)), 'x'))] }, run),
+    reclaimDisk: () => reclaimMainworksLeftovers(run),
     // GY-3553: the readings that clear environment blockers, the stamp repair, and the unblock itself.
     repairCliStamp: () => repairCliStamp(installDirectory(installIdFor(current().repository))),
     environmentReadings: async () => {
@@ -244,6 +247,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     // GY-3188: hourly, so the builder and Docker are not asked every cycle.
     reclaimJobLeftovers: async () => { if (Date.now() - leftoversSweptAt < 3_600_000) return []; leftoversSweptAt = Date.now(); return reclaimJobLeftovers(run); },
     usage: master => collectUsage(root, current(), master),
+    backfillEventStage: eventStageBackfill(limit => mutate('events/backfill-stage', { limit }, randomUUID())),
     // GY-3334: hourly, like the job leftovers: the walk reads /proc and every release copy.
     sweepCliReleases: async () => {
       if (Date.now() - releasesSweptAt < 3_600_000) return { removed: [], bytes: 0, left: [] };
@@ -297,15 +301,19 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     // live configuration names that identity, like the rework beside it.
     get mergeWriter() { const config = current();
       const reads = mergeWriterReads(config, root, run, { base: worktreeRoot(root, config), hold: async work => { const snapshot = await deps.snapshot(); return mergeCandidateHold(snapshot.work.find(item => item.id === work.id), work, snapshot.work); }, holdOpening: async work => mergeOpeningHold((await deps.snapshot()).work.find(item => item.id === work.id), work), record: (work, event) => mutate(`work/${work.id}/merge-record`, event, mergeRecordKey(work, event)) });
+      const createWork = current().operatorAgent ? (input: RelandInput, idempotencyKey: string) => asOperatorAgent('work', input, idempotencyKey) : undefined;
+      const note = (item: Pick<Work, 'id' | 'key'>, text: string, key: string) => mutate(`work/${item.id}/request`, { type: 'note', reason: text }, key);
       return { ...reads,
         ensureTrialImage: () => ensureTrialImage(),
         // GY-3545: a merge trial's failure of a test with an open flaky-check item is noted on that item as the coordinator.
         flaky: async (check: string) => openFlakyItem((await deps.snapshot()).work, check),
-        note: (item: Pick<Work, 'id' | 'key'>, text: string, key: string) => mutate(`work/${item.id}/request`, { type: 'note', reason: text }, key),
+        note,
+        // GY-3735: a merge trial's flake files the batch gate's flaky-check item.
+        fileFlaky: async (check: string, text: string) => fileFlakyCheck({ ...reads, createWork, note }, config.repository, (await deps.snapshot()).work, check, text),
         serveRecord: async () => { const record = readServeRecord(serveRecordPath(root)); return record?.commit ? { commit: record.commit, check: record.check ?? null } : null; },
-        ...(current().operatorAgent ? { createWork: (input: RelandInput, idempotencyKey: string) => asOperatorAgent('work', input, idempotencyKey),
+        ...(createWork ? { createWork,
           attest: (work: Work, proof: string, reason: string, idempotencyKey: string) => asOperatorAgent(`work/${work.id}/evidence`, intentInput('attest', work, { proof, reason }), idempotencyKey) } : {}),
-        gate: { root, repository: config.repository, previews: (commit: string) => runServedPreviewCases({ root, commit }), warmImage: (commit: string) => warmCommitOnHosts({ root, commit, run }) },
+        gate: { root, repository: config.repository, previews: (commit: string) => runServedPreviewCases({ root, commit }), onboarding: (commit: string) => runOnboardingTime({ root, commit }), warmImage: (commit: string) => warmCommitOnHosts({ root, commit, run }) },
       };
     },
     adoptRuns: loopRunAdoption(root, current, deps.fetcher),

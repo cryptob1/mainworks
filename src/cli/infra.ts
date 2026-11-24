@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { defineCommands, type CliCommand } from './registry.js';
 import type { CliContext } from './context.js';
-import { asRecordedOperator } from './session-commands.js';
+import { stateDirectory } from '../install/layout.js';
 
 /**
  * GY-3515: scoped infra access. The owner approves one repository and one hosting project; the
@@ -12,12 +12,12 @@ import { asRecordedOperator } from './session-commands.js';
  * (mode 0600, never printed), and creates and pushes the repository and creates the hosting project
  * and its environments through the control plane, which records each call.
  */
-const usage = 'Usage: graphyard infra approve OWNER/NAME --project NAME [--from OLD] | take | repo create OWNER/NAME | repo push OWNER/NAME [DIR] | project create NAME | env create PROJECT ENV | log';
-export const infraCredentialFile = (root: string) => join(root, '.graphyard', 'infra-credential');
+const usage = 'Usage: mainworks infra approve OWNER/NAME --project NAME [--from OLD] | take | repo create OWNER/NAME | repo push OWNER/NAME [DIR] | project create NAME | env create PROJECT ENV | log';
+const infraCredentialFile = (root: string) => join(stateDirectory(root), 'infra-credential');
 
 async function act(context: CliContext, body: Record<string, unknown>) {
   let token: string;
-  try { token = JSON.parse(await readFile(infraCredentialFile(context.repositoryRoot()), 'utf8')).token; } catch { throw new Error('No infra credential here: run graphyard infra take once the owner approves the task.'); }
+  try { token = JSON.parse(await readFile(infraCredentialFile(context.repositoryRoot()), 'utf8')).token; } catch { throw new Error('No infra credential here: run mainworks infra take once the owner approves the task.'); }
   const response = await fetch(`${context.base.replace(/\/+$/, '')}/api/infra/act`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const answer = await response.json() as { error?: string };
   if (!response.ok) throw new Error(answer.error ?? `The control plane answered ${response.status}`);
@@ -33,6 +33,7 @@ export const infraCommands = defineCommands([{
     const { values, positionals } = parseArgs({ args: [context.id ?? '', ...context.args].filter(Boolean), allowPositionals: true, options: { project: { type: 'string' }, from: { type: 'string' } } });
     const [verb, noun, a, b] = positionals;
     if (verb === 'approve' && noun && values.project) {
+      const { asRecordedOperator } = await import('./session-commands.js');
       await asRecordedOperator(context.repositoryRoot());
       return context.print(await context.api('infra/approvals', { repository: noun, project: values.project, ...(values.from ? { from: values.from } : {}) }));
     }
@@ -41,7 +42,7 @@ export const infraCommands = defineCommands([{
       const file = infraCredentialFile(context.repositoryRoot());
       await mkdir(join(file, '..'), { recursive: true });
       await writeFile(file, JSON.stringify({ token, repository, project }), { mode: 0o600 });
-      return context.print({ repository, project, next: `Create it: graphyard infra repo create ${repository}` });
+      return context.print({ repository, project, next: `Create it: mainworks infra repo create ${repository}` });
     }
     if (verb === 'log') return context.print(await context.api('infra/actions'));
     if (verb === 'repo' && noun === 'create' && a) return context.print(await act(context, { action: 'repo.create', repository: a }));

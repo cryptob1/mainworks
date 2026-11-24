@@ -1,5 +1,5 @@
 // GY-3412: hosts for remote shard runs. Every host runs the real graphyard-host-shim, exactly as
-// `graphyard host prepare` installs it, in its own home; only Docker is a stand-in, keeping its images
+// `mainworks host prepare` installs it, in its own home; only Docker is a stand-in, keeping its images
 // and containers in a state file, logging each call, and running a container's command in its working
 // directory — under `unshare -cn` (no network, nonroot as `--user 1000:0`) when it was created with --network=none, and with a
 // read-only root (bubblewrap) on a host whose Docker state holds a `read-only-root` file. This machine
@@ -19,7 +19,7 @@ import { hostShimScript } from '../../src/host-shim.js';
 const executable = async (path: string, text: string) => { await writeFile(path, text); await chmod(path, 0o755); };
 
 /** A Docker CLI keeping its state under `state`. */
-export const dockerStandIn = (state: string) => `#!/usr/bin/python3
+const dockerStandIn = (state: string) => `#!/usr/bin/python3
 import fcntl, hashlib, io, json, os, re, shutil, subprocess, sys, tarfile
 STATE = ${JSON.stringify(state)}
 args = sys.argv[1:]
@@ -199,7 +199,7 @@ elif command == 'create':
         env['GRAPHYARD_WARM_DIR'] = warm_dir
         if os.path.isdir(os.path.join(warm_dir, 'compile-cache')) and 'NODE_COMPILE_CACHE' not in env:
             env['NODE_COMPILE_CACHE'] = os.path.join(warm_dir, 'compile-cache')
-    if os.path.exists(os.path.join(STATE, 'read-only-root')):
+    if '--read-only' in args and os.path.exists(os.path.join(STATE, 'read-only-root')):
         # Docker's --read-only, for a host that asks: only the container's tmpfs and bind mounts are writable.
         isolate = ['bwrap', '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc'] + (['--unshare-net'] if isolate else [])
         for flag, value in zip(args, args[1:]):
@@ -266,7 +266,7 @@ const identity = { GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@exampl
 export const git = (root: string, ...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
 
 /** A repository whose test runner runs the files its list names, writes one record per file (a file named `fails` fails), and prints the checkout's commit count. */
-export const shardRunner = `import { readFileSync, appendFileSync } from 'node:fs';
+const shardRunner = `import { readFileSync, appendFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 const at = name => process.argv[process.argv.indexOf(name) + 1];
 const files = readFileSync(at('--files-from'), 'utf8').split('\\n').filter(Boolean);
@@ -311,7 +311,7 @@ const freePort = () => new Promise<number>((resolve, reject) => { const server =
 
 /**
  * A real OpenSSH server on 127.0.0.1 for this user, whose only key may run the shim with `home` as the
- * host's own folder and `hostBin` (its Docker) first on PATH (restrict,command=…, as `graphyard host prepare` writes it), and an `ssh` on `bin`
+ * host's own folder and `hostBin` (its Docker) first on PATH (restrict,command=…, as `mainworks host prepare` writes it), and an `ssh` on `bin`
  * that reaches it as USER@127.0.0.1 with that key. `kill` drops the host mid-run.
  */
 export async function sshdHost(root: string, shim: string, home: string, hostBin: string, bin: string) {

@@ -72,7 +72,7 @@ test('unit:fresh-worktree-settings-warning — the launcher names Claude Code\'s
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-test('unit:generated-rules-claude-accepts — every rule Graphyard writes for a Claude Code session is one Claude Code takes, and the empty-source refspec is still denied', () => {
+test('unit:generated-rules-claude-accepts — every rule Mainworks writes for a Claude Code session is one Claude Code takes, and the empty-source refspec is still denied', () => {
   assert.match(claudeRuleProblem('Bash(git push * :**)')!, /must be at the end/);
   assert.match(claudeRuleProblem('Bash(:*)')!, /prefix cannot be empty/);
   assert.equal(claudeRuleProblem('Bash(git push:*)'), null);

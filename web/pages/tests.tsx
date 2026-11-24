@@ -7,7 +7,7 @@ import type { EnvironmentRow } from '../../src/app-environments';
 import { EmptyState, PageHeader } from '../components/page-layout';
 
 /** Each result in words and a mark; a skip is its own state and never reads as a pass. */
-export const resultLabel: Record<string, { mark: string; word: string; tone: string }> = {
+const resultLabel: Record<string, { mark: string; word: string; tone: string }> = {
   pass: { mark: '✓', word: 'passed', tone: 'pass' }, fail: { mark: '×', word: 'failed', tone: 'fail' }, skipped: { mark: '◌', word: 'skipped', tone: 'skipped' },
   'not-run': { mark: '○', word: 'not run yet', tone: 'none' }, 'no-pr': { mark: '○', word: 'no pull request yet', tone: 'none' }, never: { mark: '○', word: 'never run', tone: 'none' },
   'not-written': { mark: '○', word: 'not written yet', tone: 'none' },
@@ -17,13 +17,13 @@ const day = (at: string) => new Date(at).toLocaleString();
 const Commit = ({ sha }: { sha: string }) => <Term term="commit"><span className="mono">{sha.slice(0, 8)}</span></Term>;
 const Pr = ({ pr }: { pr: number | null }) => pr ? <> · <Term term="pull request">PR</Term> #{pr}</> : null;
 /** Where a run came from: its commit, pull request, item and its lane's own run identity. */
-export const RunLine = ({ run }: { run: CaseRun }) => run.e2e ? <E2eRunLine run={run} e2e={run.e2e}/> : <>
+const RunLine = ({ run }: { run: CaseRun }) => run.e2e ? <E2eRunLine run={run} e2e={run.e2e}/> : <>
   <Result result={run.result}/> <Commit sha={run.sha}/><Pr pr={run.pr}/> · {run.workKey}
   {' · '}{run.run.url
     ? <a href={run.run.url} target="_blank" rel="noopener noreferrer">{run.run.kind} run {run.run.id.slice(0, 12)}{run.run.attempt ? ` attempt ${String(run.run.attempt).slice(0, 8)}` : ''} ↗</a>
     : <>{run.run.kind} run {run.run.id.slice(0, 12)}{run.run.attempt ? ` attempt ${String(run.run.attempt).slice(0, 8)}` : ''}</>}
   {run.scenarioRevision ? ` · v${run.scenarioRevision}` : ''} · {run.executed} executed / {run.skipped} skipped · {run.producer} · {day(run.at)}{run.withdrawn ? <strong className="amber"> · withdrawn</strong> : null}</>;
-/** A `graphyard e2e run` of a repository case: the target it ran against, how long it took, and the step that failed. */
+/** A `mainworks e2e run` of a repository case: the target it ran against, how long it took, and the step that failed. */
 const E2eRunLine = ({ run, e2e }: { run: CaseRun; e2e: NonNullable<CaseRun['e2e']> }) => <>
   <Result result={run.result}/> {run.sha === 'unknown' ? 'unreported commit' : <Commit sha={run.sha}/>} on {run.environment}
   {' · '}e2e run {run.run.id.slice(0, 40)} · {e2e.baseUrl}{run.scenarioRevision ? ` · v${run.scenarioRevision}` : ''} · {(e2e.durationMs / 1000).toFixed(1)} s · {run.producer} · {day(run.at)}
@@ -36,7 +36,7 @@ type OpenItem = ((id: string) => void) | undefined;
 const Link = ({ link, openItem }: { link: ProofLink; openItem: OpenItem }) => <div className="proof-item">
   <a href={`#${link.key}`} onClick={event => { if (openItem) { event.preventDefault(); openItem(link.id); } }}><span className="mono">{link.key}</span> {link.title}</a>
   {link.criteria.map(criterion => <small key={criterion.id} className="proof-criterion">{criterion.id}: {criterion.text}</small>)}</div>;
-export const LinkedWork = ({ links, openItem }: { links: TrackedCase['links']; openItem?: OpenItem }) => {
+const LinkedWork = ({ links, openItem }: { links: TrackedCase['links']; openItem?: OpenItem }) => {
   if (!links.length) return <span className="muted">none</span>;
   const newest = [...links].reverse(), rest = newest.slice(linkedShown);
   return <>{links.length > 1 && <>{links.length} items</>}
@@ -72,7 +72,7 @@ const lastWords: Record<string, string> = { passed: 'passed', failed: 'failed', 
  * used and its last run; the lifecycle, waits and cleanup folded. The tests themselves always run on
  * this host. Since GY-3485 the whole block sits in the page's Details fold.
  */
-export function WhereTestsRun({ environments }: { environments: EnvironmentRow[] }) {
+function WhereTestsRun({ environments }: { environments: EnvironmentRow[] }) {
   const named = environments.filter(row => row.lifecycle);
   return <details className="panel more-details"><summary>Details</summary><section className="where-tests-run" aria-label="Where tests run"><h3>Where tests run</h3>
     <p className="muted">Where the app under test runs. The test runner itself always runs on this host.</p>
@@ -205,7 +205,7 @@ function CoverageGrid({ cases, categories, columns, filter, setFilter }: { cases
     })}</tr>)}</tbody></table>;
 }
 
-export function MatrixView({ cases, filter, setFilter, collapsed, toggle, openItem, showHistory }: { cases: TrackedCase[]; filter: MatrixFilter; setFilter(filter: MatrixFilter): void; collapsed: ReadonlySet<string>; toggle(category: string): void; openItem: OpenItem; showHistory?(id: string): void }) {
+export function MatrixView({ cases, filter, setFilter, collapsed, toggle, openItem, showHistory, viewChips }: { cases: TrackedCase[]; filter: MatrixFilter; setFilter(filter: MatrixFilter): void; collapsed: ReadonlySet<string>; toggle(category: string): void; openItem: OpenItem; showHistory?(id: string): void; viewChips?: React.ReactNode }) {
   const ran = matrixColumns.filter(column => cases.some(entry => entry.matrix?.[column]));
   const columns = filter.column === 'all' ? ran : [filter.column];
   const required = filter.required ?? 'all';
@@ -218,12 +218,11 @@ export function MatrixView({ cases, filter, setFilter, collapsed, toggle, openIt
   return <>
     <p className="matrix-summary" data-summary="">{inCategory.length} {inCategory.length === 1 ? 'case' : 'cases'} · {inCategory.filter(entry => entry.e2e?.required).length} required · {states.filter(state => state === 'pass').length} passing · {states.filter(state => state === 'fail').length} failing · {states.filter(state => state === 'none').length} not run{filter.column === 'all' ? '' : ` in ${places[filter.column].label}`}</p>
     {grouped && <CoverageGrid cases={kept} categories={categories} columns={ran} filter={filter} setFilter={setFilter}/>}
-    <details className="matrix-help"><summary>How this works</summary><p>Trial is the merge trial, which runs an item's bound cases against its candidate merged onto main before it lands. Main is the batch gate, which runs the merged batch's cases on main's tip before anything serves it, and Served is a <code>graphyard e2e run</code> against the release this install serves. Nightly is the daily full run of every case on the last verified commit, which never blocks a merge.</p></details>
-    <div className="case-filters" role="group" aria-label="Filter the matrix">
+    <details className="matrix-help"><summary>How this works</summary><p>Trial is the merge trial, which runs an item's bound cases against its candidate merged onto main before it lands. Main is the batch gate, which runs the merged batch's cases on main's tip before anything serves it, and Served is a <code>mainworks e2e run</code> against the release this install serves. Nightly is the daily full run of every case on the last verified commit, which never blocks a merge.</p></details>
+    <div className="case-filters" role="group" aria-label="Filter the matrix">{viewChips}
       <Chip on={filter.failing} onClick={() => setFilter({ ...filter, failing: !filter.failing })}>Only failing</Chip>
-      {(['all', 'required', 'optional'] as const).map(value => <Chip key={value} on={required === value} onClick={() => setFilter({ ...filter, required: value })}>{value === 'all' ? 'Required and optional' : value === 'required' ? 'Required' : 'Optional'}</Chip>)}</div>
-    {grouped && <div className="case-filters" role="group" aria-label="Category">{['all', ...categories].map(category => <Chip key={category} on={filter.category === category} onClick={() => setFilter({ ...filter, category })}>{category === 'all' ? 'Every category' : category}</Chip>)}</div>}
-    <div className="case-filters" role="group" aria-label="Where it runs">{(['all', ...ran] as const).map(column => <Chip key={column} on={filter.column === column} onClick={() => setFilter({ ...filter, column })}>{column === 'all' ? 'Every place' : places[column].label}</Chip>)}</div>
+      {(['required', 'optional'] as const).map(value => <Chip key={value} on={required === value} onClick={() => setFilter({ ...filter, required: required === value ? 'all' : value })}>{value === 'required' ? 'Required' : 'Optional'}</Chip>)}
+      {(filter.category !== 'all' || filter.column !== 'all') && <Chip on onClick={() => setFilter({ ...filter, category: 'all', column: 'all' })}>{filter.category === 'all' ? 'Every category' : filter.category} in {filter.column === 'all' ? 'every place' : places[filter.column].label} ×</Chip>}</div>
     {rows.length ? <table className="sessions-table test-matrix" aria-label="Where each case runs">
       <thead><tr><th scope="col">Case</th>{columns.map(column => <th key={column} scope="col" title={places[column].place}>{places[column].label}</th>)}</tr>
         <tr className="matrix-totals"><th scope="row">All cases</th>{columns.map(column => <td key={column} data-column={column}>{tally(rows.map(entry => entry.matrix?.[column]))}</td>)}</tr></thead>
@@ -252,20 +251,22 @@ export function TestsView({ data, error, loading, filter, setFilter, item = '', 
   const [visible, unbuilt] = [shown.filter(entry => !notBuilt(entry)), shown.filter(notBuilt)];
   const [visibleProofs, unbuiltProofs] = [proofs.filter(proof => proof.record || !inBacklog([proof.link])), proofs.filter(proof => !proof.record && inBacklog([proof.link]))];
   const count = (id: Filter) => { const f = filters.find(entry => entry.id === id)!; return cases.filter(f.keep).length + manual.filter(f.keepProof).length; };
-  const total = cases.length + manual.length, failing = count('fail'), flaky = count('flaky');
+  // GY-3559: the headline counts failing cases exactly as the matrix summary does, over the same cases.
+  const matrixCases = cases.filter(entry => !notBuilt(entry));
+  const total = cases.length + manual.length, failing = matrixCases.filter(entry => caseState(entry, matrixColumns) === 'fail').length, flaky = count('flaky');
+  const viewChips = ([['matrix', 'Where each case runs'], ['cases', 'By item and criterion']] as const).map(([id, label]) =>
+    <button key={id} type="button" className={view === id ? 'chip active' : 'chip'} aria-pressed={view === id} onClick={() => setTestsView(id)}>{label}</button>);
   return <section className="tests-page" aria-label="Tests">
     <PageHeader title="Tests" fact={data ? total ? `${failing ? `${failing} failing` : 'Nothing failing'}${flaky ? ` · ${flaky} flaky` : ''} · ${total} ${total === 1 ? 'proof' : 'proofs'} tracked.` : 'Nothing is tested yet.' : error ? 'Tests could not be read.' : 'Reading tests…'}
       actions={canEdit && setView && <button type="button" onClick={() => setView('scenarios')}>Define test cases</button>}/>
     {error && <div role="alert" className="notice danger">{error} <button type="button" disabled={loading} onClick={retry}>Retry loading tests</button>{data ? <p>Previously loaded results are shown; they may be stale.</p> : null}</div>}
     {loading && !data && <p role="status">Loading tests…</p>}
-    {data && !cases.length && !manual.length && <EmptyState title="No test cases yet.">Add a case as <code>e2e/cases/ID.json</code> in the repository, register it with <code>graphyard e2e sync</code>, and <code>graphyard e2e run</code> records its runs here.</EmptyState>}
-    {(cases.length > 0 || manual.length > 0) && <div className="case-filters" role="group" aria-label="View">{([['matrix', 'Where each case runs'], ['cases', 'By item and criterion']] as const).map(([id, label]) =>
-      <button key={id} type="button" className={view === id ? 'chip active' : 'chip'} aria-pressed={view === id} onClick={() => setTestsView(id)}>{label}</button>)}</div>}
-    {view === 'matrix' && (cases.length > 0 || manual.length > 0) && <Matrix cases={cases.filter(entry => !notBuilt(entry))} filter={matrix} setFilter={setMatrix} openItem={openItem} showHistory={() => setTestsView('cases')}/>}
+    {data && !cases.length && !manual.length && <EmptyState title="No test cases yet.">Add a case as <code>e2e/cases/ID.json</code> in the repository, register it with <code>mainworks e2e sync</code>, and <code>mainworks e2e run</code> records its runs here.</EmptyState>}
+    {view === 'matrix' && (cases.length > 0 || manual.length > 0) && <Matrix cases={matrixCases} filter={matrix} setFilter={setMatrix} openItem={openItem} showHistory={() => setTestsView('cases')} viewChips={viewChips}/>}
     {view === 'cases' && (cases.length > 0 || manual.length > 0) && <>
-      <div className="case-filters" role="group" aria-label="Filter test cases">{filters.map(f => <button key={f.id} type="button" className={filter === f.id ? 'chip active' : 'chip'} aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>{f.label} <span className="count">{count(f.id)}</span></button>)}
+      <div className="case-filters" role="group" aria-label="Filter test cases">{viewChips}{filters.map(f => <button key={f.id} type="button" className={filter === f.id ? 'chip active' : 'chip'} aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>{f.label} <span className="count">{count(f.id)}</span></button>)}
         <input type="search" aria-label="Filter by item" placeholder="Filter by item" value={item} onChange={event => setItem(event.target.value)}/></div>
-      <p className="muted">Failing first. Flaky: passed and failed on the same commit, or changed result twice or more in its last {data!.window} runs. Pass rate is over those runs. Skipped runs count as neither. E2E cases live in <code>e2e/cases/</code>; <code>graphyard e2e run</code> records their runs.</p>
+      <p className="muted">Failing first. Flaky: passed and failed on the same commit, or changed result twice or more in its last {data!.window} runs. Pass rate is over those runs. Skipped runs count as neither. E2E cases live in <code>e2e/cases/</code>; <code>mainworks e2e run</code> records their runs.</p>
       {visible.length > 0 && <CaseTable cases={visible} label="Test cases" api={api} openItem={openItem}/>}
       {unbuilt.length > 0 && <details className="unbuilt-proofs"><summary>{folded(unbuilt.length)}</summary><CaseTable cases={unbuilt} label="Test cases of items not built yet" api={api} openItem={openItem}/></details>}
       {!shown.length && <p className="muted">No test case matches this filter.</p>}

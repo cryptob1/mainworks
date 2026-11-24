@@ -4,7 +4,7 @@
 // stage and delivery stay as they are, and no other item waits on a taste. `good` records the look.
 // `send-back` files the note as a follow-up item — the note is its reason — in the same transaction,
 // beside a proposed master lesson carrying the note (on the follow-up's `origin`), which the master
-// keeps (`graphyard master lesson add`) or drops by recording nothing.
+// keeps (`mainworks master lesson add`) or drops by recording nothing.
 import { admin, demand, isDelivered, type Taste, type Work } from '../../model.js';
 import { open as openCreated } from './create.js';
 import type { Ctx } from './types.js';
@@ -12,7 +12,7 @@ import type { Ctx } from './types.js';
 /**
  * The follow-up one send-back files, worded like a post-merge review's (model/post-merge-review.ts):
  * a bug at priority 1 whose reason is the note, reusing the delivered item's E2E cases beside its
- * own unit proof — legacy Graphyard items with no E2E proof use create-work-item.
+ * own unit proof — legacy Mainworks items with no E2E proof use create-work-item.
  */
 export function tasteFollowUp(delivered: Pick<Work, 'key' | 'title' | 'policy'> & Partial<Pick<Work, 'criteria'>>, note: string, by: string, at: string) {
   const e2e = delivered.criteria?.flatMap(criterion => criterion.proofs).filter(proof => proof.startsWith('e2e:')) ?? [];
@@ -20,7 +20,7 @@ export function tasteFollowUp(delivered: Pick<Work, 'key' | 'title' | 'policy'> 
     title: `Taste send-back of ${delivered.key}: ${note}`.slice(0, 200),
     why: 'The owner tasted this delivery and asked for the change its note names.',
     simplest: 'A follow-up item reuses the delivery loop rather than reopening the merge.',
-    description: `Sent back from the Work page's Taste feed by ${by} at ${at}. The note is this item's reason:\n\n${note}\n\nProposed master lesson carrying the note — keep it with \`graphyard master lesson add "${note.slice(0, 280)}"\` or drop it by recording nothing.`,
+    description: `Sent back from the Work page's Taste feed by ${by} at ${at}. The note is this item's reason:\n\n${note}\n\nProposed master lesson carrying the note — keep it with \`mainworks master lesson add "${note.slice(0, 280)}"\` or drop it by recording nothing.`,
     type: 'bug' as const, priority: 1, summary: `Sent back from Taste: ${note}`.slice(0, 400), dependencies: [], systemDriven: true,
     criteria: [{ id: 'AC-1', text: `The send-back note is addressed: ${note}`.slice(0, 2000), proofs: ['unit:taste-follow-up', ...(e2e.length ? [...new Set(e2e)] : ['e2e:create-work-item'])] }],
     policy: { checks: delivered.policy?.checks ?? ['test', 'typecheck'], review: true },

@@ -48,7 +48,7 @@ const call = async (bearer: string, method: 'GET' | 'POST', path: string, body?:
   return parsed;
 };
 const reload = async (id: string): Promise<Work> => call(token(operator.id), 'GET', `work/${id}`);
-/** The real `graphyard master` subcommand, authenticated as the loop's operator-agent identity. */
+/** The real `mainworks master` subcommand, authenticated as the loop's operator-agent identity. */
 const master = (id: string, ...args: string[]) => runAutonomyCommand(checkout, config, id, args, {
   coordinator: path => call(token(coordinator.id), 'GET', path), readSecret: async () => '', agents: () => [], daemonLock: async () => null });
 const lapse = (id: string) => store.pool.query(`UPDATE work_items SET document=jsonb_set(document, '{lease,expiresAt}', to_jsonb($2::text)) WHERE id=$1`, [id, new Date(Date.now() - 1000).toISOString()]);

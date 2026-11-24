@@ -11,7 +11,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // Real SSH from a user namespace: root-owned system includes look foreign, but the trial's
 // generated config still resolves its user alias, port and key and reaches the restricted shim.
 test('integration:remote-ssh-confined — shards reach the shim with foreign-owned system includes; a remote failure survives in master status', { timeout: 180_000 }, async () => {
-  const image = 'graphyard-trial:confined-ssh';
+  const image = 'mainworks-trial:confined-ssh';
   const hosts = await shardHosts('remote-ssh-confined', ['loopback'], { [image]: `sha256:${'98f889ed5f9e'.repeat(6).slice(0, 64)}` });
   const server = await sshdHost(hosts.root, hosts.shim, hosts.home('loopback'), join(hosts.root, 'hosts', 'loopback', 'bin'), hosts.bin);
   await writeFile(join(hosts.bin, 'ssh'), '#!/bin/sh\nexec /usr/bin/ssh "$@"\n');

@@ -94,7 +94,7 @@ export async function writeProviderAuthFile(provider: ConnectProvider, home: str
  * chosen here: never one a `pi-<letter>` directory holds, nor one an `opencode-<letter>` account's
  * research wrapper points its Pi directory at. The exclusive mkdir is what claims it.
  */
-export async function createPiHome(root: string, name?: string | null): Promise<{ name: string; home: string }> {
+async function createPiHome(root: string, name?: string | null): Promise<{ name: string; home: string }> {
   await mkdir(root, { recursive: true, mode: 0o700 });
   if (name && /^pi-[a-z]$/.test(name) && existsSync(resolve(root, name))) return { name, home: resolve(root, name) };
   const taken = new Set((await discoverAgentEnvironments(root)).filter(entry => entry.kind === 'opencode').map(entry => entry.name.slice('opencode-'.length)));

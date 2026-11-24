@@ -13,7 +13,7 @@ const settled = { timeout: 15_000 };
 
 /** A control plane as a compose container runs it: no herdr on its PATH or in its home, and the stub herdr only on the "host" (this process). */
 async function containerServer(site: string) {
-  await symlink(resolve('.graphyard/browser-dist'), join(site, 'dist'));
+  await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
   const database = await signInDatabase();
   const child = fork(resolve('tests/helpers/terminal-server.ts'), [database.url, site], { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
     env: { ...process.env, PATH: join(site, 'empty'), HOME: site, GRAPHYARD_HERDR_CONFIG_HOME: '', GRAPHYARD_HERDR_SESSION: '' } });
@@ -35,7 +35,7 @@ test('e2e:master-page-compose-install — a server with no herdr streams the mas
   // the server fork, sign-in and terminal handshake follow it; like every database-booting spec it carries
   // a budget that load cannot eat.
   test.setTimeout(90_000);
-  const site = await mkdtemp(join(tmpdir(), 'graphyard-compose-terminal-'));
+  const site = await mkdtemp(join(tmpdir(), 'mainworks-compose-terminal-'));
   process.env.PATH = `${stub}${delimiter}${process.env.PATH}`; process.env.HERDR_STUB_LOG = join(site, 'herdr.log');
   process.env.GRAPHYARD_HERDR_CONFIG_HOME = ''; process.env.GRAPHYARD_HERDR_SESSION = '';
   const server = await containerServer(site), stopping = new AbortController();

@@ -99,7 +99,7 @@ test('e2e:opencode-model-preservation — an explicit glm-5.3 account selection 
   assert.ok(!registryLaunchArgs(launchAccount()).includes('--model'), 'OpenCode never sees --model: the TUI refuses it (GY-3118)');
   assert.equal(registryHeadlessLaunch(launchAccount()).model, glmId, 'a headless run receives the same concrete id');
 
-  // Fleet refresh, which is also the install/upgrade accounts step (`graphyard up` runs this
+  // Fleet refresh, which is also the install/upgrade accounts step (`mainworks up` runs this
   // writer): discovery proposes only logins the registry does not hold, so nothing is rewritten.
   const writesBefore = written.length;
   const refresh = await registryArgs('propose', '--directory', directory, '--apply', '--reason', 'fleet refresh') as { applied: boolean; next: string };

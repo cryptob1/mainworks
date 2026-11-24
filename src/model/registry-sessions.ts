@@ -1,7 +1,7 @@
 import { PRODUCT_NAME } from './product.js';
 import type { Work } from './work.js';
 import { fleetRoles, rolePolicy, roleRuntimeRefusal } from './registry.js';
-import { exhaustionEvidence, foldObservation, utcClock } from './account-quota.js';
+import { allowanceHold, exhaustionEvidence, foldObservation, utcClock } from './account-quota.js';
 import type { AccountSmoke, AgentRegistry, FleetAccount, FleetModel, FleetRefusal, FleetRoleName, FleetRuntime, FleetSession, ObservedQuota, RolePolicy, RunOutcome, SelectionRequest, SessionSkip } from './registry.js';
 import { accountProvider, busyDifferentProvider, sameProviderFallback, sharedProviderSkip, type ReviewDiversity } from './review-diversity.js';
 import { workerOrder, planSpreadOrder, fleetOrder, roleUnsupported } from './worker-preference.js';
@@ -13,8 +13,12 @@ import { allowanceSentence } from './allowance.js';
  * action runs on, and the view status and the dashboard show. Everything here is pure over the
  * registry document; src/agent-registry.ts runs it inside the coordination transaction.
  */
-export const sessionHistoryLimit = 100, refusalHistoryLimit = 20;
-export const launchGraceMs = 5 * 60_000, reviewSessionMs = 2 * 3_600_000, producerSessionMs = 24 * 3_600_000, sessionCapMs = 48 * 3_600_000;
+const sessionHistoryLimit = 100;
+export const refusalHistoryLimit = 20;
+export const launchGraceMs = 5 * 60_000;
+const reviewSessionMs = 2 * 3_600_000;
+const producerSessionMs = 24 * 3_600_000;
+const sessionCapMs = 48 * 3_600_000;
 type SessionWork = Pick<Work, 'key' | 'lease' | 'autoDispatch' | 'stage'> & Partial<Pick<Work, 'sessions'>>;
 /**
  * Whether a recorded session still occupies its account, and why not when it does not. Nothing
@@ -127,7 +131,11 @@ export function accountIneligibility(registry: AgentRegistry, account: FleetAcco
   if (account.smoke?.result === 'fail' && !(options.expiredSmokeRetestable && pi && smokeFailureDue(account, now))) return `${account.name} failed its smoke test${account.smoke.reason ? `: ${account.smoke.reason}` : ''}; it is tested again after ${smokeRetestMs / 60_000} minutes, or at once when the account is changed (master registry account set)`;
   if (account.quota.state === 'broken' && account.quota.reason?.startsWith('ran on ')) return `${account.name} is broken: it ${account.quota.reason}; checked again within 30 minutes`;
   if (account.quota.state === 'broken') return `${account.name} is broken: its live request failed${account.quota.reason ? ` (${account.quota.reason})` : ''}; checked again within 30 minutes`;
-  if (exhaustionEvidence(account.quota, now)) return `${account.name} quota is exhausted${until(account.quota.resetsAt)}${account.quota.reason ? ` (${account.quota.reason})` : ''}`;
+  if (exhaustionEvidence(account.quota, now)) {
+    // A limit-list window's sentence already names its window and reset: one plain sentence, nothing twice (GY-3497).
+    if (allowanceHold.test(account.quota.reason ?? '')) return `${account.name} quota is exhausted: ${account.quota.reason}`;
+    return `${account.name} quota is exhausted${until(account.quota.resetsAt)}${account.quota.reason ? ` (${account.quota.reason})` : ''}`;
+  }
   const running = liveSessions(registry).filter(session => session.account === account.name).length;
   // GY-3333: sessions other installs on this host hold on the same login home count toward the
   // account's own limit — one home serves at most its maxSessions sessions across every install.
@@ -142,9 +150,10 @@ export function accountIneligibility(registry: AgentRegistry, account: FleetAcco
  * that role on it ended without a result (GY-446): a run that dies unjudged twice in a row is the
  * account failing, not the item, so the loop falls through to the role's next account.
  */
-export const unjudgedRunLimit = 2, unjudgedHoldMs = 3_600_000;
+const unjudgedRunLimit = 2;
+export const unjudgedHoldMs = 3_600_000;
 /** Why an account is kept from one role right now, or null. */
-export function roleIneligibility(account: FleetAccount, role: FleetRoleName, now: number): string | null {
+function roleIneligibility(account: FleetAccount, role: FleetRoleName, now: number): string | null {
   const held = account.unjudged?.[role];
   if (!held?.until || Date.parse(held.until) <= now) return null;
   return `${account.name} is held from ${role} until ${held.until}: ${unjudgedRunLimit} consecutive ${role} runs on it ended without a result${held.reason ? ` (last: ${held.reason})` : ''}`;
@@ -203,7 +212,7 @@ export function foldObservations(registry: AgentRegistry, request: Pick<Selectio
 }
 
 /** A usage window that resets within the hour with at least 30% of it unused (GY-3197): quota its account loses unless a session spends it now. */
-export function expiringWindow(account: FleetAccount, now: number) {
+function expiringWindow(account: FleetAccount, now: number) {
   return account.quota.usage.find(usage => usage.resetsAt && Date.parse(usage.resetsAt) > now && Date.parse(usage.resetsAt) - now <= 3_600_000 && usage.percent <= 70) ?? null;
 }
 /** The highest share any of an account's unreset usage windows shows (GY-3498); null with no reading. */
@@ -214,7 +223,7 @@ function highestWindow(account: FleetAccount, now: number): number | null {
 /** At this share of its highest window an eligible account trails the role's accounts with room left (GY-3498). */
 const nearAllowance = 80;
 /** A choice past the role's own accounts (GY-3092): the role, the fleet account that serves it, and why each of the role's own was passed over. */
-export interface RoleFailover { role: FleetRoleName; account: string; reason: string }
+interface RoleFailover { role: FleetRoleName; account: string; reason: string }
 export interface SessionChoice { account: FleetAccount; runtime: FleetRuntime; model: FleetModel; policy: RolePolicy; reason: string; skipped: SessionSkip[]; failover: RoleFailover | null }
 export interface SessionRefusal { account: null; reason: string; skipped: SessionSkip[] }
 /**
@@ -267,20 +276,30 @@ export function chooseSession(registry: AgentRegistry, request: Pick<SelectionRe
     // GY-3333: the live sessions other installs on this host hold on the account count toward its limit.
     const foreign = request.hostSessions?.filter(entry => entry.account === name) ?? [];
     // An unsupported runtime stored before the refusal existed is passed over with its reason, never launched.
-    const refusal = request.exclude?.includes(name) ? `${name} already failed to start a session under this dispatch` : account ? accountIneligibility(registry, account, now, request.host, { hostSessions: foreign }) ?? roleIneligibility(account, role.name, now) ?? roleRuntimeRefusal(registry, account, role.name) ?? roleUnsupported(registry, role, name) : `${name} is not a registered account`;
-    const differs = !!diverse && !!account && accountProvider(registry, account) !== diverse.provider;
+    const isBuilder = !!diverse?.account && name === diverse.account;
+    const refusal = request.exclude?.includes(name) ? `${name} already failed to start a session under this dispatch`
+      : isBuilder && !diverse?.provider ? `${name} built ${diverse!.work}`
+      : account ? accountIneligibility(registry, account, now, request.host, { hostSessions: foreign }) ?? roleIneligibility(account, role.name, now) ?? roleRuntimeRefusal(registry, account, role.name) ?? roleUnsupported(registry, role, name) : `${name} is not a registered account`;
+    const differs = !!diverse?.provider && !!account && accountProvider(registry, account) !== diverse.provider;
     if (refusal) {
       skipped.push({ account: name, reason: refusal });
       if (differs) others.push({ account: name, reason: refusal });
       if (differs && account!.maxSessions !== null && !accountIneligibility(registry, { ...account!, maxSessions: null }, now, request.host) && !roleIneligibility(account!, role.name, now) && !roleRuntimeRefusal(registry, account!, role.name)) busy.push({ account: name, reason: refusal });
       continue;
     }
-    if (diverse && !differs) { const skip = sharedProviderSkip(name, diverse); skipped.push(skip); shared.add(skip); fallback ??= { account: account!, index: order.indexOf(name), skip }; continue; }
+    if (diverse?.provider && !differs) {
+      const skip = sharedProviderSkip(name, diverse);
+      skipped.push(skip);
+      shared.add(skip);
+      if (!isBuilder) fallback ??= { account: account!, index: order.indexOf(name), skip };
+      continue;
+    }
+    if (isBuilder) { skipped.push({ account: name, reason: `${name} built ${diverse!.work}` }); continue; }
     const window = expiring.get(name), soon = window && order.indexOf(name) > 0 ? `; chosen first: its ${window.window} window resets at ${window.resetsAt} with ${100 - window.percent}% unused` : '';
     const room = near.size && !near.has(name) ? `; chosen for room left: ${[...near].map(([other, peak]) => `${other} at ${peak}%`).join(', ')} of its allowance trail${near.size === 1 ? 's' : ''}` : '';
-    return chosen(account!, order.indexOf(name), skipped, `${soon}${room}${diverse ? ` on provider ${accountProvider(registry, account!)}, not the implementer's ${diverse.provider}` : ''}`);
+    return chosen(account!, order.indexOf(name), skipped, `${soon}${room}${diverse?.provider ? ` on provider ${accountProvider(registry, account!)}, not the implementer's ${diverse.provider}` : ''}`);
   }
-  if (diverse && busy.length) return { account: null, skipped, reason: busyDifferentProvider(role.name, diverse, busy) };
+  if (diverse?.provider && busy.length) return { account: null, skipped, reason: busyDifferentProvider(role.name, diverse, busy) };
   for (const list of [skipped, others, busy]) list.sort((first, second) => { const a = order.indexOf(first.account), b = order.indexOf(second.account); return (a < 0 ? 1 : 0) - (b < 0 ? 1 : 0) || a - b; }); // the skips read in the role's own preference order, whatever the plan spread made of the trial, a fleet account that served no role trailing (GY-2943, GY-3092)
   if (fallback) return chosen(fallback.account, fallback.index, skipped.filter((entry, at) => at < skipped.indexOf(fallback!.skip) || !shared.has(entry)), `; ${sameProviderFallback(diverse!, others)}`);
   return { account: null, skipped, reason: `no eligible account for ${role.name}: ${skipped.map(entry => entry.reason).join('; ')}` };
@@ -304,6 +323,8 @@ export interface FleetAccountView {
   allowance?: string;
   /** Why an unknown account shows no usage, in the probe's words: `this key reports no allowance` (GY-3495). */
   usageNote?: string | null;
+  /** GY-3497: the extra-usage line the provider's answer gave when spend is enabled (`extra usage on: $3.21 of $10.00 used`); shown, never changed. */
+  spend?: string | null;
   /** The hold's `resetsAt` is the bounded unknown-reset window, not a reset the provider named (GY-3302). */
   resetUnknown?: boolean;
   eligible: boolean;
@@ -351,6 +372,7 @@ export function fleetView(registry: AgentRegistry, now: number, host: string | n
       quota: evidence ? 'exhausted' : account.quota.state === 'exhausted' ? 'unknown' : account.quota.state, evidence, loggedIn: account.quota.loggedIn, usage: account.quota.usage.map(({ readAt, ...usage }) => readAt ? { ...usage, lastRead: `last read ${utcClock(readAt)}` } : usage), resetsAt: account.quota.resetsAt, observedAt: account.quota.observedAt, checkedLive: account.quota.since ?? null, reason: account.quota.state === 'available' ? null : account.quota.reason, quotaSource: account.quota.source, resetUnknown: account.quota.session === 'guessed',
       allowance: allowanceSentence(account.quota.usage, now),
       usageNote: !evidence && account.quota.state !== 'available' && !account.quota.usage.length ? account.quota.reason : null,
+      spend: account.quota.spend ?? null,
       eligible: !ineligible, ineligible, smoke: account.smoke ?? null,
       held: fleetRoles.flatMap(role => { const reason = roleIneligibility(account, role, now); return reason ? [{ role, reason }] : []; }) };
   });
@@ -365,7 +387,7 @@ export function fleetView(registry: AgentRegistry, now: number, host: string | n
   });
   const unassigned = accounts.filter(account => !account.roles.length).map(account => `${account.name} serves no role; name it in a role or remove it`);
   const missing = registry.accounts.length ? fleetRoles.filter(name => !registry.roles.some(role => role.name === name)).map(name => name === 'master' || name === 'caretaker'
-    ? `role ${name} is not configured; the durable loop launches no ${name} session until graphyard master registry role set ${name} ACCOUNT[,ACCOUNT…] --reason REASON names its accounts`
+    ? `role ${name} is not configured; the durable loop launches no ${name} session until mainworks master registry role set ${name} ACCOUNT[,ACCOUNT…] --reason REASON names its accounts`
     : `role ${name} is not configured; its sessions launch from local profiles until it is`) : [];
   const plans = groupAccountsByPlan({ accounts: registry.accounts }, now);
   return { revision: registry.revision, updatedAt: registry.updatedAt, configured: registry.roles.length > 0, host, runtimes: registry.runtimes, models: registry.models, accounts, roles, plans,

@@ -1,8 +1,9 @@
+import { setting } from './setting.js';
 /**
  * Generated files: paths whose content is derived from other files by a script (the docs
  * indexes `scripts/check-docs.mjs --write` renders) and verified current by CI, never hand-merged.
  * No work item owns them, so the regression guard classifies a candidate that regenerates one as
- * `generated` rather than as an out-of-scope rewrite, and `graphyard sync` resolves a merge
+ * `generated` rather than as an out-of-scope rewrite, and `mainworks sync` resolves a merge
  * conflict in one by regenerating it.
  *
  * The control plane learns the set from `GRAPHYARD_GENERATED_FILES`, a comma-separated list of
@@ -27,5 +28,5 @@ export function parseGeneratedFiles(value: string | undefined): string[] {
  * regression guard is also bundled into the dashboard (through the model's gate evaluation),
  * where no process environment exists and no file is generated.
  */
-export const configuredGeneratedFiles = (env: NodeJS.ProcessEnv = typeof process === 'undefined' ? {} : process.env) => parseGeneratedFiles(env.GRAPHYARD_GENERATED_FILES);
+export const configuredGeneratedFiles = (env: NodeJS.ProcessEnv = typeof process === 'undefined' ? {} : process.env) => parseGeneratedFiles(setting('GENERATED_FILES', env));
 

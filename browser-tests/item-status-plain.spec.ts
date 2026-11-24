@@ -22,7 +22,7 @@ function tasks(now: number) {
     item(204, 'Board groups sort by age', { stage: 'build', stageEnteredAt: at(-20 * minute), exclusiveResources: [file],
       lease: { owner: 'worker-a', epoch: 1, expiresAt: at(hour) }, lastAssignment: { owner: 'worker-a', epoch: 1, displayName: 'Juniper', runtime: 'Claude' } }),
     item(205, 'Rename the Lead page', { stage: 'build', stageEnteredAt: at(-30 * minute), hold: true, heldBy: master,
-      holdReason: 'Waits for the GY-3600 redesign to land. Then release it with graphyard ready GY-205.' }),
+      holdReason: 'Waits for the GY-3600 redesign to land. Then release it with mainworks ready GY-205.' }),
   ];
 }
 
@@ -37,7 +37,7 @@ async function open(page: Page, width: number) {
     if (/\/work\/[^/]+$/.test(path)) return route.fulfill({ json: work.find(item => path.endsWith(item.id) || path.endsWith(item.key)) });
     return route.fulfill({ json: [] });
   });
-  await page.goto('/?sign-in');
+  await page.goto('/?sign-in#work');
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible();

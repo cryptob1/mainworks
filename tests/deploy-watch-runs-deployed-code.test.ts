@@ -68,12 +68,14 @@ test('integration:deploy-watch-runs-deployed-code — a watch that deploys a com
   const port = (server.address() as { port: number }).port, url = `http://127.0.0.1:${port}`;
 
   // The only Docker and gh this fixture has: every provider command succeeds but a pull (GY-3214:
-  // these commits are published nowhere, so the install builds them), `compose ps` reports the
+  // these commits are published nowhere, so the install builds them) and an image inspect (GY-3710:
+  // no commit's image is on this host beforehand), `compose ps` reports the
   // deployment running, and an image build records its per-commit tag as the served commit.
   await mkdir(shim, { recursive: true });
   await writeFile(join(shim, 'docker'), `#!/bin/sh
 echo "docker \$*" >> ${JSON.stringify(join(state, 'docker.log'))}
 [ "\$1 \$2" = "image pull" ] && exit 1
+[ "\$1 \$2" = "image inspect" ] && exit 1
 for arg in "$@"; do
   if [ "$prev" = "--tag" ]; then
     tag=\$(echo "\$arg" | sed 's|.*:||')
@@ -89,7 +91,7 @@ exit 0\n`, { mode: 0o755 });
   await mkdir(join(install, 'compose'), { recursive: true });
   await writeFile(join(install, 'compose', 'compose.yaml'), `name: graphyard-owner-project\nservices:\n  server:\n    ports: ["127.0.0.1:${port}:4310"]\n`);
   await writeFile(join(install, 'install.json'), `${JSON.stringify({ version: 1, installId: 'owner-project', repository, provider: 'compose', baseBranch: 'main', url,
-    deployment: { local: false, port, image: 'graphyard-local:owner-project' }, createdAt: '2026-11-05T00:00:00.000Z', updatedAt: '2026-11-05T00:00:00.000Z' }, null, 2)}\n`);
+    deployment: { local: false, port, image: 'mainworks-local:owner-project' }, createdAt: '2026-11-05T00:00:00.000Z', updatedAt: '2026-11-05T00:00:00.000Z' }, null, 2)}\n`);
   await writeFile(join(base, 'master.token'), 'fixture-master-token-0123456789abcdef\n', { mode: 0o600 });
   await mkdir(join(checkout, '.graphyard'), { recursive: true });
   await writeFile(join(checkout, '.graphyard', 'master.json'), `${JSON.stringify({ version: 1, url, credentialFile: join(base, 'master.token'), cliPath: join(launcherRoot, 'bin', 'graphyard.mjs'),
@@ -100,7 +102,7 @@ exit 0\n`, { mode: 0o755 });
   await dependencies(launcherRoot);
 
   const watch = { out: '', err: '' };
-  // The watch gets the environment the unit gives it: no Graphyard variables of the enclosing run.
+  // The watch gets the environment the unit gives it: no Mainworks variables of the enclosing run.
   const clean: Record<string, string> = {};
   for (const [name, value] of Object.entries(process.env)) if (!name.startsWith('GRAPHYARD_') && !name.startsWith('HERDR_') && value !== undefined) clean[name] = value;
   const child = spawn(process.execPath, [join(launcherRoot, 'bin', 'graphyard.mjs'), 'upgrade', '--watch', '--checkout', deploySrc], {
@@ -111,7 +113,7 @@ exit 0\n`, { mode: 0o755 });
 
   const record = deployRecordPath(checkout);
   const buildsOf = async (sha: string) => {
-    try { return ((await readFile(join(state, 'docker.log'), 'utf8')).match(new RegExp(`--tag graphyard-local:${sha.slice(0, 12)}( |$)`, 'gm')) ?? []).length; } catch { return 0; }
+    try { return ((await readFile(join(state, 'docker.log'), 'utf8')).match(new RegExp(`--tag mainworks-local:${sha.slice(0, 12)}( |$)`, 'gm')) ?? []).length; } catch { return 0; }
   };
   const markers = () => (watch.err.match(/running the deployed watch code/g) ?? []).length;
   const handovers = () => (watch.err.match(/release handover: retry/g) ?? []).length;
@@ -141,7 +143,7 @@ exit 0\n`, { mode: 0o755 });
     await until('the watch created its deploy checkout', () => existsSync(join(deploySrc, '.git')));
     // A commit that changes the deploy-watch code: every pass of the new code says so.
     const watchSource = await readFile(join(checkout, 'src', 'deploy-watch.ts'), 'utf8');
-    const marked = watchSource.replace('  for (;;) {\n    let served', `  for (;;) {\n    log('[graphyard-deploy] running the deployed watch code');\n    let served`);
+    const marked = watchSource.replace('  for (;;) {\n    let served', `  for (;;) {\n    log('[mainworks-deploy] running the deployed watch code');\n    let served`);
     assert.notEqual(marked, watchSource, 'the fixture marks the deploy-watch code');
     await writeFile(join(checkout, 'src', 'deploy-watch.ts'), marked);
     git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'B: the deploy-watch code changes');

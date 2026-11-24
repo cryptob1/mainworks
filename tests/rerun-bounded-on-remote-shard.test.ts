@@ -13,7 +13,7 @@ import { git, shardHosts, shardRepository } from './helpers/shard-hosts.js';
 // never started its child and both cases of tests/complete-rerun-bounded.test.ts failed every trial
 // that ran the file there. Docker is the fixture's stand-in, here with Docker's read-only root.
 
-const image = 'graphyard-trial:rerun-bounded';
+const image = 'mainworks-trial:rerun-bounded';
 const source = fileURLToPath(new URL('..', import.meta.url));
 const file = 'tests/complete-rerun-bounded.test.ts';
 

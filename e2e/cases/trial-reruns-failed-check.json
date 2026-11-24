@@ -1,0 +1,13 @@
+{
+  "id": "trial-reruns-failed-check",
+  "title": "A merge trial reruns a failing test file once and files it as flaky when the rerun passes",
+  "description": "Run the real loop cycle against a real temporary Postgres control plane and a scratch bare Git remote: a candidate whose merge trial fails a test once and passes its rerun of the same tree merges, and master status lists the 'Flaky check on main' item filed for that test.",
+  "target": "any",
+  "required": false,
+  "steps": [{
+    "kind": "command",
+    "name": "Merge a candidate whose trial fails a test once through the real loop and read master status",
+    "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=^e2e:trial-reruns-failed-check tests/trial-reruns-failed-check.test.ts",
+    "timeoutSeconds": 300
+  }]
+}

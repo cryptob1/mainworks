@@ -6,10 +6,11 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { z } from 'zod';
+import { stateDirectory } from '../install/layout.js';
 
 const inputReferenceSchema = z.object({ record: z.string(), runtime: z.string(), event: z.string() }).strict();
 type InputReference = z.infer<typeof inputReferenceSchema>;
-export const conversationSchema = z.object({
+const conversationSchema = z.object({
   launch: z.string(), runtime: z.string(), account: z.string().nullable(), nativeId: z.string(),
   transcript: z.string(), record: z.string(), origins: z.string(),
   predecessor: z.string().nullable(), supersededBy: z.string().nullable().default(null),
@@ -19,8 +20,8 @@ export const conversationSchema = z.object({
 export type Conversation = z.infer<typeof conversationSchema>;
 export const continuitySchema = z.object({ current: conversationSchema, predecessor: conversationSchema.nullable() }).strict();
 export type Continuity = z.infer<typeof continuitySchema>;
-export const masterRecords = (root: string) => resolve(root, '.graphyard/master-records');
-export const masterInputs = (root: string, launch: string) => resolve(root, '.graphyard/launch', `${launch}.inputs.jsonl`);
+export const masterRecords = (root: string) => resolve(stateDirectory(root), 'master-records');
+export const masterInputs = (root: string, launch: string) => resolve(stateDirectory(root), 'launch', `${launch}.inputs.jsonl`);
 
 /** Supported native formats, rather than silently launching a master that cannot continue. */
 export function assertConversationRuntime(kind: string): asserts kind is 'claude' | 'codex' {
@@ -32,8 +33,8 @@ export function conversationArgs(kind: string, nativeId: string | null, resume: 
 }
 
 /** Persist before submission, including each delivery retry. The marker joins origin to native input. */
-export async function graphyardInput(origins: string, origin: 'launch' | 'wake' | 'retry', text: string) {
-  const id = randomUUID(), marker = `[Graphyard input ${id}; origin=${origin}]`;
+export async function mainworksInput(origins: string, origin: 'launch' | 'wake' | 'retry', text: string) {
+  const id = randomUUID(), marker = `[Mainworks input ${id}; origin=${origin}]`;
   await mkdir(dirname(origins), { recursive: true, mode: 0o700 });
   await appendFile(origins, JSON.stringify({ id, origin, marker, text }) + '\n', { mode: 0o600 });
   return `${marker}\n${text}`;
@@ -140,7 +141,7 @@ async function conversationRecord(conversation: Conversation) {
       if (event.type === 'input') {
         // One recorded delivery identifies one native input. A later person quoting that delivery
         // remains person input, even when it includes the marker and the whole original request.
-        for (const marker of (event.text ?? '').matchAll(/\[Graphyard input ([0-9a-f-]+); origin=(?:launch|wake|retry)\]/g)) {
+        for (const marker of (event.text ?? '').matchAll(/\[Mainworks input ([0-9a-f-]+); origin=(?:launch|wake|retry)\]/g)) {
           const origin = recorded.get(marker[1]);
           if (!origin || (associations.has(origin.id) && associations.get(origin.id) !== event.id)
             || !event.text?.includes(`${origin.marker}\n${origin.text}`)) continue;
@@ -178,7 +179,7 @@ export async function continuationContext(previous: Conversation) {
 export async function conversationHandover(previous: Conversation) { return (await continuationContext(previous)).handover; }
 
 /** Claude names its id before launch; Codex writes session_meta with its native id and cwd. */
-export async function discoverConversation(kind: string, environment: Record<string, string>, root: string, since: number, nativeId: string | null, initialInput?: string): Promise<{ nativeId: string; transcript: string } | null> {
+async function discoverConversation(kind: string, environment: Record<string, string>, root: string, since: number, nativeId: string | null, initialInput?: string): Promise<{ nativeId: string; transcript: string } | null> {
   assertConversationRuntime(kind);
   if (kind === 'claude') {
     const home = environment.CLAUDE_CONFIG_DIR ?? process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude');

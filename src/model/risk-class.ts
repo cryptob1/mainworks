@@ -8,17 +8,17 @@ import type { Work } from './work.js';
  * naming, per file, the rule that made it sensitive. It is the one merge rule (model/gates.ts): a
  * sensitive delta waits for one independent approval before the merge writer merges it; any other
  * merges on its passing trial and is reviewed after the merge. It is computed on read and shown by
- * `graphyard status` and the item page.
+ * `mainworks status` and the item page.
  *
  * `sensitive` is whatever the repository's graphyard.json declares under `risk.sensitive`
  * (model/repository-policy.ts, GY-1843): each entry a glob and the rule a reason cites. A repository
  * that declares none gets the generic default — CI configuration, dependency manifests and
  * lockfiles, migrations, container, compose, deploy and infrastructure files, auth and secrets,
- * anywhere in the tree — never Graphyard's own layout, which Graphyard's graphyard.json declares for
+ * anywhere in the tree — never Mainworks's own layout, which Mainworks's graphyard.json declares for
  * itself. Everything else is `normal`. A delta nobody can see (no files at all) is sensitive: until
  * the class can see what a change touches, it is treated as the worst case.
  */
-export const riskClasses = ['sensitive', 'normal'] as const;
+const riskClasses = ['sensitive', 'normal'] as const;
 export type RiskClass = typeof riskClasses[number];
 
 export const compiled = new WeakMap<RepositoryPolicy, CompiledRule[]>();
@@ -46,7 +46,7 @@ export const sensitiveReason = (path: string, rule: string) => `${path}: ${rule}
 export const unknownChangeReason = 'unknown change';
 
 /** GY-3635: paths whose edits can weaken the repository's own checks. */
-export const isTestSelectorPath = (path: string) => path === 'scripts/ci-tests.mjs';
+const isTestSelectorPath = (path: string) => path === 'scripts/ci-tests.mjs';
 export const isTestHelperPath = (path: string) => path.startsWith('tests/helpers/') && !path.includes('*');
 export const isE2eCasePath = (path: string) => path.startsWith('e2e/cases/') && path.endsWith('.json');
 export const isTestFilePath = (path: string) =>
@@ -68,7 +68,7 @@ const canonical = (value: unknown): string => {
 };
 
 /** Whether two versions of graphyard.json differ in their checks sections (delivery.mergeGate, checks, gate, risk, e2e). */
-export function graphyardChecksChanged(baseText: string | null, headText: string | null): boolean {
+export function mainworksChecksChanged(baseText: string | null, headText: string | null): boolean {
   if (baseText === headText) return false;
   const parse = (text: string | null): Record<string, unknown> | null => {
     if (text === null) return {};

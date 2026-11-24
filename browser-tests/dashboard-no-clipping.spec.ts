@@ -74,13 +74,13 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 800, height: 700 }
     test.setTimeout(180_000);
     const database = await signInDatabase();
     const site = await temporaryDirectory('no-clipping');
-    await symlink(resolve('.graphyard/browser-dist'), join(site, 'dist'));
+    await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
     const http = await plane(database.url, site);
     const page = await browser.newPage({ viewport }); await serveXterm(page);
     try {
       await seed(http.url);
       const { code } = await (await fetch(`${http.url}/api/sign-in-links`, { method: 'POST', headers: operator })).json() as { code: string };
-      await page.goto(`${http.url}/#sign-in=${code}`);
+      await page.goto(`${http.url}/#sign-in=${code}&work`);
       await expect(page.getByRole('heading', { name: 'Work', exact: true, level: 1 })).toBeVisible(settled);
       await expect(page.locator('[data-row]').first()).toBeVisible(settled);
       await expect(page.locator('.version-label')).toContainText('Mainworks 1a2b3c4', settled);

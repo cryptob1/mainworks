@@ -1,8 +1,8 @@
 import { trialOverloadFault } from '../merge-writer/trial-cpu.js';
 import { timedMergePorts, trialStepMedians } from './trial-timings.js';
 import type { TrialStepReport } from '../merge-writer/trial.js';
-import { mergeWriterKeptQueue, mergeWriterKeptRefusals, mergeWriterKeptReworks, mergeWriterKeptTimeouts, mergeWriterTrialTimeoutRefusals, mergeWriterKeptUnconfirmed, mergeWriterUnconfirmedReplays, serveRevertsKept, type PendingRework, type UnconfirmedRecord, type MergeWriterState, type RevertFlight } from './merge-writer-state.js';
-export { mergeWriterKeptQueue, mergeWriterKeptRefusals, mergeWriterKeptReworks, mergeWriterKeptTimeouts, mergeWriterTrialTimeoutRefusals, mergeWriterKeptUnconfirmed, mergeWriterUnconfirmedReplays, pendingReworkSchema, unconfirmedRecordSchema, mergeWriterStateSchema, emptyMergeWriterState, type PendingRework, type UnconfirmedRecord, type MergeWriterState, type RevertFlight } from './merge-writer-state.js';
+import { mergeWriterKeptQueue, mergeWriterKeptRefusals, mergeWriterKeptReworks, mergeWriterKeptTimeouts, mergeWriterTrialTimeoutRefusals, mergeWriterKeptUnconfirmed, mergeWriterUnconfirmedReplays, type PendingRework, type UnconfirmedRecord, type MergeWriterState, type RevertFlight } from './merge-writer-state.js';
+export { mergeWriterKeptQueue, mergeWriterKeptRefusals, mergeWriterKeptReworks,   mergeWriterKeptUnconfirmed, mergeWriterUnconfirmedReplays,   mergeWriterStateSchema, emptyMergeWriterState,   type MergeWriterState, type RevertFlight } from './merge-writer-state.js';
 // Concern: the control-plane merge executor's cycle step (GY-1524) — reconcile open intents, pick the next head, run one merge beside the cycle and record what it did.
 import { randomUUID } from 'node:crypto';
 import { availableParallelism } from 'node:os';
@@ -29,7 +29,7 @@ import { adoptTrialRun, finishedTrialRun, launchTrialRun, stopTrialRun, trialRun
 import { loadProjectDelivery } from '../model-boundary/project-applications.js';
 import { standingBaseFailure } from '../merge-writer/base-failure-hold.js';
 import { baseFailureHoldMs, baseFailurePrefix, isBaseRepair, isHotfix, criterionProofs, pushPassedTrial, mergeHeads, mergeBatches, type HeadResult, e2eProofsOf, firstParentHolds, keyReusedRefusal, mergeRecordStatus, mergeQueue, previewRecordEvent, proofTestFiles, pushArgs, pushEnvironment, mergeWriterRemote, pushFailureWithStderr, reconcileIntents, runMergeTrial, staleLeaseRejection, trialAheadOfReviewPrefix, trialRefusalHeld, type MergePorts, type MergeRecordEvent, type MergeTrialRun } from '../merge-writer/executor.js';
-import { graphyardVerifiedRef, publishedVersion } from '../release.js';
+import { mainworksVerifiedRef, publishedVersion } from '../release.js';
 import { message, storeAction, type DaemonState } from './state.js';
 import { cpuPressureHeld, trialCapNow } from './cpu-pressure.js';
 import { standingLimit } from '../master/profiles.js';
@@ -37,6 +37,7 @@ import { reportTrialHostFault, reportTrialImageFault, reportTrialNetworkFault, r
 import { reworkReasonMax } from './rework.js';
 import type { Cycle } from './cycle.js';
 import { heavyJobsDirectory, readHeavyDrain, type HeavyDrain } from '../master/verification-slots.js';
+import { setting } from '../setting.js';
 
 /** The merge writer's ports (merge-writer/executor.ts). */
 export interface MergeWriterReads extends MergePorts {
@@ -75,7 +76,7 @@ export interface MergeWriterReads extends MergePorts {
   /** GY-3443: records `proof` as passing on `work`'s candidate head (`POST work/ID/evidence` as the master's operator-agent identity, as `master attest` does); absent, nothing is attested. */
   attest?(work: Work, proof: string, reason: string, idempotencyKey: string): Promise<unknown>;
   /** GY-3119: the checkout whose .graphyard/main-gate.json the batch gate keeps, and the repository it gates; absent, no batch gate runs. */
-  gate?: { root: string; repository: string; /** GY-3296: the app environment lifecycle; absent, the loop's own over the root's state file. */ environments?: ReturnType<typeof import('../app-environments.js').environmentLifecycle>; /** GY-3193: runs the preview cases on the host against the commit; absent, each is reported not covered. */ previews?(commit: string): Promise<PreviewCaseRun[]>; /** GY-3444: the machine's trial slot directory the gate reads its waits from; absent, the launcher's own. */ slots?: string; /** GY-3627: build the warm test image once for a verified commit and push it to each ready compute host. */ warmImage?(commit: string): Promise<unknown> };
+  gate?: { root: string; repository: string; /** GY-3296: the app environment lifecycle; absent, the loop's own over the root's state file. */ environments?: ReturnType<typeof import('../app-environments.js').environmentLifecycle>; /** GY-3193: runs the preview cases on the host against the commit; absent, each is reported not covered. */ previews?(commit: string): Promise<PreviewCaseRun[]>; /** GY-3747: times a fresh repository from connect to first merge in a scratch install of the commit. */ onboarding?(commit: string): Promise<import('../onboarding-time.js').OnboardingRun>; /** GY-3444: the machine's trial slot directory the gate reads its waits from; absent, the launcher's own. */ slots?: string; /** GY-3627: build the warm test image once for a verified commit and push it to each ready compute host. */ warmImage?(commit: string): Promise<unknown> };
   /**
    * GY-3199: publishes `commit` at `refs/graphyard/verified` on this checkout's origin with the
    * merge writer's deploy key alone, like every other push — the ref every install's deploy watch
@@ -104,11 +105,11 @@ const output = (error: unknown) => { const failed = error as { stdout?: unknown;
 
 /**
  * GY-3290: a trial — a merge's, the batch gate's, a diagnostic's, a revert's; in this process or
- * detached — is one heavy job of the host: it waits here for a slot of the budget every Graphyard
+ * detached — is one heavy job of the host: it waits here for a slot of the budget every Mainworks
  * project on the host shares, naming the holders as its step, before anything of it starts.
  */
 export const heavyTrial = <T>(key: string, onStep: ((step: string) => void) | undefined, signal: AbortSignal | undefined, trial: () => Promise<T>, until?: AbortSignal, gate?: boolean) =>
-  withHeavyJob(testMergeLabel(key), trial, { onWait: () => onStep?.(waitStep(process.env[slotsDirectoryVariable]!)), signal, until, reserved: gate });
+  withHeavyJob(testMergeLabel(key), trial, { onWait: () => onStep?.(waitStep(setting(slotsDirectoryVariable)!)), signal, until, reserved: gate });
 
 /**
  * The reads over the coordinator checkout `root` (its object store holds every submitted head,
@@ -146,7 +147,7 @@ export function mergeWriterReads(config: Pick<MasterConfig, 'baseBranch' | 'run'
       const merged = await trialMerge(gitAs, { head, baseTip, ...(item ? { subject: mergeSubject(item) } : {}) });
       if ('conflict' in merged) return merged;
       const changes = (await git('diff', '--name-status', '--no-renames', baseTip, merged.mergeSha)).split('\n').filter(line => line.trim()).map(line => line.trim().split('\t') as [string, string]);
-      return { mergeSha: merged.mergeSha, files: changes.map(([, path]) => path), addedOrModified: changes.filter(([status]) => status === 'A' || status === 'M').map(([, path]) => path) };
+      return { mergeSha: merged.mergeSha, files: changes.map(([, path]) => path), addedOrModified: changes.filter(([status]) => status === 'A' || status === 'M').map(([, path]) => path), added: changes.filter(([status]) => status === 'A').map(([, path]) => path) };
     },
     trial: async (mergeSha, files, item, baseTip, onStep, onTiming, heads, share, signal, timeoutMs) => {
       const proofs = criterionProofs(item);
@@ -166,7 +167,7 @@ export function mergeWriterReads(config: Pick<MasterConfig, 'baseBranch' | 'run'
     },
     // GY-3199: the batch gate's own publication — the verified commit at refs/graphyard/verified, pushed with the deploy key alone like every other push.
     pushVerified: async commit => {
-      await run('git', ['-C', root, 'push', remote, `${commit}:${graphyardVerifiedRef}`], { env: pushEnvironment(settings, options.environment) });
+      await run('git', ['-C', root, 'push', remote, `${commit}:${mainworksVerifiedRef}`], { env: pushEnvironment(settings, options.environment) });
     },
     pushReleaseTag: async commit => {
       const date = new Date(Number((await git('show', '-s', '--format=%ct', commit)).trim()) * 1000);
@@ -262,13 +263,14 @@ function cancellableTrials(ports: MergeWriterReads, trials: Set<RunningTrial>): 
     return Promise.race([trial, cancelled]).finally(() => trials.delete(running));
   } };
 }
-/** GY-3099: why a running trial carrying `key`'s `head` no longer counts: the item is gone, was returned for rework, or carries a new head. */
-export function carriedHeadStale(work: readonly Work[], key: string, head: string): string | null {
+/** GY-3099: why a running trial carrying `key`'s `head` no longer counts: the item is gone, was returned for rework, was held, or carries a new head. */
+function carriedHeadStale(work: readonly Work[], key: string, head: string): string | null {
   const item = work.find(entry => entry.key === key);
   if (!item) return `${key} is no longer available`;
   const current = item.candidate?.sha.toLowerCase() ?? null;
   if (current !== head) return `${key}'s head ${head.slice(0, 12)} was replaced by ${current ? current.slice(0, 12) : 'no candidate'}`;
   if (item.reworkRequested) return `${key}'s head ${head.slice(0, 12)} was returned for rework`;
+  if (item.hold) return `${key} was held`; // GY-3728: a held item cannot merge, so its trial frees its slot
   return null;
 }
 /** Resolves once the merge in flight for `state` has settled; for the step's tests. */
@@ -278,7 +280,7 @@ const itemPreviews = new WeakMap<DaemonState, Map<string, LivePreview>>();
 export const mergeWriterInFlight = (state: DaemonState) => [...flights.get(state) ?? []].some(flight => !flight.settled);
 export const mergeWriterIdle = async (state: DaemonState) => { for (let waited = 0; mergeWriterInFlight(state) && waited < 600_000; waited += 5) await new Promise(resolve => setTimeout(resolve, 5)); };
 /** The action key a merge of `key`'s `head` is recorded under. */
-export const mergeWriterActionKey = (key: string, head: string) => `merge-writer:${key}:${head}`;
+const mergeWriterActionKey = (key: string, head: string) => `merge-writer:${key}:${head}`;
 /** The ledger states the snapshot carries, by item key: what `mergeQueue` and `reconcileIntents` read. */
 export const snapshotLedger = (work: readonly Work[]): Record<string, MergeLedgerState> => Object.fromEntries(work.flatMap(item => item.mergeLedger ? [[item.key, item.mergeLedger] as const] : []));
 /** The rework a failed trial grounds (AC-3): its binding names the head and the ground, as every loop rework does, so the server's lane rework finds it. */
@@ -349,14 +351,14 @@ export function trialShareAllowance(share: number | undefined, timeoutMs?: numbe
  * tip move another head's landing makes (GY-3120), one cycle's allowance per head that can trial at once
  * (`run.mergeWriter.parallel`, plus the diagnostic flight) — the bound a held head's motion is judged inside (owed-report.ts `mergeWriterMotionBound`).
  */
-export const mergeWriterFlightBoundMs = (run: { intervalSeconds?: number; mergeWriter?: { parallel?: number } }) =>
+const mergeWriterFlightBoundMs = (run: { intervalSeconds?: number; mergeWriter?: { parallel?: number } }) =>
   ((run.mergeWriter?.parallel ?? defaultMergeWriterParallel) + 1) * (trialTimeoutMinutes * 60_000 + (run.intervalSeconds ?? 20) * 1000);
 
 /**
  * GY-2053: what one recorded write says, as the reader reads it — the attempt step the writer's summary reports as its newest movement.
  * Every ledger write a flight or a reconcile makes is attempt progress: an intent, a trial verdict, a push, a reconcile.
  */
-export const attemptProgressLine = (item: { key: string }, event: MergeRecordEvent): string => {
+const attemptProgressLine = (item: { key: string }, event: MergeRecordEvent): string => {
   const sha = (value: unknown) => typeof value === 'string' && value ? value.slice(0, 12) : null;
   switch (event.kind) {
     case 'intent': return `${item.key}'s head ${sha(event.head)} recorded its merge intent on base tip ${sha(event.baseTip)} as merge ${sha(event.mergeSha)}`;
@@ -376,7 +378,7 @@ export const attemptProgressLine = (item: { key: string }, event: MergeRecordEve
  * Each write is also the attempt progress the summary reports (GY-2053), recorded before it is
  * sent: the write itself is the writer moving, whatever its reply turns out to be.
  */
-export function attemptRecorder(writer: MergeWriterState, record: MergePorts['record'], attempt: string, at: () => string): MergePorts['record'] {
+function attemptRecorder(writer: MergeWriterState, record: MergePorts['record'], attempt: string, at: () => string): MergePorts['record'] {
   let next = 0;
   return async (item, event) => {
     const mergeAttempt = { id: attempt, write: next++ };
@@ -449,7 +451,7 @@ export const mergeWriterReworkKey = (key: string, head: string) => `${mergeWrite
  * transient failure never loses the rework. Without the decision effects the record waits, named
  * for the operator. Answers whether the state changed.
  */
-export async function requestPendingReworks(cycle: Pick<Cycle, 'state' | 'effects' | 'now' | 'snapshot' | 'performed'>): Promise<boolean> {
+async function requestPendingReworks(cycle: Pick<Cycle, 'state' | 'effects' | 'now' | 'snapshot' | 'performed'>): Promise<boolean> {
   const { state, effects, now, snapshot, performed } = cycle;
   const writer = state.mergeWriter;
   const at = () => new Date(now()).toISOString();
@@ -475,7 +477,7 @@ export async function requestPendingReworks(cycle: Pick<Cycle, 'state' | 'effect
     const applied = !item || item.stage === 'done' || item.reworkRequested || item.candidate?.sha.toLowerCase() !== pending.head;
     const action = (actionState: 'done' | 'failed', detail: string) => performed.push(storeAction(state, key, { kind: 'judgement', work: pending.key, principal: null, state: actionState, detail: detail.slice(0, 1900), attempts: pending.attempts + 1, epoch: null, cycle: state.cycle, at: at() }));
     if (applied) { action('done', `The rework the merge writer's refusal of ${pending.key} head ${pending.head} grounds is applied: the snapshot shows the item ${!item || item.stage === 'done' ? 'done' : item.reworkRequested ? 'returned to a worker' : 'on a new head'}`); continue; }
-    if (!effects.rework) { kept.push({ ...pending, attempts: pending.attempts + 1, lastError: 'this loop runs without the master identity' }); action('failed', `The rework the merge writer's refusal of ${pending.key} head ${pending.head} grounds waits: this loop runs without the master identity, so apply it with graphyard master rework ${pending.key} REASON`); continue; }
+    if (!effects.rework) { kept.push({ ...pending, attempts: pending.attempts + 1, lastError: 'this loop runs without the master identity' }); action('failed', `The rework the merge writer's refusal of ${pending.key} head ${pending.head} grounds waits: this loop runs without the master identity, so apply it with mainworks master rework ${pending.key} REASON`); continue; }
     const rework = trialFailureRework(item, pending.head, pending.reason);
     try {
       await effects.rework(item, rework.reason, rework.input.binding);
@@ -1168,5 +1170,5 @@ export const mergeWriterSummary = (writer: MergeWriterState | null | undefined, 
   const inFlight = writer.inFlight && timed(writer.inFlight);
   return { trials: writer.trials, stepMedians: trialStepMedians(writer.trials ?? []), queue: writer.queue, inFlight, ...(writer.inFlights ? { inFlights: writer.inFlights.map(timed) } : {}), lastMergeAt: writer.lastMergeAt, refusals: writer.refusals, reworks: writer.reworks, progress: writer.progress, motionBoundMs: writer.motionBoundMs, serveRevert: writer.serveRevert };
 };
-export type { MergeRecordEvent };
-export { serveRevertsKept };
+;
+;

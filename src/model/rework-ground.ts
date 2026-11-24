@@ -29,7 +29,7 @@ export function trialFailedGround(work: Pick<Work, 'candidate' | 'mergeLedger'>)
 /** The station that refused an attempt, as the rework brief ledger names it (GY-3636). */
 export type ReworkStation = 'review' | 'product review' | 'merge trial' | 'acceptance' | 'base moved';
 export const attemptSummaryMax = 200;
-export const reworkCapLimit = 3;
+const reworkCapLimit = 3;
 
 export type ReworkHistoryEntry = { attempt: number; reason: string; binding: string | null; at: string };
 
@@ -62,7 +62,7 @@ export function oneLineSummary(reason: string, limit = attemptSummaryMax): strin
  * Counted automatic refusals since the last Lead decision (`binding === null`).
  * Base-moved conflicts do not count toward the cap (GY-3636 AC-2).
  */
-export function reworkCapRefusals(work: Pick<Work, 'stage' | 'reworkHistory'>): ReworkHistoryEntry[] {
+function reworkCapRefusals(work: Pick<Work, 'stage' | 'reworkHistory'>): ReworkHistoryEntry[] {
   if (work.stage === 'done' || !work.reworkHistory?.length) return [];
   let start = 0;
   for (let i = work.reworkHistory.length - 1; i >= 0; i--) {
@@ -86,6 +86,6 @@ export function reworkCapCause(work: Pick<Work, 'id' | 'key' | 'stage' | 'rework
   const listed = refusals.map((entry, index) => `(${index + 1}) Attempt ${entry.attempt} (${reworkStation(entry)}): ${oneLineSummary(entry.reason, attemptSummaryMax)}`).join('; ');
   return {
     key: `rework-cap:${work.id}`,
-    detail: `${work.key}: ${reworkCapLabel(work)}; no further attempt is launched automatically. Refusals: ${listed}. Decide one of: revise the requirements (graphyard master requirements ${work.key} FILE REASON), split into smaller items (graphyard master create FILE and close ${work.key}), or park with a summary (graphyard master hold ${work.key} REASON or graphyard master close ${work.key} REASON).`,
+    detail: `${work.key}: ${reworkCapLabel(work)}; no further attempt is launched automatically. Refusals: ${listed}. Decide one of: revise the requirements (mainworks master requirements ${work.key} FILE REASON), split into smaller items (mainworks master create FILE and close ${work.key}), or park with a summary (mainworks master hold ${work.key} REASON or mainworks master close ${work.key} REASON).`,
   };
 }

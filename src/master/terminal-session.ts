@@ -7,7 +7,7 @@ import type { MasterConfig } from './profiles.js';
 import { herdrCall, herdrInvocation, herdrTarget, herdrTerminalArgs, observeHerdrAgents } from './herdr.js';
 import { readSessionScreenOrError } from './prompt-delivery.js';
 
-export interface TerminalSession { account: string | null; runtime: string | null; pane: string | null; state: string; since?: string | null }
+interface TerminalSession { account: string | null; runtime: string | null; pane: string | null; state: string; since?: string | null }
 export type SessionReader = () => Promise<TerminalSession>;
 export const terminalSessionReader = (config: () => MasterConfig): SessionReader => async () => {
   const master = masterSessionSchema.parse(JSON.parse(await readFile(daemonStatePath(config()), 'utf8').catch(error => { if (error.code === 'ENOENT') return '{}'; throw error; })).master ?? {});
@@ -18,16 +18,31 @@ export const terminalSessionReader = (config: () => MasterConfig): SessionReader
 };
 export interface TerminalRequest { control: boolean; pane: string | null; master?: boolean; cols: string; rows: string }
 export interface TerminalHandlers { line(line: string): void; exit(reason: string): void }
-export interface TerminalStream { send(command: unknown): void; end(): void }
+export interface TerminalStream { send(command: unknown): void; end(): Promise<void> }
 
 export function terminalStream(request: TerminalRequest, handlers: TerminalHandlers, session?: SessionReader, instance = herdrTarget()): TerminalStream {
   let child: import('node:child_process').ChildProcess | undefined;
   const pendingInput: unknown[] = [];
   let stopped = false, previous = '', pane: string | null | undefined;
-  let timer: ReturnType<typeof setTimeout>;
+  let timer: ReturnType<typeof setTimeout> | undefined, retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let closing: Promise<void> = Promise.resolve();
   const abort = new AbortController();
   const emit = (value: unknown) => { if (!stopped) handlers.line(JSON.stringify(value)); };
-  const detach = () => { pendingInput.length = 0; const old = child; child = undefined; old?.stdin?.end(); if (old) setTimeout(() => old.kill(), 1_000).unref(); };
+  const detach = (): Promise<void> => {
+    pendingInput.length = 0;
+    const old = child;
+    child = undefined;
+    if (!old) return closing;
+    const closed = old.exitCode !== null || old.signalCode !== null
+      ? Promise.resolve()
+      : new Promise<void>(done => { old.once('close', () => done()); old.once('error', () => done()); });
+    old.stdin?.end();
+    const kill = setTimeout(() => old.kill(), 1_000);
+    kill.unref();
+    const done = closed.finally(() => clearTimeout(kill));
+    closing = closing.then(() => done);
+    return done;
+  };
   const refresh = async () => {
     try {
       const current = request.master && session ? await session() : { pane: request.pane, account: null, runtime: null, state: request.pane ? 'unknown' : 'absent' };
@@ -65,7 +80,7 @@ export function terminalStream(request: TerminalRequest, handlers: TerminalHandl
                 // closed page's), which detach ends within a second: ask once more after that before
                 // watching at another stream's size for good (GY-3372).
                 const target = pane;
-                setTimeout(() => { if (!stopped && !child && pane === target) open('control', true); }, 2_000);
+                retryTimer = setTimeout(() => { if (!stopped && !child && pane === target) open('control', true); }, 2_000);
                 return;
               }
               handlers.line(line);
@@ -86,6 +101,6 @@ export function terminalStream(request: TerminalRequest, handlers: TerminalHandl
       // The hello can arrive while history is loading; keep those first keystrokes.
       else if (pane && !stopped && command.type === 'terminal.input') pendingInput.push(command);
     },
-    end: () => { stopped = true; clearTimeout(timer); abort.abort(); detach(); },
+    end: () => { stopped = true; clearTimeout(timer); clearTimeout(retryTimer); abort.abort(); return detach(); },
   };
 }

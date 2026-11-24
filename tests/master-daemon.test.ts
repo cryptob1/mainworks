@@ -84,7 +84,7 @@ test('the daemon cursor lives beside the coordinator credential, stays private, 
       assert.equal((await stat(daemonStatePath(master))).mode & 0o777, 0o600);
       assert.equal((await readDaemonState(root, master)).cycle, 7);
       await writeDaemonState(config(token, { repository: 'owner/other' }), emptyDaemonState(config(token, { repository: 'owner/other' })));
-      await assert.rejects(readDaemonState(root, master), /another Graphyard server or repository/);
+      await assert.rejects(readDaemonState(root, master), /another Mainworks server or repository/);
     } finally { await rm(root, { recursive: true, force: true }); }
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
@@ -96,7 +96,7 @@ test('only one loop owns a repository, and a killed daemon reclaims its own lock
     acquireDaemonLock(state, { pid: process.pid, host: 'machine-a' }, clock, 20_000);
     assert.equal(state.lock!.pid, process.pid);
     // A live process on this host owns the loop; a second daemon must not double-dispatch.
-    assert.throws(() => acquireDaemonLock(state, { pid: process.pid + 1, host: 'machine-a' }, clock, 20_000), /Another Graphyard master loop/);
+    assert.throws(() => acquireDaemonLock(state, { pid: process.pid + 1, host: 'machine-a' }, clock, 20_000), /Another Mainworks master loop/);
     // A dead pid on this host is reclaimed without waiting out a staleness window.
     state.lock = { ...state.lock!, pid: 2 ** 22 - 1 };
     acquireDaemonLock(state, { pid: process.pid, host: 'machine-a' }, clock + 1000, 20_000);
@@ -109,7 +109,7 @@ test('only one loop owns a repository, and a killed daemon reclaims its own lock
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-test('an interrupted cursor entry is resolved against Graphyard, never repeated from the cursor alone', async () => {
+test('an interrupted cursor entry is resolved against Mainworks, never repeated from the cursor alone', async () => {
   const { directory, token } = await privateDirectory();
   try {
     const master = config(token); const state = emptyDaemonState(master);
@@ -187,7 +187,7 @@ test('a dispatch of operator-authorized rework interrupted by a kill is dispatch
   await writeFile(workerCredential, workerToken, { mode: 0o600 });
   try {
     const master = config(token, { workers: [profile('codex', workerCredential)] });
-    // An operator requested rework: the lease is gone and the build gate is open again, but Graphyard
+    // An operator requested rework: the lease is gone and the build gate is open again, but Mainworks
     // keeps the earlier attempt's submission and PR so the new attempt reuses the same branch.
     const rework = submitted({ stage: 'build', reworkRequested: true, lease: null,
       gates: [{ name: 'build', passed: false, reasons: ['Worker has not submitted implementation for this attempt'] }] });

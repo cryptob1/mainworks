@@ -6,6 +6,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { type ChildRun, type ChildRunOptions, defaultChildTimeoutMs, type BoundChildRun, childRunner, defaultChildRun } from '../child-runner.js';
 import type { MasterConfig } from './profiles.js';
 import { herdrConnectCommands } from '../herdr-connect.js';
+import { setting } from '../setting.js';
 
 /** A legacy private server retained only while its existing panes drain. */
 export interface HerdrInstance { configHome: string; session: string }
@@ -26,7 +27,7 @@ let processInstance: HerdrInstance | null = null;
 export function targetHerdr(instance: HerdrInstance | null | undefined) { processInstance = instance ?? null; }
 export const herdrTarget = () => processInstance;
 /** The herdr binary: on PATH, else where Herdr's own installer puts it (~/.local/bin), which a user unit's PATH may lack. */
-export function herdrBinary(env: NodeJS.ProcessEnv = process.env, home: string = homedir()) {
+function herdrBinary(env: NodeJS.ProcessEnv = process.env, home: string = homedir()) {
   if ((env.PATH ?? '').split(delimiter).some(directory => directory && existsSync(join(directory, 'herdr')))) return 'herdr';
   const installed = join(home, '.local', 'bin', 'herdr');
   return existsSync(installed) ? installed : 'herdr';
@@ -35,7 +36,7 @@ export const isHerdrCommand = (command: string) => command === 'herdr' || comman
 /** A herdr call's own arguments, without the `--session NAME` herdrInvocation puts before them. */
 export const herdrSubcommand = (args: string[]) => args[0] === '--session' ? args.slice(2) : args;
 /**
- * The one way Graphyard spells a herdr command (GY-1511): for an install with its own instance, its
+ * The one way Mainworks spells a herdr command (GY-1511): for an install with its own instance, its
  * XDG_CONFIG_HOME and `--session` (which outranks a pane's HERDR_SOCKET_PATH); for the default
  * instance, the arguments unchanged. Every herdr spawn in src/ goes through here or herdrCall.
  */
@@ -46,11 +47,11 @@ export function herdrInvocation(args: string[], instance: HerdrInstance | null =
     // A caller inside an old pane can retain its socket after the install has moved to the main server.
     // The main server's own socket is kept (GY-3237): the confined master session's HOME is a scratch
     // home, so a herdr client without it would look for the main server where none listens.
-    if (!process.env.GRAPHYARD_HERDR_CONFIG_HOME && (!process.env.HERDR_SOCKET_PATH || mainHerdrSocket(process.env.HERDR_SOCKET_PATH))) return { command, args };
-    const { HERDR_SOCKET_PATH: _socket, GRAPHYARD_HERDR_CONFIG_HOME: _home, GRAPHYARD_HERDR_SESSION: _session, ...env } = process.env;
-    return { command, args, env: { ...env, ...(process.env.GRAPHYARD_HERDR_CONFIG_HOME ? { XDG_CONFIG_HOME: join(homedir(), '.config') } : {}) } };
+    if (!setting('HERDR_CONFIG_HOME') && (!process.env.HERDR_SOCKET_PATH || mainHerdrSocket(process.env.HERDR_SOCKET_PATH))) return { command, args };
+    const { HERDR_SOCKET_PATH: _socket, GRAPHYARD_HERDR_CONFIG_HOME: _home, GRAPHYARD_HERDR_SESSION: _session, MAINWORKS_HERDR_CONFIG_HOME: _newHome, MAINWORKS_HERDR_SESSION: _newSession, ...env } = process.env;
+    return { command, args, env: { ...env, ...(setting('HERDR_CONFIG_HOME') ? { XDG_CONFIG_HOME: join(homedir(), '.config') } : {}) } };
   }
-  const { HERDR_SOCKET_PATH: _socket, ...env } = process.env;
+  const { HERDR_SOCKET_PATH: _socket, MAINWORKS_HERDR_CONFIG_HOME: _newHome, MAINWORKS_HERDR_SESSION: _newSession, ...env } = process.env;
   return { command, args: ['--session', instance.session, ...args], env: { ...env, XDG_CONFIG_HOME: instance.configHome, [herdrInstanceEnv.configHome]: instance.configHome, [herdrInstanceEnv.session]: instance.session } };
 }
 /** Runs herdr ARGS through RUN (a ChildRun, or a synchronous stub) against INSTANCE. */
@@ -134,14 +135,14 @@ export function herdrWorkspaceOf(entry: { workspace_id?: string; pane_id?: strin
   return herdrWorkspaceOf(entry.pane_id ?? entry.tab_id ?? '');
 }
 /** Whether ENTRY is this install's to act on: within SCOPE, or attributed to no workspace at all. */
-export function inHerdrScope(entry: Parameters<typeof herdrWorkspaceOf>[0], scope: string | null = processScope) {
+function inHerdrScope(entry: Parameters<typeof herdrWorkspaceOf>[0], scope: string | null = processScope) {
   if (!scope) return true;
   const workspace = herdrWorkspaceOf(entry);
   return workspace === null || workspace === scope;
 }
 /** Refuses, by name, a pane or tab another install's workspace holds. */
-export function assertHerdrScope(target: string, scope: string | null = processScope) {
-  if (!inHerdrScope(target, scope)) throw new Error(`Herdr ${target} belongs to workspace ${herdrWorkspaceOf(target)}, not this installation's workspace ${scope}; Graphyard never closes, pastes into or reclaims another install's pane`);
+function assertHerdrScope(target: string, scope: string | null = processScope) {
+  if (!inHerdrScope(target, scope)) throw new Error(`Herdr ${target} belongs to workspace ${herdrWorkspaceOf(target)}, not this installation's workspace ${scope}; Mainworks never closes, pastes into or reclaims another install's pane`);
 }
 /**
  * Every Herdr call the coordinator makes. `run` is the asynchronous runner (child-runner.ts) —
@@ -179,7 +180,7 @@ export async function listHerdrAgents(run?: ChildRun, scope: string | null = pro
 }
 export async function observeHerdrAgents(run?: ChildRun, scope: string | null = processScope) {
   try { return { agents: await listHerdrAgents(run, scope), available: true, reason: null }; }
-  catch { return { agents: [] as HerdrAgent[], available: false, reason: 'Herdr session health is unavailable; Graphyard work state remains authoritative' }; }
+  catch { return { agents: [] as HerdrAgent[], available: false, reason: 'Herdr session health is unavailable; Mainworks work state remains authoritative' }; }
 }
 
 export async function closeHerdrPane(pane: string, run?: ChildRun, timeoutMs = 5_000, scope: string | null = processScope) {

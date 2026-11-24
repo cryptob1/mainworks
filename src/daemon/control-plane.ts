@@ -1,8 +1,8 @@
 // Concern: GY-3199, GY-3233, GY-3249, GY-3693 — the control plane's own faults, as the loop sees them. The deploy
 // watch keeps .graphyard/control-plane.json; this step reads it each cycle, and the cycle hands it
-// the steps that ran past their timeout; the merge writer hands it trial-host faults. A fault belongs to Graphyard, not to the managed
+// the steps that ran past their timeout; the merge writer hands it trial-host faults. A fault belongs to Mainworks, not to the managed
 // repository: it is filed once to the configured upstream install (`upstream` in master.json),
-// into this install only when it manages Graphyard itself (adding an observation note to any open
+// into this install only when it manages Mainworks itself (adding an observation note to any open
 // or recently done item with the same faultKey instead of filing a duplicate), and otherwise raised
 // as one attention line — never filed again per cycle. Once a day it reports the staleness the record shows.
 import { randomUUID } from 'node:crypto';
@@ -10,31 +10,31 @@ import { controlPlaneRecordPath, controlPlaneStaleLines, readControlPlaneRecord,
 import type { Work } from '../model.js';
 import { readCredentialFile } from '../private-file.js';
 import { serverOrigin } from '../repository-setup.js';
-import { graphyardRepository } from '../scenarios.js';
+import { mainworksRepository } from '../scenarios.js';
 import type { MasterConfig } from '../master/profiles.js';
 import { actionLine, message, storeAction } from './state.js';
 import type { Cycle } from './cycle.js';
 
 /** How long a failed upstream filing waits before the loop asks again. */
-export const upstreamRetryMs = 3_600_000;
+const upstreamRetryMs = 3_600_000;
 /** GY-3693: how long after a repair item is delivered or closed before the same fault files a new item. */
-export const faultCooldownMs = 24 * 60 * 60_000;
+const faultCooldownMs = 24 * 60 * 60_000;
 
 /**
  * The bug item every fault the loop files is built from (GY-3160, GY-3365, GY-3693): the batch gate's flakes,
  * known reds and diagnostics, and the control plane's own faults. AC-1 binds a new pinning test,
  * which fails on the base, so the bug trial reproduces the defect there; AC-2 binds an E2E case,
- * so the item meets the filing rule that every bug owes an e2e proof. Graphyard's own filings bind
+ * so the item meets the filing rule that every bug owes an e2e proof. Mainworks's own filings bind
  * create-work-item, an existing case that passes on any base; a gate filing in any other repository
  * binds that repository's own case instead (GY-3568). Every item carries a `faultKey` so repeats
  * add an observation note to the existing item instead of filing duplicates.
  */
-export const faultItem = (input: { faultKey: string; title: string; description: string; proof: string; reason: string; repaired?: { text: string; proof: string }; e2e?: { proof: string; clause: string } }) => {
+const faultItem = (input: { faultKey: string; title: string; description: string; proof: string; reason: string; repaired?: { text: string; proof: string }; e2e?: { proof: string; clause: string } }) => {
   const e2e = input.e2e ?? { proof: 'e2e:create-work-item', clause: 'creating a work item still works' };
   return {
   faultKey: input.faultKey,
   title: input.title.slice(0, 200), type: 'bug' as const, priority: 1, description: input.description, dependencies: [],
-  why: 'A fault in Graphyard slows or stops delivery for everyone using this install until it is fixed.',
+  why: 'A fault in Mainworks slows or stops delivery for everyone using this install until it is fixed.',
   simplest: 'Fix the one cause the description names and pin it with a test; nothing else changes.',
   criteria: [
     // AC-1 never repeats the title: a title like "… on the install for X" reads as a live-install observation the filing refuses.
@@ -52,9 +52,9 @@ export function controlPlaneUpgradeItem(record: ControlPlaneRecord) {
   return faultItem({
     faultKey: `control-plane-upgrade:${step}`,
     title: `Control-plane upgrade stuck at ${step}`,
-    description: `The daily control-plane upgrade to the verified Graphyard commit ${verified.slice(0, 12)} fails at ${step}: ${(record.failedReason ?? 'no reason recorded').slice(0, 500)}. The install keeps running ${record.commit?.slice(0, 12) ?? 'its previous version'} and retries about hourly; .graphyard/control-plane.json carries the record and master status shows it. Fix the upgrade's cause — the failed step and reason above — so the install runs the latest verified commit again.`,
+    description: `The daily control-plane upgrade to the verified Mainworks commit ${verified.slice(0, 12)} fails at ${step}: ${(record.failedReason ?? 'no reason recorded').slice(0, 500)}. The install keeps running ${record.commit?.slice(0, 12) ?? 'its previous version'} and retries about hourly; .graphyard/control-plane.json carries the record and master status shows it. Fix the upgrade's cause — the failed step and reason above — so the install runs the latest verified commit again.`,
     proof: 'unit:control-plane-upgrade-pinned',
-    repaired: { text: 'The install again runs the latest verified Graphyard commit within a day of its publishing', proof: 'manual:control-plane-current' },
+    repaired: { text: 'The install again runs the latest verified Mainworks commit within a day of its publishing', proof: 'manual:control-plane-current' },
     reason: 'Filed by the master loop from the control-plane update record (GY-3199)',
   });
 }
@@ -81,7 +81,7 @@ export const trialHostFaultItem = (host: string, repository: string) => faultIte
 export const trialSandboxFaultItem = (repository: string) => faultItem({
   faultKey: `trial-sandbox-fault:${repository}`,
   title: `Merge trials cannot start nested sandboxes on ${repository}'s trial host`,
-  description: `A merge trial on the install for ${repository} failed because AppArmor denied a nested bubblewrap sandbox inside the trial container. The head was neither refused nor reworked and stays queued; the trial record carries the output. graphyard doctor names the fix: load the graphyard-trial AppArmor profile on the trial host (rerun graphyard up).`,
+  description: `A merge trial on the install for ${repository} failed because AppArmor denied a nested bubblewrap sandbox inside the trial container. The head was neither refused nor reworked and stays queued; the trial record carries the output. mainworks doctor names the fix: load the mainworks-trial AppArmor profile on the trial host (rerun mainworks up).`,
   proof: 'unit:trial-sandbox-starts',
   reason: 'Filed by the master loop from a trial-host fault (GY-3339)',
 });
@@ -99,7 +99,7 @@ export const trialImageFaultItem = (repository: string) => faultItem({
 export const trialNetworkFaultItem = (repository: string, networks: string) => faultItem({
   faultKey: `trial-network-fault:${repository}`,
   title: `Merge trials cannot create Docker networks on the install for ${repository}`,
-  description: `A merge trial on the install for ${repository} failed to create its network: all predefined address pools have been fully subnetted, with ${networks} Graphyard preview networks on the trial host. The head was neither refused nor reworked and stays queued. Find what leaks the networks and remove it; the loop's leftovers sweep removes trial networks no container uses.`,
+  description: `A merge trial on the install for ${repository} failed to create its network: all predefined address pools have been fully subnetted, with ${networks} Mainworks preview networks on the trial host. The head was neither refused nor reworked and stays queued. Find what leaks the networks and remove it; the loop's leftovers sweep removes trial networks no container uses.`,
   proof: 'unit:trial-network-created',
   reason: 'Filed by the master loop from a trial-host fault (GY-3316)',
 });
@@ -115,7 +115,7 @@ const doneAt = (item: Pick<Work, 'stageEnteredAt' | 'updatedAt' | 'delivery' | '
  * GY-3693: the standing repair item for `faultKey` — any open item with that fault key, else the
  * most recently delivered or closed item with that fault key within the last 24 hours.
  */
-export function existingFaultItem(work: readonly Work[], faultKey: string, now: number): Work | null {
+function existingFaultItem(work: readonly Work[], faultKey: string, now: number): Work | null {
   const matching = work.filter(item => item.faultKey === faultKey);
   const open = matching.find(item => item.stage !== 'done');
   if (open) return open;
@@ -168,7 +168,7 @@ type FaultCycle = Pick<Cycle, 'state' | 'effects' | 'clock' | 'log' | 'config'> 
 /**
  * Reports one fault: filed upstream when one is configured, into this install (through
  * `fileLoopFault`, adding an observation note to any open or recently done item with the same
- * `faultKey`) only when it manages Graphyard's own repository, otherwise one attention line. A
+ * `faultKey`) only when it manages Mainworks's own repository, otherwise one attention line. A
  * failed upstream filing stands as its attention line and is asked again an hour later.
  */
 async function reportFault(cycle: FaultCycle, item: FaultItem, fault: string) {
@@ -177,38 +177,38 @@ async function reportFault(cycle: FaultCycle, item: FaultItem, fault: string) {
     const entry = storeAction(cycle.state, key, { kind: 'attention', work: null, principal: null, state, detail: detail.slice(0, 1900), attempts: (row?.attempts ?? 0) + 1, epoch: null, cycle: cycle.state.cycle, at: new Date(cycle.clock).toISOString() });
     cycle.log(actionLine(cycle.state.cycle, entry));
   };
-  if (!upstream && cycle.config.repository?.toLowerCase() === graphyardRepository) {
+  if (!upstream && cycle.config.repository?.toLowerCase() === mainworksRepository) {
     const work = cycle.snapshot?.work ?? [];
     const existing = existingFaultItem(work, key, cycle.clock);
     if (!existing && row && row.state === 'done' && cycle.clock - Date.parse(row.at) < faultCooldownMs) return;
     try {
       const result = await fileLoopFault({ work, now: cycle.clock, createWork: cycle.effects.mergeWriter?.createWork, note: cycle.effects.mergeWriter?.note }, item, fault, key);
-      if (result.action === 'unwired') return note('failed', `Graphyard fault: ${fault}. No work filer is wired, so it is not filed.`);
+      if (result.action === 'unwired') return note('failed', `Mainworks fault: ${fault}. No work filer is wired, so it is not filed.`);
       note('done', `${result.action === 'noted' ? 'Noted' : 'Filed'} ${result.item ?? 'an item'}: ${fault}`);
-    } catch (error) { note('failed', `Graphyard fault: ${fault}. Could not file it: ${message(error)}`); }
+    } catch (error) { note('failed', `Mainworks fault: ${fault}. Could not file it: ${message(error)}`); }
     return;
   }
   if (row && (row.state === 'done' || !upstream || cycle.clock - Date.parse(row.at) < upstreamRetryMs)) return;
-  if (!upstream) return note('failed', `Graphyard fault: ${fault}. No upstream install is configured (upstream in master.json), so it is not filed; report it to Graphyard, never as work in ${cycle.config.repository}`);
+  if (!upstream) return note('failed', `Mainworks fault: ${fault}. No upstream install is configured (upstream in master.json), so it is not filed; report it to Mainworks, never as work in ${cycle.config.repository}`);
   try {
     const filed = await upstream(item, key);
     note('done', `Filed ${filed?.key ?? 'an item'} to the upstream install: ${fault}`);
-  } catch (error) { note('failed', `Graphyard fault: ${fault}. Could not file it to the upstream install: ${message(error)}`); }
+  } catch (error) { note('failed', `Mainworks fault: ${fault}. Could not file it to the upstream install: ${message(error)}`); }
 }
 
-/** GY-3249: a merge trial that could not fetch from `host` is reported once per host, like any Graphyard fault. */
+/** GY-3249: a merge trial that could not fetch from `host` is reported once per host, like any Mainworks fault. */
 export const reportTrialHostFault = (cycle: FaultCycle, host: string) =>
   reportFault(cycle, trialHostFaultItem(host, cycle.config.repository), `merge trials cannot fetch from ${host}, a host a normal build needs`);
 
 /** GY-3316: a merge trial Docker refused a network for spent address pools is reported once per repository, naming the preview networks on the host. */
 export const reportTrialNetworkFault = (cycle: FaultCycle, networks: string) =>
-  reportFault(cycle, trialNetworkFaultItem(cycle.config.repository, networks), `merge trials cannot create a Docker network on the install for ${cycle.config.repository}: its address pools are spent, with ${networks} Graphyard preview networks on the trial host`);
+  reportFault(cycle, trialNetworkFaultItem(cycle.config.repository, networks), `merge trials cannot create a Docker network on the install for ${cycle.config.repository}: its address pools are spent, with ${networks} Mainworks preview networks on the trial host`);
 
-/** GY-3275: a merge trial that cannot build a repository's own trial image is reported once per repository, like any Graphyard fault. */
+/** GY-3275: a merge trial that cannot build a repository's own trial image is reported once per repository, like any Mainworks fault. */
 export const reportTrialImageFault = (cycle: FaultCycle) =>
   reportFault(cycle, trialImageFaultItem(cycle.config.repository), `merge trials cannot build the repository's graphyard.trial.Dockerfile image on the install for ${cycle.config.repository}`);
 
-/** GY-3339: a merge trial whose nested sandbox AppArmor denied is reported once per repository, like any Graphyard fault. */
+/** GY-3339: a merge trial whose nested sandbox AppArmor denied is reported once per repository, like any Mainworks fault. */
 export const reportTrialSandboxFault = (cycle: FaultCycle) =>
   reportFault(cycle, trialSandboxFaultItem(cycle.config.repository), `merge trials cannot start nested sandboxes: AppArmor denies them in the trial container on the install for ${cycle.config.repository}`);
 
@@ -231,6 +231,36 @@ export async function controlPlaneStep(cycle: FaultCycle, stalledSteps: readonly
   if (cycle.state.controlPlaneDay !== day) {
     cycle.state.controlPlaneDay = day;
     const stale = controlPlaneStaleLines(readControlPlaneRecord(controlPlaneRecordPath(root)), cycle.clock);
-    if (stale.length) cycle.log(`[graphyard-master] control-plane diagnostics: ${stale.join('; ')}`);
+    if (stale.length) cycle.log(`[mainworks-master] control-plane diagnostics: ${stale.join('; ')}`);
   }
 }
+
+/** The pinning-test proof a gate filing binds, named from its check: `known-red:test:tests/a-b.test.ts` → `unit:a-b-pinned`. */
+export const pinningProof = (key: string) =>
+  `unit:${key.slice(key.indexOf(':') + 1).toLowerCase().replace(/^test:tests\//, '').replace(/\.test\.ts$/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}-pinned`;
+
+/** The proof a gate filing owes once the batch gate passes again; the loop records it itself (GY-3443). */
+export const repairedProof = 'manual:batch-gate-repaired';
+
+/**
+ * The E2E proof a gate filing binds (GY-3568): Mainworks's own filings keep create-work-item, the
+ * case its install has always run; every other repository binds its own — the failing case itself
+ * when the check is one, else a new case named like the pinning proof, which the fix adds to that
+ * repository's catalog.
+ */
+const gateFiledE2e = (key: string, repository: string): { proof: string; clause: string } => {
+  if (repository.toLowerCase() === mainworksRepository) return { proof: 'e2e:create-work-item', clause: 'creating a work item still works' };
+  const check = key.slice(key.indexOf(':') + 1);
+  return check.startsWith('e2e:')
+    ? { proof: check, clause: `the E2E case ${check.slice(4)} passes again` }
+    : { proof: `e2e:${pinningProof(key).slice('unit:'.length)}`, clause: `a new E2E case ${pinningProof(key).slice('unit:'.length)} passes` };
+};
+
+/** A batch gate filing's item: its pinning test and its E2E case are named from its check and the gated repository. */
+export const gateFiledItem = (input: { title: string; description: string; key: string }, baseBranch: string, repository: string) =>
+  faultItem({ faultKey: input.key, title: input.title, description: input.description, proof: pinningProof(input.key), repaired: { text: 'The batch gate passes again', proof: repairedProof }, e2e: gateFiledE2e(input.key, repository), reason: `Filed by the batch gate on ${baseBranch}` });
+
+/** GY-3735: a merge trial's flake files the batch gate's own "Flaky check on main: CHECK" item, or notes the one its fault key has. */
+export const fileFlakyCheck = (reads: { createWork?: Parameters<typeof fileLoopFault>[0]['createWork']; note?: Parameters<typeof fileLoopFault>[0]['note']; baseBranch: string; now(): number }, repository: string, work: readonly Work[], check: string, text: string) =>
+  fileLoopFault({ work, now: reads.now(), createWork: reads.createWork, note: reads.note },
+    gateFiledItem({ key: `flake:${check}`, title: `Flaky check on main: ${check}`, description: text }, reads.baseBranch, repository), text);

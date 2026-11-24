@@ -15,7 +15,7 @@ export const inviteCommand: CliCommand = {
     const { values, positionals } = parseArgs({ args: [context.id ?? '', ...context.args].filter(Boolean), allowPositionals: true, options: { role: { type: 'string' }, days: { type: 'string' } } });
     const revoke = positionals[0] === 'revoke' && positionals.length === 2;
     const name = revoke ? positionals[1] : positionals[0];
-    if (!name || positionals.length > (revoke ? 2 : 1) || (!revoke && !values.role)) throw new Error('Usage: graphyard invite NAME --role viewer|maintainer [--days 1|7|30], or graphyard invite revoke NAME');
+    if (!name || positionals.length > (revoke ? 2 : 1) || (!revoke && !values.role)) throw new Error('Usage: mainworks invite NAME --role viewer|maintainer [--days 1|7|30], or mainworks invite revoke NAME');
     await asRecordedOperator(context.repositoryRoot());
     if (revoke) return context.print(await context.api(`invites/${encodeURIComponent(name)}/revoke`, {}));
     const invite = await context.api('invites', { name, role: values.role, ...(values.days ? { days: Number(values.days) } : {}) }) as { link: string; name: string; role: string; expiresAt: string; note: string | null };

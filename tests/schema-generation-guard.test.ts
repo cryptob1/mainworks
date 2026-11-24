@@ -56,8 +56,8 @@ test('unit:schema-generation-guard — a release whose table definitions are old
 
     // The older definition refuses before any statement runs, naming both generations and both releases.
     await assert.rejects(store.init(), (error: Error) => {
-      assert.match(error.message, new RegExp(`generation ${schemaVersion + 1} \\(migrated by Graphyard 9\\.9\\.9\\) is newer than this release supports \\(generation ${schemaVersion}, Graphyard ${current.release.replace(/\./g, '\\.')}\\)`));
-      assert.match(error.message, /instead of re-applying its older table definitions — upgrade to Graphyard 9\.9\.9 or newer/);
+      assert.match(error.message, new RegExp(`generation ${schemaVersion + 1} \\(migrated by Mainworks 9\\.9\\.9\\) is newer than this release supports \\(generation ${schemaVersion}, Mainworks ${current.release.replace(/\./g, '\\.')}\\)`));
+      assert.match(error.message, /instead of re-applying its older table definitions — upgrade to Mainworks 9\.9\.9 or newer/);
       return true;
     });
     assert.deepEqual(await snapshot(store), migrated, 'no table, trigger or digest record changed');

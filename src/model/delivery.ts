@@ -1,7 +1,7 @@
 import type { Work } from './work.js';
 
 export interface ReleaseDelivery { environment: string; policyRevision: number; releaseId: string; releaseRevision: number; generation: number; verifiedAt: string; interval: { from: string; to: string } }
-/** What the running release served when Graphyard's coordinator observed it covering this merge. */
+/** What the running release served when Mainworks's coordinator observed it covering this merge. */
 export interface DeploymentObservation {
   sha: string; mergeSha: string; source: 'endpoint' | 'github-deployment'; observedAt: string;
   /** Exact when the release serves the merge commit itself; otherwise a descendant that contains it. */

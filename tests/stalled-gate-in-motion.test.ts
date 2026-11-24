@@ -33,7 +33,7 @@ async function holds() {
   return declared;
 }
 
-const conflictText = (sha: string, base: string) => `Candidate ${sha.slice(0, 12)} cannot be brought onto base branch tip ${base.slice(0, 12)} without resolving a conflict, which is content nobody reviewed or proved: Merge of ${base.slice(0, 12)} into graphyard-merge-check/gy conflicts and cannot be resolved by Graphyard.`;
+const conflictText = (sha: string, base: string) => `Candidate ${sha.slice(0, 12)} cannot be brought onto base branch tip ${base.slice(0, 12)} without resolving a conflict, which is content nobody reviewed or proved: Merge of ${base.slice(0, 12)} into mainworks-merge-check/gy conflicts and cannot be resolved by Mainworks.`;
 /**
  * The submitted item as the record held it: a head the base moved past, its stage entered at the
  * claim, no request of any kind raised; the control plane's confirmed conflicts as `baseRefresh`

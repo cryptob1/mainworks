@@ -21,11 +21,11 @@ import type { Work } from './work.js';
 // GY-1992, GY-2874: `scope-request`, `decision` and `escalation` are retired; a stored one still loads, and a new one is refused.
 export const agentRequestTypes = ['blocker', 'note'] as const;
 export type AgentRequestType = typeof agentRequestTypes[number];
-export const deciderKinds = ['rule', 'follow-up', 'human'] as const;
-export type DeciderKind = typeof deciderKinds[number];
+const deciderKinds = ['rule', 'follow-up', 'human'] as const;
+type DeciderKind = typeof deciderKinds[number];
 /** The three decisions no agent may make. A request may name one; nothing else routes to a human. */
 export const humanDecisions = ['goals-and-priorities', 'spending-money-or-accounts', 'issuing-credentials'] as const;
-export type HumanDecision = typeof humanDecisions[number];
+type HumanDecision = typeof humanDecisions[number];
 
 export interface Decider { kind: DeciderKind; who: string; command: string | null }
 
@@ -51,12 +51,13 @@ export interface AgentRequest {
 export function deciderFor(key: string, request: Pick<AgentRequest, 'type' | 'humanDecision'>): Decider {
   if (request.humanDecision) return { kind: 'human', who: `the human operator (${request.humanDecision.replace(/-/g, ' ')})`, command: null };
   switch (request.type) {
-    case 'blocker': return { kind: 'follow-up', who: 'a tracked follow-up work item', command: `graphyard master create — a follow-up item naming ${key} and the external cause` };
+    case 'blocker': return { kind: 'follow-up', who: 'a tracked follow-up work item', command: `mainworks master create — a follow-up item naming ${key} and the external cause` };
     case 'note': return { kind: 'rule', who: 'nobody; a note is recorded, not decided', command: null };
   }
 }
 
-export const agentRequestLimit = 50, agentRequestCeiling = 200;
+export const agentRequestLimit = 50;
+const agentRequestCeiling = 200;
 
 /**
  * The bound on an item's recorded requests, which never drops an open ask a decider owes an

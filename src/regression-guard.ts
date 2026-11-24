@@ -14,15 +14,6 @@ declare module './model/work.js' {
 }
 
 /**
- * GY-863. The line-level three-way merge git's own merge performs: each side's changes since the
- * merge base are applied to the other, a region both sides changed identically is taken once, and
- * a region they changed differently is a conflict. Pure and shared, so the landing check and its
- * tests run the identical judgement. Lines are whole bytes (a trailing newline-less piece is a
- * line), so a clean merge of byte-identical inputs reproduces git's blob exactly.
- */
-export interface ThreeWayMerge { clean: boolean; content: Buffer | null }
-
-/**
  * Delivered work items whose observed diff covers the path. A pull request the provider reports
  * merged shipped its files whether or not its delivery is recorded yet.
  */
@@ -37,7 +28,7 @@ export function shippedBy(path: string, all: Work[]): string[] {
  * asks git before naming any candidate unlanded; such a peer is neither `foreign` nor `carried`,
  * none of its files is read as a revert, and its merge is reconciled at once (engine.ts).
  */
-export interface LandedCandidate { key: string; pr: number; head: string; mergeSha: string | null }
+interface LandedCandidate { key: string; pr: number; head: string; mergeSha: string | null }
 declare module './model/landing-check.js' {
   interface LandingCheck {
     /** The open candidates in this head's history that git shows already on the base branch tip (GY-744). */

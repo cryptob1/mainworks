@@ -4,7 +4,7 @@ import { eventsImmutableDdl } from '../compaction.js';
 import { DELIVERY_EVENT_PREDICATE } from './production.js';
 
 /** Work aggregates, their immutable history, and the durable integration jobs behind them. */
-export const workItems = defineTable({
+const workItems = defineTable({
   name: 'work_items', orderBy: 'number', serial: 'number',
   ddl: `CREATE TABLE IF NOT EXISTS work_items (
   id uuid PRIMARY KEY, number bigserial UNIQUE, document jsonb NOT NULL
@@ -26,13 +26,26 @@ WHERE document ?| ARRAY[
   'lane', 'speedTarget', 'mechanicalPlan', 'mechanicalAnswered'
 ] OR document->>'blocker' LIKE 'Scope request refused%';`,
 });
-export const events = defineTable({
+const events = defineTable({
   name: 'events', orderBy: 'seq', serial: 'seq',
   ddl: `CREATE TABLE IF NOT EXISTS events (
   seq bigserial PRIMARY KEY, work_id uuid REFERENCES work_items(id),
   actor text NOT NULL, kind text NOT NULL, payload jsonb NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT clock_timestamp()
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(), stage text
 );
+-- GY-3765: a whole-document row's stage, set as it is written, so the flow reads it without opening
+-- the document. Existing rows of the flow's window are filled once; the ledger is otherwise append-only.
+CREATE OR REPLACE FUNCTION graphyard_event_stage() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN NEW.stage := NEW.payload->'work'->>'stage'; RETURN NEW; END $$;
+DROP TRIGGER IF EXISTS event_stage ON events;
+CREATE TRIGGER event_stage BEFORE INSERT ON events FOR EACH ROW EXECUTE FUNCTION graphyard_event_stage();
+DO $events$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'events'::regclass AND attname = 'stage' AND NOT attisdropped) THEN
+    ALTER TABLE events ADD COLUMN stage text;
+    DROP TRIGGER IF EXISTS immutable_events ON events;
+    UPDATE events SET stage = payload->'work'->>'stage' WHERE payload ? 'work' AND created_at > now() - interval '8 days';
+  END IF;
+END $events$;
 CREATE INDEX IF NOT EXISTS events_work ON events(work_id,seq);
 -- The ledger's recent growth by kind (eventStats) is a range read on insertion time.
 CREATE INDEX IF NOT EXISTS events_created ON events(created_at);
@@ -59,7 +72,17 @@ CREATE INDEX IF NOT EXISTS events_work_delivery ON events(work_id,seq)
 -- GY-3402: the install-wide records (agent registry, connect requests, team access) are the newest
 -- events of one kind family with no item. A LIKE on kind cannot use a btree under the database's
 -- collation, so each read scanned the whole ledger; this answers them newest-first in one probe.
+-- GY-3760: the events history page leaves the routine kinds (events-history.ts) out; on a ledger of
+-- millions of heartbeats a filter on the primary key read millions of rows to fill one page. These
+-- hold only the rows the page returns, newest first, for the whole ledger and for one item.
+CREATE INDEX IF NOT EXISTS events_history ON events(seq) WHERE NOT (kind = ANY ('{github.observed,heartbeat}'::text[]));
+CREATE INDEX IF NOT EXISTS events_work_history ON events(work_id,seq) WHERE NOT (kind = ANY ('{github.observed,heartbeat}'::text[]));
+-- GY-3763: the flow numbers read the last 7 days' whole-document rows as a range on insertion time,
+-- never testing a payload outside the window.
+CREATE INDEX IF NOT EXISTS events_work_flow ON events(created_at) WHERE payload ? 'work' AND work_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS events_unowned_family ON events(split_part(kind,'.',1),seq) WHERE work_id IS NULL;
+-- GY-3768: the delta rows still lacking their stage, which the loop's backfill finds without reading the ledger; empty once it is done.
+CREATE INDEX IF NOT EXISTS events_stageless_delta ON events(seq) WHERE payload ? 'delta' AND NOT payload ? 'stage';
 ${eventWorkFunctions}
 -- Append-only but for the audited compaction of routine rows (store/compaction.ts, GY-979).
 ${eventsImmutableDdl}`,
@@ -68,11 +91,11 @@ ${eventsImmutableDdl}`,
 export const unownedFamilySql = (prefix: string, alias = 'events') =>
   `${alias}.work_id IS NULL AND split_part(${alias}.kind,'.',1) = '${prefix.slice(0, -1)}'`;
 /** Where the next ledger compaction batch starts (store/compaction.ts): a lost row only restarts the pass. */
-export const ledgerCompactionCursor = defineTable({
+const ledgerCompactionCursor = defineTable({
   name: 'ledger_compaction_cursor', orderBy: 'id', cache: true,
   ddl: `CREATE TABLE IF NOT EXISTS ledger_compaction_cursor (id boolean PRIMARY KEY DEFAULT true CHECK (id), seq bigint NOT NULL);`,
 });
-export const receipts = defineTable({
+const receipts = defineTable({
   name: 'receipts', orderBy: 'actor,key',
   ddl: `CREATE TABLE IF NOT EXISTS receipts (
   actor text NOT NULL, key text NOT NULL, fingerprint text NOT NULL, result jsonb NOT NULL,
@@ -82,7 +105,7 @@ export const receipts = defineTable({
 ALTER TABLE receipts ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
 CREATE INDEX IF NOT EXISTS receipts_created ON receipts(created_at);`,
 });
-export const jobs = defineTable({
+const jobs = defineTable({
   name: 'jobs', orderBy: 'work_id',
   ddl: `CREATE TABLE IF NOT EXISTS jobs (
   work_id uuid PRIMARY KEY REFERENCES work_items(id), available_at timestamptz NOT NULL DEFAULT now(),

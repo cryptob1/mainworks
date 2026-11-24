@@ -42,7 +42,7 @@ export function endedBySubmission(work: Work, epoch: number) {
 /** The ledger kind of a lease renewal that failed server-side (GY-558). */
 export const renewalFaultEvent = 'lease.renewal-failed';
 /** A lease carrying the server-side renewal fault that extended it (GY-558); cleared by the next renewal. */
-export type GracedLease = Lease & { renewalFault?: { at: string; error: string } };
+type GracedLease = Lease & { renewalFault?: { at: string; error: string } };
 /** A renewal that failed server-side: 503, with the grace its recorded fault earned, if any. */
 export class RenewalFault extends Refusal {
   constructor(message: string, readonly grace: { at: string; graceUntil: string; now: string } | null) { super(message, 503); }

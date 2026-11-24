@@ -137,7 +137,7 @@ test('unit:unit-names-fail-closed — with no units.json, a legacy-named unit th
   const refusal = (checkoutPath: string) => (error: unknown) => {
     assert.ok(error instanceof LegacyUnitRefusal, String(error));
     assert.match(error.message, new RegExp(`${legacyLoopUnit.replace('.', '\\.')}.*runs another checkout \\(${checkoutPath}\\)`));
-    assert.match(error.message, /run graphyard master init in /);
+    assert.match(error.message, /run mainworks master init in /);
     return true;
   };
   // The pilot records nothing yet: every reader refuses rather than return production's names.
@@ -235,7 +235,7 @@ test('unit:herdr-scope-per-install — the install\'s workspace scopes every inv
 
 // ---- The master harness ------------------------------------------------------------------------
 
-test('unit:harness-own-units-only — the generated master harness allows restarting its own install\'s loop unit and denies every other install\'s Graphyard units', async () => {
+test('unit:harness-own-units-only — the generated master harness allows restarting its own install\'s loop unit and denies every other install\'s Mainworks units', async () => {
   const home = await temporaryDirectory('harness-units-home');
   const unitDirectory = join(home, '.config/systemd/user');
   const host = userManager();
@@ -267,7 +267,7 @@ test('unit:harness-own-units-only — the generated master harness allows restar
   for (const command of ['systemctl --user restart graphyard-master-cryptob1-graphyard-game-pilot.service', 'systemctl --user stop graphyard-master-cryptob1-graphyard-game.service'])
     assert.equal(decide(productionPlan, command), 'deny', command);
 
-  // A name that extends another install's (graphyard-game vs graphyard-game-pilot) never denies the longer one's own unit.
+  // A name that extends another install's (mainworks-game vs mainworks-game-pilot) never denies the longer one's own unit.
   const thirdPlan = masterHarness(third, config('cryptob1/graphyard-game'), 'claude', { unitDirectory });
   assert.equal(decide(thirdPlan, 'systemctl --user restart graphyard-master-cryptob1-graphyard-game.service'), 'allow');
   assert.equal(decide(thirdPlan, 'systemctl --user restart graphyard-master-cryptob1-graphyard-game-pilot.service'), 'deny');

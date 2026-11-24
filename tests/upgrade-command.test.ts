@@ -8,7 +8,7 @@ import { installRequestFromArgs, redeployArguments } from '../src/install/index.
 import type { InstallRecord } from '../src/install/secrets.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-1962: `graphyard upgrade` moves CLI, server, loop and managed files to one release, in order.
+// GY-1962: `mainworks upgrade` moves CLI, server, loop and managed files to one release, in order.
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', ...args], { cwd, encoding: 'utf8' }).trim();
 const order = ['backup', 'checkout', 'npm-ci', 'redeploy', 'restart', 'refresh', 'health'];
 const releaseSource = (generations: string[]) => `export const schemaGenerations: readonly (string | null)[] = [\n  ${generations.join(', ')},\n];\n`;
@@ -31,13 +31,13 @@ test('unit:upgrade-command-plan — the plan lists the ordered steps without act
   assert.match(plan.steps[3].command, /install --repo acme\/app --provider compose --base-branch main --server-name graphyard --review-policy agent --workers 1 --image ghcr\.io\/cryptob1\/graphyard:2026\.10\.17 --source-root \/opt\/graphyard --plan && .*install --repo acme\/app .* --source-root \/opt\/graphyard --apply$/, 'the install preview runs before the apply, both building from the checkout the upgrade checked out (GY-2168)');
   assert.match(plan.steps[4].command, /master restart$/);
   assert.match(plan.steps[5].command, /init --scan --url https:\/\/gy\.example && .*init --scan --apply --url https:\/\/gy\.example$/, 'the scan refreshes the stored proposal before it is applied');
-  assert.equal(plan.rollback, 'graphyard upgrade --to 2026.10.16');
+  assert.equal(plan.rollback, 'mainworks upgrade --to 2026.10.16');
   assert.match(renderPlan(plan), /^upgrade 2026\.10\.16 -> 2026\.10\.17/);
   assert.match(upgradePlan(inputs({ current: { version: 'unreleased aaaaaaaaaaaa', revision: 'a'.repeat(40), released: false } })).rollback, /checkout --detach a{40}/, 'an unreleased previous rolls back by commit');
   assert.deepEqual(redeployArguments({ ...record, deployment: { local: false, port: 4317, image: null } }, 'img').slice(0, 4), ['--repo', 'acme/app', '--provider', 'compose']);
   assert.ok(redeployArguments({ ...record, deployment: { local: false, port: 4317, image: null } }, 'img').join(' ').includes('--port 4317'), 'the recorded port is kept');
   // The redeploy is a full apply, so it replans exactly the recorded roster and mode: extra workers and the CI producer's grants stay
-  // authorized, a principal added by graphyard principal add is reconciled in by install itself, and nothing reverts to defaults.
+  // authorized, a principal added by mainworks principal add is reconciled in by install itself, and nothing reverts to defaults.
   const fleet = redeployArguments({ ...record, reviewPolicy: 'agent', noGithubApp: true, principals: [...record.principals, principal('worker-2', 'worker'), principal('worker-3', 'worker'),
     principal('ci', 'producer', { proofs: ['e2e:checkout', 'unit:pay'] }), principal('observer', 'producer', { grants: ['delivery:observe-sha'], source: 'principal' })] }, 'img');
   // A record from before GY-2010 that chose no App redeploys with no App flag: install registers none.
@@ -50,7 +50,7 @@ test('unit:upgrade-command-plan — the plan lists the ordered steps without act
   assert.throws(() => upgradePlan(inputs({ target: { version: '2026.10.1', revision: 'c'.repeat(40), schema: 3 } })), /Refusing 2026\.10\.1: its schema generation 3 is older than the database's \(4\)/);
   assert.equal(plan.rollforward, null, 'a target at the database generation migrates nothing');
   const migrating = upgradePlan(inputs({ target: { version: '2026.10.18', revision: 'd'.repeat(40), schema: 5 } }));
-  assert.match(migrating.rollforward ?? '', /migrates the database from generation 4 to 5 .* rerun graphyard upgrade --to 2026\.10\.18, or restore .*before-2026\.10\.17\.json with graphyard db restore/, 'a newer generation migrates forward');
+  assert.match(migrating.rollforward ?? '', /migrates the database from generation 4 to 5 .* rerun mainworks upgrade --to 2026\.10\.18, or restore .*before-2026\.10\.17\.json with mainworks db restore/, 'a newer generation migrates forward');
   assert.match(renderPlan(migrating), /from the redeploy on: /);
 
   // The target and its generation come from the CLI checkout's tags and that revision's release.ts, read without moving HEAD.
@@ -88,18 +88,18 @@ test('unit:upgrade-command-run — steps run in order, the previous release is r
   });
   const plan = upgradePlan(inputs());
   assert.deepEqual(await runUpgrade(plan, effects()), { ok: true, steps: order });
-  assert.deepEqual(calls, ['record 2026.10.16 graphyard upgrade --to 2026.10.16', ...order], 'the record precedes every change');
+  assert.deepEqual(calls, ['record 2026.10.16 mainworks upgrade --to 2026.10.16', ...order], 'the record precedes every change');
   calls.forEach((call, index) => { if (call === 'checkout') assert.equal(calls[index + 1], 'npm-ci', 'npm ci runs right after each checkout move'); });
 
   calls.length = 0;
   const stopped = await runUpgrade(plan, effects('redeploy'));
-  assert.deepEqual(stopped, { ok: false, steps: ['backup', 'checkout', 'npm-ci'], failed: 'redeploy', error: 'redeploy broke', rollback: 'graphyard upgrade --to 2026.10.16' });
+  assert.deepEqual(stopped, { ok: false, steps: ['backup', 'checkout', 'npm-ci'], failed: 'redeploy', error: 'redeploy broke', rollback: 'mainworks upgrade --to 2026.10.16' });
   assert.deepEqual(calls.slice(1), ['backup', 'checkout', 'npm-ci', 'redeploy'], 'nothing runs after the failing step');
 
   // Once a migrating redeploy has run, the previous release refuses the database, so the failure names the roll forward instead.
   const migrating = upgradePlan(inputs({ target: { version: '2026.10.18', revision: 'd'.repeat(40), schema: 5 } }));
   const early = await runUpgrade(migrating, effects('backup'));
-  assert.equal(!early.ok && early.rollback, 'graphyard upgrade --to 2026.10.16', 'before the redeploy nothing migrated');
+  assert.equal(!early.ok && early.rollback, 'mainworks upgrade --to 2026.10.16', 'before the redeploy nothing migrated');
   for (const failAt of ['redeploy', 'health']) {
     const late = await runUpgrade(migrating, effects(failAt));
     assert.equal(!late.ok && late.rollback, migrating.rollforward, `${failAt} fails after the migration`);
@@ -119,7 +119,7 @@ test('unit:upgrade-command-run — steps run in order, the previous release is r
   for (const [status, body, error] of [[503, { ok: false, healthy: false, version: '2026.10.17' }, /HTTP 503/], [200, { ok: false, healthy: false, version: '2026.10.17' }, /unhealthy/], [200, { ok: true, healthy: true, version: '2026.10.16' }, /not 2026\.10\.17/]] as const) {
     const result = await live(status, body);
     assert.equal(result.ok, false, `HTTP ${status} ${JSON.stringify(body)} stops the upgrade`);
-    assert.ok(!result.ok && result.failed === 'health' && error.test(result.error) && result.rollback === 'graphyard upgrade --to 2026.10.16');
+    assert.ok(!result.ok && result.failed === 'health' && error.test(result.error) && result.rollback === 'mainworks upgrade --to 2026.10.16');
   }
 
   calls.length = 0;

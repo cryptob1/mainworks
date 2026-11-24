@@ -1,10 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { defaultChildRun } from '../child-runner.js';
-import { postReview, ReviewPostRefusal, reviewPostExample } from '../review-post.js';
-import { reviewStandard } from '../review-prompt.js';
-import { extractChangedAssertions } from '../model/changed-assertions.js';
-import { readVerificationMaps } from '../verification-maps.js';
-import { cliPath, resolveWork, type CliContext } from './context.js';
+import type { CliContext } from './context.js';
 import { defineCommands } from './registry.js';
 
 async function readStdin() {
@@ -30,6 +25,9 @@ const selfGit = (...args: string[]) => {
  * always exits 0.
  */
 async function reviewSelf({ api, args }: CliContext) {
+  const [{ defaultChildRun }, { reviewStandard }, { extractChangedAssertions }, { readVerificationMaps }, { resolveWork }] = await Promise.all([
+    import('../child-runner.js'), import('../review-prompt.js'), import('../model/changed-assertions.js'), import('../verification-maps.js'), import('./context.js'),
+  ]);
   const work = await resolveWork(api, args[0]);
   const status = await api('status');
   const baseBranch = String(status.baseBranch ?? 'main');
@@ -43,9 +41,9 @@ async function reviewSelf({ api, args }: CliContext) {
 }
 
 /**
- * `review post` (GY-1492): the reviewer session posts its verdict through Graphyard, which checks
+ * `review post` (GY-1492): the reviewer session posts its verdict through Mainworks, which checks
  * the launch's review binding and the bound head first. It never reads the repository connection
- * file: a reviewer holds no Graphyard credential. The binding carries a one-time verdict token
+ * file: a reviewer holds no Mainworks credential. The binding carries a one-time verdict token
  * (GY-1525), and the verdict goes to `POST /api/work/:id/review-verdict` at GRAPHYARD_URL as that token.
  * `review self` (GY-1987) is the worker's own read: it uses the worker's connection, never a
  * binding, and never writes.
@@ -66,6 +64,9 @@ export const reviewCommands = defineCommands([{
   async run(context) {
     const { id, args, print } = context;
     if (id === 'self') return reviewSelf(context);
+    const [{ defaultChildRun }, { postReview, ReviewPostRefusal, reviewPostExample }, { cliPath }] = await Promise.all([
+      import('../child-runner.js'), import('../review-post.js'), import('./context.js'),
+    ]);
     if (id !== 'post') throw new Error(`Use review self GY-N, or review post --event APPROVE|REQUEST_CHANGES|COMMENT [--body TEXT], like this:\n${reviewPostExample(cliPath, 'APPROVE')}`);
     const flag = (name: string) => { const at = args.indexOf(name); return at < 0 ? undefined : args[at + 1]; };
     const body = args.includes('--body') ? flag('--body') ?? '' : await readStdin();

@@ -45,7 +45,7 @@ test('unit:only-docker-tests-stay-on-the-coordinator — postgres, withDatabase,
 });
 
 test('unit:only-docker-tests-stay-on-the-coordinator — when the trial image lacks a browser, browser tests stay local and the reason is recorded once', { timeout: 300_000 }, async () => {
-  const image = 'graphyard-trial:no-browser-fixture';
+  const image = 'mainworks-trial:no-browser-fixture';
   const hosts = await shardHosts('no-browser-trial', ['box'], { [image]: `sha256:${'3612'.repeat(16)}` });
   const browserFiles = ['tests/browser-a.test.ts', 'tests/browser-b.test.ts'];
   const plainFiles = ['tests/plain-a.test.ts', 'tests/plain-b.test.ts'];

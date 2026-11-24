@@ -12,8 +12,9 @@ import { runFiles } from './runner/pi.js';
 import { reportedModel } from './master/runtimes.js';
 import { listRunDirectories, runsDirectory } from './runner/registry.js';
 import type { Conversation } from './master/conversation.js';
+import { stateDirectory } from './install/layout.js';
 
-const outbox = (root: string) => resolve(root, '.graphyard', 'usage-outbox');
+const outbox = (root: string) => resolve(stateDirectory(root), 'usage-outbox');
 type Session = Pick<UsageRow, 'id' | 'work' | 'role' | 'account' | 'runtime' | 'at'>;
 
 /** A run's rows: its tokens by model, or one 'not reported' row for a runtime that printed no usage. */
@@ -84,7 +85,7 @@ function masterUsage(conversation: Conversation): { rows: UsageRow[]; done: () =
 
 let lastCollected = 0;
 /** Reports are made at most this often: the loop's cycle is much shorter than anyone reads costs. */
-export const usageReportMs = 60_000;
+const usageReportMs = 60_000;
 /**
  * Reports every session's usage this host holds and has not reported: noted review runs, ended
  * worker and producer runs and the master transcript's growth. A batch the control plane did not take is kept

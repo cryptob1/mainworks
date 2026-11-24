@@ -12,7 +12,7 @@ import { shardHosts, shardRepository } from './helpers/shard-hosts.js';
 // ready, `npm run test:affected` runs its selected files there through the merge trial's
 // remote-shard runner; only files pinned local-only start a process here.
 
-const image = 'graphyard-trial:worker-tests';
+const image = 'mainworks-trial:worker-tests';
 /** The fixture's suite runner: files from --files-from (a shard) or its arguments (a run here); each prints its result and records where it ran. */
 const runner = (answers: string) => `import { readFileSync, appendFileSync } from 'node:fs';
 const argv = process.argv.slice(2), at = name => argv[argv.indexOf(name) + 1];

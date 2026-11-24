@@ -1,7 +1,7 @@
 {
   "id": "verification-uses-remote-hosts",
   "title": "A worker verification's test shards run on ready hosts while a merge trial starts",
-  "description": "A worker's host-run test check over a large test list, with two ready compute hosts reached through graphyard-host-shim under a strict heavy-job cap of one. Its shards run on both hosts as a merge trial's do, and it holds no heavy-job slot while they run there, so a merge trial takes the one slot at once. Master status's remoteShards shows the worker verification as the latest run, with every shard run remotely and both hosts ready. A check that is one script beside a declared Postgres Compose service has no shards to send: it runs whole on a ready host, which starts the service in its run directory, runs the script on the service's network and removes the project, and it runs on this machine, with the reason in the trial log, when no host is ready or the host drops it. One host serves two installs: each install's key reaches its own release's helper, and removing one install's key leaves the other working. A host that answers without Docker reads away with whether its Docker unit is not enabled or failed. The warm test image is keyed to main's commit and lockfile, holds dist/cli.mjs, dist/server.mjs and a filled compile cache, is pushed to ready hosts before shards start, starts the CLI in under 0.6 CPU-seconds, and rebuilds when a head changes source files. While a leftover limit file fixes the budget and a host is ready, master status names the file, the budget without it and graphyard master config hostHeavyJobs=auto, which removes it.",
+  "description": "A worker's host-run test check over a large test list, with two ready compute hosts reached through graphyard-host-shim under a strict heavy-job cap of one. Its shards run on both hosts as a merge trial's do, and it holds no heavy-job slot while they run there, so a merge trial takes the one slot at once. Master status's remoteShards shows the worker verification as the latest run, with every shard run remotely and both hosts ready. A check that is one script beside a declared Postgres Compose service has no shards to send: it runs whole on a ready host, which starts the service in its run directory, runs the script on the service's network and removes the project, and it runs on this machine, with the reason in the trial log, when no host is ready or the host drops it; that reason is recorded in the run's steps.jsonl and shown beside the host's load line in master status and on the Workers page until a check next runs there. One host serves two installs: each install's key reaches its own release's helper, and removing one install's key leaves the other working. A ready host on an older helper stays ready, and master status adds one line: HOST runs an older helper: run host prepare there to update it. A host that answers without Docker reads away with whether its Docker unit is not enabled or failed. The warm test image is keyed to main's commit and lockfile, holds dist/cli.mjs, dist/server.mjs and a filled compile cache, is pushed to ready hosts before shards start, starts the CLI in under 0.6 CPU-seconds, and rebuilds when a head changes source files. While a leftover limit file fixes the budget and a host is ready, master status names the file, the budget without it and mainworks master config hostHeavyJobs=auto, which removes it. A host takes test shards while its busy cores plus the shards placed there stay under its cores less two; master status shows each host's shards beside its busy cores.",
   "tags": [
     "trial",
     "verification"
@@ -17,13 +17,19 @@
     },
     {
       "kind": "command",
+      "name": "Place shards on hosts by free cores, show each host's shards in master status and raise one line while this machine is overloaded beside a half-free host",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/host-accepts-shards-by-free-cores.test.ts",
+      "timeoutSeconds": 300
+    },
+    {
+      "kind": "command",
       "name": "Show a leftover limit file in master status while hosts are ready, and lift it with hostHeavyJobs=auto",
       "run": "node --import tsx tests/helpers/run-tests.ts tests/lead-lifts-fixed-heavy-limit.test.ts",
       "timeoutSeconds": 300
     },
     {
       "kind": "command",
-      "name": "Run a script check and its Postgres service whole on a fake host, and on this machine when the host is away",
+      "name": "Run a script check and its Postgres service whole on a fake host, and on this machine when the host is away, with the reason in master status and on the Workers page",
       "run": "node --import tsx tests/helpers/run-tests.ts tests/declared-check-runs-on-a-host.test.ts",
       "timeoutSeconds": 600
     },
@@ -35,7 +41,7 @@
     },
     {
       "kind": "command",
-      "name": "Prepare one fake host for two installs at different helper releases and probe each through its own helper",
+      "name": "Prepare one fake host for two installs at different helper releases, probe each through its own helper, and name the older helper in one master status line",
       "run": "node --import tsx tests/helpers/run-tests.ts tests/two-installs-share-a-host.test.ts",
       "timeoutSeconds": 300
     },

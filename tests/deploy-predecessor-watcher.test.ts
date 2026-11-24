@@ -86,7 +86,7 @@ function watcher(root: string, run: ChildRun) {
   let ready!: () => void, deployed!: () => void;
   const started = new Promise<void>(done => { ready = done; });
   const serving = new Promise<void>(done => { deployed = done; });
-  child.stderr!.on('data', data => { stderr += data; if (stderr.includes('[graphyard-deploy] serving ')) deployed(); });
+  child.stderr!.on('data', data => { stderr += data; if (stderr.includes('[mainworks-deploy] serving ')) deployed(); });
   child.on('message', async (message: any) => {
     if (message.kind !== 'run') return;
     try {

@@ -46,7 +46,7 @@ export async function serveRangeCommits(git: ServeRevertGit, lastVerified: strin
 }
 
 /** The item a landing commit is for: its ledger's merge sha first (the head itself for a fast-forward), else the `Merge GY-N` subject the writer gave it. */
-export function serveMergeOwner(commit: Pick<ServeRangeCommit, 'sha' | 'subject'>, work: readonly Work[]): Work | null {
+function serveMergeOwner(commit: Pick<ServeRangeCommit, 'sha' | 'subject'>, work: readonly Work[]): Work | null {
   const ledged = work.find(item => item.mergeLedger?.mergeSha?.toLowerCase() === commit.sha);
   if (ledged) return ledged;
   const key = /^Merge (GY-\d+)\b/.exec(commit.subject)?.[1]?.toUpperCase();
@@ -180,7 +180,7 @@ export interface ServeRevertPorts {
 }
 
 /** A prepared revert, persisted before the loop starts its trial and push. */
-export interface PreparedServeRevert { culprit: Work; mergeSha: string; revertSha: string }
+interface PreparedServeRevert { culprit: Work; mergeSha: string; revertSha: string }
 
 /** The loop schedules the shared trial and push beside its cycle; standalone callers await it. */
 export type ScheduleServeRevert = (prepared: PreparedServeRevert, run: () => Promise<ServeRevertResult>) => Promise<void>;
@@ -214,7 +214,7 @@ export const baseStillFails = 'the base tip fails the same checks, so the revert
  * type — so the trial judges the revert on the repository's own checks (build plus the affected
  * and required tests), without the culprit's proofs, bound cases or bug-reproduction check.
  */
-export const revertTrialItem = (culpritKey: string): Pick<Work, 'key' | 'criteria'> & { type?: Work['type'] } =>
+const revertTrialItem = (culpritKey: string): Pick<Work, 'key' | 'criteria'> & { type?: Work['type'] } =>
   ({ key: culpritKey, criteria: [] });
 
 /** The revert commit's trial and leased push: pass, a held trial failure, or a retry (a failing base, or a push the base move rejected). */

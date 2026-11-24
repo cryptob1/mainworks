@@ -1,17 +1,17 @@
-# Graphyard architecture review — 2026-10-31
+# Mainworks architecture review — 2026-10-31
 
-Reviewed commit: **`3cebd2c26cf01842ac824dd3eb2ba7194745aae3`** (main tip, "GY-2994: a BLOCKED match skips the prompt's own wording"). Every `file:line` below refers to that commit. This review changes no behaviour. Its fixes are the `graphyard master create` payloads at the end, for the master to file.
+Reviewed commit: **`3cebd2c26cf01842ac824dd3eb2ba7194745aae3`** (main tip, "GY-2994: a BLOCKED match skips the prompt's own wording"). Every `file:line` below refers to that commit. This review changes no behaviour. Its fixes are the `mainworks master create` payloads at the end, for the master to file.
 
 ## Summary (two-minute read)
 
-Graphyard's core is sound:
+Mainworks's core is sound:
 - leases, epochs and the fleet-then-item lock order;
 - one transaction per mutation, appending history;
 - an append-only ledger;
 - every route authenticated and role-checked;
 - the browser bundle importing only pure model code.
 
-The problem is what has piled up around that core. Over October, Graphyard moved to the "GitHub-light" design, where the loop's merge writer trial-merges and pushes `main` with a deploy key. In the same month it deleted release candidates, approvers, escalations, scope requests and risk lanes. Each of those deletions removed the *writer* of a fact but often left its *readers*, its schema and its tests in place. The code still evaluates states that nothing can produce any more.
+The problem is what has piled up around that core. Over October, Mainworks moved to the "GitHub-light" design, where the loop's merge writer trial-merges and pushes `main` with a deploy key. In the same month it deleted release candidates, approvers, escalations, scope requests and risk lanes. Each of those deletions removed the *writer* of a fact but often left its *readers*, its schema and its tests in place. The code still evaluates states that nothing can produce any more.
 
 The six problems that matter most:
 
@@ -229,7 +229,7 @@ Each of these is reachable, so reachability alone does not flag it. The check, i
 | Provider usage parsers | `src/provider-usage.ts:63,131,452` | `adapter.getUsage()` is called without a response, so `parse` is never reached; `environment-quota.ts` parses the same data again | — | safe to delete; the tests need updating |
 | `observation-priority.ts` leftovers | `:14,38,75` | no references | — | safe to delete |
 | `regression-guard.ts` `threeWayMerge` | `:23-129` | served the deleted `github.ts decideLandingMerges` | GY-2010 | safe to delete |
-| GitHub-era readiness text | `src/readiness.ts:108-113,135,166`; `master/config.ts:269`; `src/setup-from-zero.ts:183-193,282` | they recommend a `pull_request` workflow, `graphyard reviewpolicy`, `graphyard github-setup --update-permissions` and a release token, none of which exist; `github-app`/`reviewer-app` doctor lines always pass and point at a deleted step 4 | 6fabe05aa0, GY-1983, GY-2010 | safe to delete |
+| GitHub-era readiness text | `src/readiness.ts:108-113,135,166`; `master/config.ts:269`; `src/setup-from-zero.ts:183-193,282` | they recommend a `pull_request` workflow, `mainworks reviewpolicy`, `mainworks github-setup --update-permissions` and a release token, none of which exist; `github-app`/`reviewer-app` doctor lines always pass and point at a deleted step 4 | 6fabe05aa0, GY-1983, GY-2010 | safe to delete |
 
 ### Exports with no reference anywhere
 
@@ -371,7 +371,7 @@ The CLI, `web/`, runners, scripts and tests were searched for each route.
 
 ### Unused config fields, flags and environment variables
 
-- **`graphyard install` flags parsed and never read** (`src/install/index.ts:97-107`): `--ssh-host`, `--ssh-user`, `--ssh-key`, `--server-type`, `--location`, `--workspace`, `--target`, `--migrate`, `--max-monthly`, `--confirm-price`, `--logs`, `--herdr-only`, `--profiles-only`, `--fresh-cursor`. These belonged to the railway, hetzner, host and helm providers deleted in 903694608e. Safe to delete.
+- **`mainworks install` flags parsed and never read** (`src/install/index.ts:97-107`): `--ssh-host`, `--ssh-user`, `--ssh-key`, `--server-type`, `--location`, `--workspace`, `--target`, `--migrate`, `--max-monthly`, `--confirm-price`, `--logs`, `--herdr-only`, `--profiles-only`, `--fresh-cursor`. These belonged to the railway, hetzner, host and helm providers deleted in 903694608e. Safe to delete.
 - **Install values computed and never read:** `requiredChecks` and `reviewCount` (`install/index.ts:356-363`, branch protection). The `--review-policy github` default (`:319`). `deployment.sshHost`/`sshUser`, always null and `'root'` (`install/secrets.ts:59`). Safe to delete.
 - **Master config** (`src/master/profiles.ts`):
   - `mergeMethod` (`:405`) is written and never read. Safe to delete.
@@ -528,7 +528,7 @@ Effort: S under a day for one agent, M one to three days, L more.
   - production wiring, with a fallback mutator that never runs because production always passes `mutate` (`effects-production.ts:155`).
   - `daemon/rework.ts:5` imports model predicates from it.
 - **`supervisor.ts`:**
-  - `:1-591` is the `graphyard watch` worker supervision, with a single caller in `cli/workspace.ts`.
+  - `:1-591` is the `mainworks watch` worker supervision, with a single caller in `cli/workspace.ts`.
   - `:593-1107` is loop-unit installation, which overlaps `daemon/loop-supervisor.ts`.
 - **Cost:** each change to dispatch or to unit installation edits a file that also holds unrelated code, and the generic helpers in `supervisor.ts` drive the A3 cycle.
 - **Simpler shape:**
@@ -583,7 +583,7 @@ Effort: S under a day for one agent, M one to three days, L more.
 - **History:** GY-1535 (10-08), GY-1718 (10-11), GY-1902 (10-17), GY-2965 (10-27). Each was added beside the previous one.
 - **Simpler shape:** one `serveHead(checkout, declaration)` driven by `delivery.applications`. Retire the `GRAPHYARD_UAT_STATIC` merge preview in favour of the trial's bound-case run.
 
-### A10. `runTrialAttempt` hard-codes Graphyard's own layout (medium, M)
+### A10. `runTrialAttempt` hard-codes Mainworks's own layout (medium, M)
 
 - **Where:** `merge-writer/trial.ts:712-1046` is one 335-line closure that does all of this:
   - checkout placement;
@@ -594,10 +594,10 @@ Effort: S under a day for one agent, M one to three days, L more.
   - repository-check mode and ci-tests mode;
   - memory-slot sharding and cleanup.
 - **The hard-coding:** `dashboardPaths` (`:472`: `web/`, `src/server/routes/`, `scripts/dashboard-fixture.mjs`), `scripts/ci-tests.mjs` and `tests/helpers/run-tests.ts` (`~:986`).
-- **Cost:** for any managed repository, these paths only switch modes by accident, and every change to Graphyard's own test layout edits the trial.
+- **Cost:** for any managed repository, these paths only switch modes by accident, and every change to Mainworks's own test layout edits the trial.
 - **Simpler shape:**
   - Split into `prepare → scan → build → runChecks(strategy)`.
-  - Graphyard's own trial strategy moves into its `graphyard.json` `preMerge`, the same declaration managed repositories use.
+  - Mainworks's own trial strategy moves into its `graphyard.json` `preMerge`, the same declaration managed repositories use.
 
 ### A11. Six hand-composed session-launch sequences and no runtime abstraction (medium, M for launch, L for runtimes)
 
@@ -755,7 +755,7 @@ The import graph, reachability, export usage and `tsc` passes cover every tracke
 
 ## Fixes, ranked
 
-Ranked by value for effort, deletions first. Each item is one independently landable change, written as a complete `graphyard master create` payload. Where an item names a needs-check, the master runs that query against production before releasing the item. If the check finds live use, the item's scope narrows to the parts the check cleared.
+Ranked by value for effort, deletions first. Each item is one independently landable change, written as a complete `mainworks master create` payload. Where an item names a needs-check, the master runs that query against production before releasing the item. If the check finds live use, the item's scope narrows to the parts the check cleared.
 
 The safety finding, R1 (A1), should be released first despite its place in the list.
 
@@ -1248,7 +1248,7 @@ Value: medium. Effort: S.
     },
     {
       "id": "AC-2",
-      "text": "graphyard help lists no master merge, master principals or scenario FILE command: the cli unit test from this head passes.",
+      "text": "mainworks help lists no master merge, master principals or scenario FILE command: the cli unit test from this head passes.",
       "proofs": [
         "unit:cli"
       ]
@@ -1792,14 +1792,14 @@ Value: medium. Effort: M.
 ```json
 {
   "title": "Split supervisor.ts into worker session watch and loop-unit installation",
-  "summary": "supervisor.ts holds two unrelated subsystems: graphyard watch's worker supervision (one caller) and loop/deploy unit installation, which overlaps daemon/loop-supervisor.ts.",
+  "summary": "supervisor.ts holds two unrelated subsystems: mainworks watch's worker supervision (one caller) and loop/deploy unit installation, which overlaps daemon/loop-supervisor.ts.",
   "description": "From the architecture review (A5). Move src/supervisor.ts:1-591 (systemd scope, process-tree signalling, lease renewal, consent probing, surrender) to src/session-watch.ts, and :593-1107 (unit text, installLoopSupervisor, alignLoopUnit, durable-checkout preflight, test home guard) together with src/daemon/loop-supervisor.ts to src/install/loop-unit.ts. Generic helpers go to the leaf from R2.",
   "type": "chore",
   "priority": 4,
   "criteria": [
     {
       "id": "AC-1",
-      "text": "graphyard watch and loop-unit installation behave as before from their new modules: the launch-supervisor-setup, supervised-local and deploy-unit unit tests from this head pass and src/supervisor.ts no longer exists.",
+      "text": "mainworks watch and loop-unit installation behave as before from their new modules: the launch-supervisor-setup, supervised-local and deploy-unit unit tests from this head pass and src/supervisor.ts no longer exists.",
       "proofs": [
         "unit:launch-supervisor-setup",
         "unit:supervised-local",
@@ -1881,21 +1881,21 @@ Value: medium. Effort: M.
 }
 ```
 
-#### 14. R14 — Split the trial into prepare, scan, build and declared checks; move Graphyard's own layout into graphyard.json
+#### 14. R14 — Split the trial into prepare, scan, build and declared checks; move Mainworks's own layout into graphyard.json
 
 Value: medium. Effort: M.
 
 ```json
 {
-  "title": "Split the trial into prepare, scan, build and declared checks; move Graphyard's own layout into graphyard.json",
-  "summary": "runTrialAttempt is one 335-line closure that hard-codes Graphyard's dashboard paths, ci-tests script and test runner, so any managed repository switches modes by accident.",
-  "description": "From the architecture review (A10). Split src/merge-writer/trial.ts:712-1046 into prepare (checkout placement), scan (secret scan), build (install and build) and runChecks(strategy), where the strategy comes from the repository's graphyard.json preMerge declaration. Move dashboardPaths (:472), the scripts/ci-tests.mjs affected selection and tests/helpers/run-tests.ts invocation into Graphyard's own graphyard.json preMerge, so the trial carries no path of this repository.",
+  "title": "Split the trial into prepare, scan, build and declared checks; move Mainworks's own layout into graphyard.json",
+  "summary": "runTrialAttempt is one 335-line closure that hard-codes Mainworks's dashboard paths, ci-tests script and test runner, so any managed repository switches modes by accident.",
+  "description": "From the architecture review (A10). Split src/merge-writer/trial.ts:712-1046 into prepare (checkout placement), scan (secret scan), build (install and build) and runChecks(strategy), where the strategy comes from the repository's graphyard.json preMerge declaration. Move dashboardPaths (:472), the scripts/ci-tests.mjs affected selection and tests/helpers/run-tests.ts invocation into Mainworks's own graphyard.json preMerge, so the trial carries no path of this repository.",
   "type": "chore",
   "priority": 3,
   "criteria": [
     {
       "id": "AC-1",
-      "text": "Graphyard's own trial and a managed repository's trial both run from their declarations: the trial-merge, trial-e2e-cases and merge-executor unit tests from this head pass, and src/merge-writer/trial.ts names no web/, scripts/ or tests/ path.",
+      "text": "Mainworks's own trial and a managed repository's trial both run from their declarations: the trial-merge, trial-e2e-cases and merge-executor unit tests from this head pass, and src/merge-writer/trial.ts names no web/, scripts/ or tests/ path.",
       "proofs": [
         "unit:trial-merge",
         "unit:trial-e2e-cases",

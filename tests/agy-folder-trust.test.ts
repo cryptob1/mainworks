@@ -114,7 +114,7 @@ test('unit:trust-prompt-screen-fails-launch — an agy session whose screen show
   assert.deepEqual(keys, [], 'the trust prompt is never answered by the launcher');
 });
 
-test('GY-1183 — an agy account homed by AGY_CONFIG_DIR records trust in its own settings, and writes drop removed Graphyard worktrees only', async () => {
+test('GY-1183 — an agy account homed by AGY_CONFIG_DIR records trust in its own settings, and writes drop removed Mainworks worktrees only', async () => {
   const home = await temporaryDirectory('agy-launcher-home'), account = await temporaryDirectory('agy-account-home'), worktree = await temporaryDirectory('agy-account-worktree');
   const settings = agyConfigFile({ HOME: home, AGY_CONFIG_DIR: account });
   assert.equal(settings, join(account, 'settings.json'), 'the account\'s own settings, not the launcher\'s home');
@@ -122,7 +122,7 @@ test('GY-1183 — an agy account homed by AGY_CONFIG_DIR records trust in its ow
   assert.deepEqual(JSON.parse(await readFile(settings, 'utf8')).trustedWorkspaces, [realpathSync(worktree)]);
   assert.equal(existsSync(agyConfigFile({ HOME: home })), false, 'nothing was written under the launcher\'s HOME');
 
-  // A removed Graphyard worktree is pruned on the next write; a live one and the operator's own entries stay.
+  // A removed Mainworks worktree is pruned on the next write; a live one and the operator's own entries stay.
   const root = await temporaryDirectory('agy-prune'), worktrees = join(root, '.graphyard', 'worktrees');
   const live = join(worktrees, 'GY-1-1'), removed = join(worktrees, 'GY-2-1'), next = join(worktrees, 'GY-3-1');
   mkdirSync(live, { recursive: true }); mkdirSync(next, { recursive: true });
@@ -139,10 +139,10 @@ test('GY-1194 — re-trusting an already-trusted folder still prunes, and manage
   mkdirSync(worktree, { recursive: true });
   // A relocated run.worktreeRoot holds managed checkouts by their session name, not under .graphyard/worktrees.
   const managed = join(root, 'elsewhere', 'graphyard-review-gy-5-abcdef1-0123abcd', 'checkout');
-  const lookalike = join(root, 'elsewhere', 'graphyard-notes', 'checkout');
+  const lookalike = join(root, 'elsewhere', 'mainworks-notes', 'checkout');
   await writeFile(settings, JSON.stringify({ trustedWorkspaces: [worktree, join(root, '.graphyard', 'worktrees', 'GY-2-1'), managed, lookalike] }));
   assert.equal((await trustAgyFolder(worktree, { AGY_CONFIG_DIR: account })).written, false, 'the folder was already trusted');
-  assert.deepEqual(JSON.parse(await readFile(settings, 'utf8')).trustedWorkspaces, [worktree, lookalike], 'removed Graphyard checkouts go at once; an unmanaged name stays');
+  assert.deepEqual(JSON.parse(await readFile(settings, 'utf8')).trustedWorkspaces, [worktree, lookalike], 'removed Mainworks checkouts go at once; an unmanaged name stays');
   assert.equal((await trustAgyFolder(worktree, { AGY_CONFIG_DIR: account })).written, false);
   assert.deepEqual(JSON.parse(await readFile(settings, 'utf8')).trustedWorkspaces, [worktree, lookalike]);
   // A managed checkout that still exists is kept.

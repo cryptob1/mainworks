@@ -13,7 +13,7 @@ import { controlPlaneRecordPath, writeControlPlaneRecord } from '../src/deploy-w
 import { masterConfigSchema } from '../src/master.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import type { Principal, Work } from '../src/model.js';
-import { graphyardRepository } from '../src/scenarios.js';
+import { mainworksRepository } from '../src/scenarios.js';
 
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -32,7 +32,7 @@ let store: Store, http: ReturnType<typeof server>, url: string;
 before(async () => {
   store = await withDatabase('no-duplicate-repairs');
   await store.init();
-  http = server(new Engine(store, 7200, graphyardRepository), credentials);
+  http = server(new Engine(store, 7200, mainworksRepository), credentials);
   await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
   url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
 });
@@ -51,10 +51,10 @@ test('e2e:no-duplicate-repairs — a stub loop through a control-plane upgrade s
     url,
     credentialFile: '/outside/coordinator.token',
     cliPath: '/bin/graphyard',
-    repository: graphyardRepository,
+    repository: mainworksRepository,
     baseBranch: 'main',
     hostId: 'machine-a',
-    masterAgentName: 'graphyard-master-graphyard',
+    masterAgentName: 'graphyard-master-mainworks',
     workers: [],
   });
 
@@ -77,7 +77,7 @@ test('e2e:no-duplicate-repairs — a stub loop through a control-plane upgrade s
     closeSession: () => {},
     dispatch: async () => ({ pane: 'p1', epoch: 1 }),
     mergeWriter: {
-      gate: { root, repository: graphyardRepository },
+      gate: { root, repository: mainworksRepository },
       createWork: (input: unknown, key: string) => post(operatorToken, 'work', input, key),
       note: (item: Pick<Work, 'id' | 'key'>, text: string, key: string) =>
         post(coordinatorToken, `work/${item.id}/request`, { type: 'note', reason: text }, key),

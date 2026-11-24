@@ -14,11 +14,12 @@ import { save } from '../store.js';
 import { authenticated } from './receipts.js';
 import type { Services } from './routes.js';
 import { gitRunnerFor } from '../merge-writer/local-observation.js';
+import { setting } from '../setting.js';
 
 type Db = pg.PoolClient;
 
 /**
- * Close a work item that will never be delivered (`graphyard master close`): a duplicate, work a
+ * Close a work item that will never be delivered (`mainworks master close`): a duplicate, work a
  * delivered change already superseded, or work nobody wants any more. One transaction under the
  * coordination lock moves the item to the terminal stage with a `closure` record, cancels every
  * open review and producer request, withdraws an open human-only request so the Needs-you page
@@ -34,7 +35,7 @@ export async function closeWork(services: Services, caller: Principal, id: strin
   let ancestry: { base: string; contained: boolean } | null = null;
   if (data.kind === 'superseded' && ref && !itemRef.test(ref) && commitRef.test(ref)) {
     const { engine } = services;
-    if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(process.env.GRAPHYARD_REPOSITORY_ROOT ?? process.cwd());
+    if (engine.gitRunner === undefined) engine.gitRunner = gitRunnerFor(setting('REPOSITORY_ROOT') ?? process.cwd());
     demand(engine.gitRunner, 'The control plane has no checkout to verify that the superseding commit is on the base branch', 503);
     const baseRef = `refs/remotes/origin/${engine.baseBranch}`;
     const tip = await engine.gitRunner(['rev-parse', '--verify', '--quiet', baseRef]);
@@ -70,7 +71,7 @@ export async function closeWork(services: Services, caller: Principal, id: strin
 }
 
 /** Cancel the item's open dispatch requests, withdraw its human-only request and resolve its agent requests. */
-export function settleOpenRequests(work: Work, closure: Closure, now: Date) {
+function settleOpenRequests(work: Work, closure: Closure, now: Date) {
   const at = now.toISOString(), resolution = `item closed as ${closure.kind}: ${closure.reason}`.slice(0, 2000);
   const cancelled: DispatchRequest[] = [];
   if (work.autoDispatch) {

@@ -3,10 +3,11 @@ import { featureMapCaseId } from '../app-feature-check.js';
 // scheduled diagnostics beside it, both over the merge writer's trial container and git.
 import type { Work } from '../model.js';
 import { bootstrapGate, gateLimitMs, type DiagnosePort, gateOutcomeReason, gateRecordPath, mergeFilings, readGateRecord, runDiagnostics, runGate, writeGateRecord, type GatePorts, type GateRecord } from '../batch-gate.js';
-import { graphyardRepository } from '../scenarios.js';
+import { mainworksRepository } from '../scenarios.js';
 import { releaseNotesPath, releaseNote, appendReleaseNote } from '../release-notes.js';
 import { deployRecordPath, readDeployRecord } from '../deploy-watch.js';
 import { notCovered, servedPreviewCases } from '../merge-writer/served-previews.js';
+import { onboardingCase } from '../onboarding-time.js';
 import { baseStillFails, relandItemFor, revertMergeCommit, serveLandings, serveRangeCommits, trialAndPushRevert } from '../merge-writer/serve-revert.js';
 import { gateTrialKey, trialStartOwner, trialStartWaiting } from '../merge-writer/trial-load.js';
 import { heavyTrial, trialShareAllowance, type MergeWriterReads } from './cycle-merge-writer.js';
@@ -15,7 +16,7 @@ import type { Cycle } from './cycle.js';
 import { actionLine } from './run.js';
 import { actionDetailMax, message, storeAction } from './state.js';
 import { batchGateFlights as flights, busyTrialSlots } from './trial-slots.js';
-import { faultItem, fileLoopFault } from './control-plane.js';
+import { fileLoopFault, gateFiledItem, repairedProof } from './control-plane.js';
 import { currentEvidence } from '../model/evidence.js';
 import { EnvironmentFault, declaredEnvironments, environmentSecretsFile, environmentStatePath, localEnvironment, loopLifecycle, trustedCheckout, type AppEnvironment } from '../app-environments.js';
 import { installSecretsDirectory } from '../e2e/steps.js';
@@ -143,30 +144,7 @@ async function gateEnvironments(reads: MergeWriterReads, commit: string, cases: 
   return result;
 }
 
-/** The pinning-test proof a gate filing binds, named from its check: `known-red:test:tests/a-b.test.ts` → `unit:a-b-pinned`. */
-export const pinningProof = (key: string) =>
-  `unit:${key.slice(key.indexOf(':') + 1).toLowerCase().replace(/^test:tests\//, '').replace(/\.test\.ts$/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}-pinned`;
-
-/** The proof a gate filing owes once the batch gate passes again; the loop records it itself (GY-3443). */
-export const repairedProof = 'manual:batch-gate-repaired';
-
-/**
- * The E2E proof a gate filing binds (GY-3568): Graphyard's own filings keep create-work-item, the
- * case its install has always run; every other repository binds its own — the failing case itself
- * when the check is one, else a new case named like the pinning proof, which the fix adds to that
- * repository's catalog.
- */
-export const gateFiledE2e = (key: string, repository: string): { proof: string; clause: string } => {
-  if (repository.toLowerCase() === graphyardRepository) return { proof: 'e2e:create-work-item', clause: 'creating a work item still works' };
-  const check = key.slice(key.indexOf(':') + 1);
-  return check.startsWith('e2e:')
-    ? { proof: check, clause: `the E2E case ${check.slice(4)} passes again` }
-    : { proof: `e2e:${pinningProof(key).slice('unit:'.length)}`, clause: `a new E2E case ${pinningProof(key).slice('unit:'.length)} passes` };
-};
-
-/** A batch gate filing's item: its pinning test and its E2E case are named from its check and the gated repository. */
-export const gateFiledItem = (input: { title: string; description: string; key: string }, baseBranch: string, repository: string) =>
-  faultItem({ faultKey: input.key, title: input.title, description: input.description, proof: pinningProof(input.key), repaired: { text: 'The batch gate passes again', proof: repairedProof }, e2e: gateFiledE2e(input.key, repository), reason: `Filed by the batch gate on ${baseBranch}` });
+export { fileFlakyCheck, gateFiledItem, pinningProof, repairedProof } from './control-plane.js';
 
 /**
  * GY-3443: while the gate's last outcome is verified, every open item owing `manual:batch-gate-repaired`
@@ -201,7 +179,7 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
     return { item: result.action === 'unwired' ? null : result.item };
   };
   const catalog = async (commit: string) => {
-    // GY-3336: a repository with no e2e/cases directory — a fresh install of a repository Graphyard
+    // GY-3336: a repository with no e2e/cases directory — a fresh install of a repository Mainworks
     // has never gated — answers an empty catalog, not a failing gate: `ls-tree COMMIT:e2e/cases`
     // errors "Not a valid object name" on a path the commit does not hold.
     try { return lines(await git(['ls-tree', '--name-only', `${commit}:e2e/cases`])).filter(name => name.endsWith('.json')).map(name => name.slice(0, -5)); }
@@ -210,8 +188,8 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
   return {
     now: reads.now,
     fetch: reads.fetch,
-    // GY-3199: only the install gating Graphyard itself publishes the verified ref; every other install's gate verifies another repository, whose verified commits no control plane follows.
-    ...(reads.gate?.repository.toLowerCase() === graphyardRepository && reads.pushVerified ? { publish: (commit: string) => reads.pushVerified!(commit) } : {}),
+    // GY-3199: only the install gating Mainworks itself publishes the verified ref; every other install's gate verifies another repository, whose verified commits no control plane follows.
+    ...(reads.gate?.repository.toLowerCase() === mainworksRepository && reads.pushVerified ? { publish: (commit: string) => reads.pushVerified!(commit) } : {}),
     landings: async (from, to) => serveLandings(await serveRangeCommits(git, from, to), work),
     files: async (from, to) => lines(await git(['diff', '--name-only', from, to])),
     catalog,
@@ -261,9 +239,11 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
       const previews = reads.gate?.previews;
       const previewCases = !servedPreviewCases.some(id => held.includes(id)) ? []
         : previews ? await previews(commit) : notCovered(commit, new Date(reads.now()).toISOString(), 'this loop runs no served preview cases');
+      // GY-3747: a repository holding the onboarding case times a fresh repository to its first merge.
+      const onboarding = held.includes(onboardingCase) ? await reads.gate?.onboarding?.(commit) : undefined;
       // GY-3305: the suite trial's details ride with the catalog's — a failing test check (the browser
       // suite among them) keeps its identity whichever trial named it.
-      return { failed: [...new Set([...suite.failed, ...failed])], catalogMs, previewCases, details: { ...suite.details, ...details }, outputs: { ...suite.outputs, ...outputs } };
+      return { failed: [...new Set([...suite.failed, ...failed])], catalogMs, previewCases, ...(onboarding ? { onboarding } : {}), details: { ...suite.details, ...details }, outputs: { ...suite.outputs, ...outputs } };
     },
   };
 }
@@ -314,7 +294,7 @@ function mergeGateRecord(file: string, merge: (latest: GateRecord | null) => Gat
 }
 
 /** What a gate's write keeps of the diagnostics' own fields (GY-3147, GY-3193): they recorded them meanwhile. */
-const diagnosticFields = (latest: GateRecord | null, current: GateRecord) => ({ releaseTagged: latest?.releaseTagged ?? current.releaseTagged, catalogMs: latest?.catalogMs ?? current.catalogMs, diagnosticsAt: latest?.diagnosticsAt ?? current.diagnosticsAt, diagnosticFailures: latest?.diagnosticFailures ?? current.diagnosticFailures, previewCases: latest?.previewCases ?? current.previewCases, ...mergeFilings(latest, current) });
+const diagnosticFields = (latest: GateRecord | null, current: GateRecord) => ({ releaseTagged: latest?.releaseTagged ?? current.releaseTagged, catalogMs: latest?.catalogMs ?? current.catalogMs, diagnosticsAt: latest?.diagnosticsAt ?? current.diagnosticsAt, diagnosticFailures: latest?.diagnosticFailures ?? current.diagnosticFailures, previewCases: latest?.previewCases ?? current.previewCases, onboarding: latest?.onboarding ?? current.onboarding, ...mergeFilings(latest, current) });
 
 /** The commit served at rollout, which becomes the first verified commit: the deploy record's when it names this repository, else main's tip. */
 async function rolloutCommit(root: string, repository: string, reads: MergeWriterReads) {
@@ -436,8 +416,8 @@ export async function batchGateStep(cycle: Pick<Cycle, 'state' | 'effects' | 'sn
   // Retire the standing blocker left by the former host publisher.
   delete cycle.state.actions['publish-verified:blocker'];
   const deployed = readDeployRecord(deployRecordPath(gate.root));
-  if (reads.pushReleaseTag && gate.repository.toLowerCase() === graphyardRepository &&
-      deployed?.repository?.toLowerCase() === graphyardRepository && (deployed.verified || deployed.tip === record.verified) &&
+  if (reads.pushReleaseTag && gate.repository.toLowerCase() === mainworksRepository &&
+      deployed?.repository?.toLowerCase() === mainworksRepository && (deployed.verified || deployed.tip === record.verified) &&
       deployed.tip && !deployed.reason && !deployed.failed && !deployed.restore && record.releaseTagged !== deployed.tip) {
     try {
       const tag = await reads.pushReleaseTag(deployed.tip);
@@ -505,7 +485,7 @@ export async function batchGateStep(cycle: Pick<Cycle, 'state' | 'effects' | 'sn
         if (failed) {
           // Re-read so the diagnostics' fields never overwrite what a gate recorded meanwhile; the
           // filings of both writers merge (GY-3147).
-          await mergeGateRecord(file, latest => ({ ...(latest ?? fresh), catalogMs: fresh.catalogMs, diagnosticsAt: fresh.diagnosticsAt, diagnosticFailures: fresh.diagnosticFailures, previewCases: fresh.previewCases, ...mergeFilings(latest, fresh) }));
+          await mergeGateRecord(file, latest => ({ ...(latest ?? fresh), catalogMs: fresh.catalogMs, diagnosticsAt: fresh.diagnosticsAt, diagnosticFailures: fresh.diagnosticFailures, previewCases: fresh.previewCases, onboarding: fresh.onboarding, ...mergeFilings(latest, fresh) }));
           note('batch-gate:diagnostics', 'done', `Diagnostics on ${fresh.verified?.slice(0, 12)}: ${failed.length} failure(s) filed`);
         }
       } catch (error) { note('batch-gate:diagnostics', 'failed', `The diagnostics failed and run again next cycle: ${message(error)}`); }

@@ -21,7 +21,7 @@ const head = 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0';
 const mergeSha = 'f0e1d2c3b4a5968778695a4b3c2d1e0f1a2b3c4d';
 const base = '0123456789abcdef0123456789abcdef01234567';
 const candidate = { sha: head, baseSha: base, pr: 12, branch: 'graphyard/gy-3173-1', author: 'worker-a' };
-const repository = 'owner/graphyard';
+const repository = 'owner/mainworks';
 const commit = (sha: string) => `https://github.com/${repository}/commit/${sha}`;
 
 /** The item's observation as the control plane records it, or as GitHub did before it became the merge writer. */
@@ -75,7 +75,7 @@ test('unit:tests/control-plane-no-pr-link.test.ts — the candidate component li
   assert.ok(!open.includes('/pull/'), open);
   // A pull-request item keeps its pull request link.
   const pr = renderToStaticMarkup(createElement(CandidatePr, { repository, candidate, workKey: 'GY-31', observation: observation(false, false) }));
-  assert.match(pr, /href="https:\/\/github\.com\/owner\/graphyard\/pull\/12"/);
+  assert.match(pr, /href="https:\/\/github\.com\/owner\/mainworks\/pull\/12"/);
   assert.match(pr, /PR #12/);
 });
 
@@ -88,5 +88,5 @@ test('unit:tests/control-plane-no-pr-link.test.ts — a shipped Work row links a
   assert.match(shipped, new RegExp(`href="${commit(mergeSha)}"`));
   assert.doesNotMatch(shipped, /\/pull\/|PR #\d/);
   // A pull-request item's row keeps its pull request link.
-  assert.match(page(item({ observation: observation(false, true) })), /href="https:\/\/github\.com\/owner\/graphyard\/pull\/12"/);
+  assert.match(page(item({ observation: observation(false, true) })), /href="https:\/\/github\.com\/owner\/mainworks\/pull\/12"/);
 });

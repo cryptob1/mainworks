@@ -1,0 +1,16 @@
+{
+  "id": "consumer-update-waits-for-quiet",
+  "title": "An install that follows Mainworks waits for a quiet moment before it updates",
+  "description": "A running deploy watch for an install whose repository is not the Mainworks source has a review session in flight. A newer verified Mainworks build is published: the watch records which build waits and why, and restarts nothing until the review ends; then it serves the newer build.",
+  "tags": ["deployment", "regression"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "Publish a newer verified build during a stub review and see no restart until the review ends",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/consumer-update-waits-for-quiet.test.ts",
+      "timeoutSeconds": 120
+    }
+  ]
+}

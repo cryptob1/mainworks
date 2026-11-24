@@ -6,7 +6,7 @@ import type { Work } from './work.js';
  *
  * A launched agent session is otherwise invisible to everyone but the process that launched it:
  * its pane identifier lives in that launcher's local ledger, and watching a specific agent means
- * asking a master to relay it. A handle puts the same facts on the item, where Graphyard's own
+ * asking a master to relay it. A handle puts the same facts on the item, where Mainworks's own
  * readers already look — what runtime and host it runs on, the workspace, tab and pane it occupies
  * there, the transcript it writes, and the one command or link that attaches to it.
  *
@@ -19,7 +19,7 @@ import type { Work } from './work.js';
 export const sessionKinds = ['implementation', 'review', 'proof', 'coordination'] as const;
 export type SessionKind = typeof sessionKinds[number];
 export const sessionStates = ['running', 'finished'] as const;
-export type SessionState = typeof sessionStates[number];
+type SessionState = typeof sessionStates[number];
 /** What the loop observed of a session: the runtime's reading, or its absence from the reports. */
 export const observedSessionStates = ['working', 'idle', 'ended', 'lost'] as const;
 export type ObservedSessionState = typeof observedSessionStates[number];
@@ -70,7 +70,8 @@ export const sessionObservationFields = ['observed', 'observedAt', 'missedReport
  * make room — a list of live sessions grows up to the ceiling instead, which only a launcher can
  * fill (`engine.ts`, `command === 'session'`) and which keeps the document bounded regardless.
  */
-export const sessionHandleLimit = 40, sessionHandleCeiling = 200;
+export const sessionHandleLimit = 40;
+const sessionHandleCeiling = 200;
 
 function bounded(handles: SessionHandle[], recorded: SessionHandle): SessionHandle[] {
   if (handles.length <= sessionHandleLimit) return handles;
@@ -266,32 +267,3 @@ export function supersededSession(work: Work, handle: Pick<SessionHandle, 'kind'
  * coordination session outlives the work it shepherds, so it gets a shift rather than an hour.
  */
 export const roleSessionMaximumMs: Record<SessionKind, number> = { implementation: 4 * 3_600_000, review: 3_600_000, proof: 2 * 3_600_000, coordination: 12 * 3_600_000 };
-export interface OverlongSession {
-  workId: string; key: string; id: string; kind: SessionKind; role: string; principal: string; runtime: string; host: string;
-  ageMs: number; maximumMs: number; idleMs: number; lastActivityAt: string; liveness: Liveness; live: boolean | null;
-  attach: string; subject: string; outcome: string | null;
-}
-export type OverlongOptions = LivenessOptions & { maximums?: Partial<Record<SessionKind, number>>;
-  /** This host, when the reader has one: a session another host launched is not judged against this host's runtime listing. */
-  hostId?: string | null };
-/**
- * Every running session past its role's maximum, longest first, whether or not it is still live. A
- * session that died is caught by reconciliation; one running and making no progress is not, and is
- * the more expensive of the two — it holds its role slot, its provider seat and its item while
- * reporting nothing wrong. Nothing is closed here: a slow session may be working.
- */
-export function overlongSessions(all: Work[], runtime: RuntimeSession[] | null, now: Date, options: OverlongOptions = {}): OverlongSession[] {
-  const states = options.states ?? defaultStates, maximums = { ...roleSessionMaximumMs, ...options.maximums };
-  return all.flatMap(work => (work.sessions ?? []).filter(handle => handle.state === 'running').flatMap(handle => {
-    const maximumMs = maximums[handle.kind] ?? roleSessionMaximumMs[handle.kind];
-    const startedAt = Date.parse(handle.startedAt), lastAt = Date.parse(handle.updatedAt);
-    const ageMs = Number.isFinite(startedAt) ? Math.max(0, now.getTime() - startedAt) : 0;
-    if (ageMs <= maximumMs) return [];
-    const liveness = sessionLiveness(handle, runtime, states, options.hostId);
-    return [{ workId: work.id, key: work.key, id: handle.id, kind: handle.kind, role: sessionRole(handle), principal: handle.principal,
-      runtime: handle.runtime, host: handle.host, ageMs, maximumMs, lastActivityAt: handle.updatedAt,
-      idleMs: Number.isFinite(lastAt) ? Math.max(0, now.getTime() - lastAt) : ageMs,
-      liveness, live: liveness === 'live' ? true : liveness === 'ended' || liveness === 'vanished' ? false : null,
-      attach: attachCommand(handle), subject: handle.subject, outcome: handle.outcome }];
-  })).sort((a, b) => b.ageMs - a.ageMs);
-}

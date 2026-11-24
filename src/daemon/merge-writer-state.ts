@@ -7,21 +7,19 @@ export const mergeWriterTrialTimeoutRefusals = 2;
 /** How many record writes whose reply was lost `state.mergeWriter` keeps, and how many cycles one is replayed before the ledger is adopted instead (GY-1852). */
 export const mergeWriterKeptUnconfirmed = 20, mergeWriterUnconfirmedReplays = 10;
 const shaField = z.string().max(64), instant = z.string().max(64);
-/** Legacy cursor bound; durable revert history now lives on the merge ledger. */
-export const serveRevertsKept = 20;
 /**
  * A rework a failed trial grounds that the server has not yet confirmed (AC-3): kept until the
  * decision request succeeds or the snapshot shows the item reworked, moved to a new head or done,
  * and requested again every cycle until then. A refused head leaves the queue, so nothing but this
  * record would ask again.
  */
-export const pendingReworkSchema = z.object({ key: z.string().max(100), id: z.string().max(100), head: shaField, reason: z.string().max(2000), refusedAt: instant, attempts: z.number().int().min(0).max(100_000), lastError: z.string().max(2000).nullable() }).strict();
+const pendingReworkSchema = z.object({ key: z.string().max(100), id: z.string().max(100), head: shaField, reason: z.string().max(2000), refusedAt: instant, attempts: z.number().int().min(0).max(100_000), lastError: z.string().max(2000).nullable() }).strict();
 export type PendingRework = z.infer<typeof pendingReworkSchema>;
 /**
  * GY-1852: a merge record write whose reply the loop never saw (a transport failure or a 5xx): the
  * attempt and write it was sent under and its exact input, replayed next cycle under the same key.
  */
-export const unconfirmedRecordSchema = z.object({ key: z.string().max(100), id: z.string().max(100), attempt: z.string().max(100), write: z.number().int().min(0).max(1000),
+const unconfirmedRecordSchema = z.object({ key: z.string().max(100), id: z.string().max(100), attempt: z.string().max(100), write: z.number().int().min(0).max(1000),
   event: z.record(z.string(), z.unknown()), sentAt: instant, replays: z.number().int().min(0).max(100_000), lastError: z.string().max(2000) }).strict();
 export type UnconfirmedRecord = z.infer<typeof unconfirmedRecordSchema>;
 /** GY-2053: the newest attempt progress the writer's own summary keeps, so a multi-attempt flight keeps showing movement. */

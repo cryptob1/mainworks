@@ -23,11 +23,11 @@ const base = {
   repository: 'owner/project', cliPath: '/bin/graphyard.mjs', url: 'https://graphyard.example', credentialFile: '/credentials/master.token',
   hostId: 'host', baseBranch: 'main', workers: [], reviewers: [], producers: [], run: {},
 } as unknown as MasterConfig;
-// Each config's prompt word count before the mission paragraph (GY-3521's base commit).
+// Each config's prompt word count beside the mission paragraph (GY-3491 cut the duplicated rules; GY-3530 added ask).
 const configs: [MasterConfig, number][] = [
-  [base, 249],
-  [{ ...base, supervision: 'supervised' } as MasterConfig, 305],
-  [{ ...base, repository: 'cryptob1/graphyard' }, 212],
+  [base, 196],
+  [{ ...base, supervision: 'supervised' } as MasterConfig, 237],
+  [{ ...base, repository: 'cryptob1/graphyard' }, 159],
 ];
 
 test('integration:master-mission-line — the master prompt begins with the mission paragraph, identical for every project, in 45 words or fewer', () => {

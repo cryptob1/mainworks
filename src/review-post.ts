@@ -1,6 +1,6 @@
-// `graphyard review post` (GY-1492): the reviewer session's one way to post its verdict. The head
+// `mainworks review post` (GY-1492): the reviewer session's one way to post its verdict. The head
 // guard is checked here against the launch's own binding before exactly one verdict is posted. The
-// command needs no Graphyard credential: the launch binds a one-time verdict token (GY-1525), and
+// command needs no Mainworks credential: the launch binds a one-time verdict token (GY-1525), and
 // the command sends the verdict to `POST /api/work/:id/review-verdict` as that token; the server
 // records it on the item's observation (server/review-verdict.ts).
 import { randomUUID } from 'node:crypto';
@@ -10,6 +10,7 @@ import { z } from 'zod';
 import type { ChildRun } from './child-runner.js';
 import { blockingFindings, findingLocation } from './review-cap.js';
 import { validateAssertionRulings } from './model/changed-assertions.js';
+import { setting } from './setting.js';
 
 /** The file, in the session's GH_CONFIG_DIR, that binds a reviewer session to its launch. */
 export const reviewBindingFile = 'review-binding.json';
@@ -19,7 +20,7 @@ export const reviewEvents = ['APPROVE', 'REQUEST_CHANGES', 'COMMENT', 'REJECT', 
 export type ReviewEvent = typeof reviewEvents[number];
 const sha = z.string().regex(/^[0-9a-f]{40}$/);
 /** The verdict token a control-plane launch binds: 32 random bytes, hex; only its sha256 is kept anywhere but the binding. */
-export const verdictTokenSchema = z.string().regex(/^[0-9a-f]{64}$/);
+const verdictTokenSchema = z.string().regex(/^[0-9a-f]{64}$/);
 export const reviewBindingSchema = z.object({
   repository: z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
   key: z.string().min(1).max(100), pr: z.number().int().positive(), sha, baseSha: sha, policyRevision: z.number().int().nonnegative(),
@@ -49,7 +50,7 @@ export async function writeReviewBinding(directory: string, binding: ReviewPostB
 export async function readReviewBinding(directory: string): Promise<ReviewPostBinding> {
   let text: string;
   try { text = await readFile(join(directory, reviewBindingFile), 'utf8'); }
-  catch { throw new ReviewPostRefusal(`GH_CONFIG_DIR (${directory}) holds no ${reviewBindingFile}: review post runs only in a reviewer session Graphyard launched`); }
+  catch { throw new ReviewPostRefusal(`GH_CONFIG_DIR (${directory}) holds no ${reviewBindingFile}: review post runs only in a reviewer session Mainworks launched`); }
   try { return reviewBindingSchema.parse(JSON.parse(text)); }
   catch { throw new ReviewPostRefusal(`${reviewBindingFile} in GH_CONFIG_DIR is not a valid review binding`); }
 }
@@ -60,7 +61,7 @@ export class ReviewPostRefusal extends Error {}
 const unquoted = (path: string): string => /^".*"$/.test(path) ? (() => { try { return JSON.parse(path) as string; } catch { return path; } })() : path;
 
 /** The hunks the new head changes, by file, read from `git diff -U0 PREVIOUS HEAD`: each file's new-side [first line, last line] ranges. */
-export function changedHunks(diff: string): Map<string, Array<[number, number]>> {
+function changedHunks(diff: string): Map<string, Array<[number, number]>> {
   const hunks = new Map<string, Array<[number, number]>>();
   let path: string | null = null;
   for (const line of diff.split('\n')) {
@@ -88,7 +89,7 @@ export function changedHunks(diff: string): Map<string, Array<[number, number]>>
  * criterion named. A finding re-raising an earlier round's path, naming a changed line, or citing an
  * unmet AC-N stands; anything else on unchanged code belongs on a Nit: line.
  */
-export function unchangedCodeFindings(body: string, binding: Pick<ReviewPostBinding, 'previousHead' | 'earlierPaths'>, diff: string): string[] {
+function unchangedCodeFindings(body: string, binding: Pick<ReviewPostBinding, 'previousHead' | 'earlierPaths'>, diff: string): string[] {
   const hunks = changedHunks(diff), earlier = new Set(binding.earlierPaths ?? []);
   return blockingFindings(body).filter(finding => {
     const location = findingLocation(finding);
@@ -142,11 +143,11 @@ export async function postReview(input: { event: string | undefined; body: strin
   let binding: ReviewPostBinding | null = null;
   const refuse = (reason: string): never => { throw new ReviewPostRefusal(`Review not posted: ${reason}.\nPost it like this:\n${reviewPostExample(input.cliPath, event ?? 'APPROVE')}`); };
   const directory = input.environment.GH_CONFIG_DIR;
-  if (!directory) refuse('GH_CONFIG_DIR is unset; review post runs only in a reviewer session Graphyard launched');
+  if (!directory) refuse('GH_CONFIG_DIR is unset; review post runs only in a reviewer session Mainworks launched');
   try { binding = await readReviewBinding(directory!); } catch (error) { refuse((error as Error).message); }
   if (!event) refuse(`--event must be one of ${reviewEvents.join(', ')}`);
   const bound = binding!;
-  if (input.environment.GRAPHYARD_REVIEW !== `${bound.key}@${bound.sha}`) refuse(`GRAPHYARD_REVIEW is ${input.environment.GRAPHYARD_REVIEW ? `"${input.environment.GRAPHYARD_REVIEW}"` : 'unset'}, not this launch's ${bound.key}@${bound.sha}`);
+  if (setting('REVIEW', input.environment) !== `${bound.key}@${bound.sha}`) refuse(`GRAPHYARD_REVIEW is ${setting('REVIEW', input.environment) ? `"${setting('REVIEW', input.environment)}"` : 'unset'}, not this launch's ${bound.key}@${bound.sha}`);
   const body = input.body.trim();
   if (!body) refuse('the review body is empty');
   // Control-plane mode (GY-1525): the verdict goes to the API as the launch's one-time token, bound
@@ -164,7 +165,7 @@ export async function postReview(input: { event: string | undefined; body: strin
       const assertionRefusal = validateAssertionRulings(body, bound.changedAssertions);
       if (assertionRefusal) refuse(assertionRefusal);
     }
-    const base = input.environment.GRAPHYARD_URL;
+    const base = setting('URL', input.environment);
     if (!base) refuse('GRAPHYARD_URL is unset; a control-plane reviewer session is launched with the control plane\'s address');
     const post = dependencies.fetch ?? fetch;
     let screenshots: Awaited<ReturnType<typeof screenshotUploads>> = [];
@@ -179,6 +180,6 @@ export async function postReview(input: { event: string | undefined; body: strin
     if (!response.ok) refuse(`the control plane refused the verdict (${response.status}): ${answer?.error ?? 'no reason given'}`);
     return { reviewId: answer.reviewId ?? null, event: event!, key: bound.key, pr: bound.pr, sha: bound.head!, recorded: 'control-plane' as const };
   }
-  // A pull-request-era binding (no mode) posts nothing: Graphyard reads and writes no remote review.
-  return refuse('this binding is a pull-request-era GitHub binding, and Graphyard no longer posts GitHub reviews; the loop launches the review again against the control plane');
+  // A pull-request-era binding (no mode) posts nothing: Mainworks reads and writes no remote review.
+  return refuse('this binding is a pull-request-era GitHub binding, and Mainworks no longer posts GitHub reviews; the loop launches the review again against the control plane');
 }

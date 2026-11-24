@@ -6,7 +6,7 @@ import { z } from 'zod';
  * The end-to-end case repository (GY-1351). A case is a JSON file under `e2e/cases/`, reviewed like
  * code: an id, a title, tags, a target (`uat`: it runs against UAT before every release; `any`: on
  * demand only), whether it is `required` (only a required case can block a release, GY-1378; the
- * default is optional) and ordered steps against the HTTP API and the dashboard. `graphyard e2e sync`
+ * default is optional) and ordered steps against the HTTP API and the dashboard. `mainworks e2e sync`
  * registers each case as a revision of the scenario of the same id (src/scenarios.ts), so editing a
  * case publishes a new immutable revision and `e2e:ID` proofs keep pinning the revision they named.
  *
@@ -20,8 +20,6 @@ import { z } from 'zod';
  */
 export const caseDirectory = 'e2e/cases';
 export const caseRunner = 'graphyard-e2e';
-/** The release contract (GY-1378): each required customer outcome and the cases that prove it. */
-export const contractFile = 'e2e/contract.json';
 
 const text = z.string().min(1).max(500);
 const variable = z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]*$/, 'a variable name is letters, digits and _');
@@ -58,7 +56,7 @@ const browserStep = z.object({
   for (const field of needs[step.action]) if (step[field] === undefined) context.addIssue({ code: 'custom', path: [field], message: `a browser ${step.action} step needs ${field}` });
 });
 /** Both general steps default to ten minutes: a Playwright suite or an agent's browsing is not one request. */
-export const defaultGeneralStepTimeoutSeconds = 600;
+const defaultGeneralStepTimeoutSeconds = 600;
 const timeoutSeconds = z.number().int().min(1).max(3600).default(defaultGeneralStepTimeoutSeconds);
 const commandStep = z.object({
   kind: z.literal('command'), name: text.optional(),
@@ -75,7 +73,7 @@ const agentStep = z.object({
 }).strict();
 const step = z.discriminatedUnion('kind', [httpStep, browserStep, commandStep, agentStep]);
 /** A case or outcome id: also a file name and a ledger tag segment. */
-export const caseId = z.string().regex(/^[a-z0-9][a-z0-9._-]*$/, 'an id is lower-case letters, digits, ., _ and -').max(100);
+const caseId = z.string().regex(/^[a-z0-9][a-z0-9._-]*$/, 'an id is lower-case letters, digits, ., _ and -').max(100);
 export const caseSchema = z.object({
   id: caseId,
   title: z.string().min(1).max(200),
@@ -114,7 +112,7 @@ export function parseCase(file: string, source: string): E2eCase {
 }
 
 /** Every case file under `directory` (relative to `root`), sorted by id: the valid ones, and each malformed file with why. */
-export async function inspectCases(root: string, directory = caseDirectory) {
+async function inspectCases(root: string, directory = caseDirectory) {
   const names = (await readdir(join(root, directory))).filter(name => name.endsWith('.json')).sort();
   const invalid: { id: string; file: string; error: string }[] = []; const cases: CaseFile[] = [];
   for (const name of names) {
@@ -174,7 +172,7 @@ export type CaseScenario = ReturnType<typeof scenarioDefinition>;
 
 const definitionKeys = ['id', 'title', 'purpose', 'setup', 'steps', 'expected', 'environment', 'runner', 'testPath', 'tags', 'required'] as const;
 /** Whether a registered revision is exactly this case's definition. */
-export const sameDefinition = (revision: Record<string, unknown>, definition: CaseScenario) =>
+const sameDefinition = (revision: Record<string, unknown>, definition: CaseScenario) =>
   definitionKeys.every(key => JSON.stringify(revision[key] ?? (key === 'tags' ? [] : null)) === JSON.stringify(definition[key]));
 
 /** The newest registered revision of a case that is exactly its current definition, or null when the case is not synced. */
@@ -211,7 +209,7 @@ export async function syncCases(api: Api, cases: readonly CaseFile[]): Promise<S
  * ledger tag segment (`rc-hold/OUTCOME/…`), so it follows the case id rule. A case may prove several
  * outcomes; the contract binds only required cases, so nothing optional ever holds a release.
  */
-export const contractSchema = z.object({
+const contractSchema = z.object({
   outcomes: z.array(z.object({
     id: caseId, title: z.string().min(1).max(200),
     criteria: z.array(text).max(20).default([]),
@@ -224,14 +222,4 @@ export const contractSchema = z.object({
   });
 });
 export type ReleaseContract = z.infer<typeof contractSchema>;
-
-/** Validate the contract's text, refusing a malformed contract by naming the field. */
-export function parseContract(source: string, file = contractFile): ReleaseContract {
-  let raw: unknown;
-  try { raw = JSON.parse(source); } catch (error) { throw new Error(`${file}: (contract): not valid JSON: ${(error as Error).message}`); }
-  const parsed = contractSchema.safeParse(raw);
-  if (!parsed.success) throw new Error(parsed.error.issues.map(issue => `${file}: ${fieldOf(issue.path)}: ${issue.message}`).join('\n'));
-  return parsed.data;
-}
-export const loadContract = async (root: string) => parseContract(await readFile(join(root, contractFile), 'utf8'));
 

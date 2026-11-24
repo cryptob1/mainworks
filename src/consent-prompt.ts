@@ -53,7 +53,7 @@ export const consentAnswers: ConsentRule[] = [
  * number — and only when the footer ends on the screen's last line, so the same words quoted above an
  * ordinary prompt end on that prompt, not on a menu, and are never answered.
  */
-export const settingsSuggestionAnswer: ConsentRule = {
+const settingsSuggestionAnswer: ConsentRule = {
   id: 'settings-not-now', kind: 'settings',
   asks: /(?:↑|↓|arrow keys?)[^\n]*\besc\b[^a-z\n]{0,3}(?:not now|to dismiss)|\besc\b[^a-z\n]{0,3}(?:not now|to dismiss)[^\n]*(?:↑|↓|arrow keys?)/i,
   choose: /\b(esc)\b[^a-z\n]{0,3}(?:not now|to dismiss)/i,
@@ -61,7 +61,7 @@ export const settingsSuggestionAnswer: ConsentRule = {
 };
 /**
  * GY-3336: the one folder-trust prompt the launcher answers itself — a session launched in the
- * install's own checkout, the folder the operator connected Graphyard to. The master session runs
+ * install's own checkout, the folder the operator connected Mainworks to. The master session runs
  * there confined, its HOME a scratch home, so the trust record the launch wrote never reaches the
  * runtime and it stops at the dialog; the operator already chose that folder, so the launcher
  * accepts its "Yes" for that folder alone. It is never in the global allow-list: a trust prompt in
@@ -88,9 +88,10 @@ const promptKinds: [ConsentKind, RegExp][] = [
  */
 const menuOption = /^\W{0,4}(?:\d[.)]\s+\S|(?:Yes|No)\b[,.]?(?:\s|$))/m;
 /** The prompts that are never answered by anybody but a human, whatever rule would match them. */
-export const neverAnswered: ConsentKind[] = ['credential', 'payment'];
+const neverAnswered: ConsentKind[] = ['credential', 'payment'];
 /** How much of the screen bottom a dialog is read from, and how much of it a record keeps. */
-export const consentScreenLines = 25, consentTextLimit = 400;
+const consentScreenLines = 25;
+const consentTextLimit = 400;
 
 /**
  * The dialog the screen ends on: its last numbered menu, and the few lines just above it that ask
@@ -100,7 +101,8 @@ export const consentScreenLines = 25, consentTextLimit = 400;
  * of the first option. Words that ask a consent question elsewhere in the tail — output above an
  * unrelated numbered list, or a list printed long ago — are not a dialog waiting for a keystroke.
  */
-export const consentQuestionLines = 5, consentFooterLines = 2;
+const consentQuestionLines = 5;
+const consentFooterLines = 2;
 function trailingDialog(lines: string[]): { lines: string[]; question: string[] } | null {
   let last = -1;
   for (let index = lines.length - 1; index >= Math.max(0, lines.length - 1 - consentFooterLines); index--) if (menuOption.test(lines[index])) { last = index; break; }
@@ -218,7 +220,8 @@ export function screenDialog(screen: string | null | undefined): string | null {
  * with a human. Output above the notice is not read for that: it is not what the keystroke answers.
  */
 export interface NoticeDialog { kind: string; text: string; keys: string[] }
-export const noticeScreenLines = 12, noticeTextLimit = 300;
+const noticeScreenLines = 12;
+const noticeTextLimit = 300;
 const noticeDialogs: { kind: string; asks: RegExp }[] = [
   { kind: 'autocompact', asks: /\bauto.?compact\b|\bcompacting\b/i },
 ];

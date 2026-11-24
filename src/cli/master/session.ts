@@ -1,4 +1,4 @@
-// Concern: the authenticated master session every `graphyard master` subcommand after init runs in.
+// Concern: the authenticated master session every `mainworks master` subcommand after init runs in.
 import { sessionName } from '../../session-name.js';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +7,7 @@ import { readCredentialFile } from '../../private-file.js';
 import { cliCommit } from '../../protocol-version.js';
 import { executorHostHeader } from '../../model/registry.js';
 import type { CliContext } from '../context.js';
+import { setting } from '../../setting.js';
 
 /** What a subcommand group returns when the id is not one of its own, so the next group is asked. */
 export const unhandled = Symbol('unhandled master subcommand');
@@ -15,11 +16,11 @@ export const unhandled = Symbol('unhandled master subcommand');
 export async function openMasterSession(context: CliContext, root: string) {
   const { id, args, print } = context;
   const stored = await loadMasterConfig(root);
-  const person = process.env.GRAPHYARD_FOR_PERSON;
+  const person = setting('FOR_PERSON');
   const master = person ? { ...stored, forPerson: person, masterAgentName: sessionName(stored.masterAgentName, person) } : stored;
   const masterToken = await readCredentialFile(master.credentialFile);
   const masterApi = async (path: string, credential = masterToken, timeoutMs = 30_000, headers: Record<string, string> = {}) => {
-    const response = await fetch(`${master.url}/api/${path}`, { headers: { ...headers, Authorization: `Bearer ${credential}` }, signal: AbortSignal.timeout(timeoutMs) });
+    const response = await fetch(`${master.url}/api/${path}`, { headers: { 'X-Mainworks-Command': `master ${id}`, ...headers, Authorization: `Bearer ${credential}` }, signal: AbortSignal.timeout(timeoutMs) });
     // The status rides on the error so a caller can tell a missing route (404) from a failing one.
     if (!response.ok) { const text = await response.text(); let message = text; try { message = JSON.stringify(JSON.parse(text)); } catch {} throw Object.assign(new Error(message), { status: response.status }); }
     return response.json();

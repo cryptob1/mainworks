@@ -127,7 +127,7 @@ test('e2e:confined-session-host-credentials — under real bwrap a worker and a 
     for (const marker of ['OWN-TOKEN-READABLE', 'LOGIN-USABLE', 'GIT-COMMIT-OK', 'the fixture test passes', `WORKER-COMPLETE ${ownToken.length} work/id-1/submit`])
       assert.ok(ran.stdout.includes(marker), `${marker}: ${output.slice(-800)}`);
     const sync = JSON.parse(/^WORKER-SYNC (.*)$/m.exec(ran.stdout)![1]);
-    assert.equal(sync.ok && sync.merged, true, `graphyard sync merged the base tip: ${JSON.stringify(sync)}`);
+    assert.equal(sync.ok && sync.merged, true, `mainworks sync merged the base tip: ${JSON.stringify(sync)}`);
     assert.ok(existsSync(join(f.worktree, 'advance.md')), 'the base tip landed in the worktree');
 
     // A review session: its own binding directory and runtime login kept, the same locations hidden.

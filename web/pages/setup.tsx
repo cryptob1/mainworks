@@ -10,7 +10,7 @@ import type { Dashboard } from './dashboard';
 
 /**
  * The first-run Setup page (GY-1419): the checklist a new installation needs, each item's live
- * state read from the control plane, one plain sentence and one button. `graphyard up` prints this
+ * state read from the control plane, one plain sentence and one button. `mainworks up` prints this
  * page's address and waits on the same checklist (src/model/setup-checklist.ts). The checklist names
  * no command, sha or file: the person reading it may never open a terminal. Once every item is
  * green it asks what to build and submits that as the first work item. Beside it, the commands that
@@ -19,7 +19,7 @@ import type { Dashboard } from './dashboard';
 
 let opened: string | undefined;
 /**
- * The page the address asks for, read once before anything renders (web/main.tsx): `graphyard up`
+ * The page the address asks for, read once before anything renders (web/main.tsx): `mainworks up`
  * prints a sign-in link ending `&setup`, which opens this page once the person is signed in. The
  * marker leaves the address bar so the sign-in page redeems the exact link fragment it knows.
  */
@@ -27,7 +27,7 @@ export function initialView(pages: readonly string[]): string {
   if (opened !== undefined) return opened;
   const requested = requestedView(location.hash, pages);
   if (requested.hash !== location.hash) history.replaceState(null, '', `${location.pathname}${location.search}${requested.hash}`);
-  return opened = requested.view ?? 'work';
+  return opened = requested.view ?? 'home'; // GY-3603: an unhashed visit opens Home, which is the first-run page until work merges
 }
 
 function ItemAction({ item, onConnect }: { item: SetupItem; onConnect: () => void }) {
@@ -39,21 +39,21 @@ function ItemAction({ item, onConnect }: { item: SetupItem; onConnect: () => voi
 }
 
 /**
- * The onboarding change as the current setup step (GY-1478): the commit `graphyard up` published on
+ * The onboarding change as the current setup step (GY-1478): the commit `mainworks up` published on
  * its branch, filed as a work item the loop reviews and merges by itself. It shows what it waits
  * for and how long, until the change is merged (GY-2938: no pull request, no link to open).
  */
 function OnboardingStep({ wait }: { wait: OnboardingWait }) {
   return <li data-setup-item="onboarding" data-done={wait.merged ? 'yes' : 'no'} data-waiting-for={wait.waitingFor.join(' ')} aria-current={wait.merged ? undefined : 'step'}>
-    <strong>{wait.merged ? '✓ ' : '○ '}Onboarding change</strong> <span className={wait.merged ? 'green' : 'amber'}>{wait.merged ? 'Done' : wait.closed ? 'Needs you' : 'In progress'}</span>
+    <strong>{wait.merged ? '✓ ' : '○ '}Onboarding change</strong>
     <p>{wait.line}</p>
   </li>;
 }
 
-export function SetupChecklist({ items, onConnect, onboarding }: { items: SetupItem[]; onConnect: () => void; onboarding?: OnboardingWait | null }) {
+function SetupChecklist({ items, onConnect, onboarding }: { items: SetupItem[]; onConnect: () => void; onboarding?: OnboardingWait | null }) {
   return <ol className="setup-checklist" aria-label="First-run checklist">
     {items.map(item => <li key={item.id} data-setup-item={item.id} data-done={item.done ? 'yes' : 'no'}>
-      <strong>{item.done ? '✓ ' : '○ '}{item.title}</strong> <span className={item.done ? 'green' : 'amber'}>{item.done ? 'Done' : item.human ? 'Needs you' : 'In progress'}</span>
+      <strong>{item.done ? '✓ ' : '○ '}{item.title}</strong>
       <p>{item.line}</p>
       <ItemAction item={item} onConnect={onConnect}/>
     </li>)}
@@ -65,7 +65,7 @@ export function SetupChecklist({ items, onConnect, onboarding }: { items: SetupI
  * Where to watch the agents (GY-1511): the copyable commands that attach to the Herdr server holding
  * this install's sessions, on its host and from another machine, and whether that server is running.
  */
-export function HerdrConnect({ watch }: { watch: HerdrWatch }) {
+function HerdrConnect({ watch }: { watch: HerdrWatch }) {
   const commands = herdrConnectCommands(watch);
   const rows = [
     { id: 'local', label: 'On this host', text: commands.local },
@@ -94,7 +94,7 @@ export function AlertsLine({ status }: { status: any }) {
       {on ? <span className="green">Stall alerts: on (after {alerts} min)</span> : alerts === false ? <span className="amber">Stall alerts: off</span> : 'Stall alerts: not known yet'}
     </p>
     {alerts === false && <MoreDetails summary="Turn them on">To be told when queued work cannot start or merge, set <code>run.alertUrl</code> in <code>.graphyard/master.json</code> on the host that runs the master loop to a webhook URL that takes a POST, such as an ntfy topic (<code>https://ntfy.sh/your-topic</code>); <code>run.alertMinutes</code> sets the stall window (default 20).</MoreDetails>}
-    {!on && alerts !== false && <MoreDetails summary="Why">The dashboard learns it from a running master loop. Start the loop on the host with <code>graphyard master run</code>, or check it with <code>graphyard master status</code>.</MoreDetails>}
+    {!on && alerts !== false && <MoreDetails summary="Why">The dashboard learns it from a running master loop. Start the loop on the host with <code>mainworks master run</code>, or check it with <code>mainworks master status</code>.</MoreDetails>}
   </div>;
 }
 
@@ -102,17 +102,17 @@ export function AlertsLine({ status }: { status: any }) {
  * Where this install's parts run (GY-3277), as its loop named them (`setup.where`): the units and
  * containers beside the command that reads their logs, then the URL, the master's Herdr pane and the
  * directories. Collapsed at the foot of the page: onboarding does not need it, operating does.
- * `graphyard guide infra` explains each part; this shows only this install's own names.
+ * `mainworks guide infra` explains each part; this shows only this install's own names.
  */
 export function WhereThingsRunPanel({ where, panes }: { where: WhereThingsRun | null; panes: { session: string | null; master?: string | null } | null }) {
-  if (!where) return <p data-where-things-run="unknown" className="muted">Not known yet: the loop names these once it runs (graphyard master run).</p>;
+  if (!where) return <p data-where-things-run="unknown" className="muted">Not known yet: the loop names these once it runs (mainworks master run).</p>;
   const rows: [string, string][] = [['The loop', where.loopUnit], ['Deploy watch', where.deployUnit], ['Server and dashboard', where.server], ['Database', where.database]];
   return <div data-where-things-run="known">
     <table className="sessions-table" aria-label="Where things run">
       <thead><tr><th scope="col">Part</th><th scope="col">Runs as</th><th scope="col">Logs</th></tr></thead>
       <tbody>{rows.map(([part, name]) => { const logs = whereLogs(name); return <tr key={part}><th scope="row">{part}</th><td data-label="Runs as">{name}</td><td data-label="Logs">{logs ? <code>{logs}</code> : <span className="muted">—</span>}</td></tr>; })}</tbody>
     </table>
-    <p className="muted">Dashboard {where.url} (port {where.port}){panes?.session ? ` · Herdr session ${panes.session}${panes.master ? `, master pane ${panes.master}` : ''}` : ''} · checkout {where.checkout} · install directory {where.installDirectory}. <code>graphyard guide infra</code> explains each part.</p>
+    <p className="muted">Dashboard {where.url} (port {where.port}){panes?.session ? ` · Herdr session ${panes.session}${panes.master ? `, master pane ${panes.master}` : ''}` : ''} · checkout {where.checkout} · install directory {where.installDirectory}. <code>mainworks guide infra</code> explains each part.</p>
   </div>;
 }
 
@@ -120,7 +120,7 @@ export function WhereThingsRunPanel({ where, panes }: { where: WhereThingsRun | 
 export interface InfraActionRow { who: string; at: string; action: string; target: string; outcome: string; detail: string }
 const infraVerbs: Record<string, string> = { 'repo.create': 'Create repository', 'repo.push': 'Push repository', 'project.create': 'Create hosting project', 'environment.create': 'Create environment' };
 /** GY-3515: what masters did with scoped infra access, newest first: who, what and when, in one short list. */
-export function InfraActionsPanel({ actions }: { actions: readonly InfraActionRow[] }) {
+function InfraActionsPanel({ actions }: { actions: readonly InfraActionRow[] }) {
   return <ol className="infra-actions" data-infra-actions={actions.length}>{actions.slice(0, 20).map((entry, index) =>
     <li key={index}><time dateTime={entry.at}>{new Date(entry.at).toLocaleString()}</time> <b>{entry.who}</b> {infraVerbs[entry.action] ?? entry.action} {entry.target}{entry.outcome === 'done' ? '' : ` — ${entry.outcome}`}</li>)}</ol>;
 }
@@ -128,7 +128,7 @@ export function InfraActionsPanel({ actions }: { actions: readonly InfraActionRo
 /**
  * The page body for a status answer and the work items (WORK, read at NOW), without the dashboard's
  * state: what the tests render. The onboarding change is a step of its own while it is open, as
- * `graphyard up` waits for it. WORKUNREAD: the work items are not read yet (or the read failed), so
+ * `mainworks up` waits for it. WORKUNREAD: the work items are not read yet (or the read failed), so
  * whether the change merged is unknown and the page is not yet green.
  */
 export function SetupView({ status, work, workUnread, now, onConnect, infra }: { status: any; work?: readonly any[] | null; workUnread?: boolean; now?: number; onConnect: () => void; infra?: readonly InfraActionRow[] }) {

@@ -2,7 +2,7 @@ import type { Cycle } from './cycle.js';
 
 /** GY-3593: one caretaker run every 30 minutes per install, never two at once. */
 export const caretakerIntervalMs = 30 * 60_000;
-export const caretakerKey = 'caretaker';
+const caretakerKey = 'caretaker';
 
 /** What one caretaker pass came to: skipped (no account, with the reason) or its result line. */
 export type CaretakerOutcome = { skipped: string } | { result: string };

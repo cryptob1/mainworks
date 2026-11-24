@@ -24,7 +24,7 @@ export function offerToSavePassword(token: string, scope: { PasswordCredential?:
 }
 export const HELPER_TEXT = 'Tokens are scoped to your role and kept for this browser session.';
 /** The one command that signs the human operator in without a token (GY-738, GY-2171). */
-export const SIGN_IN_COMMAND = `${COMMAND_NAME} open`;
+const SIGN_IN_COMMAND = `${COMMAND_NAME} open`;
 /** Where a session a sign-in link opens is kept: it lasts until 90 days unused, so it outlives the browser session a typed token keeps to (GY-2171). */
 export const HUMAN_SESSION_KEY = 'graphyard-token';
 /** The token this browser holds: a typed one for this browser session, else a sign-in link's human session. */
@@ -33,19 +33,19 @@ export const storedToken = () => sessionStorage.getItem(HUMAN_SESSION_KEY) ?? lo
 export const SIGN_IN_NEEDED = 'Sign in to do that.';
 /** The sign-in form opens at once for `/?sign-in` and for a sign-in or claim link; otherwise the dashboard first tries the local viewer. */
 export const wantsSignIn = () => new URLSearchParams(location.search).has('sign-in') || !!signInCode(location.hash) || !!claimFromHash(location.hash);
-/** The operator's line: run the command (a click copies it) on the Graphyard host. */
+/** The operator's line: run the command (a click copies it) on the Mainworks host. */
 function SignInCommand() {
   return <p className="login-help">Operator? Run <code className="login-command" title="Click to copy" onClick={() => void navigator.clipboard?.writeText(SIGN_IN_COMMAND).catch(() => {})}>{SIGN_IN_COMMAND}</code> on the {PRODUCT_NAME} host, or {COMMAND_NAME} login to print a link to open elsewhere.</p>;
 }
-export const LINK_REFUSED_NOTICE = 'That sign-in link has expired or was already used. Ask for a new one.';
+const LINK_REFUSED_NOTICE = 'That sign-in link has expired or was already used. Ask for a new one.';
 
-/** The one-time code a sign-in link carries in its fragment (`/#sign-in=CODE`), which never reaches a server log. */
-export const signInCode = (hash: string) => /^#sign-in=([A-Za-z0-9_-]{16,200})$/.exec(hash)?.[1] ?? null;
+/** The one-time code a sign-in link carries in its fragment (`/#sign-in=CODE`, or `/#sign-in=CODE&page` naming the page to open), which never reaches a server log. */
+const signInCode = (hash: string) => /^#sign-in=([A-Za-z0-9_-]{16,200})(?:&[a-z-]+(?:\/[a-z-]+)?)?$/.exec(hash)?.[1] ?? null;
 /**
  * Redeem a sign-in link's code for a human session token. The link is single use: the server
  * forgets it on the first attempt, whatever the outcome.
  */
-export async function redeemSignIn(code: string, fetcher: typeof fetch): Promise<{ kind: 'signed-in'; token: string } | { kind: 'refused' } | { kind: 'unreachable' }> {
+async function redeemSignIn(code: string, fetcher: typeof fetch): Promise<{ kind: 'signed-in'; token: string } | { kind: 'refused' } | { kind: 'unreachable' }> {
   try {
     const response = await fetcher('/api/sign-in', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
     if (response.status === 401 || response.status === 400) return { kind: 'refused' };
@@ -56,11 +56,11 @@ export async function redeemSignIn(code: string, fetcher: typeof fetch): Promise
 }
 
 /** The single-use sign-in link a self-contained install prints ends in `#claim=CODE` (GY-717); null for any other fragment. */
-export const claimFromHash = (hash: string) => /^#claim=([A-Za-z0-9_-]{16,200})$/.exec(hash)?.[1] ?? null;
-export const CLAIM_REFUSED = 'That sign-in link was already used or is not valid; sign in with an admin token.';
+const claimFromHash = (hash: string) => /^#claim=([A-Za-z0-9_-]{16,200})$/.exec(hash)?.[1] ?? null;
+const CLAIM_REFUSED = 'That sign-in link was already used or is not valid; sign in with an admin token.';
 
 /** Trades the claim for the admin credential, once; null when the server refuses it. */
-export async function redeemClaim(code: string, fetcher: typeof fetch): Promise<string | null> {
+async function redeemClaim(code: string, fetcher: typeof fetch): Promise<string | null> {
   const response = await fetcher('/api/signin/claim', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
   if (!response.ok) return null;
   const body = await response.json() as { token?: unknown };

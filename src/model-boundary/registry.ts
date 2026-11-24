@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { secretName, isAbsolute, launchEnvironmentValueLimit, capabilityTiers, quotaStates, registryRoles, type AgentRegistry, type RegistryMutation, type FleetAccount, type FleetRuntime, upsert, demandRegistry, registryLimits, type FleetModel, type FleetAccountInput, unobservedQuota, type FleetRole, roleRuntimeRefusal } from '../model/registry.js';
+import { secretName, isAbsolute, launchEnvironmentValueLimit, capabilityTiers, quotaStates, fleetRoles, type AgentRegistry, type RegistryMutation, type FleetAccount, type FleetRuntime, upsert, demandRegistry, registryLimits, type FleetModel, type FleetAccountInput, unobservedQuota, type FleetRole, roleRuntimeRefusal } from '../model/registry.js';
 import { notSecret, secretPaths } from '../model/registry-keys.js';
 import { accountKeySchema, smokeObservationSchema } from './registry-keys.js';
 /**
@@ -20,7 +20,7 @@ const hostName = z.string().trim().min(1).max(200).refine(value => !/[\u0000-\u0
 const text = (max: number) => z.string().trim().min(1).max(max).refine(value => !/[\u0000-\u001f\u007f]/.test(value), 'Control characters are not allowed');
 
 const launchEnvironment = z.record(
-  z.string().regex(/^[A-Z_][A-Z0-9_]*$/).refine(name => !name.startsWith('GRAPHYARD_'), 'GRAPHYARD_ variables are owned by the launcher').refine(name => !secretName.test(name), 'A launch contract never carries a secret; the credential lives in the runtime login the account references'),
+  z.string().regex(/^[A-Z_][A-Z0-9_]*$/).refine(name => !/^(GRAPHYARD_|MAINWORKS_)/.test(name), 'GRAPHYARD_ variables are owned by the launcher').refine(name => !secretName.test(name), 'A launch contract never carries a secret; the credential lives in the runtime login the account references'),
   z.string().min(1).refine(value => !/[\u0000-\u001f\u007f]/.test(value), 'Environment values cannot contain control characters').refine(notSecret, 'That value looks like a credential; the registry stores references, never secrets'),
 ).default({}).superRefine((values, context) => {
   // GY-3276: a value past the limit is a host problem to fix (a PATH that long), so the refusal
@@ -35,7 +35,7 @@ const launchEnvironment = z.record(
  * `homeVariable` the variable that points the CLI at one account's login home, `modelFlag` the
  * argument that selects the account's model, `login` the command an operator runs to log an
  * account in (`{home}` stands for the account's home), and `loginFile` a path inside the home
- * whose presence means the account is logged in, for runtimes Graphyard has no richer probe for.
+ * whose presence means the account is logged in, for runtimes Mainworks has no richer probe for.
  */
 export const launchContractSchema = z.object({
   kind: entryName,
@@ -44,7 +44,7 @@ export const launchContractSchema = z.object({
   headlessArgs: z.array(z.string().max(1000).refine(notSecret, 'Arguments must not contain credentials')).max(30)
     .refine(args => args.filter(arg => arg === '{request}').length === 1, 'headlessArgs must contain exactly one {request} argument').optional(),
   environment: launchEnvironment,
-  homeVariable: z.string().regex(/^[A-Z_][A-Z0-9_]*$/).refine(name => !name.startsWith('GRAPHYARD_'), 'GRAPHYARD_ variables are owned by the launcher').nullable().default(null),
+  homeVariable: z.string().regex(/^[A-Z_][A-Z0-9_]*$/).refine(name => !/^(GRAPHYARD_|MAINWORKS_)/.test(name), 'GRAPHYARD_ variables are owned by the launcher').nullable().default(null),
   modelFlag: z.string().regex(/^--?[a-zA-Z][a-zA-Z0-9-]*$/).nullable().default(null),
   login: z.string().trim().min(1).max(500).refine(notSecret, 'A login command names how to log in, never the credential').nullable().default(null),
   loginFile: z.string().trim().min(1).max(200).refine(value => !isAbsolute(value) && !value.split('/').includes('..'), 'loginFile is a path inside the account home').nullable().default(null),
@@ -69,9 +69,11 @@ export const modelSchema = z.object({
     asOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'A price is as of a day, YYYY-MM-DD').optional() }).strict().prefault({}),
   capability: z.object({ tier: z.enum(capabilityTiers).default('strong'), contextTokens: z.number().int().min(1000).max(100_000_000).nullable().default(null), notes: text(300).optional() }).strict().prefault({}),
 }).strict();
-export const usageSchema = z.object({ window: text(40), percent: z.number().min(0).max(1000), resetsAt: z.string().datetime().nullable(),
+const usageSchema = z.object({ window: text(40), percent: z.number().min(0).max(1000), resetsAt: z.string().datetime().nullable(),
   /** When a window carried past a failed usage read was last read (GY-3494). */
-  readAt: z.string().datetime().optional() }).strict();
+  readAt: z.string().datetime().optional(),
+  /** GY-3497: the provider's own limit list named this window (Claude's `limits[]`), so the provider enforces it and a reading at its ceiling holds. */
+  limitList: z.literal(true).optional() }).strict();
 /** What was last observed about an account: by an executor's probe on its host, or marked by an operator. */
 export const quotaObservationSchema = z.object({
   loggedIn: z.boolean().nullable().default(null),
@@ -81,7 +83,7 @@ export const quotaObservationSchema = z.object({
   reason: text(500).nullable().default(null),
   /**
    * The provider login behind the account (GY-1573): its runtime kind and a digest of the provider's own
-   * account and organization ids, read from the login home. Matching identities are diagnostic only; each login is checked separately; null when the login names none Graphyard can read, absent when a
+   * account and organization ids, read from the login home. Matching identities are diagnostic only; each login is checked separately; null when the login names none Mainworks can read, absent when a
    * probe could not read the login file just now and the identity last read stands.
    */
   identity: z.string().regex(/^[a-z][a-z0-9-]{0,39}:[0-9a-f]{16,64}$/, 'A provider identity is a runtime kind and a hex digest').nullable().optional(),
@@ -94,6 +96,8 @@ export const quotaObservationSchema = z.object({
   key: z.string().regex(/^[0-9a-f]{12}$/).optional(),
   /** GY-3516: no longer written (GY-3555: the account's own live request decides); kept so stored readings still parse. */
   fault: text(300).nullable().optional(),
+  /** GY-3497: the extra-usage line the provider's answer gave when spend is enabled (`extra usage on: $3.21 of $10.00 used`); shown, never changed. */
+  spend: text(120).optional(),
 }).strict();
 
 /**
@@ -133,7 +137,7 @@ export const rolePolicySchema = z.object({
   model: entryName.nullable().default(null),
 }).strict();
 export const roleSchema = z.object({
-  name: z.enum(registryRoles), // Active assignments only; the ledger retains historical roles.
+  name: z.enum(fleetRoles), // Active assignments only; the ledger retains historical roles.
   /** Eligible accounts, most preferred first. */
   accounts: z.array(entryName).max(50).refine(list => new Set(list).size === list.length, 'A role lists each account once'),
   /** How many sessions of this role may run at once; 0 pauses the role. */
@@ -152,13 +156,13 @@ export const registryMutationSchemas = {
   'account.remove': z.object({ name: entryName, reason }).strict(),
   'account.quota': z.object({ name: entryName, quota: quotaObservationSchema, reason }).strict(),
   'role.set': z.object({ role: roleSchema, reason }).strict(),
-  'role.remove': z.object({ name: z.enum(registryRoles), reason }).strict(),
+  'role.remove': z.object({ name: z.enum(fleetRoles), reason }).strict(),
   /** A whole proposal at once, in dependency order: what setup discovers and an operator accepts. */
-  apply: z.object({ runtimes: z.array(runtimeSchema).max(50).default([]), models: z.array(modelSchema).max(100).default([]), accounts: z.array(accountSchema).max(200).default([]), roles: z.array(roleSchema).max(registryRoles.length).default([]), reason }).strict(),
+  apply: z.object({ runtimes: z.array(runtimeSchema).max(50).default([]), models: z.array(modelSchema).max(100).default([]), accounts: z.array(accountSchema).max(200).default([]), roles: z.array(roleSchema).max(fleetRoles.length).default([]), reason }).strict(),
 } as const;
 
 export const selectionRequestSchema = z.object({
-  role: z.enum(registryRoles),
+  role: z.enum(fleetRoles),
   host: hostName,
   work: z.string().trim().min(1).max(40).nullable().default(null),
   principal: z.string().trim().min(1).max(200).nullable().default(null),
@@ -170,7 +174,7 @@ export const selectionRequestSchema = z.object({
   /** What the executor just observed about the accounts that live on its host. */
   observations: z.array(z.object({ account: entryName, quota: quotaObservationSchema, smoke: smokeObservationSchema.optional() }).strict()).max(200).default([]),
   /**
-   * GY-3333: the live sessions other Graphyard installs on this host hold on accounts that live
+   * GY-3333: the live sessions other Mainworks installs on this host hold on accounts that live
    * there, read from the host-level records beside each login home. Every install counts them
    * toward the account's own session limit, so one login home serves at most its `maxSessions`
    * sessions across every install on the host.

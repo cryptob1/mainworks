@@ -4,7 +4,8 @@ import type { DaemonState } from './state.js';
 import { message } from './state.js';
 
 /** How long the control plane must be unreachable before the loop starts its server, and how often it tries again. */
-export const composeRestartAfterMs = 120_000, composeRestartEveryMs = 300_000;
+const composeRestartAfterMs = 120_000;
+const composeRestartEveryMs = 300_000;
 
 /** A compose install's server, as the loop drives it: its compose directory, the restart, and the readings master status names. */
 export interface ComposeServer {
@@ -45,7 +46,7 @@ export function composeServer(directory: string, run: ChildRun): ComposeServer {
  */
 export async function noteControlPlane(state: DaemonState, failure: { call: string | null; reason: string; answered: boolean } | null, now: number, server: (() => ComposeServer | null | Promise<ComposeServer | null>) | undefined, log: (line: string) => void) {
   if (!failure) {
-    if (state.controlPlane) log(`[graphyard-master] the control plane answers again after being unreachable since ${state.controlPlane.unreachableSince}`);
+    if (state.controlPlane) log(`[mainworks-master] the control plane answers again after being unreachable since ${state.controlPlane.unreachableSince}`);
     state.controlPlane = null;
     return;
   }
@@ -61,5 +62,5 @@ export async function noteControlPlane(state: DaemonState, failure: { call: stri
   record.restartedAt = at;
   [record.exitReason, record.freeDisk] = await Promise.all([compose.exitReason(), compose.freeDisk()]);
   record.restart = await compose.up().then(output => `started${output ? `: ${output.slice(-300)}` : ''}`, error => `failed: ${message(error).slice(0, 300)}`);
-  log(`[graphyard-master] the control plane has been unreachable since ${record.unreachableSince} (${record.error}); ran docker compose up -d in ${compose.directory}: ${record.restart}; the server's last exit: ${record.exitReason}; ${record.freeDisk}`);
+  log(`[mainworks-master] the control plane has been unreachable since ${record.unreachableSince} (${record.error}); ran docker compose up -d in ${compose.directory}: ${record.restart}; the server's last exit: ${record.exitReason}; ${record.freeDisk}`);
 }

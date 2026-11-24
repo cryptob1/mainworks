@@ -23,7 +23,7 @@ import { atomicPrivateWrite, dispatchWork, loadMasterConfig, selectAccount, setu
 import { applyRegistryMutation } from '../src/model-boundary/registry.js';
 import { chooseSession, emptyRegistry, fleetRoles, fleetView, foldObservation, launchGraceMs, proposedRuntimes, sessionEnded, settleSessions, type AgentRegistry as Registry, type FleetSession, type FleetView } from '../src/model/registry.js';
 import type { Principal, Work } from '../src/model.js';
-import { FleetOverview, pastesCredential } from '../web/pages/fleet.js';
+import { FleetOverview, FleetReference, pastesCredential } from '../web/pages/fleet.js';
 import { views, visibleViews } from '../web/pages/index.js';
 import { startedAtOnce } from './helpers/launch-shell.js';
 import { recordedRuns } from './helpers/headless-runs.js';
@@ -104,7 +104,7 @@ async function master(workers: { name: string; principal: string; kind: string; 
   const root = await temporaryDirectory('repo', scratch), credentialDirectory = await temporaryDirectory('credentials', scratch);
   execFileSync('git', ['init', '-q', root]); execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/owner/project.git'], { cwd: root });
   const bound = async () => new Response(JSON.stringify({ actor: { id: 'master', role: 'coordinator' }, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234 }));
-  await setupMaster(root, { url, token: tokens.get('master')!, cliPath: launcher, credentialDirectory, hostId: HOST, herdrWorkspace: 'workspace-graphyard' }, bound as typeof fetch);
+  await setupMaster(root, { url, token: tokens.get('master')!, cliPath: launcher, credentialDirectory, hostId: HOST, herdrWorkspace: 'workspace-mainworks' }, bound as typeof fetch);
   await mkdir(join(credentialDirectory, 'workers'), { recursive: true, mode: 0o700 });
   const config = await loadMasterConfig(root) as any;
   for (const entry of workers) {
@@ -166,7 +166,7 @@ test('integration:agent-registry-model — the control plane stores runtimes wit
   // API: every runtime the item names, each with its launch contract, and one added later that no code knows.
   for (const runtime of proposedRuntimes) await ok('agent-registry/runtimes', operator, { runtime, reason: `Register ${runtime.name}` });
   assert.deepEqual(proposedRuntimes.map(runtime => runtime.name).sort(), ['claude', 'codex', 'cursor', 'muse', 'opencode', 'pi']);
-  await ok('agent-registry/runtimes', coordinator, { runtime: { name: 'aider', description: 'Added after release', launch: { kind: 'aider', args: ['--yes-always'], homeVariable: 'AIDER_HOME', modelFlag: '--model', login: 'AIDER_HOME={home} aider --login', loginFile: 'session.json' } }, reason: 'A runtime Graphyard has never heard of' });
+  await ok('agent-registry/runtimes', coordinator, { runtime: { name: 'aider', description: 'Added after release', launch: { kind: 'aider', args: ['--yes-always'], homeVariable: 'AIDER_HOME', modelFlag: '--model', login: 'AIDER_HOME={home} aider --login', loginFile: 'session.json' } }, reason: 'A runtime Mainworks has never heard of' });
   // A registry holds references, never secrets: not in a contract's environment, its arguments, or an account.
   for (const launch of [{ kind: 'x', environment: { ANTHROPIC_API_KEY: 'value' } }, { kind: 'x', args: ['--key', 'sk-ant-api03-abcdefghijklmnop'] }, { kind: 'x', environment: { GRAPHYARD_TOKEN_FILE: '/x' } }])
     assert.equal((await call('agent-registry/runtimes', operator, { runtime: { name: 'leaky', launch }, reason: 'r' })).status, 400, JSON.stringify(launch));
@@ -267,7 +267,7 @@ test('integration:registry-driven-selection — an executor\'s action runs on th
   await ok('agent-registry/roles', operator, { role: { name: 'worker', accounts: ['claude-off', 'claude-spent', 'claude-out', 'claude-remote', 'claude-fresh'], concurrency: 2 }, reason: 'role' });
   await ok('agent-registry/roles', operator, { role: { name: 'producer', accounts: ['muse-a'], concurrency: 1 }, reason: 'role' });
 
-  // The profile is a Graphyard identity and nothing else here: it says codex, with Codex-only
+  // The profile is a Mainworks identity and nothing else here: it says codex, with Codex-only
   // arguments, and names no account. The registry decides what actually runs.
   const { root, config } = await master([{ name: 'worker-a', principal: 'implementer', kind: 'codex', agentArgs: ['--model', 'gpt-codex-only'] }, { name: 'worker-b', principal: 'implementer-b', kind: 'codex' }, { name: 'worker-c', principal: 'implementer-c', kind: 'claude', agentArgs: ['--permission-mode', 'default'] }]);
   assert.equal(config.environments, undefined); assert.ok(config.workers.every(entry => !entry.accounts));
@@ -523,8 +523,8 @@ test('unit:registry-visibility — the fleet view and the dashboard show each ac
   const settled = structuredClone(registry); settled.sessions.push(session({ id: 'newer', selectedAt: new Date(now + 1000).toISOString() }));
   assert.deepEqual(settleSessions(settled, [], new Date(now + 2000).toISOString()).map(entry => entry.endReason), ['superseded by the claude-a session launched for GY-5']);
 
-  // Dashboard: the page renders the same view.
-  const page = renderToStaticMarkup(createElement(FleetOverview, { fleet: view }));
+  // Dashboard: the page renders the same view; roles and runtimes sit in its Advanced fold (GY-3560).
+  const page = renderToStaticMarkup(createElement(FleetOverview, { fleet: view })) + renderToStaticMarkup(createElement(FleetReference, { fleet: view }));
   for (const shown of ['claude-b · claude · opus (claude-opus-5) · ineligible', `Ineligible: claude-b quota is exhausted until ${resetsAt} (weekly window spent)`, 'worker (2 of 3), reviewer (2 of 2), producer (1 of 1)', 'Quota: exhausted — 7d 100%', 'worker on GY-5 since', '(limit 1)', 'Ineligible: codex-out is not logged in', 'Login: logged out', 'Ineligible: codex-a is placed on build-host-2', '$15 in / $75 out per MTok', 'Capability: frontier',
     'worker · 1 of 12 running · next: none', 'claude-a → claude-b → codex-a', 'role producer is paused (concurrency 0)', 'Credential by reference: /agents/claude-a on build-host-1', 'CLAUDE_CONFIG_DIR'])
     assert.ok(page.includes(shown.replaceAll('\'', '&#x27;')), shown);

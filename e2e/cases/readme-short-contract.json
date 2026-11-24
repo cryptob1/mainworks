@@ -1,7 +1,7 @@
 {
   "id": "readme-short-contract",
   "title": "README keeps every landing contract together",
-  "description": "Run the unchanged README contract tests against the candidate checkout in one invocation: the 250-word landing page with exactly Why Graphyard, Quick start and Learn more, docs/ holding only the walkthrough media, onboarding commands the installed CLI help advertises, and the guide topics carrying the full setup and publishing details.",
+  "description": "Run the unchanged README contract tests against the candidate checkout in one invocation: the 250-word landing page with exactly Why Mainworks, Quick start and Learn more, docs/ holding only the walkthrough media, onboarding commands the installed CLI help advertises, and the guide topics carrying the full setup and publishing details.",
   "target": "any",
   "required": true,
   "steps": [{

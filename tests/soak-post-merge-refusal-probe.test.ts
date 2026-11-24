@@ -82,7 +82,7 @@ test('unit:soak-post-merge-refusal-probe — three stranded post-merge requests 
   execFileSync('git', ['init', '-q', root]);
   execFileSync('git', ['remote', 'add', 'origin', `https://github.com/${repository}.git`], { cwd: root });
   const coordinatorStatus = async () => new Response(JSON.stringify({ actor: { id: 'graphyard-master', role: 'coordinator' }, repository, baseBranch: 'main', githubAppId: 1234 }));
-  await setupMaster(root, { url: 'https://graphyard.example', token: `${'x'.repeat(32)}`, cliPath: launcher, credentialDirectory, herdrWorkspace: 'workspace-graphyard' }, coordinatorStatus as typeof fetch);
+  await setupMaster(root, { url: 'https://graphyard.example', token: `${'x'.repeat(32)}`, cliPath: launcher, credentialDirectory, herdrWorkspace: 'workspace-mainworks' }, coordinatorStatus as typeof fetch);
   await saveReviewerProfile(root, { name: 'reviewer-claude', agentName: 'review-claude-1', kind: 'claude', concurrency: 4 });
   const file = join(root, '.graphyard/master.json');
   const storedConfig = JSON.parse(await readFile(file, 'utf8')) as Record<string, any>;
@@ -181,9 +181,9 @@ test('unit:soak-post-merge-refusal-probe — three stranded post-merge requests 
     assert.deepEqual(attempts.at(-1), { key, at: attempts.at(-1)!.at, postMerge: true, head: M, baseTip: B }, `${key}'s launch is registered as the post-merge review of the merge commit against its parent`);
   }
   // The recovery's launches also leave the sessions' shared verification-slot directory under the
-  // managed root; a session checkout is a managed `graphyard-<kind>-…` directory, and that is what is counted.
+  // managed root; a session checkout is a managed `mainworks-<kind>-…` directory, and that is what is counted.
   const directories = (path: string, managed = false) => readdir(path, { withFileTypes: true }).catch(() => [] as { name: string; isDirectory(): boolean }[])
-    .then(entries => entries.filter(entry => entry.isDirectory() && (!managed || /^graphyard-(proof|review|approval|trial)-/.test(entry.name))).length);
+    .then(entries => entries.filter(entry => entry.isDirectory() && (!managed || /^mainworks-(proof|review|approval|trial)-/.test(entry.name))).length);
   assert.equal(await directories(sessions), keys.length, 'each recovery holds its own session directory');
   assert.equal(await directories(worktrees, true), keys.length, 'each recovery holds its own checkout');
   for (let guard = 0; guard < 48; guard++) await tick(hour);

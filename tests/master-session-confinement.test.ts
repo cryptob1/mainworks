@@ -30,7 +30,7 @@ function coordinator(base: string) {
   writeFileSync(join(root, 'Dockerfile'), 'FROM node:22\n');
   writeFileSync(join(root, '.gitignore'), '.graphyard/\n*.log\n');
   execFileSync('git', ['init', '-q', '-b', 'main', root]);
-  git('config', 'user.email', 'graphyard@localhost'); git('config', 'user.name', 'Graphyard');
+  git('config', 'user.email', 'graphyard@localhost'); git('config', 'user.name', 'Mainworks');
   git('add', '.'); git('commit', '-q', '-m', 'coordinator');
   return { root, git };
 }
@@ -124,7 +124,7 @@ test('unit:master-session-confinement-refusal — a master launch that cannot ca
   const base = await temporaryDirectory('master-refusal');
   const { root } = coordinator(base);
   for (const probe of [{ bwrap: null, platform: 'linux' }, { bwrap: 'bwrap', platform: 'darwin' }, { bwrap: 'bwrap', platform: 'linux', mountNamespaceWorks: false }])
-    await assert.rejects(masterSessionConfinement('claude', root, probe), /Graphyard never starts a session unconfined.*The master session is refused rather than started with the checkout writable/s, `refused on ${JSON.stringify(probe)}`);
+    await assert.rejects(masterSessionConfinement('claude', root, probe), /Mainworks never starts a session unconfined.*The master session is refused rather than started with the checkout writable/s, `refused on ${JSON.stringify(probe)}`);
   // Through the launcher: the refusal comes before anything is typed into the pane.
   const typed: string[][] = [];
   const run = (_bin: string, args: string[]) => { typed.push(args); return '{}'; };

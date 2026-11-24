@@ -16,7 +16,7 @@ import type { SessionHandle } from './sessions.js';
 import type { Delivery, ReleaseDelivery } from './delivery.js';
 import type { BlockingRulingAction } from './delegation.js';
 import { demand } from './refusal.js';
-export const CHECK_NAME = 'Graphyard / merge', LANDABLE_CHECK = 'graphyard/landable'; // GY-887: both are Graphyard's own, never CI inputs to the verdict
+export const CHECK_NAME = 'Graphyard / merge', LANDABLE_CHECK = 'graphyard/landable'; // GY-887: both are Mainworks's own, never CI inputs to the verdict
 export const stages = ['backlog', 'ready', 'build', 'review', 'test', 'acceptance', 'merge', 'done'] as const;
 export type Stage = typeof stages[number];
 export const sliceIds = ['product', 'infrastructure', 'docs-experience'] as const; export type SliceId = typeof sliceIds[number];
@@ -101,6 +101,8 @@ export interface Observation {
   protected: boolean; files: string[]; at: string;
   /** The candidate diff compared against its bound base; see regression-guard.ts. */
   scopeFiles?: ScopeFile[];
+  /** sha256 of the documentation files this head changes, with their blobs (GY-3716, model/docs-signoff.ts). */
+  docsDigest?: string;
   /** The same judgement against the commit the candidate would land on, and the unlanded work its head carries; see model/landing-check.ts. */
   landing?: LandingCheck;
   revertedDelivery?: RevertedDelivery; // a merged change whose content the base branch does not hold; see model/landing-check.ts
@@ -175,7 +177,7 @@ export interface Work extends Create {
   capacity?: CapacityState | null;
   /**
    * The last time the control plane brought this candidate onto a base branch that had moved
-   * under it, or refused to because the merge conflicts. Decided and written by Graphyard
+   * under it, or refused to because the merge conflicts. Decided and written by Mainworks
    * alone; see model/base-refresh.ts for the rule and model/carry.ts for what the refresh carries.
    */
   baseRefresh?: BaseRefresh | null; baseRefreshRequest?: BaseRefreshRequest | null; mergeRefusal?: MergeRefusal | null; // baseRefreshRequest: the standing request to merge a repaired base in (GY-528); mergeRefusal: the guarded merge's refusal (GY-831)
@@ -204,7 +206,7 @@ export interface Work extends Create {
   agentRequests?: AgentRequest[];
   /** Durable handles for the sessions launched on this item; see model/sessions.ts. */
   sessions?: SessionHandle[];
-  /** Recorded before GY-258 and only cleared since: Graphyard issues no merge executions. */
+  /** Recorded before GY-258 and only cleared since: Mainworks issues no merge executions. */
   mergeExecution?: { id: string; owner: string; sha: string; baseSha: string; policyRevision: number; authorizationRevision: number; issuedAt: string; expiresAt: string; verifiedAt?: string; committingAt?: string; clockOffset?: { min: number; max: number }; fenced?: { reason: string; at: string } | null } | null;
   delivery?: Delivery;
   /** Retired repair lane (GY-406, removed by GY-1234): stored items keep loading; nothing reads these. */

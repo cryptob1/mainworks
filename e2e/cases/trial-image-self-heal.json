@@ -1,7 +1,7 @@
 {
   "id": "trial-image-self-heal",
   "title": "A missing trial image is provisioned on the spot, not refused",
-  "description": "With a stub docker first on PATH and the trial image graphyard-trial:local absent, two heads the merge writer trials together wait on one provision — the published image's pull, then a build when the pull fails — and both then run their trial. With the build failing, neither head gets a verdict or a rework, and master status shows one attention line naming graphyard-trial:local and the docker error.",
+  "description": "With a stub docker first on PATH and the trial image mainworks-trial:local absent, two heads the merge writer trials together wait on one provision — the published image's pull, then a build when the pull fails — and both then run their trial. With the build failing, neither head gets a verdict or a rework, and master status shows one attention line naming mainworks-trial:local and the docker error.",
   "tags": ["trial", "regression"],
   "target": "any",
   "required": false,

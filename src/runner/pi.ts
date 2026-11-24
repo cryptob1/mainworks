@@ -1,6 +1,7 @@
 import { sessionScopeProperties } from '../session-share.js';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { confinedRuntimeArgs } from '../worker-sandbox.js';
+import { piModelArgs } from '../master/runtimes.js';
 import { randomUUID } from 'node:crypto';
 import { closeSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,11 +10,12 @@ import { StringDecoder } from 'node:string_decoder';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import type { Run, RunEvent, RunFailure, RunOptions, RunResult, Runner } from './types.js';
+import { stateDirectory } from '../install/layout.js';
 
 /**
  * The Pi implementation of the runner (GY-169). It launches `pi --mode json` in the given
  * worktree through the given environment wrapper (`pi-a`, `pi-b`: each sets PI_CODING_AGENT_DIR
- * and reads its provider key at run time) and model, with the Graphyard extension
+ * and reads its provider key at run time) and model, with the Mainworks extension
  * (integrations/pi) as its only extension, and reads Pi's JSONL event stream. There is no
  * terminal: stdin is closed, so nothing can wait on a person, and JSON mode exits once the prompt
  * is settled.
@@ -24,26 +26,26 @@ import type { Run, RunEvent, RunFailure, RunOptions, RunResult, Runner } from '.
  * restarted process adopts it from the run registry (registry.ts adoptRuns).
  */
 
-/** The Graphyard Pi extension this checkout ships. */
-export const piExtensionPath = fileURLToPath(new URL('../../integrations/pi/index.ts', import.meta.url));
+/** The Mainworks Pi extension this checkout ships. */
+const piExtensionPath = fileURLToPath(new URL('../../integrations/pi/index.ts', import.meta.url));
 export const defaultPiModel = 'zai/glm-5.3-flash';
 
 /**
  * Pi's non-interactive launch. JSON mode processes the prompt and exits; no session file is kept;
- * only the Graphyard extension loads (discovery is off), and the worktree's own project resources
+ * only the Mainworks extension loads (discovery is off), and the worktree's own project resources
  * — a candidate's `.pi/` extensions, skills, prompt templates, AGENTS.md — are ignored, so the code
  * under judgement cannot load code into its judge. The prompt follows `--` so it is never read as
  * an option.
  */
 export function piArgs(prompt: string, options: { model: string; extension?: string; args?: string[] }) {
   return ['--mode', 'json', '--no-session', '--no-extensions', '--extension', options.extension ?? piExtensionPath,
-    '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--no-approve', '--model', options.model, ...(options.args ?? []), '--', prompt];
+    '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--no-approve', ...piModelArgs(options.model), ...(options.args ?? []), '--', prompt];
 }
 
-/** Inherited variables a run never sees: the loop's own Graphyard and Herdr identity. What a run may hold is passed in `env`. */
+/** Inherited variables a run never sees: the loop's own Mainworks and Herdr identity. What a run may hold is passed in `env`. */
 export function runEnvironment(base: NodeJS.ProcessEnv, extra: Record<string, string> = {}) {
   const env: Record<string, string> = {};
-  for (const [name, value] of Object.entries(base)) if (value !== undefined && !/^(GRAPHYARD_|HERDR_)/.test(name)) env[name] = value;
+  for (const [name, value] of Object.entries(base)) if (value !== undefined && !/^(GRAPHYARD_|MAINWORKS_|HERDR_)/.test(name)) env[name] = value;
   return { ...env, ...extra };
 }
 
@@ -71,7 +73,7 @@ const credentialPattern = /((?:authorization\s*:\s*)?bearer\s+|(?:token|password
 const redactCredentials = (value: string) => value.replace(credentialPattern, (_match, label?: string, scheme?: string) => label ? `${label}[redacted]` : scheme ? `${scheme}[redacted]@` : '[redacted]');
 
 /** One Pi JSONL record as a runner event; null for the streaming noise a record does not keep. */
-export function piEvent(record: any, at: string): RunEvent | null {
+function piEvent(record: any, at: string): RunEvent | null {
   switch (record?.type) {
     case 'session': return { kind: 'session', at, id: String(record.id ?? '') };
     case 'message_end': return { kind: 'message', at, role: String(record.message?.role ?? 'unknown'), text: bounded(text(record.message?.content)), stopReason: record.message?.stopReason ?? null, error: record.message?.errorMessage ?? null };
@@ -145,7 +147,7 @@ export function runContainment(input: { cgroup?: string | null; systemd?: () => 
   });
   if (reachable()) return 'systemd';
   const log = input.log ?? (line => { if (!fallbackLogged) { fallbackLogged = true; process.stderr.write(`${line}\n`); } });
-  log(`graphyard: headless runs started from ${service} get no transient scope (no systemd user manager answers), so a stop or restart of ${service} still ends them`);
+  log(`mainworks: headless runs started from ${service} get no transient scope (no systemd user manager answers), so a stop or restart of ${service} still ends them`);
   return 'setsid';
 }
 
@@ -153,8 +155,9 @@ export function runContainment(input: { cgroup?: string | null; systemd?: () => 
 export const runFiles = (directory: string) => ({
   meta: join(directory, 'run.json'), stdout: join(directory, 'stdout.jsonl'), stderr: join(directory, 'stderr.log'),
   exit: join(directory, 'exit'), stopped: join(directory, 'stopped.json'), stdin: join(directory, 'stdin.txt'),
+  prompt: join(directory, 'prompt.txt'),
 });
-export const runMetaSchema = z.object({
+const runMetaSchema = z.object({
   version: z.literal(1), id: z.string().min(1).max(80), command: z.string().max(4000), pid: z.number().int().positive().nullable(),
   /** The process's start time (/proc/PID/stat), so a reused pid is never taken for the run. */
   identity: z.string().max(40).nullable(), containment: z.enum(['systemd', 'setsid']), unit: z.string().max(200).nullable(),
@@ -292,7 +295,7 @@ export function scratchRunsDirectory(cwd: string | undefined) {
   if (cwd) {
     // Each level made on its own, never recursively: a recursive mkdir can spin forever on a
     // pseudo-filesystem such as /proc, where a plain one fails at once.
-    const local = resolve(cwd, '.graphyard', 'scratch-runs');
+    const local = resolve(stateDirectory(cwd), 'scratch-runs');
     const made = (directory: string) => { try { mkdirSync(directory, { mode: 0o700 }); } catch (error: any) { if (error?.code !== 'EEXIST') throw error; } };
     try { made(dirname(local)); made(local); return local; } catch { /* a checkout it cannot write to: the temp directory */ }
   }
@@ -492,7 +495,7 @@ export function piSmoke(configured: { command: string; model: string; args?: str
     let child: ChildProcess;
     try {
       child = (configured.spawn ?? spawn)(configured.command, [...(configured.commandArgs ?? []), '--mode', 'json', '--no-session', '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--no-approve',
-        '--no-tools', '--model', configured.model, ...(configured.args ?? []), '--', 'Reply with the single word OK.'], { cwd: options.cwd, env: runEnvironment(process.env, configured.environment), stdio: ['ignore', 'pipe', 'pipe'] });
+        '--no-tools', ...piModelArgs(configured.model), ...(configured.args ?? []), '--', 'Reply with the single word OK.'], { cwd: options.cwd, env: runEnvironment(process.env, configured.environment), stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (error) { finish({ ok: false, error: `${configured.command} could not be started: ${error instanceof Error ? error.message : String(error)}` }); return; }
     const bound = setTimeout(() => { child.kill('SIGKILL'); finish({ ok: false, error: `${configured.command} gave no answer within ${Math.round((options.timeoutMs ?? 120_000) / 1000)}s` }); }, options.timeoutMs ?? 120_000);
     bound.unref();

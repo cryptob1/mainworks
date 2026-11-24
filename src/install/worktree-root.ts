@@ -5,9 +5,10 @@ import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { stopProcessesUnder } from '../session-processes.js';
+import { setting } from '../setting.js';
 
 /**
- * The managed worktree root: the one directory on this host under which Graphyard creates every
+ * The managed worktree root: the one directory on this host under which Mainworks creates every
  * ephemeral checkout — a proof producer's detached worktree of the exact head, and the checkout a
  * reviewer may read surrounding code from. They must sit outside every worktree of the repository
  * (a session that builds inside an assignment worktree would be building someone else's work),
@@ -18,7 +19,8 @@ import { stopProcessesUnder } from '../session-processes.js';
  * from the system temporary directory.
  */
 
-export const defaultWorktreeRootMinFreeGb = 2, defaultWorktreeRootBudgetGb = 10;
+export const defaultWorktreeRootMinFreeGb = 2;
+const defaultWorktreeRootBudgetGb = 10;
 type Environment = Record<string, string | undefined>;
 export interface WorktreeRootSettings { repository: string; run?: { worktreeRoot?: string; worktreeRootMinFreeGb?: number; worktreeRootBudgetGb?: number } }
 
@@ -28,7 +30,7 @@ export interface WorktreeRootSettings { repository: string; run?: { worktreeRoot
  * account home, and a root that moved with the caller would not be one root.
  */
 export function dataDirectory(environment: Environment = process.env) {
-  const configured = environment.GRAPHYARD_DATA_HOME;
+  const configured = setting('DATA_HOME', environment);
   if (configured && !isAbsolute(configured)) throw new Error('GRAPHYARD_DATA_HOME must be an absolute path');
   return resolve(configured || resolve(homedir(), '.local/share/graphyard'));
 }
@@ -51,7 +53,7 @@ const volatileFilesystems: Record<number, string> = { 0x01021994: 'tmpfs', 0x858
 export const volatileFilesystem = (path: string): string | null => {
   try { return volatileFilesystems[Number(statfsSync(path).type)] ?? null; } catch { return null; }
 };
-export interface FilesystemFacts {
+interface FilesystemFacts {
   /** The directory that was measured: the path itself, or its nearest existing ancestor. */
   probed: string;
   /** `tmpfs` or `ramfs` when the volume is memory-backed; null on durable storage. */
@@ -109,7 +111,7 @@ export function sessionCheckout(base: string, kind: CheckoutKind, key: string, s
 /** The only thing ever removed: a session directory, by its managed name, directly inside the root. */
 function assertManaged(base: string, directory: string) {
   if (dirname(resolve(directory)) !== resolve(base) || !managedName.test(basename(directory)))
-    throw new Error(`Refusing to remove ${directory}: only a Graphyard session checkout directly inside ${base} is ever removed`);
+    throw new Error(`Refusing to remove ${directory}: only a Mainworks session checkout directly inside ${base} is ever removed`);
 }
 export async function allocateSessionCheckout(base: string, kind: CheckoutKind, key: string, sha: string, id: string): Promise<SessionCheckout> {
   const checkout = sessionCheckout(base, kind, key, sha, id);
@@ -181,7 +183,7 @@ export async function removeUnownedCheckouts(repository: string, base: string, l
 }
 
 /** What the root itself holds, as `du` counts it; null when it cannot be measured in time. */
-export async function directoryBytes(path: string, timeoutMs = 10_000): Promise<number | null> {
+async function directoryBytes(path: string, timeoutMs = 10_000): Promise<number | null> {
   try {
     const kilobytes = Number.parseInt((await runChild('du', ['-sk', path], { timeoutMs })).split(/\s/)[0] ?? '', 10);
     return Number.isFinite(kilobytes) ? kilobytes * 1024 : null;
@@ -193,7 +195,7 @@ export interface WorktreeRootHealth {
   usedBytes: number | null; budgetBytes: number; checkouts: number; unowned: number; low: boolean; overBudget: boolean;
 }
 /** The share of the budget at which `master status` speaks up, while writes still succeed. */
-export const worktreeRootBudgetWarning = 0.8;
+const worktreeRootBudgetWarning = 0.8;
 /**
  * The root as `master status` reports it. Free space is what the kernel reports for the volume; a
  * user quota is invisible there, so the root's own size is also held against a configured budget —

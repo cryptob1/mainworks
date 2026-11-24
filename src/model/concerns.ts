@@ -14,7 +14,7 @@ import type { Work } from './work.js';
 export interface HumanNeeded { decision: string; resolve: string }
 /** The computed action as this module writes it; `Work['nextAction']` is typed as the base kind. */
 export interface OpenAction extends NextAction { needsHuman?: HumanNeeded }
-export const openAction = (work: Pick<Work, 'nextAction'>): OpenAction | null => (work.nextAction ?? null) as OpenAction | null;
+const openAction = (work: Pick<Work, 'nextAction'>): OpenAction | null => (work.nextAction ?? null) as OpenAction | null;
 
 /**
  * What an action waits on when no executor may run it, or null when the loop can run it itself.
@@ -28,15 +28,15 @@ export const openAction = (work: Pick<Work, 'nextAction'>): OpenAction | null =>
 export function humanNeeded(action: NextAction): HumanNeeded | null {
   if (actionJudgment[action.kind] !== 'in-step') return null;
   // A rework the loop owes is applied by the loop itself (GY-1387, GY-2874); the hand command is the fallback.
-  if (action.kind === 'request-rework') return { decision: `a new head for ${action.key}`, resolve: `graphyard master rework ${action.key} REASON` };
+  if (action.kind === 'request-rework') return { decision: `a new head for ${action.key}`, resolve: `mainworks master rework ${action.key} REASON` };
   // GY-2981: a filing refusal the ready gate raised is answered by requirements, which adds the
   // criterion the item's creation rules now demand — it never weakens the item to fit them.
   if (action.inputs.kind === 'attention' && isFilingRefusal(action.inputs.detail))
-    return { decision: `filing ${action.key} under today's rules`, resolve: `graphyard master requirements ${action.key} FILE REASON` };
+    return { decision: `filing ${action.key} under today's rules`, resolve: `mainworks master requirements ${action.key} FILE REASON` };
   // A gate refusing something no executor step answers — an exhausted reviewer roster, an
   // unverified branch protection — names what has to be decided in the refusal itself.
   const detail = action.inputs.kind === 'attention' ? action.inputs.detail : action.reason;
-  return { decision: `resolving ${action.key}'s refusal`, resolve: `graphyard diagnose ${action.key} — ${detail}` };
+  return { decision: `resolving ${action.key}'s refusal`, resolve: `mainworks diagnose ${action.key} — ${detail}` };
 }
 
 /**
@@ -54,7 +54,7 @@ export function dispatchHold(work: Work, all: Work[], now: Date): string | null 
 }
 
 /** A delivered (merged or Done) item owes nothing more. */
-export const isDeliveredWork = (work: Pick<Work, 'stage'> & { observation?: { merged?: boolean } | null; delivery?: unknown }): boolean =>
+const isDeliveredWork = (work: Pick<Work, 'stage'> & { observation?: { merged?: boolean } | null; delivery?: unknown }): boolean =>
   work.stage === 'done' || !!work.observation?.merged || !!work.delivery;
 
 /** The step an item needs, with who owes it when no executor may run it. */

@@ -92,7 +92,7 @@ class World {
         const n = Number(item.key.slice(3)), key = mergeRecordKey(item, event), input = JSON.stringify(event);
         world.sends.set(key, (world.sends.get(key) ?? 0) + 1);
         if (world.refusedKeys.has(key)) world.resent.push(key);
-        const refuse = () => { world.refusedKeys.set(key, world.cycle); throw Object.assign(new Error(`Graphyard refused work/${item.id}/merge-record (409): ${reused}`), { status: 409 }); };
+        const refuse = () => { world.refusedKeys.set(key, world.cycle); throw Object.assign(new Error(`Mainworks refused work/${item.id}/merge-record (409): ${reused}`), { status: 409 }); };
         if (routeDown(world.cycle)) { world.down += 1; throw Object.assign(new Error('merge-record: route down (HTTP 503)'), { status: 503 }); }
         // A merge in flight whose intent key the server already holds with other input.
         if (event.kind === 'intent' && reusedInFlight(n) && !world.injected.has(`flight:${n}`)) { world.injected.add(`flight:${n}`); refuse(); }

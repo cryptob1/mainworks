@@ -31,7 +31,7 @@ async function fixture(page: Page) {
 test('integration:feature-skips-spec-check — legacy feature reports have no dashboard panel', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await fixture(page);
-  await page.goto('/?sign-in');
+  await page.goto('/?sign-in#work');
   await page.getByLabel('Access token').fill('browser-fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.getByRole('heading', { name: 'Work', exact: true })).toBeVisible();
@@ -44,7 +44,7 @@ test('integration:feature-skips-spec-check — legacy feature reports have no da
 test('integration:feature-skips-spec-check — bugs show no obsolete panel', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await fixture(page);
-  await page.goto('/?sign-in');
+  await page.goto('/?sign-in#work');
   await page.getByLabel('Access token').fill('browser-fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await expect(page.getByRole('heading', { name: 'Work', exact: true })).toBeVisible();

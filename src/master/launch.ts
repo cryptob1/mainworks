@@ -26,9 +26,11 @@ import { createdHerdrTab, type HerdrAgent, herdrCall, herdrJson, herdrRun, stopC
 import { herdrErrorText, nameRefusedByRuntime, sessionWords, type PromptDelivery } from './prompt-delivery.js';
 import { keyringEndpointWarning, keyringProbeBackoff } from './launch-keyring.js';
 import { masterRecords } from './conversation.js';
+import { setting } from '../setting.js';
+import { stateDirectory } from '../install/layout.js';
 // Prompt delivery moved to prompt-delivery.ts (GY-1863) with the screen a stalled delivery is
 // judged by; the names below are the one address every existing import has always had.
-export { promptAttempts, promptAcceptMs, promptRetryPauseMs, noticeSettleMs, PromptNotAcceptedError, herdrErrorCode, herdrErrorText, nameRefusedByRuntime, deliverPrompt, readSessionScreen, sessionWords, type PromptDelivery } from './prompt-delivery.js';
+export { promptAttempts, promptAcceptMs, promptRetryPauseMs,  PromptNotAcceptedError, herdrErrorCode, herdrErrorText, nameRefusedByRuntime, deliverPrompt, readSessionScreen, sessionWords, type PromptDelivery } from './prompt-delivery.js';
 
 /**
  * Keep what an interrupted attempt had not committed. The work is committed on the attempt's own
@@ -44,7 +46,7 @@ export async function preservePartialWork(path: string, label: string, run: Chil
   if (!await git('status', '--porcelain')) return { state: 'clean', commit: await git('rev-parse', 'HEAD'), ...described, detail: 'the worktree held no uncommitted change; every commit of the attempt is on its branch' };
   try {
     await git('add', '-A');
-    await git('-c', 'user.name=Graphyard', '-c', 'user.email=graphyard@localhost', 'commit', '--no-verify', '-m', `WIP: ${label}`);
+    await git('-c', 'user.name=Mainworks', '-c', 'user.email=graphyard@localhost', 'commit', '--no-verify', '-m', `WIP: ${label}`);
     return { state: 'committed', commit: await git('rev-parse', 'HEAD'), ...described, detail: 'uncommitted changes were committed on the attempt branch, unpushed' };
   } catch (error) {
     await git('reset', '--hard'); await git('clean', '-fd');
@@ -58,7 +60,7 @@ export async function preservePartialWork(path: string, label: string, run: Chil
  * `herdr agent prompt` types its text into the running session through bracketed paste, and a
  * coding agent treats pasted text as untrusted data rather than as a request from its operator —
  * correctly, against prompt injection — so a session launched that way often ends its first turn
- * having refused to act (GY-93). Every runtime Graphyard launches takes an initial prompt on its
+ * having refused to act (GY-93). Every runtime Mainworks launches takes an initial prompt on its
  * own command line instead, where it is the user's own first message: Claude Code, Codex and
  * Cursor as a positional argument after their flags, OpenCode through `--prompt`. A runtime with
  * no such contract keeps the paste, and the record says so.
@@ -83,10 +85,10 @@ export const launchDelivery = (kind: string | undefined, args: string[] = []): R
  * (GY-93): a runtime without a way to take it there is refused before launch, naming the runtime
  * and the fix, rather than started and handed text it may rightly treat as untrusted (GY-184).
  */
-export const requestContractRefusal = (kind: string) => `${PRODUCT_NAME} refuses to launch the ${kind} runtime: it has no way to take the session's first request on its command line, and a launched session's instruction is never pasted into it. Register where ${kind} takes its first prompt with graphyard master registry runtime set NAME --kind ${kind} --arg=${requestPlaceholder} (or --arg=FLAG --arg=${requestPlaceholder}) --reason REASON.`;
+export const requestContractRefusal = (kind: string) => `${PRODUCT_NAME} refuses to launch the ${kind} runtime: it has no way to take the session's first request on its command line, and a launched session's instruction is never pasted into it. Register where ${kind} takes its first prompt with mainworks master registry runtime set NAME --kind ${kind} --arg=${requestPlaceholder} (or --arg=FLAG --arg=${requestPlaceholder}) --reason REASON.`;
 /** The most bytes a launch command line may hold: the runtime, its flags and two file paths, never the request. */
 export const launchCommandLimit = 512;
-export const launchDirectory = (directory: string) => resolve(directory, '.graphyard/launch');
+export const launchDirectory = (directory: string) => resolve(stateDirectory(directory), 'launch');
 /** The session's launch files: `stem` is `DIR/.graphyard/launch/NAME`, and each file present is `STEM.role` or `STEM.request` (and `STEM.launch`, the runtime's words, for a line that would exceed the bound). */
 export interface LaunchFiles { stem: string; role: string | null; request: string | null }
 /** A word for the pane's shell: bare when it needs no quoting, single-quoted otherwise. */
@@ -130,10 +132,10 @@ export function writeLaunchFiles(directory: string, name: string, text: { role?:
  * Whether `argv1` is one of the launcher's own entries: `bin/graphyard.mjs` or the `src/cli.ts`
  * or built `dist/cli.mjs` child it spawns — in each the checkout is two levels up.
  */
-const cliEntry = (argv1: string) => ['graphyard.mjs', 'cli.ts', 'cli.mjs'].includes(basename(argv1));
+const cliEntry = (argv1: string) => ['mainworks.mjs', 'graphyard.mjs', 'cli.ts', 'cli.mjs'].includes(basename(argv1));
 /**
  * The coordinator checkout the launching process itself runs from, or null when this is not the
- * Graphyard CLI or the test runner is driving: nothing is confined there. Both entries count —
+ * Mainworks CLI or the test runner is driving: nothing is confined there. Both entries count —
  * `bin/graphyard.mjs`, which operators and prompts invoke, and the `src/cli.ts` child it spawns,
  * which is what `process.argv[1]` holds inside the loop — so a launch is never confined against
  * the wrong tree, and never silently unconfined in production (GY-888).
@@ -142,7 +144,7 @@ export const launcherCoordinatorRoot = (argv1: string | undefined = process.argv
   if (!argv1 || testRunner || !cliEntry(argv1)) return null;
   // GY-1790: an entry the restart started from the held snapshot is handed the checkout it serves
   // in the environment; confinement guards that checkout, not the snapshot's own tree.
-  const handed = process.env.GRAPHYARD_CHECKOUT_ROOT?.trim();
+  const handed = setting('CHECKOUT_ROOT')?.trim();
   const root = handed || coordinatorCheckoutRoot(resolve(argv1));
   return root && root !== '/' ? root : null;
 };
@@ -150,7 +152,7 @@ export const launcherCoordinatorRoot = (argv1: string | undefined = process.argv
 export const launcherRootUndetermined = (argv1: string | undefined = process.argv[1], testRunner: boolean = underTestRunner()): string | null => {
   if (!argv1 || testRunner || !cliEntry(argv1)) return null;
   // GY-1790: a snapshot entry is handed its checkout in the environment, so its root is determined.
-  if (process.env.GRAPHYARD_CHECKOUT_ROOT?.trim()) return null;
+  if (setting('CHECKOUT_ROOT')?.trim()) return null;
   const root = coordinatorCheckoutRoot(resolve(argv1));
   return root && root !== '/' ? null : `this launcher's coordinator checkout could not be derived from its entry ${argv1}`;
 };
@@ -191,7 +193,7 @@ export async function masterSessionConfinement(kind: string, root: string, probe
   prepareConfinedGitPaths(root);
   // The master's dispatches add worktrees: the shared worktrees area is re-exposed only where it exists.
   if (existsSync(checkoutGitDirectory(root))) mkdirSync(join(checkoutGitDirectory(root), 'worktrees'), { recursive: true });
-  const managed = join(resolve(root), '.graphyard');
+  const managed = stateDirectory(resolve(root));
   mkdirSync(managed, { recursive: true, mode: 0o700 });
   // GY-3237: the Herdr socket and config the install records now — the main server after a
   // GY-3212 migration, a private instance while it drains — so `herdr agent list` and
@@ -201,7 +203,7 @@ export async function masterSessionConfinement(kind: string, root: string, probe
   // GY-3445: and the host-wide heavy-jobs folder, whose drain record `master drain` and `master resume` write.
   const heavyJobs = heavyJobsDirectory();
   // GY-3698: the machine's compute known-hosts and host list files, so `host add` works from the confined master while the rest of machine/ stays hidden.
-  const config = configHome(environment?.GRAPHYARD_CONFIG_HOME);
+  const config = configHome(environment && setting('CONFIG_HOME', environment));
   const knownHosts = hostKnownHostsFile(config), hosts = hostsFile(config);
   for (const path of [ledgerLocks, heavyJobs, dirname(knownHosts)]) mkdirSync(path, { recursive: true });
   if (!existsSync(knownHosts)) writeFileSync(knownHosts, '', { mode: 0o600 });
@@ -243,7 +245,7 @@ export async function sessionConfinement(kind: string, args: readonly string[], 
     return null;
   }
   const workspaceRoot = resolve(options.cwd ?? options.directory), allocated = resolve(options.directory);
-  const input: ConfinementInput = { kind, args, environment: options.environment, coordinatorRoot: root, writable: [...(options.writable ?? []), ...(options.environment?.[slotsDirectoryVariable] ? [options.environment[slotsDirectoryVariable]] : [])], sessionDirectory: workspaceRoot, ...(allocated === workspaceRoot ? {} : { allocatedDirectory: allocated }), ...(options.ownGitHubCredential ? { ownGitHubCredential: true } : {}), ...(options.secretsBus === null ? { secretsBus: null } : {}), ...(options.credentialMask ? { credentialMask: options.credentialMask } : {}), ...(options.maskProbe !== undefined ? { maskProbe: options.maskProbe } : {}) };
+  const input: ConfinementInput = { kind, args, environment: options.environment, coordinatorRoot: root, writable: [...(options.writable ?? []), ...(options.environment && setting(slotsDirectoryVariable, options.environment) ? [setting(slotsDirectoryVariable, options.environment)!] : [])], sessionDirectory: workspaceRoot, ...(allocated === workspaceRoot ? {} : { allocatedDirectory: allocated }), ...(options.ownGitHubCredential ? { ownGitHubCredential: true } : {}), ...(options.secretsBus === null ? { secretsBus: null } : {}), ...(options.credentialMask ? { credentialMask: options.credentialMask } : {}), ...(options.maskProbe !== undefined ? { maskProbe: options.maskProbe } : {}) };
   const refusal = await coordinatorConfinementRefusal(input);
   if (refusal) throw new Error(refusal);
   prepareConfinedGitPaths(root);
@@ -259,13 +261,13 @@ export async function sessionConfinement(kind: string, args: readonly string[], 
  */
 export function headlessConfinementWrapper(root: string, cwd: string | undefined, bwrap: string | null = bwrapOnPath(), credentialMask?: CredentialMask, environment?: NodeJS.ProcessEnv): readonly string[] {
   const head = `A headless session cannot be started with the coordinator checkout at ${root} unwritable at the OS level`;
-  if (cwd === undefined) throw new Error(`${head}: the run has no working directory to confine around. Graphyard never starts a session unconfined.`);
+  if (cwd === undefined) throw new Error(`${head}: the run has no working directory to confine around. Mainworks never starts a session unconfined.`);
   // The checkout's own problem is named before any host capability, as coordinatorConfinementRefusal
   // names it: it is deterministic on every host, while the probes answer for this one alone.
   const gitProblem = checkoutGitProblem(root);
-  if (gitProblem) throw new Error(`${head}: the Git directory it writes through cannot be resolved — ${gitProblem}. Graphyard never starts a session unconfined.`);
-  if (!bwrap) throw new Error(`${head}: bubblewrap (bwrap) is not installed. Graphyard never starts a session unconfined; install bubblewrap (e.g. apt install bubblewrap).`);
-  if (mountNamespaceProbeResult(bwrap) === false) throw new Error(`${head}: this host refuses the unprivileged namespaces bubblewrap needs. Graphyard never starts a session unconfined; allow unprivileged user namespaces on this host.`);
+  if (gitProblem) throw new Error(`${head}: the Git directory it writes through cannot be resolved — ${gitProblem}. Mainworks never starts a session unconfined.`);
+  if (!bwrap) throw new Error(`${head}: bubblewrap (bwrap) is not installed. Mainworks never starts a session unconfined; install bubblewrap (e.g. apt install bubblewrap).`);
+  if (mountNamespaceProbeResult(bwrap) === false) throw new Error(`${head}: this host refuses the unprivileged namespaces bubblewrap needs. Mainworks never starts a session unconfined; allow unprivileged user namespaces on this host.`);
   prepareConfinedGitPaths(root);
   return readOnlyMountWrapper({ coordinatorRoot: root, sessionDirectory: resolve(cwd), bwrap, environment, ...(credentialMask ? { credentialMask } : {}) });
 }
@@ -361,7 +363,7 @@ export function paneLastLine(text: string | null, limit = paneLineLimit) {
 /** Whether the pane's last line is the launch command itself — typed, or still being typed — and not yet answered: it opens with the stem binding and names the runtime. */
 export const commandEchoing = (line: string, command: string) => !!line && (line.includes(command.slice(0, 24)) || (line.includes(`${launchVariable}=`) && line.includes(` ${command.replace(/^GY=\S+; /, '').split(' ')[0]}`)));
 /** How many of the runtime's last printed lines an exit at start quotes. */
-export const exitedLineLimit = 5;
+const exitedLineLimit = 5;
 /**
  * What the runtime printed after the launch command, when the pane's screen shows that command
  * echoed with output below it (GY-976): the lines below its last echo, less the shell's new prompt
@@ -382,19 +384,19 @@ export function outputAfterCommand(screen: string | null, command: string) {
   if (prompted && echoed > 0 && lines[echoed - 1] && after.at(-1) === lines[echoed - 1]) after.pop();
   return after.length ? after.slice(-exitedLineLimit).map(line => line.length > paneLineLimit ? `${line.slice(0, paneLineLimit)}…` : line) : null;
 }
-/** Whether an argv word is the graphyard CLI: `graphyard`, or its `graphyard.mjs` script, by basename. */
-const graphyardCli = (word: string) => (word.split('/').at(-1) ?? '').replace(/\.[cm]?js$/, '') === 'graphyard';
+/** Whether an argv word is the mainworks CLI: `mainworks`, or its `graphyard.mjs` script, by basename. */
+const mainworksCli = (word: string) => (word.split('/').at(-1) ?? '').replace(/\.[cm]?js$/, '') === 'graphyard';
 /** The words a shell wrapper's `-c` string (`-c`, `-lc`, …) runs, split on whitespace (GY-1225); only a shell's: `grep -c` is not a wrapper. */
 const wrappedWords = (argv: string[]) => /^(sh|bash|zsh|dash)$/.test(argv[0]?.split('/').at(-1) ?? '') ? argv.flatMap((word, index) => index > 0 && /^-[a-z]*c$/.test(argv[index - 1]) ? word.split(/\s+/).filter(Boolean) : []) : [];
 /**
- * Whether a foreground process's argv is a `graphyard watch` supervisor (GY-1213): `watch`, right
- * after the graphyard CLI that runs it (GY-1225: not any bare `watch`, such as `sudo watch`), then
+ * Whether a foreground process's argv is a `mainworks watch` supervisor (GY-1213): `watch`, right
+ * after the mainworks CLI that runs it (GY-1225: not any bare `watch`, such as `sudo watch`), then
  * its operands and any flags, then the `--` that opens the runtime's command — however many words
  * lie between — or a shell wrapper's single `-c` string spelling the same. Pinned against
  * `launchCommand` with the supervisor prefix dispatch builds.
  */
 export function supervisorArgv(argv: string[]) {
-  return [argv, wrappedWords(argv)].some(words => words.some((word, at) => word === 'watch' && at > 0 && graphyardCli(words[at - 1]) && words.indexOf('--', at + 2) > 0));
+  return [argv, wrappedWords(argv)].some(words => words.some((word, at) => word === 'watch' && at > 0 && mainworksCli(words[at - 1]) && words.indexOf('--', at + 2) > 0));
 }
 /**
  * Whether a foreground process's argv runs `program` (GY-1213): a word, or a word of a wrapper's
@@ -412,7 +414,7 @@ export function runsProgram(argv: string[], program: string) {
  * process group does (the typed launch command — its supervisor, then the runtime — is executing),
  * null when Herdr cannot say. Given the runtime's program, a group Herdr lists the processes of is
  * told apart (GY-1184): `runtime` when an executable or interpreter script runs that program,
- * `supervisor` when only its `graphyard watch` supervisor is identified, `command` for a wrapper
+ * `supervisor` when only its `mainworks watch` supervisor is identified, `command` for a wrapper
  * still preparing that runtime, and `other` (naming it) when none is — an unrelated job left in a reused pane,
  * not this launch. The real Herdr lists them; a group listed empty stays `command`.
  */
@@ -437,10 +439,6 @@ export async function paneForeground(pane: string, run?: ChildRun, program?: str
     const named = typeof inspected?.name === 'string' && inspected.name ? inspected.name : argvs[at][0].split('/').at(-1);
     return { other: named || 'an unnamed process' };
   } catch { return null; }
-}
-/** Whether the pane's own shell holds its terminal's foreground (paneForeground). False when Herdr cannot say. */
-export async function shellInForeground(pane: string, run?: ChildRun) {
-  return await paneForeground(pane, run) === 'shell';
 }
 export async function observeStart(pane: string, kind: string, command: string, run?: ChildRun, readyStates = startedStates, answers: readonly import('../consent-prompt.js').ConsentRule[] = consentAnswers): Promise<StartObservation> {
   let agent: HerdrAgent | null = null;
@@ -605,7 +603,7 @@ export interface SessionStart extends PromptDelivery, StartBounds { directory: s
 export async function startAgentSession(name: string, kind: string, pane: string, args: string[], text: string, run: ChildRun | undefined, options: SessionStart) {
   assertIsolatableHostControlEndpoints({ ...process.env, ...options.environment });
   assertSessionName(name, options.retry);
-  // A runtime Graphyard cannot start without its own approval prompts is refused here, before
+  // A runtime Mainworks cannot start without its own approval prompts is refused here, before
   // anything is typed, rather than launched into a session that waits for a keypress (GY-184).
   // A registry runtime's own launch contract is its recipe when it registers one.
   assertLaunchable(kind, options.contract);
@@ -651,11 +649,11 @@ export async function startAgentSession(name: string, kind: string, pane: string
     let started: Awaited<ReturnType<typeof awaitRuntimeStart>>;
     try { started = await awaitRuntimeStart(pane, kind, command, run, { ...options, readyStates: startedStates, ...(own ? { trustFolder: true } : {}) }); }
     catch (error) {
-      if (error instanceof SessionStartError) log(`graphyard: ${name} (${kind}) in pane ${pane}: start failed after ${(error.waitedMs / 1000).toFixed(1)} s (${error.startCase}; bound ${Math.round((options.timeoutMs ?? agentStartTimeoutMs) / 1000)} s)`);
+      if (error instanceof SessionStartError) log(`mainworks: ${name} (${kind}) in pane ${pane}: start failed after ${(error.waitedMs / 1000).toFixed(1)} s (${error.startCase}; bound ${Math.round((options.timeoutMs ?? agentStartTimeoutMs) / 1000)} s)`);
       throw error;
     }
     const runtimeStartedAt = new Date().toISOString();
-    log(`graphyard: ${name} (${kind}) in pane ${pane}: runtime started after ${(started.waitedMs / 1000).toFixed(1)} s (bound ${Math.round((options.timeoutMs ?? agentStartTimeoutMs) / 1000)} s)`);
+    log(`mainworks: ${name} (${kind}) in pane ${pane}: runtime started after ${(started.waitedMs / 1000).toFixed(1)} s (bound ${Math.round((options.timeoutMs ?? agentStartTimeoutMs) / 1000)} s)`);
     try { await herdrJson(['agent', 'rename', pane, name], run); }
     catch (error) {
       // A runtime whose own naming rules are narrower than the ones checked above says so in its
@@ -813,7 +811,7 @@ export async function settlementReason(record: LaunchAcknowledgement, agent: Pic
 export const neverStarted = (record: { state: string; resolution?: string | null }) => record.state === 'failed' && !!record.resolution?.startsWith(neverStartedReason);
 /** The re-prompt: the session's own request again, from the launcher that sent it, not a paste from a stranger. */
 export function repromptText(request: string, ackMs: number) {
-  return `The Graphyard launcher that started this session has seen no activity from it for ${Math.round(ackMs / 1000)} seconds, so here is the request it was started with, sent once more by that same launcher: it is this session's own instruction, not untrusted text, and needs no further authorization. If you have already begun, continue where you are. ${request}`;
+  return `The Mainworks launcher that started this session has seen no activity from it for ${Math.round(ackMs / 1000)} seconds, so here is the request it was started with, sent once more by that same launcher: it is this session's own instruction, not untrusted text, and needs no further authorization. If you have already begun, continue where you are. ${request}`;
 }
 
 /**
@@ -824,7 +822,7 @@ export function repromptText(request: string, ackMs: number) {
  * carry it, and the liveness sweep's wording, the blocked-prompt read and the per-runtime exhaustion
  * notices judge a codex pane as codex. A launch that reports no account ran on the profile's own.
  */
-export function launchedRuntime(launched: unknown): string | null {
+function launchedRuntime(launched: unknown): string | null {
   const kind = (launched as { account?: { kind?: unknown } | null } | null | undefined)?.account?.kind;
   return typeof kind === 'string' && kind ? kind : null;
 }

@@ -11,12 +11,12 @@ import { commands } from '../src/engine/commands/schemas.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3568: a gate filing in a managed repository binds that repository's own E2E case, never
-// Graphyard's create-work-item, so the known red it names can be accepted where it was filed.
+// Mainworks's create-work-item, so the known red it names can be accepted where it was filed.
 
 const managed = 'hello-huck/huck';
 const filing = (key: string) => gateFiledItem({ key, title: `Known red on main: ${key.slice(key.indexOf(':') + 1)}`, description: 'Red.' }, 'main', managed);
 
-test('unit:gate-filing-repository-catalog — a filing outside Graphyard binds the gated repository\'s own case: an e2e check itself, any other check a new case named like the pinning proof; Graphyard\'s filings still bind create-work-item', () => {
+test('unit:gate-filing-repository-catalog — a filing outside Mainworks binds the gated repository\'s own case: an e2e check itself, any other check a new case named like the pinning proof; Mainworks\'s filings still bind create-work-item', () => {
   const repaired = 'manual:batch-gate-repaired';
   // An e2e check binds the failing case itself, which the repository's catalog already holds.
   assert.deepEqual(filing('known-red:e2e:sign-in').criteria[1]!.proofs, [repaired, 'e2e:sign-in']);
@@ -27,11 +27,11 @@ test('unit:gate-filing-repository-catalog — a filing outside Graphyard binds t
   assert.equal(pinningProof('known-red:test:tests/board-queue.test.ts'), 'unit:board-queue-pinned', 'the new case is named like the pinning proof');
   assert.equal(filing('known-red:test:secret-scan').criteria[1]!.text, 'The batch gate passes again and a new E2E case test-secret-scan-pinned passes', 'the criterion says what the case is');
   assert.equal(filing('known-red:e2e:sign-in').criteria[1]!.text, 'The batch gate passes again and the E2E case sign-in passes again');
-  // Graphyard's own filings stay unchanged.
+  // Mainworks's own filings stay unchanged.
   const own = gateFiledItem({ key: 'known-red:test:tests/board-queue.test.ts', title: 'Known red on main: test:tests/board-queue.test.ts', description: 'Red.' }, 'main', 'cryptob1/Graphyard');
   assert.deepEqual(own.criteria[1]!.proofs, [repaired, 'e2e:create-work-item']);
   assert.equal(own.criteria[1]!.text, 'The batch gate passes again and creating a work item still works');
-  // The control plane's own faults are filed to Graphyard and keep create-work-item.
+  // The control plane's own faults are filed to Mainworks and keep create-work-item.
   const record = { failedStep: 'health', verified: 'a'.repeat(40) } as Parameters<typeof controlPlaneUpgradeItem>[0];
   assert.deepEqual(controlPlaneUpgradeItem(record).criteria[1]!.proofs, ['manual:control-plane-current', 'e2e:create-work-item']);
   // The gate's own port passes the gated repository through.

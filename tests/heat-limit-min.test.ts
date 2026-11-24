@@ -26,7 +26,7 @@ setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocki
 
 // GY-3416: a laptop's heat limit. The guard once compared each CPU sensor to its own critical
 // minus 3 — 102C on a machine whose critical is 105C — so a host at 95-98C was never throttled: no
-// launch waited, the host cooked, and other installs on it asked Graphyard to slow down. Now the
+// launch waited, the host cooked, and other installs on it asked Mainworks to slow down. Now the
 // limit is min(85C, crit-3): the trial cap halves from 5C under it and both restore on their own
 // once the reading holds below it. GY-3501: the limit no longer holds launches — a hot sensor
 // governs only the trials and checks that make the heat. The reading is the hottest package or
@@ -92,7 +92,7 @@ const heat = async (root: string, packageC: number, coreC: number) => {
   await writeFile(join(root, 'hwmon0', 'temp2_input'), `${coreC * 1000}\n`);
 };
 
-/** `graphyard master status` over this fixture's snapshot and daemon state, as the CLI reads it. */
+/** `mainworks master status` over this fixture's snapshot and daemon state, as the CLI reads it. */
 async function status(config: MasterConfig, state: DaemonState) {
   await writeFile(daemonStatePath(config), JSON.stringify(state));
   const root = await temporaryDirectory('heat-limit-min-status');

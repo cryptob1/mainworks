@@ -15,7 +15,7 @@ const NAMES = ['Ada', 'Juno', 'Pixel', 'Milo', 'Nova', 'Otto', 'Iris', 'Felix', 
   'Rue', 'Sol', 'Tess', 'Ugo', 'Vale', 'Wim', 'Xavi', 'Yoyo', 'Zuzu', 'Aggie', 'Bix', 'Dara', 'Eli', 'Fable', 'Gil', 'Hopper', 'Juniper', 'Koko', 'Lumen', 'Mochi'];
 
 const isMaster = (id: string) => /master/.test(id);
-/** Ids that are not an agent account: Graphyard itself and the people who run it keep their own names. */
+/** Ids that are not an agent account: Mainworks itself and the people who run it keep their own names. */
 const unnamed = (id: string) => id === 'graphyard' || /operator|admin|human/.test(id);
 /** An account's friendly name: the same on every page and every install, from its id alone. A master account is always the Master. */
 export function friendlyName(id: string): string | null {
@@ -64,7 +64,7 @@ export function BuildLine() {
 }
 
 /** The agent that built an item: the last implementer, or the lease holder. */
-export const builderOf = (w: Work) => w.implementers?.at(-1) ?? w.lease?.owner ?? null;
+const builderOf = (w: Work) => w.implementers?.at(-1) ?? w.lease?.owner ?? null;
 /** A brief confetti burst, a few dozen CSS pieces that fall once; it lasts as long as the toast it celebrates. A finished goal gets a larger one (GY-3601). None with reduced motion set. */
 function Confetti({ big }: { big: boolean }) {
   const [pieces] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches ? [] : Array.from({ length: big ? 160 : 40 }, () => ({
@@ -72,7 +72,7 @@ function Confetti({ big }: { big: boolean }) {
   return pieces.length ? <div className={big ? 'confetti big' : 'confetti'} aria-hidden="true">{pieces.map((style, n) => <i key={n} style={style}/>)}</div> : null;
 }
 /** How long an item took: from its Builder's claim (else its filing) to its merge; null when either is unknown. */
-export function buildTime(item: Work): string | null {
+function buildTime(item: Work): string | null {
   const merged = Date.parse(item.delivery?.mergedAt ?? item.observation?.mergedAt ?? ''), started = Date.parse(item.lastAssignment?.claimedAt ?? item.createdAt ?? '');
   return Number.isNaN(merged) || Number.isNaN(started) ? null : plainDuration((merged - started) / 60_000);
 }

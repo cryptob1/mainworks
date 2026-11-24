@@ -7,7 +7,6 @@ import { readInstallLoopCode } from './loop-code.js';
 import { shellQuote } from './shell-quote.js';
 import { chmod, cp, lstat, mkdir, readdir, rmdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { spawn } from 'node:child_process';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -28,6 +27,7 @@ import { installArgv, packageManager } from './package-manager.js';
 import { pinnedNodePath } from './node-pin.js';
 import { defaultChildRun } from './child-runner.js';
 import { herdrSync } from './herdr-host.js';
+import { stateDirectory, defaultConfigHome } from './install/layout.js';
 export { readInstallLoopCode, readLoopCode, judgeLoopCode, localLoopCodeFiles, unitLauncherCheckout, systemdCommandLineWords, type UnitCode, type LoopCodeReading, type LoopCodeFiles, type LoopCodeFacts } from './loop-code.js';
 export { shellQuote } from './shell-quote.js';
 
@@ -46,7 +46,7 @@ export async function loadConnection(cwd: string): Promise<Connection | null> {
   try { roots = connectionRoots(cwd); } catch { return null; }
   for (const root of roots) {
     try {
-      const file = resolve(root, '.graphyard/connection.json'); const info = await lstat(file);
+      const file = resolve(stateDirectory(root), 'connection.json'); const info = await lstat(file);
       if (!info.isFile() || info.mode & 0o077) throw new Error('Connection credentials must be a regular file with mode 0600');
       const connection = connectionSchema.parse(JSON.parse(await readFile(file, 'utf8')));
       connection.url = serverOrigin(connection.url); return connection;
@@ -63,7 +63,7 @@ const start = '<!-- graphyard -->', end = '<!-- /graphyard -->';
  * harness launches without the repository's project files (master.ts prepareSessionHarness).
  * It ends with the autonomy contract (autonomy.ts), so every installation's AGENTS.md carries it.
  */
-export const launchAuthorization = `Every session Graphyard launches — a worker under \`watch\`, and the reviewer and proof-producer
+export const launchAuthorization = `Every session Mainworks launches — a worker under \`watch\`, and the reviewer and proof-producer
 sessions the master and its loop start — receives its instruction as the
 session's own first request, on the runtime's command line, never as pasted text; no human
 sends "go". The one message such a session may later receive as a paste comes from that
@@ -79,14 +79,14 @@ ${autonomyContract}`;
 // --apply with the install URL) rewrite the committed block, dirtying the coordinator checkout.
 export function managedInstructions(existing: string) {
   const starts = existing.split(start).length - 1, ends = existing.split(end).length - 1;
-  if (starts !== ends || starts > 1 || starts === 1 && existing.indexOf(end) < existing.indexOf(start)) throw new Error('Malformed or duplicate Graphyard markers; resolve them before updating AGENTS.md');
+  if (starts !== ends || starts > 1 || starts === 1 && existing.indexOf(end) < existing.indexOf(start)) throw new Error('Malformed or duplicate Mainworks markers; resolve them before updating AGENTS.md');
   // GY-2972: the block carries only the rules every session needs on every turn, one line each,
   // and names the guide topics; every rule it used to carry in full prints from `guide TOPIC`
   // (src/guide.ts), which moves the previous text verbatim.
   const section = `${start}
-## Graphyard coordination
+## Mainworks coordination
 
-This repository uses Graphyard for ownership and delivery gates; ignored
+This repository uses Mainworks for ownership and delivery gates; ignored
 \`.graphyard/connection.json\` names the control plane and the machine-specific
 CLI and connection settings. Never put credentials in AGENTS.md or Git.
 
@@ -95,7 +95,7 @@ Never weaken requirements, and never use an operator/producer token for
 implementation or proof. Act without asking, and record blockers with the CLI.
 Submit with \`complete GY-N EPOCH --head SHA\`; make \`complete\` your last action.
 For any procedure, run \`node $GRAPHYARD_CLI guide TOPIC\`
-(topics: claim, sync, complete, park, blocked, review, proof, upgrade, master, setup, infra, publishing, runtimes).
+(worker: claim, sync, complete, park, blocked; reviewer: review; producer: proof; \`guide\` alone lists the rest).
 ${end}`;
   return starts ? existing.slice(0, existing.indexOf(start)) + section + existing.slice(existing.indexOf(end) + end.length) : `${existing}${existing.endsWith('\n') || !existing ? '' : '\n'}\n${section}\n`;
 }
@@ -118,7 +118,7 @@ export async function herdrPluginBinding(runHerdr: (args: string[]) => string | 
 }
 
 /**
- * Whether Herdr reports its `graphyard` plugin enabled (`plugin list --plugin graphyard --json`): a
+ * Whether Herdr reports its `mainworks` plugin enabled (`plugin list --plugin mainworks --json`): a
  * config.json written for the right server says nothing of an enable that failed after it, or a
  * plugin disabled since (GY-1511). False when the plugin is not installed; null when Herdr cannot say.
  */
@@ -139,8 +139,8 @@ export async function setupRepository(root: string, input: Connection, options: 
   const detected = await discover(root);
   if (connection.token) {
     let response: Response;
-    try { response = await (options.fetcher ?? fetch)(`${connection.url}/api/status`, { headers: { Authorization: `Bearer ${connection.token}` }, signal: AbortSignal.timeout(15000) }); } catch { throw new Error('Cannot reach Graphyard; setup has not saved credentials'); }
-    if (!response.ok) throw new Error(`Graphyard rejected the credential (${response.status}); setup has not saved it`);
+    try { response = await (options.fetcher ?? fetch)(`${connection.url}/api/status`, { headers: { Authorization: `Bearer ${connection.token}` }, signal: AbortSignal.timeout(15000) }); } catch { throw new Error('Cannot reach Mainworks; setup has not saved credentials'); }
+    if (!response.ok) throw new Error(`Mainworks rejected the credential (${response.status}); setup has not saved it`);
     const status = await response.json();
     if (status.actor?.role !== 'worker') throw new Error('Repository worker setup requires a worker credential; operator, coordinator, producer, and reader tokens are not suitable for launching workers');
     assertRepository(detected.repository, status.repository);
@@ -185,7 +185,7 @@ export async function setupRepository(root: string, input: Connection, options: 
     const created = found ? null : parsed(['workspace', 'create', '--cwd', root, '--label', label, '--no-focus']);
     const workspace = found ?? created?.workspace?.workspace_id ?? created?.workspace_id;
     if (!workspace) throw new Error('Herdr returned no workspace for this installation');
-    const pluginRoot = options.pluginHome ?? join(homedir(), '.config/graphyard/herdr-plugin');
+    const pluginRoot = options.pluginHome ?? join(defaultConfigHome(), 'herdr-plugin');
     await mkdir(join(pluginRoot, 'integrations/herdr'), { recursive: true });
     // Installs share this one read/modify/write, including when two upgrades overlap.
     const lock = join(pluginRoot, '.refresh-lock');
@@ -285,7 +285,7 @@ export type AppliedSetup = z.infer<typeof appliedStateSchema>;
 
 /** Reads the applied record without creating .graphyard/ or touching .gitignore, so a scan writes nothing. */
 export async function loadAppliedSetup(root: string): Promise<AppliedSetup | null> {
-  const file = resolve(root, '.graphyard', appliedFileName);
+  const file = resolve(stateDirectory(root), appliedFileName);
   try {
     if (!(await lstat(file)).isFile()) throw new Error('The applied setup record must be a regular file');
     return appliedStateSchema.parse(JSON.parse(await readFile(file, 'utf8')));
@@ -302,7 +302,7 @@ export function setupDrift(applied: AppliedSetup | null, proposal: SetupProposal
 
 /** Non-mutating status of the local proposal and applied setup, for read-only commands. */
 export async function readSetupStatus(root: string) {
-  const directory = resolve(root, '.graphyard');
+  const directory = stateDirectory(root);
   const read = async (name: string, schema: z.ZodType<any>) => {
     let value: any = null;
     try { value = JSON.parse(await readFile(resolve(directory, name), 'utf8')); } catch (error: any) { if (error.code !== 'ENOENT') return { error: 'unreadable' }; }
@@ -329,7 +329,7 @@ export interface ApplyDependencies {
   url: string;
   now?: () => Date;
   /**
-   * The `graphyard install` that already owns this repository's identities (GY-1413): its install
+   * The `mainworks install` that already owns this repository's identities (GY-1413): its install
    * directory and its confirmed App. Apply then commits only the onboarding files — it never writes
    * a second principals registry. Its App is the one a pull-request-era install recorded, else null.
    */
@@ -339,7 +339,7 @@ export interface ApplyDependencies {
 /**
  * Apply an operator-reviewed proposal. Every artifact is written idempotently:
  * unchanged content is left alone, operator-edited files are reported as drift
- * instead of being overwritten. Principals and credentials belong to graphyard install.
+ * instead of being overwritten. Principals and credentials belong to mainworks install.
  */
 export async function applyProposal(root: string, proposalInput: unknown, dependencies: ApplyDependencies) {
   const proposal = setupProposalSchema.parse(proposalInput);
@@ -372,7 +372,7 @@ export async function applyProposal(root: string, proposalInput: unknown, depend
 
   // Installation owns all identities and credentials; init only writes onboarding files.
   const workerPrincipals = [...new Set(proposal.profiles.workers.map(profile => profile.principal))];
-  if (dependencies.installed) unchanged.push(`principal and grant registry (managed by graphyard install in ${dependencies.installed.directory}; not written here)`);
+  if (dependencies.installed) unchanged.push(`principal and grant registry (managed by mainworks install in ${dependencies.installed.directory}; not written here)`);
 
   const profilesDirectory = resolve(directory, 'profiles');
   await mkdir(profilesDirectory, { recursive: true, mode: 0o700 });
@@ -407,8 +407,8 @@ export async function applyProposal(root: string, proposalInput: unknown, depend
     workerPrincipals,
     principalsFile: null,
     next: dependencies.installed
-      ? `The principals are the ones graphyard install deployed from ${dependencies.installed.directory}; nothing needs installing as GRAPHYARD_PRINCIPALS. Commit the onboarding files`
-      : 'Run graphyard install --apply to provision installation credentials and the principal roster in install.json, then rerun init --scan --apply' };
+      ? `The principals are the ones mainworks install deployed from ${dependencies.installed.directory}; nothing needs installing as GRAPHYARD_PRINCIPALS. Commit the onboarding files`
+      : 'Run mainworks install --apply to provision installation credentials and the principal roster in install.json, then rerun init --scan --apply' };
 }
 
 // --- Delivery: the merge-gate policy and the release-candidate pipeline (GY-1102) ------------------
@@ -462,7 +462,7 @@ export async function applyDelivery(root: string, policyInput: DeliveryPolicy, s
     let current: string | null = null;
     try { current = await readFile(resolve(root, path), 'utf8'); } catch (error: any) { if (error.code !== 'ENOENT') throw error; }
     if (current === null) continue;
-    if (current.split('\n', 3).includes('# Generated by graphyard init from the delivery policy in graphyard.json (docs/onboarding.md).')) { await rm(resolve(root, path)); applied.push(`removed ${path}: repository setup writes no GitHub Actions workflows`); }
+    if (current.split('\n', 3).includes('# Generated by mainworks init from the delivery policy in graphyard.json (docs/onboarding.md).')) { await rm(resolve(root, path)); applied.push(`removed ${path}: repository setup writes no GitHub Actions workflows`); }
     else drift.push(`${path} is not one init generated; delete it so no Actions gate remains`);
   }
   return { policy, requiredChecks: requiredPullRequestChecks(policy), workflows: [], applied, unchanged, drift, wroteServe: writeServe, firstCase };
@@ -472,7 +472,7 @@ export async function applyDelivery(root: string, policyInput: DeliveryPolicy, s
 const onboardingFirstCase = () => ({
   id: onboardingCaseId,
   title: 'The head serves and answers',
-  description: `The served head answers a request: the check every end-to-end case shares. Graphyard's onboarding wrote it as this repository's first case (${onboardingCasePath}); give the application its own cases beside it.`,
+  description: `The served head answers a request: the check every end-to-end case shares. Mainworks's onboarding wrote it as this repository's first case (${onboardingCasePath}); give the application its own cases beside it.`,
   tags: ['onboarding'],
   target: 'any' as const,
   required: false,
@@ -486,7 +486,7 @@ const onboardingFirstCase = () => ({
 // GY-1859: a running unit is not proof the install runs the right code. The loop serving a
 // repository may be a process an earlier checkout left behind: it answers, the setup checklist
 // reads it as green, and every fix merged since is invisible to it. So the master-loop step of
-// `graphyard up` reads what its units actually run — the checkout and launcher each ExecStart
+// `mainworks up` reads what its units actually run — the checkout and launcher each ExecStart
 // names, and the commit the loop recorded loading on its cursor — and compares them with the CLI
 // running the command. A unit on other code is rewritten onto this CLI and restarted through
 // systemd; `doctor` flags the same mismatch as one line naming both paths and the rerun.
@@ -499,7 +499,7 @@ const onboardingFirstCase = () => ({
  * kept beside it (`coordinator/lifted.json`, whose pin `master recover --to SHA` restores). GY-3337:
  * the install's one stable launcher is lifted the same way while it resolves — a unit rewritten onto
  * this CLI under it would come back on the release it serves; the next deploy pass rewrites the
- * launcher, and `graphyard master init` re-adopts it.
+ * launcher, and `mainworks master init` re-adopts it.
  * Returns what was lifted, one phrase each; nothing standing lifts nothing.
  */
 export async function liftLoopPins(root: string, options: { installDir?: string | null; repository?: string | null } = {}): Promise<string[]> {
@@ -517,14 +517,14 @@ export async function liftLoopPins(root: string, options: { installDir?: string 
   const launcher = installDir ? installLauncherPath(installDir) : null;
   if (launcher && existsSync(launcher)) {
     await rm(launcher, { force: true });
-    lifted.push(`the serving launcher ${launcher} (the next deploy pass rewrites it, and graphyard master init re-adopts it)`);
+    lifted.push(`the serving launcher ${launcher} (the next deploy pass rewrites it, and mainworks master init re-adopts it)`);
   }
   return lifted;
 }
 
 /** Remove the retired launcher pointer on every up, including an already current install. */
 export async function removeHeldCliPin(root: string): Promise<void> {
-  await rm(join(root, '.graphyard', 'held-cli.json'), { force: true });
+  await rm(join(stateDirectory(root), 'held-cli.json'), { force: true });
 }
 
 /**

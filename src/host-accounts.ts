@@ -5,13 +5,14 @@ import { closeSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, 
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { ChildProcessError, runChild } from './child-runner.js';
+import { setting } from './setting.js';
 
 /** Where the host's account records live; `GRAPHYARD_HOST_ACCOUNTS` moves it (the test runner isolates it from the real home). */
 export const hostAccountsVariable = 'GRAPHYARD_HOST_ACCOUNTS';
-export const hostAccountsRoot = (environment: NodeJS.ProcessEnv = process.env) => environment[hostAccountsVariable] ?? join(homedir(), '.gy', 'accounts');
+const hostAccountsRoot = (environment: NodeJS.ProcessEnv = process.env) => setting(hostAccountsVariable, environment) ?? join(homedir(), '.gy', 'accounts');
 
 /** One account's records are keyed by its login home: the path itself, made safe for a file name. */
-export const hostAccountKey = (home: string) => `${home.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'home'}-${createHash('sha256').update(home).digest('hex').slice(0, 8)}`;
+const hostAccountKey = (home: string) => `${home.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'home'}-${createHash('sha256').update(home).digest('hex').slice(0, 8)}`;
 const accountDirectory = (home: string) => join(hostAccountsRoot(), hostAccountKey(home));
 
 /** What one live session's record names: the install holding it, and what it holds it for. */

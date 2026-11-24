@@ -1,4 +1,5 @@
 import { statfs } from 'node:fs/promises';
+import { setting } from '../setting.js';
 
 // The plane's own health (GY-132), which /healthz reports (routes/health.ts) and the loop reads before it dispatches.
 
@@ -32,7 +33,7 @@ export async function probeWrites(pool: { connect(): Promise<{ query(sql: string
  * same path exists on this host — an embedded, compose or same-machine database. A database on its
  * own host (a managed service) answers null and the default bound stands.
  */
-export async function readDatabaseVolumeBytes(pool: { query(sql: string): Promise<{ rows: any[] }> }): Promise<{ bytes: number; path: string } | null> {
+async function readDatabaseVolumeBytes(pool: { query(sql: string): Promise<{ rows: any[] }> }): Promise<{ bytes: number; path: string } | null> {
   try {
     const path = String((await pool.query("SELECT current_setting('data_directory') AS path")).rows[0]?.path ?? '');
     if (!path) return null;
@@ -50,7 +51,7 @@ export async function readDatabaseVolumeBytes(pool: { query(sql: string): Promis
  * configured or measured bound fails health.
  */
 export async function readDatabaseCapacity(pool: { query(sql: string): Promise<{ rows: any[] }> }, env: NodeJS.ProcessEnv = process.env): Promise<PlaneReading> {
-  const configured = Number(env.GRAPHYARD_DATABASE_MAX_BYTES);
+  const configured = Number(setting('DATABASE_MAX_BYTES', env));
   const set = Number.isFinite(configured) && configured > 0;
   const volume = set ? null : await readDatabaseVolumeBytes(pool);
   const bound = set ? configured : volume?.bytes ?? defaultDatabaseMaxBytes;

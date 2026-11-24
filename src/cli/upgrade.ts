@@ -1,5 +1,6 @@
-// `graphyard upgrade` (GY-1962): one command moves the CLI checkout, the server, the loop and
+// `mainworks upgrade` (GY-1962): one command moves the CLI checkout, the server, the loop and
 // executors, and the managed repository's generated files to one dated release, in order.
+import { imageLock, withHostLock } from '../host-lock.js';
 import { createRequire } from 'node:module';
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, readlinkSync, statSync } from 'node:fs';
@@ -8,13 +9,13 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeBackupFile } from '../backup.js';
 import { Store } from '../store.js';
-import { checkoutRelease, compareDateVersions, datedVersionPattern, graphyardBaseBranch, graphyardUpstreamUrl, graphyardVerifiedRef, imageRepository, installationRoot, recordCommit, type Release } from '../release.js';
+import { checkoutRelease, compareDateVersions, datedVersionPattern, graphyardBaseBranch, mainworksUpstreamUrl, mainworksVerifiedRef, imageRepository, installationRoot, recordCommit, type Release } from '../release.js';
 import { repositoryFromRemote } from '../onboarding.js';
 import { installDirectory, readInstallRecord, type InstallRecord } from '../install/secrets.js';
 import { installIdFor } from '../install/types.js';
+import { loopUnitDirectory, repointDeployUnit } from '../install/loop-unit.js';
 import { localDatabaseUrl, localPaths, readLocalEnvironment } from '../install/local-runtime.js';
 import { redeployArguments } from '../install/index.js';
-import { defineCommands } from './registry.js';
 import type { ChildRun } from '../child-runner.js';
 import { deployRecordPath, releaseHandover, watchMain, type DeployWatchPorts, type StoppedPlanePorts } from '../deploy-watch.js';
 import { checkServedApp } from '../app-feature-check.js';
@@ -24,7 +25,12 @@ import { migrateHerdr } from '../herdr-migration.js';
 import { loadMasterConfig } from '../master.js';
 import { cliReleasePath, activeCliRoot, prepareCliRelease, publishCliRelease } from '../install/cli-release.js';
 import { knownGoodState, pinKnownGood } from '../master/known-good.js';
-import { joinHostHeavyBudget, withHeavyJob } from '../master/verification-slots.js';
+import { heavyJobsDirectory, heldSlots, joinHostHeavyBudget, withHeavyJob } from '../master/verification-slots.js';
+import { readReviewLedger } from '../reviewer.js';
+import { readProducerLedger } from '../producer.js';
+import { pullLine, readImagePulls } from '../install/image-pulls.js';
+import { setting } from '../setting.js';
+import { stateDirectory } from '../install/layout.js';
 
 export type UpgradeStepId = 'checkout' | 'npm-ci' | 'backup' | 'redeploy' | 'restart' | 'refresh' | 'health';
 export interface UpgradeStep { id: UpgradeStepId; title: string; command: string }
@@ -51,7 +57,7 @@ const cli = (root: string, ...args: string[]) => ['node', JSON.stringify(join(ro
 const npmCiCommand = (root: string) => `npm ci --prefix ${JSON.stringify(root)}`;
 /** The command that returns to `previous`: the same upgrade towards its release, or its commit when it had none. */
 export const rollbackCommand = (previous: Release, cliRoot: string) => previous.released
-  ? `graphyard upgrade --to ${previous.version}`
+  ? `mainworks upgrade --to ${previous.version}`
   : `git -C ${JSON.stringify(cliRoot)} checkout --detach ${previous.revision} && npm ci --prefix ${JSON.stringify(cliRoot)}, then redeploy the image the server ran before`;
 
 /**
@@ -73,7 +79,7 @@ export function upgradePlan(inputs: UpgradeInputs): UpgradePlan {
   const url = inputs.url ? ['--url', inputs.url] : [];
   const steps: UpgradeStep[] = [
     // GY-3538: the backup runs first, with the running release's CLI, before the checkout moves the code.
-    { id: 'backup', title: `Back up the database at generation ${databaseSchema ?? 'unknown'} (DATABASE_URL) with the running release, before anything changes`, command: `graphyard db backup ${inputs.backupFile}` },
+    { id: 'backup', title: `Back up the database at generation ${databaseSchema ?? 'unknown'} (DATABASE_URL) with the running release, before anything changes`, command: `mainworks db backup ${inputs.backupFile}` },
     { id: 'checkout', title: `Check out ${target.version} (${target.revision.slice(0, 12)}) detached in the CLI checkout`, command: `git -C ${JSON.stringify(cliRoot)} checkout --detach ${target.revision}` },
     { id: 'npm-ci', title: 'Install the dependencies the target\'s lockfile names', command: npmCiCommand(cliRoot) },
     { id: 'redeploy', title: `Redeploy the server at ${image} through the install adapter`, command: redeploy },
@@ -83,7 +89,7 @@ export function upgradePlan(inputs: UpgradeInputs): UpgradePlan {
   ];
   const migrates = target.schema !== null && databaseSchema !== null && target.schema > databaseSchema;
   return { from: inputs.current, to: target, databaseSchema, steps, rollback: rollbackCommand(inputs.current, cliRoot), cliChanges: inputs.cliChanges,
-    rollforward: migrates ? `the server migrates the database from generation ${databaseSchema} to ${target.schema} when it redeploys, and ${inputs.current.version} refuses it after that: fix the failing step and rerun graphyard upgrade --to ${target.version}, or restore ${inputs.backupFile} with graphyard db restore into an empty database migrated by ${inputs.current.version} before rolling back` : null };
+    rollforward: migrates ? `the server migrates the database from generation ${databaseSchema} to ${target.schema} when it redeploys, and ${inputs.current.version} refuses it after that: fix the failing step and rerun mainworks upgrade --to ${target.version}, or restore ${inputs.backupFile} with mainworks db restore into an empty database migrated by ${inputs.current.version} before rolling back` : null };
 }
 
 export interface UpgradeEffects {
@@ -144,9 +150,9 @@ function revisionSchema(cliRoot: string, revision: string): number | null {
   return null;
 }
 
-/** The dated release `--to` names, or without one Graphyard's fetched origin/main tip, from the CLI checkout's refs. */
+/** The dated release `--to` names, or without one Mainworks's fetched origin/main tip, from the CLI checkout's refs. */
 export function resolveTarget(cliRoot: string, to?: string): UpgradeTarget {
-  if (to !== undefined && !datedVersionPattern.test(to)) throw new Error('Use upgrade --to VERSION (a dated release such as 2026.10.17), or no --to for Graphyard\'s main');
+  if (to !== undefined && !datedVersionPattern.test(to)) throw new Error('Use upgrade --to VERSION (a dated release such as 2026.10.17), or no --to for Mainworks\'s main');
   const ref = to === undefined ? `refs/remotes/origin/${graphyardBaseBranch}` : `refs/tags/${to}`;
   let revision: string;
   try { revision = git(cliRoot, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`); }
@@ -211,7 +217,7 @@ export function liveEffects(inputs: UpgradeInputs, recordFile: string, fetchHeal
     async run(step) {
       if (step.id === 'backup') {
         const databaseUrl = inputs.databaseUrl === undefined ? process.env.DATABASE_URL : inputs.databaseUrl;
-        if (!databaseUrl) throw new Error('Set DATABASE_URL to the Graphyard database so the upgrade can back it up before the server migrates it');
+        if (!databaseUrl) throw new Error('Set DATABASE_URL to the Mainworks database so the upgrade can back it up before the server migrates it');
         // The CLI checkout's own code, not yet moved: the release that matches the database.
         await mkdir(resolve(inputs.backupFile, '..'), { recursive: true });
         const loader = createRequire(join(inputs.cliRoot, 'package.json')).resolve('tsx');
@@ -244,8 +250,8 @@ const oneFetchAtATime = <T>(fetch: () => Promise<T>) => {
 };
 
 /**
- * The git half of the deploy unit's ports: fetch Graphyard's own main (GY-2982) — never the managed
- * repository's base branch, which Graphyard's origin may not have — read HEAD, check a commit out detached.
+ * The git half of the deploy unit's ports: fetch Mainworks's own main (GY-2982) — never the managed
+ * repository's base branch, which Mainworks's origin may not have — read HEAD, check a commit out detached.
  */
 export function gitWatchPorts(cliRoot: string, run: ChildRun): Pick<DeployWatchPorts, 'fetch' | 'head' | 'checkout' | 'contains'> {
   const git = async (...args: string[]) => String(await run('git', ['-C', cliRoot, ...args])).trim();
@@ -258,14 +264,14 @@ export function gitWatchPorts(cliRoot: string, run: ChildRun): Pick<DeployWatchP
 }
 
 /**
- * GY-3199: the latest batch-gate-verified Graphyard commit, fetched from Graphyard's canonical
+ * GY-3199: the latest batch-gate-verified Mainworks commit, fetched from Mainworks's canonical
  * upstream — a constant in the code, never the install's own origin — with the host's existing git
  * access. The ref lands in the checkout's own refs so the pass may build and compare against it;
  * null when it resolves to no commit.
  */
-export async function fetchVerifiedRef(git: (...args: string[]) => Promise<string>, url: string = graphyardUpstreamUrl): Promise<string | null> {
-  await git('fetch', '--quiet', '--no-tags', '--force', url, `${graphyardVerifiedRef}:${graphyardVerifiedRef}`);
-  const sha = (await git('rev-parse', '--verify', graphyardVerifiedRef)).trim().toLowerCase();
+export async function fetchVerifiedRef(git: (...args: string[]) => Promise<string>, url: string = mainworksUpstreamUrl): Promise<string | null> {
+  await git('fetch', '--quiet', '--no-tags', '--force', url, `${mainworksVerifiedRef}:${mainworksVerifiedRef}`);
+  const sha = (await git('rev-parse', '--verify', mainworksVerifiedRef)).trim().toLowerCase();
   return /^[0-9a-f]{40}$/.test(sha) ? sha : null;
 }
 
@@ -306,7 +312,7 @@ export async function ensureDeployCheckout(checkout: string, source: string, run
   if (origin) await git('-C', next, 'remote', 'add', 'origin', origin);
   if (linked) {
     // The release pointer publishCliRelease left beside the old checkout stays with the install.
-    if (existsSync(join(checkout, '.graphyard'))) await rename(join(checkout, '.graphyard'), join(next, '.graphyard'));
+    if (existsSync(stateDirectory(checkout))) await rename(stateDirectory(checkout), stateDirectory(next));
     await rm(checkout, { recursive: true, force: true });
     console.log(`Replaced the deploy checkout ${checkout}, a worktree of another checkout, with a standalone clone at ${await git('-C', next, 'rev-parse', 'HEAD')}`);
   }
@@ -454,7 +460,7 @@ export function managedServePorts(input: { root: string; baseBranch: string; run
     // as not yet run rather than as a verdict no case earned. The cases' bearer token is
     // GRAPHYARD_TOKEN; a case that needs the install's own credentials declares secrets, which the
     // runner resolves from the install's e2e-secrets env as in every other run.
-    check: (url, baselineUrl) => checkServedApp(checkout, url, process.env.GRAPHYARD_TOKEN ?? '', baselineUrl ?? undefined),
+    check: (url, baselineUrl) => checkServedApp(checkout, url, setting('TOKEN') ?? '', baselineUrl ?? undefined),
   };
 }
 
@@ -470,17 +476,21 @@ export const servedRepository = (cliRoot: string): string | null => {
 };
 
 /**
- * Removes every per-commit image `graphyard-local:<sha12>` (or the older `previous-<sha12>`) but the kept
+ * Removes every per-commit image `mainworks-local:<sha12>` (or the older `previous-<sha12>`) but the kept
  * commits', one `docker image rm` each; docker refuses one a container uses, and each failure is one
- * logged line, never the deploy's.
+ * logged line, never the deploy's. It waits for the host's image lock, so it never runs during another install's build (GY-3718).
  */
-export async function pruneImages(run: ChildRun, keep: string[], log: (line: string) => void = line => console.error(line)) {
+export function pruneImages(run: ChildRun, keep: string[], log: (line: string) => void = line => console.error(line)) {
+  return withHostLock(imageLock, () => removeImages(run, keep, log));
+}
+
+async function removeImages(run: ChildRun, keep: string[], log: (line: string) => void) {
   const kept = new Set(keep.map(sha => sha.slice(0, 12)));
-  const failed = (what: string) => (error: unknown) => log(`[graphyard-deploy] ${what}: ${error instanceof Error ? error.message : String(error)}`);
-  const tags = await Promise.resolve(run('docker', ['image', 'ls', 'graphyard-local', '--format', '{{.Tag}}'])).then(String, failed('could not list the per-commit images'));
+  const failed = (what: string) => (error: unknown) => log(`[mainworks-deploy] ${what}: ${error instanceof Error ? error.message : String(error)}`);
+  const tags = await Promise.resolve(run('docker', ['image', 'ls', 'mainworks-local', '--format', '{{.Tag}}'])).then(String, failed('could not list the per-commit images'));
   for (const tag of (tags ?? '').split('\n').map(line => line.trim())) {
     const sha = /^(?:previous-)?([0-9a-f]{12})$/.exec(tag)?.[1];
-    if (sha && !kept.has(sha)) await Promise.resolve(run('docker', ['image', 'rm', `graphyard-local:${tag}`])).catch(failed(`could not remove graphyard-local:${tag}`));
+    if (sha && !kept.has(sha)) await Promise.resolve(run('docker', ['image', 'rm', `mainworks-local:${tag}`])).catch(failed(`could not remove mainworks-local:${tag}`));
   }
 }
 
@@ -502,6 +512,18 @@ export function stoppedPlanePorts(url: string, composeDirectory: string, run: Ch
   };
 }
 
+/**
+ * GY-3746: what is in flight on this install, as the deploy watch's wait names it: a review session,
+ * a merge trial holding a heavy-job slot, or a proof producer's acceptance run; null when nothing is.
+ */
+export async function installInFlight(root: string, repository: string, slots: string = heavyJobsDirectory()): Promise<string | null> {
+  if ((await readReviewLedger(root)).reviews.some(record => record.state === 'pending')) return 'a review is running';
+  const own = (project: string | undefined) => !project || project.toLowerCase() === repository.toLowerCase();
+  if (heldSlots(slots).some(({ owner }) => owner && own(owner.project) && /^(?:merge trial|test merge) /.test(owner.label))) return 'a merge trial is running';
+  if ((await readProducerLedger(root)).producers.some(record => record.state === 'pending')) return 'an acceptance run is running';
+  return null;
+}
+
 /** The deploy watch builds isolated per-commit CLI artifacts, redeploys through the existing install
  * plan/apply flow, and publishes the launcher pointer only after strict health passes. Published
  * artifacts (including the legacy build checkout) are retained for in-flight CLI/server processes.
@@ -510,7 +532,7 @@ export async function watchPorts(input: { cliRoot: string; repoRoot: string; rep
   const { cliRoot, repoRoot, url } = input, directory = installDirectory(installIdFor(input.repository));
   const recorded = await readInstallRecord(directory).catch(() => null);
   const install = recorded && input.herdrInstance ? { ...recorded, herdrInstance: true } : recorded;
-  if (install?.provider !== 'compose' && install?.provider !== 'local') return `the deploy unit needs a compose or local install; ${install ? `this one runs on ${install.provider}` : 'no install record names this repository'}, so releases reach it only through graphyard upgrade`;
+  if (install?.provider !== 'compose' && install?.provider !== 'local') return `the deploy unit needs a compose or local install; ${install ? `this one runs on ${install.provider}` : 'no install record names this repository'}, so releases reach it only through mainworks upgrade`;
   const run = (command: string, args: string[], cwd: string, env?: NodeJS.ProcessEnv) => Promise.resolve(input.run(command, args, { cwd, timeoutMs: 1_800_000, ...(env ? { env } : {}) })).then(String);
   // Local servers and redeploy commands load the candidate's exact source. Published trees
   // are never checked out or npm-ci'd again, including when rollback reuses an older release.
@@ -518,15 +540,18 @@ export async function watchPorts(input: { cliRoot: string; repoRoot: string; rep
   const inputsFor = (commit: string): UpgradeInputs => {
     const current = checkoutRelease(cliRoot);
     return { cliRoot: buildFor(commit), repoRoot, current, target: { version: releaseOfCommit(cliRoot, commit).version, revision: commit, schema: null }, databaseSchema: null, install, url, cliChanges: [],
-      image: install.provider === 'compose' ? `graphyard-local:${commit.slice(0, 12)}` : install.deployment?.image ?? `graphyard-local:${install.installId}`, backupFile: join(directory, 'backups', `before-${commit.slice(0, 12)}-${Date.now()}.json`) };
+      image: install.provider === 'compose' ? `mainworks-local:${commit.slice(0, 12)}` : install.deployment?.image ?? `mainworks-local:${install.installId}`, backupFile: join(directory, 'backups', `before-${commit.slice(0, 12)}-${Date.now()}.json`) };
   };
   const tree = gitWatchPorts(cliRoot, input.run);
   const gitIn = async (...args: string[]) => String(await input.run('git', ['-C', cliRoot, ...args], { timeoutMs: 120_000 })).trim();
   return {
     ...tree,
-    // GY-3199: the verified ref from Graphyard's canonical upstream — the only commit an install for
+    // GY-3199: the verified ref from Mainworks's canonical upstream — the only commit an install for
     // another repository adopts, at least once a day, without a command or a new setting.
     verifiedUpstream: () => oneFetchAtATime(() => fetchVerifiedRef(gitIn)),
+    // GY-3746: a following install takes a newer build only when nothing is in flight, unless it carries a hotfix.
+    busy: () => installInFlight(repoRoot, input.repository),
+    hotfix: async (from, to) => /\bhotfix:/i.test(await gitIn('log', '--first-parent', '--format=%s', `${from}..${to}`)),
     // GY-3450: the deploy build and restart take the deploy path's reserved slot, never waiting behind item work or a drain.
     build: async commit => {
       await withHeavyJob(`deploy build ${commit.slice(0, 12)}`, () => prepareCliRelease(directory, cliRoot, commit, input.run), { reserved: true });
@@ -543,7 +568,11 @@ export async function watchPorts(input: { cliRoot: string; repoRoot: string; rep
       const args = [...redeployArguments(install, inputs.image!).slice(0, -1), '--source-root', build, '--apply'];
       const invoke = (flags: string[]) => run(process.execPath, ['--import', loader, join(build, 'src', 'cli.ts'), 'install', ...flags], repoRoot, { ...process.env, GRAPHYARD_VERSION: stamp.version, GRAPHYARD_BUILD_REVISION: stamp.revision });
       await invoke([...args.slice(0, -1), '--plan']);
+      const started = Date.now();
       await invoke(args);
+      // GY-3733: one line naming how long each image pull of this restart took.
+      const pulled = pullLine(readImagePulls(), started);
+      if (pulled) console.error(`[graphyard-deploy] ${pulled}`);
     }, { reserved: true }),
     head: async () => git(activeCliRoot(cliRoot), 'rev-parse', 'HEAD'),
     checkout: commit => publishCliRelease(directory, cliRoot, commit),
@@ -564,36 +593,14 @@ export async function watchPorts(input: { cliRoot: string; repoRoot: string; rep
 export const renderPlan = (plan: UpgradePlan) => [`upgrade ${plan.from.version} -> ${plan.to.version} (schema ${plan.to.schema ?? 'unknown'}; database ${plan.databaseSchema ?? 'unknown'})`,
   ...(plan.cliChanges.length ? [`refused until the CLI checkout is clean: ${plan.cliChanges.join(', ')}`] : []), ...plan.steps.map((step, index) => `${index + 1}. ${step.id.padEnd(8)} ${step.title}\n   ${step.command}`), `rollback: ${plan.rollback}`, ...(plan.rollforward ? [`from the redeploy on: ${plan.rollforward}`] : [])].join('\n');
 
-export const upgradeCommands = defineCommands([{
-  name: 'upgrade',
-  help: [
-    '  upgrade [--to VERSION] [--plan]',
-    '                                Back up the database, move the CLI checkout (then npm ci),',
-    '                                redeploy the server, restart loop and executors, refresh the',
-    '                                generated files, and check /healthz, to Mainworks\' main tip',
-    '                                (or the dated release VERSION);',
-    '                                --plan prints the steps only; a failure names its step and rollback',
-    '  upgrade --repair-identity     Restore a moved CLI release’s local commit stamp.',
-    '  upgrade --watch [--once] [--checkout DIR]',
-    '                                The deploy unit (graphyard-deploy.service): fetch origin and, for',
-    '                                each new base tip, build, restart, check /healthz, and roll back',
-    '                                to the previous tip on failure; the watch then restarts on the',
-    '                                code it served; DIR is the install\'s own checkout.',
-    '                                An install for another repository upgrades its own control plane',
-    '                                by itself: each pass (at least daily) checks the commit Mainworks\'',
-    '                                batch gate verified, as refs/graphyard/verified on Mainworks\'',
-    '                                canonical upstream — never an unverified main tip — and runs the',
-    '                                upgrade steps to exactly that commit, keeping its state in',
-    '                                .graphyard/control-plane.json (commit, last check, last update,',
-    '                                last failed step); a failed upgrade keeps the previous version and',
-    '                                retries; see `graphyard guide upgrade`',
-  ],
-  async run(context) {
+export { upgradeCommands } from './upgrade-commands.js';
+
+export async function runUpgradeCommand(context: Parameters<import('./registry.js').CliCommand['run']>[0]) {
     const flags = [context.id, ...context.args].filter((arg): arg is string => !!arg);
     if (flags.includes('--repair-identity')) {
       const root = resolve(installationRoot), commit = basename(root);
       if (basename(dirname(root)) !== 'cli-releases' || !/^[0-9a-f]{40}$/i.test(commit)) {
-        throw new Error('Identity repair requires an installed cli-releases/<commit> directory; run graphyard upgrade from a readable Graphyard checkout');
+        throw new Error('Identity repair requires an installed cli-releases/<commit> directory; run mainworks upgrade from a readable Mainworks checkout');
       }
       const file = recordCommit(root, commit);
       console.log(`Restored CLI release identity: ${file}`);
@@ -620,7 +627,13 @@ export const upgradeCommands = defineCommands([{
       const runningRoot = fileURLToPath(new URL('../../', import.meta.url));
       const handover = releaseHandover(() => {
         try { return git(runningRoot, 'rev-parse', 'HEAD'); } catch { return null; } // a tree with no git history names no running commit
-      }, () => stopping.abort()); // the serve half stops after the pass it is in; nothing is torn mid-flight
+      }, () => stopping.abort(), // the serve half stops after the pass it is in; nothing is torn mid-flight
+      // GY-3756: the unit this watch runs under is pointed at the served release before the restart.
+      async () => {
+        let unit: string | undefined;
+        try { unit = /^0::\/.*\/((?:graphyard|mainworks)-deploy[^/\s]*\.service)(?:\/.*)?$/m.exec(readFileSync('/proc/self/cgroup', 'utf8'))?.[1]; } catch { /* no cgroup: no unit to point */ }
+        return unit ? repointDeployUnit({ unitPath: join(loopUnitDirectory(), unit), installDir: installDirectory(installIdFor(master.repository)) }) : null;
+      });
       // The managed repository's own serving (GY-2976, GY-3201): the first node application main's
       // graphyard.json declares is checked out into the install's own serve checkout, built and served
       // by the same unit's pass; a repository that declares none gives the serve pass nothing to do.
@@ -636,23 +649,22 @@ export const upgradeCommands = defineCommands([{
     if (!flags.includes('--plan')) git(cliRoot, 'fetch', '--tags', '--force', 'origin', graphyardBaseBranch);
     const repository = repositoryFromRemote(git(repoRoot, 'remote', 'get-url', 'origin'));
     const directory = repository ? installDirectory(installIdFor(repository)) : null;
-    const url = process.env.GRAPHYARD_URL || context.connection?.url ? context.base : null;
+    const url = setting('URL') || context.connection?.url ? context.base : null;
     const current = checkoutRelease(cliRoot);
     const target = resolveTarget(cliRoot, to);
     const install = directory ? await readInstallRecord(directory) : null;
     const inputs: UpgradeInputs = { cliRoot, repoRoot, current, target, cliChanges: cliChangesOf(cliRoot), databaseSchema: await databaseSchemaOf(url), url, install,
-      backupFile: join(directory ?? join(repoRoot, '.graphyard'), 'backups', `before-${target.version}-${Date.now()}.json`) };
+      backupFile: join(directory ?? stateDirectory(repoRoot), 'backups', `before-${target.version}-${Date.now()}.json`) };
     const plan = upgradePlan(inputs);
     console.log(renderPlan(plan));
     if (flags.includes('--plan')) return;
     // The plan needs no credential: the install's database is resolved only for a real upgrade.
     const databaseUrl = inputs.databaseUrl = await installDatabaseUrl(directory, install);
     // Every precondition a later step needs is checked before the record and the checkout move.
-    if (!databaseUrl) throw new Error('Set DATABASE_URL to the Graphyard database so the upgrade can back it up before the server migrates it; nothing was changed');
+    if (!databaseUrl) throw new Error('Set DATABASE_URL to the Mainworks database so the upgrade can back it up before the server migrates it; nothing was changed');
     if (!url) throw new Error('Set GRAPHYARD_URL so the upgrade can read /healthz after the redeploy; nothing was changed');
-    const result = await runUpgrade(plan, liveEffects(inputs, join(repoRoot, '.graphyard', 'upgrade.json')));
+    const result = await runUpgrade(plan, liveEffects(inputs, join(stateDirectory(repoRoot), 'upgrade.json')));
     if (result.ok) { await migrateHerdr(repoRoot); console.log(`upgraded to ${target.version}`); return; }
     process.exitCode = 1;
     console.error(upgradeFailure(result));
-  },
-}]);
+}

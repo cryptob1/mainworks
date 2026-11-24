@@ -122,7 +122,7 @@ test('integration:main-batch-gate — at rollout the served commit is the first 
   assert.equal(record.verified, tip, 'a passing gate records the tip verified');
   assert.deepEqual(record.merges.map(merge => merge.item), ['GY-1', 'GY-2', 'GY-3']);
   assert.equal(record.inFlight, null);
-  // Graphyard's own graphyard.json names the core set.
+  // Mainworks's own graphyard.json names the core set.
   assert.deepEqual(checkoutRepositoryPolicy(process.cwd()).gate.core, ['create-work-item', 'smoke']);
 
   // The whole catalog replaces the subset once its measured time fits half the limit.
@@ -651,7 +651,7 @@ test('unit:batch-gate-outcome-visible — every settled run is the record\'s las
     assert.ok(Date.parse(done.lastOutcome!.finishedAt!) > 0);
     const outcomeLines = lines.filter(line => line.includes('Batch gate on'));
     assert.equal(outcomeLines.length, 1, 'one journal line names the outcome');
-    assert.match(outcomeLines[0]!, new RegExp(`^\\[graphyard-master\\] cycle \\d+ merge done: Batch gate on ${realTip.slice(0, 12)}: verified$`));
+    assert.match(outcomeLines[0]!, new RegExp(`^\\[mainworks-master\\] cycle \\d+ merge done: Batch gate on ${realTip.slice(0, 12)}: verified$`));
   }
 
   // A failing run end to end: the error outcome reaches the record on disk and the journal in one line.
@@ -705,7 +705,7 @@ test('unit:verified-batch-release-note — a verified batch appends a release no
 
 test('unit:batch-gate-filing-idempotent — a known red or diagnostic failure whose item is already filed — the same case under different wording, as a later tip makes — is reused and never re-filed; a refused or failed filing is a gate note and never aborts the verdict (GY-3147)', async () => {
   const verified = sha(1), batch = [landing(2)];
-  const refused = () => new RefusedResponse('Graphyard refused work (409): Idempotency key reused with different input', 409, { error: 'Idempotency key reused with different input' });
+  const refused = () => new RefusedResponse('Mainworks refused work (409): Idempotency key reused with different input', 409, { error: 'Idempotency key reused with different input' });
 
   // The gate: a known red filed on one batch, then the same case on the next batch — its filing would name the new tip, so its wording differs.
   {

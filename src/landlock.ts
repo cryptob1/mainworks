@@ -2,7 +2,7 @@
 // below Landlock ABI 9, so up's preflight and doctor read the ABI first, the same way it does.
 import { execFileSync } from 'node:child_process';
 
-export const landlockAbiRequired = 9;
+const landlockAbiRequired = 9;
 
 /** The host's Landlock ABI: landlock_create_ruleset(NULL, 0, LANDLOCK_CREATE_RULESET_VERSION). Throws when it cannot be read. */
 export function readLandlockAbi(): number {
@@ -12,9 +12,9 @@ export function readLandlockAbi(): number {
   return Number(out);
 }
 
-/** Why this host cannot run Graphyard sessions, naming the ABI found and the kernel needed; null when it can. */
+/** Why this host cannot run Mainworks sessions, naming the ABI found and the kernel needed; null when it can. */
 export function landlockRefusal(read: () => number = readLandlockAbi): string | null {
   let abi: number;
-  try { abi = read(); } catch (error: any) { return `could not read the Landlock ABI (${String(error.message ?? error).split('\n')[0]}); Graphyard needs Linux Landlock ABI ${landlockAbiRequired} or newer (Linux 7.0 or later) to confine sessions`; }
-  return abi >= landlockAbiRequired ? null : `this kernel offers Landlock ABI ${abi}; Graphyard needs Linux Landlock ABI ${landlockAbiRequired} or newer (Linux 7.0 or later) to confine sessions, so nothing would launch`;
+  try { abi = read(); } catch (error: any) { return `could not read the Landlock ABI (${String(error.message ?? error).split('\n')[0]}); Mainworks needs Linux Landlock ABI ${landlockAbiRequired} or newer (Linux 7.0 or later) to confine sessions`; }
+  return abi >= landlockAbiRequired ? null : `this kernel offers Landlock ABI ${abi}; Mainworks needs Linux Landlock ABI ${landlockAbiRequired} or newer (Linux 7.0 or later) to confine sessions, so nothing would launch`;
 }

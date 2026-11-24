@@ -66,7 +66,7 @@ test('e2e:flow-numbers-shown — /api/flow and master status read 75% first pass
   assert.deepEqual({ attempts: day.attempts, merges: day.merges, firstPassYield: day.firstPassYield }, { attempts: 4, merges: 3, firstPassYield: 0.75 });
   assert.equal(day.rework['merge trial'], 1);
   assert.deepEqual({ p90: day.stations.review.p90, oldest: day.stations.review.oldest.key }, { p90: 120, oldest: items[4].key });
-  assert.deepEqual(Object.keys(flow).sort(), ['24h', '6h', '7d', 'attention']);
+  assert.deepEqual(Object.keys(flow).sort(), ['24h', '6h', '7d', 'ageSeconds', 'asOf', 'attention']);
 
   const directory = await temporaryDirectory('flow-numbers-shown');
   const config = masterConfigSchema.parse({ version: 1, url, repository: 'owner/game', credentialFile: join(directory, 'coordinator.token'), cliPath: '/bin/graphyard', hostId: 'test-host', baseBranch: 'main',

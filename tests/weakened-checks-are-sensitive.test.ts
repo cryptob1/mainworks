@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { classifyRisk, riskOf } from '../src/model-boundary/risk-class.js';
-import { graphyardChecksChanged, reviewedBeforeMerge } from '../src/model/risk-class.js';
+import { mainworksChecksChanged, reviewedBeforeMerge } from '../src/model/risk-class.js';
 import { evaluate } from '../src/model-boundary/gates.js';
 import type { Work } from '../src/model/work.js';
 
@@ -80,14 +80,14 @@ test('unit:weakened-checks-are-sensitive — modifying or removing existing test
   const nonChecks = classifyRisk([{ path: 'graphyard.json', status: 'modified', checksChanged: false }]);
   assert.equal(nonChecks.risk, 'normal');
   assert.equal(
-    graphyardChecksChanged(
+    mainworksChecksChanged(
       JSON.stringify({ delivery: { mergeGate: { preMerge: [{ check: 'test', command: 'npm test' }] } }, featureMap: [] }),
       JSON.stringify({ delivery: { mergeGate: { preMerge: [{ check: 'test', command: 'true' }] } }, featureMap: [] }),
     ),
     true,
   );
   assert.equal(
-    graphyardChecksChanged(
+    mainworksChecksChanged(
       JSON.stringify({ delivery: { mergeGate: { preMerge: [{ check: 'test', command: 'npm test' }] } }, featureMap: [{ name: 'A' }] }),
       JSON.stringify({ delivery: { mergeGate: { preMerge: [{ check: 'test', command: 'npm test' }] } }, featureMap: [{ name: 'B' }] }),
     ),

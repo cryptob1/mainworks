@@ -1,0 +1,15 @@
+{
+  "id": "prune-local-warm-images",
+  "title": "One loop reclaim leaves only the kept warm images and master status shows the graphyard-warm total drop",
+  "description": "With several stale graphyard-warm images present, runs the loop's leftovers sweep once and checks that only the current trial image's warm images and the two newest stay, and that master status diskHeadroom shows the graphyard-warm total drop (GY-3745).",
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "one reclaim keeps only the current, two newest and in-use warm images; master status shows the drop",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:prune-local-warm-images tests/prune-local-warm-images.test.ts",
+      "timeoutSeconds": 120
+    }
+  ]
+}

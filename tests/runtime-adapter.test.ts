@@ -7,7 +7,7 @@ import { detectRuntimeExhaustion } from '../src/master/runtime-prompt.js';
 import { registerRuntimeAdapter, runtimeAdapter } from '../src/master/runtimes.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-// GY-3034 AC-1: everything Graphyard knows of a runtime lives in its one adapter record, so a new
+// GY-3034 AC-1: everything Mainworks knows of a runtime lives in its one adapter record, so a new
 // runtime is added by registering its adapter: nothing else is edited for it to launch, resume,
 // deliver its first request on its command line and report its provider's limit notice.
 test('unit:runtime-adapter — a registered adapter is launchable, resumable and reports usage limits with no other file changed', async () => {

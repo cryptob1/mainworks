@@ -12,6 +12,8 @@ import { validateAssertionRulings } from '../model/changed-assertions.js';
 import { productVerdicts, type ProductReview } from '../model/product-review.js';
 import { save } from '../store.js';
 import { decisionWork } from '../store/decision-read.js';
+import { sessionView } from '../model/session-state.js';
+import { recordSession } from '../model/sessions.js';
 import type { Services } from './routes.js';
 
 /**
@@ -24,7 +26,7 @@ import type { Services } from './routes.js';
  * (review-post.ts). The hash is kept on the item as `work.reviewLaunch`; the token itself is seen
  * only by the session. The token is also what authenticates the session's one call: the launch
  * registers it as a bearer credential for the reviewer principal, with the `reader` role, until the
- * verdict lands, the launch is refused, or it expires — so `review post` needs no Graphyard
+ * verdict lands, the launch is refused, or it expires — so `review post` needs no Mainworks
  * credential of its own, exactly as the GitHub-mode session needs none.
  *
  * `POST /api/work/:id/review-verdict` — the session's verdict. The route verifies the token's hash,
@@ -49,28 +51,29 @@ export const reviewLaunchBodySchema = z.object({ reviewer: identifier, head: sha
  * `Screenshot:` line gives it and the image itself, kept by the control plane and served on the item
  * (`GET /api/work/:id/product-review/screenshots/:name`), so the panel shows what the reviewer saw.
  */
-export const productScreenshotBytesMax = 2 * 1024 * 1024, productScreenshotsMax = 5;
+export const productScreenshotBytesMax = 2 * 1024 * 1024;
+const productScreenshotsMax = 5;
 export const screenshotUpload = z.object({ name: z.string().trim().min(1).max(1000), mediaType: z.enum(['image/png', 'image/jpeg']), bytes: z.string().min(4).max(Math.ceil(productScreenshotBytesMax / 3) * 4) }).strict();
 type ScreenshotUpload = z.infer<typeof screenshotUpload>;
 /** The body limit of a route that may carry screenshots: every one at its largest, base64, with room for the rest. */
 export const productScreenshotBodyLimit = productScreenshotsMax * Math.ceil(productScreenshotBytesMax / 3) * 4 + 200_000;
-export const reviewVerdictBodySchema = z.object({ event: z.enum(reviewEvents), body: z.string().trim().min(1).max(65_536), sha, token: hex64, screenshots: z.array(screenshotUpload).max(productScreenshotsMax).optional() }).strict();
+const reviewVerdictBodySchema = z.object({ event: z.enum(reviewEvents), body: z.string().trim().min(1).max(65_536), sha, token: hex64, screenshots: z.array(screenshotUpload).max(productScreenshotsMax).optional() }).strict();
 /** The hand-recorded product review (GY-2989): the operator or the loop's coordinator records one itself, without a launched session. */
-export const productReviewBodySchema = z.object({
+const productReviewBodySchema = z.object({
   reviewer: identifier, sha, baseSha: sha,
   verdict: z.enum(productVerdicts),
   findings: z.string().trim().min(1).max(65_536),
   /** Each an http(s) link to an image hosted elsewhere, or an image uploaded with the verdict. */
   screenshots: z.array(z.union([z.url({ protocol: /^https?$/ }).max(2000), screenshotUpload])).max(productScreenshotsMax).default([]),
 }).strict();
-/** GY-2078: the loop's withdrawal of one control-plane review verdict — which review, and the request the re-review is asked by. */
-export const reviewWithdrawBodySchema = z.object({ reviewId: z.number().int().safe().positive(), reason: z.string().trim().min(1).max(8000) }).strict();
 /** The events each route appends with its own payload; the document save beside each is `<event>.recorded`. */
-export const reviewLaunchEvent = 'review.launch', reviewVerdictEvent = 'review.verdict', independenceRefusedEvent = 'review.independence-refused';
+const reviewLaunchEvent = 'review.launch';
+const reviewVerdictEvent = 'review.verdict';
+const independenceRefusedEvent = 'review.independence-refused';
 /** The event a product review's verdict is appended with (GY-2989). */
-export const productReviewVerdictEvent = 'product-review.verdict';
+const productReviewVerdictEvent = 'product-review.verdict';
 /** The screenshots a product verdict names, one `Screenshot:` line each (product-review.ts shows them on the item). */
-export const productScreenshots = (body: string) => body.split('\n').map(line => line.trim()).filter(line => /^Screenshot:/i.test(line)).map(line => line.replace(/^Screenshot:\s*/i, '').trim()).filter(Boolean);
+const productScreenshots = (body: string) => body.split('\n').map(line => line.trim()).filter(line => /^Screenshot:/i.test(line)).map(line => line.replace(/^Screenshot:\s*/i, '').trim()).filter(Boolean);
 const linked = (name: string) => /^https?:\/\//i.test(name);
 /**
  * Keep a product verdict's uploaded screenshots in place of the item's earlier ones, and answer the
@@ -92,14 +95,12 @@ export async function readProductScreenshot(services: Services, id: string, name
   demand(row, 'No such product review screenshot', 404);
   return { mediaType: row.media_type, bytes: row.bytes };
 }
-/** The event a control-plane review's withdrawal is appended with (GY-2078). */
-export const reviewWithdrawnEvent = 'review.withdrawn';
 /** How long a registered launch's token stays valid at most, whatever expiry the launcher asks. */
-export const launchTokenBoundMs = 4 * 3_600_000;
+const launchTokenBoundMs = 4 * 3_600_000;
 
 export const tokenHashOf = (token: string) => createHash('sha256').update(token, 'utf8').digest('hex');
 /** The refusal when the verdict's token is not the registered launch's. */
-export const tokenRefusal = 'The verdict token is not the one this launch registered; post only from the session Graphyard launched';
+export const tokenRefusal = 'The verdict token is not the one this launch registered; post only from the session Mainworks launched';
 /** The refusal when the verdict names a commit other than the registered head. */
 export const headRefusal = (sha: string, head: string) => `The verdict names ${sha.slice(0, 12)}, not the registered head ${head.slice(0, 12)} this session was launched to review; post nothing for a different commit`;
 /** The refusal when a launch already holds its verdict. */
@@ -175,7 +176,13 @@ export async function renewReviewRequest(services: Services, actor: Principal, i
     demand(operatorScopeIncludes(actor, work!), 'Work item is outside this operator-agent scope', 403);
     const previous = liveReviewRequest(work!);
     demand(previous, `${work!.key} has no standing review request to renew`, 409);
-    demand(!work!.sessions?.some(handle => handle.kind === 'review' && handle.state === 'running' && handle.head === previous!.sha), `A reviewer session for ${work!.key} is running on ${previous!.sha.slice(0, 12)}; it answers the request`, 409);
+    const running = (work!.sessions ?? []).filter(handle => handle.kind === 'review' && handle.state === 'running' && handle.head === previous!.sha);
+    demand(!running.some(handle => sessionView(handle, now).live), `A reviewer session for ${work!.key} is running on ${previous!.sha.slice(0, 12)}; it answers the request`, 409);
+    // GY-3748: a reviewer session that is not live is replaced instead of refusing `master review`.
+    for (const dead of running) {
+      recordSession(work!, { id: dead.id, kind: dead.kind, runtime: dead.runtime, host: dead.host, subject: dead.subject, state: 'finished',
+        outcome: 'replaced by master review: the reviewer session was not live' }, actor.id, now);
+    }
     const resolved = { ...previous!, state: 'cancelled' as const, resolvedAt: now.toISOString(), resolution: 'renewed by master review: the request is asked afresh' };
     work!.autoDispatch = { ...work!.autoDispatch!, review: null, history: [...work!.autoDispatch!.history, resolved].slice(-dispatchHistoryLimit) };
     await record(db, work!, actor.id, 'dispatch.cancelled', { details: { ...resolved, at: now.toISOString() } });
@@ -197,7 +204,7 @@ export async function recordReviewVerdict(services: Services, actor: Principal, 
     const all = await decisionWork(db, [id]);
     const work = all.find(item => item.id === id || item.key === id); demand(work, 'Work item not found', 404);
     const launch = work!.reviewLaunch;
-    demand(launch, `${work!.key} has no registered reviewer launch; a control-plane verdict is posted only by the session Graphyard launched`, 409);
+    demand(launch, `${work!.key} has no registered reviewer launch; a control-plane verdict is posted only by the session Mainworks launched`, 409);
     const offered = Buffer.from(tokenHashOf(data.token), 'hex'), registered = Buffer.from(launch!.tokenHash, 'hex');
     demand(offered.length === registered.length && timingSafeEqual(offered, registered), tokenRefusal, 403);
     demand(!launch!.verdict, secondVerdictRefusal(work!.key, launch!.head), 409);

@@ -1,5 +1,5 @@
 import type { Work } from './work.js';
-import type { DispatchRequest, ReviewState } from './dispatch.js';
+import type { DispatchRequest } from './dispatch.js';
 import { currentEvidence } from './evidence.js';
 import { evidenceBindsCandidate } from './carry.js';
 import { requiredProofs } from './bootstrap.js';
@@ -13,13 +13,13 @@ import { requiredProofs } from './bootstrap.js';
 const short = (sha: string) => sha.slice(0, 12);
 
 /** One producer session runs one group: every automatable proof of one kind, on one head. */
-export const producerGroups = ['unit', 'integration', 'manual'] as const;
+const producerGroups = ['unit', 'integration', 'manual'] as const;
 export type ProducerGroup = typeof producerGroups[number];
 
 /** A proof a launched producer session can run: every unit and integration proof, and a manual proof the item marks producer-runnable. */
 export const automatableProof = (work: Pick<Work, 'producerProofs'>, proof: string) =>
   /^(unit|integration):/.test(proof) || proof.startsWith('manual:') && (work.producerProofs ?? []).includes(proof);
-export const producerGroupOf = (proof: string): ProducerGroup => proof.slice(0, proof.indexOf(':')) as ProducerGroup;
+const producerGroupOf = (proof: string): ProducerGroup => proof.slice(0, proof.indexOf(':')) as ProducerGroup;
 /**
  * A proof a machine settles without judgment: every unit and integration proof. These run before a
  * reviewer is asked for anything (GY-115); a manual proof, even one a producer session runs, is
@@ -89,17 +89,6 @@ export function producerManualFailures(work: Work, all: Work[], now: Date): Mech
 export const producerManualFailure = (verdict: MechanicalVerdict, sha: string) =>
   `${criteriaOf(verdict)}: ${verdict.proof} failed on ${short(sha)} (trusted evidence from ${verdict.producer}); the producer judged the change and found it inadequate, so the head returns to its worker`;
 
-/** Why no reviewer may be asked about this head yet, or null once every mechanical proof has passed on it. */
-export function mechanicalHold(work: Work, all: Work[], now: Date): { needed: false; reason: string; state: ReviewState } | null {
-  if (!work.candidate) return null;
-  const verdicts = mechanicalVerdicts(work, all, now), sha = work.candidate.sha;
-  const failed = verdicts.filter(verdict => verdict.outcome === 'failed');
-  if (failed.length) return { needed: false, state: 'proof-failed', reason: failed.map(verdict => mechanicalFailure(verdict, sha)).join('; ') };
-  const pending = verdicts.filter(verdict => verdict.outcome === 'unproven');
-  if (pending.length) return { needed: false, state: 'proofs-pending', reason: `review follows the mechanical proofs: ${pending.map(verdict => `${criteriaOf(verdict)} ${verdict.proof}`).join(', ')} ${pending.length === 1 ? 'has' : 'have'} not passed on ${short(sha)} yet` };
-  return null;
-}
-
 /** Why no request may stand for the candidate right now, or null when the head is a live, observed, buildable candidate. */
 export function dispatchIneligibility(work: Work): string | null {
   if (work.stage === 'done') return 'the work is delivered';
@@ -130,7 +119,7 @@ export function dispatchIneligibility(work: Work): string | null {
  * - `proven` — trusted passing evidence binds every proof of the group.
  * - `request` — something is left to prove and nothing refuses asking for it.
  */
-export type ProducerGroupState = 'request' | 'failed' | 'proven' | 'ineligible';
+type ProducerGroupState = 'request' | 'failed' | 'proven' | 'ineligible';
 export interface ProducerGroupDecision {
   group: ProducerGroup; state: ProducerGroupState;
   /** The group's proofs no evidence binds yet: what a request for it asks for. */
@@ -171,12 +160,12 @@ export function producerGroupDecisions(work: Work, all: Work[], now: Date, outco
  */
 export interface UnexercisedFinding { proof: string; finding: string; criteria: string[]; behaviour: string | null }
 /** What a `manual:` record with no case executed is: a judgement never made (GY-868). */
-export const unexecutedManualFinding = (proof: string) => `the record carries executed = 0: no test case or check ran, so the criterion was never judged and there is no failure of the change to fix`;
+const unexecutedManualFinding = (proof: string) => `the record carries executed = 0: no test case or check ran, so the criterion was never judged and there is no failure of the change to fix`;
 export function unexercisedFindings(work: Work, now: Date, sha: string | undefined = work.candidate?.sha, proofs?: readonly string[]): UnexercisedFinding[] {
   if (!sha) return [];
   const findings = new Map<string, UnexercisedFinding>();
   for (const entry of work.evidence ?? []) {
-    // GY-875: a record carried onto the current candidate by a Graphyard-authored base refresh is
+    // GY-875: a record carried onto the current candidate by a Mainworks-authored base refresh is
     // bound to it exactly as an exact-sha record is (evidenceBindsCandidate), so a carried
     // unexercised manual record holds the candidate only while attestationDecision can see it and
     // request the wait the hold names. Carry binds
@@ -192,7 +181,7 @@ export function unexercisedFindings(work: Work, now: Date, sha: string | undefin
   return [...findings.values()].filter(({ proof }) => !(sha === work.candidate?.sha && currentEvidence(work, proof, now)?.result === 'pass'));
 }
 /** One finding as a rework names it: the proof, the criterion, and the mutation that survived. */
-export const unexercisedDetail = (entry: UnexercisedFinding, sha: string) =>
+const unexercisedDetail = (entry: UnexercisedFinding, sha: string) =>
   `${entry.proof} was recorded as not exercising ${entry.criteria.length ? entry.criteria.join(', ') : 'its criterion'} on ${short(sha)}: ${entry.behaviour ? `the mutation removing "${entry.behaviour}" survived` : 'no surviving-mutation run was recorded'} — ${entry.finding.length > 400 ? `${entry.finding.slice(0, 399)}…` : entry.finding}`;
 
 /**

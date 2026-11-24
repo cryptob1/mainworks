@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { z } from 'zod';
-import { demand } from './model.js';
-import { resolvedPayloadSql } from './store/snapshot-delta.js';
+import { demand, Refusal } from './model.js';
+import { eventStageSql, resolvedPayloadSql } from './store/snapshot-delta.js';
 
 /**
  * Reading an item's history.
@@ -37,8 +37,8 @@ export interface EventHistoryQuery {
   order: 'asc' | 'desc';
   /** Routine rows are excluded unless the caller asks for them explicitly. */
   routine: 'exclude' | 'include';
-  /** `full` keeps the event's whole payload; `details` drops the work snapshot it embeds. */
-  payload: 'full' | 'details' | 'none';
+  /** `full` keeps the event's whole payload; `details` drops the work snapshot it embeds; `stage` is the snapshot's stage alone. */
+  payload: 'full' | 'details' | 'stage' | 'none';
   /**
    * `rows` answers with the event array alone; `history` adds paging and the routine summary;
    * `page` is `history` without the summary, for the pages after the first of one walk — the
@@ -48,7 +48,7 @@ export interface EventHistoryQuery {
 }
 
 const kindPattern = /^[\w.:-]{1,100}$/;
-export const eventHistorySchema = z.object({
+const eventHistorySchema = z.object({
   work: z.string().uuid().nullish(),
   kind: z.array(z.string().regex(kindPattern, 'An event kind is 1-100 characters of letters, digits, dot, colon, dash or underscore')).max(25).default([]),
   since: z.string().datetime().nullish(), until: z.string().datetime().nullish(),
@@ -56,7 +56,7 @@ export const eventHistorySchema = z.object({
   limit: z.coerce.number().int().min(1).max(eventHistoryLimits.maxPage).default(eventHistoryLimits.page),
   order: z.enum(['asc', 'desc']).default('desc'),
   routine: z.enum(['exclude', 'include']).default('exclude'),
-  payload: z.enum(['full', 'details', 'none']).default('full'),
+  payload: z.enum(['full', 'details', 'stage', 'none']).default('full'),
   view: z.enum(['rows', 'history', 'page']).default('rows'),
 }).strict();
 
@@ -97,9 +97,12 @@ export function eventHistorySql(query: EventHistoryQuery): Sql {
   if (query.since) where.push(`created_at>=${param(query.since)}::timestamptz`);
   if (query.until) where.push(`created_at<${param(query.until)}::timestamptz`);
   if (query.cursor) where.push(`seq${query.order === 'asc' ? '>' : '<'}${param(query.cursor)}::bigint`);
-  const columns = query.payload === 'none' ? '' : query.payload === 'details' ? ", payload->'details' AS details" : `, ${resolvedPayloadSql()} AS payload`;
-  // One row beyond the page proves whether another page exists without a second count.
-  return { text: `SELECT seq,work_id,actor,kind,created_at${columns} FROM events${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY seq ${query.order === 'asc' ? 'ASC' : 'DESC'} LIMIT ${param(query.limit + 1)}`, values };
+  const columns = query.payload === 'none' ? '' : query.payload === 'details' ? ", payload->'details' AS details"
+    : query.payload === 'stage' ? `, ${eventStageSql()} AS stage` : `, ${resolvedPayloadSql()} AS payload`;
+  const order = query.order === 'asc' ? 'ASC' : 'DESC';
+  // GY-3761: the page's seq values first, by key with the filters and limit, then payloads for
+  // those rows only. One row beyond the page proves whether another page exists without a count.
+  return { text: `SELECT seq,work_id,actor,kind,created_at${columns} FROM (SELECT seq FROM events${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY seq ${order} LIMIT ${param(query.limit + 1)}) page JOIN events USING (seq) ORDER BY seq ${order}`, values };
 }
 
 /**
@@ -122,7 +125,7 @@ export function routineSummarySql(query: EventHistoryQuery, scan: number = event
      GROUP BY kind ORDER BY kind`, values };
 }
 
-export interface RoutineKindSummary { kind: string; count: number; firstAt: string | null; lastAt: string | null; firstSeq: string | null; lastSeq: string | null }
+interface RoutineKindSummary { kind: string; count: number; firstAt: string | null; lastAt: string | null; firstSeq: string | null; lastSeq: string | null }
 export interface RoutineSummary {
   included: boolean; excluded: string[]; kinds: RoutineKindSummary[]; total: number;
   scanLimit: number; truncated: boolean; statement: string;
@@ -149,11 +152,28 @@ export function summariseRoutine(query: EventHistoryQuery, rows: any[], scan: nu
 
 export interface EventHistoryPage {
   observedAt: string;
-  filters: { work: string | null; kinds: string[]; since: string | null; until: string | null; order: 'asc' | 'desc'; limit: number; routine: 'exclude' | 'include'; payload: 'full' | 'details' | 'none' };
+  filters: { work: string | null; kinds: string[]; since: string | null; until: string | null; order: 'asc' | 'desc'; limit: number; routine: 'exclude' | 'include'; payload: EventHistoryQuery['payload'] };
   events: any[];
   page: { returned: number; hasMore: boolean; nextCursor: string | null; firstSeq: string | null; lastSeq: string | null; firstAt: string | null; lastAt: string | null };
   /** The disclosure of what the filter left out; null for a read that did not ask for it (`rows`, `page`). */
   routine: RoutineSummary | null;
+}
+
+/** A history read past this fails fast instead of loading the database (GY-3761). */
+export const eventHistoryTimeoutMs = 5000;
+async function timed(pool: pg.Pool, query: EventHistoryQuery, sql: Sql) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`SET LOCAL statement_timeout = ${eventHistoryTimeoutMs}`);
+    const result = await client.query(sql.text, sql.values);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    if ((error as { code?: string }).code !== '57014') throw error;
+    throw new Refusal(`The history read ran past ${eventHistoryTimeoutMs / 1000} s. ${query.work ? 'Narrow it with since and until, or kind.' : 'Narrow it to one item with work, or with since and until.'}`, 422);
+  } finally { client.release(); }
 }
 
 /**
@@ -167,8 +187,8 @@ export async function readEventHistory(pool: pg.Pool, query: EventHistoryQuery, 
   const summary = query.view === 'history' ? routineSummarySql(query, scan) : null;
   const [clock, rows, routineRows] = await Promise.all([
     pool.query('SELECT clock_timestamp() AS now'),
-    pool.query(page.text, page.values),
-    summary ? pool.query(summary.text, summary.values) : Promise.resolve({ rows: [] as any[] }),
+    timed(pool, query, page),
+    summary ? timed(pool, query, summary) : Promise.resolve({ rows: [] as any[] }),
   ]);
   const hasMore = rows.rows.length > query.limit;
   const events = rows.rows.slice(0, query.limit).map(row => ({ ...row, seq: String(row.seq) }));
@@ -185,13 +205,13 @@ export async function readEventHistory(pool: pg.Pool, query: EventHistoryQuery, 
 }
 
 /**
- * The same vocabulary on the command line: `graphyard events GY-N --kind claim,submit --since …`.
+ * The same vocabulary on the command line: `mainworks events GY-N --kind claim,submit --since …`.
  * `--routine` is the explicit flag that returns the rows the default summarises, and `--all`
  * follows the cursor to the end of the range instead of stopping at one page.
  */
 export interface EventHistoryFlags { params: URLSearchParams; all: boolean }
 const valueFlags = new Set(['kind', 'since', 'until', 'limit', 'order', 'cursor', 'payload']);
-export const eventsUsage = 'Use events GY-N [--kind K[,K]] [--since ISO] [--until ISO] [--order asc|desc] [--limit N] [--cursor SEQ] [--payload full|details|none] [--routine] [--all]';
+export const eventsUsage = 'Use events GY-N [--kind K[,K]] [--since ISO] [--until ISO] [--order asc|desc] [--limit N] [--cursor SEQ] [--payload full|details|stage|none] [--routine] [--all]';
 
 export function parseEventHistoryFlags(args: string[]): EventHistoryFlags {
   const params = new URLSearchParams();

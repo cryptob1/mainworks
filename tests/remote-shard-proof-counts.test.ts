@@ -12,7 +12,7 @@ import { shardHosts, shardRepository, type ShardHostsFixture } from './helpers/s
 // runs carries the same TAP reporter and its output is counted too, so a proof whose file goes to a host
 // is never read as 0 executed. Docker on the host is the fixture's stand-in.
 
-const image = 'graphyard-trial:proof-counts';
+const image = 'mainworks-trial:proof-counts';
 const proof = 'integration:remote-counted';
 let hosts: ShardHostsFixture;
 before(async () => { hosts = await shardHosts('remote-shard-proof-counts', ['box'], { [image]: `sha256:${'6c6c'.repeat(16)}` }); });

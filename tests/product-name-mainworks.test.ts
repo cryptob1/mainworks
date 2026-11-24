@@ -9,9 +9,9 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 const exec = promisify(execFile);
 
 // GY-3572: package.json installs both command names for the one CLI; each prints the Mainworks help.
-test('e2e:product-name-mainworks — mainworks and graphyard are the same CLI and print Mainworks help', async () => {
+test('e2e:product-name-mainworks — mainworks and the old command are the same CLI and print Mainworks help', async () => {
   const bin = JSON.parse(await readFile('package.json', 'utf8')).bin as Record<string, string>;
-  assert.equal(bin.mainworks, bin.graphyard, 'both names point at the same file');
+  assert.deepEqual([bin.mainworks, bin.graphyard], ['./bin/mainworks.mjs', './bin/graphyard.mjs'], 'the old name is a shim onto the same CLI');
   const dir = await temporaryDirectory('product-name');
   try {
     // Each command name on PATH, as npm links a package's bin entries.
