@@ -5,6 +5,28 @@ import { parseResetTime } from './capacity.js';
 export interface ProbeFailure { reason: string; resetsAt: string | null; apiError: string | null }
 const probeFallbackReason = 'The live request failed';
 const probeMaxLength = 160;
+
+/**
+ * GY-3788: whether a live account check failure came from the check's own environment (a read-only
+ * or unwritable account home, a failed scratch home, a missing model alias in the launch, or a
+ * sandbox/bwrap error) rather than from the provider or the account's login. Returns one plain line
+ * naming the check's fault (at most 300 chars), or null for a real provider/account failure.
+ */
+export function checkEnvironmentFault(reason: string | null | undefined): string | null {
+  if (!reason) return null;
+  const text = reason.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  const clip = (prefix: string) => `${prefix} (${text})`.slice(0, 300).trim();
+  if (/\bEROFS\b|read-only file system|settings\.json\.lock|\b(?:EACCES|EPERM)\b|\b(?:not writable|unwritable)\b/i.test(text))
+    return clip('check environment fault: read-only account home');
+  if (/the smoke test's scratch home\b|mainworks-(?:agy|pi)-smoke-|\bscratch home\b.*\bfail/i.test(text))
+    return clip('check environment fault: scratch home failed');
+  if (/\b(?:missing|unknown|invalid)\s+model\s+alias\b|\bmodel\s+alias\b.*\b(?:not found|missing|unknown|unavailable|invalid)\b/i.test(text))
+    return clip('check environment fault: missing model alias');
+  if (/\bbwrap:/i.test(text))
+    return clip('check environment fault: sandbox error');
+  return null;
+}
 const jsonOpening = /\{\s*["']/;
 const cleanLine = (line: string) => line.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
 const sanitizePlain = (line: string): { text: string; tail: string } => {
@@ -127,6 +149,13 @@ export function exhaustionEvidence(quota: Pick<ObservedQuota, 'state' | 'usage' 
  * operator's mark only when it is newer than the mark. A reading that made no request never replaces a live result or a mark. */
 export function foldObservation(account: FleetAccount, observed: QuotaObservation, context: { actor: string; at: string }) {
   const held = account.quota, now = Date.parse(context.at);
+  // GY-3788: a check environment fault leaves the account's quota mark unchanged and records the fault once.
+  if (observed.fault) {
+    const loggedIn = held.loggedIn ?? observed.loggedIn;
+    const changed = (held.fault ?? null) !== observed.fault || held.loggedIn !== loggedIn;
+    if (changed) account.quota = { ...held, loggedIn, fault: observed.fault };
+    return changed;
+  }
   const decided = account.quotaDecision ? Date.parse(account.quotaDecision.at) : null;
   if (observed.since ? decided !== null && Date.parse(observed.since) <= decided : held.source === 'operator') return false;
   // A session caught on the wrong model stands until a newer live check (GY-3596).
@@ -141,8 +170,11 @@ export function foldObservation(account: FleetAccount, observed: QuotaObservatio
   // API key, a logout) clears it, so a home logged in afresh is never held under its former login.
   const identity = observed.identity === undefined ? held.identity ?? null : observed.identity;
   const state = observed.state === 'exhausted' && !exhaustionEvidence({ ...observed, source: 'probe' }, now) ? 'unknown' as const : observed.state;
-  const changed = held.since !== observed.since || held.loggedIn !== observed.loggedIn || held.state !== state || moved || held.source !== 'probe' || identity !== (held.identity ?? null) || held.session !== observed.session || held.key !== observed.key || (held.fault ?? null) !== (observed.fault ?? null) || (held.spend ?? null) !== (observed.spend ?? null);
-  account.quota = { ...observed, state, ...state === observed.state ? {} : { resetsAt: null }, identity, observedAt: context.at, observedBy: context.actor, source: 'probe' };
+  // A real live check (observed.since) clears any prior check environment fault; a passive reading keeps it.
+  const fault = observed.since ? null : (held.fault ?? null);
+  const changed = held.since !== observed.since || held.loggedIn !== observed.loggedIn || held.state !== state || moved || held.source !== 'probe' || identity !== (held.identity ?? null) || held.session !== observed.session || held.key !== observed.key || (held.fault ?? null) !== fault || (held.spend ?? null) !== (observed.spend ?? null);
+  const { fault: _dropped, ...clean } = observed;
+  account.quota = { ...clean, state, ...state === observed.state ? {} : { resetsAt: null }, ...(fault ? { fault } : {}), identity, observedAt: context.at, observedBy: context.actor, source: 'probe' };
   return changed;
 }
 

@@ -72,7 +72,9 @@ export async function registryCommand(master: Pick<MasterConfig, 'hostId'> & Par
     if (!account || !runtime) throw new Error(`${name} is not a registry account on ${master.hostId}; master registry lists this host's accounts`);
     const quota = await checkAccountLive(account, runtime, { smoke: options.smoke }, current.models.find(model => model.name === account.model)?.id ?? null);
     await api.write('agent-registry/observe', { host: master.hostId, observations: [{ account: name, quota }] });
-    return quota.state === 'available' ? `${name} passed its live check` : `${name} ${quota.loggedIn === false ? 'is not logged in' : `is ${quota.state}`}: ${quota.reason ?? 'no reason given'}`;
+    return quota.fault ? `${name}: ${quota.fault} (quota left ${quota.state})`
+      : quota.state === 'available' ? `${name} passed its live check`
+      : `${name} ${quota.loggedIn === false ? 'is not logged in' : `is ${quota.state}`}: ${quota.reason ?? 'no reason given'}`;
   }
   if (collection === 'model' && action === 'seed') {
     const { values } = parseArgs({ args: rest, options: { reason: { type: 'string' } } });

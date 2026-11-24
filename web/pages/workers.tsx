@@ -189,11 +189,11 @@ function Accounts({ principals, setSelected }: { principals: PrincipalSummary[];
  * GY-3555: each account as its own last live request decided it, in one line: available, held until the reset the
  * provider stated (in its words), or broken (in its words), and when that request ran. The full line is its title.
  */
-export function availabilityLine(account: Pick<FleetAccountView, 'name' | 'quota' | 'loggedIn' | 'resetsAt' | 'reason' | 'checkedLive'>, now: number) {
+export function availabilityLine(account: Pick<FleetAccountView, 'name' | 'quota' | 'loggedIn' | 'resetsAt' | 'reason' | 'checkedLive' | 'fault'>, now: number) {
   const state = account.quota === 'exhausted' ? 'held' : account.quota === 'broken' || account.loggedIn === false ? 'broken' : 'available';
   const head = state === 'held' ? `held until ${account.resetsAt ? localTime(account.resetsAt) : 'its next live check'}` : state;
   const checked = account.checkedLive ? `checked live ${ago(account.checkedLive, now)}` : 'not checked live yet';
-  return { state, text: [account.name, head, checked, state === 'available' ? null : account.reason].filter(Boolean).join(' · ') };
+  return { state, text: [account.name, head, checked, state === 'available' ? account.fault : account.reason].filter(Boolean).join(' · ') };
 }
 export function AccountAvailability({ accounts, now }: { accounts: FleetAccountView[]; now: number }) {
   const enabled = accounts.filter(account => account.enabled);

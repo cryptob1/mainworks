@@ -319,6 +319,8 @@ export interface FleetAccountView {
   checkedLive?: string | null;
   /** Why it is held or broken, in the provider's own words from that request (or the operator's mark); null when available. */
   reason?: string | null;
+  /** GY-3788: the live check's own environment fault, when the check failed on its own sandbox/home/alias rather than the provider; null otherwise. */
+  fault?: string | null;
   /** What is left in one plain sentence (GY-3499): `about 24% of this week left, back Sun 22 Nov 05:00`, or `allowance not reported`. */
   allowance?: string;
   /** Why an unknown account shows no usage, in the probe's words: `this key reports no allowance` (GY-3495). */
@@ -369,7 +371,7 @@ export function fleetView(registry: AgentRegistry, now: number, host: string | n
       plan: account.plan ?? planInfo.planName,
       roles: registry.roles.filter(role => role.accounts.includes(account.name)).map(role => ({ role: role.name, preference: role.accounts.indexOf(account.name) + 1, of: role.accounts.length })),
       liveSessions: live.filter(session => session.account === account.name).map(session => ({ id: session.id, role: session.role, work: session.work, host: session.host, since: session.selectedAt })),
-      quota: evidence ? 'exhausted' : account.quota.state === 'exhausted' ? 'unknown' : account.quota.state, evidence, loggedIn: account.quota.loggedIn, usage: account.quota.usage.map(({ readAt, ...usage }) => readAt ? { ...usage, lastRead: `last read ${utcClock(readAt)}` } : usage), resetsAt: account.quota.resetsAt, observedAt: account.quota.observedAt, checkedLive: account.quota.since ?? null, reason: account.quota.state === 'available' ? null : account.quota.reason, quotaSource: account.quota.source, resetUnknown: account.quota.session === 'guessed',
+      quota: evidence ? 'exhausted' : account.quota.state === 'exhausted' ? 'unknown' : account.quota.state, evidence, loggedIn: account.quota.loggedIn, usage: account.quota.usage.map(({ readAt, ...usage }) => readAt ? { ...usage, lastRead: `last read ${utcClock(readAt)}` } : usage), resetsAt: account.quota.resetsAt, observedAt: account.quota.observedAt, checkedLive: account.quota.since ?? null, reason: account.quota.state === 'available' ? null : account.quota.reason, fault: account.quota.fault ?? null, quotaSource: account.quota.source, resetUnknown: account.quota.session === 'guessed',
       allowance: allowanceSentence(account.quota.usage, now),
       usageNote: !evidence && account.quota.state !== 'available' && !account.quota.usage.length ? account.quota.reason : null,
       spend: account.quota.spend ?? null,
@@ -389,10 +391,11 @@ export function fleetView(registry: AgentRegistry, now: number, host: string | n
   const missing = registry.accounts.length ? fleetRoles.filter(name => !registry.roles.some(role => role.name === name)).map(name => name === 'master' || name === 'caretaker'
     ? `role ${name} is not configured; the durable loop launches no ${name} session until mainworks master registry role set ${name} ACCOUNT[,ACCOUNT…] --reason REASON names its accounts`
     : `role ${name} is not configured; its sessions launch from local profiles until it is`) : [];
+  const checkFaults = accounts.filter(account => account.enabled && account.fault).map(account => `${account.name}: ${account.fault}`);
   const plans = groupAccountsByPlan({ accounts: registry.accounts }, now);
   return { revision: registry.revision, updatedAt: registry.updatedAt, configured: registry.roles.length > 0, host, runtimes: registry.runtimes, models: registry.models, accounts, roles, plans,
     sessions: registry.sessions.slice(-30), refusals: registry.refusals, lastMutation: registry.lastMutation,
-    attention: [...roles.flatMap(role => roleAttention(role, live)), ...unassigned, ...missing] };
+    attention: [...roles.flatMap(role => roleAttention(role, live)), ...unassigned, ...missing, ...checkFaults] };
 }
 
 /**
