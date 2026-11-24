@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { z } from 'zod';
 import { demand, Refusal } from './model.js';
-import { resolvedPayloadSql } from './store/snapshot-delta.js';
+import { eventWorkSql, resolvedPayloadSql } from './store/snapshot-delta.js';
 
 /**
  * Reading an item's history.
@@ -37,8 +37,8 @@ export interface EventHistoryQuery {
   order: 'asc' | 'desc';
   /** Routine rows are excluded unless the caller asks for them explicitly. */
   routine: 'exclude' | 'include';
-  /** `full` keeps the event's whole payload; `details` drops the work snapshot it embeds. */
-  payload: 'full' | 'details' | 'none';
+  /** `full` keeps the event's whole payload; `details` drops the work snapshot it embeds; `stage` is the snapshot's stage alone. */
+  payload: 'full' | 'details' | 'stage' | 'none';
   /**
    * `rows` answers with the event array alone; `history` adds paging and the routine summary;
    * `page` is `history` without the summary, for the pages after the first of one walk — the
@@ -56,7 +56,7 @@ const eventHistorySchema = z.object({
   limit: z.coerce.number().int().min(1).max(eventHistoryLimits.maxPage).default(eventHistoryLimits.page),
   order: z.enum(['asc', 'desc']).default('desc'),
   routine: z.enum(['exclude', 'include']).default('exclude'),
-  payload: z.enum(['full', 'details', 'none']).default('full'),
+  payload: z.enum(['full', 'details', 'stage', 'none']).default('full'),
   view: z.enum(['rows', 'history', 'page']).default('rows'),
 }).strict();
 
@@ -97,7 +97,8 @@ export function eventHistorySql(query: EventHistoryQuery): Sql {
   if (query.since) where.push(`created_at>=${param(query.since)}::timestamptz`);
   if (query.until) where.push(`created_at<${param(query.until)}::timestamptz`);
   if (query.cursor) where.push(`seq${query.order === 'asc' ? '>' : '<'}${param(query.cursor)}::bigint`);
-  const columns = query.payload === 'none' ? '' : query.payload === 'details' ? ", payload->'details' AS details" : `, ${resolvedPayloadSql()} AS payload`;
+  const columns = query.payload === 'none' ? '' : query.payload === 'details' ? ", payload->'details' AS details"
+    : query.payload === 'stage' ? `, ${eventWorkSql()}->>'stage' AS stage` : `, ${resolvedPayloadSql()} AS payload`;
   const order = query.order === 'asc' ? 'ASC' : 'DESC';
   // GY-3761: the page's seq values first, by key with the filters and limit, then payloads for
   // those rows only. One row beyond the page proves whether another page exists without a count.
@@ -151,7 +152,7 @@ export function summariseRoutine(query: EventHistoryQuery, rows: any[], scan: nu
 
 export interface EventHistoryPage {
   observedAt: string;
-  filters: { work: string | null; kinds: string[]; since: string | null; until: string | null; order: 'asc' | 'desc'; limit: number; routine: 'exclude' | 'include'; payload: 'full' | 'details' | 'none' };
+  filters: { work: string | null; kinds: string[]; since: string | null; until: string | null; order: 'asc' | 'desc'; limit: number; routine: 'exclude' | 'include'; payload: EventHistoryQuery['payload'] };
   events: any[];
   page: { returned: number; hasMore: boolean; nextCursor: string | null; firstSeq: string | null; lastSeq: string | null; firstAt: string | null; lastAt: string | null };
   /** The disclosure of what the filter left out; null for a read that did not ask for it (`rows`, `page`). */
@@ -210,7 +211,7 @@ export async function readEventHistory(pool: pg.Pool, query: EventHistoryQuery, 
  */
 export interface EventHistoryFlags { params: URLSearchParams; all: boolean }
 const valueFlags = new Set(['kind', 'since', 'until', 'limit', 'order', 'cursor', 'payload']);
-export const eventsUsage = 'Use events GY-N [--kind K[,K]] [--since ISO] [--until ISO] [--order asc|desc] [--limit N] [--cursor SEQ] [--payload full|details|none] [--routine] [--all]';
+export const eventsUsage = 'Use events GY-N [--kind K[,K]] [--since ISO] [--until ISO] [--order asc|desc] [--limit N] [--cursor SEQ] [--payload full|details|stage|none] [--routine] [--all]';
 
 export function parseEventHistoryFlags(args: string[]): EventHistoryFlags {
   const params = new URLSearchParams();

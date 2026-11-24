@@ -16,12 +16,12 @@ test('unit:event-history-callers-default-to-details — the CLI and dashboard hi
   const payload = (path: string) => new URLSearchParams(path.split('?')[1] ?? '').get('payload');
   assert.deepEqual(paths.map(payload), ['details', 'details', 'full']);
 
-  // Every other caller of /api/events names its payload: details or none for display, full only where it reads the work document.
+  // Every other caller of /api/events names its payload: details or none for display, stage where only the stage is read, full only where it reads the work document.
   const callers: [string, RegExp][] = [
     ['web/main.tsx', /api\(`events\?[^`]*payload=details/],
     ['web/pages/master.tsx', /api\(`events\?[^`]*payload=details/],
     ['src/cli/master/loop.ts', /'events\?[^']*payload=none/],
-    ['src/cli/master-status.ts', /`events\?[^`]*payload=full/],
+    ['src/cli/master-status.ts', /`events\?[^`]*payload=stage/],
     ['src/merge-admission-audit.ts', /payload: 'full'/],
   ];
   for (const [file, pattern] of callers) assert.match(readFileSync(new URL(`../${file}`, import.meta.url), 'utf8'), pattern, file);

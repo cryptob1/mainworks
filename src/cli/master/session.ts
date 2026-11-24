@@ -20,7 +20,7 @@ export async function openMasterSession(context: CliContext, root: string) {
   const master = person ? { ...stored, forPerson: person, masterAgentName: sessionName(stored.masterAgentName, person) } : stored;
   const masterToken = await readCredentialFile(master.credentialFile);
   const masterApi = async (path: string, credential = masterToken, timeoutMs = 30_000, headers: Record<string, string> = {}) => {
-    const response = await fetch(`${master.url}/api/${path}`, { headers: { ...headers, Authorization: `Bearer ${credential}` }, signal: AbortSignal.timeout(timeoutMs) });
+    const response = await fetch(`${master.url}/api/${path}`, { headers: { 'X-Mainworks-Command': `master ${id}`, ...headers, Authorization: `Bearer ${credential}` }, signal: AbortSignal.timeout(timeoutMs) });
     // The status rides on the error so a caller can tell a missing route (404) from a failing one.
     if (!response.ok) { const text = await response.text(); let message = text; try { message = JSON.stringify(JSON.parse(text)); } catch {} throw Object.assign(new Error(message), { status: response.status }); }
     return response.json();

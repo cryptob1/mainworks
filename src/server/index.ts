@@ -28,6 +28,7 @@ import { masterMessageRoutes, reporterScope } from './routes/reporter.js';
 import { caretakerRoutes, caretakerScope } from './routes/caretaker.js';
 import { staticRoutes } from './static.js';
 import { terminalUpgrade } from './terminal.js';
+import { queryCaller } from '../store/slow-queries.js';
 export { principalSchema, type Credential } from './principals.js';
 export type { ServerOptions } from './auth.js';
 export { assembleServices } from './auth.js';
@@ -73,7 +74,10 @@ export function server(engine: Engine, credentials: Credential[], options: Serve
         for (const module of modules) for (const route of module.routes) {
           const params = matchRoute(route, req.method, url.pathname);
           if (!params) continue;
-          const result = await route.handle(context, params);
+          // GY-3762: a slow statement names the route, the principal and the command that asked for it.
+          const command = req.headers['x-mainworks-command'];
+          const caller = `${typeof command === 'string' && command ? `${command.slice(0, 60)} via ` : ''}${req.method} ${typeof route.path === 'string' ? route.path : url.pathname}${context.actor.id ? ` as ${context.actor.id}` : ''}`;
+          const result = await queryCaller.run(caller, () => route.handle(context, params));
           if (result === Next) continue;
           if (result !== Sent) send(200, result);
           return true;

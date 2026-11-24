@@ -140,7 +140,7 @@ export function recordIntervention(work: Work, kind: keyof PipelineTimeline['int
 /** GY-3105: delivery speed, computed at query time from the event ledger for the last merged items; nothing is stored. */
 const deliverySpeedStages = ['ready', 'build', 'review', 'test', 'acceptance', 'merge'] as const;
 const deliverySpeedWindow = 50;
-export interface SpeedEvent { kind: string; created_at: string; payload?: { work?: { stage?: string } } }
+export interface SpeedEvent { kind: string; created_at: string; stage?: string | null }
 /** `events` is the item's whole ledger, or null when it could not be read. */
 export interface MergedItem { key: string; mergedAt: string; attempts: number; events: SpeedEvent[] | null }
 export interface Spread { median: number; p90: number; samples: number }
@@ -158,7 +158,7 @@ export function spread(values: number[]): Spread | null {
 function itemSpeed(item: MergedItem) {
   if (!item.events) return null;
   const merged = Date.parse(item.mergedAt);
-  const events = item.events.map(event => ({ at: Date.parse(event.created_at), stage: event.payload?.work?.stage })).sort((a, b) => a.at - b.at);
+  const events = item.events.map(event => ({ at: Date.parse(event.created_at), stage: event.stage ?? undefined })).sort((a, b) => a.at - b.at);
   const start = item.events.map(event => ({ kind: event.kind, at: Date.parse(event.created_at) })).filter(event => event.kind === 'ready').map(event => event.at).sort((a, b) => a - b)[0];
   if (start === undefined || !Number.isFinite(merged) || merged < start) return null;
   const stages: Record<string, number> = {};

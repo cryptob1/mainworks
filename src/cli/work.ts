@@ -126,7 +126,7 @@ export const workCommands = defineCommands([
     help: [
       '  events                       Read the latest rows of the whole ledger',
       '  events GY-N [--kind K[,K]] [--since ISO] [--until ISO] [--order asc|desc]',
-      '        [--limit N] [--cursor SEQ] [--payload full|details|none] [--routine] [--all]',
+      '        [--limit N] [--cursor SEQ] [--payload full|details|stage|none] [--routine] [--all]',
       '                               Read an item\'s immutable history. Routine rows (github.observed,',
       '                               heartbeat) are summarised as counts with their first and',
       '                               last instants instead of filling the page; --routine returns',
