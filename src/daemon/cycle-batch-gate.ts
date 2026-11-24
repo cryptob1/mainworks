@@ -303,7 +303,7 @@ const diagnosticFields = (latest: GateRecord | null, current: GateRecord) => {
   const merged = mergeFilings(latest, current, 'gate');
   const published = current.published ?? (latest?.verified === current.verified ? latest?.published : undefined);
   if (published && published === current.verified) clearGateNote(merged, 'verified-ref');
-  return { releaseTagged: latest?.releaseTagged ?? current.releaseTagged, catalogMs: latest?.catalogMs ?? current.catalogMs, diagnosticsAt: latest?.diagnosticsAt ?? current.diagnosticsAt, diagnosticsRun: latest?.diagnosticsRun ?? current.diagnosticsRun, diagnosticFailures: latest?.diagnosticFailures ?? current.diagnosticFailures, previewCases: latest?.previewCases ?? current.previewCases, onboarding: latest?.onboarding ?? current.onboarding, ...(published !== undefined ? { published } : {}), ...merged };
+  return { releaseTagged: latest?.releaseTagged ?? current.releaseTagged, catalogMs: latest?.catalogMs ?? current.catalogMs, diagnosticsAt: latest?.diagnosticsAt ?? current.diagnosticsAt, diagnosticsRun: latest?.diagnosticsRun ?? current.diagnosticsRun, diagnosticsTrials: latest?.diagnosticsTrials, diagnosticFailures: latest?.diagnosticFailures ?? current.diagnosticFailures, previewCases: latest?.previewCases ?? current.previewCases, onboarding: latest?.onboarding ?? current.onboarding, ...(published !== undefined ? { published } : {}), ...merged };
 };
 
 /** The commit served at rollout, which becomes the first verified commit: the deploy record's when it names this repository, else main's tip. */
@@ -364,6 +364,17 @@ export async function batchGateStep(cycle: Pick<Cycle, 'state' | 'effects' | 'sn
     // one (GY-3450); so do its probes and bisects, which stop with its run: the step after a stopped run starts on the slot
     // that run freed instead of queueing behind merge trials (GY-3800).
     if (flight?.tip !== sha) {
+      // GY-3805: the diagnostics trial detached too, so a deploy's restart never kills their hour-long run: the next loop collects it.
+      if (!signal && reads.launchTrialRun && reads.adoptTrialRun && !item.environments) {
+        const earlier = readGateRecord(file)?.diagnosticsTrials?.find(run => run.commit === sha && run.input === input);
+        const adopted = earlier ? await reads.adoptTrialRun({ key: gateKey, head: sha, mergeSha: sha, directory: earlier.directory }) : null;
+        if (adopted) return adopted.trial(step, timing);
+        await reads.ensureTrialImage?.();
+        const launched = reads.launchTrialRun({ key: gateKey, head: sha, mergeSha: sha, baseTip: base ?? null, changedFiles: [...files], proofs, e2eProofs: e2eProofsOf(item),
+          reproduce: item.type !== 'chore', cores: null, ...trialShareAllowance(share, timeout, reads.cores) });
+        await mergeGateRecord(file, latest => ({ ...(latest ?? gated), diagnosticsTrials: [...(latest?.diagnosticsTrials ?? []).filter(run => run.commit === sha && run.input !== input), { commit: sha, input, directory: launched.directory }] }));
+        return launched.trial(step, timing);
+      }
       const other = () => reads.trial(sha, files, item, base, step, timing, heads, share, signal && AbortSignal.any([signal, run]), timeout);
       return signal ? heavyTrial(gateKey, step, signal, other, run, true) : other();
     }
@@ -511,7 +522,7 @@ export async function batchGateStep(cycle: Pick<Cycle, 'state' | 'effects' | 'sn
         if (failed) {
           // Re-read so the diagnostics' fields never overwrite what a gate recorded meanwhile; the
           // filings of both writers merge (GY-3147).
-          await mergeGateRecord(file, latest => ({ ...(latest ?? fresh), catalogMs: fresh.catalogMs, diagnosticsAt: fresh.diagnosticsAt, diagnosticsRun: fresh.diagnosticsRun, diagnosticFailures: fresh.diagnosticFailures, previewCases: fresh.previewCases, onboarding: fresh.onboarding, ...mergeFilings(latest, fresh, 'diagnostics') }));
+          await mergeGateRecord(file, latest => ({ ...(latest ?? fresh), catalogMs: fresh.catalogMs, diagnosticsAt: fresh.diagnosticsAt, diagnosticsRun: fresh.diagnosticsRun, diagnosticsTrials: undefined, diagnosticFailures: fresh.diagnosticFailures, previewCases: fresh.previewCases, onboarding: fresh.onboarding, ...mergeFilings(latest, fresh, 'diagnostics') }));
           note('batch-gate:diagnostics', 'done', `Diagnostics on ${fresh.verified?.slice(0, 12)}: ${failed.length} failure(s) filed`);
         }
       } catch (error) {

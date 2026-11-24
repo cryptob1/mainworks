@@ -1,0 +1,18 @@
+{
+  "id": "diagnostics-survive-restart",
+  "title": "A daily diagnostics run survives a loop restart and master status shows its time and outcome",
+  "description": "On a test install whose diagnostics are six days old, the loop starts the day's run detached and restarts mid-run; the next loop collects the finished run instead of starting another, and master status shows its time and outcome.",
+  "tags": [
+    "diagnostics"
+  ],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "restart the loop mid-run and read the collected run in master status",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:diagnostics-survive-restart tests/diagnostics-survive-restart.test.ts",
+      "timeoutSeconds": 600
+    }
+  ]
+}

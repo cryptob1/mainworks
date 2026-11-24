@@ -136,6 +136,8 @@ export interface GateRecord {
   diagnosticsAt: string | null;
   /** GY-3779: the last diagnostics run, completed or thrown: when, its outcome and why. Optional only for records an older loop wrote. */
   diagnosticsRun?: DiagnosticsRun;
+  /** GY-3805: the diagnostics' detached trial runs on the verified commit, which a loop after a restart collects instead of starting again; cleared when the run completes. */
+  diagnosticsTrials?: { commit: string; input: string; directory: string }[];
   /**
    * GY-3264: the latest diagnostic run's failures, per check: the exact commit it tested and the
    * trial's own bounded failing-step text (null when the trial supplied none), kept here because
