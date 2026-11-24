@@ -16,4 +16,6 @@ export const humanAnswerSchema = z.object({
   note: z.string().trim().max(4000).optional(),
   /** A `secret` choice's value: sealed before anything is written, never stored as given. */
   secret: z.string().min(1).max(8000).optional(),
+  /** A variable request's value, sealed in the browser to the loop host's connect key (web/seal.ts): the server never sees it. */
+  sealedValue: z.object({ ephemeral: z.base64().max(400), iv: z.base64().max(40), ciphertext: z.base64().max(12000) }).strict().optional(),
 }).strict().refine(data => data.answer || data.choice, 'Give a choice or an answer');

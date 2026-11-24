@@ -7,6 +7,7 @@ import { humanAsk } from '../../src/model/human-ask';
 import type { Dashboard } from './dashboard';
 import { EmptyState, PageHeader } from '../components/page-layout';
 import { hostsNeedingUpdate, hostUpdateCommand } from '../components/top-bar';
+import { sealForHost, type SealedKey } from '../seal';
 
 /**
  * What waits on the human, and nothing else: every action the server will take from the
@@ -22,7 +23,13 @@ import { hostsNeedingUpdate, hostUpdateCommand } from '../components/top-bar';
  * credential is ever handled on a command line. Recently answered requests stay listed so the
  * human can see what their answer set in motion.
  */
-export default function HumanRequestsPage({ work, status, observedAt, action, busy, setSelected, signOut }: Dashboard) {
+export default function HumanRequestsPage({ work, status, observedAt, action, busy, setSelected, signOut, api }: Dashboard) {
+  // A variable's value is sealed here, to the host whose loop sets it, before anything is sent (web/seal.ts).
+  const seal = async (host: string, value: string) => {
+    const key = ((await api('agent-registry/connect/host-key')).hosts as { host: string; publicKey?: string }[] ?? []).find(entry => entry.host === host)?.publicKey;
+    if (!key) throw new Error(`${host} has not registered its key yet: start its master loop, then answer again`);
+    return sealForHost(key, value);
+  };
   const now = Number.isNaN(observedAt) ? Date.now() : observedAt;
   // The rows the server derived from the rule table. A client whose status read has not landed
   // yet still sees every rule whose instances live on the work documents it already holds,
@@ -48,7 +55,7 @@ export default function HumanRequestsPage({ work, status, observedAt, action, bu
     {outdated.length > 0 && <div className="card human-request" data-host-update-request><div className="card-top"><strong>Compute machines need an update</strong></div>
       <p>{outdated.join(', ')} {outdated.length === 1 ? 'takes' : 'take'} no trial work until updated. Run <span className="mono">{hostUpdateCommand}</span>, then the script it prints on each with sudo.</p></div>}
     {requests.length === 0 ? !growth && !outdated.length && <EmptyState title="All clear.">Goals, money, accounts and credentials for people come here when an item needs one of them.</EmptyState>
-      : <div className="cards">{requests.map(row => <RequestCard key={row.request.id} row={row} refusal={refusalFor(row)} busy={busy} open={() => setSelected(row.id)} signIn={signOut}
+      : <div className="cards">{requests.map(row => <RequestCard key={row.request.id} row={row} refusal={refusalFor(row)} busy={busy} open={() => setSelected(row.id)} signIn={signOut} seal={seal}
         answer={(text, post) => action(row.id, row.answer.post.command, { ...post, [row.answer.post.field]: text })} send={body => action(row.id, row.answer.post.command, body)}/>)}</div>}
     {work.flatMap(item => (item.humanProofs ?? []).filter(check => check.answer?.ownerSaid).map(check => <section className="panel" key={check.id}>
       <strong>{item.key} · {check.proof}</strong><p>relayed by {check.answer!.by} from the owner: "{check.answer!.ownerSaid}"</p>
@@ -81,10 +88,12 @@ const signInAction = 'Sign in as the operator';
  * cap) or a secret (sealed to the requesting host). A session the rule refuses is told why and
  * offered the operator's sign-in. Free words stay available, folded away, never the primary path.
  */
-export function RequestCard({ row, refusal, busy, open, answer, send, signIn }: { row: HumanRequestRow; refusal: string | null; busy: boolean; open(): void; answer(text: string, body: Record<string, unknown>): Promise<void>; send?(body: Record<string, unknown>): Promise<void>; signIn?(): void }) {
+export function RequestCard({ row, refusal, busy, open, answer, send, signIn, seal }: { row: HumanRequestRow; refusal: string | null; busy: boolean; open(): void; answer(text: string, body: Record<string, unknown>): Promise<void>; send?(body: Record<string, unknown>): Promise<void>; signIn?(): void; seal?(host: string, value: string): Promise<SealedKey> }) {
   const [text, setText] = useState('');
   const [note, setNote] = useState('');
   const [secret, setSecret] = useState('');
+  const [sealFault, setSealFault] = useState('');
+  const variable = row.request.variable;
   const [photo, setPhoto] = useState<{ name: string; mediaType: string; bytes: string } | null>(null);
   const check = row.rule === humanProofRule.kind;
   // No answer goes out while the chosen photo is being read or could not be read, so one never loses it silently.
@@ -110,8 +119,13 @@ export function RequestCard({ row, refusal, busy, open, answer, send, signIn }: 
   // when the request is no longer open. A credential cleared while its request still stands may
   // be unrecoverable, so a failed submission keeps every field for the retry.
   const submit = (body: Record<string, unknown>) => { if (text.trim()) void answer(text.trim(), body); };
-  const choose = (choice: HumanOnlyChoice) => {
-    const body = { ...choice.body, ...(choice.note && note.trim() ? { [choice.note]: note.trim() } : {}), ...(choice.input === 'secret' ? { secret } : {}), ...(photo ? { photo } : {}) };
+  const choose = async (choice: HumanOnlyChoice) => {
+    let value: Record<string, unknown> = choice.input === 'secret' ? { secret } : {};
+    if (choice.input === 'secret' && variable) {
+      setSealFault('');
+      try { value = { sealedValue: await seal!(row.request.sealHost!, secret) }; } catch (error) { setSealFault(error instanceof Error ? error.message : String(error)); return; }
+    }
+    const body = { ...choice.body, ...(choice.note && note.trim() ? { [choice.note]: note.trim() } : {}), ...value, ...(photo ? { photo } : {}) };
     void (send ? send(body) : answer('', body));
   };
   const ready = (choice: HumanOnlyChoice) => !busy && photoRead !== 'reading' && photoRead !== 'failed' && (choice.input !== 'text' || !!note.trim()) && (choice.input !== 'secret' || !!secret);
@@ -124,7 +138,8 @@ export function RequestCard({ row, refusal, busy, open, answer, send, signIn }: 
     <p className="muted human-kind">{row.decision} · asked by {row.request.requestedBy}</p>
     {refusal ? <div className="login-actions"><p className="muted">This session cannot answer it: {shortShas(refusal)}.</p>{signIn && <button type="button" onClick={signIn}>{signInAction}</button>}</div> : <>
       {choices.length > 0 && <form onSubmit={event => { event.preventDefault(); if (recommended && ready(recommended)) choose(recommended); }}>
-        {choices.some(choice => choice.input === 'secret') && <label>Value to provide (sealed to the requesting host, never stored as typed)<input type="password" autoComplete="off" value={secret} onChange={event => setSecret(event.target.value)}/></label>}
+        {choices.some(choice => choice.input === 'secret') && <label>{variable ? `Value of ${variable} (sealed in this browser; the loop sets it in every environment and no agent sees it)` : 'Value to provide (sealed to the requesting host, never stored as typed)'}<input type="password" autoComplete="off" value={secret} onChange={event => setSecret(event.target.value)}/></label>}
+        {sealFault && <p role="alert" className="muted">{sealFault}</p>}
         {choices.some(choice => choice.note) && <textarea aria-label={`Note for ${row.work}`} placeholder="Note (optional; needed for a choice ending in …)" value={note} onChange={event => setNote(event.target.value)} rows={2}/>}
         {check && <label>Photo (optional)<input type="file" accept="image/png,image/jpeg" onChange={event => choosePhoto(event.target.files?.[0] ?? null)}/></label>}
         {photoRead === 'failed' && <p role="alert" className="muted">That photo could not be read. Choose it again or clear it to answer.</p>}

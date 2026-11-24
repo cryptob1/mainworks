@@ -13,18 +13,20 @@ const featureMap = z.array(z.object({
   command: z.string().trim().min(1).optional(),
   traps: z.array(z.string()),
 }).strict().refine(feature => !!(feature.url || feature.command), 'A feature needs a URL path or command')).min(1);
+/** A deployed environment's name, and a variable's name: letters, digits and _. */
+export const runtimeEnvironmentName = z.string().regex(/^[a-z0-9][a-z0-9-]*$/);
+export const variableName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, 'A variable name is letters, digits and _');
 /**
- * Where each deployed environment keeps its variables (runtime-check.ts): the platform and the
- * secrets' source in plain words, and per environment a command that prints the variable names it
- * holds and the names it must hold. Names only; the check never reads or keeps a value.
+ * What each deployed environment must hold (runtime-check.ts): the platform and the secrets'
+ * source in plain words, and per environment the variable names it needs. Names only. The
+ * commands that list and set them live in the install's own runtime.json, never here: this file
+ * is the candidate's, and a command here would run with the platform login.
  */
 const runtime = z.object({
   platform: z.string().trim().min(1).max(100),
   secrets: z.string().trim().min(1).max(500),
-  environments: z.record(z.string().regex(/^[a-z0-9][a-z0-9-]*$/), z.object({
-    variables: z.string().trim().min(1),
-    required: z.array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, 'A variable name is letters, digits and _')),
-  }).strict()).refine(environments => Object.keys(environments).length > 0, 'Name at least one environment'),
+  environments: z.record(runtimeEnvironmentName, z.object({ required: z.array(variableName) }).strict())
+    .refine(environments => Object.keys(environments).length > 0, 'Name at least one environment'),
 }).strict();
 export const repositoryConfigSchema = z.object({
   featureMap: featureMap.optional(),

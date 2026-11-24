@@ -7,7 +7,8 @@ import { z } from 'zod';
 import { activeLease, demand, operatorScopeIncludes, type Principal, type Work } from '../model.js';
 import { capacityEventSchema } from '../model-boundary/capacity.js';
 import { capacityRetryAt, capacitySignature, retainedExhaustions, type CapacityState, type ExhaustionRecord } from '../model/capacity.js';
-import { describeHumanRequest, humanDecisionLabel, humanOnlyRefusal, humanProofRule, humanRequestBlocker, openHumanOnly, parkRefusal, parkRule, recommendationIssues, retainedHumanRequests, type HumanOnlySubject, type HumanRequest } from '../model/human-request.js';
+import { runtimeEnvironmentName } from '../model-boundary/documentation.js';
+import { describeHumanRequest, runtimeVariableBlocker, humanDecisionLabel, humanOnlyRefusal, humanProofRule, humanRequestBlocker, openHumanOnly, parkRefusal, parkRule, recommendationIssues, retainedHumanRequests, type HumanOnlySubject, type HumanRequest } from '../model/human-request.js';
 import { humanRequestSchema } from '../model-boundary/human-request.js';
 import { humanAnswerSchema } from '../model-boundary/human-answer.js';
 import { resolveHumanAnswer } from '../model/human-answer.js';
@@ -77,7 +78,7 @@ export async function requestHumanDecision(services: Services, actor: Principal,
     // The requester's choices are kept as they chose them; a request without any offers its kind's defaults (`requestChoices`).
     const request: HumanRequest = { id: randomUUID(), kind: data.kind, reason: data.reason, needed: data.needed, requestedBy: actor.id, epoch: data.epoch, at: now.toISOString(),
       ...(data.ask ? { ask: data.ask } : {}), ...(data.steps ? { steps: data.steps } : {}), ...(data.why ? { why: data.why } : {}), recommendation: data.recommendation,
-      ...(data.choices ? { choices: data.choices } : {}), ...(data.sealTo ? { sealTo: data.sealTo } : {}) };
+      ...(data.choices ? { choices: data.choices } : {}), ...(data.sealTo ? { sealTo: data.sealTo } : {}), ...(data.variable ? { variable: data.variable, sealHost: data.sealHost } : {}) };
     work!.humanRequest = request;
     work!.blocker = describeHumanRequest(request);
     work!.blockedAt = now.toISOString();
@@ -114,11 +115,41 @@ export async function answerHumanDecision(services: Services, actor: Principal, 
     const resolved = resolveHumanAnswer(request!, data);
     const sealed = resolved.secret ? sealToHost(request!.sealTo!, data.secret!) : null;
     const answered: HumanRequest = { ...request!, answer: { by: actor.id, at: now.toISOString(), outcome: resolved.outcome, text: resolved.text, waitedMs: Math.max(0, now.getTime() - Date.parse(request!.at)),
-      ...(data.ownerSaid ? { ownerSaid: data.ownerSaid } : {}), ...(resolved.choice ? { choice: resolved.choice, note: resolved.note } : {}), ...(sealed ? { sealed } : {}) } };
+      ...(data.ownerSaid ? { ownerSaid: data.ownerSaid } : {}), ...(resolved.choice ? { choice: resolved.choice, note: resolved.note } : {}), ...(sealed ? { sealed } : {}), ...(resolved.sealedValue ? { sealedValue: data.sealedValue } : {}) } };
     work!.humanRequests = [...(work!.humanRequests ?? []), answered].slice(-retainedHumanRequests);
     work!.humanRequest = null;
-    if (work!.blocker?.startsWith(humanRequestBlocker) || reversing) { work!.blocker = resolved.outcome === 'provided' ? null : `A human declined ${humanDecisionLabel[answered.kind]} for this item: ${resolved.text}`.slice(0, 2000); work!.blockedAt = work!.blocker ? now.toISOString() : null; }
-    return commit(services, db, now, work!, all, actor, 'human.answered', { request: answered, resumed: resolved.outcome === 'provided' });
+    // A provided variable resumes the item only once the loop has set it (recordVariableApplied).
+    const waitsOnLoop = resolved.sealedValue && resolved.outcome === 'provided';
+    if (work!.blocker?.startsWith(humanRequestBlocker) || reversing) { work!.blocker = waitsOnLoop ? `${runtimeVariableBlocker} ${answered.variable} in every environment` : resolved.outcome === 'provided' ? null : `A human declined ${humanDecisionLabel[answered.kind]} for this item: ${resolved.text}`.slice(0, 2000); work!.blockedAt = work!.blocker ? now.toISOString() : null; }
+    return commit(services, db, now, work!, all, actor, 'human.answered', { request: { ...answered, answer: { ...answered.answer!, ...(answered.answer!.sealedValue ? { sealedValue: 'sealed' } : {}) } }, resumed: resolved.outcome === 'provided' && !waitsOnLoop });
+  }));
+}
+
+const variableAppliedSchema = z.object({ request: z.string().uuid(), environments: z.array(runtimeEnvironmentName).max(50), error: z.string().trim().min(1).max(500).optional() }).strict();
+
+/**
+ * The loop records what it did with a provided variable (runtime-check.ts `setVariable`): the
+ * ciphertext is dropped either way. Set everywhere, the item resumes; otherwise the request opens
+ * again with the reason, so the owner provides it once the cause is fixed.
+ */
+export async function recordVariableApplied(services: Services, actor: Principal, id: string, body: unknown, key: string) {
+  const data = variableAppliedSchema.parse(body);
+  return services.engine.store.transaction(async (db, now) => once(db, actor, key, { id, data }, async () => {
+    demand(actor.role === 'coordinator', 'Only the loop records a variable it set', 403);
+    const { work, all } = await findWork(db, id); demand(work, 'Work item not found', 404);
+    const index = work!.humanRequests?.findLastIndex(entry => entry.id === data.request && entry.answer?.sealedValue) ?? -1;
+    demand(index >= 0, `${work!.key} has no provided variable ${data.request} waiting for the loop`, 409);
+    const answered = work!.humanRequests![index]!;
+    const applied = { at: now.toISOString(), environments: data.environments, ...(data.error ? { error: data.error } : {}) };
+    work!.humanRequests![index] = { ...answered, answer: { ...answered.answer!, sealedValue: null, applied } };
+    if (data.error) {
+      const { answer: _answer, ...asked } = answered;
+      const reopened: HumanRequest = { ...asked, id: randomUUID(), at: now.toISOString(), reason: `${asked.reason} The last value was not set: ${data.error}`.slice(0, 2000) };
+      work!.humanRequest = reopened;
+      work!.blocker = describeHumanRequest(reopened);
+      work!.blockedAt = now.toISOString();
+    } else if (work!.blocker?.startsWith(runtimeVariableBlocker)) { work!.blocker = null; work!.blockedAt = null; }
+    return commit(services, db, now, work!, all, actor, data.error ? 'variable.failed' : 'variable.applied', { request: data.request, variable: answered.variable, ...applied });
   }));
 }
 

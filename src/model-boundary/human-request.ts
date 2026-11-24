@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { genericChoiceIssues, humanDecisionKinds } from '../model/human-request.js';
 import { shortAskIssues } from '../model/human-ask.js';
+import { variableName } from './documentation.js';
 /**
  * One ready-made answer the requester offers (GY-738): a button on the card. `text` asks for the
  * operator's own words beside it (a different cap); `secret` asks for a value that is sealed to
@@ -29,7 +30,15 @@ export const humanRequestSchema = z.object({
   choices: z.array(humanChoiceSchema).min(1).max(6).refine(choices => new Set(choices.map(choice => choice.id)).size === choices.length, 'Choice ids must be distinct').optional(),
   /** The requesting host's public key (PEM): a `secret` choice's value is sealed to it. */
   sealTo: z.string().trim().min(1).max(4000).optional(),
-}).strict().refine(data => data.sealTo || !data.choices?.some(choice => choice.input === 'secret'), 'A secret choice needs sealTo, the requesting host\'s public key')
+  /**
+   * A deployed environment variable the human provides (runtime-check.ts): the browser seals its
+   * value to `sealHost`'s connect key, and the loop on that host sets it in every environment.
+   * No agent, the requester included, ever reads it.
+   */
+  variable: variableName.optional(),
+  sealHost: z.string().trim().min(1).max(200).optional(),
+}).strict().refine(data => data.sealTo || data.variable || !data.choices?.some(choice => choice.input === 'secret'), 'A secret choice needs sealTo, the requesting host\'s public key')
+  .refine(data => !data.variable || data.sealHost, 'A variable request names the host whose loop sets it (sealHost)')
   .superRefine((data, context) => {
     for (const message of [...shortAskIssues(data), ...genericChoiceIssues(data.choices)]) context.addIssue({ code: 'custom', message });
   });

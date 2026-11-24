@@ -8,7 +8,7 @@ import { RenewalFault, type Command } from '../../engine.js';
 import { leaseCommands } from '../../store/pools.js';
 import { producerIndependenceRefusal, recordEvidenceRefusal, recordLeadViolation } from '../../delegation.js';
 import { defineRoutes, parseJson, Sent, type RouteContext } from '../routes.js';
-import { answerHumanDecision, answerHumanProof, listHumanRequests, requestHumanProof, recordCapacity, requestHumanDecision } from '../waits.js';
+import { answerHumanDecision, recordVariableApplied, answerHumanProof, listHumanRequests, requestHumanProof, recordCapacity, requestHumanDecision } from '../waits.js';
 import { judgeClosedQuestion } from '../closed-question.js';
 import { closeWork } from '../close.js';
 import { unownedFamilySql } from '../../store/tables/work.js';
@@ -76,12 +76,13 @@ export const workRoutes = defineRoutes('work', [
   // (`capacity`). They precede the generic route, which would read them as commands.
   { method: 'GET', path: '/api/human-requests', handle: ({ actor, services }) => listHumanRequests(services, actor) },
   {
-    method: 'POST', path: /^\/api\/work\/([^/]+)\/(park|answer|capacity)$/,
+    method: 'POST', path: /^\/api\/work\/([^/]+)\/(park|answer|capacity|variable-applied)$/,
     async handle(context, [id, action]) {
       await refuseLead(context, id, action);
       const data = await parseJson(context), key = context.idempotencyKey(), target = decodeURIComponent(id);
       return action === 'park' ? requestHumanDecision(context.services, context.actor, target, data, key)
         : action === 'answer' ? answerHumanDecision(context.services, context.actor, target, data, key, await installAddress(context))
+        : action === 'variable-applied' ? recordVariableApplied(context.services, context.actor, target, data, key)
         : recordCapacity(context.services, context.actor, target, data, key);
     },
   },

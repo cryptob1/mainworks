@@ -17,6 +17,7 @@ import { herdrServerSeen, herdrTarget } from '../../master/herdr.js';
 import { unhandled, type MasterSession } from './session.js';
 import { exitWhenStopped, recordingLockRefusal } from '../../master/loop-restart.js';
 import { processConnectAccounts } from '../../master/connect-accounts.js';
+import { applyRuntimeVariables } from '../../master/runtime-variables.js';
 import { syncTeamAccess } from '../../master/team-access.js';
 import { reportOpenIssues } from '../../master/first-run-issues.js';
 import { recordRunningPin } from '../../master/known-good.js';
@@ -94,6 +95,9 @@ export async function loopCommand(session: MasterSession): Promise<unknown> {
       processConnectAccounts(current(), { checkouts: [root] }).catch(error => console.error(`[mainworks-master] connect-account worker: ${error instanceof Error ? error.message : String(error)}`))
         // GY-3294: and carries Setup's team access to this machine's shared record and back (a server without the routes answers 404).
         .then(() => syncTeamAccess(current())).catch(error => { if (error?.status !== 404) console.error(`[mainworks-master] team access: ${error instanceof Error ? error.message : String(error)}`); })
+        // And sets each variable the owner provided on Needs you, sealed to this host (runtime-check.ts).
+        .then(() => applyRuntimeVariables(current())).then(reports => reports.forEach(report => console.error(`[mainworks-master] ${report.work}: ${report.variable} ${report.error ? `not set: ${report.error}` : `set in ${report.environments.join(', ')}`}`)))
+        .catch(error => console.error(`[mainworks-master] runtime variables: ${error instanceof Error ? error.message : String(error)}`))
         .finally(() => { connecting = false; });
     }, 15_000);
     connects?.unref?.();
