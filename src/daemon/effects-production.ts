@@ -60,6 +60,7 @@ import { deployRecordPath, readDeployRecord } from '../deploy-watch.js';
 import { mainworksVolumes, measureDiskUseByKind, reclaimMainworksLeftovers, reclaimJobLeftovers, stopOrphanTrialContainers, trialContainerMaxAgeMs } from './disk-headroom.js';
 import { dataDirectory } from '../install/worktree-root.js';
 import { durableTemporaryRoot, trialCheckoutRoots } from '../merge-writer/trial.js';
+import { warmCommitOnHosts } from '../merge-writer/remote-shards.js';
 import { installDirectory, readInstallRecord } from '../install/secrets.js';
 import { installIdFor } from '../install/types.js';
 import { eventStageBackfill } from './event-stage-backfill.js';
@@ -246,7 +247,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     // GY-3188: hourly, so the builder and Docker are not asked every cycle.
     reclaimJobLeftovers: async () => { if (Date.now() - leftoversSweptAt < 3_600_000) return []; leftoversSweptAt = Date.now(); return reclaimJobLeftovers(run); },
     usage: master => collectUsage(root, current(), master),
-    backfillEventStage: eventStageBackfill(limit => mutate('events/backfill-stage', { limit }, randomUUID())),
+    backfillEventStage: eventStageBackfill((limit, recount) => mutate('events/backfill-stage', recount ? { limit, recount: true } : { limit }, randomUUID())),
     // GY-3334: hourly, like the job leftovers: the walk reads /proc and every release copy.
     sweepCliReleases: async () => {
       if (Date.now() - releasesSweptAt < 3_600_000) return { removed: [], bytes: 0, left: [] };
@@ -312,7 +313,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
         serveRecord: async () => { const record = readServeRecord(serveRecordPath(root)); return record?.commit ? { commit: record.commit, check: record.check ?? null } : null; },
         ...(createWork ? { createWork,
           attest: (work: Work, proof: string, reason: string, idempotencyKey: string) => asOperatorAgent(`work/${work.id}/evidence`, intentInput('attest', work, { proof, reason }), idempotencyKey) } : {}),
-        gate: { root, repository: config.repository, previews: (commit: string) => runServedPreviewCases({ root, commit }), onboarding: (commit: string) => runOnboardingTime({ root, commit }) },
+        gate: { root, repository: config.repository, previews: (commit: string) => runServedPreviewCases({ root, commit }), onboarding: (commit: string) => runOnboardingTime({ root, commit }), warmImage: (commit: string) => warmCommitOnHosts({ root, commit, run }) },
       };
     },
     adoptRuns: loopRunAdoption(root, current, deps.fetcher),

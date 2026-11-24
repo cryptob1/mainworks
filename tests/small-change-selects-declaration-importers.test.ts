@@ -154,8 +154,8 @@ test('unit:small-change-selects-declaration-importers — a rerun of a failing f
   };
   try {
     await runMergeTrial({ root: base, base, mergeSha: 'a'.repeat(40), baseTip: 'b'.repeat(40), changedFiles: ['src/common.ts'], proofs: ['unit:widen-proof'], proofFiles: ['tests/proof.test.ts'], timeoutMs: 60_000, key: 'GY-1', temporaryRoots: [await temporaryDirectory('declaration-importers-tmp')], checkoutRoots: [], run: run as never, remove: async () => {}, cores: 2 });
-    assert.ok(envs.length > 1, 'the failing file was rerun');
-    assert.deepEqual(envs.map(env => env.GRAPHYARD_SELECTION_IMPORTERS), ['1', ...envs.slice(1).map(() => undefined)], 'only the trial itself narrows');
+    assert.ok(runs > 1, 'the failing file was rerun');
+    assert.deepEqual(envs.map(env => env.GRAPHYARD_SELECTION_IMPORTERS), ['1'], 'the rerun runs the failing file with no selection of its own (GY-3787)');
     const { readTestSelections } = await import('../src/merge-writer/test-selection.js');
     assert.equal(readTestSelections(base).length, 1, 'a rerun records no selection share');
   } finally { await rm(base, { recursive: true, force: true }); }

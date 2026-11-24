@@ -1,0 +1,11 @@
+{
+  "id": "backfill-faster",
+  "title": "The stage backfill counts remaining rows once per loop start and uses 3 s batches",
+  "description": "On a running test install, the stage backfill reaches zero remaining with one full count logged and no backfill statement over 5 seconds.",
+  "tags": ["api", "events", "regression"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "the backfill reaches zero remaining with one full count logged and no backfill statement over 5 seconds", "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:backfill-faster tests/backfill-faster.test.ts", "timeoutSeconds": 900 }
+  ]
+}

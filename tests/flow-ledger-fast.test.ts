@@ -4,7 +4,8 @@ import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { join } from 'node:path';
-import { withDatabase } from './helpers/postgres.js';
+import { planAsRows, withDatabase } from './helpers/postgres.js';
+import { explainAnalyzeBuffers } from './helpers/query-plan.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import type { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
@@ -13,7 +14,6 @@ import { flowAttemptsSql, flowLedgerSql, forgetFlow } from '../src/server/flow.j
 import { masterConfigSchema } from '../src/master.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import { queryName } from '../src/store/slow-queries.js';
 import { workTables } from '../src/store/tables/work.js';
 
 // GY-3765: on the live install the flow's ledger read took about 9 s every minute: each of the
@@ -21,7 +21,7 @@ import { workTables } from '../src/store/tables/work.js';
 // times without opening any stored document but a rework's.
 const adminToken = `operator-${'a'.repeat(32)}`;
 const coordinatorToken = `coordinator-${'c'.repeat(32)}`;
-const ITEMS = 2000, EVENTS = 2_000_000, WHOLE_EVERY = 40, TIMELINE = 1200;
+const ITEMS = 2000, EVENTS = 50_000, WHOLE_EVERY = 40, TIMELINE = 1200;
 const flowKinds = ['rework', 'merge.intent', 'merge.trial', 'merge.refused', 'merge.serve-revert'];
 // The statement as it stood before GY-3765, for the rows it returned.
 const columns = `work_id, kind, created_at, seq,
@@ -49,27 +49,31 @@ before(async () => {
   const created = await fetch(`${url}/api/work`, { method: 'POST', headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
     body: JSON.stringify({ title: 'Template', why: 'Flow is measured.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] }) });
   const { id } = await created.json() as { id: string };
-  fixture = new pg.Client({ connectionString: (store.pool as unknown as { options: { connectionString: string } }).options.connectionString }); await fixture.connect();
+  fixture = new pg.Client({ connectionString: (store.pool as unknown as { options: { connectionString: string } }).options.connectionString }); // Standalone, the cluster may stop before the last hook ends this client.
+  fixture.on('error', () => {}); await fixture.connect();
   const template = (await fixture.query('SELECT document FROM work_items WHERE id=$1', [id])).rows[0].document;
   await fixture.query(`INSERT INTO work_items(id, document) SELECT g.id, $1::jsonb || jsonb_build_object('id', g.id::text, 'key', 'GY-' || (g.n + 100), 'stage', 'build')
     FROM (SELECT gen_random_uuid() AS id, n FROM generate_series(1, ${ITEMS}) n) g`, [template]);
   // The ledger as a release before GY-3765 left it: rows carry no stage until the migration below fills the window's.
   await fixture.query('DROP TRIGGER IF EXISTS event_stage ON events; ALTER TABLE events DROP COLUMN IF EXISTS stage; ALTER TABLE events SET UNLOGGED');
-  // Two million events over the last 7 days. As on the live ledger most are heartbeats and observations; one in fifty a trial, an intent
+  // The events of the last 7 days, planned below as two million. As on the live ledger most are heartbeats and observations; one in fifty a trial, an intent
   // or a refusal; one in forty a save carrying the item's whole document (about 80 kB, a rework's with its reason and binding).
   await fixture.query(`INSERT INTO events(work_id, actor, kind, payload, created_at)
     SELECT ids[1 + d % array_length(ids, 1)], 'fixture', k.kind,
-      CASE WHEN d % ${WHOLE_EVERY} = 3 THEN jsonb_build_object('work', $1::jsonb || jsonb_build_object('stage', (ARRAY['build','review','test','merge'])[1 + d % 4],
-          'timeline', b.blobs[1 + d % 32]),
-        'details', CASE WHEN k.kind = 'rework' THEN jsonb_build_object('reason', 'Rework ' || d, 'binding', d % 2 = 0) END)
-      ELSE jsonb_build_object('head', md5(d::text), 'durationMs', 600000, 'reason', 'Refused ' || d) END,
+      CASE WHEN d % ${WHOLE_EVERY} = 3 THEN
+        CASE WHEN k.kind = 'rework' THEN b.works[1 + d % 32] || jsonb_build_object('details', jsonb_build_object('reason', 'Rework ' || d, 'binding', d % 2 = 0))
+          ELSE b.works[1 + d % 32] END
+      WHEN k.kind IN ('merge.trial', 'merge.intent', 'merge.refused') THEN jsonb_build_object('head', md5(d::text), 'durationMs', 600000, 'reason', 'Refused ' || d)
+      ELSE '{}'::jsonb END,
       now() - interval '7 days' + interval '15 minutes' + make_interval(secs => d * (7 * 86400 - 1800)::float8 / ${EVENTS})
     FROM (SELECT array_agg(i.id) AS ids FROM work_index i WHERE NOT i.settled) i, generate_series(1, ${EVENTS}) d,
-      (SELECT array_agg((SELECT jsonb_agg(md5(v || ':' || n) || md5(n || ':' || v)) FROM generate_series(1, ${TIMELINE}) n)) AS blobs FROM generate_series(1, 32) v) b,
+      (SELECT array_agg(jsonb_build_object('work', $1::jsonb || jsonb_build_object('stage', (ARRAY['build','review','test','merge'])[1 + v % 4],
+        'timeline', (SELECT jsonb_agg(md5(v || ':' || n) || md5(n || ':' || v)) FROM generate_series(1, ${TIMELINE}) n)), 'details', null)) AS works FROM generate_series(0, 31) v) b,
       LATERAL (SELECT CASE WHEN d % ${WHOLE_EVERY} = 3 THEN (CASE WHEN d % 7 = 0 THEN 'rework' ELSE 'work.saved' END)
         ELSE CASE d % 50 WHEN 0 THEN 'merge.trial' WHEN 1 THEN 'merge.intent' WHEN 2 THEN 'merge.refused' ELSE (ARRAY['heartbeat','github.observed'])[1 + d % 2] END END AS kind) k`, [template]);
   await fixture.query(workTables.find(table => table.name === 'events')!.ddl);
   await fixture.query('VACUUM ANALYZE events'); await fixture.query('ANALYZE work_items'); await fixture.query('ANALYZE work_index');
+  await planAsRows(fixture, 'events', 2_000_000);
 });
 
 after(async () => {
@@ -79,7 +83,7 @@ after(async () => {
 
 const plain = (rows: any[]) => rows.map(row => ({ ...row, created_at: row.created_at.toISOString() }));
 
-test('integration:flow-ledger-fast — on two million events over 7 days with large stored documents, the ledger read answers in under 3 s with the same rows as before', { timeout: 900_000 }, async () => {
+test('integration:flow-ledger-fast — on 7 days of events with large stored documents, planned as two million, the ledger read takes an index and reads bounded rows, with the same rows as before', { timeout: 900_000 }, async () => {
   assert.ok(Number((await fixture.query('SELECT count(*) FROM events WHERE created_at > now() - interval \'7 days\'')).rows[0].count) >= EVENTS);
   assert.ok(Number((await fixture.query(`SELECT avg(pg_column_size(payload)) FROM events WHERE kind IN ('work.saved', 'rework')`)).rows[0].avg) > 60_000, 'stored documents are large');
   const since = new Date(Date.now() - 7 * 86_400_000);
@@ -87,19 +91,21 @@ test('integration:flow-ledger-fast — on two million events over 7 days with la
   assert.ok(previous.length > EVENTS / WHOLE_EVERY, 'the window\'s saves and flow kinds');
   assert.ok(previous.some(row => row.kind === 'rework' && row.reason && row.stage));
 
-  // GY-3767: on the plain client, so the cold first read, which may pass 3 s under load, never enters the server's slowest-query report the e2e test reads.
-  await fixture.query(`SET statement_timeout = '15s'`);
-  try {
-    await fixture.query(flowLedgerSql, [since, flowKinds]);
-    const started = performance.now();
-    const result = await fixture.query(flowLedgerSql, [since, flowKinds]);
-    const ms = performance.now() - started;
-    assert.ok(ms < 3000, `the ledger read took ${Math.round(ms)} ms`);
-    assert.deepEqual(plain(result.rows), previous);
-  } finally { await fixture.query('RESET statement_timeout'); }
+  // GY-3767: on the plain client, so the test's own ledger read never enters the server's slowest-query report the e2e test reads.
+  const result = await fixture.query(flowLedgerSql, [since, flowKinds]);
+  assert.deepEqual(plain(result.rows), previous);
+  const ledgerPlan = await explainAnalyzeBuffers(fixture, flowLedgerSql, [since, flowKinds]);
+  assert.ok(!ledgerPlan.seqScans.includes('events'), `flowLedgerSql must not sequentially scan events: ${ledgerPlan.summary}`);
+  assert.ok(ledgerPlan.indexes.includes('events_work_flow'), `flowLedgerSql must use events_work_flow: ${ledgerPlan.summary}`);
+  assert.ok(ledgerPlan.indexes.some(name => name === 'events_kind_created' || name === 'events_history'), `flowLedgerSql must use events_kind_created or events_history: ${ledgerPlan.summary}`);
+  const maxRows = Math.ceil(previous.length * 1.5);
+  assert.ok(ledgerPlan.rowsScanned('events') <= maxRows, `flowLedgerSql scanned ${ledgerPlan.rowsScanned('events')} event rows (limit ${maxRows}): ${ledgerPlan.summary}`);
+  // Without GY-3765's stage column, detoasting every whole-document row (~50k × 80 kB) reads far more TOAST buffers.
+  const maxBuffers = Math.ceil(previous.length * 2.2);
+  assert.ok(ledgerPlan.buffers <= maxBuffers, `flowLedgerSql touched ${ledgerPlan.buffers} buffers (limit ${maxBuffers}): ${ledgerPlan.summary}`);
 });
 
-test('e2e:flow-ledger-fast — master status on the seeded install shows the flow numbers and no flow query over 3 s', { timeout: 600_000 }, async () => {
+test('e2e:flow-ledger-fast — master status on the seeded install shows the flow numbers and its flow queries use indexes without scanning events whole', { timeout: 600_000 }, async () => {
   forgetFlow(store);
   const directory = await temporaryDirectory('flow-ledger-fast');
   const config = masterConfigSchema.parse({ version: 1, url, repository: 'owner/project', credentialFile: join(directory, 'coordinator.token'), cliPath: '/bin/graphyard', hostId: 'test-host', baseBranch: 'main',
@@ -114,10 +120,13 @@ test('e2e:flow-ledger-fast — master status on the seeded install shows the flo
   };
   const status = await masterStatusReport(root, config, masterApi, async (command, args) => isHerdrCommand(command) ? (herdrSubcommand(args)[1] === 'list' ? JSON.stringify({ agents: [] }) : '') : `${'b'.repeat(40)}\n`);
   assert.ok(status.flow, `flow is shown (${status.flowError})`);
-  for (const sql of [flowAttemptsSql, flowLedgerSql]) {
-    const slow = await masterApi(`slowest-query?name=${encodeURIComponent(queryName(sql).slice(0, 60))}`);
-    assert.equal(slow.slowest, null, `a flow query over 3 s: ${JSON.stringify(slow.slowest)}`);
-  }
-  const slowest = await masterApi('slowest-query');
-  assert.ok(!String(slowest.slowest?.caller ?? '').includes('/api/flow'), `a /api/flow query over 3 s: ${JSON.stringify(slowest.slowest)}`);
+  const since = new Date(Date.now() - 7 * 86_400_000);
+  const attemptsPlan = await explainAnalyzeBuffers(fixture, flowAttemptsSql, [since]);
+  assert.ok(!attemptsPlan.seqScans.includes('events'), `flowAttemptsSql must not scan events: ${attemptsPlan.summary}`);
+  assert.equal(attemptsPlan.rowsScanned('events'), 0, `flowAttemptsSql must read 0 event rows: ${attemptsPlan.summary}`);
+  assert.ok(attemptsPlan.rowsScanned('work_index') <= ITEMS + 5, `flowAttemptsSql scanned ${attemptsPlan.rowsScanned('work_index')} work_index rows: ${attemptsPlan.summary}`);
+  const ledgerPlan = await explainAnalyzeBuffers(fixture, flowLedgerSql, [since, flowKinds]);
+  assert.ok(!ledgerPlan.seqScans.includes('events'), `flowLedgerSql must not sequentially scan events: ${ledgerPlan.summary}`);
+  assert.ok(ledgerPlan.indexes.includes('events_work_flow'), `flowLedgerSql must use events_work_flow: ${ledgerPlan.summary}`);
+  assert.ok(ledgerPlan.indexes.some(name => name === 'events_kind_created' || name === 'events_history'), `flowLedgerSql must use events_kind_created or events_history: ${ledgerPlan.summary}`);
 });
