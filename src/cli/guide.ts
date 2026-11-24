@@ -1,5 +1,4 @@
 import { defineCommands } from './registry.js';
-import { guideList, guideText } from '../guide.js';
 import { PRODUCT_NAME } from '../model/product.js';
 
 /**
@@ -17,6 +16,9 @@ export const guideCommands = defineCommands([
       '                                guide with no topic lists them; guide master says how',
       `                                Railway deploys apps from git and ${PRODUCT_NAME} observes each versionUrl`,
     ],
-    async run(context) { console.log(context.id ? guideText(context.id) : guideList()); },
+    async run(context) {
+      const { guideList, guideText } = await import('../guide.js');
+      console.log(context.id ? guideText(context.id) : guideList());
+    },
   },
 ]);

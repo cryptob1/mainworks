@@ -33,14 +33,17 @@ export async function buildEntries(root) {
     const entry = join(root, 'src', `${name}.ts`), outfile = join(dist, `${name}.mjs`);
     const { outputFiles } = await build({
       entryPoints: [entry], outfile, write: false, bundle: true, platform: 'node', format: 'esm',
-      target: 'node24', packages: 'external', logLevel: 'warning', absWorkingDir: root,
+      target: 'node24', packages: 'external', minify: true, logLevel: 'warning', absWorkingDir: root,
       banner: { js: 'const __bundleUrl = import.meta.url;' }, define: { 'import.meta.url': '__moduleUrl' },
       plugins: [{
         name: 'source-import-meta-url',
         setup(context) {
           context.onLoad({ filter: /\.(tsx?|m?js)$/ }, async ({ path }) => {
-            const url = path === entry ? '__bundleUrl' : `new URL(${JSON.stringify(relative(dist, path).split('\\').join('/'))}, __bundleUrl).href`;
-            return { contents: `const __moduleUrl = ${url};\n${await readFile(path, 'utf8')}`, loader: path.endsWith('x') ? 'tsx' : path.endsWith('ts') ? 'ts' : 'js' };
+            const source = await readFile(path, 'utf8');
+            const prefix = path === entry || source.includes('import.meta.url')
+              ? `const __moduleUrl = ${path === entry ? '__bundleUrl' : `new URL(${JSON.stringify(relative(dist, path).split('\\').join('/'))}, __bundleUrl).href`};\n`
+              : '';
+            return { contents: `${prefix}${source}`, loader: path.endsWith('x') ? 'tsx' : path.endsWith('ts') ? 'ts' : 'js' };
           });
         },
       }],

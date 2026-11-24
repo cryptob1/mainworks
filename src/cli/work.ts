@@ -1,15 +1,8 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { caretakerRequestsFile, type CaretakerRequest } from '../master/caretaker-prompt.js';
-import { registryCommand } from './master-registry.js';
+import type { CaretakerRequest } from '../master/caretaker-prompt.js';
 import { readFile } from 'node:fs/promises';
-import { wholeDocument } from '../model/work-summary.js';
-import { inheritedObligations, proofAuthority, type Principal, type ProofAuthority } from '../model.js';
-import { withMergePipeline } from '../pipeline-speed.js';
-import { diagnose, fileConflicts, obligationLedger, proofAuthorization, proofPreview, resourceConflicts } from '../coordination.js';
-import { handoff } from '../repository-setup.js';
-import { eventHistoryLimits, parseEventHistoryFlags } from '../events-history.js';
+import type { Principal, ProofAuthority } from '../model.js';
 import { defineCommands } from './registry.js';
-import { withRisk } from '../model-boundary/risk-class.js';
 import { setting } from '../setting.js';
 
 /** Reading work: control-plane status, the ledger, diagnosis, creation and history. */
@@ -20,12 +13,18 @@ export const workCommands = defineCommands([
     help: ['  status [GY-N]                Control-plane or work status'],
     unscoped: async ({ api, print }) => print(await api('status')),
     // The risk class of the merge delta reads beside the lane (GY-1521), computed here, never stored; the merge in flight names its step and elapsed time the same way (GY-2963).
-    run: async ({ print }, work) => print(withRisk(withMergePipeline(work))),
+    run: async ({ print }, work) => {
+      const [{ withRisk }, { withMergePipeline }] = await Promise.all([import('../model-boundary/risk-class.js'), import('../pipeline-speed.js')]);
+      return print(withRisk(withMergePipeline(work)));
+    },
   },
   {
     name: 'diagnose',
     help: ['  diagnose GY-N                Explain blockers, overlap and required proof'],
     async run({ id, api, print }) {
+      const [{ wholeDocument }, { inheritedObligations, proofAuthority }, { diagnose, fileConflicts, proofAuthorization, proofPreview }] = await Promise.all([
+        import('../model/work-summary.js'), import('../model.js'), import('../coordination.js'),
+      ]);
       const snapshot = await api('work-snapshot'), listed = snapshot.work.find((w: any) => w.id === id || w.key === id);
       if (!listed) throw new Error(`Unknown work item ${id}`);
       // A settled delivery is a summary in the snapshot (GY-422); its diagnosis reads the whole document.
@@ -42,7 +41,10 @@ export const workCommands = defineCommands([
   {
     name: 'obligations',
     help: ['  obligations                  List every deferred bootstrap proof still owed and who inherits it'],
-    run: async ({ api, print }) => print(obligationLedger((await api('work-snapshot')).work)),
+    run: async ({ api, print }) => {
+      const { obligationLedger } = await import('../coordination.js');
+      return print(obligationLedger((await api('work-snapshot')).work));
+    },
   },
   {
     name: 'list',
@@ -53,6 +55,7 @@ export const workCommands = defineCommands([
     name: 'next',
     help: [],
     async run({ api, print }) {
+      const { resourceConflicts } = await import('../coordination.js');
       const snapshot = await api('work-snapshot'); const items = snapshot.work;
       return print(items.filter((w: any) => w.stage !== 'done' && w.ready && !w.blocker && (!w.submission || w.reworkRequested) && (!w.lease || Date.parse(w.lease.expiresAt) <= Date.parse(snapshot.now)) && !resourceConflicts(w, items, Date.parse(snapshot.now)).length && w.dependencies.every((d: string) => items.some((x: any) => x.id === d && x.stage === 'done'))).sort((a: any, b: any) => a.priority - b.priority));
     },
@@ -84,9 +87,13 @@ export const workCommands = defineCommands([
         const text = args[0] === '-' ? readFileSync(0, 'utf8') : readFileSync(args[0], 'utf8');
         return print(await api('caretaker/reports', { lines: text.split('\n').map(line => line.trim()).filter(Boolean) }));
       }
-      if (id === 'registry') return print(await registryCommand({ hostId: setting('HOST_ID') ?? '' }, args, { read: path => api(path), write: (path, data) => api(path, data) }));
+      if (id === 'registry') {
+        const { registryCommand } = await import('./master-registry.js');
+        return print(await registryCommand({ hostId: setting('HOST_ID') ?? '' }, args, { read: path => api(path), write: (path, data) => api(path, data) }));
+      }
       const reason = args.join(' ').trim(), [key, profile] = args;
       if ((id === 'restart' && reason || id === 'dispatch' && key && profile) && setting('TOKEN_FILE')) {
+        const { caretakerRequestsFile } = await import('../master/caretaker-prompt.js');
         const file = caretakerRequestsFile(setting('TOKEN_FILE')!);
         const requests: CaretakerRequest[] = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : [];
         requests.push(id === 'restart' ? { command: 'restart', reason } : { command: 'dispatch', key: key!, profile: profile! });
@@ -109,6 +116,7 @@ export const workCommands = defineCommands([
       const [snapshot, status] = await Promise.all([api('work-snapshot'), api('status')]);
       const work = snapshot.work.find((w: any) => w.id === id || w.key === id);
       if (!work) throw new Error(`Unknown work item ${id}`);
+      const { handoff } = await import('../repository-setup.js');
       return print(handoff(work, { ...status, now: snapshot.now }, context.individualHostId(), await context.activeCliPath()));
     },
   },
@@ -127,6 +135,7 @@ export const workCommands = defineCommands([
     ],
     unscoped: async ({ api, print }) => print(await api('events')),
     async run({ api, print, args }, work) {
+      const { eventHistoryLimits, parseEventHistoryFlags } = await import('../events-history.js');
       const { params, all } = parseEventHistoryFlags(args);
       params.set('work', work.id);
       params.set('view', 'history');

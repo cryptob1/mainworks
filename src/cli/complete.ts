@@ -504,22 +504,12 @@ export async function completePreflight(
   }
 }
 
+import { completeHelp } from './lease.js';
+
 export const completeCommand: CliCommand = {
   name: 'complete',
   scope: 'work',
-  help: [
-    '  complete GY-N EPOCH [--head [SHA]]  Submit the commit (the worktree\'s HEAD when no SHA is',
-    '                                given) and end the lease; gates decide completion. The shared',
-    '                                object store already holds it, so nothing is pushed. A submission',
-    '                                the control plane does not answer (its 120 s request bound, a',
-    '                                dropped connection) is resent under one idempotency key for up',
-    '                                to 10 minutes, so a slow plane strands no finished head. Reports',
-    '                                what mainworks verify ran on HEAD and its outcome. Refused while',
-    '                                GitHub requests are paused, it waits for the named reset and',
-    '                                submits again (bounded). Preflight refuses a missing proof id,',
-    '                                a missing feature E2E case, a base conflict, or a failing fast',
-    '                                gate before submitting; the merge trial decides the rest.',
-  ],
+  help: completeHelp,
   run: async (context, work) => {
     // GY-3330: one idempotency key for this attempt and head — a caller's GRAPHYARD_REQUEST_ID,
     // else derived — so every retry of a submission the control plane did not answer repeats the

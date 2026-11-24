@@ -1,17 +1,11 @@
 import { rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { availableRuntimes, describeMergeGate, discover, installedOnboarding } from '../onboarding.js';
-import { type DeliveryMode } from '../model/delivery-policy.js';
-import { applyProposal, loadAppliedSetup, loadProposal, saveProposal, scanProposal, setupDrift, setupRepository } from '../repository-setup.js';
-import { acquireApplyLock, applyInstall, applyRosterChange, buildPlan, installIdFor, installRequestFromArgs, prepareInstall, repositoryRoot, type InstallDependencies } from '../install/index.js';
-import { importPrincipalToken, installDirectory, readInstallRecord, recordedRoster, removeRosterEntry, rosterEntry, upsertRosterEntry } from '../install/secrets.js';
+import type { DeliveryMode } from '../model/delivery-policy.js';
+import type { InstallDependencies } from '../install/index.js';
+import type { rosterEntry } from '../install/secrets.js';
 import { defineCommands } from './registry.js';
-import { readSecretFromStdin } from './context.js';
-import { moveInstall } from '../install/move.js';
-import { upCommand } from '../up.js'; import { runDoctor } from './install-doctor.js';
 import { setting } from '../setting.js';
-import { chooseInstallLayout } from '../install/layout.js';
 
 /** GY-2009: install registers no GitHub App, so `up --reuse-app` would reuse nothing; it is refused rather than silently ignored. */
 const upAppReuseRefusal = 'mainworks up --reuse-app is refused: install registers no GitHub App and the merge writer\'s deploy key is its only GitHub access (GY-2009); rerun without --reuse-app';
@@ -30,6 +24,9 @@ export function refuseUpAppReuse(args: readonly (string | undefined)[]): void {
  * Repeating either command changes nothing and only reads the roster back.
  */
 export async function principalCommand(args: string[], dependencies: InstallDependencies & { cwd: string }) {
+  const [{ discover }, { acquireApplyLock, installIdFor, repositoryRoot }, { installDirectory, readInstallRecord, rosterEntry }] = await Promise.all([
+    import('../onboarding.js'), import('../install/index.js'), import('../install/secrets.js'),
+  ]);
   const [action, id, ...rest] = args;
   const { values } = parseArgs({ args: rest, options: { role: { type: 'string' }, 'session-kind': { type: 'string' }, grant: { type: 'string', multiple: true }, proof: { type: 'string', multiple: true }, 'token-file': { type: 'string' }, repo: { type: 'string' } }, allowPositionals: false });
   if ((action !== 'add' && action !== 'remove') || !id) throw new Error('Use principal add ID --role ROLE [--session-kind ai|human] [--grant NAME]... [--proof PATTERN]... [--token-file PATH] [--repo OWNER/NAME], or principal remove ID [--repo OWNER/NAME]');
@@ -46,6 +43,9 @@ export async function principalCommand(args: string[], dependencies: InstallDepe
   try { return await editRoster(root, directory, id, entry, dependencies, values['token-file'] ? resolve(values['token-file']) : null); } finally { await release(); }
 }
 async function editRoster(root: string, directory: string, id: string, entry: ReturnType<typeof rosterEntry> | null, dependencies: InstallDependencies & { cwd: string }, tokenSource: string | null = null) {
+  const [{ applyRosterChange, prepareInstall }, { importPrincipalToken, readInstallRecord, recordedRoster, removeRosterEntry, upsertRosterEntry }] = await Promise.all([
+    import('../install/index.js'), import('../install/secrets.js'),
+  ]);
   const record = await readInstallRecord(directory);
   if (!record) throw new Error(`No installation is recorded under ${directory}; run mainworks install --apply first`);
   const { roster, changed } = entry ? upsertRosterEntry(recordedRoster(record), entry) : removeRosterEntry(recordedRoster(record), id);
@@ -102,6 +102,7 @@ export const installCommands = defineCommands([
     readsConnection: () => false,
     async run(context) {
       refuseUpAppReuse([context.id, ...context.args]);
+      const { upCommand } = await import('../up.js');
       const result = await upCommand(context.repositoryRoot(), () => context.activeCliPath(), [context.id, ...context.args].filter((value): value is string => value !== undefined));
       context.print(result);
       if ('exitCode' in result) process.exitCode = result.exitCode;
@@ -142,8 +143,12 @@ export const installCommands = defineCommands([
       if (context.id === 'move') {
         const { values } = parseArgs({ args: context.args, options: { to: { type: 'string' }, into: { type: 'string' }, plan: { type: 'boolean' } }, allowPositionals: false });
         if (!values.to) throw new Error('Use install move --to HOST [--into DIR] [--plan]');
+        const { moveInstall } = await import('../install/move.js');
         return context.print(await moveInstall(context.repositoryRoot(), { to: values.to, ...(values.into ? { into: values.into } : {}), plan: !!values.plan }));
       }
+      const [{ applyInstall, buildPlan, installRequestFromArgs, prepareInstall }, { readSecretFromStdin }, { chooseInstallLayout }] = await Promise.all([
+        import('../install/index.js'), import('./context.js'), import('../install/layout.js'),
+      ]);
       const { values, request: inputs } = installRequestFromArgs(context.rest);
       const mergeToken = values['merge-token-stdin'] ? await readSecretFromStdin(10000) : undefined;
       if (values['merge-token-stdin'] && !mergeToken) throw new Error('--merge-token-stdin requires a nonempty token on stdin');
@@ -171,6 +176,9 @@ export const installCommands = defineCommands([
       '                                after mainworks install, --apply reuses the install\'s identities and writes no principals file',
     ],
     async run(context) {
+      const [{ availableRuntimes, describeMergeGate, installedOnboarding }, { applyProposal, loadAppliedSetup, loadProposal, saveProposal, scanProposal, setupDrift, setupRepository }, { readSecretFromStdin }] = await Promise.all([
+        import('../onboarding.js'), import('../repository-setup.js'), import('./context.js'),
+      ]);
       const { base, connection, print } = context;
       const root = context.repositoryRoot();
       const { values } = parseArgs({ args: context.rest, options: { url: { type: 'string' }, herdr: { type: 'boolean' }, 'token-stdin': { type: 'boolean' }, 'host-id': { type: 'string' }, 'cli-path': { type: 'string' }, scan: { type: 'boolean' }, apply: { type: 'boolean' },
@@ -228,7 +236,7 @@ export const installCommands = defineCommands([
       '  doctor [--profile PROFILE]   Inspect local discovery, live integration readiness and the',
       '                                readiness checklist for a completion profile',
     ],
-    async run(context) { return runDoctor(context); },
+    async run(context) { return (await import('./install-doctor.js')).runDoctor(context); },
   },
   { name: 'principal', help: ['  principal add ID --role admin|coordinator|worker|reader|producer|reporter [--session-kind ai|human]',
     '              [--grant external-runs:import|delivery:observe-sha] [--proof unit:*|integration:*|e2e:*|manual:*]...',

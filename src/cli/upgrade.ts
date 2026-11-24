@@ -15,7 +15,6 @@ import { installDirectory, readInstallRecord, type InstallRecord } from '../inst
 import { installIdFor } from '../install/types.js';
 import { localDatabaseUrl, localPaths, readLocalEnvironment } from '../install/local-runtime.js';
 import { redeployArguments } from '../install/index.js';
-import { defineCommands } from './registry.js';
 import type { ChildRun } from '../child-runner.js';
 import { deployRecordPath, releaseHandover, watchMain, type DeployWatchPorts, type StoppedPlanePorts } from '../deploy-watch.js';
 import { checkServedApp } from '../app-feature-check.js';
@@ -593,31 +592,9 @@ export async function watchPorts(input: { cliRoot: string; repoRoot: string; rep
 export const renderPlan = (plan: UpgradePlan) => [`upgrade ${plan.from.version} -> ${plan.to.version} (schema ${plan.to.schema ?? 'unknown'}; database ${plan.databaseSchema ?? 'unknown'})`,
   ...(plan.cliChanges.length ? [`refused until the CLI checkout is clean: ${plan.cliChanges.join(', ')}`] : []), ...plan.steps.map((step, index) => `${index + 1}. ${step.id.padEnd(8)} ${step.title}\n   ${step.command}`), `rollback: ${plan.rollback}`, ...(plan.rollforward ? [`from the redeploy on: ${plan.rollforward}`] : [])].join('\n');
 
-export const upgradeCommands = defineCommands([{
-  name: 'upgrade',
-  help: [
-    '  upgrade [--to VERSION] [--plan]',
-    '                                Back up the database, move the CLI checkout (then npm ci),',
-    '                                redeploy the server, restart loop and executors, refresh the',
-    '                                generated files, and check /healthz, to Mainworks\' main tip',
-    '                                (or the dated release VERSION);',
-    '                                --plan prints the steps only; a failure names its step and rollback',
-    '  upgrade --repair-identity     Restore a moved CLI release’s local commit stamp.',
-    '  upgrade --watch [--once] [--checkout DIR]',
-    '                                The deploy unit (graphyard-deploy.service): fetch origin and, for',
-    '                                each new base tip, build, restart, check /healthz, and roll back',
-    '                                to the previous tip on failure; the watch then restarts on the',
-    '                                code it served; DIR is the install\'s own checkout.',
-    '                                An install for another repository upgrades its own control plane',
-    '                                by itself: each pass (at least daily) checks the commit Mainworks\'',
-    '                                batch gate verified, as refs/graphyard/verified on Mainworks\'',
-    '                                canonical upstream — never an unverified main tip — and runs the',
-    '                                upgrade steps to exactly that commit, keeping its state in',
-    '                                .graphyard/control-plane.json (commit, last check, last update,',
-    '                                last failed step); a failed upgrade keeps the previous version and',
-    '                                retries; see `mainworks guide upgrade`',
-  ],
-  async run(context) {
+export { upgradeCommands } from './upgrade-commands.js';
+
+export async function runUpgradeCommand(context: Parameters<import('./registry.js').CliCommand['run']>[0]) {
     const flags = [context.id, ...context.args].filter((arg): arg is string => !!arg);
     if (flags.includes('--repair-identity')) {
       const root = resolve(installationRoot), commit = basename(root);
@@ -683,5 +660,4 @@ export const upgradeCommands = defineCommands([{
     if (result.ok) { await migrateHerdr(repoRoot); console.log(`upgraded to ${target.version}`); return; }
     process.exitCode = 1;
     console.error(upgradeFailure(result));
-  },
-}]);
+}

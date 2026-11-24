@@ -2,9 +2,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { z } from 'zod';
 import { defineCommands } from './registry.js';
-import { realRuntimeBinary } from '../runtime-binary.js';
 import { setting } from '../setting.js';
 
 /**
@@ -17,7 +15,6 @@ const readOnlyArgs: Record<string, (request: string) => string[]> = {
   claude: request => ['-p', '--output-format', 'text', '--allowedTools', 'Read,Grep,Glob', '--disallowedTools', 'Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Task', request],
   codex: request => ['exec', '--sandbox', 'read-only', '--skip-git-repo-check', request],
 };
-const answerSchema = z.object({ summary: z.string().trim().min(1), evidence: z.array(z.string().regex(/^\S+:\d+/, 'each entry is file:line')) });
 type Note = { summary: string; evidence: string[] } | { failure: string };
 
 function investigate(program: string, args: string[], cwd: string, boundSeconds: number): Promise<{ stdout: string; failure?: string }> {
@@ -53,10 +50,12 @@ export const askCommands = defineCommands([{
     try {
       execFileSync('tar', ['-x', '-C', checkout], { input: execFileSync('git', ['archive', head], { maxBuffer: 1 << 30 }) });
       execFileSync('chmod', ['-R', 'a-w', checkout]);
+      const { realRuntimeBinary } = await import('../runtime-binary.js');
       const run = await investigate(realRuntimeBinary(kind), readOnlyArgs[kind]!(request), checkout, bound);
       if (run.failure) note = { failure: run.failure };
       else {
-        const { jsonAnswer } = await import('../headless-session.js');
+        const [{ z }, { jsonAnswer }] = await Promise.all([import('zod'), import('../headless-session.js')]);
+        const answerSchema = z.object({ summary: z.string().trim().min(1), evidence: z.array(z.string().regex(/^\S+:\d+/, 'each entry is file:line')) });
         try { note = jsonAnswer(run.stdout, answerSchema); } catch (error) { note = { failure: `The investigator's answer could not be read: ${(error as Error).message}.` }; }
       }
     } finally {

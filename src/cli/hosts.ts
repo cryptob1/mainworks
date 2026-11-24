@@ -1,6 +1,4 @@
 import { defineCommands } from './registry.js';
-import { addHost, hostPrepareScript, localPublicKey, readHosts, removeHost, sessionHelperProblem, setHostSessions } from '../hosts.js';
-import { runRemoteSession } from '../remote-session.js';
 
 /** GY-3407: lend a spare machine's compute, nothing else; merge trials send it test shards (GY-3412). */
 export const hostCommands = defineCommands([{
@@ -19,6 +17,9 @@ export const hostCommands = defineCommands([{
   ],
   readsConnection: () => false,
   async run(context) {
+    const [{ addHost, hostPrepareScript, localPublicKey, readHosts, removeHost, sessionHelperProblem, setHostSessions }, { runRemoteSession }] = await Promise.all([
+      import('../hosts.js'), import('../remote-session.js'),
+    ]);
     const [target] = context.args;
     if (context.id === 'prepare') {
       process.stdout.write(hostPrepareScript(await localPublicKey()));

@@ -1,8 +1,4 @@
 import { defineCommands } from './registry.js';
-import { checkoutRoot } from './context.js';
-import { benchTrial, compareBenchResults, formatBenchComparison } from '../bench.js';
-import { loadStoredMasterConfig } from '../master.js';
-import { readDaemonState } from '../daemon/state.js';
 
 function flagValue(args: readonly string[], flag: string): string | undefined {
   const idx = args.indexOf(flag);
@@ -15,6 +11,7 @@ function flagValue(args: readonly string[], flag: string): string | undefined {
 /** Checks whether the install's loop currently shows a queued or in-flight merge trial. */
 async function hasQueuedTrial(root: string): Promise<boolean> {
   try {
+    const [{ loadStoredMasterConfig }, { readDaemonState }] = await Promise.all([import('../master.js'), import('../daemon/state.js')]);
     const config = await loadStoredMasterConfig(root);
     const state = await readDaemonState(root, config);
     return (state.mergeWriter.queue?.length ?? 0) > 0;
@@ -36,6 +33,7 @@ export const benchCommands = defineCommands([{
     if (context.id !== 'trial') {
       throw new Error('Usage: mainworks bench trial [--files PATH] [--ref REF] [--compare REF]');
     }
+    const [{ checkoutRoot }, { benchTrial, compareBenchResults, formatBenchComparison }] = await Promise.all([import('./context.js'), import('../bench.js')]);
     const root = await checkoutRoot(context, 'bench trial');
     const filesPath = flagValue(context.args, '--files');
     const compareRef = flagValue(context.args, '--compare');
