@@ -34,7 +34,7 @@ import { pipelineItems, pipelineTime } from '../../pipeline-speed.js';
 import { releaseCheckSince } from '../../model/incidents.js';
 import { readFlow, sharedFlow } from '../flow.js';
 import { boundedHistoryRead } from '../history-reads.js';
-import { slowestQuery } from '../../store/slow-queries.js';
+import { longestLockHold, slowestQuery } from '../../store/slow-queries.js';
 import { publicLinkOff } from './team-access.js';
 import { setting } from '../../setting.js';
 
@@ -66,7 +66,8 @@ export const statusRoutes = defineRoutes('status', [
   }, operatorVisible) },
   // GY-3757: the slowest database query of the last 10 minutes when it ran past 3 s, for master status; `name` keeps the queries whose name starts with it.
   // GY-3772: with the delta rows the stage backfill's last batch left lacking the stage, null until a batch runs.
-  { method: 'GET', path: '/api/slowest-query', handle: async ({ url }) => ({ slowest: slowestQuery(Date.now(), url.searchParams.get('name') ?? ''), stageBackfill }) },
+  // GY-3799: with the longest coordination-lock hold of the last 10 minutes, 1 s or more.
+  { method: 'GET', path: '/api/slowest-query', handle: async ({ url }) => ({ slowest: slowestQuery(Date.now(), url.searchParams.get('name') ?? ''), stageBackfill, lockHold: longestLockHold() }) },
   {
     method: 'GET', path: '/api/status',
     async handle({ actor, req, url, services, operatorVisible }) {

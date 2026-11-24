@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { activeLease, demand, type Principal } from '../model.js';
-import { lockedWork } from '../store/locked-read.js';
+import { itemDocument } from '../store/bounded-snapshot.js';
 import { save } from '../store.js';
 import { maskSecrets } from '../redaction.js';
 import type { Services } from './routes.js';
@@ -18,11 +18,11 @@ export async function workerVerification(services: Services, actor: Principal, i
   const input = schema.parse(body);
   demand(actor.role === 'worker', 'Only an implementation worker may request self-verification', 403);
   const read = () => services.engine.store.transaction(async (db, now) => {
-    const work = (await lockedWork(db, [id])).find(work => work.id === id || work.key === id);
+    const work = await itemDocument(db, id);
     demand(work, 'Work item not found', 404);
     activeLease(work!, actor, input.epoch, now);
     return work!;
-  });
+  }, { coordinationLock: false, itemLock: id });
   const work = await read();
   const workspace = work.workspaces.find(entry => entry.owner === actor.id && entry.epoch === input.epoch);
   demand(workspace, 'The lease has no assigned worktree', 409);
@@ -39,23 +39,23 @@ export async function workerVerification(services: Services, actor: Principal, i
   catch (error) {
     const reason = maskSecrets(error instanceof Error ? error.message : String(error)).slice(0, 8000);
     await services.engine.store.transaction(async (db, now) => {
-      const current = (await lockedWork(db, [id])).find(entry => entry.id === work.id);
+      const current = await itemDocument(db, work.id);
       if (!current) return;
       activeLease(current, actor, input.epoch, now);
       await save(db, current, actor.id, 'work.self-verification-failed', now, { epoch: input.epoch, head: input.head, mode: input.mode, error: reason });
-    }).catch(() => {});
+    }, { coordinationLock: false, itemLock: work.id }).catch(() => {});
     throw error;
   }
   demand(result.record.head === input.head, 'Verification returned a different head', 409);
   await services.engine.store.transaction(async (db, now) => {
-    const current = (await lockedWork(db, [id])).find(entry => entry.id === work.id)!;
+    const current = (await itemDocument(db, work.id))!;
     // GY-3543: a result that outlived its assignment is still kept for its head, unless a newer request for the item replaced it.
     let lapsed = false;
     try { activeLease(current, actor, input.epoch, now); } catch (error) { if (latest(services, work.id) !== ticket) throw error; lapsed = true; }
     if (!lapsed) demand(JSON.stringify(current.criteria) === JSON.stringify(work.criteria), 'Criteria changed during verification', 409);
     if (passedRecord(result.record)) current.passedVerification = { head: input.head, policyRevision: work.policyRevision, at: now.toISOString(), result };
     await save(db, current, actor.id, 'work.self-verified', now, { epoch: input.epoch, ...result, ...(lapsed ? { lapsed } : {}) });
-  });
+  }, { coordinationLock: false, itemLock: work.id });
   return result;
 }
 
