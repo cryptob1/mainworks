@@ -11,13 +11,18 @@ import { actionDetailMax, storeAction, type DaemonState } from './state.js';
 export const stallAlarmKey = 'stall-alarm';
 /** Free capacity and ready work with no launch this long raise the alarm. */
 const stallIdleMs = 10 * 60_000;
+/** GY-3778: at least this many free builder slots with no ready, released or releasable work for 15 minutes raise the empty-board alarm. */
+export const emptyBoardMinFreeSlots = 3;
+export const emptyBoardIdleMs = 15 * 60_000;
+const emptyBoardCauseMarker = 'the line has no work to build';
+export const isEmptyBoardAlarm = (detail: string) => detail.includes(emptyBoardCauseMarker);
 /** An open item with no change and no actor this long raises it too. */
 const noActorMs = 60 * 60_000;
 
 export interface StallReadings {
   now: number;
-  /** Open items in scope; `ready` are the ones dispatch could launch now. */
-  open: readonly Work[]; ready: readonly Work[];
+  /** Open items in scope; `ready` are the ones dispatch could launch now; `releasable` are unreleased backlog items eligible for release. */
+  open: readonly Work[]; ready: readonly Work[]; releasable?: readonly Work[];
   freeSlots: number;
   /** GY-3473: what holds every implementation launch this cycle — disk, CPU pressure, an untrusted checkout, a running batch gate — as dispatch itself decided it. */
   holds?: readonly string[];
@@ -72,6 +77,18 @@ export function stallCauses({ now, open, ready, holds = [], gates, state, regist
   return causes;
 }
 
+/** GY-3778: the newest builder start (running implementation session or completed dispatch), else the loop's own start. */
+function lastBuilderStartAt(state: StallReadings['state'], work: readonly Work[]): number | null {
+  const times: number[] = [];
+  for (const item of work) for (const session of item.sessions ?? []) {
+    if (session.kind !== 'implementation') continue;
+    if (session.state === 'running') times.push(Date.parse(session.startedAt ?? ''));
+  }
+  for (const [key, action] of Object.entries(state.actions)) if (key.startsWith('dispatch:') && action.state === 'done') times.push(Date.parse(action.at));
+  const seen = times.filter(Number.isFinite);
+  return seen.length ? Math.max(...seen) : state.lock ? Date.parse(state.lock.startedAt) : null;
+}
+
 /** The one alarm line, or null while work moves. Stable while the stall lasts, so it wakes the master once. */
 export function stallAlarm(readings: StallReadings): string | null {
   const { now, open, ready, freeSlots, state } = readings;
@@ -82,6 +99,11 @@ export function stallAlarm(readings: StallReadings): string | null {
   const stalled = ready.length > 0 && freeSlots > 0 && Number.isFinite(since) && now - since >= stallIdleMs;
   if (stalled)
     lines.push(`${ready.length} ready item(s) (${ready.slice(0, 5).map(item => item.key).join(', ')}) and ${freeSlots} free worker slot(s), but no launch since ${iso(since)}. Cause: ${stallCauses(readings).join('; ')}`);
+  // GY-3778: free builder slots sitting idle with nothing ready, released or releasable for 15 minutes.
+  const hasWork = ready.length > 0 || open.some(item => item.ready && item.stage === 'ready') || (readings.releasable?.length ?? 0) > 0;
+  const lastStart = lastBuilderStartAt(state, open);
+  if (!hasWork && freeSlots >= emptyBoardMinFreeSlots && lastStart !== null && now - lastStart >= emptyBoardIdleMs)
+    lines.push(`${freeSlots} free builder slot(s) and no ready, released or releasable work since ${iso(lastStart)}. Cause: ${emptyBoardCauseMarker} (${freeSlots} free builder slot(s)).`);
   const merging = new Set([...state.mergeWriter.queue.map(entry => entry.key), ...(state.mergeWriter.inFlights ?? []).map(entry => entry.key), ...(state.mergeWriter.inFlight ? [state.mergeWriter.inFlight.key] : [])]);
   const idle = open.filter(item => item.ready && item.stage !== 'done' && !item.blocker && !item.hold && !parkedOnHuman(item) && !item.dependencies.some(id => open.some(other => other.id === id)) && !live(item, now) && !merging.has(item.key)
     && !(stalled && ready.includes(item)) && now - Date.parse(item.updatedAt) >= noActorMs);

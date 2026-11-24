@@ -804,7 +804,9 @@ async function dispatchStep(cycle: Cycle) {
     const running = snapshot.work.flatMap(item => item.sessions ?? []).filter(session => session.kind === 'implementation' && session.state === 'running').length;
     // An item in a run of equal failures or held at the 3-refusal cap already wakes the master (GY-3104, GY-3636).
     const repeating = repeatingItems(state.failureRuns), unheld = (item: Work) => !repeating.has(item.key) && !reworkCapHeld(item);
-    const alarm = stallAlarm({ now: clock, open: open.filter(unheld), ready: claimable.filter(unheld), freeSlots: allowed - running, holds, gates,
+    const identity = config.operatorAgent ? { id: config.operatorAgent.id, role: 'operator-agent' as const } : undefined;
+    const releasable = releasableBacklog(snapshot.work, identity).filter(item => (item.owner ?? null) === null);
+    const alarm = stallAlarm({ now: clock, open: open.filter(unheld), ready: claimable.filter(unheld), releasable, freeSlots: allowed - running, holds, gates,
       state, registry, serving: await Promise.resolve(effects.servingCommit?.()).catch(() => null) ?? null });
     if (recordStallAlarm(state, alarm, clock)) { cycle.log(`[mainworks-master] cycle ${state.cycle}: ${alarm ?? 'the stall alarm cleared'}`); await effects.persist(state); }
   }
@@ -877,6 +879,13 @@ function anythingInTestOrMerge(work: readonly Work[], mergeWriter: Pick<MergeWri
  * only when no other item is in test, acceptance or merge, and while it is in flight nothing else
  * is released.
  */
+function releasableBacklog(work: readonly Work[], identity?: { id: string; role: 'operator-agent' }): Work[] {
+  return work
+    .filter(item => item.criteria.length > 0 && item.stage !== 'done' && !item.ready && !item.hold && !item.blocker && !loopOwnedRefusal(item) && !ownerHoldRefusal(item, identity)
+      && item.dependencies.every(dep => work.find(entry => entry.id === dep)?.stage === 'done'))
+    .sort((a, b) => Number(!!b.yardRepair) - Number(!!a.yardRepair) || a.priority - b.priority || Date.parse(a.createdAt) - Date.parse(b.createdAt));
+}
+
 async function releaseBacklog(cycle: Cycle, allowed: number) {
   const { config, state, effects, snapshot, clock } = cycle;
   let pipelineRoom = allowed - snapshot.work.filter(item => inPipeline(item, snapshot.work, clock)).length;
@@ -884,10 +893,7 @@ async function releaseBacklog(cycle: Cycle, allowed: number) {
   let queued = queue.count, queueRoom = queue.limit - queued;
   let landsAloneInFlight = snapshot.work.some(item => item.landsAlone && inPipeline(item, snapshot.work, clock));
   const identity = config.operatorAgent ? { id: config.operatorAgent.id, role: 'operator-agent' as const } : undefined;
-  const candidates = snapshot.work
-    .filter(item => item.criteria.length > 0 && item.stage !== 'done' && !item.ready && !item.hold && !item.blocker && !loopOwnedRefusal(item) && !ownerHoldRefusal(item, identity)
-      && item.dependencies.every(dep => snapshot.work.find(entry => entry.id === dep)?.stage === 'done'))
-    .sort((a, b) => Number(!!b.yardRepair) - Number(!!a.yardRepair) || a.priority - b.priority || Date.parse(a.createdAt) - Date.parse(b.createdAt));
+  const candidates = releasableBacklog(snapshot.work, identity);
   for (const item of candidates) {
     // A yard repair (GY-3102) is released past both caps; ordinary items wait for room and any lands-alone item in flight.
     if (!item.yardRepair) {

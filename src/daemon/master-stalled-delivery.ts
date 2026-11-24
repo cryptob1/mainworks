@@ -8,11 +8,13 @@ import { parseBaseFailureReason } from '../merge-writer/executor.js';
 import { gateCauses, type GateRecord } from '../batch-gate.js';
 import { normalizeFailureReason, repeatedFailureCause, repeatingItems } from './repeated-failure.js';
 import { reworkCapCause } from '../model/rework-ground.js';
-import { stallAlarmKey } from './stall-alarm.js';
+import { isEmptyBoardAlarm, stallAlarmKey } from './stall-alarm.js';
 import { unproducedManualProofs } from '../model/unproduced-attestation.js';
 
 /** GY-3770: repeat a sign-off wait wake every 30 minutes while the item remains unchanged. */
 export const signoffWakeRepeatMs = 30 * 60_000;
+/** GY-3778: repeat an empty-board wake at most once per 30 minutes while builders sit idle with no work. */
+export const emptyBoardWakeRepeatMs = 30 * 60_000;
 
 /**
  * GY-3770: open items whose passed trial leaves only `manual:` proofs unpassed that the Lead
@@ -91,7 +93,13 @@ export function masterCauses(work: readonly Work[], actions: DaemonState['action
     // GY-3122: a disk shortage the loop could not reclaim names no item, and holds every trial and worker.
     if (key === 'disk-headroom') { if (action.state === 'failed') causes.push(cause('disk-headroom', action.detail)); continue; }
     // GY-3432: the stall alarm names no single item either; numbers and ids aside (a temperature, a request id), an unchanged alarm wakes once.
-    if (key === stallAlarmKey) { causes.push({ ...cause(key, action.detail), digest: cause(key, normalizeFailureReason(action.detail)).digest }); continue; }
+    // GY-3778: when the alarm is an empty board, ask the Lead to file work from the brief and repeat at most once per 30 minutes.
+    if (key === stallAlarmKey) {
+      const empty = isEmptyBoardAlarm(action.detail);
+      const detail = empty ? `${action.detail} The board is empty: file new work from the product brief and goals so idle builders have work to build.` : action.detail;
+      causes.push({ ...cause(key, detail), digest: cause(key, normalizeFailureReason(action.detail)).digest, ...(empty ? { repeatMs: emptyBoardWakeRepeatMs } : {}) });
+      continue;
+    }
     // GY-3103: a failed runtime canary names its runtime, not an item the master would see open.
     if (key.startsWith('runtime-canary:')) { if (action.state === 'failed') causes.push(cause(key, action.detail)); continue; }
     const item = open.find(item => item.key === action.work);

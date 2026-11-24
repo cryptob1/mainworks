@@ -1,0 +1,16 @@
+{
+  "id": "empty-board-wakes-lead",
+  "title": "On a running test install with no open items and free builder slots, master status shows the empty-board alarm",
+  "description": "Starts a real temporary Postgres control plane with no open items and four free builder slots idle for over 15 minutes; one loop cycle raises the empty-board stallAlarm, wakes the Lead, and master status heads with the empty-board alarm naming the free slots.",
+  "tags": ["master", "api"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "running test install with no open items and free builder slots shows the empty-board alarm in master status",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/empty-board-wakes-lead-e2e.test.ts",
+      "timeoutSeconds": 180
+    }
+  ]
+}
