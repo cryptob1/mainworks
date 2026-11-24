@@ -15,7 +15,8 @@ export function recordQuery(text: string, ms: number, now = Date.now()) {
   slow.push({ name: queryName(text), ms, at: now });
 }
 
-export function slowestQuery(now = Date.now()): SlowQuery | null {
+/** The slowest of the window, or of the statements whose name starts with `prefix`. */
+export function slowestQuery(now = Date.now(), prefix = ''): SlowQuery | null {
   slow = slow.filter(query => now - query.at <= windowMs);
-  return slow.reduce<SlowQuery | null>((max, query) => !max || query.ms > max.ms ? query : max, null);
+  return slow.filter(query => query.name.startsWith(prefix)).reduce<SlowQuery | null>((max, query) => !max || query.ms > max.ms ? query : max, null);
 }

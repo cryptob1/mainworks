@@ -56,8 +56,8 @@ export const statusRoutes = defineRoutes('status', [
     const deploys = servingRoot ? readDeployHistory(servingRoot, repository ?? null) : [];
     return readFlow(engine.store.pool, operatorVisible(await engine.store.fleet()), now.getTime(), { deploys, git: read });
   } },
-  // GY-3757: the slowest database query of the last 10 minutes when it ran past 3 s, for master status.
-  { method: 'GET', path: '/api/slowest-query', handle: async () => ({ slowest: slowestQuery() }) },
+  // GY-3757: the slowest database query of the last 10 minutes when it ran past 3 s, for master status; `name` keeps the queries whose name starts with it.
+  { method: 'GET', path: '/api/slowest-query', handle: async ({ url }) => ({ slowest: slowestQuery(Date.now(), url.searchParams.get('name') ?? '') }) },
   {
     method: 'GET', path: '/api/status',
     async handle({ actor, req, url, services, operatorVisible }) {
