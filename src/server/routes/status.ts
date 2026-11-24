@@ -12,7 +12,7 @@ import { releaseInfo, schemaVersion } from '../../release.js';
 import { openHumanOnly } from '../../model/human-request.js';
 import { humanOnlySubjects } from '../waits.js';
 import { defineRoutes, parseJson } from '../routes.js';
-import { backfillEventStage } from '../../store/snapshot-delta.js';
+import { backfillEventStage, countStagelessDeltas, stageBackfillMax } from '../../store/snapshot-delta.js';
 import { coordinationSnapshot, coordinationViewHeader } from '../work-view.js';
 import { executorHost } from './agent-registry.js';
 import { projectDelivery } from '../../model-boundary/project-applications.js';
@@ -42,6 +42,9 @@ import { setting } from '../../setting.js';
 /** Control-plane status and the work reads every client polls. */
 /** GY-3772: the rows the stage backfill's last batch left, for master status. */
 let stageBackfill: { remaining: number; at: string } | null = null;
+/** GY-3774: per-pool remaining count cache so the partial-index count runs at most once a minute, outside the batch. */
+const stageBackfillCounts = new WeakMap<object, { remaining: number; countedAt: number }>();
+const stageBackfillCountIntervalMs = 60_000;
 
 export const statusRoutes = defineRoutes('status', [
   { method: 'GET', path: '/api/work-replay', async handle({ services, url, operatorVisible }) {
@@ -275,12 +278,30 @@ export const statusRoutes = defineRoutes('status', [
   },
   {
     // GY-3768: the loop's backfill of the stage on delta rows written before GY-3766, one batch a call of the size the loop asks (GY-3769), outside any coordination transaction.
+    // GY-3774: the batch runs and times the UPDATE alone; remaining is counted from events_stageless_delta at most once a minute outside the batch, and decremented in between.
     method: 'POST', path: '/api/events/backfill-stage',
     async handle(context) {
       demand(context.actor.role === 'coordinator' || context.actor.role === 'admin', 'The stage backfill is run by the loop (a coordinator identity)', 403);
-      const batch = await backfillEventStage(context.services.engine.store.pool, Number((await parseJson(context, undefined, '{}')).limit) || 50);
-      stageBackfill = { remaining: batch.remaining, at: new Date().toISOString() };
-      return batch;
+      const limit = Math.max(1, Math.min(stageBackfillMax, Math.floor(Number((await parseJson(context, undefined, '{}')).limit) || 50) || 1));
+      const pool = context.services.engine.store.pool;
+      const batch = await backfillEventStage(pool, limit);
+      const now = Date.now();
+      let remaining: number;
+      if (batch.filled < limit) {
+        remaining = 0;
+        stageBackfillCounts.set(pool, { remaining: 0, countedAt: now });
+      } else {
+        const cached = stageBackfillCounts.get(pool);
+        if (!cached || now - cached.countedAt >= stageBackfillCountIntervalMs) {
+          remaining = await countStagelessDeltas(pool);
+          stageBackfillCounts.set(pool, { remaining, countedAt: now });
+        } else {
+          remaining = Math.max(0, cached.remaining - batch.filled);
+          cached.remaining = remaining;
+        }
+      }
+      stageBackfill = { remaining, at: new Date(now).toISOString() };
+      return { ...batch, remaining };
     },
   },
 ]);
