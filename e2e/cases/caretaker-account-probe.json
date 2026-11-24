@@ -1,0 +1,13 @@
+{
+  "id": "caretaker-account-probe",
+  "title": "The caretaker probes a held account outside its sandbox and receives the provider's sentence",
+  "description": "Seed a held fixture account, run a caretaker pass that invokes `caretaker registry account probe NAME` from inside the caretaker session, assert it receives the provider's sentence without reading the account's credentials, and assert caretaker prompt step 1 names that command.",
+  "target": "any",
+  "required": false,
+  "steps": [{
+    "kind": "command",
+    "name": "caretaker probes a held fixture account and prompt step 1 names the command",
+    "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:caretaker-account-probe tests/caretaker-account-probe.test.ts",
+    "timeoutSeconds": 300
+  }]
+}

@@ -80,7 +80,7 @@ export const workCommands = defineCommands([
     // dispatch is a request beside that token; the loop serves it, with its own identity, when the run ends.
     name: 'caretaker',
     help: ['  caretaker report FILE|-       Save the caretaker run\'s report (at most 12 lines: checked:, fixed:, filed:, needs the owner:)',
-      '  caretaker registry [account quota NAME STATE --reason TEXT]  Read the fleet, or correct an account\'s quota mark',
+      '  caretaker registry [account probe NAME | account quota NAME STATE --reason TEXT]  Read the fleet, probe an account, or correct its quota mark',
       '  caretaker restart REASON | dispatch GY-N PROFILE  Ask the loop to restart, or to dispatch an item, when this run ends'],
     run: async ({ id, args, api, print }) => {
       if (id === 'report' && args[0]) {
@@ -88,6 +88,23 @@ export const workCommands = defineCommands([
         return print(await api('caretaker/reports', { lines: text.split('\n').map(line => line.trim()).filter(Boolean) }));
       }
       if (id === 'registry') {
+        if (args[0] === 'account' && args[1] === 'probe') {
+          const name = args[2];
+          if (!name) throw new Error('Use caretaker registry account probe NAME');
+          const probeUrl = setting('CARETAKER_PROBE_URL');
+          if (!probeUrl) throw new Error('caretaker registry account probe NAME is only available inside a caretaker run');
+          const tokenFile = setting('TOKEN_FILE');
+          const token = tokenFile ? readFileSync(tokenFile, 'utf8').trim() : setting('TOKEN')?.trim();
+          if (!token) throw new Error('caretaker registry account probe NAME needs GRAPHYARD_TOKEN_FILE');
+          const response = await fetch(`${probeUrl}/probe`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ account: name }),
+          });
+          const body = await response.json() as any;
+          if (!response.ok) throw new Error(body?.error ?? `probe failed (${response.status})`);
+          return print(body);
+        }
         const { registryCommand } = await import('./master-registry.js');
         return print(await registryCommand({ hostId: setting('HOST_ID') ?? '' }, args, { read: path => api(path), write: (path, data) => api(path, data) }));
       }
