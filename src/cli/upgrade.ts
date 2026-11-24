@@ -520,11 +520,12 @@ export function stoppedPlanePorts(url: string, composeDirectory: string, run: Ch
 /**
  * GY-3746, GY-3785: what is in flight on this install, as the deploy watch's wait names it: a review
  * session, a merge trial holding a heavy-job slot, a proof producer's acceptance run, or a running
- * builder session; null when nothing is.
+ * builder session; null when nothing is. GY-3791: only a slot of this install's own repository counts,
+ * so the followed project's trials on the same host never hold its update.
  */
 export async function installInFlight(root: string, repository: string, slots: string = heavyJobsDirectory()): Promise<string | null> {
   if ((await readReviewLedger(root)).reviews.some(record => record.state === 'pending')) return 'a review is running';
-  const own = (project: string | undefined) => !project || project.toLowerCase() === repository.toLowerCase();
+  const own = (project: string | undefined) => project?.toLowerCase() === repository.toLowerCase();
   if (heldSlots(slots).some(({ owner }) => owner && own(owner.project) && /^(?:merge trial|test merge) /.test(owner.label))) return 'a merge trial is running';
   if ((await readProducerLedger(root)).producers.some(record => record.state === 'pending')) return 'an acceptance run is running';
   if (hasRunningWorker(root)) return 'a builder is running';
