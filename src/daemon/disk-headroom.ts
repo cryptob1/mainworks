@@ -1,8 +1,7 @@
 // Concern: disk headroom (GY-3122) — the close step measures the volumes Mainworks writes; below the
 // floor it reclaims only its own leftovers, and while still below it no new merge trial or worker starts.
 import { existsSync } from 'node:fs';
-import { readdir, rm, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { stat } from 'node:fs/promises';
 import type { ChildRun } from '../child-runner.js';
 import type { MasterConfig } from '../master/profiles.js';
 import { freeBytes } from '../master/worktrees.js';
