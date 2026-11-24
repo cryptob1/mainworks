@@ -494,7 +494,11 @@ export async function acquireVerificationSlot(options: AcquireOptions): Promise<
           held.release();
         }
       }
-      if (!told) { told = true; options.onWait?.(waitLine(options)); }
+      // An admitted waiter ahead of us may still be running flock inside tryTake; wait until a slot is held so the line names who holds it (GY-3773).
+      if (!told) {
+        const line = waitLine(options);
+        if (line.includes(', held by ')) { told = true; options.onWait?.(line); }
+      }
       await new Promise(done => setTimeout(done, pollMs * (0.5 + Math.random())));
     }
   } finally { ticket?.leave(); }

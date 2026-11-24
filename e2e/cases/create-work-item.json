@@ -1,7 +1,7 @@
 {
   "id": "create-work-item",
   "title": "An operator creates a work item, finds it in the work list and releases it",
-  "description": "POST /api/work creates an item with its criteria, replaying the create under the same idempotency key returns the same item, GET /api/work lists it, and POST /api/work/:id/ready releases it from the backlog. When the target is a checkout's e2e serve, its seed file is keyed by its own port, so another serve in the checkout never overwrites or removes it (GY-3666).",
+  "description": "POST /api/work creates an item with its criteria, replaying the create under the same idempotency key returns the same item, GET /api/work lists it, and POST /api/work/:id/ready releases it from the backlog. When the target is a checkout's e2e serve, its seed file is keyed by its own port, so another serve in the checkout never overwrites or removes it (GY-3666). A waiter for a host heavy-job slot names who holds it (GY-3773).",
   "tags": ["api", "work"],
   "target": "uat",
   "required": true,
@@ -27,6 +27,7 @@
       "expect": [{ "path": "key", "equals": "{{key}}" }, { "path": "ready", "equals": true }]
     },
     {"kind": "command", "name": "the served head's seed is its own port's", "run": "node --input-type=module <<'JS'\nimport{existsSync,readFileSync} from 'node:fs';\nconst target=process.env.TARGET_URL;\nconst own='.graphyard/e2e-serve-'+new URL(target).port+'.json', shared='.graphyard/e2e-serve.json';\nconst accepted=async file=>(await fetch(new URL('/api/scenarios',target),{headers:{Authorization:'Bearer '+JSON.parse(readFileSync(file,'utf8')).delivery.coordinatorToken}})).status===200;\nif(existsSync(own)&&!await accepted(own)){console.error(own+' names another serve\\'s credentials');process.exit(1);}\nif(!existsSync(own)&&existsSync(shared)&&await accepted(shared)){console.error('the served head seeds the shared '+shared+', which another serve in this checkout overwrites or removes (GY-3666)');process.exit(1);}\nJS", "timeoutSeconds": 60},
-    {"kind": "command", "name": "the CLI guide prints a topic from its per-topic file", "run": "test ! -e bin/graphyard.mjs || node bin/graphyard.mjs guide claim | grep -q 'Renew ownership at least every 30 seconds'", "timeoutSeconds": 60}
+    {"kind": "command", "name": "the CLI guide prints a topic from its per-topic file", "run": "test ! -e bin/graphyard.mjs || node bin/graphyard.mjs guide claim | grep -q 'Renew ownership at least every 30 seconds'", "timeoutSeconds": 60},
+    {"kind": "command", "name": "a waiter's wait line names the slot holder (GY-3773)", "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=GY-3773 tests/managed-worktree-root.test.ts", "timeoutSeconds": 300}
   ]
 }

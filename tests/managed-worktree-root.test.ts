@@ -558,6 +558,49 @@ test('unit:managed-worktree-root-pinned — a holder whose run starts late still
   } finally { await rm(scratch, { recursive: true, force: true }); }
 });
 
+test('unit:managed-worktree-root-pinned — a waiter queued behind a holder still claiming its slot waits to emit its wait line until a holder is in place (GY-3773)', async () => {
+  const scratch = await temporaryDirectory('slots-wait-holder');
+  const stop = new AbortController();
+  let locker: ReturnType<typeof spawn> | undefined;
+  let holder: Awaited<ReturnType<typeof acquireVerificationSlot>> | undefined;
+  try {
+    const directory = join(scratch, 'heavy-jobs'), queue = join(directory, 'queue'), ticket = join(queue, '1-000000000000001-claiming');
+    await mkdir(queue, { recursive: true });
+    await writeFile(ticket, 'owner/project');
+    // Hold an older locked ticket in queue/ before any slot-N exists, as an admitted waiter does while flock runs inside tryTake.
+    locker = spawn('flock', ['--exclusive', ticket, 'sh', '-c', 'echo locked; read _'], { stdio: ['pipe', 'pipe', 'ignore'] });
+    await new Promise<void>((ready, fail) => {
+      locker!.stdout!.once('data', () => ready());
+      locker!.once('error', fail);
+      locker!.once('exit', code => fail(new Error(`flock exited early (${code})`)));
+    });
+
+    const lines: string[] = [];
+    const waiting = acquireVerificationSlot({ directory, slots: 1, label: 'npm test', project: 'owner/project', pollMs: 10, signal: stop.signal, onWait: line => lines.push(line) });
+    waiting.catch(() => {});
+    // Let the waiter poll while the older ticket is still claiming its slot and no slot-0 exists yet.
+    await new Promise(done => setTimeout(done, 80));
+    holder = await acquireVerificationSlot({ directory, slots: 1, firstSlot: 0, label: 'npm test', project: 'owner/project' });
+    locker.stdin!.end();
+    await rm(ticket, { force: true });
+
+    for (const deadline = Date.now() + 5_000; lines.length === 0 && Date.now() < deadline;) await new Promise(done => setTimeout(done, 10));
+    assert.equal(lines.length, 1, 'the waiter reports its wait once');
+    assert.match(lines[0], /waits for a host heavy-job slot: every Mainworks project on this host shares 1 at once, held by npm test \(owner\/project\) \[pid \d+/, 'the wait line names who holds the slot');
+
+    holder.release();
+    holder = undefined;
+    const taken = await waiting;
+    taken.release();
+  } finally {
+    stop.abort();
+    holder?.release();
+    locker?.stdin?.end();
+    locker?.kill();
+    await rm(scratch, { recursive: true, force: true });
+  }
+});
+
 test('unit:host-verification-slots — a sandboxed session is granted the lock directory, and an account PATH keeps the wrappers first', async () => {
   const scratch = await temporaryDirectory('slots-grant');
   try {
