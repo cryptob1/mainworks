@@ -11,4 +11,6 @@ export function parseShard(text: string): { index: number; count: number };
 export function fileEdges(file: string, text: string, files: Set<string>, directories: Map<string, string[]>): { imports: Set<string>; data: Set<string> };
 export function dependencyMap(root?: string, tests?: string[]): DependencyMap;
 export function changedDeclarations(changed: string[], base: string, root?: string, head?: string | null): ChangedDeclarations;
-export function selectAffected(changed: string[] | null, map: DependencyMap, tests: string[], declarations?: ChangedDeclarations): Selection;
+export function selectAffected(changed: string[] | null, map: DependencyMap, tests: string[], declarations?: ChangedDeclarations, exports?: Map<string, Set<string>> | null): Selection;
+/** GY-3750: per changed src file, the exported names a change confined to function bodies and non-exported code reaches; null when it alters more. */
+export function changedExports(changed: string[], base: string, root?: string, head?: string | null): Map<string, Set<string>> | null;
