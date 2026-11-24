@@ -2,7 +2,7 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { mergeLedgerKinds, mergeTrialKind } from '../model/merge-ledger.js';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { ConfigReload } from '../master/config.js';
 import type { MasterConfig } from '../master/profiles.js';
 import { defaultChildRun } from '../child-runner.js';
@@ -12,7 +12,10 @@ export { actionLine } from './state.js';
 import { boundedPersist, cycleFailureCeiling, describeFailingCall, loopHeartbeat, loopLiveness, markedEffects, namedEffects, noteCycleFailure, noteCycleSuccess, noteUnhandled, watchdogPlan, type LoopHeartbeat } from './liveness.js';
 import type { DaemonEffects } from './effects.js';
 import { Launcher, defaultLaunchConcurrency, runCycle } from './cycle.js';
-import { awaitSupervisorRestart, detectLoopSupervisorUnit, restartEndedBySupervisorStop } from '../install/loop-unit.js';
+import { awaitSupervisorRestart, detectLoopSupervisorUnit, loopUnitDirectory, repointDeployUnit, restartEndedBySupervisorStop } from '../install/loop-unit.js';
+import { installDirectory } from '../install/secrets.js';
+import { installIdFor } from '../install/types.js';
+import { noteDeployRelease } from './deploy-release.js';
 import { mergeWriterInFlight, mergeWriterSummary } from './cycle-merge-writer.js';
 import { noteBatchGateStopping } from './cycle-batch-gate.js';
 import { detachRuns } from '../runner/registry.js';
@@ -167,6 +170,8 @@ export async function runDaemon(config: MasterConfig, state: DaemonState, raw: D
   /** Reads what runs in the deploy unit (GY-3136); defaults to its cgroup. */
   deployUnit?: () => DeployUnitProcess | null;
   restartDeploy?: (unit: string) => Promise<unknown>;
+  /** GY-3756: points the deploy unit at the served release before its restart; null when it starts it, else why not. */
+  repointDeploy?: (unit: string) => Promise<string | null>;
   delay?: (ms: number, signal: AbortSignal) => Promise<void>;
   /**
    * The control plane's event ledger, newest first. Polled during the wait: an event another actor
@@ -276,13 +281,20 @@ export async function runDaemon(config: MasterConfig, state: DaemonState, raw: D
         // The cycle ended, failed or completed: either way the loop is alive and moving (GY-3341).
         progress();
         const deploy = options.root && !stopping ? (options.deployUnit ?? readDeployUnitProcess)() : null;
+        // GY-3756: the watch's release, read from its process, against the served one; status warns past 10 minutes apart.
+        if (deploy) noteDeployRelease(state, deploy.commit, readDeployRecord(deployRecordPath(options.root!))?.tip ?? null, now());
         const deployCause = deploy && deployRestartCause(options.root!, deploy, serving => state.actions[`deploy-unit-restart:${serving}`]?.state === 'done');
         if (deploy && deployCause) {
           const { serving, reason } = deployCause;
-          log(`[mainworks-master] restarting ${deploy.unit}: ${reason}`);
           let detail = `Restarted ${deploy.unit} through systemd: ${reason}`, outcome: 'done' | 'failed' = 'done';
-          try { await (options.restartDeploy ?? (unit => defaultChildRun('systemctl', ['--user', '--no-block', 'restart', unit])))(deploy.unit); }
-          catch (error) { outcome = 'failed'; detail = `Could not restart ${deploy.unit} (${reason}): ${message(error)}`; log(`[mainworks-master] ${detail}`); }
+          // A unit naming an old release would restart onto it again: it is pointed at the served release first, and left running when that fails.
+          const refused = await (options.repointDeploy ?? (async unit => repointDeployUnit({ unitPath: join(loopUnitDirectory(), unit), installDir: installDirectory(installIdFor(config.repository)) })))(deploy.unit).catch(message);
+          if (refused) { outcome = 'failed'; detail = `Did not restart ${deploy.unit} (${reason}): ${refused}`; log(`[mainworks-master] ${detail}`); }
+          else {
+            log(`[mainworks-master] restarting ${deploy.unit}: ${reason}`);
+            try { await (options.restartDeploy ?? (unit => defaultChildRun('systemctl', ['--user', '--no-block', 'restart', unit])))(deploy.unit); }
+            catch (error) { outcome = 'failed'; detail = `Could not restart ${deploy.unit} (${reason}): ${message(error)}`; log(`[mainworks-master] ${detail}`); }
+          }
           storeAction(state, `deploy-unit-restart:${serving}`, { kind: 'deployment', work: null, principal: null, state: outcome, detail: detail.slice(0, 1000), attempts: 1, epoch: null, cycle: state.cycle, at: new Date(now()).toISOString() });
           await effects.persist(state).catch(() => {});
         }

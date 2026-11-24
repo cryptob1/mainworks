@@ -13,6 +13,7 @@ import { checkoutRelease, compareDateVersions, datedVersionPattern, graphyardBas
 import { repositoryFromRemote } from '../onboarding.js';
 import { installDirectory, readInstallRecord, type InstallRecord } from '../install/secrets.js';
 import { installIdFor } from '../install/types.js';
+import { loopUnitDirectory, repointDeployUnit } from '../install/loop-unit.js';
 import { localDatabaseUrl, localPaths, readLocalEnvironment } from '../install/local-runtime.js';
 import { redeployArguments } from '../install/index.js';
 import type { ChildRun } from '../child-runner.js';
@@ -626,7 +627,13 @@ export async function runUpgradeCommand(context: Parameters<import('./registry.j
       const runningRoot = fileURLToPath(new URL('../../', import.meta.url));
       const handover = releaseHandover(() => {
         try { return git(runningRoot, 'rev-parse', 'HEAD'); } catch { return null; } // a tree with no git history names no running commit
-      }, () => stopping.abort()); // the serve half stops after the pass it is in; nothing is torn mid-flight
+      }, () => stopping.abort(), // the serve half stops after the pass it is in; nothing is torn mid-flight
+      // GY-3756: the unit this watch runs under is pointed at the served release before the restart.
+      async () => {
+        let unit: string | undefined;
+        try { unit = /^0::\/.*\/((?:graphyard|mainworks)-deploy[^/\s]*\.service)(?:\/.*)?$/m.exec(readFileSync('/proc/self/cgroup', 'utf8'))?.[1]; } catch { /* no cgroup: no unit to point */ }
+        return unit ? repointDeployUnit({ unitPath: join(loopUnitDirectory(), unit), installDir: installDirectory(installIdFor(master.repository)) }) : null;
+      });
       // The managed repository's own serving (GY-2976, GY-3201): the first node application main's
       // graphyard.json declares is checked out into the install's own serve checkout, built and served
       // by the same unit's pass; a repository that declares none gives the serve pass nothing to do.

@@ -483,10 +483,21 @@ export async function watchMain(file: string, ports: DeployWatchPorts, options: 
  * commit's code calls `stop` and throws the release handover, so the launcher restarts the watch on
  * the code it serves. `running` names the commit this process's code comes from.
  */
-export const releaseHandover = (running: () => string | null, stop: () => void) => async (tip: string) => {
-  if (!tip || running() === tip) return;
-  stop();
-  throw Object.assign(new Error(`[mainworks-deploy] the watch hands itself over to ${tip.slice(0, 12)}: it serves code this process is not running, and the restart loads it`), { releaseHandover: true });
+export const releaseHandover = (running: () => string | null, stop: () => void, repoint: () => Promise<string | null> = async () => null, log: (line: string) => void = line => console.error(line)) => {
+  // GY-3756: the unit is pointed at the served release first; a rewrite that fails keeps this process
+  // running, reported once per tip, since a restart would only load the same old release again.
+  let reported: string | null = null;
+  return async (tip: string) => {
+    if (!tip || running() === tip) return;
+    const refused = await repoint();
+    if (refused) {
+      if (reported !== tip) log(`[mainworks-deploy] the watch stays on ${running()?.slice(0, 12) ?? 'its release'} and does not hand over to ${tip.slice(0, 12)}: ${refused}`);
+      reported = tip;
+      return;
+    }
+    stop();
+    throw Object.assign(new Error(`[mainworks-deploy] the watch hands itself over to ${tip.slice(0, 12)}: it serves code this process is not running, and the restart loads it`), { releaseHandover: true });
+  };
 };
 
 /** The managed repository's serving, as the dashboard header reads it (GY-2964). */
