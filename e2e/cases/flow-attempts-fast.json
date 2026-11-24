@@ -1,0 +1,11 @@
+{
+  "id": "flow-attempts-fast",
+  "title": "Master status shows flow numbers with no slow flow query",
+  "description": "On a test install seeded with two million events over 7 days and 3,500 items with long attempt lists, master status shows the flow numbers and the server reports no /api/flow query over 3 seconds.",
+  "tags": ["api", "regression"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "master status on a seeded install shows flow numbers and no /api/flow query over 3 s", "run": "node --import tsx tests/helpers/run-tests.ts tests/flow-attempts-fast.test.ts", "timeoutSeconds": 900 }
+  ]
+}
