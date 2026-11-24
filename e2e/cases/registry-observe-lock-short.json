@@ -4,7 +4,7 @@
   "description": "On a running test install seeded with 20 accounts and 50 sessions, POST /api/agent-registry/observe carrying every account's observations completes in under 1 s without holding the coordination lock, and master status names no observe request among coordination-lock holds over 1 s.",
   "tags": ["database", "status", "locks", "agent-registry"],
   "target": "any",
-  "required": false,
+  "required": true,
   "steps": [
     {
       "kind": "command",
