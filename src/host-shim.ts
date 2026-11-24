@@ -13,6 +13,8 @@
 //                                  started as one project, argv run by the trial launcher on its first service's network
 //                                  with the services' variables, the project and its volumes removed whatever argv answered
 //   clean RUN                      remove a run directory
+//   update-shim DIGEST             GY-3780: this release's shim on stdin, kept only when its SHA-256 is DIGEST, as gy-compute's own
+//                                  copy, which the installed shim runs from then on
 //   run-session RUN                GY-3405: one agent session in IMAGE with RUN's checkout mounted at the session's own
 //                                  working directory; the first stdin line is JSON {argv, env, cwd, homes}, nothing else,
 //                                  each home an in-memory tmpfs; the rest of stdin (the login) goes straight into the container;
@@ -47,10 +49,10 @@ const sessionHours = 8;
  * changes what it does in a way a trial relies on, and add a new verb here; any other change to the
  * shim (its launcher, limits, wording) leaves this list alone, so hosts on the older shim keep taking shards.
  */
-export const hostShimVerbs = ['probe:1', 'receive-pack:1', 'receive-image:2', 'prepare-run:2', 'run-shard:2', 'fetch-records:1', 'clean:1', 'run-session:1'];
+export const hostShimVerbs = ['probe:1', 'receive-pack:1', 'receive-image:2', 'prepare-run:2', 'run-shard:2', 'fetch-records:1', 'clean:1', 'run-session:1', 'update-shim:1'];
 /** GY-3645: `run-check` is no trial verb: a host takes a whole check once its probe names a Compose plugin, which only a shim with the verb prints. */
 /** The verbs a merge trial uses: a host whose shim lacks any of them takes no shards until prepare runs again there. */
-export const trialVerbs = hostShimVerbs.filter(verb => !verb.startsWith('run-session:'));
+export const trialVerbs = hostShimVerbs.filter(verb => !/^(?:run-session|update-shim):/.test(verb));
 /** Shims released before the probe listed its verbs, by digest: the verbs each speaks (GY-3549's shim). */
 export const legacyShimVerbs: Record<string, readonly string[]> = { '90b5bdaa66f84f53f7dbc87ef089f17051c1e230900a4248ffb76ecb8d2315d6': trialVerbs };
 /** The trial verbs a shim lacks, by what its probe printed: its verbs line, else what its digest is known to speak. */
@@ -64,6 +66,11 @@ const shimTemplate = `#!/bin/sh
 # graphyard-host-shim: the only command Mainworks's SSH key may run here (mainworks host prepare).
 refuse() { echo "graphyard-host-shim refuses: $SSH_ORIGINAL_COMMAND" >&2; exit 1; }
 [ $# -eq 0 ] || { [ $# -eq 2 ] && [ "$1" = --home ]; } || refuse
+# GY-3780: run this user's own updated copy when there is one, one per installed helper and coordinator address: another install's update is not this one's.
+if [ -z "$MAINWORKS_SHIM" ]; then
+  export MAINWORKS_SHIM="\${2:-$HOME}/.graphyard/shims/\${0##*/}-\${SSH_CLIENT%% *}"
+  [ ! -f "$MAINWORKS_SHIM" ] || exec sh "$MAINWORKS_SHIM" "$@"
+fi
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/docker.sock"
 case "$SSH_ORIGINAL_COMMAND" in
@@ -74,10 +81,10 @@ case "$SSH_ORIGINAL_COMMAND" in
     echo "compose $(docker compose version --short 2>/dev/null)"
 ${hostProbeScript.split('\n').map(line => `    ${line}`).join('\n')}
     ;;
-  receive-pack\\ *|receive-image\\ *|prepare-run\\ *|run-shard\\ *|run-check\\ *|fetch-records\\ *|clean\\ *|run-session\\ *)
+  receive-pack\\ *|receive-image\\ *|prepare-run\\ *|run-shard\\ *|run-check\\ *|fetch-records\\ *|clean\\ *|run-session\\ *|update-shim\\ *)
     # The verbs that take arguments, validated and run in Python.
     exec python3 -I -c "$(cat <<'GRAPHYARD_VERBS'
-import json, os, re, shutil, signal, subprocess, sys, tempfile, time
+import hashlib, json, os, re, shutil, signal, subprocess, sys, tempfile, time
 LAUNCHER = ${JSON.stringify(trialLauncher)}
 asked = os.environ.get('SSH_ORIGINAL_COMMAND', '')
 def refuse():
@@ -92,7 +99,7 @@ RUN = r'trial-[A-Za-z0-9_]{6,40}'
 IMAGE = ${JSON.stringify(warmImagePattern.source.slice(1, -1))}
 INDEX = r'[1-9][0-9]{0,3}'
 SHAPES = {'receive-pack': [NAME, SHA], 'receive-image': [IMAGE], 'prepare-run': [NAME, SHA, IMAGE],
-          'run-shard': [RUN, INDEX], 'run-check': [RUN], 'fetch-records': [RUN, INDEX], 'clean': [RUN], 'run-session': [RUN]}
+          'run-shard': [RUN, INDEX], 'run-check': [RUN], 'fetch-records': [RUN, INDEX], 'clean': [RUN], 'run-session': [RUN], 'update-shim': [r'[0-9a-f]{64}']}
 if verb not in SHAPES or len(args) != len(SHAPES[verb]) or not all(re.fullmatch(shape, arg) for shape, arg in zip(SHAPES[verb], args)):
     refuse()
 mirrors, runs = os.path.join(home, '.graphyard', 'mirrors'), os.path.join(home, '.graphyard', 'runs')
@@ -159,6 +166,14 @@ elif verb == 'prepare-run':
             if not os.path.islink(path):
                 os.chmod(path, os.stat(path).st_mode | 0o060)
     print('run ' + os.path.basename(run))
+elif verb == 'update-shim':
+    content, own = sys.stdin.buffer.read(1 << 20), os.environ['MAINWORKS_SHIM']
+    if hashlib.sha256(content).hexdigest() != args[0]:
+        sys.exit('graphyard-host-shim refuses the update: its content does not match ' + args[0])
+    os.makedirs(os.path.dirname(own), exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=os.path.dirname(own), delete=False) as file:
+        file.write(content)
+    os.replace(file.name, own)
 elif verb == 'run-session':
     # Only the first line is the shim's: read unbuffered, so the login after it reaches the container's stdin and never a file here.
     line = b''

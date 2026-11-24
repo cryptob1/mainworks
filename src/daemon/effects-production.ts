@@ -236,10 +236,10 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     sessionName: unit => liveRuns().find(entry => entry.run.directory && `graphyard-run-${basename(entry.run.directory)}.scope` === unit)?.name,
     // GY-3407: the read runs beside the cycle, so a host taking its SSH timeout never slows the loop; the cycle takes the latest finished one.
     hostReadings: async previous => {
-      hostsReading ??= readHostReadings(previous, { run }).then(readings => {
+      hostsReading ??= readHostReadings(previous, { run, update: true }).then(readings => {
         hostsLatest = readings;
         // GY-3528: every install on this machine budgets heavy jobs from these readings.
-        writeMachines(heavyJobsDirectory(), readings.map(reading => ({ name: reading.host, local: reading.local, away: reading.away, cores: reading.cores, busy: reading.busy ?? null, celsius: reading.celsius })));
+        writeMachines(heavyJobsDirectory(), readings.map(reading => ({ name: reading.host, local: reading.local, away: reading.away, cores: reading.cores, busy: reading.busy ?? null, celsius: reading.celsius, updateError: reading.updateError })));
       }, () => {}).finally(() => { hostsReading = null; });
       return hostsLatest ?? previous;
     },
