@@ -11,7 +11,7 @@ import { loopWhere, loopWhereHeader, loopWhereRegistry } from '../../model/where
 import { releaseInfo, schemaVersion } from '../../release.js';
 import { openHumanOnly } from '../../model/human-request.js';
 import { humanOnlySubjects } from '../waits.js';
-import { defineRoutes, parseJson } from '../routes.js';
+import { defineRoutes } from '../routes.js';
 import { coordinationSnapshot, coordinationViewHeader } from '../work-view.js';
 import { executorHost } from './agent-registry.js';
 import { projectDelivery } from '../../model-boundary/project-applications.js';
