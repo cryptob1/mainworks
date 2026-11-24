@@ -303,7 +303,7 @@ async function loopLockChecks(root: string, injected: LockRefusal | null | undef
 async function serveCheck(root: string): Promise<SetupCheck | null> {
   const record = readServeRecord(serveRecordPath(root));
   if (!record?.url) return null;
-  const answered = await fetch(record.url, { signal: AbortSignal.timeout(5_000) }).then(() => true, () => false);
+  const answered = await fetch(record.url, { signal: AbortSignal.timeout(5_000) }).then(response => { void response.body?.cancel().catch(() => {}); return true; }, () => false);
   const check = (status: SetupCheck['status'], detail: string): SetupCheck => ({ id: 'serve', status, step: setupSteps.serve, detail });
   return answered ? check('pass', `${record.url} answers${record.commit ? ` at ${record.commit.slice(0, 12)}` : ''}`)
     : check('fail', `the declared serve does not answer ${record.url}${record.failed ? `; the build of ${record.failed.slice(0, 12)} failed last: ${(record.reason ?? '').slice(0, 200)}` : ''}`);
