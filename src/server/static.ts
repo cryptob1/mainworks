@@ -6,7 +6,7 @@ import { Next, Sent, defineRoutes } from './routes.js';
 import { previewRequested, previewSitePathSchema, previewSiteUrl } from '../project-previews.js';
 import { readEmblem } from '../model/emblem.js';
 import { save } from '../store.js';
-import { lockedWork } from '../store/locked-read.js';
+import { itemDocument } from '../store/bounded-snapshot.js';
 import type { Services } from './routes.js';
 import { setting } from '../setting.js';
 
@@ -29,11 +29,11 @@ const previewUseInterval = 60_000;
 /** Records that `key`'s preview `id` was opened now (`lastUsedAt`), unless it was within `interval`. */
 async function notePreviewUse(services: Services, key: string, id: string, interval: number) {
   await services.engine.store.transaction(async (db, now) => {
-    const work = (await lockedWork(db, [key])).find(item => item.key === key), preview = work?.preview;
+    const work = await itemDocument(db, key), preview = work?.preview;
     if (!preview || preview.id !== id || (preview.lastUsedAt && now.getTime() - Date.parse(preview.lastUsedAt) < interval)) return;
     work!.preview = { ...preview, lastUsedAt: now.toISOString() };
     await save(db, work!, 'preview-link', 'preview.used', now, { preview: { id } });
-  });
+  }, { coordinationLock: false, itemLock: key });
 }
 
 /**

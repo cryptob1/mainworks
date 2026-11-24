@@ -531,7 +531,7 @@ const childOutput = (error: unknown) => { const failed = error as { stdout?: unk
  */
 export async function runMergeTrial(input: MergeTrialInput): Promise<MergeTrialRun> {
   const inner = input.run ?? defaultChildRun;
-  let tap = '', files: string[] = [], only: string[] | null = null;
+  let tap = '', files: string[] = [];
   // The trial's shards run beside each other (GY-1832), so their TAP streams are joined: each proof's
   // cases are counted over every shard, as one runner process would count them. A retried trial runs
   // in a fresh checkout, and only the attempt that answered is counted: each attempt starts its TAP
@@ -567,7 +567,7 @@ export async function runMergeTrial(input: MergeTrialInput): Promise<MergeTrialR
     return inner(command, args, options);
   };
   const selectFiles = async (selected: string[], timeoutMs: number) => {
-    files = only ?? [...new Set([...selected, ...await proofFiles({ timeoutMs })])];
+    files = [...new Set([...selected, ...await proofFiles({ timeoutMs })])];
     return files;
   };
   const counted = (): ProofCounts => Object.fromEntries(input.proofs.map(proof => {
@@ -593,8 +593,7 @@ export async function runMergeTrial(input: MergeTrialInput): Promise<MergeTrialR
   const rerunInput = { ...input, e2eProofs: [] as const };
   // Only the run on the base tip reads counts: attribution reads failing files, so it spends no runner's time.
   const retest = async (sha: string, failing: string[], e2eProofs: readonly string[] = [], counting?: 'count', e2eFrom?: string) => {
-    only = failing;
-    try { const rerun = await runTrial({ ...rerunInput, rerun: true, selectFiles, e2eProofs, ...(e2eFrom ? { e2eFrom } : {}), mergeSha: sha, changedFiles: failing, run, reporter, onAttempt: rerunAttempt, ...(counting ? { countProofs } : {}) }); return { run: rerun, tap, proofs: counted() }; }
+    try { const rerun = await runTrial({ ...rerunInput, rerun: true, files: failing, selectFiles, e2eProofs, ...(e2eFrom ? { e2eFrom } : {}), mergeSha: sha, changedFiles: failing, run, reporter, onAttempt: rerunAttempt, ...(counting ? { countProofs } : {}) }); return { run: rerun, tap, proofs: counted() }; }
     catch (error) { return error instanceof TrialCleanupError && error.verdict ? { run: error.verdict, tap, proofs: counted() } : null; }
   };
   const ownProofFiles = discovered ?? input.proofFiles;

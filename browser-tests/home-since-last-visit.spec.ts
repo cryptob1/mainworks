@@ -4,6 +4,7 @@ import { withDatabase } from '../tests/helpers/postgres';
 import { Engine } from '../src/engine';
 import { server } from '../src/server';
 import { boardFromStatus } from '../src/model/board';
+import { VERIFY_TIMEOUT_MS } from '../web/pages/login';
 
 // e2e:home-since-last-visit — GY-3671: Home counts what changed since this person's own last visit,
 // shows active goals and what is being built, and sends the box's text to the Lead. The visit and the
@@ -47,11 +48,12 @@ async function visit(page: Page, first = false) {
     await page.goto('/?sign-in#work');
     await page.getByLabel('Access token').fill(token);
     await page.getByRole('button', { name: 'Open control plane' }).click();
-    await expect(page.locator('header.main-top-bar')).toBeVisible();
+    // GY-3797: sign-in, reload, and /api/home-visit cross the 5 s expect default on a loaded gate host; allow what the page allows.
+    await expect(page.locator('header.main-top-bar')).toBeVisible({ timeout: VERIFY_TIMEOUT_MS });
     await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Home(\s+\d+)?$/ }).click();
   } else await page.reload();
   await expect(page).toHaveURL(/#home$/);
-  await expect(page.getByRole('region', { name: 'Since you last looked' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Since you last looked' })).toBeVisible({ timeout: VERIFY_TIMEOUT_MS });
 }
 const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
 
@@ -92,7 +94,7 @@ test('e2e:home-since-last-visit — the second visit counts exactly the merge in
     for (const width of [390, 1280]) { await page.setViewportSize({ width, height: 900 }); expect(await noSideScroll(page)).toBe(true); }
     await box.fill('Prioritise the release check.');
     await page.getByRole('form', { name: 'Tell the Lead' }).getByRole('button', { name: 'Send' }).click();
-    await expect(page.getByRole('status')).toHaveText('Sent to the Lead.');
+    await expect(page.getByRole('status')).toHaveText('Sent to the Lead.', { timeout: VERIFY_TIMEOUT_MS });
     expect((await messages()).map(m => m.text)).toEqual(['Prioritise the release check.']);
 
     // A signed-in teammate, whom the message route refuses, is offered no box and no decision buttons.
