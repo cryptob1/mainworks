@@ -11,6 +11,7 @@
 // and reports whether the operator's own account logs into that host unattended on port 22.
 import { existsSync } from 'node:fs';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { homedir, hostname, userInfo } from 'node:os';
 import { defaultChildRun, type ChildRun } from './child-runner.js';
@@ -24,7 +25,7 @@ import { shellQuote } from './install/transport.js';
 /** `sessions` (GY-3405): how many agent sessions the host takes at once; absent or 0, it takes test shards only. */
 export interface HostRecord { target: string; addedAt: string; sessions?: number }
 /** GY-3517: `at` is when this probe read the host; `update` marks one away only because its shim lacks a trial verb. */
-export interface HostReading { host: string; local?: boolean; at?: string; away: boolean; /** GY-3601: when an away host stopped answering. */ since?: string; update?: boolean; /** GY-3744: its helper's digest is not this release's. */ older?: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; /** GY-3528: cores busy (the 1-minute load). */ busy?: number | null; stat?: { total: number; steal: number } | null }
+export interface HostReading { host: string; local?: boolean; at?: string; away: boolean; /** GY-3601: when an away host stopped answering. */ since?: string; update?: boolean; /** GY-3780: why it did not take this release's helper. */ updateError?: string; /** GY-3744: its helper's digest is not this release's. */ older?: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; /** GY-3528: cores busy (the 1-minute load). */ busy?: number | null; stat?: { total: number; steal: number } | null }
 
 /** Machine-wide, beside the machine-share link (team-access.ts): every install's loop on this machine reads the same hosts. */
 export const hostsFile = (home = configHome()) => join(home, 'machine', 'hosts.json');
@@ -87,6 +88,8 @@ for helper in /usr/local/bin/graphyard-host-shim*; do
   [ -e "$helper" ] || continue
   grep -qF "command=\\"\${helper##*/}\\"" "$keys" || rm -f "$helper"
 done
+# The helper just installed runs, not an update it took earlier.
+rm -f "$home/.graphyard/shims/${helper}-"*
 uid=$(id -u "$user")
 # Rootless Docker for $user (GY-3419): the host's own extras when both tools are installed, else the
 # static rootless extras for the host's reported Docker version plus a static slirp4netns fetched
@@ -235,8 +238,15 @@ export async function probeHost(target: string | null, run: ChildRun = defaultCh
   if (!reading) return { ok: false as const, reason: noDockerReason(target ?? 'this machine', output) };
   // GY-3476, GY-3517: a shim from an older release takes shards while it speaks every verb a trial uses; one lacking any waits for prepare.
   const missing = target ? missingTrialVerbs(reading) : [];
-  if (missing.length) return { ok: false as const, update: true, reason: outdatedShimReason(target!, missing) };
+  if (missing.length) return { ok: false as const, update: true, reason: outdatedShimReason(target!, missing), shim: reading.shim, verbs: reading.verbs };
   return { ok: true as const, ...reading };
+}
+
+/** GY-3780: send this release's shim to a host on another one, over the same restricted key: null once the host took it, else why not. */
+async function updateHostShim(target: string, run: ChildRun, knownHosts: string): Promise<string | null> {
+  const words = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', ...hostKeySshOptions(knownHosts), ...sshTarget(target), `update-shim ${createHash('sha256').update(hostShimScript).digest('hex')}`];
+  try { await run('sh', ['-c', `printf %s ${shellQuote(hostShimScript)} | ${words.map(shellQuote).join(' ')}`], { timeoutMs: 15_000 }); return null; }
+  catch (error: any) { return lastLine(String(error?.stderr ?? '')) || (error?.timedOut ? 'no answer within 15 seconds' : `exit ${error?.status ?? 'signal'}`); }
 }
 
 /** A host's key must reach only the shim: a plain shell command run through it is refused. */
@@ -306,15 +316,28 @@ export async function setHostSessions(target: string, sessions: number, options:
   await writeHosts(file, hosts.map(host => host.target === target ? { ...host, sessions } : host));
 }
 
-/** One cycle's readings: this machine first, then every recorded host; steal is measured from the previous cycle's counters. */
-export async function readHostReadings(previous: HostReading[], options: { file?: string; knownHosts?: string; run?: ChildRun; local?: string } = {}): Promise<HostReading[]> {
+/**
+ * One cycle's readings: this machine first, then every recorded host; steal is measured from the previous cycle's counters.
+ * GY-3780: with `update` (the loop), a host on another release's shim that speaks update-shim takes this release's and is
+ * read again; one whose update fails reads away with the reason.
+ */
+export async function readHostReadings(previous: HostReading[], options: { file?: string; knownHosts?: string; run?: ChildRun; local?: string; update?: boolean } = {}): Promise<HostReading[]> {
   const knownHosts = options.knownHosts ?? (options.file ? join(dirname(options.file), 'known_hosts') : hostKnownHostsFile());
   const targets = [null, ...(await readHosts(options.file).catch(() => [])).map(host => host.target)];
   return Promise.all(targets.map(async target => {
     const host = target ?? options.local ?? hostname();
-    const probe = await probeHost(target, options.run, knownHosts), at = new Date().toISOString();
+    let probe = await probeHost(target, options.run, knownHosts), updateError: string | null = null;
+    if (options.update && target && 'shim' in probe && probe.shim !== hostShimDigest && probe.verbs?.includes('update-shim:1')) {
+      updateError = await updateHostShim(target, options.run ?? defaultChildRun, knownHosts);
+      if (!updateError) {
+        probe = await probeHost(target, options.run, knownHosts);
+        if ('shim' in probe && probe.shim !== hostShimDigest) updateError = 'it took the update but still runs the older helper';
+      }
+      if (updateError) probe = { ok: false, update: true, reason: `${target} did not take this release's helper: ${updateError}`, shim: null, verbs: null };
+    }
+    const at = new Date().toISOString();
     const was = previous.find(reading => reading.host === host);
-    if (!probe.ok) return { host, ...(target ? {} : { local: true }), at, away: true, since: was?.away ? was.since ?? was.at ?? at : at, ...('update' in probe ? { update: true } : {}), reason: probe.reason, cores: null, celsius: null, steal: null, runs: null, busy: null, stat: null };
+    if (!probe.ok) return { host, ...(target ? {} : { local: true }), at, away: true, since: was?.away ? was.since ?? was.at ?? at : at, ...('update' in probe ? { update: true } : {}), ...(updateError ? { updateError } : {}), reason: probe.reason, cores: null, celsius: null, steal: null, runs: null, busy: null, stat: null };
     const before = was?.stat ?? null;
     return { host, ...(target ? {} : { local: true }), at, away: false, ...(target && probe.shim !== hostShimDigest ? { older: true } : {}), cores: probe.cores, celsius: probe.celsius, steal: stealPercent(before, probe.stat), runs: probe.runs, busy: probe.load, stat: probe.stat };
   }));
