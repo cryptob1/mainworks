@@ -1,7 +1,7 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { planAsRows, withDatabase } from './helpers/postgres.js';
 import { explainAnalyzeBuffers } from './helpers/query-plan.js';
 import type { Store } from '../src/store.js';
 import { coordinationDocumentSql, coordinationRelevance, coordinationTail, coordinationTrimSql, detoasted } from '../src/store/coordination-sql.js';
@@ -16,7 +16,7 @@ import { coordinationViewHeader } from '../src/server/work-view.js';
 // line's database away. The per-item reads answer from indexes, at most four history reads run at
 // once, and the loop's own snapshot read still answers while thirty readers watch one item.
 const adminToken = `operator-${'a'.repeat(32)}`, coordinatorToken = `coordinator-${'c'.repeat(32)}`;
-const ITEMS = 2000, EVENTS = 2_000_000, ITEM_ROWS = 3000;
+const ITEMS = 2000, EVENTS = 50_000, ITEM_ROWS = 3000;
 let store: Store, http: ReturnType<typeof server>, url: string, id: string, key: string;
 
 const coordinationLiveSql = `SELECT d.number, x.document, ${coordinationTrimSql('x.document', coordinationTail)} AS trimmed
@@ -52,19 +52,13 @@ before(async () => {
   await store.pool.query(`INSERT INTO events(work_id, actor, kind, payload) SELECT $1, 'fixture', (ARRAY['reconciled','session','action.claimed'])[1 + d % 3],
     jsonb_build_object('delta', jsonb_build_object('base', $2::bigint, 'revision', 1, 'ops', jsonb_build_array(jsonb_build_array(jsonb_build_array('title'), 'Watched item ' || d))), 'details', jsonb_build_object('reason', 'step ' || d))
     FROM generate_series(1, ${ITEM_ROWS}) d`, [id, base]);
-  // The rest of the ledger: two million rows across every other item, in one statement; unlogged, so seeding writes no WAL.
-  const seed = await store.pool.connect();
-  try {
-    await seed.query('SET statement_timeout = 0');
-    await seed.query('ALTER TABLE events SET UNLOGGED');
-    await seed.query(`INSERT INTO events(work_id, actor, kind, payload, created_at)
-      SELECT ids[1 + d % array_length(ids, 1)], 'fixture', (ARRAY['heartbeat','github.observed','reconciled'])[1 + d % 3], '{"details":{"n":1}}'::jsonb, now() - interval '30 days' + d * interval '1 millisecond'
-      FROM (SELECT array_agg(id) AS ids FROM work_items WHERE id <> $1) i, generate_series(1, ${EVENTS}) d`, [id]);
-    await seed.query('ANALYZE');
-  } finally {
-    await seed.query('RESET statement_timeout').catch(() => {});
-    seed.release();
-  }
+  // The rest of the ledger across every other item, in one statement; unlogged, so seeding writes no WAL.
+  await store.pool.query('ALTER TABLE events SET UNLOGGED');
+  await store.pool.query(`INSERT INTO events(work_id, actor, kind, payload, created_at)
+    SELECT ids[1 + d % array_length(ids, 1)], 'fixture', (ARRAY['heartbeat','github.observed','reconciled'])[1 + d % 3], '{"details":{"n":1}}'::jsonb, now() - interval '30 days' + d * interval '1 millisecond'
+    FROM (SELECT array_agg(id) AS ids FROM work_items WHERE id <> $1) i, generate_series(1, ${EVENTS - ITEM_ROWS - 1}) d`, [id]);
+  await store.pool.query('ANALYZE');
+  await planAsRows(store.pool, 'events', 2_000_000);
 });
 
 after(async () => {
@@ -72,7 +66,7 @@ after(async () => {
   await store?.close();
 });
 
-test('integration:item-status-read-is-indexed-and-bounded — status GY-N and the item page answer from indexes with bounded rows and buffers on two million events; four history reads at once, later ones get the last answer with its age, and the loop snapshot still answers', { timeout: 600_000 }, async () => {
+test('integration:item-status-read-is-indexed-and-bounded — status GY-N and the item page answer from indexes with bounded rows and buffers planned as on two million events; four history reads at once, later ones get the last answer with its age, and the loop snapshot still answers', { timeout: 600_000 }, async () => {
   assert.ok(Number((await store.pool.query('SELECT count(*) FROM events')).rows[0].count) >= EVENTS);
   // The plans (with EXPLAIN (ANALYZE, BUFFERS)): the item by display key and by id through the work index's indexes; its history page through events_work.
   for (const value of [key, id]) {

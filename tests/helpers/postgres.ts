@@ -73,3 +73,13 @@ export async function databaseAvailable(connection: string, available: boolean) 
     if (!available) await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [name]);
   } finally { await admin.end(); }
 }
+
+/**
+ * Plan as on a large ledger (GY-3792): seed a small table, then tell the planner it holds `rows`
+ * rows, so EXPLAIN shows the plan a real install gets without spending minutes writing them.
+ * Call after ANALYZE, which would overwrite it.
+ */
+export async function planAsRows(client: Pick<pg.ClientBase, 'query'>, table: string, rows: number) {
+  // The planner scales reltuples by the table's real page count, so only the row count changes.
+  await client.query(`SELECT pg_restore_relation_stats('schemaname', 'public', 'relname', $1::text, 'reltuples', $2::real)`, [table, rows]);
+}
