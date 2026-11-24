@@ -334,7 +334,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     // GY-3412: test shards run on other hosts over the last 20 trials — the share run remotely, trial
     // wall time, waits while a host idled, this machine's peak CPU temperature and each host's latest probe (GY-3517).
     remoteShards: remoteShardSummary(readRemoteShardRuns(root), state?.hosts),
-    // GY-3750: over the last 20 item trials, the median share of reachable test files the trial selected.
+    // GY-3750: over the last 20 item trials, the median shares of reachable and of all test files the trial selected.
     testSelection: testSelectionSummary(readTestSelections(root)),
     // GY-3119: the batch gate on main — the verified commit that serves, the gate in flight with its current step, the last run's outcome with its reason or failing check (GY-3141), a held batch and the revert rate over the last 20 merges.
     batchGate: gateSummary(gateRecord),

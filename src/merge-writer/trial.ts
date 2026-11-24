@@ -801,6 +801,10 @@ export interface RunTrialInput {
   /** GY-3750: a rerun of failing files or of proofs on the base tip, which neither narrows its selection nor counts as a trial's. */
   rerun?: boolean;
   run?: ChildRun;
+  /** GY-3787: the files a rerun runs, in place of a selection of its own. */
+  files?: readonly string[];
+  /** GY-3787: each check's selection, made by the first attempt that reached one and reused by every retry. */
+  selections?: Map<string, { selected: string[]; cached: Set<string> }>;
   /** Add criterion files to a declared selector's output before sharding. */
   selectFiles?: (files: string[], timeoutMs: number) => Promise<string[]>;
   environment?: NodeJS.ProcessEnv;
@@ -1065,11 +1069,11 @@ export function setTrialAttempts(error: unknown, attempts: TrialNoVerdict[]): vo
  * that would not go after a verdict (TrialCleanupError with a verdict) is that verdict, not retried.
  */
 export async function runTrial(input: RunTrialInput): Promise<TrialRun> {
-  const attempts: TrialNoVerdict[] = [], retries = Math.max(0, Math.floor(input.retries ?? trialRetries));
+  const attempts: TrialNoVerdict[] = [], retries = Math.max(0, Math.floor(input.retries ?? trialRetries)), selections = input.selections ?? new Map();
   for (let attempt = 0; ; attempt++) {
     try {
       input.onAttempt?.(attempt);
-      const verdict = await runTrialAttempt(input);
+      const verdict = await runTrialAttempt({ ...input, selections });
       return attempts.length ? { ...verdict, retried: attempts } : verdict;
     } catch (error) {
       if (error instanceof TrialCleanupError && error.verdict) { if (attempts.length) error.verdict.retried = attempts; throw error; }
@@ -1114,7 +1118,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
   // with room outside every temporary root (else the session directory's checkout), each removed with the session and marked as this process's.
   const roots = input.temporaryRoots ?? trialTemporaryRoots();
   let home: string | null = null, temporary: string | null = null, place: string | null = null, worktree = checkout.worktree, guarded: string | null = null;
-  let env: Record<string, string>, wrapper: string[], boundary: ReturnType<typeof trialContainerBoundary>, runImage: string | undefined;
+  let env: Record<string, string>, wrapper: string[], unqueued: string[] | undefined, boundary: ReturnType<typeof trialContainerBoundary>, runImage: string | undefined;
   let dependencies: string | null = null, warm: string | null = null, caches = '';
   // GY-3640: a caching trial runs in its commit's kept built tree (keptBaseBuild), built by the
   // first pass on the commit and reused by every later one.
@@ -1282,6 +1286,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     }
     boundary = trialContainerBoundary([checkout.directory, place, kept, temporary, home], [...trialContainerDependencies(input.root), ...(warm ? [warm] : [])], Date.now() + remaining(), { ...await trialLoad(input.root, input.key === gateTrialKey ? 'gate' : 'merge', cpu.cores(), input.cores ?? availableParallelism()), owner: trialStartOwner(input.root, input.mergeSha) }, chosen ?? undefined);
     wrapper = boundary();
+    unqueued = boundary(undefined, false);
     runImage = chosen ?? undefined;
   };
   const log: string[] = [];
@@ -1322,12 +1327,12 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     return { ok: false, out, status, signal, cause: failed.cause };
   };
   // A shard's output goes to its own `entries` while the shards run, so the log keeps shard order whichever finishes first.
-  const child = async (phase: TrialTimeoutError['phase'], command: string, args: string[], options: { env?: NodeJS.ProcessEnv; entries?: string[] } = {}): Promise<Ended> => {
+  const child = async (phase: TrialTimeoutError['phase'], command: string, args: string[], options: { env?: NodeJS.ProcessEnv; entries?: string[]; wrapper?: string[] } = {}): Promise<Ended> => {
     const entries = options.entries ?? log;
     let out: string;
     const cpuBefore = cpu.sample();
     if (input.signal?.aborted) throw input.signal.reason;
-    try { out = String(await run(command, args, { cwd: worktree, env: (options.env ?? env) as Record<string, string>, timeoutMs: remaining(), ...(wrapper ? { wrapper } : {}), ...(input.signal ? { signal: input.signal } : {}) })); }
+    try { out = String(await run(command, args, { cwd: worktree, env: (options.env ?? env) as Record<string, string>, timeoutMs: remaining(), ...(options.wrapper ?? wrapper ? { wrapper: options.wrapper ?? wrapper } : {}), ...(input.signal ? { signal: input.signal } : {}) })); }
     catch (error) {
       const out = output(error);
       const ended = endedOf(error, out);
@@ -1566,7 +1571,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const hosts = input.remote?.hosts ?? await shardHosts();
     if (!hosts.length) return here('no compute host is added');
     const transport = input.remote?.transport ?? shardSshSession(run);
-    const session = remoteShardSession({ root: input.root, sha: input.mergeSha, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport });
+    const session = remoteShardSession({ root: input.root, sha: input.mergeSha, baseTip: input.baseTip, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport });
     try {
       const readings = (await (input.remote?.read ?? ((named, shared) => readShardHosts(named, run, cpu.cores(), shared)))(hosts, transport)).slice(1);
       const host = readings.filter(reading => underHeatLimit(reading) && reading.compose).sort((a, b) => realFreeCores(b) - realFreeCores(a))[0];
@@ -1662,54 +1667,71 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
   const runSelected = async (check: RepositoryTrialCheck): Promise<Pick<TrialRun, 'tests' | 'runnerExit' | 'groups' | 'logTail' | 'slowest'>> => {
     const result = (tests: TrialRun['tests'], runnerExit: number | null = null, groups?: TrialGroup[], logTail = tail()) => ({ tests, runnerExit, groups, logTail });
     const strategy = check.selection!;
-    const selector = checkCommandArgv(strategy.command)!;
-    enter('selection');
-    enterStep('selection');
-    // A selection child the host killed or could not start is no verdict (GY-1832); only one that exits non-zero fails the selection.
-    // GY-3192: the base tip lets the selection narrow each changed file to the declarations its diff touches.
-    // GY-3635: unless the candidate's change to the selector was approved in review, run the base commit's copy of the selector script against the candidate's worktree so candidate new tests still run.
-    const selectorScript = input.baseTip && !input.selectorApproved
-      ? selector.slice(1).find(arg => !arg.startsWith('-') && /\.(?:[cm]?js|ts)$/.test(arg))
-      : undefined;
-    let restoreSelector: (() => Promise<void>) | null = null;
-    if (selectorScript) {
-      const baseSelector = await Promise.resolve(run('git', ['-C', input.root, 'show', `${input.baseTip}:${selectorScript}`], { timeoutMs: remaining() })).then(String, () => null);
-      if (baseSelector !== null) {
-        const scriptPath = join(worktree, selectorScript);
-        const originalSelector = await readFile(scriptPath, 'utf8').catch(() => null);
-        if (originalSelector !== baseSelector) {
-          await writeFile(scriptPath, baseSelector, 'utf8');
-          restoreSelector = async () => {
-            if (originalSelector !== null) await writeFile(scriptPath, originalSelector, 'utf8');
-            else await rm(scriptPath, { force: true });
-          };
+    const selector = checkCommandArgv(strategy.command)!, pattern = new RegExp(strategy.pattern);
+    const select = async () => {
+      // A selection child the host killed or could not start is no verdict (GY-1832); only one that exits non-zero fails the selection.
+      // GY-3787: it takes no container slot and waits on no sensor: it is one short process, and every test waits on it.
+      // GY-3192: the base tip lets the selection narrow each changed file to the declarations its diff touches.
+      // GY-3635: unless the candidate's change to the selector was approved in review, run the base commit's copy of the selector script against the candidate's worktree so candidate new tests still run.
+      const selectorScript = input.baseTip && !input.selectorApproved
+        ? selector.slice(1).find(arg => !arg.startsWith('-') && /\.(?:[cm]?js|ts)$/.test(arg))
+        : undefined;
+      let restoreSelector: (() => Promise<void>) | null = null;
+      if (selectorScript) {
+        const baseSelector = await Promise.resolve(run('git', ['-C', input.root, 'show', `${input.baseTip}:${selectorScript}`], { timeoutMs: remaining() })).then(String, () => null);
+        if (baseSelector !== null) {
+          const scriptPath = join(worktree, selectorScript);
+          const originalSelector = await readFile(scriptPath, 'utf8').catch(() => null);
+          if (originalSelector !== baseSelector) {
+            await writeFile(scriptPath, baseSelector, 'utf8');
+            restoreSelector = async () => {
+              if (originalSelector !== null) await writeFile(scriptPath, originalSelector, 'utf8');
+              else await rm(scriptPath, { force: true });
+            };
+          }
         }
       }
+      let selection: Ended;
+      // GY-3750: an item's trial narrows a body-only change to the importers of what it reaches; the batch gate and reruns keep today's selection.
+      const narrow = input.key !== gateTrialKey && !input.rerun;
+      try {
+        selection = await child('selection', selector[0]!, [...selector.slice(1), ...input.changedFiles], input.baseTip ? { wrapper: unqueued, env: { ...env, GRAPHYARD_SELECTION_BASE: input.baseTip, ...(narrow ? { GRAPHYARD_SELECTION_IMPORTERS: '1' } : {}) } } : { wrapper: unqueued });
+      } finally {
+        if (restoreSelector) await restoreSelector().catch(() => {});
+      }
+      if (hostEnded(selection)) throw runnerFailure('selection', selection);
+      if (!selection.ok) return null;
+      const counts = narrow ? selectionCounts(selection.out.split('\n')[0] ?? '') : null;
+      if (counts) {
+        const all = String(await Promise.resolve(run('git', ['-C', input.root, 'ls-tree', '-r', '--name-only', input.mergeSha], { timeoutMs: remaining() })).catch(() => '')).split('\n').filter(line => pattern.test(line)).length;
+        await recordTestSelection(input.root, { ...counts, ...(all ? { all } : {}) }).catch(() => {});
+      }
+      let selected = selection.out.split('\n').map(line => line.trim()).filter(line => pattern.test(line));
+      // GY-3418: a selected file that passed in an earlier trial with the same content, imports, data
+      // files and dependencies is not run again; the proof files the caller adds always run. GY-3639:
+      // each file's key decides alone, so a doc or a case edited beside code leaves the others cached.
+      const cached = dependencies ? cachedPasses(caches, testResultKeys(worktree, selected, dependencies)) : new Set<string>();
+      if (cached.size) {
+        log.push(`test-result cache: ${cached.size} file(s) passed in an earlier trial with the same content, imports and dependencies, so they are not run again: ${[...cached].join(', ')}`);
+        selected = selected.filter(file => !cached.has(file));
+      }
+      return { selected, cached };
+    };
+    // GY-3787: one selection per trial. A rerun runs the files it was given, and a retry the ones the first attempt selected;
+    // a rerun given no test file of this check (another check failed first) selects as a trial does.
+    const given = input.files?.filter(file => pattern.test(file));
+    const reruns = given && (given.length || !input.files!.length);
+    let chosen = reruns ? { selected: given, cached: new Set<string>() } : input.selections?.get(check.check);
+    if (!chosen) {
+      enter('selection');
+      enterStep('selection');
+      chosen = await select() ?? undefined;
+      if (!chosen) return result({ passed: 0, failed: [strategy.command], files: 0 });
+      input.selections?.set(check.check, chosen);
     }
-    let selection: Ended;
-    // GY-3750: an item's trial narrows a body-only change to the importers of what it reaches; the batch gate and reruns keep today's selection.
-    const narrow = input.key !== gateTrialKey && !input.rerun;
-    try {
-      selection = await child('selection', selector[0]!, [...selector.slice(1), ...input.changedFiles], input.baseTip ? { env: { ...env, GRAPHYARD_SELECTION_BASE: input.baseTip, ...(narrow ? { GRAPHYARD_SELECTION_IMPORTERS: '1' } : {}) } } : {});
-    } finally {
-      if (restoreSelector) await restoreSelector().catch(() => {});
-    }
-    if (hostEnded(selection)) throw runnerFailure('selection', selection);
-    if (!selection.ok) return result({ passed: 0, failed: [strategy.command], files: 0 });
-    const counts = narrow ? selectionCounts(selection.out.split('\n')[0] ?? '') : null;
-    if (counts) await recordTestSelection(input.root, counts).catch(() => {});
-    const pattern = new RegExp(strategy.pattern);
-    let selected = selection.out.split('\n').map(line => line.trim()).filter(line => pattern.test(line));
-    // GY-3418: a selected file that passed in an earlier trial with the same content, imports, data
-    // files and dependencies is not run again; the proof files the caller adds always run. GY-3639:
-    // each file's key decides alone, so a doc or a case edited beside code leaves the others cached.
-    const cached = dependencies ? cachedPasses(caches, testResultKeys(worktree, selected, dependencies)) : new Set<string>();
-    if (cached.size) {
-      log.push(`test-result cache: ${cached.size} file(s) passed in an earlier trial with the same content, imports and dependencies, so they are not run again: ${[...cached].join(', ')}`);
-      selected = selected.filter(file => !cached.has(file));
-    }
+    const { selected, cached } = chosen;
     let files = selected;
-    try { if (input.selectFiles) files = await input.selectFiles(selected, remaining()); }
+    try { if (input.selectFiles && !reruns) files = await input.selectFiles(selected, remaining()); }
     catch (error) {
       if ((error as { timedOut?: boolean }).timedOut) throw new TrialTimeoutError('selection', Math.max(0, now() - startedAt), tail());
       throw runnerFailure('selection', endedOf(error, output(error)));
@@ -1755,7 +1777,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     let outputShown = false;
     // A shard a host turned away is noted after every shard's output, so the note stays in the log tail kept on the item.
     const dropped = new Map<string, HostDroppedError>();
-    const session = hosts.length ? remoteShardSession({ root: input.root, sha: input.mergeSha, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport }) : null;
+    const session = hosts.length ? remoteShardSession({ root: input.root, sha: input.mergeSha, baseTip: input.baseTip, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport }) : null;
     // One shard on this machine, or on `remote`; a remote host that turned it away rethrows, so it runs elsewhere.
     const shard = async (index: number, remote?: string) => {
       const group = shards[index]!, entries: string[] = [];

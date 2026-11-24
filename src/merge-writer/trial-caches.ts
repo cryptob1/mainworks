@@ -102,21 +102,30 @@ export function testResultKeys(worktree: string, files: readonly string[], depen
   };
   // The configuration every test runs under is in every key: a change to it runs them all again.
   const configuration = tops.length ? readdirSync(worktree).filter(name => /^(?:package\.json|\.npmrc|tsconfig[\w.-]*\.json)$/.test(name)).sort().map(name => `\0${name}\0${read(join(worktree, name)) ?? ''}`).join('') : '';
+  // GY-3787: each file is parsed and hashed once per call, however many tests reach it.
+  const parsed = new Map<string, { digest: string; imports: string[] }>();
+  const parse = (path: string) => {
+    if (!parsed.has(path)) {
+      const text = read(path), found = text === null ? [] : [...text.matchAll(importPattern)].map(match => resolveImport(path, match[1]!));
+      parsed.set(path, { digest: sha(text ?? ''), imports: [...new Set(found.filter((target): target is string => !!target && !relative(worktree, target).startsWith('..')))] });
+    }
+    return parsed.get(path)!;
+  };
+  const digests = new Map<string, string>();
+  const digest = (content: string) => { if (!digests.has(content)) digests.set(content, sha(content)); return digests.get(content)!; };
   const keys = new Map<string, string>();
   for (const file of files) {
     const start = join(worktree, file), seen = new Set<string>([start]), queue = [start], hash = createHash('sha256').update(dependencies).update(configuration);
     const own = `${file.split('/')[0]}/`, reads = new Map<string, string>();
     while (queue.length) {
       const path = queue.shift()!, text = read(path);
-      hash.update(`\0${relative(worktree, path)}\0${text ?? ''}`);
+      const { digest: content, imports } = parse(path);
+      hash.update(`\0${relative(worktree, path)}\0${content}`);
       if (text === null) continue;
-      for (const match of text.matchAll(importPattern)) {
-        const found = resolveImport(path, match[1]!);
-        if (found && !seen.has(found) && !relative(worktree, found).startsWith('..')) { seen.add(found); queue.push(found); }
-      }
+      for (const found of imports) if (!seen.has(found)) { seen.add(found); queue.push(found); }
       if (tops.length && (path === start || relative(worktree, path).startsWith(own))) for (const [name, content] of data(path, text)) reads.set(name, content);
     }
-    for (const name of [...reads.keys()].sort()) hash.update(`\0data\0${name}\0${reads.get(name)}`);
+    for (const name of [...reads.keys()].sort()) hash.update(`\0data\0${name}\0${digest(reads.get(name)!)}`);
     keys.set(file, hash.digest('hex').slice(0, 40));
   }
   return keys;

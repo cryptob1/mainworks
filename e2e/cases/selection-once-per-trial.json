@@ -1,0 +1,18 @@
+{
+  "id": "selection-once-per-trial",
+  "title": "A merge trial picks its tests once, in seconds",
+  "description": "A real merge trial of a one-file change over a seeded test install: a flaky test file reruns on the merge commit and the proof runs on the base tip, and the trial still runs its selector once and records one selection step, under 10 s and within 3 s of the selector itself. A retried trial reuses the first attempt's selection.",
+  "tags": [
+    "trial"
+  ],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "One selection step per trial, under 10 s",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/selection-once-per-trial.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}

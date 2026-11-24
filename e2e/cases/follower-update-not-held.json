@@ -1,0 +1,16 @@
+{
+  "id": "follower-update-not-held",
+  "title": "Another project's merge trials never hold an install's update",
+  "description": "A running deploy watch for an install that follows the Mainworks source takes a newer verified build while the followed project's merge trial holds a heavy-job slot on the same host.",
+  "tags": ["deployment", "regression"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "Publish a newer verified build while the followed project's merge trial runs and see it served",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/follower-update-not-held.test.ts",
+      "timeoutSeconds": 120
+    }
+  ]
+}
