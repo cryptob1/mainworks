@@ -220,6 +220,21 @@ export interface GatePorts {
 
 /** How many filing notes the record keeps. */
 const filingNotesWindow = 5;
+const notePrefix = (source: string) => `${source}: `;
+const withoutNote = (notes: readonly string[] | undefined, source: string) => (notes ?? []).filter(note => !note.startsWith(notePrefix(source)));
+const isDiagnosticNote = (note: string) => note.startsWith('diagnostic:');
+const isSkippedCaseNote = (note: string) => /: .+ bound this case; it is gone from the catalog/.test(note);
+
+/** Record a gate note keyed by its source, replacing any earlier note for that source. */
+export function setGateNote(record: Pick<GateRecord, 'notes'>, source: string, text: string) {
+  record.notes = [...withoutNote(record.notes, source), `${source}: ${text}`.slice(0, 200)].slice(-filingNotesWindow);
+}
+
+/** Remove any gate note keyed by `source`. */
+export function clearGateNote(record: Pick<GateRecord, 'notes'>, source: string) {
+  if (!record.notes?.length) return;
+  record.notes = withoutNote(record.notes, source);
+}
 
 /** Whether a filing was refused because its key was filed before with different wording (GY-3147). */
 const reusedFilingKey = (error: unknown) => /Idempotency key reused with different input/.test(error instanceof Error ? error.message : String(error));
@@ -231,20 +246,23 @@ const reusedFilingKey = (error: unknown) => /Idempotency key reused with differe
  * failure is a gate note. A refused or failed filing never aborts the run's verdict.
  */
 async function fileFailure(ports: Pick<GatePorts, 'file' | 'faultDedup'>, record: Pick<GateRecord, 'filed' | 'notes'>, at: string, input: { title: string; description: string; key: string }) {
-  if (!ports.faultDedup?.(input.key) && input.key in (record.filed ?? {})) return; // the case has its item: reuse it
+  if (!ports.faultDedup?.(input.key) && input.key in (record.filed ?? {})) { clearGateNote(record, input.key); return; } // the case has its item: reuse it
   try {
     const filed = await ports.file(input);
     (record.filed ??= {})[input.key] = { item: typeof filed === 'object' && filed !== null ? filed.item : null, at };
+    clearGateNote(record, input.key);
   } catch (error) {
     const text = error instanceof Error ? error.message : String(error);
-    if (reusedFilingKey(error)) (record.filed ??= {})[input.key] = { item: null, at };
-    else record.notes = [...record.notes ?? [], `${input.key}: ${text}`.slice(0, 200)].slice(-filingNotesWindow);
+    if (reusedFilingKey(error)) { (record.filed ??= {})[input.key] = { item: null, at }; clearGateNote(record, input.key); }
+    else setGateNote(record, input.key, text);
   }
 }
 
-/** The filings of two concurrent writers — the gate beside the diagnostics — merged: the newest binding per case wins, notes stay deduplicated and bounded. */
-export function mergeFilings(latest: Pick<GateRecord, 'filed' | 'notes'> | null, mine: Pick<GateRecord, 'filed' | 'notes'>): Pick<GateRecord, 'filed' | 'notes'> {
-  return { filed: { ...latest?.filed, ...mine.filed }, notes: [...new Set([...latest?.notes ?? [], ...mine.notes ?? []])].slice(-filingNotesWindow) };
+/** The filings of two concurrent writers — the gate beside the diagnostics — merged: the newest binding per case wins, and each writer keeps its own notes so a cleared note is never resurrected by the other. */
+export function mergeFilings(latest: Pick<GateRecord, 'filed' | 'notes'> | null, mine: Pick<GateRecord, 'filed' | 'notes'>, writer: 'gate' | 'diagnostics' = 'gate'): Pick<GateRecord, 'filed' | 'notes'> {
+  const own = (note: string) => (writer === 'diagnostics') === isDiagnosticNote(note);
+  const kept = [...(latest?.notes ?? []).filter(note => !own(note)), ...(mine.notes ?? []).filter(own)];
+  return { filed: { ...latest?.filed, ...mine.filed }, notes: [...new Set(kept)].slice(-filingNotesWindow) };
 }
 
 /** What one gate came to. */
@@ -285,12 +303,10 @@ const boundCaseIds = (record: Pick<GateRecord, 'merges'>, landings: readonly Ser
 export async function gateChecks(ports: Pick<GatePorts, 'catalog' | 'core'>, record: Pick<GateRecord, 'merges' | 'notes'>, tip: string, landings: readonly ServeLanding[], whole: boolean): Promise<string[]> {
   const catalog = await ports.catalog(tip);
   const bound: string[] = [];
+  if (record.notes?.length) record.notes = record.notes.filter(note => !isSkippedCaseNote(note));
   for (const { id, item } of boundCases(record, landings)) {
     if (catalog.includes(id)) bound.push(id);
-    else {
-      const note = `${id}: ${item} bound this case; it is gone from the catalog, so the gate skips it`.slice(0, 200);
-      record.notes = [...new Set([...record.notes ?? [], note])].slice(-filingNotesWindow);
-    }
+    else setGateNote(record, id, `${item} bound this case; it is gone from the catalog, so the gate skips it`);
   }
   const cases = [...new Set([...(whole ? catalog : bound), ...await ports.core(tip)])];
   return ['build', ...cases.map(id => `e2e:${id}`), 'affected'];
@@ -497,8 +513,8 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
       // GY-3199: the verified commit is published where every install's deploy watch reads it. A
       // failed publish never undoes the verification — it is one gate note, and the loop's catch-up
       // publish retries it.
-      try { await ports.publish?.(tip); record.published = tip; } catch (error) {
-        record.notes = [...record.notes ?? [], `verified-ref: ${error instanceof Error ? error.message : String(error)}`.slice(0, 200)].slice(-filingNotesWindow);
+      try { await ports.publish?.(tip); record.published = tip; clearGateNote(record, 'verified-ref'); } catch (error) {
+        setGateNote(record, 'verified-ref', error instanceof Error ? error.message : String(error));
       }
       return { outcome: 'verified', tip, checks, flakes, knownRed, ...(knownFlaky.length ? { knownFlaky } : {}) };
     };
@@ -630,6 +646,7 @@ export async function runDiagnostics(ports: Pick<GatePorts, 'now' | 'file'> & { 
   // GY-3264: each failure's commit and failing step are recorded before filing, so a check filed
   // before — whose item is reused, never re-filed — still has its newest detail readable in status.
   record.diagnosticFailures = Object.fromEntries(failed.map(check => [check, { commit: verified, detail: details[check]?.slice(0, 1000) ?? null, at }]));
+  if (record.notes?.length) record.notes = record.notes.filter(note => !isDiagnosticNote(note));
   for (const check of failed) {
     const detail = record.diagnosticFailures[check]!.detail, output = outputs[check]?.length ? `\n\nThe last lines of its output:\n\n\`\`\`\n${outputs[check]!.join('\n').slice(-12_000)}\n\`\`\`` : '';
     await fileFailure(ports, record, at, { key: `diagnostic:${check}`, title: `Diagnostic failure on main: ${check}`,
