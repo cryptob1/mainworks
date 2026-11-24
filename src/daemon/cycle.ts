@@ -806,7 +806,8 @@ async function dispatchStep(cycle: Cycle) {
     const repeating = repeatingItems(state.failureRuns), unheld = (item: Work) => !repeating.has(item.key) && !reworkCapHeld(item);
     const identity = config.operatorAgent ? { id: config.operatorAgent.id, role: 'operator-agent' as const } : undefined;
     const releasable = releasableBacklog(snapshot.work, identity).filter(item => (item.owner ?? null) === null);
-    const alarm = stallAlarm({ now: clock, open: open.filter(unheld), ready: claimable.filter(unheld), releasable, freeSlots: allowed - running, holds, gates,
+    const alarm = stallAlarm({ now: clock, open: open.filter(unheld), ready: claimable.filter(unheld), releasable,
+      released: open.filter(item => item.ready && item.stage !== 'done').length, freeSlots: allowed - running, holds, gates,
       state, registry, serving: await Promise.resolve(effects.servingCommit?.()).catch(() => null) ?? null });
     if (recordStallAlarm(state, alarm, clock)) { cycle.log(`[mainworks-master] cycle ${state.cycle}: ${alarm ?? 'the stall alarm cleared'}`); await effects.persist(state); }
   }

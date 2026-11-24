@@ -6,7 +6,7 @@ import { writeFile } from 'node:fs/promises';
 import { emptyDaemonState, daemonStatePath, type DaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
-import { stallAlarmKey } from '../src/daemon/stall-alarm.js';
+import { isEmptyBoardAlarm, stallAlarmKey } from '../src/daemon/stall-alarm.js';
 import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../src/master.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
@@ -284,4 +284,20 @@ test(`${proof} — no empty-board alarm or wake when one ready item exists, when
   await twoSlots.cycle();
   assert.equal(twoSlots.state.actions[stallAlarmKey], undefined, 'no alarm with fewer than three free builder slots');
   assert.equal(twoSlots.wakes.length, 0);
+});
+
+test(`${proof} — no empty-board alarm or wake while a released item is still open at review, test or merge, or held, with no running builder`, async () => {
+  for (const overrides of [
+    { stage: 'review' },
+    { stage: 'test' },
+    { stage: 'merge' },
+    { stage: 'build', hold: { reason: 'held by the test' } },
+  ] as Partial<Work>[]) {
+    const f = await fixture({ work: [makeWork('GY-30', { ready: true, ...overrides })], workers: 4 });
+    await f.cycle();
+    f.advance(20);
+    await f.cycle();
+    assert.ok(!isEmptyBoardAlarm(alarmOf(f.state) ?? ''), `no empty-board alarm with a released item at ${overrides.stage}${overrides.hold ? ' on hold' : ''}`);
+    assert.ok(![...f.wakes, ...f.launches].some(text => /board is empty/i.test(text)), `no empty-board wake with a released item at ${overrides.stage}`);
+  }
 });

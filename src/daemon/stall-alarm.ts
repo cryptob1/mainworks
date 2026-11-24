@@ -23,6 +23,8 @@ export interface StallReadings {
   now: number;
   /** Open items in scope; `ready` are the ones dispatch could launch now; `releasable` are unreleased backlog items eligible for release. */
   open: readonly Work[]; ready: readonly Work[]; releasable?: readonly Work[];
+  /** GY-3778: every open released item, held, blocked or in flight included; any one means the board is not empty. */
+  released?: number;
   freeSlots: number;
   /** GY-3473: what holds every implementation launch this cycle — disk, CPU pressure, an untrusted checkout, a running batch gate — as dispatch itself decided it. */
   holds?: readonly string[];
@@ -100,7 +102,7 @@ export function stallAlarm(readings: StallReadings): string | null {
   if (stalled)
     lines.push(`${ready.length} ready item(s) (${ready.slice(0, 5).map(item => item.key).join(', ')}) and ${freeSlots} free worker slot(s), but no launch since ${iso(since)}. Cause: ${stallCauses(readings).join('; ')}`);
   // GY-3778: free builder slots sitting idle with nothing ready, released or releasable for 15 minutes.
-  const hasWork = ready.length > 0 || open.some(item => item.ready && item.stage === 'ready') || (readings.releasable?.length ?? 0) > 0;
+  const hasWork = ready.length > 0 || (readings.released ?? open.filter(item => item.ready && item.stage !== 'done').length) > 0 || (readings.releasable?.length ?? 0) > 0;
   const lastStart = lastBuilderStartAt(state, open);
   if (!hasWork && freeSlots >= emptyBoardMinFreeSlots && lastStart !== null && now - lastStart >= emptyBoardIdleMs)
     lines.push(`${freeSlots} free builder slot(s) and no ready, released or releasable work since ${iso(lastStart)}. Cause: ${emptyBoardCauseMarker} (${freeSlots} free builder slot(s)).`);
