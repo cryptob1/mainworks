@@ -7,7 +7,7 @@ import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { namedPool } from '../src/store/report-pool.js';
-import { backfillEventStage } from '../src/store/snapshot-delta.js';
+import { eventWorkSql } from '../src/store/snapshot-delta.js';
 import { eventStageBackfill } from '../src/daemon/event-stage-backfill.js';
 
 // GY-3769: GY-3768's 1,000-row batches of long-chain rows ran past the statement timeout and stored nothing, again
@@ -65,8 +65,10 @@ after(async () => {
 test('integration:backfill-stage-small-batches — on 800-row chains of 180 KB documents every backfill batch finishes in under 5 s and stores at least one row, until every delta row carries the stage graphyard_event_work gives', { timeout: 600_000 }, async () => {
   const before = await lacking();
   assert.equal(before, ITEMS * (ROWS - ROWS / EVERY));
-  // The seed is long enough: GY-3768's 1,000-row batch runs past the timeout and stores nothing.
-  await assert.rejects(backfillEventStage(plain, 1000), /statement timeout/);
+  // The seed is long enough: GY-3768's 1,000-row batch, which rebuilt each row's document, runs past the timeout and
+  // stores nothing (GY-3772 no longer rebuilds documents, so its statement is kept here).
+  await assert.rejects(plain.query(`SET LOCAL graphyard.stage_backfill = 'on'; UPDATE events e SET payload = e.payload || jsonb_build_object('stage', ${eventWorkSql('e')}->>'stage')
+    FROM (SELECT seq FROM events WHERE payload ? 'delta' AND NOT payload ? 'stage' ORDER BY seq LIMIT 1000) b WHERE e.seq = b.seq`), /statement timeout/);
   assert.equal(await lacking(), before);
 
   const lines: string[] = [], batches: { limit: number; filled: number; ms: number }[] = [];
@@ -94,6 +96,6 @@ test('integration:backfill-stage-small-batches — on 800-row chains of 180 KB d
 });
 
 test('e2e:backfill-stage-small-batches — after the backfill on a running test install with long delta chains, master status names no backfill statement over 5 s', async () => {
-  const slowest = (await call('slowest-query?name=UPDATE%20events%20e%20SET%20payload')).slowest;
+  const slowest = (await call('slowest-query?name=WITH%20batch%20AS%20(SELECT%20seq%2C%20work_id')).slowest;
   assert.ok(!slowest || slowest.ms < TIMEOUT_MS, `master status names ${JSON.stringify(slowest)}`);
 });

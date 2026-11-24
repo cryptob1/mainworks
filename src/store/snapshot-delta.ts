@@ -183,8 +183,10 @@ export const resolvedPayloadSql = (alias = 'events') =>
 /** GY-3769: the most older delta rows one backfill batch may take; the loop sizes each batch to finish in about 2 s. */
 export const stageBackfillMax = 1000;
 /**
- * Stores the stage on the oldest `limit` delta rows that lack it (by the events_stageless_delta index), resolving them
- * by item and seq so one chain's rows run together; `filled` is 0 once none is left.
+ * Stores the stage on the oldest `limit` delta rows that lack it (by the events_stageless_delta index); `filled` is 0
+ * once none is left and `remaining` counts the rows still lacking it. GY-3772: a row's stage is its base's stage after
+ * the row's own edits of `stage`, the value graphyard_event_work's document would hold, read once per base and never by
+ * rebuilding the document (a root edit is a no-op in graphyard_event_work).
  */
 export async function backfillEventStage(pool: pg.Pool, limit: number) {
   const db = await pool.connect();
@@ -192,12 +194,18 @@ export async function backfillEventStage(pool: pg.Pool, limit: number) {
     await db.query('BEGIN');
     // The events trigger lets this one update through: a delta row lacking its stage gains it (compaction.ts).
     await db.query("SET LOCAL graphyard.stage_backfill = 'on'");
-    const { rows } = await db.query(`UPDATE events e SET payload = e.payload || jsonb_build_object('stage', b.stage)
-      FROM (SELECT x.seq, ${eventWorkSql('x')}->>'stage' AS stage FROM events x
-        WHERE x.seq IN (SELECT seq FROM events WHERE payload ? 'delta' AND NOT payload ? 'stage' ORDER BY seq LIMIT $1) ORDER BY x.work_id, x.seq) b
-      WHERE e.seq = b.seq RETURNING e.seq`, [Math.max(1, Math.min(stageBackfillMax, Math.floor(limit) || 1))]);
+    const { rows } = await db.query(`WITH batch AS (SELECT seq, work_id, payload->'delta' AS d FROM events WHERE payload ? 'delta' AND NOT payload ? 'stage' ORDER BY seq LIMIT $1),
+      bases AS MATERIALIZED (SELECT b.seq, b.work_id, b.payload->'work'->>'stage' AS stage FROM events b
+        WHERE b.seq IN (SELECT DISTINCT (d->>'base')::bigint FROM batch) AND b.payload ? 'work')
+      UPDATE events e SET payload = e.payload || jsonb_build_object('stage', CASE WHEN bases.seq IS NULL THEN NULL
+          WHEN edit.op IS NULL THEN bases.stage WHEN jsonb_array_length(edit.op) = 1 THEN NULL ELSE edit.op->1 #>> '{}' END)
+      FROM batch LEFT JOIN bases ON bases.seq = (batch.d->>'base')::bigint AND bases.work_id = batch.work_id
+        LEFT JOIN LATERAL (SELECT o.value AS op FROM jsonb_array_elements(CASE WHEN jsonb_typeof(batch.d->'ops') = 'array' THEN batch.d->'ops' ELSE '[]' END) WITH ORDINALITY o(value, n)
+          WHERE o.value->0 = '["stage"]' ORDER BY o.n DESC LIMIT 1) edit ON true
+      WHERE e.seq = batch.seq RETURNING e.seq`, [Math.max(1, Math.min(stageBackfillMax, Math.floor(limit) || 1))]);
+    const remaining = Number((await db.query(`SELECT count(*) FROM events WHERE payload ? 'delta' AND NOT payload ? 'stage'`)).rows[0].count);
     await db.query('COMMIT');
-    return { filled: rows.length };
+    return { filled: rows.length, remaining };
   } catch (error) {
     await db.query('ROLLBACK').catch(() => {});
     throw error;
