@@ -6,6 +6,6 @@
   "target": "any",
   "required": false,
   "steps": [
-    { "kind": "command", "name": "the backfill's remaining rows fall by at least 1,000 within ten loop cycles and reach zero", "run": "node --import tsx tests/helpers/run-tests.ts tests/backfill-count-off-batch.test.ts", "timeoutSeconds": 900 }
+    { "kind": "command", "name": "the backfill's remaining rows fall by at least 1,000 within ten loop cycles and reach zero", "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:backfill-count-off-batch tests/backfill-count-off-batch.test.ts", "timeoutSeconds": 900 }
   ]
 }
