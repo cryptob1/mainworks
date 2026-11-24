@@ -2,7 +2,7 @@
 // browser sealed it to this host's connect key; the loop opens it here, sets it in every
 // environment the install's runtime.json declares and records the outcome on the item, which drops
 // the ciphertext. The value lives only in this process's memory and the set command's `$VALUE`.
-import type { MasterConfig } from '../master.js';
+import type { MasterConfig } from './profiles.js';
 import type { Work } from '../model.js';
 import { fleetRequest } from '../fleet.js';
 import { installIdFor } from '../install/types.js';
