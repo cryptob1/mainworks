@@ -26,7 +26,7 @@ const freePort = () => new Promise<number>((accept, reject) => {
 /** Waits until the URL answers, so a just-restarted serve process is judged by its answer, not its spawn. */
 const untilAnswers = async (url: string) => {
   for (let attempt = 0; attempt < 100; attempt++) {
-    if (await fetch(url).then(response => response.ok, () => false)) return;
+    if (await fetch(url, { signal: AbortSignal.timeout(5_000) }).then(response => { void response.body?.cancel().catch(() => {}); return response.ok; }, () => false)) return;
     await new Promise(accept => setTimeout(accept, 100));
   }
   throw new Error(`${url} never answered`);
@@ -34,14 +34,16 @@ const untilAnswers = async (url: string) => {
 /** Waits until the URL stops answering, so a killed serve is judged gone by its port, not its pid. */
 const untilSilent = async (url: string) => {
   for (let attempt = 0; attempt < 100; attempt++) {
-    if (!(await fetch(url).then(() => true, () => false))) return;
+    if (!(await fetch(url, { signal: AbortSignal.timeout(5_000) }).then(response => { void response.body?.cancel().catch(() => {}); return true; }, () => false))) return;
     await new Promise(accept => setTimeout(accept, 100));
   }
   throw new Error(`${url} never went silent`);
 };
 const stopServing = (root: string) => {
-  const pid = readServeRecord(serveRecordPath(root))?.pid;
-  if (pid) try { process.kill(-pid, 'SIGKILL'); } catch { /* already gone */ }
+  const record = readServeRecord(serveRecordPath(root));
+  for (const pid of [record?.pid, record?.baseline?.pid]) {
+    if (pid) try { process.kill(-pid, 'SIGKILL'); } catch { /* already gone */ }
+  }
 };
 /** Commits `files` to the pusher and pushes them to main; answers the new tip. */
 const push = async (pusher: string, files: Record<string, string>, what: string) => {
@@ -91,7 +93,7 @@ const statusOf = (root: string, repository: string) => masterStatusReport(root, 
   url: 'http://127.0.0.1:5', repository, credentialFile: join(root, 'coordinator.token'), hostId: 'test-host', baseBranch: 'main', workers: [], run: { intervalSeconds: 30 },
 } as unknown as MasterConfig, async () => ({ work: [], now: new Date().toISOString() }));
 
-const servedCommit = async (url: string) => (await (await fetch(url)).text()).trim();
+const servedCommit = async (url: string) => (await (await fetch(url, { signal: AbortSignal.timeout(5_000) })).text()).trim();
 const escaped = (url: string) => url.replace(/[.:]/g, match => `\\${match}`);
 
 test('unit:tests/managed-serve.test.ts — the deploy pass serves the node application main declares: installed at the root, built and started in its directory on a free PORT; a merged main moves what the port answers, and master status reports the URL, the served commit and atMain; a failing build keeps the previous commit serving and records the failure', async () => {
@@ -258,7 +260,7 @@ test('unit:tests/managed-serve.test.ts — a repository declaring no node applic
     assert.ok(liveServe);
     assert.equal(liveServe.status, 'pass');
     assert.match(liveServe.detail, new RegExp(`${escaped(live)} answers at ${main.slice(0, 12)}`));
-  } finally { await new Promise<void>(done => server.close(() => done())); }
+  } finally { server.closeAllConnections?.(); await new Promise<void>(done => server.close(() => done())); }
 });
 
 test('unit:tests/managed-serve.test.ts — a malformed node application is named, never served', () => {

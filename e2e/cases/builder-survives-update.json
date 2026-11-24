@@ -1,0 +1,16 @@
+{
+  "id": "builder-survives-update",
+  "title": "A builder keeps its item when the control plane restarts for an update",
+  "description": "The quiet-update wait counts running builder sessions as work in flight with the 4-hour upper bound. A stub builder session running under watch survives a control-plane restart mid-item and submits the item without a new attempt.",
+  "tags": ["deployment", "regression"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "Restart the control plane mid-item and verify the builder submits without a new attempt and quiet-update waits for builders",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/builder-survives-update.test.ts",
+      "timeoutSeconds": 180
+    }
+  ]
+}

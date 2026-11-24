@@ -428,6 +428,16 @@ export function adoptHeadlessWorkers(root: string): AdoptedRun[] {
     return [{ name: record.name, role: 'worker' as const, work: record.work, subject: record.subject, directory, live: true, settled }];
   });
 }
+/** Whether any headless builder session in `root` is still running (GY-3785). */
+export function hasRunningWorker(root: string): boolean {
+  let names: string[];
+  try { names = readdirSync(workerRunsDirectory(root)); } catch { return false; }
+  return names.some(name => {
+    const directory = join(workerRunsDirectory(root), name);
+    const record = readWorkerRecord(directory), meta = readRunMeta(directory);
+    return !!record && !!meta && readText(runFiles(directory).exit) === null && runAlive(meta);
+  });
+}
 /** GY-3405: every worker run that ran on an added host, newest first: its item, the host, when it started and whether it still runs. */
 export function remoteWorkerRuns(root: string): { work: string; host: string; startedAt: string; running: boolean }[] {
   let names: string[];
