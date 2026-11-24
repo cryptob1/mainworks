@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { defineCommands, workMutation } from './registry.js';
 import { setting } from '../setting.js';
 
-export const verifyHelp = [
+const verifyHelp = [
   '  verify GY-N                  Run exactly the unit and integration proofs the item\'s',
   '                                criteria name on committed HEAD in a private trial, name others as',
   '                                outstanding, and record the result complete reports.',
@@ -16,14 +16,14 @@ export const verifyHelp = [
   '                                the change: it is not run against the base (repeatable)',
 ];
 
-export const checkHelp = [
+const checkHelp = [
   '  check NAME [GY-N]             Run the declared pre-merge check NAME on committed HEAD on the',
   '                                host, with its Compose services, as the merge trial runs it;',
   '                                prints its output and exits 1 when it fails. GY-N defaults to',
   '                                the item of the assigned graphyard/<key>-<epoch> branch',
 ];
 
-export const completeHelp = [
+const completeHelp = [
   '  complete GY-N EPOCH [--head [SHA]]  Submit the commit (the worktree\'s HEAD when no SHA is',
   '                                given) and end the lease; gates decide completion. The shared',
   '                                object store already holds it, so nothing is pushed. A submission',

@@ -504,12 +504,10 @@ export async function completePreflight(
   }
 }
 
-import { completeHelp } from './lease.js';
-
 export const completeCommand: CliCommand = {
   name: 'complete',
   scope: 'work',
-  help: completeHelp,
+  help: [],
   run: async (context, work) => {
     // GY-3330: one idempotency key for this attempt and head — a caller's GRAPHYARD_REQUEST_ID,
     // else derived — so every retry of a submission the control plane did not answer repeats the
