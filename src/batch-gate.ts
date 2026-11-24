@@ -132,7 +132,10 @@ export interface GateRecord {
   gateRuns?: { ms: number; at: string }[];
   /** GY-3507: the last few verified gate runs' own execution time (waits left out), newest last: what the bound reads. */
   verifiedRuns?: { ms: number; at: string }[];
+  /** When the diagnostics last completed; a thrown run leaves it, so the next cycle retries. */
   diagnosticsAt: string | null;
+  /** GY-3779: the last diagnostics run, completed or thrown: when, its outcome and why. Optional only for records an older loop wrote. */
+  diagnosticsRun?: DiagnosticsRun;
   /**
    * GY-3264: the latest diagnostic run's failures, per check: the exact commit it tested and the
    * trial's own bounded failing-step text (null when the trial supplied none), kept here because
@@ -605,6 +608,9 @@ async function gateFlight(ports: GatePorts, record: GateRecord): Promise<GateOut
   }
 }
 
+/** GY-3779: how the last diagnostics run ended: passed, failed checks (named in the reason) or threw (its error). */
+export interface DiagnosticsRun { at: string; outcome: 'passed' | 'failed' | 'threw'; reason: string | null }
+
 /** One diagnostic failure as the record keeps it (GY-3264). */
 interface DiagnosticFailure { commit: string; detail: string | null; at: string }
 
@@ -637,6 +643,7 @@ export async function runDiagnostics(ports: Pick<GatePorts, 'now' | 'file'> & { 
   }
   record.catalogMs = catalogMs;
   record.diagnosticsAt = at;
+  record.diagnosticsRun = { at, outcome: failed.length ? 'failed' : 'passed', reason: failed.length ? `${failed.length} failing: ${failed.join(', ')}`.slice(0, 500) : null };
   if (previewCases.length) record.previewCases = Object.fromEntries(previewCases.map(run => [run.case, run]));
   if (onboarding) record.onboarding = onboarding;
   return failed;
@@ -660,7 +667,7 @@ export function gateSummary(record: GateRecord | null) {
       holds: 'first claim on trial slots; implementation continues within heat and worker capacity limits' } : null,
     // GY-3141: the last settled run's outcome with its reason or failing check, beside the run in flight's current step.
     lastOutcome: record.lastOutcome ? { ...record.lastOutcome, tip: record.lastOutcome.tip ? record.lastOutcome.tip.slice(0, 12) : null } : null,
-    held: record.held, revertRate: `${rate.reverted}/${rate.merges}`, diagnosticsAt: record.diagnosticsAt, catalogMs: measuredCatalogMs(record, Date.now()),
+    held: record.held, revertRate: `${rate.reverted}/${rate.merges}`, diagnosticsAt: record.diagnosticsAt, diagnostics: record.diagnosticsRun ?? null, catalogMs: measuredCatalogMs(record, Date.now()),
     // GY-3193: each preview case's last daily run and verdict; `not covered` when it did not run.
     previewCases: Object.values(record.previewCases ?? {}).map(run => ({ ...run, commit: run.commit.slice(0, 12) })),
     // GY-3747: the last daily onboarding run: minutes from connect to first merge, its result and date.
@@ -681,6 +688,17 @@ export function gateCauses(record: GateRecord | null): { key: string; detail: st
     ...(record.held ? [{ key: 'batch-gate', detail: `Batch gate held: ${record.held.reason}` }] : []),
     ...(rate.rate > revertRateLimit ? [{ key: 'revert-rate', detail: `Revert rate ${rate.reverted}/${rate.merges} over the last ${revertRateWindow} merges is above 1 in 5` }] : []),
   ];
+}
+
+/** GY-3779: diagnostics that last completed over 30 hours ago are one master status attention line naming the last run and its outcome. */
+export function diagnosticsAttention(record: Pick<GateRecord, 'diagnosticsAt' | 'diagnosticsRun'> | null, now: number): { subject: string; text: string; next: string }[] {
+  if (!record?.diagnosticsAt || now - Date.parse(record.diagnosticsAt) <= 30 * 60 * 60_000) return [];
+  const run = record.diagnosticsRun;
+  return [{
+    subject: 'the daily diagnostics',
+    text: `Daily diagnostics last completed ${formatAge(record.diagnosticsAt, now)} ago${run ? `; the last run ${formatAge(run.at, now)} ago ${run.outcome}${run.reason ? `: ${run.reason}` : ''}` : ''}`,
+    next: 'The loop retries each cycle: fix what the last run names',
+  }];
 }
 
 /** A timeout hold an older loop wrote (GY-3383), read from its words: GY-3444 clears it on the next gate run. */

@@ -233,9 +233,13 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
     flaky: check => openFlakyItem(work, check)?.key ?? null,
     // The full suite (a package.json change selects every test) and the whole catalog, each its own trial so the catalog's time is its own; then the preview cases, in a repository that holds them.
     diagnose: async commit => {
-      const suite = await trialFailures(reads, commit, ['build', 'affected'], ['package.json'], gateLimitMs, trusted);
+      // GY-3779: a trial that crashes or times out is that check's failure, not the run's end: the
+      // catalog and onboarding still run and the day's run is recorded.
+      const survive = (check: string, run: Promise<Awaited<ReturnType<typeof trialFailures>>>) =>
+        run.catch((error: unknown) => ({ failed: [check], details: { [check]: message(error) } as Record<string, string>, outputs: {} as Record<string, string[]> }));
+      const suite = await survive('full-suite', trialFailures(reads, commit, ['build', 'affected'], ['package.json'], gateLimitMs, trusted));
       const held = await catalog(commit), cases = held.map(id => `e2e:${id}`), started = reads.now();
-      const { failed, details, outputs } = cases.length ? await trialFailures(reads, commit, cases, [], gateLimitMs, trusted, true) : { failed: [], details: {}, outputs: {} }, catalogMs = reads.now() - started;
+      const { failed, details, outputs } = cases.length ? await survive('e2e-catalog', trialFailures(reads, commit, cases, [], gateLimitMs, trusted, true)) : { failed: [], details: {}, outputs: {} }, catalogMs = reads.now() - started;
       const previews = reads.gate?.previews;
       const previewCases = !servedPreviewCases.some(id => held.includes(id)) ? []
         : previews ? await previews(commit) : notCovered(commit, new Date(reads.now()).toISOString(), 'this loop runs no served preview cases');
@@ -294,7 +298,7 @@ function mergeGateRecord(file: string, merge: (latest: GateRecord | null) => Gat
 }
 
 /** What a gate's write keeps of the diagnostics' own fields (GY-3147, GY-3193): they recorded them meanwhile. */
-const diagnosticFields = (latest: GateRecord | null, current: GateRecord) => ({ releaseTagged: latest?.releaseTagged ?? current.releaseTagged, catalogMs: latest?.catalogMs ?? current.catalogMs, diagnosticsAt: latest?.diagnosticsAt ?? current.diagnosticsAt, diagnosticFailures: latest?.diagnosticFailures ?? current.diagnosticFailures, previewCases: latest?.previewCases ?? current.previewCases, onboarding: latest?.onboarding ?? current.onboarding, ...mergeFilings(latest, current) });
+const diagnosticFields = (latest: GateRecord | null, current: GateRecord) => ({ releaseTagged: latest?.releaseTagged ?? current.releaseTagged, catalogMs: latest?.catalogMs ?? current.catalogMs, diagnosticsAt: latest?.diagnosticsAt ?? current.diagnosticsAt, diagnosticsRun: latest?.diagnosticsRun ?? current.diagnosticsRun, diagnosticFailures: latest?.diagnosticFailures ?? current.diagnosticFailures, previewCases: latest?.previewCases ?? current.previewCases, onboarding: latest?.onboarding ?? current.onboarding, ...mergeFilings(latest, current) });
 
 /** The commit served at rollout, which becomes the first verified commit: the deploy record's when it names this repository, else main's tip. */
 async function rolloutCommit(root: string, repository: string, reads: MergeWriterReads) {
@@ -479,10 +483,15 @@ export async function batchGateStep(cycle: Pick<Cycle, 'state' | 'effects' | 'sn
         if (failed) {
           // Re-read so the diagnostics' fields never overwrite what a gate recorded meanwhile; the
           // filings of both writers merge (GY-3147).
-          await mergeGateRecord(file, latest => ({ ...(latest ?? fresh), catalogMs: fresh.catalogMs, diagnosticsAt: fresh.diagnosticsAt, diagnosticFailures: fresh.diagnosticFailures, previewCases: fresh.previewCases, onboarding: fresh.onboarding, ...mergeFilings(latest, fresh) }));
+          await mergeGateRecord(file, latest => ({ ...(latest ?? fresh), catalogMs: fresh.catalogMs, diagnosticsAt: fresh.diagnosticsAt, diagnosticsRun: fresh.diagnosticsRun, diagnosticFailures: fresh.diagnosticFailures, previewCases: fresh.previewCases, onboarding: fresh.onboarding, ...mergeFilings(latest, fresh) }));
           note('batch-gate:diagnostics', 'done', `Diagnostics on ${fresh.verified?.slice(0, 12)}: ${failed.length} failure(s) filed`);
         }
-      } catch (error) { note('batch-gate:diagnostics', 'failed', `The diagnostics failed and run again next cycle: ${message(error)}`); }
+      } catch (error) {
+        // GY-3779: a thrown run is recorded with its reason, so status shows why the day's run is missing.
+        const diagnosticsRun = { at: new Date(cycle.now()).toISOString(), outcome: 'threw' as const, reason: message(error).slice(0, 500) };
+        await mergeGateRecord(file, latest => ({ ...(latest ?? record!), diagnosticsRun })).catch(() => undefined);
+        note('batch-gate:diagnostics', 'failed', `The diagnostics failed and run again next cycle: ${message(error)}`);
+      }
       finally { live.diagnostics = null; }
     })();
   }
