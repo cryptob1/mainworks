@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type pg from 'pg';
 import { demand } from '../../model.js';
-import { readRegistry } from '../../agent-registry.js';
+import { lockAgentRegistry, readRegistry } from '../../agent-registry.js';
 import { unownedFamilySql } from '../../store/tables/work.js';
 import { connectDefaultRoles, connectProvider, connectProviders } from '../../fleet.js';
 import { applyRegistryMutation, registryMutationSchemas } from '../../model-boundary/registry.js';
@@ -154,12 +154,16 @@ function foldConnectEvents(rows: { actor: string; kind: string; payload: any; cr
 const configurators = ['admin', 'coordinator'] as const;
 const readers = ['admin', 'coordinator', 'reader', 'slice-lead'] as const;
 /**
- * GY-3799: connect requests and host keys are no coordination decision. Their writes serialize on
- * their own lock and their reads take none, so a slow events scan never holds every coordinated
- * write; only a healthy result, which registers an account, also takes the coordination lock.
+ * GY-3799, GY-3807: connect requests and host keys are no coordination decision. Their writes
+ * serialize on their own lock and their reads take none, so a slow events scan never holds every
+ * coordinated write; a healthy result also takes the agent-registry lock to register the account.
  */
 const connectWrite = <T>(services: Services, fn: (db: pg.PoolClient, now: Date) => Promise<T>, registers = false) =>
-  services.engine.store.transaction(async (db, now) => { await db.query('SELECT pg_advisory_xact_lock($1)', [advisoryLocks.agentConnect]); return fn(db, now); }, { coordinationLock: registers });
+  services.engine.store.transaction(async (db, now) => {
+    await db.query('SELECT pg_advisory_xact_lock($1)', [advisoryLocks.agentConnect]);
+    if (registers) await lockAgentRegistry(db);
+    return fn(db, now);
+  }, { coordinationLock: false });
 /** Read a page of connect events, newest first, inside the caller's transaction. */
 const readConnectEvents = (db: Pick<pg.PoolClient, 'query'>) =>
   // The newest 500 requests with every event of each: a long-lived request keeps its claimed,
