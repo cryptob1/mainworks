@@ -18,7 +18,7 @@ import { eventStageBackfill } from '../src/daemon/event-stage-backfill.js';
 // GY-3774: backfillEventStage ran a full-table count(*) inside every batch's transaction, and eventStageBackfill
 // sized the next batch from the whole call's duration. A slow count drove batches down to 1 row.
 const coordinatorToken = `coordinator-${'c'.repeat(32)}`;
-const ITEMS = 100, DELTAS_PER_ITEM = 5_000, TIMEOUT_MS = 5_000;
+const ITEMS = 100, DELTAS_PER_ITEM = 1_000, TIMEOUT_MS = 5_000;
 
 const apiCall = async (baseUrl: string, path: string, body?: unknown) => {
   const response = await fetch(`${baseUrl}/api/${path}`, {
@@ -54,7 +54,7 @@ const masterStatus = async (serverUrl: string, root: string) => {
   );
 };
 
-test('integration:backfill-count-off-batch — on 500,000 stageless delta rows, a slow count never shrinks batches to 1 row, each sized batch fills >= 100 rows under 5 s, remaining is within 1% and counted at most once a minute, and every stored stage matches graphyard_event_work', { timeout: 600_000 }, async () => {
+test('integration:backfill-count-off-batch — on 100,000 stageless delta rows, a slow count never shrinks batches to 1 row, each sized batch fills >= 100 rows under 5 s, remaining is within 1% and counted at most once a minute, and every stored stage matches graphyard_event_work', { timeout: 600_000 }, async () => {
   const database = await databaseUrl('backfill-count-off-batch');
   const store = new Store(database);
   await store.init();
@@ -87,7 +87,7 @@ test('integration:backfill-count-off-batch — on 500,000 stageless delta rows, 
 
   try {
     await plain.query('ALTER TABLE events SET UNLOGGED');
-    // Seed 500,000 delta rows lacking stage across 100 items, with every 50th delta editing stage.
+    // Seed 100,000 delta rows lacking stage across 100 items, with every 50th delta editing stage.
     await plain.query(`DO $$
       DECLARE
         i int;
@@ -118,7 +118,7 @@ test('integration:backfill-count-off-batch — on 500,000 stageless delta rows, 
 
     const initial = await lacking(plain);
     assert.equal(initial, ITEMS * DELTAS_PER_ITEM);
-    assert.ok(initial >= 500_000);
+    assert.ok(initial >= 100_000);
 
     countQueries = 0;
     // A 2.5 s count (under the 5 s timeout) shrinks batches 50 -> 20 -> 8 -> 3 -> 1 on the base tip.

@@ -90,6 +90,9 @@ test('integration:flow-ledger-fast — on 7 days of events with large stored doc
   const previous = plain((await fixture.query(previousLedgerSql, [since, flowKinds])).rows);
   assert.ok(previous.length > EVENTS / WHOLE_EVERY, 'the window\'s saves and flow kinds');
   assert.ok(previous.some(row => row.kind === 'rework' && row.reason && row.stage));
+  const plan = (await fixture.query(`EXPLAIN ${flowLedgerSql}`, [since, flowKinds])).rows.map(row => row['QUERY PLAN']).join('\n');
+  assert.doesNotMatch(plan, /Seq Scan on events/, plan);
+  assert.match(plan, /Index Scan using events_work_flow on events/, plan);
 
   // GY-3767: on the plain client, so the test's own ledger read never enters the server's slowest-query report the e2e test reads.
   const result = await fixture.query(flowLedgerSql, [since, flowKinds]);

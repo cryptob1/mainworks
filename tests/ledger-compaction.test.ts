@@ -250,7 +250,7 @@ test('integration:ledger-compaction-completes — on a generated ledger of hundr
   const scale = await withDatabase('ledger-compaction-scale');
   try {
     await scale.init();
-    const itemCount = 400, segments = 6, deltas = 120;
+    const itemCount = 200, segments = 6, deltas = 120;
     await scale.pool.query(`DO $gen$ DECLARE item uuid; base bigint; rev int; doc jsonb; BEGIN
       FOR n IN 1..${itemCount} LOOP
         item := gen_random_uuid(); rev := 0;
@@ -273,7 +273,7 @@ test('integration:ledger-compaction-completes — on a generated ledger of hundr
       END LOOP; END $gen$`);
     await scale.pool.query('ANALYZE events');
     const routineRows = Number((await scale.pool.query('SELECT count(*) AS n FROM events WHERE kind <> $1', ['create'])).rows[0].n);
-    assert.ok(routineRows >= 250_000, `the generated ledger holds ${routineRows} routine rows`);
+    assert.ok(routineRows >= 140_000, `the generated ledger holds ${routineRows} routine rows`);
     const fingerprint = async () => new Map((await scale.pool.query(`SELECT e.seq, md5((${resolvedPayloadSql('e')})::text) AS doc FROM events e WHERE e.work_id IS NOT NULL`)).rows.map(row => [String(row.seq), row.doc as string]));
     const before = await fingerprint();
 

@@ -28,10 +28,22 @@ export const benchCommands = defineCommands([{
     '                                             one JSON result and append it to .graphyard/bench-results.jsonl',
     '  bench trial --compare REF [--files PATH]   Run the benchmark on REF and on main back to back and',
     '                                             print the per-step difference',
+    '  bench reads [--events N]                   Seed 2,000,000 events (or N) on a scratch database once',
+    '                                             and print the four large-ledger reads\' times as JSON',
   ],
   async run(context) {
+    if (context.id === 'reads') {
+      const { benchReadEvents, benchReadsScratch } = await import('../bench-reads.js');
+      const raw = flagValue(context.args, '--events');
+      const events = raw === undefined ? benchReadEvents : Number(raw);
+      if (!Number.isInteger(events) || events < 1) {
+        throw new Error('Usage: mainworks bench reads [--events N] (N must be a positive integer)');
+      }
+      console.log(JSON.stringify(await benchReadsScratch(events)));
+      return;
+    }
     if (context.id !== 'trial') {
-      throw new Error('Usage: mainworks bench trial [--files PATH] [--ref REF] [--compare REF]');
+      throw new Error('Usage: mainworks bench trial [--files PATH] [--ref REF] [--compare REF] | bench reads [--events N]');
     }
     const [{ checkoutRoot }, { benchTrial, compareBenchResults, formatBenchComparison }] = await Promise.all([import('./context.js'), import('../bench.js')]);
     const root = await checkoutRoot(context, 'bench trial');
