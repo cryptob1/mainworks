@@ -15,7 +15,7 @@ import type { DaemonEffects } from './effects.js';
 import { record, type DaemonAction, type DaemonState, type DiskKind, type DiskSample, type DiskUse } from './state.js';
 import { workerVerificationPrefix, workerVerificationRoot, workerVerificationTimeoutMs } from '../merge-writer/worker-verification.js';
 import { trialBuilder } from '../install/trial-image.js';
-import { warmInUseDirectory } from '../merge-writer/remote-shards.js';
+import { warmImagesInUse, warmInUseDirectory } from '../merge-writer/remote-shards.js';
 import { composeProjectPrefix, sweepComposePreviews } from '../compose-preview.js';
 import { trialShareAllowance } from './cycle-merge-writer.js';
 import { defaultMergeWriterParallel } from '../master/merge-writer-settings.js';
@@ -192,12 +192,7 @@ export async function reclaimJobLeftovers(run: ChildRun, roots: { temporary?: st
  * (never forced: Docker also keeps one a container uses). What was removed, by name.
  */
 export async function pruneWarmImages(run: ChildRun, inUseDirectory = warmInUseDirectory()): Promise<string[]> {
-  const inUse = new Set<string>();
-  for (const name of await readdir(inUseDirectory).catch(() => [] as string[])) {
-    const [tag, pid] = name.split('.');
-    try { process.kill(Number(pid), 0); inUse.add(`graphyard-warm:${tag}`); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code === 'EPERM') inUse.add(`graphyard-warm:${tag}`); else await rm(join(inUseDirectory, name), { force: true }); }
-  }
+  const inUse = await warmImagesInUse(inUseDirectory);
   const docker = async (args: string[]) => String(await run('docker', args, { timeoutMs: 60_000 })).split('\n').map(line => line.trim()).filter(Boolean);
   const removed: string[] = [];
   try {

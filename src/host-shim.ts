@@ -117,9 +117,15 @@ elif verb == 'receive-image':
     subprocess.check_call(['docker', 'load', '-q'], stdout=subprocess.DEVNULL)
     if not has_image(args[0]):
         sys.exit('graphyard-host-shim: the image stream does not hold ' + args[0])
-    # One warm image is kept: the others go unless a running shard still uses one.
+    # The two newest warm images of this trial image and lockfile are kept (a trial on the older base may
+    # still be starting); the others go unless a running shard still uses one. Docker lists newest first.
+    family, kept = (args[0].rsplit('-', 1)[0] + '-' if args[0].split(':', 1)[1].count('-') == 2 else args[0]), [args[0]]
     for image in subprocess.run(['docker', 'images', 'graphyard-warm', '--format', '{{.Repository}}:{{.Tag}}'], capture_output=True, text=True).stdout.split():
-        if image != args[0]:
+        if image in kept:
+            continue
+        if len(kept) < 2 and image.startswith(family):
+            kept.append(image)
+        else:
             quiet('docker', 'image', 'rm', image)
 elif verb == 'prepare-run':
     if not has_commit(args[1]):
@@ -244,19 +250,21 @@ else:
                          'floorBytes': float(os.environ.get('GRAPHYARD_HOST_FLOOR_GB', ${defaultDiskFloorGb})) * 1e9, 'hwmon': '/sys/class/hwmon', 'pressureBoundSeconds': ${trialPressureBoundSeconds}}}
         # Keep new files removable by the host's mapped group too, point Node at the warm image's compile cache,
         # and overlay its built CLI/server entries when src/ matches its commit (or rebuild them when the head changed src/).
-        # Shards of one trial on this host share run/repo from separate PID namespaces: one at a time builds, under a lock on the shared file.
+        # Shards of one trial on this host share run/repo from separate PID namespaces: each takes a lock on a shared
+        # file before reading dist/, and only the first links or rebuilds it, so nothing writes there once any shard runs.
         prelude = (
             'umask 0002; '
             'warm="\${GRAPHYARD_WARM_DIR:-/warm}"; '
             'if [ -d "$warm/compile-cache" ] && [ -z "\${NODE_COMPILE_CACHE:-}" ]; then export NODE_COMPILE_CACHE="$warm/compile-cache"; fi; '
-            'if [ -f "$warm/commit" ] && [ -f "$warm/dist/cli.mjs" ] && [ ! -f dist/cli.mjs ]; then '
+            'if [ -f "$warm/commit" ] && [ -f "$warm/dist/cli.mjs" ]; then '
             '  mkdir -p dist; exec 9>dist/.warm-lock; flock 9; '
-            '  if [ ! -f dist/cli.mjs ]; then '
+            '  if [ ! -f dist/.warm-done ]; then '
             '    if git diff --quiet "$(cat "$warm/commit")" HEAD -- src bin/built-entry.mjs package.json 2>/dev/null; then '
-            '      for f in "$warm"/dist/*.mjs; do [ -f "$f" ] || continue; b=$(basename "$f"); ln -sf "$f" "dist/$b.tmp" && mv -f "dist/$b.tmp" "dist/$b"; done; '
+            '      for f in "$warm"/dist/*.mjs; do [ -f "$f" ] || continue; ln -sf "$f" "dist/$(basename "$f")"; done; '
             '    elif [ -f bin/built-entry.mjs ]; then '
             '      node bin/built-entry.mjs; '
             '    fi; '
+            '    : > dist/.warm-done; '
             '  fi; '
             '  exec 9>&-; '
             'fi; '

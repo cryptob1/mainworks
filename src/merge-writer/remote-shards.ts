@@ -4,7 +4,7 @@
 // there through graphyard-host-shim (src/host-shim.ts), whose fixed verbs are all this machine's key
 // may run. A host that drops or turns away a shard has it re-queued on another host: capacity, never a fault.
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { availableParallelism, homedir, hostname, tmpdir } from 'node:os';
@@ -242,6 +242,28 @@ export function parseWarmImageTag(tag: string): { digest: string; lock: string; 
   return match ? { digest: match[1]!, lock: match[2]!, commit: match[3] ?? null } : null;
 }
 
+/** GY-3745: the warm images a running trial on this machine marks as in use (its marker's pid still alive). */
+export async function warmImagesInUse(directory = warmInUseDirectory()): Promise<Set<string>> {
+  const inUse = new Set<string>();
+  for (const name of await readdir(directory).catch(() => [] as string[])) {
+    const [tag, pid] = name.split('.');
+    try { process.kill(Number(pid), 0); inUse.add(`graphyard-warm:${tag}`); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'EPERM') inUse.add(`graphyard-warm:${tag}`); else await rm(join(directory, name), { force: true }); }
+  }
+  return inUse;
+}
+
+/**
+ * GY-3627: after a new warm image is built, keep the two newest of its trial image and lockfile (Docker
+ * lists newest first) and remove the older ones a running trial does not use, never forced.
+ */
+async function pruneWarmImageFamily(tag: string, local: (command: string, args: string[]) => Promise<string>) {
+  const family = tag.slice(0, tag.lastIndexOf('-') + 1), inUse = await warmImagesInUse();
+  const images = (await local('docker', ['images', 'graphyard-warm', '--format', '{{.Repository}}:{{.Tag}}']).catch(() => ''))
+    .split('\n').map(line => line.trim()).filter(image => image.startsWith(family) && image !== tag);
+  for (const image of images.slice(1)) if (!inUse.has(image)) await local('docker', ['image', 'rm', image]).catch(() => {});
+}
+
 const buildingWarmImages = new Map<string, Promise<{ tag: string; built: boolean }>>();
 
 const lockfileHash = async (local: (command: string, args: string[]) => Promise<string>, root: string, commit: string) => {
@@ -280,7 +302,7 @@ export async function ensureWarmImage(input: { root: string; commit: string; ima
       await local('docker', ['commit', '--change', `ENV NODE_COMPILE_CACHE=${warmCompileCacheDirectory}`, name, tag]);
     } finally { await local('docker', ['rm', '-f', name]).catch(() => {}); }
     return { tag, built: true };
-  })();
+  })().then(async result => { await pruneWarmImageFamily(tag, local); return result; });
   buildingWarmImages.set(tag, build);
   try { return await build; } finally { buildingWarmImages.delete(tag); }
 }

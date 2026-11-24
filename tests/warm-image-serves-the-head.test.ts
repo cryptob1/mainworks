@@ -1,6 +1,8 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { once } from 'node:events';
 import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -65,7 +67,7 @@ async function cliRepository(label: string) {
   return { root, sha: git(root, 'rev-parse', 'HEAD') };
 }
 
-test('integration:warm-image-serves-the-head — warm image is keyed to lockfile and commit, pushed before shards, starts the CLI under 0.6 CPU-seconds, and a head changing a source file runs its own code', { timeout: 240_000 }, async () => {
+test('integration:warm-image-serves-the-head — warm image is keyed to lockfile and commit, pushed before shards, starts the CLI under 0.6 CPU-seconds, and a head changing a source file runs its own code in concurrent shards, two newest images kept, signals end the in-process CLI', { timeout: 240_000 }, async () => {
   const { root, sha: base } = await cliRepository('warm-image-repo');
   const lockHash = createHash('sha256').update((await readFile(join(root, 'package-lock.json'), 'utf8')).trim()).digest('hex');
   const expectedTag = warmImageTag(digest, lockHash, base);
@@ -139,25 +141,70 @@ test('integration:warm-image-serves-the-head — warm image is keyed to lockfile
   const head = await commitFile(root, 'src/cli/index.ts', modifiedCli);
 
   const headSession = remoteShardSession({ root, sha: head, baseTip: base2, image, run: runWithHosts, deadline: Date.now() + 120_000 });
+  // AC-3(b): two shards of the trial start at once on the same host. Each records dist/cli.mjs when it starts
+  // and again after a pause: neither sees it change, so no shard wrote rebuilt files while another ran.
   const verifyHeadScript = `
     import { execFileSync } from 'node:child_process';
-    import { writeFileSync } from 'node:fs';
+    import { statSync, writeFileSync } from 'node:fs';
     const records = process.argv[1];
+    const seen = () => { const { ino, mtimeMs } = statSync('dist/cli.mjs'); return ino + ':' + mtimeMs; };
+    const before = seen();
     const help = execFileSync(process.execPath, ['bin/graphyard.mjs', '--help'], { encoding: 'utf8' });
+    await new Promise(resolve => setTimeout(resolve, 1500));
     const hasMarker = help.includes(${JSON.stringify(marker)});
     console.log('HEAD_SEEN=' + hasMarker);
+    console.log('DIST=' + before + '>' + seen());
     writeFileSync(records, JSON.stringify({ file: 'tests/cli.test.ts', passed: hasMarker, durationMs: 1 }) + '\\n');
     if (!hasMarker) process.exit(1);
   `;
   try {
-    const headShard = await headSession.run(box, 0, ['tests/cli.test.ts'], (_list, records) => [process.execPath, '--input-type=module', '-e', verifyHeadScript, records], 2);
-    assert.equal(headShard.ok, true, headShard.out);
-    assert.match(headShard.out, /HEAD_SEEN=true/, headShard.out);
+    const shards = await Promise.all([0, 1].map(index => headSession.run(box, index, ['tests/cli.test.ts'], (_list, records) => [process.execPath, '--input-type=module', '-e', verifyHeadScript, records], 2)));
+    const dist = shards.map(shard => {
+      assert.equal(shard.ok, true, shard.out);
+      assert.match(shard.out, /HEAD_SEEN=true/, shard.out);
+      const [start, end] = /DIST=(\S+)>(\S+)/.exec(shard.out)!.slice(1);
+      assert.equal(end, start, `dist/cli.mjs changed while a shard ran: ${shard.out}`);
+      return start;
+    });
+    assert.equal(dist[1], dist[0], 'both shards read the one rebuilt dist/cli.mjs');
     assert.equal(dockerCount(hosts.localState, 'commit'), 1, 'newer base reused the newest existing warm image without rebuilding a new image');
     assert.equal(dockerCount(hosts.state('box'), 'load'), 1, 'no new warm image needed to be loaded on the host');
     const creates = await dockerCreates(hosts.state('box'));
     assert.equal(creates.at(-1)![creates.at(-1)!.indexOf('--entrypoint') + 2], expectedTag, 'the head shard ran in the newest existing warm image');
   } finally {
     await headSession.close();
+  }
+
+  // AC-3(a): three successive verified commits leave the two newest warm images of this trial image and lockfile, here and on the host.
+  const family = warmImageTag(digest, lockHash);
+  const warmImages = async (state: string) => Object.keys(JSON.parse(await readFile(join(state, 'state.json'), 'utf8')).images).filter(name => name.startsWith(`${family}-`)).sort();
+  const verified = [base];
+  for (const label of ['third', 'fourth']) {
+    const commit = await commitFile(root, 'tests/cli.test.ts', `// ${label} base\nexport {};\n`);
+    const warmed = await warmCommitOnHosts({
+      root, commit, image, hosts: [box], run: runWithHosts, deadline: Date.now() + 120_000,
+      read: async (named, transport) => (await readShardHosts(named, runWithHosts, 2, transport)).map((reading, index) => ({ ...reading, cores: index ? 8 : 2, busy: 0, steal: 0, celsius: null, away: false })),
+    });
+    assert.deepEqual(warmed.pushed, [box]);
+    verified.push(commit);
+  }
+  const newest = verified.slice(-2).map(commit => warmImageTag(digest, lockHash, commit)).sort();
+  assert.deepEqual(await warmImages(hosts.localState), newest, 'this machine keeps the two newest warm images');
+  assert.deepEqual(await warmImages(hosts.state('box')), newest, 'the compute host keeps the two newest warm images');
+
+  // AC-3(c): on the launcher's in-process path (a built CLI and NODE_COMPILE_CACHE set), SIGINT and SIGTERM still end the command.
+  const launcher = await temporaryDirectory('warm-image-signals');
+  await mkdir(join(launcher, 'bin'), { recursive: true }); await mkdir(join(launcher, 'src')); await mkdir(join(launcher, 'dist'));
+  for (const file of ['graphyard.mjs', 'mainworks.mjs']) await cp(join(source, 'bin', file), join(launcher, 'bin', file));
+  await writeFile(join(launcher, 'src', 'cli.ts'), '');
+  await writeFile(join(launcher, 'bin', 'built-entry.mjs'), "import { join } from 'node:path';\nexport const builtEntry = (root, name) => join(root, 'dist', `${name}.mjs`);\n");
+  await writeFile(join(launcher, 'dist', 'cli.mjs'), "console.log('waiting'); setInterval(() => {}, 1000);\n");
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    const child = spawn(process.execPath, [join(launcher, 'bin', 'graphyard.mjs')], { env: { ...process.env, NODE_COMPILE_CACHE: join(launcher, 'cache') }, stdio: ['ignore', 'pipe', 'inherit'] });
+    await new Promise<void>(resolve => child.stdout!.on('data', chunk => { if (String(chunk).includes('waiting')) resolve(); }));
+    child.kill(signal);
+    const ended = await Promise.race([once(child, 'exit').then(([code, by]) => by ?? code), new Promise(resolve => setTimeout(() => resolve('still running'), 5_000))]);
+    if (ended === 'still running') child.kill('SIGKILL');
+    assert.equal(ended, signal, `${signal} ends the in-process command`);
   }
 });
