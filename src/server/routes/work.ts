@@ -16,7 +16,8 @@ import { productScreenshotBodyLimit, readProductScreenshot, recordProductReviewB
 import { readTrialScreenshot } from '../trial-screenshots.js';
 import { mergeRecordInput, recordMergeEvent } from '../merge-record.js';
 import { save } from '../../store.js';
-import { lockedWork, workIdByRef } from '../../store/locked-read.js';
+import { workIdByRef } from '../../store/locked-read.js';
+import { itemDocument } from '../../store/bounded-snapshot.js';
 import { applyPreviewRecord, previewRecordBodySchema, previewSiteByteLimit, previewSiteFileLimit } from '../../project-previews.js';
 import type { Services } from '../routes.js';
 import { recordInvestigatorNote } from '../investigator-note.js';
@@ -243,7 +244,7 @@ async function recordItemPreview(services: Services, actor: Principal, id: strin
   demand(key && key.length <= 200, 'An Idempotency-Key is required', 400);
   const receiptInput = mergeRecordInput(id, { kind: 'preview', preview, ...(site ? { site } : {}) });
   return services.engine.store.transaction(async (db, now) => once(db, actor, key, receiptInput, async () => {
-    const work = (await lockedWork(db, [id])).find(item => item.id === id || item.key === id); demand(work, 'Work item not found', 404);
+    const work = await itemDocument(db, id); demand(work, 'Work item not found', 404);
     const refusal = applyPreviewRecord(work!, preview); demand(!refusal, refusal!, 409);
     await save(db, work!, actor.id, `preview.${preview.state}`, now, { preview: { id: preview.id, sha: preview.sha, state: preview.state, endReason: preview.endReason } });
     const serving = work!.preview?.state === 'running' ? work!.preview.id : null;
@@ -255,7 +256,7 @@ async function recordItemPreview(services: Services, actor: Principal, id: strin
     }
     const result = { recorded: true, key: work!.key, kind: 'preview', preview: work!.preview };
     return result;
-  }));
+  }), { coordinationLock: false, itemLock: id });
 }
 /** The largest merge-record body the coordinator sends: a running preview's site, base64-encoded, and its record. */
 const previewRecordBodyLimit = Math.ceil(previewSiteByteLimit / 3) * 4 + previewSiteFileLimit * 1024 + 64 * 1024;

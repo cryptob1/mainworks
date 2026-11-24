@@ -8,7 +8,8 @@ import { unownedFamilySql } from '../../store/tables/work.js';
 import { connectDefaultRoles, connectProvider, connectProviders } from '../../fleet.js';
 import { applyRegistryMutation, registryMutationSchemas } from '../../model-boundary/registry.js';
 import { executorHostHeader, looksLikeSecret, proposedConcurrency, proposedRuntimes, fleetRoles, type RegistryMutation } from '../../model/registry.js';
-import { defineRoutes, parseJson } from '../routes.js';
+import { defineRoutes, parseJson, type Services } from '../routes.js';
+import { advisoryLocks } from '../../store/locks.js';
 
 const collections = { runtimes: 'runtime', models: 'model', accounts: 'account', roles: 'role' } as const;
 /** The executor a read is judged for: `?host=`, or the executor-host header an older server simply ignores. */
@@ -152,6 +153,13 @@ function foldConnectEvents(rows: { actor: string; kind: string; payload: any; cr
 
 const configurators = ['admin', 'coordinator'] as const;
 const readers = ['admin', 'coordinator', 'reader', 'slice-lead'] as const;
+/**
+ * GY-3799: connect requests and host keys are no coordination decision. Their writes serialize on
+ * their own lock and their reads take none, so a slow events scan never holds every coordinated
+ * write; only a healthy result, which registers an account, also takes the coordination lock.
+ */
+const connectWrite = <T>(services: Services, fn: (db: pg.PoolClient, now: Date) => Promise<T>, registers = false) =>
+  services.engine.store.transaction(async (db, now) => { await db.query('SELECT pg_advisory_xact_lock($1)', [advisoryLocks.agentConnect]); return fn(db, now); }, { coordinationLock: registers });
 /** Read a page of connect events, newest first, inside the caller's transaction. */
 const readConnectEvents = (db: Pick<pg.PoolClient, 'query'>) =>
   // The newest 500 requests with every event of each: a long-lived request keeps its claimed,
@@ -167,13 +175,13 @@ function connectAccountRoutes(): import('../routes.js').Route[] {
     } },
   { method: 'GET', path: '/api/agent-registry/connect', handle: async ({ actor, services }) => {
       demand((readers as readonly string[]).includes(actor.role), 'Connect requests are readable by admin, coordinator, slice-lead and reader identities', 403);
-      return { connects: (await services.engine.store.transaction(async db => foldConnectEvents((await readConnectEvents(db)).rows))).map(withoutSealed) };
+      return { connects: foldConnectEvents((await readConnectEvents(services.engine.store.pool)).rows).map(withoutSealed) };
     } },
   { method: 'GET', path: '/api/agent-registry/connect/requests', handle: async ({ actor, url, services }) => {
       demand((configurators as readonly string[]).includes(actor.role), 'Pending connect requests are read by the host\'s executor identity', 403);
       const host = url.searchParams.get('host')?.trim() || null;
       demand(!!host, 'Name the host with ?host=', 400);
-      const connects = await services.engine.store.transaction(async db => foldConnectEvents((await readConnectEvents(db)).rows));
+      const connects = foldConnectEvents((await readConnectEvents(services.engine.store.pool)).rows);
       const now = Date.now();
       // The owning host reads its open requests with their sealed payloads; its own finished ones
       // stay visible for an hour so a report that raced the fold still finds its request.
@@ -182,7 +190,7 @@ function connectAccountRoutes(): import('../routes.js').Route[] {
   { method: 'GET', path: '/api/agent-registry/connect/host-key', handle: async ({ actor, url, req, services }) => {
       demand((readers as readonly string[]).includes(actor.role), 'Host keys are readable by admin, coordinator, slice-lead and reader identities', 403);
       const host = executorHost(url, req);
-      const rows = (await services.engine.store.transaction(async db => db.query(`SELECT payload->'host' AS host, payload->'publicKey' AS "publicKey", created_at FROM events WHERE work_id IS NULL AND kind='${connectEventPrefix}host-key' ORDER BY seq DESC`))).rows;
+      const rows = (await services.engine.store.pool.query(`SELECT payload->'host' AS host, payload->'publicKey' AS "publicKey", created_at FROM events WHERE work_id IS NULL AND kind='${connectEventPrefix}host-key' ORDER BY seq DESC`)).rows;
       const keys = new Map<string, { publicKey: string; registeredAt: string }>();
       for (const row of rows) if (typeof row.host === 'string' && typeof row.publicKey === 'string' && !keys.has(row.host)) keys.set(row.host, { publicKey: row.publicKey, registeredAt: row.created_at.toISOString() });
       const hosts = host ? [...keys.entries()].filter(([name]) => name === host).map(([name, key]) => ({ host: name, ...key })) : [...keys.entries()].map(([name, key]) => ({ host: name, ...key }));
@@ -192,7 +200,7 @@ function connectAccountRoutes(): import('../routes.js').Route[] {
       const { actor, services } = context;
       demand((configurators as readonly string[]).includes(actor.role), 'A host registers its key with its coordinator identity', 403);
       const data = hostKeySchema.parse(await parseJson(context));
-      return services.engine.store.transaction(async (db, now) => {
+      return connectWrite(services, async (db, now) => {
         // The newest registration per host wins; re-registering an unchanged key appends nothing.
         const existing = (await db.query(`SELECT payload->>'publicKey' AS "publicKey" FROM events WHERE work_id IS NULL AND kind='${connectEventPrefix}host-key' AND payload->>'host'=$1 ORDER BY seq DESC LIMIT 1`, [data.host])).rows[0];
         if (existing?.publicKey === data.publicKey) return { host: data.host, registeredAt: true as const };
@@ -213,7 +221,7 @@ function connectAccountRoutes(): import('../routes.js').Route[] {
       demand(provider.kind !== 'subscription' || !data.sealed, `${provider.label} logs in through ${provider.login ? provider.login.command : 'its own login'}; it takes no key`, 400);
       demand(!looksLikeSecret(data.reason) && !looksLikeSecret(data.host), 'That looks like a credential. Paste it into the connect form so the browser seals it to the host.', 400);
       const id = randomUUID();
-      return services.engine.store.transaction(async (db, now) => {
+      return connectWrite(services, async (db, now) => {
         const open = foldConnectEvents((await readConnectEvents(db)).rows).filter(entry => openState(entry.state));
         demand(open.length < 20, 'There are already 20 connect requests under way; cancel one or wait for it to finish', 409);
         demand(open.every(entry => entry.provider !== provider.id || entry.host !== data.host), `A ${provider.label} connect on ${data.host} is already under way`, 409);
@@ -227,7 +235,7 @@ function connectAccountRoutes(): import('../routes.js').Route[] {
       const data = action === 'cancel' || action === 'claim' ? null : await parseJson(context, undefined, '{}');
       const operatorAction = action === 'cancel' || action === 'answer';
       demand((configurators as readonly string[]).includes(actor.role) && (!operatorAction || actor.role === 'admin'), operatorAction ? `${action === 'cancel' ? 'Cancelling a connect' : 'Answering a sign-in'} is an operator decision` : 'Connect requests are worked by the host\'s executor identity', 403);
-      return services.engine.store.transaction(async (db, now) => {
+      return connectWrite(services, async (db, now) => {
         const at = now.toISOString();
         const connects = foldConnectEvents((await readConnectEvents(db)).rows);
         const connect = connects.find(entry => entry.id === id);
@@ -286,7 +294,7 @@ function connectAccountRoutes(): import('../routes.js').Route[] {
         const applied = applyRegistryMutation(current, 'apply', proposal, { actor: actor.id, at });
         await db.query('INSERT INTO events(work_id,actor,kind,payload) VALUES(NULL,$1,$2,$3)', [actor.id, 'agent-registry.apply', JSON.stringify({ change: { ...proposal, removed: applied.removed }, registry: applied.registry })]);
         return { id, state: 'healthy' as const, name: result.name, placement };
-      });
+      }, action === 'result');
     } },
   ];
 }

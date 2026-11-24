@@ -54,6 +54,8 @@ export async function boundedSnapshot(pool: pg.Pool, since?: string | null): Pro
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** GY-3757: an id through the work index's primary key, a display key through `work_index_key`; never a scan of the index. */
 export const workDocumentSql = (idOrKey: string) => `SELECT w.document FROM work_index i JOIN work_items w ON w.id = i.id WHERE ${uuid.test(idOrKey) ? 'i.id = $1::uuid' : 'i.key = $1'} ORDER BY i.number LIMIT 1`;
+/** GY-3799: one item's document inside the caller's transaction, under its item lock rather than the coordination lock. */
+export const itemDocument = async (db: Pick<pg.PoolClient, 'query'>, idOrKey: string): Promise<Work | undefined> => (await db.query(workDocumentSql(idOrKey), [idOrKey])).rows[0]?.document;
 /** One item's whole document by id or display key, or null; the key is matched on the work index, so no other document is read. */
 export async function workDocument(pool: pg.Pool, idOrKey: string): Promise<Work | null> {
   const row = (await pool.query(workDocumentSql(idOrKey), [idOrKey])).rows[0];
