@@ -57,7 +57,7 @@ import { allowanceSentence, allowanceWarning } from '../model/allowance.js';
 import { benchResultsPath, benchStatus, readBenchResults } from '../bench.js';
 import { repeatedFailureAttention } from '../model/incidents.js';
 import { readImagePulls, slowPullAttention } from '../install/image-pulls.js';
-import type { SlowQuery } from '../store/slow-queries.js';
+import type { LockHold, SlowQuery } from '../store/slow-queries.js';
 
 /** GY-3105: an item's whole non-routine ledger, oldest first, paged by cursor to the end; null when any page cannot be read.
  *  GY-3762: each row's stage alone; the whole documents were 580 MB a run on the live install. */
@@ -259,7 +259,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   const linkAttention = linkOff ? [{ subject: 'team access', text: `${publicLinkOffLine}. ${lastPublic(linkOff.lastPublic, now)} ${linkOff.doing}`, next: 'Do what the line names if the loop cannot; it clears once the link is public' }] : [];
   const overloadAttention = overloaded(state?.sessions ?? [], now).map(session => ({ subject: session.name ?? session.unit, text: `Overload: ${overloadAlarm(session, now)}`, next: 'The session is only held to its share, not stopped; see what it runs on the Workers page' }));
   // GY-3757: the slowest database query of the last 10 minutes, by name, when it ran past 3 s.
-  const slowRead: { slowest?: SlowQuery | null; stageBackfill?: { remaining: number; at: string } | null } = unreachable ? {} : await Promise.resolve().then(() => masterApi('slowest-query')).then(body => body ?? {}, () => ({}));
+  const slowRead: { slowest?: SlowQuery | null; lockHold?: LockHold | null; stageBackfill?: { remaining: number; at: string } | null } = unreachable ? {} : await Promise.resolve().then(() => masterApi('slowest-query')).then(body => body ?? {}, () => ({}));
   const slowest = slowRead.slowest ?? null;
   // GY-3634: the latest trial benchmark beside the median of the previous ten on the same file list, with one attention line on >25% wall regression.
   const bench = benchStatus(readBenchResults(benchResultsPath(root)));
@@ -272,7 +272,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     caretaker: state?.caretaker ? `Last ran ${formatAge(Date.parse(state.caretaker.at), now)} ago: ${state.caretaker.result}` : 'Not run yet',
     // GY-3095: the pipeline has stopped where a role cannot launch; each line names the role, the refusal, how long it has lasted and the next command.
     // GY-3204: and each application whose versionUrl lags main or fails to answer.
-    attention: [...signoffAttention(open, now), ...humanAttention, ...reworkCaps, ...leaseLosses, ...blockerAttention, ...drained, ...fixedLimitAttention, ...imbalanceAttention, ...growth, ...trialImageFault, ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now, reviews) : []), ...backedOff, ...unlaunchableWorkerAttention(fleet), ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...wrongModelAttention(fleet), ...allowanceAttention(fleet, now), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(readRemoteShardRuns(root)), ...gateStalled, ...deployReleaseAttention(state, now), ...overloadAttention, ...flowAttention, ...slowQueryAttention(slowest, now), ...linkAttention, ...(bench?.attention ? [bench.attention] : []), ...slowPullAttention(readImagePulls()), ...repeatedFailureAttention(snapshot.work, now), ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
+    attention: [...signoffAttention(open, now), ...humanAttention, ...reworkCaps, ...leaseLosses, ...blockerAttention, ...drained, ...fixedLimitAttention, ...imbalanceAttention, ...growth, ...trialImageFault, ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now, reviews) : []), ...backedOff, ...unlaunchableWorkerAttention(fleet), ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...wrongModelAttention(fleet), ...allowanceAttention(fleet, now), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(readRemoteShardRuns(root)), ...gateStalled, ...deployReleaseAttention(state, now), ...overloadAttention, ...flowAttention, ...slowQueryAttention(slowest, now), ...lockHoldAttention(slowRead.lockHold ?? null, now), ...linkAttention, ...(bench?.attention ? [bench.attention] : []), ...slowPullAttention(readImagePulls()), ...repeatedFailureAttention(snapshot.work, now), ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
     // GY-3199: the control plane's own update record — the Mainworks commit this install runs, its
     // last check and last update, the step of a failed upgrade, and the staleness the daily
     // diagnostics reports (a check over a day old, or a verified commit first seen over a day ago
@@ -356,6 +356,10 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
 export const slowQueryAttention = (slowest: SlowQuery | null, now: number) => slowest ? [{ subject: 'database',
   text: `The slowest database query of the last 10 minutes took ${(slowest.ms / 1000).toFixed(1)} s, ${formatAge(slowest.at, now)} ago${slowest.caller ? `, asked by ${slowest.caller}` : ''}: ${slowest.name}`,
   next: 'File a fix for the query it names if it repeats' }] : [];
+/** GY-3799: one line naming the longest coordination-lock hold of the last 10 minutes, when one held it 1 s or more. */
+export const lockHoldAttention = (hold: LockHold | null, now: number) => hold ? [{ subject: 'database',
+  text: `The longest coordination-lock hold of the last 10 minutes was ${(hold.ms / 1000).toFixed(1)} s, ${formatAge(hold.at, now)} ago, by ${hold.name}`,
+  next: 'File a fix moving its slow work out of the transaction if it repeats' }] : [];
 /**
  * GY-3421: an item whose review request the loop could not launch — every launch refused, its
  * attempts spent, or reviewer capacity exhausted — one line naming the item, why no reviewer is
