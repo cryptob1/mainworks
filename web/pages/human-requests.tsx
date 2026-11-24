@@ -9,6 +9,13 @@ import { EmptyState, PageHeader } from '../components/page-layout';
 import { hostsNeedingUpdate, hostUpdateCommand } from '../components/top-bar';
 import { sealForHost, type SealedKey } from '../seal';
 
+/** Seals a variable's value in this browser to the host whose loop sets it, before anything is sent (web/seal.ts). */
+export const sealer = (api: Dashboard['api']) => async (host: string, value: string): Promise<SealedKey> => {
+  const key = ((await api('agent-registry/connect/host-key')).hosts as { host: string; publicKey?: string }[] ?? []).find(entry => entry.host === host)?.publicKey;
+  if (!key) throw new Error(`${host} has not registered its key yet: start its master loop, then answer again`);
+  return sealForHost(key, value);
+};
+
 /**
  * What waits on the human, and nothing else: every action the server will take from the
  * operator's own credential alone — a decision only a human may make (goals and priorities,
@@ -24,12 +31,7 @@ import { sealForHost, type SealedKey } from '../seal';
  * human can see what their answer set in motion.
  */
 export default function HumanRequestsPage({ work, status, observedAt, action, busy, setSelected, signOut, api }: Dashboard) {
-  // A variable's value is sealed here, to the host whose loop sets it, before anything is sent (web/seal.ts).
-  const seal = async (host: string, value: string) => {
-    const key = ((await api('agent-registry/connect/host-key')).hosts as { host: string; publicKey?: string }[] ?? []).find(entry => entry.host === host)?.publicKey;
-    if (!key) throw new Error(`${host} has not registered its key yet: start its master loop, then answer again`);
-    return sealForHost(key, value);
-  };
+  const seal = sealer(api);
   const now = Number.isNaN(observedAt) ? Date.now() : observedAt;
   // The rows the server derived from the rule table. A client whose status read has not landed
   // yet still sees every rule whose instances live on the work documents it already holds,
@@ -88,7 +90,7 @@ const signInAction = 'Sign in as the operator';
  * cap) or a secret (sealed to the requesting host). A session the rule refuses is told why and
  * offered the operator's sign-in. Free words stay available, folded away, never the primary path.
  */
-export function RequestCard({ row, refusal, busy, open, answer, send, signIn, seal }: { row: HumanRequestRow; refusal: string | null; busy: boolean; open(): void; answer(text: string, body: Record<string, unknown>): Promise<void>; send?(body: Record<string, unknown>): Promise<void>; signIn?(): void; seal?(host: string, value: string): Promise<SealedKey> }) {
+export function RequestCard({ row, refusal, busy, open, answer, send, signIn, seal }: { row: HumanRequestRow; refusal: string | null; busy: boolean; open(): void; answer(text: string, body: Record<string, unknown>): Promise<void>; send?(body: Record<string, unknown>): Promise<void>; signIn?(): void; seal(host: string, value: string): Promise<SealedKey> }) {
   const [text, setText] = useState('');
   const [note, setNote] = useState('');
   const [secret, setSecret] = useState('');
@@ -123,7 +125,7 @@ export function RequestCard({ row, refusal, busy, open, answer, send, signIn, se
     let value: Record<string, unknown> = choice.input === 'secret' ? { secret } : {};
     if (choice.input === 'secret' && variable) {
       setSealFault('');
-      try { value = { sealedValue: await seal!(row.request.sealHost!, secret) }; } catch (error) { setSealFault(error instanceof Error ? error.message : String(error)); return; }
+      try { value = { sealedValue: await seal(row.request.sealHost!, secret) }; } catch (error) { setSealFault(error instanceof Error ? error.message : String(error)); return; }
     }
     const body = { ...choice.body, ...(choice.note && note.trim() ? { [choice.note]: note.trim() } : {}), ...value, ...(photo ? { photo } : {}) };
     void (send ? send(body) : answer('', body));

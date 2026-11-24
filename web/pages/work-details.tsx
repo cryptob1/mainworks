@@ -31,7 +31,7 @@ import { releaseView } from '../../src/model/release';
 import { shownRisk } from '../../src/model-boundary/risk-class.js';
 import StatusBadge from '../components/status-badge';
 import StatusAge from '../components/status-age';
-import { RequestCard } from './human-requests';
+import { RequestCard, sealer } from './human-requests';
 import type { Dashboard } from './dashboard';
 import type { ItemPreview, ItemPreviewState } from '../../src/project-previews';
 
@@ -324,7 +324,7 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
       <p className="page-fact" {...(stuck ? { 'data-stuck-why': true } : {})}><span className="next-label">{stuck ? 'Why:' : 'Now:'}</span> <span className={`status-sentence tone-${plain.tone}`}><Explained sentence={why}/></span></p>
       <p className="next-line" {...(stuck ? { 'data-stuck-next': true } : {})}><span className="next-label">Next:</span> {trialFailed ? 'It goes back to a Builder with this output, or is tried again if the main branch was at fault.'
         : <><strong>{actor.who}</strong>{actor.does && actor.does !== steps.label && actor.does !== why && !waitingOnYou.length ? <> — {actor.does}</> : null}</>}</p>
-      {waitingOnYou.map(row => <RequestCard key={row.request.id} row={row} refusal={humanOnlyRefusal(row.rule, status?.actor ?? {})} busy={busy} open={() => {}} signIn={signOut}
+      {waitingOnYou.map(row => <RequestCard key={row.request.id} row={row} refusal={humanOnlyRefusal(row.rule, status?.actor ?? {})} busy={busy} open={() => {}} signIn={signOut} seal={sealer(api)}
         answer={(text, post) => action(row.id, row.answer.post.command, { ...post, [row.answer.post.field]: text })} send={body => action(row.id, row.answer.post.command, body)}/>)}
       {item.violations.map(v => <div className="notice danger" key={v}>{shortShas(v)}</div>)}
     </section>
