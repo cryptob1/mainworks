@@ -195,7 +195,7 @@ export async function backfillEventStage(pool: pg.Pool, limit: number) {
     // The events trigger lets this one update through: a delta row lacking its stage gains it (compaction.ts).
     await db.query("SET LOCAL graphyard.stage_backfill = 'on'");
     const { rows } = await db.query(`WITH batch AS (SELECT seq, work_id, payload->'delta' AS d FROM events WHERE payload ? 'delta' AND NOT payload ? 'stage' ORDER BY seq LIMIT $1),
-      bases AS (SELECT b.seq, b.work_id, b.payload->'work'->>'stage' AS stage FROM events b
+      bases AS MATERIALIZED (SELECT b.seq, b.work_id, b.payload->'work'->>'stage' AS stage FROM events b
         WHERE b.seq IN (SELECT DISTINCT (d->>'base')::bigint FROM batch) AND b.payload ? 'work')
       UPDATE events e SET payload = e.payload || jsonb_build_object('stage', CASE WHEN bases.seq IS NULL THEN NULL
           WHEN edit.op IS NULL THEN bases.stage WHEN jsonb_array_length(edit.op) = 1 THEN NULL ELSE edit.op->1 #>> '{}' END)
