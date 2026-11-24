@@ -50,7 +50,7 @@ test('e2e:master-image-paste-delivery — a screenshot pasted on the Lead live s
   const child = fork(resolve('tests/helpers/terminal-server.ts'), [database.url, site], { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
     env: { ...process.env, PATH: `${stub}${delimiter}${process.env.PATH}`, HERDR_STUB_LOG: log, GRAPHYARD_HERDR_CONFIG_HOME: '', GRAPHYARD_HERDR_SESSION: '' } });
   const [{ url }] = await once(child, 'message') as [{ url: string }];
-  await symlink(resolve('.graphyard/browser-dist'), join(site, 'dist'));
+  await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
   // TLS terminates in front of the control plane, as tailscale serve does on the host the master runs on.
   const front = await httpsFront(url, host);
   const origin = front.origin;

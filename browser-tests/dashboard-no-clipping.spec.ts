@@ -74,7 +74,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 800, height: 700 }
     test.setTimeout(180_000);
     const database = await signInDatabase();
     const site = await temporaryDirectory('no-clipping');
-    await symlink(resolve('.graphyard/browser-dist'), join(site, 'dist'));
+    await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
     const http = await plane(database.url, site);
     const page = await browser.newPage({ viewport }); await serveXterm(page);
     try {

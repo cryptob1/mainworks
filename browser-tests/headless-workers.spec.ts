@@ -13,7 +13,7 @@ test('e2e:headless-workers — the item page lists worker runs by attempt and sh
   test.setTimeout(120_000);
   const database = await signInDatabase();
   const site = await mkdtemp(join(tmpdir(), 'graphyard-worker-runs-'));
-  await symlink(resolve('.graphyard/browser-dist'), join(site, 'dist'));
+  await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
   const child = fork(resolve('tests/helpers/worker-runs-server.ts'), [database.url, site], { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
   const [{ url, key }] = await once(child, 'message') as [{ url: string; key: string }];
   try {

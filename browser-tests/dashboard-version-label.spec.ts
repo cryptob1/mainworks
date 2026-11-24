@@ -49,7 +49,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
     test.setTimeout(120_000);
     const database = await signInDatabase();
     const site = await temporaryDirectory('version-label');
-    await symlink(resolve('.graphyard/browser-dist'), join(site, 'dist'));
+    await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
     // Both planes listen on one port, as one URL does across a deploy; the page talks to whichever is serving it.
     const port = await freePort();
     let http = await plane(database.url, site, first, port);

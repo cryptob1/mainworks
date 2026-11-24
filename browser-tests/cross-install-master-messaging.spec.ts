@@ -15,7 +15,7 @@ const settled = { timeout: 15_000 };
 test('e2e:cross-install-master-messaging — the receiving install\'s Lead page shows the thread with the sender\'s name, the message and the reply in order at 1280 px and 390 px', async ({ browser }) => {
   test.setTimeout(120_000);
   const site = await temporaryDirectory('cross-install-messages');
-  await symlink(resolve('.graphyard/browser-dist'), join(site, 'dist'));
+  await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
   const database = await withDatabase('cross_install_messages'); await database.init();
   const child = fork(resolve('tests/helpers/terminal-server.ts'), [(database.pool.options as { connectionString: string }).connectionString, site], {
     execArgv: ['--import', 'tsx'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'], env: { ...process.env, PATH: join(site, 'empty'), HOME: site },
