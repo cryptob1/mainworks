@@ -71,6 +71,8 @@ export const schemaGenerations: readonly (string | null)[] = [
   'sha256:4e8e9cd523874b3e522c8c2142b9cca07e18b3a6ec672c53c94e8036567ed8e3',
   // GY-3716: the coordination view keeps every docs sign-off, which stands across heads of its item.
   'sha256:5603670d13084fca2b151de4b97bec3448c744b41853859ccbd62ec47ef7dda5',
+  // GY-3757: per-item status reads answer from an index on the work index's item key.
+  'sha256:9d89fe4556a2dc117ee1a906ec2946544dcf00871a0e53f28c3850fc15ceb6ac',
 ];
 /** The schema generation the code in this process expects: its table definitions' place in the lineage. */
 export const schemaVersion = schemaGenerations.length - 1;
