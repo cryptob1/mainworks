@@ -79,6 +79,8 @@ export const schemaGenerations: readonly (string | null)[] = [
   'sha256:f1d3cc7339c568bbaafae395d7797b12269dca54f4857e53044ceb8429aa5169',
   // GY-3764: the work index carries each item's attempts and when they or its stage last changed, for the flow.
   'sha256:07eba85cc444266e130cecaea2e8864cd68ce7faa3dffd18a2f62442cfb87adb',
+  // GY-3765: events carry a whole-document row's stage, so the flow reads it without the document.
+  'sha256:1b6fb63b9ac162fd425c426a2fcfae8522e465611dfc30c7eed31866ce85816f',
 ];
 /** The schema generation the code in this process expects: its table definitions' place in the lineage. */
 export const schemaVersion = schemaGenerations.length - 1;

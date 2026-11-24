@@ -31,8 +31,21 @@ const events = defineTable({
   ddl: `CREATE TABLE IF NOT EXISTS events (
   seq bigserial PRIMARY KEY, work_id uuid REFERENCES work_items(id),
   actor text NOT NULL, kind text NOT NULL, payload jsonb NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT clock_timestamp()
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(), stage text
 );
+-- GY-3765: a whole-document row's stage, set as it is written, so the flow reads it without opening
+-- the document. Existing rows of the flow's window are filled once; the ledger is otherwise append-only.
+CREATE OR REPLACE FUNCTION graphyard_event_stage() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN NEW.stage := NEW.payload->'work'->>'stage'; RETURN NEW; END $$;
+DROP TRIGGER IF EXISTS event_stage ON events;
+CREATE TRIGGER event_stage BEFORE INSERT ON events FOR EACH ROW EXECUTE FUNCTION graphyard_event_stage();
+DO $events$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'events'::regclass AND attname = 'stage' AND NOT attisdropped) THEN
+    ALTER TABLE events ADD COLUMN stage text;
+    DROP TRIGGER IF EXISTS immutable_events ON events;
+    UPDATE events SET stage = payload->'work'->>'stage' WHERE payload ? 'work' AND created_at > now() - interval '8 days';
+  END IF;
+END $events$;
 CREATE INDEX IF NOT EXISTS events_work ON events(work_id,seq);
 -- The ledger's recent growth by kind (eventStats) is a range read on insertion time.
 CREATE INDEX IF NOT EXISTS events_created ON events(created_at);

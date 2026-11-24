@@ -8,8 +8,7 @@ interface Queryable { query: (text: string, values: unknown[]) => Promise<{ rows
 const flowKinds = ['rework', 'merge.intent', 'merge.trial', 'merge.refused', 'merge.serve-revert'];
 /** GY-3763: the longest window the flow reports; nothing older is read. */
 const readSpanMs = 7 * 24 * 3_600_000;
-const columns = `work_id, kind, created_at, seq,
-    CASE WHEN payload ? 'work' THEN payload->'work'->>'stage' END AS stage,
+const columns = `work_id, kind, created_at, seq, stage,
     CASE WHEN kind = 'rework' THEN COALESCE(payload->'details'->>'reason', payload->'details'->'intent'->>'reason')
       WHEN kind = 'merge.refused' THEN payload->>'reason' END AS reason,
     CASE WHEN kind = 'rework' THEN COALESCE(payload->'details'->>'binding', payload->'details'->'intent'->>'binding') END AS binding,
@@ -20,10 +19,11 @@ const columns = `work_id, kind, created_at, seq,
 /**
  * GY-3763: the window's rows, each half a range scan on insertion time: the whole-document rows
  * through events_work_flow, the flow kinds through events_kind_created. Neither tests a payload
- * outside the window.
+ * outside the window. GY-3765: a whole-document row's stage is its own column, so only a rework's
+ * document is opened, for its reason; a row with no stage carries no document.
  */
 export const flowLedgerSql = `SELECT ${columns} FROM events WHERE work_id IS NOT NULL AND created_at > $1 AND payload ? 'work'
-  UNION ALL SELECT ${columns} FROM events WHERE work_id IS NOT NULL AND created_at > $1 AND kind = ANY($2::text[]) AND NOT (payload ? 'work')
+  UNION ALL SELECT ${columns} FROM events WHERE work_id IS NOT NULL AND created_at > $1 AND kind = ANY($2::text[]) AND stage IS NULL
   ORDER BY seq`;
 
 /**
