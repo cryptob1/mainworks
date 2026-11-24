@@ -1,0 +1,15 @@
+{
+  "id": "batch-gate-slot-priority",
+  "title": "The batch gate takes the next freed heavy-job slot ahead of merge trials and reruns only failed files after heat",
+  "description": "With every heavy-job slot held by merge trials and a batch gate waiting, the first freed slot goes to the batch gate and no new merge trial starts before it; a batch gate whose run fails as slowed by heat reruns only its failed files on the next cycle and verifies when they pass.",
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "batch gate takes the next freed slot ahead of merge trials and reruns only failed files after heat",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:batch-gate-slot-priority tests/batch-gate-slot-priority.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}

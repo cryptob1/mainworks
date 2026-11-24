@@ -1392,9 +1392,10 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const closed = enter();
     const line = `[step] ${stepLabel} took ${stepSeconds(now() - stepAt)}`;
     log.push(line);
-    // GY-3535: a failure while its containers waited over a minute for the CPU to cool measures the heat, not the head.
+    // GY-3535, GY-3803: a failure while its containers waited over a minute for the CPU to cool measures the heat, not the head.
+    const failedE2e = e2e.some(entry => entry.failed > 0 || entry.missing || entry.executed === 0);
     const heat = build === 'fail' || tests.failed.length ? heatWaitSeconds(log.join('\n')) : 0;
-    if (heat > 60) throw new TrialHeatError(stepLabel, heat);
+    if (heat > 60) throw new TrialHeatError(stepLabel, heat, build === 'fail' || failedE2e ? [] : tests.failed);
     return { build, tests, durationMs: Math.max(0, now() - startedAt), logTail: logTail === undefined ? tail() : `${logTail}\n${line}`, runnerExit, ...(groups ? { groups } : {}), phases: closed,
       ...(detail?.failingCase ? { failingCase: detail.failingCase } : {}),
       ...(detail?.timedOut ? { timedOut: true } : {}),

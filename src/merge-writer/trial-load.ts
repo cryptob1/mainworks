@@ -85,9 +85,9 @@ const launcherWords = '(?:graphyard|mainworks) trial container: ', launcherPatte
 const heatLine = `${waitingLine}: a CPU sensor held this start `;
 /** GY-3535: the seconds every container start in `output` waited for the CPU to cool, summed. */
 export const heatWaitSeconds = (output: string) => [...output.matchAll(new RegExp(`${launcherWords}waiting: a CPU sensor held this start (\\d+)s`, 'g'))].reduce((sum, match) => sum + Number(match[1]), 0);
-/** GY-3535: a step that failed or timed out after its containers waited over a minute on heat: the host's overload, so the same head is trialled again, never reworked. */
+/** GY-3535, GY-3803: a step that failed or timed out after its containers waited over a minute on heat: the host's overload, so the same head is trialled again, never reworked; carries any failed test files so a batch gate reruns only them. */
 export class TrialHeatError extends Error {
-  constructor(step: string, seconds: number) {
+  constructor(readonly step: string, readonly seconds: number, readonly files: readonly string[] = []) {
     super(`${trialOverloadPrefix} trial slowed by heat: ${step} failed after its containers waited ${seconds}s for the CPU to cool`);
     this.name = 'TrialHeatError';
   }
