@@ -81,6 +81,8 @@ export const schemaGenerations: readonly (string | null)[] = [
   'sha256:07eba85cc444266e130cecaea2e8864cd68ce7faa3dffd18a2f62442cfb87adb',
   // GY-3765: events carry a whole-document row's stage, so the flow reads it without the document.
   'sha256:1b6fb63b9ac162fd425c426a2fcfae8522e465611dfc30c7eed31866ce85816f',
+  // GY-3768: the events trigger lets the stage backfill add a missing stage to a delta row, found by a partial index.
+  'sha256:cefe302b733ea489e9242037aaf602f43c1389eea075783e9ae3b58adcc85c0b',
 ];
 /** The schema generation the code in this process expects: its table definitions' place in the lineage. */
 export const schemaVersion = schemaGenerations.length - 1;

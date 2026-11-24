@@ -58,13 +58,16 @@ const literal = (list: readonly string[]) => `ARRAY[${list.map(kind => `'${kind}
 const kinds = literal([...routineSaveKinds, ...bookkeepingKinds]);
 
 /**
- * The events table's own immutability trigger: every UPDATE is refused, and every DELETE unless it
+ * The events table's own immutability trigger: every UPDATE is refused but the stage backfill's
+ * (GY-3768: a delta row lacking `stage` gains it, nothing else changes), and every DELETE unless it
  * is of a routine kind inside a compaction transaction. Installed with the events DDL in place of
  * the shared `graphyard_immutable` trigger.
  */
 export const eventsImmutableDdl = `CREATE OR REPLACE FUNCTION graphyard_events_immutable() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF TG_OP = 'DELETE' AND current_setting('graphyard.ledger_compaction', true) = 'on' AND OLD.kind = ANY(${kinds}) THEN RETURN OLD; END IF;
+  IF TG_OP = 'UPDATE' AND current_setting('graphyard.stage_backfill', true) = 'on' AND OLD.payload ? 'delta' AND NOT OLD.payload ? 'stage'
+    AND NEW.payload - 'stage' = OLD.payload AND (NEW.seq, NEW.work_id, NEW.actor, NEW.kind, NEW.created_at) IS NOT DISTINCT FROM (OLD.seq, OLD.work_id, OLD.actor, OLD.kind, OLD.created_at) THEN RETURN NEW; END IF;
   RAISE EXCEPTION 'The event ledger is append-only';
 END $$;
 DROP TRIGGER IF EXISTS immutable_events ON events;

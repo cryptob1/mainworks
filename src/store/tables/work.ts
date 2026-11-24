@@ -81,6 +81,8 @@ CREATE INDEX IF NOT EXISTS events_work_history ON events(work_id,seq) WHERE NOT 
 -- never testing a payload outside the window.
 CREATE INDEX IF NOT EXISTS events_work_flow ON events(created_at) WHERE payload ? 'work' AND work_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS events_unowned_family ON events(split_part(kind,'.',1),seq) WHERE work_id IS NULL;
+-- GY-3768: the delta rows still lacking their stage, which the loop's backfill finds without reading the ledger; empty once it is done.
+CREATE INDEX IF NOT EXISTS events_stageless_delta ON events(seq) WHERE payload ? 'delta' AND NOT payload ? 'stage';
 ${eventWorkFunctions}
 -- Append-only but for the audited compaction of routine rows (store/compaction.ts, GY-979).
 ${eventsImmutableDdl}`,
