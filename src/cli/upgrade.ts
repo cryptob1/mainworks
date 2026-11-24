@@ -349,6 +349,10 @@ async function stopTrackedServe(tracked: { pid?: number | null; started?: string
     await new Promise(accept => setTimeout(accept, 100));
   }
   try { process.kill(-tracked.pid, 'SIGKILL'); } catch { /* already gone */ }
+  for (let wait = 0; wait < 20; wait++) {
+    try { process.kill(-tracked.pid, 0); } catch { return; }
+    await new Promise(accept => setTimeout(accept, 100));
+  }
 }
 
 /** The inodes of the TCP sockets listening on `port`, from the kernel's tables (Linux). */

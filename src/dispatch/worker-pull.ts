@@ -22,8 +22,8 @@ export interface PulledAssignment { at: string; assigned: Work | null; offered: 
  * for it to be given work. The wait for the next assignment is one poll interval plus the time
  * the claim itself takes, so the published interval is the bound on ready-to-claim.
  */
-export async function runWorkerPull(pull: () => Promise<{ assigned: Work | null; offered?: number; refused?: { key: string; reason: string }[] }>, options: { intervalMs?: number; signal?: AbortSignal; once?: boolean; now?: () => number; maxPolls?: number; log?: (line: string) => void } = {}): Promise<PulledAssignment> {
-  const intervalMs = options.intervalMs ?? workerPullIntervalMs, now = options.now ?? Date.now, log = options.log ?? (() => {});
+export async function runWorkerPull(pull: () => Promise<{ assigned: Work | null; offered?: number; refused?: { key: string; reason: string }[] }>, options: { intervalMs?: number; signal?: AbortSignal; once?: boolean; now?: () => number; wait?: (ms: number, signal?: AbortSignal) => Promise<void>; maxPolls?: number; log?: (line: string) => void } = {}): Promise<PulledAssignment> {
+  const intervalMs = options.intervalMs ?? workerPullIntervalMs, now = options.now ?? Date.now, wait = options.wait ?? ((ms, signal) => delay(ms, undefined, { signal })), log = options.log ?? (() => {});
   const startedAt = now();
   let polls = 0, last: { assigned: Work | null; offered?: number; refused?: { key: string; reason: string }[] } = { assigned: null };
   const done = (): PulledAssignment => ({ at: new Date(now()).toISOString(), assigned: last.assigned ?? null, offered: last.offered ?? 0, refused: last.refused ?? [], waitedMs: Math.max(0, now() - startedAt), polls });
@@ -32,7 +32,7 @@ export async function runWorkerPull(pull: () => Promise<{ assigned: Work | null;
     last = await pull();
     if (last.assigned) { log(`[mainworks-worker] claimed ${last.assigned.key} after ${polls} poll(s)`); return done(); }
     if (options.once || (options.maxPolls !== undefined && polls >= options.maxPolls)) return done();
-    try { await delay(intervalMs, undefined, { signal: options.signal }); } catch { /* woken to stop */ }
+    try { await wait(intervalMs, options.signal); } catch { /* woken to stop */ }
   }
   return done();
 }
