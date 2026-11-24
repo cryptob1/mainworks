@@ -1,0 +1,15 @@
+{
+  "id": "gate-notes-clear",
+  "title": "A batch gate note clears once its fault is gone",
+  "description": "Runs the batch gate on a test install with a real git origin: a failed verified-ref push leaves a verified-ref note in master status, and once the push to refs/graphyard/verified succeeds, master status shows no verified-ref note.",
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "verified commit with a successful verified-ref push shows no verified-ref note in master status",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:gate-notes-clear tests/gate-notes-clear.test.ts",
+      "timeoutSeconds": 120
+    }
+  ]
+}
