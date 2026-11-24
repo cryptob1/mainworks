@@ -141,13 +141,13 @@ test('integration:warm-image-serves-the-head — warm image is keyed to lockfile
   const head = await commitFile(root, 'src/cli/index.ts', modifiedCli);
 
   const headSession = remoteShardSession({ root, sha: head, baseTip: base2, image, run: runWithHosts, deadline: Date.now() + 120_000 });
-  // AC-3(b): two shards of the trial start at once on the same host. Each records dist/cli.mjs when it starts
+  // AC-3(b): two shards of the trial start at once on the same host. Each records dist/cli.mjs and dist/server.mjs when it starts
   // and again after a pause: neither sees it change, so no shard wrote rebuilt files while another ran.
   const verifyHeadScript = `
     import { execFileSync } from 'node:child_process';
     import { statSync, writeFileSync } from 'node:fs';
     const records = process.argv[1];
-    const seen = () => { const { ino, mtimeMs } = statSync('dist/cli.mjs'); return ino + ':' + mtimeMs; };
+    const seen = () => ['cli', 'server'].map(name => { const { ino, mtimeMs } = statSync('dist/' + name + '.mjs'); return ino + ':' + mtimeMs; }).join(',');
     const before = seen();
     const help = execFileSync(process.execPath, ['bin/graphyard.mjs', '--help'], { encoding: 'utf8' });
     await new Promise(resolve => setTimeout(resolve, 1500));
@@ -163,10 +163,10 @@ test('integration:warm-image-serves-the-head — warm image is keyed to lockfile
       assert.equal(shard.ok, true, shard.out);
       assert.match(shard.out, /HEAD_SEEN=true/, shard.out);
       const [start, end] = /DIST=(\S+)>(\S+)/.exec(shard.out)!.slice(1);
-      assert.equal(end, start, `dist/cli.mjs changed while a shard ran: ${shard.out}`);
+      assert.equal(end, start, `dist/ changed while a shard ran: ${shard.out}`);
       return start;
     });
-    assert.equal(dist[1], dist[0], 'both shards read the one rebuilt dist/cli.mjs');
+    assert.equal(dist[1], dist[0], 'both shards read the one rebuilt dist/');
     assert.equal(dockerCount(hosts.localState, 'commit'), 1, 'newer base reused the newest existing warm image without rebuilding a new image');
     assert.equal(dockerCount(hosts.state('box'), 'load'), 1, 'no new warm image needed to be loaded on the host');
     const creates = await dockerCreates(hosts.state('box'));
