@@ -6,7 +6,7 @@ import { demandWork } from '../../model/refusal.js';
 import { workIdByRef } from '../../store/locked-read.js';
 import type { Principal, Work } from '../../model.js';
 import type { Engine } from '../../engine.js';
-import { preserveAssignment, renewLease, renewalGrace } from '../leases.js';
+import { preserveAssignment, renewLease, renewalGrace, restoreDowntimeLease } from '../leases.js';
 import type { Ctx } from './types.js';
 
 /** The renewal itself: the lease checks every heartbeat passes, written once for the item-locked fast path and the operator-agent path. */
@@ -36,6 +36,8 @@ export function renewHeartbeat(engine: Engine, actor: Principal, id: string | nu
     demandWork(work);
     // A lease past its expiry that a recorded server-side renewal fault still covers stays live (GY-558).
     await renewalGrace(engine, db, work, now);
+    // GY-3785: a lease that lapsed while the control plane was not serving is accepted if nobody else claimed the item.
+    await restoreDowntimeLease(engine, db, work, actor, data.epoch, now);
     preserveAssignment(work);
     demand(work.stage !== 'done', 'Delivered work is immutable; create a follow-up task');
     run({ engine, db, actor, command: 'heartbeat', id, data, work, all: [], now, observation: null });

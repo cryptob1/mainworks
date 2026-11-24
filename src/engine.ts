@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg';
-import type { Principal, Work, Observation } from './model.js';
+import type { Principal, Work, Observation, PlaneStall } from './model.js';
 import type { GitRunner } from './merge-writer/local-observation.js';
 import { runCommand } from './engine/commands/run.js';
 import { renewalFaultOf, renewalFaultRefusal, recordPlaneLiveness, startPlaneBeat, yieldToRenewals } from './engine/leases.js';
@@ -35,6 +35,8 @@ export class Engine {
   constructor(public store: Store, public leaseSeconds = 120, public repository = process.env.GITHUB_REPOSITORY ?? '') {}
   /** The commit this process first recorded itself serving (recordPlaneLiveness); undefined until its first tick named one (GY-2177). */
   servedCommit: string | null | undefined;
+  /** The downtime gap this process observed on its first liveness tick (GY-3785); null when there was no prior tick gap. */
+  restartGap: PlaneStall | null | undefined;
 
   /**
    * Run one command. A renewal that fails server-side — what `renewalFaultOf` blames on the server: a connection or statement timeout,

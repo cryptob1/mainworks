@@ -224,10 +224,10 @@ def admit():
                 bound = None
                 began = time.time()
             if why != said:
-                print('${waitingLine}: ' + why, file=sys.stderr, flush=True)
                 if said is None:
                     with open(waiting, 'w') as file:
                         file.write(load.get('owner', ''))
+                print('${waitingLine}: ' + why, file=sys.stderr, flush=True)
                 said = why
             if bound is not None and time.time() - began >= bound:
                 print('${faultLine}the trial container waited ' + str(int(time.time() - began)) + 's to start and gave up: ' + why, file=sys.stderr, flush=True)

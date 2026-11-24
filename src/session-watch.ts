@@ -143,6 +143,24 @@ export function assignmentSurrender(epoch: number, argv: string[] = process.argv
 
 /** How long before the lease's own expiry a supervisor stops retrying a failed renewal (GY-274). */
 export const renewalSafetyMarginMs = 15_000;
+/** How long a builder session keeps working and retrying lease renewal when the control plane is unreachable (connection error or 5xx) (GY-3785). */
+export const renewalUnreachableRetryMs = 5 * 60_000;
+/**
+ * Whether a failed lease renewal is a connection error or 5xx (control plane unreachable or restarting):
+ * the builder keeps working and retries renewal for up to `renewalUnreachableRetryMs` (5 minutes).
+ * Definite refusals (409, unknownWorkCode) and unanswered hung requests are not unreachable errors.
+ */
+export function unreachableRenewalFailure(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  if (definiteRenewalRefusal(error)) return false;
+  const { status, unanswered, code } = error as { status?: unknown; unanswered?: unknown; code?: unknown };
+  if (unanswered === true) return false;
+  if (typeof status === 'number') return status >= 500;
+  if (typeof code === 'string' && /^ECONN(RESET|REFUSED|ABORTED)|^ETIMEDOUT$|^EPIPE$|^E(HOST|NET)UNREACH$|^EAI_AGAIN$/.test(code)) return true;
+  if (error instanceof TypeError || error instanceof SyntaxError) return true;
+  if (error instanceof Error && /Control plane unreachable|fetch failed|ECONNREFUSED|ECONNRESET|socket hang up/i.test(error.message)) return true;
+  return false;
+}
 /**
  * Whether a failed renewal is the server's definite answer rather than a transient failure: a
  * renewal that came back for another epoch, or the 409 Conflict every epoch, lease and ownership
@@ -239,9 +257,9 @@ export function restartTolerantApi(api: ControlPlaneApi, until: () => number, op
  */
 export const setupLine = (subject: string, epoch: number) => `mainworks: starting supervision of ${subject} epoch ${epoch}`;
 // The deadline uses elapsed local time and server-reported duration, not synchronized clocks.
-export async function supervise(command: string, args: string[], epoch: number, renew: () => Promise<Renewal>, options: { intervalMs?: number; graceMs?: number; safetyMarginMs?: number; retryMs?: number; retryMaxMs?: number; startupWindowMs?: number; attemptBoundMs?: number; detached?: boolean; containment?: Containment; platform?: NodeJS.Platform; session?: SupervisedSession;
+export async function supervise(command: string, args: string[], epoch: number, renew: () => Promise<Renewal>, options: { intervalMs?: number; graceMs?: number; safetyMarginMs?: number; retryMs?: number; retryMaxMs?: number; startupWindowMs?: number; attemptBoundMs?: number; unreachableRetryMs?: number; detached?: boolean; containment?: Containment; platform?: NodeJS.Platform; session?: SupervisedSession;
   /** GY-3259: the headless run log the agent's output is appended to, one redacted JSON line per output line with its time and stream. */ log?: string } = {}) {
-  let deadline = 0, granted = 0, attempts = 0;
+  let deadline = 0, granted = 0, attempts = 0, unreachableUntil = 0;
   /** One renewal attempt, sequenced: a beat the supervisor already gave up on never moves the deadline. */
   const heartbeatAttempt = () => {
     const seq = ++attempts;
@@ -251,7 +269,7 @@ export async function supervise(command: string, args: string[], epoch: number, 
       if (seq !== attempts) throw Object.assign(new Error('Superseded lease renewal'), { superseded: true });
       const duration = Date.parse(result.lease?.expiresAt ?? '') - Date.parse(result.updatedAt);
       if (result.lease?.epoch !== epoch || !Number.isFinite(duration) || duration <= 0) throw Object.assign(new Error('Invalid lease renewal'), { definite: true });
-      deadline = started + duration; granted = duration;
+      deadline = started + duration; granted = duration; unreachableUntil = 0;
       if (deadline <= performance.now()) throw Object.assign(new Error('Lease expired during renewal'), { definite: true });
     })();
   };
@@ -259,6 +277,8 @@ export async function supervise(command: string, args: string[], epoch: number, 
   // gets its renewals; at the production 120 s lease it is the full 15 s.
   const margin = () => Math.min(options.safetyMarginMs ?? renewalSafetyMarginMs, granted / 4);
   const retryMs = options.retryMs ?? 1000, retryMaxMs = options.retryMaxMs ?? 10_000;
+  const unreachableRetryMs = options.unreachableRetryMs ?? renewalUnreachableRetryMs;
+  const effectiveDeadline = () => Math.max(deadline, unreachableUntil);
   /** A renewal the plane did not answer within the attempt's bound (GY-1791): retried afresh, never an answer. */
   const unanswered = () => Object.assign(new Error('Lease renewal went unanswered past its attempt bound'), { name: 'TimeoutError', unanswered: true });
   /**
@@ -284,14 +304,15 @@ export async function supervise(command: string, args: string[], epoch: number, 
    */
   async function renewWithRetry(stopped: () => boolean, orphaned: () => string | null = () => null, extended: () => void = () => {}): Promise<'renewed' | 'refused' | 'lapsing' | 'stopped' | { orphaned: string }> {
     for (let attempt = 0; ; attempt++) {
+      const retryUntil = Math.max(deadline - margin(), unreachableUntil);
       // Inside the safety margin nothing more is attempted: the lease is left to expire on its own.
-      if (attempt === 0 && deadline - margin() <= performance.now()) return 'lapsing';
+      if (attempt === 0 && retryUntil <= performance.now()) return 'lapsing';
       const started = performance.now();
       // The attempt waits no longer than its bound, and never past the window; the losing timer is
       // cleared whichever side settles the race, so a renewed lease retains no timer until its expiry.
       // An infinite bound awaits the request however long it hangs (the base's wiring, for its reproduction).
       const attemptBound = options.attemptBoundMs ?? margin();
-      const bound = Math.max(1, Math.min(attemptBound, deadline - margin() - started));
+      const bound = Math.max(1, Math.min(attemptBound, retryUntil - started));
       let unansweredTimer: ReturnType<typeof setTimeout> | undefined;
       const beat = heartbeatAttempt(); beat.catch(() => { /* the race below answers this attempt; an abandoned one is superseded */ });
       try {
@@ -304,6 +325,12 @@ export async function supervise(command: string, args: string[], epoch: number, 
         // The bound closed on a request that never answered: the in-flight beat is superseded, so a
         // response landing now cannot move the deadline of an attempt that was given up on.
         if ((error as { unanswered?: boolean }).unanswered === true) attempts++;
+        // GY-3785: a connection error or 5xx means the control plane is unreachable or restarting;
+        // keep working and retry renewal for up to 5 minutes so an update costs a pause, not the attempt.
+        if (unreachableRenewalFailure(error) && unreachableUntil === 0 && unreachableRetryMs > 0) {
+          unreachableUntil = started + unreachableRetryMs;
+          extended();
+        }
         // A server-side failure the server recorded keeps the lease for its grace (GY-558): the
         // deadline moves out to it, measured from when this attempt was sent, and retries go on.
         const grace = renewalGraceMs(error);
@@ -311,13 +338,13 @@ export async function supervise(command: string, args: string[], epoch: number, 
           deadline = started + grace; extended();
           console.error(`Mainworks recorded the failed renewal server-side; the lease is kept for ${Math.round(grace / 1000)}s more while renewal is retried.`);
         }
-        const window = deadline - margin() - performance.now();
+        const window = Math.max(deadline - margin(), unreachableUntil) - performance.now();
         const wait = Math.min(retryMs * 2 ** attempt, retryMaxMs, window);
         if (wait <= 0) {
-          console.error(`Mainworks lease renewal is still failing (${reason}); retries stop ${Math.round(margin())} ms before the lease expires and the worker stops only if the lease actually expires.`);
+          console.error(`Mainworks lease renewal is still failing (${reason}); retries stop and the worker stops if the lease expires.`);
           return 'lapsing';
         }
-        console.error(`Mainworks lease renewal failed transiently (${reason}); retrying in ${Math.round(wait)} ms with ${Math.round((deadline - performance.now()) / 1000)}s of lease left.`);
+        console.error(`Mainworks lease renewal failed transiently (${reason}); retrying in ${Math.round(wait)} ms with ${Math.round((effectiveDeadline() - performance.now()) / 1000)}s left.`);
         await delay(wait);
         if (stopped()) return 'stopped';
         const cause = orphaned();
@@ -381,7 +408,7 @@ export async function supervise(command: string, args: string[], epoch: number, 
         finish(null, code);
       }, options.graceMs ?? 5000);
     }
-    const armDeadline = () => { clearTimeout(expiry); expiry = setTimeout(() => stop(1), Math.max(0, deadline - performance.now())); };
+    const armDeadline = () => { clearTimeout(expiry); expiry = setTimeout(() => stop(1), Math.max(0, effectiveDeadline() - performance.now())); };
     /**
      * Why there is nothing left to supervise, or null while the agent is still there.
      *

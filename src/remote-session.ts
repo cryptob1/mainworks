@@ -13,7 +13,7 @@
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -231,7 +231,18 @@ export async function runRemoteSession(input: RemoteSession): Promise<number> {
       }
       await git('reset', '-q', '--hard', head);
       await git('clean', '-fdq', '-e', 'node_modules');
-      if (work !== head) { await git('read-tree', '-u', '--reset', work); await git('reset', '-q'); }
+      if (work !== head) {
+        // Apply the snapshot through a scratch index so the real index stays at `head` and mirrored
+        // uncommitted files never briefly appear staged (`A `) between read-tree and reset.
+        const index = join(scratch, `${randomUUID()}.index`);
+        try {
+          const current = await git('rev-parse', '--path-format=absolute', '--git-path', 'index');
+          if (existsSync(current)) await copyFile(current, index);
+          await run('git', ['-C', input.worktree, 'read-tree', '-u', '--reset', work], { env: { ...process.env, GIT_INDEX_FILE: index } });
+        } finally {
+          await rm(index, { force: true });
+        }
+      }
     };
     const code = await transport.session(input.target, words => new Promise<number>(resolve => {
       const child = spawn('ssh', [...words, `run-session ${runName}`], { stdio: ['pipe', 'pipe', 'pipe'] });
