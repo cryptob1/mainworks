@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { z } from 'zod';
 import { demand, Refusal } from './model.js';
-import { eventWorkSql, resolvedPayloadSql } from './store/snapshot-delta.js';
+import { eventStageSql, resolvedPayloadSql } from './store/snapshot-delta.js';
 
 /**
  * Reading an item's history.
@@ -98,7 +98,7 @@ export function eventHistorySql(query: EventHistoryQuery): Sql {
   if (query.until) where.push(`created_at<${param(query.until)}::timestamptz`);
   if (query.cursor) where.push(`seq${query.order === 'asc' ? '>' : '<'}${param(query.cursor)}::bigint`);
   const columns = query.payload === 'none' ? '' : query.payload === 'details' ? ", payload->'details' AS details"
-    : query.payload === 'stage' ? `, ${eventWorkSql()}->>'stage' AS stage` : `, ${resolvedPayloadSql()} AS payload`;
+    : query.payload === 'stage' ? `, ${eventStageSql()} AS stage` : `, ${resolvedPayloadSql()} AS payload`;
   const order = query.order === 'asc' ? 'ASC' : 'DESC';
   // GY-3761: the page's seq values first, by key with the filters and limit, then payloads for
   // those rows only. One row beyond the page proves whether another page exists without a count.
