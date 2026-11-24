@@ -148,6 +148,8 @@ export async function readFlow(pool: Queryable, work: readonly Flowed[], now: nu
 
 type Stored = { at: number; work: readonly (Flowed & { reportedBy?: string })[]; flow: Flow & { items: FlowItem[] } };
 const jobs = new WeakMap<object, { last?: Stored; running?: Promise<Stored> }>();
+/** Drops the stored flow so the next reader computes it again: a test that changes the ledger and reads again within the minute. */
+export const forgetFlow = (key: object) => { jobs.delete(key); };
 /**
  * GY-3763: one computation per server at most once a minute, shared by every reader. A reader gets
  * the stored result with its age; one that finds it a minute old starts the next computation and

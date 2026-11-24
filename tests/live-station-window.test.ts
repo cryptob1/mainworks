@@ -7,6 +7,7 @@ import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
+import { forgetFlow } from '../src/server/flow.js';
 import { server } from '../src/server.js';
 import { masterConfigSchema } from '../src/master.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
@@ -114,6 +115,7 @@ test('integration:live-station-window — each window counts only its own merges
     JSON.stringify({ commit: recent, at: ago(40), repository }),
   ].join('\n') + '\n');
 
+  forgetFlow(store);
   const flow = await call(adminToken, 'flow');
   for (const window of ['6h', '24h']) {
     const live = flow[window].stations.live;
@@ -135,6 +137,7 @@ test('e2e:live-station-window — after a merge deploys, master status shows a 6
   await seedMerged('Deployed merge', next, 5);
   assert.equal(await deployOnce(deployRecordPath(repoRoot), fakePorts(next, previous), () => {}, repository), 'deployed');
 
+  forgetFlow(store);
   const status = await report();
   assert.ok(status.flow, `flow is shown (${status.flowError})`);
   const live = status.flow['6h'].stations.live;

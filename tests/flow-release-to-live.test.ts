@@ -7,6 +7,7 @@ import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
+import { forgetFlow } from '../src/server/flow.js';
 import { server } from '../src/server.js';
 import { masterConfigSchema } from '../src/master.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
@@ -122,6 +123,7 @@ test('integration:flow-release-to-live — live station reports median, p90, sam
   ].join('\n') + '\n');
   await writeFile(deployRecordPath(repoRoot), JSON.stringify({ tip: m2, failed: m3, reason: 'build failed', at: ago(10), repository }));
 
+  forgetFlow(store);
   const flow = await call(adminToken, 'flow');
   const live = flow['24h'].stations.live;
   assert.ok(live, '24h flow carries a live station');
@@ -134,6 +136,7 @@ test('integration:flow-release-to-live — live station reports median, p90, sam
 
   // A failed deploy of M3 via deployOnce rolls back to M2 and does not mark M3 as live.
   assert.equal(await deployOnce(deployRecordPath(repoRoot), fakePorts(m3, m2, true), () => {}, repository), 'rolled-back');
+  forgetFlow(store);
   const afterRollback = (await call(adminToken, 'flow'))['24h'].stations.live;
   assert.equal(afterRollback.oldest.key, third.key);
   assert.equal(afterRollback.oldest.waiting, true);
@@ -147,6 +150,7 @@ test('e2e:flow-release-to-live — after a merge deploys, master status shows a 
   // Deploy m4 through the real deployOnce watch pass.
   assert.equal(await deployOnce(deployRecordPath(repoRoot), fakePorts(m4, previous), () => {}, repository), 'deployed');
 
+  forgetFlow(store);
   const status = await report();
   assert.ok(status.flow, `flow is shown (${status.flowError})`);
   const live = status.flow['24h'].stations.live;

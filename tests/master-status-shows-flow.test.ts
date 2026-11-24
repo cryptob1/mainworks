@@ -6,6 +6,7 @@ import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
+import { forgetFlow } from '../src/server/flow.js';
 import { server } from '../src/server.js';
 import { masterConfigSchema } from '../src/master.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
@@ -80,6 +81,7 @@ test('integration:master-status-shows-flow — the master reads /api/flow for it
   // The flow read fails as production's did: its query ran past the statement timeout.
   const fleet = store.fleet.bind(store);
   store.fleet = () => Promise.reject(new Error('canceling statement due to statement timeout'));
+  forgetFlow(store);
   try {
     const failed = await report();
     assert.equal(failed.flow, null);

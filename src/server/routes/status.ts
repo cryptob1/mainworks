@@ -48,7 +48,7 @@ export const statusRoutes = defineRoutes('status', [
   } },
   // GY-3624: the flow numbers, for master status and the Work page; /api/status does not carry them (GY-3677).
   // GY-3763: computed at most once a minute and served from memory with its age.
-  { method: 'GET', path: '/api/flow', handle: ({ services, operatorVisible }) => sharedFlow(services.engine, Date.now(), async now => {
+  { method: 'GET', path: '/api/flow', handle: ({ services, operatorVisible }) => sharedFlow(services.engine.store, Date.now(), async now => {
     const { engine, repository } = services;
     const runner = engine.gitRunner === undefined ? engine.gitRunner = gitRunnerFor(setting('REPOSITORY_ROOT') ?? process.cwd()) : engine.gitRunner;
     const servingRoot = setting('REPOSITORY_ROOT')?.trim() ? resolve(setting('REPOSITORY_ROOT')!) : repositoryToplevel(process.cwd());
