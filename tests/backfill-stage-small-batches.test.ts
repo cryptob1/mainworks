@@ -3,12 +3,24 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { databaseUrl } from './helpers/postgres.js';
+import { explainAnalyzeBuffers } from './helpers/query-plan.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { namedPool } from '../src/store/report-pool.js';
 import { eventWorkSql } from '../src/store/snapshot-delta.js';
 import { eventStageBackfill } from '../src/daemon/event-stage-backfill.js';
+
+// The batch UPDATE statement run by backfillEventStage (src/store/snapshot-delta.ts).
+const backfillEventStageSql = `WITH batch AS (SELECT seq, work_id, payload->'delta' AS d FROM events WHERE payload ? 'delta' AND NOT payload ? 'stage' ORDER BY seq LIMIT $1),
+  bases AS MATERIALIZED (SELECT b.seq, b.work_id, b.payload->'work'->>'stage' AS stage FROM events b
+    WHERE b.seq IN (SELECT DISTINCT (d->>'base')::bigint FROM batch) AND b.payload ? 'work')
+  UPDATE events e SET payload = e.payload || jsonb_build_object('stage', CASE WHEN bases.seq IS NULL THEN NULL
+      WHEN edit.op IS NULL THEN bases.stage WHEN jsonb_array_length(edit.op) = 1 THEN NULL ELSE edit.op->1 #>> '{}' END)
+  FROM batch LEFT JOIN bases ON bases.seq = (batch.d->>'base')::bigint AND bases.work_id = batch.work_id
+    LEFT JOIN LATERAL (SELECT o.value AS op FROM jsonb_array_elements(CASE WHEN jsonb_typeof(batch.d->'ops') = 'array' THEN batch.d->'ops' ELSE '[]' END) WITH ORDINALITY o(value, n)
+      WHERE o.value->0 = '["stage"]' ORDER BY o.n DESC LIMIT 1) edit ON true
+  WHERE e.seq = batch.seq RETURNING e.seq`;
 
 // GY-3769: GY-3768's 1,000-row batches of long-chain rows ran past the statement timeout and stored nothing, again
 // each cycle. The loop now starts at 50 rows and sizes each batch from the last one's time to take about 1 s (GY-3771).
@@ -71,11 +83,24 @@ test('integration:backfill-stage-small-batches — on 800-row chains of 180 KB d
     FROM (SELECT seq FROM events WHERE payload ? 'delta' AND NOT payload ? 'stage' ORDER BY seq LIMIT 1000) b WHERE e.seq = b.seq`), /statement timeout/);
   assert.equal(await lacking(), before);
 
-  const lines: string[] = [], batches: { limit: number; filled: number; ms: number }[] = [];
+  // Plan and buffer bound on a 50-row backfill batch (rolled back so the loop below still backfills every row):
+  // uses events_stageless_delta without scanning events whole, reads only the batch + its bases, and never rebuilds documents.
+  const probeClient = await plain.connect();
+  try {
+    await probeClient.query('BEGIN');
+    await probeClient.query("SET LOCAL graphyard.stage_backfill = 'on'");
+    const batchPlan = await explainAnalyzeBuffers(probeClient, backfillEventStageSql, [50]);
+    await probeClient.query('ROLLBACK');
+    assert.ok(!batchPlan.seqScans.includes('events'), `backfill batch must not sequentially scan events: ${batchPlan.summary}`);
+    assert.ok(batchPlan.indexes.includes('events_stageless_delta'), `backfill batch must use events_stageless_delta: ${batchPlan.summary}`);
+    assert.ok(batchPlan.rowsScanned('events') <= 50 * 3, `backfill batch scanned ${batchPlan.rowsScanned('events')} event rows (limit 150): ${batchPlan.summary}`);
+    assert.ok(batchPlan.buffers <= 50 * 60, `backfill batch touched ${batchPlan.buffers} buffers (limit 3000): ${batchPlan.summary}`);
+  } finally { probeClient.release(); }
+
+  const lines: string[] = [], batches: { limit: number; filled: number }[] = [];
   const cycle = eventStageBackfill(async limit => {
-    const started = performance.now();
     const answer = await call('events/backfill-stage', { limit });
-    batches.push({ limit, filled: answer.filled, ms: performance.now() - started });
+    batches.push({ limit, filled: answer.filled });
     return answer;
   });
   let left = before;
@@ -83,7 +108,6 @@ test('integration:backfill-stage-small-batches — on 800-row chains of 180 KB d
     assert.ok(batches.length < 200, `the backfill had not finished after ${batches.length} cycles`);
     await cycle(line => lines.push(line));
     const batch = batches.at(-1)!, now = await lacking();
-    assert.ok(batch.ms < TIMEOUT_MS, `a ${batch.limit}-row batch took ${Math.round(batch.ms)} ms`);
     if (now) assert.ok(now < left, `cycle ${batches.length} stored nothing`);
     assert.equal(left - now, batch.filled);
     if (batch.filled) assert.match(lines.at(-1)!, new RegExp(`stored ${batch.filled} rows`));
