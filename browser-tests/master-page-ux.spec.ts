@@ -1,7 +1,7 @@
 import { test, expect, type Browser, type Page } from '@playwright/test';
 import { fork } from 'node:child_process';
 import { once } from 'node:events';
-import { readFile, symlink, writeFile } from 'node:fs/promises';
+import { readFile, symlink } from 'node:fs/promises';
 import { delimiter, join, resolve } from 'node:path';
 import { withDatabase } from '../tests/helpers/postgres';
 import { temporaryDirectory } from '../tests/helpers/temp-dirs';
@@ -9,6 +9,7 @@ import { bridgeTerminals } from '../src/master/terminal-bridge';
 import { terminalSessionReader } from '../src/master/terminal-session';
 import type { MasterConfig } from '../src/master/profiles';
 import { serveXterm } from './xterm';
+import { saveMasterState } from './master-state';
 
 const settled = { timeout: 15_000 };
 async function fixture(browser: Browser, phone = false) {
@@ -26,7 +27,7 @@ async function fixture(browser: Browser, phone = false) {
   process.env.HERDR_STUB_STATE = join(site, 'master.daemon.json');
   process.env.GRAPHYARD_HERDR_CONFIG_HOME = ''; process.env.GRAPHYARD_HERDR_SESSION = '';
   const current = { master: { agentName: 'master', pane: 'w1:master' as string | null, account: 'test-account', runtime: 'codex' }, status: 'idle', gap: '' };
-  const save = () => writeFile(join(site, 'master.daemon.json'), JSON.stringify(current));
+  const save = () => saveMasterState(join(site, 'master.daemon.json'), current);
   await save();
   const stopping = new AbortController();
   await new Promise<void>(done => bridgeTerminals(url, 'test-coordinator', stopping.signal, done, terminalSessionReader(() => ({ credentialFile: join(site, 'master.token') }) as MasterConfig)));
