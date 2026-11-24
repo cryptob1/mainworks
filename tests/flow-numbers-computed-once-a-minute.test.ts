@@ -37,8 +37,9 @@ before(async () => {
       ${from} + make_interval(secs => d * ${spanSeconds}::float8 / ${count})
     FROM ${ids}, generate_series(1, ${count}) d`;
   await store.pool.query(row(EVENTS - WINDOW, `now() - interval '400 days'`, 390 * 86_400));
-  await store.pool.query(row(WINDOW, `now() - interval '7 days' + interval '1 minute'`, 7 * 86_400 - 120));
-  await store.pool.query('ANALYZE events');
+  // GY-3793: keep the window seed well inside the 7-day boundary so load cannot age rows out before checks run, and vacuum so hint bits and the visibility map are set before timing reads.
+  await store.pool.query(row(WINDOW, `now() - interval '7 days' + interval '15 minutes'`, 7 * 86_400 - 1800));
+  await store.pool.query('VACUUM ANALYZE events');
 });
 
 after(async () => {
