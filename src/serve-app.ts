@@ -76,7 +76,7 @@ async function writeServeRecord(file: string, record: Omit<ServeRecord, 'at'>) {
 }
 
 /** Whether an HTTP URL answers at all (any status counts: an app may 404 its root and still be served). */
-export const answering = (url: string) => fetch(url, { signal: AbortSignal.timeout(5_000) }).then(() => true, () => false);
+export const answering = (url: string) => fetch(url, { signal: AbortSignal.timeout(5_000) }).then(response => { void response.body?.cancel().catch(() => {}); return true; }, () => false);
 
 /** How long a restarted serve has to answer before the pass records the commit as unserved (a serve that cannot bind, a command that fails). */
 const serveAnswerTimeoutMs = 30_000;
@@ -131,17 +131,19 @@ const message = (error: unknown) => error instanceof Error ? error.message : Str
  * new process's pid, so the next restart stops the process that actually holds the port. No
  * declaration, no action.
  */
-export async function serveOnce(file: string, ports: ServePorts, log: (line: string) => void = line => console.error(line), options: { answerTimeoutMs?: number } = {}): Promise<'absent' | 'unchanged' | 'served' | 'failed' | 'restarted'> {
+export async function serveOnce(file: string, ports: ServePorts, log: (line: string) => void = line => console.error(line), options: { answerTimeoutMs?: number; freePort?: () => Promise<number> } = {}): Promise<'absent' | 'unchanged' | 'served' | 'failed' | 'restarted'> {
   const answerTimeoutMs = options.answerTimeoutMs ?? serveAnswerTimeoutMs;
+  const allocatePort = options.freePort ?? freePort;
   const tip = await ports.fetch();
   let declaration: ServeDeclaration | null = null;
   try { declaration = await ports.declaration(); } catch (error) { log(`[mainworks-serve] ${message(error)}`); }
   if (!declaration) return 'absent';
   const record = readServeRecord(file);
   // The port is chosen once, free, and kept in the record, so the URL stays the same across deploys and reboots.
-  const port = Number(record?.url ? new URL(record.url).port : 0) || await freePort();
-  const url = `http://127.0.0.1:${port}`;
+  const recordedPort = Number(record?.url ? new URL(record.url).port : 0);
   if (record?.commit === tip) {
+    const port = recordedPort || await allocatePort();
+    const url = `http://127.0.0.1:${port}`;
     if (await answering(url)) return 'unchanged';
     let served: ServeProcess | null = null;
     try {
@@ -166,10 +168,14 @@ export async function serveOnce(file: string, ports: ServePorts, log: (line: str
     await ports.build(declaration);
   } catch (error) {
     const reason = message(error);
+    const url = record?.url ?? `http://127.0.0.1:${await allocatePort()}`;
     log(`[mainworks-serve] the build of ${tip.slice(0, 12)} failed, so ${(record?.commit ?? 'nothing').slice(0, 12)} keeps serving: ${reason}`);
-    await writeServeRecord(file, { commit: record?.commit ?? null, url: record?.url ?? url, failed: tip, reason, pid: record?.pid ?? null, started: record?.started ?? null, check: record?.check ?? null, baseline: record?.baseline ?? null });
+    await writeServeRecord(file, { commit: record?.commit ?? null, url, failed: tip, reason, pid: record?.pid ?? null, started: record?.started ?? null, check: record?.check ?? null, baseline: record?.baseline ?? null });
     return 'failed';
   }
+  // Allocate a fresh port only after checkout, install and build finish so it is not left unbound across the build.
+  const port = recordedPort || await allocatePort();
+  const url = `http://127.0.0.1:${port}`;
   // The restart stopped the previous serve, so the new one must answer before the commit is recorded as served.
   let served: ServeProcess | null = null;
   // GY-2985: what was live before keeps serving beside the new build — the previously served
@@ -184,7 +190,7 @@ export async function serveOnce(file: string, ports: ServePorts, log: (line: str
     servedByRestart(ports, port, url, served);
     const candidate = record?.commit ?? record?.baseline?.commit ?? null;
     if (candidate && ports.baseline) {
-      const baselinePort = await freePort(), baselineUrl = `http://127.0.0.1:${baselinePort}`;
+      const baselinePort = await allocatePort(), baselineUrl = `http://127.0.0.1:${baselinePort}`;
       try {
         const started = await ports.baseline(candidate, declaration, baselinePort);
         if (!(await waitAnswer(baselineUrl, answerTimeoutMs))) throw new Error(`the baseline serve did not answer ${baselineUrl} within ${Math.round(answerTimeoutMs / 1000)}s`);
