@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { recordQuery } from './slow-queries.js';
 
 /** A failed statement's SQL, as `namedStatements` attaches it to the error the driver raised. */
 export const failedStatement = (error: unknown): string | null =>
@@ -7,7 +8,8 @@ export const failedStatement = (error: unknown): string | null =>
  * Every statement a pool's connections run carries its SQL on the error it fails with (GY-422), so
  * a request that fails on "canceling statement due to statement timeout" is logged with the
  * statement that ran out of time, not only the driver's sentence. Each connection's `query` is
- * wrapped once, when the pool opens it; `pool.query` runs through the same connections.
+ * wrapped once, when the pool opens it; `pool.query` runs through the same connections. Each
+ * statement is timed for the slowest-query report (slow-queries.ts, GY-3757).
  */
 export function namedStatements(pool: pg.Pool) {
   pool.on('connect', client => {
@@ -20,10 +22,11 @@ export function namedStatements(pool: pg.Pool) {
     (client as unknown as { query: (...args: any[]) => any }).query = (...args: any[]) => {
       const config = args[0];
       if (config && typeof config === 'object' && typeof config.submit === 'function') return query(...args);
-      const last = args.length - 1;
-      if (typeof args[last] === 'function') { const done = args[last]; args[last] = (error: unknown, result: unknown) => done(error ? name(error, config) : error, result); return query(...args); }
+      const last = args.length - 1, started = performance.now();
+      const timed = () => { const text = typeof config === 'string' ? config : config?.text; if (typeof text === 'string') recordQuery(text, performance.now() - started); };
+      if (typeof args[last] === 'function') { const done = args[last]; args[last] = (error: unknown, result: unknown) => { timed(); done(error ? name(error, config) : error, result); }; return query(...args); }
       const result = query(...args);
-      return result && typeof result.then === 'function' ? result.catch((error: unknown) => { throw name(error, config); }) : result;
+      return result && typeof result.then === 'function' ? result.then((value: unknown) => { timed(); return value; }, (error: unknown) => { timed(); throw name(error, config); }) : result;
     };
   });
   return pool;

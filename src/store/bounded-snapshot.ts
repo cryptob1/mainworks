@@ -51,8 +51,11 @@ export async function boundedSnapshot(pool: pg.Pool, since?: string | null): Pro
   finally { client.release(); }
 }
 
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** GY-3757: an id through the work index's primary key, a display key through `work_index_key`; never a scan of the index. */
+export const workDocumentSql = (idOrKey: string) => `SELECT w.document FROM work_index i JOIN work_items w ON w.id = i.id WHERE ${uuid.test(idOrKey) ? 'i.id = $1::uuid' : 'i.key = $1'} ORDER BY i.number LIMIT 1`;
 /** One item's whole document by id or display key, or null; the key is matched on the work index, so no other document is read. */
 export async function workDocument(pool: pg.Pool, idOrKey: string): Promise<Work | null> {
-  const row = (await pool.query('SELECT w.document FROM work_index i JOIN work_items w ON w.id = i.id WHERE i.id::text = $1 OR i.key = $1 ORDER BY i.number LIMIT 1', [idOrKey])).rows[0];
+  const row = (await pool.query(workDocumentSql(idOrKey), [idOrKey])).rows[0];
   return row?.document ?? null;
 }

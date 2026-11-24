@@ -91,6 +91,8 @@ DO $work_index$ BEGIN
     ALTER TABLE work_index ADD COLUMN merged_at timestamptz;
   END IF;
 END $work_index$;
+-- GY-3757: \`status GY-N\` and the item page find the item by display key in one probe.
+CREATE INDEX IF NOT EXISTS work_index_key ON work_index(key);
 ${projection}
 DO $work_index$ BEGIN
   IF obj_description('work_index'::regclass, 'pg_class') IS DISTINCT FROM '${workIndexDigest}' THEN

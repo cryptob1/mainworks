@@ -32,6 +32,8 @@ import { snapshotPage } from '../../store/paged-snapshot.js';
 import { pipelineItems, pipelineTime } from '../../pipeline-speed.js';
 import { releaseCheckSince } from '../../model/incidents.js';
 import { readFlow } from '../flow.js';
+import { boundedHistoryRead } from '../history-reads.js';
+import { slowestQuery } from '../../store/slow-queries.js';
 import { publicLinkOff } from './team-access.js';
 import { setting } from '../../setting.js';
 
@@ -54,6 +56,8 @@ export const statusRoutes = defineRoutes('status', [
     const deploys = servingRoot ? readDeployHistory(servingRoot, repository ?? null) : [];
     return readFlow(engine.store.pool, operatorVisible(await engine.store.fleet()), now.getTime(), { deploys, git: read });
   } },
+  // GY-3757: the slowest database query of the last 10 minutes when it ran past 3 s, for master status.
+  { method: 'GET', path: '/api/slowest-query', handle: async () => ({ slowest: slowestQuery() }) },
   {
     method: 'GET', path: '/api/status',
     async handle({ actor, req, url, services, operatorVisible }) {
@@ -250,13 +254,17 @@ export const statusRoutes = defineRoutes('status', [
     // and the disclosure of what the filter left out, and `view=page` the cursor alone, for the
     // later pages of one walk. All share one set of defaults.
     method: 'GET', path: '/api/events',
-    async handle({ actor, url, services, operatorVisible }) {
+    async handle({ actor, res, url, services, operatorVisible }) {
       const query = parseEventHistoryQuery(url.searchParams);
       // The master's identity, scoped to every item, reads the ledger whole; every other operator agent names its item.
       const wholeLedger = actor.role === 'operator-agent' && !!actor.scope?.workItems.includes('*');
       if (actor.role === 'operator-agent' && !wholeLedger) { demand(query.work, 'Operator-agent history reads require a scoped work item', 403); const item = await services.engine.store.workDocument(query.work!); demand(item && item.id === query.work && operatorVisible([item]).length, 'Work item is outside this operator-agent scope', 403); }
-      const history = await readEventHistory(services.engine.store.pool, query);
-      return query.view === 'rows' ? history.events : history;
+      // GY-3757: one item's history shares four slots; a read kept waiting gets the last answer, its age in seconds in `Age`.
+      const read = async () => { const history = await readEventHistory(services.engine.store.pool, query); return query.view === 'rows' ? history.events : history; };
+      if (!query.work) return read();
+      const { answer, ageMs } = await boundedHistoryRead(`${url.pathname}${url.search}`, read);
+      if (ageMs !== null) res.setHeader('Age', String(Math.round(ageMs / 1000)));
+      return answer;
     },
   },
 ]);
