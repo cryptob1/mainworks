@@ -6,6 +6,7 @@ import { encodeLoopCheckoutTrust, loopPresenceHeader, loopStallAlarmHeader, loop
 import { coordinationViewHeader } from '../src/server/work-view';
 import { serveXterm } from './xterm';
 import { proposedRuntimes } from '../src/model/registry';
+import { VERIFY_TIMEOUT_MS } from '../web/pages/login';
 
 async function plane(context: BrowserContext, label: string) {
   const store = await withDatabase(label);
@@ -87,7 +88,8 @@ for (const width of [1280, 390]) {
       const signIn = await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } });
       const { code } = await signIn.json() as { code: string };
       await page.goto(`/#sign-in=${code}&work`);
-      await expect(page.locator('header.main-top-bar')).toBeVisible({ timeout: 15_000 });
+      // GY-3796: sign-in may take as long as the page itself allows it; a loaded gate host spent past 15 s still verifying.
+      await expect(page.locator('header.main-top-bar')).toBeVisible({ timeout: VERIFY_TIMEOUT_MS });
 
       // Clean state: Caretaker pill shows quiet grey "Caretaker ✓ N min ago".
       const pill = page.locator('header.main-top-bar .caretaker-pill');
@@ -123,7 +125,7 @@ for (const width of [1280, 390]) {
       const sectionTabs = page.getByRole('navigation', { name: 'Pages in this section' });
       await sectionTabs.getByText('Advanced', { exact: true }).click();
       await sectionTabs.getByRole('button', { name: 'Test cases', exact: true }).click();
-      await expect(page.locator('.scenario-card')).toHaveCount(1);
+      await expect(page.locator('.scenario-card')).toHaveCount(1, { timeout: 15_000 });
       // Its text wraps inside the card rather than running past the right edge.
       expect(await page.locator('.scenario-card').evaluate(card => card.scrollWidth - card.clientWidth), 'the test case fits its card').toBeLessThanOrEqual(0);
       await assertTopBar(page, 'Work', width);
