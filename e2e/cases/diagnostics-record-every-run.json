@@ -1,0 +1,16 @@
+{
+  "id": "diagnostics-record-every-run",
+  "title": "The daily diagnostics record every run and master status shows when they last ran",
+  "description": "On a test install whose diagnostics are six days old, master status names them; the scheduled diagnostics then run once on the verified commit, and master status's batch gate shows their time, outcome and onboarding minutes with no stale line.",
+  "tags": ["diagnostics"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "run the scheduled diagnostics once and read their time and outcome in master status",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:diagnostics-record-every-run tests/diagnostics-record-every-run.test.ts",
+      "timeoutSeconds": 600
+    }
+  ]
+}
