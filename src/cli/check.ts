@@ -18,11 +18,9 @@ const branchItem = (root: string) => {
   return key.toUpperCase();
 };
 
-import { checkHelp } from './lease.js';
-
 export const checkCommand: CliCommand = {
   name: 'check',
-  help: checkHelp,
+  help: [],
   run: async context => {
     if (!context.id) throw new Error('Usage: mainworks check NAME [GY-N]');
     const work = await resolveWork(context.api, context.args[0] ?? branchItem(context.repositoryRoot()));

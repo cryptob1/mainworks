@@ -268,12 +268,10 @@ export async function selfVerification(root: string, key: string) {
       : `every mechanical proof passed on HEAD${clean}${notes}`, ...summary };
 }
 
-import { verifyHelp } from './lease.js';
-
 export const verifyCommand: CliCommand = {
   name: 'verify',
   scope: 'work',
-  help: verifyHelp,
+  help: [],
   run: async (context, work) => {
     const { values } = parseArgs({ args: context.args, options: { preserves: { type: 'string', multiple: true } }, allowPositionals: false });
     const preserves = (values.preserves ?? []).flatMap(value => value.split(',')).map(value => value.trim()).filter(Boolean);
