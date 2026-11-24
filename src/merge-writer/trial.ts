@@ -1571,9 +1571,10 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const hosts = input.remote?.hosts ?? await shardHosts();
     if (!hosts.length) return here('no compute host is added');
     const transport = input.remote?.transport ?? shardSshSession(run);
-    const session = remoteShardSession({ root: input.root, sha: input.mergeSha, baseTip: input.baseTip, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport });
+    let session: ReturnType<typeof remoteShardSession> | null = null;
     try {
       const readings = (await (input.remote?.read ?? ((named, shared) => readShardHosts(named, run, cpu.cores(), shared)))(hosts, transport)).slice(1);
+      session = remoteShardSession({ root: input.root, sha: input.mergeSha, baseTip: input.baseTip, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport, hosts: readings });
       const host = readings.filter(reading => underHeatLimit(reading) && reading.compose).sort((a, b) => realFreeCores(b) - realFreeCores(a))[0];
       if (!host) return here(`no host is ready (${readings.map(reading => `${reading.name}: ${reading.away ? reading.reason ?? 'away' : reading.compose ? 'too hot' : 'no Docker Compose plugin, see mainworks host prepare'}`).join('; ')})`, readings.map(reading => reading.name));
       enterStep(`tests: ${check.check} on ${host.name}`);
@@ -1588,7 +1589,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       if (error instanceof HostDroppedError) return here(error.message, [error.host]);
       if ((error as { timedOut?: boolean }).timedOut) throw new TrialTimeoutError('tests', Math.max(0, now() - startedAt), tail());
       throw error;
-    } finally { await session.close(); }
+    } finally { await (session ? session.close() : transport.close()); }
   };
   // GY-3526: a worker verification's tests on this machine run on one shared host slot; a merge trial already holds its own.
   const onThisMachine = input.localSlot ? (await import('../master/verification-slots.js')).sharedHeavyJob(input.localSlot, { strictOnly: true }) : <T>(part: () => Promise<T>) => part();
@@ -1777,7 +1778,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     let outputShown = false;
     // A shard a host turned away is noted after every shard's output, so the note stays in the log tail kept on the item.
     const dropped = new Map<string, HostDroppedError>();
-    const session = hosts.length ? remoteShardSession({ root: input.root, sha: input.mergeSha, baseTip: input.baseTip, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport }) : null;
+    const session = hosts.length ? remoteShardSession({ root: input.root, sha: input.mergeSha, baseTip: input.baseTip, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport, hosts: readings }) : null;
     // One shard on this machine, or on `remote`; a remote host that turned it away rethrows, so it runs elsewhere.
     const shard = async (index: number, remote?: string) => {
       const group = shards[index]!, entries: string[] = [];

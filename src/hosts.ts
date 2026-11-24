@@ -18,7 +18,7 @@ import { defaultChildRun, type ChildRun } from './child-runner.js';
 import { configHome } from './install/secrets.js';
 import { cpuSensorNames } from './merge-writer/trial-load.js';
 import { cpuStatTotals, stealPercent } from './daemon/cpu-pressure.js';
-import { hostProbeScript, hostShimDigest, hostShimScript, missingTrialVerbs } from './host-shim.js';
+import { hostProbeScript, hostShimDigest, hostShimScript, missingTrialVerbs, trialVerbs } from './host-shim.js';
 import { trialAppArmorProfilePath, trialAppArmorProfileText } from './merge-writer/trial-apparmor.js';
 import { shellQuote } from './install/transport.js';
 
@@ -339,6 +339,7 @@ export async function readHostReadings(previous: HostReading[], options: { file?
     const was = previous.find(reading => reading.host === host);
     if (!probe.ok) return { host, ...(target ? {} : { local: true }), at, away: true, since: was?.away ? was.since ?? was.at ?? at : at, ...('update' in probe ? { update: true } : {}), ...(updateError ? { updateError } : {}), reason: probe.reason, cores: null, celsius: null, steal: null, runs: null, busy: null, stat: null };
     const before = was?.stat ?? null;
-    return { host, ...(target ? {} : { local: true }), at, away: false, ...(target && probe.shim !== hostShimDigest ? { older: true } : {}), cores: probe.cores, celsius: probe.celsius, steal: stealPercent(before, probe.stat), runs: probe.runs, busy: probe.load, stat: probe.stat };
+    const older = Boolean(target && (probe.shim !== hostShimDigest || (probe.verbs !== null && trialVerbs.some(verb => !probe.verbs!.includes(verb)))));
+    return { host, ...(target ? {} : { local: true }), at, away: false, ...(older ? { older: true } : {}), cores: probe.cores, celsius: probe.celsius, steal: stealPercent(before, probe.stat), runs: probe.runs, busy: probe.load, stat: probe.stat };
   }));
 }

@@ -51,14 +51,32 @@ const sessionHours = 8;
  */
 export const hostShimVerbs = ['probe:1', 'receive-pack:1', 'receive-image:2', 'prepare-run:2', 'run-shard:2', 'fetch-records:1', 'clean:1', 'run-session:1', 'update-shim:1'];
 /** GY-3645: `run-check` is no trial verb: a host takes a whole check once its probe names a Compose plugin, which only a shim with the verb prints. */
-/** The verbs a merge trial uses: a host whose shim lacks any of them takes no shards until prepare runs again there. */
+/** The verbs a merge trial uses: a host whose shim lacks any of them (and every older form the coordinator still speaks) takes no shards until prepare runs again there. */
 export const trialVerbs = hostShimVerbs.filter(verb => !/^(?:run-session|update-shim):/.test(verb));
+/**
+ * GY-3804: older verb revisions the coordinator still speaks beside the current one in `hostShimVerbs`.
+ * A host speaking any listed revision for a trial verb stays ready; one lacking every supported revision
+ * waits for prepare. When a verb's revision is bumped in `hostShimVerbs`, add its previous revision here
+ * and keep a coordinator branch for it until every host has moved on.
+ */
+export const olderTrialVerbs: Readonly<Record<string, readonly string[]>> = {
+  'receive-image:2': ['receive-image:1'],
+  'prepare-run:2': ['prepare-run:1'],
+};
 /** Shims released before the probe listed its verbs, by digest: the verbs each speaks (GY-3549's shim). */
-export const legacyShimVerbs: Record<string, readonly string[]> = { '90b5bdaa66f84f53f7dbc87ef089f17051c1e230900a4248ffb76ecb8d2315d6': trialVerbs };
+export const legacyShimVerbs: Record<string, readonly string[]> = {
+  '90b5bdaa66f84f53f7dbc87ef089f17051c1e230900a4248ffb76ecb8d2315d6': ['probe:1', 'receive-pack:1', 'receive-image:1', 'prepare-run:1', 'run-shard:2', 'fetch-records:1', 'clean:1'],
+};
+/** The verbs a probed shim speaks: its probe's verbs line, else what its digest is known to speak. */
+export const probeShimVerbs = (probe: { shim: string | null; verbs: string[] | null }): readonly string[] =>
+  probe.verbs ?? (probe.shim === hostShimDigest ? hostShimVerbs : probe.shim ? legacyShimVerbs[probe.shim] : undefined) ?? [];
+/** GY-3804: whether a host's probed verbs accept the commit-keyed v2 warm image tag (absent verbs default to v2). */
+export const supportsWarmImageV2 = (verbs?: readonly string[] | null) =>
+  !verbs || (verbs.includes('receive-image:2') && verbs.includes('prepare-run:2'));
 /** The trial verbs a shim lacks, by what its probe printed: its verbs line, else what its digest is known to speak. */
-export const missingTrialVerbs = (probe: { shim: string | null; verbs: string[] | null }) => {
-  const speaks = probe.verbs ?? (probe.shim === hostShimDigest ? hostShimVerbs : probe.shim ? legacyShimVerbs[probe.shim] : undefined) ?? [];
-  return trialVerbs.filter(verb => !speaks.includes(verb));
+export const missingTrialVerbs = (probe: { shim: string | null; verbs: string[] | null }, required: readonly string[] = trialVerbs) => {
+  const speaks = probeShimVerbs(probe);
+  return required.filter(verb => !speaks.includes(verb) && !(olderTrialVerbs[verb] ?? []).some(older => speaks.includes(older)));
 };
 
 const shimDigestSlot = '@GRAPHYARD_SHIM_DIGEST@';

@@ -10,7 +10,7 @@ import { basename, dirname, join } from 'node:path';
 import { availableParallelism, homedir, hostname, tmpdir } from 'node:os';
 import type { ChildRun } from '../child-runner.js';
 import { shellQuote } from '../shell-quote.js';
-import { hostShimDigest } from '../host-shim.js';
+import { hostShimDigest, probeShimVerbs, supportsWarmImageV2 } from '../host-shim.js';
 import { heavyJobsDirectory, readMachines } from '../master/verification-slots.js';
 import { hostKnownHostsFile, probeHost, readHosts, sshTarget, type HostReading as HostProbe } from '../hosts.js';
 import { trialImage } from './trial-container.js';
@@ -18,7 +18,7 @@ import { trialContainerFault, trialHotCelsius } from './trial-load.js';
 import { stateDirectory } from '../install/layout.js';
 
 /** One host's reading: cores, cores busy (1-minute load), the share of CPU stolen, and its hottest CPU sensor against the heat limit. */
-export interface HostReading { name: string; cores: number; busy: number; steal: number; celsius: number | null; limit: number; away: boolean; reason?: string; /** GY-3645: its shim runs a check's Compose services. */ compose?: boolean }
+export interface HostReading { name: string; cores: number; busy: number; steal: number; celsius: number | null; limit: number; away: boolean; reason?: string; /** GY-3645: its shim runs a check's Compose services. */ compose?: boolean; /** GY-3804: the verbs this host's shim probe listed, so trials choose v1 or v2 calls per host. */ verbs?: readonly string[] }
 
 /** The targets of the hosts `mainworks host add` recorded; none when it recorded none. */
 export const shardHosts = async () => (await readHosts().catch(() => [])).map(host => host.target);
@@ -98,7 +98,8 @@ export async function readShardHosts(targets: readonly string[], run: ChildRun, 
     // GY-3780: a host whose update the loop saw fail stays away until it runs this release's shim.
     const failed = target && probe.shim !== hostShimDigest ? machines?.find(machine => machine.name === target)?.updateError : undefined;
     if (failed) return { name, cores: 0, busy: 0, steal: 0, celsius: null, limit: trialHotCelsius, away: true, reason: `${target} did not take this release's helper: ${failed}` };
-    return { name, cores: probe.cores ?? cores, busy: probe.load ?? 0, steal: probe.stat?.total ? probe.stat.steal / probe.stat.total : 0, celsius: probe.celsius, limit: trialHotCelsius, away: false, ...(target && probe.compose ? { compose: true } : {}) };
+    const verbs = target ? probeShimVerbs(probe) : undefined;
+    return { name, cores: probe.cores ?? cores, busy: probe.load ?? 0, steal: probe.stat?.total ? probe.stat.steal / probe.stat.total : 0, celsius: probe.celsius, limit: trialHotCelsius, away: false, ...(target && probe.compose ? { compose: true } : {}), ...(verbs && !supportsWarmImageV2(verbs) ? { verbs } : {}) };
   })); } finally { if (!transport) await ssh.close(); }
 }
 
@@ -270,11 +271,38 @@ async function pruneWarmImageFamily(tag: string, local: (command: string, args: 
 }
 
 const buildingWarmImages = new Map<string, Promise<{ tag: string; built: boolean }>>();
+const buildingWarmImagesV1 = new Map<string, Promise<string>>();
 
 const lockfileHash = async (local: (command: string, args: string[]) => Promise<string>, root: string, commit: string) => {
   const lock = await local('git', ['-C', root, 'show', `${commit}:package-lock.json`]).catch(() => null);
   return { lock, hash: lock === null ? 'none' : createHash('sha256').update(lock).digest('hex') };
 };
+
+/**
+ * GY-3804: build the pre-GY-3627 2-part warm image `(image digest, lockfile hash)` for compute hosts
+ * whose helper speaks `receive-image:1` and `prepare-run:1` without version 2.
+ */
+export async function ensureWarmImageV1(input: { root: string; sha: string; image: string; run: ChildRun; deadline: number }): Promise<string> {
+  const remaining = () => Math.max(1_000, input.deadline - Date.now());
+  const local = async (command: string, args: string[]) => String(await input.run(command, args, { timeoutMs: remaining() })).trim();
+  const digest = await local('docker', ['image', 'inspect', '--format', '{{.Id}}', input.image]);
+  const { lock, hash } = await lockfileHash(local, input.root, input.sha);
+  const tag = warmImageTag(digest, hash);
+  if (await local('docker', ['image', 'inspect', '--format', '{{.Id}}', tag]).then(() => true, () => false)) return tag;
+  const active = buildingWarmImagesV1.get(tag);
+  if (active) return active;
+  const build = (async (): Promise<string> => {
+    if (lock === null) { await local('docker', ['tag', input.image, tag]); return tag; }
+    const name = `graphyard-warm-${randomUUID().slice(0, 8)}`, install = 'mkdir -p /deps && cd /deps && tar -xf - && npm ci --no-audit --no-fund >/dev/null';
+    try {
+      await local('sh', ['-c', `set -o pipefail 2>/dev/null; git -C ${shellQuote(input.root)} archive ${shellQuote(input.sha)} package.json package-lock.json | docker run -i --name ${name} --user 0:0 --entrypoint /bin/sh ${shellQuote(input.image)} -c ${shellQuote(install)}`]);
+      await local('docker', ['commit', name, tag]);
+    } finally { await local('docker', ['rm', '-f', name]).catch(() => {}); }
+    return tag;
+  })();
+  buildingWarmImagesV1.set(tag, build);
+  try { return await build; } finally { buildingWarmImagesV1.delete(tag); }
+}
 
 /**
  * GY-3627: build the warm image at most once for `(image, lockfile, commit)`, holding `/deps/node_modules`,
@@ -357,16 +385,21 @@ export async function warmCommitOnHosts(input: {
 }): Promise<{ tag: string; built: boolean; pushed: string[]; failed: { host: string; reason: string }[] }> {
   const deadline = input.deadline ?? Date.now() + 10 * 60_000;
   const remaining = () => Math.max(1_000, deadline - Date.now());
-  const built = await ensureWarmImage({ root: input.root, commit: input.commit, image: input.image ?? trialImage(), run: input.run, deadline });
+  const image = input.image ?? trialImage();
+  const built = await ensureWarmImage({ root: input.root, commit: input.commit, image, run: input.run, deadline });
   const targets = input.hosts ? [...input.hosts] : await shardHosts();
   if (!targets.length) return { ...built, pushed: [], failed: [] };
   const transport = shardSshSession(input.run);
   const pushed: string[] = [], failed: { host: string; reason: string }[] = [];
+  let v1Tag: Promise<string> | null = null;
   try {
     const readings = (await (input.read ?? ((named, shared) => readShardHosts(named, input.run, availableParallelism(), shared)))(targets, transport)).slice(1);
     await Promise.all(readings.filter(reading => !reading.away).map(async reading => {
       try {
-        await transport.session(reading.name, words => input.run('sh', ['-c', `set -o pipefail 2>/dev/null; docker save ${shellQuote(built.tag)} | ${['ssh', ...words, `receive-image ${built.tag}`].map(shellQuote).join(' ')}`], { timeoutMs: remaining() }));
+        const tag = supportsWarmImageV2(reading.verbs)
+          ? built.tag
+          : await (v1Tag ??= ensureWarmImageV1({ root: input.root, sha: input.commit, image, run: input.run, deadline }));
+        await transport.session(reading.name, words => input.run('sh', ['-c', `set -o pipefail 2>/dev/null; docker save ${shellQuote(tag)} | ${['ssh', ...words, `receive-image ${tag}`].map(shellQuote).join(' ')}`], { timeoutMs: remaining() }));
         pushed.push(reading.name);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -388,11 +421,12 @@ export const warmInUseDirectory = (home = homedir()) => join(home, '.graphyard',
  * lacks, or the warm image, sent once per tag — then clones the commit into a run directory. Shards run
  * there through the shim's `run-shard`; `close` cleans every run directory.
  */
-export function remoteShardSession(input: { root: string; sha: string; baseTip?: string; image: string; run: ChildRun; deadline: number; signal?: AbortSignal; transport?: ShardSshSession }) {
+export function remoteShardSession(input: { root: string; sha: string; baseTip?: string; image: string; run: ChildRun; deadline: number; signal?: AbortSignal; transport?: ShardSshSession; hosts?: readonly Pick<HostReading, 'name' | 'verbs'>[] }) {
   const repo = mirrorName(input.root);
   const remaining = () => Math.max(1_000, input.deadline - Date.now());
   const local = async (command: string, args: string[]) => String(await input.run(command, args, { timeoutMs: remaining() })).trim();
   const transport = input.transport ?? shardSshSession(input.run);
+  const verbsByHost = new Map((input.hosts ?? []).map(host => [host.name, host.verbs]));
   /** One shim verb on `target`, with `source`'s output as its input; any failure turns the host away. */
   const shim = async (target: string, verb: string, source?: string) => {
     try {
@@ -405,14 +439,27 @@ export function remoteShardSession(input: { root: string; sha: string; baseTip?:
       throw new HostDroppedError(target, (String(failed.stderr ?? '').trim() || String(failed.message ?? error)).slice(-500));
     }
   };
-  let warm: Promise<string> | null = null, marker: string | null = null;
-  const warmImage = () => selectWarmImage({ root: input.root, sha: input.sha, baseTip: input.baseTip, image: input.image, run: input.run, deadline: input.deadline });
+  const warmByVersion = new Map<'v1' | 'v2', Promise<string>>(), markers: string[] = [];
+  const warmImage = (version: 'v1' | 'v2') => {
+    let pending = warmByVersion.get(version);
+    if (!pending) {
+      pending = (version === 'v2'
+        ? selectWarmImage({ root: input.root, sha: input.sha, baseTip: input.baseTip, image: input.image, run: input.run, deadline: input.deadline })
+        : ensureWarmImageV1({ root: input.root, sha: input.sha, image: input.image, run: input.run, deadline: input.deadline })
+      ).then(async tag => {
+        await mkdir(warmInUseDirectory(), { recursive: true });
+        const path = join(warmInUseDirectory(), `${tag.slice('graphyard-warm:'.length)}.${process.pid}.${randomUUID().slice(0, 8)}`);
+        markers.push(path);
+        await writeFile(path, '');
+        return tag;
+      });
+      warmByVersion.set(version, pending);
+    }
+    return pending;
+  };
   const prepare = async (target: string) => {
-    const image = await (warm ??= warmImage().then(async tag => {
-      await mkdir(warmInUseDirectory(), { recursive: true });
-      await writeFile(marker = join(warmInUseDirectory(), `${tag.slice('graphyard-warm:'.length)}.${process.pid}.${randomUUID().slice(0, 8)}`), '');
-      return tag;
-    }));
+    const version = supportsWarmImageV2(verbsByHost.get(target)) ? 'v2' : 'v1';
+    const image = await warmImage(version);
     for (let step = 0; step < 3; step++) {
       const answer = (await shim(target, `prepare-run ${repo} ${input.sha} ${image}`)).trim().split('\n').at(-1) ?? '';
       if (answer.startsWith('run ')) return answer.slice(4);
@@ -465,7 +512,7 @@ export function remoteShardSession(input: { root: string; sha: string; baseTip?:
         if (run) await shim(target, `clean ${run}`).catch(() => {});
       }));
       await transport.close();
-      if (marker) await rm(marker, { force: true });
+      await Promise.all(markers.map(marker => rm(marker, { force: true })));
     },
   };
 }
