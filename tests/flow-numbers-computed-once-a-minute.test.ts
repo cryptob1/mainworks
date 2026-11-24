@@ -59,15 +59,14 @@ test('integration:flow-numbers-computed-once-a-minute — one job reads the 7-da
   const inWindow = Number((await store.pool.query('SELECT count(*) FROM events WHERE created_at > $1', [since])).rows[0].count);
   assert.ok(inWindow >= WINDOW && inWindow < WINDOW + 10, `${inWindow} events in the window`);
 
-  // The plans: both halves of the ledger read and the attempts read are index range scans on created_at; no table scan of events.
+  // The plans: both halves of the ledger read are index range scans on created_at; the attempts read takes no events (GY-3764).
   const plan = async (text: string, values: unknown[]) => (await store.pool.query(`EXPLAIN ${text}`, values)).rows.map(row => row['QUERY PLAN']).join('\n');
   const ledgerPlan = await plan(flowLedgerSql, [since, flowKinds]);
   assert.doesNotMatch(ledgerPlan, /Seq Scan on events/, ledgerPlan);
   assert.match(ledgerPlan, /Index Scan using events_work_flow on events[^\n]*\n\s*Index Cond: \(created_at > /, ledgerPlan);
   assert.match(ledgerPlan, /Index Scan using events_(kind_)?created on events[^\n]*\n\s*Index Cond: [^\n]*created_at > /, ledgerPlan);
   const attemptsPlan = await plan(flowAttemptsSql, [since]);
-  assert.doesNotMatch(attemptsPlan, /Seq Scan on events/, attemptsPlan);
-  assert.match(attemptsPlan, /using events_created on events[^\n]*\n\s*Index Cond: \(created_at > /, attemptsPlan);
+  assert.doesNotMatch(attemptsPlan, /on events/, attemptsPlan);
 
   // The computation, warmed once, finishes in under 2 seconds.
   const work = await store.fleet();

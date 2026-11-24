@@ -27,14 +27,11 @@ export const flowLedgerSql = `SELECT ${columns} FROM events WHERE work_id IS NOT
   ORDER BY seq`;
 
 /**
- * Each item's attempts from its own document, only the three fields the flow reads: the fleet serves
- * a settled delivery as the work index's summary, without its timeline, and a hot path returns no
- * settled document's history. Only items open, merged or written to within the window are read.
+ * Each item's attempts, the three fields the flow reads, from the work index (GY-3764): no event and
+ * no whole document is read. Only items open, merged within the window, or whose stage or attempts
+ * changed within it are read; an item with neither had no attempt end inside the window.
  */
-export const flowAttemptsSql = `SELECT w.id, (SELECT jsonb_agg(jsonb_build_object('claimedAt', a->'claimedAt', 'endedAt', a->'endedAt', 'end', a->'end'))
-    FROM jsonb_array_elements(CASE WHEN jsonb_typeof(w.document->'pipeline'->'attempts') = 'array' THEN w.document->'pipeline'->'attempts' ELSE '[]'::jsonb END) a) AS attempts
-  FROM work_items w JOIN work_index i ON i.id = w.id
-  WHERE NOT i.settled OR i.merged_at > $1 OR w.id IN (SELECT work_id FROM events WHERE created_at > $1 AND work_id IS NOT NULL)`;
+export const flowAttemptsSql = `SELECT id, attempts FROM work_index WHERE attempts IS NOT NULL AND (NOT settled OR merged_at > $1 OR touched_at > $1)`;
 type Attempts = Map<string, { claimedAt: string; endedAt: string | null; end?: string | null }[]>;
 
 async function rows(pool: Queryable, now: number) {

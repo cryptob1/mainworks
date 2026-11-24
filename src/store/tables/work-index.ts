@@ -38,6 +38,13 @@ const dueAt = `(SELECT MIN(COALESCE(GREATEST(
   FROM jsonb_array_elements(CASE WHEN jsonb_typeof(d.document->'actionQueue'->'actions') = 'array' THEN d.document->'actionQueue'->'actions' ELSE '[]'::jsonb END) AS a(entry)
   WHERE d.document->>'stage' IS DISTINCT FROM 'done' OR a.entry->>'kind' = 'verify-deployment')`;
 const number = (path: string) => `graphyard_number(${path})`;
+/**
+ * GY-3764: the item's attempts, only the three fields the flow reads, and the latest time any of
+ * them was claimed or ended, so the flow reads the index alone and never a whole document.
+ */
+const attempts = `SELECT jsonb_agg(jsonb_build_object('claimedAt', a->'claimedAt', 'endedAt', a->'endedAt', 'end', a->'end')) AS attempts,
+    GREATEST(MAX(graphyard_timestamptz(a->>'claimedAt')), MAX(graphyard_timestamptz(a->>'endedAt'))) AS touched_at
+  FROM jsonb_array_elements(CASE WHEN jsonb_typeof(d.document->'pipeline'->'attempts') = 'array' THEN d.document->'pipeline'->'attempts' ELSE '[]'::jsonb END) a`;
 
 /** The projection itself: one upsert per document, read as `d.document`. */
 // A malformed time reads as none rather than failing the write that carried it. Matched, not
@@ -47,7 +54,7 @@ const projection = `CREATE OR REPLACE FUNCTION graphyard_timestamptz(value text)
 CREATE OR REPLACE FUNCTION graphyard_number(value jsonb) RETURNS numeric LANGUAGE sql IMMUTABLE AS $work_index$
   SELECT CASE WHEN jsonb_typeof(value) = 'number' THEN (value #>> '{}')::numeric END $work_index$;
 CREATE OR REPLACE FUNCTION graphyard_index_work(p_id uuid, p_number bigint, p_document jsonb) RETURNS void LANGUAGE sql AS $work_index$
-INSERT INTO work_index AS i(id, number, key, stage, priority, revision, pr, pr_state, due_at, merged_at, settled, summary, trimmed, peers)
+INSERT INTO work_index AS i(id, number, key, stage, priority, revision, pr, pr_state, due_at, merged_at, settled, summary, trimmed, peers, attempts, touched_at)
 SELECT p_id, p_number, d.document->>'key', d.document->>'stage', ${number("d.document->'priority'")},
   ${number("d.document->'revision'")}, ${number("d.document->'candidate'->'pr'")},
   CASE WHEN d.document->'observation'->'merged' = 'true'::jsonb THEN 'merged' ELSE d.document->'observation'->>'prState' END,
@@ -59,14 +66,17 @@ SELECT p_id, p_number, d.document->>'key', d.document->>'stage', ${number("d.doc
     'submission', d.document->'submission', 'reworkRequested', d.document->'reworkRequested',
     'submissionPr', d.document->'submission'->'pr',
     'bootstrap', EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(d.document->'criteria', '[]'::jsonb)) ac WHERE jsonb_typeof(ac->'bootstrap') = 'object'),
-    'proofs', CASE WHEN d.document->>'stage' = 'done' THEN COALESCE((SELECT jsonb_agg(e->'proof') FROM jsonb_array_elements(COALESCE(d.document->'evidence', '[]'::jsonb)) e), '[]'::jsonb) ELSE '[]'::jsonb END)
+    'proofs', CASE WHEN d.document->>'stage' = 'done' THEN COALESCE((SELECT jsonb_agg(e->'proof') FROM jsonb_array_elements(COALESCE(d.document->'evidence', '[]'::jsonb)) e), '[]'::jsonb) ELSE '[]'::jsonb END),
+  t.attempts, GREATEST(graphyard_timestamptz(d.document->>'stageEnteredAt'), t.touched_at)
 FROM (SELECT ${detoasted('p_document')} AS document OFFSET 0) d
+CROSS JOIN LATERAL (${attempts}) t
 CROSS JOIN LATERAL (SELECT ${settledSql} AS settled) s
 CROSS JOIN ${coordinationRelevance(0)}
 CROSS JOIN LATERAL (SELECT CASE WHEN s.settled THEN ${coordinationDocument({ keep: 0, settled: true })} END AS summary) x
 ON CONFLICT (id) DO UPDATE SET number = EXCLUDED.number, key = EXCLUDED.key, stage = EXCLUDED.stage, priority = EXCLUDED.priority,
   revision = EXCLUDED.revision, pr = EXCLUDED.pr, pr_state = EXCLUDED.pr_state,
-  due_at = EXCLUDED.due_at, merged_at = EXCLUDED.merged_at, settled = EXCLUDED.settled, summary = EXCLUDED.summary, trimmed = EXCLUDED.trimmed, peers = EXCLUDED.peers
+  due_at = EXCLUDED.due_at, merged_at = EXCLUDED.merged_at, settled = EXCLUDED.settled, summary = EXCLUDED.summary, trimmed = EXCLUDED.trimmed, peers = EXCLUDED.peers,
+  attempts = EXCLUDED.attempts, touched_at = EXCLUDED.touched_at
 $work_index$;
 CREATE OR REPLACE FUNCTION graphyard_work_index_sync() RETURNS trigger LANGUAGE plpgsql AS $work_index$
 BEGIN PERFORM graphyard_index_work(NEW.id, NEW.number, NEW.document); RETURN NULL; END $work_index$;`;
@@ -81,12 +91,16 @@ const workIndex = defineTable({
   id uuid PRIMARY KEY REFERENCES work_items(id) ON DELETE CASCADE, number bigint NOT NULL,
   key text, stage text, priority numeric, revision numeric,
   pr numeric, pr_state text, due_at timestamptz, merged_at timestamptz,
-  settled boolean NOT NULL DEFAULT false, summary jsonb, trimmed jsonb
+  settled boolean NOT NULL DEFAULT false, summary jsonb, trimmed jsonb, attempts jsonb, touched_at timestamptz
 );
 DO $work_index$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'work_index'::regclass AND attname = 'peers' AND NOT attisdropped) THEN
     LOCK TABLE work_items IN SHARE ROW EXCLUSIVE MODE;
     ALTER TABLE work_index ADD COLUMN peers jsonb NOT NULL DEFAULT '{}'::jsonb;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'work_index'::regclass AND attname = 'attempts' AND NOT attisdropped) THEN
+    LOCK TABLE work_items IN SHARE ROW EXCLUSIVE MODE;
+    ALTER TABLE work_index ADD COLUMN attempts jsonb, ADD COLUMN touched_at timestamptz;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'work_index'::regclass AND attname = 'merged_at' AND NOT attisdropped) THEN
     LOCK TABLE work_items IN SHARE ROW EXCLUSIVE MODE;
