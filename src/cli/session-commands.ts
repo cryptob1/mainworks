@@ -6,9 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type { Work } from '../model.js';
 import { answerableHumanProof } from '../model/human-proof.js';
 import { hostDoableAsk, hostDoableRefusal, parkRefusal, type HostDoableAsk, type HumanRequestRow } from '../model/human-request.js';
-import { configHome, installDirectory, readInstallRecord, readToken } from '../install/secrets.js';
 import { installIdFor } from '../install/types.js';
-import { repositoryFromRemote } from '../onboarding.js';
 import { workMutation, type CliCommand } from './registry.js';
 import { parkCommand, parkInput } from './park-command.js';
 import { setting } from '../setting.js';
@@ -30,8 +28,9 @@ import { stateDirectory } from '../install/layout.js';
  * mid-write never leaves a partial key under the real name; a key file left truncated is replaced.
  * `linkKey` is the hard-link primitive, replaceable so a test can stand in for a filesystem without one.
  */
-export async function hostSealKey(hostId: string, home = configHome(), linkKey: typeof link = link) {
-  const path = join(home, 'seal', `${hostId}.pem`);
+export async function hostSealKey(hostId: string, home?: string, linkKey: typeof link = link) {
+  const resolvedHome = home ?? (await import('../install/secrets.js')).configHome();
+  const path = join(resolvedHome, 'seal', `${hostId}.pem`);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const publicKey = (await sealPublicHalf(path) ?? await createSealKey(path, linkKey)).trim();
   const stored = await readFile(`${path}.pub`, 'utf8').then(text => text.trim(), () => undefined);
@@ -115,9 +114,10 @@ const sealLockStaleMs = 10_000, sealLockWaitMs = 20_000;
 const noHardLinks = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS']);
 
 /** Open a value sealed to this host (server/waits.ts `sealToHost`). */
-async function unsealOnHost(sealed: string, hostId: string, home = configHome()) {
+async function unsealOnHost(sealed: string, hostId: string, home?: string) {
+  const resolvedHome = home ?? (await import('../install/secrets.js')).configHome();
   const box = JSON.parse(Buffer.from(sealed, 'base64').toString('utf8')) as { key: string; iv: string; tag: string; data: string };
-  const key = privateDecrypt({ key: await readFile(join(home, 'seal', `${hostId}.pem`), 'utf8'), padding: cryptoConstants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' }, Buffer.from(box.key, 'base64'));
+  const key = privateDecrypt({ key: await readFile(join(resolvedHome, 'seal', `${hostId}.pem`), 'utf8'), padding: cryptoConstants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' }, Buffer.from(box.key, 'base64'));
   const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(box.iv, 'base64'));
   decipher.setAuthTag(Buffer.from(box.tag, 'base64'));
   return Buffer.concat([decipher.update(Buffer.from(box.data, 'base64')), decipher.final()]).toString('utf8');
@@ -181,6 +181,9 @@ const answerHumanCommand: CliCommand = {
  * being <install> itself, and the operator is the planned `<install>-operator`. Null when neither is here.
  */
 async function recordedOperator(root: string): Promise<{ token: string; reachableUrl: string | null } | null> {
+  const [{ configHome, installDirectory, readInstallRecord, readToken }, { repositoryFromRemote }] = await Promise.all([
+    import('../install/secrets.js'), import('../onboarding.js'),
+  ]);
   let repository: string | null;
   try { repository = repositoryFromRemote(execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })); } catch { return null; }
   if (!repository) return null;

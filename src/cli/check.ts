@@ -18,14 +18,11 @@ const branchItem = (root: string) => {
   return key.toUpperCase();
 };
 
+import { checkHelp } from './lease.js';
+
 export const checkCommand: CliCommand = {
   name: 'check',
-  help: [
-    '  check NAME [GY-N]             Run the declared pre-merge check NAME on committed HEAD on the',
-    '                                host, with its Compose services, as the merge trial runs it;',
-    '                                prints its output and exits 1 when it fails. GY-N defaults to',
-    '                                the item of the assigned graphyard/<key>-<epoch> branch',
-  ],
+  help: checkHelp,
   run: async context => {
     if (!context.id) throw new Error('Usage: mainworks check NAME [GY-N]');
     const work = await resolveWork(context.api, context.args[0] ?? branchItem(context.repositoryRoot()));

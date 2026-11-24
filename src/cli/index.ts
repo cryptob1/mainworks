@@ -1,4 +1,3 @@
-import { createContext, resolveWork } from './context.js';
 import type { CliCommand } from './registry.js';
 import { installCommands } from './install.js';
 import { dbCommands } from './db.js';
@@ -15,7 +14,7 @@ import { workspaceCommands } from './workspace.js';
 import { reviewCommands } from './review.js';
 import { guideCommands } from './guide.js';
 import { versionCommands } from './version.js';
-import { upgradeCommands } from './upgrade.js';
+import { upgradeCommands } from './upgrade-commands.js';
 import { hostCommands } from './hosts.js';
 import { benchCommands } from './bench.js';
 import { teamAccessCommands } from './team-access.js';
@@ -52,6 +51,7 @@ export async function main(argv = process.argv.slice(2)) {
   // A subcommand's help flag is answered by the launcher before any command runs, so
   // `mainworks login --help` prints login's help instead of minting a sign-in link (GY-3172).
   if (selected && [id, ...args].some(word => word === '--help' || word === '-h')) { console.log(selected.help.join('\n')); return; }
+  const { createContext, resolveWork } = await import('./context.js');
   const context = await createContext(command, id, args, selected?.readsConnection?.(id) ?? true);
   if (selected && selected.scope !== 'work') return selected.run(context, undefined);
   if (selected?.unscoped && !id) return selected.unscoped(context);

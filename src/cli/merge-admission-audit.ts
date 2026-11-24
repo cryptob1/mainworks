@@ -1,8 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { auditInstalls, type AuditInstall } from '../merge-admission-audit.js';
-import { readCredentialFile } from '../private-file.js';
+import type { AuditInstall } from '../merge-admission-audit.js';
 import { defineCommands } from './registry.js';
 
 export const admissionAuditCommands = defineCommands([{
@@ -14,6 +13,7 @@ export const admissionAuditCommands = defineCommands([{
     '                                After verified deployment, file remediation for unsafe merges and attach the report to',
     '                                manual:post-deploy/merge-admission-audit; live isolated-item checks still need execution.'],
   async run(context) {
+    const [{ auditInstalls }, { readCredentialFile }] = await Promise.all([import('../merge-admission-audit.js'), import('../private-file.js')]);
     let discoveryGap: string | undefined;
     let configured: { name: string; url: string; credentialFile?: string }[];
     if (context.id) configured = JSON.parse(await readFile(context.id, 'utf8'));

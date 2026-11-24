@@ -517,3 +517,6 @@ export const upgradeCommands = defineCommands([{
     console.error(`upgrade stopped at ${result.failed}: ${result.error}\nrollback: ${result.rollback}`);
   },
 }]);
+
+// GY-3754: the registry now lives in upgrade-commands.ts and loads this module lazily for its run.
+export const runUpgradeCommand = (context: Parameters<typeof upgradeCommands[number]['run']>[0]) => upgradeCommands[0]!.run(context);

@@ -4,7 +4,6 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { defineCommands, type CliCommand } from './registry.js';
 import type { CliContext } from './context.js';
-import { asRecordedOperator } from './session-commands.js';
 import { stateDirectory } from '../install/layout.js';
 
 /**
@@ -34,6 +33,7 @@ export const infraCommands = defineCommands([{
     const { values, positionals } = parseArgs({ args: [context.id ?? '', ...context.args].filter(Boolean), allowPositionals: true, options: { project: { type: 'string' }, from: { type: 'string' } } });
     const [verb, noun, a, b] = positionals;
     if (verb === 'approve' && noun && values.project) {
+      const { asRecordedOperator } = await import('./session-commands.js');
       await asRecordedOperator(context.repositoryRoot());
       return context.print(await context.api('infra/approvals', { repository: noun, project: values.project, ...(values.from ? { from: values.from } : {}) }));
     }

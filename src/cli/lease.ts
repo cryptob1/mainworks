@@ -2,10 +2,40 @@ import { readFile } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { defineCommands, workMutation } from './registry.js';
-import { verifyCommand } from './verify.js';
-import { checkCommand } from './check.js';
-import { completeCommand } from './complete.js';
 import { setting } from '../setting.js';
+
+export const verifyHelp = [
+  '  verify GY-N                  Run exactly the unit and integration proofs the item\'s',
+  '                                criteria name on committed HEAD in a private trial, name others as',
+  '                                outstanding, and record the result complete reports.',
+  '                                A passing proof is run again against the base\'s sources',
+  '                                with this change\'s tests; one that still passes there is',
+  '                                reported unexercised and fails verify. A base run not',
+  '                                made is recorded as indeterminate, with its reason',
+  '                                --preserves PROOF  the proof guards behaviour that predates',
+  '                                the change: it is not run against the base (repeatable)',
+];
+
+export const checkHelp = [
+  '  check NAME [GY-N]             Run the declared pre-merge check NAME on committed HEAD on the',
+  '                                host, with its Compose services, as the merge trial runs it;',
+  '                                prints its output and exits 1 when it fails. GY-N defaults to',
+  '                                the item of the assigned graphyard/<key>-<epoch> branch',
+];
+
+export const completeHelp = [
+  '  complete GY-N EPOCH [--head [SHA]]  Submit the commit (the worktree\'s HEAD when no SHA is',
+  '                                given) and end the lease; gates decide completion. The shared',
+  '                                object store already holds it, so nothing is pushed. A submission',
+  '                                the control plane does not answer (its 120 s request bound, a',
+  '                                dropped connection) is resent under one idempotency key for up',
+  '                                to 10 minutes, so a slow plane strands no finished head. Reports',
+  '                                what mainworks verify ran on HEAD and its outcome. Refused while',
+  '                                GitHub requests are paused, it waits for the named reset and',
+  '                                submits again (bounded). Preflight refuses a missing proof id,',
+  '                                a missing feature E2E case, a base conflict, or a failing fast',
+  '                                gate before submitting; the merge trial decides the rest.',
+];
 
 /**
  * Keeps what a blocked attempt had not committed (GY-1008), run from its own worktree: when the
@@ -141,9 +171,23 @@ export const leaseCommands = defineCommands([
       return context.print(await workMutation(context, work)('defer', { epoch: Number(epoch), notBefore, reason: reason.join(' ') }));
     },
   },
-  verifyCommand,
-  checkCommand,
-  completeCommand,
+  {
+    name: 'verify',
+    scope: 'work',
+    help: verifyHelp,
+    run: async (context, work) => (await import('./verify.js')).verifyCommand.run(context, work),
+  },
+  {
+    name: 'check',
+    help: checkHelp,
+    run: async (context, work) => (await import('./check.js')).checkCommand.run(context, work),
+  },
+  {
+    name: 'complete',
+    scope: 'work',
+    help: completeHelp,
+    run: async (context, work) => (await import('./complete.js')).completeCommand.run(context, work),
+  },
   {
     name: 'evidence',
     scope: 'work',

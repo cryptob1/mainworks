@@ -268,20 +268,12 @@ export async function selfVerification(root: string, key: string) {
       : `every mechanical proof passed on HEAD${clean}${notes}`, ...summary };
 }
 
+import { verifyHelp } from './lease.js';
+
 export const verifyCommand: CliCommand = {
   name: 'verify',
   scope: 'work',
-  help: [
-    '  verify GY-N                  Run exactly the unit and integration proofs the item\'s',
-    '                                criteria name on committed HEAD in a private trial, name others as',
-    '                                outstanding, and record the result complete reports.',
-    '                                A passing proof is run again against the base\'s sources',
-    '                                with this change\'s tests; one that still passes there is',
-    '                                reported unexercised and fails verify. A base run not',
-    '                                made is recorded as indeterminate, with its reason',
-    '                                --preserves PROOF  the proof guards behaviour that predates',
-    '                                the change: it is not run against the base (repeatable)',
-  ],
+  help: verifyHelp,
   run: async (context, work) => {
     const { values } = parseArgs({ args: context.args, options: { preserves: { type: 'string', multiple: true } }, allowPositionals: false });
     const preserves = (values.preserves ?? []).flatMap(value => value.split(',')).map(value => value.trim()).filter(Boolean);
