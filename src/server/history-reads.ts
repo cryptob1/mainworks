@@ -4,7 +4,8 @@
  * then, when the same read answered before, it gets that answer and its age instead of waiting on.
  */
 export const historyReadSlots = 4;
-const waitMs = 5_000, remembered = 500;
+/** Answers are kept a minute, at most 16, so whole-document pages never pile up in memory. */
+const waitMs = 5_000, remembered = 16, keptMs = 60_000;
 
 let running = 0;
 const waiting: (() => void)[] = [];
@@ -21,12 +22,12 @@ export async function boundedHistoryRead<T>(key: string, read: () => Promise<T>)
     let timer: NodeJS.Timeout | undefined;
     const waited = await Promise.race([slot.then(() => true), new Promise<false>(resolve => { timer = setTimeout(() => resolve(false), waitMs); })]);
     clearTimeout(timer);
-    const cached = last.get(key);
-    if (!waited && cached) {
+    const cached = last.get(key), now = Date.now();
+    if (!waited && cached && now - cached.at <= keptMs) {
       // Give up the place in line; a slot granted meanwhile passes on.
       const index = waiting.indexOf(granted);
       if (index >= 0) waiting.splice(index, 1); else release();
-      return { answer: cached.answer as T, ageMs: Date.now() - cached.at };
+      return { answer: cached.answer as T, ageMs: now - cached.at };
     }
     if (!waited) await slot;
   }

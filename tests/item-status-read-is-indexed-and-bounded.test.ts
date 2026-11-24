@@ -87,7 +87,7 @@ test('integration:item-status-read-is-indexed-and-bounded — status GY-N and th
   let peak = 0, sampling = true;
   const sampler = (async () => {
     while (sampling) {
-      const active = Number((await monitor.query(`SELECT count(*) FROM pg_stat_activity WHERE state = 'active' AND query LIKE 'SELECT seq,work_id,actor,kind,created_at%FROM events WHERE work_id=%'`)).rows[0].count);
+      const active = Number((await monitor.query(`SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND state = 'active' AND query LIKE 'SELECT seq,work_id,actor,kind,created_at%FROM events WHERE work_id=%'`)).rows[0].count);
       peak = Math.max(peak, active);
       await new Promise(resolve => setTimeout(resolve, 10));
     }
