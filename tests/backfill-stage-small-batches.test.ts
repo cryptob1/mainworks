@@ -96,6 +96,6 @@ test('integration:backfill-stage-small-batches — on 800-row chains of 180 KB d
 });
 
 test('e2e:backfill-stage-small-batches — after the backfill on a running test install with long delta chains, master status names no backfill statement over 5 s', async () => {
-  const slowest = (await call('slowest-query?name=UPDATE%20events%20e%20SET%20payload')).slowest;
+  const slowest = (await call('slowest-query?name=WITH%20batch%20AS%20(SELECT%20seq%2C%20work_id')).slowest;
   assert.ok(!slowest || slowest.ms < TIMEOUT_MS, `master status names ${JSON.stringify(slowest)}`);
 });

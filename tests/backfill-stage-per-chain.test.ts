@@ -112,6 +112,6 @@ test('integration:backfill-stage-per-chain — on 50 items of 800-row chains on 
 test('e2e:backfill-stage-per-chain — on a running test install with long delta chains, master status shows the backfill\'s remaining rows at zero and no backfill statement over 5 s', async () => {
   const status = await masterStatus();
   assert.equal(status.stageBackfill?.remaining, 0);
-  const slowest = (await call('slowest-query?name=UPDATE%20events%20e%20SET%20payload')).slowest;
+  const slowest = (await call('slowest-query?name=WITH%20batch%20AS%20(SELECT%20seq%2C%20work_id')).slowest;
   assert.ok(!slowest || slowest.ms < TIMEOUT_MS, `master status names ${JSON.stringify(slowest)}`);
 });
