@@ -1,9 +1,12 @@
+import { resolve } from 'node:path';
 import { defineConfig } from '@playwright/test';
 // `npm run test:browser` (tests/helpers/run-tests.ts --browser) reserves a free port for the server.
 // The suite runs against the built bundle, not the dev server: a cold dev server transforms on first
 // request, so a fresh checkout (every merge trial) timed tests out before the first page rendered.
 const port = Number(process.env.GRAPHYARD_BROWSER_PORT ?? 4319);
-const vite = (command: string) => `npx vite ${command} --configLoader runner --outDir ../.graphyard/browser-dist`;
+// GY-3753: the runner names each run's own bundle directory: two runs in one checkout must not empty each other's.
+const dist = process.env.GRAPHYARD_BROWSER_DIST ??= resolve('.graphyard/browser-dist');
+const vite = (command: string) => `npx vite ${command} --configLoader runner --outDir "${dist}"`;
 export default defineConfig({
   testDir: './browser-tests', fullyParallel: true, timeout: 30000,
   // GY-3436: a Mainworks session's test budget (PLAYWRIGHT_WORKERS, set at its launch) caps its browsers; trials keep the default.

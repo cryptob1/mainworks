@@ -20,7 +20,7 @@ test('e2e:master-page-plain — blockers and the terminal first, install message
   test.setTimeout(120_000);
   const database = await signInDatabase();
   const site = await mkdtemp(join(tmpdir(), 'graphyard-master-plain-'));
-  await symlink(resolve('.graphyard/browser-dist'), join(site, 'dist'));
+  await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
   const child = fork(resolve('tests/helpers/terminal-server.ts'), [database.url, site], { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
     env: { ...process.env, PATH: `${resolve('fixtures/herdr-terminal-stub')}${delimiter}${process.env.PATH}`, HERDR_STUB_LOG: join(site, 'herdr.log'), GRAPHYARD_HERDR_CONFIG_HOME: '', GRAPHYARD_HERDR_SESSION: '' } });
   const [{ url }] = await once(child, 'message') as [{ url: string }];

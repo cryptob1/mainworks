@@ -31,7 +31,7 @@ async function assertNoDocumentScroll(page: Page, context: string) {
 test('e2e:master-tabs — the Lead page has Conversation, Live session, History and Messages tabs in a keyboard-navigable URL-backed tablist and never scrolls the document at 1280x800 and 390x844', async ({ browser }) => {
   test.setTimeout(180_000);
   const site = await temporaryDirectory('master-tabs');
-  await symlink(resolve('.graphyard/browser-dist'), join(site, 'dist'));
+  await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
   const database = await withDatabase('master_tabs');
   await database.init();
 

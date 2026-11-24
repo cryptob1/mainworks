@@ -316,7 +316,9 @@ export async function runTests(options: RunOptions = {}): Promise<RunResult> {
     try { writeFileSync(join(dataHome, 'heavy-jobs', 'limit'), '64\n'); } catch { /* the default bound stands */ }
     const set = { ...suiteRunEnvironment({ browser: options.browser, browserPort: reservation.base, clusterPort, clusterUrl: postgres.url, dataHome, tmpRoot: scratch }),
       // GY-3333: the suite's host-level account records live under the test data home, never the real ~/.gy.
-      [hostAccountsVariable]: join(dataHome, 'host-accounts') };
+      [hostAccountsVariable]: join(dataHome, 'host-accounts'),
+      // GY-3753: each browser run builds and serves its own bundle, removed with its scratch root.
+      ...(options.browser ? { GRAPHYARD_BROWSER_DIST: join(scratch, 'browser-dist') } : {}) };
     const environment = isolatedTestEnvironment(options.environment ?? process.env, set);
     const [command, commandArgs] = options.browser || !selection
       ? [process.execPath, [fileURLToPath(import.meta.resolve('@playwright/test/cli')), 'test', ...args]]

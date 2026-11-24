@@ -24,7 +24,7 @@ test('e2e:master-page-paste — Ctrl+V text arrives as one bracketed paste, a PN
   const database = await signInDatabase();
   const site = await mkdtemp(join(tmpdir(), 'graphyard-master-paste-'));
   const log = join(site, 'herdr.log');
-  await symlink(resolve('.graphyard/browser-dist'), join(site, 'dist'));
+  await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
   const child = fork(resolve('tests/helpers/terminal-server.ts'), [database.url, site], { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
     env: { ...process.env, PATH: `${stub}${delimiter}${process.env.PATH}`, HERDR_STUB_LOG: log, GRAPHYARD_HERDR_CONFIG_HOME: '', GRAPHYARD_HERDR_SESSION: '' } });
   const [{ url }] = await once(child, 'message') as [{ url: string }];

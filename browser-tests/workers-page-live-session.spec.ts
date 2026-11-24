@@ -19,7 +19,7 @@ test('e2e:workers-page-live-session — one compact row per agent; opening it sh
   test.setTimeout(120_000);
   const database = await signInDatabase();
   const site = await mkdtemp(join(tmpdir(), 'mainworks-workers-page-'));
-  await symlink(resolve('.graphyard/browser-dist'), join(site, 'dist'));
+  await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
   const child = fork(resolve('tests/helpers/workers-page-server.ts'), [database.url, site], { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
   const [{ url, first, session, master }] = await once(child, 'message') as [{ url: string; first: string; session: string; master: string }];
   const signIn = async () => (await (await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string }).code;

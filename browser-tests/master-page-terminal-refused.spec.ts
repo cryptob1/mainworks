@@ -20,7 +20,7 @@ test('e2e:master-page-terminal-refused — when the terminal cannot start, the L
   // load cannot eat; the refusal it asserts is unchanged.
   test.setTimeout(60_000);
   const site = await temporaryDirectory('refused-terminal');
-  await symlink(resolve('.graphyard/browser-dist'), join(site, 'dist'));
+  await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
   const database = await signInDatabase();
   // No herdr on the server's PATH or in its home, and no host supervisor connected.
   const child = fork(resolve('tests/helpers/terminal-server.ts'), [database.url, site], { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
