@@ -467,10 +467,16 @@ export async function batchGateStep(cycle: Pick<Cycle, 'state' | 'effects' | 'sn
           const outcome = await runGate({ ...ports, checkpoint: write }, current).finally(() => ended.abort());
           // The diagnostics' fields and filings are theirs: a gate's write keeps what they recorded meanwhile.
           await write();
-          if (outcome.outcome === 'verified' && before) {
-            const landings = await ports.landings(before, outcome.tip);
-            const reverted = new Set(current.merges.filter(merge => merge.reverted).map(merge => merge.sha));
-            await appendReleaseNote(releaseNotesPath(gate.root), releaseNote(outcome.tip, current.verifiedAt ?? new Date(cycle.now()).toISOString(), landings, reverted));
+          if (outcome.outcome === 'verified') {
+            if (before) {
+              const landings = await ports.landings(before, outcome.tip);
+              const reverted = new Set(current.merges.filter(merge => merge.reverted).map(merge => merge.sha));
+              await appendReleaseNote(releaseNotesPath(gate.root), releaseNote(outcome.tip, current.verifiedAt ?? new Date(cycle.now()).toISOString(), landings, reverted));
+            }
+            if (gate.warmImage) {
+              try { await gate.warmImage(outcome.tip); }
+              catch (error) { note(`batch-gate:warm-image:${outcome.tip}`, 'failed', `Could not warm the test image for ${outcome.tip.slice(0, 12)}: ${message(error)}`); }
+            }
           }
           if (outcome.outcome !== 'idle') {
             const reason = gateOutcomeReason(outcome);

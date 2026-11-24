@@ -360,9 +360,12 @@ export async function runTests(options: RunOptions = {}): Promise<RunResult> {
 export const heavyRunLabel = (mode: 'test' | 'browser' | 'typecheck', args: string[], strict = false) =>
   mode === 'typecheck' || args.length && !strict ? null : `${mode === 'browser' ? 'npm run test:browser' : 'npm test'}${args.length ? ` ${args.join(' ')}` : ''}`;
 
-/** `tsc --noEmit` under the caller's environment, marked as holding the slot this process took. */
+/**
+ * `tsc --noEmit` under the caller's environment, marked as holding the slot this process took. The check
+ * needs ~1.5 GB of heap; in a trial container Node's default heap stops at half its ~2.6 GB memory (GY-3627).
+ */
 export async function typecheck(cwd = process.cwd(), args: string[] = []) {
-  const child = spawn(process.execPath, [fileURLToPath(import.meta.resolve('typescript/bin/tsc')), '--noEmit', ...args], { cwd, stdio: 'inherit', env: { ...process.env, [heldVariable]: '1' } });
+  const child = spawn(process.execPath, ['--max-old-space-size=2048', fileURLToPath(import.meta.resolve('typescript/bin/tsc')), '--noEmit', ...args], { cwd, stdio: 'inherit', env: { ...process.env, [heldVariable]: '1' } });
   return await new Promise<number>(done => child.on('close', (status, signal) => done(status ?? (signal ? 1 : 0))));
 }
 
