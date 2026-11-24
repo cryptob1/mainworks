@@ -1,6 +1,7 @@
 // Concern: GY-3624 — the ledger rows the flow numbers read, turned into item histories, and the numbers for each window.
 import type { Work } from '../model.js';
-import { baseFailurePrefix } from '../model/merge-queue.js';
+import { baseFailurePrefix, trialAheadOfReviewPrefix } from '../model/merge-queue.js';
+import { unproducedManualProofs } from '../model/unproduced-attestation.js';
 import type { DeployHistoryEntry, GitRead } from '../deploy-watch.js';
 import { flowAttention, flowNumbers, flowWindows, type FlowEvent, type FlowItem, type FlowNumbers, type FlowWindow } from '../flow-numbers.js';
 
@@ -47,7 +48,7 @@ type Flowed = Pick<Work, 'id' | 'key' | 'title' | 'stage' | 'stageEnteredAt' | '
  * next refusal, of the same head — finds its failing tests fail on the base too. A head held for a
  * red base is refused without a trial of its own, so that refusal flags none.
  */
-export function flowItems(work: readonly Flowed[], ledger: readonly any[], attempts: Attempts = new Map(), deployed: ReadonlyMap<string, string | null> = new Map()): FlowItem[] {
+export function flowItems(work: readonly Flowed[], ledger: readonly any[], attempts: Attempts = new Map(), deployed: ReadonlyMap<string, string | null> = new Map(), now = Date.now()): FlowItem[] {
   const events = new Map<string, FlowEvent[]>(), unanswered = new Map<string, FlowEvent>();
   for (const row of ledger) {
     const list = events.get(row.work_id) ?? [];
@@ -55,7 +56,10 @@ export function flowItems(work: readonly Flowed[], ledger: readonly any[], attem
     if (row.kind === 'merge.refused') {
       const trial = unanswered.get(row.work_id);
       unanswered.delete(row.work_id);
-      if (trial && trial.head === row.head && String(row.reason ?? '').startsWith(baseFailurePrefix)) trial.flaky = true;
+      const reason = String(row.reason ?? '');
+      if (trial && trial.head === row.head && reason.startsWith(baseFailurePrefix)) trial.flaky = true;
+      if (reason.startsWith(trialAheadOfReviewPrefix) && /acceptance gate awaits .*manual:/.test(reason))
+        list.push({ kind: row.kind, at, reason: row.reason ?? null, head: row.head ?? null });
     } else {
       const event: FlowEvent = { kind: row.kind, at, stage: row.stage ?? null, reason: row.reason ?? null, binding: row.binding ?? null, head: row.head ?? null,
         durationMs: row.duration_ms == null ? null : Number(row.duration_ms), flaky: !!row.flaked, reverted: !!row.reverted };
@@ -65,11 +69,18 @@ export function flowItems(work: readonly Flowed[], ledger: readonly any[], attem
     }
     events.set(row.work_id, list);
   }
-  return work.map(item => ({ key: item.key, title: item.title, stage: item.stage, stageEnteredAt: item.stageEnteredAt,
-    mergedAt: item.delivery?.mergedAt ?? item.observation?.mergedAt ?? null,
-    ...(deployed.has(item.id) ? { deployedAt: deployed.get(item.id) } : {}),
-    attempts: (attempts.get(item.id) ?? []).map(attempt => ({ claimedAt: attempt.claimedAt, endedAt: attempt.endedAt, end: attempt.end ?? null })),
-    events: events.get(item.id) ?? [] }));
+  const full = work.filter((item): item is Work => 'gates' in item && Array.isArray((item as Work).gates) && Array.isArray((item as Work).criteria) && Array.isArray((item as Work).violations));
+  const atNow = new Date(now);
+  return work.map(item => {
+    const awaitingSignoff = item.stage === 'acceptance' && 'gates' in item && Array.isArray((item as Work).gates) && Array.isArray((item as Work).criteria) && Array.isArray((item as Work).violations)
+      ? unproducedManualProofs(item as Work, full, atNow).length > 0 : false;
+    return { key: item.key, title: item.title, stage: item.stage, stageEnteredAt: item.stageEnteredAt,
+      mergedAt: item.delivery?.mergedAt ?? item.observation?.mergedAt ?? null,
+      ...(deployed.has(item.id) ? { deployedAt: deployed.get(item.id) } : {}),
+      ...(awaitingSignoff ? { awaitingSignoff: true } : {}),
+      attempts: (attempts.get(item.id) ?? []).map(attempt => ({ claimedAt: attempt.claimedAt, endedAt: attempt.endedAt, end: attempt.end ?? null })),
+      events: events.get(item.id) ?? [] };
+  });
 }
 
 /**
@@ -139,7 +150,7 @@ export async function readFlow(pool: Queryable, work: readonly Flowed[], now: nu
     rows(pool, now),
     live?.deploys?.length && live.git ? resolveDeployedAt(work, live.deploys, live.git, now) : Promise.resolve(new Map<string, string | null>()),
   ]);
-  const items = flowItems(work, ledger, attempts, deployed);
+  const items = flowItems(work, ledger, attempts, deployed, now);
   return { ...numbers(items, now), items };
 }
 

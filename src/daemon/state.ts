@@ -121,6 +121,8 @@ const masterSessionRecordSchema = z.object({
    * subject and wake the session every cycle with no event.
    */
   subjects: z.record(z.string().max(60), z.string().max(40)).default({}),
+  /** GY-3770: per repeating subject key, the ISO instant it last woke the master session. */
+  subjectWakes: z.record(z.string().max(60), z.string().max(64)).default({}),
   /**
    * Registry sessions an ended or failed launch could not give back: the master role runs one
    * session at a time, so a leaked row would refuse every relaunch. Each is ended again every cycle

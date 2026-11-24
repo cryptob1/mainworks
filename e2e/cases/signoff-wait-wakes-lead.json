@@ -1,0 +1,16 @@
+{
+  "id": "signoff-wait-wakes-lead",
+  "title": "A passed trial waiting only for the Lead's manual sign-off wakes the Lead",
+  "description": "Takes a submitted item through a real merge trial with one Lead-attestable manual proof left open and asserts the loop records a wake to the Lead's session naming the item, proof and head, lists it first in master status attention, and reports the acceptance wait split under waiting for sign-off in /api/flow.",
+  "tags": ["api", "regression"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "passed trial with one manual proof open wakes the Lead and splits acceptance wait in flow",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/signoff-wait-wakes-lead.test.ts",
+      "timeoutSeconds": 600
+    }
+  ]
+}

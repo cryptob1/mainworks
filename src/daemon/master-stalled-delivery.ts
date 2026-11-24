@@ -9,6 +9,33 @@ import { gateCauses, type GateRecord } from '../batch-gate.js';
 import { normalizeFailureReason, repeatedFailureCause, repeatingItems } from './repeated-failure.js';
 import { reworkCapCause } from '../model/rework-ground.js';
 import { stallAlarmKey } from './stall-alarm.js';
+import { unproducedManualProofs } from '../model/unproduced-attestation.js';
+
+/** GY-3770: repeat a sign-off wait wake every 30 minutes while the item remains unchanged. */
+export const signoffWakeRepeatMs = 30 * 60_000;
+
+/**
+ * GY-3770: open items whose passed trial leaves only `manual:` proofs unpassed that the Lead
+ * (master role) may attest, ordered longest-waiting first.
+ */
+export function signoffWaitingItems(work: readonly Work[], now: number): { item: Work; proofs: string[]; head: string; minutes: number }[] {
+  const list = [...work], at = new Date(now);
+  return list.flatMap(item => {
+    if (item.stage === 'done' || item.hold || !Array.isArray(item.gates) || !Array.isArray(item.criteria) || !Array.isArray(item.violations)) return [];
+    const proofs = unproducedManualProofs(item, list, at);
+    if (!proofs.length || !item.candidate) return [];
+    const entered = Date.parse(item.stageEnteredAt);
+    const minutes = Number.isFinite(entered) ? Math.max(0, Math.round((now - entered) / 60_000)) : 0;
+    return [{ item, proofs, head: item.candidate.sha, minutes }];
+  }).sort((a, b) => Date.parse(a.item.stageEnteredAt) - Date.parse(b.item.stageEnteredAt) || a.item.key.localeCompare(b.item.key));
+}
+
+/** GY-3770: top-of-attention lines in `master status` for items waiting only on the Lead's sign-off. */
+export const signoffAttention = (work: readonly Work[], now: number) => signoffWaitingItems(work, now).map(({ item, proofs, head, minutes }) => ({
+  subject: item.key,
+  text: `waits for your sign-off: ${proofs.join(', ')} on ${head.slice(0, 12)}, ${minutes} min`,
+  next: `Verify and run mainworks master attest ${item.key} ${proofs[0]} REASON`,
+}));
 
 export const stalledDeliveryAction = 'Diagnose the shared base failure, file or advance its repair, and resume delivery with every test and merge requirement intact. Act as the operator-agent; no human review or approval is needed.';
 
@@ -30,7 +57,7 @@ export function stalledDelivery(work: readonly Work[]) {
 }
 
 /** `quiet`: a cause a run of repeated equal failures stands in for (GY-3104): it wakes nobody, but keeps its subject, so it does not wake once the run ends. */
-export type MasterCause = { key: string; detail: string; digest: string; quiet?: boolean };
+export type MasterCause = { key: string; detail: string; digest: string; quiet?: boolean; repeatMs?: number };
 const cause = (key: string, detail: string): MasterCause => ({ key, detail, digest: createHash('sha1').update(detail).digest('hex') });
 const subject = (kind: string, id: string) => `${kind}:${createHash('sha1').update(id).digest('hex')}`;
 
@@ -39,9 +66,13 @@ const subject = (kind: string, id: string) => `${kind}:${createHash('sha1').upda
  * item in a run of repeated equal failures (GY-3104) wakes the master by its run's one cause; its
  * per-failure causes are kept quiet.
  */
-export function masterCauses(work: readonly Work[], actions: DaemonState['actions'] = {}, runs: DaemonState['failureRuns'] = {}): MasterCause[] {
+export function masterCauses(work: readonly Work[], actions: DaemonState['actions'] = {}, runs: DaemonState['failureRuns'] = {}, now = Date.now()): MasterCause[] {
   const open = work.filter(item => item.stage !== 'done');
-  const causes = stalledDelivery(open);
+  const causes: MasterCause[] = stalledDelivery(open);
+  for (const { item, proofs, head } of signoffWaitingItems(open, now)) {
+    const entry = cause(subject('signoff', item.id), `${item.key} waits for your sign-off: ${proofs.join(', ')} on ${head.slice(0, 12)} — verify and run mainworks master attest ${item.key} ${proofs[0]} REASON`);
+    causes.push({ ...entry, repeatMs: signoffWakeRepeatMs });
+  }
   const repeating = repeatingItems(runs);
   const quiet = (item: Pick<Work, 'key'>, entry: MasterCause) => repeating.has(item.key) ? { ...entry, quiet: true } : entry;
   for (const item of open) {

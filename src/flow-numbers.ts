@@ -1,10 +1,11 @@
 // Concern: GY-3624 flow numbers — attempts and merges an hour, first-pass yield with rework causes, wait per station, flaky rate and reverts, for a window, from item histories and trial ledgers. Nothing is stored.
 import { plainDuration, spread } from './pipeline-speed.js';
 import { mergeWriterTrialGround } from './model/rework-ground.js';
+import { trialAheadOfReviewPrefix } from './model/merge-queue.js';
 
 export const flowWindows = { '6h': 6, '24h': 24, '7d': 168 } as const;
 export type FlowWindow = keyof typeof flowWindows;
-export const flowStations = ['ready', 'build', 'review', 'test queue', 'merge trial', 'acceptance', 'merge', 'live'] as const;
+export const flowStations = ['ready', 'build', 'review', 'test queue', 'merge trial', 'acceptance', 'waiting for sign-off', 'waiting for the merge writer', 'merge', 'live'] as const;
 type FlowStation = typeof flowStations[number];
 export const reworkCauses = ['review', 'product review', 'merge trial', 'acceptance', 'base moved', 'red base'] as const;
 type ReworkCause = typeof reworkCauses[number];
@@ -20,6 +21,8 @@ export interface FlowItem {
   key: string; title: string; stage: string; stageEnteredAt: string; mergedAt: string | null;
   /** First serving deploy containing this merge (`null` when deploy records exist and none contains it yet; `undefined` when deploy tracking is unavailable). */
   deployedAt?: string | null;
+  /** GY-3770: true when this open item in acceptance currently waits only on Lead-attestable manual proofs. */
+  awaitingSignoff?: boolean;
   attempts: { claimedAt: string; endedAt: string | null; end: string | null }[];
   events: FlowEvent[];
 }
@@ -47,6 +50,9 @@ function reworkCause(reason: string, binding: string | null | undefined): Rework
 
 const ms = (iso: string | null | undefined) => iso ? Date.parse(iso) : Number.NaN;
 const stationOf: Record<string, FlowStation> = { ready: 'ready', build: 'build', review: 'review', acceptance: 'acceptance', merge: 'merge' };
+const isSignoffRefusal = (event: FlowEvent) => event.kind === 'merge.refused'
+  && !!event.reason?.startsWith(trialAheadOfReviewPrefix)
+  && /acceptance gate awaits .*manual:/.test(event.reason);
 interface Visit { station: FlowStation; start: number; end: number; open: boolean }
 
 /**
@@ -69,6 +75,18 @@ function visits(item: FlowItem, now: number): Visit[] {
     if (mark.stage === 'test') {
       const started = trials.filter(trial => trial.end >= mark.at && trial.start < end).map(trial => Math.max(trial.start, mark.at));
       out.push(started.length ? { station: 'test queue', start: mark.at, end: Math.min(...started), open: false } : { station: 'test queue', start: mark.at, end, open });
+    } else if (mark.stage === 'acceptance') {
+      out.push({ station: 'acceptance', start: mark.at, end, open });
+      // GY-3770: split acceptance wait into waiting for sign-off vs waiting for the merge writer.
+      const split = item.events.filter(event => isSignoffRefusal(event) && ms(event.at) >= mark.at && ms(event.at) < end).map(event => ms(event.at)).sort((a, b) => a - b)[0];
+      if (split !== undefined) {
+        if (split > mark.at) out.push({ station: 'waiting for the merge writer', start: mark.at, end: split, open: false });
+        out.push({ station: 'waiting for sign-off', start: split, end, open });
+      } else {
+        const prior = item.events.filter(event => (event.kind === 'merge.refused' || event.kind === 'merge.intent') && ms(event.at) <= mark.at).sort((a, b) => ms(a.at) - ms(b.at)).at(-1);
+        const signoff = (open && !!item.awaitingSignoff) || (!!prior && isSignoffRefusal(prior));
+        out.push({ station: signoff ? 'waiting for sign-off' : 'waiting for the merge writer', start: mark.at, end, open });
+      }
     } else if (stationOf[mark.stage]) out.push({ station: stationOf[mark.stage], start: mark.at, end, open });
   });
   const merged = ms(item.mergedAt);

@@ -1047,7 +1047,7 @@ async function masterSession(cycle: Cycle, open: Work[]) {
   // GY-3345: and each unanswered message another install's Master sent this one. An unreadable list
   // keeps the messages already delivered, so none is delivered twice.
   const messages = config.forPerson ? [] : await Promise.resolve(effects.masterMessages?.() ?? []).catch(() => null);
-  const causes = [...masterCauses(open, state.actions, state.failureRuns), ...(await sessions.pendingCauses?.(open) ?? []), ...messageCauses(messages ?? [], config.cliPath, config.peers?.map(peer => peer.name) ?? [])];
+  const causes = [...masterCauses(open, state.actions, state.failureRuns, cycle.now()), ...(await sessions.pendingCauses?.(open) ?? []), ...messageCauses(messages ?? [], config.cliPath, config.peers?.map(peer => peer.name) ?? [])];
   const current = new Set(causes.map(cause => cause.key));
   if (!messages) for (const key of Object.keys(state.master.subjects)) if (key.startsWith('message:')) current.add(key);
   // A retrial temporarily replaces its refusal with an intent. Keep the same base's wake
@@ -1055,6 +1055,7 @@ async function masterSession(cycle: Cycle, open: Work[]) {
   for (const item of open) if (item.mergeLedger?.state === 'intent' && item.mergeLedger.head === item.candidate?.sha && item.mergeLedger.baseTip)
     current.add(`base:${item.mergeLedger.baseTip}`);
   for (const key of Object.keys(state.master.subjects)) if (!current.has(key)) delete state.master.subjects[key];
+  for (const key of Object.keys(state.master.subjectWakes)) if (!current.has(key)) delete state.master.subjectWakes[key];
   const master = state.master;
   const handle = herdr.agents.find(agent => agent.name === (master.agentName ?? config.masterAgentName));
   const recoveryKey = config.forPerson ? `master:continuity:${config.forPerson}` : 'master:continuity';
@@ -1083,7 +1084,12 @@ async function masterSession(cycle: Cycle, open: Work[]) {
   if (handle.pane_id) state.master.pane = handle.pane_id;
   if (!state.master.startedAt) state.master.startedAt = cycle.snapshot.now;
   if (!recoveryFailed && await masterPaneFailover(cycle, handle, open)) return;
-  const changed = causes.filter(cause => !cause.quiet && state.master.subjects[cause.key] !== cause.digest);
+  const repeatDue = (cause: { key: string; repeatMs?: number }) => {
+    if (!cause.repeatMs) return false;
+    const last = Date.parse(state.master.subjectWakes[cause.key] ?? '');
+    return !Number.isFinite(last) || cycle.now() - last >= cause.repeatMs;
+  };
+  const changed = causes.filter(cause => !cause.quiet && (state.master.subjects[cause.key] !== cause.digest || repeatDue(cause)));
   const target = handle.pane_id ?? state.master.pane ?? handle.name;
   const since = Date.parse(state.master.lastWake?.at ?? state.master.startedAt ?? cycle.snapshot.now);
   const heartbeat = !changed.length && open.length > 0 && cycle.now() - since >= (config.run.masterHeartbeatMinutes ?? 30) * 60_000;
@@ -1093,8 +1099,12 @@ async function masterSession(cycle: Cycle, open: Work[]) {
   cycle.launcher.submit(key, [], async sink => {
     try {
       await sessions.wake!(target, prompt, state.master.continuity);
-      for (const cause of changed) state.master.subjects[cause.key] = cause.digest;
-      state.master.lastWake = { at: new Date(cycle.now()).toISOString(), causes: changed.map(cause => cause.key).slice(0, 20), heartbeat };
+      const at = new Date(cycle.now()).toISOString();
+      for (const cause of changed) {
+        state.master.subjects[cause.key] = cause.digest;
+        if (cause.repeatMs) state.master.subjectWakes[cause.key] = at;
+      }
+      state.master.lastWake = { at, causes: changed.map(cause => cause.key).slice(0, 20), heartbeat };
       sink.push(await record(state, key, { kind: 'wake', work: null, principal: null, state: 'done', detail: prompt, attempts: 1, cycle: state.cycle }, cycle.now(), effects.persist));
     } catch (error) { sink.push(await record(state, key, { kind: 'wake', work: null, principal: null, state: 'failed', detail: `Could not wake the master: ${message(error)}`, attempts: (state.actions[key]?.attempts ?? 0) + 1, cycle: state.cycle }, cycle.now(), effects.persist)); }
   });
@@ -1174,7 +1184,7 @@ function submitMasterLaunch(cycle: Cycle, open: Work[], recoveryError?: string, 
       const exclude = Object.keys(unusable);
       try {
         await endPreviousMasterSessions(cycle, closedPane);
-        const causes = [...masterCauses(open, state.actions, state.failureRuns), ...(await sessions.pendingCauses?.(open) ?? [])];
+        const causes = [...masterCauses(open, state.actions, state.failureRuns, cycle.now()), ...(await sessions.pendingCauses?.(open) ?? [])];
         const { recoveryFailures, ...oldMaster } = state.master;
         const failures = recoveryError ? [...recoveryFailures, { at: new Date(cycle.now()).toISOString(), error: recoveryError, master: oldMaster }] : recoveryFailures;
         const previous = recoveryError ? null : state.master.continuity;
@@ -1184,6 +1194,7 @@ function submitMasterLaunch(cycle: Cycle, open: Work[], recoveryError?: string, 
         state.master = { ...emptyMasterSession(), ...launched, continuity: launched.continuity ?? previous, recoveryFailures: failures, startedAt: at,
           unusableAccounts: activeUnusableAccounts(state.master, cycle.now()),
           subjects: Object.fromEntries(causes.map(cause => [cause.key, cause.digest])),
+          subjectWakes: Object.fromEntries(causes.filter(cause => cause.repeatMs).map(cause => [cause.key, at])),
           lastWake: causes.length ? { at, causes: causes.map(cause => cause.key).slice(0, 20), heartbeat: false } : null };
         if (pendingFailover) {
           sink.push(await record(state, failoverKey, { kind: 'failover', work: null, principal: null, state: 'done', detail: pendingFailover.detail, attempts: pendingFailover.count, cycle: state.cycle }, cycle.now(), effects.persist));
