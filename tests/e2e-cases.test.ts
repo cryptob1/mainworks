@@ -175,7 +175,7 @@ test('unit:e2e-runner-results — e2e run runs passing and failing cases against
   assert.ok(cases.every(entry => entry.definition.steps.every(step => step.kind === 'http' || step.kind === 'command')));
   await syncCases(apiAs(operator), cases);
   const report = join(dir, 'report.json');
-  const { GRAPHYARD_TOKEN_FILE: _file, ...inherited } = process.env;
+  const { GRAPHYARD_TOKEN_FILE: _file, MAINWORKS_TOKEN_FILE: _mwFile, MAINWORKS_URL: _mwUrl, MAINWORKS_TOKEN: _mwToken, ...inherited } = process.env;
   const env = { ...inherited, GRAPHYARD_URL: url, GRAPHYARD_TOKEN: tokens.get(operator.id)!, GRAPHYARD_REPOSITORY_ROOT: dir };
   const runCli = (...args: string[]) => new Promise<{ code: number; stdout: string; stderr: string }>(resolve =>
     execFile(process.execPath, [cli, 'e2e', 'run', ...args], { cwd: dir, env, timeout: 120_000 }, (error, stdout, stderr) => resolve({ code: error ? Number((error as any).code ?? 1) : 0, stdout, stderr })));
@@ -731,4 +731,14 @@ test('integration:e2e-cases — the shipped catalog loads and every case parses;
   const oneLink = shipped.find(entry => entry.definition.id === 'one-link-invite')!;
   assert.deepEqual(invite.definition.steps.map(step => (step as { run?: string }).run), oneLink.definition.steps.map(step => (step as { run?: string }).run));
   assert.match((invite.definition.steps[0] as { run: string }).run, /tests\/one-link-invite\.test\.ts/);
+});
+
+test('unit:e2e-cases-pinned — create-work-item runs in a scratch case-only repository without failing on absent checkout test files', async () => {
+  const dir = await repository({});
+  await cp(join(root, caseDirectory, 'create-work-item.json'), join(dir, caseDirectory, 'create-work-item.json'));
+  const cases = await loadCases(dir);
+  const step = cases[0].definition.steps.find(s => s.kind === 'command' && s.run.includes('tests/managed-worktree-root.test.ts'));
+  assert.ok(step, 'create-work-item still runs the GY-3773 test in a real checkout');
+  const report = await runCases(cases, { url, token: tokens.get(operator.id)!, root: dir });
+  assert.equal(report.cases[0].outcome, 'pass', JSON.stringify(report.cases[0].failingStep));
 });
