@@ -169,7 +169,7 @@ export const workspaceCommands = defineCommands([
     help: ['  watch GY-N EPOCH -- COMMAND   Run a worker, heartbeat, stop on lease loss'],
     // Not work-scoped (GY-1033): the setup line comes from argv before any control-plane call, even the item lookup, once the epoch is checked (GY-1184).
     async run(context) {
-      const [{ controlPlaneRestartWindowMs, restartTolerantApi, setupLine, supervise }, { resolveWork }] = await Promise.all([
+      const [{ controlPlaneRestartWindowMs, restartTolerantApi, setupLine, supervise }, { isConfirmedCoordinationRefusal, resolveWork }] = await Promise.all([
         import('../session-watch.js'), import('./context.js'),
       ]);
       const { id, args, api, base } = context; const epoch = Number(args[0]); const separator = args.indexOf('--');
@@ -189,10 +189,26 @@ export const workspaceCommands = defineCommands([
       for (const [name, value] of Object.entries(own)) process.env[`GRAPHYARD_${name}`] = process.env[`MAINWORKS_${name}`] = value;
       // `complete` ends the lease, so the renewal after a submission is refused by design: say
       // so before the supervisor stops the session, so the stop reads as the end of the attempt
-      // rather than as a lost assignment.
+      // rather than as a lost assignment. A direct single-attempt fetch surfaces connection errors
+      // and 5xx immediately to `supervise()`, which owns the 5-minute unreachable retry loop (GY-3785).
+      const renewUrl = `${base.replace(/\/+$/, '')}/api/work/${work.id}/heartbeat`;
       const renew = async () => {
-        try { return await api(`work/${work.id}/heartbeat`, { epoch }, randomUUID()); }
-        catch (error) {
+        try {
+          const response = await fetch(renewUrl, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${watchToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
+            body: JSON.stringify({ epoch }),
+            signal: AbortSignal.timeout(15_000),
+          });
+          const body = await response.json();
+          if (!response.ok) {
+            const error = new Error(JSON.stringify(body));
+            (error as any).confirmedRefusal = isConfirmedCoordinationRefusal(response.status, body);
+            (error as any).status = response.status;
+            throw error;
+          }
+          return body;
+        } catch (error) {
           if (error instanceof Error && error.message.includes('ended when') && error.message.includes('was submitted')) console.error(`${work.key} epoch ${epoch} was submitted; its implementation lease has ended and the worker session is being stopped.`);
           throw error;
         }

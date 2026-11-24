@@ -10,7 +10,7 @@ import { leadMay } from '../../delegation.js';
 import { settleDelivered } from '../../model-boundary/actions.js';
 import type { Engine } from '../../engine.js';
 import { recordDispatch } from '../evaluate.js';
-import { preserveAssignment, renewalGrace } from '../leases.js';
+import { preserveAssignment, renewalGrace, restoreDowntimeLease } from '../leases.js';
 import { commands, type Command } from './schemas.js';
 import { table } from './index.js';
 import { renewHeartbeat } from './heartbeat.js';
@@ -81,6 +81,7 @@ export async function runCommand(engine: Engine, actor: Principal, command: Comm
       // A lease past its expiry that a recorded server-side renewal fault still covers stays live (GY-558).
       // Priority edits preserve the assignment and gates; the next loop evaluates their new order.
       if (command !== 'priority') await renewalGrace(engine, db, work, now);
+      if (command === 'heartbeat') await restoreDowntimeLease(engine, db, work, actor, c.data.epoch, now);
       if (actor.role === 'operator-agent') {
         authorizeOperatorCommand(actor, command, c.data, work, engine.repository);
         entry.operator?.(c);

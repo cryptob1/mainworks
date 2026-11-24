@@ -89,6 +89,14 @@ export const planeStallMs = 60_000;
  * and well past the retry the grace exists for.
  */
 export const stallRenewalWindowMs = 30_000;
+/** How long past a server downtime a builder's renewal may reclaim a lease that lapsed during that downtime, provided the item's epoch is unchanged and nobody else claimed it (GY-3785). */
+export const downtimeRenewalWindowMs = 5 * 60_000;
+
+/** The recorded plane stalls plus this process's own startup restart gap, if any (GY-3785). */
+async function planeDowntimes(engine: Engine, db: { query: (text: string, values: unknown[]) => Promise<{ rows: any[] }> }, fromMs: number, untilMs: number): Promise<PlaneStall[]> {
+  const stalls = await readPlaneStalls(db, fromMs, untilMs);
+  return engine.restartGap ? [...stalls, engine.restartGap] : stalls;
+}
 
 /**
  * Let a lease renewal run before reconciliation's next evaluation or write (GY-1290). Evaluation is
@@ -170,10 +178,51 @@ export async function renewalGrace(engine: Engine, db: PoolClient, work: Work, n
   }
   // The stall covers the expiry itself, so the read reaches back one window before it; the
   // recovery tick wrote the stall at its own `to`, which is the newest row the window can hold.
-  const stall = stallCovering(await readPlaneStalls(db, expires - leaseMs, now.getTime()), expires);
+  const stall = stallCovering(await planeDowntimes(engine, db, expires - leaseMs, now.getTime()), expires);
   if (!stall) return false;
   lease.renewalFault = { at: stall.from, error: `the control plane was not answering between ${stall.from} and ${stall.to}` };
   lease.expiresAt = new Date(Math.max(expires, Date.parse(stall.to) + stallRenewalWindowMs)).toISOString();
+  return true;
+}
+
+/**
+ * GY-3785: accept a builder's renewal for a lease that lapsed while the control plane was not
+ * serving, provided the item's epoch is unchanged and no other session claimed it. Works whether
+ * the expired lease is still on the document or reconciliation already cleared it as a plain lapse;
+ * never resurrects a lease that was submitted, released, blocked, reworked, or claimed by another epoch.
+ */
+export async function restoreDowntimeLease(engine: Engine, db: PoolClient, work: Work, actor: Principal, epoch: number, now: Date): Promise<boolean> {
+  if (work.stage === 'done' || work.submission || work.blocker || work.reworkRequested || work.epoch !== epoch) return false;
+  if (work.lease && Date.parse(work.lease.expiresAt) > now.getTime()) return false;
+  let expires: number;
+  if (work.lease) {
+    if (work.lease.owner !== actor.id || work.lease.epoch !== epoch) return false;
+    expires = Date.parse(work.lease.expiresAt);
+  } else {
+    if (work.lastAssignment?.owner !== actor.id || work.lastAssignment?.epoch !== epoch) return false;
+    const attempt = work.pipeline?.attempts?.find(a => a.epoch === epoch && a.owner === actor.id);
+    if (!attempt || attempt.end !== 'expired') return false;
+    const row = (await db.query(
+      `SELECT payload->'details'->>'expiresAt' AS expires_at FROM events WHERE work_id=$1 AND kind='lease.expired'
+       AND payload->'details'->>'owner'=$2 AND (payload->'details'->>'epoch')::int=$3
+       AND COALESCE(payload->'details'->>'cause', '') <> 'rework'
+       ORDER BY seq DESC LIMIT 1`,
+      [work.id, actor.id, epoch],
+    )).rows[0] as { expires_at?: string } | undefined;
+    expires = row?.expires_at ? Date.parse(row.expires_at) : Number.NaN;
+  }
+  if (!Number.isFinite(expires)) return false;
+  const leaseMs = engine.leaseSeconds * 1000;
+  const downtimes = await planeDowntimes(engine, db, expires - leaseMs, now.getTime());
+  const covered = downtimes.find(d => {
+    const from = Date.parse(d.from), to = Date.parse(d.to);
+    return expires >= from && expires <= to + stallRenewalWindowMs && now.getTime() <= to + downtimeRenewalWindowMs;
+  });
+  if (!covered) return false;
+  work.lease = { owner: actor.id, epoch, expiresAt: new Date(now.getTime() + leaseMs).toISOString() };
+  const attempt = work.pipeline?.attempts?.find(a => a.epoch === epoch && a.owner === actor.id);
+  if (attempt && attempt.end === 'expired') { attempt.end = null; attempt.endedAt = null; }
+  if (work.stage === 'ready') work.stage = 'build';
   return true;
 }
 
@@ -216,7 +265,7 @@ export function renewLease(engine: Engine, work: Work, actor: Principal, epoch: 
  * sent at over the gap and move the tick past a stall nothing recorded. A caller measuring a
  * simulated clock passes `at`.
  */
-export async function recordPlaneLiveness(engine: Engine, at?: Date) {
+export async function recordPlaneLiveness(engine: Engine, at?: Date, options: { startup?: boolean } = {}) {
   let db: PoolClient | null = null;
   try {
     db = await engine.store.leasePool.connect();
@@ -225,6 +274,10 @@ export async function recordPlaneLiveness(engine: Engine, at?: Date) {
     await db.query('INSERT INTO plane_liveness(id,tick_at) VALUES(true,$1) ON CONFLICT (id) DO NOTHING', [at]);
     const previous = (await db.query('SELECT tick_at FROM plane_liveness WHERE id = true FOR UPDATE')).rows[0].tick_at as Date;
     let served: string | null | undefined;
+    let firstGap: PlaneStall | null | undefined;
+    if (options.startup && engine.restartGap === undefined) {
+      firstGap = at.getTime() > previous.getTime() ? { from: previous.toISOString(), to: at.toISOString() } : null;
+    }
     if (at.getTime() > previous.getTime()) {
       if (at.getTime() - previous.getTime() > planeStallMs)
         await record(db, null, 'graphyard', 'plane.stall', { details: { from: previous.toISOString(), to: at.toISOString() } });
@@ -247,6 +300,7 @@ export async function recordPlaneLiveness(engine: Engine, at?: Date) {
     await db.query('COMMIT');
     // The field moves once the row is on the ledger: a failed transaction left it unset, and the
     // next tick's commit comparison retries the whole check without recording anything twice.
+    if (firstGap !== undefined) engine.restartGap = firstGap;
     if (served !== undefined) engine.servedCommit = served;
   } catch {
     await db?.query('ROLLBACK').catch(() => {}); // the next beat records it
@@ -261,7 +315,7 @@ export async function recordPlaneLiveness(engine: Engine, at?: Date) {
  * outage queues no pile of beats to land together when the pool answers again.
  */
 export async function startPlaneBeat(engine: Engine, intervalMs = planeStallMs / 6): Promise<() => void> {
-  await recordPlaneLiveness(engine);
+  await recordPlaneLiveness(engine, undefined, { startup: true });
   let inFlight = false;
   const timer = setInterval(() => {
     if (inFlight) return;
