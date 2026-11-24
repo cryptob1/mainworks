@@ -27,6 +27,8 @@ import { DELIVERY_EVENT_PREDICATE } from './tables/production.js';
  * kinds were 8 GB of a 9 GB ledger in production. The `snapshotEvery` and size rules now apply to
  * the other kinds alone, so a routine delta can sit any number of rows after its base.
  *
+ * A delta row also carries `stage`, the item's stage, so reading stages never resolves documents (GY-3766).
+ *
  * Rows written before this generalisation carry a clock-only delta (`observation`, `lease`,
  * no `ops`); both readers still resolve them.
  */
@@ -170,11 +172,13 @@ BEGIN
   RETURN found;
 END $fn$;`;
 
+/** An event's stage in SQL: stored on a delta row since GY-3766, else from its document, resolving only older delta rows. */
+export const eventStageSql = (alias = 'events') => `COALESCE(${alias}.payload->>'stage', ${alias}.payload->'work'->>'stage', ${eventWorkSql(alias)}->>'stage')`;
 /** An event's full document in SQL, for a row of `events` under `alias`. */
 export const eventWorkSql = (alias = 'events') => `graphyard_event_work(${alias}.work_id, ${alias}.payload)`;
 /** An event's payload with a delta replaced by the document it stands for: the shape every full row has. */
 export const resolvedPayloadSql = (alias = 'events') =>
-  `CASE WHEN ${alias}.payload ? 'delta' THEN (${alias}.payload - 'delta') || jsonb_build_object('work', ${eventWorkSql(alias)}) ELSE ${alias}.payload END`;
+  `CASE WHEN ${alias}.payload ? 'delta' THEN (${alias}.payload - 'delta' - 'stage') || jsonb_build_object('work', ${eventWorkSql(alias)}) ELSE ${alias}.payload END`;
 
 /** The one ledger read a save makes: the item's last full snapshot and how many rows followed it. */
 const snapshotBaseSql = `SELECT b.seq, b.payload->'work' AS work, (SELECT count(*)::int FROM events n WHERE n.work_id=$1 AND n.seq>b.seq) AS since
@@ -193,7 +197,8 @@ export async function appendSave(db: pg.PoolClient, work: Work, actor: string, k
   const document: Work | undefined = base?.work && JSON.parse(text);
   if (base?.work && document && (routine || base.since < snapshotEvery) && base.work.stage === document.stage && equal(base.work.delivery ?? null, document.delivery ?? null)
     && !(kind === 'github.observed' && document.delivery?.mergedAt && !(await db.query(`SELECT 1 FROM events WHERE work_id=$1 AND ${DELIVERY_EVENT_PREDICATE} LIMIT 1`, [work.id])).rows.length)) {
-    const delta = JSON.stringify({ delta: workDelta(Number(base.seq), base.work, document), details });
+    // The stage rides beside the delta so a stage read never rebuilds the document (GY-3766).
+    const delta = JSON.stringify({ delta: workDelta(Number(base.seq), base.work, document), stage: document.stage, details });
     if (routine || delta.length <= full.length * deltaSizeFraction) row = delta;
   }
   await db.query('INSERT INTO events(work_id,actor,kind,payload) VALUES($1,$2,$3,$4)', [work.id, actor, kind, row]);
