@@ -8,7 +8,7 @@ import { releaseNotesPath, releaseNote, appendReleaseNote } from '../release-not
 import { deployRecordPath, readDeployRecord } from '../deploy-watch.js';
 import { notCovered, servedPreviewCases } from '../merge-writer/served-previews.js';
 import { onboardingCase } from '../onboarding-time.js';
-import { baseStillFails, relandItemFor, revertMergeCommit, serveLandings, serveRangeCommits, trialAndPushRevert } from '../merge-writer/serve-revert.js';
+import { baseStillFails, relandItemFor, revertMergeCommit, serveLandings, serveRangeCommits, trialAndPushRevert, type ServeRevertPorts } from '../merge-writer/serve-revert.js';
 import { gateTrialKey, trialStartOwner, trialStartWaiting } from '../merge-writer/trial-load.js';
 import { heavyTrial, trialShareAllowance, type MergeWriterReads } from './cycle-merge-writer.js';
 import { criterionProofs, e2eProofsOf, openFlakyItem } from '../merge-writer/executor.js';
@@ -206,7 +206,7 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
       }
       return current;
     },
-    revert: async (landing, gated, check, prior = []) => {
+    revert: async (landing, gated, check, prior = [], onStep) => {
       // Merges may have landed while the gate ran: the revert goes onto main as it stands now.
       const tip = (await reads.fetch()).toLowerCase();
       let current = tip;
@@ -217,7 +217,8 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
         current = revert.revertSha;
       }
       const files = lines(await git(['diff', '--name-only', tip, current]));
-      const pushed = await trialAndPushRevert(reads, { revertSha: current, files, baseTip: tip, culpritKey: landing.item.key, mergeSha: landing.sha });
+      const trial: ServeRevertPorts['trial'] = (sha, changed, item, options) => reads.trial(sha, changed, item, undefined, options?.onStep, undefined, undefined, undefined, options?.signal);
+      const pushed = await trialAndPushRevert({ trial, push: reads.push }, { revertSha: current, files, baseTip: tip, culpritKey: landing.item.key, mergeSha: landing.sha, onStep, startMs: reads.revertStartMs });
       if ('held' in pushed) return { held: pushed.held };
       if ('retry' in pushed) return { retry: pushed.retry, ...(pushed.retry === baseStillFails ? { revertSha: current } : {}) };
       const failingCase = check.startsWith('e2e:') ? check.slice(4) : null;
