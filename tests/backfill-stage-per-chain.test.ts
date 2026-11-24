@@ -94,7 +94,7 @@ test('integration:backfill-stage-per-chain — on 50 items of 800-row chains on 
     const batch = batches.at(-1)!, now = await lacking();
     assert.ok(batch.ms < TIMEOUT_MS, `a ${batch.limit}-row batch took ${Math.round(batch.ms)} ms`);
     assert.equal(batch.remaining, now, 'each batch reports the rows still lacking the stage');
-    if (batch.filled) assert.match(lines.at(-1)!, new RegExp(`stored ${batch.filled} rows .*, ${now.toLocaleString('en-US')} left`));
+    if (batch.filled) assert.match(lines.at(-1)!, new RegExp(`stored ${batch.filled} rows.*, ${now.toLocaleString('en-US')} left`));
     if (batches.length === 1 || !now) shown.push((await masterStatus()).stageBackfill?.remaining);
     left = now;
   }

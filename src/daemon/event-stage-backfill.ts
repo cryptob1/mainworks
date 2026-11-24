@@ -17,6 +17,12 @@ export function eventStageBackfill(post: (limit: number) => Promise<{ filled: nu
     try { ({ filled: batch, remaining } = await post(limit)); } catch (error) { limit = Math.max(1, Math.floor(limit / 4)); throw error; }
     const ms = Math.max(1, now() - started);
     filled += batch;
+    if (batch && remaining === 0) {
+      // GY-3772: the batch that leaves none ends the backfill, so no empty batch follows it.
+      done = true;
+      log(`[mainworks-master] the event stage backfill is done: it stored ${batch} rows, 0 left; ${filled} older delta rows now store their stage`);
+      return;
+    }
     if (batch) {
       log(`[mainworks-master] the event stage backfill stored ${batch} rows in ${(ms / 1000).toFixed(1)} s (${filled} so far, ${(remaining ?? 0).toLocaleString('en-US')} left)`);
       limit = Math.max(1, Math.min(maxBatch, Math.round(limit * targetMs / ms)));
