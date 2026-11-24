@@ -24,14 +24,16 @@ test('integration:batch-gate-own-time — 40 minutes waiting for a slot and 30 o
   const clock = { now: Date.parse('2026-11-17T08:00:00Z') };
   let waiting = false;
   const kept: number[] = [];
+  let markSampled!: () => void;
+  const sampled = new Promise<void>(resolve => { markSampled = resolve; });
   const ports = gatePorts(async () => {
     waiting = true; clock.now += 40 * minute;
-    await new Promise(resolve => setTimeout(resolve, 1300)); // the gate samples its waits while the run goes on
+    await sampled; // the gate samples its waits while the run goes on
     waiting = false; clock.now += 30 * minute;
     return [];
   }, clock, () => waiting);
   const record: GateRecord = bootstrapGate('owner/project', verified);
-  ports.checkpoint = async () => { if (record.inFlight?.waitedMs) kept.push(record.inFlight.waitedMs); };
+  ports.checkpoint = async () => { if (record.inFlight?.waitedMs) { kept.push(record.inFlight.waitedMs); markSampled(); } };
   const outcome = await runGate(ports, record);
   assert.equal(outcome.outcome, 'verified', 'the wait is not the gate\'s own time');
   assert.ok(kept.at(-1)! >= 40 * minute, 'the waited time rides the record, so a restart keeps it');
@@ -65,8 +67,8 @@ test('integration:batch-gate-own-time — a gate start waiting for a slot is vis
   await writeFile(join(bin, 'docker'), `#!/bin/sh
 echo "$*" >> ${JSON.stringify(log)}
 case "$3" in
-  start) for name; do :; done; echo $$ > ${JSON.stringify(log)}."$name"; exec sleep 60 ;;
-  rm) for name; do :; done; kill "$(cat ${JSON.stringify(log)}."$name")" 2>/dev/null; exit 0 ;;
+  start) for name; do :; done; echo $$ > ${JSON.stringify(log)}."$name"; [ -e ${JSON.stringify(log)}."$name".rm ] && exit 0; exec sleep 60 ;;
+  rm) for name; do :; done; : > ${JSON.stringify(log)}."$name".rm; kill "$(cat ${JSON.stringify(log)}."$name" 2>/dev/null)" 2>/dev/null; exit 0 ;;
 esac
 exit 0
 `);
@@ -100,6 +102,7 @@ exit 0
     await end(merge.child);
     await until(() => gate.said().includes('starting'), 'the gate starts once the slot frees');
     await until(() => !trialStartWaiting('gate', slots), 'its wait ends with the start');
+    await until(async () => (await creates()).length === 2, 'the gate creates its container');
     const gateCreate = (await creates())[1]!;
     assert.match(gateCreate, new RegExp(`--cpu-shares=${gateCpuShares}`), 'the gate container runs under the higher CPU weight');
     assert.ok(gateCpuShares > 1024, 'higher than the default weight merge trials and worker verification run under');
