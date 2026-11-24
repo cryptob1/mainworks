@@ -1,25 +1,26 @@
+import { readFile } from 'node:fs/promises';
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
-import { databaseUrl } from './helpers/postgres.js';
+import { databaseUrl, planAsRows } from './helpers/postgres.js';
+import { explainAnalyzeBuffers } from './helpers/query-plan.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
-import { parseEventHistoryQuery, readEventHistory } from '../src/events-history.js';
+import { eventHistorySql, parseEventHistoryQuery, readEventHistory, routineSummarySql } from '../src/events-history.js';
 
 // GY-3761: the history page resolved every candidate row's payload (graphyard_event_work) before
 // it applied its limit, so on a real ledger it ran for minutes and loaded the database while
 // failing. It now selects the page's seq values first and resolves payloads for those rows only.
 const adminToken = `operator-${'a'.repeat(32)}`;
-const ITEMS = 2000, EVENTS = 2_000_000, KEPT = 5000, OTHERS = 20_000, ITEM_ROUTINE = 50_000;
+const ITEMS = 2000, EVENTS = 100_000, KEPT = 1200, OTHERS = 20_000, ITEM_ROUTINE = 1600, SCAN = 1000;
 let store: Store, counted: pg.Pool, http: ReturnType<typeof server>, url: string, id: string;
 
 const get = async (path: string) => {
-  const started = performance.now();
   const response = await fetch(`${url}/api/${path}`, { headers: { Authorization: `Bearer ${adminToken}` }, signal: AbortSignal.timeout(120_000) });
   const body = await response.json();
-  return { status: response.status, body, ms: performance.now() - started };
+  return { status: response.status, body };
 };
 
 before(async () => {
@@ -41,7 +42,7 @@ before(async () => {
   const base = (await store.pool.query(`SELECT seq FROM events WHERE work_id=$1 AND payload ? 'work' ORDER BY seq DESC LIMIT 1`, [id])).rows[0].seq;
   const delta = (d: string) => `jsonb_build_object('details', jsonb_build_object('step', ${d}), 'delta', jsonb_build_object('base', ${base}, 'revision', ${d}, 'updatedAt', now(), 'ops', jsonb_build_array(jsonb_build_array(jsonb_build_array('title'), 'step ' || ${d}))))`;
   const others = `(SELECT array_agg(id) AS ids FROM work_items WHERE id <> '${id}') i`;
-  // Every row worth reading is a delta the read must resolve; then millions of routine rows.
+  // Every row worth reading is a delta the read must resolve; then the routine rows.
   await store.pool.query(`INSERT INTO events(work_id, actor, kind, payload) SELECT $1, 'fixture', (ARRAY['reconciled','session','action.claimed'])[1 + d % 3], ${delta('d')}
     FROM generate_series(1, ${KEPT}) d`, [id]);
   await store.pool.query(`INSERT INTO events(work_id, actor, kind, payload) SELECT ids[1 + d % array_length(ids, 1)], 'fixture', (ARRAY['reconciled','session','action.claimed'])[1 + d % 3], ${delta('d')}
@@ -51,6 +52,7 @@ before(async () => {
   await store.pool.query(`INSERT INTO events(work_id, actor, kind, payload) SELECT ids[1 + d % array_length(ids, 1)], 'fixture', (ARRAY['heartbeat','github.observed'])[1 + d % 2], '{"details":{"n":1}}'::jsonb
     FROM ${others}, generate_series(1, ${EVENTS - ITEM_ROUTINE - OTHERS - KEPT}) d`);
   await store.pool.query('ANALYZE events');
+  await planAsRows(store.pool, 'events', 2_000_000);
 });
 
 after(async () => {
@@ -71,7 +73,7 @@ async function calls(params: Record<string, string>) {
   return { calls: await total() - before, page, limit: query.limit };
 }
 
-test('integration:event-history-pages-before-resolving — a history page resolves payloads only for the rows it returns, answers in under a second on two million events, and a read past 5 s names the filter to narrow', { timeout: 900_000 }, async () => {
+test('integration:event-history-pages-before-resolving — a history page resolves payloads only for the rows it returns, reads a bounded number of rows planned as on two million events, and a read past 5 s names the filter to narrow', { timeout: 900_000 }, async () => {
   assert.ok(Number((await store.pool.query('SELECT count(*) FROM events')).rows[0].count) >= EVENTS);
 
   // At most limit+1 resolutions per read, whatever the filters make the planner do.
@@ -84,14 +86,22 @@ test('integration:event-history-pages-before-resolving — a history page resolv
     assert.ok(read.page.events.every(row => !('work' in params) || row.payload?.work), JSON.stringify(params));
   }
 
-  // The default page and one item's page each answer in under a second.
-  await get('events'); await get(`events?work=${id}`);
+  // The default page and one item's page read at most the kept rows and the item's own, never the routine rows of the rest of the ledger.
+  for (const params of <Record<string, string>[]>[{}, { work: id }]) {
+    const query = parseEventHistoryQuery(new URLSearchParams(params));
+    const page = eventHistorySql(query), pagePlan = await explainAnalyzeBuffers(store.pool, page.text, page.values);
+    const kept = 'work' in params ? KEPT + OTHERS + ITEM_ROUTINE : query.limit + 1;
+    assert.ok(!pagePlan.seqScans.includes('events'), `${JSON.stringify(params)}: the page read events whole: ${pagePlan.summary}`);
+    assert.ok(pagePlan.rowsScanned('events') <= kept + 2 * (query.limit + 1), `${JSON.stringify(params)}: the page scanned ${pagePlan.rowsScanned('events')} event rows: ${pagePlan.summary}`);
+    assert.ok(pagePlan.buffers <= 10_000, `${JSON.stringify(params)}: the page touched ${pagePlan.buffers} buffers: ${pagePlan.summary}`);
+    const summary = routineSummarySql(query, SCAN)!, summaryPlan = await explainAnalyzeBuffers(store.pool, summary.text, summary.values);
+    assert.ok(!summaryPlan.seqScans.includes('events'), `${JSON.stringify(params)}: the routine summary read events whole: ${summaryPlan.summary}`);
+    assert.ok(summaryPlan.rowsScanned('events') <= SCAN + KEPT + ITEM_ROUTINE, `${JSON.stringify(params)}: the routine summary scanned ${summaryPlan.rowsScanned('events')} event rows: ${summaryPlan.summary}`);
+  }
   const all = await get('events?view=history');
   assert.equal(all.status, 200, JSON.stringify(all.body).slice(0, 300));
-  assert.ok(all.ms < 1000, `the default events page took ${Math.round(all.ms)} ms`);
   const item = await get(`events?work=${id}&view=history`);
   assert.equal(item.status, 200, JSON.stringify(item.body).slice(0, 300));
-  assert.ok(item.ms < 1000, `one item's events page took ${Math.round(item.ms)} ms`);
   assert.equal(item.body.events[0].payload.details.step, KEPT);
   assert.equal(item.body.events[0].payload.work.title, `step ${KEPT}`);
 
@@ -100,8 +110,13 @@ test('integration:event-history-pages-before-resolving — a history page resolv
   try {
     await holder.query('BEGIN'); await holder.query('LOCK TABLE events IN ACCESS EXCLUSIVE MODE');
     const slow = await get('events');
-    assert.ok(slow.ms < 9000, `the timed-out read took ${Math.round(slow.ms)} ms`);
     assert.equal(slow.status, 422, JSON.stringify(slow.body));
     assert.match(JSON.stringify(slow.body), /5 s.*work/);
   } finally { await holder.query('ROLLBACK'); holder.release(); }
+});
+
+test('unit:event-history-pages-before-resolving-pinned — the history page test proves plans and rows read, never elapsed milliseconds, so a busy machine cannot fail it', async () => {
+  const source = await readFile(new URL(import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /\bperformance\.now\s*\(|\bms\s*</);
+  assert.match(source, /\bexplainAnalyzeBuffers\(store\.pool, page\.text/);
 });
