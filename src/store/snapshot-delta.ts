@@ -180,6 +180,26 @@ export const eventWorkSql = (alias = 'events') => `graphyard_event_work(${alias}
 export const resolvedPayloadSql = (alias = 'events') =>
   `CASE WHEN ${alias}.payload ? 'delta' THEN (${alias}.payload - 'delta' - 'stage') || jsonb_build_object('work', ${eventWorkSql(alias)}) ELSE ${alias}.payload END`;
 
+/** GY-3768: how many older delta rows one loop cycle gives their stage. */
+export const stageBackfillBatch = 1000;
+/** Stores the stage on the oldest batch of delta rows that lack it (by the events_stageless_delta index); `filled` is 0 once none is left. */
+export async function backfillEventStage(pool: pg.Pool) {
+  const db = await pool.connect();
+  try {
+    await db.query('BEGIN');
+    // The events trigger lets this one update through: a delta row lacking its stage gains it (compaction.ts).
+    await db.query("SET LOCAL graphyard.stage_backfill = 'on'");
+    const { rows } = await db.query(`UPDATE events e SET payload = e.payload || jsonb_build_object('stage', ${eventWorkSql('e')}->>'stage')
+      FROM (SELECT seq FROM events WHERE payload ? 'delta' AND NOT payload ? 'stage' ORDER BY seq LIMIT ${stageBackfillBatch}) b
+      WHERE e.seq = b.seq RETURNING e.seq`);
+    await db.query('COMMIT');
+    return { filled: rows.length };
+  } catch (error) {
+    await db.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally { db.release(); }
+}
+
 /** The one ledger read a save makes: the item's last full snapshot and how many rows followed it. */
 const snapshotBaseSql = `SELECT b.seq, b.payload->'work' AS work, (SELECT count(*)::int FROM events n WHERE n.work_id=$1 AND n.seq>b.seq) AS since
     FROM events b WHERE b.work_id=$1 AND b.payload ? 'work' ORDER BY b.seq DESC LIMIT 1`;

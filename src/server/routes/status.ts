@@ -12,6 +12,7 @@ import { releaseInfo, schemaVersion } from '../../release.js';
 import { openHumanOnly } from '../../model/human-request.js';
 import { humanOnlySubjects } from '../waits.js';
 import { defineRoutes } from '../routes.js';
+import { backfillEventStage } from '../../store/snapshot-delta.js';
 import { coordinationSnapshot, coordinationViewHeader } from '../work-view.js';
 import { executorHost } from './agent-registry.js';
 import { projectDelivery } from '../../model-boundary/project-applications.js';
@@ -266,6 +267,14 @@ export const statusRoutes = defineRoutes('status', [
       const { answer, ageMs } = await boundedHistoryRead(`${url.pathname}${url.search}`, read);
       if (ageMs !== null) res.setHeader('Age', String(Math.round(ageMs / 1000)));
       return answer;
+    },
+  },
+  {
+    // GY-3768: the loop's backfill of the stage on delta rows written before GY-3766, one batch a call, outside any coordination transaction.
+    method: 'POST', path: '/api/events/backfill-stage',
+    async handle({ actor, services }) {
+      demand(actor.role === 'coordinator' || actor.role === 'admin', 'The stage backfill is run by the loop (a coordinator identity)', 403);
+      return backfillEventStage(services.engine.store.pool);
     },
   },
 ]);
