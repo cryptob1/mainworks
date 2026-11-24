@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { connectionResetAttention, readRemoteShardRuns, readShardHosts, remoteShardSummary, shardSshSession } from '../src/merge-writer/remote-shards.js';
 import { runTrial } from '../src/merge-writer/trial.js';
+import { writeMachines } from '../src/master/verification-slots.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { dockerCreates, shardHosts, shardRepository, sshdHost, type ShardHostsFixture } from './helpers/shard-hosts.js';
 
@@ -58,10 +59,19 @@ const run: ChildRun = async (command, args, options) => {
   return defaultChildRun(command, args, { ...options, env });
 };
 
+/** A trial under its own verification slots directory, where the loop read the fixture host with 64 free cores. */
+const ownSlots = async <T>(body: () => Promise<T>): Promise<T> => {
+  // GY-3755: the machine running this test may set its own slots directory, whose loop readings omit the fixture host and so give it no room.
+  const directory = await temporaryDirectory('ssh-reuse-per-host-slots'), previous = process.env.MAINWORKS_VERIFICATION_SLOTS_DIR;
+  writeMachines(directory, [{ name: 'local', local: true, away: false, cores: 2, busy: 0, celsius: null }, { name: target, away: false, cores: 64, busy: 0, celsius: null }]);
+  process.env.MAINWORKS_VERIFICATION_SLOTS_DIR = directory;
+  try { return await body(); } finally { if (previous === undefined) delete process.env.MAINWORKS_VERIFICATION_SLOTS_DIR; else process.env.MAINWORKS_VERIFICATION_SLOTS_DIR = previous; }
+};
+
 /** One trial of 30 one-file shards; this machine reads too hot to take any while the host runs, so all 30 are placed on the host at once. */
-const trial = async () => runTrial({ root: repository.root, base: await temporaryDirectory('ssh-reuse-per-host-base'), mergeSha: repository.sha, changedFiles: files, timeoutMs: 300_000, cores: 2, run, retries: 0, groupSize: 1,
+const trial = async () => ownSlots(async () => runTrial({ root: repository.root, base: await temporaryDirectory('ssh-reuse-per-host-base'), mergeSha: repository.sha, changedFiles: files, timeoutMs: 300_000, cores: 2, run, retries: 0, groupSize: 1,
   remote: { hosts: [target], read: async (named, transport) => (await readShardHosts(named, run, 2, transport)).map((reading, index) => index === 0
-    ? { ...reading, celsius: 999 } : { ...reading, cores: reading.away ? 0 : 64, busy: 0, steal: 0, celsius: null }) } });
+    ? { ...reading, celsius: 999 } : { ...reading, cores: reading.away ? 0 : 64, busy: 0, steal: 0, celsius: null }) } }));
 
 test(`${proof} — 30 shards placed on one host open at most 3 new SSH connections to it, run through the shim, and the host stays ready under a server that resets above 5`, { timeout: 600_000 }, async () => {
   Object.assign(counts, { opened: 0, reset: 0 }); limit = 5;
@@ -101,4 +111,19 @@ test(`${proof} — a host that resets every connection reads away, and master st
   assert.match(attention[0]!.text, new RegExp(`^${target.replace(/\./g, '\\.')} takes no trial shards: it reset the SSH connection`));
   assert.doesNotMatch(`${attention[0]!.text} ${attention[0]!.next}`, /kex_exchange_identification|by peer|ssh:/);
   assert.ok(attention[0]!.next.length > 0);
+});
+
+test('unit:ssh-reuse-per-host-pinned — the 30 shards still run on the host when the machine running the test sets a slots directory whose readings omit it', { timeout: 600_000 }, async () => {
+  const loop = await temporaryDirectory('ssh-reuse-per-host-loop-slots'), names = ['MAINWORKS_VERIFICATION_SLOTS_DIR', 'GRAPHYARD_VERIFICATION_SLOTS_DIR'] as const;
+  const previous = names.map(name => process.env[name]);
+  writeMachines(loop, [{ name: 'local', local: true, away: false, cores: 2, busy: 0, celsius: null }]);
+  for (const name of names) process.env[name] = loop;
+  Object.assign(counts, { opened: 0, reset: 0 }); limit = 5;
+  const before = (await dockerCreates(hosts.state('compute'))).length;
+  try {
+    const result = await trial();
+    assert.equal(result.build, 'pass', result.logTail);
+    assert.deepEqual({ passed: result.tests.passed, failed: result.tests.failed }, { passed: files.length, failed: [] }, result.logTail);
+  } finally { names.forEach((name, index) => { if (previous[index] === undefined) delete process.env[name]; else process.env[name] = previous[index]; }); }
+  assert.equal((await dockerCreates(hosts.state('compute'))).length - before, files.length, 'every shard ran on the host');
 });
