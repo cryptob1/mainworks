@@ -33,7 +33,7 @@ export const usageRoutes = defineRoutes('usage', [
       }
       // A finished session that ran a model other than its account's own marks the account broken (GY-3596).
       const ran = rows.filter(row => row.account && row.ran);
-      if (ran.length) await services.engine.store.transaction((db, now) => recordSessionModels(db, actor, ran.map(row => ({ account: row.account!, ran: row.ran! })), now));
+      if (ran.length) await services.engine.store.transaction((db, now) => recordSessionModels(db, actor, ran.map(row => ({ account: row.account!, ran: row.ran! })), now), { coordinationLock: false });
       return { recorded: rows.length };
     },
   },

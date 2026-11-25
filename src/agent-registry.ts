@@ -4,6 +4,7 @@ import type pg from 'pg';
 import { z } from 'zod';
 import { demand, type Principal } from './model.js';
 import type { Store } from './store.js';
+import { advisoryLocks } from './store/locks.js';
 import { unownedFamilySql } from './store/tables/work.js';
 import { fleetRoles, RegistryError, chooseSession, emptyRegistry, fleetView, foldObservations, liveSessions, endRegistrySession, runOutcomes, refusalHistoryLimit, settleSessions, type AgentRegistry as RegistryDocument, type FleetSession, type RegistryMutation } from './model/registry.js';
 import { applyRegistryMutation, registryMutationSchemas, observationRequestSchema, selectionRequestSchema } from './model-boundary/registry.js';
@@ -20,10 +21,14 @@ import { recordSessionModel, requestLimitNoticeCheck } from './model/account-quo
  * state and its complete, attributable history, so the registry is carried by every logical
  * backup and needs no table of its own. The document is small (tens of kilobytes at most) and
  * events are appended only when something an eligibility decision reads has changed, never per
- * poll. Every write happens inside the store's coordination transaction, so a selection is
- * serialized against every other selection and mutation, across replicas and executor hosts.
+ * poll. Every write serializes on the agent registry's own advisory lock (GY-3807), never holding
+ * the coordination lock, so a selection, observation or mutation serializes against every other
+ * registry write across replicas and executor hosts without stalling coordinated work writes.
  */
 const registryEventPrefix = 'agent-registry.';
+/** Serialize writes to the agent registry without holding the coordination lock (GY-3807). */
+export const lockAgentRegistry = (db: Pick<pg.PoolClient, 'query'>) =>
+  db.query('SELECT pg_advisory_xact_lock($1)', [advisoryLocks.agentRegistry]);
 const configurators = ['admin', 'coordinator'] as const;
 const readers = ['admin', 'coordinator', 'reader', 'slice-lead', 'caretaker'] as const;
 
@@ -80,6 +85,7 @@ const appendRegistry = async (db: Pick<pg.PoolClient, 'query'>, actor: Principal
 /** Persist a session's request for a live account check in the caller's transaction.
  * Provider I/O runs later on the host, outside the coordination transaction. */
 export async function recordLimitNoticeCheck(db: Pick<pg.PoolClient, 'query'>, actor: Principal, notice: Parameters<typeof requestLimitNoticeCheck>[1], now: Date) {
+  await lockAgentRegistry(db);
   const registry = await readRegistry(db), at = now.toISOString();
   const account = requestLimitNoticeCheck(registry, notice, { actor: actor.id, at });
   if (!account) return null;
@@ -90,6 +96,7 @@ export async function recordLimitNoticeCheck(db: Pick<pg.PoolClient, 'query'>, a
 
 /** Persist the accounts finished sessions caught on a model other than their own (GY-3596), in the caller's transaction. */
 export async function recordSessionModels(db: Pick<pg.PoolClient, 'query'>, actor: Principal, reports: { account: string; ran: string }[], now: Date) {
+  await lockAgentRegistry(db);
   const registry = await readRegistry(db), at = now.toISOString();
   const marked = reports.filter(report => recordSessionModel(registry, report.account, report.ran, { actor: actor.id, at }));
   if (!marked.length) return;
@@ -100,6 +107,9 @@ export async function recordSessionModels(db: Pick<pg.PoolClient, 'query'>, acto
 export class AgentRegistry {
   constructor(private store: Store) {}
 
+  private transaction<T>(fn: (db: pg.PoolClient, now: Date) => Promise<T>) {
+    return this.store.transaction(async (db, now) => { await lockAgentRegistry(db); return fn(db, now); }, { coordinationLock: false });
+  }
   private append(db: pg.PoolClient, actor: Principal, kind: string, registry: RegistryDocument, change: unknown) { return appendRegistry(db, actor, kind, registry, change); }
   /** The work items live sessions were launched for: all that session liveness reads. */
   private async sessionWork(db: Pick<pg.PoolClient, 'query'>, registry: RegistryDocument) {
@@ -134,7 +144,7 @@ export class AgentRegistry {
     const registry = await readRegistry(this.store.pool);
     const at = new Date((await this.store.pool.query('SELECT clock_timestamp() AS now')).rows[0].now).toISOString();
     if (!settleSessions(structuredClone(registry), await this.sessionWork(this.store.pool, registry), at).length) return { registry, at };
-    return this.store.transaction(async (db, now) => {
+    return this.transaction(async (db, now) => {
       const current = await readRegistry(db), settledAt = now.toISOString();
       const closed = settleSessions(current, await this.sessionWork(db, current), settledAt);
       if (closed.length) {
@@ -165,7 +175,7 @@ export class AgentRegistry {
     demand(key && key.length <= 200, 'An Idempotency-Key is required', 400);
     demand(kind in registryMutationSchemas, `Unknown registry change ${kind}`, 404);
     const receiptInput = { kind, input };
-    return this.store.transaction(async (db, now) => once(db, actor, key, receiptInput, async () => {
+    return this.transaction(async (db, now) => once(db, actor, key, receiptInput, async () => {
       const current = await readRegistry(db);
       let applied: ReturnType<typeof applyRegistryMutation>;
       try { applied = applyRegistryMutation(current, kind, input, { actor: actor.id, at: now.toISOString() }); }
@@ -189,7 +199,7 @@ export class AgentRegistry {
     demand(key && key.length <= 200, 'An Idempotency-Key is required', 400);
     const request = selectionRequestSchema.parse(input);
     const receiptInput = { kind: 'select', request };
-    return this.store.transaction(async (db, now) => once(db, actor, key, receiptInput, async () => {
+    return this.transaction(async (db, now) => once(db, actor, key, receiptInput, async () => {
       const registry = await readRegistry(db), at = now.toISOString();
       let changed = settleSessions(registry, await this.sessionWork(db, registry), at).length > 0;
       // Its quotas and the smoke tests it ran (GY-446), for the logins on its own host only.
@@ -232,7 +242,7 @@ export class AgentRegistry {
     demand(key && key.length <= 200, 'An Idempotency-Key is required', 400);
     const request = observationRequestSchema.parse(input);
     const receiptInput = { kind: 'observe', request };
-    return this.store.transaction(async (db, now) => once(db, actor, key, receiptInput, async () => {
+    return this.transaction(async (db, now) => once(db, actor, key, receiptInput, async () => {
       const registry = await readRegistry(db), at = now.toISOString();
       const changed = foldObservations(registry, request, { actor: actor.id, at });
       if (changed) { registry.revision++; registry.updatedAt = at; await this.append(db, actor, 'observed', registry, { host: request.host }); }
@@ -266,7 +276,7 @@ export class AgentRegistry {
     // A headless run's end says whether it produced a result (GY-446): runs of one role that end
     // without one, twice in a row, hold the account from that role.
     const data = z.object({ reason: z.string().trim().min(1).max(500), outcome: z.enum(runOutcomes).optional() }).strict().parse(input);
-    return this.store.transaction(async (db, now) => {
+    return this.transaction(async (db, now) => {
       const registry = await readRegistry(db), session = registry.sessions.find(entry => entry.id === id);
       demand(session, 'Unknown session', 404);
       if (!endRegistrySession(registry, session, data.reason, data.outcome, now.toISOString())) return { session };
