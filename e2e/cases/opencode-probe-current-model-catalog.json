@@ -1,0 +1,9 @@
+{
+  "id": "opencode-probe-current-model-catalog",
+  "title": "An OpenCode account runs a model newer than OpenCode's own catalog",
+  "description": "Probe an OpenCode account on glm-5.4 with an OpenCode whose built-in catalog ends at glm-5.3, and with one at its Z.AI limit; every launch declares its model.",
+  "tags": ["capacity"],
+  "target": "any",
+  "required": true,
+  "steps": [{ "kind": "command", "name": "OpenCode model catalog probe", "run": "node --import tsx tests/helpers/run-tests.ts tests/opencode-probe-current-model-catalog.test.ts", "timeoutSeconds": 600 }]
+}

@@ -10,7 +10,7 @@ import { join, resolve } from 'node:path';
 import { defaultPiModel, piRunner, piSmoke, runEnvironment, type SmokeResult } from './pi.js';
 import { headlessConfinementWrapper, launcherCoordinatorRoot } from '../master/launch.js';
 import { bwrapOnPath, type CredentialMask } from '../master/confinement.js';
-import { acceptedFlags, accountHomeEnvironment, withModel, zaiLimitSentence } from '../master/runtimes.js';
+import { acceptedFlags, accountHomeEnvironment, openCodeConfig, withModel, zaiLimitSentence } from '../master/runtimes.js';
 import type { FleetLaunchAccount } from '../fleet.js';
 import { registryToolsArgs } from '../registry-tools.js';
 import { claimRunWatch, liveRun, runsDirectory, superviseRun, writeRunOwner, type Applied } from './registry.js';
@@ -80,11 +80,7 @@ export function registryHeadlessLaunch(account: FleetLaunchAccount) {
   // cursor-agent reads under confinement living at `$XDG_CONFIG_HOME/cursor/auth.json`.
   const environment: Record<string, string> = { ...contract.environment, ...(contract.homeVariable && account.home ? { [contract.homeVariable]: account.home } : {}), ...accountHomeEnvironment(account.kind, account.home) };
   // GY-3823: keep OpenCode's config model aligned with the account's registered model id, as accountLaunch does.
-  if (account.kind === 'opencode' && modelId) {
-    let existing: Record<string, unknown> = {};
-    try { if (environment.OPENCODE_CONFIG_CONTENT) existing = JSON.parse(environment.OPENCODE_CONFIG_CONTENT); } catch { /* ignore */ }
-    environment.OPENCODE_CONFIG_CONTENT = JSON.stringify({ ...existing, model: modelId });
-  }
+  if (account.kind === 'opencode' && modelId) environment.OPENCODE_CONFIG_CONTENT = openCodeConfig(environment.OPENCODE_CONFIG_CONTENT, modelId);
   return { command: contract.kind, model: modelId ?? defaultPiModel, args, environment };
 }
 /**
