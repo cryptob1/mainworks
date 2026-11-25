@@ -538,9 +538,9 @@ async function checkServiceImages(
   local: (command: string, args: string[]) => Promise<string>,
 ): Promise<string[]> {
   const blob = await local('git', ['-C', root, 'cat-file', 'blob', `${sha}:${file}`]).catch(() => '');
-  if (!blob) return [];
+  if (!blob || /\b(?:include|extends|label_file)\b|\\[xuU]/.test(blob)) return [];
   let config: { services?: Record<string, { image?: unknown; depends_on?: string[] | Record<string, unknown> }> } | null = null;
-  const dir = await mkdtemp(join(tmpdir(), 'mainworks-check-compose-'));
+  const dir = await mkdtemp(join(tmpdir(), 'check-compose-'));
   try {
     const tempFile = join(dir, basename(file) || 'compose.yml');
     await writeFile(tempFile, blob);
