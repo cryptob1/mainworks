@@ -303,8 +303,16 @@ export async function addHost(target: string, options: { file?: string; knownHos
   if (['root', hostUser].includes(await loginUser(target, run))) return recordHost(target, file, run, knownHosts);
   const host = targetHost(target), candidates = [`${hostUser}@${host}`, `${hostUser}@${host}:${computePort}`, target];
   const probes = await Promise.all(candidates.map(candidate => probeHost(candidate, run, knownHosts)));
-  const prepared = candidates.find((_, index) => { const probe = probes[index]!; return probe.ok && probe.verbs?.includes('update-shim:1'); });
-  if (prepared) return { ...(await recordHost(prepared, file, run, knownHosts, false)), target: prepared, prepared: true };
+  const current = candidates.find((_, index) => { const probe = probes[index]!; return probe.ok && probe.shim === hostShimDigest; });
+  if (current) return { ...(await recordHost(current, file, run, knownHosts, false)), target: current, prepared: true };
+  const updatable = candidates.find((_, index) => { const probe = probes[index]!; return 'shim' in probe && probe.shim !== hostShimDigest && probe.verbs?.includes('update-shim:1'); });
+  if (updatable) {
+    const updateError = await updateHostShim(updatable, run, knownHosts);
+    if (!updateError) {
+      const updated = await probeHost(updatable, run, knownHosts);
+      if (updated.ok && updated.shim === hostShimDigest) return { ...(await recordHost(updatable, file, run, knownHosts, false)), target: updatable, prepared: false };
+    }
+  }
   if (!(options.terminal ?? (process.stdin.isTTY && process.stdout.isTTY))) throw new Error(`Run this in a terminal: mainworks host add ${target}`);
   const output = await prepareOverSsh(target, hostPrepareScript(options.publicKey ?? await localPublicKey()), knownHosts);
   const port = /host add \S+?:(\d+)\s*$/m.exec(output)?.[1];

@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { userInfo } from 'node:os';
 import { fakeHosts, ownerLogin } from './helpers/fake-hosts.js';
 import { main } from '../src/cli/index.js';
-import { hostShimDigest } from '../src/host-shim.js';
+import { hostShimDigest, hostShimScript } from '../src/host-shim.js';
+import { probeHost, shareHost } from '../src/hosts.js';
 import { outdatedShimAttention } from '../src/merge-writer/remote-shards.js';
 import infra from '../src/guide/infra.js';
 
@@ -87,4 +88,62 @@ test(`${proof} — guide infra says how to add a machine in at most three senten
   assert.match(sentences[0]!, /mainworks host add YOU@HOST` in a terminal/);
   assert.match(sentences[1]!, /host share HOST KEY/);
   assert.match(sentences[2]!, /^Helper updates then need nobody\.$/);
+});
+
+test(`${proof} — AC-4: prepare keeps another install's helper; host add updates an older update-shim:1 helper to this release's digest`, { timeout: 120_000 }, async () => {
+  // (a) Prepare removes only this install's superseded helper and never another install's helper (direct or shared --home).
+  const keyOther = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHTV6f52ARa/vlYRkS8yKc4Chbk2xf06bI6Tny1m2lZq other-install';
+  const keyShared = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAB12cd34EF56gh78IJ90kl12MN34op56QR78st90UV1 shared-install';
+  const digestOther = 'a'.repeat(64);
+  const digestOld = 'b'.repeat(64);
+  const pair = await fakeHosts('host-add-ac4', [{ name: 'shared' }, { name: 'outdated', owner: true }]);
+  const oldPath = process.env.PATH, oldConfig = process.env.GRAPHYARD_CONFIG_HOME;
+  const ac4Config = join(pair.root, 'config');
+  Object.assign(process.env, { PATH: `${pair.bin}:${saved.PATH}`, GRAPHYARD_CONFIG_HOME: ac4Config });
+  try {
+    await pair.prepare('shared', { publicKey: keyOther, shim: { script: hostShimScript.replace(hostShimDigest, digestOther), digest: digestOther } });
+    await shareHost('gy-compute@shared', keyShared);
+    // This install re-prepares at another digest: both other-install's direct helper and the helper named by shared-install's --home line stay.
+    await pair.prepare('shared', { shim: { script: hostShimScript.replace(hostShimDigest, digestOld), digest: digestOld } });
+    assert.ok(existsSync(join(pair.host('shared'), 'usr-local-bin', `graphyard-host-shim-${digestOther}`)), "another install's direct helper is kept");
+    assert.ok(existsSync(join(pair.host('shared'), 'usr-local-bin', `graphyard-host-shim-${hostShimDigest}`)), "another install's shared --home helper is kept");
+    assert.ok(existsSync(join(pair.host('shared'), 'usr-local-bin', `graphyard-host-shim-${digestOld}`)), "this install's new helper is present");
+
+    // Now this install prepares back to hostShimDigest: its own superseded digestOld helper is removed, while digestOther stays.
+    await pair.prepare('shared');
+    assert.equal(existsSync(join(pair.host('shared'), 'usr-local-bin', `graphyard-host-shim-${digestOld}`)), false, "this install's superseded helper is removed");
+    assert.ok(existsSync(join(pair.host('shared'), 'usr-local-bin', `graphyard-host-shim-${digestOther}`)), "another install's helper is still kept");
+
+    // (b) A host whose probed shim has an older digest that lists update-shim:1 is NOT counted as already prepared:
+    // host add updates it through update-shim (without sudo) until its probed digest is hostShimDigest.
+    await pair.prepare('outdated', { shim: { script: hostShimScript.replace(hostShimDigest, digestOld), digest: digestOld } });
+    const beforeProbe = await probeHost('gy-compute@outdated');
+    assert.equal(beforeProbe.ok, true);
+    assert.equal(beforeProbe.ok && beforeProbe.shim, digestOld, 'starts on an older digest that still speaks update-shim:1');
+    assert.ok(beforeProbe.ok && beforeProbe.verbs?.includes('update-shim:1'));
+
+    const sudoBefore = (await readFile(join(pair.host('outdated'), 'log'), 'utf8').catch(() => '')).split('\n').filter(line => line.startsWith('sudo sh -c')).length;
+    terminal(false);
+    const updated = await output(['host', 'add', `${ownerLogin}@outdated`]);
+    assert.equal(updated.lines.length, 1, `one line: ${updated.lines.join(' | ')}`);
+    assert.match(updated.lines[0]!, /^Added gy-compute@outdated: \d+ cores, rootless Docker answers through the shim\./);
+    const afterProbe = await probeHost('gy-compute@outdated');
+    assert.equal(afterProbe.ok, true);
+    assert.equal(afterProbe.ok && afterProbe.shim, hostShimDigest, 'host add updated the older helper to this release digest via update-shim');
+    const sudoAfter = (await readFile(join(pair.host('outdated'), 'log'), 'utf8').catch(() => '')).split('\n').filter(line => line.startsWith('sudo sh -c')).length;
+    assert.equal(sudoAfter, sudoBefore, 'update-shim needed no sudo');
+
+    // Running host add again now that its digest matches hostShimDigest is a no-op.
+    const noop = await output(['host', 'add', `${ownerLogin}@outdated`]);
+    assert.deepEqual(noop.lines, ['gy-compute@outdated is already prepared and added: nothing to do.']);
+
+    // Even when already recorded, an older update-shim:1 helper is updated to hostShimDigest rather than treated as a no-op.
+    await pair.prepare('outdated', { shim: { script: hostShimScript.replace(hostShimDigest, digestOld), digest: digestOld } });
+    const reupdated = await output(['host', 'add', `${ownerLogin}@outdated`]);
+    assert.deepEqual(reupdated.lines, ["Updated gy-compute@outdated's helper to this release."]);
+    const finalProbe = await probeHost('gy-compute@outdated');
+    assert.equal(finalProbe.ok && finalProbe.shim, hostShimDigest);
+  } finally {
+    Object.assign(process.env, { PATH: oldPath, GRAPHYARD_CONFIG_HOME: oldConfig });
+  }
 });
