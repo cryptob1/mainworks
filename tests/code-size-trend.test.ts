@@ -8,7 +8,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { bootstrapGate, gateRecordPath, readGateRecord, writeGateRecord } from '../src/batch-gate.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import { batchGateStep } from '../src/daemon/cycle-batch-gate.js';
+import { batchGatePorts, batchGateStep } from '../src/daemon/cycle-batch-gate.js';
 import type { MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
@@ -79,10 +79,10 @@ test('integration:code-size-trend — master status and Home status line show so
     baselineDay: '2030-05-01',
   });
 
-  // Home's status line renders today's counts with the 7-day change.
+  // Home's status line renders today's counts with the 7-day change in plain wording.
   const now = Date.parse('2030-05-08T12:00:00Z');
   const line = statusLine({ codeSize: report.codeSize } as any, [], [], now) as any;
-  assert.equal(line.codeSize, '1,120 src (-80), 2,550 tests (+150) 7d');
+  assert.equal(line.codeSize, 'Code 1,120 lines (−80 this week) · Tests 2,550 lines (+150)');
   const html = renderToStaticMarkup(createElement(HomeStatus, {
     work: [],
     status: { codeSize: report.codeSize },
@@ -90,7 +90,10 @@ test('integration:code-size-trend — master status and Home status line show so
     setView: () => {},
     setSelected: () => {},
   }));
-  assert.match(html, /1,120 src \(-80\), 2,550 tests \(\+150\) 7d/);
+  assert.match(html, /Code 1,120 lines \(−80 this week\) · Tests 2,550 lines \(\+150\)/);
+
+  // Zero-count readings (repositories without src/ or tests/) are omitted from Home's status line.
+  assert.equal(statusLine({ codeSize: { source: 0, tests: 0, sourceChange: null, testsChange: null } }, [], [], now).codeSize, null);
 
   // When all readings are within 7 days, compare against the oldest reading kept.
   await writeGateRecord(file, {
@@ -203,4 +206,60 @@ test('e2e:code-size-trend — on a running test install master status shows code
     testsChange: 2,
     baselineDay: '2030-05-01',
   });
+});
+
+test('code-size-trend — repositories without src/ or tests/ record nothing and real git errors surface as a gate note', async () => {
+  const { root, config } = await makeInstall('code-size-other');
+
+  // Repository keeping code in lib/ (no src/ or tests/).
+  mkdirSync(join(root, 'lib'), { recursive: true });
+  writeFileSync(join(root, 'lib', 'main.go'), 'package main\nfunc main() {}\n');
+  git(root, 'add', '.');
+  git(root, 'commit', '-q', '-m', 'base');
+  const baseSha = git(root, 'rev-parse', 'HEAD');
+  await writeGateRecord(gateRecordPath(root), bootstrapGate(repository, baseSha));
+
+  writeFileSync(join(root, 'lib', 'main.go'), 'package main\nfunc main() { println("hi") }\n');
+  git(root, 'add', '.');
+  git(root, 'commit', '-q', '-m', 'next');
+  const tip = git(root, 'rev-parse', 'HEAD');
+
+  const clock = Date.parse('2030-05-01T10:00:00Z');
+  const state = emptyDaemonState(config);
+  const ports: MergeWriterReads = {
+    baseBranch: 'main',
+    now: () => clock,
+    fetch: async () => tip,
+    cores: 2,
+    parallel: 1,
+    git: async (args, extra) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env: { ...gitEnv, ...extra } }),
+    gate: { root, repository },
+    merge: async head => ({ mergeSha: head, files: [] }),
+    trial: async () => ({ build: 'pass', tests: { passed: 1, failed: [], files: 1 }, durationMs: 10, logTail: '', files: [], proofs: {} }),
+    push: async () => 'pushed',
+    holds: async () => false,
+    record: async () => {},
+  };
+  const effects: DaemonEffects = {
+    snapshot: async () => ({ work: [] as Work[], now: new Date(clock).toISOString() }),
+    agents: () => [],
+    credentials: async () => ({}),
+    closeSession: () => {},
+    dispatch: async () => {},
+    mergeWriter: ports,
+    persist: async () => {},
+  };
+
+  const flight = await batchGateStep({ state, effects, snapshot: { work: [], now: new Date(clock).toISOString() }, now: () => clock, log: () => {} });
+  await flight?.gate;
+
+  const record = readGateRecord(gateRecordPath(root));
+  assert.equal(record?.codeSize, undefined, 'does not record 0/0 when repository has neither src/ nor tests/');
+  assert.equal(record?.notes?.some(line => line.startsWith('code-size: ')), false, 'missing src/ or tests/ is not an error');
+  const report = await masterStatusReport(root, config, unreachable, async () => '') as any;
+  assert.equal(report.codeSize, null);
+
+  // A real git failure (status !== 1, e.g. bad object) throws instead of returning 0 so gateFlight sets the code-size note.
+  const gatePorts = batchGatePorts({ ...ports, git: ports.git! }, []);
+  await assert.rejects(() => gatePorts.codeSize!('0000000000000000000000000000000000000000'));
 });

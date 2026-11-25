@@ -241,14 +241,21 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
         if (Number.isFinite(count)) total += count;
       }
       return total;
-    } catch { return 0; }
+    } catch (error) {
+      if ((error as { status?: unknown })?.status === 1) return 0;
+      throw error;
+    }
   };
   return {
     now: reads.now,
     fetch: reads.fetch,
     // GY-3199: only the install gating Mainworks itself publishes the verified ref; every other install's gate verifies another repository, whose verified commits no control plane follows.
     ...(reads.gate?.repository.toLowerCase() === mainworksRepository && reads.pushVerified ? { publish: (commit: string) => reads.pushVerified!(commit) } : {}),
-    codeSize: async commit => ({ source: await countNonBlankLines(commit, 'src'), tests: await countNonBlankLines(commit, 'tests') }),
+    codeSize: async commit => {
+      const source = await countNonBlankLines(commit, 'src');
+      const tests = await countNonBlankLines(commit, 'tests');
+      return source === 0 && tests === 0 ? null : { source, tests };
+    },
     landings: async (from, to) => serveLandings(await serveRangeCommits(git, from, to), work),
     files: async (from, to) => lines(await git(['diff', '--name-only', from, to])),
     catalog,

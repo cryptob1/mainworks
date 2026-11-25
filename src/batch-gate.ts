@@ -262,8 +262,8 @@ export interface GatePorts {
    * verification — it is one gate note, caught up on a later cycle.
    */
   publish?(commit: string): Promise<void>;
-  /** GY-3833: non-blank line counts in `src/` and `tests/` at `commit`, recorded once per UTC day when a commit verifies. */
-  codeSize?(commit: string): Promise<{ source: number; tests: number }>;
+  /** GY-3833: non-blank line counts in `src/` and `tests/` at `commit`, recorded once per UTC day when a commit verifies; null when the repository has neither directory. */
+  codeSize?(commit: string): Promise<{ source: number; tests: number } | null>;
   /**
    * Called whenever the record changed mid-flight — the cut, and each step a run finished — so a
    * loop restart adopts the batch as it stood, its finished steps with it.
@@ -566,8 +566,8 @@ async function gateFlight(ports: GatePorts, record: GateRecord, keepInFlight: ()
       record.results = Object.fromEntries(Object.entries(record.results).filter(([commit]) => commit === tip));
       if (ports.codeSize) {
         try {
-          const { source, tests } = await ports.codeSize(tip);
-          record.codeSize = recordCodeSize(record.codeSize, { day: record.verifiedAt.slice(0, 10), commit: tip, source, tests });
+          const reading = await ports.codeSize(tip);
+          if (reading) record.codeSize = recordCodeSize(record.codeSize, { day: record.verifiedAt.slice(0, 10), commit: tip, ...reading });
           clearGateNote(record, 'code-size');
         } catch (error) {
           setGateNote(record, 'code-size', error instanceof Error ? error.message : String(error));

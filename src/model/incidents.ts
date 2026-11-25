@@ -262,13 +262,14 @@ export function incidentsFromStatus(status: StatusSnapshot, work: Work[], now: n
 }
 
 const formatCount = (n: number) => n.toLocaleString('en-US');
-const formatDelta = (n: number) => n > 0 ? `+${formatCount(n)}` : n < 0 ? `-${formatCount(-n)}` : '0';
+const formatLines = (n: number) => `${formatCount(n)} ${n === 1 ? 'line' : 'lines'}`;
+const formatDelta = (n: number) => n > 0 ? `+${formatCount(n)}` : n < 0 ? `−${formatCount(-n)}` : '0';
 const formatCodeSize = (codeSize: StatusSnapshot['codeSize']): string | null => {
-  if (!codeSize) return null;
+  if (!codeSize || (codeSize.source === 0 && codeSize.tests === 0)) return null;
   if (codeSize.sourceChange !== null && codeSize.testsChange !== null) {
-    return `${formatCount(codeSize.source)} src (${formatDelta(codeSize.sourceChange)}), ${formatCount(codeSize.tests)} tests (${formatDelta(codeSize.testsChange)}) 7d`;
+    return `Code ${formatLines(codeSize.source)} (${formatDelta(codeSize.sourceChange)} this week) · Tests ${formatLines(codeSize.tests)} (${formatDelta(codeSize.testsChange)})`;
   }
-  return `${formatCount(codeSize.source)} src, ${formatCount(codeSize.tests)} tests`;
+  return `Code ${formatLines(codeSize.source)} · Tests ${formatLines(codeSize.tests)}`;
 };
 
 /** Home's first line: state, Builders working of allowed, test machines ready of configured, time since the last change went live, merges an hour today, and code base size. */
