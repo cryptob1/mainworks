@@ -17,7 +17,7 @@ import { flowNumbers, type FlowItem } from '../src/flow-numbers.js';
 import { FlowLine } from '../web/pages/work.js';
 import type { Principal } from '../src/model.js';
 
-// GY-3839: review and product-review rework is grouped by a short label read from the first
+// GY-3839: review and product-review rework (its prefix split on a hyphen, en or em dash, as headless reviewers write it) is grouped by a short label read from the first
 // BLOCKING line of each verdict, and the top three labels show beside the rework causes.
 const now = Date.parse('2026-11-25T12:00:00Z');
 const at = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString();
@@ -32,15 +32,15 @@ test('integration:review-rework-reasons — review and product-review rework of 
   const items = [
     item('GY-1', [
       review('GY-1', 30, ['tests/retry.test.ts:12 - no test covers the retry path', 'src/x.ts:4 - the page overflows at 390 px']),
-      review('GY-1', 60, ['src/flow.ts:40 - AC-2 is not met: master status never shows the label']),
+      review('GY-1', 60, ['tests/flow.test.ts:40 — AC-2 is not met: master status never shows the label']),
     ]),
     item('GY-2', [
       review('GY-2', 90, ['src/a.ts:3 - missing test for the empty window']),
-      product('GY-2', 120, 'Home - the flow table overflows the screen at 390 px'),
+      product('GY-2', 120, 'Home — the flow table overflows the screen at 390 px'),
       product('GY-2', 150, 'Work page - the button no longer opens the item, a regression from GY-2000'),
     ]),
     item('GY-3', [
-      review('GY-3', 200, ['src/b.ts:9 - acceptance criterion AC-1 unmet: the count is never shown']),
+      review('GY-3', 200, ['tests/b.test.ts:9 – acceptance criterion AC-1 unmet: the count is never shown']),
       review('GY-3', 210, ['tests/b.test.ts:1 - the bound proof is missing']),
       // A merge trial's failure and an older verdict outside the window are not review reasons.
       { kind: 'rework', at: at(220), reason: "GY-3: the merge writer's trial of candidate abc failed: trial failed: tests/x.test.ts", binding: 'abc:merge-writer-trial-failed' },

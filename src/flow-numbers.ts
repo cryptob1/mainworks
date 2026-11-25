@@ -50,10 +50,11 @@ function reworkCause(reason: string, binding: string | null | undefined): Rework
   return 'review';
 }
 
-/** GY-3839: a short label for a review's first BLOCKING finding, past its `PATH:LINE - ` or `SCREEN - ` prefix. */
+/** GY-3839: a short label for a review's first BLOCKING finding, past its `PATH:LINE — ` or `SCREEN — ` prefix (hyphen, en or em dash). */
 function reviewReason(reason: string): string {
   const line = /BLOCKING:?\s*(.*)/.exec(reason)?.[1] ?? '';
-  const finding = line.includes(' - ') ? line.slice(line.indexOf(' - ') + 3) : line;
+  const prefix = /\s[-–—]\s/.exec(line);
+  const finding = prefix ? line.slice(prefix.index + prefix[0].length) : line;
   if (/regress|no longer|used to/i.test(finding)) return 'regression';
   if (/\b(tests?|proofs?)\b/i.test(finding)) return 'missing test';
   if (/criteri|\bAC-\d|not met|unmet|requirement/i.test(finding)) return 'criterion unmet';
