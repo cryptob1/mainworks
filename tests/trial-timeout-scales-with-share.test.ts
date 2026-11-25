@@ -1,3 +1,4 @@
+import './helpers/temp-dirs.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { availableParallelism } from 'node:os';

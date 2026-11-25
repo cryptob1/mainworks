@@ -182,7 +182,7 @@ const args = process.argv.slice(2);
 const home = homedir();
 
 function configHomes() {
-  const override = process.env.MAINWORKS_CONFIG_HOME ?? process.env.GRAPHYARD_CONFIG_HOME;
+  const override = ['MAINWORKS_CONFIG_HOME', 'GRAPHYARD_CONFIG_HOME'].map(name => process.env[name]).find(value => value !== undefined);
   if (override) return [resolve(override)];
   return [join(home, '.config', 'mainworks'), join(home, '.config', 'graphyard')].filter(existsSync);
 }

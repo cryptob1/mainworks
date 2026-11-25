@@ -20,7 +20,7 @@ import { fileLoopFault, gateFiledItem, readProjectCapabilities, repairedProof } 
 import { currentEvidence } from '../model/evidence.js';
 import { EnvironmentFault, declaredEnvironments, environmentSecretsFile, environmentStatePath, localEnvironment, loopLifecycle, trustedCheckout, type AppEnvironment } from '../app-environments.js';
 import { installSecretsDirectory } from '../e2e/steps.js';
-import { declarationSlot, heavyJobsDirectory, heldSlots } from '../master/verification-slots.js';
+import { declarationSlot, heavyJobsDirectory, liveSlots } from '../master/verification-slots.js';
 import { existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -336,7 +336,7 @@ const gateStarts = new WeakMap<object, { since: number; started: boolean }>();
 export const gateStartStallMs = 5 * 60_000;
 export const gateStallKey = 'batch-gate:stalled';
 /** Who holds the host's heavy-job slots, as the alarm names them. */
-const slotHolders = () => heldSlots(heavyJobsDirectory()).filter(entry => entry.slot < declarationSlot)
+const slotHolders = async () => (await liveSlots(heavyJobsDirectory())).filter(entry => entry.slot < declarationSlot)
   .map(entry => entry.owner ? `${entry.owner.label}${entry.owner.project ? ` (${entry.owner.project})` : ''} [pid ${entry.owner.pid}]` : `slot-${entry.slot}`).join('; ') || 'nothing';
 
 /** GY-3450: raise the stall alarm while the gate in flight has started no check for five minutes; clear it otherwise. */
@@ -346,7 +346,7 @@ async function gateStartAlarm(cycle: Pick<Cycle, 'state' | 'effects' | 'now' | '
     if (standing?.state === 'failed') return;
     const tip = readGateRecord(file)?.inFlight?.tip;
     const entry = storeAction(cycle.state, gateStallKey, { kind: 'attention', work: null, principal: null, state: 'failed', attempts: 1, epoch: null, cycle: cycle.state.cycle, at: new Date(cycle.now()).toISOString(),
-      detail: `The batch gate${tip ? ` on ${tip.slice(0, 12)}` : ''} has started no check in ${Math.round((cycle.now() - watch.since) / 60_000)} minutes; the host heavy-job slots are held by ${slotHolders()}`.slice(0, actionDetailMax) });
+      detail: `The batch gate${tip ? ` on ${tip.slice(0, 12)}` : ''} has started no check in ${Math.round((cycle.now() - watch.since) / 60_000)} minutes; the host heavy-job slots are held by ${await slotHolders()}`.slice(0, actionDetailMax) });
     cycle.log(actionLine(cycle.state.cycle, entry));
     await cycle.effects.persist?.(cycle.state);
   } else if (standing) {

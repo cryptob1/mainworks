@@ -53,7 +53,7 @@ import { composeServer } from './compose-recovery.js';
 import { leftoverDisk, pathsBytes } from './leftovers.js';
 import { cpuCelsius } from './cpu-pressure.js';
 import { cliReleasePath, repairCliStamp, servedCliRelease, sweepCliReleases } from '../install/cli-release.js';
-import { declarationSlot, heavyJobLimit, heavyJobsDirectory, heldSlots, readHeavyDrain, writeMachines } from '../master/verification-slots.js';
+import { declarationSlot, heavyJobLimit, heavyJobsDirectory, liveSlots, readHeavyDrain, writeMachines } from '../master/verification-slots.js';
 import { collectUsage } from '../usage-capture.js';
 import { fileFlakyCheck, upstreamFiler } from './control-plane.js';
 import { trialRunsDirectory } from '../merge-writer/trial-run.js';
@@ -213,7 +213,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     environmentReadings: async () => {
       const slots = heavyJobsDirectory();
       return {
-        slotsFree: !readHeavyDrain(slots) && heldSlots(slots).filter(entry => entry.slot < declarationSlot).length < heavyJobLimit(slots),
+        slotsFree: !readHeavyDrain(slots) && (await liveSlots(slots)).filter(entry => entry.slot < declarationSlot).length < heavyJobLimit(slots),
         cliCommit: servedCliRelease(installDirectory(installIdFor(current().repository)))?.commit ?? null,
         serverCommit: readDeployRecord(deployRecordPath(root))?.tip ?? null,
         // The nearest path that exists: a lock file a read-only volume refused never exists itself.
