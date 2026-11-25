@@ -1,7 +1,7 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { chmod, writeFile } from 'node:fs/promises';
+import { execFileSync, spawn } from 'node:child_process';
+import { chmod, readFile, writeFile } from 'node:fs/promises';
 import { createServer, connect, type Server } from 'node:net';
 import { join } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
@@ -20,7 +20,7 @@ import { dockerCreates, shardHosts, shardRepository, sshdHost, type ShardHostsFi
 const proof = 'integration:ssh-reuse-per-host';
 const image = 'mainworks-trial:ssh-reuse';
 const files = Array.from({ length: 30 }, (_, index) => `tests/plain-${index}.test.ts`);
-let hosts: ShardHostsFixture, repository: { root: string; sha: string }, server: { kill(): void }, proxy: Server, target: string;
+let hosts: ShardHostsFixture, repository: { root: string; sha: string }, server: { kill(): void; start(): Promise<void> }, proxy: Server, target: string;
 const previous = process.env.GRAPHYARD_TRIAL_IMAGE;
 const counts = { opened: 0, open: 0, reset: 0 };
 let limit = 5;
@@ -126,4 +126,27 @@ test('unit:ssh-reuse-per-host-pinned — the 30 shards still run on the host whe
     assert.deepEqual({ passed: result.tests.passed, failed: result.tests.failed }, { passed: files.length, failed: [] }, result.logTail);
   } finally { names.forEach((name, index) => { if (previous[index] === undefined) delete process.env[name]; else process.env[name] = previous[index]; }); }
   assert.equal((await dockerCreates(hosts.state('compute'))).length - before, files.length, 'every shard ran on the host');
+});
+
+test('unit:ssh-reuse-per-host-pinned — a session sshd refuses while it still holds one the transport released retries its own connection, never opening a new one', { timeout: 600_000 }, async () => {
+  // GY-3824: sshd frees a session after the client's slot is released; a session refused in that gap made ssh connect directly.
+  const config = join(hosts.root, 'sshd', 'sshd_config'), text = await readFile(config, 'utf8');
+  const restart = async (body: string) => { server.kill(); await writeFile(config, body); await server.start(); };
+  await restart(`${text}MaxSessions 1\n`);
+  Object.assign(counts, { opened: 0, reset: 0 }); limit = 5;
+  const transport = shardSshSession(run);
+  try {
+    // The race's one condition, injected: sshd still holds the only session slot, which the transport has released.
+    const held = await transport.session(target, words => new Promise<ReturnType<typeof spawn>>((resolve, reject) => {
+      const child = spawn(join(hosts.bin, 'ssh'), ['-v', ...words, `update-shim ${'0'.repeat(64)}`], { stdio: ['pipe', 'ignore', 'pipe'] });
+      let said = '';
+      child.stderr.on('data', chunk => { said += String(chunk); if (/master session id/.test(said)) resolve(child); });
+      child.once('exit', () => reject(new Error(said)));
+    }));
+    let refusals = 0;
+    const probe = await transport.session(target, words => Promise.resolve(run('ssh', [...words, 'probe'])).catch((error: unknown) => { refusals++; held.stdin!.end(); throw error; }));
+    assert.match(String(probe), /^verbs /m);
+    assert.ok(refusals > 0, 'sshd refused the session over the shared connection');
+    assert.equal(counts.opened, 1, 'the refused session opened no new SSH connection');
+  } finally { await transport.close(); await restart(text); }
 });
