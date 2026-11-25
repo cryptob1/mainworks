@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Engine } from './engine.js';
+import { masterRunSchema } from './master.js';
 import { defaultChildRun } from './child-runner.js';
 import { mergeWriterReads } from './daemon/cycle-merge-writer.js';
 import { firstTaskInput, type FirstRunIssue } from './model/first-run.js';
@@ -34,7 +35,7 @@ export async function measureOnboarding(store: Store, input: { scratch: string; 
   git('init', '-q', '--bare', '-b', 'main', origin);
   git('remote', 'add', 'origin', origin);
   git('push', '-q', 'origin', 'main');
-  const writer = mergeWriterReads({ repository: 'fixture/onboarding', baseBranch: 'main', run: { mergeWriter: { deployKeyFile: join(input.scratch, 'unused-local-key') } } }, repo, defaultChildRun,
+  const writer = mergeWriterReads({ repository: 'fixture/onboarding', baseBranch: 'main', run: masterRunSchema.parse({ mergeWriter: { deployKeyFile: join(input.scratch, 'unused-local-key') } }) }, repo, defaultChildRun,
     { base: input.scratch, record: async () => {} });
 
   const policy = repositoryPolicy();
