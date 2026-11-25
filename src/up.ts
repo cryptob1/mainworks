@@ -36,6 +36,7 @@ import { herdrPluginBinding, herdrPluginEnabled, serverOrigin, readLoopCode, lif
 import { loopCodeRoot } from './daemon/checkout-state.js';
 import { recordHerdrWorkspace } from './master/config.js';
 import { chooseInstallLayout, stateDirectory } from './install/layout.js';
+import { authorEnvironment } from './check-in-author.js';
 export { readInstallLoopCode } from './loop-code.js';
 
 /**
@@ -1217,7 +1218,7 @@ export { onboardingBranch };
 /** The onboarding files every apply writes; a publish without one refuses (GY-1480). */
 export const onboardingRequiredFiles = ['AGENTS.md', 'graphyard.json'] as const;
 /**
- * GY-3221: the identity Mainworks's own commits are authored under, so onboarding commits need no
+ * GY-3221: the identity Mainworks's own commits are committed under (GY-3850: authored by the owner), so onboarding commits need no
  * host git identity: the environment names the author and committer for `git commit-tree`, and a
  * host with no global user.name/user.email commits all the same.
  */
@@ -1267,7 +1268,10 @@ export async function publishOnboarding(root: string, repository: string, run: (
     const tree = child('git', ['write-tree'], env).trim();
     if (tree === child('git', ['rev-parse', `${baseCommit}^{tree}`]).trim()) return null;
     // Dated from the base tip, so the same files above the same tip always yield this one commit.
-    const dated = { ...env, ...mainworksGitIdentity,
+    // GY-3850: authored by the installer, who install records as the owner, as 'NAME (Mainworks)'; else 'Mainworks <mainworks@localhost>'.
+    const global = (key: string) => { try { return String(child('git', ['config', '--global', key])).trim(); } catch { return ''; } };
+    const [name, email] = [global('user.name'), global('user.email')];
+    const dated = { ...env, ...mainworksGitIdentity, ...authorEnvironment(name && email ? { name, email } : null),
       GIT_AUTHOR_DATE: child('git', ['show', '-s', '--format=%cI', baseCommit]), GIT_COMMITTER_DATE: child('git', ['show', '-s', '--format=%cI', baseCommit]) };
     const commit = child('git', ['commit-tree', tree, '-p', baseCommit, '-m', 'Add Mainworks onboarding: coordination instructions, configuration and delivery workflows'], dated).trim();
     // The branch is this command's own: an earlier, interrupted publish is replaced, never merged into.

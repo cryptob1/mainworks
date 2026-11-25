@@ -90,7 +90,7 @@ test("unit:tests/up-preflight-branch-identity.test.ts — onboarding commits suc
   await onboardingFiles(root);
   const published = await withConfigHome(configHome, () => publishOnboarding(root, 'owner/scratch-up-preflight', run));
   assert.ok(published, 'the onboarding commit was built with no host git identity');
-  assert.equal(git('show', '-s', '--format=%an <%ae>', published.commit), 'Mainworks <graphyard@localhost>');
+  assert.equal(git('show', '-s', '--format=%an <%ae>', published.commit), 'Mainworks <mainworks@localhost>', 'with no owner, authored as Mainworks (GY-3850)');
   assert.equal(git('show', '-s', '--format=%cn <%ce>', published.commit), 'Mainworks <graphyard@localhost>');
   assert.match(git('ls-remote', origin, `refs/heads/${onboardingBranch}`), new RegExp(published.commit), 'pushed to the onboarding branch');
   assert.deepEqual(await withConfigHome(configHome, () => publishOnboarding(root, 'owner/scratch-up-preflight', run)), published, 'a rerun publishes the same head');
