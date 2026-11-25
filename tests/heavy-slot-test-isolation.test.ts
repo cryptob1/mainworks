@@ -64,9 +64,9 @@ test('integration:heavy-slot-test-isolation — every test file that starts tria
   const tests = join(root, 'tests');
   const open = readdirSync(tests).filter(name => name.endsWith('.test.ts')).filter(name => {
     const source = readFileSync(join(tests, name), 'utf8');
-    return /mergeWriterStep|batchGateStep|mergeWriterReads|heavyTrial|mergeWriter:|withHeavyJob|acquireVerificationSlot/.test(source) && !/helpers\/(heavy-slots|temp-dirs|pipeline-world)\.js/.test(source);
+    return /mergeWriterStep|batchGateStep|mergeWriterReads|heavyTrial|mergeWriter:|withHeavyJob|acquireVerificationSlot/.test(source) && !/helpers\/(temp-dirs|pipeline-world)\.js/.test(source);
   });
-  assert.deepEqual(open, [], 'import ./helpers/heavy-slots.js (or temp-dirs.js) first');
+  assert.deepEqual(open, [], 'import ./helpers/temp-dirs.js');
 });
 
 test('integration:heavy-slot-test-isolation — a holder whose process exited is not in master status and does not count toward the limit; a live one stays', { timeout: 60_000 }, async () => {

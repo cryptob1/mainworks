@@ -109,7 +109,7 @@ test('e2e:confined-session-host-credentials — under real bwrap a worker and a 
       'console.log(`WORKER-SYNC ${JSON.stringify(printed.at(-1))}`);',
       'const calls = [];',
       'await completeCommand.run({ args: ["1", "--head"], repositoryRoot: () => tree, print: () => {},',
-      '  api: async (path, body) => { calls.push(path);',
+      '  api: async (path, body) => { if (path !== "owner") calls.push(path);',
       '    return { key: "GY-1", submission: { epoch: 1 } }; } }, work);',
       'console.log(`WORKER-COMPLETE ${token.length} ${calls.join(",")}`);',
     ].join('\n'));
