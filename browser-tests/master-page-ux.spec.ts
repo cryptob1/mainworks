@@ -123,6 +123,9 @@ test('e2e:master-page-ux — history, fitting, native input, clipboard, reconnec
     await expect.poll(f.reconnects, settled).toBe(1);
     await expect(page.locator('.xterm-rows')).toContainText(f.current.gap, settled);
     expect(await page.evaluate(() => (window as any).survivedDrop)).toBe(true);
+    // GY-3813: Chromium holds a WebSocket frame that arrives while offline, and the dropped socket's
+    // close waits behind it: the reconnect's live screen, its last frame, lands before the network goes.
+    await expect(page.locator('.xterm-rows')).toContainText('screen of w1:master');
     // A failed reconnect while offline must keep retrying once the network returns.
     await page.context().setOffline(true);
     f.current.gap = 'output while offline'; await f.save();
