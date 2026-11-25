@@ -6,7 +6,7 @@ import { defineConfig } from '@playwright/test';
 const port = Number(process.env.GRAPHYARD_BROWSER_PORT ?? 4319);
 // GY-3753: the runner names each run's own bundle directory: two runs in one checkout must not empty each other's.
 const dist = process.env.GRAPHYARD_BROWSER_DIST ??= resolve('.graphyard/browser-dist');
-const vite = (command: string) => `npx vite ${command} --configLoader runner --outDir "${dist}"`;
+const vite = (command: string) => `./node_modules/.bin/vite ${command} --configLoader runner --outDir "${dist}"`;
 export default defineConfig({
   testDir: './browser-tests', fullyParallel: true, timeout: 30000,
   // GY-3436: a Mainworks session's test budget (PLAYWRIGHT_WORKERS, set at its launch) caps its browsers; trials keep the default.
@@ -18,6 +18,6 @@ export default defineConfig({
   // every test; the suite runs with reduced motion, and the specs that prove the motion ask for it.
   use: { baseURL: `http://127.0.0.1:${port}`, headless: true, reducedMotion: 'reduce', screenshot: process.env.E2E_SCREENSHOTS_DIR ? 'on' : 'off' },
   // The server step builds the bundle first; a loaded trial host spent 52 s in that build alone, past
-  // the 60 s default, so the wait allows three minutes.
-  webServer: { command: `${vite('build')} && ${vite(`preview --host 127.0.0.1 --port ${port} --strictPort`)}`, url: `http://127.0.0.1:${port}`, reuseExistingServer: false, timeout: 180000 },
+  // the 60 s default, so the wait allows three minutes. Specs that serve their own dist bundle can opt out.
+  ...(process.env.GRAPHYARD_PLAYWRIGHT_NO_WEBSERVER ? {} : { webServer: { command: `(test -f "${dist}/index.html" || ${vite('build')}) && ${vite(`preview --host 127.0.0.1 --port ${port} --strictPort`)}`, url: `http://127.0.0.1:${port}`, reuseExistingServer: false, timeout: 180000 } }),
 });
