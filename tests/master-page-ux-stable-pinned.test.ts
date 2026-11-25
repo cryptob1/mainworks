@@ -11,7 +11,7 @@ import type { MasterConfig } from '../src/master/profiles.js';
 // Lead's daemon state file in place while the terminal stream re-reads it every second; a read that
 // landed mid-write found it empty, the reader threw, the stream exited and the page reconnected once
 // more than the spec counts. The spec's save replaces the file whole, as the loop's own write does.
-test('unit:master-page-ux-stable-pinned — a session read during the spec\'s save never sees a half-written state file', async () => {
+test('unit:master-page-ux-state-saved-whole — a session read during the spec\'s save never sees a half-written state file', async () => {
   const site = await mkdtemp(join(tmpdir(), 'gy3752-'));
   try {
     const read = terminalSessionReader(() => ({ credentialFile: join(site, 'master.token') }) as MasterConfig);
