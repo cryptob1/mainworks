@@ -361,13 +361,21 @@ export async function sshdHost(root: string, shim: string, home: string, hostBin
   const sshd = execFileSync('sh', ['-c', 'command -v sshd || echo /usr/sbin/sshd'], { encoding: 'utf8' }).trim();
   let server: ChildProcess | null = null;
   const start = async () => {
-    server = spawn(sshd, ['-D', '-e', '-f', join(dir, 'sshd_config')], { stdio: ['ignore', 'ignore', 'pipe'] });
-    for (let tries = 0; tries < 100; tries++) {
-      const open = await new Promise<boolean>(resolve => { const socket = createServer(); socket.once('error', () => resolve(true)).listen(port, '127.0.0.1', () => socket.close(() => resolve(false))); });
-      if (open) return;
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-    throw new Error('sshd did not listen');
+    const child = spawn(sshd, ['-D', '-e', '-f', join(dir, 'sshd_config')], { stdio: ['ignore', 'ignore', 'pipe'] });
+    server = child;
+    await new Promise<void>((resolve, reject) => {
+      let stderr = '', settled = false;
+      const done = (error?: Error) => { if (settled) return; settled = true; clearTimeout(timer); error ? reject(error) : resolve(); };
+      const timer = setTimeout(() => done(new Error(`sshd did not listen: ${stderr.trim()}`)), 5_000);
+      // Wait for sshd's own listening line (and keep stderr drained) instead of probing by binding `port`, which races sshd's bind().
+      child.stderr.on('data', (chunk: Buffer) => {
+        if (settled) return;
+        stderr += chunk.toString('utf8');
+        if (stderr.includes(`Server listening on 127.0.0.1 port ${port}.`)) done();
+      });
+      child.once('error', error => done(error));
+      child.once('exit', (code, signal) => done(new Error(`sshd exited before listening (${signal ?? code}): ${stderr.trim()}`)));
+    });
   };
   await start();
   const real = execFileSync('sh', ['-c', 'command -v ssh'], { encoding: 'utf8' }).trim();
