@@ -25,7 +25,7 @@ import { getCachedPlanUsage, setCachedPlanUsage } from '../provider-usage.js';
 export { describeObservedExhaustion, providerIdentity } from './account-identity.js';
 // The per-provider login and quota probes live in ./environment-quota.ts, reached through each runtime's adapter.
 import type { PlanReading } from './environment-quota.js';
-import { accountHomeEnvironment, runtimeAdapter, withModel, type AccountReading } from './runtimes.js';
+import { accountHomeEnvironment, openCodeConfig, runtimeAdapter, withModel, type AccountReading } from './runtimes.js';
 import { setting } from '../setting.js';
 import { stateDirectory } from '../install/layout.js';
 
@@ -407,7 +407,7 @@ export function accountLaunch(profile: { kind?: string; approvals: 'auto' | 'pro
     // a runtime contract pinned to one account's home.
     Object.assign(environment, accountHomeEnvironment(kind, account.home));
     const modelId = 'fleet' in account ? account.fleet.modelId : null;
-    if (kind === 'opencode' && modelId) environment.OPENCODE_CONFIG_CONTENT = JSON.stringify({ ...(environment.OPENCODE_CONFIG_CONTENT ? JSON.parse(environment.OPENCODE_CONFIG_CONTENT) : {}), model: modelId });
+    if (kind === 'opencode' && modelId) environment.OPENCODE_CONFIG_CONTENT = openCodeConfig(environment.OPENCODE_CONFIG_CONTENT, modelId);
     // mise resolves installed runtimes under XDG_DATA_HOME; keep it on the operator's own install.
     if (variable === 'XDG_DATA_HOME' && account.home) {
       const mise = process.env.MISE_DATA_DIR ?? resolve(process.env.XDG_DATA_HOME ?? resolve(homedir(), '.local/share'), 'mise');

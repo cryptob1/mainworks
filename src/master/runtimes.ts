@@ -90,7 +90,7 @@ const zaiLimitEnvelope = new RegExp(`"code"\\s*:\\s*"?\\d+"?\\s*,\\s*"message"\\
  */
 async function opencodeAccount(environment: ProbedHome, probe: EnvironmentProbe, plan: { id: string | null; now: number }): Promise<AccountReading> {
   const reading = await zaiAccount(environment, probe, plan);
-  const run = (probed: EnvironmentProbe['opencodeAuth'], args: string[]) => probed === undefined ? (underTestRunner() ? null : (home: string) => opencodeCommand(home, args)) : probed;
+  const run = (probed: EnvironmentProbe['opencodeAuth'], args: string[]) => probed === undefined ? (underTestRunner() ? null : (home: string) => opencodeCommand(home, args, args[0] === 'models' ? environment.model : null)) : probed;
   const list = run(probe.opencodeAuth, ['auth', 'list']), models = run(probe.opencodeModels, ['models']);
   if (!reading.loggedIn) return reading;
   // A declared key file reaches OpenCode as an environment variable at launch, never through its store.
@@ -115,13 +115,27 @@ export async function acceptedFlags(program: string, before: readonly string[], 
   const words = new Set(help.split(/[\s,=]+/));
   return flags.filter(flag => words.has(flag));
 }
+/**
+ * The `OPENCODE_CONFIG_CONTENT` of a launch on `modelId`, over the runtime's `own`. GY-3830: OpenCode
+ * answers from the catalog built into it until a refresh lands, after a short run has ended, and
+ * refuses a newer model with "Model unavailable"; a model the config declares is always in its catalog.
+ */
+export function openCodeConfig(own: string | undefined, modelId: string) {
+  let config: any = {};
+  try { config = JSON.parse(own || '{}'); } catch { /* unreadable content is replaced */ }
+  const slash = modelId.indexOf('/');
+  if (slash < 1) return JSON.stringify({ ...config, model: modelId });
+  const provider = modelId.slice(0, slash), model = modelId.slice(slash + 1), declared = config.provider?.[provider];
+  return JSON.stringify({ ...config, model: modelId,
+    provider: { ...config.provider, [provider]: { ...declared, models: { ...declared?.models, [model]: declared?.models?.[model] ?? {} } } } });
+}
 /** What OpenCode itself answers for a home: `--standalone` where it has one, or the host's background service answers with its own login. */
-async function opencodeCommand(home: string, args: string[]) {
-  const program = realRuntimeBinary('opencode'), env = { ...process.env, XDG_DATA_HOME: home };
+async function opencodeCommand(home: string, args: string[], model?: string | null) {
+  const program = realRuntimeBinary('opencode'), env = { ...process.env, XDG_DATA_HOME: home, ...model?.includes('/') ? { OPENCODE_CONFIG_CONTENT: openCodeConfig(process.env.OPENCODE_CONFIG_CONTENT, model) } : {} };
   return String(await defaultChildRun(program, [...args, ...await acceptedFlags(program, ['run'], ['--standalone'], env)], { env, timeoutMs: 30_000 }));
 }
 export const opencodeAuthList = (home: string) => opencodeCommand(home, ['auth', 'list']);
-export const opencodeModels = (home: string) => opencodeCommand(home, ['models']);
+export const opencodeModels = (home: string, model?: string | null) => opencodeCommand(home, ['models'], model);
 /** GY-3329: where cursor-agent keeps its sign-in on a host with no desktop keyring: `$XDG_CONFIG_HOME/cursor/auth.json`. */
 const cursorSignInFile = 'cursor/auth.json';
 /** GY-3414: the file cursor-agent records its login in, under `CURSOR_CONFIG_DIR`: its `authInfo` names the signed-in user. */
