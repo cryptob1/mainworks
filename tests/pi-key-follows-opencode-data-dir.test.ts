@@ -112,6 +112,7 @@ test('e2e:pi-key-follows-opencode-data-dir — on a running test install a Pi ac
 
   const key = 'e2e-zai-key-from-opencode-b';
   seedDatabase(opencodeData(join(opencodeHome, 'opencode')), key);
+  writeFileSync(join(piHome, 'auth.json'), keyCommand(opencodeHome), { mode: 0o600 });
 
   const piOk = writeStubPi(bin, 'pi-ok-e2e', key);
 
