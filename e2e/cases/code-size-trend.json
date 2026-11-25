@@ -1,0 +1,15 @@
+{
+  "id": "code-size-trend",
+  "title": "Master status shows code base size and seven-day change after a verified commit",
+  "description": "Runs the real batch gate step on a test install with src/ and tests/ files, verifies a commit, and checks that master status shows codeSize with non-blank source and test line counts and their seven-day change.",
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "master status shows codeSize after the first verified commit and tracks the seven-day change",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:code-size-trend tests/code-size-trend.test.ts",
+      "timeoutSeconds": 120
+    }
+  ]
+}

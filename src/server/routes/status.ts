@@ -26,7 +26,7 @@ import { hostname } from 'node:os';
 import { appRelease } from '../../app-url.js';
 import { thisWeekReport } from '../../project-memory.js';
 import { currentMergeStep } from '../../model/merge-ledger.js';
-import { gateRecordPath, readGateRecord } from '../../batch-gate.js';
+import { codeSizeSummary, gateRecordPath, readGateRecord } from '../../batch-gate.js';
 import { boundedSnapshot, workDocument } from '../../store/bounded-snapshot.js';
 import { snapshotPage } from '../../store/paged-snapshot.js';
 import { pipelineItems, pipelineTime } from '../../pipeline-speed.js';
@@ -112,6 +112,8 @@ export const statusRoutes = defineRoutes('status', [
         baseBranch: process.env.GITHUB_BASE_BRANCH ?? 'main', starvedJobs, jobs, deploy, serving, live, pipelineTime: pipelineTime(timed, released, observedAt.getTime()),
         // GY-3399: the week's batch-gate reverts beside the week's gates removed, each naming its items, for the header.
         thisWeek: servingRoot && actor.role !== 'operator-agent' ? await thisWeekReport(servingRoot, observedAt.getTime()) : null,
+        // GY-3833: non-blank lines in src/ and tests/ at the latest verified commit, with the seven-day change, for Home's status line.
+        codeSize: codeSizeSummary(gate),
         // GY-3601: since when the release check on main has tried without passing, across runs and holds, for Home's incidents.
         releaseCheck: (since => since ? { since } : null)(releaseCheckSince(gate, visibleWork)),
         // GY-3690: invited people are locked out while the install's public link is off, for Home's incidents.

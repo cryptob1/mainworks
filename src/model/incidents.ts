@@ -33,6 +33,8 @@ export interface StatusSnapshot {
   app?: { deployedAt?: string | null } | null;
   /** GY-3690: while the owner turned the public link on and someone is invited but the link is not public, what the loop does and when it was last public. */
   publicLink?: { doing: string; lastPublic?: string | null } | null;
+  /** GY-3833: non-blank lines in src/ and tests/ at the latest verified commit, with the seven-day change. */
+  codeSize?: { source: number; tests: number; sourceChange: number | null; testsChange: number | null } | null;
 }
 
 type IncidentKind = 'release-check' | 'not-pushed' | 'accounts' | 'machine-away' | 'no-merge' | 'repeated-failure' | 'public-link';
@@ -259,7 +261,18 @@ export function incidentsFromStatus(status: StatusSnapshot, work: Work[], now: n
   return incidents;
 }
 
-/** Home's first line: state, Builders working of allowed, test machines ready of configured, time since the last change went live, merges an hour today. */
+const formatCount = (n: number) => n.toLocaleString('en-US');
+const formatLines = (n: number) => `${formatCount(n)} ${n === 1 ? 'line' : 'lines'}`;
+const formatDelta = (n: number) => n > 0 ? `+${formatCount(n)}` : n < 0 ? `−${formatCount(-n)}` : '0';
+const formatCodeSize = (codeSize: StatusSnapshot['codeSize']): string | null => {
+  if (!codeSize || (codeSize.source === 0 && codeSize.tests === 0)) return null;
+  if (codeSize.sourceChange !== null && codeSize.testsChange !== null) {
+    return `Code ${formatLines(codeSize.source)} (${formatDelta(codeSize.sourceChange)} this week) · Tests ${formatLines(codeSize.tests)} (${formatDelta(codeSize.testsChange)})`;
+  }
+  return `Code ${formatLines(codeSize.source)} · Tests ${formatLines(codeSize.tests)}`;
+};
+
+/** Home's first line: state, Builders working of allowed, test machines ready of configured, time since the last change went live, merges an hour today, and code base size. */
 export function statusLine(status: StatusSnapshot, work: Work[], incidents: Incident[], now: number) {
   const builders = status.fleet?.roles?.find(role => role.role === 'worker');
   const hosts = status.hosts ?? [];
@@ -273,5 +286,6 @@ export function statusLine(status: StatusSnapshot, work: Work[], incidents: Inci
     machines: { ready: hosts.filter(host => !host.away).length, configured: hosts.length },
     lastLive: deployed === null ? null : span(now - deployed),
     mergesPerHour: Math.round(mergesToday / Math.max(1, (now - today) / hour) * 10) / 10,
+    codeSize: formatCodeSize(status.codeSize),
   };
 }

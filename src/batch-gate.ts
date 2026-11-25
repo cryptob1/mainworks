@@ -74,6 +74,50 @@ const revertRateLimit = 1 / 5;
 
 /** One merge the gate judged: its landing commit, its item, and whether the gate reverted it. */
 interface GateMerge { sha: string; item: string; reverted: boolean }
+/** GY-3833: one daily code-base size reading (non-blank lines in src/ and tests/) recorded when a commit verifies. */
+interface CodeSizeReading { day: string; commit: string; source: number; tests: number }
+/** GY-3833: today's code-base size beside its change against seven days earlier (or the oldest reading kept). */
+interface CodeSizeSummary {
+  day: string;
+  commit: string;
+  source: number;
+  tests: number;
+  sourceChange: number | null;
+  testsChange: number | null;
+  baselineDay: string | null;
+}
+const codeSizeWindow = 30;
+const dayMs = 24 * 60 * 60_000;
+/** GY-3833: keep at most one reading per UTC day, oldest first, bounded to the last 30 days. */
+function recordCodeSize(readings: readonly CodeSizeReading[] | undefined, reading: CodeSizeReading): CodeSizeReading[] {
+  return [...(readings ?? []).filter(entry => entry.day !== reading.day), reading]
+    .sort((a, b) => a.day.localeCompare(b.day))
+    .slice(-codeSizeWindow);
+}
+/** GY-3833: latest code-base size reading and its change against seven days earlier (or the oldest reading kept). */
+export function codeSizeSummary(record: Pick<GateRecord, 'codeSize'> | null): CodeSizeSummary | null {
+  if (!record?.codeSize?.length) return null;
+  const sorted = [...record.codeSize].sort((a, b) => a.day.localeCompare(b.day));
+  const latest = sorted.at(-1)!;
+  const prior = sorted.slice(0, -1);
+  let baseline: CodeSizeReading | null = null;
+  if (prior.length) {
+    const targetMs = Date.parse(`${latest.day}T00:00:00Z`) - 7 * dayMs;
+    for (let i = prior.length - 1; i >= 0; i -= 1) {
+      if (Date.parse(`${prior[i]!.day}T00:00:00Z`) <= targetMs) { baseline = prior[i]!; break; }
+    }
+    baseline ??= prior[0]!;
+  }
+  return {
+    day: latest.day,
+    commit: latest.commit.slice(0, 12),
+    source: latest.source,
+    tests: latest.tests,
+    sourceChange: baseline ? latest.source - baseline.source : null,
+    testsChange: baseline ? latest.tests - baseline.tests : null,
+    baselineDay: baseline?.day ?? null,
+  };
+}
 /** What the last settled gate run came to (GY-3141): why the verified commit has not moved, at a glance. */
 interface GateLastOutcome {
   /** The tip the run gated; null when the run failed before it cut a batch. */
@@ -157,6 +201,8 @@ export interface GateRecord {
   notes?: string[];
   /** GY-3431: the failures recorded on each open flaky-check item instead of a revert, by item key: the last few per item, the ten items failing most recently. Optional only for records an older loop wrote. */
   flaky?: Record<string, { check: string; tip: string; at: string }[]>;
+  /** GY-3833: daily non-blank line counts in src/ and tests/ recorded when commits verify, one per UTC day, oldest first. */
+  codeSize?: CodeSizeReading[];
   at: string;
 }
 
@@ -216,6 +262,8 @@ export interface GatePorts {
    * verification — it is one gate note, caught up on a later cycle.
    */
   publish?(commit: string): Promise<void>;
+  /** GY-3833: non-blank line counts in `src/` and `tests/` at `commit`, recorded once per UTC day when a commit verifies; null when the repository has neither directory. */
+  codeSize?(commit: string): Promise<{ source: number; tests: number } | null>;
   /**
    * Called whenever the record changed mid-flight — the cut, and each step a run finished — so a
    * loop restart adopts the batch as it stood, its finished steps with it.
@@ -516,6 +564,15 @@ async function gateFlight(ports: GatePorts, record: GateRecord, keepInFlight: ()
       record.verifiedRuns = [...record.verifiedRuns ?? [], { ms: ports.now() - Date.parse(record.inFlight!.startedAt) - (record.inFlight!.waitedMs ?? 0), at: at() }].slice(-gateRunsWindow);
       record.verified = tip; record.verifiedAt = at(); record.attempt = { recuts: 0, timeouts: 0 };
       record.results = Object.fromEntries(Object.entries(record.results).filter(([commit]) => commit === tip));
+      if (ports.codeSize) {
+        try {
+          const reading = await ports.codeSize(tip);
+          if (reading) record.codeSize = recordCodeSize(record.codeSize, { day: record.verifiedAt.slice(0, 10), commit: tip, ...reading });
+          clearGateNote(record, 'code-size');
+        } catch (error) {
+          setGateNote(record, 'code-size', error instanceof Error ? error.message : String(error));
+        }
+      }
       // GY-3199: the verified commit is published where every install's deploy watch reads it. A
       // failed publish never undoes the verification — it is one gate note, and the loop's catch-up
       // publish retries it.
