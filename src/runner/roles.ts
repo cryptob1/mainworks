@@ -170,7 +170,7 @@ export async function smokeRegistryAccount(account: FleetLaunchAccount, options:
       const args = withModel(account.kind, cursor ? launchPlan('cursor', 'auto', launch.args).args : launch.args, account.fleet.contract, account.fleet.modelId);
       const [command, ...argv] = await headlessArgv({ kind: account.kind, args, contract: account.fleet.contract }, 'Reply with the single word OK.', env);
       // GY-3819: OpenCode's log carries the provider's answer its own error event may leave out.
-      const logs = account.kind === 'opencode' ? await acceptedFlags(options.command ?? command!, ['run'], ['--print-logs'], env) : [];
+      const logs = account.kind === 'opencode' && !account.fleet.contract.headlessArgs ? await acceptedFlags(options.command ?? command!, ['run'], ['--print-logs'], env) : [];
       const output = await runChild(options.command ?? command!, [...(options.commandArgs ?? []), ...argv, ...logs], { env, cwd: options.cwd ?? (cursor ? process.cwd() : account.home ?? undefined), timeoutMs: options.timeoutMs ?? 120_000 });
       // Print-mode runtimes can report provider errors with exit zero (OpenCode).
       const failure = failureEvents(output).length > 0;
