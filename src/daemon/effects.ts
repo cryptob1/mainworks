@@ -180,6 +180,8 @@ export interface DaemonEffects {
   masterSession?: MasterSessionEffects;
   /** GY-3593: one caretaker pass on the caretaker role's first available account, settled with its result line or why it was skipped. */
   caretaker?: () => Promise<import('./caretaker.js').CaretakerOutcome>;
+  /** GY-3835: one headless planner run when the empty-board alarm holds for 30 minutes, drafting at most three unreleased items. */
+  planner?: (input: import('./planner.js').PlannerInput) => Promise<import('./planner.js').PlannerOutcome>;
   /** GY-3345: the messages to this install's Master (`GET master/messages`); each unanswered one from another install wakes the session once. Absent, none is read. */
   masterMessages?: () => Promise<MasterMessage[]>;
   personalMasterSession?: (config: MasterConfig) => MasterSessionEffects;

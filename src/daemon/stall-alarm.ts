@@ -113,12 +113,24 @@ export function stallAlarm(readings: StallReadings): string | null {
   return lines.length ? `Stall: ${lines.join(' ')}` : null;
 }
 
+/** GY-3835: when the current empty-board alarm first fired, or null when no empty-board alarm stands. */
+export function emptyBoardAlarmSince(state: Pick<DaemonState, 'actions'>): number | null {
+  const standing = state.actions[stallAlarmKey];
+  if (!standing || !isEmptyBoardAlarm(standing.detail)) return null;
+  const at = Date.parse(standing.since ?? standing.at);
+  return Number.isFinite(at) ? at : null;
+}
+
 /** Raises, updates or clears the alarm's one cursor entry; the master is woken by masterCauses. */
 export function recordStallAlarm(state: DaemonState, text: string | null, now: number) {
   const standing = state.actions[stallAlarmKey];
   if (!text) { if (standing) delete state.actions[stallAlarmKey]; return !!standing; }
   const detail = text.slice(0, actionDetailMax);
   if (standing?.detail === detail) return false;
-  storeAction(state, stallAlarmKey, { kind: 'attention', work: null, principal: null, state: 'failed', detail, attempts: 1, epoch: null, cycle: state.cycle, at: iso(now) });
+  const at = iso(now);
+  const since = isEmptyBoardAlarm(detail)
+    ? (standing && isEmptyBoardAlarm(standing.detail) ? (standing.since ?? standing.at) : at)
+    : undefined;
+  storeAction(state, stallAlarmKey, { kind: 'attention', work: null, principal: null, state: 'failed', detail, attempts: 1, epoch: null, cycle: state.cycle, at, ...(since ? { since } : {}) });
   return true;
 }
