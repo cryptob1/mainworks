@@ -1,4 +1,4 @@
-import { test, expect, type Browser, type Page } from '@playwright/test';
+import { test, expect as baseExpect, type Browser, type Page } from '@playwright/test';
 import { fork } from 'node:child_process';
 import { once } from 'node:events';
 import { readFile, symlink } from 'node:fs/promises';
@@ -11,7 +11,12 @@ import type { MasterConfig } from '../src/master/profiles';
 import { serveXterm } from './xterm';
 import { saveMasterState } from './master-state';
 
-const settled = { timeout: 15_000 };
+// GY-3813: one pane change is a one-second poll and four process starts, which a loaded trial host
+// stretched past the 5 s and 30 s defaults; every wait in this spec has the same room.
+test.describe.configure({ timeout: 60_000 });
+const expect = baseExpect.configure({ timeout: 15_000 });
+// The proof's stub holds each live screen back this long.
+const screenDelay = Number(process.env.STUB_SCREEN_DELAY_MS ?? 0);
 async function fixture(browser: Browser, phone = false) {
   const site = await temporaryDirectory('master-ux');
   await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
@@ -51,7 +56,7 @@ async function fixture(browser: Browser, phone = false) {
   await openLiveSession(page);
   const calls = async () => (await readFile(join(site, 'herdr.log'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
   const inputs = async () => (await calls()).filter(entry => entry.command?.type === 'terminal.input').map(entry => entry.command.text);
-  await expect(page.locator('.xterm-rows')).toContainText('screen of w1:master', settled);
+  await expect(page.locator('.xterm-rows')).toContainText('screen of w1:master');
   const reconnects = () => page.evaluate(() => (window as any).terminalStates.filter((state: string) => state === 'reconnecting').length);
   return { page, child, current, save, calls, inputs, reconnects, stop: async () => {
     await context.close(); stopping.abort();
@@ -63,13 +68,11 @@ async function fixture(browser: Browser, phone = false) {
 
 /** The sign-in link opens the Lead page on its conversation; its live session is its own address. */
 const openLiveSession = async (page: Page) => {
-  await expect(page.getByRole('heading', { name: 'Lead', exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole('heading', { name: 'Lead', exact: true })).toBeVisible();
   await page.evaluate(() => { location.hash = '#master/live'; });
 };
 
 test('e2e:master-page-ux — history, fitting, native input, clipboard, reconnect and pane changes', async ({ browser }) => {
-  // Includes server startup, two reconnects and two pane changes under the parallel browser suite.
-  test.setTimeout(60_000);
   const f = await fixture(browser), { page } = f;
   try {
     await expect(page.getByRole('status')).toContainText('Idle · test-account');
@@ -120,17 +123,21 @@ test('e2e:master-page-ux — history, fitting, native input, clipboard, reconnec
     // written after the drop could miss that read (GY-3261).
     f.current.gap = 'output produced during the gap'; await f.save();
     f.child.send('drop-terminals');
-    await expect.poll(f.reconnects, settled).toBe(1);
-    await expect(page.locator('.xterm-rows')).toContainText(f.current.gap, settled);
+    await expect.poll(f.reconnects).toBe(1);
+    await expect(page.locator('.xterm-rows')).toContainText(f.current.gap);
     expect(await page.evaluate(() => (window as any).survivedDrop)).toBe(true);
+    // GY-3813: Chromium holds a WebSocket frame that arrives while offline, and the dropped socket's
+    // close waits behind it: the reconnect's live screen, its last frame, lands before the network goes.
+    await expect(page.locator('.xterm-rows')).toContainText('screen of w1:master');
     // A failed reconnect while offline must keep retrying once the network returns.
     await page.context().setOffline(true);
+    if (screenDelay) await page.waitForTimeout(2 * screenDelay); // a screen not waited for would land here
     f.current.gap = 'output while offline'; await f.save();
     f.child.send('drop-terminals');
-    await expect.poll(f.reconnects, settled).toBe(2);
+    await expect.poll(f.reconnects).toBe(2);
     await page.waitForTimeout(1000);
     await page.context().setOffline(false);
-    await expect(page.locator('.xterm-rows')).toContainText(f.current.gap, settled);
+    await expect(page.locator('.xterm-rows')).toContainText(f.current.gap);
     f.current.master.pane = 'w1:replacement'; f.current.master.account = 'second-account'; f.current.status = 'working'; await f.save();
     await expect(page.locator('.xterm-rows')).toContainText('screen of w1:replacement');
     await expect(page.getByRole('status')).toContainText('Working · second-account');

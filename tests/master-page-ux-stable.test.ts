@@ -12,3 +12,12 @@ test('unit:master-page-ux-stable — master-page-ux passes 20 of 20 runs on 4 wo
   const finished = await runTests({ browser: true, args: ['--repeat-each=20', '--workers=4', 'browser-tests/master-page-ux.spec.ts'], stdio: 'pipe' });
   assert.equal(finished.code, 0, `a run of master-page-ux failed; 20 of 20 must pass:\n${finished.stderr.slice(-4_000)}\n${finished.stdout.slice(-6_000)}`);
 });
+
+// GY-3813: on a loaded host the spec went offline between the reconnect's history and its live screen.
+// Chromium holds a WebSocket frame that arrives offline and the dropped socket's close behind it, so
+// the page never reconnected ("Expected: 2 Received: 1"). Here every live screen lands a second after
+// its history, and the spec stays offline past that: it passes only by waiting for the screen first.
+test('unit:master-page-ux-stable-pinned — master-page-ux passes when every live screen arrives well after its history', async () => {
+  const finished = await runTests({ browser: true, args: ['--workers=1', '-g', 'e2e:master-page-ux', 'browser-tests/master-page-ux.spec.ts'], stdio: 'pipe', environment: { ...process.env, STUB_SCREEN_DELAY_MS: '1000' } });
+  assert.equal(finished.code, 0, `master-page-ux failed with a late live screen:\n${finished.stderr.slice(-4_000)}\n${finished.stdout.slice(-6_000)}`);
+});
