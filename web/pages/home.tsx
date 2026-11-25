@@ -57,7 +57,7 @@ export default function HomePage(dashboard: Dashboard) {
       <ul className="shipped-list">{outdated.map(host => <li key={host} data-host-action={host}>
         <strong>{machineName(host)}</strong>
         <span>Takes no test work until a one-time update; updating it moves test work off {coordinator}.</span>
-        <span>Run <span className="mono">{hostUpdateCommand}</span>, then the script it prints on {machineName(host)} with sudo.</span>
+        <span>In a terminal here, run <span className="mono">{hostUpdateCommand(host)}</span>.</span>
       </li>)}{requests.slice(0, 5).map(row => <li key={row.request.id}>
         <strong>{row.work}</strong>
         <span>{humanAsk(row.request)}</span>

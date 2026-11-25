@@ -23,7 +23,7 @@ const host: [string, string, string][] = [
   ['Database', 'graphyard-OWNER-NAME-db-1', 'Postgres 17 in Docker.'],
   ['Test merges', 'Docker containers', 'One per test merge.'],
   ['Agent sessions', 'Workers, reviewers, the Master', 'Confined, one worktree, fair CPU.'],
-  ['Hosts', `${COMMAND_NAME} host prepare`, 'Test shards, worker sessions; RAM-only logins.'],
+  ['Hosts', `${COMMAND_NAME} host add YOU@HOST`, 'Test shards, worker sessions; RAM-only logins.'],
 ];
 const outside: [string, string][] = [
   ['GitHub', 'Your code. Only the loop pushes.'],
