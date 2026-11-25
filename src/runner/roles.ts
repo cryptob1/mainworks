@@ -79,6 +79,12 @@ export function registryHeadlessLaunch(account: FleetLaunchAccount) {
   // GY-3329: a cursor account's home rides on XDG_CONFIG_HOME as well, the sign-in
   // cursor-agent reads under confinement living at `$XDG_CONFIG_HOME/cursor/auth.json`.
   const environment: Record<string, string> = { ...contract.environment, ...(contract.homeVariable && account.home ? { [contract.homeVariable]: account.home } : {}), ...accountHomeEnvironment(account.kind, account.home) };
+  // GY-3823: keep OpenCode's config model aligned with the account's registered model id, as accountLaunch does.
+  if (account.kind === 'opencode' && modelId) {
+    let existing: Record<string, unknown> = {};
+    try { if (environment.OPENCODE_CONFIG_CONTENT) existing = JSON.parse(environment.OPENCODE_CONFIG_CONTENT); } catch { /* ignore */ }
+    environment.OPENCODE_CONFIG_CONTENT = JSON.stringify({ ...existing, model: modelId });
+  }
   return { command: contract.kind, model: modelId ?? defaultPiModel, args, environment };
 }
 /**
@@ -120,12 +126,13 @@ export function planModelUnused(output: string, modelId: string | null | undefin
   return /\bfree usage limit reached\b|\bFreeUsageLimitError\b/i.test(output) || !!ran && ran !== modelId && ran !== modelId.split('/').pop();
 }
 /**
- * GY-3819: what a failed request reports. OpenCode ends a spent Z.AI account's run with "Model
- * unavailable"; the provider's limit sentence elsewhere in the run's output is the real reason.
+ * GY-3819 / GY-3823: what a failed request reports. OpenCode ends a spent Z.AI account's run with
+ * "Model unavailable"; the provider's limit sentence elsewhere in the run's output is the real reason.
  */
+const opencodeLogLine = /^(?:timestamp=\S+ level=|(?:DEBUG|INFO|WARN|ERROR)\s+\d{4}-\d{2}-\d{2}T)/;
 function smokeFailureReason(output: string) {
-  const { reason } = parseProbeFailure(output.split('\n').filter(line => !/^timestamp=\S+ level=/.test(line)).join('\n'));
-  return /^Model unavailable\b/.test(reason) ? zaiLimitSentence.exec(output)?.[0].trim() ?? reason : reason;
+  const { reason } = parseProbeFailure(output.split('\n').filter(line => !opencodeLogLine.test(line)).join('\n'));
+  return /^Model unavailable\b/i.test(reason) ? zaiLimitSentence.exec(output)?.[0].trim() ?? reason : reason;
 }
 const writableDirectory = (path: string) => { try { accessSync(path, constants.W_OK); return true; } catch { return false; } };
 
@@ -169,14 +176,20 @@ export async function smokeRegistryAccount(account: FleetLaunchAccount, options:
       const cursor = account.kind === 'cursor';
       const args = withModel(account.kind, cursor ? launchPlan('cursor', 'auto', launch.args).args : launch.args, account.fleet.contract, account.fleet.modelId);
       const [command, ...argv] = await headlessArgv({ kind: account.kind, args, contract: account.fleet.contract }, 'Reply with the single word OK.', env);
-      // GY-3819: OpenCode's log carries the provider's answer its own error event may leave out.
-      const logs = account.kind === 'opencode' && !account.fleet.contract.headlessArgs ? await acceptedFlags(options.command ?? command!, ['run'], ['--print-logs'], env) : [];
-      const output = await runChild(options.command ?? command!, [...(options.commandArgs ?? []), ...argv, ...logs], { env, cwd: options.cwd ?? (cursor ? process.cwd() : account.home ?? undefined), timeoutMs: options.timeoutMs ?? 120_000 });
+      // GY-3819 / GY-3823: OpenCode's log carries the provider's answer its own error event may leave out.
+      const logs = account.kind === 'opencode' && !account.fleet.contract.headlessArgs
+        ? await acceptedFlags(options.command ?? command!, ['run'], ['--print-logs'], env)
+          .then(found => found.length ? found : acceptedFlags(options.command ?? command!, [], ['--print-logs'], env))
+        : [];
+      const childArgs = logs.length && argv.length > 0 ? [...argv.slice(0, -1), ...logs, argv.at(-1)!] : argv;
+      let stderr = '';
+      const output = await runChild(options.command ?? command!, [...(options.commandArgs ?? []), ...childArgs], { env, cwd: options.cwd ?? (cursor ? process.cwd() : account.home ?? undefined), timeoutMs: options.timeoutMs ?? 120_000, onStderr: chunk => { stderr += chunk; } });
       // Print-mode runtimes can report provider errors with exit zero (OpenCode).
+      const combined = [output, stderr].filter(Boolean).join('\n');
       const failure = failureEvents(output).length > 0;
       const answered = /\bOK\b/i.test(output);
       if (answered && !failure && planModelUnused(output, account.fleet.modelId)) return { ok: false, error: wrongModelBanner.exec(output)![0] };
-      return { output, ok: answered && !failure, error: failure ? Object.values(key).reduce((text, secret) => text.replaceAll(secret, '[redacted]'), smokeFailureReason(output)) : answered ? null : 'The smoke request returned no answer' };
+      return { output, ok: answered && !failure, error: failure ? Object.values(key).reduce((text, secret) => text.replaceAll(secret, '[redacted]'), smokeFailureReason(combined)) : answered ? null : 'The smoke request returned no answer' };
     } catch (error) {
       const message = error instanceof ChildProcessError ? [error.stdout, error.stderr].filter(Boolean).join('\n') || error.message : String(error);
       return { ok: false, error: Object.values(key).reduce((text, secret) => text.replaceAll(secret, '[redacted]'), smokeFailureReason(message)) };
