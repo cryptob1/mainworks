@@ -233,10 +233,8 @@ export interface RemoteShardEnd { ok: boolean; out: string; status: number | nul
 
 /** The name of this checkout's mirror on a host (~/.graphyard/mirrors/NAME.git): one per checkout this install trials from. */
 export const mirrorName = (root: string) => `${createHash('sha1').update(root).digest('hex').slice(0, 8)}-${basename(root).replace(/[^A-Za-z0-9._-]/g, '-')}`.slice(0, 100);
-/** GY-3627: where the warm image stores its filled Node compile cache, built CLI/server entries and the commit they were built from. */
+/** GY-3627: where the warm image stores its filled Node compile cache. */
 const warmCompileCacheDirectory = '/warm/compile-cache';
-const warmDistDirectory = '/warm/dist';
-const warmCommitFile = '/warm/commit';
 
 /** The warm image for a trial image's digest, a lockfile's hash (`none` without one), and the commit it was built from. */
 export const warmImageTag = (digest: string, lockHash: string, commit?: string) =>
