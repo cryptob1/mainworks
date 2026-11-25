@@ -8,6 +8,7 @@ import { fakeHosts, ownerLogin } from './helpers/fake-hosts.js';
 import { main } from '../src/cli/index.js';
 import { hostShimDigest } from '../src/host-shim.js';
 import { outdatedShimAttention } from '../src/merge-writer/remote-shards.js';
+import infra from '../src/guide/infra.js';
 
 // GY-3834 AC-1: `host add OWNER@HOST` in a terminal prepares the machine over its own SSH session
 // (sudo there, prompts reaching the owner's terminal), records gy-compute@HOST and prints one line with
@@ -77,4 +78,13 @@ test(`${proof} — host prepare stays for machines with no SSH login, and attent
     assert.ok(`${line!.text} ${line!.next}`.includes(command), `${line!.text} / ${line!.next}`);
     assert.doesNotMatch(`${line!.text} ${line!.next}`, /script|host prepare/);
   }
+});
+
+test(`${proof} — guide infra says how to add a machine in at most three sentences`, () => {
+  const cell = /^\| Compute machines \| (.*?) Merge trials/m.exec(infra)?.[1] ?? '';
+  const sentences = cell.split(/(?<=\.) /);
+  assert.ok(sentences.length <= 3, cell);
+  assert.match(sentences[0]!, /mainworks host add YOU@HOST` in a terminal/);
+  assert.match(sentences[1]!, /host share HOST KEY/);
+  assert.match(sentences[2]!, /^Helper updates then need nobody\.$/);
 });

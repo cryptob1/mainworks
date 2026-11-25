@@ -1,5 +1,5 @@
 // Concern: GY-3407 — the hosts Mainworks watches; merge trials send them test shards (GY-3412). A host lends
-// compute and nothing else: `mainworks host prepare` prints a one-time sudo script that creates the
+// compute and nothing else: a one-time sudo script (`host prepare` prints it; `host add` runs it) creates the
 // unprivileged gy-compute user (not in the docker group) with linger and rootless Docker, and lets this
 // machine's key run only graphyard-host-shim-DIGEST (restrict,command=…: no shell, pty or forwarding). The shim
 // answers fixed verbs (src/host-shim.ts). `mainworks host add USER@HOST` refuses a key
