@@ -41,7 +41,7 @@ export function testSelectionSummary(all: readonly TestSelection[]) {
 }
 
 /** GY-3840: a release check's items and the test files it caught failing (that failed again and pass on the verified commit). */
-export interface ReleaseSweep { at: string; items: string[]; failed: string[] }
+export interface ReleaseSweep { at: string; /** The batch tip the check ran on. */ tip?: string; items: string[]; failed: string[] }
 
 /**
  * Over the last 20 release checks, the failing test files no recorded item trial of the batch selected,

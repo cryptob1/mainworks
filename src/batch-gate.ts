@@ -591,7 +591,8 @@ async function gateFlight(ports: GatePorts, record: GateRecord, keepInFlight: ()
       if (flakyItem) noteFlaky(check, flakyItem);
     };
     // GY-3840: what this release check caught, beside the items whose trials selected tests, for master status.
-    record.sweeps = [...record.sweeps ?? [], { at: at(), items: landings.flatMap(landing => landing.item ? [landing.item.key] : []),
+    // A batch adopted after a restart replaces its own entry, so a miss is never counted twice.
+    record.sweeps = [...(record.sweeps ?? []).filter(sweep => sweep.tip !== tip), { at: at(), tip, items: landings.flatMap(landing => landing.item ? [landing.item.key] : []),
       failed: confirmed.filter(check => check.startsWith('test:')).map(check => check.slice(5)) }].slice(-20);
     if (!confirmed.length) return verify();
     // A recut that still fails asks the verified commit about every confirmed check at once.
