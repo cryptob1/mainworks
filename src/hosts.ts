@@ -301,7 +301,7 @@ export async function addHost(target: string, options: { file?: string; knownHos
   const knownHosts = options.knownHosts ?? (options.file ? join(dirname(options.file), 'known_hosts') : hostKnownHostsFile());
   if (target.length > 300 || !hostTargetPattern.test(target)) throw new Error(`Name the host as USER@HOST, USER@HOST:PORT or an ssh-config alias, for example ${hostUser}@omarchypc:${computePort}: got ${JSON.stringify(target)}`);
   if (['root', hostUser].includes(await loginUser(target, run))) return recordHost(target, file, run, knownHosts);
-  const host = targetHost(target), candidates = [`${hostUser}@${host}`, `${hostUser}@${host}:${computePort}`];
+  const host = targetHost(target), candidates = [`${hostUser}@${host}`, `${hostUser}@${host}:${computePort}`, target];
   const probes = await Promise.all(candidates.map(candidate => probeHost(candidate, run, knownHosts)));
   const prepared = candidates.find((_, index) => { const probe = probes[index]!; return probe.ok && probe.verbs?.includes('update-shim:1'); });
   if (prepared) return { ...(await recordHost(prepared, file, run, knownHosts, false)), target: prepared, prepared: true };
