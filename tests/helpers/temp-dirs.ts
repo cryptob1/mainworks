@@ -2,7 +2,7 @@ import { after } from 'node:test';
 import { rmSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { tempOwnerMarker, writeTempOwner } from '../../src/tmp-reclaim.js';
 import { livePostmasters, liveServersUnder, stopServersUnder } from '../../src/postgres-stop.js';
 
@@ -25,6 +25,16 @@ import { livePostmasters, liveServersUnder, stopServersUnder } from '../../src/p
 // to stop, and removed when the process exits, after every hook has run, stopping (fast shutdown,
 // awaited) any server still running there first. Removing a data directory under a running server
 // made its checkpointer PANIC on the shutdown checkpoint and dump core (GY-3112).
+
+// GY-3854: a test file run from a Mainworks session or loop (`node --test FILE`) inherits the host's
+// real heavy-job slot directory, and its fixture trials registered there as `test merge GY-1`. On
+// import, before any test, a test file leaves the host's budget and data home as the suite's runner
+// does; a fixture that wants slots names its own directory. A process a test starts keeps what it was handed.
+if (/\.test\.[cm]?[jt]s$/.test(process.argv[1] ?? '')) {
+  for (const prefix of ['MAINWORKS', 'GRAPHYARD'])
+    for (const name of ['VERIFICATION_SLOTS_DIR', 'HEAVY_JOB_PROJECT', 'VERIFICATION_SLOT_HELD']) delete process.env[`${prefix}_${name}`];
+  if (!process.env.MAINWORKS_DATA_HOME && !process.env.GRAPHYARD_DATA_HOME) process.env.GRAPHYARD_DATA_HOME = resolve(import.meta.dirname, '../../.graphyard/test-data');
+}
 
 const created = new Set<string>();
 

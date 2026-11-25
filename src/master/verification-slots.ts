@@ -291,6 +291,17 @@ async function reclaimStale(path: string) {
   } finally { closeSync(fd); }
 }
 
+/** GY-3854: the slots held now without those whose process is gone. It only reads, so a session confined to reading the directory lists the same. */
+export async function liveSlots(directory: string) {
+  const live: ReturnType<typeof heldSlots> = [];
+  for (const entry of heldSlots(directory)) {
+    let fd: number | null = null;
+    try { fd = openSync(join(directory, `slot-${entry.slot}`, 'owner.json'), 'r'); } catch { /* no owner to judge */ }
+    try { if (fd === null || !entry.owner?.locked || !await lock(fd).catch(() => false)) live.push(entry); } finally { if (fd !== null) closeSync(fd); }
+  }
+  return live;
+}
+
 /** The heavy jobs the limit counts now: every live slot below the gate's and the declarations, dead owners' reclaimed first. */
 async function running(directory: string) {
   for (const entry of heldSlots(directory)) await reclaimStale(join(directory, `slot-${entry.slot}`));
@@ -597,7 +608,7 @@ export function onPathOf(name: string, path: string) {
 export const verificationBin = fileURLToPath(new URL('../../bin/verification', import.meta.url));
 
 /** The heavy jobs holding the host's slots now, for master status: what runs, for which project, since when. */
-export const slotHolders = (directory: string) => heldSlots(directory).filter(entry => entry.slot < declarationSlot)
+export const slotHolders = (directory: string, held = heldSlots(directory)) => held.filter(entry => entry.slot < declarationSlot)
   .map(entry => entry.owner ? { label: entry.owner.label, project: entry.owner.project ?? null, pid: entry.owner.pid, since: entry.owner.at } : { label: `slot-${entry.slot}`, project: null, pid: null, since: null });
 
 /** The variables a session's tab carries: the host's lock directory, its project, and PATH with the wrappers first. */
