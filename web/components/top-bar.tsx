@@ -333,7 +333,7 @@ export default function TopBar(dashboard: Dashboard & { onPalette?: () => void }
         {onPalette && <button type="button" className="palette-button" title="Ctrl K / ⌘ K" aria-label="Command palette (Ctrl K)" onClick={onPalette}><kbd>⌘</kbd><kbd>K</kbd></button>}
       </div>
     </div>
-    {status && <HostUpdateLine status={status}/>}
+    {status && (view !== 'home' || selected) && <HostUpdateLine status={status}/>}
     {status && <ReleaseLine status={status}/>}
     {status && <WeekLine status={status} work={work} open={dashboard.setSelected}/>}
     {!selected && pages.length >= 2 && <nav className="tabs" aria-label="Pages in this section">{tabs.map(tab)}{advanced.length > 0 && <details className="tabs-advanced" open={advanced.some(page => page.id === view) || undefined}><summary className="tab">Advanced</summary>{advanced.map(tab)}</details>}</nav>}

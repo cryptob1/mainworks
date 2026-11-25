@@ -1,0 +1,11 @@
+{
+  "id": "home-needs-you-host-action",
+  "title": "Home shows each test machine that needs its one-time prepare under Needs you",
+  "description": "A real browser on the built dashboard: the status snapshot names two test machines whose helper is older than this release. At 1280 and 390 px Home's Needs you shows one card per machine with its name, the command to run there with sudo and that it moves test work off this machine; each card goes once its machine reads current.",
+  "tags": ["dashboard"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "host action cards on Home", "run": "npm run test:browser -- browser-tests/home-needs-you-host-action.spec.ts", "timeoutSeconds": 420 }
+  ]
+}
