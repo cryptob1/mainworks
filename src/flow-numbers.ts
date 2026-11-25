@@ -51,7 +51,7 @@ function reworkCause(reason: string, binding: string | null | undefined): Rework
 }
 
 /** GY-3839: a short label for a review's first BLOCKING finding, past its `PATH:LINE - ` or `SCREEN - ` prefix. */
-export function reviewReason(reason: string): string {
+function reviewReason(reason: string): string {
   const line = /BLOCKING:?\s*(.*)/.exec(reason)?.[1] ?? '';
   const finding = line.includes(' - ') ? line.slice(line.indexOf(' - ') + 3) : line;
   if (/regress|no longer|used to/i.test(finding)) return 'regression';
