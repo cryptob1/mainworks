@@ -5,7 +5,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { main } from '../src/cli/index.js';
-import { hostShimDigest, hostShimVerbs, trialVerbs } from '../src/host-shim.js';
+import { hostShimDigest, hostShimScript, hostShimVerbs, trialVerbs } from '../src/host-shim.js';
 import { addHost, probeHost, shareHost } from '../src/hosts.js';
 import { readShardHosts } from '../src/merge-writer/remote-shards.js';
 import { runTrial } from '../src/merge-writer/trial.js';
@@ -52,6 +52,11 @@ test(`${proof} — share binds the key to the same helper with its own state dir
   const b = await as(keyB, () => addHost('gy-compute@box', { file: join(hosts.root, 'b-hosts.json') }));
   assert.equal(b.added, true);
   assert.equal(b.probe?.shim, hostShimDigest, "B answers through A's helper");
+  // A re-prepares at another helper release: the helper B's shared line names stays.
+  await hosts.prepare('box', { shim: { script: hostShimScript.replace(hostShimDigest, 'c'.repeat(64)), digest: 'c'.repeat(64) } });
+  assert.ok(existsSync(join(hosts.host('box'), 'usr-local-bin', `graphyard-host-shim-${hostShimDigest}`)), "the helper a shared key names is kept");
+  assert.equal((await as(keyB, () => probeHost('gy-compute@box'))).ok, true, 'B still reaches the host');
+  await hosts.prepare('box');
 
   const before = await readFile(keys, 'utf8');
   for (const bad of ['ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ x', `${keyB}\n${keyB}`, `command="sh" ${keyB}`, 'ssh-ed25519 AAAA', `${keyB} "quoted"`]) {

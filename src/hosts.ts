@@ -87,10 +87,10 @@ if ! grep -qxF "$line" "$keys"; then
   mv "$keys.new" "$keys"
 fi
 chown "$user:$user" "$keys"; chmod 600 "$keys"
-# Helpers no key names are left from older releases: remove them.
+# Helpers no key names are left from older releases: remove them. A shared key names its helper followed by --home (GY-3834).
 for helper in /usr/local/bin/graphyard-host-shim*; do
   [ -e "$helper" ] || continue
-  grep -qF "command=\\"\${helper##*/}\\"" "$keys" || rm -f "$helper"
+  grep -qF -e "command=\\"\${helper##*/}\\"" -e "command=\\"\${helper##*/} " "$keys" || rm -f "$helper"
 done
 # The helper just installed runs, not an update it took earlier.
 rm -f "$home/.graphyard/shims/${helper}-"*
