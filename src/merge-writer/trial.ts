@@ -34,6 +34,7 @@ import { diskFloorBytes, gateTrialKey, trialFileTimeoutMs, heatWaitSeconds, Tria
 import { nestedSandboxDenied, trialAppArmorFix } from './trial-apparmor.js';
 import { maskSecrets } from '../redaction.js';
 import { setting } from '../setting.js';
+import { loopAuthorEnvironment } from '../check-in-author.js';
 import { stateDirectory } from '../install/layout.js';
 import { recordTrialTimings } from './trial-timings.js';
 
@@ -97,8 +98,8 @@ export const mergeSubject = (item: { key: string; title?: string | null }) => `M
  * nothing in, or merged origin/BASE in by fast-forward) is that commit itself: main fast-forwards
  * to it, so every commit the base's first-parent history held stays on it, and no merge commit
  * wraps a tree with no new change. Any other head gets the merge commit of head onto baseTip:
- * `git merge-tree --write-tree` computes the merged tree, `git commit-tree` (authored by
- * graphyard-merge-writer, subject `input.subject`, dated by its parents so a repeat is identical) makes the commit with parents baseTip and head.
+ * `git merge-tree --write-tree` computes the merged tree, `git commit-tree` (committed by
+ * graphyard-merge-writer and authored by the owner (GY-3850), subject `input.subject`, dated by its parents so a repeat is identical) makes the commit with parents baseTip and head.
  * Either way the only ref written is `refs/graphyard/trial/<head>`. Nothing under `refs/heads/*`,
  * no remote and no checkout is touched. A conflicting merge gives the conflicted paths and writes
  * no commit. Retention: one ref per tried head, overwritten by that head's next trial and never
@@ -127,9 +128,10 @@ export async function trialMerge(git: TrialGit, input: { head: string; baseTip: 
   // GY-3159: the dates are the later committer date of its two parents, not the clock, so merging
   // the same head onto the same tip again (the loop adopting a trial after a restart) makes the same commit.
   const date = `${Math.max(...(await git(['show', '-s', '--format=%ct', baseTip, head])).split(/\s+/).filter(Boolean).map(Number))} +0000`;
-  // The environment names the author, so a caller's own GIT_AUTHOR_* never decides it.
+  // The environment names the author, so a caller's own GIT_AUTHOR_* never decides it. GY-3850: the
+  // author is the owner's 'NAME (Mainworks)'; the committer stays the merge writer, which gates read.
   const mergeSha = (await git(['commit-tree', tree, '-p', baseTip, '-p', head, '-m', input.subject ?? `Merge ${head.slice(0, 12)}`],
-    { GIT_AUTHOR_NAME: trialAuthor, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: trialAuthor, GIT_COMMITTER_EMAIL: email, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date })).trim().toLowerCase();
+    { ...loopAuthorEnvironment(), GIT_COMMITTER_NAME: trialAuthor, GIT_COMMITTER_EMAIL: email, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date })).trim().toLowerCase();
   await git(['update-ref', trialRef(head), mergeSha]);
   return { mergeSha, tree };
 }

@@ -264,7 +264,7 @@ test('unit:complete-head-cli — complete GY-N EPOCH --head [SHA] sends {epoch, 
   const calls: { path: string; body: unknown }[] = [], printed: any[] = [];
   const worktree = join(checkout, '.graphyard', 'worktrees', 'GY-1-1');
   const context = { args: ['1', '--head'], api: async (path: string, body: unknown) => {
-    calls.push({ path, body }); return { key: 'GY-1', submission: { epoch: 1, pr: 5 } };
+    if (path !== 'owner') calls.push({ path, body }); return { key: 'GY-1', submission: { epoch: 1, pr: 5 } };
   }, print: (value: unknown) => printed.push(value), repositoryRoot: () => worktree } as unknown as CliContext;
   await completeCommand.run(context, { id: 'id-1', key: 'GY-1' } as any);
   assert.deepEqual(calls, [{ path: 'work/id-1/submit', body: { epoch: 1, head } }]);

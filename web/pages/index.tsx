@@ -17,6 +17,7 @@ import ProductPage from './product';
 import { DeliveryDefaults } from '../components/delivery-slices';
 import { WhereItRuns } from '../components/where-it-runs';
 import { PublicLink } from '../components/public-link';
+import { CheckInOwner } from '../components/check-in-owner';
 import { requestedView } from '../../src/model/setup-checklist';
 
 /**
@@ -74,7 +75,7 @@ export const views: readonly View[] = [
   { id: 'costs', icon: '$', label: 'Costs', section: 'settings', render: dashboard => <CostsPage api={dashboard.api} observedAt={dashboard.observedAt}/> },
   { id: 'setup', icon: '✔', label: 'Setup', section: 'settings', adminOnly: true, render: dashboard => <SetupPage status={dashboard.status} api={dashboard.api} setView={dashboard.setView}/> },
   // The project's effective delivery defaults and declared applications (GY-1901), with where the app runs (GY-3434).
-  { id: 'delivery', icon: '⇉', label: 'Delivery', section: 'settings', visible: dashboard => ['admin', 'coordinator', 'reader', 'slice-lead'].includes(role(dashboard)), render: dashboard => <><DeliveryDefaults status={dashboard.status}/><PublicLink api={dashboard.api} status={dashboard.status}/><WhereItRuns status={dashboard.status} now={Number.isNaN(dashboard.observedAt) ? Date.now() : dashboard.observedAt}/></> },
+  { id: 'delivery', icon: '⇉', label: 'Delivery', section: 'settings', visible: dashboard => ['admin', 'coordinator', 'reader', 'slice-lead'].includes(role(dashboard)), render: dashboard => <><DeliveryDefaults status={dashboard.status}/><CheckInOwner status={dashboard.status}/><PublicLink api={dashboard.api} status={dashboard.status}/><WhereItRuns status={dashboard.status} now={Number.isNaN(dashboard.observedAt) ? Date.now() : dashboard.observedAt}/></> },
   { id: 'guide', icon: '?', label: 'Help', section: 'settings', render: () => <GuidePage/> },
   { id: 'automation', icon: '◇', label: 'Operator automation', section: 'settings', advanced: true, adminOnly: true, visible: dashboard => configured(dashboard.features.automation), render: dashboard => <AutomationPage operatorAgents={dashboard.operatorAgents} operatorAgentsError={dashboard.operatorAgentsError}/> },
 ];

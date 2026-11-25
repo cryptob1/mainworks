@@ -85,7 +85,7 @@ for (const proof of ['integration:drop-worker-host-verification', 'e2e:drop-work
     t.after(() => { verificationQueue.waitMs = waitMs; });
     const requests: string[] = [];
     const context = { args: ['1', '--head', head], repositoryRoot: () => worktree, print: () => {},
-      api: (path: string, body: unknown, id: string) => { requests.push(path); return api(path, body, worker.token, id); },
+      api: (path: string, body: unknown, id: string) => { if (path !== 'owner') requests.push(path); return api(path, body, worker.token, id); },
     } as unknown as CliContext;
     await completeCommand.run(context, work);
     assert.deepEqual(requests, [`work/${work.id}/submit`], 'complete sends only the head; no host verification request');

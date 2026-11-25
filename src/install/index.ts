@@ -731,6 +731,7 @@ export async function buildPlan(session: InstallSession): Promise<InstallPlan> {
   actions.push(deployKeyAction(session));
 
   actions.push({ id: 'verify.status', target: 'graphyard', state: 'update', title: 'Verify authenticated GET /api/status reports the admin actor and the managed repository' });
+  actions.push(await ownerAction(session, existing));
   const launcher = userLauncherPath(session.deps.home);
   actions.push({
     id: 'local.launcher',
@@ -1003,6 +1004,7 @@ async function performInstall(session: InstallSession, plan: InstallPlan): Promi
   const release: InstallSummary['release'] = { mode: session.delivery.policy.mode };
 
   const status = await authenticatedStatus(session, url);
+  await recordOwner(session, url, plan);
   const profiles = observeOnly ? observedProfiles() : await registerProfiles(session, url);
   record = installRecordSchema.parse({
     ...record,
@@ -1155,6 +1157,28 @@ async function waitForHealth(session: InstallSession, url: string, attempts = 40
     await session.deps.wait(3_000);
   }
   return false;
+}
+
+/**
+ * GY-3850: the owner every commit is authored by, from the git config of the person running a first
+ * install. An existing install keeps what it has: nothing is guessed on a re-run or an upgrade.
+ */
+async function ownerAction(session: InstallSession, existing: boolean): Promise<PlanAction> {
+  const change = 'change it with mainworks config owner "NAME" EMAIL';
+  if (existing) return { id: 'graphyard.owner', target: 'graphyard', state: 'satisfied', title: `Keep the owner commits are authored by; ${change}` };
+  const read = async (key: string) => (await session.context.transport.exec('git', ['config', '--global', key], { allowFailure: true })).stdout.trim();
+  const [name, email] = [await read('user.name'), await read('user.email')];
+  if (!name || !email) return { id: 'graphyard.owner', target: 'graphyard', state: 'held', held: 'git config names no user.name and user.email', title: `Author commits as Mainworks until the owner is named: ${change}` };
+  return { id: 'graphyard.owner', target: 'graphyard', state: 'create', title: `Author every commit as '${name} (Mainworks) <${email}>'; ${change}`,
+    values: [{ name: 'owner name', value: name, secret: false }, { name: 'owner email', value: email, secret: false }] };
+}
+async function recordOwner(session: InstallSession, url: string, plan: InstallPlan) {
+  const action = plan.actions.find(entry => entry.id === 'graphyard.owner');
+  if (action?.state !== 'create') return;
+  const [name, email] = ['owner name', 'owner email'].map(field => action.values?.find(value => value.name === field)?.value);
+  const token = session.tokens.get(principalOfRole(session.principals, 'admin').id)!;
+  const response = await session.deps.fetch(`${url}/api/owner`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ name, email }), signal: AbortSignal.timeout(30_000) });
+  if (!response.ok) throw new Error(`Recording the owner failed (${response.status}); run mainworks config owner "${name}" ${email}`);
 }
 
 async function authenticatedStatus(session: InstallSession, url: string) {

@@ -43,7 +43,7 @@ test('unit:complete-explicit-head-no-push — complete GY-N EPOCH --head SHA att
   const context = {
     args: ['1', '--head', head],
     api: async (path: string, body: unknown) => {
-      calls.push({ path, body }); return { key: 'GY-1', submission: { epoch: 1, pr: 7 } };
+      if (path !== 'owner') calls.push({ path, body }); return { key: 'GY-1', submission: { epoch: 1, pr: 7 } };
     },
     print: (value: unknown) => printed.push(value), repositoryRoot: () => work,
   } as unknown as CliContext;

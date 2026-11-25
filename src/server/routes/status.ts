@@ -35,6 +35,7 @@ import { readFlow, sharedFlow } from '../flow.js';
 import { boundedHistoryRead } from '../history-reads.js';
 import { longestLockHold, slowestQuery } from '../../store/slow-queries.js';
 import { publicLinkOff } from './team-access.js';
+import { checkInOwner } from './owner.js';
 import { setting } from '../../setting.js';
 
 
@@ -118,6 +119,8 @@ export const statusRoutes = defineRoutes('status', [
         releaseCheck: (since => since ? { since } : null)(releaseCheckSince(gate, visibleWork)),
         // GY-3690: invited people are locked out while the install's public link is off, for Home's incidents.
         publicLink: actor.role === 'operator-agent' ? null : await publicLinkOff(engine.store.pool, observedAt),
+        // GY-3850: who every commit is authored by, for Settings and the attention line while none is named.
+        owner: (owner => owner && { name: owner.name, email: owner.email })(await checkInOwner(engine.store.pool)),
         // GY-3483: the checks running now, for the header — merge trials the merge writer has in flight
         // (an intent with no trial verdict yet) and a batch gate run on main.
         checksRunning: visibleWork.filter(item => item.mergeLedger?.state === 'intent' && !item.mergeLedger.trial && currentMergeStep(item, observedAt.getTime())?.fresh).length

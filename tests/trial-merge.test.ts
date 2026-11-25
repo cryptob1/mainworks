@@ -57,7 +57,7 @@ async function repository(files: Record<string, string>) {
   return { root, base, commitOnBase, write };
 }
 
-test('unit:trial-merge-exact-commit — a head whose first-parent chain does not hold the base tip gets its merge commit in the object store: parents [baseTip, head], the merged tree, author graphyard-merge-writer, the subject the caller names (`Merge GY-N: title`), only refs/graphyard/trial/<head> written, and no worktree, branch or remote touched', async () => {
+test('unit:trial-merge-exact-commit — a head whose first-parent chain does not hold the base tip gets its merge commit in the object store: parents [baseTip, head], the merged tree, committer graphyard-merge-writer and author Mainworks while no owner is named (GY-3850), the subject the caller names (`Merge GY-N: title`), only refs/graphyard/trial/<head> written, and no worktree, branch or remote touched', async () => {
   const repo = await repository({ 'a.txt': 'one\n', 'b.txt': 'two\n' });
   const baseTip = gitIn(repo.root, 'commit-tree', gitIn(repo.root, 'rev-parse', 'HEAD^{tree}'), '-p', repo.base, '-m', 'main moved');
   gitIn(repo.root, 'reset', '-q', '--hard', baseTip);
@@ -73,7 +73,8 @@ test('unit:trial-merge-exact-commit — a head whose first-parent chain does not
   assert.equal(gitIn(repo.root, 'rev-parse', `${result.mergeSha}^{tree}`), result.tree);
   assert.equal(gitIn(repo.root, 'show', `${result.mergeSha}:a.txt`), 'one head', 'the head\'s change is in the merge');
   assert.equal(gitIn(repo.root, 'show', `${result.mergeSha}:b.txt`), 'two main', 'and main\'s');
-  assert.equal(gitIn(repo.root, 'log', '-1', '--format=%an', result.mergeSha), trialAuthor);
+  assert.equal(gitIn(repo.root, 'log', '-1', '--format=%cn', result.mergeSha), trialAuthor);
+  assert.equal(gitIn(repo.root, 'log', '-1', '--format=%an', result.mergeSha), 'Mainworks');
   assert.equal(gitIn(repo.root, 'log', '-1', '--format=%s', result.mergeSha), 'Merge GY-9: Edit a');
   assert.equal(mergeSubject({ key: 'GY-9' }), 'Merge GY-9', 'an item whose title is not at hand is named by its key');
   assert.equal(gitIn(repo.root, 'rev-parse', trialRef(head)), result.mergeSha, 'the one ref written');
