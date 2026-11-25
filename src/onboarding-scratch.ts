@@ -5,6 +5,9 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Engine } from './engine.js';
+import { masterRunSchema } from './master.js';
+import { defaultChildRun } from './child-runner.js';
+import { mergeWriterReads } from './daemon/cycle-merge-writer.js';
 import { firstTaskInput, type FirstRunIssue } from './model/first-run.js';
 import { loopPresenceHeader } from './model/loop-presence.js';
 import { proposedRuntimes } from './model/registry.js';
@@ -28,7 +31,12 @@ export async function measureOnboarding(store: Store, input: { scratch: string; 
   git('config', 'user.name', 'Stub Builder'); git('config', 'user.email', 'builder@example.invalid');
   await writeFile(join(repo, 'README.md'), '# Onboarding fixture\n');
   git('add', 'README.md'); git('commit', '-q', '-m', 'Initial commit');
-  git('update-ref', 'refs/remotes/origin/main', git('rev-parse', 'HEAD'));
+  const origin = join(input.scratch, 'origin.git');
+  git('init', '-q', '--bare', '-b', 'main', origin);
+  git('remote', 'add', 'origin', origin);
+  git('push', '-q', 'origin', 'main');
+  const writer = mergeWriterReads({ repository: 'fixture/onboarding', baseBranch: 'main', run: masterRunSchema.parse({ mergeWriter: { deployKeyFile: join(input.scratch, 'unused-local-key') } }) }, repo, defaultChildRun,
+    { base: input.scratch, record: async () => {} });
 
   const policy = repositoryPolicy();
   setRepositoryPolicy({ ...policy, e2e: { ...policy.e2e, pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
@@ -50,6 +58,7 @@ export async function measureOnboarding(store: Store, input: { scratch: string; 
     return body;
   };
 
+  let pushedAt: number | undefined;
   let task: { id: string; key: string; revision: number } | null = null, epoch = 0;
   const branch = () => `graphyard/${task!.key.toLowerCase()}-1`;
   const steps: [string, () => Promise<unknown>][] = [
@@ -80,10 +89,12 @@ export async function measureOnboarding(store: Store, input: { scratch: string; 
       await api(`work/${task!.id}/submit`, tokens.builder, { epoch, head: git('rev-parse', 'HEAD') });
     }],
     ['merge the first change', async () => {
-      git('checkout', '-q', 'main');
-      git('merge', '-q', '--no-ff', '-m', `Merge ${task!.key}`, branch());
-      const mergeSha = git('rev-parse', 'HEAD');
-      git('update-ref', 'refs/remotes/origin/main', mergeSha);
+      const baseTip = await writer.fetch();
+      const merged = await writer.merge(git('rev-parse', branch()), baseTip);
+      if ('conflict' in merged) throw new Error('The first change conflicts with main');
+      const { mergeSha } = merged;
+      if (await writer.push(mergeSha, baseTip) !== 'pushed') throw new Error('The first merge push was rejected');
+      pushedAt = now();
       await store.transaction(async (db, at) => {
         const work = (await lockedWork(db, [task!.id]))[0]!;
         work.stage = 'done'; work.lease = null;
@@ -102,5 +113,7 @@ export async function measureOnboarding(store: Store, input: { scratch: string; 
     setRepositoryPolicy(policy);
     await new Promise<void>(resolve => http.close(() => resolve()));
   }
-  return { at: new Date(now()).toISOString(), commit: input.commit, minutes: Math.round((now() - started) / 6_000) / 10, result: handFixes.length ? 'failed' : 'passed', handFixes };
+  const ended = pushedAt ?? now(), seconds = (ended - started) / 1000;
+  // Round up to tenths: a real sub-three-second run must not read as zero minutes.
+  return { at: new Date(ended).toISOString(), commit: input.commit, seconds, minutes: Math.ceil(seconds / 6) / 10, result: handFixes.length ? 'failed' : 'passed', handFixes };
 }

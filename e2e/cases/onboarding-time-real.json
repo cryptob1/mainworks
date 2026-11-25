@@ -1,0 +1,14 @@
+{
+  "id": "onboarding-time-real",
+  "title": "A fresh repository reports its real connect-to-merge time",
+  "description": "Start a scratch install, connect its repository, push its first change with the merge writer, and read a positive onboarding time in master status.",
+  "tags": ["diagnostics"],
+  "target": "any",
+  "required": false,
+  "steps": [{
+    "kind": "command",
+    "name": "connect a scratch repository and read its first pushed merge time",
+    "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:onboarding-time-real tests/onboarding-time-real.test.ts",
+    "timeoutSeconds": 600
+  }]
+}

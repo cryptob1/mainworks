@@ -1,6 +1,6 @@
 // Concern: the daily onboarding time (GY-3747). A scratch install of the verified commit connects a
 // small fixture repository, starts its first task the way the first-run page does, and a stub
-// Builder carries it to a merge; the run records the minutes from connect to first merge and every
+// Builder carries it to a merge; the run records the seconds from connect to first merge and every
 // step that refused, which a person would have had to fix by hand. Never the live install: the
 // task it files would reach real workers. The run itself is src/onboarding-scratch.ts, kept apart so
 // the batch gate's record reads none of the engine.
@@ -16,8 +16,8 @@ export const onboardingCase = 'onboarding-time-measured';
 /** The brief's bound: a first merge slower than this files an item. */
 const onboardingLimitMinutes = 15;
 
-/** One daily onboarding run: minutes from connect to first merge, and each step that needed a hand fix. */
-export interface OnboardingRun { at: string; commit: string; minutes: number; result: 'passed' | 'failed'; handFixes: string[] }
+/** One daily onboarding run: seconds from connect to first merge, and each step that needed a hand fix. */
+export interface OnboardingRun { at: string; commit: string; /** Absent on historical runs. */ seconds?: number; minutes: number; result: 'passed' | 'failed'; handFixes: string[] }
 
 /** Why a run files an item — a hand fix or a first merge over the limit — or null when it needs none. */
 export function onboardingFailure(run: OnboardingRun): string | null {
