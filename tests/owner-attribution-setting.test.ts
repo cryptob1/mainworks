@@ -21,7 +21,7 @@ test('integration:owner-attribution-setting — install records the owner from g
   const fixture = await harness({ provider: 'compose', serverUrl: 'http://127.0.0.1:4310', extraResponses: [
     { match: 'git config --global user.name', result: 'Ada Lovelace\n' }, { match: 'git config --global user.email', result: 'ada@example.com\n' }] });
   const posted: unknown[] = [];
-  const served = fixture.deps.fetch;
+  const served = fixture.deps.fetch!;
   fixture.deps.fetch = (async (input: any, init: any = {}) => String(input).endsWith('/api/owner') && init.method === 'POST'
     ? (posted.push(JSON.parse(String(init.body))), new Response(JSON.stringify({ owner: JSON.parse(String(init.body)) }), { status: 200 })) : served(input, init)) as typeof fetch;
   try {
