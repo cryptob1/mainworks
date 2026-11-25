@@ -13,11 +13,23 @@ import { serveHead } from '../src/merge-writer/serve-head.js';
 const proof = 'unit:tests/trial-load-cap.test.ts';
 
 // Stand-in docker and df CLIs. `start` holds the attached client until `rm` of that container ends it, as Docker does.
+// Write the pidfile atomically before logging `start` and pair with a `.rm` sentinel so a fast `rm` never misses `start` and leaves `sleep 60` running.
 const fakeDocker = (log: string) => `#!/bin/sh
-echo "$*" >> ${JSON.stringify(log)}
+for name; do :; done
+pidfile=${JSON.stringify(log)}."$name"
 case "$3" in
-  start) for name; do :; done; echo $$ > ${JSON.stringify(log)}."$name"; exec sleep 60 ;;
-  rm) for name; do :; done; kill "$(cat ${JSON.stringify(log)}."$name")" 2>/dev/null; exit 0 ;;
+  start)
+    echo $$ > "$pidfile.tmp" && mv "$pidfile.tmp" "$pidfile"
+    [ -e "$pidfile.rm" ] && exit 0
+    echo "$*" >> ${JSON.stringify(log)}
+    exec sleep 60
+    ;;
+  rm)
+    : > "$pidfile.rm"
+    pid=$(cat "$pidfile" 2>/dev/null)
+    [ -n "$pid" ] && kill "$pid" 2>/dev/null
+    exit 0
+    ;;
 esac
 exit 0
 `;
@@ -36,9 +48,9 @@ async function machine(label: string) {
     await writeFile(join(hwmon, name, 'name'), name);
     await writeFile(join(hwmon, name, 'temp1_input'), `${millidegrees}\n`);
   };
-  const launch = (load: { cap?: number; order?: number } = {}) => {
+  const launch = (load: { cap?: number; order?: number; pollSeconds?: number } = {}) => {
     const [program, ...words] = trialContainerLaunch({ image: 'mainworks-trial:local', mounts: [[base, '/scratch', false]], network: 'none',
-      load: { slots: join(base, 'slots'), cap: load.cap ?? 2, order: load.order ?? trialStartOrder.merge, hotCelsius: 95, floorBytes: 30e9, hwmon, pressureBoundSeconds: 600 } });
+      load: { slots: join(base, 'slots'), cap: load.cap ?? 2, order: load.order ?? trialStartOrder.merge, hotCelsius: 95, floorBytes: 30e9, hwmon, pressureBoundSeconds: 600, pollSeconds: load.pollSeconds ?? 0.05 } });
     const child = spawn(program!, [...words, 'sleep', '600'], { cwd: base, env: { PATH: `${bin}:/usr/bin:/bin` }, stdio: ['ignore', 'ignore', 'pipe'] });
     let said = '';
     child.stderr!.on('data', chunk => { said += chunk; });
@@ -46,9 +58,9 @@ async function machine(label: string) {
     return { child, said: () => said };
   };
   const until = async (condition: () => boolean | Promise<boolean>, what: string) => {
-    for (let waited = 0; !(await condition()); waited += 50) {
+    for (let waited = 0; !(await condition()); waited += 20) {
       assert.ok(waited < 15_000, what);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await new Promise(resolve => setTimeout(resolve, 20));
     }
   };
   const end = async (child: ChildProcess) => { const gone = new Promise(resolve => child.once('close', resolve)); child.kill('SIGTERM'); await gone; };
@@ -100,7 +112,7 @@ test(`${proof} — at normal readings a start proceeds at once, without waiting`
   const host = await machine('load-normal');
   try {
     await host.sensor('coretemp', 70_000);
-    const at = Date.now(), { said } = host.launch();
+    const at = Date.now(), { said } = host.launch({ pollSeconds: 1 });
     await host.until(async () => await host.started() === 1, 'the start goes');
     assert.ok(Date.now() - at < 900, 'no wait of even one retry');
     assert.equal(said(), '');
@@ -120,7 +132,7 @@ test(`${proof} — a freed slot goes to the gate before the merge trial, and the
     await host.until(() => gate.said().includes('waiting'), 'the gate waits');
     await host.end(occupant.child);
     await host.until(() => gate.said().includes('starting'), 'the gate goes first');
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    await new Promise(resolve => setTimeout(resolve, 250));
     assert.equal(merge.said().includes('starting') || verification.said().includes('starting'), false);
     await host.end(gate.child);
     await host.until(() => merge.said().includes('starting'), 'the merge trial goes second');
@@ -163,7 +175,7 @@ test(`${proof} — a serve command's time to answer starts when its container do
   const base = await temporaryDirectory('load-serve', process.cwd());
   const port = await new Promise<number>(resolve => { const probe = createServer().listen(0, '127.0.0.1', () => { const { port } = probe.address() as { port: number }; probe.close(() => resolve(port)); }); });
   const launcher = join(base, 'launcher');
-  await writeFile(launcher, '#!/bin/sh\necho "mainworks trial container: waiting: a CPU sensor reads 95C or more" >&2\nsleep 2\necho "mainworks trial container: starting" >&2\nexec "$@"\n');
+  await writeFile(launcher, '#!/bin/sh\necho "mainworks trial container: waiting: a CPU sensor reads 95C or more" >&2\nsleep 1.3\necho "mainworks trial container: starting" >&2\nexec "$@"\n');
   await chmod(launcher, 0o755);
   const server = join(base, 'server.cjs');
   await writeFile(server, `require('http').createServer((q, r) => r.end('ok')).listen(${port}, '127.0.0.1');\n`);
