@@ -12,7 +12,7 @@ import { deployReleaseAttention } from '../daemon/deploy-release.js';
 import { standingStepFailures, testQueueStatus, workerGrowthKey, masterLaunchKey, masterLaunchBackoffAfter } from '../daemon/cycle.js';
 import { fetchRefusalKey, gateStallKey } from '../daemon/cycle-batch-gate.js';
 import { cpuPerMergedItem, cpuWaiting } from '../daemon/cpu-pressure.js';
-import { readTestSelections, testSelectionSummary } from '../merge-writer/test-selection.js';
+import { missedByNarrowing, readTestSelections, testSelectionSummary } from '../merge-writer/test-selection.js';
 import { heatReading } from '../merge-writer/trial-load.js';
 import { overloadAlarm, overloaded, sessionFigures } from '../session-share.js';
 import { profileHealth, repeatedLaunchFailures } from '../daemon/sessions.js';
@@ -334,7 +334,8 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     // wall time, waits while a host idled, this machine's peak CPU temperature and each host's latest probe (GY-3517).
     remoteShards: remoteShardSummary(readRemoteShardRuns(root), state?.hosts),
     // GY-3750: over the last 20 item trials, the median shares of reachable and of all test files the trial selected.
-    testSelection: testSelectionSummary(readTestSelections(root)),
+    // GY-3840: with how many failing test files the last 20 release checks caught that no item trial of their batch selected.
+    testSelection: ((runs) => { const summary = testSelectionSummary(runs); return { ...summary || {}, missedByNarrowing: missedByNarrowing(gateRecord?.sweeps ?? [], runs) }; })(readTestSelections(root)),
     // GY-3119: the batch gate on main — the verified commit that serves, the gate in flight with its current step, the last run's outcome with its reason or failing check (GY-3141), a held batch and the revert rate over the last 20 merges.
     batchGate: gateSummary(gateRecord),
     // GY-3833: non-blank lines in src/ and tests/ at the latest verified commit, with the seven-day change.

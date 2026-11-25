@@ -1,0 +1,18 @@
+{
+  "id": "narrowing-miss-rate",
+  "title": "Master status counts failures the release check caught that no item trial selected",
+  "description": "Runs the real batch gate step on a test install: an item lands whose recorded item trial selected only one test file, and the release check's sweep catches another file failing on the batch tip. Master status then shows testSelection.missedByNarrowing with one release check, one missed file, and that file and item.",
+  "tags": [
+    "trial"
+  ],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "master status shows missedByNarrowing after a release check",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:narrowing-miss-rate tests/narrowing-miss-rate.test.ts",
+      "timeoutSeconds": 120
+    }
+  ]
+}

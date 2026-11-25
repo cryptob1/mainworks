@@ -38,6 +38,7 @@ import { EnvironmentFault } from './app-environments.js';
 import { formatAge } from './model/duration.js';
 import type { Work } from './model.js';
 import { baseStillFails, type ServeLanding } from './merge-writer/serve-revert.js';
+import type { ReleaseSweep } from './merge-writer/test-selection.js';
 import type { PreviewCaseRun } from './merge-writer/served-previews.js';
 import { onboardingFailure, type OnboardingRun } from './onboarding-time.js';
 import { TrialHeatError, trialFileTimeoutMs } from './merge-writer/trial-load.js';
@@ -201,6 +202,8 @@ export interface GateRecord {
   notes?: string[];
   /** GY-3431: the failures recorded on each open flaky-check item instead of a revert, by item key: the last few per item, the ten items failing most recently. Optional only for records an older loop wrote. */
   flaky?: Record<string, { check: string; tip: string; at: string }[]>;
+  /** GY-3840: the last 20 release checks' items and the test files each caught failing, oldest first. */
+  sweeps?: ReleaseSweep[];
   /** GY-3833: daily non-blank line counts in src/ and tests/ recorded when commits verify, one per UTC day, oldest first. */
   codeSize?: CodeSizeReading[];
   at: string;
@@ -587,6 +590,9 @@ async function gateFlight(ports: GatePorts, record: GateRecord, keepInFlight: ()
       const flakyItem = record.filed?.[`flake:${check}`]?.item;
       if (flakyItem) noteFlaky(check, flakyItem);
     };
+    // GY-3840: what this release check caught, beside the items whose trials selected tests, for master status.
+    record.sweeps = [...record.sweeps ?? [], { at: at(), items: landings.flatMap(landing => landing.item ? [landing.item.key] : []),
+      failed: confirmed.filter(check => check.startsWith('test:')).map(check => check.slice(5)) }].slice(-20);
     if (!confirmed.length) return verify();
     // A recut that still fails asks the verified commit about every confirmed check at once.
     if (record.attempt.recuts >= 1) await probe(confirmed);
