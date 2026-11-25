@@ -34,8 +34,9 @@ async function fixtureRepo() {
   const root = await temporaryDirectory('trial-timings-repo');
   const base = await temporaryDirectory('trial-timings-base');
   git(root, 'init', '-q', '-b', 'main');
+  mkdirSync(join(root, '.graphyard'));
   writeFiles(root, {
-    '.gitignore': 'node_modules\n',
+    '.gitignore': 'node_modules\n.graphyard\n',
     'package.json': JSON.stringify({ name: 'timings-fixture', scripts: { build: 'node -e ""' } }),
     'package-lock.json': '{"lockfileVersion":3}\n',
     'graphyard.json': JSON.stringify({ delivery: { mergeGate: { perCandidate: [], preMerge: [{

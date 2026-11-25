@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { emptyDaemonState, daemonStatePath, type DaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { daemonEffects, type DaemonEffects } from '../src/daemon/effects.js';
@@ -112,6 +112,7 @@ async function fixture(options: {
 } = {}) {
   const directory = await temporaryDirectory('planner-drafts-empty-board');
   // GY-3838: the planner reads the slowest files from stored trial timings.
+  await mkdir(join(directory, '.graphyard'));
   await recordTrialTimings(directory, { at: new Date().toISOString(), run: 'merge trial', commit: 'a'.repeat(40),
     files: Object.fromEntries(['a', 'b', 'c', 'd', 'e', 'f'].map((name, index) => [`tests/${name}.test.ts`, (index + 1) * 1000])) });
   const workers = workerProfiles(options.workers ?? 4);

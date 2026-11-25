@@ -1,7 +1,7 @@
 // GY-3838: each merge trial's and release check's per-file test durations, the last 20 kept, so master
 // status and the planner name the five slowest trial test files by their median over those trials.
-import { mkdir, rename, writeFile } from 'node:fs/promises';
-import { readFileSync } from 'node:fs';
+import { rename, writeFile } from 'node:fs/promises';
+import { existsSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { stateDirectory } from '../install/layout.js';
@@ -14,9 +14,11 @@ export function readTrialTimings(root: string): TrialTimings[] {
   try { const runs = JSON.parse(readFileSync(path(root), 'utf8')); return Array.isArray(runs) ? runs : []; } catch { return []; }
 }
 
+/** Kept in the install's state directory; a checkout that has none (a bare fixture repository) keeps nothing, so its tree stays clean. */
 export async function recordTrialTimings(root: string, timings: TrialTimings): Promise<void> {
-  const file = path(root), runs = [...readTrialTimings(root), timings].slice(-kept);
-  await mkdir(dirname(file), { recursive: true });
+  const file = path(root);
+  if (!existsSync(dirname(file))) return;
+  const runs = [...readTrialTimings(root), timings].slice(-kept);
   const temporary = `${file}.${process.pid}.${randomUUID().slice(0, 8)}`;
   await writeFile(temporary, `${JSON.stringify(runs)}\n`);
   await rename(temporary, file);
