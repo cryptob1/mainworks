@@ -29,7 +29,11 @@ const faultCooldownMs = 24 * 60 * 60_000;
  * binds that repository's own case instead (GY-3568). Every item carries a `faultKey` so repeats
  * add an observation note to the existing item instead of filing duplicates.
  */
-const faultItem = (input: { faultKey: string; title: string; description: string; proof: string; reason: string; plannedFiles?: string[]; repaired?: { text: string; proof: string }; e2e?: { proof: string; clause: string } }) => {
+const defaultPinText = 'The fault is fixed at its cause, not skipped or weakened; a new test pins it and fails without the fix';
+/** GY-3821: flaky-check items tell their Builder how to pin a race deterministically through a test seam. */
+const flakyPinText = 'The fault is fixed at its cause, not skipped or weakened; a new test pins it and reproduces the race by injecting the one condition the test waits on through a test seam, never by loading the host or lengthening a wait, timeout or poll bound, and fails on the base tip on every run';
+
+const faultItem = (input: { faultKey: string; title: string; description: string; proof: string; reason: string; ac1Text?: string; plannedFiles?: string[]; repaired?: { text: string; proof: string }; e2e?: { proof: string; clause: string } }) => {
   const e2e = input.e2e ?? { proof: 'e2e:create-work-item', clause: 'creating a work item still works' };
   return {
   faultKey: input.faultKey,
@@ -39,7 +43,7 @@ const faultItem = (input: { faultKey: string; title: string; description: string
   simplest: 'Fix the one cause the description names and pin it with a test; nothing else changes.',
   criteria: [
     // AC-1 never repeats the title: a title like "… on the install for X" reads as a live-install observation the filing refuses.
-    { id: 'AC-1', text: 'The fault is fixed at its cause, not skipped or weakened; a new test pins it and fails without the fix', proofs: [input.proof] },
+    { id: 'AC-1', text: input.ac1Text ?? defaultPinText, proofs: [input.proof] },
     input.repaired
       ? { id: 'AC-2', text: `${input.repaired.text} and ${e2e.clause}`, proofs: [input.repaired.proof, e2e.proof] }
       : { id: 'AC-2', text: `${e2e.clause[0]!.toUpperCase()}${e2e.clause.slice(1)}`, proofs: [e2e.proof] },
@@ -260,7 +264,7 @@ const gateFiledE2e = (key: string, repository: string): { proof: string; clause:
 /** A batch gate filing's item: its pinning test and its E2E case are named from its check and the gated repository. */
 export const gateFiledItem = (input: { title: string; description: string; key: string }, baseBranch: string, repository: string) => {
   const plannedFile = /^(?:flake|known-red):test:(.+)$/.exec(input.key)?.[1];
-  return faultItem({ faultKey: input.key, title: input.title, description: input.description, proof: pinningProof(input.key), repaired: { text: 'The batch gate passes again', proof: repairedProof }, e2e: gateFiledE2e(input.key, repository), reason: `Filed by the batch gate on ${baseBranch}`, ...(plannedFile ? { plannedFiles: [plannedFile] } : {}) });
+  return faultItem({ faultKey: input.key, title: input.title, description: input.description, proof: pinningProof(input.key), ...(input.key.startsWith('flake:') ? { ac1Text: flakyPinText } : {}), repaired: { text: 'The batch gate passes again', proof: repairedProof }, e2e: gateFiledE2e(input.key, repository), reason: `Filed by the batch gate on ${baseBranch}`, ...(plannedFile ? { plannedFiles: [plannedFile] } : {}) });
 };
 
 /** GY-3735: a merge trial's flake files the batch gate's own "Flaky check on main: CHECK" item, or notes the one its fault key has. */

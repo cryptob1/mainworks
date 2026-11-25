@@ -1,0 +1,16 @@
+{
+  "id": "flaky-item-pin-guidance",
+  "title": "A filed flaky-check item shows test-seam pin guidance in its criteria",
+  "description": "Run the real loop cycle against a real temporary Postgres control plane and scratch bare Git remote: when a merge trial fails a test once and passes its rerun, the filed Flaky check on main item on the running test install shows the test-seam pin guidance in its AC-1 criterion.",
+  "tags": ["dispatch", "batch-gate", "merge-writer"],
+  "target": "any",
+  "required": true,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "Filed flaky-check item shows test-seam pin guidance in its criteria on a running test install",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=^e2e:flaky-item-pin-guidance tests/flaky-item-pin-guidance.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}
