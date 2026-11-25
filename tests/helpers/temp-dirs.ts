@@ -1,3 +1,4 @@
+import './heavy-slots.js';
 import { after } from 'node:test';
 import { rmSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';

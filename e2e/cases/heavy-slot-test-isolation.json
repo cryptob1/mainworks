@@ -1,0 +1,15 @@
+{
+  "id": "heavy-slot-test-isolation",
+  "title": "Test runs leave the host's heavy-job slots to real trials",
+  "description": "Runs test files that create merge trials with the environment of a Mainworks session, while the host's slot directory allows one job: no fixture trial registers there, and the next merge trial starts without waiting for a slot (GY-3854).",
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "after a test run that creates merge trials, the next merge trial starts without waiting",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:heavy-slot-test-isolation tests/heavy-slot-test-isolation.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}

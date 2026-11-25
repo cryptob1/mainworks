@@ -25,7 +25,7 @@ import { migrateHerdr } from '../herdr-migration.js';
 import { loadMasterConfig } from '../master.js';
 import { cliReleasePath, activeCliRoot, prepareCliRelease, publishCliRelease, writeUserLauncher } from '../install/cli-release.js';
 import { knownGoodState, pinKnownGood } from '../master/known-good.js';
-import { heavyJobsDirectory, heldSlots, joinHostHeavyBudget, withHeavyJob } from '../master/verification-slots.js';
+import { heavyJobsDirectory, joinHostHeavyBudget, liveSlots, withHeavyJob } from '../master/verification-slots.js';
 import { readReviewLedger } from '../reviewer.js';
 import { readProducerLedger } from '../producer.js';
 import { hasRunningWorker } from '../headless-session.js';
@@ -526,7 +526,7 @@ export function stoppedPlanePorts(url: string, composeDirectory: string, run: Ch
 export async function installInFlight(root: string, repository: string, slots: string = heavyJobsDirectory()): Promise<string | null> {
   if ((await readReviewLedger(root)).reviews.some(record => record.state === 'pending')) return 'a review is running';
   const own = (project: string | undefined) => project?.toLowerCase() === repository.toLowerCase();
-  if (heldSlots(slots).some(({ owner }) => owner && own(owner.project) && /^(?:merge trial|test merge) /.test(owner.label))) return 'a merge trial is running';
+  if ((await liveSlots(slots)).some(({ owner }) => owner && own(owner.project) && /^(?:merge trial|test merge) /.test(owner.label))) return 'a merge trial is running';
   if ((await readProducerLedger(root)).producers.some(record => record.state === 'pending')) return 'an acceptance run is running';
   if (hasRunningWorker(root)) return 'a builder is running';
   return null;
