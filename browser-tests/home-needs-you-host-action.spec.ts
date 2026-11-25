@@ -39,8 +39,8 @@ test('e2e:home-needs-you-host-action — one Needs you card per outdated test ma
     for (const name of ['vish-msi', 'omarchypc']) {
       const card = section.locator(`[data-host-action="gy-compute@${name}"]`);
       await expect(card).toContainText(name);
-      await expect(card).toContainText('mainworks host prepare');
-      await expect(card).toContainText('with sudo');
+      await expect(card).toContainText(`mainworks host add YOU@${name}`);
+      await expect(card).not.toContainText('script');
       await expect(card).toContainText('moves test work off vishrog');
       await expect(card).not.toContainText(/GY-\d|shim/);
     }

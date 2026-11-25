@@ -4,7 +4,7 @@ import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fakeHosts } from './helpers/fake-hosts.js';
 import { hostShimDigest, hostShimScript } from '../src/host-shim.js';
-import { addHost, probeHost, readHostReadings } from '../src/hosts.js';
+import { addHost, hostAddCommand, probeHost, readHostReadings } from '../src/hosts.js';
 import { outdatedShimAttention } from '../src/merge-writer/remote-shards.js';
 import { encodeLoopHosts, loopHosts } from '../src/model/loop-presence.js';
 
@@ -44,7 +44,7 @@ test(`${proof} — each install's probe answers through its own helper, both hos
   const readings = async (key: string | undefined, file: string) => loopHosts(encodeLoopHosts(await as(key, () => readHostReadings([], { file, local: 'here' }))))!;
   const older = await readings(keyB, join(hosts.root, 'b-hosts.json'));
   assert.equal(older.find(reading => reading.host === 'gy-compute@box')!.away, false, "B's host stays ready");
-  assert.deepEqual(outdatedShimAttention(older).map(line => line.text), ['gy-compute@box runs an older helper: run host prepare there to update it']);
+  assert.deepEqual(outdatedShimAttention(older).map(line => line.text), [`gy-compute@box runs an older helper: run ${hostAddCommand('gy-compute@box')} to update it`]);
   assert.deepEqual(outdatedShimAttention(await readings(undefined, join(hosts.root, 'a-hosts.json'))), [], "A's host runs this release's helper");
 
   const keys = join(hosts.home('box'), '.ssh', 'authorized_keys');

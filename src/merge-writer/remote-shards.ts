@@ -12,7 +12,7 @@ import type { ChildRun } from '../child-runner.js';
 import { shellQuote } from '../shell-quote.js';
 import { hostShimDigest, probeShimVerbs, supportsCheckImages, supportsWarmImageV2 } from '../host-shim.js';
 import { heavyJobsDirectory, readMachines } from '../master/verification-slots.js';
-import { hostKnownHostsFile, probeHost, readHosts, sshTarget, type HostReading as HostProbe } from '../hosts.js';
+import { hostAddCommand, hostKnownHostsFile, probeHost, readHosts, sshTarget, type HostReading as HostProbe } from '../hosts.js';
 import { trialImage } from './trial-container.js';
 import { trialContainerFault, trialHotCelsius } from './trial-load.js';
 import { stateDirectory } from '../install/layout.js';
@@ -627,9 +627,9 @@ export function remoteShardSummary(runs: readonly RemoteShardRun[], probes?: rea
 
 /** GY-3476, GY-3517: one attention line for each host the latest probe reads away because its shim lacks a verb trials use, or (GY-3744) reads ready on an older helper; it clears with the probe. */
 export const outdatedShimAttention = (probes: readonly Pick<HostProbe, 'host' | 'away' | 'update' | 'updateError' | 'older'>[]) => probes.flatMap(probe =>
-  probe.away && probe.update ? [{ subject: `host ${probe.host}`, text: `${probe.host} takes no trial shards: ${probe.updateError ? `it did not take this release's helper (${probe.updateError})` : 'its graphyard-host-shim is older than this release'}`, next: `Run mainworks host prepare and, with sudo on ${probe.host}, the script it prints` }]
+  probe.away && probe.update ? [{ subject: `host ${probe.host}`, text: `${probe.host} takes no trial shards: ${probe.updateError ? `it did not take this release's helper (${probe.updateError})` : 'its graphyard-host-shim is older than this release'}`, next: `Run ${hostAddCommand(probe.host)}` }]
   // GY-3744: a ready host on another release's helper keeps taking shards; one line says how to update it.
-  : !probe.away && probe.older ? [{ subject: `host ${probe.host}`, text: `${probe.host} runs an older helper: run host prepare there to update it`, next: `Run mainworks host prepare and, with sudo on ${probe.host}, the script it prints` }] : []);
+  : !probe.away && probe.older ? [{ subject: `host ${probe.host}`, text: `${probe.host} runs an older helper: run ${hostAddCommand(probe.host)} to update it`, next: `Run ${hostAddCommand(probe.host)}` }] : []);
 
 /** GY-3534: one attention line for each host the latest trial left away because its SSH server reset the connection. */
 export const connectionResetAttention = (runs: readonly RemoteShardRun[]) => (runs.at(-1)?.hosts ?? []).filter(host => host.away && /connection reset|kex_exchange_identification/i.test(host.reason ?? '')).map(host =>

@@ -120,15 +120,15 @@ function WeekLine({ status, work, open }: { status?: Dashboard['status']; work: 
 /** GY-3517: the compute machines the loop's latest probe reads away only because their host helper is too old for this release. */
 export const hostsNeedingUpdate = (status?: Dashboard['status']): string[] =>
   Array.isArray(status?.hosts) ? status.hosts.filter((host: { away?: unknown; update?: unknown; host?: unknown }) => host?.away === true && host.update === true && typeof host.host === 'string').map((host: { host: string }) => host.host) : [];
-/** The one command that updates a machine's helper: its printed script is then run there with sudo. */
-export const hostUpdateCommand = 'mainworks host prepare';
+/** GY-3834: the one command that updates a machine's helper, run in a terminal on the main machine. */
+export const hostUpdateCommand = (host: string) => `mainworks host add YOU@${host.replace(/^.*@/, '').replace(/:\d+$/, '')}`;
 
 /** GY-3517: one line while any compute machine needs its helper updated, naming them and the one command; gone once the next probe reads them ready. */
 function HostUpdateLine({ status }: { status?: Dashboard['status'] }) {
   const names = hostsNeedingUpdate(status);
   if (!names.length) return null;
   return <p className="host-update-line" role="status" data-host-update={names.join(' ')}>
-    <strong>Compute machines need an update: {names.join(', ')}</strong> · run <span className="mono">{hostUpdateCommand}</span>, then the script it prints on each with sudo
+    <strong>Compute machines need an update: {names.join(', ')}</strong> · in a terminal here, run {names.map((name, index) => <span key={name}>{index ? ', ' : ''}<span className="mono">{hostUpdateCommand(name)}</span></span>)}
   </p>;
 }
 

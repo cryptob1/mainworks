@@ -75,7 +75,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
       await signIn(page, url);
       const line = page.locator('[data-host-update]');
       await expect(line).toHaveCount(1, { timeout: 15_000 });
-      await expect(line).toHaveText('Compute machines need an update: gy-compute@oldbox · run mainworks host prepare, then the script it prints on each with sudo');
+      await expect(line).toHaveText('Compute machines need an update: gy-compute@oldbox · in a terminal here, run mainworks host add YOU@oldbox');
       await expect(line).toBeInViewport();
       await noOverflow(page, viewport.width);
 
@@ -83,7 +83,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
       await expect(page.getByRole('heading', { name: 'Needs you', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
       const item = page.locator('[data-host-update-request]');
       await expect(item).toContainText('Compute machines need an update');
-      await expect(item).toContainText('gy-compute@oldbox takes no trial work until updated. Run mainworks host prepare');
+      await expect(item).toContainText('gy-compute@oldbox takes no trial work until updated. In a terminal here, run mainworks host add YOU@oldbox');
       await expect(item).not.toContainText('newbox');
       await noOverflow(page, viewport.width);
 

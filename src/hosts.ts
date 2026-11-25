@@ -1,5 +1,5 @@
 // Concern: GY-3407 — the hosts Mainworks watches; merge trials send them test shards (GY-3412). A host lends
-// compute and nothing else: `mainworks host prepare` prints a one-time sudo script that creates the
+// compute and nothing else: a one-time sudo script (`host prepare` prints it; `host add` runs it) creates the
 // unprivileged gy-compute user (not in the docker group) with linger and rootless Docker, and lets this
 // machine's key run only graphyard-host-shim-DIGEST (restrict,command=…: no shell, pty or forwarding). The shim
 // answers fixed verbs (src/host-shim.ts). `mainworks host add USER@HOST` refuses a key
@@ -9,7 +9,11 @@
 // GY-3440: where port 22 is Tailscale SSH (it ignores authorized_keys and so the shim), prepare adds a
 // second OpenSSH for gy-compute only on port 2222; host add takes USER@HOST:PORT or an ssh-config alias
 // and reports whether the operator's own account logs into that host unattended on port 22.
+// GY-3834: `host add OWNER@HOST` in a terminal runs that script over its own SSH session with sudo, then
+// records gy-compute@HOST; `host share` lets an enrolled coordinator bind another install's key to the
+// same helper (the shim's share verb), so a second install needs no root there.
 import { existsSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
@@ -83,10 +87,10 @@ if ! grep -qxF "$line" "$keys"; then
   mv "$keys.new" "$keys"
 fi
 chown "$user:$user" "$keys"; chmod 600 "$keys"
-# Helpers no key names are left from older releases: remove them.
+# Helpers no key names are left from older releases: remove them. A shared key names its helper followed by --home (GY-3834).
 for helper in /usr/local/bin/graphyard-host-shim*; do
   [ -e "$helper" ] || continue
-  grep -qF "command=\\"\${helper##*/}\\"" "$keys" || rm -f "$helper"
+  grep -qF -e "command=\\"\${helper##*/}\\"" -e "command=\\"\${helper##*/} " "$keys" || rm -f "$helper"
 done
 # The helper just installed runs, not an update it took earlier.
 rm -f "$home/.graphyard/shims/${helper}-"*
@@ -191,7 +195,7 @@ export async function localPublicKey(home = homedir()) {
     const key = await readFile(join(home, '.ssh', name), 'utf8').catch(() => null);
     if (key?.trim()) return key.trim();
   }
-  throw new Error(`No SSH public key in ${join(home, '.ssh')}: create one with ssh-keygen -t ed25519, then run mainworks host prepare again`);
+  throw new Error(`No SSH public key in ${join(home, '.ssh')}: create one with ssh-keygen -t ed25519, then run that command again`);
 }
 
 function parseHostProbe(text: string) {
@@ -204,7 +208,10 @@ function parseHostProbe(text: string) {
     uid: user ? Number(user[1]) : null, groups: user ? user[2]!.split(/\s+/).filter(Boolean) : [] };
 }
 
-const outdatedShimReason = (target: string, missing: readonly string[] = []) => `${target}'s graphyard-host-shim is older than this release: run mainworks host prepare and the script it prints there${missing.length ? ` (it lacks ${missing.join(', ')})` : ''}`;
+const targetHost = (target: string) => target.replace(/^.*@/, '').replace(/:\d+$/, '');
+/** GY-3834: the one command that prepares a host, for the owner to run in a terminal on this machine. */
+export const hostAddCommand = (target: string) => `mainworks host add ${userInfo().username}@${targetHost(target)} in a terminal`;
+const outdatedShimReason = (target: string, missing: readonly string[] = []) => `${target}'s graphyard-host-shim is older than this release: run ${hostAddCommand(target)}${missing.length ? ` (it lacks ${missing.join(', ')})` : ''}`;
 const lastLine = (text: string) => text.trim().split('\n').filter(Boolean).at(-1) ?? '';
 /** ssh's arguments for a host target: USER@HOST:PORT becomes -p PORT USER@HOST; USER@HOST and an alias pass as they are. */
 export const sshTarget = (target: string) => { const port = /^(.+@.+):(\d+)$/.exec(target); return port ? ['-p', port[2]!, port[1]!] : [target]; };
@@ -221,9 +228,9 @@ const sshFailure = (target: string, error: any, knownHosts: string) => hostKeyCh
 /** GY-3697: the probe's docker-unit line says whether rootless Docker's user unit failed or is not enabled. */
 function noDockerReason(name: string, output: string) {
   const [, enabled, active] = /^docker-unit (\S*) ?(\S*)$/m.exec(output) ?? [];
-  if (active === 'failed') return `${name} answers but its Docker failed (docker.service failed): see journalctl --user -u docker.service as ${hostUser} there, or run mainworks host prepare and the script it prints`;
-  if (enabled && enabled !== 'enabled') return `${name} answers but its Docker is not enabled (docker.service is ${enabled}), so it stops at reboot: run mainworks host prepare and the script it prints there`;
-  return `${name} answers but its Docker does not: run mainworks host prepare and the script it prints there`;
+  if (active === 'failed') return `${name} answers but its Docker failed (docker.service failed): see journalctl --user -u docker.service as ${hostUser} there, or run ${hostAddCommand(name)}`;
+  if (enabled && enabled !== 'enabled') return `${name} answers but its Docker is not enabled (docker.service is ${enabled}), so it stops at reboot: run ${hostAddCommand(name)}`;
+  return `${name} answers but its Docker does not: run ${hostAddCommand(name)}`;
 }
 
 /** One probe of a host through its shim (null: this machine): its readings, or the plain reason it cannot be read. */
@@ -232,7 +239,7 @@ export async function probeHost(target: string | null, run: ChildRun = defaultCh
   try { output = String(await (target ? ssh(target, 'probe', run, knownHosts) : run('sh', ['-c', hostProbeScript], { timeoutMs: 15_000 }))); }
   catch (error: any) {
     if (!target) return { ok: false as const, reason: `this machine could not be read: ${lastLine(String(error?.stderr ?? '')) || String(error?.message ?? error)}` };
-    return { ok: false as const, reason: error?.status === 255 || error?.timedOut ? sshFailure(target, error, knownHosts) : `${target} does not answer graphyard-host-shim's probe: run mainworks host prepare and the script it prints there` };
+    return { ok: false as const, reason: error?.status === 255 || error?.timedOut ? sshFailure(target, error, knownHosts) : `${target} does not answer graphyard-host-shim's probe: run ${hostAddCommand(target)}` };
   }
   const reading = parseHostProbe(output);
   if (!reading) return { ok: false as const, reason: noDockerReason(target ?? 'this machine', output) };
@@ -255,8 +262,6 @@ async function opensPlainShell(target: string, run: ChildRun, knownHosts: string
   catch (error: any) { return error?.status === 255 || error?.timedOut ? sshFailure(target, error, knownHosts) : 'no'; }
 }
 
-const targetHost = (target: string) => target.replace(/^.*@/, '').replace(/:\d+$/, '');
-
 /** Read-only: does this machine's own account open a shell on the host's port 22 (Tailscale SSH or a key) with nobody there to approve it? */
 async function operatorLogin(target: string, run: ChildRun = defaultChildRun, account = userInfo().username, knownHosts = hostKnownHostsFile()) {
   const host = /^hostname (\S+)$/m.exec(String(await Promise.resolve(run('ssh', ['-G', ...sshTarget(target)], { timeoutMs: 5_000 })).catch(() => '')))?.[1] ?? targetHost(target);
@@ -269,24 +274,80 @@ async function operatorLogin(target: string, run: ChildRun = defaultChildRun, ac
   catch { return { login, unattended: false }; }
 }
 
-export async function addHost(target: string, options: { file?: string; knownHosts?: string; run?: ChildRun } = {}) {
+/** The account a target logs in as: USER@…, else what ssh's config resolves an alias to. */
+async function loginUser(target: string, run: ChildRun) {
+  if (target.includes('@')) return target.split('@')[0]!;
+  return /^user (\S+)$/m.exec(String(await Promise.resolve(run('ssh', ['-G', target], { timeoutMs: 5_000 })).catch(() => '')))?.[1] ?? hostUser;
+}
+
+/** GY-3834: run the prepare script on the host over one SSH session with sudo; its prompts and output reach this terminal. What it printed. */
+async function prepareOverSsh(target: string, script: string, knownHosts: string) {
+  await ensureKnownHostsDirectory(knownHosts);
+  const child = spawn('ssh', ['-t', ...hostKeySshOptions(knownHosts), ...sshTarget(target), `sudo sh -c ${shellQuote(script)}`], { stdio: ['inherit', 'pipe', 'inherit'] });
+  let output = '';
+  child.stdout.on('data', (chunk: Buffer) => { output += chunk; process.stdout.write(chunk); });
+  const code = await new Promise<number | null>(resolve => { child.on('close', resolve); child.on('error', () => resolve(null)); });
+  if (code !== 0) throw new Error(`${target} was not prepared: the script stopped${code === null ? '' : ` (exit ${code})`}; its output is above`);
+  return output;
+}
+
+/**
+ * Record a host. GY-3834: given the owner's own login rather than gy-compute, find the host prepared (a no-op
+ * when its helper already answers this machine's key), else prepare it over SSH — only from a terminal, where
+ * sudo can ask — and record gy-compute@HOST.
+ */
+export async function addHost(target: string, options: { file?: string; knownHosts?: string; run?: ChildRun; terminal?: boolean; publicKey?: string } = {}) {
   const file = options.file ?? hostsFile(), run = options.run ?? defaultChildRun;
   const knownHosts = options.knownHosts ?? (options.file ? join(dirname(options.file), 'known_hosts') : hostKnownHostsFile());
   if (target.length > 300 || !hostTargetPattern.test(target)) throw new Error(`Name the host as USER@HOST, USER@HOST:PORT or an ssh-config alias, for example ${hostUser}@omarchypc:${computePort}: got ${JSON.stringify(target)}`);
+  if (['root', hostUser].includes(await loginUser(target, run))) return recordHost(target, file, run, knownHosts);
+  const host = targetHost(target), candidates = [`${hostUser}@${host}`, `${hostUser}@${host}:${computePort}`, target];
+  const probes = await Promise.all(candidates.map(candidate => probeHost(candidate, run, knownHosts)));
+  const current = candidates.find((_, index) => { const probe = probes[index]!; return probe.ok && probe.shim === hostShimDigest; });
+  if (current) return { ...(await recordHost(current, file, run, knownHosts, false)), target: current, prepared: true };
+  const updatable = candidates.find((_, index) => { const probe = probes[index]!; return 'shim' in probe && probe.shim !== hostShimDigest && probe.verbs?.includes('update-shim:1'); });
+  if (updatable) {
+    const updateError = await updateHostShim(updatable, run, knownHosts);
+    if (!updateError) {
+      const updated = await probeHost(updatable, run, knownHosts);
+      if (updated.ok && updated.shim === hostShimDigest) return { ...(await recordHost(updatable, file, run, knownHosts, false)), target: updatable, prepared: false };
+    }
+  }
+  if (!(options.terminal ?? (process.stdin.isTTY && process.stdout.isTTY))) throw new Error(`Run this in a terminal: mainworks host add ${target}`);
+  const output = await prepareOverSsh(target, hostPrepareScript(options.publicKey ?? await localPublicKey()), knownHosts);
+  const port = /host add \S+?:(\d+)\s*$/m.exec(output)?.[1];
+  const compute = `${hostUser}@${host}${port ? `:${port}` : ''}`;
+  return { ...(await recordHost(compute, file, run, knownHosts, false)), target: compute, prepared: false };
+}
+
+/** Check a gy-compute target answers only through the shim, as neither root nor the docker group, and record it. */
+async function recordHost(target: string, file: string, run: ChildRun, knownHosts: string, checkOperator = true) {
   const hosts = await readHosts(file);
-  if (hosts.some(host => host.target === target)) return { added: false, hosts };
-  const host = targetHost(target);
+  if (hosts.some(host => host.target === target)) return { added: false, target, hosts };
   const refuse = (reason: string) => { throw new Error(`${target} was not added: ${reason}`); };
   const shell = await opensPlainShell(target, run, knownHosts);
-  if (shell === 'yes') refuse(`its SSH key opens a plain shell, so Mainworks could reach everything that user can; run mainworks host prepare and the script it prints there, then add ${hostUser}@${host} (${hostUser}@${host}:${computePort} where port 22 is Tailscale SSH)`);
+  if (shell === 'yes') refuse(`its SSH key opens a plain shell, so Mainworks could reach everything that user can; run ${hostAddCommand(target)}`);
   if (shell !== 'no') refuse(shell);
   const probe = await probeHost(target, run, knownHosts);
   if (!probe.ok) refuse(probe.reason);
-  if (probe.ok && probe.uid === 0) refuse(`it logs in as root; add the unprivileged ${hostUser} user that mainworks host prepare creates`);
-  if (probe.ok && probe.groups.includes('docker')) refuse(`${target.split('@')[0]} is in the docker group, which is root on that host; use ${hostUser} with rootless Docker (mainworks host prepare)`);
+  if (probe.ok && probe.uid === 0) refuse(`it logs in as root; run ${hostAddCommand(target)}, which creates the unprivileged ${hostUser} user`);
+  if (probe.ok && probe.groups.includes('docker')) refuse(`${target.split('@')[0]} is in the docker group, which is root on that host; run ${hostAddCommand(target)} for ${hostUser} with rootless Docker`);
   const next = [...hosts, { target, addedAt: new Date().toISOString() }];
   await writeHosts(file, next);
-  return { added: true, hosts: next, probe: probe.ok ? probe : null, operator: await operatorLogin(target, run, userInfo().username, knownHosts) };
+  return { added: true, target, hosts: next, probe: probe.ok ? probe : null, operator: checkOperator ? await operatorLogin(target, run, userInfo().username, knownHosts) : null };
+}
+
+/**
+ * GY-3834: from an enrolled coordinator, bind another install's key on `target` to the same restricted helper
+ * with its own state directory (the shim's share verb), or remove it; no root there. Returns the key's comment.
+ */
+export async function shareHost(target: string, publicKey: string, options: { remove?: boolean; run?: ChildRun; knownHosts?: string } = {}) {
+  const run = options.run ?? defaultChildRun, knownHosts = options.knownHosts ?? hostKnownHostsFile();
+  await ensureKnownHostsDirectory(knownHosts);
+  const words = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', ...hostKeySshOptions(knownHosts), ...sshTarget(target), options.remove ? 'unshare' : 'share'];
+  try { await run('sh', ['-c', `printf '%s\\n' ${shellQuote(publicKey)} | ${words.map(shellQuote).join(' ')}`], { timeoutMs: 15_000 }); }
+  catch (error: any) { throw new Error(`${target} was not ${options.remove ? 'unshared' : 'shared'}: ${error?.status === 255 || error?.timedOut ? sshFailure(target, error, knownHosts) : lastLine(String(error?.stderr ?? '')).replace(/^graphyard-host-shim refuses: /, '') || `exit ${error?.status}`}`); }
+  return publicKey.trim().split(/\s+/)[2] ?? 'that key';
 }
 
 export async function removeHost(target: string, options: { file?: string } = {}) {
@@ -302,7 +363,7 @@ export async function removeHost(target: string, options: { file?: string } = {}
 export async function sessionHelperProblem(target: string, run: ChildRun = defaultChildRun): Promise<string | null> {
   const probe = await probeHost(target, run);
   if (probe.ok && probe.verbs?.includes('run-session:1')) return null;
-  return probe.ok || probe.update ? `${target}'s helper is older than this release and takes no sessions: run mainworks host prepare and its script there first` : probe.reason;
+  return probe.ok || probe.update ? `${target}'s helper is older than this release and takes no sessions: run ${hostAddCommand(target)} first` : probe.reason;
 }
 
 /** GY-3405: open an added host to `sessions` agent sessions at once (0 closes it to them), once its helper runs them. */

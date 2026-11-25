@@ -16,6 +16,8 @@
 //   clean RUN                      remove a run directory
 //   update-shim DIGEST             GY-3780: this release's shim on stdin, kept only when its SHA-256 is DIGEST, as gy-compute's own
 //                                  copy, which the installed shim runs from then on
+//   share / unshare                GY-3834: one ssh-ed25519 public key line on stdin, bound to this same helper (restrict: no shell,
+//                                  pty or forwarding) with its own state directory under ~/.graphyard/installs, or that key's line removed
 //   run-session RUN                GY-3405: one agent session in IMAGE with RUN's checkout mounted at the session's own
 //                                  working directory; the first stdin line is JSON {argv, env, cwd, homes}, nothing else,
 //                                  each home an in-memory tmpfs; the rest of stdin (the login) goes straight into the container;
@@ -50,10 +52,10 @@ const sessionHours = 8;
  * changes what it does in a way a trial relies on, and add a new verb here; any other change to the
  * shim (its launcher, limits, wording) leaves this list alone, so hosts on the older shim keep taking shards.
  */
-export const hostShimVerbs = ['probe:1', 'receive-pack:1', 'receive-image:3', 'prepare-run:2', 'run-shard:2', 'fetch-records:1', 'clean:1', 'run-session:1', 'update-shim:1'];
+export const hostShimVerbs = ['probe:1', 'receive-pack:1', 'receive-image:3', 'prepare-run:2', 'run-shard:2', 'fetch-records:1', 'clean:1', 'run-session:1', 'update-shim:1', 'share:1'];
 /** GY-3645: `run-check` is no trial verb: a host takes a whole check once its probe names a Compose plugin, which only a shim with the verb prints. */
 /** The verbs a merge trial uses: a host whose shim lacks any of them (and every older form the coordinator still speaks) takes no shards until prepare runs again there. */
-export const trialVerbs = hostShimVerbs.filter(verb => !/^(?:run-session|update-shim):/.test(verb));
+export const trialVerbs = hostShimVerbs.filter(verb => !/^(?:run-session|update-shim|share):/.test(verb));
 /**
  * GY-3804: older verb revisions the coordinator still speaks beside the current one in `hostShimVerbs`.
  * A host speaking any listed revision for a trial verb stays ready; one lacking every supported revision
@@ -103,7 +105,7 @@ case "$SSH_ORIGINAL_COMMAND" in
     echo "compose $(docker compose version --short 2>/dev/null)"
 ${hostProbeScript.split('\n').map(line => `    ${line}`).join('\n')}
     ;;
-  receive-pack\\ *|receive-image\\ *|prepare-run\\ *|run-shard\\ *|run-check\\ *|fetch-records\\ *|clean\\ *|run-session\\ *|update-shim\\ *)
+  receive-pack\\ *|receive-image\\ *|prepare-run\\ *|run-shard\\ *|run-check\\ *|fetch-records\\ *|clean\\ *|run-session\\ *|update-shim\\ *|share|unshare)
     # The verbs that take arguments, validated and run in Python.
     exec python3 -I -c "$(cat <<'GRAPHYARD_VERBS'
 import hashlib, json, os, re, shutil, signal, subprocess, sys, tempfile, time
@@ -124,7 +126,7 @@ CHECK_IMAGE = r'[A-Za-z0-9][A-Za-z0-9._/:@-]{0,255}'
 IMAGE_ID = r'sha256:[0-9a-f]{64}'
 INDEX = r'[1-9][0-9]{0,3}'
 SHAPES = {'receive-pack': [NAME, SHA], 'receive-image': [IMAGE], 'prepare-run': [NAME, SHA, IMAGE],
-          'run-shard': [RUN, INDEX], 'run-check': [RUN], 'fetch-records': [RUN, INDEX], 'clean': [RUN], 'run-session': [RUN], 'update-shim': [r'[0-9a-f]{64}']}
+          'run-shard': [RUN, INDEX], 'run-check': [RUN], 'fetch-records': [RUN, INDEX], 'clean': [RUN], 'run-session': [RUN], 'update-shim': [r'[0-9a-f]{64}'], 'share': [], 'unshare': []}
 def matches_shape(shape, values):
     return len(values) == len(shape) and all(re.fullmatch(pattern, value) for pattern, value in zip(shape, values))
 check_image_receive = verb == 'receive-image' and (matches_shape([RUN, CHECK_FILE, CHECK_IMAGE, IMAGE_ID], args) or matches_shape([RUN, CHECK_FILE, CHECK_IMAGE, IMAGE_ID, r'check'], args))
@@ -289,6 +291,23 @@ elif verb == 'update-shim':
     with tempfile.NamedTemporaryFile(dir=os.path.dirname(own), delete=False) as file:
         file.write(content)
     os.replace(file.name, own)
+elif verb in ('share', 'unshare'):
+    found = re.fullmatch(r'(ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI[A-Za-z0-9+/]{43})( [A-Za-z0-9@._+-]{1,100})?\\n?', sys.stdin.read(4096))
+    if not found:
+        sys.exit('graphyard-host-shim refuses: not one ssh-ed25519 public key line')
+    key, ssh = found.group(1), os.path.join(os.path.expanduser('~'), '.ssh')
+    keys = os.path.join(ssh, 'authorized_keys')
+    lines = [line for line in (open(keys).read().splitlines() if os.path.exists(keys) else []) if line and (' ' + key + ' ') not in (line + ' ')]
+    if verb == 'share':
+        helper = re.match(r'graphyard-host-shim(?:-[0-9a-f]{64})?', os.path.basename(os.environ['MAINWORKS_SHIM'])).group(0)
+        state = os.path.join(os.path.expanduser('~'), '.graphyard', 'installs', hashlib.sha256(key.encode()).hexdigest()[:12])
+        os.makedirs(state, exist_ok=True)
+        lines.append('restrict,command="' + helper + ' --home ' + state + '" ' + key + (found.group(2) or ''))
+    os.makedirs(ssh, mode=0o700, exist_ok=True)
+    with tempfile.NamedTemporaryFile('w', dir=ssh, delete=False) as file:
+        file.write(''.join(line + '\\n' for line in lines))
+    os.chmod(file.name, 0o600)
+    os.replace(file.name, keys)
 elif verb == 'run-session':
     # Only the first line is the shim's: read unbuffered, so the login after it reaches the container's stdin and never a file here.
     line = b''

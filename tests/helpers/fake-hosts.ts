@@ -33,10 +33,14 @@ export interface FakeHost {
   rootlessExtrasMissing?: boolean;
   /** with rootlessExtrasMissing: the served slirp4netns checksum is wrong, so the script must refuse. */
   tamperSlirpChecksum?: boolean;
+  /** GY-3834: not prepared; the owner's own login (vish) opens a plain shell whose sudo is the stand-in, so `host add vish@HOST` prepares it over SSH. */
+  owner?: boolean;
 }
 
 /** The operator public key the fixture authorizes on every host (the wrapper reads no key material). */
 const fixturePublicKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFJpeHR1cmU mainworks-host-fixture';
+/** GY-3834: the owner's own login on an `owner` host. */
+export const ownerLogin = 'vish';
 /** This process's uid: GY-3412's shim names its socket by the real uid (os.getuid), which in the fixture is this, not gy-compute's 1001. */
 const uid = process.getuid?.() ?? 1000;
 
@@ -258,8 +262,8 @@ echo "dockerd-rootless-setuptool.sh install for $USER at $XDG_RUNTIME_DIR/docker
   return serve;
 }
 
-/** Run the printed script itself against the stand-in host: gy-compute, linger, subuid, shim, key, rootless Docker. */
-async function runPrepareScript(host: FakeHost, dir: string, install: PrepareInstall = {}) {
+/** The host's fixture root: etc, usr-local-bin and the privileged stand-ins. */
+async function setupHostRoot(host: FakeHost, dir: string) {
   await Promise.all(['etc/ssh', 'etc/systemd/system', 'usr-local-bin', 'standins'].map(part => mkdir(join(dir, part), { recursive: true })));
   await Promise.all([
     writeFile(join(dir, 'etc', 'passwd'), 'root:x:0:0:root:/root:/bin/sh\n'),
@@ -271,11 +275,17 @@ async function runPrepareScript(host: FakeHost, dir: string, install: PrepareIns
   const entries = standins(dir, host);
   if (host.rootlessExtrasMissing) Object.assign(entries, { curl: curlStandIn(dir, await buildServeDirectory(dir, host)) });
   for (const [name, text] of Object.entries(entries)) await executable(join(dir, 'standins', name), text);
-  // The one rewrite of the printed script: the test is not root, so the shim's /usr/local/bin and the
-  // files it writes under /etc/ssh and /etc/systemd/system land inside the fixture. Every other line
-  // runs exactly as printed.
-  const script = hostPrepareScript(install.publicKey ?? fixturePublicKey, install.shim).replaceAll('/usr/local/bin/graphyard-host-shim', join(dir, 'usr-local-bin', 'graphyard-host-shim'))
-    .replaceAll('/etc/ssh/', `${dir}/etc/ssh/`).replaceAll('/etc/systemd/system/', `${dir}/etc/systemd/system/`);
+}
+
+/** The one rewrite of a prepare script: the test is not root, so the shim's /usr/local/bin and the files it writes under /etc/ssh and /etc/systemd/system land inside the fixture. */
+const fixturePaths = (script: string, dir: string) => script.replaceAll('/usr/local/bin/graphyard-host-shim', join(dir, 'usr-local-bin', 'graphyard-host-shim'))
+  .replaceAll('/etc/ssh/', `${dir}/etc/ssh/`).replaceAll('/etc/systemd/system/', `${dir}/etc/systemd/system/`);
+
+/** Run the printed script itself against the stand-in host: gy-compute, linger, subuid, shim, key, rootless Docker. */
+async function runPrepareScript(host: FakeHost, dir: string, install: PrepareInstall = {}) {
+  await setupHostRoot(host, dir);
+  // Every line but the fixture paths runs exactly as printed.
+  const script = fixturePaths(hostPrepareScript(install.publicKey ?? fixturePublicKey, install.shim), dir);
   const file = join(dir, 'prepare.sh');
   await writeFile(file, script);
   const result = spawnSync('sh', [file], { encoding: 'utf8', env: { ...process.env, PATH: `${join(dir, 'standins')}:${process.env.PATH}` } });
@@ -306,6 +316,13 @@ export async function fakeHosts(label: string, hosts: FakeHost[]): Promise<FakeH
   const byName = new Map(hosts.map(host => [host.name, host]));
   for (const host of hosts) {
     const dir = join(root, 'hosts', host.name);
+    if (host.owner) {
+      await setupHostRoot(host, dir);
+      const home = join(dir, 'home', ownerLogin);
+      await mkdir(join(home, '.ssh'), { recursive: true });
+      await writeFile(join(home, '.ssh', 'authorized_keys'), `${fixturePublicKey}\n`);
+      continue;
+    }
     if (host.unrestricted) {
       const home = join(dir, 'home', 'vish');
       await mkdir(join(home, '.ssh'), { recursive: true });
@@ -330,6 +347,7 @@ while [ $# -gt 0 ]; do
     -G) G=1 ;;
     -p) port="$2"; shift ;;
     -o) shift ;;
+    -t) ;;
     *) if [ -z "$target" ]; then target="$1"; else last="$1"; fi ;;
   esac
   shift
@@ -365,9 +383,16 @@ HOME="$home"; export HOME
 if [ -n "$force" ]; then
   export FAKE_SSH_USER="$user"
   PATH="$home/bin:$dir/usr-local-bin:$dir/standins:/usr/bin:/bin"
-  SSH_ORIGINAL_COMMAND="$last" exec "$force"
+  # sshd runs the forced command, arguments and all, through the user's shell.
+  export SSH_ORIGINAL_COMMAND="$last"
+  exec sh -c "$force"
 fi
 PATH="$home/bin:/usr/bin:/bin"
+# GY-3834: the owner's login on an unprepared host: its sudo and privileged tools are the stand-ins, its paths the fixture's.
+if [ "$user" = ${ownerLogin} ] && [ -d "$dir/standins" ]; then
+  PATH="$dir/standins:$PATH"
+  last=$(printf '%s' "$last" | sed "s#/usr/local/bin/graphyard-host-shim#$dir/usr-local-bin/graphyard-host-shim#g; s#/etc/ssh/#$dir/etc/ssh/#g; s#/etc/systemd/system/#$dir/etc/systemd/system/#g")
+fi
 exec sh -c "$last"
 `);
   return { root, bin, publicKey: fixturePublicKey, host: (name: string) => join(root, 'hosts', name), home: (name: string, user = hostUser) => join(root, 'hosts', name, 'home', user), prepareOutput: (name: string) => outputs.get(name) ?? '',

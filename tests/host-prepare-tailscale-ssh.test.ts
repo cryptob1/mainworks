@@ -58,7 +58,7 @@ test(`${proof} — on a Tailscale SSH host the printed script runs an OpenSSH fo
 });
 
 test(`${proof} — host add takes USER@HOST:PORT and an alias, refuses Tailscale SSH's plain shell, and reports whether ${me}@HOST logs in unattended`, async () => {
-  await assert.rejects(main(['host', 'add', 'gy-compute@desk']), /gy-compute@desk was not added: its SSH key opens a plain shell[^\n]*then add gy-compute@desk \(gy-compute@desk:2222 where port 22 is Tailscale SSH\)/);
+  await assert.rejects(main(['host', 'add', 'gy-compute@desk']), /gy-compute@desk was not added: its SSH key opens a plain shell[^\n]*run mainworks host add \S+@desk in a terminal/);
   const port = await output(['host', 'add', 'gy-compute@desk:2222']);
   assert.match(port, /^Added gy-compute@desk:2222: \d+ cores, rootless Docker answers through the shim/m);
   assert.match(port, new RegExp(`^Warning: ${me}@desk logs in unattended on port 22, so anything running as you here can open a shell there\\. If it is Tailscale SSH, set every ssh rule reaching that host to action check in your tailnet policy\\.$`, 'm'));

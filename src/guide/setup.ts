@@ -15,7 +15,7 @@ export default `${PRODUCT_NAME} runs on a Linux host. Check each prerequisite; \
 
 Use \`handoff GY-N\` to obtain the workspace and launch command for this machine. Run agents through \`watch GY-N EPOCH -- YOUR_AGENT_COMMAND\`. The supervisor supplies \`MAINWORKS_CLI\`, \`MAINWORKS_URL\`, and worker identity to the child. Inside that session, invoke the CLI as \`node "$MAINWORKS_CLI" status GY-N\` (or other commands). For manual startup, use the CLI path printed by \`init\` or Herdr's handoff command.
 
-Test runs go to compute machines first, with the coordinator as fallback. Add a compute machine with \`${COMMAND_NAME} host prepare\` and \`${COMMAND_NAME} host add gy-compute@HOST\`.
+Test runs go to compute machines first, with the coordinator as fallback. Add a compute machine with \`${COMMAND_NAME} host add YOU@HOST\` in a terminal.
 
 A project is onboarded only when main's \`graphyard.json\` declares \`e2e.serve\` starting the real application on \$PORT (\`{"command":"PORT=\${PORT:-3000} npm start","url":"http://127.0.0.1:3000/","readySeconds":60}\`) and a nonempty \`featureMap\`. Each feature has a name, a URL path or a command (given TARGET_URL), and traps: known pitfalls, empty when none are known. Example: \`"featureMap": [{"name":"Home","url":"/","traps":[]}]\`. The batch gate and deploy check reach every mapped feature, alongside the project's cases. A missing declaration or the generated placeholder serve is a Master fault naming the project, never a pass or a human task. The Master implements the real serve and feature map; Setup stays Not onboarded until main declares them.
 
