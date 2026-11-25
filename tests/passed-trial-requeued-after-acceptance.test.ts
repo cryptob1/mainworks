@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { mergeWriterIdle } from '../src/daemon/cycle-merge-writer.js';
 import { cycleUntil, git, pipelineWorld, rollout, worldLoop } from './helpers/pipeline-world.js';
 
@@ -11,6 +13,7 @@ import { cycleUntil, git, pipelineWorld, rollout, worldLoop } from './helpers/pi
 
 test('integration:passed-trial-requeued-after-acceptance — a head whose trial passed while acceptance was refused is queued again once acceptance clears and lands with no rework', { timeout: 600_000 }, async () => {
   const world = await pipelineWorld('passed-trial-requeued-after-acceptance');
+  const releaseSlow = join(world.root, 'release-slow');
   try {
     await rollout(world);
     const proof = 'manual:batch-gate-repaired';
@@ -32,8 +35,10 @@ test('integration:passed-trial-requeued-after-acceptance — a head whose trial 
     const other = await world.submit('Other change', { 'other.txt': 'other\n' });
     await cycleUntil(loop, 'the other change lands', async () => (await world.work()).find(entry => entry.key === other.key)!.stage === 'done', 200_000);
     await mergeWriterIdle(loop.state);
-    // A slow head takes the only trial slot.
-    const slow = await world.submit('Slow change', { 'proof.cjs': `const { test } = require('node:test');\ntest('unit:declared', () => new Promise(resolve => setTimeout(resolve, 60_000)));\n` });
+    // A slow head takes the only trial slot until released after the accepted head lands beside it.
+    const slow = await world.submit('Slow change', {
+      'proof.cjs': `const { test } = require('node:test');\nconst { existsSync } = require('node:fs');\ntest('unit:declared', () => new Promise(resolve => {\n  const deadline = Date.now() + 60_000;\n  const check = () => existsSync(${JSON.stringify(releaseSlow)}) || Date.now() >= deadline ? resolve() : setTimeout(check, 25);\n  check();\n}));\n`,
+    });
     await cycleUntil(loop, 'the slow head is trialling', () => !!loop.state.mergeWriter.inFlights?.some(entry => entry.key === slow.key), 60_000);
 
     // The proof is recorded: acceptance clears on the same head.
@@ -49,6 +54,10 @@ test('integration:passed-trial-requeued-after-acceptance — a head whose trial 
     assert.equal(done.mergeLedger?.state, 'reconciled');
     assert.equal(done.candidate!.sha, head, 'the same head landed: no resubmission');
     assert.ok(!done.reworkRequested, 'no rework was requested');
+    await writeFile(releaseSlow, 'go\n');
     await cycleUntil(loop, 'the slow head lands after it', async () => (await world.work()).find(entry => entry.key === slow.key)!.stage === 'done', 200_000);
-  } finally { await world.close(); }
+  } finally {
+    await writeFile(releaseSlow, 'go\n').catch(() => {});
+    await world.close();
+  }
 });
