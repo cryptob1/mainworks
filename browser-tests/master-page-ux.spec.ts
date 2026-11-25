@@ -3,10 +3,7 @@ import { fork, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { readFile, symlink } from 'node:fs/promises';
 import { delimiter, join, resolve } from 'node:path';
-import { withDatabase } from '../tests/helpers/postgres';
 import { temporaryDirectory } from '../tests/helpers/temp-dirs';
-import { bridgeTerminals } from '../src/master/terminal-bridge';
-import { type SessionReader } from '../src/master/terminal-session';
 import { serveXterm } from './xterm';
 import { saveMasterState } from './master-state';
 
@@ -15,38 +12,33 @@ const fastPoll = { intervals: [50] };
 const initialMaster = () => ({ master: { agentName: 'master', pane: 'w1:master' as string | null, account: 'test-account', runtime: 'codex' }, status: 'idle', gap: '' });
 
 // GY-3818: share one Postgres database, forked terminal-server and terminal bridge per Playwright
-// worker via a worker-scoped fixture (fullyParallel runs beforeAll per test).
+// worker via a worker-scoped fixture, and keep src/ imports inside the forked tsx server so
+// Playwright's Babel transformer does not compile the whole repository per worker.
 interface SharedServer { site: string; url: string; child: ChildProcess; run: number }
 const test = base.extend<{}, { server: SharedServer }>({
   server: [async ({}, use) => {
     const site = await temporaryDirectory('master-ux');
     await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
-    const database = await withDatabase('master_ux'); await database.init();
-    const child = fork(resolve('tests/helpers/terminal-server.ts'), [(database.pool.options as { connectionString: string }).connectionString, site], {
-      execArgv: ['--import', 'tsx'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
-      env: { ...process.env, PATH: join(site, 'empty'), HOME: site, GRAPHYARD_HERDR_CONFIG_HOME: '', GRAPHYARD_HERDR_SESSION: '' },
-    });
-    const [{ url }] = await once(child, 'message') as [{ url: string }];
-    const original = { ...process.env };
-    process.env.PATH = `${resolve('fixtures/herdr-terminal-stub')}${delimiter}${process.env.PATH}`;
-    process.env.HERDR_STUB_LOG = join(site, 'herdr-0.log');
-    process.env.HERDR_STUB_STATE = join(site, 'master.daemon.json');
-    process.env.GRAPHYARD_HERDR_CONFIG_HOME = ''; process.env.GRAPHYARD_HERDR_SESSION = '';
     const stateFile = join(site, 'master.daemon.json');
     await saveMasterState(stateFile, initialMaster());
-    const readSession: SessionReader = async () => {
-      const state = JSON.parse(await readFile(stateFile, 'utf8'));
-      const master = state.master ?? {};
-      return { account: master.account ?? null, runtime: master.runtime ?? null, pane: master.pane ?? null, state: master.pane ? (state.status ?? 'idle') : 'absent', since: master.startedAt ?? null };
-    };
-    const stopping = new AbortController();
-    await new Promise<void>(done => bridgeTerminals(url, 'test-coordinator', stopping.signal, done, readSession, undefined, 50));
+    const child = fork(resolve('tests/helpers/terminal-server.ts'), ['new', site], {
+      execArgv: ['--import', 'tsx'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+      env: {
+        ...process.env,
+        PATH: `${resolve('fixtures/herdr-terminal-stub')}${delimiter}${process.env.PATH}`,
+        HOME: site,
+        HERDR_STUB_LOG: join(site, 'herdr-0.log'),
+        HERDR_STUB_STATE: stateFile,
+        GRAPHYARD_TEST_BRIDGE_STATE: stateFile,
+        GRAPHYARD_HERDR_CONFIG_HOME: '',
+        GRAPHYARD_HERDR_SESSION: '',
+      },
+    });
+    const [{ url }] = await once(child, 'message') as [{ url: string }];
     try {
       await use({ site, url, child, run: 0 });
     } finally {
-      stopping.abort();
-      const ended = once(child, 'exit'); child.send('stop'); await ended; await database.close();
-      process.env = original;
+      const ended = once(child, 'exit'); child.send('stop'); await ended;
     }
   }, { scope: 'worker' }],
 });
@@ -54,10 +46,12 @@ const test = base.extend<{}, { server: SharedServer }>({
 async function fixture(browser: Browser, shared: SharedServer, phone = false) {
   const { site, url, child } = shared;
   const logFile = join(site, `herdr-${++shared.run}.log`);
-  process.env.HERDR_STUB_LOG = logFile;
   const current = initialMaster();
   const save = () => saveMasterState(join(site, 'master.daemon.json'), current);
   await save();
+  const reset = once(child, 'message');
+  child.send({ type: 'reset', logFile });
+  await reset;
   const context = await browser.newContext({ viewport: phone ? { width: 390, height: 844 } : { width: 1280, height: 900 }, permissions: ['clipboard-read', 'clipboard-write'] });
   await serveXterm(context);
   const page = await context.newPage();

@@ -30,7 +30,7 @@ export async function bridgeTerminals(url: string, token: string, signal: AbortS
     };
     socket.onopen = connected;
     socket.onerror = () => {};
-    const abort = () => socket.close();
+    const abort = () => { for (const child of streams.values()) child.end(); streams.clear(); socket.close(); };
     socket.onclose = () => {
       signal.removeEventListener('abort', abort);
       for (const child of streams.values()) child.end();
