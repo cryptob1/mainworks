@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createServer as createHttpServer } from 'node:http';
-import { createServer } from 'node:net';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { masterStatusReport } from '../src/cli/master-status.js';
@@ -19,10 +18,6 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // repository that declares none reports exactly what it reported before.
 
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
-const freePort = () => new Promise<number>((accept, reject) => {
-  const server = createServer(); server.once('error', reject);
-  server.listen(0, '127.0.0.1', () => { const { port } = server.address() as { port: number }; server.close(() => accept(port)); });
-});
 /** Waits until the URL answers, so a just-restarted serve process is judged by its answer, not its spawn. */
 const untilAnswers = async (url: string) => {
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -238,8 +233,8 @@ test('unit:tests/managed-serve.test.ts — a repository declaring no node applic
   assert.equal((await setupFromZeroChecks(doctorInput)).find(check => check.id === 'serve'), undefined);
 
   // A declared serve that does not answer: one FAIL line naming the URL, the last build failure with it.
-  const dead = await freePort();
-  const deadUrl = `http://127.0.0.1:${dead}`;
+  // Use an unbindable reserved loopback port so concurrent tests cannot claim it before doctor probes it.
+  const deadUrl = 'http://127.0.0.1:5';
   await mkdir(join(root, '.graphyard'), { recursive: true });
   await writeFile(serveRecordPath(root), `${JSON.stringify({ commit: main, url: deadUrl, failed: main, reason: 'the build was told to fail', pid: null, at: new Date().toISOString() }, null, 2)}\n`);
   const checks = await setupFromZeroChecks(doctorInput);

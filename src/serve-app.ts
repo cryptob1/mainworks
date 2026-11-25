@@ -174,8 +174,12 @@ export async function serveOnce(file: string, ports: ServePorts, log: (line: str
     return 'failed';
   }
   // Allocate a fresh port only after checkout, install and build finish so it is not left unbound across the build.
-  const port = recordedPort || await allocatePort();
-  const url = `http://127.0.0.1:${port}`;
+  // When no port was recorded yet, retry with a fresh port if another process claims the ephemeral
+  // port in the window between allocatePort() and restart() binding it (GY-3855). A recorded port
+  // is never substituted: a foreign holder there is reported as a failure (GY-2993).
+  const attempts = recordedPort ? 1 : 5;
+  let port = recordedPort;
+  let url = port ? `http://127.0.0.1:${port}` : '';
   // The restart stopped the previous serve, so the new one must answer before the commit is recorded as served.
   let served: ServeProcess | null = null;
   // GY-2985: what was live before keeps serving beside the new build — the previously served
@@ -185,9 +189,18 @@ export async function serveOnce(file: string, ports: ServePorts, log: (line: str
   // the tracked process only once its own build can replace it.
   let baseline: ServeBaseline | null = record?.baseline ?? null;
   try {
-    served = await ports.restart(declaration, port);
-    if (!(await waitAnswer(url, answerTimeoutMs))) throw new Error(`the serve did not answer ${url} within ${Math.round(answerTimeoutMs / 1000)}s`);
-    servedByRestart(ports, port, url, served);
+    for (let attempt = 1; ; attempt++) {
+      port = recordedPort || await allocatePort();
+      url = `http://127.0.0.1:${port}`;
+      served = await ports.restart(declaration, port);
+      if (!(await waitAnswer(url, answerTimeoutMs))) throw new Error(`the serve did not answer ${url} within ${Math.round(answerTimeoutMs / 1000)}s`);
+      try {
+        servedByRestart(ports, port, url, served);
+        break;
+      } catch (error) {
+        if (attempt >= attempts) throw error;
+      }
+    }
     const candidate = record?.commit ?? record?.baseline?.commit ?? null;
     if (candidate && ports.baseline) {
       const baselinePort = await allocatePort(), baselineUrl = `http://127.0.0.1:${baselinePort}`;
@@ -215,7 +228,7 @@ export async function serveOnce(file: string, ports: ServePorts, log: (line: str
   } catch (error) {
     const reason = message(error);
     log(`[mainworks-serve] ${reason}, so nothing serves`);
-    await writeServeRecord(file, { commit: null, url, failed: tip, reason, pid: served?.pid ?? null, started: served?.started ?? null, check: null, baseline });
+    await writeServeRecord(file, { commit: null, url: url || null, failed: tip, reason, pid: served?.pid ?? null, started: served?.started ?? null, check: null, baseline });
     return 'failed';
   }
 }
