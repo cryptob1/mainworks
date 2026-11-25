@@ -2,10 +2,10 @@
 // holds the run's record and the host side that starts it in a checkout of the verified commit.
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { cp, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Engine } from './engine.js';
-import { masterRunSchema } from './master.js';
+import { masterRunSchema } from './master/profiles.js';
 import { defaultChildRun } from './child-runner.js';
 import { mergeWriterReads } from './daemon/cycle-merge-writer.js';
 import { firstTaskInput, type FirstRunIssue } from './model/first-run.js';
@@ -32,9 +32,11 @@ export async function measureOnboarding(store: Store, input: { scratch: string; 
   await writeFile(join(repo, 'README.md'), '# Onboarding fixture\n');
   git('add', 'README.md'); git('commit', '-q', '-m', 'Initial commit');
   const origin = join(input.scratch, 'origin.git');
-  git('init', '-q', '--bare', '-b', 'main', origin);
+  // A copy of the fixture's own .git is its origin: no network git outside the merge writer.
+  await cp(join(repo, '.git'), origin, { recursive: true });
+  git('--git-dir', origin, 'config', 'core.bare', 'true');
   git('remote', 'add', 'origin', origin);
-  git('push', '-q', 'origin', 'main');
+  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
   const writer = mergeWriterReads({ repository: 'fixture/onboarding', baseBranch: 'main', run: masterRunSchema.parse({ mergeWriter: { deployKeyFile: join(input.scratch, 'unused-local-key') } }) }, repo, defaultChildRun,
     { base: input.scratch, record: async () => {} });
 
