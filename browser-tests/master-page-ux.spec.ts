@@ -14,7 +14,8 @@ import { saveMasterState } from './master-state';
 // GY-3813: one pane change is a one-second poll and four process starts, which a loaded trial host
 // stretched past the 5 s and 30 s defaults; every wait in this spec has the same room.
 test.describe.configure({ timeout: 60_000 });
-const expect = baseExpect.configure({ timeout: 15_000 });
+const settled = { timeout: 15_000 };
+const expect = baseExpect.configure(settled);
 // The proof's stub holds each live screen back this long.
 const screenDelay = Number(process.env.STUB_SCREEN_DELAY_MS ?? 0);
 async function fixture(browser: Browser, phone = false) {
@@ -56,7 +57,7 @@ async function fixture(browser: Browser, phone = false) {
   await openLiveSession(page);
   const calls = async () => (await readFile(join(site, 'herdr.log'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
   const inputs = async () => (await calls()).filter(entry => entry.command?.type === 'terminal.input').map(entry => entry.command.text);
-  await expect(page.locator('.xterm-rows')).toContainText('screen of w1:master');
+  await expect(page.locator('.xterm-rows')).toContainText('screen of w1:master', settled);
   const reconnects = () => page.evaluate(() => (window as any).terminalStates.filter((state: string) => state === 'reconnecting').length);
   return { page, child, current, save, calls, inputs, reconnects, stop: async () => {
     await context.close(); stopping.abort();
@@ -123,8 +124,8 @@ test('e2e:master-page-ux — history, fitting, native input, clipboard, reconnec
     // written after the drop could miss that read (GY-3261).
     f.current.gap = 'output produced during the gap'; await f.save();
     f.child.send('drop-terminals');
-    await expect.poll(f.reconnects).toBe(1);
-    await expect(page.locator('.xterm-rows')).toContainText(f.current.gap);
+    await expect.poll(f.reconnects, settled).toBe(1);
+    await expect(page.locator('.xterm-rows')).toContainText(f.current.gap, settled);
     expect(await page.evaluate(() => (window as any).survivedDrop)).toBe(true);
     // GY-3813: Chromium holds a WebSocket frame that arrives while offline, and the dropped socket's
     // close waits behind it: the reconnect's live screen, its last frame, lands before the network goes.
@@ -134,10 +135,10 @@ test('e2e:master-page-ux — history, fitting, native input, clipboard, reconnec
     if (screenDelay) await page.waitForTimeout(2 * screenDelay); // a screen not waited for would land here
     f.current.gap = 'output while offline'; await f.save();
     f.child.send('drop-terminals');
-    await expect.poll(f.reconnects).toBe(2);
+    await expect.poll(f.reconnects, settled).toBe(2);
     await page.waitForTimeout(1000);
     await page.context().setOffline(false);
-    await expect(page.locator('.xterm-rows')).toContainText(f.current.gap);
+    await expect(page.locator('.xterm-rows')).toContainText(f.current.gap, settled);
     f.current.master.pane = 'w1:replacement'; f.current.master.account = 'second-account'; f.current.status = 'working'; await f.save();
     await expect(page.locator('.xterm-rows')).toContainText('screen of w1:replacement');
     await expect(page.getByRole('status')).toContainText('Working · second-account');
