@@ -221,7 +221,7 @@ export const opensDashboard = (cwd: string, args: string[]) => args.filter(arg =
 });
 const defaultBuildDashboard = (cwd: string) => async (outDir: string) => {
   const { build } = await import('vite');
-  await build({ configFile: join(cwd, 'vite.config.ts'), root: join(cwd, 'web'), cacheDir: join(cwd, '.graphyard', 'vite'), logLevel: 'warn', build: { outDir, emptyOutDir: true } });
+  await build({ configFile: join(cwd, 'vite.config.ts'), configLoader: 'runner', root: join(cwd, 'web'), cacheDir: join(cwd, '.graphyard', 'vite'), logLevel: 'warn', build: { outDir, emptyOutDir: true } });
 };
 
 /**

@@ -6,7 +6,7 @@ import { defineConfig } from '@playwright/test';
 const port = Number(process.env.GRAPHYARD_BROWSER_PORT ?? 4319);
 // GY-3753: the runner names each run's own bundle directory: two runs in one checkout must not empty each other's.
 const dist = process.env.GRAPHYARD_BROWSER_DIST ??= resolve('.graphyard/browser-dist');
-const vite = (command: string) => `./node_modules/.bin/vite ${command} --configLoader runner --outDir "${dist}"`;
+const vite = (command: string) => `npx vite ${command} --configLoader runner --outDir "${dist}"`;
 export default defineConfig({
   testDir: './browser-tests', fullyParallel: true, timeout: 30000,
   // GY-3436: a Mainworks session's test budget (PLAYWRIGHT_WORKERS, set at its launch) caps its browsers; trials keep the default.
