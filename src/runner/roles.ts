@@ -6,7 +6,7 @@ import { confinedRuntimeArgs } from '../worker-sandbox.js';
 import { spawn, type SpawnOptions } from 'node:child_process';
 import { accessSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { defaultPiModel, piRunner, piSmoke, runEnvironment, type SmokeResult } from './pi.js';
 import { headlessConfinementWrapper, launcherCoordinatorRoot } from '../master/launch.js';
 import { bwrapOnPath, type CredentialMask } from '../master/confinement.js';
@@ -105,8 +105,29 @@ export function accountKeyEnvironment(account: Pick<FleetLaunchAccount, 'name' |
   if (!value || /[\u0000-\u001f\u007f]/.test(value)) throw new Error(`${account.name}'s key file ${file} must hold the key alone, on one line`);
   return { [account.key.variable]: value };
 }
-/** Paths inside an OpenCode account home where OpenCode login may store its auth file. */
-const opencodeAuthCandidates = ['opencode/auth.json', '.local/share/opencode/auth.json', '.config/opencode/auth.json', 'auth.json'] as const;
+/** The directory OpenCode keeps its login in under a launch environment: `$XDG_DATA_HOME/opencode`, or `$HOME/.local/share/opencode`. */
+const opencodeDataDirectory = (env: { XDG_DATA_HOME?: string; HOME?: string }) => join(env.XDG_DATA_HOME ?? join(env.HOME ?? '', '.local', 'share'), 'opencode');
+
+/** The Z.AI key in an OpenCode data directory: its auth.json, or the opencode.db OpenCode 2.x keeps logins in (GY-3832). */
+function zaiKeyInOpencodeData(directory: string): string | null {
+  const text = (key: unknown) => typeof key === 'string' && key.trim() ? key.trim() : null;
+  try {
+    const parsed = JSON.parse(readFileSync(join(directory, 'auth.json'), 'utf8'));
+    const key = text(parsed?.['zai-coding-plan']?.key ?? parsed?.zai?.key ?? parsed?.['z.ai']?.key ?? parsed?.ZAI_API_KEY);
+    if (key) return key;
+  } catch { /* no auth.json; OpenCode 2.x may hold the login in its database */ }
+  const file = join(directory, 'opencode.db');
+  if (!existsSync(file)) return null;
+  try {
+    // Loaded here, not imported: node:sqlite warns on load, and only this read needs it.
+    const { DatabaseSync } = process.getBuiltinModule('node:sqlite');
+    const database = new DatabaseSync(file, { readOnly: true });
+    try {
+      const row = database.prepare("SELECT value FROM credential WHERE integration_id IN ('zai-coding-plan', 'zai', 'z.ai') ORDER BY active DESC, time_updated DESC LIMIT 1").get();
+      return text(JSON.parse(String(row?.value)).key);
+    } finally { database.close(); }
+  } catch { return null; }
+}
 
 /** Extract the file path a `!` key command reads (skipping `/dev/*` redirections), or null. */
 function keyCommandPath(command: string): string | null {
@@ -119,37 +140,26 @@ function keyCommandPath(command: string): string | null {
   return null;
 }
 
-/** Read a Z.AI key from an OpenCode auth file or sibling OpenCode auth paths under the same account home. */
+/**
+ * The Z.AI key of the OpenCode account whose auth file `readPath` names. OpenCode's launch sets
+ * XDG_DATA_HOME to the account's home, or to its `opencode` folder as `opencode-b` does, or only HOME.
+ */
 function readZaiKeyFromOpencode(readPath: string): string | null {
-  const readKey = (file: string): string | null => {
-    try {
-      const parsed = JSON.parse(readFileSync(file, 'utf8'));
-      const candidate = parsed?.['zai-coding-plan']?.key ?? parsed?.zai?.key ?? parsed?.['z.ai']?.key ?? parsed?.ZAI_API_KEY;
-      return typeof candidate === 'string' && candidate.trim() ? candidate.trim() : null;
-    } catch { return null; }
-  };
-  const direct = readKey(readPath);
-  if (direct) return direct;
-  const suffix = opencodeAuthCandidates.find(candidate => readPath.endsWith(`/${candidate}`));
-  if (!suffix) return null;
-  const opencodeHome = readPath.slice(0, -(suffix.length + 1));
-  for (const candidate of opencodeAuthCandidates) {
-    const found = readKey(resolve(opencodeHome, candidate));
+  if (!readPath.endsWith('/opencode/auth.json')) return null;
+  const home = dirname(dirname(readPath));
+  for (const env of [{ XDG_DATA_HOME: home }, { XDG_DATA_HOME: join(home, 'opencode') }, { HOME: home }]) {
+    const found = zaiKeyInOpencodeData(opencodeDataDirectory(env));
     if (found) return found;
   }
-  try {
-    const plain = readFileSync(resolve(opencodeHome, 'zai.key'), 'utf8').trim();
-    if (plain) return plain;
-  } catch { /* no plain key file */ }
-  return null;
+  try { return readFileSync(join(home, 'zai.key'), 'utf8').trim() || null; } catch { return null; }
 }
 
 /**
  * GY-3738, GY-3829: a Pi account's auth.json may name its provider key by a `!` command, and the
  * command may read another account's home (an OpenCode login's auth file), which a confined session
  * masks. The command runs on the host and its answer is handed to Pi as the provider's key variable
- * (`zai` → `ZAI_API_KEY`). If the command returns empty for Z.AI, sibling OpenCode auth locations
- * under the same OpenCode home are checked; when still empty, the error names the file it read.
+ * (`zai` → `ZAI_API_KEY`). If the command finds no Z.AI key (`jq -r` prints `null`), the data directories that
+ * OpenCode account's launch uses are read; when still empty, the error names the file it read.
  */
 export async function piKeyEnvironment(home: string | null, modelId: string | null): Promise<Record<string, string>> {
   const provider = modelId?.split('/')[0];
@@ -161,6 +171,7 @@ export async function piKeyEnvironment(home: string | null, modelId: string | nu
   let value: string;
   try { value = (await defaultChildRun('/bin/sh', ['-c', command], { timeoutMs: 10_000 })).trim(); }
   catch { value = ''; }
+  if (value === 'null') value = '';
   if (!value && provider === 'zai' && readPath) value = readZaiKeyFromOpencode(readPath) ?? '';
   if (!value) {
     throw new Error(readPath
