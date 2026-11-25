@@ -72,8 +72,12 @@ test('unit:incidents-from-status — held accounts fire above a quarter; busy or
   assert.equal(unknownReset.action?.label, 'Open accounts');
 });
 
-test('unit:incidents-from-status — a test machine fires when away over 5 minutes, not when answering or briefly away', () => {
-  assert.deepEqual(kinds({ hosts: [{ host: 'a', away: false, at: ago(0) }, { host: 'b', away: true, since: ago(4 * minute) }] }), []);
+test('unit:incidents-from-status — a test machine fires when away over 5 minutes, not when answering, briefly away, or waiting on prepare', () => {
+  assert.deepEqual(kinds({ hosts: [
+    { host: 'a', away: false, at: ago(0) },
+    { host: 'b', away: true, since: ago(4 * minute) },
+    { host: 'c', away: true, update: true, since: ago(hour), at: ago(minute) },
+  ] }), []);
   const cards = incidentsFromStatus({ hosts: [{ host: 'a', away: true, since: ago(6 * minute) }, { host: 'b', away: true, since: ago(hour) }] }, [], now);
   assert.deepEqual(cards.map(card => card.kind), ['machine-away', 'machine-away']);
   assert.equal(cards[1].broke, 'Test machine b has not answered for 1 h.');
