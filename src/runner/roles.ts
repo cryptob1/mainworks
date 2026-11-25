@@ -1,6 +1,6 @@
 import { headlessArgv } from '../headless-argv.js';
 import { launchPlan } from '../harness.js';
-import { ChildProcessError, runChild } from '../child-runner.js';
+import { ChildProcessError, defaultChildRun, runChild } from '../child-runner.js';
 import { randomUUID } from 'node:crypto';
 import { confinedRuntimeArgs } from '../worker-sandbox.js';
 import { spawn, type SpawnOptions } from 'node:child_process';
@@ -105,6 +105,71 @@ export function accountKeyEnvironment(account: Pick<FleetLaunchAccount, 'name' |
   if (!value || /[\u0000-\u001f\u007f]/.test(value)) throw new Error(`${account.name}'s key file ${file} must hold the key alone, on one line`);
   return { [account.key.variable]: value };
 }
+/** Paths inside an OpenCode account home where OpenCode login may store its auth file. */
+const opencodeAuthCandidates = ['opencode/auth.json', '.local/share/opencode/auth.json', '.config/opencode/auth.json', 'auth.json'] as const;
+
+/** Extract the file path a `!` key command reads (skipping `/dev/*` redirections), or null. */
+function keyCommandPath(command: string): string | null {
+  const matches = command.match(/(?:'([^']+)'|"([^"]+)"|(\/[^\s'"]+))/g);
+  if (!matches) return null;
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const raw = matches[i]!.replace(/^['"]|['"]$/g, '');
+    if (raw.startsWith('/') && !raw.startsWith('/dev/')) return raw;
+  }
+  return null;
+}
+
+/** Read a Z.AI key from an OpenCode auth file or sibling OpenCode auth paths under the same account home. */
+function readZaiKeyFromOpencode(readPath: string): string | null {
+  const readKey = (file: string): string | null => {
+    try {
+      const parsed = JSON.parse(readFileSync(file, 'utf8'));
+      const candidate = parsed?.['zai-coding-plan']?.key ?? parsed?.zai?.key ?? parsed?.['z.ai']?.key ?? parsed?.ZAI_API_KEY;
+      return typeof candidate === 'string' && candidate.trim() ? candidate.trim() : null;
+    } catch { return null; }
+  };
+  const direct = readKey(readPath);
+  if (direct) return direct;
+  const suffix = opencodeAuthCandidates.find(candidate => readPath.endsWith(`/${candidate}`));
+  if (!suffix) return null;
+  const opencodeHome = readPath.slice(0, -(suffix.length + 1));
+  for (const candidate of opencodeAuthCandidates) {
+    const found = readKey(resolve(opencodeHome, candidate));
+    if (found) return found;
+  }
+  try {
+    const plain = readFileSync(resolve(opencodeHome, 'zai.key'), 'utf8').trim();
+    if (plain) return plain;
+  } catch { /* no plain key file */ }
+  return null;
+}
+
+/**
+ * GY-3738, GY-3829: a Pi account's auth.json may name its provider key by a `!` command, and the
+ * command may read another account's home (an OpenCode login's auth file), which a confined session
+ * masks. The command runs on the host and its answer is handed to Pi as the provider's key variable
+ * (`zai` → `ZAI_API_KEY`). If the command returns empty for Z.AI, sibling OpenCode auth locations
+ * under the same OpenCode home are checked; when still empty, the error names the file it read.
+ */
+export async function piKeyEnvironment(home: string | null, modelId: string | null): Promise<Record<string, string>> {
+  const provider = modelId?.split('/')[0];
+  if (!home || !provider) return {};
+  let key: unknown;
+  try { key = JSON.parse(readFileSync(resolve(home, 'auth.json'), 'utf8'))?.[provider]?.key; } catch { return {}; }
+  if (typeof key !== 'string' || !key.startsWith('!')) return {};
+  const command = key.slice(1), readPath = keyCommandPath(command);
+  let value: string;
+  try { value = (await defaultChildRun('/bin/sh', ['-c', command], { timeoutMs: 10_000 })).trim(); }
+  catch { value = ''; }
+  if (!value && provider === 'zai' && readPath) value = readZaiKeyFromOpencode(readPath) ?? '';
+  if (!value) {
+    throw new Error(readPath
+      ? `not logged in: ${readPath} gave no ${provider} key`
+      : `not logged in: ${home}/auth.json ${provider} key command answered nothing`);
+  }
+  return { [`${provider.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY`]: value };
+}
+
 /** A registry account's headless runner: every run reads the account's key afresh, into its own environment only, and every run is confined at its spawn (GY-888). Extra arguments after the account's own narrow the session further (the doctor's tool set). */
 export function registryRunner(account: FleetLaunchAccount, extraArgs: string[] = [], credentialMask?: CredentialMask, coordinatorRoot?: string): Runner {
   const launch = registryHeadlessLaunch(account);
@@ -195,10 +260,13 @@ export async function smokeRegistryAccount(account: FleetLaunchAccount, options:
       return { ok: false, error: Object.values(key).reduce((text, secret) => text.replaceAll(secret, '[redacted]'), smokeFailureReason(message)) };
     }
   }
-  // GY-3788, GY-3806: give Pi a writable scratch environment and, when the account home is read-only
-  // under confinement, a writable copy of its home files so locks and config writes succeed.
+  // GY-3788, GY-3806, GY-3829: give Pi a writable scratch environment, resolve its auth.json `!`
+  // key command into the provider's key variable as worker launches do, and when the account home
+  // is read-only under confinement, use a writable copy of its home files so locks and config writes succeed.
   const homeVariable = account.fleet.contract.homeVariable ?? 'PI_CODING_AGENT_DIR';
   const piHome = launch.environment[homeVariable] ?? account.home;
+  try { key = { ...key, ...await piKeyEnvironment(piHome, launch.model) }; }
+  catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
   const scratch = smokeScratch('mainworks-pi-smoke-');
   let writableHome: string | null = null;
   if (piHome && existsSync(piHome) && !writableDirectory(piHome)) {
