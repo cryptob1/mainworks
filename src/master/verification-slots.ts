@@ -297,7 +297,7 @@ export async function liveSlots(directory: string) {
   for (const entry of heldSlots(directory)) {
     let fd: number | null = null;
     try { fd = openSync(join(directory, `slot-${entry.slot}`, 'owner.json'), 'r'); } catch { /* no owner to judge */ }
-    try { if (fd === null || !entry.owner?.locked || !await lock(fd)) live.push(entry); } finally { if (fd !== null) closeSync(fd); }
+    try { if (fd === null || !entry.owner?.locked || !await lock(fd).catch(() => false)) live.push(entry); } finally { if (fd !== null) closeSync(fd); }
   }
   return live;
 }
