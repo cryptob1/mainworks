@@ -57,6 +57,7 @@ import { leftoversStep, tallyLeftovers } from './leftovers.js';
 import { yardAlertStep } from './yard-alerts.js';
 import { deliveryAlertStep } from './delivery-alerts.js';
 import { recordStallAlarm, stallAlarm } from './stall-alarm.js';
+import { plannerStep } from './planner.js';
 import { controlPlaneStep } from './control-plane.js';
 import { reworkWorktreePath } from '../cli/workspace-worktree.js';
 
@@ -810,6 +811,8 @@ async function dispatchStep(cycle: Cycle) {
       released: open.filter(item => item.ready && item.stage !== 'done').length, freeSlots: allowed - running, holds, gates,
       state, registry, serving: await Promise.resolve(effects.servingCommit?.()).catch(() => null) ?? null });
     if (recordStallAlarm(state, alarm, clock)) { cycle.log(`[mainworks-master] cycle ${state.cycle}: ${alarm ?? 'the stall alarm cleared'}`); await effects.persist(state); }
+    // GY-3835: after 30 minutes of empty-board alarm, launch one headless planner session to draft up to three unreleased items.
+    plannerStep(cycle);
   }
   // A dispatch tick that fails (its state cannot be saved) still wakes the master.
   // GY-3605: the tick's session launches each have the launch bound — minutes, when a product review

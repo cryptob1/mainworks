@@ -1,0 +1,16 @@
+{
+  "id": "planner-drafts-on-empty-board",
+  "title": "On a running test install, an empty board for 30 minutes yields at most three unreleased draft items listed in master status",
+  "description": "Starts a real temporary Postgres control plane with no open items and an empty-board alarm held for over 30 minutes; one loop cycle launches a headless planner session that files at most three unreleased draft items with why and simplest and no criteria, and master status lists them under attention with their keys.",
+  "tags": ["master", "api"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "running test install with an empty board for 30 minutes yields at most three unreleased draft items listed in master status",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/planner-drafts-on-empty-board-e2e.test.ts",
+      "timeoutSeconds": 180
+    }
+  ]
+}

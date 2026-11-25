@@ -211,6 +211,8 @@ export const daemonStateSchema = z.object({
   personalMasters: z.record(z.string(), masterSessionSchema).default({}),
   /** GY-3593: when the caretaker last started and its result line, which `master status` shows. */
   caretaker: z.object({ at: z.string(), result: z.string().max(500) }).strict().nullable().default(null),
+  /** GY-3835: when the empty-board planner last ran, last filed drafts, and its result line. */
+  planner: z.object({ at: z.string(), filedAt: z.string().nullable().default(null), result: z.string().max(500) }).strict().nullable().default(null),
   /** The control plane the snapshot could not reach (GY-2966): since when, and on a compose install the loop's last `docker compose up -d` with the server's last exit and the free disk space; null while it answers. */
   controlPlane: z.object({ unreachableSince: z.string(), error: z.string().max(1000), restartedAt: z.string().nullable(), restart: z.string().max(1000).nullable(), exitReason: z.string().max(1000).nullable(), freeDisk: z.string().max(500).nullable() }).strict().nullable().default(null),
   /** A disk shortage the headroom step could not reclaim (GY-3122): while set, no new merge trial or worker starts; null with room above the floor. */
