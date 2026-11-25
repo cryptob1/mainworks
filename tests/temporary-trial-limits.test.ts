@@ -138,9 +138,19 @@ async function host() {
   writeFileSync(join(root, 'job.mjs'), `import { appendFileSync } from 'node:fs'; appendFileSync(process.env.RUN_LOG, 'start ' + process.env.JOB_ID + '\\nend ' + process.env.JOB_ID + '\\n');\n`);
   const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { env: { ...process.env, GIT_AUTHOR_NAME: 'F', GIT_AUTHOR_EMAIL: 'f@example.com', GIT_COMMITTER_NAME: 'F', GIT_COMMITTER_EMAIL: 'f@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } });
   git('init', '-q', '-b', 'main'); git('add', '-A'); git('commit', '-qm', 'fixture');
-  const env = { PATH: process.env.PATH, HOME: process.env.HOME, GRAPHYARD_DATA_HOME: data, RUN_GO: go, RUN_LOG: log };
-  const started: ChildProcess[] = [];
-  after(() => { for (const child of started) child.kill('SIGKILL'); });
+  // GY-3852: the strict cap's heat wait reads these sensors, not the host's: a hot trial host held every queued job for a minute.
+  const sensors = join(scratch, 'hwmon'), celsius = (value: number) => writeFileSync(join(sensors, 'hwmon0', 'temp1_input'), `${value * 1000}\n`);
+  mkdirSync(join(sensors, 'hwmon0'), { recursive: true });
+  writeFileSync(join(sensors, 'hwmon0', 'name'), 'coretemp\n');
+  writeFileSync(join(sensors, 'hwmon0', 'temp1_label'), 'Package id 0\n');
+  celsius(60);
+  const env = { PATH: process.env.PATH, HOME: process.env.HOME, GRAPHYARD_DATA_HOME: data, GRAPHYARD_HWMON: sensors, RUN_GO: go, RUN_LOG: log };
+  const started: ChildProcess[] = [], hwmon = process.env.GRAPHYARD_HWMON;
+  process.env.GRAPHYARD_HWMON = sensors;
+  after(() => {
+    for (const child of started) child.kill('SIGKILL');
+    if (hwmon === undefined) delete process.env.GRAPHYARD_HWMON; else process.env.GRAPHYARD_HWMON = hwmon;
+  });
   const track = (id: string, child: ChildProcess) => {
     let stderr = '';
     child.stderr!.on('data', chunk => { stderr += chunk; });
@@ -150,7 +160,7 @@ async function host() {
   const launcher = join(import.meta.dirname, 'helpers', 'heavy-job-launcher.ts');
   const events = () => readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(line => line.split(' ') as [string, string]);
   return {
-    directory: hostHeavyJobsDirectory(env), managed, events, go: () => writeFileSync(go, ''),
+    directory: hostHeavyJobsDirectory(env), managed, events, sensors, celsius, go: () => writeFileSync(go, ''),
     ran: (id: string) => events().some(([event, job]) => event === 'start' && job === id),
     session: (id: string, args: string[], project = 'acme/app') => track(id, spawn('npm', args, { cwd: root, stdio: ['ignore', 'ignore', 'pipe'], env: { ...env, ...verificationEnvironment(project, env), JOB_ID: id } })),
     launch: (mode: string, id: string, project = 'acme/app') => track(id, spawn(process.execPath, ['--import', 'tsx', launcher, mode, id, root, managed], { stdio: ['ignore', 'ignore', 'pipe'], env: { ...env, FIXTURE_PROJECT: project } })),
@@ -194,19 +204,15 @@ test('integration:temporary-trial-limits — a host-wide strict cap of 1 seriali
   } finally { if (previous === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = previous; }
 
   // At 85C or more no new run starts under the strict cap; it starts once the CPU reads cooler.
-  const sensors = await temporaryDirectory('strict-cap-sensors');
-  mkdirSync(join(sensors, 'hwmon0'));
-  writeFileSync(join(sensors, 'hwmon0', 'name'), 'coretemp\n');
-  writeFileSync(join(sensors, 'hwmon0', 'temp1_label'), 'Package id 0\n');
-  writeFileSync(join(sensors, 'hwmon0', 'temp1_input'), '90000\n');
+  yard.celsius(90);
   const lines: string[] = [];
   let taken = false;
-  const hot = acquireVerificationSlot({ directory: yard.directory, label: 'npm test', hwmon: sensors, pollMs: 20, onWait: line => lines.push(line) }).then(held => { taken = true; return held; });
+  const hot = acquireVerificationSlot({ directory: yard.directory, label: 'npm test', hwmon: yard.sensors, pollMs: 20, onWait: line => lines.push(line) }).then(held => { taken = true; return held; });
   await until(() => lines.length > 0, 'the hot start waits');
   assert.match(lines[0]!, /90C, 85C or more/);
   await sleep(100);
   assert.ok(!taken, 'nothing starts at 90C');
-  writeFileSync(join(sensors, 'hwmon0', 'temp1_input'), '70000\n');
+  yard.celsius(70);
   (await hot).release();
 
   // At its expiry the strict cap lifts on its own: the ordinary limit, reservation and exemptions return.

@@ -154,7 +154,7 @@ export interface AcquireOptions {
   drainable?: boolean;
   /** GY-3450: the deploy path (the batch gate's check, a deploy build or restart) — takes the reserved slot when it is free, else an ordinary one. */
   reserved?: boolean;
-  /** GY-3446: the sensors a strict cap's heat wait reads. */
+  /** GY-3446: the sensors a strict cap's heat wait reads; absent, GRAPHYARD_HWMON, else the host's (a test's own children read its fixture, GY-3852). */
   hwmon?: string;
 }
 
@@ -482,7 +482,7 @@ export async function acquireVerificationSlot(options: AcquireOptions): Promise<
       }
       // GY-3446: under a strict cap no new job starts at the launch heat limit, and the reservation is not beside the limit.
       // GY-3532: it compares the 120 s mean of this wait's own samples, the latest until it holds 4.
-      const strict = readStrictCap(options.directory), sample = strict ? await cpuCelsius(options.hwmon) : null, at = Date.now();
+      const strict = readStrictCap(options.directory), sample = strict ? await cpuCelsius(options.hwmon ?? setting('HWMON')) : null, at = Date.now();
       if (sample !== null) { while (samples.length && at - samples[0]![0] >= heatWindowMs) samples.shift(); samples.push([at, sample]); }
       const heat = sample === null ? null : heatReading(samples);
       if (heat && heat.celsius >= trialHotCelsius) {
