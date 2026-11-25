@@ -260,7 +260,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   // GY-3690: one line while the owner turned the public link on and someone is invited, but the link is not public.
   const linkOff: { doing: string; lastPublic: string | null } | null = unreachable ? null : await Promise.resolve().then(() => masterApi('team-access/host')).then(body => body?.publicLinkOff ?? null, () => null);
   // GY-3850: one line while no owner is named; commits are then authored 'Mainworks'.
-  const ownerAttention = unreachable ? [] : await Promise.resolve().then(() => masterApi('owner')).then(body => body && !body.owner ? [{ subject: 'commit author', text: ownerAttentionLine, next: 'It clears once the owner is named' }] : [], () => []);
+  const ownerAttention = unreachable ? [] : await Promise.resolve().then(() => masterApi('owner')).then(body => body && 'owner' in body && !body.owner ? [{ subject: 'commit author', text: ownerAttentionLine, next: 'It clears once the owner is named' }] : [], () => []);
   const linkAttention = linkOff ? [{ subject: 'team access', text: `${publicLinkOffLine}. ${lastPublic(linkOff.lastPublic, now)} ${linkOff.doing}`, next: 'Do what the line names if the loop cannot; it clears once the link is public' }] : [];
   const overloadAttention = overloaded(state?.sessions ?? [], now).map(session => ({ subject: session.name ?? session.unit, text: `Overload: ${overloadAlarm(session, now)}`, next: 'The session is only held to its share, not stopped; see what it runs on the Workers page' }));
   // GY-3757: the slowest database query of the last 10 minutes, by name, when it ran past 3 s.
