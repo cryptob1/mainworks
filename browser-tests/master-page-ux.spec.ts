@@ -1,4 +1,4 @@
-import { test, expect as baseExpect, type Browser, type Page } from '@playwright/test';
+import { test, expect, type Browser, type Page } from '@playwright/test';
 import { fork } from 'node:child_process';
 import { once } from 'node:events';
 import { readFile, symlink } from 'node:fs/promises';
@@ -11,11 +11,7 @@ import type { MasterConfig } from '../src/master/profiles';
 import { serveXterm } from './xterm';
 import { saveMasterState } from './master-state';
 
-// GY-3813: one pane change is a one-second poll and four process starts, which a loaded trial host
-// stretched past the 5 s and 30 s defaults; every wait in this spec has the same room.
-test.describe.configure({ timeout: 60_000 });
 const settled = { timeout: 15_000 };
-const expect = baseExpect.configure(settled);
 async function fixture(browser: Browser, phone = false) {
   const site = await temporaryDirectory('master-ux');
   await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
@@ -67,11 +63,13 @@ async function fixture(browser: Browser, phone = false) {
 
 /** The sign-in link opens the Lead page on its conversation; its live session is its own address. */
 const openLiveSession = async (page: Page) => {
-  await expect(page.getByRole('heading', { name: 'Lead', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Lead', exact: true })).toBeVisible({ timeout: 15_000 });
   await page.evaluate(() => { location.hash = '#master/live'; });
 };
 
 test('e2e:master-page-ux — history, fitting, native input, clipboard, reconnect and pane changes', async ({ browser }) => {
+  // Includes server startup, two reconnects and two pane changes under the parallel browser suite.
+  test.setTimeout(60_000);
   const f = await fixture(browser), { page } = f;
   try {
     await expect(page.getByRole('status')).toContainText('Idle · test-account');
