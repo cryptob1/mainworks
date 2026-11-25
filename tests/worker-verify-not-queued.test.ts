@@ -81,7 +81,9 @@ test('integration:worker-verify-not-queued — with both ordinary slots held by 
   const runner = spawn(process.execPath, ['--import', 'tsx', 'tests/helpers/run-tests.ts', '--files-from', list], { cwd: checkout, env: environment, stdio: ['ignore', 'ignore', 'pipe'] });
   let runnerErr = '';
   runner.stderr.on('data', chunk => { runnerErr += chunk; });
-  const [code] = await Promise.race([once(runner, 'close'), sleep(60_000).then(() => [`still waiting: ${runnerErr}`])]);
+  // The 60 s bound must not keep the process alive once the runner closes (GY-3859: it held the file ~57 s).
+  let bound: NodeJS.Timeout | undefined;
+  const [code] = await Promise.race([once(runner, 'close'), new Promise(done => { bound = setTimeout(() => done([`still waiting: ${runnerErr}`]), 60_000); })]).finally(() => clearTimeout(bound));
   assert.equal(code, 0, runnerErr);
   assert.doesNotMatch(runnerErr, waiting);
 
