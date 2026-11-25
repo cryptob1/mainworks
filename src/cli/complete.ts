@@ -18,6 +18,7 @@ import { criterionProofs, e2eProofsOf, featureCaseFailure, proofTestFiles, requi
 import { trialHomeVariables, trialTemporaryMode, trialTemporaryVariables } from '../merge-writer/trial.js';
 import { setting } from '../setting.js';
 import { stateDirectory } from '../install/layout.js';
+import { foreignAuthor, type CheckInOwner } from '../check-in-author.js';
 
 /**
  * A submission is observed on GitHub before it is accepted, so while the control plane's GitHub
@@ -387,6 +388,8 @@ export interface CompletePreflightOptions {
   baseBranch?: string;
   /** Child runner for git and fast-gate invocations; defaults to `defaultChildRun`. */
   run?: ChildRun;
+  /** GY-3850: the install's owner as the control plane names it; when given, every commit the head adds over the base must be authored by it. */
+  owner?: CheckInOwner | null;
 }
 
 const fullSha = /^[0-9a-f]{40}$/i;
@@ -447,6 +450,12 @@ export async function completePreflight(
       }
       throw error;
     }
+  }
+
+  // GY-3850: every commit the head adds is authored by the owner's 'NAME (Mainworks)'.
+  if (baseTip && options.owner !== undefined) {
+    const foreign = foreignAuthor(await git(['log', '--format=%H%x09%an', `${baseTip}..${head}`]), options.owner, options.baseBranch ? `origin/${options.baseBranch}` : baseTip.slice(0, 12));
+    if (foreign) throw new Error(foreign);
   }
 
   // 2. Required unit/integration proof ids must appear in tests/*.test.ts on the head
@@ -519,7 +528,9 @@ export const completeCommand: CliCommand = {
     await checkoutRoot(context, `mainworks complete ${work.key}`);
     const root = context.repositoryRoot();
     const body = completionBody(context.args, () => worktreeHead(root)), requestId = setting('REQUEST_ID') ?? `complete:${work.id}:${body.epoch}:${body.head}`;
-    await completePreflight(root, work, body.head);
+    // GY-3850: the owner every commit must be authored by; a control plane that cannot name it leaves authors unchecked.
+    const owner = await Promise.resolve(context.api('owner')).then((answer: any) => answer?.owner ? { name: String(answer.owner.name), email: String(answer.owner.email) } : null, () => undefined);
+    await completePreflight(root, work, body.head, { owner });
     let verification: Awaited<ReturnType<typeof selfVerification>> | { state: 'unavailable'; reason: string };
     try { verification = await selfVerification(root, work.key); } catch (error: any) { verification = { state: 'unavailable', reason: `the worktree could not be read: ${error.message}` }; }
     const submitted = await submitUntilAnswered(() => submitThroughPause(() => context.api(`work/${work.id}/submit`, body, requestId)));

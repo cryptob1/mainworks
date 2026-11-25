@@ -12,6 +12,7 @@
 import type { Work } from '../model.js';
 import { e2eProofsOf, failureIsBase, trialFailureReason, type MergeTrialRun } from './executor.js';
 import { trialAuthor } from './trial.js';
+import { loopAuthorEnvironment } from '../check-in-author.js';
 
 /** One git call in the coordinator's object store: the arguments after `git -C <root>` (and the environment, for the revert's author), the child's stdout. */
 export type ServeRevertGit = (args: string[], env?: Record<string, string>) => Promise<string>;
@@ -89,7 +90,7 @@ export function selectServeCulprit(commits: readonly ServeRangeCommit[], work: r
  * The commit that takes exactly `mergeSha` back out of `baseTip`, made without a worktree: the
  * three-way merge of the tip with the first-parent tip before the landing against the landing itself
  * (`--merge-base` is the landing: for a merge commit what `git revert -m 1` applies, for a
- * fast-forward every commit the head brought), committed with the merge writer's author. A conflicted revert names
+ * fast-forward every commit the head brought), committed by the merge writer, authored by the owner (GY-3850). A conflicted revert names
  * its paths instead — the loop holds it, since no trial can judge a commit that was never made.
  */
 export async function revertMergeCommit(git: ServeRevertGit, input: { mergeSha: string; before: string; baseTip: string; subject: string }): Promise<{ revertSha: string } | { conflict: string[] }> {
@@ -108,7 +109,7 @@ export async function revertMergeCommit(git: ServeRevertGit, input: { mergeSha: 
   if (!fullSha.test(out)) throw new Error(`git merge-tree answered no tree for the revert of ${mergeSha.slice(0, 12)}`);
   const email = `${trialAuthor}@users.noreply.invalid`;
   const revertSha = (await git(['commit-tree', out, '-p', baseTip, '-m', `Revert "${input.subject}"\n\nThis reverts commit ${mergeSha}.`],
-    { GIT_AUTHOR_NAME: trialAuthor, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: trialAuthor, GIT_COMMITTER_EMAIL: email })).trim().toLowerCase();
+    { ...loopAuthorEnvironment(), GIT_COMMITTER_NAME: trialAuthor, GIT_COMMITTER_EMAIL: email })).trim().toLowerCase();
   if (!fullSha.test(revertSha)) throw new Error(`git commit-tree answered no revert commit for ${mergeSha.slice(0, 12)}`);
   return { revertSha };
 }

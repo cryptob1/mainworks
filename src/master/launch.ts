@@ -7,6 +7,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { heavyJobsDirectory, slotsDirectoryVariable } from './verification-slots.js';
 import { confinedRuntimeArgs } from '../worker-sandbox.js';
 import { type ChildRun, childRunner, defaultChildRun } from '../child-runner.js';
+import { loopAuthorEnvironment } from '../check-in-author.js';
 import { assertSessionName, SessionNameRefusedError } from '../session-name.js';
 import { requestPlaceholder, type RegisteredLaunch, assertLaunchable, LaunchRefusedError, launchRecipe } from '../harness.js';
 import { runtimeAdapter } from './runtimes.js';
@@ -46,7 +47,8 @@ export async function preservePartialWork(path: string, label: string, run: Chil
   if (!await git('status', '--porcelain')) return { state: 'clean', commit: await git('rev-parse', 'HEAD'), ...described, detail: 'the worktree held no uncommitted change; every commit of the attempt is on its branch' };
   try {
     await git('add', '-A');
-    await git('-c', 'user.name=Mainworks', '-c', 'user.email=graphyard@localhost', 'commit', '--no-verify', '-m', `WIP: ${label}`);
+    // GY-3850: authored by the owner's 'NAME (Mainworks)'; the committer stays Mainworks.
+    await run('git', ['-C', path, '-c', 'user.name=Mainworks', '-c', 'user.email=graphyard@localhost', 'commit', '--no-verify', '-m', `WIP: ${label}`], { env: { ...process.env, ...loopAuthorEnvironment() } });
     return { state: 'committed', commit: await git('rev-parse', 'HEAD'), ...described, detail: 'uncommitted changes were committed on the attempt branch, unpushed' };
   } catch (error) {
     await git('reset', '--hard'); await git('clean', '-fd');

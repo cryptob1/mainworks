@@ -27,6 +27,7 @@ import { bridgeTerminals } from '../../master/terminal-bridge.js';
 import { alertMinutesOf } from '../../daemon/yard-alerts.js';
 import { heavyJobBudget, heavyJobsDirectory, hostsWithSlots, joinHostHeavyBudget } from '../../master/verification-slots.js';
 import { lastHostFallbacks } from '../../merge-writer/trial-run.js';
+import { recordLoopOwner } from '../../check-in-author.js';
 
 /** The Herdr server the loop names on each read (GY-1511): the instance its herdr calls target, its host, whether it last answered, and the master's pane (GY-3211). */
 const loopHerdrReport = (host: string | null, master: string | null = null) => encodeLoopPanes({ configHome: herdrTarget()?.configHome ?? null, session: herdrTarget()?.session ?? null, host, running: herdrServerSeen(), master });
@@ -75,7 +76,13 @@ export async function loopCommand(session: MasterSession): Promise<unknown> {
       return encodeLoopHosts(hostsWithSlots(state.hosts, heavyJobBudget(heavyJobsDirectory())).map(host => ({ ...host, fallback: fallbacks.get(host.host) })));
     };
     const coordinationSnapshot = (timeoutMs?: number) => masterApi('work-snapshot', masterToken, timeoutMs, { [coordinationViewHeader]: 'coordination', [loopPresenceHeader]: String(loopInterval()), [loopSupervisionHeader]: current().supervision ?? 'autonomous', [loopPanesHeader]: loopHerdrReport(current().hostId, state.master.pane), [loopAlertsHeader]: current().run.alertUrl ? String(alertMinutesOf(current().run)) : 'off', [loopCheckoutTrustHeader]: state.actions[checkoutTrustKey]?.state === 'failed' ? encodeLoopCheckoutTrust(state.actions[checkoutTrustKey]!.detail) : 'off', [loopWorkerGrowthHeader]: state.actions[workerGrowthKey]?.state === 'failed' ? encodeLoopCheckoutTrust(state.actions[workerGrowthKey]!.detail) : 'off', [loopStepFailureHeader]: stepFailureLine(standingStepFailures(state)[0]), [loopFetchRefusalHeader]: state.actions[fetchRefusalKey]?.state === 'failed' ? encodeLoopCheckoutTrust(state.actions[fetchRefusalKey]!.detail) : 'off', [loopStallAlarmHeader]: state.actions[stallAlarmKey] ? encodeLoopCheckoutTrust(state.actions[stallAlarmKey]!.detail) : 'off', ...(where ? { [loopWhereHeader]: encodeLoopWhere(where) } : {}), [loopCpuHeader]: state.cpuPressure ? encodeLoopCpu({ avg60: state.cpuPressure.avg60, steal: state.cpuPressure.steal, celsius: state.cpuPressure.celsius, testBudget: state.cpuPressure.testBudget, trialCap: state.cpuPressure.trialCap, waiting: cpuWaiting(state) !== null }) : 'off', [loopHostsHeader]: hostsHeader(), [loopSessionsHeader]: state.sessions.length ? encodeLoopSessions(state.sessions) : 'off' });
-    const effects = daemonEffects(root, current, { snapshot: retriedSnapshot(() => coordinationSnapshot()), sessionHistory: async work => (await masterApi(`work/${work.id}`, masterToken)).sessions ?? [], mutate: masterMutation,
+    // GY-3850: each snapshot also reads the owner its merges, reverts, kept work and launched workers author commits with; a failed read keeps the last one.
+    const ownedSnapshot = async () => {
+      const snapshot = await coordinationSnapshot();
+      await masterApi('owner', masterToken).then(body => recordLoopOwner(body?.owner ? { name: body.owner.name, email: body.owner.email } : null), () => {});
+      return snapshot;
+    };
+    const effects = daemonEffects(root, current, { snapshot: retriedSnapshot(ownedSnapshot), sessionHistory: async work => (await masterApi(`work/${work.id}`, masterToken)).sessions ?? [], mutate: masterMutation,
       messages: async () => (await masterApi('master/messages', masterToken)).messages ?? [] });
     // GY-1603: a stopped loop's process exits within its unit's stop bound, whatever handle is left open.
     const exit = exitWhenStopped();

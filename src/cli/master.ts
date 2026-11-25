@@ -1,6 +1,7 @@
 import { defineCommands } from './registry.js';
 import { sessionCommands } from './session-commands.js';
 import { inviteCommand } from './invite.js';
+import { configCommand } from './config-owner.js';
 import { registryHelp } from './master-registry-help.js';
 import { closeHelp } from './master-close.js';
 
@@ -129,6 +130,7 @@ export const masterCommands = defineCommands([
   },
   ...sessionCommands,
   inviteCommand,
+  configCommand,
 ]);
 
 const masterInit: typeof import('./master-init.js').masterInit = async (...args) => (await import('./master-init.js')).masterInit(...args);
