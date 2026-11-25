@@ -3,7 +3,7 @@ import type { Work } from '../model.js';
 import { baseFailurePrefix, trialAheadOfReviewPrefix } from '../model/merge-queue.js';
 import { unproducedManualProofs } from '../model/unproduced-attestation.js';
 import type { DeployHistoryEntry, GitRead } from '../deploy-watch.js';
-import { flowAttention, flowNumbers, flowWindows, type FlowEvent, type FlowItem, type FlowNumbers, type FlowWindow } from '../flow-numbers.js';
+import { flowAttention, flowNumbers, flowWindows, type FlakeEvent, type FlowEvent, type FlowItem, type FlowNumbers, type FlowWindow } from '../flow-numbers.js';
 
 interface Queryable { query: (text: string, values: unknown[]) => Promise<{ rows: any[] }> }
 export const flowKinds = ['rework', 'merge.intent', 'merge.trial', 'merge.refused', 'merge.serve-revert'];
@@ -16,6 +16,7 @@ const columns = `work_id, kind, created_at, seq, stage,
     CASE WHEN kind IN ('merge.trial', 'merge.refused') THEN payload->>'head' END AS head,
     CASE WHEN kind = 'merge.trial' THEN payload->>'durationMs' END AS duration_ms,
     CASE WHEN kind = 'merge.trial' THEN payload ? 'flaked' END AS flaked,
+    CASE WHEN kind = 'merge.trial' THEN payload->'flaked' END AS flakes,
     CASE WHEN kind = 'merge.serve-revert' THEN payload->>'outcome' = 'reverted' END AS reverted`;
 /**
  * GY-3763: the window's rows, each half a range scan on insertion time: the whole-document rows
@@ -62,7 +63,8 @@ export function flowItems(work: readonly Flowed[], ledger: readonly any[], attem
         list.push({ kind: row.kind, at, reason: row.reason ?? null, head: row.head ?? null });
     } else {
       const event: FlowEvent = { kind: row.kind, at, stage: row.stage ?? null, reason: row.reason ?? null, binding: row.binding ?? null, head: row.head ?? null,
-        durationMs: row.duration_ms == null ? null : Number(row.duration_ms), flaky: !!row.flaked, reverted: !!row.reverted };
+        durationMs: row.duration_ms == null ? null : Number(row.duration_ms), flaky: !!row.flaked,
+        ...(row.flakes ? { flakes: (row.flakes.files as string[]).map(file => ({ file, at, assertion: row.flakes.assertions?.[file] ?? null })) } : {}), reverted: !!row.reverted };
       list.push(event);
       if (row.kind === 'merge.trial') unanswered.set(row.work_id, event);
       else if (row.kind === 'merge.intent') unanswered.delete(row.work_id);
@@ -134,13 +136,13 @@ async function resolveDeployedAt(work: readonly Flowed[], deploys: readonly Depl
   return result;
 }
 
-interface FlowLiveOptions { deploys?: readonly DeployHistoryEntry[]; git?: GitRead | null }
+interface FlowLiveOptions { deploys?: readonly DeployHistoryEntry[]; git?: GitRead | null; releaseFlakes?: readonly FlakeEvent[] }
 export type Flow = Record<FlowWindow, FlowNumbers> & { attention: ReturnType<typeof flowAttention> };
 /** The flow as every reader gets it: the stored numbers, when they were computed and how long ago. */
 export type FlowReport = Flow & { asOf: string; ageSeconds: number };
 
-function numbers(items: readonly FlowItem[], now: number): Flow {
-  const windows = Object.fromEntries(Object.entries(flowWindows).map(([name, hours]) => [name, flowNumbers(items, hours, now)])) as Record<FlowWindow, FlowNumbers>;
+function numbers(items: readonly FlowItem[], now: number, releaseFlakes: readonly FlakeEvent[] = []): Flow {
+  const windows = Object.fromEntries(Object.entries(flowWindows).map(([name, hours]) => [name, flowNumbers(items, hours, now, releaseFlakes)])) as Record<FlowWindow, FlowNumbers>;
   return { ...windows, attention: flowAttention(windows['24h']) };
 }
 
@@ -151,7 +153,7 @@ export async function readFlow(pool: Queryable, work: readonly Flowed[], now: nu
     live?.deploys?.length && live.git ? resolveDeployedAt(work, live.deploys, live.git, now) : Promise.resolve(new Map<string, string | null>()),
   ]);
   const items = flowItems(work, ledger, attempts, deployed, now);
-  return { ...numbers(items, now), items };
+  return { ...numbers(items, now, live?.releaseFlakes), items };
 }
 
 type Stored = { at: number; work: readonly (Flowed & { reportedBy?: string })[]; flow: Flow & { items: FlowItem[] } };

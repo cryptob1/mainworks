@@ -1,0 +1,11 @@
+{
+  "id": "flaky-checks-grouped",
+  "title": "Master status lists a check that failed a trial and passed its rerun",
+  "description": "On a running test install whose one trial failed a test file and passed its rerun, master status lists that check with its count and failing assertion line beside the review reasons.",
+  "tags": ["api", "regression"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "master status lists the flaky check", "run": "node --import tsx tests/helpers/run-tests.ts tests/flaky-checks-grouped.test.ts", "timeoutSeconds": 300 }
+  ]
+}

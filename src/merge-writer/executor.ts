@@ -76,6 +76,8 @@ export interface MergeTrialRun extends TrialRun {
    * the item's proofs: the verdict's failures are the rerun's.
    */
   flaked?: { files: string[]; tests: string[] };
+  /** GY-3849: the first failing assertion line of each file the first run failed, by file, when its output names one. */
+  assertions?: Record<string, string>;
   /**
    * GY-1834: the files still failing after the rerun that fail on the base tip (the tip the merge was made on) too,
    * with the test names the base run reported and the cases that failed the rerun: the failure is the base's
@@ -111,8 +113,10 @@ export function mergeTrialShots(into: readonly TrialCaseShot[], from: readonly T
   return [...merged.values()].filter(shot => shot.before !== undefined || shot.after !== undefined).slice(0, trialScreenshotCasesMax);
 }
 /** GY-1834: the flake a trial record carries, bounded as the record's schema bounds it: every name `parseFailedTests` keeps (≤ 500 characters) fits. */
-const trialFlaked = (flaked: { files: readonly string[]; tests: readonly string[] }, at: string): TrialFlaked =>
-  ({ files: flaked.files.slice(0, 100), tests: flaked.tests.slice(0, 100), at });
+const trialFlaked = ({ flaked, assertions = {} }: Pick<MergeTrialRun, 'assertions'> & { flaked: NonNullable<MergeTrialRun['flaked']> }, at: string): TrialFlaked => {
+  const files = flaked.files.slice(0, 100), named = files.filter(file => assertions[file]);
+  return { files, tests: flaked.tests.slice(0, 100), ...(named.length ? { assertions: Object.fromEntries(named.map(file => [file, assertions[file]!])) } : {}), at };
+};
 /** What `POST /api/work/:id/merge-record` takes: one of the five steps, with its ledger payload. */
 export type MergeRecordEvent =
   | ({ kind: 'serve-revert' } & MergeServeRevert)
@@ -308,6 +312,17 @@ export function firstFailingAssertion(tap: string): string | null {
     }
   }
   return null;
+}
+/** GY-3849: the first failing assertion line of each of `files` a run's TAP names, by file: each failing entry's file is its `location`. */
+export function assertionsByFile(tap: string, files: readonly string[]): Record<string, string> {
+  const found: Record<string, string> = {};
+  for (const [entry] of tap.matchAll(/^[ \t]*not ok \d+ - [^\n]*\n[ \t]*---\n[\s\S]*?^[ \t]*\.\.\.$/gm)) {
+    const location = /^\s*location: ["']?(.+?):\d+:\d+["']?\s*$/m.exec(entry)?.[1];
+    const file = location && files.find(path => location === path || location.endsWith(`/${path}`));
+    const text = file && firstFailingAssertion(entry);
+    if (text) found[file] ??= text;
+  }
+  return found;
 }
 /** The reason's segment introducing the base run's own report (GY-2954), which `parseBaseFailureReason` cuts the tests at. */
 const baseFailureDetailLead = ' — base run: ';
@@ -595,7 +610,8 @@ export async function runMergeTrial(input: MergeTrialInput): Promise<MergeTrialR
   }));
   // GY-3267: the candidate run's kept screenshots are the after side; the base run adds the before.
   const shots = mergeTrialShots([], verdict.e2e ?? [], 'after');
-  const first: MergeTrialRun = { ...verdict, files, proofs: { ...counted(), ...e2eCounts, ...checkCounts }, ...(leftover ? { leftover } : {}), ...(shots.length ? { screenshots: shots } : {}) };
+  const assertions = verdict.tests.failed.length ? assertionsByFile(tap, verdict.tests.failed) : {};
+  const first: MergeTrialRun = { ...verdict, files, proofs: { ...counted(), ...e2eCounts, ...checkCounts }, ...(Object.keys(assertions).length ? { assertions } : {}), ...(leftover ? { leftover } : {}), ...(shots.length ? { screenshots: shots } : {}) };
   // A rerun's attempts start their TAP afresh like the trial's, so each run reads only its own answering attempt.
   const rerunAttempt = () => { epoch++; tap = ''; byRunner = {}; };
   // A rerun of failing test files (or a run on the base tip) re-runs no E2E case: the head's bound cases were judged by the first attempt, whose counts stand.
@@ -923,7 +939,7 @@ export async function mergeOne(ports: MergePorts, item: Work): Promise<MergeOutc
     }
     await fileFlakes(ports, run, item.key, mergeSha, merged.added ?? []);
     // GY-1834: a flake rides on the trial record, refused or not, so it is durable before anything else happens.
-    const flaked = run.flaked ? trialFlaked(run.flaked, at()) : null;
+    const flaked = run.flaked ? trialFlaked({ flaked: run.flaked, assertions: run.assertions }, at()) : null;
     await ports.record(item, { kind: 'trial', head, baseTip, mergeSha, outcome: 'verdict', build: run.build, tests: { ...recordedTests(run.tests), ...(run.slowest ? { slowest: run.slowest } : {}) }, files: run.files, proofs: run.proofs, durationMs: run.durationMs,
       ...(run.phases ? { phases: run.phases } : {}), attempts: run.retried ?? [], ...(flaked ? { flaked } : {}),
       // GY-3267: the screenshots travel once, in their own field — never inside the e2e results.
@@ -1086,6 +1102,8 @@ async function trialBatch(ports: MergePorts, items: readonly Work[], onStep?: (i
       await ports.record(item, { kind: 'intent', head, baseTip: base, mergeSha, risk: riskOf(item).risk, at: at() });
       await ports.record(item, { kind: 'trial', head, baseTip: base, mergeSha, outcome: 'verdict', batch: keys, build: run.build, tests: recordedTests(run.tests), files: run.files,
         proofs: Object.fromEntries(Object.entries(run.proofs).filter(([proof]) => own.has(proof))), durationMs: run.durationMs, ...(run.phases ? { phases: run.phases } : {}), attempts: run.retried ?? [],
+        // GY-3849: the batch's one trial flaked once, so its flake rides on the first item's record.
+        ...(run.flaked && index === 0 ? { flaked: trialFlaked({ flaked: run.flaked, assertions: run.assertions }, at()) } : {}),
         ...(run.e2e?.length ? { e2e: run.e2e.filter(entry => own.has(entry.proof)).map(({ output: _output, screenshot: _screenshot, ...entry }) => entry) } : {}) });
       results.push({ work: item, outcome: await land(ports, item, { head, baseTip: base, mergeSha, failure: null, baseHeld: null, run }) });
     } catch (error) { results.push({ work: item, error }); }

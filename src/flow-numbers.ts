@@ -16,7 +16,9 @@ type ReworkCause = typeof reworkCauses[number];
  * ends) and whether it flaked (its failing tests passed on the rerun, or failed the same way on the
  * base); a `merge.serve-revert` whether it reverted.
  */
-export interface FlowEvent { kind: string; at: string; stage?: string | null; reason?: string | null; binding?: string | null; head?: string | null; durationMs?: number | null; flaky?: boolean; reverted?: boolean }
+export interface FlowEvent { kind: string; at: string; stage?: string | null; reason?: string | null; binding?: string | null; head?: string | null; durationMs?: number | null; flaky?: boolean; flakes?: FlakeEvent[]; reverted?: boolean }
+/** GY-3849: one test file that failed a trial or release check then passed on its rerun, with its first failing assertion line when the run named one. */
+export interface FlakeEvent { file: string; at: string; assertion: string | null }
 export interface FlowItem {
   key: string; title: string; stage: string; stageEnteredAt: string; mergedAt: string | null;
   /** First serving deploy containing this merge (`null` when deploy records exist and none contains it yet; `undefined` when deploy tracking is unavailable). */
@@ -35,6 +37,8 @@ export interface FlowNumbers {
   /** GY-3839: the top three short reasons review and product review sent heads back for, read from each verdict's first BLOCKING line. */
   reviewReasons: { label: string; count: number }[];
   stations: Record<FlowStation, StationWait | null>;
+  /** GY-3849: the five test files that most often failed a trial or release check then passed on rerun, with the latest occurrence's first failing assertion line. */
+  flakyChecks: { check: string; count: number; assertion: string | null }[];
   trials: number; flaky: number; flakyRate: number | null;
   reverts: number; revertRate: number | null;
 }
@@ -127,8 +131,8 @@ function attemptOutcomes(item: FlowItem) {
   });
 }
 
-/** The flow over the `hours` before `now`. */
-export function flowNumbers(items: readonly FlowItem[], hours: number, now: number): FlowNumbers {
+/** The flow over the `hours` before `now`; `releaseFlakes` are the release checks' own flakes, which no item's history holds. */
+export function flowNumbers(items: readonly FlowItem[], hours: number, now: number, releaseFlakes: readonly FlakeEvent[] = []): FlowNumbers {
   const from = now - hours * 3_600_000, inWindow = (at: number) => at > from && at <= now;
   const ended = items.flatMap(attemptOutcomes).filter(outcome => inWindow(outcome.at));
   const merges = items.filter(item => inWindow(ms(item.mergedAt))).length;
@@ -141,6 +145,10 @@ export function flowNumbers(items: readonly FlowItem[], hours: number, now: numb
     if (cause === 'review' || cause === 'product review') { const label = reviewReason(event.reason ?? ''); reasons.set(label, (reasons.get(label) ?? 0) + 1); }
   }
   const reviewReasons = [...reasons].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count).slice(0, 3);
+  const flakes = [...events.flatMap(event => event.flakes ?? []), ...releaseFlakes.filter(flake => inWindow(ms(flake.at)))].sort((a, b) => ms(a.at) - ms(b.at));
+  const checks = new Map<string, FlowNumbers['flakyChecks'][number]>();
+  for (const { file, assertion } of flakes) checks.set(file, { check: file, count: (checks.get(file)?.count ?? 0) + 1, assertion });
+  const flakyChecks = [...checks.values()].sort((a, b) => b.count - a.count).slice(0, 5);
   // GY-3732: like merges an hour, the live station counts only merges made inside the window.
   const stays = items.flatMap(item => visits(item, now).filter(visit => visit.station === 'live' ? inWindow(visit.start) : visit.end > from).map(visit => ({ item, visit, ms: visit.end - visit.start })));
   const stations = Object.fromEntries(flowStations.map(station => {
@@ -158,7 +166,7 @@ export function flowNumbers(items: readonly FlowItem[], hours: number, now: numb
   const ratio = (part: number, whole: number) => whole ? part / whole : null;
   return {
     hours, attempts: ended.length, attemptsPerHour: ended.length / hours, merges, mergesPerHour: merges / hours,
-    firstPassYield: ratio(ended.filter(outcome => outcome.merged).length, ended.length), rework, reviewReasons, stations,
+    firstPassYield: ratio(ended.filter(outcome => outcome.merged).length, ended.length), rework, reviewReasons, flakyChecks, stations,
     trials: trials.length, flaky, flakyRate: ratio(flaky, trials.length), reverts, revertRate: ratio(reverts, merges),
   };
 }

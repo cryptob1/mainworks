@@ -32,6 +32,7 @@ const columns = `work_id, kind, created_at, seq,
     CASE WHEN kind IN ('merge.trial', 'merge.refused') THEN payload->>'head' END AS head,
     CASE WHEN kind = 'merge.trial' THEN payload->>'durationMs' END AS duration_ms,
     CASE WHEN kind = 'merge.trial' THEN payload ? 'flaked' END AS flaked,
+    CASE WHEN kind = 'merge.trial' THEN payload->'flaked' END AS flakes,
     CASE WHEN kind = 'merge.serve-revert' THEN payload->>'outcome' = 'reverted' END AS reverted`;
 const previousLedgerSql = `SELECT ${columns} FROM events WHERE work_id IS NOT NULL AND created_at > $1 AND payload ? 'work'
   UNION ALL SELECT ${columns} FROM events WHERE work_id IS NOT NULL AND created_at > $1 AND kind = ANY($2::text[]) AND NOT (payload ? 'work')
