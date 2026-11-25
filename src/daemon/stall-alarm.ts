@@ -12,8 +12,8 @@ export const stallAlarmKey = 'stall-alarm';
 /** Free capacity and ready work with no launch this long raise the alarm. */
 const stallIdleMs = 10 * 60_000;
 /** GY-3778: at least this many free builder slots with no ready, released or releasable work for 15 minutes raise the empty-board alarm. */
-export const emptyBoardMinFreeSlots = 3;
-export const emptyBoardIdleMs = 15 * 60_000;
+const emptyBoardMinFreeSlots = 3;
+const emptyBoardIdleMs = 15 * 60_000;
 const emptyBoardCauseMarker = 'the line has no work to build';
 export const isEmptyBoardAlarm = (detail: string) => detail.includes(emptyBoardCauseMarker);
 /** An open item with no change and no actor this long raises it too. */

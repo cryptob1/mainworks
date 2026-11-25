@@ -12,15 +12,15 @@ import { isEmptyBoardAlarm, stallAlarmKey } from './stall-alarm.js';
 import { unproducedManualProofs } from '../model/unproduced-attestation.js';
 
 /** GY-3770: repeat a sign-off wait wake every 30 minutes while the item remains unchanged. */
-export const signoffWakeRepeatMs = 30 * 60_000;
+const signoffWakeRepeatMs = 30 * 60_000;
 /** GY-3778: repeat an empty-board wake at most once per 30 minutes while builders sit idle with no work. */
-export const emptyBoardWakeRepeatMs = 30 * 60_000;
+const emptyBoardWakeRepeatMs = 30 * 60_000;
 
 /**
  * GY-3770: open items whose passed trial leaves only `manual:` proofs unpassed that the Lead
  * (master role) may attest, ordered longest-waiting first.
  */
-export function signoffWaitingItems(work: readonly Work[], now: number): { item: Work; proofs: string[]; head: string; minutes: number }[] {
+function signoffWaitingItems(work: readonly Work[], now: number): { item: Work; proofs: string[]; head: string; minutes: number }[] {
   const list = [...work], at = new Date(now);
   return list.flatMap(item => {
     if (item.stage === 'done' || item.hold || !Array.isArray(item.gates) || !Array.isArray(item.criteria) || !Array.isArray(item.violations)) return [];

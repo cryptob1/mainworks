@@ -28,7 +28,7 @@ const bearerMatches = (header: string | undefined, expected: string) => {
  * `caretaker registry account probe NAME`; the loop runs the registry's live probe outside the
  * sandbox with the account's own login and returns only the outcome and provider sentence.
  */
-export async function startCaretakerProbeServer(
+async function startCaretakerProbeServer(
   config: Pick<MasterConfig, 'url' | 'credentialFile' | 'hostId'>,
   token: string,
   deps: { smoke?: (account: FleetLaunchAccount) => Promise<SmokeResult> } = {},

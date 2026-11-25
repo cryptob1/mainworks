@@ -76,6 +76,8 @@ export const providerUsageErrors: readonly RegExp[] = [
 ];
 /** Z.AI's 429 `Weekly/Monthly Limit Exhausted`, which the runtimes that speak to it print verbatim behind their own error labels (GY-973, GY-1817). */
 const zaiLimitExhausted = /\b(?:weekly|monthly|daily|hourly|usage)(?:\/(?:weekly|monthly|daily|hourly))? limit exhausted\b/i;
+/** That notice with the reset it names, up to the end of the string or line it is printed in (GY-3819). */
+export const zaiLimitSentence = new RegExp(`${zaiLimitExhausted.source}[^"\\\\\\n]*`, 'i');
 /** The same notice inside Z.AI's own error envelope (`{"code":"1310","message":"Weekly/Monthly Limit Exhausted. …"}`), as pi prints it: the envelope, never the bare phrase an agent may write about it, is the provider speaking. */
 const zaiLimitEnvelope = new RegExp(`"code"\\s*:\\s*"?\\d+"?\\s*,\\s*"message"\\s*:\\s*"${zaiLimitExhausted.source}`, 'i');
 

@@ -2,9 +2,9 @@
 // the loop reads it from the unit's process each pass, and master status's one line when it does not.
 import { storeAction, type DaemonState } from './state.js';
 
-export const deployReleaseKey = 'deploy-unit:release';
+const deployReleaseKey = 'deploy-unit:release';
 /** How long the update service may run another release than the served one before status says so. */
-export const deployReleaseGraceMs = 10 * 60_000;
+const deployReleaseGraceMs = 10 * 60_000;
 
 /** Record the update service's release against the served one: `at` is when they first differed; equal, the record goes. */
 export function noteDeployRelease(state: DaemonState, running: string | null, serving: string | null, now: number) {

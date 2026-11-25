@@ -90,7 +90,7 @@ export const planeStallMs = 60_000;
  */
 export const stallRenewalWindowMs = 30_000;
 /** How long past a server downtime a builder's renewal may reclaim a lease that lapsed during that downtime, provided the item's epoch is unchanged and nobody else claimed it (GY-3785). */
-export const downtimeRenewalWindowMs = 5 * 60_000;
+const downtimeRenewalWindowMs = 5 * 60_000;
 
 /** The recorded plane stalls plus this process's own startup restart gap, if any (GY-3785). */
 async function planeDowntimes(engine: Engine, db: { query: (text: string, values: unknown[]) => Promise<{ rows: any[] }> }, fromMs: number, untilMs: number): Promise<PlaneStall[]> {

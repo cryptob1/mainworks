@@ -10,7 +10,7 @@ import { join, resolve } from 'node:path';
 import { defaultPiModel, piRunner, piSmoke, runEnvironment, type SmokeResult } from './pi.js';
 import { headlessConfinementWrapper, launcherCoordinatorRoot } from '../master/launch.js';
 import { bwrapOnPath, type CredentialMask } from '../master/confinement.js';
-import { accountHomeEnvironment, withModel } from '../master/runtimes.js';
+import { acceptedFlags, accountHomeEnvironment, withModel, zaiLimitSentence } from '../master/runtimes.js';
 import type { FleetLaunchAccount } from '../fleet.js';
 import { registryToolsArgs } from '../registry-tools.js';
 import { claimRunWatch, liveRun, runsDirectory, superviseRun, writeRunOwner, type Applied } from './registry.js';
@@ -119,6 +119,14 @@ export function planModelUnused(output: string, modelId: string | null | undefin
   const ran = wrongModelBanner.exec(output)?.[1];
   return /\bfree usage limit reached\b|\bFreeUsageLimitError\b/i.test(output) || !!ran && ran !== modelId && ran !== modelId.split('/').pop();
 }
+/**
+ * GY-3819: what a failed request reports. OpenCode ends a spent Z.AI account's run with "Model
+ * unavailable"; the provider's limit sentence elsewhere in the run's output is the real reason.
+ */
+function smokeFailureReason(output: string) {
+  const { reason } = parseProbeFailure(output.split('\n').filter(line => !/^timestamp=\S+ level=/.test(line)).join('\n'));
+  return /^Model unavailable\b/.test(reason) ? zaiLimitSentence.exec(output)?.[0].trim() ?? reason : reason;
+}
 const writableDirectory = (path: string) => { try { accessSync(path, constants.W_OK); return true; } catch { return false; } };
 
 /** Copy top-level files from a read-only account home into a writable scratch directory and link subdirectories. */
@@ -161,15 +169,17 @@ export async function smokeRegistryAccount(account: FleetLaunchAccount, options:
       const cursor = account.kind === 'cursor';
       const args = withModel(account.kind, cursor ? launchPlan('cursor', 'auto', launch.args).args : launch.args, account.fleet.contract, account.fleet.modelId);
       const [command, ...argv] = await headlessArgv({ kind: account.kind, args, contract: account.fleet.contract }, 'Reply with the single word OK.', env);
-      const output = await runChild(options.command ?? command, [...(options.commandArgs ?? []), ...argv], { env, cwd: options.cwd ?? (cursor ? process.cwd() : account.home ?? undefined), timeoutMs: options.timeoutMs ?? 120_000 });
+      // GY-3819: OpenCode's log carries the provider's answer its own error event may leave out.
+      const logs = account.kind === 'opencode' && !account.fleet.contract.headlessArgs ? await acceptedFlags(options.command ?? command!, ['run'], ['--print-logs'], env) : [];
+      const output = await runChild(options.command ?? command!, [...(options.commandArgs ?? []), ...argv, ...logs], { env, cwd: options.cwd ?? (cursor ? process.cwd() : account.home ?? undefined), timeoutMs: options.timeoutMs ?? 120_000 });
       // Print-mode runtimes can report provider errors with exit zero (OpenCode).
       const failure = failureEvents(output).length > 0;
       const answered = /\bOK\b/i.test(output);
       if (answered && !failure && planModelUnused(output, account.fleet.modelId)) return { ok: false, error: wrongModelBanner.exec(output)![0] };
-      return { output, ok: answered && !failure, error: failure ? Object.values(key).reduce((text, secret) => text.replaceAll(secret, '[redacted]'), parseProbeFailure(output).reason) : answered ? null : 'The smoke request returned no answer' };
+      return { output, ok: answered && !failure, error: failure ? Object.values(key).reduce((text, secret) => text.replaceAll(secret, '[redacted]'), smokeFailureReason(output)) : answered ? null : 'The smoke request returned no answer' };
     } catch (error) {
       const message = error instanceof ChildProcessError ? [error.stdout, error.stderr].filter(Boolean).join('\n') || error.message : String(error);
-      return { ok: false, error: Object.values(key).reduce((text, secret) => text.replaceAll(secret, '[redacted]'), parseProbeFailure(message).reason) };
+      return { ok: false, error: Object.values(key).reduce((text, secret) => text.replaceAll(secret, '[redacted]'), smokeFailureReason(message)) };
     }
   }
   // GY-3788, GY-3806: give Pi a writable scratch environment and, when the account home is read-only
