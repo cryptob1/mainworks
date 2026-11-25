@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
-import { mkdir, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { command } from './process.js';
 
@@ -13,16 +13,18 @@ const wheels=[
 
 /**
  * The pinned oracle interpreter: HARD_MATH_PYTHON, the trial image's environment, or an
- * environment built in `directory` from digest-pinned wheels (callers bind it read-only). Trials run on the
+ * environment built in `directory` from digest-pinned wheels (callers bind it read-only) and reused there once verified. Trials run on the
  * deployed image, so a head that adds the image environment still needs the last case.
  */
 export async function pinnedPython(directory:string):Promise<string> {
   if(process.env.HARD_MATH_PYTHON) return process.env.HARD_MATH_PYTHON;
   if(existsSync(imagePython)) return imagePython;
+  const python=join(directory,'bin','python'),verified=join(directory,'verified');
+  if(existsSync(verified)) return python;
   const system=realpathSync((await command('/bin/sh',['-c','command -v python3'])).stdout.trim());
   const version=(await command(system,['-I','-c','import sys;print("%d.%d"%sys.version_info[:2])'])).stdout.trim();
   const site=join(directory,'lib',`python${version}`,'site-packages');
-  await mkdir(site,{recursive:true});await mkdir(join(directory,'bin'));
+  await mkdir(site,{recursive:true});await mkdir(join(directory,'bin'),{recursive:true});
   for(const wheel of wheels) {
     const response=await fetch(wheel.url,{signal:AbortSignal.timeout(120_000)});
     if(!response.ok) throw new Error(`${wheel.url} answered ${response.status}`);
@@ -32,8 +34,8 @@ export async function pinnedPython(directory:string):Promise<string> {
     await command(system,['-I','-c','import sys,zipfile;zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])',file,site]);
   }
   await writeFile(join(directory,'pyvenv.cfg'),`home = ${join(system,'..')}\ninclude-system-site-packages = false\nversion = ${version}\n`);
-  await symlink(system,join(directory,'bin','python'));
-  const python=join(directory,'bin','python');
+  await rm(python,{force:true});await symlink(system,python);
   await command(python,['-I','-c','import sympy,mpmath;assert sympy.__version__=="1.14.0" and mpmath.__version__=="1.3.0"']);
+  await writeFile(verified,'');
   return python;
 }
