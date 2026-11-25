@@ -1,32 +1,12 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { defaultChildRun } from '../child-runner.js';
+import { join } from 'node:path';
 import type { FleetLaunchAccount } from '../fleet.js';
 import { defaultPiModel, piSmoke, type SmokeResult } from './pi.js';
-import { runConfinement } from './roles.js';
+import { piKeyEnvironment, runConfinement } from './roles.js';
 import { accountLaunch, type LaunchAccount } from '../master/environments.js';
 import { credentialMaskFor } from '../master/confinement.js';
 import { runtimeLoginHomes } from '../master/profiles.js';
-
-/**
- * GY-3738: a Pi account's auth.json may name its provider key by a `!` command, and the command may
- * read another account's home (an OpenCode login's auth file), which the worker sandbox masks. The
- * command is run here, on the host, and its answer handed to Pi as the provider's key variable
- * (`zai` → `ZAI_API_KEY`), which Pi reads when the command it runs itself answers nothing.
- */
-async function piKeyEnvironment(home: string | null, modelId: string | null): Promise<Record<string, string>> {
-  const provider = modelId?.split('/')[0];
-  if (!home || !provider) return {};
-  let key: unknown;
-  try { key = JSON.parse(readFileSync(resolve(home, 'auth.json'), 'utf8'))?.[provider]?.key; } catch { return {}; }
-  if (typeof key !== 'string' || !key.startsWith('!')) return {};
-  let value: string;
-  try { value = (await defaultChildRun('/bin/sh', ['-c', key.slice(1)], { timeoutMs: 10_000 })).trim(); }
-  catch { value = ''; }
-  if (!value) throw new Error(`${home}/auth.json names its ${provider} key by a command that answered nothing; log the account in again`);
-  return { [`${provider.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY`]: value };
-}
 
 /**
  * A worker session's launch on the chosen account, whatever worker identity claims the item: the

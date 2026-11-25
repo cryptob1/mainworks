@@ -1,0 +1,16 @@
+{
+  "id": "pi-key-from-opencode-login",
+  "title": "A Pi account check finds its Z.AI key from an OpenCode login and names the file read when empty",
+  "description": "On a running test install, a Pi account whose auth.json reads its Z.AI key from an OpenCode account's auth file passes its live check with the resolved key, and a Pi account whose key command answers nothing reports the file path it read.",
+  "tags": ["accounts", "quota"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "Pi account check finds its Z.AI key on a running test install",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:pi-key-from-opencode-login tests/pi-key-from-opencode-login.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}
