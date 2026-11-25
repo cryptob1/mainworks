@@ -14,6 +14,7 @@ import { runPlanner } from '../src/master/planner.js';
 import type { FlowReport } from '../src/server/flow.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { recordTrialTimings } from '../src/merge-writer/trial-timings.js';
 
 const proof = 'integration:planner-drafts-on-empty-board';
 const start = Date.parse('2026-11-25T08:00:00Z');
@@ -110,6 +111,9 @@ async function fixture(options: {
   createWork?: (payload: Record<string, unknown>) => Promise<{ key?: string } | null>;
 } = {}) {
   const directory = await temporaryDirectory('planner-drafts-empty-board');
+  // GY-3838: the planner reads the slowest files from stored trial timings.
+  await recordTrialTimings(directory, { at: new Date().toISOString(), run: 'merge trial', commit: 'a'.repeat(40),
+    files: Object.fromEntries(['a', 'b', 'c', 'd', 'e', 'f'].map((name, index) => [`tests/${name}.test.ts`, (index + 1) * 1000])) });
   const workers = workerProfiles(options.workers ?? 4);
   const config: MasterConfig = masterConfigSchema.parse({
     version: 1,
@@ -164,7 +168,7 @@ async function fixture(options: {
       launch: async () => ({ agentName: 'master', pane: 'pM', runtime: 'codex', account: 'a', session: 's' }),
     },
     planner: input =>
-      runPlanner(process.cwd(), config, input, {
+      runPlanner(directory, config, input, {
         flow: async () => sampleFlow,
         select: async () => ({
           account: { name: 'planner-acct', kind: 'claude', environment: {} } as any,

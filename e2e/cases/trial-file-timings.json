@@ -1,0 +1,16 @@
+{
+  "id": "trial-file-timings",
+  "title": "Master status shows the five slowest trial test files after one trial",
+  "description": "Runs one real merge trial on a fixture repository whose test runner reports each file's duration, then runs masterStatusReport and asserts the five slowest files with their median seconds.",
+  "tags": ["master"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "master status shows the slowest trial files after one trial",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:trial-file-timings tests/trial-file-timings.test.ts",
+      "timeoutSeconds": 180
+    }
+  ]
+}

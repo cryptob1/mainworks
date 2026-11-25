@@ -1,13 +1,11 @@
 // Concern: GY-3835 — when the empty-board alarm holds for 30 minutes and no planner draft was filed
 // in the last 2 hours, launch one headless planner session to draft up to three unreleased items
 // with why and simplest only for the Lead to sharpen or close.
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { Cycle } from './cycle.js';
 import { emptyBoardAlarmSince } from './stall-alarm.js';
 import type { Work } from '../model/work.js';
 import { percent, reworkCauses, type FlowNumbers } from '../flow-numbers.js';
-import { timingBaselinePath } from '../model/timing-companion.js';
+import { readTrialTimings, slowestTrialFiles } from '../merge-writer/trial-timings.js';
 
 const plannerHoldMs = 30 * 60_000;
 const plannerCooldownMs = 2 * 60 * 60_000;
@@ -45,24 +43,9 @@ export function plannerDraftAttention(open: readonly Work[]) {
     }));
 }
 
-/** Five slowest trial test files from the latest benchmark, falling back to the checked-in timing baseline. */
-export function slowestTrialTestFiles(root: string, benchFiles?: readonly { file: string; seconds: number }[]): { file: string; seconds: number }[] {
-  if (benchFiles?.length) {
-    return [...benchFiles]
-      .sort((a, b) => b.seconds - a.seconds || a.file.localeCompare(b.file))
-      .slice(0, 5);
-  }
-  try {
-    const parsed = JSON.parse(readFileSync(join(root, timingBaselinePath), 'utf8')) as { files?: Record<string, number> };
-    return Object.entries(parsed.files ?? {})
-      .filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]))
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .slice(0, 5)
-      .map(([file, ms]) => ({ file, seconds: Math.round(ms / 100) / 10 }));
-  } catch {
-    return [];
-  }
-}
+/** GY-3838: the five slowest trial test files over the last 20 stored merge trials and release checks, by median seconds. */
+export const slowestTrialTestFiles = (root: string): { file: string; seconds: number }[] =>
+  slowestTrialFiles(readTrialTimings(root)).map(entry => ({ file: entry.file, seconds: entry.medianSeconds }));
 
 /** Builds the headless planner prompt from the product brief, 6-hour flow numbers, rework causes and five slowest trial test files. */
 export function plannerPrompt(context: {

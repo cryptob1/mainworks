@@ -35,6 +35,7 @@ import { nestedSandboxDenied, trialAppArmorFix } from './trial-apparmor.js';
 import { maskSecrets } from '../redaction.js';
 import { setting } from '../setting.js';
 import { stateDirectory } from '../install/layout.js';
+import { recordTrialTimings } from './trial-timings.js';
 
 /** One git call in the coordinator's object store: the arguments after `git -C <root>`, the child's stdout. */
 export type TrialGit = (args: string[], env?: Record<string, string>) => Promise<string>;
@@ -1850,6 +1851,21 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       const placed = [local, ...hosts.map((host, index) => ({ name: host, remote: host, reading: readings[index + 1]!, room: Math.min(Math.floor(realFreeCores(readings[index + 1]!) / breadth), hostShare(host)) }))];
       const placement = await runShardsOnHosts({ count: shards.length, hosts: placed, breadth, pinned, stopped: () => stopped !== null,
         run: (host, index) => shard(index, host.remote) });
+      const fileDurations: { file: string; durationMs: number }[] = [];
+      for (const settled of settledShards) {
+        if (!settled) continue;
+        for (const line of settled.records.split('\n')) {
+          try {
+            const record = JSON.parse(line) as { file?: unknown; durationMs?: unknown };
+            if (typeof record.file === 'string' && typeof record.durationMs === 'number' && Number.isFinite(record.durationMs)) {
+              fileDurations.push({ file: record.file, durationMs: record.durationMs });
+            }
+          } catch { /* ignore non-JSON lines */ }
+        }
+      }
+      // GY-3838: a merge trial's or release check's per-file durations, for master status and the planner; a rerun or a worker's verification is neither.
+      if (fileDurations.length && !input.rerun && !input.localSlot) await recordTrialTimings(input.root, { at: new Date().toISOString(), run: input.key === gateTrialKey ? 'release check' : 'merge trial', commit: input.mergeSha,
+        files: Object.fromEntries(fileDurations.map(entry => [entry.file, Math.round(entry.durationMs)])) }).catch(() => {});
       if (input.onMetrics) {
         const shardsPerHost: Record<string, number> = {};
         for (const host of placement.ran) {
@@ -1859,18 +1875,6 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         const hostTemperatures: Record<string, number | null> = readings.length
           ? Object.fromEntries(readings.map(reading => [reading.name, reading.celsius]))
           : {};
-        const fileDurations: { file: string; durationMs: number }[] = [];
-        for (const settled of settledShards) {
-          if (!settled) continue;
-          for (const line of settled.records.split('\n')) {
-            try {
-              const record = JSON.parse(line) as { file?: unknown; durationMs?: unknown };
-              if (typeof record.file === 'string' && typeof record.durationMs === 'number' && Number.isFinite(record.durationMs)) {
-                fileDurations.push({ file: record.file, durationMs: record.durationMs });
-              }
-            } catch { /* ignore non-JSON lines */ }
-          }
-        }
         input.onMetrics({ shardsPerHost, hostTemperatures, fileDurations });
       }
       if (hosts.length) await recordRemoteShardRun(input.root, { ...(input.localSlot ? { label: input.localSlot } : {}), at: new Date().toISOString(), wallMs: Math.max(0, now() - startedAt), shards: placement.ran.length, remote: placement.ran.filter(name => name !== local.name).length,
