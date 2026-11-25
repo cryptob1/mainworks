@@ -57,6 +57,16 @@ const fullSuitePaths = [
 ];
 // Documentation no test executes: prose a change cannot break, whether or not a test names its path.
 const isDocumentation = file => file.startsWith('docs/') || file.endsWith('.md');
+// Fast static rule checks always run in item trials and the release check, whatever the change selects (GY-3826).
+const staticRuleTests = [
+  'tests/architecture.test.ts',
+  'tests/architecture-pinned.test.ts',
+  'tests/barrel-imports.test.ts',
+  'tests/import-cycles.test.ts',
+  'tests/no-old-name.test.ts',
+  'tests/knip-clean.test.ts',
+];
+const staticRuleSet = new Set(staticRuleTests);
 
 function trackedFiles(root) {
   try { return execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }).split('\0').filter(Boolean); }
@@ -469,7 +479,7 @@ export function selectAffected(changed, map, tests, declarations, exports) {
   // GY-3750: an item's trial of a change confined to function bodies and non-exported src code runs
   // only the tests importing the exported names it reaches; the batch gate keeps the sweep.
   const importers = exports?.size && new Set([...exports].flatMap(([file, names]) => [...names, '*'].flatMap(name => map.importers?.get(file)?.get(name) ?? [])));
-  const files = importers ? all.files.filter(test => importers.has(test)) : all.files;
+  const files = importers ? all.files.filter(test => importers.has(test) || staticRuleSet.has(test)) : all.files;
   const reason = importers ? `the change is confined to function bodies or non-exported code of ${exports.size} file(s)` : all.reason;
   return { mode: importers ? 'affected' : all.mode, reason: `selected ${files.length} of ${all.files.length} reachable: ${reason}`, files };
 }
@@ -484,7 +494,7 @@ function selectWhole(changed, map, tests, declarations) {
     const names = declarations?.get(file), listers = declarations ? map.listers?.get(file) ?? [] : [];
     return names ? [...(map.readers?.get(file) ?? []), ...[...names].flatMap(name => map.declarations?.get(file)?.get(name) ?? [])] : map.get(file).filter(test => !listers.includes(test));
   };
-  const selected = new Set(effective.flatMap(testsFor));
+  const selected = new Set([...effective.flatMap(testsFor), ...staticRuleTests.filter(test => tests.includes(test))]);
   if (selected.size === tests.length) return { mode: 'full', reason: `every test file reaches the ${effective.length} changed file(s)`, files: tests };
   return { mode: 'affected', reason: `${selected.size} of ${tests.length} test files are affected by ${effective.length} changed file(s)`, files: tests.filter(test => selected.has(test)) };
 }

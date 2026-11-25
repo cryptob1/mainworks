@@ -1,0 +1,18 @@
+{
+  "id": "static-rules-always-run",
+  "title": "A one-file merge trial records the fast static rule tests among its selected tests",
+  "description": "Runs a real loop cycle against a temporary Postgres control plane and scratch Git remote using scripts/ci-tests.mjs affected: a one-file change to an unrelated source file merges and its recorded merge.trial event lists all six static rule test files (architecture, architecture-pinned, barrel-imports, import-cycles, no-old-name, knip-clean) among its selected tests.",
+  "tags": [
+    "trial"
+  ],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "Run a one-file merge trial on a test install and check its recorded selected tests",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=^e2e:static-rules-always-run tests/static-rules-always-run.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}
