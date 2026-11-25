@@ -1720,11 +1720,11 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       if (hostEnded(selection)) throw runnerFailure('selection', selection);
       if (!selection.ok) return null;
       const counts = narrow ? selectionCounts(selection.out.split('\n')[0] ?? '') : null;
+      let selected = selection.out.split('\n').map(line => line.trim()).filter(line => pattern.test(line));
       if (counts) {
         const all = String(await Promise.resolve(run('git', ['-C', input.root, 'ls-tree', '-r', '--name-only', input.mergeSha], { timeoutMs: remaining() })).catch(() => '')).split('\n').filter(line => pattern.test(line)).length;
-        await recordTestSelection(input.root, { ...counts, ...(all ? { all } : {}) }).catch(() => {});
+        await recordTestSelection(input.root, { ...counts, ...(all ? { all } : {}), key: input.key, files: selected }).catch(() => {});
       }
-      let selected = selection.out.split('\n').map(line => line.trim()).filter(line => pattern.test(line));
       // GY-3418: a selected file that passed in an earlier trial with the same content, imports, data
       // files and dependencies is not run again; the proof files the caller adds always run. GY-3639:
       // each file's key decides alone, so a doc or a case edited beside code leaves the others cached.
