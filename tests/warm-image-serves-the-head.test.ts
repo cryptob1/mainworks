@@ -52,7 +52,7 @@ const runWithHosts: ChildRun = (command, args, options) =>
     },
   });
 
-/** A small real git repository carrying the real Graphyard bin/, src/, package.json and package-lock.json. */
+/** A small real git repository carrying the real Mainworks bin/, src/, package.json and package-lock.json. */
 async function cliRepository(label: string) {
   const root = await temporaryDirectory(label);
   git(root, 'init', '-q', '-b', 'main');
