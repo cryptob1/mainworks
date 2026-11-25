@@ -26,3 +26,10 @@ test('unit:old-name-appears-only-in-the-allowlist — a case-insensitive search 
   const lines = oldNameLines();
   assert.deepEqual(lines.slice(0, 50), [], `${lines.length} line(s) say the old name outside ${allowlist}`);
 });
+
+test('unit:no-old-name-pinned — onboarding-time and warm-image-serves-the-head contain no unallowlisted old-name lines', () => {
+  const offending = oldNameLines().filter(line =>
+    line.startsWith('src/onboarding-time.ts:') || line.startsWith('tests/warm-image-serves-the-head.test.ts:'),
+  );
+  assert.deepEqual(offending, []);
+});

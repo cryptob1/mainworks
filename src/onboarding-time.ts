@@ -27,7 +27,7 @@ export function onboardingFailure(run: OnboardingRun): string | null {
 
 /** The run on `commit`, checked out from `root`, by that commit's own scripts/onboarding-time.ts in a scratch install; never throws. */
 export async function runOnboardingTime(input: { root: string; commit: string }): Promise<OnboardingRun> {
-  const directory = await mkdtemp(join(tmpdir(), 'graphyard-onboarding-')), worktree = join(directory, 'checkout');
+  const directory = await mkdtemp(join(tmpdir(), 'mainworks-onboarding-')), worktree = join(directory, 'checkout');
   const git = (...args: string[]) => defaultChildRun('git', ['-C', input.root, ...args]);
   try {
     await git('worktree', 'add', '--detach', worktree, input.commit);
