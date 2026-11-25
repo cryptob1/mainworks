@@ -24,7 +24,7 @@ import { standingLimit } from '../master/profiles.js';
 import { attemptBoundSummary } from '../master/attempt-bound.js';
 import { mergeWriterSummary, trialImageKey } from '../daemon/cycle-merge-writer.js';
 import { servingReport, controlPlaneRecordPath, controlPlaneSummary, readControlPlaneRecord } from '../deploy-watch.js';
-import { diagnosticsAttention, gateRecordPath, gateHoldAttention, gateSummary, readGateRecord } from '../batch-gate.js';
+import { codeSizeSummary, diagnosticsAttention, gateRecordPath, gateHoldAttention, gateSummary, readGateRecord } from '../batch-gate.js';
 import { thisWeekReport } from '../project-memory.js';
 import { trialTestGateStatus } from '../merge-writer/trial.js';
 import { connectionResetAttention, outdatedShimAttention, readRemoteShardRuns, remoteShardSummary } from '../merge-writer/remote-shards.js';
@@ -336,6 +336,8 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     testSelection: testSelectionSummary(readTestSelections(root)),
     // GY-3119: the batch gate on main — the verified commit that serves, the gate in flight with its current step, the last run's outcome with its reason or failing check (GY-3141), a held batch and the revert rate over the last 20 merges.
     batchGate: gateSummary(gateRecord),
+    // GY-3833: non-blank lines in src/ and tests/ at the latest verified commit, with the seven-day change.
+    codeSize: codeSizeSummary(gateRecord),
     // GY-3399: the week's reverts beside the week's gates removed (lessons turned into code), with their items.
     thisWeek: await thisWeekReport(root, now),
     // GY-3146: what the latest verified batch changed and how to try it.

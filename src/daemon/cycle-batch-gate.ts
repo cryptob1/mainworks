@@ -232,11 +232,23 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
     try { return lines(await git(['ls-tree', '--name-only', `${commit}:e2e/cases`])).filter(name => name.endsWith('.json')).map(name => name.slice(0, -5)); }
     catch { return []; }
   };
+  const countNonBlankLines = async (commit: string, directory: string) => {
+    try {
+      const out = await git(['grep', '-I', '-c', '[^[:space:]]', commit, '--', directory]);
+      let total = 0;
+      for (const line of lines(out)) {
+        const count = Number(line.slice(line.lastIndexOf(':') + 1));
+        if (Number.isFinite(count)) total += count;
+      }
+      return total;
+    } catch { return 0; }
+  };
   return {
     now: reads.now,
     fetch: reads.fetch,
     // GY-3199: only the install gating Mainworks itself publishes the verified ref; every other install's gate verifies another repository, whose verified commits no control plane follows.
     ...(reads.gate?.repository.toLowerCase() === mainworksRepository && reads.pushVerified ? { publish: (commit: string) => reads.pushVerified!(commit) } : {}),
+    codeSize: async commit => ({ source: await countNonBlankLines(commit, 'src'), tests: await countNonBlankLines(commit, 'tests') }),
     landings: async (from, to) => serveLandings(await serveRangeCommits(git, from, to), work),
     files: async (from, to) => lines(await git(['diff', '--name-only', from, to])),
     catalog,

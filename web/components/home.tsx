@@ -20,6 +20,7 @@ export function HomeStatus({ work, status, now, setView, setSelected }: HomeStat
       <span>{line.machines.configured ? `${line.machines.ready} of ${line.machines.configured} test machines ready` : 'No test machines'}</span>
       <span>{line.lastLive === null ? 'Nothing live yet' : `Last live ${line.lastLive} ago`}</span>
       <span>{line.mergesPerHour.toFixed(1)} merges an hour today</span>
+      {line.codeSize && <span>{line.codeSize}</span>}
     </p>
     {incidents.length > 0 && <section className="incidents" aria-label="Incidents">
       {incidents.map((incident, n) => <article key={`${incident.kind}-${n}`} className="panel incident" data-incident={incident.kind}>
