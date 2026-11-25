@@ -6,10 +6,10 @@
  */
 export interface CheckInOwner { name: string; email: string }
 
-export const unownedAuthor = { name: 'Mainworks', email: 'mainworks@localhost' } as const;
-export const checkInAuthor = (owner: CheckInOwner | null | undefined) => owner ? { name: `${owner.name} (Mainworks)`, email: owner.email } : unownedAuthor;
+const unownedAuthor = { name: 'Mainworks', email: 'mainworks@localhost' } as const;
+const checkInAuthor = (owner: CheckInOwner | null | undefined) => owner ? { name: `${owner.name} (Mainworks)`, email: owner.email } : unownedAuthor;
 export const authorLine = (owner: CheckInOwner | null | undefined) => (author => `${author.name} <${author.email}>`)(checkInAuthor(owner));
-export const authorEnvironment = (owner: CheckInOwner | null | undefined) => (author => ({ GIT_AUTHOR_NAME: author.name, GIT_AUTHOR_EMAIL: author.email }))(checkInAuthor(owner));
+const authorEnvironment = (owner: CheckInOwner | null | undefined) => (author => ({ GIT_AUTHOR_NAME: author.name, GIT_AUTHOR_EMAIL: author.email }))(checkInAuthor(owner));
 
 /** The one attention line an install with no owner shows. */
 export const ownerAttentionLine = 'Commits are authored "Mainworks": name the owner with mainworks config owner "NAME" EMAIL';

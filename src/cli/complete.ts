@@ -529,7 +529,7 @@ export const completeCommand: CliCommand = {
     const root = context.repositoryRoot();
     const body = completionBody(context.args, () => worktreeHead(root)), requestId = setting('REQUEST_ID') ?? `complete:${work.id}:${body.epoch}:${body.head}`;
     // GY-3850: the owner every commit must be authored by; a control plane that cannot name it leaves authors unchecked.
-    const owner = await Promise.resolve(context.api('owner')).then((answer: any) => answer?.owner ? { name: String(answer.owner.name), email: String(answer.owner.email) } : null, () => undefined);
+    const owner = await Promise.resolve(context.api('owner')).then((answer: any) => !answer || !('owner' in answer) ? undefined : answer.owner ? { name: String(answer.owner.name), email: String(answer.owner.email) } : null, () => undefined);
     await completePreflight(root, work, body.head, { owner });
     let verification: Awaited<ReturnType<typeof selfVerification>> | { state: 'unavailable'; reason: string };
     try { verification = await selfVerification(root, work.key); } catch (error: any) { verification = { state: 'unavailable', reason: `the worktree could not be read: ${error.message}` }; }

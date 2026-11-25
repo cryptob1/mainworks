@@ -11,7 +11,7 @@ type Pool = RouteContext['services']['engine']['store']['pool'];
 export interface OwnerSetting { name: string; email: string; by: string; at: string }
 const kind = 'owner.set';
 
-export async function ownerHistory(pool: Pool, limit = 20): Promise<OwnerSetting[]> {
+async function ownerHistory(pool: Pool, limit = 20): Promise<OwnerSetting[]> {
   const rows = (await pool.query(`SELECT actor, created_at, payload FROM events WHERE ${unownedFamilySql('owner.')} AND kind = $1 ORDER BY seq DESC LIMIT $2`, [kind, limit])).rows;
   return rows.map(row => ({ name: String(row.payload.name), email: String(row.payload.email), by: String(row.actor), at: new Date(row.created_at).toISOString() }));
 }
