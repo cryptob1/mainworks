@@ -113,7 +113,7 @@ test(`${proof} — a host that resets every connection reads away, and master st
   assert.ok(attention[0]!.next.length > 0);
 });
 
-test('unit:ssh-reuse-per-host-pinned — the 30 shards still run on the host when the machine running the test sets a slots directory whose readings omit it', { timeout: 600_000 }, async () => {
+test(`${proof} — the 30 shards still run on the host when the machine running the test sets a slots directory whose readings omit it`, { timeout: 600_000 }, async () => {
   const loop = await temporaryDirectory('ssh-reuse-per-host-loop-slots'), names = ['MAINWORKS_VERIFICATION_SLOTS_DIR', 'GRAPHYARD_VERIFICATION_SLOTS_DIR'] as const;
   const previous = names.map(name => process.env[name]);
   writeMachines(loop, [{ name: 'local', local: true, away: false, cores: 2, busy: 0, celsius: null }]);

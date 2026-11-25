@@ -199,19 +199,25 @@ export function shardSshSession(run: ChildRun, knownHosts = hostKnownHostsFile()
     return hosts.get(target)!;
   };
   return {
-    /** Run `use` with the ssh words of one session on `target`, over a shared connection; it waits while every connection carries its full sessions. */
+    /** Run `use` with the ssh words of one session on `target`, over a shared connection; it waits while every connection carries its full sessions.
+     * GY-3824: sshd frees a session only after its client exits, so it may refuse the next one; ssh would then connect directly
+     * (ProxyCommand=false forbids that), so a refused session tries its connection again. */
     async session<T>(target: string, use: (words: string[]) => T | Promise<T>): Promise<T> {
       const entry = host(target), config = await entry.config, sockets = await directory!;
-      let connection: Connection | undefined;
-      while (!(connection = entry.connections.find(open => open.sessions < sessionsPerConnection))) {
-        if (entry.connections.length < connectionsPerHost) {
-          const path = join(sockets, `${opened++}.sock`);
-          entry.connections.push({ path, sessions: 0, open: Promise.resolve().then(() => run('ssh', ['-F', config, '-S', path, '-fNM', ...sshTarget(target)], { timeoutMs: 30_000 })) });
-        } else await new Promise<void>(resolve => entry.waiting.push(resolve));
+      for (let attempt = 1; ; attempt++) {
+        let connection: Connection | undefined;
+        while (!(connection = entry.connections.find(open => open.sessions < sessionsPerConnection))) {
+          if (entry.connections.length < connectionsPerHost) {
+            const path = join(sockets, `${opened++}.sock`);
+            entry.connections.push({ path, sessions: 0, open: Promise.resolve().then(() => run('ssh', ['-F', config, '-S', path, '-fNM', ...sshTarget(target)], { timeoutMs: 30_000 })) });
+          } else await new Promise<void>(resolve => entry.waiting.push(resolve));
+        }
+        connection.sessions++;
+        try { await connection.open; return await use(['-F', config, '-S', connection.path, '-o', 'ProxyCommand=false', ...sshTarget(target)]); }
+        catch (error) { if (attempt >= 50 || !/Session open refused by peer/.test(String((error as { stderr?: unknown }).stderr ?? ''))) throw error; }
+        finally { connection.sessions--; entry.waiting.shift()?.(); }
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
-      connection.sessions++;
-      try { await connection.open; return await use(['-F', config, '-S', connection.path, ...sshTarget(target)]); }
-      finally { connection.sessions--; entry.waiting.shift()?.(); }
     },
     async close() {
       await Promise.all([...hosts.entries()].map(async ([target, entry]) => {
