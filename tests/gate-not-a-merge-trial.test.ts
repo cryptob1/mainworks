@@ -23,7 +23,7 @@ const tip = sha('main-tip');
 const previous = process.env[slotsDirectoryVariable];
 after(() => { if (previous === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = previous; });
 
-async function world() {
+async function world(options: { mergeDelayMs?: number } = {}) {
   process.env[slotsDirectoryVariable] = await temporaryDirectory('gate-not-a-merge-trial-slots');
   const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',
     repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [],
@@ -42,8 +42,11 @@ async function world() {
   const work = [queued(1), queued(2)];
   const started: string[] = [];
   const reads = {
-    baseBranch: 'main', now: () => start, cores: 8, parallel: 4, fetch: async () => tip,
-    merge: async (head: string) => ({ mergeSha: sha(`merge:${head}`), files: ['src/app.ts'] }),
+    baseBranch: 'main', now: () => start, cores: 8, parallel: 4, memory: async () => null, fetch: async () => tip,
+    merge: async (head: string) => {
+      if (options.mergeDelayMs) await new Promise(resolve => setTimeout(resolve, options.mergeDelayMs));
+      return { mergeSha: sha(`merge:${head}`), files: ['src/app.ts'] };
+    },
     // Each merge trial stays running, so the test sees what runs at once.
     trial: async (mergeSha: string) => { started.push(mergeSha); return new Promise<MergeTrialRun>(() => {}); },
     push: async () => 'pushed', holds: async () => false, record: async () => {},
@@ -56,8 +59,18 @@ async function world() {
   const state = emptyDaemonState(config);
   // A gate run in flight beside the loop, as batchGateStep leaves it; it never settles here.
   batchGateFlights.set(state, { gate: new Promise<void>(() => {}), diagnostics: null });
-  const cycle = async (at: number) => { await runCycle(config, state, effects, () => at); await new Promise(resolve => setTimeout(resolve, 50)); };
-  return { state, started, cycle };
+  const waitFor = async (expected: number) => {
+    for (let waited = 0; started.length < expected; waited += 10) {
+      assert.ok(waited < 10_000, `expected ${expected} started trial(s), got ${started.length}`);
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+  };
+  const cycle = async (at: number) => {
+    await runCycle(config, state, effects, () => at);
+    const inFlight = state.mergeWriter.inFlights?.length ?? (state.mergeWriter.inFlight ? 1 : 0);
+    if (inFlight > started.length) await waitFor(inFlight);
+  };
+  return { state, started, cycle, reads };
 }
 
 test('integration:gate-not-a-merge-trial — with trialCap 1 a running batch gate and one queued merge trial run at once; two queued merge trials still respect the cap of 1', async () => {
@@ -77,4 +90,11 @@ test('e2e:gate-not-a-merge-trial — with a gate in flight and a merge queued, m
   assert.equal(summary.inFlight?.key, 'GY-1', 'master status shows the merge in flight beside the gate');
   assert.ok(summary.queue.some(entry => entry.key === 'GY-2'), 'the second merge stays queued under trialCap 1');
   assert.equal(summary.inFlights?.length ?? 1, 1, 'one merge in flight under trialCap 1');
+});
+
+test('unit:gate-not-a-merge-trial-pinned — cycle waits for the started flight to reach trial even when pre-trial steps outlast 50 ms, and isolates host memory', async () => {
+  const { started, cycle, reads } = await world({ mergeDelayMs: 120 });
+  assert.ok(reads.memory, 'world injects memory so real host RAM never lowers hostCap');
+  await cycle(start);
+  assert.equal(started.length, 1, 'cycle waits until the in-flight merge reaches trial instead of sleeping 50 ms');
 });
