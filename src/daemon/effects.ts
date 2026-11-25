@@ -134,8 +134,6 @@ export interface DaemonEffects {
   worktreeDisk?: () => Promise<number | null>;
   /** Reports the token usage this host's sessions' runtimes printed (GY-3289, usage-capture.ts); `master` is the master session's conversation. */
   usage?: (master: Conversation | null) => Promise<unknown>;
-  /** GY-3768: one cycle's batch of the event stage backfill (daemon/event-stage-backfill.ts). */
-  backfillEventStage?: (log: (line: string) => void) => Promise<void>;
   /**
    * `diagnosis` is the prompt section a run of repeated equal failures asks for (GY-3104); empty otherwise.
    * GY-3103: `canaries` are the newer runtime versions this launch may run as their canary (the

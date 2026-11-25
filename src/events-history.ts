@@ -100,6 +100,10 @@ export function eventHistorySql(query: EventHistoryQuery): Sql {
   const columns = query.payload === 'none' ? '' : query.payload === 'details' ? ", payload->'details' AS details"
     : query.payload === 'stage' ? `, ${eventStageSql()} AS stage` : `, ${resolvedPayloadSql()} AS payload`;
   const order = query.order === 'asc' ? 'ASC' : 'DESC';
+  // Stage reads already have small results. Keep the bounded rows instead of probing each seq again.
+  if (query.payload === 'stage') return {
+    text: `SELECT seq,work_id,actor,kind,created_at${columns} FROM (SELECT * FROM events${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY seq ${order} LIMIT ${param(query.limit + 1)}) events ORDER BY seq ${order}`, values,
+  };
   // GY-3761: the page's seq values first, by key with the filters and limit, then payloads for
   // those rows only. One row beyond the page proves whether another page exists without a count.
   return { text: `SELECT seq,work_id,actor,kind,created_at${columns} FROM (SELECT seq FROM events${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY seq ${order} LIMIT ${param(query.limit + 1)}) page JOIN events USING (seq) ORDER BY seq ${order}`, values };

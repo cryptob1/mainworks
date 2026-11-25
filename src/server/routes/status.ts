@@ -11,8 +11,7 @@ import { loopWhere, loopWhereHeader, loopWhereRegistry } from '../../model/where
 import { releaseInfo, schemaVersion } from '../../release.js';
 import { openHumanOnly } from '../../model/human-request.js';
 import { humanOnlySubjects } from '../waits.js';
-import { defineRoutes, parseJson } from '../routes.js';
-import { backfillEventStage, countStagelessDeltas, stageBackfillMax } from '../../store/snapshot-delta.js';
+import { defineRoutes } from '../routes.js';
 import { coordinationSnapshot, coordinationViewHeader } from '../work-view.js';
 import { executorHost } from './agent-registry.js';
 import { projectDelivery } from '../../model-boundary/project-applications.js';
@@ -40,11 +39,6 @@ import { setting } from '../../setting.js';
 
 
 /** Control-plane status and the work reads every client polls. */
-/** GY-3772: the rows the stage backfill's last batch left, for master status. */
-let stageBackfill: { remaining: number; at: string } | null = null;
-/** GY-3777: per-pool remaining count, counted once per loop start and decremented by each batch's filled rows. */
-const stageBackfillCounts = new WeakMap<object, number>();
-const stageBackfillCounting = new WeakMap<object, Promise<number>>();
 
 export const statusRoutes = defineRoutes('status', [
   { method: 'GET', path: '/api/work-replay', async handle({ services, url, operatorVisible }) {
@@ -65,9 +59,8 @@ export const statusRoutes = defineRoutes('status', [
     return { at: now, work, flow: await readFlow(engine.store.pool, work, now, { deploys, git: read }) };
   }, operatorVisible) },
   // GY-3757: the slowest database query of the last 10 minutes when it ran past 3 s, for master status; `name` keeps the queries whose name starts with it.
-  // GY-3772: with the delta rows the stage backfill's last batch left lacking the stage, null until a batch runs.
   // GY-3799: with the longest coordination-lock hold of the last 10 minutes, 1 s or more.
-  { method: 'GET', path: '/api/slowest-query', handle: async ({ url }) => ({ slowest: slowestQuery(Date.now(), url.searchParams.get('name') ?? ''), stageBackfill, lockHold: longestLockHold() }) },
+  { method: 'GET', path: '/api/slowest-query', handle: async ({ url }) => ({ slowest: slowestQuery(Date.now(), url.searchParams.get('name') ?? ''), lockHold: longestLockHold() }) },
   {
     method: 'GET', path: '/api/status',
     async handle({ actor, req, url, services, operatorVisible }) {
@@ -275,41 +268,6 @@ export const statusRoutes = defineRoutes('status', [
       const { answer, ageMs } = await boundedHistoryRead(`${url.pathname}${url.search}`, read);
       if (ageMs !== null) res.setHeader('Age', String(Math.round(ageMs / 1000)));
       return answer;
-    },
-  },
-  {
-    // GY-3768: the loop's backfill of the stage on delta rows written before GY-3766, one batch a call of the size the loop asks (GY-3769), outside any coordination transaction.
-    // GY-3777: the batch runs and times the UPDATE alone; remaining is counted once per loop start (or first call) outside the batch and decremented by each batch's filled rows.
-    method: 'POST', path: '/api/events/backfill-stage',
-    async handle(context) {
-      demand(context.actor.role === 'coordinator' || context.actor.role === 'admin', 'The stage backfill is run by the loop (a coordinator identity)', 403);
-      const body = await parseJson(context, undefined, '{}');
-      const limit = Math.max(1, Math.min(stageBackfillMax, Math.floor(Number(body.limit) || 50) || 1));
-      const recount = Boolean(body.recount);
-      const pool = context.services.engine.store.pool;
-      const batch = await backfillEventStage(pool, limit);
-      const now = Date.now();
-      let remaining: number;
-      if (batch.filled < limit) {
-        remaining = 0;
-        stageBackfillCounts.set(pool, 0);
-      } else {
-        const cached = stageBackfillCounts.get(pool);
-        if (cached === undefined || recount) {
-          let pending = stageBackfillCounting.get(pool);
-          if (!pending) {
-            pending = countStagelessDeltas(pool).then(count => { stageBackfillCounts.set(pool, count); return count; })
-              .finally(() => { if (stageBackfillCounting.get(pool) === pending) stageBackfillCounting.delete(pool); });
-            stageBackfillCounting.set(pool, pending);
-          }
-          remaining = await pending;
-        } else {
-          remaining = Math.max(0, cached - batch.filled);
-          stageBackfillCounts.set(pool, remaining);
-        }
-      }
-      stageBackfill = { remaining, at: new Date(now).toISOString() };
-      return { ...batch, remaining };
     },
   },
 ]);
