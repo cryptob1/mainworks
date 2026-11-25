@@ -1,7 +1,7 @@
 {
   "id": "event-stage-stored",
   "title": "Master status shows delivery speed with no slow events query after an item changes stage",
-  "description": "On a running test install seeded with 50 merged items of 800-row delta chains on 180 KB documents, an item changes stage and merges; master status shows its delivery speed and the server reports no events query over 3 seconds.",
+  "description": "On a running test install seeded with 50 merged items of 800-row delta chains on 180 KB documents, an item changes stage and merges; master status shows its delivery speed and the server reports no events query over 3 seconds. Stage reads avoid opening whole snapshot payloads; the retired backfill route returns 404 and status has no backfill field.",
   "tags": ["api", "events", "regression"],
   "target": "any",
   "required": false,

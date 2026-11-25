@@ -172,8 +172,8 @@ BEGIN
   RETURN found;
 END $fn$;`;
 
-/** An event's stage in SQL: stored on a delta row since GY-3766, else from its document, resolving only older delta rows. */
-export const eventStageSql = (alias = 'events') => `COALESCE(${alias}.payload->>'stage', ${alias}.payload->'work'->>'stage', ${eventWorkSql(alias)}->>'stage')`;
+/** Read the whole-row stage column before opening its document; delta stages live in the small payload. */
+export const eventStageSql = (alias = 'events') => `COALESCE(${alias}.stage, ${alias}.payload->>'stage', ${alias}.payload->'work'->>'stage', ${eventWorkSql(alias)}->>'stage')`;
 /** An event's full document in SQL, for a row of `events` under `alias`. */
 export const eventWorkSql = (alias = 'events') => `graphyard_event_work(${alias}.work_id, ${alias}.payload)`;
 /** An event's payload with a delta replaced by the document it stands for: the shape every full row has. */

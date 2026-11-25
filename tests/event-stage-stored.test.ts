@@ -12,7 +12,8 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { masterConfigSchema } from '../src/master.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { itemLedger, masterStatusReport } from '../src/cli/master-status.js';
-import { appendSave } from '../src/store/snapshot-delta.js';
+import { explainAnalyzeBuffers } from './helpers/query-plan.js';
+import { appendSave, eventStageSql } from '../src/store/snapshot-delta.js';
 
 // GY-3766: the events history's stage mode resolved every delta row's whole document just to read its stage. A delta
 // row now carries the stage beside its delta, so the read takes it from the row and resolves only older rows without it.
@@ -112,6 +113,14 @@ test('integration:event-stage-stored — a delta row written by appendSave carri
 });
 
 test('e2e:event-stage-stored — after an item changes stage on a running test install, master status shows its delivery speed and no events query over 3 s', { timeout: 600_000 }, async () => {
+  // Reading stored stages must not detoast the 180 KB whole snapshots.
+  const stored = await explainAnalyzeBuffers(store.pool,
+    `SELECT stage FROM events WHERE work_id=$1 ORDER BY seq`, [items[0].id]);
+  const projected = await explainAnalyzeBuffers(store.pool,
+    `SELECT ${eventStageSql()} FROM events WHERE work_id=$1 ORDER BY seq`, [items[0].id]);
+  assert.equal(projected.rows, ROWS);
+  assert.ok(projected.buffers <= stored.buffers + 10,
+    `stage projection opened snapshot payloads: ${projected.summary}; column: ${stored.summary}`);
   // The seeded items merged; one more changes stage through appendSave and merges, so master status reads its stored stages.
   const doneAt = (r: number) => minuteAt(r);
   await store.pool.query(`UPDATE work_items SET document = document || jsonb_build_object('stage', 'done', 'delivery', jsonb_build_object('mergedAt', $2::text, 'mergeSha', repeat('a', 40), 'authorizationRevision', 1)) WHERE id = ANY($1::uuid[])`,
