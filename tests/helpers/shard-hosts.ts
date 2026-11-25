@@ -273,6 +273,13 @@ for arg; do case "$arg" in *@*) target="$arg";; esac; done
 host="\${target#*@}"; dir="${root}/hosts/$host"
 if [ ! -d "$dir" ] || [ -e "$dir.down" ]; then echo "ssh: connect to host $host port 22: Connection refused" >&2; exit 255; fi
 cd "$dir/home" && export HOME="$dir/home" PATH="$dir/bin:/usr/bin:/bin" GRAPHYARD_HOST_FLOOR_GB=0
+# GY-3834: FAKE_SSH_KEY names another install's key, which reaches only the command its authorized_keys line forces.
+if [ -n "$FAKE_SSH_KEY" ]; then
+  line=$(grep -F "$FAKE_SSH_KEY" "$HOME/.ssh/authorized_keys" 2>/dev/null | head -n 1)
+  [ -n "$line" ] || { echo "gy-compute@$host: Permission denied (publickey)." >&2; exit 255; }
+  export SSH_ORIGINAL_COMMAND="$last"
+  PATH="${root}:$PATH" exec sh -c "$(printf %s "$line" | sed 's/^restrict,command="\\([^"]*\\)".*/\\1/')"
+fi
 SSH_ORIGINAL_COMMAND="$last" exec "${shim}"
 `);
   return {

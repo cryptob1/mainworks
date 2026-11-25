@@ -1579,7 +1579,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       session = remoteShardSession({ root: input.root, sha: input.mergeSha, baseTip: input.baseTip, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport, hosts: readings });
       const host = readings.filter(reading => underHeatLimit(reading) && reading.compose)
         .sort((a, b) => Number(supportsCheckImages(b.verbs)) - Number(supportsCheckImages(a.verbs)) || realFreeCores(b) - realFreeCores(a))[0];
-      if (!host) return here(`no host is ready (${readings.map(reading => `${reading.name}: ${reading.away ? reading.reason ?? 'away' : reading.compose ? 'too hot' : 'no Docker Compose plugin, see mainworks host prepare'}`).join('; ')})`, readings.map(reading => reading.name));
+      if (!host) return here(`no host is ready (${readings.map(reading => `${reading.name}: ${reading.away ? reading.reason ?? 'away' : reading.compose ? 'too hot' : 'no Docker Compose plugin: install docker-compose-plugin there'}`).join('; ')})`, readings.map(reading => reading.name));
       enterStep(`tests: ${check.check} on ${host.name}`);
       const probe = tcpAcceptProbe(check.services!.map(({ service, port }) => ({ host: service, port })), 120_000);
       const ended = await session.check(host.name, { file: check.services![0]!.file, services: check.services!.map(({ service, port }) => ({ service, port })), cpus: Math.max(1, host.cores),
