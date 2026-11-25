@@ -15,7 +15,7 @@ import { runtimeLoginHomes } from '../master/profiles.js';
  * command is run here, on the host, and its answer handed to Pi as the provider's key variable
  * (`zai` → `ZAI_API_KEY`), which Pi reads when the command it runs itself answers nothing.
  */
-export async function piKeyEnvironment(home: string | null, modelId: string | null): Promise<Record<string, string>> {
+async function piKeyEnvironment(home: string | null, modelId: string | null): Promise<Record<string, string>> {
   const provider = modelId?.split('/')[0];
   if (!home || !provider) return {};
   let key: unknown;

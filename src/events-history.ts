@@ -164,7 +164,7 @@ export interface EventHistoryPage {
 }
 
 /** A history read past this fails fast instead of loading the database (GY-3761). */
-export const eventHistoryTimeoutMs = 5000;
+const eventHistoryTimeoutMs = 5000;
 async function timed(pool: pg.Pool, query: EventHistoryQuery, sql: Sql) {
   const client = await pool.connect();
   try {

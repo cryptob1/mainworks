@@ -234,16 +234,16 @@ export interface RemoteShardEnd { ok: boolean; out: string; status: number | nul
 /** The name of this checkout's mirror on a host (~/.graphyard/mirrors/NAME.git): one per checkout this install trials from. */
 export const mirrorName = (root: string) => `${createHash('sha1').update(root).digest('hex').slice(0, 8)}-${basename(root).replace(/[^A-Za-z0-9._-]/g, '-')}`.slice(0, 100);
 /** GY-3627: where the warm image stores its filled Node compile cache, built CLI/server entries and the commit they were built from. */
-export const warmCompileCacheDirectory = '/warm/compile-cache';
-export const warmDistDirectory = '/warm/dist';
-export const warmCommitFile = '/warm/commit';
+const warmCompileCacheDirectory = '/warm/compile-cache';
+const warmDistDirectory = '/warm/dist';
+const warmCommitFile = '/warm/commit';
 
 /** The warm image for a trial image's digest, a lockfile's hash (`none` without one), and the commit it was built from. */
 export const warmImageTag = (digest: string, lockHash: string, commit?: string) =>
   `graphyard-warm:${digest.replace(/^sha256:/, '').slice(0, 12)}-${lockHash.slice(0, 12)}${commit ? `-${commit.slice(0, 12)}` : ''}`;
 
 /** Parse a `graphyard-warm:` tag into its trial image digest prefix, lockfile hash (or `none`), and commit prefix (if tagged with one). */
-export function parseWarmImageTag(tag: string): { digest: string; lock: string; commit: string | null } | null {
+function parseWarmImageTag(tag: string): { digest: string; lock: string; commit: string | null } | null {
   const match = /^graphyard-warm:([0-9a-f]{12})-([0-9a-f]{12}|none)(?:-([0-9a-f]{12}))?$/.exec(tag);
   return match ? { digest: match[1]!, lock: match[2]!, commit: match[3] ?? null } : null;
 }
@@ -282,7 +282,7 @@ const lockfileHash = async (local: (command: string, args: string[]) => Promise<
  * GY-3804: build the pre-GY-3627 2-part warm image `(image digest, lockfile hash)` for compute hosts
  * whose helper speaks `receive-image:1` and `prepare-run:1` without version 2.
  */
-export async function ensureWarmImageV1(input: { root: string; sha: string; image: string; run: ChildRun; deadline: number }): Promise<string> {
+async function ensureWarmImageV1(input: { root: string; sha: string; image: string; run: ChildRun; deadline: number }): Promise<string> {
   const remaining = () => Math.max(1_000, input.deadline - Date.now());
   const local = async (command: string, args: string[]) => String(await input.run(command, args, { timeoutMs: remaining() })).trim();
   const digest = await local('docker', ['image', 'inspect', '--format', '{{.Id}}', input.image]);
@@ -346,7 +346,7 @@ export async function ensureWarmImage(input: { root: string; commit: string; ima
  * (so a trial whose base is newer than any image reuses the newest one and rebuilds what differs),
  * else build one once for the base (or `sha` when the candidate changed the lockfile).
  */
-export async function selectWarmImage(input: { root: string; sha: string; baseTip?: string; image: string; run: ChildRun; deadline: number }): Promise<string> {
+async function selectWarmImage(input: { root: string; sha: string; baseTip?: string; image: string; run: ChildRun; deadline: number }): Promise<string> {
   const remaining = () => Math.max(1_000, input.deadline - Date.now());
   const local = async (command: string, args: string[]) => String(await input.run(command, args, { timeoutMs: remaining() })).trim();
   const digest = await local('docker', ['image', 'inspect', '--format', '{{.Id}}', input.image]);

@@ -160,7 +160,7 @@ export function controlPlaneSummary(record: ControlPlaneRecord | null, now: numb
 }
 
 /** GY-3746: an install following Mainworks takes a newer build at most once an hour, and anyway after 4 hours of waiting. */
-export const quietUpdateMs = 60 * 60_000, forcedUpdateMs = 4 * 60 * 60_000;
+const quietUpdateMs = 60 * 60_000, forcedUpdateMs = 4 * 60 * 60_000;
 /** `master update now` leaves this file; the next pass takes the newer build at once and removes it. */
 export const updateNowPath = (root: string) => join(stateDirectory(root), 'update-now');
 

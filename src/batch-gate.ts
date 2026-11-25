@@ -231,7 +231,7 @@ const isDiagnosticNote = (note: string) => note.startsWith('diagnostic:');
 const isSkippedCaseNote = (note: string) => /: .+ bound this case; it is gone from the catalog/.test(note);
 
 /** Record a gate note keyed by its source, replacing any earlier note for that source. */
-export function setGateNote(record: Pick<GateRecord, 'notes'>, source: string, text: string) {
+function setGateNote(record: Pick<GateRecord, 'notes'>, source: string, text: string) {
   record.notes = [...withoutNote(record.notes, source), `${source}: ${text}`.slice(0, 200)].slice(-filingNotesWindow);
 }
 
@@ -639,7 +639,7 @@ async function gateFlight(ports: GatePorts, record: GateRecord, keepInFlight: ()
 }
 
 /** GY-3779: how the last diagnostics run ended: passed, failed checks (named in the reason) or threw (its error). */
-export interface DiagnosticsRun { at: string; outcome: 'passed' | 'failed' | 'threw'; reason: string | null }
+interface DiagnosticsRun { at: string; outcome: 'passed' | 'failed' | 'threw'; reason: string | null }
 
 /** One diagnostic failure as the record keeps it (GY-3264). */
 interface DiagnosticFailure { commit: string; detail: string | null; at: string }

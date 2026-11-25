@@ -13,6 +13,6 @@
     "browser-tests/**/*.spec.ts"
   ],
   "project": ["src/**/*.{ts,tsx}", "web/**/*.{ts,tsx}", "bin/**/*.mjs", "scripts/**/*.{mjs,ts}", "tests/**/*.{ts,mjs}", "browser-tests/**/*.ts"],
-  "ignoreBinaries": ["tailscale", "mise", "bwrap", "sha256sum", "rg", "opencode", "codex"],
+  "ignoreBinaries": ["flock", "tailscale", "mise", "bwrap", "sha256sum", "rg", "opencode", "codex"],
   "ignoreDependencies": ["esbuild", "playwright", "@xterm/xterm"]
 }

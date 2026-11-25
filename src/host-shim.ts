@@ -59,7 +59,7 @@ export const trialVerbs = hostShimVerbs.filter(verb => !/^(?:run-session|update-
  * waits for prepare. When a verb's revision is bumped in `hostShimVerbs`, add its previous revision here
  * and keep a coordinator branch for it until every host has moved on.
  */
-export const olderTrialVerbs: Readonly<Record<string, readonly string[]>> = {
+const olderTrialVerbs: Readonly<Record<string, readonly string[]>> = {
   'receive-image:2': ['receive-image:1'],
   'prepare-run:2': ['prepare-run:1'],
 };
