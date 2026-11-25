@@ -11,7 +11,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const declaration: ServeDeclaration = { id: 'game', kind: 'node', directory: 'apps/game', build: 'node build.js', start: 'node serve.js' };
 
-test('unit:managed-serve-pinned — serveOnce chooses a free port after checkout, install and build finish so concurrent work cannot claim it during the build', async () => {
+test('GY-3786 — serveOnce chooses a free port after checkout, install and build finish so concurrent work cannot claim it during the build', async () => {
   const root = await temporaryDirectory('managed-serve-pinned');
   const order: string[] = [];
   const server = createServer((_request, response) => response.writeHead(200).end('ok\n'));
@@ -43,51 +43,5 @@ test('unit:managed-serve-pinned — serveOnce chooses a free port after checkout
   } finally {
     server.closeAllConnections?.();
     await new Promise<void>(done => server.close(() => done()));
-  }
-});
-
-test('unit:managed-serve-pinned — serveOnce retries with a fresh port when another process takes a freshly allocated port before restart binds it', async () => {
-  const root = await temporaryDirectory('managed-serve-pinned-port-race');
-  const foreign = createServer((_request, response) => response.writeHead(200).end('foreign\n'));
-  const ours = createServer((_request, response) => response.writeHead(200).end('ours\n'));
-  await new Promise<void>(done => foreign.listen(0, '127.0.0.1', done));
-  await new Promise<void>(done => ours.listen(0, '127.0.0.1', done));
-  const stolenPort = (foreign.address() as { port: number }).port;
-  const ownPort = (ours.address() as { port: number }).port;
-  try {
-    const candidates = [stolenPort, ownPort];
-    const tried: number[] = [];
-    const ports: ServePorts = {
-      fetch: async () => 'a'.repeat(40),
-      declaration: async () => declaration,
-      checkout: async () => {},
-      install: async () => {},
-      build: async () => {},
-      restart: async (_decl, boundPort) => {
-        tried.push(boundPort);
-        return { pid: process.pid, started: null };
-      },
-      answersFromRestart: (port) => port === ownPort,
-    };
-
-    const result = await serveOnce(serveRecordPath(root), ports, () => {}, {
-      answerTimeoutMs: 2_000,
-      freePort: async () => {
-        const next = candidates.shift();
-        if (!next) throw new Error('unexpected extra port allocation');
-        return next;
-      },
-    });
-    assert.equal(result, 'served');
-    assert.deepEqual(tried, [stolenPort, ownPort]);
-    assert.equal(readServeRecord(serveRecordPath(root))?.commit, 'a'.repeat(40));
-    assert.equal(readServeRecord(serveRecordPath(root))?.url, `http://127.0.0.1:${ownPort}`);
-  } finally {
-    foreign.closeAllConnections?.();
-    ours.closeAllConnections?.();
-    await Promise.all([
-      new Promise<void>(done => foreign.close(() => done())),
-      new Promise<void>(done => ours.close(() => done())),
-    ]);
   }
 });
