@@ -13,6 +13,7 @@ import { standingStepFailures, testQueueStatus, workerGrowthKey, masterLaunchKey
 import { fetchRefusalKey, gateStallKey } from '../daemon/cycle-batch-gate.js';
 import { cpuPerMergedItem, cpuWaiting } from '../daemon/cpu-pressure.js';
 import { missedByNarrowing, readTestSelections, testSelectionSummary } from '../merge-writer/test-selection.js';
+import { readTrialTimings, slowestTrialFiles } from '../merge-writer/trial-timings.js';
 import { heatReading } from '../merge-writer/trial-load.js';
 import { overloadAlarm, overloaded, sessionFigures } from '../session-share.js';
 import { profileHealth, repeatedLaunchFailures } from '../daemon/sessions.js';
@@ -336,6 +337,8 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     // GY-3750: over the last 20 item trials, the median shares of reachable and of all test files the trial selected.
     // GY-3840: with how many failing test files the last 20 release checks caught that no item trial of their batch selected.
     testSelection: ((runs) => { const summary = testSelectionSummary(runs); return { ...summary || {}, missedByNarrowing: missedByNarrowing(gateRecord?.sweeps ?? [], runs) }; })(readTestSelections(root)),
+    // GY-3838: the five slowest test files over the last 20 merge trials and release checks, by median seconds.
+    slowestTrialFiles: (timings => timings.length ? { trials: timings.length, files: slowestTrialFiles(timings) } : null)(readTrialTimings(root)),
     // GY-3119: the batch gate on main — the verified commit that serves, the gate in flight with its current step, the last run's outcome with its reason or failing check (GY-3141), a held batch and the revert rate over the last 20 merges.
     batchGate: gateSummary(gateRecord),
     // GY-3833: non-blank lines in src/ and tests/ at the latest verified commit, with the seven-day change.

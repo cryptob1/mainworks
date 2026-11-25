@@ -1,7 +1,6 @@
 // Concern: GY-3835 — one headless planner run on an empty board: gathers the brief, 6-hour flow
 // numbers, rework causes and five slowest trial test files, runs a headless session, and files at
 // most three unreleased draft items with why and simplest only (no criteria).
-import { benchResultsPath, readBenchResults } from '../bench.js';
 import {
   parsePlannerDrafts,
   plannerPrompt,
@@ -41,8 +40,7 @@ export async function runPlanner(
   try {
     const brief = input.brief ?? await fleetRequest(config, 'product-brief').then(body => typeof body?.brief?.markdown === 'string' ? body.brief.markdown : null, () => null);
     const flowReport = deps.flow ? await deps.flow().catch(() => null) : await fleetRequest(config, 'flow').then(body => body as FlowReport, () => null);
-    const benchSlowest = readBenchResults(benchResultsPath(root)).at(-1)?.slowestFiles;
-    const slowestTrialFiles = slowestTrialTestFiles(root, benchSlowest);
+    const slowestTrialFiles = slowestTrialTestFiles(root);
     const prompt = plannerPrompt({ brief, flow6h: flowReport?.['6h'] ?? null, slowestTrialFiles, openTitles: input.openTitles });
 
     let captured = '';

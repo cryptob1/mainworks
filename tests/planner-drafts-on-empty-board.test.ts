@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { emptyDaemonState, daemonStatePath, type DaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { daemonEffects, type DaemonEffects } from '../src/daemon/effects.js';
@@ -14,6 +14,7 @@ import { runPlanner } from '../src/master/planner.js';
 import type { FlowReport } from '../src/server/flow.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { recordTrialTimings } from '../src/merge-writer/trial-timings.js';
 
 const proof = 'integration:planner-drafts-on-empty-board';
 const start = Date.parse('2026-11-25T08:00:00Z');
@@ -68,7 +69,7 @@ const sampleFlow: FlowReport = {
     merges: 12,
     mergesPerHour: 2,
     firstPassYield: 0.67,
-    rework: { review: 2, 'product review': 1, 'merge trial': 4, acceptance: 0, 'base moved': 3, 'red base': 1 },
+    rework: { review: 2, 'product review': 1, 'merge trial': 4, acceptance: 0, 'base moved': 3, 'red base': 1 }, reviewReasons: [],
     stations: {
       ready: { median: 2, p90: 5, samples: 12, oldest: { key: 'GY-1', title: 'Old', minutes: 5, waiting: false } },
       build: { median: 14, p90: 28, samples: 12, oldest: { key: 'GY-1', title: 'Old', minutes: 28, waiting: false } },
@@ -89,13 +90,13 @@ const sampleFlow: FlowReport = {
   },
   '24h': {
     hours: 24, attempts: 40, attemptsPerHour: 1.7, merges: 30, mergesPerHour: 1.25, firstPassYield: 0.75,
-    rework: { review: 3, 'product review': 1, 'merge trial': 5, acceptance: 0, 'base moved': 4, 'red base': 1 },
+    rework: { review: 3, 'product review': 1, 'merge trial': 5, acceptance: 0, 'base moved': 4, 'red base': 1 }, reviewReasons: [],
     stations: { ready: null, build: null, review: null, 'test queue': null, 'merge trial': null, acceptance: null, 'waiting for sign-off': null, 'waiting for the merge writer': null, merge: null, live: null },
     trials: 35, flaky: 2, flakyRate: 0.057, reverts: 0, revertRate: 0,
   },
   '7d': {
     hours: 168, attempts: 200, attemptsPerHour: 1.2, merges: 150, mergesPerHour: 0.9, firstPassYield: 0.75,
-    rework: { review: 10, 'product review': 2, 'merge trial': 20, acceptance: 1, 'base moved': 15, 'red base': 2 },
+    rework: { review: 10, 'product review': 2, 'merge trial': 20, acceptance: 1, 'base moved': 15, 'red base': 2 }, reviewReasons: [],
     stations: { ready: null, build: null, review: null, 'test queue': null, 'merge trial': null, acceptance: null, 'waiting for sign-off': null, 'waiting for the merge writer': null, merge: null, live: null },
     trials: 180, flaky: 5, flakyRate: 0.028, reverts: 1, revertRate: 0.007,
   },
@@ -110,6 +111,10 @@ async function fixture(options: {
   createWork?: (payload: Record<string, unknown>) => Promise<{ key?: string } | null>;
 } = {}) {
   const directory = await temporaryDirectory('planner-drafts-empty-board');
+  // GY-3838: the planner reads the slowest files from stored trial timings.
+  await mkdir(join(directory, '.graphyard'));
+  await recordTrialTimings(directory, { at: new Date().toISOString(), run: 'merge trial', commit: 'a'.repeat(40),
+    files: Object.fromEntries(['a', 'b', 'c', 'd', 'e', 'f'].map((name, index) => [`tests/${name}.test.ts`, (index + 1) * 1000])) });
   const workers = workerProfiles(options.workers ?? 4);
   const config: MasterConfig = masterConfigSchema.parse({
     version: 1,
@@ -164,7 +169,7 @@ async function fixture(options: {
       launch: async () => ({ agentName: 'master', pane: 'pM', runtime: 'codex', account: 'a', session: 's' }),
     },
     planner: input =>
-      runPlanner(process.cwd(), config, input, {
+      runPlanner(directory, config, input, {
         flow: async () => sampleFlow,
         select: async () => ({
           account: { name: 'planner-acct', kind: 'claude', environment: {} } as any,

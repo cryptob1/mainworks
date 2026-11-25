@@ -1,0 +1,11 @@
+{
+  "id": "review-rework-reasons",
+  "title": "Master status shows the reason label of a changes-requested review",
+  "description": "On a running test install with one changes-requested review, master status reads the flow and shows that review's short reason label, taken from its first BLOCKING line, beside the rework causes.",
+  "tags": ["api", "regression"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "master status shows the review's reason label", "run": "node --import tsx tests/helpers/run-tests.ts tests/review-rework-reasons.test.ts", "timeoutSeconds": 240 }
+  ]
+}

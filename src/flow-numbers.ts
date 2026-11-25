@@ -32,6 +32,8 @@ export interface FlowNumbers {
   /** Attempts merged with no rework request ÷ attempts ended; null when none ended. */
   firstPassYield: number | null;
   rework: Record<ReworkCause, number>;
+  /** GY-3839: the top three short reasons review and product review sent heads back for, read from each verdict's first BLOCKING line. */
+  reviewReasons: { label: string; count: number }[];
   stations: Record<FlowStation, StationWait | null>;
   trials: number; flaky: number; flakyRate: number | null;
   reverts: number; revertRate: number | null;
@@ -46,6 +48,18 @@ function reworkCause(reason: string, binding: string | null | undefined): Rework
   if (/:proof|:human:/.test(ground)) return 'acceptance';
   if (/product review/.test(reason)) return 'product review';
   return 'review';
+}
+
+/** GY-3839: a short label for a review's first BLOCKING finding, past its `PATH:LINE — ` or `SCREEN — ` prefix (hyphen, en or em dash). */
+function reviewReason(reason: string): string {
+  const line = /BLOCKING:?\s*(.*)/.exec(reason)?.[1] ?? '';
+  const prefix = /\s[-–—]\s/.exec(line);
+  const finding = prefix ? line.slice(prefix.index + prefix[0].length) : line;
+  if (/regress|no longer|used to/i.test(finding)) return 'regression';
+  if (/\b(tests?|proofs?)\b/i.test(finding)) return 'missing test';
+  if (/criteri|\bAC-\d|not met|unmet|requirement/i.test(finding)) return 'criterion unmet';
+  if (/\bUI\b|page|screen|layout|overflow|button|scroll|\d+ ?px|render|display|click/i.test(finding)) return 'UI defect';
+  return 'other';
 }
 
 const ms = (iso: string | null | undefined) => iso ? Date.parse(iso) : Number.NaN;
@@ -120,7 +134,13 @@ export function flowNumbers(items: readonly FlowItem[], hours: number, now: numb
   const merges = items.filter(item => inWindow(ms(item.mergedAt))).length;
   const events = items.flatMap(item => item.events.filter(event => inWindow(ms(event.at))));
   const rework = Object.fromEntries(reworkCauses.map(cause => [cause, 0])) as Record<ReworkCause, number>;
-  for (const event of events) if (event.kind === 'rework') rework[reworkCause(event.reason ?? '', event.binding)] += 1;
+  const reasons = new Map<string, number>();
+  for (const event of events) if (event.kind === 'rework') {
+    const cause = reworkCause(event.reason ?? '', event.binding);
+    rework[cause] += 1;
+    if (cause === 'review' || cause === 'product review') { const label = reviewReason(event.reason ?? ''); reasons.set(label, (reasons.get(label) ?? 0) + 1); }
+  }
+  const reviewReasons = [...reasons].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count).slice(0, 3);
   // GY-3732: like merges an hour, the live station counts only merges made inside the window.
   const stays = items.flatMap(item => visits(item, now).filter(visit => visit.station === 'live' ? inWindow(visit.start) : visit.end > from).map(visit => ({ item, visit, ms: visit.end - visit.start })));
   const stations = Object.fromEntries(flowStations.map(station => {
@@ -138,7 +158,7 @@ export function flowNumbers(items: readonly FlowItem[], hours: number, now: numb
   const ratio = (part: number, whole: number) => whole ? part / whole : null;
   return {
     hours, attempts: ended.length, attemptsPerHour: ended.length / hours, merges, mergesPerHour: merges / hours,
-    firstPassYield: ratio(ended.filter(outcome => outcome.merged).length, ended.length), rework, stations,
+    firstPassYield: ratio(ended.filter(outcome => outcome.merged).length, ended.length), rework, reviewReasons, stations,
     trials: trials.length, flaky, flakyRate: ratio(flaky, trials.length), reverts, revertRate: ratio(reverts, merges),
   };
 }
