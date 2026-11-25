@@ -2,7 +2,7 @@ import { featureMapCaseId } from '../app-feature-check.js';
 // Concern: the loop's batch gate on main (GY-3119): one gate at a time beside the cycle, the
 // scheduled diagnostics beside it, both over the merge writer's trial container and git.
 import type { Work } from '../model.js';
-import { bootstrapGate, clearGateNote, gateLimitMs, type DiagnosePort, gateOutcomeReason, gateRecordPath, mergeFilings, readGateRecord, runDiagnostics, runGate, writeGateRecord, type GatePorts, type GateRecord } from '../batch-gate.js';
+import { bootstrapGate, clearGateNote, gateCeilingMs, gateLimitMs, type DiagnosePort, gateOutcomeReason, gateRecordPath, mergeFilings, readGateRecord, runDiagnostics, runGate, writeGateRecord, type GatePorts, type GateRecord } from '../batch-gate.js';
 import { mainworksRepository } from '../scenarios.js';
 import { releaseNotesPath, releaseNote, appendReleaseNote } from '../release-notes.js';
 import { deployRecordPath, readDeployRecord } from '../deploy-watch.js';
@@ -287,7 +287,8 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
         run.catch((error: unknown) => ({ failed: [check], details: { [check]: message(error) } as Record<string, string>, outputs: {} as Record<string, string[]> }));
       const suite = await survive('full-suite', trialFailures(reads, commit, ['build', 'affected'], ['package.json'], gateLimitMs, trusted));
       const held = await catalog(commit), cases = held.map(id => `e2e:${id}`), started = reads.now();
-      const { failed, details, outputs } = cases.length ? await survive('e2e-catalog', trialFailures(reads, commit, cases, [], gateLimitMs, trusted, true)) : { failed: [], details: {}, outputs: {} }, catalogMs = reads.now() - started;
+      // GY-3816: the whole catalog takes about 55 minutes; it gets the gate ceiling, not the 45-minute limit.
+      const { failed, details, outputs } = cases.length ? await survive('e2e-catalog', trialFailures(reads, commit, cases, [], gateCeilingMs, trusted, true)) : { failed: [], details: {}, outputs: {} }, catalogMs = reads.now() - started;
       const previews = reads.gate?.previews;
       const previewCases = !servedPreviewCases.some(id => held.includes(id)) ? []
         : previews ? await previews(commit) : notCovered(commit, new Date(reads.now()).toISOString(), 'this loop runs no served preview cases');
