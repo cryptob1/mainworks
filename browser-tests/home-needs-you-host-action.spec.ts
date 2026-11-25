@@ -29,7 +29,7 @@ test('e2e:home-needs-you-host-action — one Needs you card per outdated test ma
   await page.getByLabel('Access token').fill('fixture');
   await page.getByRole('button', { name: 'Open control plane' }).click();
   for (const width of [1280, 390]) {
-    hosts = [{ host: 'here', local: true, away: false }, old('gy-compute@vish-msi'), old('gy-compute@omarchypc')];
+    hosts = [{ host: 'vishrog', local: true, away: false }, old('gy-compute@vish-msi'), old('gy-compute@omarchypc')];
     await page.setViewportSize({ width, height: 900 });
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Home', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
@@ -41,19 +41,19 @@ test('e2e:home-needs-you-host-action — one Needs you card per outdated test ma
       await expect(card).toContainText(name);
       await expect(card).toContainText('mainworks host prepare');
       await expect(card).toContainText('with sudo');
-      await expect(card).toContainText('moves test work off this machine');
+      await expect(card).toContainText('moves test work off vishrog');
       await expect(card).not.toContainText(/GY-\d|shim/);
     }
     await expect(page.locator('[data-host-update]')).toHaveCount(0);
     expect(await noSideScroll(page)).toBe(true);
 
     // The owner prepares vish-msi; the next read shows it current and its card goes.
-    hosts = [{ host: 'here', local: true, away: false }, { host: 'gy-compute@vish-msi', away: false }, old('gy-compute@omarchypc')];
+    hosts = [{ host: 'vishrog', local: true, away: false }, { host: 'gy-compute@vish-msi', away: false }, old('gy-compute@omarchypc')];
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Home', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
     await expect(cards).toHaveCount(1);
     await expect(section.locator('[data-host-action="gy-compute@vish-msi"]')).toHaveCount(0);
-    hosts = [{ host: 'here', local: true, away: false }, { host: 'gy-compute@vish-msi', away: false }, { host: 'gy-compute@omarchypc', away: false }];
+    hosts = [{ host: 'vishrog', local: true, away: false }, { host: 'gy-compute@vish-msi', away: false }, { host: 'gy-compute@omarchypc', away: false }];
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Home', exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('[data-host-action]')).toHaveCount(0);

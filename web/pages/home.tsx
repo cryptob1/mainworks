@@ -45,6 +45,8 @@ export default function HomePage(dashboard: Dashboard) {
   const admin = status?.actor?.role === 'admin';
   // GY-3827: each test machine whose helper is older than this release waits on its owner's one-time prepare.
   const outdated = hostsNeedingUpdate(status);
+  const local = Array.isArray(status?.hosts) ? status.hosts.find((host: { local?: unknown; host?: unknown }) => host?.local === true && typeof host.host === 'string')?.host : undefined;
+  const coordinator = local ? machineName(local) : 'the main machine';
   const needs = requests.length + outdated.length;
   const fact = work.length === 0 ? 'The yard is quiet.' : summarySentence(counts);
 
@@ -54,7 +56,7 @@ export default function HomePage(dashboard: Dashboard) {
     {needs > 0 && <PageSection title="Needs you" count={needs} className="work-group group-needs-you" actions={<button type="button" className="text-button" onClick={() => setView('needs-you')}>Open all requests →</button>}>
       <ul className="shipped-list">{outdated.map(host => <li key={host} data-host-action={host}>
         <strong>{machineName(host)}</strong>
-        <span>Takes no test work until a one-time update; updating it moves test work off this machine.</span>
+        <span>Takes no test work until a one-time update; updating it moves test work off {coordinator}.</span>
         <span>Run <span className="mono">{hostUpdateCommand}</span>, then the script it prints on {machineName(host)} with sudo.</span>
       </li>)}{requests.slice(0, 5).map(row => <li key={row.request.id}>
         <strong>{row.work}</strong>
