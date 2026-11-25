@@ -1,5 +1,6 @@
-import { test as base, expect, type Browser, type Page } from '@playwright/test';
+import { test as base, expect, type BrowserContext, type Page } from '@playwright/test';
 import { fork, type ChildProcess } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { readFile, symlink } from 'node:fs/promises';
 import { delimiter, join, resolve } from 'node:path';
@@ -11,71 +12,114 @@ const settled = { timeout: 15_000 };
 const fastPoll = { intervals: [50] };
 const initialMaster = () => ({ master: { agentName: 'master', pane: 'w1:master' as string | null, account: 'test-account', runtime: 'codex' }, status: 'idle', gap: '' });
 
-// GY-3818: share one Postgres database, forked terminal-server and terminal bridge per Playwright
-// worker via a worker-scoped fixture, and keep src/ imports inside the forked tsx server so
-// Playwright's Babel transformer does not compile the whole repository per worker.
-interface SharedServer { site: string; url: string; child: ChildProcess; run: number }
+// GY-3818 / GY-3856: share one server, BrowserContext, Page and sign-in cookie per Playwright
+// worker via a worker-scoped fixture. When MASTER_UX_SHARED_SERVERS is provided (from
+// tests/master-page-ux-stable.test.ts), workers attach to pre-started isolated slots on one
+// shared Engine/Postgres instead of forking tsx servers.
+interface SharedServer {
+  site: string;
+  url: string;
+  context: BrowserContext;
+  page: Page;
+  reset(logFile: string): Promise<void>;
+  child: { send(message: string): void };
+}
 const test = base.extend<{}, { server: SharedServer }>({
-  server: [async ({}, use) => {
-    const site = await temporaryDirectory('master-ux');
-    await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
-    const stateFile = join(site, 'master.daemon.json');
-    await saveMasterState(stateFile, initialMaster());
-    const child = fork(resolve('tests/helpers/terminal-server.ts'), ['new', site], {
-      execArgv: ['--import', 'tsx'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
-      env: {
-        ...process.env,
-        PATH: `${resolve('fixtures/herdr-terminal-stub')}${delimiter}${process.env.PATH}`,
-        HOME: site,
-        HERDR_STUB_LOG: join(site, 'herdr-0.log'),
-        HERDR_STUB_STATE: stateFile,
-        GRAPHYARD_TEST_BRIDGE_STATE: stateFile,
-        GRAPHYARD_HERDR_CONFIG_HOME: '',
-        GRAPHYARD_HERDR_SESSION: '',
-      },
+  server: [async ({ browser }, use, workerInfo) => {
+    let site: string;
+    let url: string;
+    let forked: ChildProcess | undefined;
+    let reset: (logFile: string) => Promise<void>;
+    let child: { send(message: string): void };
+
+    const sharedEnv = process.env.MASTER_UX_SHARED_SERVERS;
+    if (sharedEnv) {
+      const parsed = JSON.parse(sharedEnv) as { controlUrl: string; slots: { site: string; url: string }[] };
+      const slotIndex = workerInfo.parallelIndex % parsed.slots.length;
+      ({ site, url } = parsed.slots[slotIndex]!);
+      reset = async (logFile: string) => {
+        const res = await fetch(`${parsed.controlUrl}/slot/${slotIndex}/reset`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ logFile }) });
+        if (!res.ok) throw new Error(`slot ${slotIndex} reset failed: ${res.status}`);
+      };
+      child = {
+        send: (message: string) => {
+          if (message === 'drop-terminals') void fetch(`${parsed.controlUrl}/slot/${slotIndex}/drop-terminals`, { method: 'POST' });
+        },
+      };
+    } else {
+      site = await temporaryDirectory('master-ux');
+      await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
+      const stateFile = join(site, 'master.daemon.json');
+      await saveMasterState(stateFile, initialMaster());
+      forked = fork(resolve('tests/helpers/terminal-server.ts'), ['new', site], {
+        execArgv: ['--import', 'tsx'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+        env: {
+          ...process.env,
+          PATH: `${resolve('fixtures/herdr-terminal-stub')}${delimiter}${process.env.PATH}`,
+          HOME: site,
+          HERDR_STUB_LOG: join(site, 'herdr-0.log'),
+          HERDR_STUB_STATE: stateFile,
+          GRAPHYARD_TEST_BRIDGE_STATE: stateFile,
+          GRAPHYARD_HERDR_CONFIG_HOME: '',
+          GRAPHYARD_HERDR_SESSION: '',
+        },
+      });
+      ([{ url }] = await once(forked, 'message') as [{ url: string }]);
+      reset = async (logFile: string) => {
+        const done = once(forked!, 'message');
+        forked!.send({ type: 'reset', logFile });
+        await done;
+      };
+      child = { send: (message: string) => { forked!.send(message); } };
+    }
+
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, permissions: ['clipboard-read', 'clipboard-write'] });
+    await serveXterm(context);
+    const page = await context.newPage();
+    // Capture the real xterm instance for buffer/dimension assertions, without replacing its behavior.
+    await page.addInitScript(() => {
+      let original: any;
+      Object.defineProperty(window, 'Terminal', { configurable: true, get: () => original, set: value => {
+        original = class extends value { constructor(options: unknown) { super(options); (window as any).testTerminal = this; } };
+      } });
+      // GY-3368: 'reconnecting' lasts one 250 ms retry delay, shorter than expect's polling gaps, so
+      // every state the terminal enters is recorded and the test reads the record, not one sample.
+      const states: string[] = (window as any).terminalStates = [];
+      new MutationObserver(changes => { for (const change of changes) states.push((change.target as Element).getAttribute('data-terminal')!); })
+        .observe(document, { subtree: true, attributes: true, attributeFilter: ['data-terminal'] });
     });
-    const [{ url }] = await once(child, 'message') as [{ url: string }];
+    const { code } = await (await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string };
+    await page.goto(`${url}/#sign-in=${code}&master`);
+    await expect(page.getByRole('heading', { name: 'Lead', exact: true })).toBeVisible({ timeout: 15_000 });
+    const sessionToken = await page.evaluate(() => localStorage.getItem('graphyard-token'));
     try {
-      await use({ site, url, child, run: 0 });
+      await use({ site, url, context, page, reset, child });
     } finally {
-      const ended = once(child, 'exit'); child.send('stop'); await ended;
+      await context.close();
+      if (sessionToken) await fetch(`${url}/api/sign-out`, { method: 'POST', headers: { Authorization: `Bearer ${sessionToken}` } }).catch(() => {});
+      if (forked) { const ended = once(forked, 'exit'); forked.send('stop'); await ended; }
     }
   }, { scope: 'worker' }],
 });
 
-async function fixture(browser: Browser, shared: SharedServer, phone = false) {
-  const { site, url, child } = shared;
-  const logFile = join(site, `herdr-${++shared.run}.log`);
+async function fixture(shared: SharedServer, phone = false) {
+  const { site, url, context, page } = shared;
+  await context.setOffline(false);
+  await page.setViewportSize(phone ? { width: 390, height: 844 } : { width: 1280, height: 900 });
+  await page.goto('about:blank');
+  const logFile = join(site, `herdr-${randomUUID()}.log`);
   const current = initialMaster();
   const save = () => saveMasterState(join(site, 'master.daemon.json'), current);
   await save();
-  const reset = once(child, 'message');
-  child.send({ type: 'reset', logFile });
-  await reset;
-  const context = await browser.newContext({ viewport: phone ? { width: 390, height: 844 } : { width: 1280, height: 900 }, permissions: ['clipboard-read', 'clipboard-write'] });
-  await serveXterm(context);
-  const page = await context.newPage();
-  // Capture the real xterm instance for buffer/dimension assertions, without replacing its behavior.
-  await page.addInitScript(() => {
-    let original: any;
-    Object.defineProperty(window, 'Terminal', { configurable: true, get: () => original, set: value => {
-      original = class extends value { constructor(options: unknown) { super(options); (window as any).testTerminal = this; } };
-    } });
-    // GY-3368: 'reconnecting' lasts one 250 ms retry delay, shorter than expect's polling gaps, so
-    // every state the terminal enters is recorded and the test reads the record, not one sample.
-    const states: string[] = (window as any).terminalStates = [];
-    new MutationObserver(changes => { for (const change of changes) states.push((change.target as Element).getAttribute('data-terminal')!); })
-      .observe(document, { subtree: true, attributes: true, attributeFilter: ['data-terminal'] });
-  });
-  const { code } = await (await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string };
-  await page.goto(`${url}/#sign-in=${code}&master`);
+  await shared.reset(logFile);
+  await page.goto(`${url}/#master`);
   await openLiveSession(page);
   const calls = async () => (await readFile(logFile, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
   const inputs = async () => (await calls()).filter(entry => entry.command?.type === 'terminal.input').map(entry => entry.command.text);
   await expect(page.locator('.xterm-rows')).toContainText('screen of w1:master', settled);
   const reconnects = () => page.evaluate(() => (window as any).terminalStates.filter((state: string) => state === 'reconnecting').length);
-  return { page, child, current, save, calls, inputs, reconnects, stop: async () => {
-    await context.close();
+  return { page, child: shared.child, current, save, calls, inputs, reconnects, stop: async () => {
+    await context.setOffline(false);
   } };
 }
 
@@ -86,10 +130,14 @@ const openLiveSession = async (page: Page) => {
   await page.evaluate(() => { location.hash = '#master/live'; });
 };
 
-test('e2e:master-page-ux — history, fitting, native input, clipboard, reconnect and pane changes', async ({ browser, server }) => {
+const repeatCount = Math.max(1, Number(process.env.MASTER_UX_REPEAT) || 1);
+const suffix = (run: number) => run === 0 ? '' : ` [${run + 1}/${repeatCount}]`;
+
+for (let run = 0; run < repeatCount; run++) {
+test(`e2e:master-page-ux — history, fitting, native input, clipboard, reconnect and pane changes${suffix(run)}`, async ({ server }) => {
   // Includes server startup, two reconnects and two pane changes under the parallel browser suite.
   test.setTimeout(60_000);
-  const f = await fixture(browser, server), { page } = f;
+  const f = await fixture(server), { page } = f;
   try {
     await expect(page.getByRole('status')).toContainText('Idle · test-account');
     await expect(page.locator('.terminal-session')).toHaveAttribute('title', 'codex · w1:master');
@@ -168,8 +216,8 @@ test('e2e:master-page-ux — history, fitting, native input, clipboard, reconnec
   } finally { await f.stop(); }
 });
 
-test('e2e:master-page-phone — fits 390x844 and phone keys reach the pane', async ({ browser, server }) => {
-  const f = await fixture(browser, server, true), { page } = f;
+test(`e2e:master-page-phone — fits 390x844 and phone keys reach the pane${suffix(run)}`, async ({ server }) => {
+  const f = await fixture(server, true), { page } = f;
   try {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const box = await page.locator('.terminal-host').boundingBox(); expect(box!.width).toBeLessThan(390); expect(box!.height).toBeGreaterThan(300);
@@ -178,3 +226,4 @@ test('e2e:master-page-phone — fits 390x844 and phone keys reach the pane', asy
     await expect.poll(f.inputs, fastPoll).toEqual(['\x1b', '\t', '\x03', '\x1b[D', '\x1b[B', '\x1b[A', '\x1b[C', '\r']);
   } finally { await f.stop(); }
 });
+}

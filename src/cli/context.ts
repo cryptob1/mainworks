@@ -15,6 +15,11 @@ import { setting } from '../setting.js';
 
 /** How long one CLI request waits (2026-09-27: the full work snapshot reached 19 MB and ~31 s, so a 30 s bound failed every read of it, including workers' sync and complete; GY-864 bounds those reads). */
 export const cliRequestTimeoutMs = 120_000;
+/** Test seam (GY-3856): override the per-request bound when explicitly set to a positive number of milliseconds. */
+function resolvedCliRequestTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
+  const override = Number(setting('CLI_REQUEST_TIMEOUT_MS', env));
+  return Number.isFinite(override) && override > 0 ? override : cliRequestTimeoutMs;
+}
 /** How long the per-invocation release probe waits for /healthz before the invocation proceeds unread: an unreachable or slow health endpoint is not evidence of skew (GY-1960). */
 const releaseProbeTimeoutMs = 5_000;
 const commitPattern = /^[0-9a-f]{40}$/i;
@@ -155,7 +160,7 @@ export async function createContext(command: string, id: string | undefined, arg
       try {
         response = path.endsWith('/worker-verification')
           ? await verificationRequest(url, request)
-          : await fetch(url, { ...request, signal: AbortSignal.timeout(retrying ? Math.max(1, deadline - Date.now()) : cliRequestTimeoutMs) });
+          : await fetch(url, { ...request, signal: AbortSignal.timeout(retrying ? Math.max(1, deadline - Date.now()) : resolvedCliRequestTimeoutMs()) });
         break;
       } catch (error) {
         // Only a failed connection is replayed, with the original body and idempotency key.

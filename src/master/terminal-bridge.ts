@@ -13,7 +13,7 @@ import { saveInboxFile } from './inbox.js';
  * through src/child-runner.ts; like the loop's own restart in loop-restart.ts it takes `spawn`
  * by dynamic import, and nothing in src/master/ imports node:child_process.
  */
-export async function bridgeTerminals(url: string, token: string, signal: AbortSignal, connected: () => void = () => {}, session?: SessionReader, root?: string, refreshMs = 1_000) {
+export async function bridgeTerminals(url: string, token: string, signal: AbortSignal, connected: () => void = () => {}, session?: SessionReader, root?: string, refreshMs = 1_000, openStream: typeof terminalStream = terminalStream) {
   const connect = () => {
     if (signal.aborted) return;
     const socket = new WebSocket(`${url.replace(/^http/, 'ws')}/api/terminal-host`, ['graphyard', token]);
@@ -23,7 +23,7 @@ export async function bridgeTerminals(url: string, token: string, signal: AbortS
       let message: any; try { message = JSON.parse(String(event.data)); } catch { return; }
       if (message.type === 'log') send({ id: message.id, answer: root ? readRunLog(root, String(message.run), Number(message.cursor) || 0) : null });
       if (message.type === 'upload') send({ id: message.id, answer: root ? saveInboxFile(root, String(message.name), Buffer.from(String(message.data), 'base64')) : null });
-      if (message.type === 'open') streams.set(String(message.id), terminalStream(message, { line: line => send({ id: message.id, line }), exit: reason => { streams.get(String(message.id))?.end(); streams.delete(String(message.id)); send({ id: message.id, exit: reason }); } }, session, undefined, refreshMs));
+      if (message.type === 'open') streams.set(String(message.id), openStream(message, { line: line => send({ id: message.id, line }), exit: reason => { streams.get(String(message.id))?.end(); streams.delete(String(message.id)); send({ id: message.id, exit: reason }); } }, session, undefined, refreshMs));
       const child = streams.get(String(message.id));
       if (message.type === 'command' && child) child.send(message.command);
       if (message.type === 'close' && child) { child.end(); streams.delete(String(message.id)); }

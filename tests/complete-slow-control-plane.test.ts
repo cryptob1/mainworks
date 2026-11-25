@@ -11,9 +11,10 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // GY-3330: a control plane slower than the CLI's own request bound (`cliRequestTimeoutMs`, 120 s)
 // must not strand a finished head. This case runs the real CLI against a stub plane whose
 // idempotency receipts behave like the server's own (src/store/mutations.ts `once`): the first
-// request for a key applies the submission, every later one is answered from that record. The
-// client's timeout is the real one, so each scenario waits it out once; both run at once to stay
-// inside a targeted run's per-file bound.
+// request for a key applies the submission, every later one is answered from that record.
+// GY-3856: use the CLI's request-timeout seam (1.5 s instead of 120 s) so both timeout-and-retry
+// scenarios exercise the real AbortSignal.timeout -> submitUntilAnswered path in seconds.
+const testRequestTimeoutMs = 1_500;
 
 const exec = promisify(execFile);
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
@@ -80,7 +81,7 @@ async function slowPlane(head: string, first: { answerAfterMs: number } | { appl
 
 /** Run the real `complete` against the stub, as a worker's last action, from its own worktree. */
 async function completeAgainst(url: string, root: string, head: string) {
-  const env: NodeJS.ProcessEnv = { ...process.env, GRAPHYARD_URL: url, GRAPHYARD_TOKEN: 'stub-worker-token-0123456789abcdef' };
+  const env: NodeJS.ProcessEnv = { ...process.env, GRAPHYARD_URL: url, GRAPHYARD_TOKEN: 'stub-worker-token-0123456789abcdef', GRAPHYARD_CLI_REQUEST_TIMEOUT_MS: String(testRequestTimeoutMs) };
   delete env.GRAPHYARD_TOKEN_FILE; delete env.GRAPHYARD_REQUEST_ID;
   try {
     return await exec(process.execPath, [launcher, 'complete', 'GY-1', '1', '--head', head], { cwd: root, env, timeout: 240_000 });
@@ -91,7 +92,7 @@ async function completeAgainst(url: string, root: string, head: string) {
 
 async function firstAnswerPastTheClientBound() {
   const { root, head } = await committedWorktree('complete-slow-late');
-  const plane = await slowPlane(head, { answerAfterMs: 126_000 });
+  const plane = await slowPlane(head, { answerAfterMs: testRequestTimeoutMs * 2 });
   try {
     const done = await completeAgainst(plane.url, root, head);
     assert.equal(JSON.parse(done.stdout).submission.pr, 7, 'complete reports the submission');

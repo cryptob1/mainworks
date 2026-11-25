@@ -63,18 +63,21 @@ type StreamRequest = TerminalRequest;
 
 /**
  * On a compose install the server container has no herdr: the loop, running on the host beside
- * Herdr, connects to /api/terminal-host (GY-3241) and runs each stream for the server. One host at a time.
+ * Herdr, connects to /api/terminal-host (GY-3241) and runs each stream for the server. One host
+ * per server instance (WeakMap by Services, with `lastHost` for the module-level `hostRunLog`).
  */
-let host: { socket: Duplex; streams: Map<string, Handlers>; answers: Map<string, (log: unknown) => void> } | null = null;
+interface BridgeHost { socket: Duplex; streams: Map<string, Handlers>; answers: Map<string, (log: unknown) => void> }
+const hosts = new WeakMap<Services, BridgeHost>();
+let lastHost: BridgeHost | null = null;
 const hostUpgrade = async (services: Services, req: IncomingMessage, socket: Duplex) => {
   const [protocol, token = ''] = String(req.headers['sec-websocket-protocol'] ?? '').split(',').map(part => part.trim());
   let actor: Principal;
   try { actor = await authenticate(services, `Bearer ${token}`, services.repository); } catch { return refuse(socket, 401, 'Unauthorized'); }
   if (actor.role !== 'coordinator') return refuse(socket, 403, 'Forbidden');
   accept(req, socket, protocol);
-  const mine = { socket, streams: new Map<string, Handlers>(), answers: new Map<string, (log: unknown) => void>() };
-  host?.socket.destroy(); host = mine;
-  const gone = () => { if (host === mine) host = null; for (const [id, handlers] of mine.streams) { mine.streams.delete(id); handlers.exit('the host supervisor disconnected'); } for (const answer of mine.answers.values()) answer(null); mine.answers.clear(); };
+  const mine: BridgeHost = { socket, streams: new Map<string, Handlers>(), answers: new Map<string, (log: unknown) => void>() };
+  hosts.get(services)?.socket.destroy(); hosts.set(services, mine); lastHost = mine;
+  const gone = () => { if (hosts.get(services) === mine) hosts.delete(services); if (lastHost === mine) lastHost = null; for (const [id, handlers] of mine.streams) { mine.streams.delete(id); handlers.exit('the host supervisor disconnected'); } for (const answer of mine.answers.values()) answer(null); mine.answers.clear(); };
   readFrames(socket, (opcode, payload) => {
     if (opcode === 8) return void socket.end(frame(8));
     if (opcode === 9) socket.write(frame(10, payload));
@@ -96,8 +99,7 @@ const hostLogTimeoutMs = 10_000;
  * lives (GY-3259): the server never reads a host path. Null when the run is unknown there; a throw
  * when no host supervisor is connected or it does not answer in time.
  */
-const hostLogRequest = (request: object, noun: string, did: string): Promise<unknown> => {
-  const bridge = host;
+const hostLogRequest = (request: object, noun: string, did: string, bridge: BridgeHost | null = lastHost): Promise<unknown> => {
   if (!bridge?.socket.writable) return Promise.reject(Object.assign(new Error(`The host supervisor is not connected, so ${noun} cannot be ${did} right now`), { status: 503 }));
   const id = randomUUID();
   return new Promise((resolve, reject) => {
@@ -108,7 +110,7 @@ const hostLogRequest = (request: object, noun: string, did: string): Promise<unk
 };
 export const hostRunLog = (run: string, cursor: number) => hostLogRequest({ type: 'log', run, cursor }, 'run logs', 'read');
 
-const bridgedStream = (bridge: NonNullable<typeof host>, request: StreamRequest, handlers: Handlers): Stream => {
+const bridgedStream = (bridge: BridgeHost, request: StreamRequest, handlers: Handlers): Stream => {
   const id = randomUUID();
   bridge.streams.set(id, handlers);
   const send = (value: object) => { if (bridge.socket.writable) bridge.socket.write(text({ id, ...value })); };
@@ -169,7 +171,8 @@ export async function terminalUpgrade(services: Services, req: IncomingMessage, 
     exit: reason => { if (!framed && socket.writable) socket.write(text({ refused: reason })); close(); },
   };
   const request = { control, pane, cols, rows, master: true };
-  const herdr = host ? bridgedStream(host, request, handlers) : terminalStream(request, handlers, async () => {
+  const bridge = hosts.get(services) ?? null;
+  const herdr = bridge ? bridgedStream(bridge, request, handlers) : terminalStream(request, handlers, async () => {
     const config = await loadMasterConfig(process.cwd()).catch(() => null);
     if (config) return terminalSessionReader(() => config)();
     const pane = loopPanesRegistry(services.engine).latest?.master ?? null;
@@ -183,7 +186,8 @@ export async function terminalUpgrade(services: Services, req: IncomingMessage, 
   const upload = async (name: string, data: Buffer) => {
     if (data.length > maxUploadBytes) return void socket.write(text({ note: 'Not pasted: files are limited to 20 MB' }));
     try {
-      const path = host ? await hostLogRequest({ type: 'upload', name, data: data.toString('base64') }, 'files', 'saved') as string | null : saveInboxFile(process.cwd(), name, data);
+      const activeBridge = hosts.get(services) ?? null;
+      const path = activeBridge ? await hostLogRequest({ type: 'upload', name, data: data.toString('base64') }, 'files', 'saved', activeBridge) as string | null : saveInboxFile(process.cwd(), name, data);
       if (!path) throw new Error('the host could not save it');
       command({ type: 'terminal.input', text: `\x1b[200~${path}\x1b[201~` });
       socket.write(text({ note: `Pasted ${data.subarray(0, 4).toString('latin1') === '\x89PNG' ? 'image' : 'file'} → ${path}` }));
