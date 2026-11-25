@@ -140,7 +140,7 @@ export async function harness(options: HarnessOptions): Promise<Harness> {
   }) as unknown as typeof fetch;
 
   const deps: InstallDependencies = {
-    transport: transport as Transport, fetch: fetchImpl, configHome, sourceRoot: GRAPHYARD_SOURCE,
+    transport: transport as Transport, fetch: fetchImpl, configHome, home: join(configHome, 'home'), sourceRoot: GRAPHYARD_SOURCE,
     cliPath: join(root, 'package.json'), hostId: 'install-test-host',
     wait: async () => {}, now: () => Date.now(), log: () => {},
     // The real deploy-key step, with ssh-keygen replaced by one that writes a fixed pair; gh is the recording transport's.

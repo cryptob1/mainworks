@@ -33,6 +33,7 @@ import { durableCheckoutPreflight } from './loop-unit.js';
 import { underTestRunner } from '../runtime-environment.js';
 import { deployUnitOf, perInstallUnits, proposedInstallUnits, userUnitDirectory } from './units.js';
 import { unitPrefix } from './layout.js';
+import { recordInstallCliPath, userLauncherPath, userLauncherState, writeUserLauncher } from './cli-release.js';
 import { installIdFor, providers, REDACTED, SERVER_PORT, type EnvValue, type InstallInputs, type InstallPlan, type PlanAction, type PlanDrift, type PlanValue, type PreflightItem, type Provider } from './types.js';
 
 export * from './types.js';
@@ -49,6 +50,8 @@ export interface InstallDependencies {
   transport?: Transport;
   fetch?: typeof fetch;
   configHome?: string;
+  /** Owner home directory for the stable `~/.local/bin/mainworks` launcher (default `homedir()`). */
+  home?: string;
   /** Where the image builds from (GY-2168, `--source-root`): the deployed commit's checkout; default the checkout this process's own code was loaded from. */
   sourceRoot?: string;
   cliPath?: string;
@@ -728,6 +731,14 @@ export async function buildPlan(session: InstallSession): Promise<InstallPlan> {
   actions.push(deployKeyAction(session));
 
   actions.push({ id: 'verify.status', target: 'graphyard', state: 'update', title: 'Verify authenticated GET /api/status reports the admin actor and the managed repository' });
+  const launcher = userLauncherPath(session.deps.home);
+  actions.push({
+    id: 'local.launcher',
+    target: 'local',
+    state: userLauncherState(session.deps.home),
+    title: `Install the stable mainworks launcher at ${launcher} so mainworks runs this install's current CLI from any terminal`,
+    values: [{ name: 'launcher', value: launcher, secret: false }],
+  });
   if (observeOnly) actions.push(
     held({ id: 'local.workers', target: 'local', title: 'Generate worker principals and their credentials' }, 'no worker principal is installed'),
     held({ id: 'local.profiles', target: 'local', title: 'Register master, reviewer, and worker profiles for authenticated agent runtimes on this machine' }, 'no profile, supervisor unit or master loop is installed or started'),
@@ -1004,6 +1015,9 @@ async function performInstall(session: InstallSession, plan: InstallPlan): Promi
     updatedAt: new Date(deps.now()).toISOString(),
   });
   await writeInstallRecord(session.directory, record, vault);
+  const cliPath = deps.cliPath ?? fileURLToPath(new URL('../../bin/graphyard.mjs', import.meta.url));
+  await recordInstallCliPath(session.directory, cliPath);
+  await writeUserLauncher({ ...(deps.home ? { home: deps.home } : {}) });
 
   const summary: InstallSummary = {
     repository: session.inputs.repository, provider: context.provider, installId: session.installId, installDirectory: session.directory,
@@ -1046,7 +1060,7 @@ export function resumeCommand(session: Pick<InstallSession, 'inputs'>) {
     herdr: inputs.herdr === 'skip' ? ['--no-herdr'] : [],
     pushAuth: inputs.pushAuth ? ['--push-auth', 'gh'] : [],
   };
-  return ['graphyard', 'install', ...Object.values(flags).flat(), ...flag('observe-only', inputs.observeOnly), '--apply'].join(' ');
+  return ['mainworks', 'install', ...Object.values(flags).flat(), ...flag('observe-only', inputs.observeOnly), '--apply'].join(' ');
 }
 
 

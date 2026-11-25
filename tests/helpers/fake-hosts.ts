@@ -346,7 +346,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     -G) G=1 ;;
     -p) port="$2"; shift ;;
-    -o) shift ;;
+    -o|-F) shift ;;
     -t) ;;
     *) if [ -z "$target" ]; then target="$1"; else last="$1"; fi ;;
   esac
