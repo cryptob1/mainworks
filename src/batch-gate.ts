@@ -202,6 +202,8 @@ export interface GateRecord {
   notes?: string[];
   /** GY-3431: the failures recorded on each open flaky-check item instead of a revert, by item key: the last few per item, the ten items failing most recently. Optional only for records an older loop wrote. */
   flaky?: Record<string, { check: string; tip: string; at: string }[]>;
+  /** GY-3849: test files a release check failed and its rerun passed, oldest first, the last 200: the flow's flaky checks. */
+  flakes?: ReleaseFlake[];
   /** GY-3840: the last 20 release checks' items and the test files each caught failing, oldest first. */
   sweeps?: ReleaseSweep[];
   /** GY-3833: daily non-blank line counts in src/ and tests/ recorded when commits verify, one per UTC day, oldest first. */
@@ -209,6 +211,8 @@ export interface GateRecord {
   at: string;
 }
 
+/** GY-3849: one test file that failed a release check and passed its rerun, with its first failing assertion line when the run named one. */
+interface ReleaseFlake { file: string; tip: string; at: string; assertion: string | null }
 export const gateRecordPath = (root: string) => join(stateDirectory(root), 'main-gate.json');
 export function readGateRecord(file: string): GateRecord | null {
   if (!existsSync(file)) return null;
@@ -252,6 +256,8 @@ export interface GatePorts {
   without?(commit: string, reverted: readonly ServeLanding[]): Promise<string | null>;
   /** Reverts the landing (stacked after any `prior` culprits) from main through the serve-revert path (trial, leased push, re-land filed); answers the revert, why it is held, or a retry (main moved under the push, or `baseStillFails` with the reverted tip commit). */
   revert(landing: ServeLanding & { item: Work }, tip: string, check: string, prior?: readonly (ServeLanding & { item: Work })[], onStep?: (step: string) => void): Promise<{ revertSha: string } | { held: string } | { retry: string; revertSha?: string }>;
+  /** GY-3849: what `run` saw so far: each failing file's first assertion line, and the files its own trials reran and passed. */
+  seen?: { assertions: Record<string, string>; flaked: Set<string> };
   /** Files an item owning a failure, once per `key`; answers the item it filed, when it names one. */
   file(input: { title: string; description: string; key: string }): Promise<{ item: string | null } | void>;
   /** GY-3693: when true for `key`, `file` checks existing items (open or done within 24h) and notes instead of re-filing. */
@@ -457,6 +463,10 @@ async function gateFlight(ports: GatePorts, record: GateRecord, keepInFlight: ()
   // verified-commit probe's setup (checkout, install, build) shares that same per-step bound before
   // reaching its test runner, so a hung setup stops, frees its slot and counts as a failed probe.
   // e2e cases keep their own per-step timeouts and only the gate's bound once their runner starts.
+  const noteFlake = (file: string) => {
+    if (!record.flakes?.some(flake => flake.file === file && flake.tip === tip))
+      record.flakes = [...record.flakes ?? [], { file, tip, at: at(), assertion: ports.seen?.assertions[file] ?? null }].slice(-200);
+  };
   const run = (commit: string, runChecks: readonly string[], runFiles: readonly string[], perFile = false) => {
     const key = stepKey(commit, runChecks);
     if (key in finished) return Promise.resolve(finished[key]!); // a step the last loop finished
@@ -491,6 +501,8 @@ async function gateFlight(ports: GatePorts, record: GateRecord, keepInFlight: ()
     }, 1000); })])
       .then(async failed => {
         tick();
+        for (const file of ports.seen?.flaked ?? []) noteFlake(file);
+        ports.seen?.flaked.clear();
         if (ports.now() > deadline()) throw new GateTimeout();
         finished[key] = failed; // the finished step survives a restart
         await ports.checkpoint?.();
@@ -533,6 +545,7 @@ async function gateFlight(ports: GatePorts, record: GateRecord, keepInFlight: ()
       const testChecks = rerun.filter(check => check.startsWith('test:')), others = rerun.filter(check => !check.startsWith('test:'));
       const again = [...others.length ? await run(tip, others, files) : [], ...testChecks.length ? await run(tip, testChecks, files, true) : []];
       flakes = rerun.filter(check => !again.includes(check));
+      for (const check of flakes) if (check.startsWith('test:')) noteFlake(check.slice(5));
       for (const check of flakes) await fileFailure(ports, record, at(), { key: `flake:${check}`, title: `Flaky check on main: ${check}`, description: `The batch gate's check ${check} failed on ${tip.slice(0, 12)} and passed on its re-run. Make it deterministic.` });
       // The e2e cases that must pass outright (GY-3147): smoke, whatever gate.core names, and every
       // case a batch item binds. A whole-catalog case outside them was red before the batch whenever

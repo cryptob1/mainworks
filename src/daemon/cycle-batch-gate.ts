@@ -109,7 +109,7 @@ export function fetchRefusalLine(repository: string, baseBranch: string, error: 
  * the failing step's for a case, the trial log's for the build or a test file); the trial is bounded
  * by `timeoutMs`, the gate's own clock, never the merge-trial deadline (GY-3142).
  */
-async function trialFailures(reads: MergeWriterReads, commit: string, checks: readonly string[], files: readonly string[], timeoutMs: number, trusted: () => string | null = () => null, skipFaults = false, signal?: AbortSignal, onStep?: (step: string) => void): Promise<{ failed: string[]; details: Record<string, string>; outputs: Record<string, string[]> }> {
+async function trialFailures(reads: MergeWriterReads, commit: string, checks: readonly string[], files: readonly string[], timeoutMs: number, trusted: () => string | null = () => null, skipFaults = false, signal?: AbortSignal, onStep?: (step: string) => void): Promise<{ failed: string[]; details: Record<string, string>; outputs: Record<string, string[]>; assertions: Record<string, string>; flaked: string[] }> {
   const cases = checks.filter(check => check.startsWith('e2e:'));
   const tests = checks.includes('affected') ? files : checks.filter(check => check.startsWith('test:')).map(check => check.slice(5));
   const environments = await gateEnvironments(reads, commit, cases, trusted());
@@ -151,9 +151,9 @@ async function trialFailures(reads: MergeWriterReads, commit: string, checks: re
   const logTail = (run.logTail ?? '').split('\n').filter(line => line.trim()).slice(-outputLines);
   const outputs = Object.fromEntries([...(run.e2e ?? []).filter(entry => entry.output?.length).map(entry => [entry.proof, entry.output!.slice(-outputLines)]),
     ...failed.filter(check => !check.startsWith('e2e:') && logTail.length).map(check => [check, logTail])]);
-  return { failed: failed.filter(check => checks.includes(check) || (check.startsWith('test:') && checks.includes('affected'))), details, outputs };
+  return { failed: failed.filter(check => checks.includes(check) || (check.startsWith('test:') && checks.includes('affected'))), details, outputs,
+    assertions: run.assertions ?? {}, flaked: run.flaked?.files ?? [] };
 }
-const trialChecks = async (...args: Parameters<typeof trialFailures>) => (await trialFailures(...args)).failed;
 
 /**
  * GY-3296: the named environments the gate's `cases` need at `commit`, defined by graphyard.json at
@@ -227,6 +227,7 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
     );
     return { item: result.action === 'unwired' ? null : result.item };
   };
+  const seen = { assertions: {} as Record<string, string>, flaked: new Set<string>() };
   const catalog = async (commit: string) => {
     // GY-3336: a repository with no e2e/cases directory — a fresh install of a repository Mainworks
     // has never gated — answers an empty catalog, not a failing gate: `ls-tree COMMIT:e2e/cases`
@@ -264,7 +265,13 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
     core: async commit => {
       try { return [...new Set([featureMapCaseId, ...(JSON.parse(await git(['show', `${commit}:graphyard.json`])).gate?.core ?? [])])]; } catch { return [featureMapCaseId]; }
     },
-    run: (commit, checks, files, timeoutMs, signal, onStep) => trialChecks(reads, commit, checks, files, timeoutMs, trusted, false, signal, onStep),
+    seen,
+    run: async (commit, checks, files, timeoutMs, signal, onStep) => {
+      const ran = await trialFailures(reads, commit, checks, files, timeoutMs, trusted, false, signal, onStep);
+      Object.assign(seen.assertions, ran.assertions);
+      for (const file of ran.flaked) seen.flaked.add(file);
+      return ran.failed;
+    },
     without: async (commit, reverted) => {
       let current = commit;
       for (const entry of reverted) {
