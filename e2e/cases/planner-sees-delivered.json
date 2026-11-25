@@ -1,0 +1,16 @@
+{
+  "id": "planner-sees-delivered",
+  "title": "On a running test install, the planner prompt contains a recently delivered item's title",
+  "description": "Starts a real temporary Postgres control plane, delivers one item through the merge writer, and runs a planner cycle on the empty board; asserts the planner prompt contains the recently delivered item's key and title under their own heading and labels testSelection shares as of reachable and of all tests.",
+  "tags": ["master", "api"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "running test install planner prompt contains recently delivered item title",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/planner-sees-delivered-e2e.test.ts",
+      "timeoutSeconds": 180
+    }
+  ]
+}

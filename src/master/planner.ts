@@ -4,6 +4,8 @@
 import {
   parsePlannerDrafts,
   plannerPrompt,
+  plannerTestSelection,
+  recentlyDeliveredTitles,
   slowestTrialTestFiles,
   type PlannerInput,
   type PlannerOutcome,
@@ -11,6 +13,7 @@ import {
 import { fleetRequest } from '../fleet.js';
 import { defaultHeadlessExec, headlessRunMs, startHeadlessWorker, type HeadlessExec } from '../headless-session.js';
 import { runtimeReport } from '../model/token-costs.js';
+import type { Work } from '../model/work.js';
 import type { FlowReport } from '../server/flow.js';
 import { credentialMaskFor } from './confinement.js';
 import { accountLaunch, onSelectedSession, selectAccount } from './environments.js';
@@ -26,6 +29,7 @@ export async function runPlanner(
     headless?: HeadlessExec;
     coordinatorRoot?: string;
     flow?: () => Promise<FlowReport | null>;
+    workSnapshot?: () => Promise<{ work?: Work[]; now?: string } | null>;
     createWork?: (body: Record<string, unknown>, idempotencyKey: string) => Promise<{ key?: string } | null>;
     select?: typeof selectAccount;
   } = {},
@@ -40,8 +44,15 @@ export async function runPlanner(
   try {
     const brief = input.brief ?? await fleetRequest(config, 'product-brief').then(body => typeof body?.brief?.markdown === 'string' ? body.brief.markdown : null, () => null);
     const flowReport = deps.flow ? await deps.flow().catch(() => null) : await fleetRequest(config, 'flow').then(body => body as FlowReport, () => null);
+    const deliveredTitles = input.deliveredTitles?.length
+      ? input.deliveredTitles
+      : await (deps.workSnapshot
+          ? deps.workSnapshot().catch(() => null)
+          : fleetRequest(config, 'work-snapshot').then(body => body as { work?: Work[]; now?: string }, () => null)
+        ).then(snap => Array.isArray(snap?.work) ? recentlyDeliveredTitles(snap.work, Date.parse(snap.now ?? '') || Date.now()) : []);
     const slowestTrialFiles = slowestTrialTestFiles(root);
-    const prompt = plannerPrompt({ brief, flow6h: flowReport?.['6h'] ?? null, slowestTrialFiles, openTitles: input.openTitles });
+    const testSelection = plannerTestSelection(root);
+    const prompt = plannerPrompt({ brief, flow6h: flowReport?.['6h'] ?? null, slowestTrialFiles, testSelection, openTitles: input.openTitles, deliveredTitles });
 
     let captured = '';
     const baseExec = deps.headless ?? defaultHeadlessExec();

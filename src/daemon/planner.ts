@@ -5,12 +5,14 @@ import type { Cycle } from './cycle.js';
 import { emptyBoardAlarmSince } from './stall-alarm.js';
 import type { Work } from '../model/work.js';
 import { percent, reworkCauses, type FlowNumbers } from '../flow-numbers.js';
+import { readTestSelections, testSelectionSummary } from '../merge-writer/test-selection.js';
 import { readTrialTimings, slowestTrialFiles } from '../merge-writer/trial-timings.js';
 
 const plannerHoldMs = 30 * 60_000;
 const plannerCooldownMs = 2 * 60 * 60_000;
 const plannerRetryMs = 30 * 60_000;
 const plannerMaxBackoffMs = 24 * 60 * 60_000;
+const deliveredWindowMs = 7 * 24 * 60 * 60 * 1000;
 const plannerKey = 'planner';
 const maxPlannerDrafts = 3;
 
@@ -26,6 +28,7 @@ export interface PlannerDraft {
 export interface PlannerInput {
   brief: string | null;
   openTitles: string[];
+  deliveredTitles?: string[];
 }
 
 export type PlannerOutcome = { skipped: string } | { filed: string[]; result: string };
@@ -47,12 +50,35 @@ export function plannerDraftAttention(open: readonly Work[]) {
 export const slowestTrialTestFiles = (root: string): { file: string; seconds: number }[] =>
   slowestTrialFiles(readTrialTimings(root)).map(entry => ({ file: entry.file, seconds: entry.medianSeconds }));
 
-/** Builds the headless planner prompt from the product brief, 6-hour flow numbers, rework causes and five slowest trial test files. */
+export type PlannerTestSelection = ReturnType<typeof testSelectionSummary>;
+
+/** GY-3845: median testSelection shares over the last 20 item trials. */
+export const plannerTestSelection = (root: string): PlannerTestSelection =>
+  testSelectionSummary(readTestSelections(root));
+
+const deliveredAt = (item: Pick<Work, 'delivery' | 'observation' | 'stageEnteredAt' | 'updatedAt'>) =>
+  Date.parse(item.delivery?.mergedAt ?? item.observation?.mergedAt ?? item.stageEnteredAt ?? item.updatedAt);
+
+/** GY-3845: keys and titles of items delivered in the last seven days, newest first. */
+export function recentlyDeliveredTitles(work: readonly Work[], now: number): string[] {
+  return work
+    .filter(item => {
+      if (item.stage !== 'done' || item.closure) return false;
+      const at = deliveredAt(item);
+      return Number.isFinite(at) && now - at <= deliveredWindowMs;
+    })
+    .sort((a, b) => deliveredAt(b) - deliveredAt(a))
+    .map(item => `${item.key}: ${item.title}`);
+}
+
+/** Builds the headless planner prompt from the product brief, 6-hour flow numbers, rework causes, testSelection shares, five slowest trial test files, open items and recently delivered items. */
 export function plannerPrompt(context: {
   brief: string | null;
   flow6h: FlowNumbers | null;
   slowestTrialFiles: readonly { file: string; seconds: number }[];
+  testSelection?: PlannerTestSelection;
   openTitles: readonly string[];
+  deliveredTitles?: readonly string[];
 }): string {
   const flowLines = context.flow6h
     ? [
@@ -61,12 +87,20 @@ export function plannerPrompt(context: {
       ]
     : ['6-hour flow: unavailable.', 'Rework causes (6h): unavailable.'];
 
+  const selectionLine = context.testSelection
+    ? `Test selection (last ${context.testSelection.trials} trials): median ${context.testSelection.medianShareSelected} of reachable, ${context.testSelection.medianShareOfAllSelected ?? 'unavailable'} of all tests.`
+    : 'Test selection: unavailable (median share of reachable and of all tests).';
+
   const slowLines = context.slowestTrialFiles.length
     ? context.slowestTrialFiles.slice(0, 5).map((entry, index) => `${index + 1}. ${entry.file} (${entry.seconds}s)`)
     : ['(no trial timing data available)'];
 
   const openSection = context.openTitles.length
     ? ['', 'Currently open items (do not duplicate):', ...context.openTitles.slice(0, 20).map(title => `- ${title}`)]
+    : [];
+
+  const deliveredSection = context.deliveredTitles?.length
+    ? ['', 'Delivered in the last 7 days (do not redraft):', ...context.deliveredTitles.map(title => `- ${title}`)]
     : [];
 
   return [
@@ -83,10 +117,12 @@ export function plannerPrompt(context: {
     context.brief?.trim() || '(no product brief recorded)',
     '',
     ...flowLines,
+    selectionLine,
     '',
     'Five slowest trial test files:',
     ...slowLines,
     ...openSection,
+    ...deliveredSection,
   ].join('\n');
 }
 
@@ -154,13 +190,14 @@ export function plannerStep(cycle: Pick<Cycle, 'config' | 'state' | 'effects' | 
   const at = new Date(clock).toISOString();
   const brief = state.projectMemory.brief?.markdown ?? null;
   const openTitles = snapshot.work.filter(item => item.stage !== 'done').map(item => `${item.key}: ${item.title}`);
+  const deliveredTitles = recentlyDeliveredTitles(snapshot.work, clock);
   const priorFiledAt = state.planner?.filedAt ?? null;
   const priorFailures = state.planner?.failures ?? 0;
   state.planner = { at, filedAt: priorFiledAt, result: 'Running', failures: priorFailures, nextAt: state.planner?.nextAt ?? null };
 
   launcher.submit(plannerKey, [], async () => {
     let failed = false;
-    const outcome = await start({ brief, openTitles }).catch((error: unknown): PlannerOutcome => {
+    const outcome = await start({ brief, openTitles, deliveredTitles }).catch((error: unknown): PlannerOutcome => {
       failed = true;
       return {
         filed: [],
