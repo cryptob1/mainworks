@@ -29,9 +29,10 @@ os.makedirs(STATE, exist_ok=True)
 lock = open(os.path.join(STATE, 'lock'), 'w')
 fcntl.flock(lock, fcntl.LOCK_EX)
 path = os.path.join(STATE, 'state.json')
-s = json.load(open(path)) if os.path.exists(path) else {'images': {}, 'containers': {}, 'warm': {}, 'deps': {}}
+s = json.load(open(path)) if os.path.exists(path) else {'images': {}, 'image_ids': [], 'containers': {}, 'warm': {}, 'deps': {}}
 s.setdefault('warm', {})
 s.setdefault('deps', {})
+s.setdefault('image_ids', list(set(s['images'].values())))
 def save():
     json.dump(s, open(path, 'w'))
 def log(word):
@@ -53,6 +54,13 @@ if command == 'compose':
         names = args[args.index('--quiet-pull') + 1:]
         listen = "import socket, sys; s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(('127.0.0.1', int(sys.argv[1]))); s.listen()\\nwhile True: s.accept()[0].close()"
         declared = json.load(open(file))['services']
+        unpullable_path = os.path.join(STATE, 'unpullable-images')
+        if os.path.exists(unpullable_path):
+            unpullable = set(line.strip() for line in open(unpullable_path) if line.strip())
+            for name in names:
+                img = declared.get(name, {}).get('image')
+                if img and img not in s['images'] and ('*' in unpullable or img in unpullable):
+                    sys.exit("Error response from daemon: pull access denied for " + img + ", repository does not exist or may require 'docker login'")
         s['projects'][project] = {name: subprocess.Popen([sys.executable, '-c', listen, str(declared[name]['expose'][0])], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True).pid for name in names}
         log('compose up ' + ' '.join(names))
         save()
@@ -76,19 +84,37 @@ elif command == 'images':
     for name in reversed(list(s['images'].keys())):
         if repo is None or name.split(':', 1)[0] == repo:
             print(name)
+elif command == 'build':
+    log('build')
+    tag = args[args.index('-t') + 1]
+    digest = 'sha256:' + hashlib.sha256((tag + ':' + str(len(s['image_ids']))).encode()).hexdigest()
+    s['images'][tag] = digest
+    if digest not in s['image_ids']:
+        s['image_ids'].append(digest)
+    save()
 elif command == 'image':
     if len(args) > 1 and args[1] == 'rm':
         for name in args[2:]:
             s['images'].pop(name, None)
             s['warm'].pop(name, None)
+            if name in s['image_ids']:
+                s['image_ids'].remove(name)
+                for key in [k for k, v in s['images'].items() if v == name]:
+                    s['images'].pop(key, None)
         save()
     else:
         name = args[-1]
-        if name not in s['images']:
+        if name in s['images']:
+            print(s['images'][name])
+        elif name in s['images'].values() or name in s['image_ids']:
+            print(name)
+        else:
             sys.exit('Error: No such image: ' + name)
-        print(s['images'][name])
 elif command == 'tag':
-    s['images'][args[2]] = s['images'][args[1]]
+    src = s['images'].get(args[1], args[1] if (args[1] in s['images'].values() or args[1] in s['image_ids']) else None)
+    if src is None:
+        sys.exit('Error: No such image: ' + args[1])
+    s['images'][args[2]] = src
     if args[1] in s['warm']:
         s['warm'][args[2]] = s['warm'][args[1]]
     save()
@@ -99,6 +125,8 @@ elif command == 'load':
     log('load')
     data = json.loads(sys.stdin.read())
     s['images'][data['name']] = data['id']
+    if data['id'] not in s['image_ids']:
+        s['image_ids'].append(data['id'])
     if data.get('warm') and os.path.isdir(data['warm']):
         dest = os.path.join(STATE, 'warm', hashlib.sha256(data['name'].encode()).hexdigest()[:16])
         if os.path.exists(dest):
