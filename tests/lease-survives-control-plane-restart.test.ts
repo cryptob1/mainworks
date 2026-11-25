@@ -48,7 +48,7 @@ async function postJson(url: string, token: string, body: unknown) {
   return parsed;
 }
 
-test('unit:lease-survives-control-plane-restart — stops a stub server for 90 seconds mid-session and asserts the session ends submitted on the same epoch', { timeout: 180_000 }, async () => {
+test('unit:lease-survives-control-plane-restart — stops a stub server past lease expiry mid-session and asserts the session ends submitted on the same epoch', { timeout: 60_000 }, async () => {
   const dir = await temporaryDirectory('lease-survives-restart');
   const gitEnv = { ...process.env, GIT_AUTHOR_NAME: 'test', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 'test', GIT_COMMITTER_EMAIL: 't@t' };
   const git = (...args: string[]) => execFileSync('git', ['-C', dir, ...args], { env: gitEnv, encoding: 'utf8' }).trim();
@@ -62,10 +62,10 @@ test('unit:lease-survives-control-plane-restart — stops a stub server for 90 s
   const store = await withDatabase('lease-survives-restart');
   await store.init();
 
-  let engine = new Engine(store, 30, 'owner/project');
+  let engine = new Engine(store, 2, 'owner/project');
   engine.principals = [operator, workerA, workerB];
   engine.gitRunner = gitRunnerFor(dir);
-  let stopBeat = await engine.startPlaneBeat(5_000);
+  let stopBeat = await engine.startPlaneBeat(500);
   let http: Server | undefined = server(engine, [operator, workerA, workerB]);
   await listen(http);
   const port = portOf(http);
@@ -112,7 +112,7 @@ test('unit:lease-survives-control-plane-restart — stops a stub server for 90 s
         renewals++;
         return result;
       },
-      { intervalMs: 5_000, retryMs: 500, retryMaxMs: 2_000, graceMs: 500, session: {} },
+      { intervalMs: 500, retryMs: 200, retryMaxMs: 500, graceMs: 200, session: {} },
     );
     void supervising.then(() => { settled = true; }, () => { settled = true; });
 
@@ -122,18 +122,18 @@ test('unit:lease-survives-control-plane-restart — stops a stub server for 90 s
     }
     assert.equal(settled, false, 'builder is running before downtime');
 
-    // Stop the stub server for 90 seconds mid-session (well past the 30s lease).
+    // Stop the stub server for 6 seconds mid-session (3x the 2s lease, well past expiry).
     stopBeat();
     await close(http);
     http = undefined;
-    await delay(90_000);
-    assert.equal(settled, false, 'builder kept working through 90s server downtime');
+    await delay(6_000);
+    assert.equal(settled, false, 'builder kept working through server downtime past lease expiry');
 
     // Restart the server on the same port with a fresh Engine against the same Store.
-    engine = new Engine(store, 30, 'owner/project');
+    engine = new Engine(store, 2, 'owner/project');
     engine.principals = [operator, workerA, workerB];
     engine.gitRunner = gitRunnerFor(dir);
-    stopBeat = await engine.startPlaneBeat(5_000);
+    stopBeat = await engine.startPlaneBeat(500);
     http = server(engine, [operator, workerA, workerB]);
     await listen(http, port);
 

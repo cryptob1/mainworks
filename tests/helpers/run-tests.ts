@@ -221,7 +221,7 @@ export const opensDashboard = (cwd: string, args: string[]) => args.filter(arg =
 });
 const defaultBuildDashboard = (cwd: string) => async (outDir: string) => {
   const { build } = await import('vite');
-  await build({ configFile: join(cwd, 'vite.config.ts'), root: join(cwd, 'web'), cacheDir: join(cwd, '.graphyard', 'vite'), logLevel: 'warn', build: { outDir, emptyOutDir: true } });
+  await build({ configFile: join(cwd, 'vite.config.ts'), configLoader: 'runner', root: join(cwd, 'web'), cacheDir: join(cwd, '.graphyard', 'vite'), logLevel: 'warn', build: { outDir, emptyOutDir: true } });
 };
 
 /**
@@ -297,10 +297,16 @@ export async function runTests(options: RunOptions = {}): Promise<RunResult> {
   const reservation = await reserveTestPorts(options.browser ? { first: defaultBrowserPort, span: 2 + testPortSpan, last: 65_000, ...options.ports } : { ...nestedFirst(), ...options.ports });
   let postgres: Awaited<ReturnType<typeof import('./postgres.js').startPostgres>> | undefined;
   try {
-    // One shared warm cluster for the whole run, whichever suite runs (GY-3356).
-    const { startPostgres } = await import('./postgres.js');
+    // One shared warm cluster for the whole run, whichever suite runs (GY-3356). A nested browser
+    // run whose caller already passed GRAPHYARD_TEST_DATABASE_URL reuses that cluster (GY-3818).
+    const existingClusterUrl = options.environment?.GRAPHYARD_TEST_DATABASE_URL;
     const clusterPort = sharedClusterPort(reservation.base, options.browser);
-    postgres = await startPostgres(clusterPort, undefined, scratch);
+    let clusterUrl = existingClusterUrl;
+    if (!clusterUrl) {
+      const { startPostgres } = await import('./postgres.js');
+      postgres = await startPostgres(clusterPort, undefined, scratch);
+      clusterUrl = postgres.url;
+    }
     // The suite's managed checkouts live inside the tree it runs from (ignored by .graphyard/): a worker's
     // sandbox can write nowhere else, and the default ~/.local/share/graphyard failed every checkout there (GY-498).
     // A run of the suite reads no host memory (GY-612): a host the suite itself loaded low must not
@@ -314,11 +320,12 @@ export async function runTests(options: RunOptions = {}): Promise<RunResult> {
     // bound. tests/host-heavy-budget.test.ts drives the real limit in its own directories.
     mkdirSync(join(dataHome, 'heavy-jobs'), { recursive: true });
     try { writeFileSync(join(dataHome, 'heavy-jobs', 'limit'), '64\n'); } catch { /* the default bound stands */ }
-    const set = { ...suiteRunEnvironment({ browser: options.browser, browserPort: reservation.base, clusterPort, clusterUrl: postgres.url, dataHome, tmpRoot: scratch }),
+    const set = { ...suiteRunEnvironment({ browser: options.browser, browserPort: reservation.base, clusterPort, clusterUrl, dataHome, tmpRoot: scratch }),
       // GY-3333: the suite's host-level account records live under the test data home, never the real ~/.gy.
       [hostAccountsVariable]: join(dataHome, 'host-accounts'),
       // GY-3753: each browser run builds and serves its own bundle, removed with its scratch root.
-      ...(options.browser ? { GRAPHYARD_BROWSER_DIST: join(scratch, 'browser-dist') } : {}) };
+      ...(options.browser ? { GRAPHYARD_BROWSER_DIST: options.environment?.GRAPHYARD_BROWSER_DIST ?? join(scratch, 'browser-dist') } : {}),
+      ...(options.environment?.GRAPHYARD_PLAYWRIGHT_NO_WEBSERVER ? { GRAPHYARD_PLAYWRIGHT_NO_WEBSERVER: options.environment.GRAPHYARD_PLAYWRIGHT_NO_WEBSERVER } : {}) };
     const environment = isolatedTestEnvironment(options.environment ?? process.env, set);
     const [command, commandArgs] = options.browser || !selection
       ? [process.execPath, [fileURLToPath(import.meta.resolve('@playwright/test/cli')), 'test', ...args]]

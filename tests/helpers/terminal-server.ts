@@ -1,10 +1,14 @@
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { Store } from '../../src/store.js';
 import { Engine } from '../../src/engine.js';
 import { server } from '../../src/server.js';
 import { loopPanesRegistry } from '../../src/model/loop-presence.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../../src/model-boundary/repository-policy.js';
+import { bridgeTerminals } from '../../src/master/terminal-bridge.js';
+import type { SessionReader } from '../../src/master/terminal-session.js';
 import type { Principal } from '../../src/model.js';
+import { withDatabase } from './postgres.js';
 
 /**
  * The real control plane e2e:master-page-terminal drives (GY-3211), forked with the stub herdr
@@ -19,7 +23,8 @@ setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocki
 const operator: Principal = { id: 'operator', role: 'admin', sessionKind: 'human' };
 const worker: Principal = { id: 'agent-a', role: 'worker', runtime: 'claude' };
 const coordinator: Principal = { id: 'executor-a', role: 'coordinator' };
-const store = new Store(database);
+const store = database === 'new' ? await withDatabase('master_ux') : new Store(database);
+if (database === 'new') await store.init();
 const engine = new Engine(store, 120, 'owner/project');
 engine.gitRunner = null;
 const http = server(engine, [
@@ -38,11 +43,37 @@ await engine.execute(coordinator, 'session', item.id, { id: 'worker-1', kind: 'i
   pane: 'w1:worker', attach: 'herdr pane attach w1:worker --workspace w1', subject: `${item.key}: Watch a worker`, state: 'running', observed: 'working', observedAt: new Date().toISOString() }, randomUUID());
 // The dashboard is served from ./dist, as an install serves it.
 process.chdir(site);
-http.listen(port ? Number(port) : 0, '127.0.0.1', () => process.send!({ url: `http://127.0.0.1:${(http.address() as { port: number }).port}` }));
+const bridgeState = process.env.GRAPHYARD_TEST_BRIDGE_STATE;
+const readSession: SessionReader | undefined = bridgeState ? async () => {
+  const state = JSON.parse(await readFile(bridgeState, 'utf8'));
+  const master = state.master ?? {};
+  return { account: master.account ?? null, runtime: master.runtime ?? null, pane: master.pane ?? null, state: master.pane ? (state.status ?? 'idle') : 'absent', since: master.startedAt ?? null };
+} : undefined;
+let bridgeStopping: AbortController | undefined;
+let listeningUrl = '';
+const startBridge = async () => {
+  if (!readSession) return;
+  bridgeStopping?.abort();
+  bridgeStopping = new AbortController();
+  await new Promise<void>(done => bridgeTerminals(listeningUrl, 'test-coordinator', bridgeStopping!.signal, done, readSession, undefined, 50));
+};
+http.listen(port ? Number(port) : 0, '127.0.0.1', () => {
+  listeningUrl = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  void startBridge().then(() => process.send!({ url: listeningUrl }));
+});
 const sockets = new Set<import('node:stream').Duplex>();
 http.on('upgrade', (req, socket) => { if (req.url?.startsWith('/api/terminal?')) { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); } });
 // A stop drops any live terminal socket too — an upgraded connection survives closeAllConnections, and a
 // page still open would hold the server open; its terminal reconnects, as it does across a real deploy.
-process.on('message', (message) => { if (message === 'drop-terminals') { for (const socket of sockets) socket.destroy(); return; }
- for (const socket of sockets) socket.destroy();
- http.close(() => { void store.close().finally(() => process.exit(0)); }); http.closeAllConnections(); });
+process.on('message', (message: any) => {
+  if (message === 'drop-terminals') { for (const socket of sockets) socket.destroy(); return; }
+  if (message && typeof message === 'object' && message.type === 'reset') {
+    for (const socket of sockets) socket.destroy();
+    process.env.HERDR_STUB_LOG = String(message.logFile);
+    void startBridge().then(() => process.send!({ reset: true }));
+    return;
+  }
+  bridgeStopping?.abort();
+  for (const socket of sockets) socket.destroy();
+  http.close(() => { void store.close().finally(() => process.exit(0)); }); http.closeAllConnections();
+});

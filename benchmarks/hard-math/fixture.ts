@@ -11,11 +11,13 @@ import { reviewedDeliveries } from './receipt-schema.js';
 import { masterRunSchema } from '../../src/master/profiles.js';
 /** Controlled executors test the runner and real Mainworks gates; never model/agent evidence. */
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 import { mergeWriterReads } from '../../src/daemon/cycle-merge-writer.js';
 import { mergeOne, runMergeTrial } from '../../src/merge-writer/executor.js';
+import { trialHarness } from '../../src/merge-writer/trial-container.js';
 import { defaultChildRun } from '../../src/child-runner.js';
 import { git, command } from './process.js';
 import { generate } from './generator.js';
@@ -31,8 +33,8 @@ const app=String.raw`document.querySelector('#form').addEventListener('submit',a
  */
 export const controlledWallClockSeconds={standard:90,repair:270};
 /** An oracle lookup fixture for controlled tests only; never an implementation solver. */
-export async function writeControlledArtifact(root:string,python:string,oracleFile:string,signal?:AbortSignal) {
-  const samples=[1,2,3].flatMap(seed=>generate(seed));
+export async function writeControlledArtifact(root:string,python:string,oracleFile:string,signal?:AbortSignal,seeds:readonly number[]=[1,2,3]) {
+  const samples=seeds.flatMap(seed=>generate(seed));
   const refs=await oracle(python,samples.map(request=>({request,reference:true})),oracleFile,signal);
   const {parseRequest}=await import(new URL('./seed/src/contract.mjs',import.meta.url).href);
   const table=Object.fromEntries(samples.map((sample,i)=>[parseRequest(sample).coefficients.map(String).join(','),refs[i]]));
@@ -49,15 +51,29 @@ export async function fixtureExecutor(c:RunContext,options:{missingDelivery?:boo
     roles:[{name:'worker',accounts:['fixture-limited',...c.workers.map((_,i)=>`fixture-${i}`)],concurrency:3}],reason:'Controlled deterministic executor fixtures; no real coding agents or paid usage',
   });
   await c.plane.call('agent-registry/accounts/fixture-limited/quota',c.coordinator,{quota:{loggedIn:true,state:'exhausted',usage:[],resetsAt:new Date(Date.now()+3600_000).toISOString(),reason:'Controlled availability routing fault'},reason:'Exercise existing unavailable-account skip'});
+  // Controlled fixtures test the real merge-writer, e2e and control-plane gates without spinning up
+  // 24 Docker containers across 8 components for node --check, e2e:workbench and 1 contract test (GY-3818).
+  const runTrialDirect:Parameters<typeof runMergeTrial>[0]['run']=async(program,args,options)=>{
+    const mapped=args.map(arg=>arg.startsWith(`${trialHarness}/`)?`${c.config.sourceRoot}${arg.slice(trialHarness.length)}`:arg);
+    const script=mapped.at(-1);
+    if(program==='node' && script?.endsWith('/run.mjs')) {
+      const source=await readFile(script,'utf8');
+      if(source.includes(trialHarness)) await writeFile(script,source.replaceAll(trialHarness,c.config.sourceRoot));
+      // Run the generated e2e-trial script in-process instead of cold-starting tsx 8 times.
+      await import(pathToFileURL(script).href);
+      return '';
+    }
+    return defaultChildRun(program,mapped,{...options,wrapper:[]});
+  };
   const writer=mergeWriterReads({baseBranch:'main',repository:'scratch/hard-math',run:masterRunSchema.parse({mergeWriter:{deployKeyFile:join(c.install,'unused')}})},c.root,defaultChildRun,{
     base:trials,
-    trial:input=>runMergeTrial({...input,checkoutRoots:[trials],temporaryRoots:[trials],retries:0,hidden:[c.install,c.config.oracleDirectory,join(c.config.sourceRoot,'.graphyard')]}),
+    trial:input=>runMergeTrial({...input,run:runTrialDirect,checkoutRoots:[trials],temporaryRoots:[trials],retries:0,hidden:[c.install,c.config.oracleDirectory,join(c.config.sourceRoot,'.graphyard')]}),
     record:(item,event)=>c.plane.call(`work/${item.id}/merge-record`,c.coordinator,event),
   });
   type Attempt={work:typeof c.receipt.work[number];item:any;worker:typeof c.workers[number];directory:string;branch:string;selection:any};
   const claim=async(work:typeof c.receipt.work[number],index:number):Promise<Attempt>=>{
     const worker=c.workers[index%c.workers.length];
-    const selected=await runWorkerPull(()=>c.plane.call('assignments/claim',worker.token,{work:work.id}),{intervalMs:250,maxPolls:120,signal:c.signal});
+    const selected=await runWorkerPull(()=>c.plane.call('assignments/claim',worker.token,{work:work.id}),{intervalMs:50,maxPolls:600,signal:c.signal});
     c.signal.throwIfAborted();
     assert.equal(selected.assigned?.id,work.id,JSON.stringify(selected));
     const item=await c.plane.call(`work/${work.id}`,c.coordinator),epoch=item.epoch;
@@ -82,7 +98,7 @@ export async function fixtureExecutor(c:RunContext,options:{missingDelivery?:boo
     await writeFile(join(a.directory,'fixture',`${a.work.component}.txt`),`Controlled executor fixture: ${a.work.component}; correct=${correct}\n`);
     if(a.work.component==='integration'||a.work.component==='single') {
       if(correct) {
-        await writeControlledArtifact(a.directory,c.config.oraclePython,c.oracleFile,c.signal);
+        await writeControlledArtifact(a.directory,c.config.oraclePython,c.oracleFile,c.signal,[c.config.seed]);
       }
     }
     await git(a.directory,'add','.');await git(a.directory,'commit','-q','-m',`Controlled ${a.work.component} ${correct?'fixture':'negative fixture'}`);
@@ -98,8 +114,10 @@ export async function fixtureExecutor(c:RunContext,options:{missingDelivery?:boo
   const proofAndReview=async(item:any)=>{
     // Execute the submitted checkout, and a negative contract assertion, before binding its proof.
     const directory=item.workspaces.find((w:any)=>w.epoch===item.submission.epoch).path;
-    await command(process.execPath,['--test','tests/contract.test.mjs'],{cwd:directory});
-    await command(process.execPath,['--input-type=module','-e',"import {parseRequest} from './src/contract.mjs';import assert from 'node:assert/strict';assert.throws(()=>parseRequest({coefficients:['0'],precisionBits:64}),{code:'ZERO_POLYNOMIAL'});"],{cwd:directory});
+    await Promise.all([
+      command(process.execPath,['--test','tests/contract.test.mjs'],{cwd:directory}),
+      command(process.execPath,['--input-type=module','-e',"import {parseRequest} from './src/contract.mjs';import assert from 'node:assert/strict';assert.throws(()=>parseRequest({coefficients:['0'],precisionBits:64}),{code:'ZERO_POLYNOMIAL'});"],{cwd:directory}),
+    ]);
     await c.plane.call(`work/${item.id}/evidence`,c.producer,{proof:'unit:workbench-contract',sha:item.candidate.sha,baseSha:item.candidate.baseSha,policyRevision:item.policyRevision,result:'pass',executed:1,skipped:0,exercise:{behaviour:'Contract fixture without zero polynomial rejection',result:'fail',executed:1}});
     if(options.nativePostMerge) return c.plane.call(`work/${item.id}`,c.coordinator);
     const reviewToken=randomBytes(32).toString('hex');
@@ -135,8 +153,8 @@ export async function fixtureExecutor(c:RunContext,options:{missingDelivery?:boo
     item=await proofAndReview(item);
     const merged=await mergeOne(writer,item);
     assert.equal(merged.outcome,'merged',JSON.stringify(merged));
-    await c.snapshot();
   }
+  await c.snapshot();
   if(options.nativePostMerge) {
     assert.ok(c.receipt.work.every(w=>w.merge));
     assert.equal(reviewedDeliveries(c.receipt.work),false,'final merge must not end coordination before review dispatch');
