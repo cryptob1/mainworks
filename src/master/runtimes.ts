@@ -127,10 +127,13 @@ const cursorSignInFile = 'cursor/auth.json';
 /** GY-3414: the file cursor-agent records its login in, under `CURSOR_CONFIG_DIR`: its `authInfo` names the signed-in user. */
 export const cursorLoginFile = 'cli-config.json';
 /** Cursor is logged in when cli-config.json in the account home names a signed-in user, or a keyring-less sign-in sits at `cursor/auth.json` (GY-3329). It exposes no quota. */
+export async function cursorLoggedIn(home: string): Promise<boolean> {
+  const config = await readFile(resolve(home, cursorLoginFile), 'utf8').then(text => JSON.parse(text), () => null);
+  const signIn = await readFile(resolve(home, cursorSignInFile), 'utf8').then(text => text.trim(), () => '');
+  return !!(config?.authInfo?.userId || config?.authInfo?.email) || !!signIn;
+}
 async function cursorAccount(environment: ProbedHome): Promise<AccountReading> {
-  const config = await readFile(resolve(environment.home, cursorLoginFile), 'utf8').then(text => JSON.parse(text), () => null);
-  const signIn = await readFile(resolve(environment.home, cursorSignInFile), 'utf8').then(text => text.trim(), () => '');
-  const loggedIn = !!(config?.authInfo?.userId || config?.authInfo?.email) || !!signIn;
+  const loggedIn = await cursorLoggedIn(environment.home);
   return { loggedIn, usage: [], note: 'Cursor exposes no quota Mainworks can read; the session reports its own limit', ...(loggedIn ? {} : { loggedOutReason: `${resolve(environment.home, cursorLoginFile)} names no signed-in user` }) };
 }
 /**

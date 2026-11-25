@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { access, readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { launchRecipe } from './harness.js';
 import { isMiseShim, onSearchPath, realRuntimeBinary } from './runtime-binary.js';
-import { runtimeAdapter, runtimeAdapters, reportedModel, providerUsageErrors, cursorLoginFile, accountHomeEnvironment } from './master/runtimes.js';
+import { runtimeAdapter, runtimeAdapters, reportedModel, providerUsageErrors, cursorLoginFile, cursorLoggedIn, accountHomeEnvironment } from './master/runtimes.js';
 import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { homedir } from 'node:os';
@@ -701,7 +701,9 @@ export async function relaySubscriptionLogin(provider: ConnectProvider, home: st
   const login = options.login ?? { command: provider.login!.command, args: provider.login!.args };
   const pollMs = options.pollMs ?? 2_000, timeoutMs = options.loginTimeoutMs ?? 10 * 60_000;
   const file = resolve(home, provider.loginFile ?? '');
-  const seen = () => access(file).then(() => true, () => false);
+  // GY-3831: a logged-out Cursor home can already hold a profile-only cli-config.json ({});
+  // wait for a real sign-in instead of treating that pre-existing file as login completion.
+  const seen = () => provider.runtime === 'cursor' ? cursorLoggedIn(home) : access(file).then(() => true, () => false);
   return await new Promise(done => {
     let child: ReturnType<typeof spawn>;
     const pasteCode = !!provider.login!.pasteCode;
