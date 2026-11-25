@@ -67,7 +67,7 @@ export const trialStartOrder = { gate: 0, merge: 1, verification: 2 } as const;
 export const trialPressureBoundSeconds = 10 * 60;
 
 /** What the launcher reads to admit a container. `slots` is per machine, not per install: any install's containers load the same CPUs. */
-export interface TrialLoad { slots: string; cap: number; order: number; /** GY-3444: Docker --cpu-shares, set for the gate alone. */ cpuShares?: number; /** GY-3444: the gate's cap while the CPU is hot: it starts within it instead of waiting on heat. */ hotCap?: number; /** GY-3474: whose start this is — the install root and commit — written into its wait marker, so the gate counts its own check's wait alone. */ owner?: string; hotCelsius: number; floorBytes: number; hwmon: string; pressureBoundSeconds: number }
+export interface TrialLoad { slots: string; cap: number; order: number; /** GY-3444: Docker --cpu-shares, set for the gate alone. */ cpuShares?: number; /** GY-3444: the gate's cap while the CPU is hot: it starts within it instead of waiting on heat. */ hotCap?: number; /** GY-3474: whose start this is — the install root and commit — written into its wait marker, so the gate counts its own check's wait alone. */ owner?: string; hotCelsius: number; floorBytes: number; hwmon: string; pressureBoundSeconds: number; /** Retry interval in seconds while waiting; defaults to 1. */ pollSeconds?: number }
 
 /** The load of one start for `root`'s install; `run.diskFloorGb` is the one setting it reads. */
 const hostCpu = trialCpuMonitor();
@@ -232,7 +232,7 @@ def admit():
             if bound is not None and time.time() - began >= bound:
                 print('${faultLine}the trial container waited ' + str(int(time.time() - began)) + 's to start and gave up: ' + why, file=sys.stderr, flush=True)
                 sys.exit(75)
-            time.sleep(1)
+            time.sleep(load.get('pollSeconds', 1))
     finally:
         for path in (note, waiting):
             if os.path.exists(path):
