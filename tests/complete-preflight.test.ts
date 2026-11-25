@@ -59,7 +59,7 @@ function stubContext(root: string, head: string) {
     args: ['1', '--head', head],
     repositoryRoot: () => root,
     print: () => {},
-    api: async (path: string, body: unknown) => { calls.push({ path, body }); return { submitted: true }; },
+    api: async (path: string, body: unknown) => { if (path !== 'owner') calls.push({ path, body }); return { submitted: true }; },
   } as unknown as CliContext;
   return { context, calls };
 }

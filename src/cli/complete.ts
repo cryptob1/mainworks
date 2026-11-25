@@ -388,8 +388,8 @@ export interface CompletePreflightOptions {
   baseBranch?: string;
   /** Child runner for git and fast-gate invocations; defaults to `defaultChildRun`. */
   run?: ChildRun;
-  /** GY-3850: the install's owner as the control plane names it; when given, every commit the head adds over the base must be authored by it. */
-  owner?: CheckInOwner | null;
+  /** GY-3850: the install's recorded owner; when given, every commit the head adds over the base must be authored by them. */
+  owner?: CheckInOwner;
 }
 
 const fullSha = /^[0-9a-f]{40}$/i;
@@ -453,7 +453,7 @@ export async function completePreflight(
   }
 
   // GY-3850: every commit the head adds is authored by the owner's 'NAME (Mainworks)'.
-  if (baseTip && options.owner !== undefined) {
+  if (baseTip && options.owner) {
     const foreign = foreignAuthor(await git(['log', '--format=%H%x09%an', `${baseTip}..${head}`]), options.owner, options.baseBranch ? `origin/${options.baseBranch}` : baseTip.slice(0, 12));
     if (foreign) throw new Error(foreign);
   }
@@ -528,8 +528,8 @@ export const completeCommand: CliCommand = {
     await checkoutRoot(context, `mainworks complete ${work.key}`);
     const root = context.repositoryRoot();
     const body = completionBody(context.args, () => worktreeHead(root)), requestId = setting('REQUEST_ID') ?? `complete:${work.id}:${body.epoch}:${body.head}`;
-    // GY-3850: the owner every commit must be authored by; a control plane that cannot name it leaves authors unchecked.
-    const owner = await Promise.resolve(context.api('owner')).then((answer: any) => !answer || !('owner' in answer) ? undefined : answer.owner ? { name: String(answer.owner.name), email: String(answer.owner.email) } : null, () => undefined);
+    // GY-3850: with an owner recorded, every commit must be authored by them; with none, or a control plane that cannot name one, authors are unchecked.
+    const owner = await Promise.resolve(context.api('owner')).then((answer: any) => answer?.owner ? { name: String(answer.owner.name), email: String(answer.owner.email) } : undefined, () => undefined);
     await completePreflight(root, work, body.head, { owner });
     let verification: Awaited<ReturnType<typeof selfVerification>> | { state: 'unavailable'; reason: string };
     try { verification = await selfVerification(root, work.key); } catch (error: any) { verification = { state: 'unavailable', reason: `the worktree could not be read: ${error.message}` }; }

@@ -43,19 +43,19 @@ test('unit:complete-explicit-head-no-push — complete GY-N EPOCH --head SHA att
   const context = {
     args: ['1', '--head', head],
     api: async (path: string, body: unknown) => {
-      calls.push({ path, body }); return { key: 'GY-1', submission: { epoch: 1, pr: 7 } };
+      if (path !== 'owner') calls.push({ path, body }); return { key: 'GY-1', submission: { epoch: 1, pr: 7 } };
     },
     print: (value: unknown) => printed.push(value), repositoryRoot: () => work,
   } as unknown as CliContext;
   await completeCommand.run(context, { id: 'id-1', key: 'GY-1' } as never);
   // The submission went out with the named head ...
-  assert.deepEqual(calls.filter(call => call.path !== 'owner'), [{ path: 'work/id-1/submit', body: { epoch: 1, head } }]);
+  assert.deepEqual(calls, [{ path: 'work/id-1/submit', body: { epoch: 1, head } }]);
   assert.equal(printed[0].submission.pr, 7);
   // ... and no push was attempted: the recording hook never ran, so the failing remote was never touched.
   assert.equal(existsSync(attempts), false, 'complete --head attempted a git push');
   // The bare `--head` form reads the worktree's HEAD and submits it under the same no-push rule.
   calls.length = 0;
   await completeCommand.run({ ...context, args: ['1', '--head'] } as CliContext, { id: 'id-1', key: 'GY-1' } as never);
-  assert.deepEqual(calls.filter(call => call.path !== 'owner'), [{ path: 'work/id-1/submit', body: { epoch: 1, head } }]);
+  assert.deepEqual(calls, [{ path: 'work/id-1/submit', body: { epoch: 1, head } }]);
   assert.equal(existsSync(attempts), false, 'complete --head attempted a git push');
 });
