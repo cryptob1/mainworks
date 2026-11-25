@@ -1,0 +1,9 @@
+{
+  "id": "opencode-probe-limit-sentence",
+  "title": "A spent Z.AI account on OpenCode is exhausted until its reset, not broken",
+  "description": "Probe an OpenCode account whose run prints Z.AI's weekly/monthly limit and then Model unavailable, and one whose model is really missing.",
+  "tags": ["capacity"],
+  "target": "any",
+  "required": true,
+  "steps": [{ "kind": "command", "name": "OpenCode limit probe", "run": "node --import tsx tests/helpers/run-tests.ts tests/opencode-probe-limit-sentence.test.ts", "timeoutSeconds": 600 }]
+}
