@@ -92,6 +92,7 @@ export function FlowLine({ flow }: { flow?: FlowReport | null }) {
           <thead><tr><th scope="col">Sent back by</th><th scope="col">Times</th></tr></thead>
           <tbody>{reworkCauses.map(cause => <tr key={cause} data-cause={cause}><th scope="row">{cap(cause)}</th><td data-label="Times">{day.rework[cause]}</td></tr>)}</tbody>
         </table>
+        {day.reviewReasons?.length ? <p className="muted" data-review-reasons>Review reasons: {day.reviewReasons.map(reason => `${cap(reason.label)} ${reason.count}`).join(' · ')}</p> : null}
         <p className="muted">Flaky trials {percent(day.flakyRate)} of {day.trials}. Merges reverted {percent(day.revertRate)}.</p>
       </div></details>
     </div>
