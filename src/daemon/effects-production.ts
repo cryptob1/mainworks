@@ -264,12 +264,17 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     registry: () => fleetRequest(current() as Parameters<typeof fleetRequest>[0], 'agent-registry/document'),
     // GY-3593: the install's caretaker pass, every 30 minutes (daemon/caretaker.ts).
     caretaker: () => runCaretaker(root, current(), { headless: deps.headless, coordinatorRoot: deps.coordinatorRoot }),
-    // GY-3835: one headless planner pass when the empty-board alarm holds for 30 minutes (daemon/planner.ts).
-    planner: input => runPlanner(root, current(), input, {
-      headless: deps.headless,
-      coordinatorRoot: deps.coordinatorRoot,
-      createWork: current().operatorAgent ? (body, key) => asOperatorAgent('work', body, key) : undefined,
-    }),
+    // GY-3835: one headless planner pass when the empty-board alarm holds for 30 minutes (daemon/planner.ts);
+    // exists only while the live configuration names the master's operator-agent identity.
+    get planner() {
+      return current().operatorAgent
+        ? (input: import('./planner.js').PlannerInput) => runPlanner(root, current(), input, {
+            headless: deps.headless,
+            coordinatorRoot: deps.coordinatorRoot,
+            createWork: (body, key) => asOperatorAgent('work', body, key),
+          })
+        : undefined;
+    },
     growWorkers: (config, allowed) => growWorkerPool(root, config, allowed, id => fleetRequest(config as Parameters<typeof fleetRequest>[0], 'worker-identities', { body: { id } })),
     // GY-3225: the checkout's folder-trust refusals (an untrusted checkout carrying repository
     // Claude configuration), read from the registry document and this host's account configs.

@@ -31,6 +31,7 @@ export async function runPlanner(
     select?: typeof selectAccount;
   } = {},
 ): Promise<PlannerOutcome> {
+  if (!deps.createWork) return { skipped: 'no operator-agent configured to file drafts' };
   const select = deps.select ?? selectAccount;
   let selected: Awaited<ReturnType<typeof selectAccount>>;
   try { selected = await select(config, 'worker', { name: 'planner', principal: 'planner' }); }
@@ -98,6 +99,7 @@ export async function runPlanner(
             priority: draft.priority ?? 2,
             criteria: [],
             origin: 'planner',
+            reason: 'Empty-board planner draft after 30 minutes without ready work.',
           },
           `planner-draft:${startedAt}:${index}`,
         );

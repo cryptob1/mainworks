@@ -12,6 +12,7 @@ import { timingBaselinePath } from '../model/timing-companion.js';
 const plannerHoldMs = 30 * 60_000;
 const plannerCooldownMs = 2 * 60 * 60_000;
 const plannerRetryMs = 30 * 60_000;
+const plannerMaxBackoffMs = 24 * 60 * 60_000;
 const plannerKey = 'planner';
 const maxPlannerDrafts = 3;
 
@@ -164,22 +165,31 @@ export function plannerStep(cycle: Pick<Cycle, 'config' | 'state' | 'effects' | 
   });
   if (recentDraft) return;
   if (state.planner?.filedAt && clock - Date.parse(state.planner.filedAt) < plannerCooldownMs) return;
+  if (state.planner?.nextAt && clock < Date.parse(state.planner.nextAt)) return;
   if (state.planner?.at && clock - Date.parse(state.planner.at) < plannerRetryMs) return;
 
   const at = new Date(clock).toISOString();
   const brief = state.projectMemory.brief?.markdown ?? null;
   const openTitles = snapshot.work.filter(item => item.stage !== 'done').map(item => `${item.key}: ${item.title}`);
   const priorFiledAt = state.planner?.filedAt ?? null;
-  state.planner = { at, filedAt: priorFiledAt, result: 'Running' };
+  const priorFailures = state.planner?.failures ?? 0;
+  state.planner = { at, filedAt: priorFiledAt, result: 'Running', failures: priorFailures, nextAt: state.planner?.nextAt ?? null };
 
   launcher.submit(plannerKey, [], async () => {
-    const outcome = await start({ brief, openTitles }).catch((error: unknown): PlannerOutcome => ({
-      filed: [],
-      result: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-    }));
+    let failed = false;
+    const outcome = await start({ brief, openTitles }).catch((error: unknown): PlannerOutcome => {
+      failed = true;
+      return {
+        filed: [],
+        result: `Failed: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    });
     const filed = 'filed' in outcome ? outcome.filed : [];
     const result = ('skipped' in outcome ? `Skipped: ${outcome.skipped}` : outcome.result).slice(0, 500);
-    state.planner = { at, filedAt: filed.length ? at : priorFiledAt, result };
+    const failures = failed ? priorFailures + 1 : 0;
+    const backoffMs = failed ? Math.min(plannerMaxBackoffMs, plannerCooldownMs * 2 ** Math.min(failures - 1, 10)) : 0;
+    const nextAt = failed ? new Date(clock + backoffMs).toISOString() : null;
+    state.planner = { at, filedAt: filed.length ? at : priorFiledAt, result, failures, nextAt };
     log(`[mainworks-master] cycle ${state.cycle}: planner ${result}`);
     await effects.persist(state).catch(() => {});
   });

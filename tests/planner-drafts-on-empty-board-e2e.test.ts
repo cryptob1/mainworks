@@ -61,11 +61,26 @@ test('e2e:planner-drafts-on-empty-board — running test install with an empty b
       since: new Date(now - 31 * 60_000).toISOString(),
     };
 
+    const operatorAgentToken = `planner-operator-agent-${'z'.repeat(32)}`;
+    const provisioned = await fetch(`${world.url}/api/operator-agents`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': 'e2e-provision-operator-agent' },
+      body: JSON.stringify({
+        id: 'master-operator-agent',
+        displayName: 'Master Operator Agent',
+        capabilities: [],
+        scope: { repositories: [config.repository], workItems: ['*'] },
+        token: operatorAgentToken,
+        reason: 'Provision the master operator-agent identity for the empty-board planner e2e test',
+      }),
+    });
+    assert.ok(provisioned.ok, `provision operator-agent (${provisioned.status}): ${await provisioned.text()}`);
+
     const masterApi = async (path: string, body?: unknown) => {
       const response = await fetch(`${world.url}/api/${path}`, {
         method: body === undefined ? 'GET' : 'POST',
         headers: {
-          Authorization: `Bearer ${body === undefined ? coordinatorToken : adminToken}`,
+          Authorization: `Bearer ${body === undefined ? coordinatorToken : operatorAgentToken}`,
           ...(body === undefined ? {} : { 'Content-Type': 'application/json', 'Idempotency-Key': `e2e-${Math.random()}` }),
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),

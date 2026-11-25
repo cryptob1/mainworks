@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { writeFile } from 'node:fs/promises';
 import { emptyDaemonState, daemonStatePath, type DaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
-import type { DaemonEffects } from '../src/daemon/effects.js';
+import { daemonEffects, type DaemonEffects } from '../src/daemon/effects.js';
 import { stallAlarmKey } from '../src/daemon/stall-alarm.js';
 import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../src/master.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
@@ -107,6 +107,7 @@ async function fixture(options: {
   work?: Work[];
   workers?: number;
   plannerOutput?: string;
+  createWork?: (payload: Record<string, unknown>) => Promise<{ key?: string } | null>;
 } = {}) {
   const directory = await temporaryDirectory('planner-drafts-empty-board');
   const workers = workerProfiles(options.workers ?? 4);
@@ -177,6 +178,7 @@ async function fixture(options: {
         },
         createWork: async payload => {
           createdPayloads.push(payload);
+          if (options.createWork) return options.createWork(payload);
           const key = `GY-${++nextNum}`;
           const item = makeWork(key, {
             title: String(payload.title),
@@ -252,8 +254,11 @@ test(`${proof} — empty-board alarm held 30 min launches one planner session wi
   const testFileMatches = prompt.match(/tests\/[\w./-]+\.test\.ts/g) ?? [];
   assert.ok(new Set(testFileMatches).size >= 5, `prompt names the five slowest trial test files (found ${new Set(testFileMatches).size})`);
 
-  // Cap of 3, each with why and simplest, no criteria, left unreleased.
+  // Cap of 3, each with why and simplest, reason for operator-agent mutation, no criteria, left unreleased.
   assert.equal(f.createdPayloads.length, 3, 'files at most three items despite five returned');
+  for (const payload of f.createdPayloads) {
+    assert.ok(typeof payload.reason === 'string' && payload.reason.trim().length > 0, 'planner draft create body includes a non-empty reason');
+  }
   const drafts = f.work();
   assert.equal(drafts.length, 3);
   for (const draft of drafts) {
@@ -297,4 +302,60 @@ test(`${proof} — no planner launch when one ready item exists`, async () => {
   await f.cycle();
   assert.equal(f.prompts.length, 0, 'no planner launch when one ready item exists');
   assert.equal(f.createdPayloads.length, 0, 'no draft filed when one ready item exists');
+});
+
+test(`${proof} — no planner launch when no operator-agent is configured`, async () => {
+  const f = await fixture({ work: [], workers: 4 });
+  const prodEffects = daemonEffects(process.cwd(), f.config, {
+    snapshot: async () => ({ work: [], now: new Date(start).toISOString() }),
+    mutate: async () => ({}),
+  });
+  assert.equal(prodEffects.planner, undefined, 'production effects omit planner when operatorAgent is not configured');
+
+  let headlessCalled = false;
+  const outcome = await runPlanner(process.cwd(), f.config, { brief: sampleBrief, openTitles: [] }, {
+    headless: async () => { headlessCalled = true; return '[]'; },
+    select: async () => { throw new Error('should not select an account without createWork'); },
+  });
+  assert.equal(headlessCalled, false, 'runPlanner does not launch a headless session without createWork');
+  assert.ok('skipped' in outcome, 'runPlanner reports skipped without createWork');
+});
+
+test(`${proof} — refused create backs off instead of relaunching every 30 minutes`, async () => {
+  const f = await fixture({
+    work: [],
+    workers: 4,
+    createWork: async () => {
+      throw new Error('Mainworks refused work (400): Operator-agent mutations require a reason');
+    },
+  });
+
+  // Raise alarm at 15 min, then reach 30 min held at 45 min.
+  f.advance(15);
+  await f.cycle();
+  f.advance(30);
+  await f.cycle();
+  assert.equal(f.prompts.length, 1, 'initial planner launch runs at 30 min of empty-board alarm');
+  assert.equal(f.state.planner?.failures, 1);
+  assert.ok(f.state.planner?.nextAt, 'refused create records a backoff nextAt');
+
+  // 30, 60, and 119 minutes later: must NOT relaunch.
+  f.advance(30);
+  await f.cycle();
+  f.advance(30);
+  await f.cycle();
+  f.advance(59);
+  await f.cycle();
+  assert.equal(f.prompts.length, 1, 'does not relaunch during 2-hour backoff after first refusal');
+
+  // At 120 minutes after first refusal: retries once and backs off 4 hours on second refusal.
+  f.advance(1);
+  await f.cycle();
+  assert.equal(f.prompts.length, 2, 'retries after 2-hour backoff expires');
+  assert.equal(f.state.planner?.failures, 2);
+
+  // 239 minutes later: still within 4-hour backoff.
+  f.advance(239);
+  await f.cycle();
+  assert.equal(f.prompts.length, 2, 'doubles backoff to 4 hours after second consecutive refusal');
 });
