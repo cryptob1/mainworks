@@ -16,8 +16,6 @@ import { saveMasterState } from './master-state';
 test.describe.configure({ timeout: 60_000 });
 const settled = { timeout: 15_000 };
 const expect = baseExpect.configure(settled);
-// The proof's stub holds each live screen back this long.
-const screenDelay = Number(process.env.STUB_SCREEN_DELAY_MS ?? 0);
 async function fixture(browser: Browser, phone = false) {
   const site = await temporaryDirectory('master-ux');
   await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
@@ -132,7 +130,6 @@ test('e2e:master-page-ux — history, fitting, native input, clipboard, reconnec
     await expect(page.locator('.xterm-rows')).toContainText('screen of w1:master');
     // A failed reconnect while offline must keep retrying once the network returns.
     await page.context().setOffline(true);
-    if (screenDelay) await page.waitForTimeout(2 * screenDelay); // a screen not waited for would land here
     f.current.gap = 'output while offline'; await f.save();
     f.child.send('drop-terminals');
     await expect.poll(f.reconnects, settled).toBe(2);

@@ -46,11 +46,7 @@ else if (fixture().tui) {
   frame(`\x1b[?2004h\x1b[?1049h\x1b[H\x1b[2J\x1b[1mmaster TUI on ${pane}\x1b[0m\r\n`);
   let live = 0;
   setInterval(() => frame(`live line ${String(++live).padStart(4, '0')}\r\n`), 200);
-} else {
-  // GY-3813: a loaded host delivers the live screen well after the history; a proof makes that gap certain.
-  if (process.env.STUB_SCREEN_DELAY_MS) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.env.STUB_SCREEN_DELAY_MS));
-  frame(`\x1b[?2004hscreen of ${pane}\r\n`);
-}
+} else frame(`\x1b[?2004hscreen of ${pane}\r\n`);
 createInterface({ input: process.stdin }).on('line', line => {
   const command = JSON.parse(line);
   log({ mode, pane, command });
