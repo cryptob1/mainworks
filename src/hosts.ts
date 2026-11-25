@@ -13,7 +13,7 @@
 // records gy-compute@HOST; `host share` lets an enrolled coordinator bind another install's key to the
 // same helper (the shim's share verb), so a second install needs no root there.
 import { existsSync } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
@@ -26,10 +26,10 @@ import { hostProbeScript, hostShimDigest, hostShimScript, missingTrialVerbs, tri
 import { trialAppArmorProfilePath, trialAppArmorProfileText } from './merge-writer/trial-apparmor.js';
 import { shellQuote } from './install/transport.js';
 
-/** `sessions` (GY-3405): how many agent sessions the host takes at once; absent or 0, it takes test shards only. */
-export interface HostRecord { target: string; addedAt: string; sessions?: number }
+/** `sessions` (GY-3405): how many agent sessions the host takes at once; absent or 0, it takes test shards only. `login` (GY-3836): the owner's USER@HOST login the host was added with. */
+export interface HostRecord { target: string; addedAt: string; sessions?: number; login?: string }
 /** GY-3517: `at` is when this probe read the host; `update` marks one away only because its shim lacks a trial verb. */
-export interface HostReading { host: string; local?: boolean; at?: string; away: boolean; /** GY-3601: when an away host stopped answering. */ since?: string; update?: boolean; /** GY-3780: why it did not take this release's helper. */ updateError?: string; /** GY-3744: its helper's digest is not this release's. */ older?: boolean; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; /** GY-3528: cores busy (the 1-minute load). */ busy?: number | null; stat?: { total: number; steal: number } | null }
+export interface HostReading { host: string; local?: boolean; at?: string; away: boolean; /** GY-3601: when an away host stopped answering. */ since?: string; update?: boolean; /** GY-3780: why it did not take this release's helper. */ updateError?: string; /** GY-3744: its helper's digest is not this release's. */ older?: boolean; /** GY-3836: the owner's login target (`USER@HOST`) for hints. */ login?: string; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; /** GY-3528: cores busy (the 1-minute load). */ busy?: number | null; stat?: { total: number; steal: number } | null }
 
 /** Machine-wide, beside the machine-share link (team-access.ts): every install's loop on this machine reads the same hosts. */
 export const hostsFile = (home = configHome()) => join(home, 'machine', 'hosts.json');
@@ -209,9 +209,43 @@ function parseHostProbe(text: string) {
 }
 
 const targetHost = (target: string) => target.replace(/^.*@/, '').replace(/:\d+$/, '');
-/** GY-3834: the one command that prepares a host, for the owner to run in a terminal on this machine. */
-export const hostAddCommand = (target: string) => `mainworks host add ${userInfo().username}@${targetHost(target)} in a terminal`;
-const outdatedShimReason = (target: string, missing: readonly string[] = []) => `${target}'s graphyard-host-shim is older than this release: run ${hostAddCommand(target)}${missing.length ? ` (it lacks ${missing.join(', ')})` : ''}`;
+const parseSshConfig = (output: string) => ({
+  hostname: /^hostname (\S+)$/m.exec(output)?.[1] ?? null,
+  port: /^port (\d+)$/m.exec(output)?.[1] ?? null,
+});
+/**
+ * GY-3836: the owner's login target (`USER@HOST`) for a compute host or `host add` target.
+ * Uses the recorded `USER@HOST` when present; otherwise resolves a compute alias's `HostName`
+ * with the current user (or the target's own user when it is not `gy-compute` / `root`), never
+ * an alias that points at the helper's port (2222).
+ */
+function loginTargetFromSsh(target: string, sshOutput: string, account = userInfo().username): string {
+  const { hostname: resolvedHost, port } = parseSshConfig(sshOutput);
+  const rawHost = targetHost(target);
+  const explicitUser = target.includes('@') ? target.split('@')[0]! : null;
+  const isCompute = !explicitUser || explicitUser === hostUser || explicitUser === 'root';
+  const user = isCompute ? account : explicitUser;
+  const host = resolvedHost && (isCompute || port === String(computePort)) ? resolvedHost : rawHost;
+  return `${user}@${host}`;
+}
+const sshConfigArgs = () => {
+  const config = join(homedir(), '.ssh', 'config');
+  return homedir() !== userInfo().homedir && existsSync(config) ? ['-F', config] : [];
+};
+async function resolveLoginTarget(target: string, options: { recorded?: string; run?: ChildRun; account?: string } = {}): Promise<string> {
+  if (options.recorded) return options.recorded;
+  const run = options.run ?? defaultChildRun;
+  const output = String(await Promise.resolve(run('ssh', [...sshConfigArgs(), '-G', ...sshTarget(target)], { timeoutMs: 5_000 })).catch(() => ''));
+  return loginTargetFromSsh(target, output, options.account);
+}
+function resolveLoginTargetSync(target: string, options: { recorded?: string; account?: string } = {}): string {
+  if (options.recorded) return options.recorded;
+  const result = spawnSync('ssh', [...sshConfigArgs(), '-G', ...sshTarget(target)], { encoding: 'utf8', timeout: 5_000, stdio: ['ignore', 'pipe', 'ignore'] });
+  return loginTargetFromSsh(target, result.status === 0 ? result.stdout : '', options.account);
+}
+/** GY-3834, GY-3836: the one command that prepares a host, for the owner to run in a terminal on this machine. */
+export const hostAddCommand = (target: string, login?: string) => `mainworks host add ${login ?? resolveLoginTargetSync(target)} in a terminal`;
+const outdatedShimReason = (target: string, missing: readonly string[] = [], login?: string) => `${target}'s graphyard-host-shim is older than this release: run ${hostAddCommand(target, login)}${missing.length ? ` (it lacks ${missing.join(', ')})` : ''}`;
 const lastLine = (text: string) => text.trim().split('\n').filter(Boolean).at(-1) ?? '';
 /** ssh's arguments for a host target: USER@HOST:PORT becomes -p PORT USER@HOST; USER@HOST and an alias pass as they are. */
 export const sshTarget = (target: string) => { const port = /^(.+@.+):(\d+)$/.exec(target); return port ? ['-p', port[2]!, port[1]!] : [target]; };
@@ -226,26 +260,26 @@ const sshFailure = (target: string, error: any, knownHosts: string) => hostKeyCh
   : `${target} is unreachable over SSH: ${lastLine(String(error?.stderr ?? '')) || (error?.timedOut ? 'no answer within 15 seconds' : String(error?.message ?? error))}`;
 
 /** GY-3697: the probe's docker-unit line says whether rootless Docker's user unit failed or is not enabled. */
-function noDockerReason(name: string, output: string) {
+function noDockerReason(name: string, output: string, login?: string) {
   const [, enabled, active] = /^docker-unit (\S*) ?(\S*)$/m.exec(output) ?? [];
-  if (active === 'failed') return `${name} answers but its Docker failed (docker.service failed): see journalctl --user -u docker.service as ${hostUser} there, or run ${hostAddCommand(name)}`;
-  if (enabled && enabled !== 'enabled') return `${name} answers but its Docker is not enabled (docker.service is ${enabled}), so it stops at reboot: run ${hostAddCommand(name)}`;
-  return `${name} answers but its Docker does not: run ${hostAddCommand(name)}`;
+  if (active === 'failed') return `${name} answers but its Docker failed (docker.service failed): see journalctl --user -u docker.service as ${hostUser} there, or run ${hostAddCommand(name, login)}`;
+  if (enabled && enabled !== 'enabled') return `${name} answers but its Docker is not enabled (docker.service is ${enabled}), so it stops at reboot: run ${hostAddCommand(name, login)}`;
+  return `${name} answers but its Docker does not: run ${hostAddCommand(name, login)}`;
 }
 
 /** One probe of a host through its shim (null: this machine): its readings, or the plain reason it cannot be read. */
-export async function probeHost(target: string | null, run: ChildRun = defaultChildRun, knownHosts = hostKnownHostsFile()) {
+export async function probeHost(target: string | null, run: ChildRun = defaultChildRun, knownHosts = hostKnownHostsFile(), login?: string) {
   let output: string;
   try { output = String(await (target ? ssh(target, 'probe', run, knownHosts) : run('sh', ['-c', hostProbeScript], { timeoutMs: 15_000 }))); }
   catch (error: any) {
     if (!target) return { ok: false as const, reason: `this machine could not be read: ${lastLine(String(error?.stderr ?? '')) || String(error?.message ?? error)}` };
-    return { ok: false as const, reason: error?.status === 255 || error?.timedOut ? sshFailure(target, error, knownHosts) : `${target} does not answer graphyard-host-shim's probe: run ${hostAddCommand(target)}` };
+    return { ok: false as const, reason: error?.status === 255 || error?.timedOut ? sshFailure(target, error, knownHosts) : `${target} does not answer graphyard-host-shim's probe: run ${hostAddCommand(target, login)}` };
   }
   const reading = parseHostProbe(output);
-  if (!reading) return { ok: false as const, reason: noDockerReason(target ?? 'this machine', output) };
+  if (!reading) return { ok: false as const, reason: noDockerReason(target ?? 'this machine', output, login) };
   // GY-3476, GY-3517: a shim from an older release takes shards while it speaks every verb a trial uses; one lacking any waits for prepare.
   const missing = target ? missingTrialVerbs(reading) : [];
-  if (missing.length) return { ok: false as const, update: true, reason: outdatedShimReason(target!, missing), shim: reading.shim, verbs: reading.verbs };
+  if (missing.length) return { ok: false as const, update: true, reason: outdatedShimReason(target!, missing, login), shim: reading.shim, verbs: reading.verbs };
   return { ok: true as const, ...reading };
 }
 
@@ -301,38 +335,51 @@ export async function addHost(target: string, options: { file?: string; knownHos
   const knownHosts = options.knownHosts ?? (options.file ? join(dirname(options.file), 'known_hosts') : hostKnownHostsFile());
   if (target.length > 300 || !hostTargetPattern.test(target)) throw new Error(`Name the host as USER@HOST, USER@HOST:PORT or an ssh-config alias, for example ${hostUser}@omarchypc:${computePort}: got ${JSON.stringify(target)}`);
   if (['root', hostUser].includes(await loginUser(target, run))) return recordHost(target, file, run, knownHosts);
-  const host = targetHost(target), candidates = [`${hostUser}@${host}`, `${hostUser}@${host}:${computePort}`, target];
-  const probes = await Promise.all(candidates.map(candidate => probeHost(candidate, run, knownHosts)));
+  const existing = await readHosts(file);
+  const login = await resolveLoginTarget(target, { run });
+  const host = targetHost(login);
+  const recorded = existing.find(entry => entry.login && (entry.target === target || targetHost(entry.target) === targetHost(target) || targetHost(entry.target) === host))?.login;
+  const loginTarget = recorded ?? login;
+  const candidates = [...new Set([`${hostUser}@${host}`, `${hostUser}@${host}:${computePort}`, target])];
+  const probes = await Promise.all(candidates.map(candidate => probeHost(candidate, run, knownHosts, loginTarget)));
   const current = candidates.find((_, index) => { const probe = probes[index]!; return probe.ok && probe.shim === hostShimDigest; });
-  if (current) return { ...(await recordHost(current, file, run, knownHosts, false)), target: current, prepared: true };
+  if (current) return { ...(await recordHost(current, file, run, knownHosts, false, loginTarget)), target: current, prepared: true };
   const updatable = candidates.find((_, index) => { const probe = probes[index]!; return 'shim' in probe && probe.shim !== hostShimDigest && probe.verbs?.includes('update-shim:1'); });
   if (updatable) {
     const updateError = await updateHostShim(updatable, run, knownHosts);
     if (!updateError) {
-      const updated = await probeHost(updatable, run, knownHosts);
-      if (updated.ok && updated.shim === hostShimDigest) return { ...(await recordHost(updatable, file, run, knownHosts, false)), target: updatable, prepared: false };
+      const updated = await probeHost(updatable, run, knownHosts, loginTarget);
+      if (updated.ok && updated.shim === hostShimDigest) return { ...(await recordHost(updatable, file, run, knownHosts, false, loginTarget)), target: updatable, prepared: false };
     }
   }
-  if (!(options.terminal ?? (process.stdin.isTTY && process.stdout.isTTY))) throw new Error(`Run this in a terminal: mainworks host add ${target}`);
-  const output = await prepareOverSsh(target, hostPrepareScript(options.publicKey ?? await localPublicKey()), knownHosts);
+  if (!(options.terminal ?? (process.stdin.isTTY && process.stdout.isTTY))) throw new Error(`Run this in a terminal: mainworks host add ${loginTarget}`);
+  const output = await prepareOverSsh(loginTarget, hostPrepareScript(options.publicKey ?? await localPublicKey()), knownHosts);
   const port = /host add \S+?:(\d+)\s*$/m.exec(output)?.[1];
   const compute = `${hostUser}@${host}${port ? `:${port}` : ''}`;
-  return { ...(await recordHost(compute, file, run, knownHosts, false)), target: compute, prepared: false };
+  return { ...(await recordHost(compute, file, run, knownHosts, false, loginTarget)), target: compute, prepared: false };
 }
 
 /** Check a gy-compute target answers only through the shim, as neither root nor the docker group, and record it. */
-async function recordHost(target: string, file: string, run: ChildRun, knownHosts: string, checkOperator = true) {
+async function recordHost(target: string, file: string, run: ChildRun, knownHosts: string, checkOperator = true, login?: string) {
   const hosts = await readHosts(file);
-  if (hosts.some(host => host.target === target)) return { added: false, target, hosts };
+  const existing = hosts.find(host => host.target === target);
+  if (existing) {
+    if (login && existing.login !== login) {
+      const updated = hosts.map(host => host.target === target ? { ...host, login } : host);
+      await writeHosts(file, updated);
+      return { added: false, target, hosts: updated };
+    }
+    return { added: false, target, hosts };
+  }
   const refuse = (reason: string) => { throw new Error(`${target} was not added: ${reason}`); };
   const shell = await opensPlainShell(target, run, knownHosts);
-  if (shell === 'yes') refuse(`its SSH key opens a plain shell, so Mainworks could reach everything that user can; run ${hostAddCommand(target)}`);
+  if (shell === 'yes') refuse(`its SSH key opens a plain shell, so Mainworks could reach everything that user can; run ${hostAddCommand(target, login)}`);
   if (shell !== 'no') refuse(shell);
-  const probe = await probeHost(target, run, knownHosts);
+  const probe = await probeHost(target, run, knownHosts, login);
   if (!probe.ok) refuse(probe.reason);
-  if (probe.ok && probe.uid === 0) refuse(`it logs in as root; run ${hostAddCommand(target)}, which creates the unprivileged ${hostUser} user`);
-  if (probe.ok && probe.groups.includes('docker')) refuse(`${target.split('@')[0]} is in the docker group, which is root on that host; run ${hostAddCommand(target)} for ${hostUser} with rootless Docker`);
-  const next = [...hosts, { target, addedAt: new Date().toISOString() }];
+  if (probe.ok && probe.uid === 0) refuse(`it logs in as root; run ${hostAddCommand(target, login)}, which creates the unprivileged ${hostUser} user`);
+  if (probe.ok && probe.groups.includes('docker')) refuse(`${target.split('@')[0]} is in the docker group, which is root on that host; run ${hostAddCommand(target, login)} for ${hostUser} with rootless Docker`);
+  const next = [...hosts, { target, addedAt: new Date().toISOString(), ...(login ? { login } : {}) }];
   await writeHosts(file, next);
   return { added: true, target, hosts: next, probe: probe.ok ? probe : null, operator: checkOperator ? await operatorLogin(target, run, userInfo().username, knownHosts) : null };
 }
@@ -384,23 +431,29 @@ export async function setHostSessions(target: string, sessions: number, options:
  */
 export async function readHostReadings(previous: HostReading[], options: { file?: string; knownHosts?: string; run?: ChildRun; local?: string; update?: boolean } = {}): Promise<HostReading[]> {
   const knownHosts = options.knownHosts ?? (options.file ? join(dirname(options.file), 'known_hosts') : hostKnownHostsFile());
-  const targets = [null, ...(await readHosts(options.file).catch(() => [])).map(host => host.target)];
-  return Promise.all(targets.map(async target => {
+  const records: (HostRecord | null)[] = [null, ...(await readHosts(options.file).catch(() => []))];
+  return Promise.all(records.map(async record => {
+    const target = record?.target ?? null;
     const host = target ?? options.local ?? hostname();
-    let probe = await probeHost(target, options.run, knownHosts), updateError: string | null = null;
+    let login = record?.login;
+    let probe = await probeHost(target, options.run, knownHosts, login), updateError: string | null = null;
     if (options.update && target && 'shim' in probe && probe.shim !== hostShimDigest && probe.verbs?.includes('update-shim:1')) {
       updateError = await updateHostShim(target, options.run ?? defaultChildRun, knownHosts);
       if (!updateError) {
-        probe = await probeHost(target, options.run, knownHosts);
+        probe = await probeHost(target, options.run, knownHosts, login);
         if ('shim' in probe && probe.shim !== hostShimDigest) updateError = 'it took the update but still runs the older helper';
       }
       if (updateError) probe = { ok: false, update: true, reason: `${target} did not take this release's helper: ${updateError}`, shim: null, verbs: null };
     }
     const at = new Date().toISOString();
     const was = previous.find(reading => reading.host === host);
-    if (!probe.ok) return { host, ...(target ? {} : { local: true }), at, away: true, since: was?.away ? was.since ?? was.at ?? at : at, ...('update' in probe ? { update: true } : {}), ...(updateError ? { updateError } : {}), reason: probe.reason, cores: null, celsius: null, steal: null, runs: null, busy: null, stat: null };
+    if (!probe.ok) {
+      if (target && !login) login = await resolveLoginTarget(target, { run: options.run });
+      return { host, ...(target ? {} : { local: true }), ...(login ? { login } : {}), at, away: true, since: was?.away ? was.since ?? was.at ?? at : at, ...('update' in probe ? { update: true } : {}), ...(updateError ? { updateError } : {}), reason: probe.reason, cores: null, celsius: null, steal: null, runs: null, busy: null, stat: null };
+    }
     const before = was?.stat ?? null;
     const older = Boolean(target && (probe.shim !== hostShimDigest || (probe.verbs !== null && trialVerbs.some(verb => !probe.verbs!.includes(verb)))));
-    return { host, ...(target ? {} : { local: true }), at, away: false, ...(older ? { older: true } : {}), cores: probe.cores, celsius: probe.celsius, steal: stealPercent(before, probe.stat), runs: probe.runs, busy: probe.load, stat: probe.stat };
+    if (target && older && !login) login = await resolveLoginTarget(target, { run: options.run });
+    return { host, ...(target ? {} : { local: true }), ...(login ? { login } : {}), at, away: false, ...(older ? { older: true } : {}), cores: probe.cores, celsius: probe.celsius, steal: stealPercent(before, probe.stat), runs: probe.runs, busy: probe.load, stat: probe.stat };
   }));
 }

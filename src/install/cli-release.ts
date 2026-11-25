@@ -1,7 +1,8 @@
 // Deployment artifacts stay at their original paths for processes that already loaded them.
 // Only current moves; neither the source tree nor node_modules of a published CLI is rebuilt.
-import { existsSync, lstatSync, realpathSync } from 'node:fs';
-import { copyFile, mkdir, readFile, readdir, readlink, rename, stat, symlink, unlink } from 'node:fs/promises';
+import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
+import { chmod, copyFile, mkdir, readFile, readdir, readlink, rename, stat, symlink, unlink, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import type { ChildRun } from '../child-runner.js';
 import { directoryBytes } from '../daemon/leftovers.js';
@@ -164,4 +165,160 @@ export async function repairCliStamp(directory: string) {
   const served = servedCliRelease(directory), was = served && recordedCommit(served.root);
   if (!served || was === served.commit) return null;
   return { file: recordCommit(served.root, served.commit), commit: served.commit, was };
+}
+
+/** GY-3836: the stable owner launcher on PATH (`~/.local/bin/mainworks`). */
+export const userLauncherPath = (home = homedir()) => join(home, '.local', 'bin', 'mainworks');
+
+const userLauncherScript = `#!/usr/bin/env node
+// Stable owner launcher installed by Mainworks (GY-3836): runs the current CLI
+// for the checkout in the working directory, or the only install on this machine.
+import { execFileSync, spawn } from 'node:child_process';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
+
+const args = process.argv.slice(2);
+const home = homedir();
+
+function configHomes() {
+  const override = process.env.MAINWORKS_CONFIG_HOME ?? process.env.GRAPHYARD_CONFIG_HOME;
+  if (override) return [resolve(override)];
+  return [join(home, '.config', 'mainworks'), join(home, '.config', 'graphyard')].filter(existsSync);
+}
+
+function repoFromArgs(argv) {
+  const index = argv.findIndex(arg => arg === '--repo' || arg.startsWith('--repo='));
+  if (index < 0) return '';
+  return argv[index].startsWith('--repo=') ? argv[index].slice(7) : argv[index + 1] ?? '';
+}
+
+function repoFromCwd() {
+  try {
+    const url = execFileSync('git', ['config', '--get', 'remote.origin.url'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return /[:/]([\\w.-]+\\/[\\w.-]+?)(?:\\.git)?\\/?$/.exec(url)?.[1] ?? '';
+  } catch { return ''; }
+}
+
+function gitRoot() {
+  try { return execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); }
+  catch { return ''; }
+}
+
+function installIdOf(repository) {
+  const match = /^([\\w.-]+)\\/([\\w.-]+)$/.exec(repository.trim());
+  return match ? \`\${match[1]}-\${match[2]}\`.toLowerCase().replace(/[^a-z0-9._-]/g, '-') : '';
+}
+
+function cliInInstall(installDir) {
+  for (const file of [
+    join(installDir, 'deploy', 'build', '.graphyard', 'cli-published', 'bin', 'graphyard.mjs'),
+    join(installDir, 'bin', 'graphyard.mjs'),
+    join(installDir, 'bin', 'mainworks.mjs'),
+  ]) {
+    if (existsSync(file)) return realpathSync(file);
+  }
+  try {
+    const recorded = readFileSync(join(installDir, 'cli-path'), 'utf8').trim();
+    if (recorded && existsSync(recorded)) return recorded;
+  } catch {}
+  return null;
+}
+
+function cliInCheckout(root) {
+  if (!root) return null;
+  for (const dir of ['.mainworks', '.graphyard']) {
+    try {
+      const connection = JSON.parse(readFileSync(join(root, dir, 'connection.json'), 'utf8'));
+      if (typeof connection?.cliPath === 'string' && existsSync(connection.cliPath)) return connection.cliPath;
+    } catch {}
+  }
+  for (const file of [join(root, 'bin', 'mainworks.mjs'), join(root, 'bin', 'graphyard.mjs')]) {
+    if (existsSync(file)) return file;
+  }
+  return null;
+}
+
+function listInstalls() {
+  const found = [];
+  for (const base of configHomes()) {
+    let entries = [];
+    try { entries = readdirSync(base, { withFileTypes: true }); } catch { continue; }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name === 'machine') continue;
+      const dir = join(base, entry.name);
+      if (existsSync(join(dir, 'install.json')) || cliInInstall(dir)) found.push(dir);
+    }
+  }
+  return found;
+}
+
+function resolveCli() {
+  const repository = repoFromArgs(args) || repoFromCwd();
+  const id = repository ? installIdOf(repository) : '';
+  if (id) {
+    for (const base of configHomes()) {
+      const cli = cliInInstall(join(base, id));
+      if (cli) return cli;
+    }
+  }
+  const fromCheckout = cliInCheckout(gitRoot());
+  if (fromCheckout) return fromCheckout;
+  const installs = listInstalls();
+  if (installs.length === 1) {
+    const cli = cliInInstall(installs[0]);
+    if (cli) return cli;
+  }
+  if (installs.length > 1) {
+    console.error('Multiple Mainworks installs found on this machine: run mainworks from a repository checkout or pass --repo OWNER/NAME.');
+    process.exit(1);
+  }
+  console.error('No Mainworks install found on this machine: run mainworks install --apply in a repository checkout.');
+  process.exit(1);
+}
+
+const target = resolveCli();
+const child = spawn(process.execPath, [target, ...args], { stdio: 'inherit', env: process.env });
+for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => child.kill(signal));
+child.on('error', error => { console.error(error.message); process.exit(1); });
+child.on('exit', (code, signal) => process.exit(signal ? 1 : (code ?? 1)));
+`;
+
+/** Whether `~/.local/bin/mainworks` needs creating, updating, or already matches this release. */
+export function userLauncherState(home = homedir()): 'create' | 'update' | 'satisfied' {
+  const file = userLauncherPath(home);
+  if (!existsSync(file)) return 'create';
+  try { return readFileSync(file, 'utf8') === userLauncherScript ? 'satisfied' : 'update'; } catch { return 'update'; }
+}
+
+/**
+ * GY-3836: install or update the stable `mainworks` launcher in `~/.local/bin` and ensure login
+ * shells have `~/.local/bin` on PATH. Never hardcodes a release commit, so deploys to new releases
+ * work without rewriting it.
+ */
+export async function writeUserLauncher(options: { home?: string } = {}): Promise<string> {
+  const home = options.home ?? homedir();
+  const file = userLauncherPath(home);
+  await mkdir(dirname(file), { recursive: true });
+  if (userLauncherState(home) !== 'satisfied') {
+    const staging = `${file}.${process.pid}.tmp`;
+    await writeFile(staging, userLauncherScript, { mode: 0o755 });
+    await chmod(staging, 0o755);
+    await rename(staging, file);
+  }
+  const profile = existsSync(join(home, '.bash_profile')) ? join(home, '.bash_profile') : join(home, '.profile');
+  const existing = await readFile(profile, 'utf8').catch(() => '');
+  if (!existing.includes('.local/bin')) {
+    const snippet = 'case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$PATH" ;; esac\n';
+    await writeFile(profile, `${existing}${existing && !existing.endsWith('\n') ? '\n' : ''}${snippet}`);
+  }
+  return file;
+}
+
+/** Record an install's fallback CLI path (before its first `cli-published` deploy) under its install directory. */
+export async function recordInstallCliPath(installDir: string, cliPath: string): Promise<void> {
+  const file = join(installDir, 'cli-path');
+  const staging = `${file}.${process.pid}.tmp`;
+  await writeFile(staging, `${resolve(cliPath)}\n`, { mode: 0o600 });
+  await rename(staging, file);
 }

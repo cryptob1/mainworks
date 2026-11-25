@@ -23,7 +23,7 @@ import { installCommand, readServeRecord, serveBaselineCheckoutPath, serveChecko
 import { defaultChildRun } from '../child-runner.js';
 import { migrateHerdr } from '../herdr-migration.js';
 import { loadMasterConfig } from '../master.js';
-import { cliReleasePath, activeCliRoot, prepareCliRelease, publishCliRelease } from '../install/cli-release.js';
+import { cliReleasePath, activeCliRoot, prepareCliRelease, publishCliRelease, writeUserLauncher } from '../install/cli-release.js';
 import { knownGoodState, pinKnownGood } from '../master/known-good.js';
 import { heavyJobsDirectory, heldSlots, joinHostHeavyBudget, withHeavyJob } from '../master/verification-slots.js';
 import { readReviewLedger } from '../reviewer.js';
@@ -672,7 +672,7 @@ export async function runUpgradeCommand(context: Parameters<import('./registry.j
     if (!databaseUrl) throw new Error('Set DATABASE_URL to the Mainworks database so the upgrade can back it up before the server migrates it; nothing was changed');
     if (!url) throw new Error('Set GRAPHYARD_URL so the upgrade can read /healthz after the redeploy; nothing was changed');
     const result = await runUpgrade(plan, liveEffects(inputs, join(stateDirectory(repoRoot), 'upgrade.json')));
-    if (result.ok) { await migrateHerdr(repoRoot); console.log(`upgraded to ${target.version}`); return; }
+    if (result.ok) { await migrateHerdr(repoRoot); await writeUserLauncher().catch(() => {}); console.log(`upgraded to ${target.version}`); return; }
     process.exitCode = 1;
     console.error(upgradeFailure(result));
 }
