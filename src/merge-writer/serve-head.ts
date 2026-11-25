@@ -218,6 +218,6 @@ async function serveByCommand(serve: CommandApplication, worktree: string, env: 
       log(`the serve command did not answer ${serve.url} within ${serve.readySeconds}s: ${tail().slice(-5).join(' | ').slice(0, 500)}`);
       await fail(`the serve command did not answer ${serve.url} within ${serve.readySeconds}s`);
     }
-    await new Promise(accept => setTimeout(accept, 500));
+    await new Promise(accept => setTimeout(accept, 100));
   }
 }

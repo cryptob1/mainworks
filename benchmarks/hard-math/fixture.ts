@@ -63,6 +63,12 @@ export async function fixtureExecutor(c:RunContext,options:{missingDelivery?:boo
       await import(pathToFileURL(script).href);
       return '';
     }
+    if(program==='npm' && options?.cwd) {
+      // Run the seed's own package script without npm's ~0.3s start, twice per merge (GY-3848).
+      const [name,...rest]=mapped[0]==='run'?mapped.slice(1):mapped;
+      const script=JSON.parse(await readFile(join(options.cwd,'package.json'),'utf8')).scripts[name];
+      return defaultChildRun('sh',['-c',`${script} "$@"`,'sh',...rest.filter(arg=>arg!=='--')],{...options,wrapper:[]});
+    }
     return defaultChildRun(program,mapped,{...options,wrapper:[]});
   };
   const writer=mergeWriterReads({baseBranch:'main',repository:'scratch/hard-math',run:masterRunSchema.parse({mergeWriter:{deployKeyFile:join(c.install,'unused')}})},c.root,defaultChildRun,{

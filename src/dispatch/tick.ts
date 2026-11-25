@@ -522,6 +522,7 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
   // follow-up items and the rest project memory, once per record.
   const owed = effects.launchPostMergeReview ? owedPostMergeReviews(snapshot.work) : [];
   await (async () => {
+    const postMergeLaunches: Promise<void>[] = []; // side by side like the pre-merge launches, not one startup observation after another (GY-3848)
     for (const item of owed) {
       const request = postMergeRequest(item);
       if (!session('review', item, request, reviews)) continue;
@@ -543,25 +544,24 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
       const busy = () => wait('review', item, request, `${launchWaitWording.busy}: registry slots are occupied; set concurrency on the registry reviewer role`);
       if (!profile) { wait('review', item, request, reason!); continue; }
       if (!withRoom().length) { busy(); continue; }
-      try {
-        // The delivered item names no live request, so no session handle is recorded on it: the ledger holds the session.
-        const launched = await launchInTurns(request, withRoom(), candidate => {
-          const handle = launchedSessionHandle('review', request, `${item.key}: post-merge review ${request.sha.slice(0, 12)}`, config.hostId, undefined, candidate.kind, config.herdrWorkspace);
-          return registeredLaunch(undefined, handle, withinBound(handle, withLaunchedRuntime(handle, () => effects.launchPostMergeReview!(item, request, candidate, inventory(), observedAt))), result => coordinates(candidate, request, result), attachTo);
-        }, effects.holdAccount ? exhaustedAtLaunch('review', item, request) : undefined);
+      // The delivered item names no live request, so no session handle is recorded on it: the ledger holds the session.
+      postMergeLaunches.push(launchInTurns(request, withRoom(), candidate => {
+        const handle = launchedSessionHandle('review', request, `${item.key}: post-merge review ${request.sha.slice(0, 12)}`, config.hostId, undefined, candidate.kind, config.herdrWorkspace);
+        return registeredLaunch(undefined, handle, withinBound(handle, withLaunchedRuntime(handle, () => effects.launchPostMergeReview!(item, request, candidate, inventory(), observedAt))), result => coordinates(candidate, request, result), attachTo);
+      }, effects.holdAccount ? exhaustedAtLaunch('review', item, request) : undefined).then(launched => {
         if (!launched) busy();
         else {
           delete cursor.failures[request.id]; delete cursor.capacity.review;
           tick.launched.push({ kind: 'review', work: item.key, requestId: request.id, sha: request.sha, profile: launched.profile.name, reason: 'post-merge review of the delivered merge commit', ...(launched.failover.length ? { failover: launched.failover } : {}), ...(launched.relaunched ? { relaunched: true } : {}) });
         }
-      } catch (error) {
+      }, error => {
         const answered = answeredByPendingReview(error, request);
         if (answered) wait('review', item, request, `reviewer session ${answered.agentName} is already pending on ${request.sha.slice(0, 12)}; ${launchWaitWording.settles}`);
         else if (error instanceof UnknownReviewerProfileError || error instanceof LauncherUnavailableError) { delete cursor.failures[request.id]; wait('review', item, request, message(error)); }
         else if (!outOfCapacity('review', item, request, error)) refuse('review', item, request, error);
-      }
-      await persist();
+      }).then(persist));
     }
+    for (const outcome of await Promise.allSettled(postMergeLaunches)) if (outcome.status === 'rejected') throw outcome.reason;
     for (const record of reviews) {
       if (!record.postMerge || !record.verdict || (record.postMergeFollowUps && !record.postMergeFollowUps.failure && !record.postMergeFollowUps.pending)) continue;
       const item = snapshot.work.find(work => work.key === record.key);

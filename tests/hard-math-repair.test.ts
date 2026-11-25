@@ -2,12 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { validateReceipt, comparison } from '../benchmarks/hard-math/receipt-schema.js';
 import { pinnedPython } from '../benchmarks/hard-math/python.js';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { join } from 'node:path';
 import { runFixture } from './helpers/hard-math-fixture.js';
 
 // A file of its own (GY-3206): the runner bounds each test file, so these fixture runs no longer
 // share tests/hard-math-smoke.test.ts's bound with every other one.
-const python=await pinnedPython(await temporaryDirectory('hard-math-repair-python',process.cwd()));
+// One verified environment per checkout: no wheel download or bytecode compile on each run (GY-3848).
+const python=await pinnedPython(join(process.cwd(),'.graphyard','hard-math-python'));
 
 test('integration:hard-math-smoke — real scratch Postgres/control plane and Git merge eight normal-risk components before native review dispatch/completion, reject an integration fault, repair and certify pushed CLI/API/UI', {timeout:295_000},async()=>{
   const receipt=await runFixture(python,'repair',{injectRepair:true,nativePostMerge:true});
