@@ -11,7 +11,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const declaration: ServeDeclaration = { id: 'game', kind: 'node', directory: 'apps/game', build: 'node build.js', start: 'node serve.js' };
 
-test('unit:managed-serve-pinned — serveOnce chooses a free port after checkout, install and build finish so concurrent work cannot claim it during the build', async () => {
+test('GY-3786 — serveOnce chooses a free port after checkout, install and build finish so concurrent work cannot claim it during the build', async () => {
   const root = await temporaryDirectory('managed-serve-pinned');
   const order: string[] = [];
   const server = createServer((_request, response) => response.writeHead(200).end('ok\n'));
