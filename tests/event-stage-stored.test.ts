@@ -12,6 +12,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { masterConfigSchema } from '../src/master.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { itemLedger, masterStatusReport } from '../src/cli/master-status.js';
+import { eventHistorySql, parseEventHistoryQuery } from '../src/events-history.js';
 import { explainAnalyzeBuffers } from './helpers/query-plan.js';
 import { appendSave, eventStageSql } from '../src/store/snapshot-delta.js';
 
@@ -121,6 +122,10 @@ test('e2e:event-stage-stored — after an item changes stage on a running test i
   assert.equal(projected.rows, ROWS);
   assert.ok(projected.buffers <= stored.buffers + 10,
     `stage projection opened snapshot payloads: ${projected.summary}; column: ${stored.summary}`);
+  const query = eventHistorySql(parseEventHistoryQuery(new URLSearchParams({ work: items[0].id, order: 'asc', limit: '1000', view: 'page', payload: 'stage' })));
+  const pagePlan = await explainAnalyzeBuffers(store.pool, query.text, query.values);
+  assert.equal(pagePlan.rows, ROWS);
+  assert.ok(pagePlan.buffers < ROWS, `stage page must not probe each row again: ${pagePlan.summary}`);
   // The seeded items merged; one more changes stage through appendSave and merges, so master status reads its stored stages.
   const doneAt = (r: number) => minuteAt(r);
   await store.pool.query(`UPDATE work_items SET document = document || jsonb_build_object('stage', 'done', 'delivery', jsonb_build_object('mergedAt', $2::text, 'mergeSha', repeat('a', 40), 'authorizationRevision', 1)) WHERE id = ANY($1::uuid[])`,

@@ -271,7 +271,6 @@ export async function runCycle(config: MasterConfig, state: DaemonState, effects
     if (!config.forPerson) await leftoversStep(state, clock, effects.leftoverDisk, log);
     // GY-3289: what this host's sessions spent, reported at most once a minute; a failed report is made again.
     if (!config.forPerson) await effects.usage?.(state.master.continuity?.current ?? null).catch(error => log(`[mainworks-master] token usage was not reported and is reported again: ${message(error)}`));
-    // GY-3768: older delta rows get their stage stored, one batch a cycle, until none lack it.
   });
   const metrics = cycleMetricsSchema.parse({ cycle: state.cycle, at: new Date(clock).toISOString(), open: read.snapshot.work.filter(item => item.stage !== 'done').length, actions: performed.length, steps });
   state.metrics.push(metrics);
