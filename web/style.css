@@ -193,7 +193,7 @@ img.mark{width:26px;height:26px}
 .panel h2,.panel>summary{display:flex;align-items:baseline;gap:10px;margin:0;font-size:var(--type-item);font-weight:600;color:var(--text)}.panel h2 small{font-size:var(--type-small);font-weight:400;color:var(--text-2)}
 /* The shared empty state (GY-3322): a card saying what fills the page, and at most one action. */
 .panel.empty{align-items:flex-start}.product-brief{display:flex;flex-direction:column;gap:var(--space-4)}.panel.empty p{margin:0;font-size:var(--type-body);color:var(--text-2)}
-.panel.work-group{padding:0;gap:0;overflow:hidden}.panel.work-group>h2,.panel.work-group>summary{align-items:center;padding:var(--space-3) var(--space-4)}.panel>summary{cursor:pointer}
+.panel.work-group{padding:0;gap:0;overflow:hidden}.panel.work-group>h2,.panel.work-group>summary{align-items:center;padding:var(--space-3) var(--space-4)}.panel.work-group .shipped-list{margin:0}.panel.work-group .shipped-list li{padding:8px var(--space-4)}.panel.work-group .shipped-list li:last-child{border-bottom:0}.panel>summary{cursor:pointer}
 .left-list{margin:0;padding-left:18px;font-size:var(--type-body);line-height:1.7;color:var(--text)}
 .left-step h3{margin:0 0 var(--space-2);font-size:var(--type-body);font-weight:600}.left-step h3 small{font-weight:400}.left-step+.left-step{margin-top:var(--space-3)}
 .run-log{max-height:28rem;overflow:auto;margin:var(--space-2) 0 0;padding:var(--space-3);background:var(--bg);border-radius:var(--radius-lg);font-size:var(--type-small);white-space:pre-wrap;word-break:break-word}
@@ -258,7 +258,7 @@ img.mark{width:26px;height:26px}
   .page-actions{flex-wrap:wrap}.search,.search input{width:100%}
   .tiles{flex-wrap:wrap;gap:var(--space-2)}.tile{flex:0 0 auto;flex-direction:row;align-items:center;gap:var(--space-2);min-height:36px;padding:0 14px;border-radius:999px}.tile small{display:none}.tile strong{font-size:var(--type-small);font-weight:600}
   .row-head{display:none}
-  .panel.work-group{border:0;border-radius:0;overflow:visible;gap:var(--space-3);background:transparent}.panel.work-group>h2,.panel.work-group>summary{padding:0}
+  .panel.work-group{border:0;border-radius:0;overflow:visible;gap:var(--space-3);background:transparent}.panel.work-group>h2,.panel.work-group>summary{padding:0}.panel.work-group .shipped-list li{padding:8px 0}
   .work-row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"key time" "main main" "steps steps" "who who" "decide decide";gap:var(--space-2);padding:var(--space-4);border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface)}
   .group-needs-you .work-row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"key key" "main main" "who who" "time decide";border-color:color-mix(in srgb,var(--needs-you) 45%,var(--bg));background:color-mix(in srgb,var(--needs-you) 6%,var(--bg))}
   .row-key{grid-area:key;color:var(--group);font-size:var(--type-tiny)}.row-time{grid-area:time;text-align:right;font-size:var(--type-tiny)}.row-main{grid-area:main}.row-steps{grid-area:steps}.row-steps:empty{display:none}.row-who{grid-area:who;font-size:var(--type-tiny)}.row-who::before{content:'Next: '}.decide{grid-area:decide}

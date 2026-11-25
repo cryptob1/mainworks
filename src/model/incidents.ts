@@ -28,7 +28,7 @@ export interface StatusSnapshot {
   /** The fleet as the registry holds it: each account's roles, health and quota, each role's live sessions and limit. */
   fleet?: { accounts?: StatusAccount[]; roles?: { role: string; live: number; limit: number }[] } | null;
   /** The test machines the loop reads; `since` is when an away machine stopped answering. */
-  hosts?: { host: string; away: boolean; at?: string; since?: string }[];
+  hosts?: { host: string; away: boolean; update?: boolean; at?: string; since?: string }[];
   /** When the live commit was deployed. */
   app?: { deployedAt?: string | null } | null;
   /** GY-3690: while the owner turned the public link on and someone is invited but the link is not public, what the loop does and when it was last public. */
@@ -225,8 +225,9 @@ export function incidentsFromStatus(status: StatusSnapshot, work: Work[], now: n
       action: heals ? null : { label: 'Open accounts', open: 'agents' } });
   }
 
-  // 4. A test machine away over 5 minutes.
+  // 4. A test machine away over 5 minutes (not one waiting on its owner's one-time prepare, which Home shows under Needs you).
   for (const host of status.hosts ?? []) {
+    if (host.update) continue;
     const away = host.away ? now - Date.parse(host.since ?? host.at ?? new Date(now).toISOString()) : 0;
     if (away >= 5 * minute) incidents.push({ kind: 'machine-away', broke: `Test machine ${host.host} has not answered for ${span(away)}.`,
       impact: 'Checks run on fewer machines and take longer.', doing: 'The loop probes it every cycle.', action: { label: 'Open machines', open: 'workers' } });

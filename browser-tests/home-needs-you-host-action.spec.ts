@@ -10,7 +10,7 @@ const at = (ago: number) => new Date(Date.now() - ago).toISOString();
 const work = [{ dependencies: [], scenarioRequirements: [], id: 'fixture-GY-1', key: 'GY-1', title: 'Earlier change', description: 'Earlier change', type: 'feature', priority: 2,
   stage: 'done', stageEnteredAt: at(hour), createdAt: at(2 * hour), ready: true, policy: { review: true, checks: ['test'] }, policyRevision: 1, revision: 1, violations: [], workspaces: [], criteria: [], evidence: [], gates: [], sessions: [], lease: null,
   delivery: { mergedAt: at(hour), mergeSha: 'a'.repeat(40) } }];
-const old = (host: string) => ({ host, away: true, update: true, reason: `${host}'s graphyard-host-shim is older than this release` });
+const old = (host: string) => ({ host, away: true, update: true, since: at(hour), at: at(60_000), reason: `${host}'s graphyard-host-shim is older than this release` });
 let hosts: unknown[] = [];
 
 const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
@@ -45,6 +45,11 @@ test('e2e:home-needs-you-host-action — one Needs you card per outdated test ma
       await expect(card).not.toContainText(/GY-\d|shim/);
     }
     await expect(page.locator('[data-host-update]')).toHaveCount(0);
+    await expect(page.locator('[data-incident="machine-away"]')).toHaveCount(0);
+    if (width === 1280) {
+      const paddingLeft = await cards.first().evaluate(el => Number.parseFloat(getComputedStyle(el).paddingLeft));
+      expect(paddingLeft).toBeGreaterThan(0);
+    }
     expect(await noSideScroll(page)).toBe(true);
 
     // The owner prepares vish-msi; the next read shows it current and its card goes.
