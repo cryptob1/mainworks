@@ -5,7 +5,7 @@ import { basename, dirname, isAbsolute, resolve } from 'node:path';
 import { z } from 'zod';
 import { ChildProcessError, defaultChildRun } from '../child-runner.js';
 import { discover, assertRepository } from '../onboarding.js';
-import { concurrentOverlap, resourceConflicts } from '../coordination.js';
+import { concurrentOverlap, plannedTestFileConflicts, resourceConflicts } from '../coordination.js';
 import { type SandboxExec, environmentBlocker, WorkerSandboxError, verifyWorkerSandbox, workerPaths, writablePaths, grantWorkerPaths } from '../worker-sandbox.js';
 import { assertNoApprovalOptOut } from '../harness.js';
 import { parkedOnHuman, humanDecisionLabel, answerCommand, dispatchHumanWait } from '../model/human-request.js';
@@ -150,6 +150,8 @@ export function assertDispatchable(work: Work, allWork: Work[], observedAt: stri
   if (work.submission && !work.reworkRequested) throw new Error('Dispatch requires operator-authorized rework for a submitted item');
   const conflicts = resourceConflicts(work, allWork, now);
   if (conflicts.length) throw new Error(`Dispatch blocked by exclusive resources: ${conflicts.map(conflict => `${conflict.resource} held by ${conflict.key}`).join(', ')}`);
+  const testFileConflicts = plannedTestFileConflicts(work, allWork, now);
+  if (testFileConflicts.length) throw new Error(`Dispatch blocked by planned test file: ${testFileConflicts.map(conflict => `${conflict.file} held by ${conflict.key}`).join(', ')}`);
   // GY-1698: the durable loop offers claimable work through this gate, not only through the action
   // queue's nextAction wait — a released follow-up whose reading cannot exist yet must not be claimed.
   const window = observationWindowHold(work, new Date(now));

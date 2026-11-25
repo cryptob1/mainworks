@@ -32,6 +32,17 @@ export function resourceConflicts(work: Work, all: Work[], now: number) {
   return all.filter(w => w.id !== work.id && (claimedNow(w, now) || inFlight(w, now)))
     .flatMap(w => sharedResources(work, w).map(resource => ({ resource, key: w.key })));
 }
+/** GY-3810: a loop-filed flaky-check or known-red item for a test file serialises against any item planning that file while in build. */
+const isTestFault = (work: Work) => /^(?:flake|known-red):test:/.test(work.faultKey ?? '');
+export function sharedPlannedTestFiles(work: Work, other: Work) {
+  if (!isTestFault(work) && !isTestFault(other)) return [];
+  const theirs = other.plannedFiles ?? [];
+  return [...new Set((work.plannedFiles ?? []).filter(file => theirs.some(held => pathScopesOverlap(file, held))))];
+}
+export function plannedTestFileConflicts(work: Work, all: Work[], now: number) {
+  return all.filter(w => w.id !== work.id && w.stage === 'build' && claimedNow(w, now))
+    .flatMap(w => sharedPlannedTestFiles(work, w).map(file => ({ file, key: w.key })));
+}
 
 /** The paths an item is known to touch: the files its candidate was observed to change. */
 const touchedPaths = (work: Work) => [...new Set(work.observation?.files ?? [])];
