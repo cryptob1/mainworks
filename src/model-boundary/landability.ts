@@ -21,7 +21,7 @@ function controlPlaneAcceptance(work: Work, all: Work[], now: Date): (Landabilit
     // A declared post-deploy proof (GY-1660) is observed on the serving release after delivery, never gating the merge.
     if (postDeployProof(proof)) return null;
     const family = proof.slice(0, Math.max(0, proof.indexOf(':')));
-    if (family === 'unit' || family === 'integration' || family === 'e2e') {
+    if (family === 'unit' || family === 'integration' || family === 'e2e' || family === 'check') {
       const counts = tried?.proofs[proof];
       if (counts && counts.executed > 0 && counts.failed === 0) return null;
       const seen = !head ? 'there is no candidate' : !tried ? `the merge writer has not trialled ${head.slice(0, 12)}` : !counts ? 'the trial counted none of its cases' : `the trial ran ${counts.executed} and ${counts.failed} failed`;

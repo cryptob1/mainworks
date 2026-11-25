@@ -16,7 +16,7 @@ import type { Cycle } from './cycle.js';
 import { actionLine } from './run.js';
 import { actionDetailMax, message, storeAction } from './state.js';
 import { batchGateFlights as flights, busyTrialSlots } from './trial-slots.js';
-import { fileLoopFault, gateFiledItem, repairedProof } from './control-plane.js';
+import { fileLoopFault, gateFiledItem, readProjectCapabilities, repairedProof } from './control-plane.js';
 import { currentEvidence } from '../model/evidence.js';
 import { EnvironmentFault, declaredEnvironments, environmentSecretsFile, environmentStatePath, localEnvironment, loopLifecycle, trustedCheckout, type AppEnvironment } from '../app-environments.js';
 import { installSecretsDirectory } from '../e2e/steps.js';
@@ -217,9 +217,11 @@ async function recordRepaired(record: GateRecord, work: readonly Work[], attest:
 export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<MergeWriterReads['git']> }, work: readonly Work[], trusted: () => string | null = () => null): GatePorts & { diagnose: DiagnosePort } {
   const git = reads.git;
   const file = async (input: { title: string; description: string; key: string }) => {
+    const ref = trusted() ?? `refs/remotes/origin/${reads.baseBranch}`;
+    const capabilities = await readProjectCapabilities(git, ref).catch(() => undefined);
     const result = await fileLoopFault(
       { work, now: reads.now(), createWork: reads.createWork, note: reads.note },
-      gateFiledItem(input, reads.baseBranch, reads.gate?.repository ?? ''),
+      gateFiledItem(input, reads.baseBranch, reads.gate?.repository ?? '', capabilities),
       input.description,
       input.key,
     );

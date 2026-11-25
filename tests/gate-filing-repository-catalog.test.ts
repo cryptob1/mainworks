@@ -16,7 +16,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 const managed = 'hello-huck/huck';
 const filing = (key: string) => gateFiledItem({ key, title: `Known red on main: ${key.slice(key.indexOf(':') + 1)}`, description: 'Red.' }, 'main', managed);
 
-test('unit:gate-filing-repository-catalog — a filing outside Mainworks binds the gated repository\'s own case: an e2e check itself, any other check a new case named like the pinning proof; Mainworks\'s filings still bind create-work-item', () => {
+test('unit:gate-filing-repository-catalog — a filing outside Mainworks binds the gated repository\'s own case: an e2e check itself, any other check a new case named like the pinning proof; Mainworks\'s filings still bind create-work-item', async () => {
   const repaired = 'manual:batch-gate-repaired';
   // An e2e check binds the failing case itself, which the repository's catalog already holds.
   assert.deepEqual(filing('known-red:e2e:sign-in').criteria[1]!.proofs, [repaired, 'e2e:sign-in']);
@@ -40,7 +40,7 @@ test('unit:gate-filing-repository-catalog — a filing outside Mainworks binds t
     baseBranch: 'main', now: Date.now, git: async () => '', gate: { root: '/gate', repository: managed },
     createWork: async (item: { criteria: { proofs: string[] }[] }) => { filed.push(item); return { key: 'GY-1' }; },
   } as unknown as MergeWriterReads & { git: NonNullable<MergeWriterReads['git']> };
-  batchGatePorts(reads, []).file({ key: 'diagnostic:build', title: 'Diagnostic failure on main: build', description: 'Red.' });
+  await batchGatePorts(reads, []).file({ key: 'diagnostic:build', title: 'Diagnostic failure on main: build', description: 'Red.' });
   assert.equal(filed.length, 1);
   assert.deepEqual(filed[0]!.criteria[1]!.proofs, [repaired, 'e2e:build-pinned']);
 });

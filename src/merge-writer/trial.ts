@@ -435,6 +435,8 @@ export interface TrialRun {
   timedOut?: boolean;
   /** GY-2965: how every bound E2E case ran against the served head; present when the item names e2e: proofs. */
   e2e?: TrialE2eCase[];
+  /** GY-3837: each declared preMerge check that ran in this trial and whether it passed or failed. */
+  checks?: Record<string, 'pass' | 'fail'>;
   /** GY-3639: of the selected test files, how many an earlier trial's pass served and how many ran; present when any was selected under the cache. */
   testCache?: { cached: number; ran: number };
 }
@@ -845,6 +847,8 @@ export interface RunTrialInput {
   secretScan?: ((input: SecretScanInput) => Promise<SecretScanResult>) | false;
   /** GY-2965: the item's `e2e:` proofs; each binds e2e/cases/NAME.json, which the trial runs against the served head. */
   e2eProofs?: readonly string[];
+  /** GY-3837: the item's `check:` proofs; each names a declared preMerge check that must run and pass in this trial. */
+  checkProofs?: readonly string[];
   /**
    * GY-3267: the candidate whose bound cases run here (the base-tip run's): the files it adds — its new
    * cases and their specs — are laid over this checkout before the cases run, so a case new on the
@@ -1636,25 +1640,33 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     let failingOutput: string | undefined;
     // GY-3599: the file that ran longest over every check, for the verdict and the Task page.
     let slowest: { file: string; durationMs: number } | undefined;
-    const withSlowest = (verdict: TrialRun): TrialRun => slowest ? { ...verdict, slowest } : verdict;
+    const checkResults: Record<string, 'pass' | 'fail'> = {};
+    const requestedChecks = new Set((input.checkProofs ?? []).map(proof => proof.slice('check:'.length)));
+    const withMeta = (verdict: TrialRun): TrialRun => ({
+      ...verdict,
+      ...(slowest ? { slowest } : {}),
+      ...(Object.keys(checkResults).length ? { checks: checkResults } : {}),
+    });
     for (const check of checks) {
-      if (check.paths && !touchesPaths(input.changedFiles, check.paths)) continue;
+      if (check.paths && !touchesPaths(input.changedFiles, check.paths) && !requestedChecks.has(check.check)) continue;
       if (check.selection) {
         const selected = await withServices(check, () => runSelected(check));
-        if ('services' in selected) { failed.push(check.check); detail = { failingCase: selected.services }; runnerExit = null; break; }
+        if ('services' in selected) { checkResults[check.check] = 'fail'; failed.push(check.check); detail = { failingCase: selected.services }; runnerExit = null; break; }
         passed += selected.tests.passed; files += selected.tests.files;
         failed.push(...selected.tests.failed); groups.push(...(selected.groups ?? []));
         runnerExit = selected.runnerExit ?? null;
         if (selected.slowest && selected.slowest.durationMs > (slowest?.durationMs ?? -1)) slowest = selected.slowest;
-        if (failed.length) return withSlowest(await finishTests('pass', { passed, failed, files }, runnerExit, groups, selected.logTail));
+        checkResults[check.check] = failed.length ? 'fail' : 'pass';
+        if (failed.length) return withMeta(await finishTests('pass', { passed, failed, files }, runnerExit, groups, selected.logTail));
         continue;
       }
       files++;
       enterStep(`tests: ${check.check}`);
       const ran = (check.services?.length ? await onHost(check) : null) ?? await withServices(check, () => onThisMachine(() => child('tests', check.argv[0]!, check.argv.slice(1))));
-      if ('services' in ran) { failed.push(check.check); detail = { failingCase: ran.services }; runnerExit = null; break; }
+      if ('services' in ran) { checkResults[check.check] = 'fail'; failed.push(check.check); detail = { failingCase: ran.services }; runnerExit = null; break; }
       if (hostEnded(ran)) throw runnerFailure('tests', ran);
       if (!ran.ok) {
+        checkResults[check.check] = 'fail';
         // GY-2960: name the failing test files and first case from the check's output, not only the check.
         const parsed = repositoryCheckFailure(ran.out);
         failed.push(...(parsed.files.length ? parsed.files : [check.check]));
@@ -1663,10 +1675,11 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         runnerExit = exitCode({ status: ran.status, signal: ran.signal, cause: ran.cause });
         break;
       }
+      checkResults[check.check] = 'pass';
       passed++;
     }
     const logTail = failingOutput && log.join('\n').length > tailLength ? failureTail([failingOutput]) : tail();
-    return withSlowest(await finishTests('pass', { passed, failed, files }, runnerExit, groups.length ? groups : undefined, logTail, detail));
+    return withMeta(await finishTests('pass', { passed, failed, files }, runnerExit, groups.length ? groups : undefined, logTail, detail));
   };
   const runSelected = async (check: RepositoryTrialCheck): Promise<Pick<TrialRun, 'tests' | 'runnerExit' | 'groups' | 'logTail' | 'slowest'>> => {
     const result = (tests: TrialRun['tests'], runnerExit: number | null = null, groups?: TrialGroup[], logTail = tail()) => ({ tests, runnerExit, groups, logTail });

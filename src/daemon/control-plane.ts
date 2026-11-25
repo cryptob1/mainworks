@@ -33,11 +33,11 @@ const defaultPinText = 'The fault is fixed at its cause, not skipped or weakened
 /** GY-3821: flaky-check items tell their Builder how to pin a race deterministically through a test seam. */
 const flakyPinText = 'The fault is fixed at its cause, not skipped or weakened; a new test pins it and reproduces the race by injecting the one condition the test waits on through a test seam, never by loading the host or lengthening a wait, timeout or poll bound, and fails on the base tip on every run';
 
-const faultItem = (input: { faultKey: string; title: string; description: string; proof: string; reason: string; ac1Text?: string; plannedFiles?: string[]; repaired?: { text: string; proof: string }; e2e?: { proof: string; clause: string } }) => {
+const faultItem = (input: { faultKey: string; title: string; description: string; proof: string; reason: string; type?: 'bug' | 'chore'; ac1Text?: string; plannedFiles?: string[]; repaired?: { text: string; proof: string }; e2e?: { proof: string; clause: string } }) => {
   const e2e = input.e2e ?? { proof: 'e2e:create-work-item', clause: 'creating a work item still works' };
   return {
   faultKey: input.faultKey,
-  title: input.title.slice(0, 200), type: 'bug' as const, priority: 1, description: input.description, dependencies: [],
+  title: input.title.slice(0, 200), type: input.type ?? ('bug' as const), priority: 1, description: input.description, dependencies: [],
   ...(input.plannedFiles?.length ? { plannedFiles: input.plannedFiles } : {}),
   why: 'A fault in Mainworks slows or stops delivery for everyone using this install until it is fixed.',
   simplest: 'Fix the one cause the description names and pin it with a test; nothing else changes.',
@@ -247,27 +247,165 @@ export const pinningProof = (key: string) =>
 /** The proof a gate filing owes once the batch gate passes again; the loop records it itself (GY-3443). */
 export const repairedProof = 'manual:batch-gate-repaired';
 
+/** GY-3837: what proofs a managed repository can actually execute in its merge trial. */
+export interface ProjectProofCapabilities {
+  /** True when the repository declares a runner that produces `unit:` / `integration:` proof counts (Node test runner, vitest or pytest). */
+  unitRunner: boolean;
+  /** Declared `delivery.mergeGate.preMerge` check names from `graphyard.json`. */
+  preMergeChecks?: readonly string[];
+  /** An existing core E2E case id declared in `graphyard.json` (`gate.core` or `featureMap`). */
+  coreCase?: string;
+}
+
+const unitRunnerCommand = /\b(?:node\b.*--test|npm\s+(?:run\s+)?test\b|pnpm\s+(?:run\s+)?test\b|vitest\b|pytest\b)/;
+
+/** GY-3837: derive a repository's executable proof capabilities from its `graphyard.json`, `package.json` and pytest presence. */
+export function projectProofCapabilities(input: {
+  projectConfigJson?: string | null;
+  packageJson?: string | null;
+  hasPytest?: boolean;
+}): ProjectProofCapabilities {
+  let preMerge: { check?: unknown; command?: unknown; selection?: unknown }[] = [];
+  let coreCase: string | undefined;
+  if (input.projectConfigJson) {
+    try {
+      const parsed = JSON.parse(input.projectConfigJson) as {
+        delivery?: { mergeGate?: { preMerge?: unknown } };
+        gate?: { core?: unknown };
+        featureMap?: unknown;
+      };
+      if (Array.isArray(parsed.delivery?.mergeGate?.preMerge)) {
+        preMerge = parsed.delivery.mergeGate.preMerge as { check?: unknown; command?: unknown; selection?: unknown }[];
+      }
+      if (Array.isArray(parsed.gate?.core)) {
+        const first = parsed.gate.core.find((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+        if (first) coreCase = first;
+      }
+      if (!coreCase && Array.isArray(parsed.featureMap) && parsed.featureMap.length > 0) {
+        coreCase = 'graphyard-feature-map';
+      }
+    } catch { /* ignore malformed config */ }
+  }
+  const preMergeChecks = preMerge
+    .map(entry => (typeof entry.check === 'string' ? entry.check.trim() : ''))
+    .filter(Boolean);
+  let hasPackageTest = false;
+  let hasVitest = false;
+  if (input.packageJson) {
+    try {
+      const pkg = JSON.parse(input.packageJson) as { scripts?: Record<string, unknown>; devDependencies?: Record<string, unknown>; dependencies?: Record<string, unknown> };
+      hasPackageTest = typeof pkg.scripts?.test === 'string' && pkg.scripts.test.trim().length > 0;
+      hasVitest = Boolean(pkg.devDependencies?.vitest || pkg.dependencies?.vitest);
+    } catch { /* ignore malformed package.json */ }
+  }
+  const preMergeRunsUnit = preMerge.some(entry =>
+    Boolean(entry.selection) || (typeof entry.command === 'string' && unitRunnerCommand.test(entry.command)));
+  // Matches trial.ts `repositoryTrialChecks` + proof-runner.ts `countByRunner`:
+  // when preMerge is declared, package.json scripts.test is not used as a fallback; only vitest/pytest or a Node/vitest/pytest preMerge check runs unit proofs.
+  const unitRunner = Boolean(input.hasPytest || hasVitest || (preMerge.length > 0 ? preMergeRunsUnit : hasPackageTest));
+  return { unitRunner, ...(preMergeChecks.length ? { preMergeChecks } : {}), ...(coreCase ? { coreCase } : {}) };
+}
+
+/** GY-3837: read a repository's executable proof capabilities from a git ref (falling back to HEAD). */
+export async function readProjectCapabilities(git: (args: string[]) => Promise<string>, ref: string): Promise<ProjectProofCapabilities> {
+  const resolved = (await git(['rev-parse', '--verify', ref]).catch(() => git(['rev-parse', '--verify', 'HEAD']).catch(() => ''))).trim();
+  const target = resolved || ref;
+  const [projectConfigJson, packageJson, pytestOut] = await Promise.all([
+    git(['show', `${target}:graphyard.json`]).catch(() => null),
+    git(['show', `${target}:package.json`]).catch(() => null),
+    git(['grep', '-l', '-F', '-e', 'def test_', target, '--', '*.py']).catch(() => ''),
+  ]);
+  return projectProofCapabilities({ projectConfigJson, packageJson, hasPytest: Boolean(pytestOut.trim()) });
+}
+
+const sanitizeCheckProof = (name: string) => `check:${name.replace(/[^a-zA-Z0-9._/-]+/g, '-').replace(/^-+|-+$/g, '') || 'premerge'}`;
+
 /**
- * The E2E proof a gate filing binds (GY-3568): Mainworks's own filings keep create-work-item, the
+ * The E2E proof a gate filing binds (GY-3568, GY-3837): Mainworks's own filings keep create-work-item, the
  * case its install has always run; every other repository binds its own — the failing case itself
- * when the check is one, else a new case named like the pinning proof, which the fix adds to that
- * repository's catalog.
+ * when the check is one, else its declared core case when known, else a new case named like the pinning proof.
  */
-const gateFiledE2e = (key: string, repository: string): { proof: string; clause: string } => {
+const gateFiledE2e = (key: string, repository: string, capabilities?: ProjectProofCapabilities): { proof: string; clause: string } => {
   if (repository.toLowerCase() === mainworksRepository) return { proof: 'e2e:create-work-item', clause: 'creating a work item still works' };
   const check = key.slice(key.indexOf(':') + 1);
-  return check.startsWith('e2e:')
-    ? { proof: check, clause: `the E2E case ${check.slice(4)} passes again` }
-    : { proof: `e2e:${pinningProof(key).slice('unit:'.length)}`, clause: `a new E2E case ${pinningProof(key).slice('unit:'.length)} passes` };
+  if (check.startsWith('e2e:')) return { proof: check, clause: `the E2E case ${check.slice(4)} passes again` };
+  if (capabilities?.coreCase) return { proof: `e2e:${capabilities.coreCase}`, clause: `the E2E case ${capabilities.coreCase} passes` };
+  return { proof: `e2e:${pinningProof(key).slice('unit:'.length)}`, clause: `a new E2E case ${pinningProof(key).slice('unit:'.length)} passes` };
 };
 
-/** A batch gate filing's item: its pinning test and its E2E case are named from its check and the gated repository. */
-export const gateFiledItem = (input: { title: string; description: string; key: string }, baseBranch: string, repository: string) => {
-  const plannedFile = /^(?:flake|known-red):test:(.+)$/.exec(input.key)?.[1];
-  return faultItem({ faultKey: input.key, title: input.title, description: input.description, proof: pinningProof(input.key), ...(input.key.startsWith('flake:') ? { ac1Text: flakyPinText } : {}), repaired: { text: 'The batch gate passes again', proof: repairedProof }, e2e: gateFiledE2e(input.key, repository), reason: `Filed by the batch gate on ${baseBranch}`, ...(plannedFile ? { plannedFiles: [plannedFile] } : {}) });
+/**
+ * A batch gate filing's item (GY-3160, GY-3568, GY-3837): binds a proof the repository can actually execute.
+ * - E2E check in a project without a unit runner: binds `e2e:NAME` directly (never `unit:`).
+ * - Declared `preMerge` check: binds `check:NAME` directly (never `unit:`).
+ * - Test file in a project with a unit runner (or legacy callers omitting capabilities): keeps `unit:...` pinning proof.
+ * - Any other check in a project without a unit runner: binds the repository's E2E proof (never `unit:`).
+ */
+export const gateFiledItem = (
+  input: { title: string; description: string; key: string },
+  baseBranch: string,
+  repository: string,
+  capabilities?: ProjectProofCapabilities,
+) => {
+  const check = input.key.slice(input.key.indexOf(':') + 1);
+  const isFlake = input.key.startsWith('flake:');
+  const hasUnitRunner = capabilities ? capabilities.unitRunner : true;
+  const preMergeName = capabilities?.preMergeChecks?.find(name => check === name || check === `test:${name}`) ?? null;
+  const plannedFile = !preMergeName ? /^(?:flake|known-red):test:(.+)$/.exec(input.key)?.[1] : undefined;
+  const e2e = gateFiledE2e(input.key, repository, capabilities);
+
+  let proof: string;
+  let ac1Text: string | undefined;
+  let type: 'bug' | 'chore' = 'bug';
+
+  if (preMergeName) {
+    proof = sanitizeCheckProof(preMergeName);
+    ac1Text = isFlake
+      ? `The declared check ${preMergeName} is fixed at its cause, not skipped or weakened, and passes deterministically`
+      : `The declared check ${preMergeName} is fixed at its cause, not skipped or weakened, and passes in the merge trial`;
+    if (isFlake && !hasUnitRunner) type = 'chore';
+  } else if (check.startsWith('e2e:') && !hasUnitRunner) {
+    proof = check;
+    ac1Text = isFlake
+      ? `The E2E case ${check.slice(4)} is fixed at its cause, not skipped or weakened, and passes deterministically`
+      : `The E2E case ${check.slice(4)} is fixed at its cause, not skipped or weakened, and passes in the merge trial`;
+    if (isFlake) type = 'chore';
+  } else if (hasUnitRunner) {
+    proof = pinningProof(input.key);
+    ac1Text = isFlake ? flakyPinText : undefined;
+  } else {
+    proof = e2e.proof;
+    ac1Text = isFlake
+      ? `The check ${check} is fixed at its cause, not skipped or weakened, and passes deterministically`
+      : `The check ${check} is fixed at its cause, not skipped or weakened, and passes in the merge trial`;
+    if (isFlake) type = 'chore';
+  }
+
+  return faultItem({
+    faultKey: input.key,
+    title: input.title,
+    description: input.description,
+    proof,
+    type,
+    ...(ac1Text ? { ac1Text } : {}),
+    repaired: { text: 'The batch gate passes again', proof: repairedProof },
+    e2e,
+    reason: `Filed by the batch gate on ${baseBranch}`,
+    ...(plannedFile ? { plannedFiles: [plannedFile] } : {}),
+  });
 };
 
 /** GY-3735: a merge trial's flake files the batch gate's own "Flaky check on main: CHECK" item, or notes the one its fault key has. */
-export const fileFlakyCheck = (reads: { createWork?: Parameters<typeof fileLoopFault>[0]['createWork']; note?: Parameters<typeof fileLoopFault>[0]['note']; baseBranch: string; now(): number }, repository: string, work: readonly Work[], check: string, text: string) =>
-  fileLoopFault({ work, now: reads.now(), createWork: reads.createWork, note: reads.note },
-    gateFiledItem({ key: `flake:${check}`, title: `Flaky check on main: ${check}`, description: text }, reads.baseBranch, repository), text);
+export const fileFlakyCheck = async (
+  reads: { createWork?: Parameters<typeof fileLoopFault>[0]['createWork']; note?: Parameters<typeof fileLoopFault>[0]['note']; git?: (args: string[]) => Promise<string>; baseBranch: string; now(): number },
+  repository: string,
+  work: readonly Work[],
+  check: string,
+  text: string,
+) => {
+  const capabilities = reads.git ? await readProjectCapabilities(reads.git, `refs/remotes/origin/${reads.baseBranch}`).catch(() => undefined) : undefined;
+  return fileLoopFault(
+    { work, now: reads.now(), createWork: reads.createWork, note: reads.note },
+    gateFiledItem({ key: `flake:${check}`, title: `Flaky check on main: ${check}`, description: text }, reads.baseBranch, repository, capabilities),
+    text,
+  );
+};

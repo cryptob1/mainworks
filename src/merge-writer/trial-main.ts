@@ -24,7 +24,7 @@ process.once('SIGTERM', () => stop.abort(new TrialCancelledError('the trial run 
 try {
   const run = await runMergeTrial({
     root: spec.root, base: spec.base, mergeSha: spec.mergeSha, changedFiles: spec.changedFiles,
-    proofs: spec.proofs, e2eProofs: spec.e2eProofs, proofFiles: [],
+    proofs: spec.proofs, e2eProofs: spec.e2eProofs, ...(spec.checkProofs?.length ? { checkProofs: spec.checkProofs } : {}), proofFiles: [],
     discoverProofFiles: options => proofTestFiles(defaultChildRun, spec.root, spec.mergeSha, spec.proofs, options),
     timeoutMs: spec.timeoutMs, key: spec.key, ...(spec.reproduce ? { reproduce: true } : {}), hidden: spec.hidden,
     ...(spec.baseTip ? { baseTip: spec.baseTip } : {}), ...(spec.cores ? { cores: spec.cores } : {}), ...(spec.selectorApproved ? { selectorApproved: true } : {}),

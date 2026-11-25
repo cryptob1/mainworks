@@ -241,7 +241,7 @@ export function trialFailureReason(trial: { conflict?: readonly string[]; run?: 
 /** The declared executable proofs must satisfy the acceptance rule before main can change. */
 export function requiredProofFailure(work: Pick<Work, 'criteria'>, run: Pick<MergeTrialRun, 'proofs'>): string | null {
   for (const criterion of work.criteria.filter(entry => !entry.bootstrap)) for (const proof of criterion.proofs) {
-    if (!/^(unit|integration|e2e):/.test(proof)) continue;
+    if (!/^(unit|integration|e2e|check):/.test(proof)) continue;
     const counts = run.proofs[proof];
     if (counts && counts.executed > 0 && counts.failed === 0) continue;
     const seen = counts ? `the trial ran ${counts.executed} and ${counts.failed} failed${counts.reason ? `: ${counts.reason}` : ''}` : 'the trial counted none of its cases';
@@ -479,6 +479,8 @@ export { firstParentHolds } from './trial.js';
 export const criterionProofs = (work: Pick<Work, 'criteria'>) => [...new Set(work.criteria.flatMap(criterion => criterion.proofs.filter(proof => /^(unit|integration):/.test(proof))))];
 /** The e2e: proofs the item's criteria name (GY-2965): each binds e2e/cases/NAME.json, which the trial runs against the served head. */
 export const e2eProofsOf = (work: Pick<Work, 'criteria'>) => [...new Set(work.criteria.flatMap(criterion => criterion.proofs.filter(proof => /^e2e:/.test(proof))))];
+/** GY-3837: the check: proofs the item's criteria name: each binds a declared preMerge check that the trial runs. */
+export const checkProofsOf = (work: Pick<Work, 'criteria'>) => [...new Set(work.criteria.flatMap(criterion => criterion.proofs.filter(proof => /^check:/.test(proof))))];
 /** GY-3168: every feature grows the catalog — its head adds or changes a case its criteria name. Bugs, chores and legacy features naming no e2e proof pass. */
 export function featureCaseFailure(work: Pick<Work, 'type' | 'criteria'>, addedOrModified: readonly string[]): string | null {
   const proofs = e2eProofsOf(work);
@@ -508,6 +510,8 @@ export interface MergeTrialInput extends RunTrialInput {
   proofs: readonly string[];
   /** GY-2965: the item's `e2e:` proofs, each bound to e2e/cases/NAME.json on the head, which the trial serves and runs. */
   e2eProofs?: readonly string[];
+  /** GY-3837: the item's `check:` proofs, each naming a declared preMerge check that the trial runs. */
+  checkProofs?: readonly string[];
   /** The test files those proofs' cases live in (`proofTestFiles`), run beside the affected selection. */
   proofFiles: readonly string[];
   /** GY-1834: false skips the rerun of failing files and their run on the base tip; on by default. */
@@ -584,9 +588,14 @@ export async function runMergeTrial(input: MergeTrialInput): Promise<MergeTrialR
   }
   // The bound E2E cases' counts ride the same proofs map the acceptance gate reads (GY-2965).
   const e2eCounts = Object.fromEntries((verdict.e2e ?? []).map(entry => [entry.proof, { executed: entry.executed, failed: entry.failed }]));
+  // GY-3837: declared preMerge check proofs ride the same proofs map.
+  const checkCounts = Object.fromEntries((input.checkProofs ?? []).map(proof => {
+    const name = proof.slice('check:'.length), status = verdict.checks?.[name];
+    return [proof, status === 'pass' ? { executed: 1, failed: 0 } : status === 'fail' ? { executed: 1, failed: 1 } : { executed: 0, failed: 0, reason: `the trial did not run preMerge check ${name}` }];
+  }));
   // GY-3267: the candidate run's kept screenshots are the after side; the base run adds the before.
   const shots = mergeTrialShots([], verdict.e2e ?? [], 'after');
-  const first: MergeTrialRun = { ...verdict, files, proofs: { ...counted(), ...e2eCounts }, ...(leftover ? { leftover } : {}), ...(shots.length ? { screenshots: shots } : {}) };
+  const first: MergeTrialRun = { ...verdict, files, proofs: { ...counted(), ...e2eCounts, ...checkCounts }, ...(leftover ? { leftover } : {}), ...(shots.length ? { screenshots: shots } : {}) };
   // A rerun's attempts start their TAP afresh like the trial's, so each run reads only its own answering attempt.
   const rerunAttempt = () => { epoch++; tap = ''; byRunner = {}; };
   // A rerun of failing test files (or a run on the base tip) re-runs no E2E case: the head's bound cases were judged by the first attempt, whose counts stand.
@@ -599,7 +608,7 @@ export async function runMergeTrial(input: MergeTrialInput): Promise<MergeTrialR
   const ownProofFiles = discovered ?? input.proofFiles;
   // The proof files the selection discovered are held like those the input named.
   const attributed = input.attribute === false ? first : await attributeFailures(first, tap, { ...rerunInput, selectFiles, proofFiles: ownProofFiles }, inner, retest);
-  if (!input.reproduce || !(input.proofs.length || input.e2eProofs?.length) || attributed.build !== 'pass' || attributed.tests.failed.length || trialFailureReason({ run: attributed })) return attributed;
+  if (!input.reproduce || !(input.proofs.length || input.e2eProofs?.length || input.checkProofs?.length) || attributed.build !== 'pass' || attributed.tests.failed.length || trialFailureReason({ run: attributed })) return attributed;
   // GY-3423: the refusal names the proof's files; a repository check selects no files, so they are discovered here.
   const named = ownProofFiles.length ? ownProofFiles : await proofFiles(undefined).catch(() => ownProofFiles);
   return reproduceOnBase(attributed, input, ownProofFiles, named, inner, retest);
@@ -625,10 +634,13 @@ async function reproduceOnBase(run: MergeTrialRun, input: MergeTrialInput, proof
   const onBase = await retest(tip, files, e2eProofs, 'count', input.mergeSha).catch(() => null);
   if (!onBase || onBase.run.build !== 'pass') return run;
   const passes = ({ executed, failed }: { executed: number; failed: number }) => executed > 0 && failed === 0;
-  const proofs = [...input.proofs, ...e2eProofs];
+  const checkProofs = input.checkProofs ?? [];
+  const proofs = [...input.proofs, ...e2eProofs, ...checkProofs];
   const passingOnBase = proofs.filter(proof => proof.startsWith('e2e:')
     ? (() => { const ran = onBase.run.e2e?.find(entry => entry.proof === proof); return baseCases.includes(`e2e/cases/${proof.slice(4)}.json`) && !!ran && passes(ran); })()
-    : passes(onBase.proofs[proof]!));
+    : proof.startsWith('check:')
+      ? onBase.run.checks?.[proof.slice('check:'.length)] === 'pass'
+      : passes(onBase.proofs[proof]!));
   const passing = passingOnBase.length === proofs.length;
   // GY-3267: the base run's kept screenshots are the before side of whatever the trial already kept.
   const shots = mergeTrialShots(run.screenshots ?? [], onBase.run.e2e ?? [], 'before');
@@ -1064,12 +1076,12 @@ async function trialBatch(ports: MergePorts, items: readonly Work[], onStep?: (i
   const step = onStep ? (name: string, report?: TrialStepReport) => items.forEach((_, index) => onStep(index, name, report)) : undefined;
   const run = await ports.trial(tip, files, together, baseTip, step, undefined, items.map((item, index) => ({ key: item.key, head: merges[index]!.head })));
   // A feature or bug head whose every proof already passes on the base proves nothing: the batch splits, so its own trial refuses it.
-  const notReproduced = items.some(item => { const own = [...criterionProofs(item), ...e2eProofsOf(item)]; return item.type !== 'chore' && own.length && own.every(proof => run.passingOnBase?.includes(proof)); });
+  const notReproduced = items.some(item => { const own = [...criterionProofs(item), ...e2eProofsOf(item), ...checkProofsOf(item)]; return item.type !== 'chore' && own.length && own.every(proof => run.passingOnBase?.includes(proof)); });
   if (notReproduced || trialFailureReason({ run }) || requiredProofFailure(together, run) || items.some((item, index) => featureCaseFailure(item, merges[index]!.addedOrModified))) return null;
   await fileFlakes(ports, run, keys.join(', '), tip, merges.flatMap(merge => merge.added));
   const results: HeadResult[] = [];
   for (const [index, item] of items.entries()) {
-    const { head, baseTip: base, mergeSha } = merges[index]!, own = new Set([...criterionProofs(item), ...e2eProofsOf(item)]);
+    const { head, baseTip: base, mergeSha } = merges[index]!, own = new Set([...criterionProofs(item), ...e2eProofsOf(item), ...checkProofsOf(item)]);
     try {
       await ports.record(item, { kind: 'intent', head, baseTip: base, mergeSha, risk: riskOf(item).risk, at: at() });
       await ports.record(item, { kind: 'trial', head, baseTip: base, mergeSha, outcome: 'verdict', batch: keys, build: run.build, tests: recordedTests(run.tests), files: run.files,
