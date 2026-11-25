@@ -2,11 +2,11 @@ import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { chmodSync, existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
-import { cp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { databaseUrl } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
@@ -54,9 +54,8 @@ async function imageRegistry() {
   return { host, tags, pulls };
 }
 
-/** docker, gh, npm, ssh, herdr and systemctl as a trial can have them: docker talks to the image registry and keeps its images in a file; `npm ci` links this checkout's installed dependencies. */
+/** docker, gh, npm, ssh, herdr, systemctl and tailscale as a trial can have them: docker talks to the image registry and keeps its images in a file; `npm ci` links this checkout's installed dependencies. */
 async function standIns(directory: string, origin: string, tree: string, database: string) {
-  const loader = pathToFileURL(createRequire(join(source, 'package.json')).resolve('tsx')).href;
   const modules = dirname(dirname(createRequire(join(source, 'package.json')).resolve('tsx/package.json')));
   const tools = dirname(process.execPath);
   await writeFile(join(directory, 'docker'), `#!${process.execPath}
@@ -99,10 +98,13 @@ else if (args[0] === 'compose') {
     if (!images[image]) fail('pull access denied for ' + image);
     const env = Object.fromEntries(readFileSync(join(project, 'server.env'), 'utf8').split('\\n').filter(Boolean).map(line => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]));
     const log = openSync(join(project, 'server.log'), 'a');
-    const server = spawn(process.execPath, ['--import', ${JSON.stringify(loader)}, 'src/server.ts'], { cwd: ${JSON.stringify(tree)}, detached: true, stdio: ['ignore', log, log],
+    const server = spawn(process.execPath, ['dist/server.mjs'], { cwd: ${JSON.stringify(tree)}, detached: true, stdio: ['ignore', log, log],
       env: { PATH: process.env.PATH, ...env, HOST: '127.0.0.1', PORT: /127\\.0\\.0\\.1:(\\d+):4310/.exec(bundle)[1], DATABASE_URL: ${JSON.stringify(database)}, GRAPHYARD_REPOSITORY_ROOT: /"([^"]+):\\/repo"/.exec(bundle)[1], GRAPHYARD_BUILD_SHA: images[image] } });
     writeFileSync(pid, String(server.pid));
     server.unref();
+    // Ready on return where it can be within one of setup's own 3 s health polls, which setup then need not sit out.
+    const health = 'http://127.0.0.1:' + /127\\.0\\.0\\.1:(\\d+):4310/.exec(bundle)[1] + '/healthz';
+    for (const until = Date.now() + 3000; Date.now() < until && running() && !(await fetch(health, { signal: AbortSignal.timeout(1000) }).catch(() => null))?.ok;) await new Promise(accept => setTimeout(accept, 50));
   }
 }
 `);
@@ -133,7 +135,9 @@ if (args[0] === 'ci') {
   // A trial has no systemd user manager, so Herdr's server cannot be kept running: setup leaves Herdr out and says so.
   await writeFile(join(directory, 'herdr'), '#!/bin/sh\n[ "$1" = --version ] && echo herdr 0.0.0 && exit 0\necho "no Herdr server on this host" >&2; exit 1\n');
   await writeFile(join(directory, 'systemctl'), '#!/bin/sh\necho "no systemd user manager on this host" >&2; exit 1\n');
-  for (const name of ['docker', 'gh', 'npm', 'ssh', 'herdr', 'systemctl']) chmodSync(join(directory, name), 0o755);
+  // The host's own tailscale takes 2 s to say its daemon is unreachable from a trial.
+  await writeFile(join(directory, 'tailscale'), '#!/bin/sh\necho "no tailscaled on this host" >&2; exit 1\n');
+  for (const name of ['docker', 'gh', 'npm', 'ssh', 'herdr', 'systemctl', 'tailscale']) chmodSync(join(directory, name), 0o755);
   return { path: `${directory}:${tools}:/usr/bin:/bin`, log: (name: string) => existsSync(join(directory, `${name}.log`)) ? readFileSync(join(directory, `${name}.log`), 'utf8').split('\n').filter(Boolean) : [],
     images: () => JSON.parse(readFileSync(join(directory, 'docker-images.json'), 'utf8')) as Record<string, string> };
 }
@@ -158,20 +162,23 @@ test('e2e:clean-host-npx-up — a fresh account runs npx @cryptob1/graphyard up 
   for (const directory of [upstream, home, stubs, repository]) await mkdir(directory);
 
   // Mainworks's upstream: this checkout's tracked files as one commit, which is the commit the gate verified.
-  for (const file of execFileSync('git', ['-C', source, 'ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).split('\0').filter(Boolean)) {
-    if (existsSync(join(source, file))) await cp(join(source, file), join(upstream, file), { recursive: true, verbatimSymlinks: true });
-  }
+  const files = execFileSync('git', ['-C', source, 'ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).split('\0').filter(file => file && existsSync(join(source, file)));
+  execFileSync('cp', ['-P', '--parents', '--', ...files, upstream], { cwd: source });
   git(upstream, 'init', '-q', '-b', 'main'); git(upstream, 'add', '-A'); git(upstream, 'commit', '-q', '-m', 'verified');
   const commit = git(upstream, 'rev-parse', 'HEAD');
-  // What the image build adds to that tree: the built dashboard (ignored by Git, so the tree stays the commit's).
-  execFileSync(process.execPath, [join(dirname(createRequire(join(source, 'package.json')).resolve('vite/package.json')), 'bin', 'vite.js'), 'build', '--configLoader', 'runner'], { cwd: upstream, stdio: 'ignore' });
+  // What the image build adds to that tree: the built dashboard and server (ignored by Git, so the tree stays the commit's).
+  const vite = join(dirname(createRequire(join(source, 'package.json')).resolve('vite/package.json')), 'bin', 'vite.js');
+  const built = (async () => {
+    for (const words of [[vite, 'build', '--configLoader', 'runner'], ['bin/built-entry.mjs']]) assert.equal((await run(process.execPath, words, { cwd: upstream, env: process.env })).code, 0, words[0]);
+  })();
 
   // Actions and this offline proof build and invoke the exact same publisher entry point.
   const npm = await npmRegistry(), images = await imageRegistry(), tools = await standIns(stubs, origin, upstream, await databaseUrl('npx_up'));
   const published = { npm_config_registry: npm.url, GRAPHYARD_IMAGE_REGISTRY: `${images.host}/cryptob1` };
   execFileSync(process.execPath, ['scripts/build-publisher.mjs'], { cwd: source });
-  const publication = await run(process.execPath, [join(source, 'scripts/publish-verified.mjs')], { cwd: upstream,
+  const publishing = run(process.execPath, [join(source, 'scripts/publish-verified.mjs')], { cwd: upstream,
     env: { ...process.env, ...published, GRAPHYARD_PUBLISH_COMMIT: commit, NPM_TOKEN: 'stand-in', GITHUB_TOKEN: 'stand-in', PATH: tools.path } });
+  const [publication] = await Promise.all([publishing, built]);
   assert.equal(publication.code, 0, publication.stderr);
   const outcome = JSON.parse(publication.stdout.trim());
   assert.deepEqual([...images.tags.keys()].sort(), [`cryptob1/graphyard-trial:${commit}`, 'cryptob1/graphyard-trial:verified', `cryptob1/graphyard:${commit}`, 'cryptob1/graphyard:verified']);
@@ -183,7 +190,19 @@ test('e2e:clean-host-npx-up — a fresh account runs npx @cryptob1/graphyard up 
   git(repository, 'init', '-q', '-b', 'main');
   await writeFile(join(repository, 'package.json'), JSON.stringify({ name: 'scratch', scripts: { test: 'node --eval 0' } }));
   git(repository, 'add', '.'); git(repository, 'commit', '-q', '-m', 'first'); git(repository, 'push', '-q', origin, 'main'); git(repository, 'remote', 'add', 'origin', 'git@github.com:owner/scratch.git');
-  const env = { HOME: home, PATH: tools.path, LANG: 'C.UTF-8', TMPDIR: process.env.TMPDIR ?? '/tmp', ...published };
+  // GY-3857: nobody signs in here, so `up` need not sit out its minute. In its process alone a poll sleep is
+  // short, and once it has asked for the sign-in its clock reads past the wait it was given.
+  const clock = join(base, 'up-clock.cjs');
+  await writeFile(clock, `if (process.argv[2] === 'up') {
+  const timer = setTimeout, now = Date.now, error = console.error;
+  const resolver = String(Promise.withResolvers().resolve);
+  let ahead = 0;
+  globalThis.setTimeout = (callback, ms, ...rest) => timer(callback, ms === 5000 && String(callback) === resolver ? 200 : ms, ...rest);
+  Date.now = () => now() + ahead;
+  console.error = (...words) => { if (String(words[0]).includes('"kind":"handoff","step":"accounts"')) ahead = 60_000; error(...words); };
+}
+`);
+  const env = { HOME: home, PATH: tools.path, LANG: 'C.UTF-8', TMPDIR: process.env.TMPDIR ?? '/tmp', NODE_OPTIONS: `--require=${JSON.stringify(clock)}`, ...published };
 
   const mainworks = (...args: string[]) => run('npx', ['--yes', '@cryptob1/graphyard', ...args], { cwd: repository, env });
   after(() => { for (const pid of [join(home, '.config', 'mainworks', 'owner-scratch', 'compose', 'server.pid')]) { try { process.kill(Number(readFileSync(pid, 'utf8'))); } catch { /* never started */ } } });
@@ -224,15 +243,13 @@ test('e2e:clean-host-npx-up — a fresh account runs npx @cryptob1/graphyard up 
   // Setup filed the onboarding change as the install's first work item, and a later `npx @cryptob1/graphyard` runs the installed release.
   const onboarding = events.find(event => event.step === 'onboarding' && event.state === 'done');
   assert.match(onboarding.detail, /filed as GY-1 for the loop to review and merge/);
-  const status = await mainworks('status', 'GY-1');
+  // The README's next commands work the same way, and upgrading stays a Git move of that tree. None writes, so they run together.
+  const [status, master, plan] = await Promise.all([mainworks('status', 'GY-1'), mainworks('master', 'status'), mainworks('upgrade', '--plan')]);
   assert.equal(status.code, 0, status.stderr);
   const item = JSON.parse(status.stdout);
   assert.deepEqual([item.key, item.stage !== 'done', !!item.submission], ['GY-1', true, true], 'the onboarding change is submitted and waits for review');
   assert.ok(!status.stderr.includes('Fetching Mainworks'), 'the release is fetched once');
-  // The README's next commands work the same way, and upgrading stays a Git move of that tree.
-  const master = await mainworks('master', 'status');
   assert.equal(JSON.parse(master.stdout).controlPlane.reachable, true, master.stderr);
-  const plan = await mainworks('upgrade', '--plan');
   assert.equal(plan.code, 0, plan.stderr);
   assert.ok(plan.stdout.includes(`git -C "${release}/" checkout --detach`), plan.stdout);
 });
