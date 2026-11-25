@@ -18,6 +18,6 @@ export default defineConfig({
   // every test; the suite runs with reduced motion, and the specs that prove the motion ask for it.
   use: { baseURL: `http://127.0.0.1:${port}`, headless: true, reducedMotion: 'reduce', screenshot: process.env.E2E_SCREENSHOTS_DIR ? 'on' : 'off' },
   // The server step builds the bundle first; a loaded trial host spent 52 s in that build alone, past
-  // the 60 s default, so the wait allows three minutes.
-  webServer: { command: `${vite('build')} && ${vite(`preview --host 127.0.0.1 --port ${port} --strictPort`)}`, url: `http://127.0.0.1:${port}`, reuseExistingServer: false, timeout: 180000 },
+  // the 60 s default, so the wait allows three minutes. Specs that serve their own dist bundle can opt out.
+  ...(process.env.GRAPHYARD_PLAYWRIGHT_NO_WEBSERVER ? {} : { webServer: { command: `(test -f "${dist}/index.html" || ${vite('build')}) && ${vite(`preview --host 127.0.0.1 --port ${port} --strictPort`)}`, url: `http://127.0.0.1:${port}`, reuseExistingServer: false, timeout: 180000 } }),
 });

@@ -20,7 +20,7 @@ export interface TerminalRequest { control: boolean; pane: string | null; master
 export interface TerminalHandlers { line(line: string): void; exit(reason: string): void }
 export interface TerminalStream { send(command: unknown): void; end(): Promise<void> }
 
-export function terminalStream(request: TerminalRequest, handlers: TerminalHandlers, session?: SessionReader, instance = herdrTarget()): TerminalStream {
+export function terminalStream(request: TerminalRequest, handlers: TerminalHandlers, session?: SessionReader, instance = herdrTarget(), refreshMs = 1_000): TerminalStream {
   let child: import('node:child_process').ChildProcess | undefined;
   const pendingInput: unknown[] = [];
   let stopped = false, previous = '', pane: string | null | undefined;
@@ -91,7 +91,7 @@ export function terminalStream(request: TerminalRequest, handlers: TerminalHandl
         }
       }
     } catch (error) { if (!stopped) handlers.exit(error instanceof ChildProcessError && (error.cause as NodeJS.ErrnoException)?.code === 'ENOENT' ? 'herdr is not installed where the server runs, and no host supervisor is connected to stream it' : error instanceof Error ? error.message : String(error)); }
-    if (!stopped && request.master) timer = setTimeout(refresh, 1_000);
+    if (!stopped && request.master) timer = setTimeout(refresh, refreshMs);
   };
   void refresh();
   return {

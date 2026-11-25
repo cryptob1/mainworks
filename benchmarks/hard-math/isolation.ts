@@ -4,11 +4,16 @@ import { cp, mkdir, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import pg from 'pg';
 import { freePort } from '../../src/cli/test-isolation.js';
 import { trialEnvironment } from '../../src/merge-writer/trial.js';
 import { mergeWriterReads } from '../../src/daemon/cycle-merge-writer.js';
 import { operatorCapabilities } from '../../src/model.js';
 import { shellQuote } from '../../src/install/transport.js';
+import { Store } from '../../src/store.js';
+import { Engine } from '../../src/engine.js';
+import { server as createServer } from '../../src/server/index.js';
+import { gitRunnerFor } from '../../src/merge-writer/local-observation.js';
 import { command } from './process.js';
 export const benchmarkRoot=fileURLToPath(new URL('.',import.meta.url));
 export const codeRoot=resolve(benchmarkRoot,'../..');
@@ -37,6 +42,38 @@ export async function isolatedRepository(directory:string,signal?:AbortSignal) {
   return {root,origin,startingCommit};
 }
 export async function startPlane(directory:string,root:string,credentials:Credential[],graphyardCommit:string,signal?:AbortSignal) {
+  // Under the test runner's shared warm Postgres cluster (GY-3818), create a fresh database on that
+  // cluster and serve the real control plane in-process instead of running initdb + tsx per test.
+  if(process.env.GRAPHYARD_TEST_DATABASE_URL) {
+    const dbUrl=new URL(process.env.GRAPHYARD_TEST_DATABASE_URL);
+    const name=`hard_math_${randomUUID().replaceAll('-','')}`;
+    const admin=new pg.Client({connectionString:dbUrl.href});
+    await admin.connect();
+    try { await admin.query(`CREATE DATABASE "${name}"`); } finally { await admin.end(); }
+    dbUrl.pathname=`/${name}`;
+    const store=new Store(dbUrl.href);
+    await store.init();
+    const engine=new Engine(store,120,'scratch/hard-math');
+    engine.gitRunner=gitRunnerFor(root);
+    const http=createServer(engine,credentials as any,{knownPrincipals:credentials.map(c=>c.id)});
+    await new Promise<void>(accept=>http.listen(0,'127.0.0.1',accept));
+    const port=(http.address() as {port:number}).port,url=`http://127.0.0.1:${port}`;
+    let reconciling=false;
+    const reconcileTimer=setInterval(()=>{if(reconciling)return;reconciling=true;void engine.reconcile().catch(()=>{}).finally(()=>{reconciling=false;});},50);
+    reconcileTimer.unref();
+    const call=async(path:string,token:string,body?:unknown):Promise<any>=>{
+      const response=await fetch(`${url}/api/${path}`,{method:body===undefined?'GET':'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json','Idempotency-Key':randomUUID()},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(30_000)});
+      const result=await response.json() as any;
+      if(!response.ok) throw new Error(`${path} HTTP${response.status}: ${JSON.stringify(result)}`);
+      return result;
+    };
+    const stop=async()=>{
+      clearInterval(reconcileTimer);
+      await new Promise<void>(accept=>{http.close(()=>accept());http.closeAllConnections();});
+      await store.close();
+    };
+    return {url,call,stop};
+  }
   await mkdir(join(directory,'postgres'),{recursive:true,mode:0o700});
   await writeFile(join(directory,'postgres/password'),randomBytes(32).toString('hex'),{mode:0o600});
   await writeFile(join(directory,'postgres/port'),String(await freePort()));

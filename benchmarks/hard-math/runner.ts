@@ -138,11 +138,15 @@ export async function execute(configInput:unknown,fixture?: (context:RunContext)
     await mkdir(oracleDirectory,{recursive:false,mode:0o700});
     await cp(oracleSource,join(oracleDirectory,'verify.py'));await chmod(join(oracleDirectory,'verify.py'),0o400);
     await writeFile(join(oracleDirectory,'freeze.json'),JSON.stringify({oracleDigest:receipt.oracleDigest,python:config.oraclePython,sympy:'1.14.0',mpmath:'1.3.0'}),{mode:0o400});
-    const baseline=await oracle(config.oraclePython,[{request:generate(config.seed)[2],output:{roots:[]}}],join(oracleDirectory,'verify.py'),abort.signal);
+    const [baseline,startedPlane]=await Promise.all([
+      oracle(config.oraclePython,[{request:generate(config.seed)[2],output:{roots:[]}}],join(oracleDirectory,'verify.py'),abort.signal),
+      startPlane(install,repository.root,[admin,coordinator,producer,...workers,...producers],graphyardCommit),
+    ]);
+    plane=startedPlane;
     enforce();
     if(baseline[0]?.pass!==false) throw new Error('Oracle accepted known-bad empty root baseline');
     receipt.failures.push({at:new Date().toISOString(),component:'starter-baseline',head:receipt.startingCommit,reason:baseline[0].reason});
-    enforce();plane=await startPlane(install,repository.root,[admin,coordinator,producer,...workers,...producers],graphyardCommit);
+    enforce();
     const operatorToken=await operator(plane,admin.token);await atomicPrivateText(join(install,'operator.token'),operatorToken);
     const readSnapshot=serialReads(async()=>{
       const items=await trackedDocuments(await plane!.call('work',coordinator.token),receipt.work,path=>plane!.call(path,coordinator.token));
