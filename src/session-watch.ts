@@ -258,19 +258,26 @@ export function restartTolerantApi(api: ControlPlaneApi, until: () => number, op
 export const setupLine = (subject: string, epoch: number) => `mainworks: starting supervision of ${subject} epoch ${epoch}`;
 // The deadline uses elapsed local time and server-reported duration, not synchronized clocks.
 export async function supervise(command: string, args: string[], epoch: number, renew: () => Promise<Renewal>, options: { intervalMs?: number; graceMs?: number; safetyMarginMs?: number; retryMs?: number; retryMaxMs?: number; startupWindowMs?: number; attemptBoundMs?: number; unreachableRetryMs?: number; detached?: boolean; containment?: Containment; platform?: NodeJS.Platform; session?: SupervisedSession;
-  /** GY-3259: the headless run log the agent's output is appended to, one redacted JSON line per output line with its time and stream. */ log?: string } = {}) {
+  /** GY-3259: the headless run log the agent's output is appended to, one redacted JSON line per output line with its time and stream. */ log?: string;
+  /** Optional clock seam for deterministic timing tests. */ clock?: { now: () => number; setTimeout: (fn: () => void, ms?: number) => unknown; clearTimeout: (id: unknown) => void; setInterval: (fn: () => void, ms?: number) => unknown; clearInterval: (id: unknown) => void } } = {}) {
+  const now = options.clock?.now ?? (() => performance.now());
+  const scheduleTimeout = options.clock?.setTimeout ?? ((fn: () => void, ms?: number) => setTimeout(fn, ms));
+  const cancelTimeout = options.clock?.clearTimeout ?? ((id: unknown) => clearTimeout(id as ReturnType<typeof setTimeout>));
+  const scheduleInterval = options.clock?.setInterval ?? ((fn: () => void, ms?: number) => setInterval(fn, ms));
+  const cancelInterval = options.clock?.clearInterval ?? ((id: unknown) => clearInterval(id as ReturnType<typeof setInterval>));
+  const sleep = (ms: number) => options.clock ? new Promise<void>(resolve => { scheduleTimeout(resolve, ms); }) : delay(ms);
   let deadline = 0, granted = 0, attempts = 0, unreachableUntil = 0;
   /** One renewal attempt, sequenced: a beat the supervisor already gave up on never moves the deadline. */
   const heartbeatAttempt = () => {
     const seq = ++attempts;
     return (async () => {
-      const started = performance.now();
+      const started = now();
       const result = await renew();
       if (seq !== attempts) throw Object.assign(new Error('Superseded lease renewal'), { superseded: true });
       const duration = Date.parse(result.lease?.expiresAt ?? '') - Date.parse(result.updatedAt);
       if (result.lease?.epoch !== epoch || !Number.isFinite(duration) || duration <= 0) throw Object.assign(new Error('Invalid lease renewal'), { definite: true });
       deadline = started + duration; granted = duration; unreachableUntil = 0;
-      if (deadline <= performance.now()) throw Object.assign(new Error('Lease expired during renewal'), { definite: true });
+      if (deadline <= now()) throw Object.assign(new Error('Lease expired during renewal'), { definite: true });
     })();
   };
   // The margin never exceeds a quarter of the lease the server granted, so a short lease still
@@ -306,17 +313,17 @@ export async function supervise(command: string, args: string[], epoch: number, 
     for (let attempt = 0; ; attempt++) {
       const retryUntil = Math.max(deadline - margin(), unreachableUntil);
       // Inside the safety margin nothing more is attempted: the lease is left to expire on its own.
-      if (attempt === 0 && retryUntil <= performance.now()) return 'lapsing';
-      const started = performance.now();
+      if (attempt === 0 && retryUntil <= now()) return 'lapsing';
+      const started = now();
       // The attempt waits no longer than its bound, and never past the window; the losing timer is
       // cleared whichever side settles the race, so a renewed lease retains no timer until its expiry.
       // An infinite bound awaits the request however long it hangs (the base's wiring, for its reproduction).
       const attemptBound = options.attemptBoundMs ?? margin();
       const bound = Math.max(1, Math.min(attemptBound, retryUntil - started));
-      let unansweredTimer: ReturnType<typeof setTimeout> | undefined;
+      let unansweredTimer: unknown;
       const beat = heartbeatAttempt(); beat.catch(() => { /* the race below answers this attempt; an abandoned one is superseded */ });
       try {
-        await (Number.isFinite(attemptBound) ? Promise.race([beat, new Promise<never>((_, reject) => { unansweredTimer = setTimeout(() => reject(unanswered()), bound); })]) : beat);
+        await (Number.isFinite(attemptBound) ? Promise.race([beat, new Promise<never>((_, reject) => { unansweredTimer = scheduleTimeout(() => reject(unanswered()), bound); })]) : beat);
         return 'renewed';
       }
       catch (error) {
@@ -338,23 +345,23 @@ export async function supervise(command: string, args: string[], epoch: number, 
           deadline = started + grace; extended();
           console.error(`Mainworks recorded the failed renewal server-side; the lease is kept for ${Math.round(grace / 1000)}s more while renewal is retried.`);
         }
-        const window = Math.max(deadline - margin(), unreachableUntil) - performance.now();
+        const window = Math.max(deadline - margin(), unreachableUntil) - now();
         const wait = Math.min(retryMs * 2 ** attempt, retryMaxMs, window);
         if (wait <= 0) {
           console.error(`Mainworks lease renewal is still failing (${reason}); retries stop and the worker stops if the lease expires.`);
           return 'lapsing';
         }
-        console.error(`Mainworks lease renewal failed transiently (${reason}); retrying in ${Math.round(wait)} ms with ${Math.round((effectiveDeadline() - performance.now()) / 1000)}s left.`);
-        await delay(wait);
+        console.error(`Mainworks lease renewal failed transiently (${reason}); retrying in ${Math.round(wait)} ms with ${Math.round((effectiveDeadline() - now()) / 1000)}s left.`);
+        await sleep(wait);
         if (stopped()) return 'stopped';
         const cause = orphaned();
         if (cause) return { orphaned: cause };
-      } finally { clearTimeout(unansweredTimer); }
+      } finally { cancelTimeout(unansweredTimer); }
     }
   }
   // The first renewal has no lease of its own to measure a retry window by, so it rides out a
   // control-plane restart for the restart window instead (GY-1506); a definite refusal still stops it.
-  await throughRestart(heartbeatAttempt, performance.now() + (options.startupWindowMs ?? controlPlaneRestartWindowMs), { retryMs, retryMaxMs });
+  await throughRestart(heartbeatAttempt, now() + (options.startupWindowMs ?? controlPlaneRestartWindowMs), { retryMs, retryMaxMs });
   const env = { ...process.env };
   for (const key of ['GRAPHYARD_PRINCIPALS', 'MAINWORKS_PRINCIPALS', 'DATABASE_URL', 'GITHUB_PRIVATE_KEY', 'GITHUB_PRIVATE_KEY_FILE', 'GITHUB_WEBHOOK_SECRET']) delete env[key];
   const platform = options.platform ?? process.platform;
@@ -367,8 +374,8 @@ export async function supervise(command: string, args: string[], epoch: number, 
     let stopping = false, pending = false, prelaunchInterrupted = false, finished = false;
     let scopeSeen = false;
     const supervisedPids = new Map<number, string>();
-    let expiry: ReturnType<typeof setTimeout>;
-    let timer: ReturnType<typeof setInterval>;
+    let expiry: unknown;
+    let timer: unknown;
     // The release of an attempt whose agent ended on its own, which the supervisor finishes before it exits.
     let ending: Promise<void> | undefined;
     const finish = (error: unknown, code?: number) => {
@@ -395,20 +402,20 @@ export async function supervise(command: string, args: string[], epoch: number, 
     };
     function stop(code: number) {
       if (stopping) return;
-      stopping = true; clearInterval(timer); clearTimeout(expiry);
+      stopping = true; cancelInterval(timer); cancelTimeout(expiry);
       signalGroup('SIGTERM');
       // A detached agent's process group that has emptied needs no grace (GY-3715): the supervisor
       // finishes at once rather than waiting the full grace after an agent that already exited.
       const groupGone = () => { if (!detached || platform === 'win32' || containment || !child?.pid) return false; try { process.kill(-child.pid, 0); return false; } catch { return true; } };
-      const poll = setInterval(() => { if (groupGone()) { clearInterval(poll); clearTimeout(kill); finish(null, code); } }, 50);
+      const poll = scheduleInterval(() => { if (groupGone()) { cancelInterval(poll); cancelTimeout(kill); finish(null, code); } }, 50);
       // Keep this timer referenced even if the group leader exits first.
-      const kill = setTimeout(async () => {
-        clearInterval(poll);
+      const kill = scheduleTimeout(async () => {
+        cancelInterval(poll);
         signalGroup('SIGKILL');
         finish(null, code);
       }, options.graceMs ?? 5000);
     }
-    const armDeadline = () => { clearTimeout(expiry); expiry = setTimeout(() => stop(1), Math.max(0, effectiveDeadline() - performance.now())); };
+    const armDeadline = () => { cancelTimeout(expiry); expiry = scheduleTimeout(() => stop(1), Math.max(0, effectiveDeadline() - now())); };
     /**
      * Why there is nothing left to supervise, or null while the agent is still there.
      *
@@ -461,11 +468,11 @@ export async function supervise(command: string, args: string[], epoch: number, 
         }
         child.on('error', error => { console.error(error.message); stop(1); });
         child.on('exit', (code, signal) => { endedOnItsOwn(`the agent process exited (${signal ?? `code ${code}`}) while its lease was live`); stop(code ?? 1); });
-        timer = setInterval(async () => {
+        timer = scheduleInterval(async () => {
           if (pending || stopping) return;
           pending = true;
           const surrenderOrphaned = async (cause: string) => {
-            clearInterval(timer);
+            cancelInterval(timer);
             console.error(`Mainworks worker supervision has nothing left to supervise: ${cause}. Releasing the lease and stopping.`);
             await surrenderAssignment(cause);
             stop(1);

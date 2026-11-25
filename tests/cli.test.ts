@@ -117,9 +117,35 @@ test('implementation subprocesses do not inherit Mainworks server credentials', 
 
 
 test('supervisor stops a worker when renewal hangs beyond the granted lease', async () => {
-  let count = 0; const started = performance.now();
-  const code = await supervise(process.execPath, ['-e', "process.on('SIGTERM',()=>{}); setInterval(()=>{},20)"], 1,
-    async () => ++count === 1 ? renewal(200) : new Promise(() => {}), { intervalMs: 25, graceMs: 50 });
+  let current = 0, nextId = 0;
+  const tasks = new Map<number, { at: number; every: number | null; fn: () => void }>();
+  const add = (fn: () => void, ms = 0, every: number | null = null) => {
+    const id = ++nextId; tasks.set(id, { at: current + Math.max(0, ms), every, fn }); return id;
+  };
+  const remove = (id: unknown) => { tasks.delete(id as number); };
+  const clock = {
+    now: () => current,
+    setTimeout: (fn: () => void, ms?: number) => add(fn, ms),
+    clearTimeout: remove,
+    setInterval: (fn: () => void, ms?: number) => add(fn, ms, Math.max(1, ms ?? 0)),
+    clearInterval: remove,
+  };
+  let count = 0, done = false; const started = performance.now();
+  const supervising = supervise(process.execPath, ['-e', "process.on('SIGTERM',()=>{}); setInterval(()=>{},20)"], 1,
+    async () => ++count === 1 ? renewal(200) : new Promise(() => {}), { intervalMs: 25, graceMs: 50, clock });
+  void supervising.finally(() => { done = true; });
+  while (!done) {
+    for (let i = 0; i < 4; i++) await Promise.resolve();
+    if (done) break;
+    let soonest: [number, { at: number; every: number | null; fn: () => void }] | undefined;
+    for (const entry of tasks) if (!soonest || entry[1].at < soonest[1].at) soonest = entry;
+    if (!soonest) { await delay(1); continue; }
+    const [id, task] = soonest;
+    current = task.at;
+    if (task.every !== null) task.at = current + task.every; else tasks.delete(id);
+    task.fn();
+  }
+  const code = await supervising;
   // The hung renewal is given up on at its attempt bound (the 50 ms safety margin of a 200 ms lease)
   // and one fresh request is sent before the lease expires (GY-1791); neither answers, so the deadline
   // never moves and the worker stops at the server's expiry.
@@ -436,7 +462,7 @@ test('sync merges origin/BASE without rebasing and judges only the merge: in-sco
   } finally { await new Promise<void>(r => http.close(() => r())); await rm(cwd, { recursive: true, force: true }); }
 });
 
-test(`unit:cli-pinned — sync runs from a directory inside the registered workspace (a subdirectory of the checkout) and heartbeats that checkout's own epoch, never a sibling attempt sharing the branch (GY-3355)`, async () => {
+test(`unit:cli — sync runs from a directory inside the registered workspace (a subdirectory of the checkout) and heartbeats that checkout's own epoch, never a sibling attempt sharing the branch (GY-3355)`, async () => {
   const cwd = await temporaryDirectory('cli-sync-pin');
   const heartbeats: { url: string; body: any }[] = [];
   // Rework keeps the branch across attempts: epoch 1's stale checkout and epoch 2's live one share it.
