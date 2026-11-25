@@ -1,0 +1,16 @@
+{
+  "id": "flaky-item-plans-its-file",
+  "title": "A filed flaky-check item shows its test file as planned",
+  "description": "Run the real loop cycle against a real temporary Postgres control plane and scratch bare Git remote: when a merge trial fails a test once and passes its rerun, the filed Flaky check on main item on the running test install lists that test file in plannedFiles.",
+  "tags": ["dispatch", "batch-gate", "merge-writer"],
+  "target": "any",
+  "required": true,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "Filed flaky-check item shows its test file as planned on a running test install",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=^e2e:flaky-item-plans-its-file tests/flaky-item-plans-its-file.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}

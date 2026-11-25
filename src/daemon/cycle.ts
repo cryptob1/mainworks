@@ -15,7 +15,7 @@ import type { ExhaustionSignal } from '../model/capacity.js';
 import { endedRuntimeStates } from '../model/sessions.js';
 import { checkoutTrustLine, type CheckoutTrustFleet } from '../harness.js';
 import { detectRuntimeExhaustion } from '../master/runtime-prompt.js';
-import { dispatchSort, inPipeline, resourceConflicts, sharedResources } from '../coordination.js';
+import { dispatchSort, inPipeline, resourceConflicts, sharedPlannedTestFiles, sharedResources } from '../coordination.js';
 import { capacityRefusal } from '../fleet.js';
 import type { CoordinationRounds } from '../server/work-view.js';
 import { masterCauses, masterCausePrompt, messageCauses } from './master-stalled-delivery.js';
@@ -745,6 +745,8 @@ async function dispatchStep(cycle: Cycle) {
     // Two claimable items sharing an exclusive resource: the first goes, the other waits for it to land.
     const holder = launched.find(other => sharedResources(item, other).length);
     if (holder) { refused(item, sharedResources(item, holder)[0]!, holder.key); continue; }
+    const fileHolder = launched.find(other => sharedPlannedTestFiles(item, other).length);
+    if (fileHolder) { wait(item, `planned test file ${sharedPlannedTestFiles(item, fileHolder)[0]!} is held by ${fileHolder.key}`); continue; }
     // GY-3636: after three counted refusals of any cause, hold for the Lead instead of launching again.
     if (reworkCapHeld(item)) { wait(item, reworkCapLabel(item)); continue; }
     // GY-3104: a third equal failure holds the item for the master's decision.

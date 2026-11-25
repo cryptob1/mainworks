@@ -21,11 +21,58 @@ import { currentEvidence } from '../model/evidence.js';
 import { EnvironmentFault, declaredEnvironments, environmentSecretsFile, environmentStatePath, localEnvironment, loopLifecycle, trustedCheckout, type AppEnvironment } from '../app-environments.js';
 import { installSecretsDirectory } from '../e2e/steps.js';
 import { declarationSlot, heavyJobsDirectory, heldSlots } from '../master/verification-slots.js';
+import { existsSync } from 'node:fs';
+import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
+import { readTrialRunSpec, trialRunsDirectory, type TrialRunHandle } from '../merge-writer/trial-run.js';
+import { runFiles } from '../runner/pi.js';
 
 /** The gate's own item key in the trial (a proofless pseudo-item, like a revert's). */
 const gateKey = gateTrialKey;
+/** GY-3811: the full-suite diagnostics trial's input digest (build + affected over package.json), constant across commits. */
+const suiteInput = createHash('sha256').update(JSON.stringify([[], ['package.json']])).digest('hex');
+const isSameDiagnosticsKind = (isSuite: boolean) => (entry: { input: string }) => isSuite ? entry.input === suiteInput : entry.input !== suiteInput;
+
+/**
+ * GY-3811: adopt an existing detached diagnostics run before starting another — first from
+ * `diagnosticsTrials` regardless of which verified commit started it, then by scanning
+ * `.graphyard/trial-runs` for an unfinished diagnostics run (no `exit` file, spec key
+ * `batch-gate`, not the gate's own `inFlight` run).
+ */
+async function adoptDiagnosticsTrial(
+  file: string,
+  root: string,
+  isSuite: boolean,
+  adopt: NonNullable<MergeWriterReads['adoptTrialRun']>,
+): Promise<{ handle: TrialRunHandle; commit: string; fromDisk: boolean } | null> {
+  const latest = readGateRecord(file);
+  const earlier = latest?.diagnosticsTrials?.find(isSameDiagnosticsKind(isSuite));
+  if (earlier) {
+    const handle = await adopt({ key: gateKey, head: earlier.commit, mergeSha: earlier.commit, directory: earlier.directory });
+    if (handle) return { handle, commit: earlier.commit, fromDisk: false };
+  }
+  const runsRoot = trialRunsDirectory(root);
+  const exclude = latest?.inFlight?.run?.directory;
+  const entries = await readdir(runsRoot).catch(() => [] as string[]);
+  const candidates: { commit: string; directory: string; startedAt: string }[] = [];
+  for (const entry of entries) {
+    const directory = join(runsRoot, entry);
+    if (directory === exclude || directory === earlier?.directory || existsSync(runFiles(directory).exit)) continue;
+    const spec = await readTrialRunSpec(directory);
+    if (!spec || spec.key !== gateKey) continue;
+    const matches = isSuite
+      ? spec.proofs.length === 0 && spec.changedFiles.length === 1 && spec.changedFiles[0] === 'package.json'
+      : spec.changedFiles.length === 0 && spec.proofs.length > 0;
+    if (matches) candidates.push({ commit: spec.head, directory, startedAt: spec.startedAt });
+  }
+  candidates.sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+  for (const candidate of candidates) {
+    const handle = await adopt({ key: gateKey, head: candidate.commit, mergeSha: candidate.commit, directory: candidate.directory });
+    if (handle) return { handle, commit: candidate.commit, fromDisk: true };
+  }
+  return null;
+}
 /** How many lines of a failure's output its diagnostic filing carries (GY-3265). */
 const outputLines = 80;
 const lines = (out: string) => out.split('\n').map(line => line.trim()).filter(Boolean);
@@ -360,21 +407,27 @@ export async function batchGateStep(cycle: Pick<Cycle, 'state' | 'effects' | 'sn
   const trial: MergeWriterReads['trial'] = async (sha, files, item, base, step, timing, heads, _share, signal, timeout) => {
     const share = Math.max(1, busyTrialSlots(cycle.state)), flight = gated.inFlight, proofs = criterionProofs(item), run = ended.signal;
     const input = createHash('sha256').update(JSON.stringify([proofs, files])).digest('hex');
+    // GY-3805, GY-3811: the diagnostics trial detached too, and adopt any unfinished run across deploy restarts
+    // (even after verified moves to a newer commit), starting a new one only when none is running.
+    if (!signal && reads.launchTrialRun && reads.adoptTrialRun && !item.environments) {
+      const isSuite = input === suiteInput, sameKind = isSameDiagnosticsKind(isSuite);
+      const adopted = await adoptDiagnosticsTrial(file, gate.root, isSuite, reads.adoptTrialRun);
+      if (adopted) {
+        if (adopted.fromDisk) {
+          await mergeGateRecord(file, latest => ({ ...(latest ?? gated), diagnosticsTrials: [...(latest?.diagnosticsTrials ?? []).filter(run => !sameKind(run)), { commit: adopted.commit, input, directory: adopted.handle.directory }] }));
+        }
+        return adopted.handle.trial(step, timing);
+      }
+      await reads.ensureTrialImage?.();
+      const launched = reads.launchTrialRun({ key: gateKey, head: sha, mergeSha: sha, baseTip: base ?? null, changedFiles: [...files], proofs, e2eProofs: e2eProofsOf(item),
+        reproduce: item.type !== 'chore', cores: null, ...trialShareAllowance(share, timeout, reads.cores) });
+      await mergeGateRecord(file, latest => ({ ...(latest ?? gated), diagnosticsTrials: [...(latest?.diagnosticsTrials ?? []).filter(run => !sameKind(run)), { commit: sha, input, directory: launched.directory }] }));
+      return launched.trial(step, timing);
+    }
     // The diagnostics (no signal) trial another commit and take an ordinary slot. The gate's own check takes the reserved
     // one (GY-3450); so do its probes and bisects, which stop with its run: the step after a stopped run starts on the slot
     // that run freed instead of queueing behind merge trials (GY-3800).
     if (flight?.tip !== sha) {
-      // GY-3805: the diagnostics trial detached too, so a deploy's restart never kills their hour-long run: the next loop collects it.
-      if (!signal && reads.launchTrialRun && reads.adoptTrialRun && !item.environments) {
-        const earlier = readGateRecord(file)?.diagnosticsTrials?.find(run => run.commit === sha && run.input === input);
-        const adopted = earlier ? await reads.adoptTrialRun({ key: gateKey, head: sha, mergeSha: sha, directory: earlier.directory }) : null;
-        if (adopted) return adopted.trial(step, timing);
-        await reads.ensureTrialImage?.();
-        const launched = reads.launchTrialRun({ key: gateKey, head: sha, mergeSha: sha, baseTip: base ?? null, changedFiles: [...files], proofs, e2eProofs: e2eProofsOf(item),
-          reproduce: item.type !== 'chore', cores: null, ...trialShareAllowance(share, timeout, reads.cores) });
-        await mergeGateRecord(file, latest => ({ ...(latest ?? gated), diagnosticsTrials: [...(latest?.diagnosticsTrials ?? []).filter(run => run.commit === sha && run.input !== input), { commit: sha, input, directory: launched.directory }] }));
-        return launched.trial(step, timing);
-      }
       const other = () => reads.trial(sha, files, item, base, step, timing, heads, share, signal && AbortSignal.any([signal, run]), timeout);
       return signal ? heavyTrial(gateKey, step, signal, other, run, true) : other();
     }

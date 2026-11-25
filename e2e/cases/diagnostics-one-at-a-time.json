@@ -1,0 +1,18 @@
+{
+  "id": "diagnostics-one-at-a-time",
+  "title": "A loop restart during a diagnostics run leaves one diagnostics run and records its result in master status",
+  "description": "On a running test install whose diagnostics are due, a loop restart onto a new verified commit while a detached diagnostics run is unfinished adopts that run instead of starting another, and its result appears in master status.",
+  "tags": [
+    "diagnostics"
+  ],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "restart the loop during a diagnostics run and verify one run and master status",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:diagnostics-one-at-a-time tests/diagnostics-one-at-a-time.test.ts",
+      "timeoutSeconds": 600
+    }
+  ]
+}
