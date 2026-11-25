@@ -41,7 +41,7 @@ test(`${proof} — host add records a Docker-over-SSH host and writes nothing on
   assert.deepEqual(await recorded(), ['gy-compute@box']);
   assert.deepEqual((await readdir(hosts.home('box'))).sort(), ['.graphyard', '.ssh', 'bin'], 'the probe only reads: the home holds what prepare left, nothing more');
 
-  await assert.rejects(main(['host', 'add', 'gy-compute@bare']), /gy-compute@bare was not added: gy-compute@bare answers but its Docker does not: run mainworks host prepare/);
+  await assert.rejects(main(['host', 'add', 'gy-compute@bare']), /gy-compute@bare was not added: gy-compute@bare answers but its Docker does not: run mainworks host add \S+@bare in a terminal/);
   await assert.rejects(main(['host', 'add', 'gy-compute@gone']), /gy-compute@gone was not added: gy-compute@gone is unreachable over SSH: ssh: connect to host gone port 22: Connection refused/);
   await assert.rejects(main(['host', 'add', 'not a host']), /Name the host as USER@HOST/);
   assert.deepEqual(await recorded(), ['gy-compute@box'], 'a refused host is never recorded');

@@ -71,13 +71,13 @@ test(`${proof} — a host whose shim reports another digest takes no shard, read
   const runs = readRemoteShardRuns(repository.root);
   const host = remoteShardSummary(runs)!.hosts.find(entry => entry.name === target)!;
   assert.equal(host.state, 'away');
-  assert.match(host.reason ?? '', /older than this release: run mainworks host prepare/);
+  assert.match(host.reason ?? '', /older than this release: run mainworks host add \S+ in a terminal/);
   // GY-3517: the attention line follows the loop's latest probe of the host.
   const probes = async () => { const file = join(hosts.root, 'hosts.json'); await writeFile(file, JSON.stringify([{ target, addedAt: 'x' }])); return readHostReadings([], { file, run }); };
   const attention = outdatedShimAttention(await probes());
   assert.equal(attention.length, 1);
   assert.match(attention[0]!.text, new RegExp(`^${target}`));
-  assert.match(attention[0]!.next, /mainworks host prepare/);
+  assert.match(attention[0]!.next, /mainworks host add \S+ in a terminal/);
 
   // With this release's shim the same host takes shards.
   await writeFile(hosts.shim, hostShimScript);

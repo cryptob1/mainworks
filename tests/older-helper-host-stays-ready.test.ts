@@ -5,7 +5,7 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ChildRun } from '../src/child-runner.js';
 import { hostShimDigest, hostShimScript, hostShimVerbs, missingTrialVerbs, trialVerbs } from '../src/host-shim.js';
-import { readHostReadings } from '../src/hosts.js';
+import { hostAddCommand, readHostReadings } from '../src/hosts.js';
 import {
   outdatedShimAttention,
   readShardHosts,
@@ -77,7 +77,7 @@ test(`${proof} — a host with receive-image:1 and prepare-run:1 stays ready wit
 
   const attention = outdatedShimAttention([v1, v2]);
   assert.equal(attention.length, 1);
-  assert.equal(attention[0]!.text, `${v1Host} runs an older helper: run host prepare there to update it`);
+  assert.equal(attention[0]!.text, `${v1Host} runs an older helper: run ${hostAddCommand(v1Host)} to update it`);
 });
 
 test(`${proof} — placement uses both a v1 host and a v2 host, sending v1 calls with the 2-part image to the v1 host and v2 calls with the 3-part image to the v2 host for shards, checks and warm pushes`, async () => {
@@ -241,7 +241,7 @@ test(`${proof} — fails when any helper trial verb version is raised without th
   // Parse the verbs directly from the helper script source so any bump in src/host-shim.ts is caught.
   const verbsMatch = /echo "verbs ([^"]+)"/.exec(hostShimScript);
   assert.ok(verbsMatch, 'helper source must print its verbs line');
-  const scriptTrialVerbs = verbsMatch[1]!.split(' ').filter(verb => !/^(?:run-session|update-shim):/.test(verb));
+  const scriptTrialVerbs = verbsMatch[1]!.split(' ').filter(verb => !/^(?:run-session|update-shim|share):/.test(verb));
   assert.deepEqual(scriptTrialVerbs, trialVerbs);
 
   // Baseline floor: run-shard:2 predates versioned compatibility (run-shard:1 is intentionally retired);

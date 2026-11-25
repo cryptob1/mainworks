@@ -86,7 +86,8 @@ test(`${proof} — host add accepts the prepared host into the one host list and
   await main(['host', 'add', 'gy-compute@box']);
   const recorded = () => readFile(join(config, 'machine', 'hosts.json'), 'utf8').then(text => JSON.parse(text).map((host: { target: string }) => host.target));
   assert.deepEqual(await recorded(), ['gy-compute@box']);
-  await assert.rejects(main(['host', 'add', 'vish@open']), /vish@open was not added: its SSH key opens a plain shell, so Mainworks could reach everything that user can; run mainworks host prepare and the script it prints there, then add gy-compute@open/);
+  // GY-3834: another login is the owner's, to prepare the host from a terminal; never recorded itself.
+  await assert.rejects(main(['host', 'add', 'vish@open']), /Run this in a terminal: mainworks host add vish@open/);
   await assert.rejects(main(['host', 'add', 'root@rooty']), /root@rooty was not added: it logs in as root/);
   await assert.rejects(main(['host', 'add', 'gy-compute@dockery']), /gy-compute@dockery was not added: gy-compute is in the docker group, which is root on that host/);
   assert.deepEqual(await recorded(), ['gy-compute@box'], 'a refused host is never recorded');
