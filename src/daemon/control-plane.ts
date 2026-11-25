@@ -29,11 +29,12 @@ const faultCooldownMs = 24 * 60 * 60_000;
  * binds that repository's own case instead (GY-3568). Every item carries a `faultKey` so repeats
  * add an observation note to the existing item instead of filing duplicates.
  */
-const faultItem = (input: { faultKey: string; title: string; description: string; proof: string; reason: string; repaired?: { text: string; proof: string }; e2e?: { proof: string; clause: string } }) => {
+const faultItem = (input: { faultKey: string; title: string; description: string; proof: string; reason: string; plannedFiles?: string[]; repaired?: { text: string; proof: string }; e2e?: { proof: string; clause: string } }) => {
   const e2e = input.e2e ?? { proof: 'e2e:create-work-item', clause: 'creating a work item still works' };
   return {
   faultKey: input.faultKey,
   title: input.title.slice(0, 200), type: 'bug' as const, priority: 1, description: input.description, dependencies: [],
+  ...(input.plannedFiles?.length ? { plannedFiles: input.plannedFiles } : {}),
   why: 'A fault in Mainworks slows or stops delivery for everyone using this install until it is fixed.',
   simplest: 'Fix the one cause the description names and pin it with a test; nothing else changes.',
   criteria: [
@@ -257,8 +258,10 @@ const gateFiledE2e = (key: string, repository: string): { proof: string; clause:
 };
 
 /** A batch gate filing's item: its pinning test and its E2E case are named from its check and the gated repository. */
-export const gateFiledItem = (input: { title: string; description: string; key: string }, baseBranch: string, repository: string) =>
-  faultItem({ faultKey: input.key, title: input.title, description: input.description, proof: pinningProof(input.key), repaired: { text: 'The batch gate passes again', proof: repairedProof }, e2e: gateFiledE2e(input.key, repository), reason: `Filed by the batch gate on ${baseBranch}` });
+export const gateFiledItem = (input: { title: string; description: string; key: string }, baseBranch: string, repository: string) => {
+  const plannedFile = /^(?:flake|known-red):test:(.+)$/.exec(input.key)?.[1];
+  return faultItem({ faultKey: input.key, title: input.title, description: input.description, proof: pinningProof(input.key), repaired: { text: 'The batch gate passes again', proof: repairedProof }, e2e: gateFiledE2e(input.key, repository), reason: `Filed by the batch gate on ${baseBranch}`, ...(plannedFile ? { plannedFiles: [plannedFile] } : {}) });
+};
 
 /** GY-3735: a merge trial's flake files the batch gate's own "Flaky check on main: CHECK" item, or notes the one its fault key has. */
 export const fileFlakyCheck = (reads: { createWork?: Parameters<typeof fileLoopFault>[0]['createWork']; note?: Parameters<typeof fileLoopFault>[0]['note']; baseBranch: string; now(): number }, repository: string, work: readonly Work[], check: string, text: string) =>
