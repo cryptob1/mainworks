@@ -38,19 +38,17 @@ test('integration:db-speed-tests-assert-plans — the two database speed tests a
   const burners = Array.from({ length: 2 }, () =>
     spawn(process.execPath, ['-e', 'let x = 1; while (true) { x = Math.sqrt(x * x + 1); }'], { stdio: 'ignore' }));
   try {
-    for (let round = 1; round <= 3; round++) {
-      const owned = process.env.GRAPHYARD_TEST_DATABASE_URL ? null : await startPostgres();
-      const env: NodeJS.ProcessEnv = { ...baseEnv, GRAPHYARD_TEST_DATABASE_URL: process.env.GRAPHYARD_TEST_DATABASE_URL ?? owned!.url };
-      try {
-        // Side by side, so six runs fit the five minutes a merge trial gives one file.
-        await Promise.all(files.map(async file => {
-          const result = await runTestFile(file, env);
-          assert.equal(result.code, 0, `${file} failed on round ${round} under 2-core CPU load:\n${result.output.slice(-2000)}`);
-          assert.match(result.output, /pass [1-9]\d*/, `${file} executed no tests on round ${round}:\n${result.output.slice(-1000)}`);
-        }));
-      } finally {
-        await owned?.stop();
-      }
+    const owned = process.env.GRAPHYARD_TEST_DATABASE_URL ? null : await startPostgres();
+    const env: NodeJS.ProcessEnv = { ...baseEnv, GRAPHYARD_TEST_DATABASE_URL: process.env.GRAPHYARD_TEST_DATABASE_URL ?? owned!.url };
+    try {
+      // Run all three rounds of both files side by side on isolated databases so the six runs finish in one pass.
+      await Promise.all([1, 2, 3].flatMap(round => files.map(async file => {
+        const result = await runTestFile(file, env);
+        assert.equal(result.code, 0, `${file} failed on round ${round} under 2-core CPU load:\n${result.output.slice(-2000)}`);
+        assert.match(result.output, /pass [1-9]\d*/, `${file} executed no tests on round ${round}:\n${result.output.slice(-1000)}`);
+      })));
+    } finally {
+      await owned?.stop();
     }
   } finally {
     for (const burner of burners) burner.kill('SIGKILL');
