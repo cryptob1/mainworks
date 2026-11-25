@@ -8,7 +8,6 @@ import { seedPrices } from '../model/price-sheet.js';
 import { emptyRolePolicy, quotaStates, fleetRoles, roleLimit, rolePolicy, type AgentRegistry } from '../model/registry.js';
 import { unlaunchableLine, unlaunchableNext, workerAccounts } from '../master/worker-pool.js';
 
-export { registryHelp } from './master-registry-help.js';
 
 export interface RegistryCommandApi { read(path: string): Promise<any>; write(path: string, data: unknown): Promise<any> }
 const fromFile = async (value: string) => JSON.parse(await readFile(value.slice(1), 'utf8'));

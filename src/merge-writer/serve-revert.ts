@@ -218,7 +218,7 @@ const revertTrialItem = (culpritKey: string): Pick<Work, 'key' | 'criteria'> & {
   ({ key: culpritKey, criteria: [] });
 
 /** GY-3802: a revert's trial creates its run this soon after taking its heavy-job slot, or gives the slot back. */
-export const revertStartMs = 60_000;
+const revertStartMs = 60_000;
 
 /**
  * The revert commit's trial and leased push: pass, a held trial failure, or a retry (a failing base,
