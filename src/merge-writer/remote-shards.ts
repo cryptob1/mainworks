@@ -10,7 +10,7 @@ import { basename, dirname, join } from 'node:path';
 import { availableParallelism, homedir, hostname, tmpdir } from 'node:os';
 import type { ChildRun } from '../child-runner.js';
 import { shellQuote } from '../shell-quote.js';
-import { hostShimDigest, probeShimVerbs, supportsWarmImageV2 } from '../host-shim.js';
+import { hostShimDigest, probeShimVerbs, supportsCheckImages, supportsWarmImageV2 } from '../host-shim.js';
 import { heavyJobsDirectory, readMachines } from '../master/verification-slots.js';
 import { hostKnownHostsFile, probeHost, readHosts, sshTarget, type HostReading as HostProbe } from '../hosts.js';
 import { trialImage } from './trial-container.js';
@@ -99,7 +99,7 @@ export async function readShardHosts(targets: readonly string[], run: ChildRun, 
     const failed = target && probe.shim !== hostShimDigest ? machines?.find(machine => machine.name === target)?.updateError : undefined;
     if (failed) return { name, cores: 0, busy: 0, steal: 0, celsius: null, limit: trialHotCelsius, away: true, reason: `${target} did not take this release's helper: ${failed}` };
     const verbs = target ? probeShimVerbs(probe) : undefined;
-    return { name, cores: probe.cores ?? cores, busy: probe.load ?? 0, steal: probe.stat?.total ? probe.stat.steal / probe.stat.total : 0, celsius: probe.celsius, limit: trialHotCelsius, away: false, ...(target && probe.compose ? { compose: true } : {}), ...(verbs && !supportsWarmImageV2(verbs) ? { verbs } : {}) };
+    return { name, cores: probe.cores ?? cores, busy: probe.load ?? 0, steal: probe.stat?.total ? probe.stat.steal / probe.stat.total : 0, celsius: probe.celsius, limit: trialHotCelsius, away: false, ...(target && probe.compose ? { compose: true } : {}), ...(verbs && (!supportsWarmImageV2(verbs) || !supportsCheckImages(verbs)) ? { verbs } : {}) };
   })); } finally { if (!transport) await ssh.close(); }
 }
 
@@ -502,6 +502,20 @@ export function remoteShardSession(input: { root: string; sha: string; baseTip?:
     async check(target: string, check: { file: string; services: { service: string; port: number }[]; argv: string[]; cpus: number }): Promise<RemoteCheckEnd> {
       if (!ready.has(target)) ready.set(target, prepare(target));
       const run = await ready.get(target)!;
+      // GY-3825: send any Compose service image that exists in the coordinator's local Docker and not on the host, keyed by image id.
+      if (supportsCheckImages(verbsByHost.get(target))) {
+        const images = await checkServiceImages(input.root, input.sha, check.file, check.services.map(entry => entry.service), local);
+        for (const image of images) {
+          const imageId = await local('docker', ['image', 'inspect', '--format', '{{.Id}}', image]).catch(() => '');
+          if (!/^sha256:[0-9a-f]{64}$/.test(imageId)) continue;
+          const answer = (await shim(target, `receive-image ${run} ${check.file} ${image} ${imageId} check`)).trim().split('\n').at(-1) ?? '';
+          if (answer === 'need-image') {
+            await shim(target, `receive-image ${run} ${check.file} ${image} ${imageId}`, `docker save ${shellQuote(image)}`);
+          } else if (answer !== 'have') {
+            throw new HostDroppedError(target, `receive-image check answered ${answer.slice(0, 200)}`);
+          }
+        }
+      }
       return remoteCheckEnd(target, await shim(target, `run-check ${run}`, `printf '%s' ${shellQuote(JSON.stringify({ ...check, deadline: input.deadline }))}`));
     },
     async close() {
@@ -513,6 +527,47 @@ export function remoteShardSession(input: { root: string; sha: string; baseTip?:
       await Promise.all(markers.map(marker => rm(marker, { force: true })));
     },
   };
+}
+
+/** GY-3825: service image names declared in `file` at commit `sha` for `services` and their transitive `depends_on`. */
+async function checkServiceImages(
+  root: string,
+  sha: string,
+  file: string,
+  services: readonly string[],
+  local: (command: string, args: string[]) => Promise<string>,
+): Promise<string[]> {
+  const blob = await local('git', ['-C', root, 'cat-file', 'blob', `${sha}:${file}`]).catch(() => '');
+  if (!blob) return [];
+  let config: { services?: Record<string, { image?: unknown; depends_on?: string[] | Record<string, unknown> }> } | null = null;
+  const dir = await mkdtemp(join(tmpdir(), 'mainworks-check-compose-'));
+  try {
+    const tempFile = join(dir, basename(file) || 'compose.yml');
+    await writeFile(tempFile, blob);
+    const projectDir = dirname(join(root, file));
+    const resolved = await local('docker', ['compose', '--project-directory', existsSync(projectDir) ? projectDir : dir, '--env-file', '/dev/null', '-f', tempFile, 'config', '--format', 'json']).catch(() => '');
+    if (resolved) {
+      try { config = JSON.parse(resolved); } catch { /* fall through */ }
+    }
+    if (!config) {
+      try { config = JSON.parse(blob); } catch { return []; }
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+  const map = config?.services ?? {};
+  const seen = new Set<string>(), queue = [...services], images: string[] = [];
+  while (queue.length) {
+    const name = queue.shift()!;
+    if (seen.has(name) || !map[name]) continue;
+    seen.add(name);
+    const entry = map[name]!;
+    if (typeof entry.image === 'string' && entry.image && !images.includes(entry.image)) images.push(entry.image);
+    const deps = entry.depends_on;
+    if (Array.isArray(deps)) queue.push(...deps);
+    else if (deps && typeof deps === 'object') queue.push(...Object.keys(deps));
+  }
+  return images;
 }
 
 /**

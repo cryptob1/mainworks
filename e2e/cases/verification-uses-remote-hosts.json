@@ -35,6 +35,12 @@
     },
     {
       "kind": "command",
+      "name": "Run a declared check with a service image built locally on the coordinator (never pushed) and verify it is sent once and answers on the compute host",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/declared-check-runs-with-local-only-image.test.ts",
+      "timeoutSeconds": 600
+    },
+    {
+      "kind": "command",
       "name": "Read a fake host whose Docker unit is not enabled and one whose unit failed, and show the reason",
       "run": "node --import tsx tests/helpers/run-tests.ts tests/host-probe-docker-unit.test.ts",
       "timeoutSeconds": 300

@@ -4,6 +4,7 @@
 //   probe                          the shim's own digest and verbs (GY-3517), then cores, load, CPU steal, sensors and running trial containers
 //   receive-pack REPO SHA          a git pack on stdin into the per-repo mirror ~/.graphyard/mirrors/REPO.git
 //   receive-image IMAGE            `docker save` output on stdin, loaded once per warm image; older warm images go
+//   receive-image RUN FILE IMAGE ID [check]  GY-3825: check or load a Compose service image named by RUN's committed FILE
 //   prepare-run REPO SHA IMAGE     a checkout of SHA cloned from the mirror under ~/.graphyard/runs,
 //                                  or `need-pack LAST` / `need-image` when the host lacks either
 //   run-shard RUN INDEX            JSON {files, argv, cpus, deadline} on stdin, nothing else; the trial launcher runs argv
@@ -49,7 +50,7 @@ const sessionHours = 8;
  * changes what it does in a way a trial relies on, and add a new verb here; any other change to the
  * shim (its launcher, limits, wording) leaves this list alone, so hosts on the older shim keep taking shards.
  */
-export const hostShimVerbs = ['probe:1', 'receive-pack:1', 'receive-image:2', 'prepare-run:2', 'run-shard:2', 'fetch-records:1', 'clean:1', 'run-session:1', 'update-shim:1'];
+export const hostShimVerbs = ['probe:1', 'receive-pack:1', 'receive-image:3', 'prepare-run:2', 'run-shard:2', 'fetch-records:1', 'clean:1', 'run-session:1', 'update-shim:1'];
 /** GY-3645: `run-check` is no trial verb: a host takes a whole check once its probe names a Compose plugin, which only a shim with the verb prints. */
 /** The verbs a merge trial uses: a host whose shim lacks any of them (and every older form the coordinator still speaks) takes no shards until prepare runs again there. */
 export const trialVerbs = hostShimVerbs.filter(verb => !/^(?:run-session|update-shim):/.test(verb));
@@ -60,7 +61,7 @@ export const trialVerbs = hostShimVerbs.filter(verb => !/^(?:run-session|update-
  * and keep a coordinator branch for it until every host has moved on.
  */
 const olderTrialVerbs: Readonly<Record<string, readonly string[]>> = {
-  'receive-image:2': ['receive-image:1'],
+  'receive-image:3': ['receive-image:2', 'receive-image:1'],
   'prepare-run:2': ['prepare-run:1'],
 };
 /** Shims released before the probe listed its verbs, by digest: the verbs each speaks (GY-3549's shim). */
@@ -72,7 +73,10 @@ export const probeShimVerbs = (probe: { shim: string | null; verbs: string[] | n
   probe.verbs ?? (probe.shim === hostShimDigest ? hostShimVerbs : probe.shim ? legacyShimVerbs[probe.shim] : undefined) ?? [];
 /** GY-3804: whether a host's probed verbs accept the commit-keyed v2 warm image tag (absent verbs default to v2). */
 export const supportsWarmImageV2 = (verbs?: readonly string[] | null) =>
-  !verbs || (verbs.includes('receive-image:2') && verbs.includes('prepare-run:2'));
+  !verbs || ((verbs.includes('receive-image:2') || verbs.includes('receive-image:3')) && verbs.includes('prepare-run:2'));
+/** GY-3825: whether a host's probed verbs accept check service images over receive-image:3 (absent verbs default to current). */
+export const supportsCheckImages = (verbs?: readonly string[] | null) =>
+  !verbs || verbs.includes('receive-image:3');
 /** The trial verbs a shim lacks, by what its probe printed: its verbs line, else what its digest is known to speak. */
 export const missingTrialVerbs = (probe: { shim: string | null; verbs: string[] | null }, required: readonly string[] = trialVerbs) => {
   const speaks = probeShimVerbs(probe);
@@ -115,16 +119,85 @@ NAME = r'[A-Za-z0-9][A-Za-z0-9._-]{0,99}'
 SHA = r'[0-9a-f]{40}(?:[0-9a-f]{24})?'
 RUN = r'trial-[A-Za-z0-9_]{6,40}'
 IMAGE = ${JSON.stringify(warmImagePattern.source.slice(1, -1))}
+CHECK_FILE = r'[A-Za-z0-9._][A-Za-z0-9._/-]{0,199}'
+CHECK_IMAGE = r'[A-Za-z0-9][A-Za-z0-9._/:@-]{0,255}'
+IMAGE_ID = r'sha256:[0-9a-f]{64}'
 INDEX = r'[1-9][0-9]{0,3}'
 SHAPES = {'receive-pack': [NAME, SHA], 'receive-image': [IMAGE], 'prepare-run': [NAME, SHA, IMAGE],
           'run-shard': [RUN, INDEX], 'run-check': [RUN], 'fetch-records': [RUN, INDEX], 'clean': [RUN], 'run-session': [RUN], 'update-shim': [r'[0-9a-f]{64}']}
-if verb not in SHAPES or len(args) != len(SHAPES[verb]) or not all(re.fullmatch(shape, arg) for shape, arg in zip(SHAPES[verb], args)):
+def matches_shape(shape, values):
+    return len(values) == len(shape) and all(re.fullmatch(pattern, value) for pattern, value in zip(shape, values))
+check_image_receive = verb == 'receive-image' and (matches_shape([RUN, CHECK_FILE, CHECK_IMAGE, IMAGE_ID], args) or matches_shape([RUN, CHECK_FILE, CHECK_IMAGE, IMAGE_ID, r'check'], args))
+if not check_image_receive and (verb not in SHAPES or not matches_shape(SHAPES[verb], args)):
     refuse()
-mirrors, runs = os.path.join(home, '.graphyard', 'mirrors'), os.path.join(home, '.graphyard', 'runs')
+mirrors, runs, check_images = os.path.join(home, '.graphyard', 'mirrors'), os.path.join(home, '.graphyard', 'runs'), os.path.join(home, '.graphyard', 'check-images')
 def quiet(*command, **options):
     return subprocess.call(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **options) == 0
 def has_image(image):
     return quiet('docker', 'image', 'inspect', image)
+def image_id(image):
+    result = subprocess.run(['docker', 'image', 'inspect', '--format', '{{.Id}}', image], capture_output=True, text=True)
+    return result.stdout.strip() if result.returncode == 0 else ''
+def record_check_image(img_id, name):
+    os.makedirs(check_images, exist_ok=True)
+    marker = os.path.join(check_images, img_id.replace(':', '_') + '.json')
+    names = []
+    if os.path.isfile(marker):
+        try:
+            names = list(json.load(open(marker)).get('names') or [])
+        except (OSError, ValueError):
+            names = []
+    if name not in names:
+        names.append(name)
+    with open(marker, 'w') as fh:
+        json.dump({'id': img_id, 'names': names}, fh)
+    os.utime(marker, None)
+def load_compose_config(run_dir, project_name, file_path):
+    if not isinstance(file_path, str) or not file_path or file_path.startswith('/') or '..' in file_path.split('/') or '\\0' in file_path:
+        refuse()
+    repo = os.path.realpath(os.path.join(run_dir, 'repo'))
+    compose = os.path.realpath(os.path.join(repo, file_path))
+    committed = subprocess.run(['git', '-C', repo, 'cat-file', 'blob', 'HEAD:' + file_path], capture_output=True)
+    if not compose.startswith(repo + os.sep) or committed.returncode != 0 or not os.path.isfile(compose) or open(compose, 'rb').read() != committed.stdout:
+        refuse()
+    base = ['docker', 'compose', '-p', project_name, '--project-directory', os.path.dirname(compose), '--env-file', os.devnull, '-f', compose]
+    # Compose reads include, extends and label files from anywhere before any configuration can be checked; an escape could spell those words.
+    if re.search(r'\\b(?:include|extends|label_file)\\b|\\\\[xuU]', open(compose, errors='replace').read()):
+        sys.exit('graphyard-host-shim refuses: ' + file_path + ' includes or extends other files, or writes a character by an escape')
+    try:
+        config = json.loads(subprocess.run(base + ['config', '--format', 'json'], capture_output=True, text=True).stdout)
+    except ValueError:
+        sys.exit('graphyard-host-shim: docker compose cannot read ' + file_path)
+    # The host lends this run directory and nothing else: no host path outside it, no host namespace, device or
+    # capability, and no volume, network, secret or config shared or driven from outside (compose-preview.ts holds a local check alike).
+    within = lambda path: isinstance(path, str) and (os.path.realpath(os.path.join(os.path.dirname(compose), path)) + os.sep).startswith(os.path.realpath(run_dir) + os.sep)
+    problems = []
+    for name, entry in (config.get('services') or {}).items():
+        for volume in entry.get('volumes') or []:
+            if volume.get('type') == 'bind' and not within(volume.get('source')):
+                problems.append('binds ' + str(volume.get('source')) + ', outside the run directory')
+            elif volume.get('type') not in ('bind', 'volume', 'tmpfs'):
+                problems.append('service ' + name + ' mounts a ' + str(volume.get('type')) + ' volume')
+        for env in entry.get('env_file') or []:
+            if not within(env.get('path') if isinstance(env, dict) else env):
+                problems.append('service ' + name + ' reads an env file outside the run directory')
+        for key in ('build', 'privileged', 'cap_add', 'devices', 'device_cgroup_rules', 'use_api_socket', 'volumes_from', 'external_links', 'security_opt', 'post_start', 'pre_stop', 'provider', 'runtime', 'storage_opt', 'credential_spec'):
+            if entry.get(key):
+                problems.append('service ' + name + ' sets ' + key)
+        for key in ('network_mode', 'pid', 'ipc', 'userns_mode', 'uts', 'cgroup'):
+            if re.match('host|container:|service:', str(entry.get(key) or '')):
+                problems.append('service ' + name + ' shares the ' + key + ' ' + entry[key])
+    for kind, default in (('volumes', 'local'), ('networks', 'bridge')):
+        for name, entry in (config.get(kind) or {}).items():
+            if entry and (entry.get('external') or entry.get('driver_opts') or entry.get('driver', default) != default):
+                problems.append(kind[:-1] + ' ' + name + ' is external or set by driver options')
+    for kind in ('secrets', 'configs'):
+        for name, entry in (config.get(kind) or {}).items():
+            if entry and (entry.get('external') or entry.get('environment') or ('file' in entry and not within(entry['file']))):
+                problems.append(kind[:-1] + ' ' + name + ' reads from outside the run directory')
+    if problems:
+        sys.exit('graphyard-host-shim refuses: ' + file_path + ' ' + '; '.join(problems))
+    return base, config
 if verb in ('receive-pack', 'prepare-run'):
     mirror = os.path.join(mirrors, args[0] + '.git')
     if not os.path.isdir(mirror):
@@ -138,6 +211,30 @@ if verb == 'receive-pack':
         sys.exit('graphyard-host-shim: the pack does not hold ' + args[1])
     subprocess.check_call(['git', '--git-dir=' + mirror, 'update-ref', 'refs/graphyard/last', args[1]])
     quiet('git', '--git-dir=' + mirror, 'gc', '--auto', '-q')
+elif verb == 'receive-image' and check_image_receive:
+    run_dir = os.path.join(runs, args[0])
+    if not os.path.isdir(run_dir):
+        refuse()
+    _, config = load_compose_config(run_dir, 'mainworks-check-' + args[0][6:].lower(), args[1])
+    declared_images = {entry.get('image') for entry in (config.get('services') or {}).values() if isinstance(entry, dict) and isinstance(entry.get('image'), str)}
+    if args[2] not in declared_images:
+        refuse()
+    expected_id = args[3]
+    if len(args) == 5:
+        if has_image(expected_id):
+            if image_id(args[2]) != expected_id:
+                subprocess.check_call(['docker', 'tag', expected_id, args[2]], stdout=subprocess.DEVNULL)
+            record_check_image(expected_id, args[2])
+            print('have')
+        else:
+            print('need-image')
+        sys.exit(0)
+    subprocess.check_call(['docker', 'load', '-q'], stdout=subprocess.DEVNULL)
+    if not has_image(expected_id):
+        sys.exit('graphyard-host-shim: the image stream does not hold ' + args[2])
+    if image_id(args[2]) != expected_id:
+        subprocess.check_call(['docker', 'tag', expected_id, args[2]], stdout=subprocess.DEVNULL)
+    record_check_image(expected_id, args[2])
 elif verb == 'receive-image':
     subprocess.check_call(['docker', 'load', '-q'], stdout=subprocess.DEVNULL)
     if not has_image(args[0]):
@@ -314,6 +411,29 @@ else:
         if os.path.exists(os.path.join(run, 'compose-project')):
             quiet('docker', 'compose', '-p', project, 'down', '--volumes', '--remove-orphans', '--rmi', 'local', '--timeout', '5')
         shutil.rmtree(run, ignore_errors=True)
+        # GY-3825: remove received check images unused by any run for 7 days.
+        if os.path.isdir(check_images):
+            cutoff = time.time() - 7 * 86400
+            for entry in os.listdir(check_images):
+                marker = os.path.join(check_images, entry)
+                try:
+                    if os.path.getmtime(marker) >= cutoff:
+                        continue
+                    record = json.load(open(marker))
+                except (OSError, ValueError):
+                    continue
+                removed = True
+                rec_id = record.get('id')
+                for tag in record.get('names') or []:
+                    if rec_id and image_id(tag) == rec_id and not quiet('docker', 'image', 'rm', tag):
+                        removed = False
+                if rec_id and has_image(rec_id) and not quiet('docker', 'image', 'rm', rec_id):
+                    removed = False
+                if removed:
+                    try:
+                        os.remove(marker)
+                    except OSError:
+                        pass
     elif verb == 'fetch-records':
         try:
             sys.stdout.write(open(os.path.join(run, 'tests-' + args[1] + '.jsonl')).read())
@@ -332,50 +452,24 @@ else:
         if not isinstance(file, str) or not file or file.startswith('/') or '..' in file.split('/') or '\\0' in file or not isinstance(services, list) or not 0 < len(services) <= 8 \
                 or not all(isinstance(entry, dict) and set(entry) == {'service', 'port'} and isinstance(entry['service'], str) and re.fullmatch(NAME, entry['service']) and type(entry['port']) is int for entry in services):
             refuse()
-        # Only the Compose file this run's commit holds, unchanged, inside its checkout.
-        repo = os.path.realpath(os.path.join(run, 'repo'))
-        compose = os.path.realpath(os.path.join(repo, file))
-        committed = subprocess.run(['git', '-C', repo, 'cat-file', 'blob', 'HEAD:' + file], capture_output=True)
-        if not compose.startswith(repo + os.sep) or committed.returncode != 0 or not os.path.isfile(compose) or open(compose, 'rb').read() != committed.stdout:
-            refuse()
-        base = ['docker', 'compose', '-p', project, '--project-directory', os.path.dirname(compose), '--env-file', os.devnull, '-f', compose]
-        # Compose reads include, extends and label files from anywhere before any configuration can be checked; an escape could spell those words.
-        if re.search(r'\\b(?:include|extends|label_file)\\b|\\\\[xuU]', open(compose, errors='replace').read()):
-            sys.exit('graphyard-host-shim refuses: ' + file + ' includes or extends other files, or writes a character by an escape')
-        try:
-            config = json.loads(subprocess.run(base + ['config', '--format', 'json'], capture_output=True, text=True).stdout)
-        except ValueError:
-            sys.exit('graphyard-host-shim: docker compose cannot read ' + file)
-        # The host lends this run directory and nothing else: no host path outside it, no host namespace, device or
-        # capability, and no volume, network, secret or config shared or driven from outside (compose-preview.ts holds a local check alike).
-        within = lambda path: isinstance(path, str) and (os.path.realpath(os.path.join(os.path.dirname(compose), path)) + os.sep).startswith(os.path.realpath(run) + os.sep)
-        problems = []
-        for name, entry in (config.get('services') or {}).items():
-            for volume in entry.get('volumes') or []:
-                if volume.get('type') == 'bind' and not within(volume.get('source')):
-                    problems.append('binds ' + str(volume.get('source')) + ', outside the run directory')
-                elif volume.get('type') not in ('bind', 'volume', 'tmpfs'):
-                    problems.append('service ' + name + ' mounts a ' + str(volume.get('type')) + ' volume')
-            for env in entry.get('env_file') or []:
-                if not within(env.get('path') if isinstance(env, dict) else env):
-                    problems.append('service ' + name + ' reads an env file outside the run directory')
-            for key in ('build', 'privileged', 'cap_add', 'devices', 'device_cgroup_rules', 'use_api_socket', 'volumes_from', 'external_links', 'security_opt', 'post_start', 'pre_stop', 'provider', 'runtime', 'storage_opt', 'credential_spec'):
-                if entry.get(key):
-                    problems.append('service ' + name + ' sets ' + key)
-            for key in ('network_mode', 'pid', 'ipc', 'userns_mode', 'uts', 'cgroup'):
-                if re.match('host|container:|service:', str(entry.get(key) or '')):
-                    problems.append('service ' + name + ' shares the ' + key + ' ' + entry[key])
-        for kind, default in (('volumes', 'local'), ('networks', 'bridge')):
-            for name, entry in (config.get(kind) or {}).items():
-                if entry and (entry.get('external') or entry.get('driver_opts') or entry.get('driver', default) != default):
-                    problems.append(kind[:-1] + ' ' + name + ' is external or set by driver options')
-        for kind in ('secrets', 'configs'):
-            for name, entry in (config.get(kind) or {}).items():
-                if entry and (entry.get('external') or entry.get('environment') or ('file' in entry and not within(entry['file']))):
-                    problems.append(kind[:-1] + ' ' + name + ' reads from outside the run directory')
-        if problems:
-            sys.exit('graphyard-host-shim refuses: ' + file + ' ' + '; '.join(problems))
+        base, config = load_compose_config(run, project, file)
         names, steps = [entry['service'] for entry in services], []
+        # Collect requested services plus transitive depends_on so missing-image errors name the right service.
+        svc_map = config.get('services') or {}
+        needed, queue = [], list(names)
+        while queue:
+            svc = queue.pop(0)
+            if svc in needed or svc not in svc_map:
+                continue
+            needed.append(svc)
+            deps = svc_map[svc].get('depends_on') or []
+            queue.extend(deps.keys() if isinstance(deps, dict) else deps)
+        for svc in needed:
+            img = (svc_map.get(svc) or {}).get('image')
+            if isinstance(img, str):
+                cur_id = image_id(img)
+                if cur_id and os.path.isfile(os.path.join(check_images, cur_id.replace(':', '_') + '.json')):
+                    record_check_image(cur_id, img)
         def stop(number, frame):
             raise SystemExit(128 + number)
         signal.signal(signal.SIGTERM, stop)
@@ -386,15 +480,24 @@ else:
             up = subprocess.run(base + ['up', '-d', '--quiet-pull'] + names, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             container = subprocess.run(base + ['ps', '-q', names[0]], capture_output=True, text=True).stdout.split() if up.returncode == 0 else []
             if not container:
-                sys.exit('graphyard-host-shim: the services did not start: ' + up.stdout[-500:])
-            steps.append('services %d' % ((time.time() - at) * 1000))
-            variables = {}
-            for entry in services:
-                name = 'GRAPHYARD_SERVICE_' + re.sub('[^A-Z0-9]', '_', entry['service'].upper())
-                variables[name + '_HOST'], variables[name + '_PORT'] = entry['service'], str(entry['port'])
-            at = time.time()
-            status = launch('container:' + container[0], argv, variables, stderr=subprocess.STDOUT)
-            steps.append('command %d' % ((time.time() - at) * 1000))
+                if up.returncode != 0 and re.search(r'pull access denied|manifest unknown|not found|repository does not exist|unauthorized|no such image|failed to resolve', up.stdout, re.I):
+                    missing = next(((svc, svc_map[svc]['image']) for svc in needed if isinstance((svc_map.get(svc) or {}).get('image'), str) and not has_image(svc_map[svc]['image'])), None)
+                    if missing:
+                        print('service %s: image %s is neither local nor pullable' % missing)
+                        status = 1
+                    else:
+                        sys.exit('graphyard-host-shim: the services did not start: ' + up.stdout[-500:])
+                else:
+                    sys.exit('graphyard-host-shim: the services did not start: ' + up.stdout[-500:])
+            else:
+                steps.append('services %d' % ((time.time() - at) * 1000))
+                variables = {}
+                for entry in services:
+                    name = 'GRAPHYARD_SERVICE_' + re.sub('[^A-Z0-9]', '_', entry['service'].upper())
+                    variables[name + '_HOST'], variables[name + '_PORT'] = entry['service'], str(entry['port'])
+                at = time.time()
+                status = launch('container:' + container[0], argv, variables, stderr=subprocess.STDOUT)
+                steps.append('command %d' % ((time.time() - at) * 1000))
         finally:
             at = time.time()
             if quiet(*base, 'down', '--volumes', '--remove-orphans', '--rmi', 'local', '--timeout', '5'):
