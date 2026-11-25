@@ -75,6 +75,7 @@ export function plannerPrompt(context: {
     ? [
         `6-hour flow: ${context.flow6h.mergesPerHour.toFixed(1)} merges/h (${context.flow6h.merges} merges), ${context.flow6h.attemptsPerHour.toFixed(1)} attempts/h (${context.flow6h.attempts} attempts), first-pass yield ${percent(context.flow6h.firstPassYield)}, trials ${context.flow6h.trials}, flaky ${context.flow6h.flaky} (${percent(context.flow6h.flakyRate)}), reverts ${context.flow6h.reverts}.`,
         `Rework causes (6h): ${reworkCauses.map(cause => `${cause}: ${context.flow6h!.rework[cause] ?? 0}`).join(', ')}.`,
+        `Review reasons (6h): ${context.flow6h.reviewReasons?.map(reason => `${reason.label}: ${reason.count}`).join(', ') || 'none'}.`,
       ]
     : ['6-hour flow: unavailable.', 'Rework causes (6h): unavailable.'];
 
