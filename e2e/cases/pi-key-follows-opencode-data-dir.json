@@ -1,0 +1,16 @@
+{
+  "id": "pi-key-follows-opencode-data-dir",
+  "title": "A Pi account check finds its key in the data directory OpenCode uses",
+  "description": "On a running test install, a Pi account whose key command names an OpenCode account's auth.json passes its live check when OpenCode's launch keeps that login in another data directory.",
+  "tags": ["accounts", "quota"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "Pi account check finds its key in the OpenCode data directory",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:pi-key-follows-opencode-data-dir tests/pi-key-follows-opencode-data-dir.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}
