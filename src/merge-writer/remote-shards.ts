@@ -10,8 +10,7 @@ import { basename, dirname, join } from 'node:path';
 import { availableParallelism, homedir, hostname, tmpdir } from 'node:os';
 import type { ChildRun } from '../child-runner.js';
 import { shellQuote } from '../shell-quote.js';
-import { hostShimDigest, probeShimVerbs, supportsCheckImages, supportsWarmImageV2 } from '../host-shim.js';
-import { heavyJobsDirectory, readMachines } from '../master/verification-slots.js';
+import { probeShimVerbs, supportsCheckImages, supportsWarmImageV2 } from '../host-shim.js';
 import { hostAddCommand, hostKnownHostsFile, hostLoginTarget, probeHost, readHosts, sshTarget, type HostReading as HostProbe } from '../hosts.js';
 import { trialImage } from './trial-container.js';
 import { trialContainerFault, trialHotCelsius } from './trial-load.js';
@@ -89,15 +88,12 @@ export async function splitLocalOnlyTests(
 /** This machine's reading and every host's, read at once through the shim's probe; a host that does not answer is away for this trial.
  * A trial passes its own `transport`, so the probe's connection carries its shards too. */
 export async function readShardHosts(targets: readonly string[], run: ChildRun, cores: number, transport?: ShardSshSession): Promise<HostReading[]> {
-  const ssh = transport ?? shardSshSession(run), machines = readMachines(heavyJobsDirectory());
+  const ssh = transport ?? shardSshSession(run);
   try { return await Promise.all([null, ...targets].map(async target => {
     const probe = await probeHost(target, async (program, args, options) => target && program === 'ssh' ? ssh.session(target, words => run(program, [...words, args.at(-1)!], options)) : run(program, args, options));
     const name = target ?? hostname();
     // This machine always takes shards: an unreadable reading here means only that its Docker or sensors did not answer.
     if (!probe.ok) return { name, cores: target ? 0 : cores, busy: 0, steal: 0, celsius: null, limit: trialHotCelsius, away: target !== null, ...(target ? { reason: probe.reason } : {}) };
-    // GY-3780: a host whose update the loop saw fail stays away until it runs this release's shim.
-    const failed = target && probe.shim !== hostShimDigest ? machines?.find(machine => machine.name === target)?.updateError : undefined;
-    if (failed) return { name, cores: 0, busy: 0, steal: 0, celsius: null, limit: trialHotCelsius, away: true, reason: `${target} did not take this release's helper: ${failed}` };
     const verbs = target ? probeShimVerbs(probe) : undefined;
     return { name, cores: probe.cores ?? cores, busy: probe.load ?? 0, steal: probe.stat?.total ? probe.stat.steal / probe.stat.total : 0, celsius: probe.celsius, limit: trialHotCelsius, away: false, ...(target && probe.compose ? { compose: true } : {}), ...(verbs && (!supportsWarmImageV2(verbs) || !supportsCheckImages(verbs)) ? { verbs } : {}) };
   })); } finally { if (!transport) await ssh.close(); }
@@ -627,7 +623,9 @@ export function remoteShardSummary(runs: readonly RemoteShardRun[], probes?: rea
 
 /** GY-3476, GY-3517: one attention line for each host the latest probe reads away because its shim lacks a verb trials use, or (GY-3744) reads ready on an older helper, or (GY-3891) was migrated without sudo; it clears with the probe. */
 export const outdatedShimAttention = (probes: readonly Pick<HostProbe, 'host' | 'away' | 'update' | 'updateError' | 'older' | 'migrated' | 'login'>[]) => probes.flatMap(probe =>
-  probe.away && probe.update ? [{ subject: `host ${probe.host}`, text: `${probe.host} takes no trial shards: ${probe.updateError ? `it did not take this release's helper (${probe.updateError})` : 'its graphyard-host-shim is older than this release'}`, next: `Run ${hostAddCommand(probe.host, probe.login)}` }]
+  probe.away && probe.update ? [{ subject: `host ${probe.host}`, text: `${probe.host} takes no trial shards: its graphyard-host-shim is older than this release`, next: `Run ${hostAddCommand(probe.host, probe.login)}` }]
+  // GY-3896: a failed update never takes a ready host out; one line names it and the reason.
+  : !probe.away && probe.updateError ? [{ subject: `host ${probe.host}`, text: `${probe.host} keeps taking shards but did not take this release's helper: ${probe.updateError}`, next: `Run ${hostAddCommand(probe.host, probe.login)}` }]
   // GY-3744: a ready host on another release's helper keeps taking shards; one line says how to update it.
   : !probe.away && probe.older ? [{ subject: `host ${probe.host}`, text: `${probe.host} runs an older helper: run ${hostAddCommand(probe.host, probe.login)} to update it`, next: `Run ${hostAddCommand(probe.host, probe.login)}` }]
   // GY-3891: a host migrated without sudo stays ready; one low-priority line says how to replace the root-installed helper when convenient.

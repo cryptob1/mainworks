@@ -239,7 +239,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
       hostsReading ??= readHostReadings(previous, { run, update: true }).then(readings => {
         hostsLatest = readings;
         // GY-3528: every install on this machine budgets heavy jobs from these readings.
-        writeMachines(heavyJobsDirectory(), readings.map(reading => ({ name: reading.host, local: reading.local, away: reading.away, cores: reading.cores, busy: reading.busy ?? null, celsius: reading.celsius, updateError: reading.updateError })));
+        writeMachines(heavyJobsDirectory(), readings.map(reading => ({ name: reading.host, local: reading.local, away: reading.away, cores: reading.cores, busy: reading.busy ?? null, celsius: reading.celsius })));
       }, () => {}).finally(() => { hostsReading = null; });
       return hostsLatest ?? previous;
     },

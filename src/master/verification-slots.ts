@@ -60,12 +60,12 @@ const ordinaryLimit = (directory: string) => limitFile(directory) ?? heavyJobBud
  * GY-3528: the machines the loop read last — this machine first, then every added compute host —
  * written beside the slots each cycle, so every install on this machine budgets from the same readings.
  */
-export interface Machine { name: string; local?: boolean; away: boolean; cores: number | null; busy: number | null; celsius: number | null; /** GY-3780: why the host did not take this release's helper. */ updateError?: string }
+export interface Machine { name: string; local?: boolean; away: boolean; cores: number | null; busy: number | null; celsius: number | null }
 export const machinesFile = (directory: string) => join(directory, 'machines.json');
 export function writeMachines(directory: string, machines: readonly Machine[], now = new Date(), proc = '/proc') {
   const pending = `${machinesFile(directory)}.${randomUUID()}`;
   mkdirSync(directory, { recursive: true });
-  writeFileSync(pending, JSON.stringify(machines.map(({ name, local, away, cores, busy, celsius, updateError }) => ({ name, ...(local ? { local } : {}), away, cores, busy, celsius, ...(updateError ? { updateError } : {}) }))));
+  writeFileSync(pending, JSON.stringify(machines.map(({ name, local, away, cores, busy, celsius }) => ({ name, ...(local ? { local } : {}), away, cores, busy, celsius }))));
   renameSync(pending, machinesFile(directory));
   // GY-3706: since when this machine is above its cores in load while a ready host has more than half its cores free.
   const local = machines[0], idle = machines.slice(1).find(host => !host.away && host.cores && host.busy !== null && host.cores - host.busy > host.cores / 2);

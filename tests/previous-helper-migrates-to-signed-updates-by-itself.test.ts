@@ -17,7 +17,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // update-shim:2, the installed copy refuses update-shim:1 from any key and refuses update-shim,
 // share and unshare from a shared key, and later releases update it through the signed form.
 // The 'run mainworks host add' line appears only for a host that offers neither form, or whose
-// update failed twice, with the reason. Because the root-installed file on such a host is still
+// update failed, with the reason (GY-3896: the host stays ready). Because the root-installed file on such a host is still
 // the previous one, status carries one low-priority line per migrated host, 'updated without sudo;
 // run mainworks host add USER@HOST when convenient to replace the installed helper', and never
 // blocks work on it.
@@ -179,7 +179,7 @@ test(`${proof} — loop migrates an update-shim:1 host without sudo, migrated co
   assert.match(call('probe').stdout, new RegExp(`^shim ${hostShimDigest}$`, 'm'));
 });
 
-test(`${proof} — host with neither form shows the 'run mainworks host add' instruction; a single transient update failure retries and succeeds without it, while two failures show it with the reason`, async () => {
+test(`${proof} — host with neither form shows the 'run mainworks host add' instruction; a failed update keeps the host ready and shows the reason`, async () => {
   // Host offering neither update-shim:1 nor update-shim:2 shows the host add instruction.
   await rm(shimsDir(), { recursive: true, force: true });
   await writeFile(hosts.shim, neitherFormHelperScript);
@@ -190,23 +190,7 @@ test(`${proof} — host with neither form shows the 'run mainworks host add' ins
   assert.ok(neitherLine, 'host with neither form shows host add instruction');
   assert.match(neitherLine.text, /run mainworks host add vish@box in a terminal/);
 
-  // Transient failure on attempt 1 succeeds on attempt 2: no 'run mainworks host add' line.
-  await rm(shimsDir(), { recursive: true, force: true });
-  await writeFile(hosts.shim, previousHelperScript);
-  let updateCalls = 0;
-  const flakyRun: ChildRun = async (command, args, options) => {
-    if (command === 'sh' && typeof args[1] === 'string' && args[1].includes('update-shim ')) {
-      updateCalls++;
-      if (updateCalls === 1) throw Object.assign(new Error('transient'), { status: 255, stderr: 'Connection reset by peer\n' });
-    }
-    return run(command, args, options);
-  };
-  const recovered = (await readHostReadings([], { file: hostsJson, run: flakyRun, local: 'here', update: true })).find(entry => entry.host === target)!;
-  assert.equal(updateCalls, 2, 'loop retried the failed update once');
-  assert.equal(recovered.away, false, recovered.reason);
-  assert.equal(recovered.updateError, undefined);
-
-  // Two failures: host reads away with the reason and shows the 'run mainworks host add' line.
+  // GY-3896: a failed update keeps the host ready, is tried once a cycle at most, and shows the reason in one line.
   await rm(shimsDir(), { recursive: true, force: true });
   await writeFile(hosts.shim, previousHelperScript.replace('os.replace(file.name, own)', "sys.exit('Disk quota exceeded')"));
   let failCalls = 0;
@@ -215,9 +199,8 @@ test(`${proof} — host with neither form shows the 'run mainworks host add' ins
     return run(command, args, options);
   };
   const failed = (await readHostReadings([], { file: hostsJson, run: failingRun, local: 'here', update: true })).find(entry => entry.host === target)!;
-  assert.equal(failCalls, 2, 'update attempted twice before failing');
-  assert.equal(failed.away, true);
-  assert.equal(failed.update, true);
+  assert.equal(failCalls, 1, 'one attempt, retried at most hourly');
+  assert.equal(failed.away, false);
   assert.equal(failed.updateError, 'Disk quota exceeded');
   const [failedLine] = outdatedShimAttention([failed]);
   assert.ok(failedLine);

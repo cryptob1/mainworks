@@ -29,7 +29,7 @@ import { shellQuote } from './install/transport.js';
 /** `sessions` (GY-3405): how many agent sessions the host takes at once; absent or 0, it takes test shards only. `login` (GY-3836): the owner's USER@HOST login the host was added with. */
 export interface HostRecord { target: string; addedAt: string; sessions?: number; login?: string }
 /** GY-3517: `at` is when this probe read the host; `update` marks one away only because its shim lacks a trial verb. */
-export interface HostReading { host: string; local?: boolean; at?: string; away: boolean; /** GY-3601: when an away host stopped answering. */ since?: string; update?: boolean; /** GY-3780: why it did not take this release's helper. */ updateError?: string; /** GY-3744: its helper's digest is not this release's. */ older?: boolean; /** GY-3891: updated through update-shim:1 without sudo; the root-installed helper is still the previous one. */ migrated?: boolean; /** GY-3836: the owner's login target (`USER@HOST`) for hints. */ login?: string; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; /** GY-3528: cores busy (the 1-minute load). */ busy?: number | null; stat?: { total: number; steal: number } | null }
+export interface HostReading { host: string; local?: boolean; at?: string; away: boolean; /** GY-3601: when an away host stopped answering. */ since?: string; update?: boolean; /** GY-3780: why it did not take this release's helper; GY-3896: when, so the loop retries at most hourly. */ updateError?: string; updateFailedAt?: string; /** GY-3744: its helper's digest is not this release's. */ older?: boolean; /** GY-3891: updated through update-shim:1 without sudo; the root-installed helper is still the previous one. */ migrated?: boolean; /** GY-3836: the owner's login target (`USER@HOST`) for hints. */ login?: string; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; /** GY-3528: cores busy (the 1-minute load). */ busy?: number | null; stat?: { total: number; steal: number } | null }
 
 /** Machine-wide, beside the machine-share link (team-access.ts): every install's loop on this machine reads the same hosts. */
 export const hostsFile = (home = configHome()) => join(home, 'machine', 'hosts.json');
@@ -454,7 +454,7 @@ export async function setHostSessions(target: string, sessions: number, options:
 /**
  * One cycle's readings: this machine first, then every recorded host; steal is measured from the previous cycle's counters.
  * GY-3780: with `update` (the loop), a host on another release's shim that speaks update-shim takes this release's and is
- * read again; one whose update fails reads away with the reason.
+ * read again; GY-3896: one whose update fails keeps its readiness and carries the reason.
  */
 export async function readHostReadings(previous: HostReading[], options: { file?: string; knownHosts?: string; run?: ChildRun; local?: string; update?: boolean } = {}): Promise<HostReading[]> {
   const knownHosts = options.knownHosts ?? (options.file ? join(dirname(options.file), 'known_hosts') : hostKnownHostsFile());
@@ -463,31 +463,34 @@ export async function readHostReadings(previous: HostReading[], options: { file?
     const target = record?.target ?? null;
     const host = target ?? options.local ?? hostname();
     let login = record?.login;
-    let probe = await probeHost(target, options.run, knownHosts, login), updateError: string | null = null;
+    let probe = await probeHost(target, options.run, knownHosts, login), updateError: string | undefined, updateFailedAt: string | undefined;
+    const was = previous.find(reading => reading.host === host);
     const updateForm = target && 'shim' in probe && probe.shim !== hostShimDigest
       ? (probe.verbs?.includes('update-shim:2') ? 'v2' : probe.verbs?.includes('update-shim:1') ? 'v1' : null)
       : null;
+    // GY-3896: a failed update is retried at most once an hour and never changes whether the host is ready.
     if (options.update && target && updateForm) {
-      for (let attempt = 0; attempt < 2; attempt++) {
-        updateError = await updateHostShim(target, options.run ?? defaultChildRun, knownHosts, updateForm);
+      if (was?.updateError && was.updateFailedAt && Date.now() - Date.parse(was.updateFailedAt) < 3_600_000) ({ updateError, updateFailedAt } = was);
+      else {
+        updateError = await updateHostShim(target, options.run ?? defaultChildRun, knownHosts, updateForm) ?? undefined;
         if (!updateError) {
-          probe = await probeHost(target, options.run, knownHosts, login);
-          if ('shim' in probe && probe.shim !== hostShimDigest) updateError = 'it took the update but still runs the older helper';
+          const updated = await probeHost(target, options.run, knownHosts, login);
+          if ('shim' in updated && updated.shim !== hostShimDigest) updateError = 'it took the update but still runs the older helper';
+          else probe = updated;
         }
-        if (!updateError) break;
+        if (updateError) updateFailedAt = new Date().toISOString();
       }
-      if (updateError) probe = { ok: false, update: true, reason: `${target} did not take this release's helper: ${updateError}`, shim: null, verbs: null };
     }
+    const failure = updateError ? { updateError, updateFailedAt } : {};
     const at = new Date().toISOString();
-    const was = previous.find(reading => reading.host === host);
     if (!probe.ok) {
       if (target && !login) login = await resolveLoginTarget(target, { run: options.run });
-      return { host, ...(target ? {} : { local: true }), ...(login ? { login } : {}), at, away: true, since: was?.away ? was.since ?? was.at ?? at : at, ...('update' in probe ? { update: true } : {}), ...(updateError ? { updateError } : {}), reason: probe.reason, cores: null, celsius: null, steal: null, runs: null, busy: null, stat: null };
+      return { host, ...(target ? {} : { local: true }), ...(login ? { login } : {}), at, away: true, since: was?.away ? was.since ?? was.at ?? at : at, ...('update' in probe ? { update: true } : {}), ...failure, reason: probe.reason, cores: null, celsius: null, steal: null, runs: null, busy: null, stat: null };
     }
     const before = was?.stat ?? null;
     const older = Boolean(target && (probe.shim !== hostShimDigest || (probe.verbs !== null && trialVerbs.some(verb => !probe.verbs!.includes(verb)))));
     const migrated = Boolean(target && probe.migrated);
     if (target && (older || migrated) && !login) login = await resolveLoginTarget(target, { run: options.run });
-    return { host, ...(target ? {} : { local: true }), ...(login ? { login } : {}), at, away: false, ...(older ? { older: true } : {}), ...(migrated ? { migrated: true } : {}), cores: probe.cores, celsius: probe.celsius, steal: stealPercent(before, probe.stat), runs: probe.runs, busy: probe.load, stat: probe.stat };
+    return { host, ...(target ? {} : { local: true }), ...(login ? { login } : {}), at, away: false, ...(older ? { older: true } : {}), ...failure, ...(migrated ? { migrated: true } : {}), cores: probe.cores, celsius: probe.celsius, steal: stealPercent(before, probe.stat), runs: probe.runs, busy: probe.load, stat: probe.stat };
   }));
 }
