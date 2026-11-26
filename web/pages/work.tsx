@@ -94,6 +94,7 @@ export function FlowLine({ flow }: { flow?: FlowReport | null }) {
         </table>
         {day.reviewReasons?.length ? <p className="muted" data-review-reasons>Review reasons: {day.reviewReasons.map(reason => `${cap(reason.label)} ${reason.count}`).join(' · ')}</p> : null}
         {day.flakyChecks?.length ? <p className="muted" data-flaky-checks>Flaky checks: {day.flakyChecks.map(flaky => `${flaky.check} ${flaky.count}`).join(' · ')}</p> : null}
+        {day.trialFailures?.length ? <p className="muted" data-trial-failures>Failing checks: {day.trialFailures.map(failing => `${failing.check} ${failing.count}`).join(' · ')}</p> : null}
         <p className="muted">Flaky trials {percent(day.flakyRate)} of {day.trials}. Merges reverted {percent(day.revertRate)}.</p>
       </div></details>
     </div>
