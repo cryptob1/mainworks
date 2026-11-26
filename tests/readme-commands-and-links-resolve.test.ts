@@ -12,6 +12,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const read = (path: string) => readFileSync(join(root, path), 'utf8');
 const tracked = new Set(execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean));
 const searchTerms = ['AI coding agents', 'open-source', 'Claude Code', 'Codex', 'Gemini'];
+const keywords = ['AI coding agents', 'open source', 'Claude Code', 'Codex', 'Gemini', 'self-hosted', 'code review', 'merge queue', 'autonomous'];
 
 test('unit:readme-commands-and-links-resolve — the README opens with the promise, carries true badges, and every fenced command, inline CLI command and file link resolves', () => {
   const readme = read('README.md');
@@ -21,6 +22,7 @@ test('unit:readme-commands-and-links-resolve — the README opens with the promi
   const promise = lines[2]!.replace(/\*\*/g, '');
   assert.ok(promise.toLowerCase().includes('ai coding agents'), 'the promise says AI coding agents');
   assert.equal(manifest.description, promise, 'package.json description is the promise');
+  for (const term of keywords) assert.ok(Array.isArray(manifest.keywords) && manifest.keywords.includes(term.toLowerCase()), `package.json keywords include ${term}`);
 
   assert.deepEqual(
     [...readme.matchAll(/^## (.+)$/gm)].map(match => match[1]),
