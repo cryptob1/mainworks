@@ -1,0 +1,13 @@
+{
+  "id": "release-check-timeout-recovers",
+  "title": "A release check that timed out on the whole catalog runs the affected subset next",
+  "description": "Seeds a test install with a stored short catalog time and a prior whole-catalog timeout, runs the release check, and verifies it runs the affected subset and verifies the commit.",
+  "target": "any",
+  "required": false,
+  "steps": [{
+    "kind": "command",
+    "name": "prior whole-catalog timeout recovers by running the affected subset",
+    "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:release-check-timeout-recovers tests/release-check-timeout-recovers.test.ts",
+    "timeoutSeconds": 300
+  }]
+}
