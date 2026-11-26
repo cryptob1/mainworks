@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import type { ChildRun } from '../src/child-runner.js';
 import { hostShimDigest, hostShimVerbs, missingTrialVerbs } from '../src/host-shim.js';
@@ -10,6 +9,7 @@ import {
   runShardsOnHosts,
   shardSshSession,
   type PlacedHost,
+  warmLockHash,
 } from '../src/merge-writer/remote-shards.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
@@ -39,7 +39,7 @@ test(`${proof} — a ready host offering every trial verb (current, update-shim:
   const image = 'mainworks-trial:unit';
   const imageDigest = `sha256:${'c'.repeat(64)}`;
   const lockfile = '{"lockfileVersion":3}';
-  const lockHash = createHash('sha256').update(lockfile).digest('hex');
+  const lockHash = warmLockHash(lockfile);
   const v1Tag = `graphyard-warm:${'c'.repeat(12)}-${lockHash.slice(0, 12)}`;
   const v2Tag = `graphyard-warm:${'c'.repeat(12)}-${lockHash.slice(0, 12)}-${baseTip.slice(0, 12)}`;
 

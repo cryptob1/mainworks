@@ -286,10 +286,11 @@ for (const name of fs.existsSync(root) ? fs.readdirSync(root) : []) {
   const dir = path.join(root, name), list = path.join(dir, "native", "pg-symlinks.json");
   for (const link of fs.existsSync(list) ? JSON.parse(fs.readFileSync(list, "utf8")) : []) try { fs.symlinkSync(path.basename(link.source), path.join(dir, link.target)); } catch {}
 }'`;
-// The salt retires warm images built before linkNativeLibraries, whose Postgres cannot start.
+/** A warm image's lockfile hash; the salt retires images built before linkNativeLibraries, whose Postgres cannot start. */
+export const warmLockHash = (lock: string) => createHash('sha256').update(lock).update('\nnative-links').digest('hex');
 const lockfileHash = async (local: (command: string, args: string[]) => Promise<string>, root: string, commit: string) => {
   const lock = await local('git', ['-C', root, 'show', `${commit}:package-lock.json`]).catch(() => null);
-  return { lock, hash: lock === null ? 'none' : createHash('sha256').update(lock).update('\nnative-links').digest('hex') };
+  return { lock, hash: lock === null ? 'none' : warmLockHash(lock) };
 };
 
 /**
