@@ -1,0 +1,16 @@
+{
+  "id": "ask-delivers-question",
+  "title": "A Builder's ask reaches the investigator and returns an answer",
+  "description": "On a running test control plane, `mainworks ask GY-N QUESTION` as a worker starts a stand-in runtime that, like claude -p, refuses to run without input; the question arrives on stdin and ask prints the investigator's answer.",
+  "tags": ["cli", "worker"],
+  "target": "any",
+  "required": true,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "ask delivers the question and prints the answer",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/ask-delivers-question.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}

@@ -20,7 +20,7 @@ const fs = require('node:fs');
 let wrote = 'refused';
 try { fs.writeFileSync('scribble.txt', 'x'); wrote = 'written'; } catch {}
 try { fs.appendFileSync('README.md', 'changed'); wrote = 'written'; } catch {}
-fs.writeFileSync(process.env.FAKE_RECORD, JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), readme: fs.readFileSync('README.md', 'utf8'), wrote, git: fs.existsSync('.git') }));
+fs.writeFileSync(process.env.FAKE_RECORD, JSON.stringify({ argv: process.argv.slice(2), stdin: fs.readFileSync(0, 'utf8'), cwd: process.cwd(), readme: fs.readFileSync('README.md', 'utf8'), wrote, git: fs.existsSync('.git') }));
 const mode = process.env.FAKE_MODE;
 if (mode === 'hang') setTimeout(() => {}, 600000);
 else if (mode === 'garbage') console.log('I looked around but have no JSON for you.');
@@ -59,7 +59,7 @@ test('integration:ask-investigator — one read-only headless session on the ite
     await ask('answer');
     const seen = JSON.parse(readFileSync(record, 'utf8'));
     assert.equal(seen.readme, 'item head\n', 'the session reads a checkout of the item head, not the caller\'s HEAD');
-    assert.ok(seen.argv.at(-1).includes('Where is the head named?'), 'the question is the session\'s own request');
+    assert.ok(seen.stdin.includes('Where is the head named?'), 'the question is the session\'s own request, on stdin');
     assert.ok(seen.argv.includes('-p'), 'headless');
     const allowed = seen.argv[seen.argv.indexOf('--allowedTools') + 1], denied = seen.argv[seen.argv.indexOf('--disallowedTools') + 1];
     assert.equal(allowed, 'Read,Grep,Glob');
