@@ -11,7 +11,7 @@ interface LifecycleSteps {
   pull?: boolean;
   /** What differs from the default workspace: host `machine-a`, path `/tmp/<key>/<id>`, branch `graphyard/<key>-<epoch>`. */
   workspace?: { host?: string; path?: string; branch?: string };
-  /** The claimant submits `head`, or pull request `pr` (the item's own number unless given); a submission registers the default workspace first. */
+  /** The claimant submits `head`, or pull request `pr` (the item's own number unless given); a submission registers the workspace first, as the control plane demands. */
   submit?: { pr?: number; head?: string };
 }
 
