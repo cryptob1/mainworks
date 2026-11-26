@@ -5,6 +5,7 @@ import {
   parsePlannerDrafts,
   plannerPrompt,
   plannerTestSelection,
+  recentlyClosedDrafts,
   recentlyDeliveredTitles,
   slowestTrialTestFiles,
   type PlannerInput,
@@ -44,15 +45,22 @@ export async function runPlanner(
   try {
     const brief = input.brief ?? await fleetRequest(config, 'product-brief').then(body => typeof body?.brief?.markdown === 'string' ? body.brief.markdown : null, () => null);
     const flowReport = deps.flow ? await deps.flow().catch(() => null) : await fleetRequest(config, 'flow').then(body => body as FlowReport, () => null);
+    const needSnap = !input.deliveredTitles?.length || !input.closedDrafts?.length;
+    const snap = needSnap
+      ? await (deps.workSnapshot
+          ? deps.workSnapshot().catch(() => null)
+          : fleetRequest(config, 'work-snapshot').then(body => body as { work?: Work[]; now?: string }, () => null))
+      : null;
+    const snapNow = Date.parse(snap?.now ?? '') || Date.now();
     const deliveredTitles = input.deliveredTitles?.length
       ? input.deliveredTitles
-      : await (deps.workSnapshot
-          ? deps.workSnapshot().catch(() => null)
-          : fleetRequest(config, 'work-snapshot').then(body => body as { work?: Work[]; now?: string }, () => null)
-        ).then(snap => Array.isArray(snap?.work) ? recentlyDeliveredTitles(snap.work, Date.parse(snap.now ?? '') || Date.now()) : []);
+      : Array.isArray(snap?.work) ? recentlyDeliveredTitles(snap.work, snapNow) : [];
+    const closedDrafts = input.closedDrafts?.length
+      ? input.closedDrafts
+      : Array.isArray(snap?.work) ? recentlyClosedDrafts(snap.work, snapNow) : [];
     const slowestTrialFiles = slowestTrialTestFiles(root);
     const testSelection = plannerTestSelection(root);
-    const prompt = plannerPrompt({ brief, flow6h: flowReport?.['6h'] ?? null, slowestTrialFiles, testSelection, openTitles: input.openTitles, deliveredTitles });
+    const prompt = plannerPrompt({ brief, flow6h: flowReport?.['6h'] ?? null, slowestTrialFiles, testSelection, openTitles: input.openTitles, deliveredTitles, closedDrafts });
 
     let captured = '';
     const baseExec = deps.headless ?? defaultHeadlessExec();

@@ -31,6 +31,7 @@ export interface PlannerInput {
   brief: string | null;
   openTitles: string[];
   deliveredTitles?: string[];
+  closedDrafts?: string[];
 }
 
 export type PlannerOutcome = { skipped: string } | { filed: string[]; result: string };
@@ -83,7 +84,25 @@ export function recentlyDeliveredTitles(work: readonly Work[], now: number): str
     .map(item => `${item.key}: ${item.title}`);
 }
 
-/** Builds the headless planner prompt from the product brief, 6-hour flow numbers, rework causes, testSelection shares, five slowest trial test files, open items and recently delivered items. */
+const closedAt = (item: Pick<Work, 'closure' | 'stageEnteredAt' | 'updatedAt'>) =>
+  Date.parse(item.closure?.at ?? item.stageEnteredAt ?? item.updatedAt);
+
+/** GY-3911: planner-origin drafts closed in the last seven days with their close reasons, newest first. */
+export function recentlyClosedDrafts(work: readonly Work[], now: number): string[] {
+  return work
+    .filter(item => {
+      if (!isPlannerDraft(item) || item.stage !== 'done' || !item.closure) return false;
+      const at = closedAt(item);
+      return Number.isFinite(at) && now - at <= deliveredWindowMs;
+    })
+    .sort((a, b) => closedAt(b) - closedAt(a))
+    .map(item => {
+      const reason = item.closure!.reason.trim();
+      return reason ? `${item.key}: ${item.title} — ${reason}` : `${item.key}: ${item.title}`;
+    });
+}
+
+/** Builds the headless planner prompt from the product brief, 6-hour flow numbers, rework causes, testSelection shares, five slowest trial test files, open items, recently delivered items and recently closed planner drafts. */
 export function plannerPrompt(context: {
   brief: string | null;
   flow6h: FlowNumbers | null;
@@ -91,6 +110,7 @@ export function plannerPrompt(context: {
   testSelection?: PlannerTestSelection;
   openTitles: readonly string[];
   deliveredTitles?: readonly string[];
+  closedDrafts?: readonly string[];
 }): string {
   const flowLines = context.flow6h
     ? [
@@ -117,6 +137,10 @@ export function plannerPrompt(context: {
     ? ['', 'Delivered in the last 7 days (do not redraft):', ...context.deliveredTitles.map(title => `- ${title}`)]
     : [];
 
+  const closedSection = context.closedDrafts?.length
+    ? ['', 'Planner drafts closed in the last 7 days (do not re-propose):', ...context.closedDrafts.map(entry => `- ${entry}`)]
+    : [];
+
   return [
     'You are a headless planner session. Ready work is low or empty while builder slots are free.',
     'Draft at most 3 small, high-leverage work items from the product brief, 6-hour flow numbers, rework causes and slowest trial test files for the Lead to sharpen and release.',
@@ -137,6 +161,7 @@ export function plannerPrompt(context: {
     ...slowLines,
     ...openSection,
     ...deliveredSection,
+    ...closedSection,
   ].join('\n');
 }
 
@@ -214,13 +239,14 @@ export function plannerStep(
   const brief = state.projectMemory.brief?.markdown ?? null;
   const openTitles = snapshot.work.filter(item => item.stage !== 'done').map(item => `${item.key}: ${item.title}`);
   const deliveredTitles = recentlyDeliveredTitles(snapshot.work, clock);
+  const closedDrafts = recentlyClosedDrafts(snapshot.work, clock);
   const priorFiledAt = state.planner?.filedAt ?? null;
   const priorFailures = state.planner?.failures ?? 0;
   state.planner = { at, filedAt: priorFiledAt, result: 'Running', failures: priorFailures, nextAt: state.planner?.nextAt ?? null };
 
   launcher.submit(plannerKey, [], async () => {
     let failed = false;
-    const outcome = await start({ brief, openTitles, deliveredTitles }).catch((error: unknown): PlannerOutcome => {
+    const outcome = await start({ brief, openTitles, deliveredTitles, closedDrafts }).catch((error: unknown): PlannerOutcome => {
       failed = true;
       return {
         filed: [],
