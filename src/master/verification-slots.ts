@@ -139,7 +139,7 @@ export function joinHostHeavyBudget(project: string, environment: NodeJS.Process
   environment[projectVariable] = project;
 }
 
-export interface SlotOwner { identity?: string; locked?: true; pid: number; label: string; project?: string; /** GY-3528: the host a placed shard runs on. */ host?: string; cwd: string; at: string; /** The in-flight suite files the holder declared (`declareSlotFiles`, GY-1821): what later runs deduct from the floor's budget. */ files?: number }
+export interface SlotOwner { identity?: string; locked?: true; ticket?: string; pid: number; label: string; project?: string; /** GY-3528: the host a placed shard runs on. */ host?: string; cwd: string; at: string; /** The in-flight suite files the holder declared (`declareSlotFiles`, GY-1821): what later runs deduct from the floor's budget. */ files?: number }
 export interface HeldSlot { slot: number; path: string; release: () => void }
 export interface AcquireOptions {
   directory: string; label: string; project?: string;
@@ -466,9 +466,9 @@ function admitted(waiters: { name: string; project: string }[], holders: string[
 export async function acquireVerificationSlot(options: AcquireOptions): Promise<HeldSlot> {
   const pollMs = options.pollMs ?? 1000;
   mkdirSync(options.directory, { recursive: true });
-  const owner: SlotOwner = { identity, locked: true, files: options.files, pid: process.pid, label: options.label, ...(options.project ? { project: options.project } : {}), cwd: process.cwd(), at: new Date().toISOString() };
   // A declaration beyond the bound (a running trial's shard files) or a caller fixing its own numbers does not queue.
   const ticket = options.firstSlot === undefined ? await enqueue(options.directory, options) : null;
+  const owner: SlotOwner = { identity, locked: true, ...(ticket ? { ticket: ticket.name } : {}), files: options.files, pid: process.pid, label: options.label, ...(options.project ? { project: options.project } : {}), cwd: process.cwd(), at: new Date().toISOString() };
   let told = false, drained = false, heated = false, blocked = false;
   const samples: [number, number][] = [];
   try {
@@ -494,7 +494,9 @@ export async function acquireVerificationSlot(options: AcquireOptions): Promise<
       if (reserved) return reserved;
       const limit = options.slots ?? heavyJobLimit(options.directory);
       const holders = await running(options.directory), free = limit - holders.length;
-      const waiters = free > 0 && ticket ? await liveWaiters(options.directory, !!readHeavyDrain(options.directory)) : [];
+      // A holder that just renamed its slot into place may still hold its queue ticket until finally leaves (GY-3868).
+      const holderTickets = new Set(holders.map(entry => entry.owner?.ticket).filter((name): name is string => !!name));
+      const waiters = free > 0 && ticket ? (await liveWaiters(options.directory, !!readHeavyDrain(options.directory))).filter(waiter => !holderTickets.has(waiter.name)) : [];
       const project = options.project ?? '', holderProjects = holders.map(entry => entry.owner?.project ?? '');
       if (ticket && !options.reserved && !blocked && holderProjects.includes(project)) {
         const next = queuedProjects(options.directory).find(other => other !== project && !holderProjects.includes(other));
