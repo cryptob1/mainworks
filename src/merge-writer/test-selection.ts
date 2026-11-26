@@ -6,7 +6,8 @@ import { dirname, join } from 'node:path';
 import { stateDirectory } from '../install/layout.js';
 
 export interface TestSelection { at: string; selected: number; reachable: number; /** GY-3787: every test file of the commit; absent on a trial recorded before it. */ all?: number;
-  /** GY-3840: the item the trial was for and the test files it selected; absent on a trial recorded before it. */ key?: string; files?: string[] }
+  /** GY-3840: the item the trial was for and the test files it selected; absent on a trial recorded before it. */ key?: string; files?: string[];
+  /** GY-3866: the trial selected only the direct importers of its changed files. */ oneHop?: boolean }
 const path = (root: string) => join(stateDirectory(root), 'test-selections.json');
 /** GY-3840: enough trials to cover the items of the last 20 release checks; the share line reads the last 20. */
 const kept = 100;
@@ -14,7 +15,7 @@ const kept = 100;
 /** The counts a selection's reason line states (`selected 84 of 412 reachable`), or null. */
 export const selectionCounts = (line: string) => {
   const match = /\bselected (\d+) of (\d+) reachable\b/.exec(line);
-  return match ? { selected: Number(match[1]), reachable: Number(match[2]) } : null;
+  return match ? { selected: Number(match[1]), reachable: Number(match[2]), ...(/\bdirect importers\b/.test(line) ? { oneHop: true } : {}) } : null;
 };
 
 export function readTestSelections(root: string): TestSelection[] {
@@ -29,15 +30,21 @@ export async function recordTestSelection(root: string, counts: Omit<TestSelecti
   await rename(temporary, file);
 }
 
-/** Master status's line: over the last 20 item trials, the median share of reachable test files selected, and of all test files. */
+/**
+ * Master status's line: over the last 20 item trials, the median share of reachable test files selected, and of all test files;
+ * GY-3866: `medianShareOfAll` the share of all test files over the last 20 trials before one-hop selection and after it.
+ */
 export function testSelectionSummary(all: readonly TestSelection[]) {
   const runs = all.slice(-20);
-  const median = (whole: 'reachable' | 'all') => {
-    const shares = runs.flatMap(run => run[whole] ? [run.selected / run[whole]] : []).sort((a, b) => a - b);
+  const median = (whole: 'reachable' | 'all', from = runs) => {
+    const shares = from.flatMap(run => run[whole] ? [run.selected / run[whole]] : []).sort((a, b) => a - b);
     return shares.length ? `${Math.round(shares[Math.floor((shares.length - 1) / 2)]! * 100)}%` : null;
   };
   const medianShareSelected = median('reachable');
-  return medianShareSelected && { trials: runs.filter(run => run.reachable > 0).length, medianShareSelected, medianShareOfAllSelected: median('all') };
+  return medianShareSelected && {
+    trials: runs.filter(run => run.reachable > 0).length, medianShareSelected, medianShareOfAllSelected: median('all'),
+    medianShareOfAll: { before: median('all', all.filter(run => !run.oneHop).slice(-20)), after: median('all', all.filter(run => run.oneHop).slice(-20)) },
+  };
 }
 
 /** GY-3840: a release check's items and the test files it caught failing (that failed again and pass on the verified commit). */

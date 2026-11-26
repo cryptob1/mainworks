@@ -472,16 +472,23 @@ export function changedExports(changed, base, root = repositoryRoot, head = null
  * it. A change limited to documentation selects nothing: no test executes it. A narrowed selection
  * (`declarations` given: an item's trial against its base) skips the tests whose only link to a
  * changed file is listing its directory (GY-3541); the batch gate selects with no base and runs them.
+ * `exports` (`changedExports`, an item's trial only) narrows to the direct importers (GY-3866).
  */
 export function selectAffected(changed, map, tests, declarations, exports) {
   const all = selectWhole(changed, map, tests, declarations);
   if (exports === undefined) return all;
-  // GY-3750: an item's trial of a change confined to function bodies and non-exported src code runs
-  // only the tests importing the exported names it reaches; the batch gate keeps the sweep.
-  const importers = exports?.size && new Set([...exports].flatMap(([file, names]) => [...names, '*'].flatMap(name => map.importers?.get(file)?.get(name) ?? [])));
-  const files = importers ? all.files.filter(test => importers.has(test) || staticRuleSet.has(test)) : all.files;
-  const reason = importers ? `the change is confined to function bodies or non-exported code of ${exports.size} file(s)` : all.reason;
-  return { mode: importers ? 'affected' : all.mode, reason: `selected ${files.length} of ${all.files.length} reachable: ${reason}`, files };
+  if (!changed || changed.some(file => fullSuitePaths.some(pattern => pattern.test(file)))) return { ...all, reason: `selected ${all.files.length} of ${all.files.length} reachable: ${all.reason}` };
+  // GY-3866: an item's trial runs only the tests importing a changed file directly (one hop) — of a
+  // change confined to function bodies and non-exported src code (GY-3750), only those importing the
+  // exported names it reaches — the tests reading it as data, changed tests and the static rules; the
+  // release check's sweep runs the transitive importers.
+  const direct = new Set(changed.flatMap(file => {
+    const names = map.importers?.get(file), reached = exports?.get(file);
+    const importers = !names ? [] : reached ? [...reached, '*'].flatMap(name => names.get(name) ?? []) : [...names.values()].flat();
+    return [file, ...importers, ...(map.readers?.get(file) ?? [])];
+  }));
+  const files = all.files.filter(test => direct.has(test) || staticRuleSet.has(test));
+  return { mode: 'affected', reason: `selected ${files.length} of ${all.files.length} reachable: the trial runs the direct importers of ${changed.length} changed file(s)`, files };
 }
 
 function selectWhole(changed, map, tests, declarations) {
@@ -504,7 +511,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   if (command === 'affected') {
     // GRAPHYARD_SELECTION_BASE (the merge writer's trial sets its base tip) narrows each changed file to the declarations its diff touches.
     const base = process.env.GRAPHYARD_SELECTION_BASE;
-    // GRAPHYARD_SELECTION_IMPORTERS (an item's trial, never the batch gate) narrows a body-only change to the tests importing what it reaches.
+    // GRAPHYARD_SELECTION_IMPORTERS (an item's trial, never the batch gate) narrows the selection to the tests importing a changed file directly.
     const selection = selectAffected(args, dependencyMap(), listTestFiles(), base ? changedDeclarations(args, base) : undefined, base && process.env.GRAPHYARD_SELECTION_IMPORTERS ? changedExports(args, base) : undefined);
     // The files follow in both modes, so the merge writer's trial runs exactly this selection; an empty one runs nothing.
     console.log(`${selection.mode}: ${selection.reason}`); if (selection.files.length) console.log(selection.files.join('\n'));
