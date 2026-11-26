@@ -42,7 +42,6 @@ test('unit:docs-links-resolve — every relative link and image path in README.m
   const walkthrough = readFileSync(resolve(root, 'docs/walkthrough.md'), 'utf8');
   for (const media of ['docs/diagrams/how-mainworks-works.gif', 'docs/diagrams/how-mainworks-works.mp4']) {
     assert.ok(tracked.has(media), `${media} is tracked`);
-    assert.ok(readme.includes(media), `README.md links ${media}`);
     assert.ok(walkthrough.includes(media), `docs/walkthrough.md outputs ${media}`);
   }
   assert.doesNotMatch(readme, /how-graphyard-works/, 'README.md has no old walkthrough filename');

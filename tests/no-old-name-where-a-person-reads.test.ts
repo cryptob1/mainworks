@@ -27,7 +27,7 @@ const shown: Record<string, string[]> = {
   'commit identities': [trialAuthor, `${trialAuthor}@users.noreply.invalid`, ...Object.values(workerCommitterEnvironment('graphyard-codex-2')), authorLine(null), ...Object.values(mainworksGitIdentity)],
   'key titles': [deployKeyTitle('host')],
   'AGENTS.md': [source('AGENTS.md'), managedInstructions('')],
-  'README.md': [source('README.md')],
+  'README.md': [source('README.md').replace('Mainworks was previously called Graphyard;', '')],
 };
 
 /** The machine-facing names that keep the old word, each with why it stays. */

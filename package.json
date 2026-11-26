@@ -6,7 +6,7 @@
   "engines": {
     "node": ">=24"
   },
-  "description": "Open source, self-hosted software that lets AI coding agents like Claude Code, Codex and Gemini take your goals all the way to production, with independent review and proof.",
+  "description": "Give AI coding agents a goal. Get tested, reviewed, deployed code — on your own server.",
   "keywords": [
     "ai coding agents",
     "open source",
