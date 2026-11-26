@@ -9,6 +9,8 @@ The details the [README](../README.md) leaves out. `mainworks guide setup` print
 3. **Ship one small change.** File a small goal from Home or Work; the Lead writes checkable criteria and dispatches a Builder.
 4. **Watch it merge.** Open the Task page to inspect the diff, checks and live session as the merge trial runs and lands on main.
 
+You decide goals, money and credentials. Tell any agent; reverse relayed answers under Needs you. The master handles blockers.
+
 ## Host
 
 - Docker and Compose: on an AppArmor host up loads the `mainworks-trial` profile with sudo. Merge trials need Docker and Compose even for `--local`.
