@@ -240,6 +240,37 @@ export const mirrorName = (root: string) => `${createHash('sha1').update(root).d
 const warmCompileCacheDirectory = '/warm/compile-cache';
 /** GY-3914: warm-image builds run dependency installation and build steps unprivileged with all capabilities dropped. */
 const warmBuildDockerFlags = '--user 1000:1000 --cap-drop=ALL --security-opt=no-new-privileges';
+/**
+ * GY-3936: the one install script a warm build runs (every other package's stays disabled): the embedded
+ * Postgres package's own `hydrate-symlinks.js`, which links its bundled libraries. Without it `postgres`
+ * dies with `error while loading shared libraries: libicui18n.so.60`, and every database test with it.
+ */
+const hydrateTestDatabase = 'for p in node_modules/@embedded-postgres/*/scripts/hydrate-symlinks.js; do if [ -f "$p" ]; then (cd "$(dirname "$p")/.." && node scripts/hydrate-symlinks.js); fi; done';
+/** GY-3936: the test database checks a new warm image must pass before it is tagged; an image without the package passes. */
+const warmDatabaseChecks = [
+  { command: 'postgres --version', script: '"$bin/postgres" --version' },
+  { command: 'postgres start-and-stop', script: 'd=$(mktemp -d) && "$bin/initdb" -D "$d/data" -U check --auth=trust --no-sync >/dev/null && "$bin/pg_ctl" -D "$d/data" -o "-c listen_addresses= -k $d" -w -t 60 start >/dev/null && "$bin/pg_ctl" -D "$d/data" -w stop >/dev/null' },
+].map(check => ({ ...check, script: `bin=; for d in /deps/node_modules/@embedded-postgres/*/native/bin; do if [ -x "$d/postgres" ]; then bin=$d; fi; done; [ -n "$bin" ] || exit 0; ${check.script}` }));
+
+/**
+ * GY-3936: commit the build container `name` and tag it `tag` only once the test database starts inside it;
+ * an image that fails is removed untagged, with an error naming the failing command.
+ */
+async function commitCheckedWarmImage(local: (command: string, args: string[]) => Promise<string>, name: string, tag: string, changes: string[] = []) {
+  const candidate = `graphyard-warm-check:${randomUUID().slice(0, 12)}`;
+  await local('docker', ['commit', ...changes, name, candidate]);
+  try {
+    for (const check of warmDatabaseChecks) {
+      const runner = `${name}-check`;
+      try { await local('docker', ['run', '--rm', '--name', runner, ...warmBuildDockerFlags.split(' '), '--entrypoint', '/bin/sh', candidate, '-c', check.script]); }
+      catch (error) {
+        const failed = error as { stderr?: unknown; message?: string };
+        throw new Error(`the new warm image failed \`${check.command}\`, so it was not used: ${(String(failed.stderr ?? '').trim() || String(failed.message ?? error)).slice(-300)}`);
+      }
+    }
+    await local('docker', ['tag', candidate, tag]);
+  } finally { await local('docker', ['image', 'rm', candidate]).catch(() => {}); }
+}
 
 /** The warm image for a trial image's digest, a lockfile's hash (`none` without one), and the commit it was built from. */
 export const warmImageTag = (digest: string, lockHash: string, commit?: string) =>
@@ -296,10 +327,10 @@ async function ensureWarmImageV1(input: { root: string; sha: string; image: stri
   if (active) return active;
   const build = (async (): Promise<string> => {
     if (lock === null) { await local('docker', ['tag', input.image, tag]); return tag; }
-    const name = `graphyard-warm-${randomUUID().slice(0, 8)}`, install = 'mkdir -p /deps && cd /deps && tar -xf - && HOME=/tmp npm ci --ignore-scripts --no-audit --no-fund >/dev/null';
+    const name = `graphyard-warm-${randomUUID().slice(0, 8)}`, install = `mkdir -p /deps && cd /deps && tar -xf - && HOME=/tmp npm ci --ignore-scripts --no-audit --no-fund >/dev/null && ${hydrateTestDatabase}`;
     try {
       await local('sh', ['-c', `set -o pipefail 2>/dev/null; git -C ${shellQuote(input.root)} archive ${shellQuote(input.sha)} package.json package-lock.json | docker run -i --name ${name} ${warmBuildDockerFlags} --entrypoint /bin/sh ${shellQuote(input.image)} -c ${shellQuote(install)}`]);
-      await local('docker', ['commit', name, tag]);
+      await commitCheckedWarmImage(local, name, tag);
     } finally { await local('docker', ['rm', '-f', name]).catch(() => {}); }
     return tag;
   })();
@@ -330,13 +361,13 @@ export async function ensureWarmImage(input: { root: string; commit: string; ima
       'export HOME=/tmp',
       'mkdir -p /deps /warm/build /warm/dist /warm/compile-cache',
       'cd /warm/build && tar -xf -',
-      'if [ -f package-lock.json ]; then cp package.json package-lock.json /deps/ && (cd /deps && npm ci --ignore-scripts --no-audit --no-fund >/dev/null) && ln -s /deps/node_modules /warm/build/node_modules && ln -s /deps/node_modules /warm/node_modules; fi',
+      `if [ -f package-lock.json ]; then cp package.json package-lock.json /deps/ && (cd /deps && npm ci --ignore-scripts --no-audit --no-fund >/dev/null && ${hydrateTestDatabase}) && ln -s /deps/node_modules /warm/build/node_modules && ln -s /deps/node_modules /warm/node_modules; fi`,
       `if [ -f bin/built-entry.mjs ] && [ -d node_modules ]; then node bin/built-entry.mjs && mv dist/cli.mjs /warm/dist/cli.mjs && mv dist/server.mjs /warm/dist/server.mjs && ln -s /warm/dist/cli.mjs dist/cli.mjs && ln -s /warm/dist/server.mjs dist/server.mjs && printf '%s\\n' ${shellQuote(input.commit)} > /warm/commit && chmod -R a+rX /warm && chmod 777 /warm/compile-cache && NODE_COMPILE_CACHE=/warm/compile-cache node bin/graphyard.mjs --help >/dev/null; fi`,
       'rm -rf /warm/build',
     ].join(' && ');
     try {
       await local('sh', ['-c', `set -o pipefail 2>/dev/null; git -C ${shellQuote(input.root)} archive ${shellQuote(input.commit)} | docker run -i --name ${name} ${warmBuildDockerFlags} --entrypoint /bin/sh ${shellQuote(input.image)} -c ${shellQuote(script)}`]);
-      await local('docker', ['commit', '--change', `ENV NODE_COMPILE_CACHE=${warmCompileCacheDirectory}`, name, tag]);
+      await commitCheckedWarmImage(local, name, tag, ['--change', `ENV NODE_COMPILE_CACHE=${warmCompileCacheDirectory}`]);
     } finally { await local('docker', ['rm', '-f', name]).catch(() => {}); }
     return { tag, built: true };
   })().then(async result => { await pruneWarmImageFamily(tag, local); return result; });
@@ -463,7 +494,8 @@ export function remoteShardSession(input: { root: string; sha: string; baseTip?:
   };
   const prepare = async (target: string) => {
     const version = supportsWarmImageV2(verbsByHost.get(target)) ? 'v2' : 'v1';
-    const image = await warmImage(version);
+    // GY-3936: a warm image that could not be built or failed its test database check turns the host away, so its shards run here.
+    const image = await warmImage(version).catch(error => { throw new HostDroppedError(target, error instanceof Error ? error.message : String(error)); });
     for (let step = 0; step < 3; step++) {
       const answer = (await shim(target, `prepare-run ${repo} ${input.sha} ${image}`)).trim().split('\n').at(-1) ?? '';
       if (answer.startsWith('run ')) return answer.slice(4);

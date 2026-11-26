@@ -118,6 +118,8 @@ elif command == 'tag':
     s['images'][args[2]] = src
     if args[1] in s['warm']:
         s['warm'][args[2]] = s['warm'][args[1]]
+    if args[1] in s['deps']:
+        s['deps'][args[2]] = s['deps'][args[1]]
     save()
 elif command == 'save':
     log('save')
