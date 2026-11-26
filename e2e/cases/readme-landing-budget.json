@@ -1,7 +1,7 @@
 {
   "id": "readme-landing-budget",
   "title": "README stays within its word budget and the setup guide carries what it leaves out",
-  "description": "Reads README.md and docs/setup.md: the README is 290 words or fewer and links docs/setup.md, and every fact moved out of the README (AppArmor trial profile, headless runtimes, --push-auth gh, viewer invites, publishing) is in the setup guide.",
+  "description": "Reads README.md, docs/setup.md and docs/reference.md: the README is 850 words or fewer and links docs/setup.md, which links docs/reference.md, and every fact moved out of the README (AppArmor trial profile, headless runtimes, --push-auth gh, viewer invites, publishing) is in the reference.",
   "tags": ["docs", "regression"],
   "target": "any",
   "required": false,

@@ -1,8 +1,9 @@
-// Generates the README's real-dashboard media files under docs/media/:
+// Generates the README's and docs/setup.md's real-dashboard media files under docs/media/:
 //   - docs/media/work.png   (1600x900, Work page with changes across stages)
 //   - docs/media/change.png (1600x900, one change with goal, green proofs, diff summary, reviewer verdict)
 //   - docs/media/lead.png   (1600x900, Lead page with plain-language status and one Needs you item)
 //   - docs/media/hero.gif + docs/media/hero.mp4 (1600x900, ~18s lifecycle recording, < 4 MB)
+//   - docs/media/setup-connect.png and docs/media/setup-first-goal.png (1600x900, the getting-started steps 3 and 4)
 //
 // Usage: npm run docs:media
 // Serves the built dist/ dashboard on a local loopback port with seeded demo data only.
@@ -162,7 +163,29 @@ async function main() {
   await page.screenshot({ path: join(outDir, 'lead.png'), fullPage: false });
   console.log('wrote docs/media/lead.png');
 
-  // 4. hero.gif + hero.mp4 — ~18s recording: type goal -> appears on Work -> review -> testing -> Merged -> Live.
+  // 4. setup-connect.png — the Setup page with one agent account connected and one not yet (docs/setup.md step 3).
+  setPhase('setup');
+  await page.goto(`${origin}/#setup`);
+  await page.reload();
+  await page.getByRole('heading', { name: 'Set up Mainworks', level: 1 }).waitFor();
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: join(outDir, 'setup-connect.png'), fullPage: false });
+  console.log('wrote docs/media/setup-connect.png');
+
+  // 5. setup-first-goal.png — the New work item box with a one-sentence goal typed in (docs/setup.md step 4).
+  setPhase('before-create');
+  await page.goto(`${origin}/#work`);
+  await page.reload();
+  await page.getByRole('heading', { name: 'Work', level: 1 }).waitFor();
+  await page.getByRole('button', { name: '＋ New work item' }).click();
+  await page.getByRole('dialog', { name: 'New work item' }).waitFor();
+  await page.locator('input[name="title"]').fill('Add a /health page that returns ok.');
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: join(outDir, 'setup-first-goal.png'), fullPage: false });
+  console.log('wrote docs/media/setup-first-goal.png');
+  setPhase('static');
+
+  // 6. hero.gif + hero.mp4 — ~18s recording: type goal -> appears on Work -> review -> testing -> Merged -> Live.
   const framesDir = await mkdtemp(join(tmpdir(), 'mainworks-hero-'));
   const fps = 4;
   let frameIndex = 0;

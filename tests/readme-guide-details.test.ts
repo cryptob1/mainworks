@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 // GY-3262: the README is a 250-word landing page; the full prerequisite checks and fixes,
 // and the publishing account setup, moved into `mainworks guide setup` and
 // `mainworks guide publishing`, which the README names.
-const setupDoc = readFileSync(new URL('../docs/setup.md', import.meta.url), 'utf8');
+const setupDoc = readFileSync(new URL('../docs/reference.md', import.meta.url), 'utf8');
 const cli = new URL('../src/cli.ts', import.meta.url);
 const guide = (topic: string) => execFileSync(process.execPath, ['--import', 'tsx', cli.pathname, 'guide', topic], { encoding: 'utf8' });
 
@@ -28,7 +28,7 @@ test('unit:readme-guide-details — guide setup prints every prerequisite, check
     'Contents read/write on the one repository', '--merge-token-stdin',
     'npx @cryptob1/graphyard install --repo OWNER/NAME --plan', '--provider local',
   ]) assert.ok(setup.includes(detail), `guide setup carries ${detail}`);
-  assert.ok(setupDoc.includes('mainworks guide setup'), 'docs/setup.md names mainworks guide setup');
+  assert.ok(setupDoc.includes('mainworks guide setup'), 'docs/reference.md names mainworks guide setup');
 });
 
 test('unit:readme-guide-details — guide publishing prints the publishing account setup the landing page summarizes, and the README names it', () => {
@@ -40,5 +40,5 @@ test('unit:readme-guide-details — guide publishing prints the publishing accou
     'placeholder `0.0.0`', 'npm publish --access public', 'Trusted Publisher', 'cryptob1/graphyard',
     'workflow **publish.yml**', 'grant **cryptob1/graphyard** Actions write access',
   ]) assert.ok(publishing.includes(detail), `guide publishing carries ${detail}`);
-  assert.ok(setupDoc.includes('mainworks guide publishing'), 'docs/setup.md names mainworks guide publishing');
+  assert.ok(setupDoc.includes('mainworks guide publishing'), 'docs/reference.md names mainworks guide publishing');
 });

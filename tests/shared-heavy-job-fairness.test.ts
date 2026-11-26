@@ -52,9 +52,9 @@ function secondInstall(fixture: Awaited<ReturnType<typeof host>>, entry: 'verifi
 }
 
 /** A first-install job arriving now and polling fast, as a newly launched trial does the moment a slot frees. */
-function arrival(fixture: Awaited<ReturnType<typeof host>>, label: string) {
+function arrival(fixture: Awaited<ReturnType<typeof host>>, label: string, signal = stop.signal) {
   let held: HeldSlot | null = null;
-  const taken = acquireVerificationSlot({ directory: fixture.directory, label, project: 'acme/core', pollMs: 5, signal: stop.signal }).then(slot => { held = slot; return slot; });
+  const taken = acquireVerificationSlot({ directory: fixture.directory, label, project: 'acme/core', pollMs: 5, signal }).then(slot => { held = slot; return slot; });
   taken.catch(() => {});
   return { taken, held: () => held };
 }
@@ -88,9 +88,9 @@ test('e2e:shared-heavy-job-fairness — a reviewed candidate from a second insta
   const candidate = secondInstall(fixture, 'trial', 'GY-31');
   await until(candidate.waiting, 'the candidate\'s trial waits for the shared slot');
   // The first install submits a new trial every 20 ms, before and after the slot frees.
-  const submitted: ReturnType<typeof arrival>[] = [];
+  const submitted: ReturnType<typeof arrival>[] = [], cancel = new AbortController();
   let submitting = true;
-  const stream = (async () => { for (let n = 0; submitting; n++) { submitted.push(arrival(fixture, `merge trial GY-${4000 + n}`)); await sleep(20); } })();
+  const stream = (async () => { for (let n = 0; submitting; n++) { submitted.push(arrival(fixture, `merge trial GY-${4000 + n}`, cancel.signal)); await sleep(20); } })();
   try {
     await sleep(100);
     // The batch gate is the deploy path: it starts at once in its reserved slot, ahead of every waiter.
@@ -104,6 +104,8 @@ test('e2e:shared-heavy-job-fairness — a reviewed candidate from a second insta
     assert.equal(submitted.some(job => job.held()), false, 'none of the first install\'s newer trials overtook it');
   } finally { submitting = false; await stream; }
   await candidate.finish();
-  for (const job of submitted) (await job.taken).release();
+  // GY-3937: the stream's leftover waiters are cancelled, not run one by one: each poll of every waiter spawns a flock per queued ticket, so draining ~40 took 33 s.
+  cancel.abort();
+  await Promise.allSettled(submitted.map(job => job.taken.then(slot => slot.release())));
   assert.equal(fixture.peak(), 1, 'never more than the host limit of ordinary jobs at once');
 });

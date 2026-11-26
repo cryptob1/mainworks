@@ -129,14 +129,14 @@ test('unit:readme-is-the-approved-text — README.md matches the owner-approved 
   const firstBold = readme.split('\n')[2]!.replace(/\*\*/g, '');
   assert.equal(manifest.description, firstBold, 'package.json description matches the README first bold sentence');
 
-  // The former prerequisites paragraph lives in docs/setup.md as a list, one requirement per line with its check command.
-  const setup = read('docs/setup.md');
+  // The former prerequisites paragraph lives in docs/reference.md (GY-3940) as a list, one requirement per line with its check command.
+  const setup = read('docs/reference.md');
   const prereqSection = setup.split('\n## Prerequisites\n')[1]?.split('\n## ')[0]?.trim() ?? '';
-  assert.ok(prereqSection.length > 0, 'docs/setup.md has a Prerequisites section');
+  assert.ok(prereqSection.length > 0, 'docs/reference.md has a Prerequisites section');
   const prereqLines = prereqSection.split('\n').filter(line => line.startsWith('- '));
-  assert.ok(prereqLines.length >= 9, `docs/setup.md lists each prerequisite on its own line: ${prereqLines.length}`);
+  assert.ok(prereqLines.length >= 9, `docs/reference.md lists each prerequisite on its own line: ${prereqLines.length}`);
   for (const check of ['uname -r', 'node --version', 'npm --version', 'git --version', 'docker version', 'docker compose version', 'gh auth status', 'bwrap --version', 'python3 --version', 'herdr --version', 'systemctl --user status']) {
-    assert.ok(prereqLines.some(line => line.includes(check)), `docs/setup.md prerequisite list includes ${check}`);
+    assert.ok(prereqLines.some(line => line.includes(check)), `docs/reference.md prerequisite list includes ${check}`);
   }
 
   // docs/diagrams/where-things-run.svg is linked only from docs/architecture.md (at most 250 words)
