@@ -8,9 +8,9 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3750: test compute is the line's cost and trials are most of it. An item's trial of a change
 // confined to function bodies or non-exported src code runs only the tests importing the exported
-// names it reaches (directly or through re-exports), not every test reaching the file; a change to
-// an exported signature or type, a test helper, a fixture, the install or anything outside src/
-// selects as before. The reason line states both counts; the bound proof files are added after.
+// names it reaches (directly or through re-exports), not every test reaching the file; GY-3866: any other change
+// runs the tests importing the changed file directly, and the install the full suite. The reason line
+// states both counts; the bound proof files are added after.
 
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 async function write(root: string, files: Record<string, string>) {
@@ -40,7 +40,7 @@ const project = {
   'tests/proof.test.ts': "import { readFileSync } from 'node:fs';\nreadFileSync('fixtures/case.json');\n",
 };
 
-test('unit:small-change-selects-declaration-importers — a body-only edit in a widely imported module selects only the importers of that declaration; an exported type edit, a test helper, a fixture and package.json select as today; both counts are stated', async () => {
+test('unit:small-change-selects-declaration-importers — a body-only edit in a widely imported module selects only the importers of that declaration; an exported type edit selects its direct importers; a test helper, a fixture and package.json select as today; both counts are stated', async () => {
   const root = await temporaryDirectory('declaration-importers');
   try {
     await write(root, project);
@@ -60,13 +60,13 @@ test('unit:small-change-selects-declaration-importers — a body-only edit in a 
     const body = await trial({ 'src/common.ts': common.replace('clamp(options.size) + 1', 'clamp(options.size) + 2') });
     assert.deepEqual(body.today, ['tests/hub.test.ts', 'tests/pick.test.ts', 'tests/user.test.ts', 'tests/widen.test.ts'], 'today: every test reaching widen');
     assert.deepEqual(body.selection.files, ['tests/hub.test.ts', 'tests/widen.test.ts']);
-    assert.match(body.selection.reason, /^selected 2 of 4 reachable: the change is confined to function bodies or non-exported code of 1 file\(s\)$/);
+    assert.match(body.selection.reason, /^selected 2 of 4 reachable: the trial runs the direct importers of 1 changed file\(s\)$/);
 
     // A non-exported helper's edit selects the importers of the exported names using it.
     const helper = await trial({ 'src/common.ts': common.replace('Math.max(0, value)', 'Math.max(1, value)') });
     assert.deepEqual(helper.selection.files, ['tests/hub.test.ts', 'tests/widen.test.ts']);
 
-    // An import whose module or imported name changes under an unchanged body selects as today; an added import still narrows.
+    // An import whose module or imported name changes under an unchanged body selects its direct importers (GY-3866); an added import still narrows.
     const pick = project['src/pick.ts'];
     for (const edited of [pick.replace("from './common.js'", "from './index.js'"), pick.replace('{ widen }', '{ shrink as widen }')]) {
       const outcome = await trial({ 'src/pick.ts': edited });
@@ -75,14 +75,14 @@ test('unit:small-change-selects-declaration-importers — a body-only edit in a 
     }
     const added = await trial({ 'src/pick.ts': `import { shrink } from './common.js';\n${pick.replace('return widen({ size: 1 })', 'return widen({ size: 1 }) + shrink({ size: 1 })')}` });
     assert.deepEqual(added.selection.files, ['tests/pick.test.ts']);
-    assert.match(added.selection.reason, /^selected 1 of 1 reachable: the change is confined/);
+    assert.match(added.selection.reason, /^selected 1 of 1 reachable: the trial runs the direct importers/);
 
-    // An exported type or signature edit selects as today.
+    // GY-3866: an exported type or signature edit selects the file's direct importers, not the tests reaching it through src/pick.ts or src/user.ts.
     const type = await trial({ 'src/common.ts': common.replace('size: number }', 'size: number; label?: string }') });
-    assert.deepEqual(type.selection.files, type.today);
-    assert.match(type.selection.reason, new RegExp(`^selected ${type.today.length} of ${type.today.length} reachable: `));
+    assert.deepEqual(type.selection.files, type.today.filter(file => !['tests/pick.test.ts', 'tests/user.test.ts'].includes(file)));
+    assert.match(type.selection.reason, new RegExp(`^selected ${type.selection.files.length} of ${type.today.length} reachable: `));
     const signature = await trial({ 'src/common.ts': common.replace('export function widen(options: Options)', 'export function widen(options: Options, by = 1)') });
-    assert.deepEqual(signature.selection.files, signature.today);
+    assert.deepEqual(signature.selection.files, signature.today.filter(file => !['tests/pick.test.ts', 'tests/user.test.ts'].includes(file)));
 
     // A test helper, a fixture and package.json select as today.
     for (const files of [{ 'tests/helpers/make.ts': "import { shrink } from '../../src/common.js';\nexport const make = () => shrink({ size: 2 });\n" }, { 'fixtures/case.json': '{"a":1}\n' }] as Record<string, string>[]) {
@@ -94,10 +94,10 @@ test('unit:small-change-selects-declaration-importers — a body-only edit in a 
     assert.equal(install.selection.mode, 'full');
     assert.deepEqual(install.selection.files, tests);
 
-    // A body edit beside a file outside src/ selects as today.
+    // A body edit beside a file outside src/ selects the direct importers and the fixture's readers.
     const mixed = await trial({ 'src/common.ts': common.replace('clamp(options.size) + 1', 'clamp(options.size) + 2'), 'fixtures/case.json': '{"b":1}\n' });
-    assert.deepEqual(mixed.selection.files, mixed.today);
-    assert.ok(mixed.selection.files.includes('tests/user.test.ts'));
+    assert.deepEqual(mixed.selection.files, ['tests/hub.test.ts', 'tests/proof.test.ts', 'tests/widen.test.ts']);
+    assert.ok(mixed.today.includes('tests/user.test.ts'), 'the release check still runs the transitive importer');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

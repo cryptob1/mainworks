@@ -1,0 +1,18 @@
+{
+  "id": "trial-one-hop-selection",
+  "title": "A one-file merge trial selects only its direct importers, its proofs and the static rules",
+  "description": "Runs a real loop cycle against a temporary Postgres control plane and scratch Git remote using scripts/ci-tests.mjs affected: a one-file exported-signature change merges and its recorded merge.trial event lists exactly the test importing the file directly, the bound proof file and the six static rule files, not the test reaching the file through another module.",
+  "tags": [
+    "trial"
+  ],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "Run a one-file merge trial on a test install and check its recorded selected tests",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=^e2e:trial-one-hop-selection tests/trial-one-hop-selection.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}

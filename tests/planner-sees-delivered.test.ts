@@ -48,7 +48,7 @@ test(`${proof} — planner prompt lists items delivered in the last 7 days under
   await mkdir(join(directory, '.graphyard'), { recursive: true });
   await recordTestSelection(directory, { selected: 6, reachable: 8, all: 12, key: 'GY-3838', files: ['tests/a.test.ts'] });
   const selection = testSelectionSummary(readTestSelections(directory));
-  assert.deepEqual(selection, { trials: 1, medianShareSelected: '75%', medianShareOfAllSelected: '50%' });
+  assert.deepEqual(selection, { trials: 1, medianShareSelected: '75%', medianShareOfAllSelected: '50%', medianShareOfAll: { before: '50%', after: null } });
 
   // Direct plannerPrompt check with delivered items and testSelection.
   const direct = plannerPrompt({
