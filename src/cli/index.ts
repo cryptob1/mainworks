@@ -35,11 +35,11 @@ export const commands: readonly CliCommand[] = [
 export function renderHelp() {
   return `${PRODUCT_NAME} 0.1 — distributed work, explicit proof
 
-Usage: ${COMMAND_NAME} COMMAND (the old graphyard command still works)
-Environment: GRAPHYARD_URL, GRAPHYARD_TOKEN (individual role-scoped credential)
+Usage: ${COMMAND_NAME} COMMAND (the old graphyard command and GRAPHYARD_* settings still work)
+Environment: MAINWORKS_URL, MAINWORKS_TOKEN (individual role-scoped credential)
 ${commands.flatMap(entry => entry.help).join('\n')}
 
-Use GRAPHYARD_REQUEST_ID to safely retry an identical command after a network timeout.
+Use MAINWORKS_REQUEST_ID to safely retry an identical command after a network timeout.
 Never share an operator or producer credential with an implementation agent.`;
 }
 

@@ -159,7 +159,7 @@ export function computeAccount(work: Work, all: Work[], now: Date): Computed {
         }
         if (proof.step === 'stopped') return make('attention', `${key}: ${proof.detail}`,
           { kind: 'attention', trigger: 'operator-proof', detail: proof.detail }, binding, failing.name, refusal);
-        if (proof.step === 'wait') return waits({ kind: 'session', on: 'graphyard', detail: `${key}: ${proof.detail}` }, failing.name, refusal);
+        if (proof.step === 'wait') return waits({ kind: 'session', on: 'mainworks', detail: `${key}: ${proof.detail}` }, failing.name, refusal);
         const inputs = proof.inputs;
         return make('dispatch', `${key} needs ${inputs.kind === 'dispatch' && inputs.target === 'proof' ? inputs.proofs.join(', ') : refusal} on ${short(work.candidate?.sha)}`, inputs, binding, failing.name, refusal);
       }

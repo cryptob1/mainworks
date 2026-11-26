@@ -11,7 +11,8 @@ import { commandFailure, type CommandResult } from './transport.js';
 /** The private key's name under the install directory; `merge-writer-settings.ts` reads it from the same place. */
 export const DEPLOY_KEY_FILE = 'deploy-key';
 /** The registered key's title names the host whose merge writer pushes with it. */
-const deployKeyTitle = (host: string) => `graphyard-merge-writer-${host}`;
+/** GY-3872: a key registered before keeps its 'graphyard-merge-writer-<host>' title; registration matches keys by fingerprint, never title. */
+export const deployKeyTitle = (host: string) => `mainworks-merge-writer-${host}`;
 
 export interface DeployKeyOptions {
   /** Runs `ssh-keygen` with ARGS; the default spawns the host's. Tests substitute a fake that writes the pair. */
@@ -62,7 +63,7 @@ const present = async (file: string) => { try { return (await stat(file)).isFile
 /**
  * The install's deploy key: `INSTALL_DIR/deploy-key` and its `.pub`, generated with
  * `ssh-keygen -t ed25519` when absent (the directory 0700, both files 0600), registered on
- * REPOSITORY read-write under `graphyard-merge-writer-<hostname>` unless a deploy key with its
+ * REPOSITORY read-write under `mainworks-merge-writer-<hostname>` unless a deploy key with its
  * fingerprint is already listed, and returned by its private path. The private key is never read,
  * printed or logged here: only the public file's content and path leave this module, and `gh`
  * receives the public file alone.

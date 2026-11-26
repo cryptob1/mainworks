@@ -16,6 +16,8 @@ Domain mutations must be transactional, append history, and enforce principal id
 
 Run `npm run build` and `npm run test:affected -- <your bound proof test files>` for domain/API changes: it runs the tests your change affects plus those files; `npm test` is for whole-suite runs by hand. Tests use `withDatabase(label)` from `tests/helpers/postgres.ts`, a unique database on a shared temporary Postgres cluster; do not substitute production data. Tests create every temporary directory with `temporaryDirectory(label[, parent])` from `tests/helpers/temp-dirs.ts`. Keep README.md short and current: it is the only documentation page; procedures agents need live in CLI text (`mainworks guide`, `master guide`), and docs/ holds only the walkthrough media. Keep external I/O outside coordination transactions.
 
+The CLI is `mainworks` and its settings are `MAINWORKS_*`; the old `graphyard` command and `GRAPHYARD_*` settings still work.
+
 No secrets belong in Git. `.graphyard/credentials.json` and `.env` are local-only. Installation credentials belong under `~/.config/graphyard/<install>/` with mode 0600, never in a repository. Installation and deployment changes go through `src/install/`, the Dockerfile and `compose.yaml`. Preview infrastructure changes with `mainworks install --plan` before applying (no GitHub App, branch protection or Actions gates; the merge writer deploy key, or a repository-scoped fine-grained token where deploy keys are disabled, is the only GitHub access).
 
 <!-- graphyard -->
@@ -29,6 +31,6 @@ Before editing, claim an authorized work item and use its assigned worktree.
 Never weaken requirements, and never use an operator/producer token for
 implementation or proof. Act without asking, and record blockers with the CLI.
 Submit with `complete GY-N EPOCH --head SHA`; make `complete` your last action.
-For any procedure, run `node $GRAPHYARD_CLI guide TOPIC`
+For any procedure, run `node $MAINWORKS_CLI guide TOPIC`
 (worker: claim, sync, complete, park, blocked; reviewer: review; producer: proof; `guide` alone lists the rest).
 <!-- /graphyard -->

@@ -65,7 +65,7 @@ test('integration:check-ins-are-authored-owner-and-mainworks — worker, kept-wo
     execFileSync('git', ['-C', root, 'add', '-A'], { env: session });
     execFileSync('git', ['-C', root, 'commit', '-qm', 'GY-77: the worker change'], { env: session });
     assert.equal(show(root, '%an <%ae>'), ownerAuthor, 'the worker commit is authored by the owner');
-    assert.equal(show(root, '%cn'), agent, 'the worker commit is committed by the agent identity');
+    assert.equal(show(root, '%cn'), 'mainworks-worker-a', 'the worker commit is committed by the agent identity, named mainworks- (GY-3872)');
 
     // The loop's kept work-in-progress commit.
     await writeFile(join(root, 'c.txt'), 'unfinished\n');
