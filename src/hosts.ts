@@ -57,8 +57,8 @@ export function helperSigner(home = configHome()) {
   if (!existsSync(file)) {
     mkdirSync(dirname(file), { recursive: true });
     // GY-3945: processes creating the key together (a trial's fresh home, the suite's parallel files) each make a
-    // pair beside it. Linking the private half in keeps the first pair and fails with EEXIST for the rest, who read
-    // that one; ssh-keygen writing here directly refused the key that landed under it.
+    // pair beside it, and linking the private half in keeps the first pair: the link fails with EEXIST for every
+    // process after it, which reads that pair. Written in place, ssh-keygen refused the key that landed under it.
     const pair = mkdtempSync(join(dirname(file), '.helper-signing-key-'));
     try {
       execFileSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', 'mainworks-helper', '-f', join(pair, 'key')], { stdio: 'ignore' });

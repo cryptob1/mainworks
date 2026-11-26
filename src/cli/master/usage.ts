@@ -8,7 +8,7 @@ export async function usageCommand(session: MasterSession): Promise<unknown> {
   if (id !== 'usage') return unhandled;
   const { values } = parseArgs({ args, options: { days: { type: 'string' } } });
   const days = values.days === undefined ? null : Number(values.days);
-  if (days !== null && !(days > 0)) throw new Error('Use master usage [--days N], N the days the by-role, by-model and by-account breakdowns cover');
+  if (days !== null && !(days > 0)) throw new Error('Use master usage [--days N], N the days of usage to read');
   const summary: CostSummary = await masterApi(`costs${days ? `?days=${days}` : ''}`);
   return console.log(costReport(summary, Date.now()));
 }

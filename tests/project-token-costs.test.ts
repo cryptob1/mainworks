@@ -16,7 +16,7 @@ import { Engine } from '../src/engine.js';
 import { loadMasterConfig, setupMaster } from '../src/master/config.js';
 import { spawnHeadless, startHeadlessSession, startHeadlessWorker, workerRunsDirectory } from '../src/headless-session.js';
 import { collectUsage } from '../src/usage-capture.js';
-import type { CostSummary } from '../src/model/token-costs.js';
+import { costReport, type CostSummary } from '../src/model/token-costs.js';
 import type { Principal } from '../src/model.js';
 import { workFixture } from './helpers/work-fixture.js';
 import { server } from '../src/server.js';
@@ -124,9 +124,11 @@ test('e2e:project-token-costs — the Costs section, the item page and master us
   for (const text of ['Tokens and cost', '$8.68 ($2.60 API-equivalent)', 'Workers: 1.30M tokens · $6.08', 'Reviewers: 1.35M tokens · $2.60 API-equivalent']) assert.ok(item.includes(text), `the item page shows ${text}`);
   assert.ok(!item.includes('Master'), 'the master session belongs to no item');
 
-  // `master usage`.
+  // `master usage`. GY-3945: a read bounded to 7 days names no window longer than that.
   const { stdout } = await exec(process.execPath, [launcher, 'master', 'usage', '--days', '7'], { cwd: root });
-  for (const text of ['All time: 2.65M tokens', 'at least $8.68 ($2.60 API-equivalent) · price unknown for 5,000 tokens', 'the plans cost $200/month', 'By role, last 7 days:', 'Workers: 1.30M tokens',
+  for (const text of ['Today: 2.65M tokens', '7 days: 2.65M tokens', 'at least $8.68 ($2.60 API-equivalent) · price unknown for 5,000 tokens', 'the plans cost $200/month', 'By role, last 7 days:', 'Workers: 1.30M tokens',
     'claude-experimental-1: 5,000 tokens (3,000 in, 2,000 out, 0 cache read, 0 cache write) · price unknown', 'claude-max: 1.35M tokens', '$2.60 API-equivalent · plan $200/month', 'ember: price unknown', 'opus (claude-opus-5-5): 4 / 20 / 0.2 / 5 as of'])
     assert.ok(stdout.includes(text), `master usage shows ${text}:\n${stdout}`);
+  assert.ok(!/^\s+(30 days|All time):/m.test(stdout), `master usage --days 7 names no window longer than the 7 days it read:\n${stdout}`);
+  assert.ok(costReport(summary, Date.now()).includes('All time: 2.65M tokens'), 'unbounded, it still names all time');
 });

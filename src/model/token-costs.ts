@@ -153,9 +153,11 @@ export interface CostLine extends Tokens {
 }
 export const costWindows = [['today', 'Today'], ['week', '7 days'], ['month', '30 days'], ['all', 'All time']] as const;
 type CostWindow = typeof costWindows[number][0];
+/** GY-3945: how many days back a window reaches. A usage read bounded to `days` (the API's and `master usage --days`) holds no window longer than that, so the report leaves the longer ones out. */
+const windowDays: Record<CostWindow, number> = { today: 1, week: 7, month: 30, all: Infinity };
 export interface CostSummary {
   windows: Record<CostWindow, CostLine & { shipped: number; perShipped: number | null }>;
-  /** The breakdowns over `days` (null: all time). */
+  /** The days back the usage was read (null: all time): the breakdowns cover them, and the windows are totals within them. */
   days: number | null;
   roles: CostLine[]; models: CostLine[]; accounts: CostLine[];
   /** The price sheet: every registry model with its rates and the day they were read. */
@@ -265,7 +267,7 @@ export function costReport(summary: CostSummary, now: number): string {
   const due = pricesDue(summary, now);
   return [
     'Tokens the project\'s agents spent, and what they cost at the price sheet\'s rates:',
-    ...costWindows.map(([window, label]) => { const entry = summary.windows[window]; return `  ${label}: ${tokensText(entry)} · ${costText(entry)}${entry.perShipped === null ? '' : ` · ${dollars(entry.perShipped)} per shipped item (${entry.shipped})`}`; }),
+    ...costWindows.filter(([window]) => summary.days === null || windowDays[window] <= summary.days).map(([window, label]) => { const entry = summary.windows[window]; return `  ${label}: ${tokensText(entry)} · ${costText(entry)}${entry.perShipped === null ? '' : ` · ${dollars(entry.perShipped)} per shipped item (${entry.shipped})`}`; }),
     ...(summary.monthlyFees ? [`  Flat plans are not billed per token: their figures are API-equivalent, and the plans cost ${dollars(summary.monthlyFees)}/month.`] : []),
     ...([['By role', summary.roles], ['By model', summary.models], ['By account', summary.accounts]] as const).flatMap(([title, lines]) => lines.some(entry => total(entry)) ? [`${title}${summary.days === null ? '' : `, last ${summary.days} day${summary.days === 1 ? '' : 's'}`}:`, ...lines.filter(entry => total(entry)).map(row)] : []),
     ...(summary.notMetered.length ? ['Not metered (their runtime reports no tokens):', ...summary.notMetered.map(text => `  ${text}`)] : []),
