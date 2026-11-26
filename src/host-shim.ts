@@ -88,6 +88,7 @@ export const missingTrialVerbs = (probe: { shim: string | null; verbs: string[] 
 };
 
 const shimDigestSlot = '@GRAPHYARD_SHIM_DIGEST@';
+const shimSignerSlot = '@GRAPHYARD_FALLBACK_SIGNER@';
 const shimTemplate = `#!/bin/sh
 # graphyard-host-shim: the only command Mainworks's SSH key may run here (mainworks host prepare).
 refuse() { echo "graphyard-host-shim refuses: $SSH_ORIGINAL_COMMAND" >&2; exit 1; }
@@ -103,6 +104,7 @@ case "$SSH_ORIGINAL_COMMAND" in
   probe)
     echo "shim ${shimDigestSlot}"
     echo "verbs ${hostShimVerbs.join(' ')}"
+    [ -n "$MAINWORKS_SIGNERS" ] || echo "migrated 1"
     echo "user $(id -u) $(id -Gn)"
     echo "compose $(docker compose version --short 2>/dev/null)"
 ${hostProbeScript.split('\n').map(line => `    ${line}`).join('\n')}
@@ -112,6 +114,7 @@ ${hostProbeScript.split('\n').map(line => `    ${line}`).join('\n')}
     exec python3 -I -c "$(cat <<'GRAPHYARD_VERBS'
 import hashlib, json, os, re, shutil, signal, subprocess, sys, tempfile, time
 LAUNCHER = ${JSON.stringify(trialLauncher)}
+FALLBACK_SIGNER = ${shimSignerSlot}
 asked = os.environ.get('SSH_ORIGINAL_COMMAND', '')
 def refuse():
     sys.stderr.write('graphyard-host-shim refuses: ' + asked + '\\n')
@@ -304,10 +307,21 @@ elif verb == 'update-shim':
     own = os.environ['MAINWORKS_SHIM']
     if hashlib.sha256(content).hexdigest() != args[0]:
         sys.exit('graphyard-host-shim refuses the update: its content does not match ' + args[0])
-    with tempfile.NamedTemporaryFile() as file:
-        file.write(signature + b'-----END SSH SIGNATURE-----\\n')
-        file.flush()
-        verified = subprocess.run(['ssh-keygen', '-Y', 'verify', '-f', os.environ['MAINWORKS_SIGNERS'], '-I', 'mainworks-helper', '-n', 'mainworks-helper', '-s', file.name],
+    if not signed:
+        sys.exit('graphyard-host-shim refuses the update: no key this host was prepared with signed it')
+    signers = os.environ.get('MAINWORKS_SIGNERS', '')
+    with tempfile.NamedTemporaryFile() as sig_file, tempfile.NamedTemporaryFile('w') as fallback_file:
+        sig_file.write(signature + signed)
+        sig_file.flush()
+        if signers:
+            verify_signers = signers
+        elif FALLBACK_SIGNER:
+            fallback_file.write('mainworks-helper namespaces="mainworks-helper" ' + FALLBACK_SIGNER + '\\n')
+            fallback_file.flush()
+            verify_signers = fallback_file.name
+        else:
+            sys.exit('graphyard-host-shim refuses the update: no key this host was prepared with signed it')
+        verified = subprocess.run(['ssh-keygen', '-Y', 'verify', '-f', verify_signers, '-I', 'mainworks-helper', '-n', 'mainworks-helper', '-s', sig_file.name],
                                   input=content, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if verified.returncode != 0 or b'Good "mainworks-helper" signature' not in verified.stdout:
         sys.exit('graphyard-host-shim refuses the update: no key this host was prepared with signed it')
@@ -561,4 +575,7 @@ esac
 `;
 /** GY-3476: this release's shim, named by the digest its probe prints; GY-3517: a host on another digest stays ready while it speaks every trial verb. */
 export const hostShimDigest = createHash('sha256').update(shimTemplate).digest('hex');
-export const hostShimScript = shimTemplate.replace(shimDigestSlot, hostShimDigest);
+export const hostShimScript = shimTemplate.replace(shimDigestSlot, hostShimDigest).replace(shimSignerSlot, '""');
+/** GY-3891: this release's shim with the coordinator's signing key embedded as fallback when the root-installed helper predates /etc/ssh/graphyard_helper_signers. */
+export const hostShimScriptWithSigner = (signer: string) =>
+  shimTemplate.replace(shimDigestSlot, hostShimDigest).replace(shimSignerSlot, JSON.stringify(signer));

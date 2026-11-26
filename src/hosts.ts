@@ -22,14 +22,14 @@ import { defaultChildRun, type ChildRun } from './child-runner.js';
 import { configHome } from './install/secrets.js';
 import { cpuSensorNames } from './merge-writer/trial-load.js';
 import { cpuStatTotals, stealPercent } from './daemon/cpu-pressure.js';
-import { hostProbeScript, hostShimDigest, hostShimScript, missingTrialVerbs, trialVerbs } from './host-shim.js';
+import { hostProbeScript, hostShimDigest, hostShimScript, hostShimScriptWithSigner, missingTrialVerbs, trialVerbs } from './host-shim.js';
 import { trialAppArmorProfilePath, trialAppArmorProfileText } from './merge-writer/trial-apparmor.js';
 import { shellQuote } from './install/transport.js';
 
 /** `sessions` (GY-3405): how many agent sessions the host takes at once; absent or 0, it takes test shards only. `login` (GY-3836): the owner's USER@HOST login the host was added with. */
 export interface HostRecord { target: string; addedAt: string; sessions?: number; login?: string }
 /** GY-3517: `at` is when this probe read the host; `update` marks one away only because its shim lacks a trial verb. */
-export interface HostReading { host: string; local?: boolean; at?: string; away: boolean; /** GY-3601: when an away host stopped answering. */ since?: string; update?: boolean; /** GY-3780: why it did not take this release's helper. */ updateError?: string; /** GY-3744: its helper's digest is not this release's. */ older?: boolean; /** GY-3836: the owner's login target (`USER@HOST`) for hints. */ login?: string; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; /** GY-3528: cores busy (the 1-minute load). */ busy?: number | null; stat?: { total: number; steal: number } | null }
+export interface HostReading { host: string; local?: boolean; at?: string; away: boolean; /** GY-3601: when an away host stopped answering. */ since?: string; update?: boolean; /** GY-3780: why it did not take this release's helper. */ updateError?: string; /** GY-3744: its helper's digest is not this release's. */ older?: boolean; /** GY-3891: updated through update-shim:1 without sudo; the root-installed helper is still the previous one. */ migrated?: boolean; /** GY-3836: the owner's login target (`USER@HOST`) for hints. */ login?: string; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; /** GY-3528: cores busy (the 1-minute load). */ busy?: number | null; stat?: { total: number; steal: number } | null }
 
 /** Machine-wide, beside the machine-share link (team-access.ts): every install's loop on this machine reads the same hosts. */
 export const hostsFile = (home = configHome()) => join(home, 'machine', 'hosts.json');
@@ -222,7 +222,7 @@ function parseHostProbe(text: string) {
   const temps = [...text.matchAll(/^temp (\S+) (\d+)$/gm)].filter(match => cpuSensorNames.includes(match[1]!)).map(match => Math.floor(Number(match[2]) / 1000));
   const user = /^user (\d+) ?(.*)$/m.exec(text);
   const verbs = /^verbs (.*)$/m.exec(text)?.[1]?.split(' ').filter(Boolean) ?? null;
-  return { shim: /^shim ([0-9a-f]{64})$/m.exec(text)?.[1] ?? null, verbs, compose: /^compose \S/m.test(text), cores: number(/^cores (\d+)$/m), load: number(/^load ([\d.]+)$/m), runs: number(/^runs\s+(\d+)$/m), celsius: temps.length ? Math.max(...temps) : null, stat: cpuStatTotals(text),
+  return { shim: /^shim ([0-9a-f]{64})$/m.exec(text)?.[1] ?? null, verbs, migrated: /^migrated 1$/m.test(text), compose: /^compose \S/m.test(text), cores: number(/^cores (\d+)$/m), load: number(/^load ([\d.]+)$/m), runs: number(/^runs\s+(\d+)$/m), celsius: temps.length ? Math.max(...temps) : null, stat: cpuStatTotals(text),
     uid: user ? Number(user[1]) : null, groups: user ? user[2]!.split(/\s+/).filter(Boolean) : [] };
 }
 
@@ -261,8 +261,9 @@ function resolveLoginTargetSync(target: string, options: { recorded?: string; ac
   const result = spawnSync('ssh', [...sshConfigArgs(), '-G', ...sshTarget(target)], { encoding: 'utf8', timeout: 5_000, stdio: ['ignore', 'pipe', 'ignore'] });
   return loginTargetFromSsh(target, result.status === 0 ? result.stdout : '', options.account);
 }
-/** GY-3834, GY-3836: the one command that prepares a host, for the owner to run in a terminal on this machine. */
-export const hostAddCommand = (target: string, login?: string) => `mainworks host add ${login ?? resolveLoginTargetSync(target)} in a terminal`;
+/** GY-3834, GY-3836: the login target (`USER@HOST`) and the one command that prepares a host, for the owner to run in a terminal on this machine. */
+export const hostLoginTarget = (target: string, login?: string) => login ?? resolveLoginTargetSync(target);
+export const hostAddCommand = (target: string, login?: string) => `mainworks host add ${hostLoginTarget(target, login)} in a terminal`;
 const outdatedShimReason = (target: string, missing: readonly string[] = [], login?: string) => `${target}'s graphyard-host-shim is older than this release: run ${hostAddCommand(target, login)}${missing.length ? ` (it lacks ${missing.join(', ')})` : ''}`;
 const lastLine = (text: string) => text.trim().split('\n').filter(Boolean).at(-1) ?? '';
 /** ssh's arguments for a host target: USER@HOST:PORT becomes -p PORT USER@HOST; USER@HOST and an alias pass as they are. */
@@ -301,12 +302,16 @@ export async function probeHost(target: string | null, run: ChildRun = defaultCh
   return { ok: true as const, ...reading };
 }
 
-/** GY-3780: send this release's shim, signed by this machine's helper key (GY-3879), to a host on another one, over the same restricted key: null once the host took it, else why not. */
-async function updateHostShim(target: string, run: ChildRun, knownHosts: string): Promise<string | null> {
-  const words = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', ...hostKeySshOptions(knownHosts), ...sshTarget(target), `update-shim ${createHash('sha256').update(hostShimScript).digest('hex')}`];
-  let signed: string;
-  try { helperSigner(); signed = signHelper(hostShimScript) + hostShimScript; } catch (error: any) { return `this machine could not sign the helper: ${String(error?.message ?? error).split('\n')[0]}`; }
-  try { await run('sh', ['-c', `printf %s ${shellQuote(signed)} | ${words.map(shellQuote).join(' ')}`], { timeoutMs: 15_000 }); return null; }
+/** GY-3780, GY-3879, GY-3891: send this release's shim to a host on another one, signed for update-shim:2 or unsigned once to migrate from update-shim:1: null once the host took it, else why not. */
+async function updateHostShim(target: string, run: ChildRun, knownHosts: string, form: 'v1' | 'v2' = 'v2'): Promise<string | null> {
+  let payload: string, body: string;
+  try {
+    const signer = helperSigner();
+    payload = hostShimScriptWithSigner(signer);
+    body = form === 'v2' ? signHelper(payload) + payload : payload;
+  } catch (error: any) { return `this machine could not sign the helper: ${String(error?.message ?? error).split('\n')[0]}`; }
+  const words = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', ...hostKeySshOptions(knownHosts), ...sshTarget(target), `update-shim ${createHash('sha256').update(payload).digest('hex')}`];
+  try { await run('sh', ['-c', `printf %s ${shellQuote(body)} | ${words.map(shellQuote).join(' ')}`], { timeoutMs: 15_000 }); return null; }
   catch (error: any) { return lastLine(String(error?.stderr ?? '')) || (error?.timedOut ? 'no answer within 15 seconds' : `exit ${error?.status ?? 'signal'}`); }
 }
 
@@ -362,11 +367,13 @@ export async function addHost(target: string, options: { file?: string; knownHos
   const loginTarget = recorded ?? login;
   const candidates = [...new Set([`${hostUser}@${host}`, `${hostUser}@${host}:${computePort}`, target])];
   const probes = await Promise.all(candidates.map(candidate => probeHost(candidate, run, knownHosts, loginTarget)));
-  const current = candidates.find((_, index) => { const probe = probes[index]!; return probe.ok && probe.shim === hostShimDigest; });
+  const current = candidates.find((_, index) => { const probe = probes[index]!; return probe.ok && probe.shim === hostShimDigest && !probe.migrated; });
   if (current) return { ...(await recordHost(current, file, run, knownHosts, false, loginTarget)), target: current, prepared: true };
-  const updatable = candidates.find((_, index) => { const probe = probes[index]!; return 'shim' in probe && probe.shim !== hostShimDigest && probe.verbs?.includes('update-shim:2'); });
-  if (updatable) {
-    const updateError = await updateHostShim(updatable, run, knownHosts);
+  const updatableIndex = candidates.findIndex((_, index) => { const probe = probes[index]!; return 'shim' in probe && probe.shim !== hostShimDigest && Boolean(probe.verbs?.includes('update-shim:2') || probe.verbs?.includes('update-shim:1')); });
+  if (updatableIndex >= 0) {
+    const updatable = candidates[updatableIndex]!, probed = probes[updatableIndex]!;
+    const form = 'verbs' in probed && probed.verbs?.includes('update-shim:2') ? 'v2' : 'v1';
+    const updateError = await updateHostShim(updatable, run, knownHosts, form);
     if (!updateError) {
       const updated = await probeHost(updatable, run, knownHosts, loginTarget);
       if (updated.ok && updated.shim === hostShimDigest) return { ...(await recordHost(updatable, file, run, knownHosts, false, loginTarget)), target: updatable, prepared: false };
@@ -457,11 +464,17 @@ export async function readHostReadings(previous: HostReading[], options: { file?
     const host = target ?? options.local ?? hostname();
     let login = record?.login;
     let probe = await probeHost(target, options.run, knownHosts, login), updateError: string | null = null;
-    if (options.update && target && 'shim' in probe && probe.shim !== hostShimDigest && probe.verbs?.includes('update-shim:2')) {
-      updateError = await updateHostShim(target, options.run ?? defaultChildRun, knownHosts);
-      if (!updateError) {
-        probe = await probeHost(target, options.run, knownHosts, login);
-        if ('shim' in probe && probe.shim !== hostShimDigest) updateError = 'it took the update but still runs the older helper';
+    const updateForm = target && 'shim' in probe && probe.shim !== hostShimDigest
+      ? (probe.verbs?.includes('update-shim:2') ? 'v2' : probe.verbs?.includes('update-shim:1') ? 'v1' : null)
+      : null;
+    if (options.update && target && updateForm) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        updateError = await updateHostShim(target, options.run ?? defaultChildRun, knownHosts, updateForm);
+        if (!updateError) {
+          probe = await probeHost(target, options.run, knownHosts, login);
+          if ('shim' in probe && probe.shim !== hostShimDigest) updateError = 'it took the update but still runs the older helper';
+        }
+        if (!updateError) break;
       }
       if (updateError) probe = { ok: false, update: true, reason: `${target} did not take this release's helper: ${updateError}`, shim: null, verbs: null };
     }
@@ -473,7 +486,8 @@ export async function readHostReadings(previous: HostReading[], options: { file?
     }
     const before = was?.stat ?? null;
     const older = Boolean(target && (probe.shim !== hostShimDigest || (probe.verbs !== null && trialVerbs.some(verb => !probe.verbs!.includes(verb)))));
-    if (target && older && !login) login = await resolveLoginTarget(target, { run: options.run });
-    return { host, ...(target ? {} : { local: true }), ...(login ? { login } : {}), at, away: false, ...(older ? { older: true } : {}), cores: probe.cores, celsius: probe.celsius, steal: stealPercent(before, probe.stat), runs: probe.runs, busy: probe.load, stat: probe.stat };
+    const migrated = Boolean(target && probe.migrated);
+    if (target && (older || migrated) && !login) login = await resolveLoginTarget(target, { run: options.run });
+    return { host, ...(target ? {} : { local: true }), ...(login ? { login } : {}), at, away: false, ...(older ? { older: true } : {}), ...(migrated ? { migrated: true } : {}), cores: probe.cores, celsius: probe.celsius, steal: stealPercent(before, probe.stat), runs: probe.runs, busy: probe.load, stat: probe.stat };
   }));
 }
