@@ -1,12 +1,13 @@
 {
   "id": "smoke",
   "title": "The deploy smoke: the built candidate serves and answers healthy",
-  "description": "The batch gate's smoke before any deploy: the candidate, built and served in the private trial container, answers GET /healthz?ready&strict with 200, healthy and ready, and with an owner recorded its merge commit is authored 'NAME (Mainworks) <EMAIL>' while the merge writer stays the committer. Every head a batched merge trial lands is on a candidate this smoke gates.",
+  "description": "The batch gate's smoke before any deploy: the candidate, built and served in the private trial container, answers GET /healthz?ready&strict with 200, healthy and ready, and with an owner recorded its merge commit is authored 'NAME (Mainworks) <EMAIL>' while the merge writer, mainworks-merge-writer, stays the committer, and what a person reads says Mainworks. Every head a batched merge trial lands is on a candidate this smoke gates.",
   "tags": ["api", "deployment"],
   "target": "any",
   "required": false,
   "steps": [
     { "kind": "http", "name": "the served candidate answers ready", "method": "GET", "path": "/healthz?ready&strict", "status": 200, "expect": [{ "path": "healthy", "equals": true }, { "path": "ok", "equals": true }, { "path": "readiness", "equals": true }] },
-    { "kind": "command", "name": "with an owner recorded, the merge commit is authored 'NAME (Mainworks)'", "run": "node --import tsx tests/helpers/run-tests.ts tests/check-ins-are-authored-owner-and-mainworks.test.ts", "timeoutSeconds": 120 }
+    { "kind": "command", "name": "with an owner recorded, the merge commit is authored 'NAME (Mainworks)'", "run": "node --import tsx tests/helpers/run-tests.ts tests/check-ins-are-authored-owner-and-mainworks.test.ts", "timeoutSeconds": 120 },
+    { "kind": "command", "name": "what a person reads says Mainworks, the merge writer commits as mainworks-merge-writer", "run": "node --import tsx tests/helpers/run-tests.ts tests/no-old-name-where-a-person-reads.test.ts tests/committer-and-key-names-say-mainworks.test.ts", "timeoutSeconds": 120 }
   ]
 }

@@ -94,7 +94,7 @@ Before editing, claim an authorized work item and use its assigned worktree.
 Never weaken requirements, and never use an operator/producer token for
 implementation or proof. Act without asking, and record blockers with the CLI.
 Submit with \`complete GY-N EPOCH --head SHA\`; make \`complete\` your last action.
-For any procedure, run \`node $GRAPHYARD_CLI guide TOPIC\`
+For any procedure, run \`node $MAINWORKS_CLI guide TOPIC\`
 (worker: claim, sync, complete, park, blocked; reviewer: review; producer: proof; \`guide\` alone lists the rest).
 ${end}`;
   return starts ? existing.slice(0, existing.indexOf(start)) + section + existing.slice(existing.indexOf(end) + end.length) : `${existing}${existing.endsWith('\n') || !existing ? '' : '\n'}\n${section}\n`;
