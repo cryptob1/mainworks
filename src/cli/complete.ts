@@ -20,6 +20,7 @@ import { trialHomeVariables, trialTemporaryMode, trialTemporaryVariables } from 
 import { setting } from '../setting.js';
 import { stateDirectory } from '../install/layout.js';
 import { foreignAuthor, type CheckInOwner } from '../check-in-author.js';
+import { extractChangedAssertions, validateAssertionRulings } from '../model/changed-assertions.js';
 
 /**
  * A submission is observed on GitHub before it is accepted, so while the control plane's GitHub
@@ -448,7 +449,8 @@ function firstFailingLine(output: string): string | null {
  * 2. `requiredProofFailure` over `proofTestFiles` for each non-bootstrap unit/integration proof;
  * 3. `featureCaseFailure` over the files added or modified by the head;
  * 4. `workerFastGates` when the repository carries them (`workerFastGatesPresent`);
- * 5. Changed source/test relative imports resolve in the head, then `staticRuleTests` when present.
+ * 5. Changed source/test relative imports resolve in the head, then `staticRuleTests` when present;
+ * 6. GY-3939: each changed assertion in an existing test is ruled "kept meaning" in a commit message.
  */
 export async function completePreflight(
   root: string,
@@ -485,6 +487,17 @@ export async function completePreflight(
   if (baseTip && options.owner) {
     const foreign = foreignAuthor(await git(['log', '--format=%H%x09%an%x09%ae', `${baseTip}..${head}`]), options.owner, options.baseBranch ? `origin/${options.baseBranch}` : baseTip.slice(0, 12), options.claimOwner);
     if (foreign) throw new Error(foreign);
+  }
+
+  // GY-3939: a weakened assertion was review's largest rework cause; the worker rules on each changed one first, as the reviewer will.
+  if (baseTip) {
+    const from = (await git(['merge-base', baseTip, head])).trim();
+    const changed = extractChangedAssertions(await git(['diff', '--no-color', '--no-ext-diff', from, head]));
+    if (validateAssertionRulings(await git(['log', '--format=%B', `${from}..${head}`]), changed)) {
+      throw new Error(`complete refused: this head removes or changes ${changed.length} assertion line${changed.length === 1 ? '' : 's'} in existing tests or cases, and review sends back any that is weakened:\n`
+        + changed.map(item => `${item.path}:${item.line}: ${item.before}${item.after ? ` -> ${item.after}` : ' (removed)'}`).join('\n')
+        + '\nKeep each check, or add a line "PATH:LINE — kept meaning: WHY" for it to a commit message, then complete again.');
+    }
   }
 
   // 2. Required unit/integration proof ids must appear in tests/*.test.ts on the head

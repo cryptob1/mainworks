@@ -68,6 +68,7 @@ function reviewReason(reason: string): string {
   const line = /BLOCKING:?\s*(.*)/.exec(reason)?.[1] ?? '';
   const prefix = /\s[-–—]\s/.exec(line);
   const finding = prefix ? line.slice(prefix.index + prefix[0].length) : line;
+  if (/weaken|assertion|\bcheck\b.*\b(?:deleted|removed|dropped)\b/i.test(finding)) return 'weakened assertion';
   if (/regress|no longer|used to/i.test(finding)) return 'regression';
   if (/\b(tests?|proofs?)\b/i.test(finding)) return 'missing test';
   if (/criteri|\bAC-\d|not met|unmet|requirement/i.test(finding)) return 'criterion unmet';
