@@ -1,0 +1,16 @@
+{
+  "id": "remote-catalog-shard-resolves",
+  "title": "A daily catalog shard on a test machine runs a case that imports a project dependency, and it passes",
+  "description": "On a test install with a ready test machine, a catalog shard placed there runs Mainworks' own E2E runner over the project's installed packages, so a case importing a project dependency passes, and a shard that cannot resolve a module names the missing specifier in the filed failure.",
+  "tags": ["diagnostics"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "run a dependency-importing case on a ready test machine and exclude a hot machine",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/remote-catalog-shard-resolves.test.ts",
+      "timeoutSeconds": 600
+    }
+  ]
+}
