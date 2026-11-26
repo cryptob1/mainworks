@@ -1,69 +1,62 @@
-# Setup guide
+# Get started
 
-The details the [README](../README.md) leaves out. `mainworks guide setup` prints every prerequisite check and fix; `mainworks doctor` verifies a host. The `mainworks` command and `GRAPHYARD_*` settings still work.
+This takes about fifteen minutes on a machine that already has Docker. By the end, an agent will have shipped one small change to your repository while you watched.
 
-## Prerequisites
+Stuck at any step? Run `mainworks doctor`. It checks everything on this page and prints the one command that fixes whatever is missing.
 
-- Linux 7.0+ with Landlock ABI 9+ (`uname -r`; Ubuntu 26.04: `sudo apt install linux-image-oem-7.3`)
-- Node 24+ and npm (`node --version`, `npm --version`; Ubuntu/Debian: `curl -fsSL https://deb.nodesource.com/setup_24.x | sudo bash - && sudo apt install nodejs`, Arch: `sudo pacman -S nodejs npm`, macOS: `brew install node@24`)
-- Git (`git --version`, `git remote -v`)
-- Docker with Compose (`docker version`, `docker compose version`)
-- GitHub CLI (`gh auth status`)
-- bubblewrap (`bwrap --version`)
-- Python 3 (`python3 --version`)
-- Herdr (`herdr --version`; install: `curl -fsSL https://herdr.dev/install.sh | sh`)
-- systemd user manager (`systemctl --user status`)
-- An account for at least one agent: Claude Code, Codex or Gemini
+## 1. Check your machine
 
-## First run
+You need a Linux server you control. A laptop works for a first try; for real use see [what to run it on](../README.md#what-to-run-it-on).
 
-1. **Connect.** Run `node bin/graphyard.mjs up --repo OWNER/NAME` and open the Setup link it prints.
-2. **Confirm your Builder.** Connect an AI coding account for building and one for reviewing (it may be the same account) until both turn green.
-3. **Ship one small change.** File a small goal from Home or Work; the Lead writes checkable criteria and dispatches a Builder.
-4. **Watch it merge.** Open the Task page to inspect the diff, checks and live session as the merge trial runs and lands on main.
+| You need | Check it with |
+|---|---|
+| Linux with a recent kernel (7.0 or newer) | `uname -r` |
+| Node 24 or newer | `node --version` |
+| Git, and a repository on GitHub you can push to | `git --version` |
+| Docker with Compose | `docker compose version` |
+| The GitHub CLI, signed in | `gh auth status` |
+| An account with a coding agent: Claude Code, Codex or Gemini | — |
 
-You decide goals, money and credentials. Tell any agent; reverse relayed answers under Needs you. The master handles blockers.
+A few smaller tools are needed too. Don't hunt for them: `mainworks doctor` lists exactly which are missing and how to install each on your system.
 
-## Host
+## 2. Install and start
 
-- Docker and Compose: on an AppArmor host up loads the `mainworks-trial` profile with sudo. Merge trials need Docker and Compose even for `--local`.
-- Fair sharing: each worker, reviewer and producer session gets equal CPU and disk weight and a memory share (host memory in proportion to cores divided by live sessions, never under two cores). A lone session may use the whole machine. The loop, master, server and database weigh more so they answer under load. `mainworks master status` → `sessionUsage` and Settings → Workers show use beside share; the overload alarm fires only when saturated and over twice its share for five minutes.
-
-## Compute machines
-
-- A compute machine lends Mainworks its CPU and nothing else: merge trials and worker checks send it test shards first, falling back to the coordinator only when none has room. Run `mainworks host prepare` on the coordinator and run the printed script once on the compute machine with sudo: it creates the unprivileged `gy-compute` user (no sudo, not in the docker group) with rootless Docker, and limits this machine's SSH key to `graphyard-host-shim` (no shell). When `dockerd-rootless-setuptool.sh` or `slirp4netns` are absent, the script fetches static copies into `gy-compute`'s home. It needs `curl`, `python3` and `git`.
-- `mainworks host add gy-compute@HOST` refuses an unreachable host, one without Docker, a plain-shell key, root or a docker-group user. Settings → Workers lists every host with cores, temperature, CPU steal and active runs; an unreachable host shows Away.
-- Compute-only port: where port 22 is Tailscale SSH (which ignores keys), the script starts OpenSSH for `gy-compute` on port 2222 (key-only, shim-only). Add `gy-compute@HOST:2222` or an alias from `~/.ssh/config`.
-- Agent sessions on a host: `mainworks host sessions gy-compute@HOST 2` lets the host run up to two worker sessions at once (0 turns it back to test shards only). Codex workers start there, the runtime the worker image holds; others stay on this machine. The account's login is handed over for that one session over SSH into the container's memory, never written to the host's disk, and gone when the session ends; a login the provider refreshed comes back here. Its commits and changed files show up in the worktree here as it works, and its `mainworks` commands run here, so `complete` submits the commit it made. A host that drops ends its session and the item goes back to the queue. `mainworks master status` lists each session's host under `remoteSessions`. `host sessions` refuses a host whose helper is older than this release; run `mainworks host prepare` and its script there first.
-- Tailnet check rule: Tailscale SSH rules reaching a host must use action `check`, never `accept`. `host add` warns if port 22 lets your account in unattended.
-- `mainworks host remove USER@HOST` removes one; `mainworks host list` lists all. Add only machines you own (a host can forge its own shard results).
-- Tests naming Docker, nested confinement (bwrap, unshare, landlock), npm exec or /var/tmp stay on the coordinator. Every other test — database, browser and loopback servers included — runs on compute machines first. Dropped shards hand back automatically. `mainworks master status` → `remoteShards` reports each machine.
-
-## Accounts and multi-session capacity
-
-- Workers and reviewers run headless, logged per item (`mainworks guide runtimes`).
-- One account can run several sessions at once: set its cap with `mainworks master registry account set NAME --max-sessions 3 --reason "allow parallel sessions"` (shared across every install on the host). A held account shows the provider's own sentence and reset time.
-- Where a SAML organization or org policy blocks deploy keys, `--push-auth gh` pushes with your gh login instead of a deploy key.
-- Setup invites or revokes viewers and maintainers.
-- Sharing one machine across installs: the [shared server guide](shared-server.md).
-
-## Onboarding a project
-
-- Onboarded means main's `graphyard.json` declares `e2e.serve`, serving the real app on `$PORT` (`{"command":"PORT=${PORT:-3000} npm start","url":"http://127.0.0.1:3000/","readySeconds":60}`), plus a `featureMap` (name, path or command, traps: `[{"name":"Home","url":"/","traps":[]}]`).
-- Every batch check and deploy check runs the feature map. A missing serve, missing feature map or placeholder serve shows as a Master fault in `mainworks master status` and Setup; the Lead files work to add them.
-
-## Your app's address and live deploys
-
-- Add `"app": { "url": "https://HOST.TAILNET.ts.net:PORT" }` to `graphyard.json` on main (never `127.0.0.1`, `localhost` or `::1`). The top bar shows Open app and Settings → Delivery shows the live commit and link.
-- Work counts a merge as shipped once the live commit contains it. For apps deployed elsewhere (e.g. Railway), point `graphyard.json` at its version endpoint (plain SHA, or JSON `commit`/`sha`):
-
-```json
-{ "app": { "healthUrl": "https://your-app.example.com/version" } }
+```sh
+git clone https://github.com/cryptob1/mainworks.git && cd mainworks
+npm ci && npm run build
+node bin/mainworks.mjs up --repo OWNER/NAME
 ```
 
-Or declare multiple external apps under `delivery.applications` (`id`, `directory`, `versionUrl`). Mainworks polls at most once a minute and never deploys or previews them; `mainworks master status` lists each as current, deploying, lagging or failed.
+Replace `OWNER/NAME` with your repository. `up` starts Mainworks and prints a **Setup link**. Open it.
 
-## Delivery feedback and publishing
+## 3. Connect an agent
 
-- Work's **Taste** feed shows recent deliveries with evidence: **Looks good** records your call; **Send back** opens a follow-up item and proposed lesson.
-- Verified deploys publish `@cryptob1/graphyard` with npm OIDC provenance plus both GHCR images via Actions — no host publish token. `mainworks guide publishing` covers owner setup.
+![The Setup page with an agent account connected](media/setup-connect.png)
+
+On the Setup page, connect one account for building and one for reviewing. They can be the same account. Wait for both to turn green.
+
+## 4. Ship your first change
+
+![Typing a first goal](media/setup-first-goal.png)
+
+Click **New work item** and describe something small in a sentence, for example *"Add a /health page that returns ok."*
+
+Then watch the **Work** page. You will see the change get written, reviewed by a second agent, tested on top of your main branch, and merged. A first change usually takes 20 to 40 minutes.
+
+That's it. From here you give goals; Mainworks does the rest and asks you only about goals, money, and who gets access.
+
+## Next steps
+
+- **Make tests faster.** Add another machine for tests with one command: `mainworks host add you@other-machine`. It asks for that machine's sudo password once.
+- **Tell Mainworks where your app runs,** so it can check each release and roll back a bad one: see [your app's address](reference.md#your-apps-address-and-live-deploys).
+- **Invite a teammate** with the Invite button in the top bar.
+- **Run several projects on one server:** see [shared server](shared-server.md).
+
+## When something goes wrong
+
+1. Run `mainworks doctor`. Most problems are a missing tool or a sign-in that expired, and it says which.
+2. Open the **Lead** page. If Mainworks needs a decision from you, it is listed there in plain words.
+3. Run `mainworks master status` for the full picture.
+
+Everything else — resource sharing, test machines in depth, accounts, project configuration, publishing — is in the [reference](reference.md).
+

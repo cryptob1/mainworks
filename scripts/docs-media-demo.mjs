@@ -355,6 +355,14 @@ export function buildDemoState(heroPhase = 'static') {
     // The header: agents working are the live sessions above plus the Lead's pane; checks running are the rows testing.
     checksRunning: work.filter((item) => item.stage === 'test').length,
     setup: { loop: true, panes: { master: '1' } },
+    // The Setup capture: the writing account is connected, the reviewing one not yet.
+    ...(heroPhase === 'setup' ? {
+      serving: { onboarding: { onboarded: true } },
+      fleet: {
+        roles: [{ role: 'worker', accounts: ['claude-demo'] }, { role: 'reviewer', accounts: [] }],
+        accounts: [{ name: 'claude-demo', enabled: true, loggedIn: true, eligible: true }],
+      },
+    } : {}),
     delegation: {
       limits: { maxLeads: 3, minReviewers: 1, maxReviewers: 2 },
       slices: [
