@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { runServeRevert, type ServeRevertPorts } from '../src/merge-writer/serve-revert.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import type { Work } from '../src/model.js';
@@ -94,4 +95,36 @@ test('integration:serve-revert-keeps-earlier-reverts — a conflicted revert rep
   assert.equal(result.outcome, 'held');
   assert.match(result.outcome === 'held' ? result.reason : '', /does not apply cleanly on [0-9a-f]{12}: one\.txt$/);
   assert.equal(git(r.repo, 'rev-parse', 'main'), before);
+});
+
+// GY-3930: this file failed in a merge trial with every case passing — its process aborted in libuv
+// (`uv__close: Assertion fd > STDERR_FILENO`). The per-file runner swapped stdin for /dev/null with
+// close(0) then open(), after tsx's loader thread had started: a file that thread opened in between took
+// fd 0, and once it closed it, the next spawned child's pipe landed on fd 0. The seam is that one
+// condition: a preload that takes fd 0 the moment the swap closes it, and frees it right after.
+test('unit:serve-revert-keeps-earlier-reverts-pinned — a test file that spawns git under the per-file runner keeps /dev/null on stdin when another thread opens a file during the swap', async () => {
+  const directory = await temporaryDirectory('stdin-swap-race');
+  const seam = join(directory, 'take-fd-0.mjs'), probe = join(directory, 'spawn.test.mjs');
+  await writeFile(seam, `import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const close = fs.closeSync;
+fs.closeSync = fd => { close(fd); if (fd === 0) { const taken = fs.openSync(${JSON.stringify(seam)}, 'r'); setImmediate(() => close(taken)); } };
+syncBuiltinESMExports();
+`);
+  await writeFile(probe, `import test from 'node:test';
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { readlinkSync } from 'node:fs';
+test('stdin stays /dev/null and git runs', async () => {
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(readlinkSync('/proc/self/fd/0'), '/dev/null');
+  assert.match(execFileSync('git', ['--version'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }), /git version/);
+});
+`);
+  const runner = new URL('./helpers/bounded-tests.mjs', import.meta.url).pathname;
+  const { NODE_TEST_CONTEXT: _context, ...env } = process.env;
+  const { stdout } = await promisify(execFile)(process.execPath, [runner, '--test-reporter=tap', '--test-reporter-destination=stdout', '--test-concurrency=1', '--file-timeout=60000', probe],
+    { encoding: 'utf8', env: { ...env, NODE_OPTIONS: `--import ${seam}` } }).catch(error => error);
+  assert.match(stdout, /^ok 1 - stdin stays \/dev\/null and git runs/m, stdout);
+  assert.doesNotMatch(stdout, /^not ok/m, stdout);
 });
