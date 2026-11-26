@@ -13,6 +13,7 @@ import { sessionHandleKey } from '../src/dispatch/session-sweep.js';
 import { runCycle, standingStepFailures, stepFailureThreshold } from '../src/daemon/cycle.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
+import { listen } from './helpers/http-server.js';
 
 /**
  * GY-3424 (integration:dispatch-state-save). From 2026-11-16 every save of the loop's dispatch
@@ -23,12 +24,11 @@ import type { DaemonEffects } from '../src/daemon/effects.js';
 test('integration:dispatch-state-save — a cursor with thousands of launch failures for one item saves, keeping its latest; a refused save names the server reason on master status', async t => {
   const store = new Store(await databaseUrl('dispatch_state_save')); await store.init();
   const token = 'fixture-coordinator-token'.padEnd(40, 'x');
-  const http = server(new Engine(store, 120, 'owner/project'), [{ id: 'fixture-loop', role: 'coordinator', token }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  t.after(async () => { http.closeAllConnections(); await new Promise<void>(resolve => http.close(() => resolve())); await store.close(); });
+  const { url, close } = await listen(server(new Engine(store, 120, 'owner/project'), [{ id: 'fixture-loop', role: 'coordinator', token }]));
+  t.after(async () => { await close(); await store.close(); });
   const credentialFile = join(await temporaryDirectory('dispatch-state-save'), 'coordinator.token');
   await writeFile(credentialFile, token, { mode: 0o600 });
-  const config = masterConfigSchema.parse({ version: 1, url: `http://127.0.0.1:${(http.address() as { port: number }).port}`, credentialFile, cliPath: '/bin/graphyard',
+  const config = masterConfigSchema.parse({ version: 1, url: url, credentialFile, cliPath: '/bin/graphyard',
     repository: 'owner/project', baseBranch: 'main', githubAppId: 1, hostId: 'machine-a', masterAgentName: 'gmp', workers: [] });
 
   const at = (i: number) => new Date(Date.parse('2026-11-16T08:00:00.000Z') + i * 1000).toISOString();

@@ -21,6 +21,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // Fixture filings obey the same E2E contract as real work.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { listen } from './helpers/http-server.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-1708 AC-2: mid-attempt exhaustion hold never launches a second session on the spent account,
@@ -33,7 +34,7 @@ const coordinator: Principal = { id: 'master-loop', role: 'coordinator', session
 const credentials = [operator, workerA, coordinator].map(principal => ({ ...principal, token: `bounds-${principal.id}-${'x'.repeat(32)}` }));
 const token = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
 
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string, home: string;
+let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string, home: string;
 
 const call = async (principal: Principal, method: 'GET' | 'POST', path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, {
@@ -54,16 +55,14 @@ before(async () => {
   store = await withDatabase('capacity-hold-respects-machine-bounds');
   await store.init();
   engine = new Engine(store, 300, repository);
-  http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, credentials)));
   home = await temporaryDirectory('capacity-bounds');
   await mkdir(join(home, 'env-a'), { recursive: true });
   await mkdir(join(home, 'env-b'), { recursive: true });
   await writeFile(join(home, 'env-a/.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: 'x', refreshToken: 'x' } }));
   await writeFile(join(home, 'env-b/auth.json'), JSON.stringify({ tokens: { access_token: 'x' } }));
 });
-after(async () => { http?.close(); await store?.close(); });
+after(async () => { await close?.(); await store?.close(); });
 
 test('unit:capacity-hold-respects-machine-bounds — a held account is not re-selected, a finished agent whose lease ended frees its profile, and the spent epoch is counted once', async () => {
   const capacity = await import('../src/model/capacity.js') as {

@@ -5,7 +5,6 @@ import { promisify } from 'node:util';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
 import { Engine } from '../src/engine.js';
@@ -15,6 +14,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { listen } from './helpers/http-server.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 /**
@@ -34,14 +34,12 @@ test('unit:loop-accepts-coordinator-proof-patterns — master run --once runs a 
   const root = await temporaryDirectory('coordinator-proofs-run');
   const credentialDirectory = await temporaryDirectory('coordinator-proofs-credentials');
   const credentialFile = join(credentialDirectory, 'coordinator.token');
-  const http = createServer((req, res) => {
+  const { url, close } = await listen((req, res) => {
     res.setHeader('Content-Type', 'application/json');
     if (req.url === '/api/status') return res.end(JSON.stringify({ actor: coordinator, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, build: { commit: null, protocol: MERGE_PROTOCOL } }));
     if (req.url === '/api/work-snapshot') return res.end(JSON.stringify({ now: new Date().toISOString(), work: [] }));
     res.statusCode = 404; res.end('{}');
   });
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as any).port}`;
   try {
     await exec('git', ['init', '-q'], { cwd: root });
     await exec('git', ['remote', 'add', 'origin', 'https://github.com/owner/project.git'], { cwd: root });
@@ -53,10 +51,7 @@ test('unit:loop-accepts-coordinator-proof-patterns — master run --once runs a 
     assert.equal(run.coordinator, 'master');
     assert.equal(run.cycles, 1, 'the cycle ran');
     assert.equal(run.failedCycles, 0);
-  } finally {
-    await new Promise<void>(resolve => http.close(() => resolve()));
-    await rm(root, { recursive: true, force: true }); await rm(credentialDirectory, { recursive: true, force: true });
-  }
+  } finally { await close(); await rm(root, { recursive: true, force: true }); await rm(credentialDirectory, { recursive: true, force: true }); }
 
   let w = await engine.execute(operator, 'create', null, { type: 'chore',  title: 'Proven by hand', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['manual:checked', 'e2e:fixture'] }] }, randomUUID());
   w = await engine.execute(operator, 'ready', w.id, {}, randomUUID());

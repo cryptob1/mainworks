@@ -19,6 +19,7 @@ import { launchReview, readReviewLedger, saveReviewerProfile } from '../src/revi
 import { liveRun } from '../src/runner/registry.js';
 import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3218: an account whose agent reports it is not logged in is held, and the launch moves to
 // another account. The agent here is a real child process: a stub `claude` binary that exits 1 with
@@ -29,16 +30,14 @@ const coordinator: Principal = { id: 'graphyard-master', role: 'coordinator' };
 const coordinatorToken = `${coordinator.id}-token-${'x'.repeat(32)}`;
 const reviewer = 'review-claude-1', message = 'Not logged in · Please run /login';
 const now = () => new Date().toISOString();
-let store: Store, http: ReturnType<typeof server>, registry: AgentRegistry, hostId: string;
+let store: Store, close: (() => Promise<void>) | undefined, registry: AgentRegistry, hostId: string;
 let root: string, scratch: string, base: string, head: string, lapsed: string, working: string, previousPath: string | undefined;
 
 before(async () => {
   store = await withDatabase('unauthenticated-account'); await store.init();
   const engine = new Engine(store, 120, 'owner/project');
   engine.gitRunner = null;
-  http = server(engine, [{ ...coordinator, token: coordinatorToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url, close: stop } = await listen(server(engine, [{ ...coordinator, token: coordinatorToken }])); close = stop;
   root = await temporaryDirectory('unauthenticated-root'); scratch = await temporaryDirectory('unauthenticated-scratch');
   const { git } = await gitRepo({ root });
   git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
@@ -78,7 +77,7 @@ console.log('{"verdict": "APPROVE", "body": "Reviewed head ${head} against base 
 });
 after(async () => {
   process.env.PATH = previousPath;
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
+  await close?.();
   if (store) await store.close();
   for (const directory of [root, scratch]) if (directory) await rm(directory, { recursive: true, force: true });
 });

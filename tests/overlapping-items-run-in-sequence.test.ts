@@ -12,6 +12,7 @@ import { masterConfigSchema, type HerdrAgent, type MasterConfig, type WorkerProf
 import type { Principal, Work } from '../src/model.js';
 import { coordinationViewHeader } from '../src/server/work-view.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { listen } from './helpers/http-server.js';
 
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -27,7 +28,7 @@ const workers: Principal[] = ['a', 'b', 'c', 'd'].map(name => ({ id: `worker-${n
 const credentials = [operator, coordinator, ...workers].map(principal => ({ ...principal, token: `overlap-${principal.id}-${'x'.repeat(32)}` }));
 const token = (id: string) => credentials.find(credential => credential.id === id)!.token;
 let agentToken: string;
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
+let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string;
 
 const call = async (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown, headers: Record<string, string> = {}) => {
   const response = await fetch(`${url}/api/${path}`, {
@@ -59,14 +60,12 @@ before(async () => {
   store = await withDatabase('overlap-sequence');
   await store.init();
   engine = new Engine(store, 300, repository);
-  http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, credentials)));
   agentToken = `loop-agent-${randomUUID()}`;
   await ok(token(operator.id), 'POST', 'operator-agents', { id: loopId, displayName: 'Master loop', capabilities: [],
     scope: { repositories: [repository], workItems: ['*'] }, token: agentToken, reason: 'the loop applies its decisions under its own identity' });
 });
-after(async () => { http?.close(); await store?.close(); });
+after(async () => { await close?.(); await store?.close(); });
 
 test('integration:overlapping-items-run-in-sequence — backlog items declaring the same file keep their planned files and are released and dispatched beside items on other files or declaring none', async () => {
   const first = await file('Refactor engine A', ['src/engine.ts']);

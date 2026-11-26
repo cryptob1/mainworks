@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { rm, writeFile } from 'node:fs/promises';
-import { connect, createServer } from 'node:net';
+import { connect } from 'node:net';
 import { join } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import type { startCheckServices } from '../src/compose-preview.js';
@@ -11,6 +11,7 @@ import { readShardHosts } from '../src/merge-writer/remote-shards.js';
 import { runTrial } from '../src/merge-writer/trial.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { commitFile, dockerCalls, dockerCount, dockerCreates, shardHosts, shardRepository, type ShardHostsFixture } from './helpers/shard-hosts.js';
+import { freePort } from './helpers/http-server.js';
 
 // GY-3825 AC-1 & AC-2: a declared preMerge check whose Compose file names an image built locally on
 // the coordinator (never pushed) runs on a compute host: the image is sent once by image id before
@@ -25,7 +26,6 @@ const target = 'gy-compute@box';
 
 let hosts: ShardHostsFixture, repository: { root: string; sha: string }, port: number, ran: string;
 const previous = process.env.GRAPHYARD_TRIAL_IMAGE;
-const freePort = () => new Promise<number>(resolve => { const server = createServer().listen(0, '127.0.0.1', () => { const { port } = server.address() as { port: number }; server.close(() => resolve(port)); }); });
 const accepts = () => new Promise<boolean>(resolve => { const socket = connect({ host: '127.0.0.1', port }); socket.once('connect', () => { socket.destroy(); resolve(true); }).once('error', () => resolve(false)); });
 
 before(async () => {

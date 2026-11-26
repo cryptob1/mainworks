@@ -10,6 +10,7 @@ import { HumanSignIn, teammateSessionTtlMs } from '../src/server/auth.js';
 import { canTypeIntoMasterPane } from '../src/server/principals.js';
 import { signInDatabase } from './helpers/sign-in-database.js';
 import { localRequest } from './helpers/local-request.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3215: the operator invites teammates as their own human principals. A viewer reads; a maintainer
 // also files work under their own name; neither answers a human-only decision; revoking ends a session at once.
@@ -21,9 +22,7 @@ test('e2e:teammate-invite-roles — invited viewer and maintainer sign in as the
   const token = (actor: Principal) => `${actor.id}-${'x'.repeat(32)}`;
   const engine = new Engine(database.store, 120, 'owner/project');
   engine.gitRunner = null;
-  const http = server(engine, [operator, worker, coordinator].map(actor => ({ ...actor, token: token(actor) })));
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url, close } = await listen(server(engine, [operator, worker, coordinator].map(actor => ({ ...actor, token: token(actor) }))));
   const call = (method: string, path: string, bearer: string, body?: unknown) => localRequest(url, `/api/${path}`, { method, body, headers: { 'Idempotency-Key': randomUUID(), Authorization: `Bearer ${bearer}` } });
   // The CLI as the operator runs it, against this server with the operator's own credential.
   const saved = { url: process.env.GRAPHYARD_URL, token: process.env.GRAPHYARD_TOKEN, file: process.env.GRAPHYARD_TOKEN_FILE };
@@ -91,7 +90,7 @@ test('e2e:teammate-invite-roles — invited viewer and maintainer sign in as the
     assert.equal((await call('POST', 'invites', token(operator), { name: 'operator', role: 'maintainer' })).status, 409);
   } finally {
     for (const [name, value] of [['GRAPHYARD_URL', saved.url], ['GRAPHYARD_TOKEN', saved.token], ['GRAPHYARD_TOKEN_FILE', saved.file]] as const) if (value === undefined) delete process.env[name]; else process.env[name] = value;
-    await new Promise<void>(resolve => http.close(() => resolve()));
+    await close();
     await database.close();
   }
 });

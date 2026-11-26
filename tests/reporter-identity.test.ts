@@ -16,6 +16,7 @@ import { intentCommand } from '../src/cli/master/intent.js';
 import type { MasterSession } from '../src/cli/master/session.js';
 import { loadMasterConfig, setupMaster } from '../src/master/config.js';
 import type { Principal } from '../src/model.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3344: a reporter identity lets another install's Master file items and message this install's
 // Master, and nothing else. The real control plane on a temporary Postgres, driven by the real CLI
@@ -33,10 +34,8 @@ after(() => close());
 test('e2e:reporter-identity — a reporter files an item and messages the Master with a URL and token file, and is refused everything else', async () => {
   const store = await withDatabase('reporter-identity'); await store.init();
   const engine = new Engine(store, 120, 'owner/project');
-  const http = server(engine, [coordinator, operator, reporter].map(principal => ({ ...principal, token: token(principal) })));
-  close = async () => { http.closeAllConnections(); await new Promise<void>(resolve => http.close(() => resolve())); await store.close(); };
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url, close: closeHttp } = await listen(server(engine, [coordinator, operator, reporter].map(principal => ({ ...principal, token: token(principal) }))));
+  close = async () => { await closeHttp(); await store.close(); };
   const api = async (path: string, body?: unknown, as = operator) => {
     const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token(as)}`, 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     const result = await response.json() as any;

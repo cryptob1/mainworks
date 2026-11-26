@@ -24,6 +24,7 @@ import { Store } from '../src/store.js';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3336: three faults that left the lumina-investor install failing every cycle. (1) A remote
 // that refuses the fetch of the base branch — a SAML organization that has not authorised the
@@ -152,7 +153,7 @@ test('e2e:onboard-new-repository-faults — a remote refusing the fetch is one s
 
 // The standing line reaches the owner where they look: master status, and the Setup page through the
 // loop's coordination header. One engine serves both.
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
+let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string;
 const operator: Principal = { id: 'human-operator', role: 'admin', sessionKind: 'human' };
 const coordinatorPrincipal: Principal = { id: 'master-loop', role: 'coordinator', sessionKind: 'ai' };
 const credentials = [operator, coordinatorPrincipal].map(entry => ({ ...entry, token: `${entry.id}-${'x'.repeat(32)}` }));
@@ -161,9 +162,7 @@ test('e2e:onboard-new-repository-faults — master status shows one attention li
   store = await withDatabase('onboard-new-repository-faults');
   await store.init();
   engine = new Engine(store, 7200, repository);
-  http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, credentials)));
   try {
     const root = await temporaryDirectory('onboard-refused-status'), credentialsDir = await temporaryDirectory('onboard-refused-credentials');
     execFileSync('git', ['init', '-q', root]);
@@ -206,7 +205,7 @@ test('e2e:onboard-new-repository-faults — master status shows one attention li
     assert.ok(!setupChecklist(after).some(item => item.id === 'fetch-refusal'));
     await rm(root, { recursive: true, force: true });
     await rm(credentialsDir, { recursive: true, force: true });
-  } finally { http.close(); await store.close(); }
+  } finally { await close?.(); await store.close(); }
 });
 
 /** A Herdr pane on a virtual clock: `screen` until the keys it accepts are sent, then the runtime at work. */

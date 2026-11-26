@@ -11,6 +11,7 @@ import { readServeRecord, servedApplication, serveOnce, serveRecordPath } from '
 import { setupFromZeroChecks, setupLine, type SetupCheck } from '../src/setup-from-zero.js';
 import type { MasterConfig } from '../src/master.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-2976, GY-3201: a managed repository whose graphyard.json declares a node application has its
 // main installed at the root, built in the application's directory and started there on a loopback
@@ -246,16 +247,14 @@ test('unit:tests/managed-serve.test.ts — a repository declaring no node applic
   assert.match(setupLine(serve), new RegExp(`^FAIL serve: .*${escaped(deadUrl)}`));
 
   // A declared serve that answers: one PASS line naming the URL.
-  const server = createHttpServer((request, response) => response.writeHead(200).end('served'));
-  await new Promise<void>(done => server.listen(0, '127.0.0.1', done));
-  const live = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const { url: live, close } = await listen(createHttpServer((request, response) => response.writeHead(200).end('served')));
   try {
     await writeFile(serveRecordPath(root), `${JSON.stringify({ commit: main, url: live, failed: null, reason: null, pid: null, at: new Date().toISOString() }, null, 2)}\n`);
     const liveServe = (await setupFromZeroChecks(doctorInput)).find(check => check.id === 'serve') as SetupCheck | undefined;
     assert.ok(liveServe);
     assert.equal(liveServe.status, 'pass');
     assert.match(liveServe.detail, new RegExp(`${escaped(live)} answers at ${main.slice(0, 12)}`));
-  } finally { server.closeAllConnections?.(); await new Promise<void>(done => server.close(() => done())); }
+  } finally { await close(); }
 });
 
 test('unit:tests/managed-serve.test.ts — a malformed node application is named, never served', () => {

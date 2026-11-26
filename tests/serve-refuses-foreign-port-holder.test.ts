@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { createServer } from 'node:net';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { answering, readServeRecord, serveOnce, serveRecordPath } from '../src/serve-app.js';
@@ -9,6 +8,7 @@ import { managedServePorts } from '../src/cli/upgrade.js';
 import { defaultChildRun } from '../src/child-runner.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { freePort } from './helpers/http-server.js';
 
 // GY-2993: a commit counts as served only when the answer on the served port is the serve the
 // pass started. The port is chosen once and kept in served.json (GY-3201); when another process
@@ -17,10 +17,6 @@ import { git, gitRepo } from './helpers/git-repo.js';
 // served, and its required cases never run against the foreign holder, whose answers would
 // otherwise stand in for the serve's own (the verified-true-against-the-wrong-process report).
 
-const freePort = () => new Promise<number>((accept, reject) => {
-  const server = createServer(); server.once('error', reject);
-  server.listen(0, '127.0.0.1', () => { const { port } = server.address() as { port: number }; server.close(() => accept(port)); });
-});
 
 const buildJs = [
   'const fs = require("node:fs");',

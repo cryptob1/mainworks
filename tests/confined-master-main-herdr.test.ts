@@ -21,6 +21,7 @@ import { withDatabase } from './helpers/postgres.js';
 import { expandTypedCommand } from './helpers/launch-shell.js';
 import { workFixture } from './helpers/work-fixture.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3237: after a GY-3212 migration moved an install from its private Herdr to the host's main
 // one, the master session's confinement still granted only the private instance's socket and
@@ -63,7 +64,7 @@ test(`e2e:confined-master-main-herdr — a fixture install migrated from its pri
   const operator: Principal = { id: 'operator', role: 'admin' }, coordinator: Principal = { id: 'master', role: 'coordinator' };
   const tokens = new Map([[operator.id, `operator-${'t'.repeat(32)}`], [coordinator.id, `coordinator-${'t'.repeat(32)}`]]);
 
-  let store: Store | null = null, http: ReturnType<typeof server> | null = null, url = '';
+  let store: Store | null = null, closeHttp: (() => Promise<void>) | undefined, url = '';
   let herdrServer: ReturnType<typeof createServer> | null = null;
   const saved = { HOME: process.env.HOME, GRAPHYARD_CONFIG_HOME: process.env.GRAPHYARD_CONFIG_HOME, PATH: process.env.PATH };
   process.env.HOME = home;
@@ -73,9 +74,7 @@ test(`e2e:confined-master-main-herdr — a fixture install migrated from its pri
     store = await withDatabase('confined-master-main-herdr');
     await store.init();
     const engine = new Engine(store, 120, 'owner/project');
-    const started = http = server(engine, [operator, coordinator].map(entry => ({ ...entry, token: tokens.get(entry.id)! })));
-    await new Promise<void>(resolve => started.listen(0, '127.0.0.1', resolve));
-    url = `http://127.0.0.1:${(started.address() as { port: number }).port}`;
+    ({ url, close: closeHttp } = await listen(server(engine, [operator, coordinator].map(entry => ({ ...entry, token: tokens.get(entry.id)! })))));
     const at = new Date().toISOString();
     const candidate = { sha: HEAD, baseSha: BASE, pr: 7, branch: 'graphyard/gy-1-1', author: 'implementer' };
     const work = workFixture({ id: '1f0c9a5e-7b2d-4c8a-9f3e-6d5b4a3c2d10', key: 'GY-1', title: 'Migrated review', type: 'bug', priority: 1,
@@ -252,7 +251,7 @@ test(`e2e:confined-master-main-herdr — a fixture install migrated from its pri
 
   } finally {
     if (herdrServer) await new Promise<void>(resolve => (herdrServer as NonNullable<typeof herdrServer>).close(() => resolve()));
-    if (http) { (http as unknown as { closeAllConnections?: () => void }).closeAllConnections?.(); await new Promise<void>(resolve => http!.close(() => resolve())); }
+    await closeHttp?.();
     for (const [name, value] of Object.entries(saved)) {
       if (value === undefined) delete (process.env as Record<string, string | undefined>)[name]; else (process.env as Record<string, string | undefined>)[name] = value;
     }

@@ -4,6 +4,7 @@ import { assertTrialHealth, comparisonPreflight, enforceUsage, knownUsage } from
 import { foldMergeLedger } from '../src/model-boundary/merge-ledger.js';
 import { baseFailureReason } from '../src/merge-writer/executor.js';
 import { configSchema } from '../benchmarks/hard-math/receipt-schema.js';
+import { listen } from './helpers/http-server.js';
 
 const head='a'.repeat(40),base='b'.repeat(40),merge='c'.repeat(40),at='2026-01-01T00:00:00Z';
 const intent={kind:'merge.intent',work:'GY-1',payload:{key:'GY-1',head,baseTip:base,mergeSha:merge,risk:'normal',at}};
@@ -72,7 +73,6 @@ test('hard math estimate command is read-only with fresh nonexistent run paths',
 
 
 test('hard math real prerequisites read authoritative work, latest trial records and persisted flight',async()=>{
-  const {createServer}=await import('node:http');
   const {join}=await import('node:path');
   const {temporaryDirectory}=await import('./helpers/temp-dirs.js');
   const {realPrerequisites}=await import('../benchmarks/hard-math/runner.js');
@@ -83,7 +83,7 @@ test('hard math real prerequisites read authoritative work, latest trial records
   const root=await temporaryDirectory('hard-math-prerequisites'),id='00000000-0000-4000-8000-000000000001';
   let record:any={id,key:'GY-1',stage:'build'},trial:any={outcome:'host-failure',reason:'trial host unavailable'};
   const paths:string[]=[];
-  const http=createServer((req,res)=>{
+  const { url: serverUrl, close } = await listen((req,res)=>{
     const url=new URL(req.url!,'http://localhost');paths.push(req.url!);
     let value:any;
     if(url.pathname==='/api/status') value={build:{protocol:MERGE_PROTOCOL,commit:head}};
@@ -92,9 +92,8 @@ test('hard math real prerequisites read authoritative work, latest trial records
     if(url.pathname==='/api/events') {assert.equal(url.searchParams.get('kind'),'merge.trial');assert.equal(url.searchParams.get('limit'),'1');assert.equal(url.searchParams.get('order'),'desc');value=[{kind:'merge.trial',payload:trial}];}
     res.setHeader('Content-Type','application/json');res.end(JSON.stringify(value));
   });
-  await new Promise<void>(resolve=>http.listen(0,'127.0.0.1',resolve));
   const credentialFile=join(root,'coordinator.token');await atomicPrivateText(credentialFile,'test-only-credential-'.repeat(3));
-  const source=masterConfigSchema.parse({version:1,url:`http://127.0.0.1:${(http.address() as any).port}`,credentialFile,cliPath:'/unused',repository:'scratch/prerequisites',baseBranch:'main',githubAppId:0,hostId:'fixture',masterAgentName:'fixture',workers:[]});
+  const source=masterConfigSchema.parse({version:1,url:serverUrl,credentialFile,cliPath:'/unused',repository:'scratch/prerequisites',baseBranch:'main',githubAppId:0,hostId:'fixture',masterAgentName:'fixture',workers:[]});
   try {
     await assert.rejects(realPrerequisites(source,head),/shared trial host-failure/);
     assert.ok(paths.includes(`/api/work/${id}`));
@@ -109,5 +108,5 @@ test('hard math real prerequisites read authoritative work, latest trial records
     await assert.rejects(realPrerequisites(source,head),/shared trial flight/);
     state.mergeWriter.inFlight=null;await atomicPrivateWrite(daemonStatePath(source),state);
     await assert.doesNotReject(realPrerequisites(source,head));
-  } finally {await new Promise<void>(resolve=>http.close(()=>resolve()));}
+  } finally {await close();}
 });

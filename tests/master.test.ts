@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { chmod, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { execFile, execFileSync } from 'node:child_process';
-import { createServer } from 'node:http';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { assertDispatchable, assertMasterBinding, dispatchWork, inspectWorkerCredentials, loadMasterConfig, masterInstructions, observeHerdrAgents, prepareWorkerLaunch, saveWorkerProfile, setupMaster, startMaster, workerProfileSchema } from '../src/master.js';
@@ -14,6 +13,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { gitRepo } from './helpers/git-repo.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { hostname } from 'node:os';
+import { listen } from './helpers/http-server.js';
 // Time-bomb allowance (GY-1694): every 2030-01-01 instant is judged at a 2030 `now`/observedAt the test passes (localNow pinned where the probe runs); the lone new Date() status call carries no fixture instant.
 
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
@@ -247,14 +247,13 @@ test('launch profiles verify a private worker credential and match its principal
 
 test('a launch profile token file overrides ambient Mainworks credentials', async () => {
   const root = await repository(); const credential = join(root, 'worker.token'); let authorization = '';
-  const http = createServer((request, response) => { authorization = String(request.headers.authorization ?? ''); response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify({ actor: { id: 'worker-a', role: 'worker' } })); });
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
+  const { url: serverUrl, close } = await listen((request, response) => { authorization = String(request.headers.authorization ?? ''); response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify({ actor: { id: 'worker-a', role: 'worker' } })); });
   try {
     await writeFile(credential, workerToken, { mode: 0o600 });
-    const url = `http://127.0.0.1:${(http.address() as any).port}`;
+    const url = serverUrl;
     await promisify(execFile)(process.execPath, [launcher, 'status'], { cwd: root, env: { ...process.env, GRAPHYARD_URL: url, GRAPHYARD_TOKEN: 'ambient-admin-token-'.padEnd(40, 'x'), GRAPHYARD_TOKEN_FILE: credential } });
     assert.equal(authorization, `Bearer ${workerToken}`);
-  } finally { await new Promise<void>(resolve => http.close(() => resolve())); await rm(root, { recursive: true, force: true }); }
+  } finally { await close(); await rm(root, { recursive: true, force: true }); }
 });
 
 test('worker preparation claims and creates the assigned worktree from the current managed base', async () => {

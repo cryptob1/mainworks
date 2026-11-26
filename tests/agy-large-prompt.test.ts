@@ -18,6 +18,7 @@ import { spawnHeadless, startHeadlessSession } from '../src/headless-session.js'
 import type { Principal, Work } from '../src/model.js';
 import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3696: Headless agy sessions take a large prompt without spawn E2BIG.
 // Linux MAX_ARG_STRLEN is 128 KiB (131,072 bytes) per argv element; a prompt larger than that
@@ -29,7 +30,7 @@ const coordinatorToken = `${coordinator.id}-token-${'x'.repeat(32)}`;
 const reviewer = 'review-agy-1';
 const now = () => new Date().toISOString();
 
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string;
 let scratch: string, root: string, bin: string, credentials: string, agyHome: string, base: string, head: string;
 
 const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
@@ -38,9 +39,7 @@ before(async () => {
   store = await withDatabase('agy-large-prompt'); await store.init();
   const engine = new Engine(store, 120, 'owner/project');
   engine.gitRunner = null;
-  http = server(engine, [{ ...coordinator, token: coordinatorToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ ...coordinator, token: coordinatorToken }])));
 
   await mkdir(join(process.cwd(), '.graphyard'), { recursive: true });
   scratch = await temporaryDirectory('agy-large-prompt', join(process.cwd(), '.graphyard'));
@@ -107,11 +106,7 @@ if (process.env.AGY_REVIEW_HEAD && process.env.AGY_REVIEW_BASE) {
   await saveReviewerProfile(root, { name: 'reviewer-agy', agentName: reviewer, kind: 'agy', agentArgs: [] });
 });
 
-after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  if (store) await store.close();
-  if (scratch) await rm(scratch, { recursive: true, force: true });
-});
+after(async () => { await close?.(); if (store) await store.close(); if (scratch) await rm(scratch, { recursive: true, force: true }); });
 
 const stored = async (id: string) => (await store.pool.query('SELECT document FROM work_items WHERE id=$1', [id])).rows[0].document as Work;
 const insert = async (work: Work) => { await store.pool.query('INSERT INTO work_items(id, document) VALUES ($1,$2)', [work.id, JSON.stringify(work)]); return work; };

@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
@@ -13,6 +12,7 @@ import type { MasterConfig } from '../src/master.js';
 import { batchGatePorts } from '../src/daemon/cycle-batch-gate.js';
 import { gateChecks } from '../src/batch-gate.js';
 import { freePort } from '../src/cli/test-isolation.js';
+import { listen } from './helpers/http-server.js';
 
 test('integration:real-app-onboarding — main declares a real app and feature map; batch and deploy reach its features', async () => {
   const { root } = await gitRepo({ label: 'real-app-onboarding' });
@@ -44,13 +44,12 @@ test('integration:real-app-onboarding — main declares a real app and feature m
   const { readFile } = await import('node:fs/promises');
   assert.match(await readFile(join(root, 'requests'), 'utf8'), /\/feature/);
   const requests: string[] = [];
-  const app = createServer((request, response) => { requests.push(request.url!); response.end('real feature'); });
-  await new Promise<void>(resolve => app.listen(0, '127.0.0.1', resolve));
+  const { url: appUrl, close } = await listen((request, response) => { requests.push(request.url!); response.end('real feature'); });
   try {
-    const url = `http://127.0.0.1:${(app.address() as { port: number }).port}`;
+    const url = appUrl;
     assert.equal((await checkServedApp(root, url, '')).verified, true);
     assert.deepEqual(requests, ['/healthz', '/feature']);
-  } finally { await new Promise<void>(resolve => app.close(() => resolve())); }
+  } finally { await close(); }
 });
 
 test('integration:real-app-onboarding — Mainworks maps its real dashboard and APIs', async () => {
@@ -64,8 +63,7 @@ test('integration:real-app-onboarding — Mainworks maps its real dashboard and 
   assert.ok(parseRepositoryConfig(await readFile('graphyard.json', 'utf8')).featureMap?.length, 'the installer accepts the feature map');
   const store = await withDatabase('real_app_mainworks');
   await store.init();
-  const http = server(new Engine(store, 120, 'cryptob1/graphyard'), [{ id: 'fixture-operator', role: 'admin', sessionKind: 'human', token: 'fixture-operator-token' }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
+  const { url, close } = await listen(server(new Engine(store, 120, 'cryptob1/graphyard'), [{ id: 'fixture-operator', role: 'admin', sessionKind: 'human', token: 'fixture-operator-token' }]));
   // The server serves the dashboard from ./dist; a trial that has not built it gets a stand-in page.
   const repo = process.cwd(), served = await temporaryDirectory('real-app-dist');
   const { mkdir } = await import('node:fs/promises');
@@ -75,7 +73,7 @@ test('integration:real-app-onboarding — Mainworks maps its real dashboard and 
   try {
     const mapped = featureMapCase(repo);
     assert.ok(mapped.definition.steps.length >= 5, 'the product features are mapped, not just readiness');
-    const report = await runCases([mapped], { root: repo, url: `http://127.0.0.1:${(http.address() as { port: number }).port}`, token: 'fixture-operator-token' });
+    const report = await runCases([mapped], { root: repo, url: url, token: 'fixture-operator-token' });
     assert.equal(report.cases[0].verdict, 'passed', JSON.stringify(report.cases[0].failingStep));
-  } finally { process.chdir(repo); await new Promise<void>(resolve => http.close(() => resolve())); }
+  } finally { process.chdir(repo); await close(); }
 });

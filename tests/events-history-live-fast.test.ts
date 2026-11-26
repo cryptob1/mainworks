@@ -7,6 +7,7 @@ import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { itemLedger, slowQueryAttention } from '../src/cli/master-status.js';
 import { deliverySpeed, type MergedItem } from '../src/pipeline-speed.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3762: master status reads the whole ledger of the last 50 merged items, all at once, every few minutes. It
 // asked for each event's resolved work document only to read its stage: on the live install that was 580 MB a run,
@@ -17,7 +18,7 @@ const stages = ['ready', 'build', 'review', 'test', 'acceptance', 'merge'];
 const EVERY = 20, ROUTINE = 200_000;
 const shapes = [...Array.from({ length: 3 }, () => ({ rows: 800, kb: 180 })), ...Array.from({ length: 47 }, () => ({ rows: 150, kb: 15 }))];
 const start = Date.parse('2026-11-20T00:00:00Z');
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string;
 let items: { id: string; key: string; rows: number }[] = [];
 
 const api = (headers: Record<string, string> = {}) => async (path: string) => {
@@ -33,9 +34,7 @@ const minuteAt = (r: number) => new Date(start + r * 60_000).toISOString();
 before(async () => {
   store = await withDatabase('events-history-live-fast'); await store.init();
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
-  http = server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: adminToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: adminToken }])));
   const created = await fetch(`${url}/api/work`, { method: 'POST', headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
     body: JSON.stringify({ title: 'Template', why: 'Its document seeds the ledger.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] }) });
   const { id: templateId } = await created.json() as { id: string };
@@ -65,10 +64,7 @@ before(async () => {
   await store.pool.query('ANALYZE events');
 });
 
-after(async () => {
-  http?.closeAllConnections(); if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  await store?.close();
-});
+after(async () => { await close?.(); await store?.close(); });
 
 test('integration:events-history-live-fast — master status\'s ledger reads of 50 merged items answer in under 3 s each on a live-shaped ledger with unchanged results, and a slow query names its caller', { timeout: 600_000 }, async () => {
   const read = api({ 'X-Mainworks-Command': 'master status' });

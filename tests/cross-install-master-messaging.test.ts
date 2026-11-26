@@ -19,6 +19,7 @@ import type { DaemonEffects } from '../src/daemon/effects.js';
 import { messageCauses } from '../src/daemon/master-stalled-delivery.js';
 import { messageThreads } from '../web/pages/master.js';
 import type { Principal } from '../src/model.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3345: two installs' Masters message each other through Mainworks, with replies. Two real
 // control planes on their own temporary Postgres databases; each issues the other a reporter
@@ -34,11 +35,9 @@ async function install(name: string, peer: string) {
   const reporter: Principal = { id: peer, role: 'reporter' };
   const store: Store = await withDatabase(`cross_install_${name.replace(/\W/g, '_')}`); await store.init();
   const engine = new Engine(store, 120, `owner/${name}`);
-  const http = server(engine, [coordinator, reporter].map(principal => ({ ...principal, token: token(principal) })));
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url, close: closeServer } = await listen(server(engine, [coordinator, reporter].map(principal => ({ ...principal, token: token(principal) }))));
   let running = true;
-  const stop = async () => { if (!running) return; running = false; http.closeAllConnections(); await new Promise<void>(resolve => http.close(() => resolve())); };
+  const stop = async () => { if (!running) return; running = false; await closeServer(); };
   closers.push(async () => { await stop(); await store.close(); });
   const api = async (path: string, body?: unknown, key?: string) => {
     const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token(coordinator)}`, 'Content-Type': 'application/json', 'Idempotency-Key': key ?? crypto.randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });

@@ -11,6 +11,7 @@ import { server } from '../src/server.js';
 import type { Store } from '../src/store.js';
 import { encodeLoopHosts, loopHostsHeader, loopPresenceHeader, loopSupervisionHeader } from '../src/model/loop-presence.js';
 import { coordinationViewHeader } from '../src/server/work-view.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3407: `mainworks host add USER@HOST` checks the host's rootless Docker through its shim and
 // records it; a host without Docker or one SSH cannot reach is refused with a plain reason; `host
@@ -67,9 +68,7 @@ test(`${proof} e2e:workers-host-list — each cycle reads this machine and every
   await store.init();
   const engine = new Engine(store, 120, 'fixture/hosts');
   engine.gitRunner = null;
-  const http = server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: 'host-add-operator-token-xxxxxxxxxxxxxxxx' }, { id: 'loop', role: 'coordinator', sessionKind: 'ai', token: 'host-add-loop-token-xxxxxxxxxxxxxxxxxxxxx' }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url, close } = await listen(server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: 'host-add-operator-token-xxxxxxxxxxxxxxxx' }, { id: 'loop', role: 'coordinator', sessionKind: 'ai', token: 'host-add-loop-token-xxxxxxxxxxxxxxxxxxxxx' }]));
   try {
     const read = await fetch(`${url}/api/work-snapshot`, { headers: { Authorization: 'Bearer host-add-loop-token-xxxxxxxxxxxxxxxxxxxxx', [coordinationViewHeader]: 'coordination', [loopPresenceHeader]: '15', [loopSupervisionHeader]: 'autonomous', [loopHostsHeader]: encodeLoopHosts(second) } });
     assert.equal(read.status, 200);
@@ -77,5 +76,5 @@ test(`${proof} e2e:workers-host-list — each cycle reads this machine and every
     assert.deepEqual(status.hosts.map(host => [host.host, host.away, host.local ?? false]), [['vishrog', false, true], ['gy-compute@box', false, false], ['gy-compute@gone', true, false]]);
     assert.equal(status.hosts[1]!.runs, 2);
     assert.match(status.hosts[2]!.reason!, /is unreachable over SSH/, "the away host's reason reaches the dashboard");
-  } finally { await new Promise<void>(resolve => http.close(() => resolve())); await store.close(); }
+  } finally { await close(); await store.close(); }
 });

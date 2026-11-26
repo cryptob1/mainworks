@@ -7,6 +7,7 @@ import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { type Store as StoreType } from '../src/store.js';
 import type { Principal, Work } from '../src/model.js';
+import { listen } from './helpers/http-server.js';
 
 // What production serves is observed from the deploy record and the watch alone: a fresh endpoint
 // observation of the exact release outranks the provider's newest successful deployment, which
@@ -88,12 +89,11 @@ test('unit:production-watch-build-serving — the watch observes the serving com
     const admin: Principal = { id: 'serving-admin', role: 'admin', sessionKind: 'human' };
     const credential = { ...admin, token: `serving-admin-${'s'.repeat(32)}` };
     const engine = new Engine(store, 120, 'owner/history');
-    const http = server(engine, [credential], { production: watch });
-    await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
+    const { url, close } = await listen(server(engine, [credential], { production: watch }));
     try {
       assert.equal((await store.pool.query("SELECT count(*)::int AS count FROM events WHERE kind='production.environment'")).rows[0].count, 0);
       const readStatus = async (serving = sha(4), source = 'provider') => {
-        const response = await fetch(`http://127.0.0.1:${(http.address() as { port: number }).port}/api/status`, { headers: { Authorization: `Bearer ${credential.token}` } });
+        const response = await fetch(`${url}/api/status`, { headers: { Authorization: `Bearer ${credential.token}` } });
         assert.equal(response.status, 200);
         const status = await response.json() as { production: { serving: string | null; servingSource: string | null; observedAt: string | null }; productionEnvironment: string };
         assert.equal(status.production.serving, serving, 'the watch records what production serves in status');
@@ -103,7 +103,7 @@ test('unit:production-watch-build-serving — the watch observes the serving com
         assert.notEqual(status.productionEnvironment, 'legacy-production');
       };
       await readStatus();
-      const removedRoute = await fetch(`http://127.0.0.1:${(http.address() as { port: number }).port}/api/production-environment`, {
+      const removedRoute = await fetch(`${url}/api/production-environment`, {
         method: 'POST', headers: { Authorization: `Bearer ${credential.token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ environment: 'legacy-production' }),
       });
@@ -116,18 +116,14 @@ test('unit:production-watch-build-serving — the watch observes the serving com
         candidate: 'legacy-candidate', promotion: { environment: 'production', releaseId: 'legacy-release', sourceSha: sha(2), artifact: 'sha256:legacy', at: new Date(T0).toISOString(), by: 'graphyard' },
       })]);
       await readStatus();
-      const delivery = await fetch(`http://127.0.0.1:${(http.address() as { port: number }).port}/api/delivery`, { headers: { Authorization: `Bearer ${credential.token}` } });
+      const delivery = await fetch(`${url}/api/delivery`, { headers: { Authorization: `Bearer ${credential.token}` } });
       assert.equal(delivery.status, 200);
       assert.deepEqual((await delivery.json()).environments, [], 'historical candidate promotions do not manufacture delivery environments or expected releases');
       // Losing the provider record falls back to the running build, even with conflicting history.
       deployments.length = 0;
       await watch.tick(true);
       await readStatus(sha(1), 'build');
-    } finally {
-      await new Promise<void>(resolve => http.close(() => resolve()));
-      await store.close();
-    }
-  }
+    } finally { await close(); await store.close(); } }
   // The provider's newest successful deployment outranks the running build: no ancestry is
   // compared, so a record older than the build still stands as what production serves.
   {

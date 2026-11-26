@@ -23,21 +23,20 @@ import { renewReviewRequest } from '../src/server/review-verdict.js';
 import { pendingHeadless } from './helpers/pending-review.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { endRun } from '../src/runner/registry.js';
+import { listen } from './helpers/http-server.js';
 const dropRun = (name: string) => endRun(name, { ok: false, reason: 'exit', detail: 'dropped', startedAt: new Date().toISOString(), endedAt: new Date().toISOString() } as any);
 
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const coordinator: Principal = { id: 'graphyard-master', role: 'coordinator' };
 const coordinatorToken = `${coordinator.id}-token-${'x'.repeat(32)}`;
-let store: Store, engine: Engine, http: ReturnType<typeof server>, registry: AgentRegistry, url: string;
+let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, registry: AgentRegistry, url: string;
 let root: string, scratch: string, base: string, head: string, hostId: string;
 
 before(async () => {
   store = await withDatabase('review-launch-skips-spent'); await store.init();
   engine = new Engine(store, 120, 'owner/project');
   engine.gitRunner = null;
-  http = server(engine, [{ ...coordinator, token: coordinatorToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ ...coordinator, token: coordinatorToken }])));
   root = await temporaryDirectory('review-skips-spent-root');
   scratch = await temporaryDirectory('review-skips-spent-scratch');
   const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
@@ -57,11 +56,7 @@ before(async () => {
   registry = new AgentRegistry(store);
 });
 
-after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  if (store) await store.close();
-  for (const dir of [root, scratch]) if (dir) await rm(dir, { recursive: true, force: true });
-});
+after(async () => { await close?.(); if (store) await store.close(); for (const dir of [root, scratch]) if (dir) await rm(dir, { recursive: true, force: true }); });
 
 const gitRun = (command: string, args: string[], options?: { cwd?: string }) => {
   if (command === 'git') return execFileSync(command, args, { encoding: 'utf8', cwd: options?.cwd });

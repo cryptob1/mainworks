@@ -21,17 +21,15 @@ import { registryCommand } from '../src/cli/master-registry.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { masterCredentialMask, sessionMountNamespaceWorks } from '../src/master/confinement.js';
 import { masterSessionConfinement } from '../src/master/launch.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3806: live checks of agy and Pi accounts get a writable account home and a scratch home they
 // can create, returning a login verdict (available, exhausted or not logged in) instead of a check
 // environment fault.
 
 const stores: Store[] = [];
-const servers: ReturnType<typeof server>[] = [];
-after(async () => {
-  for (const http of servers) http.close();
-  for (const store of stores) await store.close();
-});
+const servers: (() => Promise<void>)[] = [];
+after(async () => { for (const stop of servers) await stop(); for (const store of stores) await store.close(); });
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -313,10 +311,8 @@ test('e2e:account-check-writable-home — on a running test install an agy accou
   const store = await withDatabase('e2e-account-check-writable-home');
   stores.push(store);
   await store.init();
-  const http = server(new Engine(store, 7200, 'owner/e2e-agy-check'), credentials);
-  servers.push(http);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url, close } = await listen(server(new Engine(store, 7200, 'owner/e2e-agy-check'), credentials));
+  servers.push(close);
 
   const apiCall = async (bearer: string, path: string, body?: unknown) => {
     const response = await fetch(`${url}/api/${path}`, body === undefined

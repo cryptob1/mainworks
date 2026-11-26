@@ -15,20 +15,19 @@ import type { CostSummary } from '../src/model/token-costs.js';
 import type { Principal } from '../src/model.js';
 import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3496: a flat-plan account on a model nobody priced reads 'flat plan', not 'price unknown', and
 // the sessions an unmetered runtime ran collapse to one line per account, outside the totals.
 const coordinator: Principal = { id: 'graphyard-master', role: 'coordinator' };
 const token = `coordinator-token-${'y'.repeat(32)}`;
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
-let store: Store, http: ReturnType<typeof server>, url: string, root: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string, root: string;
 
 before(async () => {
   store = await withDatabase('usage-counted-or-flat'); await store.init();
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
-  http = server(engine, [{ ...coordinator, token }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ ...coordinator, token }])));
   await mkdir(join(process.cwd(), '.graphyard'), { recursive: true });
   const scratch = await temporaryDirectory('usage-counted-or-flat', join(process.cwd(), '.graphyard'));
   root = await temporaryDirectory('coordinator', scratch);
@@ -47,10 +46,7 @@ before(async () => {
     body: JSON.stringify({ rows: [row('flat-1', 'zai-coding', 'opencode', true, 9000), row('muse-1', 'muse-sub', 'muse', false, 0), row('muse-2', 'muse-sub', 'muse', false, 0), row('free-1', 'codex-free', 'codex', true, 4000)] }) });
   assert.equal(posted.status, 200, await posted.text());
 });
-after(async () => {
-  if (http) await new Promise<void>(resolve => { http.closeAllConnections?.(); http.close(() => resolve()); });
-  if (store) await store.close();
-});
+after(async () => { await close?.(); if (store) await store.close(); });
 
 test('integration:usage-counted-or-flat — a fee account reads flat plan, an unpriced one price unknown, and unmetered sessions one line per account in master usage and the Costs API', async () => {
   const summary = await (await fetch(`${url}/api/costs`, { headers: { Authorization: `Bearer ${token}` } })).json() as CostSummary;

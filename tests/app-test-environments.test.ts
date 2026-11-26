@@ -1,7 +1,6 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { createServer, type Server } from 'node:http';
 import { chmod, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -10,6 +9,7 @@ import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import type { Work } from '../src/model.js';
 import type { LifecycleExec } from '../src/app-environments.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3296: app test environments — where the app under test runs. A case naming a declared
 // environment gets an instance provisioned by the batch gate through the environment's up command
@@ -20,11 +20,8 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 const environments = () => import('../src/app-environments.js').catch(() => assert.fail('src/app-environments.ts is missing: no app test environment lifecycle'));
 
 const made: string[] = [];
-const servers: Server[] = [];
-after(async () => {
-  for (const server of servers) server.close();
-  for (const directory of made) await rm(directory, { recursive: true, force: true });
-});
+const servers: (() => Promise<void>)[] = [];
+after(async () => { for (const stop of servers) await stop(); for (const directory of made) await rm(directory, { recursive: true, force: true }); });
 
 const sentinel = 'sentinel-install-secret-3296';
 const git = (repo: string, args: string[], env?: Record<string, string>) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', env: { ...process.env, ...env } });
@@ -57,10 +54,8 @@ async function fixture(options: { maxConcurrent?: number; secretsMode?: number }
   await mkdir(join(repo, 'env'), { recursive: true }); await mkdir(join(repo, 'e2e/cases'), { recursive: true });
   await mkdir(join(provider, 'instances'), { recursive: true }); await mkdir(join(configHome, 'fixture-app'), { recursive: true });
   const app = { healthy: true, hits: 0 };
-  const server = createServer((request, response) => { app.hits++; response.writeHead(app.healthy ? 200 : 500, { 'content-type': 'application/json' }); response.end(JSON.stringify({ ok: app.healthy, path: request.url })); });
-  servers.push(server);
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const { url, close } = await listen((request, response) => { app.hits++; response.writeHead(app.healthy ? 200 : 500, { 'content-type': 'application/json' }); response.end(JSON.stringify({ ok: app.healthy, path: request.url })); });
+  servers.push(close);
   const secretsFile = join(configHome, 'fixture-app', 'app-environments.env');
   await writeFile(secretsFile, `PROVIDER_TOKEN=${sentinel}\nPROVIDER_DIR=${provider}\nAPP_URL="${url}"\n`, { mode: options.secretsMode ?? 0o600 });
   await chmod(secretsFile, options.secretsMode ?? 0o600);

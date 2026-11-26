@@ -12,6 +12,7 @@ import { trialTimings } from '../src/model/task-evidence.js';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { gitRepo } from './helpers/git-repo.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3599: the Task page's evidence, from a real control plane on isolated Postgres with a git fixture:
 // the trial's step timings and slowest file from the merge ledger, the changed files and one file's
@@ -34,11 +35,9 @@ test('e2e:task-shows-evidence — the control plane serves a task\'s trial timin
   engine.gitRunner = gitRunnerFor(repo); engine.baseBranch = 'main';
   // The install's checkout: the root the control plane reads heads from.
   const rootBefore = process.env.GRAPHYARD_REPOSITORY_ROOT; process.env.GRAPHYARD_REPOSITORY_ROOT = repo;
-  const http = server(engine, [
+  const { url, close } = await listen(server(engine, [
     { id: 'operator', role: 'admin', sessionKind: 'human', token: 'operator' }, { id: 'claude-builder-7', role: 'worker', token: 'builder' },
-    { id: 'graphyard-merge-writer', role: 'coordinator', token: 'coordinator' }] as never);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+    { id: 'graphyard-merge-writer', role: 'coordinator', token: 'coordinator' }] as never));
   let calls = 0;
   const call = async (token: string, path: string, body?: unknown) => {
     const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': `evidence-${++calls}` }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -120,7 +119,7 @@ test('e2e:task-shows-evidence — the control plane serves a task\'s trial timin
     await call('coordinator', 'usage', { rows: [usage('run-2', 'claude-opus-5-5', 5)] });
     assert.deepEqual((await call('operator', `costs?work=${filed.key}`)).builder, { account: 'claude-a', model: 'claude-opus-5-5', accountModel: 'claude-sonnet-5-5', differs: true });
     assert.equal('builder' in await call('operator', 'costs'), false);
-  } finally { await new Promise<void>(resolve => { http.close(() => resolve()); http.closeAllConnections(); }); await store.close(); if (rootBefore === undefined) delete process.env.GRAPHYARD_REPOSITORY_ROOT; else process.env.GRAPHYARD_REPOSITORY_ROOT = rootBefore; }
+  } finally { await close(); await store.close(); if (rootBefore === undefined) delete process.env.GRAPHYARD_REPOSITORY_ROOT; else process.env.GRAPHYARD_REPOSITORY_ROOT = rootBefore; }
 });
 
 test('e2e:task-shows-evidence — each test shard\'s end reports the trial\'s counts so far and its slowest file so far', async () => {

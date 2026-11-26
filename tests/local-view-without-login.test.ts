@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer, connect } from 'node:net';
+import { connect, createServer } from 'node:net';
 import { composeBundle, type AdapterContext } from '../src/install/adapters.js';
 import { randomUUID } from 'node:crypto';
 import { Engine } from '../src/engine.js';
@@ -8,6 +8,7 @@ import { server } from '../src/server.js';
 import type { Principal } from '../src/model.js';
 import { signInDatabase } from './helpers/sign-in-database.js';
 import { localRequest } from './helpers/local-request.js';
+import { listen } from './helpers/http-server.js';
 
 // Viewing the dashboard on the machine that serves it needs no sign-in: a tokenless GET from
 // loopback, addressed to the served host and port, reads as the local viewer. Any other Host
@@ -17,20 +18,16 @@ test('integration:local-view-without-login — local reads need no session; fore
   const operator: Principal = { id: 'operator', role: 'admin', sessionKind: 'human' };
   const engine = new Engine(database.store, 120, 'owner/project');
   engine.gitRunner = null;
-  const http = server(engine, [{ ...operator, token: `operator-${'x'.repeat(32)}` }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const listenerPort = (http.address() as { port: number }).port;
+  const { port: listenerPort, close } = await listen(server(engine, [{ ...operator, token: `operator-${'x'.repeat(32)}` }]));
   // Model Docker's TCP publication: the external port differs and the backend sees a peer
   // outside its direct-loopback allowlist. No HTTP headers are rewritten by Docker NAT.
-  const relay = createServer(client => {
+  const { port: publishedPort, close: closeProxy } = await listen(createServer(client => {
     const upstream = connect({ host: '127.0.0.1', port: listenerPort, localAddress: '127.0.0.2' });
     client.pipe(upstream).pipe(client);
     client.on('error', () => upstream.destroy());
     upstream.on('error', () => client.destroy());
     client.on('close', () => upstream.destroy());
-  });
-  await new Promise<void>(resolve => relay.listen(0, '127.0.0.1', resolve));
-  const publishedPort = (relay.address() as { port: number }).port;
+  }));
   const previousPort = process.env.GRAPHYARD_LOCAL_VIEW_PORT;
   delete process.env.GRAPHYARD_LOCAL_VIEW_PORT;
   try {
@@ -81,8 +78,8 @@ test('integration:local-view-without-login — local reads need no session; fore
   } finally {
     if (previousPort === undefined) delete process.env.GRAPHYARD_LOCAL_VIEW_PORT;
     else process.env.GRAPHYARD_LOCAL_VIEW_PORT = previousPort;
-    await new Promise<void>(resolve => relay.close(() => resolve()));
-    await new Promise<void>(resolve => http.close(() => resolve()));
+    await close();
+    await closeProxy();
     await database.close();
   }
 });

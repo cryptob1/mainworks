@@ -14,6 +14,7 @@ import { parseCase } from '../src/e2e/case.js';
 import { projectCaseSuite } from '../src/release-project.js';
 import type { E2eReport } from '../src/e2e/runner.js';
 import { readFileSync } from 'node:fs';
+import { listen } from './helpers/http-server.js';
 
 // GY-2983 AC-2, on this head: on a served static fixture app with a required case, the dashboard's
 // release line names the served commit and 'verified' after the serve pass runs its cases, and
@@ -32,14 +33,12 @@ test('unit:served-app-verified-case — the release line names the served commit
   // The case's command steps write the records with this script, which with no e2e serve writes into its own checkout.
   await mkdir(join(root, 'scripts')); await copyFile(join(process.cwd(), 'scripts', 'e2e-serve-record.mjs'), join(root, 'scripts', 'e2e-serve-record.mjs'));
   const written = join(root, '.graphyard', 'served.json');
-  let http: ReturnType<typeof server> | null = null, store: Store | null = null;
+  let close: (() => Promise<void>) | undefined, store: Store | null = null;
   process.env.GRAPHYARD_REPOSITORY_ROOT = root;
   try {
     store = await withDatabase('served-app-verified-case'); await store.init();
     const engine = new Engine(store, 120, '');
-    http = server(engine, [{ ...operator, token }], {});
-    await new Promise<void>(resolve => http!.listen(0, '127.0.0.1', resolve));
-    const origin = `http://127.0.0.1:${(http!.address() as { port: number }).port}`;
+    const { url: origin, close: stop } = await listen(server(engine, [{ ...operator, token }], {})); close = stop;
 
     const file = 'e2e/cases/served-app-verified.json';
     let report: E2eReport | null = null;
@@ -48,12 +47,7 @@ test('unit:served-app-verified-case — the release line names the served commit
       .run(origin, null);
     const outcome = (report as E2eReport | null)?.cases.find(entry => entry.id === 'served-app-verified');
     assert.equal(outcome?.verdict, 'passed', JSON.stringify(outcome?.failingStep ?? outcome));
-  } finally {
-    delete process.env.GRAPHYARD_REPOSITORY_ROOT;
-    await rm(written, { force: true });
-    if (http) await new Promise<void>(resolve => http!.close(() => resolve()));
-    if (store) await store.close();
-  }
+  } finally { delete process.env.GRAPHYARD_REPOSITORY_ROOT; await rm(written, { force: true }); await close?.(); if (store) await store.close(); }
 });
 
 after(async () => { /* temporaryDirectory's own hook removes the database directories */ });
