@@ -1712,7 +1712,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         }
       }
       let selection: Ended;
-      // GY-3750: an item's trial narrows a body-only change to the importers of what it reaches; the batch gate and reruns keep today's selection.
+      // GY-3866: an item's trial narrows to the direct importers of its changed files; the batch gate and reruns keep the transitive selection.
       const narrow = input.key !== gateTrialKey && !input.rerun;
       try {
         selection = await child('selection', selector[0]!, [...selector.slice(1), ...input.changedFiles], input.baseTip ? { wrapper: unqueued, env: { ...env, GRAPHYARD_SELECTION_BASE: input.baseTip, ...(narrow ? { GRAPHYARD_SELECTION_IMPORTERS: '1' } : {}) } } : { wrapper: unqueued });

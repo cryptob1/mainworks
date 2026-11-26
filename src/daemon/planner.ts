@@ -1,6 +1,7 @@
-// Concern: GY-3835 — when the empty-board alarm holds for 30 minutes and no planner draft was filed
-// in the last 2 hours, launch one headless planner session to draft up to three unreleased items
-// with why and simplest only for the Lead to sharpen or close.
+// Concern: GY-3835, GY-3865 — when ready or released-and-unclaimed work drops to two or fewer items
+// with free builder slots (or the empty-board alarm holds for 30 minutes) and no planner draft was
+// filed in the last 2 hours, launch one headless planner session to draft up to three unreleased
+// items with why and simplest only for the Lead to sharpen or close.
 import type { Cycle } from './cycle.js';
 import { emptyBoardAlarmSince } from './stall-alarm.js';
 import type { Work } from '../model/work.js';
@@ -15,6 +16,7 @@ const plannerMaxBackoffMs = 24 * 60 * 60_000;
 const deliveredWindowMs = 7 * 24 * 60 * 60 * 1000;
 const plannerKey = 'planner';
 const maxPlannerDrafts = 3;
+const plannerLowWater = 2;
 
 export interface PlannerDraft {
   title: string;
@@ -34,6 +36,16 @@ export interface PlannerInput {
 export type PlannerOutcome = { skipped: string } | { filed: string[]; result: string };
 
 const isPlannerDraft = (item: Pick<Work, 'origin'>) => item.origin === 'planner';
+
+const isReadyOrReleasedUnclaimed = (item: Work, now: number) =>
+  item.stage !== 'done'
+  && (item.owner ?? null) === null
+  && (item.stage === 'ready' || item.ready)
+  && !item.blocker
+  && !item.hold
+  && !(item.submission && !item.reworkRequested)
+  && !(item.lease && Date.parse(item.lease.expiresAt) > now)
+  && !(item.sessions ?? []).some(session => session.kind === 'implementation' && session.state === 'running');
 
 /** GY-3835: open unreleased planner drafts awaiting criteria from the Lead. */
 export function plannerDraftAttention(open: readonly Work[]) {
@@ -106,7 +118,7 @@ export function plannerPrompt(context: {
     : [];
 
   return [
-    'You are a headless planner session. The board has been empty for 30 minutes.',
+    'You are a headless planner session. Ready work is low or empty while builder slots are free.',
     'Draft at most 3 small, high-leverage work items from the product brief, 6-hour flow numbers, rework causes and slowest trial test files for the Lead to sharpen and release.',
     'Respond with ONLY a JSON array of 1 to 3 objects. Each object must have:',
     '- "title": short imperative title (max 200 chars)',
@@ -169,15 +181,24 @@ export function parsePlannerDrafts(output: string): PlannerDraft[] {
 }
 
 /**
- * Starts one headless planner session beside the cycle when the empty-board alarm has held for
- * 30 minutes and no planner draft has been filed in the last 2 hours.
+ * Starts one headless planner session beside the cycle when two or fewer items are ready or
+ * released-and-unclaimed while builder slots are free (or the empty-board alarm has held for
+ * 30 minutes) and no planner draft has been filed in the last 2 hours.
  */
-export function plannerStep(cycle: Pick<Cycle, 'config' | 'state' | 'effects' | 'snapshot' | 'clock' | 'launcher' | 'log'>) {
+export function plannerStep(
+  cycle: Pick<Cycle, 'config' | 'state' | 'effects' | 'snapshot' | 'clock' | 'launcher' | 'log'>,
+  options?: { freeSlots?: number },
+) {
   const { config, state, effects, snapshot, clock, launcher, log } = cycle;
   const start = effects.planner;
   if (!start || config.forPerson || launcher.busy(plannerKey)) return;
   const alarmSince = emptyBoardAlarmSince(state);
-  if (alarmSince === null || clock - alarmSince < plannerHoldMs) return;
+  const emptyBoardDue = alarmSince !== null && clock - alarmSince >= plannerHoldMs;
+  const running = snapshot.work.flatMap(item => item.sessions ?? []).filter(session => session.kind === 'implementation' && session.state === 'running').length;
+  const freeSlots = options?.freeSlots ?? (config.workers.length - running);
+  const readyCount = snapshot.work.filter(item => isReadyOrReleasedUnclaimed(item, clock)).length;
+  const lowWaterDue = freeSlots > 0 && readyCount <= plannerLowWater;
+  if (!emptyBoardDue && !lowWaterDue) return;
 
   const recentDraft = snapshot.work.some(item => {
     if (!isPlannerDraft(item)) return false;

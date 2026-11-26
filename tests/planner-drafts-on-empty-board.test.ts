@@ -232,24 +232,14 @@ async function status(config: MasterConfig, state: DaemonState, work: Work[]) {
   );
 }
 
-test(`${proof} — empty-board alarm held 30 min launches one planner session with brief, 6h flow, rework causes and 5 slowest trial test files; files at most 3 unreleased drafts with why/simplest and no criteria; listed in master status attention`, async () => {
+test(`${proof} — empty board with free builder slots launches one planner session with brief, 6h flow, rework causes and 5 slowest trial test files; files at most 3 unreleased drafts with why/simplest and no criteria; listed in master status attention`, async () => {
   const f = await fixture({ work: [], workers: 4 });
 
-  // At 15 min: empty-board alarm raises, but has been held 0 min -> no planner launch.
+  // At 15 min: empty-board alarm raises and the low-water trigger launches one planner session immediately.
   f.advance(15);
   await f.cycle();
   assert.ok(f.state.actions[stallAlarmKey]?.detail, 'empty-board alarm is raised at 15 min');
-  assert.equal(f.prompts.length, 0, 'no planner launch when alarm just raised');
-
-  // At 44 min (29 min of alarm): still no planner launch.
-  f.advance(29);
-  await f.cycle();
-  assert.equal(f.prompts.length, 0, 'no planner launch before 30 min of empty-board alarm');
-
-  // At 45 min (30 min of alarm): launches one planner session.
-  f.advance(1);
-  await f.cycle();
-  assert.equal(f.prompts.length, 1, 'launches one planner session after 30 min of empty-board alarm');
+  assert.equal(f.prompts.length, 1, 'launches one planner session on an empty board with free slots');
 
   const prompt = f.prompts[0]!;
   assert.ok(prompt.includes('Keep the line fed overnight without manual drafting.'), 'prompt contains the product brief');
@@ -301,12 +291,12 @@ test(`${proof} — empty-board alarm held 30 min launches one planner session wi
   assert.equal(f.prompts.length, 1, 'no second planner launch within 2 hours of a planner draft');
 });
 
-test(`${proof} — no planner launch when one ready item exists`, async () => {
-  const f = await fixture({ work: [makeWork('GY-500')], workers: 4 });
+test(`${proof} — no planner launch when three ready items exist`, async () => {
+  const f = await fixture({ work: [makeWork('GY-500'), makeWork('GY-501'), makeWork('GY-502')], workers: 4 });
   f.advance(60);
   await f.cycle();
-  assert.equal(f.prompts.length, 0, 'no planner launch when one ready item exists');
-  assert.equal(f.createdPayloads.length, 0, 'no draft filed when one ready item exists');
+  assert.equal(f.prompts.length, 0, 'no planner launch when three ready items exist');
+  assert.equal(f.createdPayloads.length, 0, 'no draft filed when three ready items exist');
 });
 
 test(`${proof} — no planner launch when no operator-agent is configured`, async () => {
@@ -335,12 +325,10 @@ test(`${proof} — refused create backs off instead of relaunching every 30 minu
     },
   });
 
-  // Raise alarm at 15 min, then reach 30 min held at 45 min.
+  // Initial planner launch runs on the empty board with free slots and fails on refused create.
   f.advance(15);
   await f.cycle();
-  f.advance(30);
-  await f.cycle();
-  assert.equal(f.prompts.length, 1, 'initial planner launch runs at 30 min of empty-board alarm');
+  assert.equal(f.prompts.length, 1, 'initial planner launch runs on empty board with free slots');
   assert.equal(f.state.planner?.failures, 1);
   assert.ok(f.state.planner?.nextAt, 'refused create records a backoff nextAt');
 
