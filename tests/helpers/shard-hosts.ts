@@ -254,8 +254,8 @@ elif command == 'start':
 
 /** GY-3879: a shim as these hosts install it: the signers prepare records root-owned live in the fixture root, holding this machine's signing key. */
 export const fixtureShim = (script: string, root: string) => {
-  writeFileSync(join(root, 'graphyard-helper-signers'), `mainworks-helper namespaces="mainworks-helper" ${helperSigner()}\n`);
-  return script.replace('/etc/ssh/graphyard_helper_signers', join(root, 'graphyard-helper-signers'));
+  writeFileSync(join(root, 'mainworks-helper-signers'), `mainworks-helper namespaces="mainworks-helper" ${helperSigner()}\n`);
+  return script.replace('/etc/ssh/graphyard_helper_signers', join(root, 'mainworks-helper-signers'));
 };
 
 export interface ShardHostsFixture { root: string; bin: string; shim: string; localState: string; home(name: string): string; state(name: string): string; down(name: string, down: boolean): Promise<void> }
