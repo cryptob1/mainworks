@@ -16,7 +16,7 @@ const columns = `work_id, kind, created_at, seq, stage,
     CASE WHEN kind IN ('merge.trial', 'merge.refused') THEN payload->>'head' END AS head,
     CASE WHEN kind = 'merge.trial' THEN payload->>'durationMs' END AS duration_ms,
     CASE WHEN kind = 'merge.trial' THEN payload ? 'flaked' END AS flaked,
-    CASE WHEN kind = 'merge.trial' THEN payload->'flaked' END AS flakes,
+    CASE WHEN kind = 'merge.trial' THEN jsonb_build_object('flaked', payload->'flaked', 'failed', payload->'tests'->'failed', 'assertions', payload->'tests'->'assertions') END AS trial,
     CASE WHEN kind = 'merge.serve-revert' THEN payload->>'outcome' = 'reverted' END AS reverted`;
 /**
  * GY-3763: the window's rows, each half a range scan on insertion time: the whole-document rows
@@ -58,13 +58,15 @@ export function flowItems(work: readonly Flowed[], ledger: readonly any[], attem
       const trial = unanswered.get(row.work_id);
       unanswered.delete(row.work_id);
       const reason = String(row.reason ?? '');
-      if (trial && trial.head === row.head && reason.startsWith(baseFailurePrefix)) trial.flaky = true;
+      if (trial && trial.head === row.head && reason.startsWith(baseFailurePrefix)) { trial.flaky = true; delete trial.failures; }
       if (reason.startsWith(trialAheadOfReviewPrefix) && /acceptance gate awaits .*manual:/.test(reason))
         list.push({ kind: row.kind, at, reason: row.reason ?? null, head: row.head ?? null });
     } else {
+      const flakes = row.flakes ?? row.trial?.flaked, failed = row.trial?.failed, assertions = row.trial?.assertions;
       const event: FlowEvent = { kind: row.kind, at, stage: row.stage ?? null, reason: row.reason ?? null, binding: row.binding ?? null, head: row.head ?? null,
         durationMs: row.duration_ms == null ? null : Number(row.duration_ms), flaky: !!row.flaked,
-        ...(row.flakes ? { flakes: (row.flakes.files as string[]).map(file => ({ file, at, assertion: row.flakes.assertions?.[file] ?? null })) } : {}), reverted: !!row.reverted };
+        ...(flakes ? { flakes: (flakes.files as string[]).map(file => ({ file, at, assertion: flakes.assertions?.[file] ?? null })) } : {}),
+        ...(Array.isArray(failed) && failed.length ? { failures: (failed as string[]).map(file => ({ file, at, assertion: assertions?.[file] ?? null })) } : {}), reverted: !!row.reverted };
       list.push(event);
       if (row.kind === 'merge.trial') unanswered.set(row.work_id, event);
       else if (row.kind === 'merge.intent') unanswered.delete(row.work_id);

@@ -69,7 +69,7 @@ const sampleFlow: FlowReport = {
     merges: 12,
     mergesPerHour: 2,
     firstPassYield: 0.67,
-    rework: { review: 2, 'product review': 1, 'merge trial': 4, acceptance: 0, 'base moved': 3, 'red base': 1 }, reviewReasons: [], flakyChecks: [],
+    rework: { review: 2, 'product review': 1, 'merge trial': 4, acceptance: 0, 'base moved': 3, 'red base': 1 }, reviewReasons: [], flakyChecks: [], trialFailures: [],
     stations: {
       ready: { median: 2, p90: 5, samples: 12, oldest: { key: 'GY-1', title: 'Old', minutes: 5, waiting: false } },
       build: { median: 14, p90: 28, samples: 12, oldest: { key: 'GY-1', title: 'Old', minutes: 28, waiting: false } },
@@ -90,13 +90,13 @@ const sampleFlow: FlowReport = {
   },
   '24h': {
     hours: 24, attempts: 40, attemptsPerHour: 1.7, merges: 30, mergesPerHour: 1.25, firstPassYield: 0.75,
-    rework: { review: 3, 'product review': 1, 'merge trial': 5, acceptance: 0, 'base moved': 4, 'red base': 1 }, reviewReasons: [], flakyChecks: [],
+    rework: { review: 3, 'product review': 1, 'merge trial': 5, acceptance: 0, 'base moved': 4, 'red base': 1 }, reviewReasons: [], flakyChecks: [], trialFailures: [],
     stations: { ready: null, build: null, review: null, 'test queue': null, 'merge trial': null, acceptance: null, 'waiting for sign-off': null, 'waiting for the merge writer': null, merge: null, live: null },
     trials: 35, flaky: 2, flakyRate: 0.057, reverts: 0, revertRate: 0,
   },
   '7d': {
     hours: 168, attempts: 200, attemptsPerHour: 1.2, merges: 150, mergesPerHour: 0.9, firstPassYield: 0.75,
-    rework: { review: 10, 'product review': 2, 'merge trial': 20, acceptance: 1, 'base moved': 15, 'red base': 2 }, reviewReasons: [], flakyChecks: [],
+    rework: { review: 10, 'product review': 2, 'merge trial': 20, acceptance: 1, 'base moved': 15, 'red base': 2 }, reviewReasons: [], flakyChecks: [], trialFailures: [],
     stations: { ready: null, build: null, review: null, 'test queue': null, 'merge trial': null, acceptance: null, 'waiting for sign-off': null, 'waiting for the merge writer': null, merge: null, live: null },
     trials: 180, flaky: 5, flakyRate: 0.028, reverts: 1, revertRate: 0.007,
   },
