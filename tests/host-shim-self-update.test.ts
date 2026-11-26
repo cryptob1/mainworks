@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { hostShimDigest, hostShimScript, hostShimVerbs } from '../src/host-shim.js';
 import { helperSigningKeyFile, readHostReadings } from '../src/hosts.js';
-import { slotsDirectoryVariable, writeMachines } from '../src/master/verification-slots.js';
+import { slotsDirectoryVariable } from '../src/master/verification-slots.js';
 import { outdatedShimAttention, readShardHosts } from '../src/merge-writer/remote-shards.js';
 import { runTrial } from '../src/merge-writer/trial.js';
 import { fakeHosts } from './helpers/fake-hosts.js';
@@ -83,19 +83,16 @@ test(`${proof} — a shim with a wrong digest is refused and the host keeps its 
   assert.match(shim('probe', '').stdout, new RegExp(`^shim ${hostShimDigest}$`, 'm'));
 });
 
-test(`${proof} — a host whose update fails stays away, for trials too, with the reason in its attention line`, async () => {
+test(`${proof} — a host whose update fails stays ready, for trials too, with the reason in its attention line (GY-3896)`, async () => {
   await installOlder(hostShimVerbs.join(' '), script => script.replace('os.replace(file.name, own)', "sys.exit('No space left on device')"));
   const failed = await loop();
-  assert.equal(failed.away, true);
+  assert.equal(failed.away, false);
   const [line] = outdatedShimAttention([failed]);
-  assert.match(line!.text, /did not take this release's helper \(No space left on device\)/);
-  writeMachines(process.env[slotsDirectoryVariable]!, [{ name: 'here', local: true, away: false, cores: 2, busy: 0, celsius: null }, { name: target, away: true, cores: null, busy: null, celsius: null, updateError: failed.updateError }]);
+  assert.match(line!.text, /did not take this release's helper: No space left on device/);
   const trial = async () => (await readShardHosts([target], run, 2)).find(reading => reading.name === target)!;
-  assert.equal((await trial()).away, true);
-  assert.match((await trial()).reason ?? '', /No space left on device/);
-  await installOlder(hostShimVerbs.join(' '));
-  assert.equal((await loop()).away, false, 'it clears with the next update that works');
   assert.equal((await trial()).away, false);
+  await installOlder(hostShimVerbs.join(' '));
+  assert.equal((await loop()).updateError, undefined, 'it clears with the next update that works');
 });
 
 test(`${proof} — a host prepared by the printed script takes the update as gy-compute, and preparing it again runs the installed helper`, async () => {

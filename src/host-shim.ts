@@ -98,6 +98,9 @@ if [ -z "$MAINWORKS_SHIM" ]; then
   export MAINWORKS_SHIM="\${2:-$HOME}/.graphyard/shims/\${0##*/}-\${SSH_CLIENT%% *}" MAINWORKS_SIGNERS=/etc/ssh/graphyard_helper_signers
   [ ! -f "$MAINWORKS_SHIM" ] || exec sh "$MAINWORKS_SHIM" "$@"
 fi
+# GY-3896: a copy migrated without sudo stores the coordinator's signer beside itself when it first runs; later signed updates verify against it.
+signer=${shimSignerSlot}
+[ -n "$MAINWORKS_SIGNERS" ] || [ -z "$signer" ] || [ -s "$MAINWORKS_SHIM.signers" ] || printf 'mainworks-helper namespaces="mainworks-helper" %s\\n' "$signer" > "$MAINWORKS_SHIM.signers"
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/docker.sock"
 case "$SSH_ORIGINAL_COMMAND" in
@@ -114,7 +117,6 @@ ${hostProbeScript.split('\n').map(line => `    ${line}`).join('\n')}
     exec python3 -I -c "$(cat <<'GRAPHYARD_VERBS'
 import hashlib, json, os, re, shutil, signal, subprocess, sys, tempfile, time
 LAUNCHER = ${JSON.stringify(trialLauncher)}
-FALLBACK_SIGNER = ${shimSignerSlot}
 asked = os.environ.get('SSH_ORIGINAL_COMMAND', '')
 def refuse():
     sys.stderr.write('graphyard-host-shim refuses: ' + asked + '\\n')
@@ -309,19 +311,13 @@ elif verb == 'update-shim':
         sys.exit('graphyard-host-shim refuses the update: its content does not match ' + args[0])
     if not signed:
         sys.exit('graphyard-host-shim refuses the update: no key this host was prepared with signed it')
-    signers = os.environ.get('MAINWORKS_SIGNERS', '')
-    with tempfile.NamedTemporaryFile() as sig_file, tempfile.NamedTemporaryFile('w') as fallback_file:
+    signers = os.environ.get('MAINWORKS_SIGNERS') or own + '.signers'
+    if not os.path.isfile(signers):
+        sys.exit('this helper has no trusted signer: run mainworks host add USER@HOST once')
+    with tempfile.NamedTemporaryFile() as sig_file:
         sig_file.write(signature + signed)
         sig_file.flush()
-        if signers:
-            verify_signers = signers
-        elif FALLBACK_SIGNER:
-            fallback_file.write('mainworks-helper namespaces="mainworks-helper" ' + FALLBACK_SIGNER + '\\n')
-            fallback_file.flush()
-            verify_signers = fallback_file.name
-        else:
-            sys.exit('graphyard-host-shim refuses the update: no key this host was prepared with signed it')
-        verified = subprocess.run(['ssh-keygen', '-Y', 'verify', '-f', verify_signers, '-I', 'mainworks-helper', '-n', 'mainworks-helper', '-s', sig_file.name],
+        verified = subprocess.run(['ssh-keygen', '-Y', 'verify', '-f', signers, '-I', 'mainworks-helper', '-n', 'mainworks-helper', '-s', sig_file.name],
                                   input=content, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if verified.returncode != 0 or b'Good "mainworks-helper" signature' not in verified.stdout:
         sys.exit('graphyard-host-shim refuses the update: no key this host was prepared with signed it')
@@ -576,6 +572,6 @@ esac
 /** GY-3476: this release's shim, named by the digest its probe prints; GY-3517: a host on another digest stays ready while it speaks every trial verb. */
 export const hostShimDigest = createHash('sha256').update(shimTemplate).digest('hex');
 export const hostShimScript = shimTemplate.replace(shimDigestSlot, hostShimDigest).replace(shimSignerSlot, '""');
-/** GY-3891: this release's shim with the coordinator's signing key embedded as fallback when the root-installed helper predates /etc/ssh/graphyard_helper_signers. */
+/** GY-3891, GY-3896: this release's shim carrying the coordinator's signing key, which a copy run without /etc/ssh/graphyard_helper_signers stores beside itself. */
 export const hostShimScriptWithSigner = (signer: string) =>
   shimTemplate.replace(shimDigestSlot, hostShimDigest).replace(shimSignerSlot, JSON.stringify(signer));
