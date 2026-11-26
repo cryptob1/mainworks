@@ -12,7 +12,7 @@
 // GY-3834: `host add OWNER@HOST` in a terminal runs that script over its own SSH session with sudo, then
 // records gy-compute@HOST; `host share` lets an enrolled coordinator bind another install's key to the
 // same helper (the shim's share verb), so a second install needs no root there.
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, linkSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -51,11 +51,21 @@ const writeHosts = async (file: string, hosts: HostRecord[]) => { if (!existsSyn
 
 /** GY-3879: the key this machine signs helper updates with, beside hosts.json; never the SSH login key, so the login alone runs only the helper. */
 export const helperSigningKeyFile = (home = configHome()) => join(home, 'machine', 'helper-signing-key');
-/** The signing key's public half (TYPE BODY), created on first use. */
+/** The signing key's public half (TYPE BODY), read from the key, which is created on first use. */
 export function helperSigner(home = configHome()) {
   const file = helperSigningKeyFile(home);
-  if (!existsSync(file)) { mkdirSync(dirname(file), { recursive: true }); execFileSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', 'mainworks-helper', '-f', file], { stdio: 'ignore' }); }
-  return readFileSync(`${file}.pub`, 'utf8').trim().split(/\s+/).slice(0, 2).join(' ');
+  if (!existsSync(file)) {
+    mkdirSync(dirname(file), { recursive: true });
+    // GY-3945: processes creating the key together (a trial's fresh home, the suite's parallel files) each make a
+    // pair beside it. Linking the private half in keeps the first pair and fails with EEXIST for the rest, who read
+    // that one; ssh-keygen writing here directly refused the key that landed under it.
+    const pair = mkdtempSync(join(dirname(file), '.helper-signing-key-'));
+    try {
+      execFileSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', 'mainworks-helper', '-f', join(pair, 'key')], { stdio: 'ignore' });
+      try { linkSync(join(pair, 'key'), file); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+    } finally { rmSync(pair, { recursive: true, force: true }); }
+  }
+  return execFileSync('ssh-keygen', ['-y', '-f', file], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim().split(/\s+/).slice(0, 2).join(' ');
 }
 /** An SSH signature of `text` the host's helper verifies against the signers prepare recorded there. */
 const signHelper = (text: string, home = configHome()) => execFileSync('ssh-keygen', ['-Y', 'sign', '-q', '-f', helperSigningKeyFile(home), '-n', 'mainworks-helper'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
