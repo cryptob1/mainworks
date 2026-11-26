@@ -26,6 +26,7 @@ import { runDispatchTick } from '../src/dispatch/tick.js';
 import { emptyDispatchCursor } from '../src/dispatch/cursor.js';
 import { dispatchEffects } from '../src/dispatch/effects.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3370: a host without the browser tool is set up for product reviews. When a feature item
 // reaches product review and agent-browser is absent, the loop installs it once into the install's
@@ -37,7 +38,7 @@ const coordinator: Principal = { id: 'graphyard-master', role: 'coordinator' };
 const coordinatorToken = `${coordinator.id}-token-${'x'.repeat(32)}`;
 const now = () => new Date().toISOString();
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string;
 let root: string, credentials: string, stubBin: string, installs: string;
 let base: string, head: string;
 const originalHome = process.env.HOME, originalData = process.env.XDG_DATA_HOME, originalPath = process.env.PATH;
@@ -46,9 +47,7 @@ before(async () => {
   store = await withDatabase('product-review-browser-provisioned'); await store.init();
   const engine = new Engine(store, 120, 'owner/project');
   engine.gitRunner = null;
-  http = server(engine, [{ ...coordinator, token: coordinatorToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ ...coordinator, token: coordinatorToken }])));
   root = await temporaryDirectory('browser-provisioned-root'); credentials = await temporaryDirectory('browser-provisioned-credentials');
   const { git, head: tip } = await gitRepo({ root, files: { 'README.md': 'Base.\n' } });
   git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
@@ -88,7 +87,7 @@ chmod 755 "$prefix/node_modules/.bin/agent-browser"
 after(async () => {
   process.env.PATH = originalPath; process.env.HOME = originalHome;
   if (originalData !== undefined) process.env.XDG_DATA_HOME = originalData;
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
+  await close?.();
   if (store) await store.close();
   for (const directory of [root, credentials, stubBin]) if (directory) await rm(directory, { recursive: true, force: true });
 });

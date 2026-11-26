@@ -14,6 +14,7 @@ import { parseCase } from '../src/e2e/case.js';
 import { projectCaseSuite } from '../src/release-project.js';
 import type { E2eReport } from '../src/e2e/runner.js';
 import { readFileSync } from 'node:fs';
+import { listen } from './helpers/http-server.js';
 
 // GY-2976 AC-3, on this head: the served control plane's status read — the master status serving
 // block the dashboard uses — returns the serve fields over the API (url, served commit, atMain,
@@ -35,14 +36,12 @@ async function runLinkCase(source: string) {
   await writeFile(join(root, 'served.txt'), 'the fixture app the record claims is served\n');
   git(['add', '.'], root); git(['commit', '-q', '-m', 'the fixture app'], root);
   await mkdir(join(root, 'scripts')); await copyFile(join(source, 'scripts', 'e2e-serve-record.mjs'), join(root, 'scripts', 'e2e-serve-record.mjs'));
-  let http: ReturnType<typeof server> | null = null, store: Store | null = null;
+  let close: (() => Promise<void>) | undefined, store: Store | null = null;
   process.env.GRAPHYARD_REPOSITORY_ROOT = root;
   try {
     store = await withDatabase('served-app-link-case'); await store.init();
     const engine = new Engine(store, 120, '');
-    http = server(engine, [{ ...operator, token }], {});
-    await new Promise<void>(resolve => http!.listen(0, '127.0.0.1', resolve));
-    const origin = `http://127.0.0.1:${(http!.address() as { port: number }).port}`;
+    const { url: origin, close: stop } = await listen(server(engine, [{ ...operator, token }], {})); close = stop;
 
     const file = 'e2e/cases/served-app-link.json';
     let report: E2eReport | null = null;
@@ -51,12 +50,7 @@ async function runLinkCase(source: string) {
       .run(origin, null);
     const outcome = (report as E2eReport | null)?.cases.find(entry => entry.id === 'served-app-link');
     assert.equal(outcome?.verdict, 'passed', JSON.stringify(outcome?.failingStep ?? outcome));
-  } finally {
-    delete process.env.GRAPHYARD_REPOSITORY_ROOT;
-    if (http) await new Promise<void>(resolve => http!.close(() => resolve()));
-    if (store) await store.close();
-  }
-}
+  } finally { delete process.env.GRAPHYARD_REPOSITORY_ROOT; await close?.(); if (store) await store.close(); } }
 
 test('unit:served-app-link-case — the served head reports the declared serve over the API and the dashboard links it', { timeout: 300_000 }, async () => {
   await runLinkCase(process.cwd());

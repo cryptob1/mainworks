@@ -15,6 +15,7 @@ import { bootstrapGate, gateRecordPath, writeGateRecord } from '../src/batch-gat
 import type { Principal, Work } from '../src/model.js';
 import { MatrixView, TestsView, type MatrixFilter } from '../web/pages/tests.js';
 import { gitRepo } from './helpers/git-repo.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3278 AC-3: the Tests page's default view is the environment matrix — every E2E case, grouped
 // by its first tag, with its latest result in each place it runs (Trial, Main, Served, Nightly),
@@ -23,7 +24,7 @@ import { gitRepo } from './helpers/git-repo.js';
 const operator: Principal = { id: 'operator', role: 'admin' };
 const token = `operator-${'t'.repeat(32)}`;
 const repository = 'owner/shop';
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string, checkout: string;
+let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string, checkout: string;
 const previousRoot = process.env.GRAPHYARD_REPOSITORY_ROOT;
 
 before(async () => {
@@ -36,13 +37,11 @@ before(async () => {
   (await gitRepo({ root: checkout, files: {}, message: 'main' })).git('update-ref', 'refs/remotes/origin/main', 'HEAD');
   engine.gitRunner = gitRunnerFor(checkout);
   process.env.GRAPHYARD_REPOSITORY_ROOT = checkout;
-  http = server(engine, [{ ...operator, token }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
+  ({ url, close } = await listen(server(engine, [{ ...operator, token }])));
 });
 after(async () => {
   if (previousRoot === undefined) delete process.env.GRAPHYARD_REPOSITORY_ROOT; else process.env.GRAPHYARD_REPOSITORY_ROOT = previousRoot;
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
+  await close?.();
   if (store) await store.close();
 });
 

@@ -8,6 +8,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { databaseUrl } from './helpers/postgres.js';
+import { listen as startServer } from './helpers/http-server.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git } from './helpers/git-repo.js';
 
@@ -19,10 +20,10 @@ import { git } from './helpers/git-repo.js';
 // run as subprocesses of a fresh home that never names a Mainworks path.
 
 const source = fileURLToPath(new URL('..', import.meta.url));
-const servers: Server[] = [];
-after(() => { for (const server of servers) server.close(); });
+const closes: (() => Promise<void>)[] = [];
+after(async () => { for (const close of closes) await close(); });
 const body = async (request: IncomingMessage) => { const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(chunk as Buffer); return Buffer.concat(chunks); };
-const listen = (server: Server) => new Promise<string>(accept => { servers.push(server); server.listen(0, '127.0.0.1', () => accept(`127.0.0.1:${(server.address() as { port: number }).port}`)); });
+const listen = async (server: Server) => { const { port, close } = await startServer(server); closes.push(close); return `127.0.0.1:${port}`; };
 
 /** A local npm registry: what `npm publish` puts is what `npx` gets. */
 async function npmRegistry() {

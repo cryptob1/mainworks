@@ -9,6 +9,7 @@ import { server } from '../src/server.js';
 import type { Principal } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { releaseLedgerGit } from './helpers/release-ledger-git.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-1860: a producer imports an external run through POST /api/validation/import. The plane binds
 // it to the release candidate whose head is exactly the run's sha (read from the `rc/` tags through
@@ -41,18 +42,16 @@ const tagObject = (index: number) => String(index + 1).repeat(40);
 /** The release ledger the import reads from the coordinator checkout: the `rc/` tag refs, and each annotated tag carrying its candidate record. `down` fails every read. */
 const github = releaseLedgerGit(() => candidates, tagObject);
 
-let store: Store, http: ReturnType<typeof server>, url: string, scratch: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string, scratch: string;
 
 before(async () => {
   scratch = await temporaryDirectory('validation-import');
 
   store = await withDatabase('validation-import-route'); await store.init();
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = github.run;
-  http = server(engine, principals.map(p => ({ ...p, token: tokens.get(p.id)! })));
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
+  ({ url, close } = await listen(server(engine, principals.map(p => ({ ...p, token: tokens.get(p.id)! })))));
 });
-after(async () => { if (http) await new Promise<void>(resolve => http.close(() => resolve())); if (store) await store.close(); if (scratch) await rm(scratch, { recursive: true, force: true }); });
+after(async () => { await close?.(); if (store) await store.close(); if (scratch) await rm(scratch, { recursive: true, force: true }); });
 
 async function call(path: string, actor: Principal, data?: unknown, key = randomUUID()) {
   const response = await fetch(`${url}/api/${path}`, { method: data === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${tokens.get(actor.id)}`, 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: data === undefined ? undefined : JSON.stringify(data) });

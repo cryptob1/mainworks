@@ -19,6 +19,7 @@ import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
 import type { Principal, Work } from '../src/model.js';
 import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3292: the loop's worker-pool growth (growWorkerPool, through saveWorkerProfile) wrote a 101st
 // profile into .graphyard/master.json whenever the registry allowed more workers than the file holds,
@@ -27,7 +28,7 @@ const coordinator: Principal = { id: 'graphyard-master', role: 'coordinator' };
 const worker: Principal = { id: 'worker-a', role: 'worker' };
 const token = (principal: Principal) => `${principal.id}-token-${'x'.repeat(32)}`;
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
-let store: Store, http: ReturnType<typeof server>, root: string, url: string;
+let store: Store, close: (() => Promise<void>) | undefined, root: string, url: string;
 const file = () => join(root, '.graphyard/master.json');
 const stored = async () => JSON.parse(await readFile(file(), 'utf8')) as { workers: { name: string; mode: string }[] };
 const minted = async () => Number((await store.pool.query('SELECT count(*) FROM worker_identities')).rows[0].count);
@@ -38,9 +39,7 @@ before(async () => {
   const scratch = await temporaryDirectory('master-profile-capacity', join(process.cwd(), '.graphyard'));
   root = await temporaryDirectory('coordinator', scratch);
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = gitRunnerFor(root);
-  http = server(engine, [coordinator, worker].map(principal => ({ ...principal, token: token(principal) })));
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [coordinator, worker].map(principal => ({ ...principal, token: token(principal) })))));
   const { git } = await gitRepo({ root, files: { 'README.md': 'Fixture.\n' } });
   git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   const credentials = await temporaryDirectory('credentials', scratch);
@@ -59,10 +58,7 @@ before(async () => {
     models: [{ name: 'fixture', id: 'fixture-model' }], roles: [{ name: 'worker', accounts, concurrency: 60 }], reason: 'more workers than master.json holds',
   }, randomUUID());
 });
-after(async () => {
-  if (http) await new Promise<void>(resolve => { http.closeAllConnections?.(); http.close(() => resolve()); });
-  if (store) await store.close();
-});
+after(async () => { await close?.(); if (store) await store.close(); });
 
 const api = async (method: 'GET' | 'POST', path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, { method, headers: { Authorization: `Bearer ${token(coordinator)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });

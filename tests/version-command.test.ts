@@ -2,8 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
-import { createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { checkoutRelease, cliRelease, releaseInfo, stampedRelease, type Release } from '../src/release.js';
@@ -11,6 +9,7 @@ import { renderVersion, versionReport } from '../src/cli/version.js';
 import { healthRoutes } from '../src/server/routes/health.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-1959: `mainworks version` names the CLI's release (the dated tag on its commit, else
 // `unreleased <sha>`) and the connected server's, which /healthz reports the same way.
@@ -93,13 +92,12 @@ test('unit:version-command — the report names the CLI release and commit, and 
 });
 
 test('unit:version-command — mainworks version prints the CLI release and the connected server\'s', async () => {
-  const server = createServer((request, response) => {
+  const { url: serverUrl, close } = await listen((request, response) => {
     response.setHeader('content-type', 'application/json');
     response.end(request.url === '/healthz' ? JSON.stringify({ ok: true, version: '2026.10.17', commit: 'd'.repeat(40) }) : '{}');
   });
-  await new Promise<void>(done => server.listen(0, '127.0.0.1', done));
   try {
-    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const url = serverUrl;
     const cwd = await temporaryDirectory('version-cli');
     const own = checkoutRelease(resolve('.'));
     const env = { ...process.env, GRAPHYARD_URL: url, GRAPHYARD_TOKEN: '' };
@@ -111,5 +109,5 @@ test('unit:version-command — mainworks version prints the CLI release and the 
     assert.deepEqual(JSON.parse(stamped.stdout).cli, { version: '2026.10.17', commit: 'd'.repeat(40) }, 'a stamped image\'s command reports its stamp, as its /healthz does');
     const help = await promisify(execFile)(process.execPath, [launcher, 'help'], { cwd, env });
     assert.match(help.stdout, /\n {2}version \[--json\]/);
-  } finally { server.close(); }
+  } finally { await close(); }
 });

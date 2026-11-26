@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync, spawnSync } from 'node:child_process';
-import { createServer } from 'node:http';
 import { existsSync } from 'node:fs';
 import { chmod, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { delimiter, join, resolve } from 'node:path';
@@ -16,6 +15,7 @@ import { recordedRuns } from './helpers/headless-runs.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
 import { registryFixture } from './helpers/registry-fixture.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-134: a Codex worker could not write its worktree's own Git admin directory, so the mandatory
 // `mainworks sync` failed at `git fetch` and the item presented as a ready-gate refusal.
@@ -224,7 +224,7 @@ test('integration:sandbox-probe-inside-confinement-fails-launch — the sandbox 
 });
 
 async function fakeServer(item: () => any, blocked: any[]) {
-  const http = createServer((req, res) => {
+  const { url, close } = await listen((req, res) => {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
@@ -235,10 +235,9 @@ async function fakeServer(item: () => any, blocked: any[]) {
       res.end(JSON.stringify(item()));
     });
   });
-  await new Promise<void>(done => http.listen(0, '127.0.0.1', done));
-  const env: NodeJS.ProcessEnv = { ...process.env, GRAPHYARD_URL: `http://127.0.0.1:${(http.address() as any).port}`, GRAPHYARD_TOKEN: 'test-only', GRAPHYARD_HERDR_AGENT_KIND: 'codex' };
+  const env: NodeJS.ProcessEnv = { ...process.env, GRAPHYARD_URL: url, GRAPHYARD_TOKEN: 'test-only', GRAPHYARD_HERDR_AGENT_KIND: 'codex' };
   for (const name of ['GRAPHYARD_TOKEN_FILE', 'GRAPHYARD_REQUEST_ID', 'HERDR_ENV', 'GRAPHYARD_GENERATED_FILES']) delete env[name];
-  return { env, close: () => new Promise<void>(done => http.close(() => done())) };
+  return { env, close: close };
 }
 
 test('integration:environment-failure-attributed — a sync that fails on a read-only path records a blocker naming the sandbox and the path, and the item presents as the environment', async () => {

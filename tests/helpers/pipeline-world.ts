@@ -6,9 +6,9 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import type { Server } from 'node:http';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { listen } from './http-server.js';
 import { bootstrapGate, gateRecordPath, readGateRecord, writeGateRecord, type GateRecord } from '../../src/batch-gate.js';
 import { fileFlakyCheck } from '../../src/daemon/cycle-batch-gate.js';
 import { defaultChildRun, type ChildRun } from '../../src/child-runner.js';
@@ -87,9 +87,7 @@ export async function pipelineWorld(label: string, extra: Record<string, string>
   const store = await withDatabase(label); await store.init();
   const database = store.pool.options.connectionString!;
   const engine = new Engine(store, 120, repo);
-  const http: Server = server(engine, [{ id: 'coordinator', role: 'coordinator', token: coordinatorToken }, { ...operator, token: adminToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url, close: closeHttp } = await listen(server(engine, [{ id: 'coordinator', role: 'coordinator', token: coordinatorToken }, { ...operator, token: adminToken }]));
   execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
   execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
   git(checkout, 'config', 'user.name', 'Fixture'); git(checkout, 'config', 'user.email', 'fixture@example.com');
@@ -128,10 +126,7 @@ export async function pipelineWorld(label: string, extra: Record<string, string>
         throw new Error(`${item.key} is not ready to merge: ${JSON.stringify(item.gates)}`);
       return item;
     },
-    close: async () => {
-      http.closeAllConnections(); await new Promise<void>(resolve => http.close(() => resolve()));
-      await store.close();
-    },
+    close: async () => { await closeHttp(); await store.close(); },
   };
 }
 

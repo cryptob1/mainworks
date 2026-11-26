@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { cp, mkdir, readdir, readFile, realpath, symlink, writeFile } from 'node:fs/promises';
-import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -13,6 +12,7 @@ import { watchPorts, deployHealth } from '../src/cli/upgrade.js';
 import { deployOnce, deployRecordPath, readDeployRecord } from '../src/deploy-watch.js';
 import { defaultChildRun } from '../src/child-runner.js';
 import { restartCause } from '../src/daemon/run.js';
+import { listen } from './helpers/http-server.js';
 
 const cliReleasePath = (directory: string, commit: string) => join(directory, 'deploy', 'build', '.graphyard', 'cli-releases', commit);
 const activeCliRoot = (root: string) => realpath(join(root, '.graphyard', 'cli-current'));
@@ -94,13 +94,11 @@ test('integration:deploy-stable-cli — real CLI loading survives delayed instal
   };
   // The fixture's source checkout stays on A even while origin advances.
   let served = a, healthy = true, apiCalls = 0;
-  const server = createServer((request, response) => {
+  const { url, close } = await listen((request, response) => {
     response.setHeader('Content-Type', 'application/json');
     if (request.url?.startsWith('/healthz')) response.end(JSON.stringify({ ok: true, healthy, version: `unreleased ${served.slice(0, 12)}`, commit: served, schema: 0 }));
     else { apiCalls++; response.end(JSON.stringify({ fixture: true, commit: served })); }
   });
-  await new Promise<void>(done => server.listen(0, '127.0.0.1', done));
-  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   await writeFile(join(directory, 'install.json'), JSON.stringify({ version: 1, installId: 'owner-project', repository: 'owner/project', provider: 'compose', baseBranch: 'main', createdAt: 'now', updatedAt: 'now' }));
   const previousHome = process.env.GRAPHYARD_CONFIG_HOME;
   process.env.GRAPHYARD_CONFIG_HOME = configHome;
@@ -201,7 +199,7 @@ test('integration:deploy-stable-cli — real CLI loading survives delayed instal
     releaseInstall?.(); releaseBuild?.();
     await pending?.catch(() => {});
     for (const session of sessions.values()) await session.close();
-    server.closeAllConnections(); await new Promise<void>(done => server.close(() => done()));
+    await close();
     if (previousHome === undefined) delete process.env.GRAPHYARD_CONFIG_HOME; else process.env.GRAPHYARD_CONFIG_HOME = previousHome;
   }
 });

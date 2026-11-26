@@ -7,6 +7,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withDatabase } from './postgres.js';
+import { listen } from './http-server.js';
 import { temporaryDirectory } from './temp-dirs.js';
 import { AgentRegistry } from '../../src/agent-registry.js';
 import { Engine } from '../../src/engine.js';
@@ -77,9 +78,7 @@ export async function headlessWorkers(label: string, leaseSeconds = 120, agentNa
   const root = await temporaryDirectory('coordinator', scratch);
   const bin = await temporaryDirectory('bin', scratch);
   const engine = new Engine(store, leaseSeconds, 'owner/project'); engine.gitRunner = gitRunnerFor(root);
-  const http = server(engine, [coordinator, worker, reader, { id: 'fixture-admin', role: 'admin' } as Principal].map(principal => ({ ...principal, token: token(principal) })));
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url, close } = await listen(server(engine, [coordinator, worker, reader, { id: 'fixture-admin', role: 'admin' } as Principal].map(principal => ({ ...principal, token: token(principal) }))));
   const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
   git('init', '-q', '--initial-branch=main'); git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   await writeFile(join(root, 'README.md'), 'Fixture.\n');
@@ -188,11 +187,7 @@ if (${JSON.stringify(entry.failure ?? '')}) { console.error(${JSON.stringify(ent
   const started = async (name: string) => JSON.parse(await readFile(join(homes.get(name)!, 'started.json'), 'utf8'));
   const runLog = async (work: Work, run: string) => api(reader, 'GET', `work/${work.key}/runs/${run}/log`);
   return { root, agentName, url, hostId, herdrCalls, homes, registry, api, stored, readyItem, configure, dispatch, submitted, started, runLog,
-    stop: async () => {
-      bridged.abort();
-      await new Promise<void>(resolve => { http.closeAllConnections?.(); http.close(() => resolve()); });
-      await store.close();
-    } };
+    stop: async () => { bridged.abort(); await close(); await store.close(); } };
 }
 
 /** The kinds with a built-in startup contract (tests/headless-workers.test.ts); `devin` is the first registry-contract kind. */

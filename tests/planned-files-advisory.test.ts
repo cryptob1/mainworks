@@ -18,6 +18,7 @@ import { masterConfigSchema, type HerdrAgent, type MasterConfig, type WorkerProf
 import type { Principal, Work } from '../src/model.js';
 import { coordinationViewHeader } from '../src/server/work-view.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { listen } from './helpers/http-server.js';
 
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -32,7 +33,7 @@ const workers: Principal[] = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map(name =
 const credentials = [operator, coordinator, ...workers].map(principal => ({ ...principal, token: `advisory-${principal.id}-${'x'.repeat(32)}` }));
 const token = (id: string) => credentials.find(credential => credential.id === id)!.token;
 let agentToken: string;
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string, cursorDirectory: string;
+let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string, cursorDirectory: string;
 
 const call = async (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown, headers: Record<string, string> = {}) => {
   const response = await fetch(`${url}/api/${path}`, {
@@ -77,14 +78,12 @@ before(async () => {
   engine = new Engine(store, 300, repository);
   // The base branch holds src/engine.ts and nothing under e2e/TIMINGS.md.
   engine.gitRunner = async args => ({ status: args[0] === 'cat-file' && args.at(-1) === `refs/remotes/origin/${engine.baseBranch}:src/engine.ts` ? 0 : 128, stdout: '', stderr: '' });
-  http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, credentials)));
   agentToken = `loop-agent-${randomUUID()}`;
   await ok(token(operator.id), 'POST', 'operator-agents', { id: loopId, displayName: 'Master loop', capabilities: [],
     scope: { repositories: [repository], workItems: ['*'] }, token: agentToken, reason: 'the loop applies its decisions under its own identity' });
 });
-after(async () => { http?.close(); await store?.close(); });
+after(async () => { await close?.(); await store?.close(); });
 
 test('integration:planned-files-advisory — overlapping planned or observed files never hold dispatch; only an exclusive resource held by another item refuses, once in the loop log, and a path absent on the base never blocks', async () => {
   const first = await file('Refactor engine A', { plannedFiles: ['src/engine.ts'] });

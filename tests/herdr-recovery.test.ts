@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { createServer } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
 import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
@@ -10,6 +9,7 @@ import type { Principal } from '../src/model.js';
 
 // Every fixture item carries an E2E proof and declares the serve its trial needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { listen } from './helpers/http-server.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // Cross-machine lease recovery, exercised inline against the real HTTP server and Postgres
@@ -165,7 +165,7 @@ useTestStore('herdr-recovery', { leaseSeconds: leaseSeconds, credentials: [{ ...
 // stopped: a weakened run that never reached the assertion under test would prove nothing.
 async function withoutRefusal(route: string, body: (weakened: string, refusals: () => number) => Promise<void>, preserve = 0) {
   let refusals = 0;
-  const forging = createServer(async (req, res) => {
+  const { url: serverUrl, close } = await listen(async (req, res) => {
     const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(chunk as Buffer);
     const upstream = await fetch(`${url}${req.url}`, { method: req.method, body: chunks.length ? Buffer.concat(chunks) : undefined,
       headers: Object.fromEntries(['authorization', 'content-type', 'idempotency-key'].filter(h => req.headers[h]).map(h => [h, String(req.headers[h])])) });
@@ -175,9 +175,8 @@ async function withoutRefusal(route: string, body: (weakened: string, refusals: 
     res.writeHead(refusal && refusals > preserve ? 200 : upstream.status, { 'Content-Type': 'application/json' });
     res.end(payload);
   });
-  await new Promise<void>(resolve => forging.listen(0, '127.0.0.1', resolve));
-  try { await body(`http://127.0.0.1:${(forging.address() as any).port}`, () => refusals); }
-  finally { await new Promise<void>(resolve => forging.close(() => resolve())); }
+  try { await body(serverUrl, () => refusals); }
+  finally { await close(); }
 }
 
 test('unit:herdr-recovery — two machines recover an expired lease against the real HTTP server and Postgres', async () => {

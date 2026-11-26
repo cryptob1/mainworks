@@ -1,5 +1,5 @@
 import { after, before } from 'node:test';
-import type { AddressInfo } from 'node:net';
+import { listen } from './http-server.js';
 import { withDatabase } from './postgres.js';
 import { Store } from '../../src/store.js';
 import { Engine } from '../../src/engine.js';
@@ -32,22 +32,18 @@ export function useTestStore(
   ready: (ctx: TestStoreContext) => Promise<void> | void,
 ) {
   let store: Store | undefined;
-  let http: ReturnType<typeof server> | undefined;
+  let close: (() => Promise<void>) | undefined;
   before(async () => {
     store = await withDatabase(label, options.storeOptions);
     await store.init();
     const engine = new Engine(store, options.leaseSeconds ?? 120, options.repository ?? 'owner/project');
     if (options.principals) engine.principals = options.principals;
-    let url = '';
+    let url = '', http: ReturnType<typeof server> | undefined;
     if (options.credentials) {
-      http = server(engine, options.credentials, options.serverOptions);
-      await new Promise<void>(resolve => http!.listen(0, '127.0.0.1', resolve));
-      url = `http://127.0.0.1:${(http.address() as AddressInfo).port}`;
+      const bound = await listen(server(engine, options.credentials, options.serverOptions));
+      http = bound.server; url = bound.url; close = bound.close;
     }
     await ready({ store, engine, http: http!, url });
   });
-  after(async () => {
-    if (http) await new Promise<void>(resolve => http!.close(() => resolve()));
-    if (store) await store.close();
-  });
+  after(async () => { await close?.(); await store?.close(); });
 }

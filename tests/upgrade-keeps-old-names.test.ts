@@ -28,6 +28,7 @@ import { liveRuns } from '../src/runner/registry.js';
 import type { Principal, Work } from '../src/model.js';
 import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3594: an install created before the rename keeps running after it deploys, with no manual
 // step. The old layout is seeded in a temporary home — the config directory ~/.config/graphyard,
@@ -39,7 +40,7 @@ const coordinator: Principal = { id: 'graphyard-master', role: 'coordinator' };
 const worker: Principal = { id: 'worker-a', role: 'worker' };
 const token = (principal: Principal) => `${principal.id}-token-${'x'.repeat(32)}`;
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
-let store: Store, http: ReturnType<typeof server>, registry: AgentRegistry;
+let store: Store, close: (() => Promise<void>) | undefined, registry: AgentRegistry;
 let root: string, url: string, runtimeHome: string;
 // The loop's clock runs `skew` ahead of the control plane's, so a back-off expires without the test waiting it out.
 let skew = 0;
@@ -52,9 +53,7 @@ before(async () => {
   root = await temporaryDirectory('coordinator', scratch);
   bin = await temporaryDirectory('bin', scratch); const home = await temporaryDirectory('home', scratch);
   const engine = new Engine(store, 3600, 'owner/project'); engine.gitRunner = gitRunnerFor(root);
-  http = server(engine, [coordinator, worker].map(principal => ({ ...principal, token: token(principal) })));
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [coordinator, worker].map(principal => ({ ...principal, token: token(principal) })))));
   const { git } = await gitRepo({ root, files: { 'README.md': 'Fixture.\n' } });
   git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   git('update-ref', 'refs/remotes/origin/main', git('rev-parse', 'HEAD'));
@@ -87,10 +86,7 @@ const [, key, epoch] = /complete (GY-\\d+) (\\d+) --head/.exec(process.argv.slic
     accounts: [{ enabled: true, maxSessions: null, name: 'claude', runtime: 'claude', model: 'fixture', credential: { host: hostId, home } }], models: [{ name: 'fixture', id: 'fixture-model' }], roles: [{ name: 'worker', accounts: ['claude'], concurrency: 2 }], reason: 'one account at concurrency 2' }, randomUUID());
   await registry.observe(coordinator, { host: hostId, observations: [{ account: 'claude', quota: { loggedIn: true, state: 'available' }, smoke: { result: 'pass', reason: null } }] }, randomUUID());
 });
-after(async () => {
-  if (http) await new Promise<void>(resolve => { http.closeAllConnections?.(); http.close(() => resolve()); });
-  if (store) await store.close();
-});
+after(async () => { await close?.(); if (store) await store.close(); });
 
 const api = async (method: 'GET' | 'POST', path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, { method, headers: { Authorization: `Bearer ${token(coordinator)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });

@@ -16,6 +16,7 @@ import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js
 import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { gitRepo } from './helpers/git-repo.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3227: an ended attempt's directory that Git no longer registers as a worktree is removed by the
 // loop's reclaim step; a live attempt's directory and a path outside the worktree root are left alone.
@@ -26,7 +27,7 @@ const worker: Principal = { id: 'worker-a', role: 'worker', sessionKind: 'ai' };
 const credentials = [operator, coordinator, worker].map(principal => ({ ...principal, token: `${principal.id}-${'x'.repeat(32)}` }));
 const token = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
 
-let store: Store, http: ReturnType<typeof server>, url: string, install: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string, install: string;
 const ok = async (principal: Principal, path: string, body: unknown) => {
   const response = await fetch(`${url}/api/${path}`, { method: 'POST', body: JSON.stringify(body),
     headers: { Authorization: `Bearer ${token(principal)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() } });
@@ -39,13 +40,11 @@ const git = (args: string[], cwd = install) => execFileSync('git', args, { cwd, 
 before(async () => {
   store = await withDatabase('reclaim-unregistered-worktree');
   await store.init();
-  http = server(new Engine(store, 1, 'owner/reclaim-unregistered'), credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(new Engine(store, 1, 'owner/reclaim-unregistered'), credentials)));
   install = await temporaryDirectory('reclaim-unregistered-install');
   await writeFile(join(install, 'coordinator.token'), `${'c'.repeat(40)}\n`, { mode: 0o600 });
 });
-after(async () => { http?.close(); await store?.close(); });
+after(async () => { await close?.(); await store?.close(); });
 
 test('e2e:reclaim-unregistered-worktree — the loop removes an ended attempt\'s unregistered directory holding a 0555 tree, leaving a live attempt and an outside path alone', async t => {
   await gitRepo({ root: install, files: { '.gitignore': 'scratch/\n' } });

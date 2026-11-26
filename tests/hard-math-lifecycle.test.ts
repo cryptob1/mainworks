@@ -167,7 +167,7 @@ test('hard math real API creates/releases the frozen plan with revisions, binds 
     const admin=credential('api-admin','admin'),coordinator=credential('api-coordinator','coordinator'),producer=credential('api-proof','producer',['unit:workbench-contract','manual:certified-artifact']);
     const workers=[0,1,2].map(i=>credential(`api-worker-${i}`,'worker'));
     http=server(new Engine(store,120,'scratch/hard-math'),[admin,coordinator,producer,...workers]);
-    await new Promise<void>(resolve=>http!.listen(0,'127.0.0.1',resolve));
+    await new Promise<void>(resolve => http!.listen(0, '127.0.0.1', resolve));
     const url=`http://127.0.0.1:${(http.address() as {port:number}).port}`;
     const call=async(path:string,token:string,body?:unknown)=>{
       const response=await fetch(`${url}/api/${path}`,{method:body===undefined?'GET':'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json','Idempotency-Key':randomUUID()},body:body===undefined?undefined:JSON.stringify(body)});

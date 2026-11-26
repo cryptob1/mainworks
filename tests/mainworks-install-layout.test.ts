@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
-import { createServer, type Server } from 'node:http';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -12,6 +11,7 @@ import { ensureTokens, installDirectory, plannedPrincipals, prepareInstallDirect
 import { installLoopSupervisor } from '../src/install/loop-unit.js';
 import { localDirectory } from '../src/onboarding.js';
 import { stateDirectory } from '../src/install/layout.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3711: a fresh install takes the Mainworks names (~/.config/mainworks, .mainworks, mainworks-*
 // units); an install that already has the legacy ones keeps them, with nothing moved.
@@ -19,8 +19,6 @@ import { stateDirectory } from '../src/install/layout.js';
 const exec = promisify(execFile);
 const repository = fileURLToPath(new URL('..', import.meta.url));
 const cli = join(repository, 'bin', 'graphyard.mjs');
-const listen = (server: Server) => new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-const close = (server: Server) => new Promise<void>(resolve => server.close(() => resolve()));
 const REPOSITORY = 'owner/project', INSTALL = 'owner-project';
 
 /** Every path under DIRECTORY, relative to it, with its mode; git's own objects left out. */
@@ -31,14 +29,12 @@ async function tree(directory: string) {
 const named = (paths: string[], word: string) => paths.filter(path => path.split(' ')[0]!.split('/').some(part => part.includes(word)));
 
 test('e2e:mainworks-install-layout — a fresh home gets only the Mainworks names; a home with the legacy layout keeps it, nothing moved, and status still runs', async () => {
-  const server = createServer((request, response) => {
+  const { url, close } = await listen((request, response) => {
     response.setHeader('Content-Type', 'application/json');
     if (request.url === '/healthz') return response.end(JSON.stringify({ ok: true }));
     if (request.url === '/api/work/GY-1') return response.end(JSON.stringify({ id: 'work-1', key: 'GY-1', epoch: 1, stage: 'build' }));
     response.statusCode = 404; response.end(JSON.stringify({ error: 'Not found' }));
   });
-  await listen(server);
-  const url = `http://127.0.0.1:${(server.address() as any).port}`;
   const savedHome = process.env.HOME;
   const clean = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^(GRAPHYARD|MAINWORKS)_/.test(name)));
   for (const name of Object.keys(process.env)) if (/^(GRAPHYARD|MAINWORKS)_CONFIG_HOME$/.test(name)) delete process.env[name];
@@ -105,8 +101,4 @@ test('e2e:mainworks-install-layout — a fresh home gets only the Mainworks name
     const again = await status(oldRoot, oldHome);
     assert.equal(again.code, 0, `status still runs after the upgrade: ${again.stderr}`);
     assert.ok(relative(oldHome, oldDirectory).startsWith('.config/graphyard'));
-  } finally {
-    if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome;
-    await close(server);
-  }
-});
+  } finally { if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome; await close(); } });

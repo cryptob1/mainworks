@@ -23,6 +23,7 @@ import { setRepositoryPolicy } from '../src/model-boundary/repository-policy.js'
 import { mergeRecordBodySchema } from '../src/server/merge-record.js';
 import { runTrialE2eCases } from '../src/merge-writer/e2e-trial.js';
 import { linkedCases } from '../src/model/test-cases.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-2965 AC-2: the merge trial serves the head and runs its bound case. A head carrying
 // e2e:home-shows-change is refused when e2e/cases/home-shows-change.json is absent, naming the
@@ -53,7 +54,7 @@ const coordinator: Principal = { id: 'coordinator', role: 'coordinator' };
 const principals = [operator, worker, coordinator];
 const tokens = new Map(principals.map(entry => [entry.id, `${entry.id}-${'t'.repeat(32)}`]));
 
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
+let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string;
 let fixtureRoot: string, root: string, base: string, baseTip: string, head: string, branch: string;
 
 const write = (path: string, content: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); };
@@ -96,15 +97,9 @@ before(async () => {
 
   engine.gitRunner = gitRunnerFor(root);
   engine.baseBranch = 'main';
-  http = server(engine, principals.map(entry => ({ ...entry, token: tokens.get(entry.id)! })));
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
+  ({ url, close } = await listen(server(engine, principals.map(entry => ({ ...entry, token: tokens.get(entry.id)! })))));
 });
-after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  if (store) await store.close();
-  if (fixtureRoot) await rm(fixtureRoot, { recursive: true, force: true });
-});
+after(async () => { await close?.(); if (store) await store.close(); if (fixtureRoot) await rm(fixtureRoot, { recursive: true, force: true }); });
 
 const gitOfRoot = (args: readonly string[]) => defaultChildRun('git', ['-C', root, ...args]);
 

@@ -8,6 +8,7 @@ import { deployRecordPath, readDeployRecord, watchMain, type DeployWatchPorts } 
 import { defaultChildRun } from '../src/child-runner.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git } from './helpers/git-repo.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-2942: each install's deploy watcher uses its own checkout and checks health against the
 // deployed commit's release, so two installs on one host no longer roll each other back.
@@ -34,9 +35,7 @@ test('unit:deploy-health-expects-deployed-commit — a checkout whose HEAD anoth
   const { checkout, commit, a } = await repositories();
   const b = await commit('B');
   let version = '';
-  const server = createHttpServer((_request, response) => { response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: true, healthy: true, version })); });
-  await new Promise<void>(done => server.listen(0, '127.0.0.1', done));
-  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const { url, close } = await listen(createHttpServer((_request, response) => { response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: true, healthy: true, version })); }));
   const moveTo = a;
   const ports: DeployWatchPorts = {
     ...gitWatchPorts(checkout, defaultChildRun),
@@ -58,7 +57,7 @@ test('unit:deploy-health-expects-deployed-commit — a checkout whose HEAD anoth
     await watchMain(file, ports, { intervalMs: 1000, once: true, log: () => {} });
     assert.equal(readDeployRecord(file)?.failed, c);
     assert.match(readDeployRecord(file)?.reason ?? '', new RegExp(`health failed: /healthz reports unreleased ${b.slice(0, 12)}, not unreleased ${c.slice(0, 12)}`));
-  } finally { server.close(); }
+  } finally { await close(); }
 });
 
 test('unit:deploy-unit-has-own-checkout — the deploy unit names a checkout under its install\'s own directory, never the operator\'s source checkout, and two installs on one host get two', async () => {

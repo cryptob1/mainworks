@@ -12,7 +12,7 @@ import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync, readdirSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { createServer } from 'node:net';
+import { freePort } from './http-server.js';
 import { temporaryDirectory } from './temp-dirs.js';
 import { hostShimScript } from '../../src/host-shim.js';
 import { helperSigner } from '../../src/hosts.js';
@@ -348,8 +348,6 @@ export function killTrees(matches: (pid: number, cwd: string) => boolean) {
   for (let grew = true; grew;) { grew = false; for (const { pid, ppid } of table) if (tree.has(ppid) && !tree.has(pid)) { tree.add(pid); grew = true; } }
   for (const pid of tree) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
 }
-
-const freePort = () => new Promise<number>((resolve, reject) => { const server = createServer().listen(0, '127.0.0.1', () => { const { port } = server.address() as { port: number }; server.close(() => resolve(port)); }).on('error', reject); });
 
 /**
  * A real OpenSSH server on 127.0.0.1 for this user, whose only key may run the shim with `home` as the

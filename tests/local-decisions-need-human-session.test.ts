@@ -6,6 +6,7 @@ import { server } from '../src/server.js';
 import type { Principal, Work } from '../src/model.js';
 import { signInDatabase } from './helpers/sign-in-database.js';
 import { localRequest } from './helpers/local-request.js';
+import { listen } from './helpers/http-server.js';
 
 // The local viewer reads; it never acts. Every mutation and every human-only decision still needs
 // a signed-in human session, and an agent's credential neither answers one nor obtains a session.
@@ -18,9 +19,7 @@ test('integration:local-decisions-need-human-session — an anonymous local muta
   const token = (actor: Principal) => `${actor.id}-${'x'.repeat(32)}`;
   const engine = new Engine(database.store, 120, 'owner/project');
   engine.gitRunner = null;
-  const http = server(engine, [operator, agentAdmin, coordinator, worker].map(actor => ({ ...actor, token: token(actor) })));
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url, close } = await listen(server(engine, [operator, agentAdmin, coordinator, worker].map(actor => ({ ...actor, token: token(actor) }))));
   const post = (path: string, body: unknown, bearer?: string) => localRequest(url, `/api/${path}`, { method: 'POST', body, headers: { 'Idempotency-Key': randomUUID(), ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}) } });
   try {
     let work: Work = await engine.execute(operator, 'create', null, { type: 'chore', title: 'Needs an account', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }] }, randomUUID());
@@ -51,5 +50,5 @@ test('integration:local-decisions-need-human-session — an anonymous local muta
     assert.equal(answered.status, 200, JSON.stringify(answered.body));
     assert.equal(answered.body.humanRequest, null);
     assert.equal(answered.body.humanRequests.at(-1).answer.by, 'operator');
-  } finally { await new Promise<void>(resolve => http.close(() => resolve())); await database.close(); }
+  } finally { await close(); await database.close(); }
 });

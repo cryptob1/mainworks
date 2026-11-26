@@ -14,22 +14,19 @@ import { promisify } from 'node:util';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createServer, type Server } from 'node:http';
 import { createContext, releaseSkew, versionSkewMessage } from '../src/cli/context.js';
 import { loadStoredMasterConfig, masterConfigSchema } from '../src/master.js';
 import { loadConnection, setupRepository } from '../src/repository-setup.js';
 import { daemonStatePath, emptyDaemonState, readDaemonState, writeDaemonState } from '../src/daemon/state.js';
 import { carryUndeclared } from '../src/daemon/state.js';
 import { noteConfigReload } from '../src/daemon/run.js';
+import { listen } from './helpers/http-server.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const exec = promisify(execFile);
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const checkout = fileURLToPath(new URL('..', import.meta.url));
 const sha40 = (label: string) => label.replace(/[^a-f0-9]/g, '0').padEnd(40, '0');
-const listen = (server: Server) => new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-const close = (server: Server) => new Promise<void>(resolve => server.close(() => resolve()));
-const origin = (server: Server) => `http://127.0.0.1:${(server.address() as any).port}`;
 /** A config whose declared fields all parse; the fixtures add the unknown fields beside it. */
 const masterConfig = (credentialFile: string) => ({ version: 1, url: 'https://graphyard.example', credentialFile, cliPath: launcher, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, hostId: 'host-a', masterAgentName: 'graphyard-master-project', autoMerge: true, mergeMethod: 'merge', workers: [] });
 async function writeCoordinatorCredential(label: string) {
@@ -58,70 +55,61 @@ test('unit:version-skew — the comparison rules: a server that names no release
   assert.equal(releaseSkew(unreleased, { version: '0.1.0', commit: 'main' }), null, 'a ref is not a commit, so nothing compares and nothing refuses');
 });
 
-test('unit:version-skew — a CLI whose release differs from the server refuses naming both releases and mainworks upgrade, and sends no request', async () => {
+test('unit:version-skew — a CLI whose release differs from the server refuses naming both releases and mainworks upgrade, and sends no request', async t => {
   const cwd = await gitRepository('version-skew-refusal');
   const requests: string[] = [];
-  const server = createServer((request, response) => {
+  const { url } = await listen((request, response) => {
     requests.push(request.url!);
     response.setHeader('Content-Type', 'application/json');
     if (request.url === '/healthz') return response.end(JSON.stringify({ ok: true, version: '2.0.0', commit: sha40('deployed') }));
     response.statusCode = 404;
     response.end(JSON.stringify({ error: 'Not found' }));
-  });
-  await listen(server);
-  try {
-    const failure = await exec(process.execPath, [launcher, 'status', 'GY-1'], { cwd, env: { ...process.env, GRAPHYARD_VERSION: '1.4.2', GRAPHYARD_TOKEN: 'test-only', GRAPHYARD_URL: origin(server) } }).then(() => null, (error: any) => error);
-    assert.match(failure?.stderr, /CLI 1\.4\.2 and server 2\.0\.0 differ: run mainworks upgrade/);
-    assert.deepEqual(requests, Array(4).fill('/healthz'), 'the initial probe and three bounded retries send no API request');
-  } finally { await close(server); }
+  }, t);
+  const failure = await exec(process.execPath, [launcher, 'status', 'GY-1'], { cwd, env: { ...process.env, GRAPHYARD_VERSION: '1.4.2', GRAPHYARD_TOKEN: 'test-only', GRAPHYARD_URL: url } }).then(() => null, (error: any) => error);
+  assert.match(failure?.stderr, /CLI 1\.4\.2 and server 2\.0\.0 differ: run mainworks upgrade/);
+  assert.deepEqual(requests, Array(4).fill('/healthz'), 'the initial probe and three bounded retries send no API request');
 });
 
-test('unit:version-skew — equal versions behave as today: the release is read once and the request is made', async () => {
+test('unit:version-skew — equal versions behave as today: the release is read once and the request is made', async t => {
   const cwd = await gitRepository('version-skew-equal');
   const requests: string[] = [];
-  const server = createServer((request, response) => {
+  const { url } = await listen((request, response) => {
     requests.push(request.url!);
     response.setHeader('Content-Type', 'application/json');
     if (request.url === '/healthz') return response.end(JSON.stringify({ ok: true, version: '2.0.0', revision: 'unknown', commit: sha40('deployed') }));
     response.statusCode = 404;
     response.end(JSON.stringify({ error: 'Not found' }));
-  });
-  await listen(server);
-  try {
-    const failure = await exec(process.execPath, [launcher, 'status', 'GY-1'], { cwd, env: { ...process.env, GRAPHYARD_VERSION: '2.0.0', GRAPHYARD_TOKEN: 'test-only', GRAPHYARD_URL: origin(server) } }).then(() => null, (error: any) => error);
-    assert.match(failure?.stderr, /Unknown work item GY-1/, 'the equal-version invocation reaches the server and fails as it always did');
-    assert.deepEqual(requests, ['/healthz', '/api/work/GY-1']);
-  } finally { await close(server); }
+  }, t);
+  const failure = await exec(process.execPath, [launcher, 'status', 'GY-1'], { cwd, env: { ...process.env, GRAPHYARD_VERSION: '2.0.0', GRAPHYARD_TOKEN: 'test-only', GRAPHYARD_URL: url } }).then(() => null, (error: any) => error);
+  assert.match(failure?.stderr, /Unknown work item GY-1/, 'the equal-version invocation reaches the server and fails as it always did');
+  assert.deepEqual(requests, ['/healthz', '/api/work/GY-1']);
 });
 
-test('unit:version-skew — an unreleased build compares commits: another commit refuses by name, the served commit proceeds', async () => {
+test('unit:version-skew — an unreleased build compares commits: another commit refuses by name, the served commit proceeds', async t => {
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: checkout, encoding: 'utf8' }).trim();
   const cwd = await gitRepository('version-skew-commits');
   const requests: string[] = [];
   let servingCommit = sha40('deployed');
-  const server = createServer((request, response) => {
+  const { url } = await listen((request, response) => {
     requests.push(request.url!);
     response.setHeader('Content-Type', 'application/json');
     if (request.url === '/healthz') return response.end(JSON.stringify({ ok: true, version: '0.0.0-dev', commit: servingCommit }));
     response.statusCode = 404;
     response.end(JSON.stringify({ error: 'Not found' }));
-  });
-  await listen(server);
-  const env = { ...process.env, GRAPHYARD_TOKEN: 'test-only', GRAPHYARD_URL: origin(server) } as Record<string, string | undefined>;
+  }, t);
+  const env = { ...process.env, GRAPHYARD_TOKEN: 'test-only', GRAPHYARD_URL: url } as Record<string, string | undefined>;
   delete env.GRAPHYARD_VERSION; // an unreleased build: no stamped release, so the commit is what it compares
-  try {
-    const behind = await exec(process.execPath, [launcher, 'status', 'GY-1'], { cwd, env }).then(() => null, (error: any) => error);
-    assert.match(behind?.stderr, new RegExp(`CLI commit ${head} and server commit ${servingCommit} differ: run mainworks upgrade`));
-    assert.deepEqual(requests, Array(4).fill('/healthz'), 'three handover retries still refuse the mismatch before any API request');
-    requests.length = 0;
-    servingCommit = head;
-    const current = await exec(process.execPath, [launcher, 'status', 'GY-1'], { cwd, env }).then(() => null, (error: any) => error);
-    assert.match(current?.stderr, /Unknown work item GY-1/, 'a checkout at the served commit proceeds');
-    assert.deepEqual(requests, ['/healthz', '/api/work/GY-1']);
-  } finally { await close(server); }
+  const behind = await exec(process.execPath, [launcher, 'status', 'GY-1'], { cwd, env }).then(() => null, (error: any) => error);
+  assert.match(behind?.stderr, new RegExp(`CLI commit ${head} and server commit ${servingCommit} differ: run mainworks upgrade`));
+  assert.deepEqual(requests, Array(4).fill('/healthz'), 'three handover retries still refuse the mismatch before any API request');
+  requests.length = 0;
+  servingCommit = head;
+  const current = await exec(process.execPath, [launcher, 'status', 'GY-1'], { cwd, env }).then(() => null, (error: any) => error);
+  assert.match(current?.stderr, /Unknown work item GY-1/, 'a checkout at the served commit proceeds');
+  assert.deepEqual(requests, ['/healthz', '/api/work/GY-1']);
 });
 
-test('unit:version-skew — an unstamped CLI on a dated checkout takes its release from the same source /healthz does, so the checkout\'s own tag with no commit proceeds and another release still refuses', async () => {
+test('unit:version-skew — an unstamped CLI on a dated checkout takes its release from the same source /healthz does, so the checkout\'s own tag with no commit proceeds and another release still refuses', async t => {
   // The dated checkout is staged with a git that answers `rev-parse HEAD` and `tag --points-at HEAD` in the
   // install root: no GRAPHYARD_VERSION is set, so the CLI's identity comes from checkoutRelease — the same
   // source /healthz serves — and a server reporting that tag with `commit: null` (no build identity) must
@@ -133,32 +121,29 @@ test('unit:version-skew — an unstamped CLI on a dated checkout takes its relea
   const cwd = await gitRepository('version-skew-dated');
   const requests: string[] = [];
   let servingVersion = '2026.10.17';
-  const server = createServer((request, response) => {
+  const { url } = await listen((request, response) => {
     requests.push(request.url!);
     response.setHeader('Content-Type', 'application/json');
     if (request.url === '/healthz') return response.end(JSON.stringify({ ok: true, version: servingVersion, commit: null }));
     response.statusCode = 404;
     response.end(JSON.stringify({ error: 'Not found' }));
-  });
-  await listen(server);
-  const env = { ...process.env, PATH: `${fakeBin}:${process.env.PATH}`, GRAPHYARD_TOKEN: 'test-only', GRAPHYARD_URL: origin(server) } as Record<string, string | undefined>;
+  }, t);
+  const env = { ...process.env, PATH: `${fakeBin}:${process.env.PATH}`, GRAPHYARD_TOKEN: 'test-only', GRAPHYARD_URL: url } as Record<string, string | undefined>;
   delete env.GRAPHYARD_VERSION; // unstamped: the checkout's own release is what both sides report
-  try {
-    const current = await exec(process.execPath, [launcher, 'status', 'GY-1'], { cwd, env }).then(() => null, (error: any) => error);
-    assert.match(current?.stderr, /Unknown work item GY-1/, 'the checkout\'s own dated tag is the served release: the invocation proceeds with no commit named anywhere');
-    assert.deepEqual(requests, ['/healthz', '/api/work/GY-1']);
-    requests.length = 0;
-    servingVersion = '2026.10.18';
-    const behind = await exec(process.execPath, [launcher, 'status', 'GY-1'], { cwd, env }).then(() => null, (error: any) => error);
-    assert.match(behind?.stderr, /CLI 2026\.10\.17 and server 2026\.10\.18 differ: run mainworks upgrade/);
-    assert.deepEqual(requests, Array(4).fill('/healthz'), 'the initial probe and three bounded retries send no API request');
-  } finally { await close(server); }
+  const current = await exec(process.execPath, [launcher, 'status', 'GY-1'], { cwd, env }).then(() => null, (error: any) => error);
+  assert.match(current?.stderr, /Unknown work item GY-1/, 'the checkout\'s own dated tag is the served release: the invocation proceeds with no commit named anywhere');
+  assert.deepEqual(requests, ['/healthz', '/api/work/GY-1']);
+  requests.length = 0;
+  servingVersion = '2026.10.18';
+  const behind = await exec(process.execPath, [launcher, 'status', 'GY-1'], { cwd, env }).then(() => null, (error: any) => error);
+  assert.match(behind?.stderr, /CLI 2026\.10\.17 and server 2026\.10\.18 differ: run mainworks upgrade/);
+  assert.deepEqual(requests, Array(4).fill('/healthz'), 'the initial probe and three bounded retries send no API request');
 });
 
-test('unit:version-skew — an Invalid input answer from a server at a different version is reported as the skew message, and a same-version one is not', async () => {
+test('unit:version-skew — an Invalid input answer from a server at a different version is reported as the skew message, and a same-version one is not', async t => {
   const savedUrl = process.env.GRAPHYARD_URL, savedToken = process.env.GRAPHYARD_TOKEN, savedVersion = process.env.GRAPHYARD_VERSION;
   let healthzReads = 0;
-  const server = createServer((request, response) => {
+  const { url } = await listen((request, response) => {
     response.setHeader('Content-Type', 'application/json');
     if (request.url === '/healthz') {
       healthzReads++;
@@ -169,10 +154,9 @@ test('unit:version-skew — an Invalid input answer from a server at a different
     }
     response.statusCode = 400;
     return response.end(JSON.stringify({ error: 'Invalid input', issues: [{ path: ['work'], message: 'older shape' }] }));
-  });
-  await listen(server);
+  }, t);
   try {
-    process.env.GRAPHYARD_URL = origin(server);
+    process.env.GRAPHYARD_URL = url;
     process.env.GRAPHYARD_TOKEN = 'test-only';
     process.env.GRAPHYARD_VERSION = '1.0.0';
     // The gate's own read could not name a release, the request met Invalid input, and the re-read names the other version: the skew, by its name.
@@ -185,7 +169,6 @@ test('unit:version-skew — an Invalid input answer from a server at a different
     const same = await createContext('status', 'GY-1', [], false);
     await assert.rejects(same.api('work/GY-1'), (error: any) => { assert.equal(error.status, 400); assert.match(error.message, /Invalid input/); assert.doesNotMatch(error.message, /differ: run mainworks upgrade/); return true; });
   } finally {
-    await close(server);
     if (savedUrl === undefined) delete process.env.GRAPHYARD_URL; else process.env.GRAPHYARD_URL = savedUrl;
     if (savedToken === undefined) delete process.env.GRAPHYARD_TOKEN; else process.env.GRAPHYARD_TOKEN = savedToken;
     if (savedVersion === undefined) delete process.env.GRAPHYARD_VERSION; else process.env.GRAPHYARD_VERSION = savedVersion;

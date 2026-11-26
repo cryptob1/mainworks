@@ -1,8 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
-import { createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { promisify } from 'node:util';
 import { cp, mkdir, rename, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -10,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { installLauncherPath, publishCliRelease } from '../src/install/cli-release.js';
 import { MERGE_PROTOCOL } from '../src/protocol-version.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { listen } from './helpers/http-server.js';
 
 const exec = promisify(execFile);
 
@@ -74,14 +73,12 @@ test('e2e:launcher-survives-rename — after a deploy of a release that renames 
   await publishCliRelease(installDir, source, b);
 
   const coordinator = { id: 'master', role: 'coordinator' };
-  const http = createServer((req, res) => {
+  const { url, close } = await listen((req, res) => {
     res.setHeader('Content-Type', 'application/json');
     if (req.url === '/api/status') return res.end(JSON.stringify({ actor: coordinator, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, build: { commit: null, protocol: MERGE_PROTOCOL } }));
     if (req.url === '/api/work-snapshot') return res.end(JSON.stringify({ now: new Date().toISOString(), work: [] }));
     res.statusCode = 404; res.end('{}');
   });
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as AddressInfo).port}`;
   try {
     await mkdir(join(project, '.graphyard'), { recursive: true });
     execFileSync('git', ['init', '-q', project]);
@@ -97,5 +94,5 @@ test('e2e:launcher-survives-rename — after a deploy of a release that renames 
       assert.equal(run.cycles, 1, `${launcher}: the restarted loop's first cycle ran`);
       assert.equal(run.failedCycles, 0, `${launcher}: the first cycle completed`);
     }
-  } finally { await new Promise<void>(resolve => http.close(() => resolve())); }
+  } finally { await close(); }
 });
