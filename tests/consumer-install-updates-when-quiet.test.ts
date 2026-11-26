@@ -58,15 +58,15 @@ test('unit:consumer-install-updates-when-quiet — a second build 20 minutes lat
   assert.deepEqual(one.restarts, [b, c]);
   assert.equal(controlPlaneSummary(readControlPlaneRecord(controlPlaneRecordPath(one.root)), Date.now())?.waiting, null);
 
-  // Busy for 4 hours: the build waits, then updates anyway.
+  // Busy for 4 hours since the last update: the build waits, then updates anyway.
   const d = 'd'.repeat(40);
   advance(90);
   one.set({ upstream: d, busy: 'a merge trial is running' });
   assert.equal(await one.pass(), 'unchanged');
-  advance(239);
-  assert.equal(await one.pass(), 'unchanged', 'still busy short of 4 hours of waiting');
+  advance(149);
+  assert.equal(await one.pass(), 'unchanged', 'still busy short of 4 hours since the last update');
   advance(1);
-  assert.equal(await one.pass(), 'deployed', 'after 4 hours of waiting it updates anyway');
+  assert.equal(await one.pass(), 'deployed', 'at 4 hours since the last update it updates anyway');
   assert.deepEqual(one.restarts, [b, c, d]);
 
   // A hotfix-titled build applies at once, even busy and minutes after the last update.

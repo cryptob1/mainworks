@@ -81,10 +81,10 @@ test('e2e:builder-survives-update — quiet-update wait counts running builder s
     assert.deepEqual(restarts, [], 'update waits while builder is running');
     assert.match(controlPlaneSummary(readControlPlaneRecord(controlPlaneRecordPath(root)), Date.now())?.waiting ?? '', /a builder is running/);
 
-    mock.timers.tick(239 * 60_000);
-    assert.equal(await deployOnce(file, ports, () => {}, mainworksRepository), 'unchanged', 'still waits just before 4 hours');
+    mock.timers.tick(119 * 60_000);
+    assert.equal(await deployOnce(file, ports, () => {}, mainworksRepository), 'unchanged', 'still waits just before 4 hours since the last update');
     mock.timers.tick(1 * 60_000);
-    assert.equal(await deployOnce(file, ports, () => {}, mainworksRepository), 'deployed', 'updates after the 4-hour upper bound');
+    assert.equal(await deployOnce(file, ports, () => {}, mainworksRepository), 'deployed', 'updates at the 4-hour upper bound from the last update');
     assert.deepEqual(restarts, [b]);
 
     // Once the builder exits, installInFlight is quiet.

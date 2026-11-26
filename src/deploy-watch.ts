@@ -159,22 +159,37 @@ export function controlPlaneSummary(record: ControlPlaneRecord | null, now: numb
     stale: controlPlaneStaleLines(record, now) };
 }
 
-/** GY-3746: an install following Mainworks takes a newer build at most once an hour, and anyway after 4 hours of waiting. */
+/** GY-3864: one attention line when the control plane's last update failed, naming the failed step and the build. */
+export function controlPlaneUpdateAttention(record: Pick<ControlPlaneRecord, 'commit' | 'verified' | 'failedStep' | 'failedReason'> | null) {
+  if (!record?.failedStep) return [];
+  const build = record.verified ? record.verified.slice(0, 12) : 'the new build';
+  const running = record.commit ? `, still running ${record.commit.slice(0, 12)}` : '';
+  const reason = record.failedReason ? `: ${record.failedReason.split('\n')[0]!.slice(0, 200)}` : '';
+  return [{
+    subject: 'control plane update',
+    text: `Control-plane update to ${build} failed at ${record.failedStep}${running}${reason}`,
+    next: 'The deploy watch retries automatically; inspect the deploy unit journal if it repeats',
+  }];
+}
+
+/** GY-3746, GY-3864: an install following Mainworks takes a newer build at most once an hour, and anyway 4 hours after its last successful update. */
 const quietUpdateMs = 60 * 60_000, forcedUpdateMs = 4 * 60 * 60_000;
 /** `master update now` leaves this file; the next pass takes the newer build at once and removes it. */
 export const updateNowPath = (root: string) => join(stateDirectory(root), 'update-now');
 
 /**
- * GY-3746: why an install following Mainworks's verified builds does not take `tip` yet, or null to
- * take it now: a hotfix, `master update now`, 4 hours of waiting, or over an hour since the last
- * update with no review, merge trial or acceptance run in flight.
+ * GY-3746, GY-3864: why an install following Mainworks's verified builds does not take `tip` yet,
+ * or null to take it now: a hotfix, `master update now`, 4 hours since the last successful update
+ * (`control.updatedAt`, falling back to `waiting.since` before any update is recorded), or over an
+ * hour since the last update with no review, merge trial or acceptance run in flight.
  */
-async function updateWait(tip: string, previous: string | null, ports: DeployWatchPorts, control: ControlPlaneRecord | null, nowFile: string): Promise<ControlPlaneRecord['waiting']> {
+export async function updateWait(tip: string, previous: string | null, ports: Pick<DeployWatchPorts, 'busy' | 'hotfix'>, control: ControlPlaneRecord | null, nowFile: string): Promise<ControlPlaneRecord['waiting']> {
   if (existsSync(nowFile)) { await rm(nowFile, { force: true }); return null; }
   if (previous && await ports.hotfix?.(previous, tip).catch(() => false)) return null;
   const now = Date.now(), since = control?.waiting?.since ?? new Date(now).toISOString();
-  if (now - Date.parse(since) >= forcedUpdateMs) return null;
   const last = control?.updatedAt ? Date.parse(control.updatedAt) : null;
+  const clock = last !== null && Number.isFinite(last) ? last : Date.parse(since);
+  if (now - clock >= forcedUpdateMs) return null;
   const recent = last !== null && now - last < quietUpdateMs;
   const busy = await ports.busy?.().catch(() => null) ?? null;
   if (!busy && !recent) return null;
