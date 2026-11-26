@@ -55,8 +55,13 @@ function hold(options: Parameters<Store['transaction']>[1]) {
   const done = store.transaction(async () => { held(); await released; }, options);
   return { taken, release, done };
 }
-/** 'settled' once `promise` settles, or 'pending' if it has not within `ms`. */
-const within = async <T>(promise: Promise<T>, ms: number) => Promise.race([promise.then(() => 'settled' as const), sleep(ms).then(() => 'pending' as const)]);
+/** 'settled' once `promise` settles, or 'pending' if it has not within `ms`. The timer is cleared
+ * once the race is decided: a 30 s one left armed kept the file's process alive after its last test. */
+const within = async <T>(promise: Promise<T>, ms: number) => {
+  let timer!: NodeJS.Timeout;
+  const pending = new Promise<'pending'>(resolve => { timer = setTimeout(() => resolve('pending'), ms); });
+  try { return await Promise.race([promise.then(() => 'settled' as const), pending]); } finally { clearTimeout(timer); }
+};
 
 test('unit:per-item-locking heartbeats on different items run while a dispatch holds the fleet lock, and neither waits for the other', { timeout: 60_000 }, async () => {
   const [one, two] = [await claimed(workers[0]), await claimed(workers[1])];
@@ -214,18 +219,20 @@ test('unit:reconcile-uncontended-under-load 30 items reconciled beside lease ren
   // the ticks of a longer window beside those earlier ones would push this window's own out of the ring.
   engine.reconcileTicks.length = 0;
   const ticks: number[] = [], failures: string[] = [];
-  // The window gives the 2 s cadence room to absorb slow ticks: the loop re-ticks every 2 s only
-  // while a tick takes under 2 s, so on a starved runner ticks of 2-3 s — inside the 5000 ms bound
-  // this test exists to check — eat the window directly, and 20 s dropped the count under 8 on a
-  // run whose every tick passed the bound (GY-2488). Thirty seconds keeps production's rates and
-  // holds the count, with every per-tick assertion applied to each of its ~15 ticks.
-  const until = performance.now() + 30_000;
+  // The window closes after 15 ticks, the count the old 30 s window at the 2 s cadence produced,
+  // rather than at a fixed time (GY-3947): ticks take well under a second, so a fixed window spent
+  // most of its 30 s asleep between them, and every loop then slept out its own cadence past its end.
+  // On a starved runner whose ticks take 2-3 s (GY-2488) the window simply runs longer, with every
+  // per-tick assertion still applied to each of its 15 ticks.
+  let open = true, closed!: () => void;
+  const closing = new Promise<void>(resolve => { closed = resolve; });
+  const pause = (ms: number) => Promise.race([sleep(ms), closing]);
   const loop = async (everyMs: number, run: () => Promise<unknown>, what: string) => {
-    await sleep(Math.random() * everyMs);
-    while (performance.now() < until) {
+    await pause(Math.random() * everyMs);
+    while (open) {
       const started = performance.now();
       await run().catch(error => { failures.push(`${what}: ${(error as Error).message}`); });
-      await sleep(Math.max(0, everyMs - (performance.now() - started)));
+      await pause(Math.max(0, everyMs - (performance.now() - started)));
     }
   };
   // Every tick measured evaluates every live item (GY-1361): a pass evaluates only what moved unless a
@@ -238,15 +245,21 @@ test('unit:reconcile-uncontended-under-load 30 items reconciled beside lease ren
   try {
     // Each at or above production's rate: a supervisor renews every 25 s (here 5 s), an observation
     // job saves each submitted item every 20 s (here 3 s), the master loop and the status routes read
-    // the coordination snapshot (here every 250 ms), and the server ticks every 2 s. Each second an
-    // attempt's lease lapses on a submitted item, so the ticks have writes to make as production's did.
+    // the coordination snapshot (here every 250 ms), and the server ticks every 2 s (here every 500 ms,
+    // so the 15 ticks take seconds, not 30: GY-3947). Each second an attempt's lease lapses on a
+    // submitted item, so the ticks have writes to make as production's did.
     await Promise.all([
       ...leased.map((work, i) => loop(5_000, () => heartbeat(fleet[i], work), 'renewal')),
       ...observed.map(work => loop(3_000, () => observeOnce(work.id), 'observation')),
       loop(250, () => store.coordinationSnapshot(), 'snapshot'),
       loop(1_000, () => store.pool.query(`UPDATE work_items SET document = jsonb_set(document, '{lease}', $2::jsonb) WHERE id = $1`,
         [observed[Math.floor(Math.random() * observed.length)].id, JSON.stringify({ owner: 'gone-worker', epoch: 1, expiresAt: new Date(Date.now() - 1000).toISOString() })]), 'lapse'),
-      loop(2_000, async () => { const started = performance.now(); await engine.reconcile(); ticks.push(performance.now() - started); }, 'tick'),
+      loop(500, async () => {
+        const started = performance.now();
+        await engine.reconcile();
+        ticks.push(performance.now() - started);
+        if (ticks.length >= 15) { open = false; closed(); }
+      }, 'tick'),
     ]);
   } finally { queryLatencyMs = 0; engine.reconcileFullEvaluationMs = fullEvery; }
   const recorded = [...engine.reconcileTicks];
