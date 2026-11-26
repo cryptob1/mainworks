@@ -23,7 +23,7 @@ const proof = 'manual:post-deploy/github-budget-attention-row-clears', own = 'ma
 const parent = { id: '11111111-1111-4111-8111-111111111111', key: 'GY-1700', stage: 'done', policy: { checks: [], review: true }, delivery: { mergeSha, mergedAt: iso(now - 50 * hour), deployment: { sha: filed, mergeSha, source: 'endpoint', observedAt: iso(now - 40 * hour), covers: 'descendant', at: iso(now - 40 * hour), observer: 'graphyard-master' } }, criteria: [{ id: 'AC-3', text: 'The github-budget row clears for 24h', proofs: [proof] }] } as unknown as Work;
 const item = (n: number, extra: Partial<Work> = {}): Work => workFixture({
   id: `00000000-0000-4000-8000-0000000000${String(n).padStart(2, '0')}`, key: `GY-${n}`, title: `Observation ${n}`, description: `Post-deploy follow-up: post-deploy:${parent.id}:AC-3:${proof}:${filed}\n\nowed`, type: 'chore', priority: 1, revision: 5,
-  createdAt: iso(now - 40 * hour), updatedAt: iso(now - 30 * hour), stageEnteredAt: iso(now - 30 * hour), lastAssignment: null, sessions: [],
+  createdAt: iso(now - 40 * hour), updatedAt: iso(now - 30 * hour), stageEnteredAt: iso(now - 30 * hour), lastAssignment: null as never, sessions: [],
   criteria: [{ id: 'AC-1', text: 'The row clears and does not re-fire during 24h', proofs: [own] }], policy: { checks: ['test', 'typecheck'], review: true },
   observationWindow: { notBefore: iso(now - hour), basis: 'criterion-window', detail: 'the 24-hour live window ran' },
   gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: false, reasons: ['Worker has not submitted implementation for this attempt'] }], ...extra });

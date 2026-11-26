@@ -12,7 +12,7 @@ export function admissionFixture(): Work {
     criteria: [{ id: 'AC-1', text: 'Proved', proofs: ['e2e:fixture', 'manual:checked'] }, { id: 'AC-2', text: 'After deployment', proofs: ['manual:post-deploy/audit'] }],
     workspaces: [{ host: 'test', path: '/fixture', branch: candidate.branch, epoch: 1, owner: 'worker' }], candidate,
     observation: { candidate, source: 'control-plane', at, files: ['package-lock.json'], checks: [], reviews: [],
-      merged: false, mergeSha: null, baseTip: B, mergeBase: B, baseTipContained: true },
+      merged: false, mergeSha: null, baseTip: B, mergeBase: B, baseTipContained: true } as never,
     gates: ['ready', 'build', 'review', 'test', 'acceptance'].map(name => ({ name, passed: true, reasons: [] })),
     mergeLedger: { key: 'GY-1', state: 'intent', head: H, baseTip: B, mergeSha: 'c'.repeat(40),
       trial: { head: H, mergeSha: 'c'.repeat(40), proofs: { 'e2e:fixture': { executed: 1, failed: 0 } } } } as never,

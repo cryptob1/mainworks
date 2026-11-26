@@ -18,7 +18,7 @@ const iso = (at: number) => new Date(at).toISOString();
 const manual = [{ id: 'AC-1', text: 'The loop reads the rate on the serving release', proofs: ['manual:post-deploy/rate-on-serving-release'] }];
 const code = [{ id: 'AC-1', text: 'The dispatcher skips it', proofs: ['unit:skips'] }, ...manual.map(criterion => ({ ...criterion, id: 'AC-2' }))];
 const item = (n: number, extra: Partial<Work> = {}): Work => workFixture({
-  id: `00000000-0000-4000-8000-00000000000${n}`, key: `GY-${n}`, title: `Observation ${n}`, type: 'chore', revision: 5, criteria: manual, lastAssignment: null,
+  id: `00000000-0000-4000-8000-00000000000${n}`, key: `GY-${n}`, title: `Observation ${n}`, type: 'chore', revision: 5, criteria: manual, lastAssignment: null as never,
   createdAt: iso(now - 40 * hour), updatedAt: iso(now - 33 * hour), stageEnteredAt: iso(now - 33 * hour), policy: { checks: ['test', 'typecheck'], review: true },
   gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: false, reasons: ['Worker has not submitted implementation for this attempt'] }],
   ...extra,
