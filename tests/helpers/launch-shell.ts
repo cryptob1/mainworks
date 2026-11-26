@@ -5,6 +5,7 @@
 // runtime would: the runtime kind, its arguments after expansion, and the request it starts on.
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
+import { runtimeAdapter } from '../../src/master/runtimes.js';
 
 export interface TypedLaunch { stem: string | null; words: string[]; kind: string; args: string[] }
 
@@ -37,8 +38,10 @@ export function expandTypedCommand(command: string): TypedLaunch {
     runtime = runtime.slice(runtime.indexOf('--') + 1);
   }
   // Herdr reports the runtime by kind, not by the command that started it: Cursor's is `agent` (GY-976).
-  const kind = basename(runtime[0]);
-  return { stem, words, kind: kind === 'agent' ? 'cursor' : kind, args: runtime.slice(1) };
+  const program = basename(runtime[0]);
+  // A custom runtime's registered identity may be its absolute executable path.
+  const kind = program === 'agent' ? 'cursor' : runtimeAdapter(program) ? program : runtime[0];
+  return { stem, words, kind, args: runtime.slice(1) };
 }
 
 /** The instruction the runtime would read from its own arguments, per the real CLI contracts. */
