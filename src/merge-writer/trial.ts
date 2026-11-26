@@ -806,8 +806,8 @@ export interface RunTrialInput {
   /** GY-3750: a rerun of failing files or of proofs on the base tip, which neither narrows its selection nor counts as a trial's. */
   rerun?: boolean;
   /**
-   * GY-3921: a run whose declared checks' results nobody reads (the reproduce-on-base rerun, the batch gate's verified-commit probe): it starts
-   * only the `check:` proofs' checks and those that run its bound test files; `'tests'` says the item has unit proofs, whose files a check with no selection may run.
+   * GY-3921: the reproduce-on-base rerun starts only the `check:` proofs' checks and those that run its
+   * bound test files; `'tests'` says the item has unit proofs, whose files a check with no selection may run.
    */
   boundOnly?: boolean | 'tests';
   run?: ChildRun;

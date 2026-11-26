@@ -23,7 +23,7 @@ import { stateDirectory } from '../install/layout.js';
 export const trialRunsDirectory = (root: string) => join(stateDirectory(root), 'trial-runs');
 
 /** What one merge flight asks a detached trial run to do: everything `runMergeTrial` reads that is not a function; the launch fills where it runs. */
-export interface TrialRunRequest { key: string; head: string; mergeSha: string; baseTip: string | null; changedFiles: string[]; proofs: string[]; e2eProofs: string[]; checkProofs?: string[]; timeoutMs: number; reproduce: boolean; cores: number | null; selectorApproved?: boolean; boundOnly?: boolean }
+export interface TrialRunRequest { key: string; head: string; mergeSha: string; baseTip: string | null; changedFiles: string[]; proofs: string[]; e2eProofs: string[]; checkProofs?: string[]; timeoutMs: number; reproduce: boolean; cores: number | null; selectorApproved?: boolean }
 /** The run's persisted input (GY-3159): the request plus where the trial checks out, what it must not read, and when it started. */
 export interface TrialRunSpec extends TrialRunRequest { version: 1; root: string; base: string; hidden: string[]; startedAt: string }
 
