@@ -34,31 +34,50 @@ const policy = checkoutRepositoryPolicy(checkout);
 test('unit:mainworks-repo-serves-its-head-for-e2e — the declared serve command passes core product and delivery cases, and stopping it removes its database directory', { timeout: 240_000 }, async t => {
   const serve = policy.e2e.serve;
   assert.ok(serve, 'graphyard.json declares e2e.serve');
-  const scratch = await temporaryDirectory('e2e-serve');
-  const token = `trial-${randomUUID()}`;
-  // GY-3195: the declared port is shared by every serve on the host (a merge trial, another run of
-  // this file); this run serves on a free port of its own so its cases never reach another's server.
-  const port = await freePort();
-  const url = new URL(serve.url); url.port = String(port);
-  // The trial's environment: no credential, TMPDIR the trial's own.
-  const child = spawn('sh', ['-c', serve.command], { cwd: checkout, detached: true, stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...trialEnvironment(process.env), TMPDIR: scratch, GRAPHYARD_E2E_TOKEN: token, GRAPHYARD_E2E_SERVE_PORT: String(port) } });
-  let output = '';
-  child.stdout.on('data', chunk => { output += chunk; }); child.stderr.on('data', chunk => { output += chunk; });
   // stdout/stderr stay open while any descendant that inherited them still runs (the shell may exit first).
   const whenClosed = (stream: NodeJS.ReadableStream | null) =>
     !stream || (stream as NodeJS.ReadableStream & { closed?: boolean }).closed
       ? Promise.resolve()
       : new Promise<void>(accept => stream.once('close', () => accept()));
-  const descendantsGone = Promise.all([whenClosed(child.stdout), whenClosed(child.stderr)]);
+  // The trial's environment: no credential, TMPDIR the serve's own. Readiness is polled from spawn.
+  // GY-3893: the bounded waits' timers are unref'd, so a stop that finishes early never holds the process open.
+  const startServe = async (label: string, token: string, port: number) => {
+    const scratch = await temporaryDirectory(label);
+    const url = new URL(serve.url); url.port = String(port);
+    const child = spawn('sh', ['-c', serve.command], { cwd: checkout, detached: true, stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...trialEnvironment(process.env), TMPDIR: scratch, GRAPHYARD_E2E_TOKEN: token, GRAPHYARD_E2E_SERVE_PORT: String(port) } });
+    let output = '';
+    child.stdout.on('data', chunk => { output += chunk; }); child.stderr.on('data', chunk => { output += chunk; });
+    const descendantsGone = Promise.all([whenClosed(child.stdout), whenClosed(child.stderr)]);
+    const answered = (async () => {
+      const deadline = Date.now() + serve.readySeconds * 1000;
+      while (Date.now() < deadline && child.exitCode === null) {
+        if (await fetch(url, { signal: AbortSignal.timeout(2_000) }).then(response => response.ok, () => false)) return true;
+        await new Promise(accept => setTimeout(accept, 100));
+      }
+      return false;
+    })();
+    // Wait for the serving process to finish cleanup (not the shell's exit).
+    const stop = async () => {
+      process.kill(-child.pid!, 'SIGTERM');
+      await Promise.race([descendantsGone, new Promise(accept => setTimeout(accept, 20_000).unref())]);
+    };
+    const kill = () => { try { process.kill(-child.pid!, 'SIGKILL'); } catch { /* already gone */ } };
+    return { scratch, url, answered, stop, kill, output: () => output };
+  };
+  const token = `trial-${randomUUID()}`;
+  // GY-3195: the declared port is shared by every serve on the host (a merge trial, another run of
+  // this file); this run serves on a free port of its own so its cases never reach another's server.
+  const port = await freePort();
+  let otherPort = await freePort();
+  while (otherPort === port) otherPort = await freePort();
+  // GY-3666 / GY-3692: another serve in this checkout (a worker's, tests/worker-serve-own-port.test.ts) starts and stops
+  // beside this run; it starts alongside this run's serve so neither waits on the other's startup.
+  const main = await startServe('e2e-serve', token, port);
+  const other = await startServe('e2e-serve-other', `other-${randomUUID()}`, otherPort);
+  const { scratch, url } = main;
   try {
-    const deadline = Date.now() + serve.readySeconds * 1000;
-    let answered = false;
-    while (!answered && Date.now() < deadline && child.exitCode === null) {
-      answered = await fetch(url, { signal: AbortSignal.timeout(2_000) }).then(response => response.ok, () => false);
-      if (!answered) await new Promise(accept => setTimeout(accept, 500));
-    }
-    assert.ok(answered, `${url} answered within ${serve.readySeconds}s: ${output.slice(-2000)}`);
+    assert.ok(await main.answered, `${url} answered within ${serve.readySeconds}s: ${main.output().slice(-2000)}`);
     // GY-3658: this file runs the delivery-pipeline case, a real nested merge trial that a remote
     // shard's missing nested confinement fails, so the shard split must keep this file local.
     await t.test('unit:graphyard-e2e-serve-pinned — the serve command answers on the port the run gives it, with the run\'s token, whatever holds the declared port, and this file never goes to a remote shard', async () => {
@@ -66,28 +85,11 @@ test('unit:mainworks-repo-serves-its-head-for-e2e — the declared serve command
       assert.notEqual(url.port, new URL(serve.url).port);
       const listed = await fetch(new URL('/api/scenarios', url), { headers: { Authorization: `Bearer ${token}` } });
       assert.equal(listed.status, 200, 'the server on the given port is this run\'s: it accepts the run\'s token');
-      // GY-3666 / GY-3692: another serve in this checkout (a worker's, tests/worker-serve-own-port.test.ts) starts and stops
-      // beside this run; the seed this run's cases read stays this serve's own.
-      const otherPort = await freePort();
-      const otherScratch = await temporaryDirectory('e2e-serve-other');
-      const other = spawn('sh', ['-c', serve.command], { cwd: checkout, detached: true, stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...trialEnvironment(process.env), TMPDIR: otherScratch, GRAPHYARD_E2E_TOKEN: `other-${randomUUID()}`, GRAPHYARD_E2E_SERVE_PORT: String(otherPort) } });
-      other.stdout.resume(); other.stderr.resume();
-      const otherDescendantsGone = Promise.all([whenClosed(other.stdout), whenClosed(other.stderr)]);
+      // The seed this run's cases read stays this serve's own after the other serve stops.
       try {
-        const otherUrl = new URL(url); otherUrl.port = String(otherPort);
-        const deadline = Date.now() + serve.readySeconds * 1000;
-        let otherAnswered = false;
-        while (!otherAnswered && Date.now() < deadline && other.exitCode === null) {
-          otherAnswered = await fetch(otherUrl, { signal: AbortSignal.timeout(2_000) }).then(response => response.ok, () => false);
-          if (!otherAnswered) await new Promise(accept => setTimeout(accept, 500));
-        }
-        assert.ok(otherAnswered, `${otherUrl} answered within ${serve.readySeconds}s`);
-        process.kill(-other.pid!, 'SIGTERM');
-        await Promise.race([otherDescendantsGone, new Promise(accept => setTimeout(accept, 20_000))]);
-      } finally {
-        try { process.kill(-other.pid!, 'SIGKILL'); } catch { /* already gone */ }
-      }
+        assert.ok(await other.answered, `${other.url} answered within ${serve.readySeconds}s`);
+        await other.stop();
+      } finally { other.kill(); }
       const seed = JSON.parse(readFileSync(join(checkout, '.graphyard', `e2e-serve-${port}.json`), 'utf8'));
       const own = await fetch(new URL('/api/scenarios', url), { headers: { Authorization: `Bearer ${seed.delivery.coordinatorToken}` } });
       assert.equal(own.status, 200, 'the seed names this serve\'s delivery credentials after another serve stopped');
@@ -101,17 +103,13 @@ test('unit:mainworks-repo-serves-its-head-for-e2e — the declared serve command
       return { file, definition: parseCase(file, readFileSync(join(checkout, file), 'utf8')) };
     });
     let report: E2eReport | null = null;
-    await projectCaseSuite(checkout, token, { cases, select: () => true,
+    const core = projectCaseSuite(checkout, token, { cases, select: () => true,
       withholdSecrets: true, artifactsDirectory: join(scratch, 'artifacts'), signal: AbortSignal.timeout(180_000), report: value => { report = value; } })
       .run(url.origin, null);
-    for (const id of ids) {
-      const outcome: E2eReport['cases'][number] | undefined = (report as E2eReport | null)?.cases.find(entry => entry.id === id);
-      assert.equal(outcome?.verdict, 'passed', `${id}: ${JSON.stringify(outcome?.failingStep ?? outcome)}`);
-    }
 
     // GY-3038: the same served head must actually deliver to its scratch bare origin. A push
     // failure after a passing build/test trial must fail this case, never manufacture delivery.
-    await t.test('unit:delivery-pipeline — the case delivers a reviewed exact head and fails after a passing trial when the bare origin is unwritable', async () => {
+    const delivery = t.test('unit:delivery-pipeline — the case delivers a reviewed exact head and fails after a passing trial when the bare origin is unwritable', async () => {
       const deliveryFile = 'e2e/cases/delivery-pipeline.json';
       const definition = parseCase(deliveryFile, readFileSync(join(checkout, deliveryFile), 'utf8'));
       const deliveryOptions = { url: url.origin, token, environment: 'uat', root: checkout,
@@ -133,14 +131,18 @@ test('unit:mainworks-repo-serves-its-head-for-e2e — the declared serve command
       assert.deepEqual(refused.mergeLedger.trial.proofs['unit:scratch-delivery'], { executed: 1, failed: 0 });
       assert.deepEqual(refused.mergeLedger.trial.proofs['e2e:scratch-delivery'], { executed: 1, failed: 0 }, 'the served scratch head passes its E2E check before the push fails');
     });
+    // GY-3893: the delivery case pushes to its own scratch origin and finds its item by its own title, so it
+    // runs beside the core cases instead of after them.
+    await Promise.all([core, delivery]);
+    for (const id of ids) {
+      const outcome: E2eReport['cases'][number] | undefined = (report as E2eReport | null)?.cases.find(entry => entry.id === id);
+      assert.equal(outcome?.verdict, 'passed', `${id}: ${JSON.stringify(outcome?.failingStep ?? outcome)}`);
+    }
 
-    process.kill(-child.pid!, 'SIGTERM');
-    // Wait for the serving process to finish cleanup (not the shell's exit), then observe removal.
-    await Promise.race([descendantsGone, new Promise(accept => setTimeout(accept, 20_000))]);
+
+    await main.stop();
     assert.deepEqual(readdirSync(scratch).filter(name => name.startsWith('graphyard-e2e-serve-')), [], 'stopping the command removes its database directory');
-  } finally {
-    try { process.kill(-child.pid!, 'SIGKILL'); } catch { /* already gone */ }
-  }
+  } finally { main.kill(); other.kill(); }
 });
 
 let store: Store, engine: Engine;
