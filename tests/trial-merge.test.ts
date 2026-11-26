@@ -21,6 +21,7 @@ import { actionAccount } from '../src/model-boundary/next-action.js';
 import { trialFailedGround, trialFailurePrefix } from '../src/model/rework-ground.js';
 import { trialFailureRework } from '../src/daemon/cycle-merge-writer.js';
 import { trialFailureReason } from '../src/merge-writer/executor.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 
 // GY-3715: the cases share no state, so they run at once under one suite, each titled as before; one at
 // a time, the file spent minutes starting trial children one after another.
@@ -881,13 +882,8 @@ test('unit:trial-merge — a failed trial grounds a rework for the candidate and
     candidate: { sha: head, baseSha: base, pr: 1, branch: 'graphyard/gy-3008-1', author: 'agent' },
     submission: { epoch: 1, pr: 1 }, reworkRequested: false, scenarioRequirements: [],
     evidence: [{ id: 'e', proof: 'unit:trial-merge', sha: head, baseSha: base, policyRevision: 1, producer: 'ci', trusted: true, result: 'pass', executed: 1, skipped: 0, at: now.toISOString() }],
-    observation: {
-      candidate: { sha: head, baseSha: base, pr: 1, branch: 'graphyard/gy-3008-1', author: 'agent' },
-      checks: [{ name: 'test', result: 'success', appId: 15368 }],
-      reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }],
-      merged: false, mergeSha: null, mergeable: true, protected: true, prState: 'open', draft: false,
-      baseTip: base, baseTree: 'b'.repeat(40), baseTipContained: true, files: ['src/model/next-action.ts'], scopeFiles: [], at: now.toISOString(),
-    },
+    observation: observationFixture({ sha: head, baseSha: base, pr: 1, branch: 'graphyard/gy-3008-1', author: 'agent' }, { checks: [{ name: 'test', result: 'success', appId: 15368 }],
+      reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }], baseTree: 'b'.repeat(40), files: ['src/model/next-action.ts'], at: now.toISOString() }),
     blocker: null, gates: [], violations: [],
     mergeLedger: { key: 'GY-3008', state: 'refused', head, baseTip: base, mergeSha: null, risk: null, intentAt: now.toISOString(),
       pushedAt: null, observedTip: null, refusal: { kind: 'merge', reason }, events: 2 },

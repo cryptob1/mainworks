@@ -4,13 +4,14 @@ import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { NoHealthyAccountError, masterConfigSchema, type MasterConfig } from '../src/master.js';
-import type { Observation, Work } from '../src/model.js';
+import type { Work } from '../src/model.js';
 import { reconcileAutoDispatch } from '../src/model-boundary/dispatch.js';
 import { emptyDispatchCursor } from '../src/dispatch/cursor.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import { type DispatchEffects } from '../src/dispatch/effects.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 
 /**
  * GY-205: a follow-up the independent review of GY-190 left. A reviewer or producer launch the
@@ -34,16 +35,12 @@ async function config(): Promise<MasterConfig> {
     producers: [{ name: 'producer-a', principal: 'proof-runner', agentName: 'produce-a', kind: 'claude', credentialFile: join(directory, 'producer-a.token') }], workers: [] });
 }
 
-function observation(candidate: { sha: string; baseSha: string; pr: number; branch: string }): Observation {
-  return { candidate: { ...candidate, author: 'implementer' }, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true,
-    files: ['src/a.ts'], scopeFiles: [], at: iso(0), prState: 'open', draft: false, baseTip: candidate.baseSha, baseTree: '7'.repeat(40), baseTipContained: true };
-}
 /** A submitted head with a standing review request and a unit producer request. */
 function requested(): Work {
   const candidate = { sha: 'a'.repeat(40), baseSha: 'b'.repeat(40), pr: 64, branch: 'graphyard/gy-64-1', author: 'implementer' };
   const make = (evidence: Work['evidence']) => workFixture({ id: 'work-64', key: 'GY-64', title: 'Slots', priority: 0, criteria: [{ id: 'AC-1', text: 'Unit', proofs: ['unit:slots'] }],
     policy: { checks: ['test'], review: true, reviewProvider: 'github' }, stage: 'review', revision: 7, createdAt: iso(0), updatedAt: iso(0), stageEnteredAt: iso(0), epoch: 1, candidate, submission: { epoch: 1, pr: 64 },
-    evidence, observation: observation(candidate),
+    evidence, observation: observationFixture(candidate, { at: iso(0) }),
     gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }] });
   // Review is not held for proofs since GY-1235, so reconciling raises the review request at once.
   const item = make([]); reconcileAutoDispatch(item, [item], new Date(clock));

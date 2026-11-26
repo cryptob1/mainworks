@@ -22,6 +22,7 @@ import { boardFromStatus } from '../src/model/board.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
+import { itemObservation } from './helpers/observation-fixture.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // Time-bomb allowance (GY-1694): the 2026-09-21 `now` is handed explicitly to nextAction and actionAccount over fixtures built from it; new Date() serves the engine tests and stamps observations.
@@ -45,7 +46,6 @@ setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocki
 const operator: Principal = { id: 'operator', role: 'admin', sessionKind: 'human' };
 const worker: Principal = { id: 'agent-a', role: 'worker', runtime: 'claude' };
 const PROOF = 'integration:totality';
-const CI_APP = 15368;
 const head = 'a'.repeat(40), base = 'b'.repeat(40);
 const sha40 = (label: string) => label.replace(/[^a-f0-9]/g, '0').padEnd(40, 'f').slice(0, 40);
 
@@ -55,21 +55,10 @@ useTestStore('action-totality', { principals: [operator, worker] }, ctx => { ({ 
 let sequence = 0;
 const submitted = () => lifecycle(engine, operator, { type: 'chore',  title: `Totality ${++sequence}`, criteria: [{ id: 'AC-1', text: 'Proven', proofs: [PROOF, 'e2e:fixture'] }] }, { claim: worker, submit: { pr: 100 + sequence } });
 
-/** The provider's view of a candidate: approved, both checks green, mergeable, protected, in scope. */
-function observation(item: Work, overrides: Partial<Observation> = {}): Observation {
-  return {
-    clockOffset: { min: 0, max: 0 },
-    candidate: { sha: head, baseSha: base, pr: item.submission!.pr, branch: item.workspaces.at(-1)!.branch, author: 'implementer' },
-    checks: [{ name: 'test', result: 'success', appId: CI_APP }, { name: 'typecheck', result: 'success', appId: CI_APP }],
-    reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }], protected: true, mergeable: true,
-    merged: false, mergeSha: null, files: ['src/loop.ts'], scopeFiles: [], at: new Date().toISOString(),
-    prState: 'open', draft: false, baseTip: base, baseTree: sha40('7e'), baseTipContained: true, ...overrides,
-  };
-}
 /** An item with an observed candidate, as the control plane holds it. */
 async function candidate(overrides: Partial<Observation> = {}) {
   const item = await submitted();
-  return engine.observe(item.id, item.revision, observation(item, overrides));
+  return engine.observe(item.id, item.revision, itemObservation(item, head, base, overrides));
 }
 
 // ---- AC-1: no open item holds a failing gate with nothing named -------------------------------

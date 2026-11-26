@@ -8,7 +8,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
-import type { Observation, Principal, Work } from '../src/model.js';
+import type { Principal, Work } from '../src/model.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master.js';
 import { dispatchEffects, type DispatchEffects } from '../src/dispatch/effects.js';
 import { readDispatchCursor, writeDispatchCursor } from '../src/dispatch/cursor.js';
@@ -19,6 +19,7 @@ import type { DaemonEffects } from '../src/daemon/effects.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
+import { itemObservation } from './helpers/observation-fixture.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 /**
@@ -56,13 +57,6 @@ after(async () => { await close?.(); if (store) await store.close(); });
 
 const reload = async (item: Work) => (await store.list()).find(entry => entry.id === item.id)!;
 const submitted = (title: string) => lifecycle(engine, operator, { type: 'chore', title, criteria: [{ id: 'AC-1', text: 'Read it', proofs: ['manual:by-hand', 'e2e:fixture'] }] }, { claim: worker, submit: {} });
-const observation = (item: Work): Observation => ({
-  clockOffset: { min: 0, max: 0 },
-  candidate: { sha: head, baseSha: base, pr: item.submission!.pr, branch: item.workspaces.at(-1)!.branch, author: 'implementer' },
-  checks: [{ name: 'test', result: 'success', appId: 15368 }, { name: 'typecheck', result: 'success', appId: 15368 }],
-  reviews: [], protected: true, mergeable: true, merged: false, mergeSha: null, files: ['src/loop.ts'], scopeFiles: [], at: new Date().toISOString(),
-  prState: 'open', draft: false, baseTip: base, baseTree: '7e'.padEnd(40, 'f'), baseTipContained: true,
-});
 
 test('dispatch-state-saves: after thousands of launch failures on one item, the loop saves its dispatch state and launches another ready item next cycle', async () => {
   // The churned item: a running session its runtime no longer lists, and thousands of refused launches.
@@ -76,7 +70,7 @@ test('dispatch-state-saves: after thousands of launch failures on one item, the 
 
   // The other item is ready for its review.
   const ready = await submitted('Ready item');
-  await engine.observe(ready.id, (await reload(ready)).revision, observation(await reload(ready)));
+  await engine.observe(ready.id, (await reload(ready)).revision, itemObservation(await reload(ready), head, base));
   assert.equal((await reload(ready)).autoDispatch?.review?.state, 'requested', 'the control plane asked for a review of the ready item');
 
   const launched: string[] = [];

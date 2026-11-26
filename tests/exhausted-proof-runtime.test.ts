@@ -4,7 +4,7 @@ import { rm, writeFile } from 'node:fs/promises';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Observation, Work } from '../src/model.js';
+import type { Work } from '../src/model.js';
 import { reconcileAutoDispatch } from '../src/model-boundary/dispatch.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master.js';
 import { exhaustedProofRework, type ExhaustedProof } from '../src/daemon/rework.js';
@@ -13,6 +13,7 @@ import { dispatchFailureLimit, emptyDispatchCursor } from '../src/dispatch/curso
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import { type DispatchEffects } from '../src/dispatch/effects.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 
 // GY-1153: Producer attempts that never started (runtime quota, trust prompt, busy profiles)
 // do not spend a request on a healthy account.
@@ -25,17 +26,12 @@ const at = '2026-10-03T11:27:00.000Z';
 const clock = Date.parse(at);
 const iso = (offsetMs: number) => new Date(clock + offsetMs).toISOString();
 
-function observation(candidate: { sha: string; baseSha: string }, extra: Partial<Observation> = {}): Observation {
-  return { candidate: { ...candidate, pr: 1127, branch: 'graphyard/gy-1127-1', author: 'implementer' }, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true,
-    files: ['src/a.ts'], scopeFiles: [], at, prState: 'open', draft: false, baseTip: candidate.baseSha, baseTree: sha40('7b'), baseTipContained: true, ...extra };
-}
-
 function work(overrides: Partial<Work> = {}): Work {
   const candidate = { sha: H, baseSha: B, pr: 1127, branch: 'graphyard/gy-1127-1', author: 'implementer' };
   return workFixture({ id: 'work-1127', key: 'GY-1127', title: 'Producer runtime exhaustion', type: 'bug', priority: 0,
     criteria: [{ id: 'AC-1', text: 'Producer runtime notice', proofs: ['unit:never-started-producers-request-no-rework'] }],
     stage: 'review', revision: 7, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1, candidate, submission: { epoch: 1, pr: 1127 },
-    observation: observation(candidate), gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], ...overrides });
+    observation: observationFixture(candidate), gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], ...overrides });
 }
 
 /**

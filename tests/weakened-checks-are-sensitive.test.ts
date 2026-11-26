@@ -4,6 +4,7 @@ import { classifyRisk, riskOf } from '../src/model-boundary/risk-class.js';
 import { mainworksChecksChanged, reviewedBeforeMerge } from '../src/model/risk-class.js';
 import { evaluate } from '../src/model-boundary/gates.js';
 import type { Work } from '../src/model/work.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 
 const baseWork = (scopeFiles: NonNullable<NonNullable<Work['observation']>['scopeFiles']>): Work => ({
   id: 'work-1',
@@ -27,22 +28,8 @@ const baseWork = (scopeFiles: NonNullable<NonNullable<Work['observation']>['scop
   gates: [],
   submission: { sha: 'a'.repeat(40), pr: 1, by: 'worker-1', at: '2026-11-22T00:00:00.000Z' },
   candidate: { sha: 'a'.repeat(40), baseSha: 'b'.repeat(40), pr: 1, branch: 'graphyard/gy-9999-1', author: 'worker-1' },
-  observation: {
-    source: 'control-plane',
-    candidate: { sha: 'a'.repeat(40), baseSha: 'b'.repeat(40), pr: 1, branch: 'graphyard/gy-9999-1', author: 'worker-1' },
-    baseTip: 'b'.repeat(40),
-    mergeBase: 'b'.repeat(40),
-    baseTipContained: true,
-    protected: false,
-    checks: [],
-    reviews: [],
-    merged: false,
-    mergeSha: null,
-    mergeable: true,
-    files: scopeFiles.map(f => f.path),
-    scopeFiles,
-    at: '2026-11-22T00:00:00.000Z',
-  },
+  observation: observationFixture({ sha: 'a'.repeat(40), baseSha: 'b'.repeat(40), pr: 1, branch: 'graphyard/gy-9999-1', author: 'worker-1' },
+    { source: 'control-plane', mergeBase: 'b'.repeat(40), protected: false, files: scopeFiles.map(f => f.path), scopeFiles, at: '2026-11-22T00:00:00.000Z' }),
 } as unknown as Work);
 
 test('unit:weakened-checks-are-sensitive — modifying or removing existing tests, e2e cases, scripts/ci-tests.mjs, tests/helpers/**, or graphyard.json checks is sensitive; add-only stays normal; renamed test file is sensitive', () => {

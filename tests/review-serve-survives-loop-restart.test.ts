@@ -21,6 +21,7 @@ import { startReviewServe } from '../src/review-serve.js';
 import { EventEmitter } from 'node:events';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 
 // GY-3662: a product review's served head survives a loop restart, so a deploy does not void
 // reviews in flight. The serve command runs detached in its own unit/session, is recorded with
@@ -111,11 +112,8 @@ async function productItem(key: string): Promise<Work> {
     stage: 'review', revision: 3, createdAt: now(), updatedAt: now(), stageEnteredAt: now(), epoch: 1,
     workspaces: [{ host: 'h', path: '/w', branch: candidate.branch, epoch: 1, owner: 'graphyard-claude-1' }], candidate, submission: { epoch: 1, pr: 7 },
     gates: [], implementers: ['graphyard-claude-1'], pipeline: { attempts: [], submittedAt: null, resubmittedAt: null, reworkRounds: 0, interventions: { blocked: 0, requirements: 0 } },
-    observation: {
-      source: 'control-plane', at: now(), candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false,
-      files: ['serve-it.mjs'], scopeFiles: [{ path: 'serve-it.mjs', status: 'modified', sha: head, additions: 1, deletions: 0, binary: false }],
-      baseTip: base, baseTipContained: true,
-    } as never,
+    observation: observationFixture(candidate, { source: 'control-plane', protected: false,
+      files: ['serve-it.mjs'], scopeFiles: [{ path: 'serve-it.mjs', status: 'modified', sha: head, additions: 1, deletions: 0, binary: false }] }),
   });
   await store.pool.query('INSERT INTO work_items(id, document) VALUES ($1,$2)', [work.id, JSON.stringify(work)]);
   return work;

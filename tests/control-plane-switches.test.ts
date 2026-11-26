@@ -12,7 +12,8 @@ import { emptyDaemonState } from '../src/daemon/state.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
 import { masterConfigSchema } from '../src/master.js';
 import type { Cycle } from '../src/daemon/cycle.js';
-import type { Observation, Work } from '../src/model/work.js';
+import type { Work } from '../src/model/work.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 
 // GY-1528: the control-plane merger switches off the gates the decided model retired — producer
 // sessions and budget blockers — while github mode keeps each
@@ -26,11 +27,8 @@ const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.ex
   repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [] });
 
 const scoped = (path: string) => ({ path, status: 'modified' as const, sha: sha(path), baseSha: sha(`base:${path}`), additions: 1, deletions: 1, binary: false });
-const observation = (source: 'control-plane' | null, paths: string[]): Observation => ({
-  ...(source ? { source } : {}),
-  candidate: { sha: head, baseSha: base, pr: 7, branch: 'graphyard/gy-1-1', author: 'worker' }, checks: [], reviews: [], merged: false, mergeSha: null,
-  mergeable: true, protected: true, files: paths, at: iso(start), baseTip: base, scopeFiles: paths.map(scoped),
-} as unknown as Observation);
+const observation = (source: 'control-plane' | null, paths: string[]) => observationFixture({ sha: head, baseSha: base, pr: 7, branch: 'graphyard/gy-1-1', author: 'worker' },
+  { ...(source ? { source } : {}), files: paths, at: iso(start), scopeFiles: paths.map(scoped) });
 const item = (source: 'control-plane' | null, paths: string[], fields: Record<string, unknown> = {}): Work => ({
   id: 'w1', key: 'GY-1', title: 'switch fixture', type: 'feature', description: '', priority: 1, dependencies: [],
   criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works', 'integration:item-holds', 'manual:item-looks', 'e2e:item-ships'] }],

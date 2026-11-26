@@ -25,6 +25,7 @@ import { registryFixture } from './helpers/registry-fixture.js';
 import { endRun } from '../src/runner/registry.js';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 const dropRun = (name: string) => endRun(name, { ok: false, reason: 'exit', detail: 'dropped', startedAt: new Date().toISOString(), endedAt: new Date().toISOString() } as any);
 
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
@@ -79,10 +80,8 @@ function makeReviewItem(key: string, requestId: string, at: string, extra: Parti
       review: { id: requestId, kind: 'review', provider: 'github', pr: 11, sha: head, baseSha: base, policyRevision: 1, state: 'requested', requestedAt: at, reason: 'review required' },
       producers: [], history: [],
     },
-    observation: {
-      source: 'control-plane', at, candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false,
-      files: ['src/server/auth.ts'], scopeFiles: [{ path: 'src/server/auth.ts', status: 'added', sha: head, additions: 1, deletions: 0, binary: false }], baseTip: base, baseTipContained: true,
-    },
+    observation: observationFixture(candidate, { source: 'control-plane', at, protected: false,
+      files: ['src/server/auth.ts'], scopeFiles: [{ path: 'src/server/auth.ts', status: 'added', sha: head, additions: 1, deletions: 0, binary: false }] }),
     ...extra,
   });
 }

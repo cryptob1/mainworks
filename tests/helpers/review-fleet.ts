@@ -4,13 +4,14 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import type { Observation, Work } from '../../src/model.js';
+import type { Work } from '../../src/model.js';
 import { reconcileAutoDispatch } from '../../src/model-boundary/dispatch.js';
 import { setupMaster, type HerdrAgent, type MasterConfig } from '../../src/master.js';
 import { reconcileReviews, saveReviewerProfile } from '../../src/reviewer.js';
 import type { DispatchEffects } from '../../src/dispatch/effects.js';
 import { startedAtOnce } from './launch-shell.js';
 import { temporaryDirectory } from './temp-dirs.js';
+import { observationFixture } from './observation-fixture.js';
 // Time-bomb allowance (GY-1694): the 2026-10-01T10:00Z at stamps createdAt, stageEnteredAt and evidence of fixture items; new Date() is the clock handed to reconcileAutoDispatch and stamps snapshots and token expiries nothing ages.
 
 // The automatic-review fleet (GY-1072): a master over a stubbed Herdr, and
@@ -22,10 +23,6 @@ const B = sha40('b1');
 const at = '2026-10-01T10:00:00.000Z';
 export const requestId = (n: number) => createHash('sha256').update(`gy-1072-review-${n}`).digest('hex').slice(0, 32);
 
-function observation(candidate: { sha: string; baseSha: string; pr: number; branch: string }): Observation {
-  return { candidate: { ...candidate, author: 'implementer' }, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true,
-    files: ['src/server/routes/a.ts'], scopeFiles: [{ path: 'src/server/routes/a.ts', status: 'modified' as const, sha: sha40('s'), additions: 1, deletions: 1, binary: false }], at: new Date().toISOString(), prState: 'open', draft: false, baseTip: candidate.baseSha, baseTree: sha40('7b'), baseTipContained: true };
-}
 /** A submitted, observed candidate for item N (its HEAD-th head) with an open review request under a fixed id. */
 export function requested(n: number, head = 1): Work {
   const now = new Date();
@@ -34,7 +31,7 @@ export function requested(n: number, head = 1): Work {
     criteria: [{ id: 'AC-1', text: 'Unit', proofs: ['unit:review'] }],
     policy: { checks: ['test', 'typecheck'], review: true, reviewProvider: 'github' }, stage: 'review', revision: 7, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 1,
     lease: null, workspaces: [{ host: 'h', path: `/w/gy-${500 + n}`, branch: candidate.branch, epoch: 1, owner: 'implementer' }], candidate, submission: { epoch: 1, pr: candidate.pr }, reworkRequested: false, scenarioRequirements: [], evidence: [],
-    observation: observation(candidate), blocker: null, gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], violations: [] } as unknown as Work;
+    observation: observationFixture(candidate, { files: ['src/server/routes/a.ts'], scopeFiles: [{ path: 'src/server/routes/a.ts', status: 'modified', sha: sha40('s'), additions: 1, deletions: 1, binary: false }] }), blocker: null, gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], violations: [] } as unknown as Work;
   // The review request follows the head's mechanical proofs (GY-115): it is the one a proven twin raises.
   const twin = structuredClone(item);
   twin.evidence = [{ id: 'twin-unit', proof: 'unit:review', sha: candidate.sha, baseSha: B, policyRevision: 1, producer: 'independent-runner', trusted: true, result: 'pass' as const, executed: 1, skipped: 0, at }] as Work['evidence'];

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFile, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import type { Observation, Work } from '../src/model.js';
+import type { Work } from '../src/model.js';
 import { liveReviewRequest } from '../src/model/dispatch.js';
 import { reconcileAutoDispatch } from '../src/model-boundary/dispatch.js';
 import { loadMasterConfig, setupMaster } from '../src/master.js';
@@ -17,6 +17,7 @@ import { type DispatchEffects } from '../src/dispatch/effects.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 // Time-bomb allowance (GY-1694): the 2026-09-21 clock is the explicit now handed to reconcileReviews, runDispatchTick and sessionRetry; Date.now()-stamped ledger records are judged by attempt counts, not age.
 
 // Each test is named for the proof it produces: integration:dismissed-review-relaunches and
@@ -29,10 +30,6 @@ const clock = Date.parse('2026-09-21T01:22:07.000Z');
 const iso = (offsetMs: number) => new Date(clock + offsetMs).toISOString();
 const reviewer = 'graphyard-reviewer[bot]';
 
-function observation(candidate: { sha: string; baseSha: string }, at: string): Observation {
-  return { candidate: { ...candidate, pr: 84, branch: 'graphyard/gy-84-1', author: 'implementer' }, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true,
-    files: ['src/a.ts'], scopeFiles: [], at, prState: 'open', draft: false, baseTip: candidate.baseSha, baseTree: sha40('7b'), baseTipContained: true };
-}
 /** One submitted, observed candidate whose only proof is manual: the review request stands alone. */
 function work(overrides: Partial<Work> = {}, at = iso(0)): Work {
   const candidate = { sha: H, baseSha: B, pr: 84, branch: 'graphyard/gy-84-1', author: 'implementer' };
@@ -40,7 +37,7 @@ function work(overrides: Partial<Work> = {}, at = iso(0)): Work {
     criteria: [{ id: 'AC-1', text: 'Relaunch', proofs: ['manual:dismissed-review'] }],
     stage: 'review', revision: 7, policyRevision: 3, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1,
     workspaces: [{ host: 'h', path: '/w/gy-84', branch: 'graphyard/gy-84-1', epoch: 1, owner: 'implementer' }], candidate, submission: { epoch: 1, pr: 84 },
-    observation: observation(candidate, at), gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], ...overrides });
+    observation: observationFixture(candidate, { at }), gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], ...overrides });
 }
 
 /** A Herdr and `gh` stub: tab and agent calls for a launch, pane closes, and the PR's review list. */
@@ -92,7 +89,7 @@ test('integration:dismissed-review-relaunches — a dismissed approval is record
     const launched = await launchReview(root, item, 'claude-reviewer', [], new Date().toISOString(), { run, registerLaunch, requestId: first.id, probe: reviewerProbe(config.hostId) });
     assert.equal(launched.requestId, first.id);
     // The reviewer approves that head; the worker pushes a new one, and GitHub dismisses the approval with it.
-    const moved = work({ candidate: { sha: H2, baseSha: B, pr: 84, branch: 'graphyard/gy-84-1', author: 'implementer' }, observation: observation({ sha: H2, baseSha: B }, new Date().toISOString()), autoDispatch: item.autoDispatch }, new Date().toISOString());
+    const moved = work({ candidate: { sha: H2, baseSha: B, pr: 84, branch: 'graphyard/gy-84-1', author: 'implementer' }, observation: observationFixture({ sha: H2, baseSha: B, pr: 84, branch: 'graphyard/gy-84-1' }), autoDispatch: item.autoDispatch }, new Date().toISOString());
     const dismissal = { state: 'DISMISSED', reviewer, reviewId: 11, submittedAt: iso(0) };
     const settled = (await reconcileReviews(root, config, { run, observe: () => dismissal, work: [moved] })).reviews[0];
     // Unanswered, not completed: a dismissed approval is not an approval, so the session answered nothing.

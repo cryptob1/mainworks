@@ -9,6 +9,7 @@ import type { Observation, Principal, Work } from '../src/model.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { itemObservation } from './helpers/observation-fixture.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 /**
@@ -27,9 +28,8 @@ useTestStore('event-snapshot-delta', {}, ctx => { ({ store, engine } = ctx); });
 
 const reload = async (id: string) => (await store.list()).find(item => item.id === id)!;
 const rows = async (id: string) => (await store.pool.query('SELECT seq, kind, payload, created_at, pg_column_size(payload) AS bytes FROM events WHERE work_id=$1 ORDER BY seq', [id])).rows as { seq: string; kind: string; payload: any; created_at: Date; bytes: number }[];
-const observation = (work: Work, extra: Partial<Observation> = {}): Observation => ({ clockOffset: { min: 0, max: 5 }, candidate: { sha: sha(work.key), baseSha: base, pr: work.submission!.pr, branch: work.workspaces[0].branch, author: 'implementer' },
-  checks: [{ name: 'test', result: 'success', appId: 15368 }], reviews: [], protected: true, mergeable: true, merged: false, mergeSha: null, baseTip: base, baseTree: '7e'.repeat(20),
-  files: ['src/a.ts'], scopeFiles: [], at: new Date().toISOString(), ...extra });
+const observation = (work: Work, extra: Partial<Observation> = {}) => itemObservation(work, sha(work.key), base,
+  { clockOffset: { min: 0, max: 5 }, checks: [{ name: 'test', result: 'success', appId: 15368 }], files: ['src/a.ts'], baseTree: '7e'.repeat(20), ...extra });
 
 const submitted = () => lifecycle(engine, operator, { type: 'chore',  title: `Delta ${++serial}`, criteria: [{ id: 'AC-1', text: 'Behaves', proofs: ['integration:x', 'e2e:fixture'] }] }, { claim: worker, workspace: { host: 'test' } });
 

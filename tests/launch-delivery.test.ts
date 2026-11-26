@@ -5,7 +5,7 @@ import { statSync } from 'node:fs';
 import { readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Observation, Work } from '../src/model.js';
+import type { Work } from '../src/model.js';
 import { reconcileAutoDispatch } from '../src/model-boundary/dispatch.js';
 import { agentStartCeilingMs, agentStartTimeoutMs, awaitRuntimeStart, launchCommand, launchCommandLimit, launchDelivery, loadMasterConfig, paneLastLine, saveProducerProfile, SessionStartError, setupMaster, startAgentSession, writeLaunchFiles, type HerdrAgent } from '../src/master.js';
 import { launchAuthorization } from '../src/repository-setup.js';
@@ -23,6 +23,7 @@ import { knownRuntimes } from '../src/install/runtimes.js';
 import { connectProvider, type FleetLaunchAccount } from '../src/fleet.js';
 import { proposedRuntimes } from '../src/model/registry-proposal.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 // Time-bomb allowance (GY-1694): 2026-09-22 and 2026-09-30 are virtual pane clocks the launcher's bounds read; the real new Date() only stamps snapshot/observation times on an item whose 2026-09-22 createdAt is already past.
 
 // GY-121: a session launch types a short, constant-size command line that references the
@@ -46,17 +47,13 @@ async function caught<T extends Error>(pending: Promise<unknown>, type: new (...
 const producerVerify = async () => ({ actor: { id: 'proof-runner', role: 'producer', proofs: ['unit:*', 'integration:*'] } });
 const producerArgs = ['--permission-mode', 'bypassPermissions', '--setting-sources', 'user', '--settings', '/home/operator/code/project/.graphyard/harness/producer-claude-producer.json'];
 
-function observation(candidate: { sha: string; baseSha: string }): Observation {
-  return { candidate: { ...candidate, pr: 121, branch: 'graphyard/gy-121-1', author: 'implementer' }, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true,
-    files: ['src/a.ts'], scopeFiles: [], at: new Date().toISOString(), prState: 'open', draft: false, baseTip: candidate.baseSha, baseTree: sha40('7b'), baseTipContained: true };
-}
 function work(overrides: Partial<Work> = {}): Work {
   const candidate = { sha: H, baseSha: B, pr: 121, branch: 'graphyard/gy-121-1', author: 'implementer' };
   return workFixture({ id: 'work-121', key: 'GY-121', title: 'Producers die at the start bound', type: 'bug', priority: 0,
     criteria: [{ id: 'AC-1', text: 'Bounded', proofs: ['unit:launch-command-bounded', 'integration:launch-refusal-names-the-screen'] }],
     stage: 'review', revision: 7, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1,
     workspaces: [{ host: 'h', path: '/w/gy-121', branch: 'graphyard/gy-121-1', epoch: 1, owner: 'implementer' }], candidate, submission: { epoch: 1, pr: 121 },
-    observation: observation(candidate), gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], ...overrides });
+    observation: observationFixture(candidate), gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], ...overrides });
 }
 // Dispatch no longer opens producer requests (GY-1235: proofs gate nothing), but the producer
 // launcher and the dispatcher's launch of a standing request remain: the requests are built by hand.

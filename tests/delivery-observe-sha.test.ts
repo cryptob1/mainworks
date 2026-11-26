@@ -8,12 +8,13 @@ import { Engine } from '../src/engine.js';
 import { Validation } from '../src/validation.js';
 import { Delivery } from '../src/delivery.js';
 import { deliveryOutcome, deliveryLabel, shortShas } from '../src/model/format.js';
-import type { Principal, Work, Observation } from '../src/model.js';
+import type { Principal, Work } from '../src/model.js';
 import { deliverThroughLedger } from './helpers/ledger-delivery.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { itemObservation } from './helpers/observation-fixture.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 /**
@@ -52,12 +53,9 @@ const smoked = (w: Work): Work => ({ ...w, policy: { ...w.policy, deploySmoke: t
 /** Delivered work the way production reaches it: an authorized, verified, independently observed merge. */
 async function delivered(mergeSha: string) {
   let w = await lifecycle(engine, operator, { type: 'chore',  title: `Delivered change ${++serial}`, criteria: [{ id: 'AC-1', text: 'Behaves', proofs: ['integration:claim-safety', 'e2e:fixture'] }] }, { claim: worker, workspace: { host: 'test', path: `/tmp/observe-sha-${serial}`, branch: `graphyard/observe-sha-${serial}` }, submit: { pr: serial } });
-  const observed = (): Observation => ({ clockOffset: { min: 0, max: 0 }, candidate: { sha: head, baseSha: base, pr: serial, branch: `graphyard/observe-sha-${serial}`, author: 'implementer' },
-    checks: [{ name: 'test', result: 'success', appId: 15368 }, { name: 'typecheck', result: 'success', appId: 15368 }], reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }],
-    protected: true, mergeable: true, merged: false, mergeSha: null, files: [], scopeFiles: [], at: new Date().toISOString() });
-  w = await engine.observe(w.id, w.revision, observed());
+  w = await engine.observe(w.id, w.revision, itemObservation(w, head, base, { reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }], files: [] }));
   w = await engine.execute(ci, 'evidence', w.id, { proof: 'integration:claim-safety', sha: head, baseSha: base, policyRevision: 1, result: 'pass', executed: 5, skipped: 0, exercise: { behaviour: 'the change under test', result: 'fail', executed: 1 } }, id());
-  w = await engine.observe(w.id, (await reload(w)).revision, observed());
+  w = await engine.observe(w.id, (await reload(w)).revision, itemObservation(w, head, base, { reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }], files: [] }));
   await delay(5); const mergedAt = ((await store.pool.query('SELECT clock_timestamp() AS now')).rows[0].now as Date).toISOString(); await delay(5);
   // GY-2010: the merge writer's ledger delivers it, as production does; no GitHub merge is observed.
   w = await deliverThroughLedger(engine, w.id, mergeSha, mergedAt);

@@ -15,6 +15,7 @@ import { saveReviewerProfile, reviewPrompt } from '../src/reviewer.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 
 // GY-2989: the product review before merge. A feature head with passing proofs does not merge until
 // its product review approves; changes requested reworks with the findings; a reject is owed to the
@@ -35,11 +36,8 @@ function feature(key: string, head = H): Work {
     // The control plane's evaluation marks a normal unreviewed head's review owed after merge (GY-3421).
     postMergeReview: 'owed',
     evidence: [{ id: 'e1', proof: 'e2e:feature-works', sha: head, baseSha: B, policyRevision: 1, producer: 'merge-trial', trusted: true, result: 'pass', executed: 1, skipped: 0, at }], gates: [], implementers: ['worker-1'],
-    observation: {
-      source: 'control-plane', at, candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false,
-      files: ['web/feature.ts'], scopeFiles: [{ path: 'web/feature.ts', status: 'added' as const, sha: shaOf(key), additions: 10, deletions: 0, binary: false }],
-      baseTip: B, baseTipContained: true, mergeBase: B,
-    },
+    observation: observationFixture(candidate, { source: 'control-plane', at, protected: false, mergeBase: B,
+      files: ['web/feature.ts'], scopeFiles: [{ path: 'web/feature.ts', status: 'added', sha: shaOf(key), additions: 10, deletions: 0, binary: false }] }),
     preview: { id: randomUUID(), path: `/preview/${key}`, state: 'running', runner: 'local', application: 'app', sha: head, source: 'head', origin: null, cases: [], detail: '', startedAt: at, readyAt: at, cleanedAt: null, endReason: null },
   });
 }

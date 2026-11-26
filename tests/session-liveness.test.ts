@@ -24,6 +24,7 @@ import { deliverThroughLedger } from './helpers/ledger-delivery.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { itemObservation } from './helpers/observation-fixture.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // Time-bomb allowance (GY-1694): boundAt 2026-09-01 is config fixture and the 2026-09-21 instants are explicit past now/at arguments; the Date.now()-relative offsets (tomorrow, over) move with the wall clock.
@@ -60,16 +61,6 @@ let sequence = 0;
 /** An item whose only proof is a manual one no producer may run, so its candidate raises a review request and no producer request. */
 const reviewOnly = { criteria: [{ id: 'AC-1', text: 'Read it', proofs: ['manual:by-hand', 'e2e:fixture'] }] };
 const submitted = (overrides: Record<string, unknown> = {}) => lifecycle(engine, operator, { type: 'chore',  title: `Session liveness ${++sequence}`, criteria: [{ id: 'AC-1', text: 'Proven', proofs: [PROOF, 'e2e:fixture'] }], ...overrides }, { claim: worker, submit: {} });
-function observation(item: Work, overrides: Partial<Observation> = {}): Observation {
-  return {
-    clockOffset: { min: 0, max: 0 },
-    candidate: { sha: head, baseSha: base, pr: item.submission!.pr, branch: item.workspaces.at(-1)!.branch, author: 'implementer' },
-    checks: [{ name: 'test', result: 'success', appId: 15368 }, { name: 'typecheck', result: 'success', appId: 15368 }],
-    reviews: [], protected: true, mergeable: true,
-    merged: false, mergeSha: null, files: ['src/loop.ts'], scopeFiles: [], at: new Date().toISOString(),
-    prState: 'open', draft: false, baseTip: base, baseTree: sha40('7e'), baseTipContained: true, ...overrides,
-  };
-}
 
 const fleetConfig = masterConfigSchema.parse({
   version: 1, url: 'https://graphyard.example', credentialFile: '/outside/master.token', cliPath: '/outside/graphyard.mjs',
@@ -121,7 +112,7 @@ function dispatcher(items: () => Promise<Work[]>, runtime: () => RuntimeSession[
  */
 async function delivered(sessionId: string) {
   let item = await submitted();
-  const approved = (overrides: Partial<Observation> = {}): Observation => ({ ...observation(item, overrides), reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }] });
+  const approved = (overrides: Partial<Observation> = {}): Observation => ({ ...itemObservation(item, head, base, overrides), reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }] });
   item = await engine.observe(item.id, (await reload(item)).revision, approved());
   await engine.execute(coordinator, 'session', item.id, { id: sessionId, kind: 'review', runtime: 'claude', host: 'host-1', agentName: 'review-claude',
     pane: `pane-${sessionId}`, role: 'review', head, subject: `${item.key}: review ${head.slice(0, 12)}`, state: 'running' }, randomUUID());
@@ -267,7 +258,7 @@ test('integration:dead-session-reconciled — a session the runtime no longer re
 test('integration:slot-released-on-death — the role slot a dead session held in the control-plane registry is released by reconciled liveness, so a request refused for the busy slot launches once the session holding it dies', async () => {
   // An item whose candidate needs a review and no producer session, so this test is about one slot.
   const held = await submitted(reviewOnly);
-  await engine.observe(held.id, (await reload(held)).revision, observation(await reload(held)));
+  await engine.observe(held.id, (await reload(held)).revision, itemObservation(await reload(held), head, base));
   const item = await reload(held);
   const review = item.autoDispatch!.review!;
   assert.equal(review.state, 'requested', 'the control plane asked for a review of this head');
@@ -277,7 +268,7 @@ test('integration:slot-released-on-death — the role slot a dead session held i
   // session at a time, and a session it granted is recorded on another item, whose own candidate
   // asks for nothing, and is still reported by the runtime: the one slot is taken.
   const other = await submitted(reviewOnly);
-  await engine.observe(other.id, (await reload(other)).revision, observation(await reload(other), { reviews: [{ reviewer: 'independent', sha: head, state: 'APPROVED' }] }));
+  await engine.observe(other.id, (await reload(other)).revision, itemObservation(await reload(other), head, base, { reviews: [{ reviewer: 'independent', sha: head, state: 'APPROVED' }] }));
   assert.equal((await reload(other)).autoDispatch?.review ?? null, null, 'nothing is requested for the item the busy session sits on');
   const fleet = registryFixture('host-1', ['claude'], ['reviewer'], 1);
   const granted = await fleet.client.select({ role: 'reviewer', host: 'host-1', work: other.key, group: null, principal: null, observations: [] });
@@ -352,10 +343,10 @@ test('integration:superseded-session-closed — a review or proof session for a 
 
   // 1. The candidate merged. Nothing the session produces can bind a candidate any more.
   let merged = await submitted();
-  await engine.observe(merged.id, (await reload(merged)).revision, observation(await reload(merged)));
+  await engine.observe(merged.id, (await reload(merged)).revision, itemObservation(await reload(merged), head, base));
   await sessionOn(await reload(merged), 'review-merged', 'review', head);
   merged = await reload(merged);
-  await engine.observe(merged.id, merged.revision, { ...observation(merged), merged: true, mergeSha, mergedAt: at.toISOString() });
+  await engine.observe(merged.id, merged.revision, { ...itemObservation(merged, head, base), merged: true, mergeSha, mergedAt: at.toISOString() });
   merged = await reload(merged);
   const mergedClosures = reconcileSessionLiveness([merged], alive(merged), at, { states: runtimeEndedStates, hostId: 'host-1' }).closures;
   assert.equal(mergedClosures.length, 1, `exactly one closure; got ${JSON.stringify(mergedClosures)}`);
@@ -365,10 +356,10 @@ test('integration:superseded-session-closed — a review or proof session for a 
   // 2. A superseded head. The item observed a new candidate, so the session reads a commit nobody
   //    is waiting for; the reason names the head it held and the head that replaced it.
   let moved = await submitted();
-  await engine.observe(moved.id, (await reload(moved)).revision, observation(await reload(moved)));
+  await engine.observe(moved.id, (await reload(moved)).revision, itemObservation(await reload(moved), head, base));
   await sessionOn(await reload(moved), 'proof-old-head', 'proof', head, 'integration');
   moved = await reload(moved);
-  await engine.observe(moved.id, moved.revision, { ...observation(moved), candidate: { ...observation(moved).candidate, sha: nextHead } });
+  await engine.observe(moved.id, moved.revision, itemObservation(moved, nextHead, base));
   moved = await reload(moved);
   assert.deepEqual(boundHeads(moved), [nextHead], 'the item holds one head, and it is not the one the session was launched for');
   const movedClosures = reconcileSessionLiveness([moved], alive(moved), at, { states: runtimeEndedStates, hostId: 'host-1' }).closures;
@@ -378,7 +369,7 @@ test('integration:superseded-session-closed — a review or proof session for a 
 
   // 3. The item went back to a worker. A session reading the old head is over whatever it is doing.
   let returned = await submitted();
-  await engine.observe(returned.id, (await reload(returned)).revision, observation(await reload(returned)));
+  await engine.observe(returned.id, (await reload(returned)).revision, itemObservation(await reload(returned), head, base));
   await sessionOn(await reload(returned), 'review-returned', 'review', head);
   returned = await engine.execute(operator, 'rework', (await reload(returned)).id, { reason: 'the finding needs a new head', previousWorkerStopped: true }, randomUUID());
   returned = await engine.execute(worker, 'claim', returned.id, {}, randomUUID());
@@ -409,7 +400,7 @@ test('integration:superseded-session-closed — a review or proof session for a 
   // And one item holds one live session per role and head: a second review of the same head
   // supersedes the first, while a second proof *group* on that head is its own slot and stands.
   let doubled = await submitted();
-  await engine.observe(doubled.id, (await reload(doubled)).revision, observation(await reload(doubled)));
+  await engine.observe(doubled.id, (await reload(doubled)).revision, itemObservation(await reload(doubled), head, base));
   await sessionOn(await reload(doubled), 'review-first', 'review', head);
   await sessionOn(await reload(doubled), 'proof-integration', 'proof', head, 'integration');
   await sessionOn(await reload(doubled), 'review-second', 'review', head);

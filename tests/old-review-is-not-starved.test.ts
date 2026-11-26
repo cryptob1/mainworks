@@ -15,6 +15,7 @@ import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 
 // GY-3684 AC-2: when several heads owe a product review, launches go oldest request first.
 // Seeds one head owing a product review for a day and three fresh ones while main moves every
@@ -37,14 +38,9 @@ function featureItem(key: string, head: string, base: string, requestedAt: Date)
     candidate, submission: { epoch: 1, pr: 1 },
     evidence: [{ id: `ev-${key}`, proof: 'e2e:smoke', sha: head, baseSha: base, policyRevision: 1, producer: 'merge-trial', trusted: true, result: 'pass', executed: 1, skipped: 0, at }],
     gates: [], implementers: ['worker-1'],
-    observation: {
-      source: 'control-plane', at, candidate, checks: [],
-      reviews: [{ id: 1, reviewer: 'code-reviewer', state: 'APPROVED', sha: head, submittedAt: at }],
-      merged: false, mergeSha: null, mergeable: true, protected: false,
-      files: ['web/feature.ts'],
-      scopeFiles: [{ path: 'web/feature.ts', status: 'added' as const, sha: shaOf(`${key}-file`), additions: 10, deletions: 0, binary: false }],
-      baseTip: base, baseTipContained: true, mergeBase: base,
-    },
+    observation: observationFixture(candidate, { source: 'control-plane', at, reviews: [{ id: 1, reviewer: 'code-reviewer', state: 'APPROVED', sha: head, submittedAt: at }],
+      protected: false, files: ['web/feature.ts'], mergeBase: base,
+      scopeFiles: [{ path: 'web/feature.ts', status: 'added', sha: shaOf(`${key}-file`), additions: 10, deletions: 0, binary: false }] }),
     productReview: null,
   });
   work.gates = evaluate(work, [work], requestedAt).gates;

@@ -6,6 +6,7 @@ import { type Evidence, type Observation, type Work } from '../src/model.js';
 import { refusalAction } from '../src/model/next-action.js';
 import { checkStates, prSteps } from '../src/model/pr-steps.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 
 // GY-292: a merge moves main under every open candidate. Only a candidate that conflicts with the
 // new base is brought onto it; the rest keep their head, CI, review, proofs and stage. Each test is
@@ -15,14 +16,6 @@ const commit = (label: string) => label.replace(/[^a-f0-9]/g, '0').padEnd(40, 'f
 const now = new Date('2026-09-25T09:00:00.000Z');
 const main = commit('a0'), moved = commit('a1');
 
-function observation(item: Work, overrides: Partial<Observation> = {}): Observation {
-  return {
-    candidate: { ...item.candidate! }, checks: [{ name: 'test', result: 'success', appId: 15368 }],
-    reviews: [{ reviewer: 'reviewer', sha: item.candidate!.sha, state: 'APPROVED' }],
-    merged: false, mergeSha: null, mergeable: true, protected: true, prState: 'open', draft: false,
-    baseTip: item.candidate!.baseSha, baseTree: commit('b0'), baseTipContained: true, files: ['src/engine.ts'], scopeFiles: [], at: now.toISOString(), ...overrides,
-  };
-}
 function evidence(item: Work): Evidence {
   return { id: `e-${item.key}`, proof: 'unit:policy', sha: item.candidate!.sha, baseSha: item.candidate!.baseSha,
     policyRevision: item.policyRevision, producer: 'ci-runner', trusted: true, result: 'pass', executed: 4, skipped: 0, at: now.toISOString() } as Evidence;
@@ -34,7 +27,8 @@ function work(key: string, head: string, overrides: Partial<Observation> = {}, l
     stage: 'review', revision: 4, createdAt: now.toISOString(), updatedAt: now.toISOString(), stageEnteredAt: now.toISOString(), epoch: 1,
     workspaces: [{ host: 'machine', path: `/tmp/${key}`, branch: `graphyard/${key}`, epoch: 1, owner: 'agent' }],
     candidate: { sha: head, baseSha: main, pr: 1, branch: `graphyard/${key}`, author: 'agent' }, submission: { epoch: 1, pr: 1 }, gates: [] });
-  item.observation = observation(item, overrides);
+  item.observation = observationFixture(item.candidate!, { checks: [{ name: 'test', result: 'success', appId: 15368 }], reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }],
+    files: ['src/engine.ts'], at: now.toISOString(), ...overrides });
   item.evidence = [evidence(item)];
   if (ledger) item.mergeLedger = { key, state: ledger, head, baseTip: main, mergeSha: ledger === 'reconciled' ? commit('d0') : null, risk: null, intentAt: now.toISOString(),
     pushedAt: ledger === 'reconciled' ? now.toISOString() : null, observedTip: null, refusal: ledger === 'refused' ? { kind: 'merge', reason: 'trial failed: tests/policy.test.ts' } : null, events: 2 };

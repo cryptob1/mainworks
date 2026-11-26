@@ -23,6 +23,7 @@ import { emptyDispatchCursor } from '../src/dispatch/cursor.js';
 import { dispatchEffects } from '../src/dispatch/effects.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import { listen } from './helpers/http-server.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 
 // GY-3748 AC-2: marks the first reviewer account exhausted after its launch was requested
 // and asserts another account posts the verdict within the case.
@@ -126,10 +127,8 @@ test('e2e:review-moves-off-spent-account — marks first reviewer exhausted afte
       review: { id: 'req-9601', kind: 'review', provider: 'github', pr: 17, sha: head, baseSha: base, policyRevision: 1, state: 'requested', requestedAt: at, reason: 'review required' },
       producers: [], history: [],
     },
-    observation: {
-      source: 'control-plane', at, candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false,
-      files: ['feature.ts'], scopeFiles: [{ path: 'feature.ts', status: 'added', sha: head, additions: 1, deletions: 0, binary: false }], baseTip: base, baseTipContained: true,
-    },
+    observation: observationFixture(candidate, { source: 'control-plane', at, protected: false,
+      files: ['feature.ts'], scopeFiles: [{ path: 'feature.ts', status: 'added', sha: head, additions: 1, deletions: 0, binary: false }] }),
   } as unknown as Work;
   await store.pool.query('INSERT INTO work_items(id, document) VALUES ($1,$2)', [work.id, JSON.stringify(work)]);
 

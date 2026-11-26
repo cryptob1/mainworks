@@ -31,6 +31,7 @@ import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/rep
 import { workFixture } from './helpers/work-fixture.js';
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // Time-bomb allowance (GY-1694): the 2026-09-22 review submittedAt instants only order verdicts; items, requests and observations are stamped with new Date().
@@ -43,16 +44,12 @@ const sha40 = (label: string) => label.replace(/[^a-f0-9]/g, '0').padEnd(40, 'f'
 const H = sha40('c1'), B = sha40('b1');
 const reviewer = 'graphyard-reviewer[bot]';
 
-function observation(candidate: { sha: string; baseSha: string }, extra: Partial<Observation> = {}): Observation {
-  return { candidate: { ...candidate, pr: 119, branch: 'graphyard/gy-114-1', author: 'implementer' }, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true,
-    files: ['src/a.ts'], scopeFiles: [], at: new Date().toISOString(), prState: 'open', draft: false, baseTip: candidate.baseSha, baseTree: sha40('7b'), baseTipContained: true, ...extra };
-}
 function work(overrides: Partial<Work> = {}): Work {
   const candidate = { sha: H, baseSha: B, pr: 119, branch: 'graphyard/gy-114-1', author: 'implementer' };
   return workFixture({ id: 'work-114', key: 'GY-114', title: 'Supervisor install', priority: 0,
     criteria: [{ id: 'AC-1', text: 'Review', proofs: ['unit:x'] }], policy: { checks: [], review: true } as never, stage: 'review', revision: 7, policyRevision: 3, epoch: 1,
     workspaces: [{ host: 'h', path: '/w/gy-114', branch: 'graphyard/gy-114-1', epoch: 1, owner: 'implementer' }], candidate, submission: { epoch: 1, pr: 119 },
-    observation: observation(candidate), gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], ...overrides });
+    observation: observationFixture(candidate), gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], ...overrides });
 }
 
 /**
@@ -321,7 +318,7 @@ async function sessionProviderContract() {
   item = await engine.execute(implementer, 'workspace', item.id, { epoch: 1, host: 'machine-a', path: `/tmp/gy124/${item.id}`, branch: `graphyard/${item.key.toLowerCase()}-1` }, randomUUID());
   item = await engine.execute(implementer, 'submit', item.id, { epoch: 1, pr: 121 }, randomUUID());
   const candidate = { sha: H, baseSha: B, pr: 121, branch: item.workspaces[0].branch, author: implementer.id };
-  item = await engine.observe(item.id, item.revision, { ...observation(candidate), candidate, source: 'control-plane', files: ['src/store/pools.ts'] });
+  item = await engine.observe(item.id, item.revision, observationFixture(candidate, { source: 'control-plane', files: ['src/store/pools.ts'] }));
   assert.equal(item.gates.find(gate => gate.name === 'review')!.passed, false);
   const coordinator = { id: 'session-launcher', role: 'coordinator' as const, token: 'launcher-credential-'.padEnd(40, 'x') };
   const { url: baseUrl, close } = await listen(server(engine, [coordinator]));
@@ -341,7 +338,7 @@ async function sessionProviderContract() {
 
 test('integration:conflicting-verdicts-surfaced — APPROVED then CHANGES_REQUESTED on one head for one request is a conflict: both recorded, attention raised, neither acted on, and a fresh review resolves it', async () => {
   let item = await lifecycle(engine, operator, { type: 'chore',  title: 'Two verdicts on one head', criteria: [{ id: 'AC-1', text: 'Review', proofs: ['unit:x', 'e2e:fixture'] }] }, { claim: implementer, submit: { pr: 119 } });
-  const observed = (reviews: Observation['reviews']): Observation => ({ ...observation({ sha: H, baseSha: B }, { reviews }), candidate: { sha: H, baseSha: B, pr: 119, branch: item.workspaces[0].branch, author: 'implementer' } });
+  const observed = (reviews: Observation['reviews']): Observation => observationFixture({ sha: H, baseSha: B, pr: 119, branch: item.workspaces[0].branch }, { reviews });
   item = await proven(await engine.observe(item.id, item.revision, observed([])));
   const request = item.autoDispatch!.review!;
   assert.equal(request.state, 'requested');
@@ -388,7 +385,7 @@ test('integration:conflicting-verdicts-surfaced — APPROVED then CHANGES_REQUES
   // A person is not the reviewer identity: approving and then requesting changes on one head is
   // their latest word, and that change request still blocks — no conflict, nothing withheld.
   let human = await lifecycle(engine, operator, { type: 'chore',  title: 'A person changes their mind', criteria: [{ id: 'AC-1', text: 'Review', proofs: ['unit:x', 'e2e:fixture'] }] }, { claim: implementer, submit: { pr: 120 } });
-  const byHuman = (reviews: Observation['reviews']): Observation => ({ ...observation({ sha: H, baseSha: B }, { reviews }), candidate: { sha: H, baseSha: B, pr: 120, branch: human.workspaces[0].branch, author: 'implementer' } });
+  const byHuman = (reviews: Observation['reviews']): Observation => observationFixture({ sha: H, baseSha: B, pr: 120, branch: human.workspaces[0].branch }, { reviews });
   human = await proven(await engine.observe(human.id, human.revision, byHuman([])));
   assert.equal(human.autoDispatch!.review!.state, 'requested');
   human = await engine.observe(human.id, human.revision, byHuman([{ id: 601, reviewer: 'maintainer', sha: H, state: 'APPROVED', submittedAt: '2026-09-22T09:00:00Z' }]));

@@ -15,6 +15,7 @@ import type { Principal, Work } from '../src/model.js';
 import type { ProductReview } from '../src/model/product-review.js';
 import type { Store } from '../src/store.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 
 // GY-3684 AC-1: a product review verdict on a head satisfies the product review gate for that head
 // after main moves; a new product review is required only when the head itself changes or its merge
@@ -39,15 +40,10 @@ function featureOn(key: string, head: string, base: string, at: string, options:
     evidence: [{ id: 'e1', proof: 'e2e:smoke', sha: head, baseSha: base, policyRevision: 1, producer: 'merge-trial', trusted: true, result: 'pass', executed: 1, skipped: 0, at }],
     gates: [], implementers: ['worker-1'],
     pipeline: { attempts: [], submittedAt: at, resubmittedAt: null, reworkRounds: 0, interventions: { blocked: 0, requirements: 0 } },
-    observation: {
-      source: 'control-plane', at, candidate, checks: [],
-      reviews: [{ id: 1, reviewer: 'code-reviewer', state: 'APPROVED', sha: head, submittedAt: at }],
-      merged: false, mergeSha: null, mergeable: !options.conflicting, ...(options.conflicting ? { conflicting: true } : {}), protected: false,
-      files: ['web/feature.ts'],
-      scopeFiles: [{ path: 'web/feature.ts', status: 'added' as const, sha: shaOf(`${key}:${head}`), additions: 10, deletions: 0, binary: false }],
-      baseTip: base, baseTipContained: base === B0,
-      ...(options.mergeBase !== null ? { mergeBase: options.mergeBase ?? B0 } : {}),
-    } as never,
+    observation: observationFixture(candidate, { source: 'control-plane', at, reviews: [{ id: 1, reviewer: 'code-reviewer', state: 'APPROVED', sha: head, submittedAt: at }],
+      mergeable: !options.conflicting, ...(options.conflicting ? { conflicting: true } : {}), protected: false, files: ['web/feature.ts'],
+      scopeFiles: [{ path: 'web/feature.ts', status: 'added', sha: shaOf(`${key}:${head}`), additions: 10, deletions: 0, binary: false }],
+      baseTip: base, baseTipContained: base === B0, ...(options.mergeBase !== null ? { mergeBase: options.mergeBase ?? B0 } : {}) }),
     productReview: null,
   });
 }

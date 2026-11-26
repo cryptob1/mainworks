@@ -16,6 +16,7 @@ import { lifecycle } from './helpers/work-lifecycle.js';
 
 import { defaultRepositoryPolicy } from '../src/model/repository-policy.js';
 import { setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { itemObservation, observationFixture } from './helpers/observation-fixture.js';
 
 // GY-2965: the fixtures create items carrying e2e: proofs, so this process declares the serve the trial would use.
 setRepositoryPolicy({ ...defaultRepositoryPolicy, e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
@@ -38,20 +39,13 @@ useTestStore('bootstrap-policy', {}, ctx => {
 const current = async (workId: string) => (await store.list()).find(item => item.id === workId)!;
 const all = () => store.list();
 
-function observation(work: Work, overrides: Partial<Observation> = {}): Observation {
-  return { clockOffset: { min: 0, max: 0 }, candidate: { sha: head, baseSha: base, pr: work.submission!.pr, branch: work.workspaces[0].branch, author: 'implementer' },
-    checks: [{ name: 'test', result: 'success', appId: 15368 }, { name: 'typecheck', result: 'success', appId: 15368 }],
-    reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }], merged: false, mergeSha: null, mergeable: true,
-    protected: true, files: [], scopeFiles: [], at: new Date().toISOString(), prState: 'open', draft: false, ...overrides };
-}
-
 /** An item taken through claim, workspace, submission and an observed, reviewed, green candidate. */
 async function submitted(input: Record<string, unknown>, observe: Partial<Observation> = {}) {
   const criteria = input.criteria as Work['criteria'];
   if (!criteria.some(ac => ac.proofs.some(proof => proof.startsWith('e2e:'))))
     input = { ...input, criteria: [...criteria, { id: 'AC-99', text: 'The served head works', proofs: ['e2e:fixture'] }] };
   const work = await lifecycle(engine, operator, input, { claim: worker, workspace: { host: 'test' }, submit: { pr: 1000 + ++serial } });
-  return engine.observe(work.id, work.revision, observation(work, observe));
+  return engine.observe(work.id, work.revision, itemObservation(work, head, base, { reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }], files: [], ...observe }));
 }
 async function prove(work: Work, proof: string, overrides: Record<string, unknown> = {}) {
   const producer: Principal = { id: `producer-${proof}`, role: 'producer', proofs: [proof, 'e2e:fixture'] };
@@ -70,9 +64,8 @@ function fixture(overrides: Partial<Work> = {}): Work {
     policy: { checks: ['test'], review: true, reviewProvider: 'github' }, stage: 'acceptance', revision: 4, policyRevision: 2,
     epoch: 1, workspaces: [{ host: 'h', path: '/p', branch: 'graphyard/gy-2-1', epoch: 1, owner: 'implementer' }],
     candidate: { sha: head, baseSha: base, pr: 7, branch: 'graphyard/gy-2-1', author: 'implementer' }, submission: { epoch: 1, pr: 7 }, gates: [],
-    observation: { candidate: { sha: head, baseSha: base, pr: 7, branch: 'graphyard/gy-2-1', author: 'implementer' },
-      checks: [{ name: 'test', result: 'success', appId: 15368 }], reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }],
-      merged: false, mergeSha: null, mergeable: true, protected: true, files: [], scopeFiles: [], at, prState: 'open', draft: false },
+    observation: observationFixture({ sha: head, baseSha: base, pr: 7, branch: 'graphyard/gy-2-1' }, { checks: [{ name: 'test', result: 'success', appId: 15368 }],
+      reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }], files: [], at }),
     // The merge writer's passing trial of the head (GY-2010: the test gate reads the merge ledger).
     mergeLedger: { key: 'GY-2', state: 'intent', head, baseTip: base, mergeSha: null, risk: null, intentAt: at, pushedAt: null, observedTip: null, refusal: null, events: 2 },
     ...overrides });

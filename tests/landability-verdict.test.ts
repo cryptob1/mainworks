@@ -6,6 +6,7 @@ import { evaluateLandability } from '../src/model-boundary/landability.js';
 import { stableJson } from '../src/model/stable-json.js';
 import type { Evidence, Observation, ScopeFile, Work } from '../src/model.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 
 // GY-878. Whether a candidate can land was answered twice — by the build and acceptance gates and
 // again by the merge queue's ejection check and landing re-check — and the answers drifted apart
@@ -41,12 +42,8 @@ function item(shape: Shape, extra: Partial<Work> = {}): Work {
   const files = shape.files ?? ['src/server/routes/own.ts'];
   const candidate = { sha: head, baseSha: sha('9'), pr: 40 + shape.key.charCodeAt(3), branch: `graphyard/${shape.key.toLowerCase()}-1`, author: 'worker' };
   const proofs = shape.proofs ?? ['unit:own-proof'];
-  const observation: Observation = {
-    candidate, checks: [{ name: 'test', result: 'success', appId: 1 }], reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED', submittedAt: at }],
-    merged: false, mergeSha: null, mergeable: true, protected: true, files,
-    scopeFiles: shape.scopeFiles ?? files.map(path => changed(path)), landing: shape.landing ?? { base: main, files: files.map(path => changed(path)) },
-    at, prState: 'open', draft: false, baseTip: main, baseTree: sha('e'), baseTipContained: true,
-  } as Observation;
+  const observation = observationFixture(candidate, { checks: [{ name: 'test', result: 'success', appId: 1 }], reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED', submittedAt: at }],
+    files, scopeFiles: shape.scopeFiles ?? files.map(path => changed(path)), landing: shape.landing ?? { base: main, files: files.map(path => changed(path)) }, at, baseTip: main, baseTree: sha('e') });
   return workFixture({
     id: shape.key.toLowerCase(), key: shape.key, priority: 0, stage: 'merge', revision: 4, epoch: 1, candidate, observation, gates: [],
     criteria: proofs.map((proof, index) => ({ id: `AC-${index + 1}`, text: 'proven', proofs: [proof] })), policy: { checks: [], review: false },

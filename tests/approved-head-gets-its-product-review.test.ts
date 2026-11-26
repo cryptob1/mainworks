@@ -14,6 +14,7 @@ import { saveReviewerProfile } from '../src/reviewer.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 
 // GY-3608 AC-2: a head already approved by the code reviewer that still owes a product review
 // never stalls on 'cannot be reviewed and no executor step answers it', and the next dispatch tick
@@ -31,14 +32,9 @@ function codeApprovedFeature(key: string): Work {
     createdAt: at, updatedAt: at, stageEnteredAt: at, candidate, submission: { epoch: 1, pr: 0 }, gates: [], implementers: ['worker-1'],
     workspaces: [{ host: 'h', path: `/w/${key}`, branch: candidate.branch, epoch: 1, owner: 'worker-1' }],
     evidence: [{ id: 'e1', proof: 'e2e:smoke', sha: H, baseSha: B, policyRevision: 1, producer: 'merge-trial', trusted: true, result: 'pass', executed: 1, skipped: 0, at }],
-    observation: {
-      source: 'control-plane', at, candidate, checks: [],
-      reviews: [{ id: 1, reviewer: 'review-codex', state: 'APPROVED', sha: H, submittedAt: at }],
-      merged: false, mergeSha: null, mergeable: true, protected: false,
-      files: ['web/feature.ts'],
-      scopeFiles: [{ path: 'web/feature.ts', status: 'added' as const, sha: shaOf(key), additions: 10, deletions: 0, binary: false }],
-      baseTip: B, baseTipContained: true, mergeBase: B,
-    } as never,
+    observation: observationFixture(candidate, { source: 'control-plane', at, reviews: [{ id: 1, reviewer: 'review-codex', state: 'APPROVED', sha: H, submittedAt: at }],
+      protected: false, files: ['web/feature.ts'], mergeBase: B,
+      scopeFiles: [{ path: 'web/feature.ts', status: 'added', sha: shaOf(key), additions: 10, deletions: 0, binary: false }] }),
     productReview: null,
   });
 }

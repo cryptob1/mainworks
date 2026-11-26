@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Observation, Work } from '../src/model.js';
+import type { Work } from '../src/model.js';
 import { reconcileAutoDispatch } from '../src/model-boundary/dispatch.js';
 import { acknowledgeLaunch, acknowledgementMs, defaultAcknowledgementSeconds, dispatchWork, launchDelivery, loadMasterConfig, masterOwnedRunFields, neverStarted, prepareSessionHarness, saveMasterSettings, saveProducerProfile, sessionWords, settlementDue, setupMaster, SessionStartError, startAgentSession, sustainedActivityMs, type HerdrAgent, type WorkerProfile } from '../src/master.js';
 import { launchAuthorization, managedInstructions } from '../src/repository-setup.js';
@@ -26,6 +26,7 @@ import { registryFixture } from './helpers/registry-fixture.js';
 import type { FleetRoleName } from '../src/model/registry.js';
 import { hostname } from 'node:os';
 import { workFixture } from './helpers/work-fixture.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 /** The control-plane registry every launch takes its slot from (GY-3030): a fresh one per launch, one account of `runtime` in `role`. */
 const fleet = (role: FleetRoleName, runtime: string) => registryFixture(hostname(), [runtime], [role]).probe;
 // Time-bomb allowance (GY-1694): 2026-09-20 is the request clock (sessionRetry, reconcileProducers now: () => new Date(clock + offset)); the real clock only stamps snapshot times and the registerLaunch expiry relative to itself.
@@ -49,17 +50,13 @@ const coordinatorStatus = async () => new Response(JSON.stringify({ actor: { id:
 const registerLaunch = async () => ({ launch: 'fixture-launch' });
 const producerVerify = (principal: string) => async () => ({ actor: { id: principal, role: 'producer', proofs: ['unit:*', 'integration:*'] } });
 
-function observation(candidate: { sha: string; baseSha: string }): Observation {
-  return { candidate: { ...candidate, pr: 93, branch: 'graphyard/gy-93-1', author: 'implementer' }, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true,
-    files: ['src/a.ts'], scopeFiles: [], at: new Date().toISOString(), prState: 'open', draft: false, baseTip: candidate.baseSha, baseTree: sha40('7b'), baseTipContained: true };
-}
 function work(overrides: Partial<Work> = {}): Work {
   const candidate = { sha: H, baseSha: B, pr: 93, branch: 'graphyard/gy-93-1', author: 'implementer' };
   return workFixture({ id: 'work-93', key: 'GY-93', title: 'Launched sessions refuse their own prompt', type: 'bug', priority: 0,
     criteria: [{ id: 'AC-1', text: 'Request', proofs: ['integration:launch-prompt-is-a-request'] }],
     stage: 'review', revision: 7, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1,
     workspaces: [{ host: 'h', path: '/w/gy-93', branch: 'graphyard/gy-93-1', epoch: 1, owner: 'implementer' }], candidate, submission: { epoch: 1, pr: 93 },
-    observation: observation(candidate), gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], ...overrides });
+    observation: observationFixture(candidate), gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], ...overrides });
 }
 // Dispatch no longer opens producer requests (GY-1235: proofs gate nothing), but the producer
 // launcher and its ledger still stand: the request the launches below bind is built by hand.

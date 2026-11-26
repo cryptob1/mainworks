@@ -10,7 +10,7 @@ import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { createBackup, restoreBackup } from '../src/backup.js';
 import { schemaVersion } from '../src/release.js';
-import type { Evidence, Observation, Principal, Work } from '../src/model.js';
+import type { Evidence, Principal, Work } from '../src/model.js';
 import { actionSettleMs } from '../src/model/action-progress.js';
 import { coordinationHistoryLimit, coordinationRecordLimit, coordinationSessionLimit, coordinationSnapshot as trimInProcess, coordinationViewHeader, coordinationWork, deliverySettled, type CoordinationOmissions } from '../src/server/work-view.js';
 import { coordinationRecords, coordinationSessions, coordinationTail } from '../src/store/coordination-sql.js';
@@ -20,6 +20,7 @@ import { mergeDelivered, mergeIntent } from './helpers/merge-ledger.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { itemObservation } from './helpers/observation-fixture.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 /**
@@ -270,13 +271,10 @@ test('integration:index-matches-documents — the index equals the documents aft
   assert.equal((await reload(w)).lease?.owner, worker.id);
   w = await engine.execute(worker, 'workspace', w.id, { epoch: 1, host: 'test', path: '/tmp/indexed', branch: 'graphyard/indexed' }, randomUUID());
   w = await engine.execute(worker, 'submit', w.id, { epoch: 1, pr: 901 }, randomUUID()); await check('submitted');
-  const observation = (): Observation => ({ clockOffset: { min: 0, max: 0 }, candidate: { sha: head, baseSha: base, pr: 901, branch: 'graphyard/indexed', author: 'implementer' },
-    checks: [{ name: 'test', result: 'success', appId: 15368 }, { name: 'typecheck', result: 'success', appId: 15368 }], reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }],
-    protected: true, mergeable: true, merged: false, mergeSha: null, files: [], scopeFiles: [], at: new Date().toISOString(), prState: 'open' });
-  w = await engine.observe(w.id, w.revision, observation()); await check('observed');
+  w = await engine.observe(w.id, w.revision, itemObservation(w, head, base, { reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }], files: [] })); await check('observed');
   w = await engine.execute(ci, 'evidence', w.id, { proof: 'integration:claim-safety', sha: head, baseSha: base, policyRevision: 1, result: 'pass', executed: 5, skipped: 0, exercise: { behaviour: 'the change under test', result: 'fail', executed: 1 } }, randomUUID());
   await check('evidenced');
-  w = await engine.observe(w.id, (await reload(w)).revision, observation()); await check('reobserved');
+  w = await engine.observe(w.id, (await reload(w)).revision, itemObservation(w, head, base, { reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }], files: [] })); await check('reobserved');
   // The merge writer's trial, push and reconciliation deliver it (GY-2010).
   w = await mergeIntent(engine, w, 'e'.repeat(40)); await check('merge intended');
   await delay(5); const mergedAt = ((await store.pool.query('SELECT clock_timestamp() AS now')).rows[0].now as Date).toISOString(); await delay(5);

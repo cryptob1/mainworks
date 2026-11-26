@@ -6,11 +6,12 @@ import { lifecycle } from './helpers/work-lifecycle.js';
 import { Store, StaleWrite, save } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { definiteRenewalRefusal } from '../src/session-watch.js';
-import type { Observation, Principal, Work } from '../src/model.js';
+import type { Principal, Work } from '../src/model.js';
 import { Refusal, unknownWorkCode } from '../src/model/refusal.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { itemObservation } from './helpers/observation-fixture.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-1124 AC-1: commands on different items that read no fleet state (heartbeats) take only their
@@ -163,18 +164,11 @@ test('unit:per-item-locking mixed fleet and item locks under concurrent load nev
 const headSha = 'a'.repeat(40), baseSha = 'b'.repeat(40);
 /** An item submitted for review, whose observation job saves a fresh provider observation every poll. */
 const submittedItem = (worker: Principal) => lifecycle(engine, operator, { type: 'chore',  title: `Locking item ${++created}`, criteria: [{ id: 'AC-1', text: 'Holds', proofs: ['unit:per-item-locking', 'e2e:fixture'] }] }, { claim: worker, submit: {} });
-const providerObservation = (item: Work): Observation => ({
-  clockOffset: { min: 0, max: 0 },
-  candidate: { sha: headSha, baseSha, pr: item.submission!.pr, branch: item.workspaces.at(-1)!.branch, author: 'implementer' },
-  checks: [{ name: 'test', result: 'success', appId: 15368 }, { name: 'typecheck', result: 'success', appId: 15368 }],
-  reviews: [], protected: true, mergeable: true, merged: false, mergeSha: null, files: [`src/locking-${item.key}.ts`], scopeFiles: [],
-  at: new Date().toISOString(), prState: 'open', draft: false, baseTip: baseSha, baseTree: 'c'.repeat(40), baseTipContained: true,
-});
 /** One observation job's save, as the observation worker makes it: read the item, observe, save over the revision read. */
 async function observeOnce(id: string) {
   for (let attempt = 0; attempt < 3; attempt++) {
     const read = (await store.workItem(id))!;
-    try { return await engine.observe(id, read.revision, providerObservation(read)); }
+    try { return await engine.observe(id, read.revision, itemObservation(read, headSha, baseSha, { files: [`src/locking-${read.key}.ts`] })); }
     catch (error) { if (!/changed while GitHub was being observed/.test((error as Error).message)) throw error; }
   }
 }

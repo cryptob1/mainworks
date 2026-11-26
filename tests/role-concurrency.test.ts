@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
-import type { Observation, Principal, Work } from '../src/model.js';
+import type { Principal, Work } from '../src/model.js';
 import { reconcileAutoDispatch } from '../src/model-boundary/dispatch.js';
 import { isProfileSession, loadMasterConfig, reviewerProfileSchema, sessionAgentName, sessionNameLimit, setupMaster, saveProducerProfile, type HerdrAgent, type MasterConfig } from '../src/master.js';
 import type { FleetClient } from '../src/fleet.js';
@@ -27,6 +27,7 @@ import { workFixture } from './helpers/work-fixture.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // Time-bomb allowance (GY-1694): the 2026-09-21 `at` stamps the requested() fixtures; the tests stamp items, verdicts and registerLaunch expiry from the real clock alone.
@@ -39,14 +40,11 @@ setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocki
 
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const sha40 = (label: string) => label.replace(/[^a-f0-9]/g, '0').padEnd(40, 'f').slice(0, 40);
+// GY-883: the observed scope rides the public API path, the high lane, whose full path demands all three proof groups this file dispatches.
+const publicRoute = { files: ['src/server/routes/a.ts'], scopeFiles: [{ path: 'src/server/routes/a.ts', status: 'modified' as const, sha: sha40('s'), additions: 1, deletions: 1, binary: false }] };
 const B = sha40('b1');
 const at = '2026-09-21T10:00:00.000Z';
 
-function observation(candidate: { sha: string; baseSha: string; pr: number; branch: string }, extra: Partial<Observation> = {}): Observation {
-  // GY-883: the observed scope rides the public API path, the high lane, whose full path demands all three proof groups this file dispatches.
-  return { candidate: { ...candidate, author: 'implementer' }, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true,
-    files: ['src/server/routes/a.ts'], scopeFiles: [{ path: 'src/server/routes/a.ts', status: 'modified' as const, sha: sha40('s'), additions: 1, deletions: 1, binary: false }], at: new Date().toISOString(), prState: 'open', draft: false, baseTip: candidate.baseSha, baseTree: sha40('7b'), baseTipContained: true, ...extra };
-}
 /**
  * The first eight characters of a request id: the tag a session derived for it is named with. The
  * control plane mints a request id from the head, base, policy and the clock, so a suite that
@@ -66,7 +64,7 @@ function requested(n: number, overrides: Partial<Work> = {}, now = new Date()): 
   const item = workFixture({ id: `work-${200 + n}`, key: `GY-${200 + n}`, title: `Item ${n}`, priority: 0,
     criteria: [{ id: 'AC-1', text: 'Unit', proofs: ['unit:concurrency'] }, { id: 'AC-2', text: 'Integration', proofs: ['integration:concurrency'] }, { id: 'AC-3', text: 'Manual', proofs: ['manual:concurrency'] }],
     policy: { checks: ['test', 'typecheck'], review: true, reviewProvider: 'github' }, stage: 'review', revision: 7, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1,
-    workspaces: [{ host: 'h', path: `/w/gy-${200 + n}`, branch: candidate.branch, epoch: 1, owner: 'implementer' }], candidate, submission: { epoch: 1, pr: candidate.pr }, observation: observation(candidate),
+    workspaces: [{ host: 'h', path: `/w/gy-${200 + n}`, branch: candidate.branch, epoch: 1, owner: 'implementer' }], candidate, submission: { epoch: 1, pr: candidate.pr }, observation: observationFixture(candidate, publicRoute),
     gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], ...overrides });
   // No proof holds the review (GY-1235): reconciliation raises the review request on the head at
   // once, and no producer request beside it.
@@ -219,7 +217,7 @@ test('integration:concurrent-producers — the control plane refuses evidence fo
   const H = sha40('c1');
   const submitted = async (title: string, claimant: Principal, pr: number) => {
     const item = await lifecycle(engine, operator, { type: 'chore',  title, criteria: [{ id: 'AC-1', text: 'Unit', proofs: ['unit:concurrency', 'e2e:fixture'] }] }, { claim: claimant, submit: { pr } });
-    return engine.observe(item.id, item.revision, { ...observation({ sha: H, baseSha: B, pr, branch: item.workspaces[0].branch }), candidate: { sha: H, baseSha: B, pr, branch: item.workspaces[0].branch, author: claimant.id } });
+    return engine.observe(item.id, item.revision, observationFixture({ sha: H, baseSha: B, pr, branch: item.workspaces[0].branch, author: claimant.id }, publicRoute));
   };
   const worker: Principal = { id: 'builder', role: 'worker' };
   const touched = await submitted('Implemented by the runner principal', runnerAsWorker, 301);
