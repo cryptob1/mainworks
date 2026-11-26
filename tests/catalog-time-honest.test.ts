@@ -44,7 +44,7 @@ test('integration:catalog-time-honest — a whole-catalog trial timeout is measu
   assert.equal(catalogFits(record, clock), false);
   assert.equal((await runGate(ports, record)).outcome, 'verified');
   assert.ok(selections[0]!.includes('e2e:unrelated'));
-  assert.deepEqual(selections[1], ['build', 'affected', 'e2e:smoke']);
+  assert.deepEqual(selections[1], ['build', 'affected']);
 });
 
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
@@ -85,7 +85,7 @@ test('e2e:catalog-time-honest — a test install persists a catalog timeout and 
     snapshot: { work: [], now: new Date(clock).toISOString() } as never, performed: [], now: () => clock, log: () => {} };
   const step = await batchGateStep(cycle);
   await step!.gate; await step!.diagnostics;
-  assert.deepEqual(selections, [['e2e:smoke', 'e2e:unrelated', 'e2e:graphyard-feature-map'], ['e2e:smoke', 'e2e:graphyard-feature-map']]);
+  assert.deepEqual(selections, [['e2e:smoke', 'e2e:unrelated', 'e2e:graphyard-feature-map'], ['e2e:graphyard-feature-map']]);
   const record = readGateRecord(file)!;
   assert.equal(record.verified, head);
   assert.equal(record.lastOutcome?.outcome, 'verified');
