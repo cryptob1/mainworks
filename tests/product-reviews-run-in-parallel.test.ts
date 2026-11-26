@@ -124,10 +124,12 @@ test('integration:product-reviews-run-in-parallel — two product reviews of dif
     if (arrived.size === 2) releaseBoth();
     // Both reviewers must be alive at the same time before either finishes: each waits for the
     // other by name, on the settled budget, so a launch lagging under load waits instead of failing.
+    // GY-3876: clear the timer once both are alive; a pending 60 s timer held the test process open.
+    let timer: NodeJS.Timeout | undefined;
     await Promise.race([
       bothAlive,
-      new Promise<void>((_resolve, reject) => setTimeout(() => reject(new Error('product reviews did not run in parallel')), settledMs)),
-    ]);
+      new Promise<void>((_resolve, reject) => { timer = setTimeout(() => reject(new Error('product reviews did not run in parallel')), settledMs); }),
+    ]).finally(() => clearTimeout(timer));
     // While both serve processes are alive concurrently, fetch this review's own address.
     pages[name] = await fetch(addresses[name]!).then(response => response.text(), () => '');
     if (arrived.has('first') && arrived.has('second')) {
