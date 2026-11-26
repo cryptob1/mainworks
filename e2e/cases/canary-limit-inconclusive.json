@@ -1,0 +1,11 @@
+{
+  "id": "canary-limit-inconclusive",
+  "title": "A runtime canary stopped by its provider's limit notice shows as inconclusive in master status, not as a failed version",
+  "description": "A loop with a newer opencode version installed runs its canary; the canary session ends on a provider limit notice. Master status shows the canary inconclusive with the notice and reset, the runtime is neither failed nor switched, and the next launch of the runtime runs the canary again. A canary that ends early for any other reason is still failed.",
+  "tags": ["runtimes", "quota"],
+  "target": "any",
+  "required": true,
+  "steps": [
+    { "kind": "command", "name": "limit-stopped canary is inconclusive and retried; other early ends still fail", "run": "node --import tsx tests/helpers/run-tests.ts tests/canary-limit-inconclusive.test.ts", "timeoutSeconds": 600 }
+  ]
+}
