@@ -55,21 +55,22 @@ function serveMergeOwner(commit: Pick<ServeRangeCommit, 'sha' | 'subject'>, work
 }
 
 /**
- * The range's commits grouped into landings: each commit an item owns closes the landing that
- * began after the previous one, so a fast-forwarded head carries its own commits. A merge commit
- * nothing owns (with any unowned commits before it), and commits after the last owned one, are
- * landings with no item.
+ * The range's commits grouped into landings: a fast-forwarded head an item owns closes the landing
+ * that began after the previous one, so it carries its own commits. A merge commit is a landing of
+ * its own from its first parent (GY-3881), so unowned commits before it — a direct landing, a plain
+ * revert — are a landing with no item, never taken back out with the merge; so are commits after the last landing.
  */
 export function serveLandings(commits: readonly ServeRangeCommit[], work: readonly Work[]): ServeLanding[] {
   const landings: ServeLanding[] = [];
-  let before = commits[0]?.parent ?? '', open = false;
+  let before = commits[0]?.parent ?? '', previous: ServeRangeCommit | null = null;
+  const closeUnowned = () => { if (previous && previous.sha !== before) landings.push({ sha: previous.sha, before, subject: previous.subject, item: null }); };
   for (const commit of commits) {
     const item = serveMergeOwner(commit, work);
-    if (item || commit.merge) { landings.push({ sha: commit.sha, before, subject: commit.subject, item }); before = commit.sha; open = false; }
-    else open = true;
+    if (commit.merge) { closeUnowned(); landings.push({ sha: commit.sha, before: commit.parent, subject: commit.subject, item }); before = commit.sha; }
+    else if (item) { landings.push({ sha: commit.sha, before, subject: commit.subject, item }); before = commit.sha; }
+    previous = commit;
   }
-  const last = commits[commits.length - 1];
-  if (last && open) landings.push({ sha: last.sha, before, subject: last.subject, item: null });
+  closeUnowned();
   return landings;
 }
 
@@ -97,7 +98,7 @@ export async function revertMergeCommit(git: ServeRevertGit, input: { mergeSha: 
   const mergeSha = input.mergeSha.toLowerCase(), before = input.before.toLowerCase(), baseTip = input.baseTip.toLowerCase();
   if (![mergeSha, before, baseTip].every(sha => fullSha.test(sha))) throw new Error('A serve revert names the landing, the tip before it and the base tip by their full 40-hex shas');
   let out: string;
-  try { out = (await git(['merge-tree', '--write-tree', '--merge-base', mergeSha, baseTip, before])).split('\0')[0]!.trim(); }
+  try { out = (await git(['merge-tree', '--write-tree', '--name-only', '-z', '--merge-base', mergeSha, baseTip, before])).split('\0')[0]!.trim(); }
   catch (error) {
     // Exit 1 is a conflicted merge, like the trial's own (trial.ts `trialMerge`): the tree id,
     // then the conflicted paths, then the informational messages.
