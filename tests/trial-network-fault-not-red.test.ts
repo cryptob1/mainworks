@@ -23,6 +23,7 @@ import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import type { Principal, Work } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 
 // GY-3249: Huck's merge trials failed at next/font fetching from Google Fonts, each counted a red
 // head, and Huck's master worked around it in Huck's repository. A trial step that fails fetching
@@ -73,11 +74,7 @@ test('e2e:trial-network-fault-not-red — a build failing on a network fetch rer
     engine.gitRunner = gitRunnerFor(root); engine.baseBranch = 'main';
     const token = 'fixture-coordinator-' + 'x'.repeat(32);
     const { url, close: stop } = await listen(server(engine, [{ ...coordinator, token }])); close = stop;
-    let work = await engine.execute(operator, 'create', null, { type: 'chore', title: 'fonts', criteria: [{ id: 'AC-1', text: 'Builds', proofs: ['unit:builds', 'e2e:fixture'] }] }, randomUUID());
-    work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
-    work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
-    await engine.execute(worker, 'workspace', work.id, { epoch: work.epoch, host: 'fixture', path: root, branch: 'graphyard/gy-1-1' }, randomUUID());
-    work = await engine.execute(worker, 'submit', work.id, { epoch: work.epoch, head }, randomUUID());
+    let work = await lifecycle(engine, operator, { type: 'chore', title: 'fonts', criteria: [{ id: 'AC-1', text: 'Builds', proofs: ['unit:builds', 'e2e:fixture'] }] }, { claim: worker, workspace: { host: 'fixture', path: root, branch: 'graphyard/gy-1-1' }, submit: { head } });
     const ports: MergePorts = {
       baseBranch: 'main', now: Date.now,
       fetch: async () => base,

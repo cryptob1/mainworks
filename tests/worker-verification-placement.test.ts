@@ -7,6 +7,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { runWorkerVerification } from '../src/merge-writer/worker-verification.js';
 import type { Work } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 
 // This is deliberately a real trial: a host without Docker cannot satisfy placement.
 test('integration:worker-verification-placement — exact committed head executes in the private trial and a failing proof stays failed', { timeout: 120_000 }, async () => {
@@ -85,10 +86,7 @@ test('integration:placed-http', () => {
   const worker = { id: 'worker', role: 'worker' as const }, operator = { id: 'operator', role: 'admin' as const, sessionKind: 'human' as const };
   const credentials = [ { ...worker, token: 'worker-test-token' }, { id: 'host', role: 'coordinator' as const, token: 'host-test-token' } ];
   engine.principals = [operator, ...credentials];
-  let work = await engine.execute(operator, 'create', null, { type: 'chore', title: 'Host verification', criteria: [{ id: 'AC-1', text: 'Runs privately', proofs: ['integration:placed-http', 'e2e:fixture'] }] }, randomUUID());
-  work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
-  work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
-  work = await engine.execute(worker, 'workspace', work.id, { epoch: 1, host: 'test', path: repository, branch: 'graphyard/verification' }, randomUUID());
+  let work = await lifecycle(engine, operator, { type: 'chore', title: 'Host verification', criteria: [{ id: 'AC-1', text: 'Runs privately', proofs: ['integration:placed-http', 'e2e:fixture'] }] }, { claim: worker, workspace: { host: 'test', path: repository, branch: 'graphyard/verification' } });
   const { url: serverUrl, close } = await listen(server(engine, credentials));
   t.after(close);
   const url = serverUrl;

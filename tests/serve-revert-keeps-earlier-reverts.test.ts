@@ -100,8 +100,9 @@ test('integration:serve-revert-keeps-earlier-reverts — a conflicted revert rep
 // GY-3930: this file failed in a merge trial with every case passing — its process aborted in libuv
 // (`uv__close: Assertion fd > STDERR_FILENO`). The per-file runner swapped stdin for /dev/null with
 // close(0) then open(), after tsx's loader thread had started: a file that thread opened in between took
-// fd 0, and once it closed it, the next spawned child's pipe landed on fd 0. The seam is that one
-// condition: a preload that takes fd 0 the moment the swap closes it, and frees it right after.
+// fd 0, and once it closed it, the next spawned child's pipe landed on fd 0. GY-3931 spawns each file
+// with /dev/null on stdin instead. The seam is that one condition: a preload that takes fd 0 the moment
+// anything closes it, and frees it right after.
 test('unit:serve-revert-keeps-earlier-reverts-pinned — a test file that spawns git under the per-file runner keeps /dev/null on stdin when another thread opens a file during the swap', async () => {
   const directory = await temporaryDirectory('stdin-swap-race');
   const seam = join(directory, 'take-fd-0.mjs'), probe = join(directory, 'spawn.test.mjs');

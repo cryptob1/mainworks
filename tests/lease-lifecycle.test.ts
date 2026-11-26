@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Principal, Work } from '../src/model.js';
@@ -27,12 +28,7 @@ const merge = (work: Work) => work.gates.find(gate => gate.name === 'merge')!;
 
 useTestStore('lease-lifecycle', { principals: [operator, worker, replacement] }, ctx => { ({ store, engine } = ctx); });
 
-async function claimed(title: string, actor: Principal = worker) {
-  let work = await engine.execute(operator, 'create', null, input(title), id());
-  work = await engine.execute(operator, 'ready', work.id, {}, id());
-  work = await engine.execute(actor, 'claim', work.id, {}, id());
-  return engine.execute(actor, 'workspace', work.id, { epoch: work.epoch, host: 'lifecycle-host', path: `/tmp/lifecycle/${work.id}`, branch: `graphyard/${work.key.toLowerCase()}-${work.epoch}` }, id());
-}
+const claimed = (title: string, actor: Principal = worker) => lifecycle(engine, operator, input(title), { claim: actor, workspace: { host: 'lifecycle-host' } });
 // Rewrite the stored document the way an older deployment left it: the lease outlives the
 // submission. Reconciliation must read it as history, not as a document this code wrote.
 async function overwrite(work: Work, mutate: (document: Work) => void) {
@@ -93,9 +89,7 @@ test('integration:lease-release-on-submit: complete ends the lease with the cand
 
   // A lapsed unsubmitted lease ends the attempt the same way: a plain lease.expired, nothing to resolve.
   const expiring = new Engine(store, 0, 'owner/project'); expiring.principals = engine.principals;
-  let abandoned = await engine.execute(operator, 'create', null, input('lease-lapse-before-submit'), id());
-  abandoned = await engine.execute(operator, 'ready', abandoned.id, {}, id());
-  abandoned = await expiring.execute(worker, 'claim', abandoned.id, {}, id());
+  let abandoned = await lifecycle(expiring, operator, input('lease-lapse-before-submit'), { claim: worker });
   const abandonedEpoch = abandoned.epoch;
   await engine.reconcile();
   abandoned = await reload(abandoned);
@@ -107,9 +101,7 @@ test('integration:lease-release-on-submit: complete ends the lease with the cand
   await engine.reconcile();
   assert.equal((await events(abandoned, 'lease.expired')).length, 1, 'recorded once');
   // A replacement claim over a lapsed lease simply takes the item.
-  let replaced = await engine.execute(operator, 'create', null, input('lease-replacement-claim'), id());
-  replaced = await engine.execute(operator, 'ready', replaced.id, {}, id());
-  replaced = await expiring.execute(worker, 'claim', replaced.id, {}, id());
+  let replaced = await lifecycle(expiring, operator, input('lease-replacement-claim'), { claim: worker });
   const replacedEpoch = replaced.epoch;
   replaced = await engine.execute(replacement, 'claim', replaced.id, {}, id());
   assert.equal(replaced.lease!.owner, replacement.id);

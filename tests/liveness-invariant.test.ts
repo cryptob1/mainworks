@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Observation, Principal, Work } from '../src/model.js';
@@ -51,11 +52,7 @@ const observation = (work: Work, extra: Partial<Observation> = {}): Observation 
   checks: [{ name: 'test', result: 'success', appId: 15368 }, { name: 'typecheck', result: 'success', appId: 15368 }], reviews: [{ reviewer: 'reviewer', sha: head(work), state: 'APPROVED' }],
   protected: true, mergeable: true, merged: false, mergeSha: null, baseTip: base, baseTree: '7e'.repeat(20), files: [], scopeFiles: [], at: new Date().toISOString(), ...extra });
 
-const released = async () => {
-  const n = ++serial;
-  const created = await engine.execute(operator, 'create', null, { type: 'chore',  title: `Liveness ${n}`, criteria: [{ id: 'AC-1', text: 'Behaves', proofs: [PROOF, 'e2e:fixture'] }] }, id());
-  return engine.execute(operator, 'ready', created.id, {}, id());
-};
+const released = () => lifecycle(engine, operator, { type: 'chore',  title: `Liveness ${++serial}`, criteria: [{ id: 'AC-1', text: 'Behaves', proofs: [PROOF, 'e2e:fixture'] }] });
 const claimed = async () => engine.execute(worker, 'claim', (await released()).id, {}, id());
 /** A submitted, observed candidate; `evidence` decides what its proof says. */
 async function candidate(evidence: 'pass' | 'fail' | null, extra: Partial<Observation> = {}) {

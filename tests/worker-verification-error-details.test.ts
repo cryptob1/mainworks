@@ -19,6 +19,7 @@ import type { WorkerVerificationInput } from '../src/merge-writer/worker-verific
 import type { Principal, Work } from '../src/model.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-3506: a failing confined verification step must preserve its exit status/signal and masked
@@ -97,10 +98,7 @@ test('e2e:worker-verification-error-details — forced runner failure surfaces e
   const coordinator = { id: 'host', role: 'coordinator' as const, token: 'host-' + 'h'.repeat(32) };
   engine.principals = [operator, worker, coordinator];
   const proof = 'integration:worker-verification-error-details';
-  let work = await engine.execute(operator, 'create', null, { type: 'bug', title: 'Verification diagnostics', criteria: [{ id: 'AC-1', text: 'Diagnostics', proofs: [proof, 'e2e:worker-verification-error-details'] }] }, randomUUID());
-  work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
-  work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
-  work = await engine.execute(worker, 'workspace', work.id, { epoch: 1, host: 'test', path: worktree, branch: 'graphyard/gy-1-1' }, randomUUID());
+  let work = await lifecycle(engine, operator, { type: 'bug', title: 'Verification diagnostics', criteria: [{ id: 'AC-1', text: 'Diagnostics', proofs: [proof, 'e2e:worker-verification-error-details'] }] }, { claim: worker, workspace: { host: 'test', path: worktree, branch: 'graphyard/gy-1-1' } });
 
   const { url: serverUrl, close } = await listen(server(engine, [worker, coordinator]));
   t.after(close);

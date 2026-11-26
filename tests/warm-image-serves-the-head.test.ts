@@ -1,7 +1,6 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -13,6 +12,7 @@ import {
   remoteShardSession,
   warmCommitOnHosts,
   warmImageTag,
+  warmLockHash,
 } from '../src/merge-writer/remote-shards.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { commitFile, dockerCount, dockerCreates, git, shardHosts, type ShardHostsFixture } from './helpers/shard-hosts.js';
@@ -69,7 +69,7 @@ async function cliRepository(label: string) {
 
 test('integration:warm-image-serves-the-head — warm image is keyed to lockfile and commit, pushed before shards, starts the CLI under 0.6 CPU-seconds, and a head changing a source file runs its own code in concurrent shards, two newest images kept, signals end the in-process CLI', { timeout: 240_000 }, async () => {
   const { root, sha: base } = await cliRepository('warm-image-repo');
-  const lockHash = createHash('sha256').update((await readFile(join(root, 'package-lock.json'), 'utf8')).trim()).digest('hex');
+  const lockHash = warmLockHash((await readFile(join(root, 'package-lock.json'), 'utf8')).trim());
   const expectedTag = warmImageTag(digest, lockHash, base);
   assert.match(expectedTag, /^graphyard-warm:362736273627-[0-9a-f]{12}-[0-9a-f]{12}$/, 'tag carries image digest, lockfile hash and commit');
   assert.ok(expectedTag.endsWith(`-${base.slice(0, 12)}`), `tag ${expectedTag} ends with base commit ${base.slice(0, 12)}`);

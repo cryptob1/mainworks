@@ -15,6 +15,7 @@ import { proofPreview } from '../src/model/coordination.js';
 import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -60,11 +61,7 @@ async function branch(name: string, guide: string) {
 }
 /** An item submitted on HEAD with both proofs attested by the master on it. */
 async function submitted(name: string, head: string, attest: string[]): Promise<Work> {
-  let work = await engine.execute(admin, 'create', null, { type: 'bug', title: 'Docs signed off', criteria: [{ id: 'AC-1', text: 'The guide says what changed', proofs: [DOCS, OTHER] }, { id: 'AC-2', text: 'The fixture case passes', proofs: [E2E] }] }, id());
-  work = await engine.execute(admin, 'ready', work.id, {}, id());
-  const pulled = await engine.pullAssignment(worker, { work: work.id }, id());
-  work = await engine.execute(worker, 'workspace', pulled.assigned!.id, { epoch: pulled.assigned!.epoch, host: 'test', path: `/tmp/docs-attest/${work.key}`, branch: name }, id());
-  work = await engine.execute(worker, 'submit', work.id, { epoch: work.epoch, head }, id());
+  let work = await lifecycle(engine, admin, { type: 'bug', title: 'Docs signed off', criteria: [{ id: 'AC-1', text: 'The guide says what changed', proofs: [DOCS, OTHER] }, { id: 'AC-2', text: 'The fixture case passes', proofs: [E2E] }] }, { claim: worker, pull: true, workspace: { host: 'test', branch: name }, submit: { head } });
   for (const proof of attest) work = await engine.execute(master, 'evidence', work.id, { proof, sha: head, baseSha: work.candidate!.baseSha, policyRevision: work.policyRevision, result: 'pass', executed: 1, skipped: 0, reason: 'the guide matches the change', ...attestationExercise(work, proof) }, id());
   return work;
 }
@@ -112,11 +109,7 @@ test('unit:docs-attestation-follows-content — a docs attestation stores the di
 
 test('e2e:docs-signoff-survives-rebase — the master attests a docs proof, main moves with an unrelated change, the merged head is resubmitted and the acceptance gate passes without a second attestation', { timeout: 300_000 }, async () => {
   const { worktree, head } = await branch('graphyard/gy-3-1', '# Guide\n\nRebased docs.\n');
-  let work = await engine.execute(admin, 'create', null, { type: 'bug', title: 'Docs survive a rebase', criteria: [{ id: 'AC-1', text: 'The guide says what changed', proofs: [DOCS] }, { id: 'AC-2', text: 'The fixture case passes', proofs: [E2E] }] }, id());
-  work = await engine.execute(admin, 'ready', work.id, {}, id());
-  const pulled = await engine.pullAssignment(worker, { work: work.id }, id());
-  work = await engine.execute(worker, 'workspace', pulled.assigned!.id, { epoch: pulled.assigned!.epoch, host: 'test', path: `/tmp/docs-attest/${work.key}`, branch: 'graphyard/gy-3-1' }, id());
-  work = await engine.execute(worker, 'submit', work.id, { epoch: work.epoch, head }, id());
+  let work = await lifecycle(engine, admin, { type: 'bug', title: 'Docs survive a rebase', criteria: [{ id: 'AC-1', text: 'The guide says what changed', proofs: [DOCS] }, { id: 'AC-2', text: 'The fixture case passes', proofs: [E2E] }] }, { claim: worker, pull: true, workspace: { host: 'test', branch: 'graphyard/gy-3-1' }, submit: { head } });
   work = await engine.execute(master, 'evidence', work.id, { proof: DOCS, sha: head, baseSha: work.candidate!.baseSha, policyRevision: work.policyRevision, result: 'pass', executed: 1, skipped: 0, reason: 'the guide matches the change', ...attestationExercise(work, DOCS) }, id());
   assert.deepEqual(acceptance(tried(work)), []);
 

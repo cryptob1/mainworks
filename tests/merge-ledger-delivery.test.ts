@@ -10,6 +10,7 @@ import type { Observation, Principal, Work } from '../src/model.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 import { fixtureMergeSha, mergeDelivered, mergeIntent } from './helpers/merge-ledger.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 
 /**
  * GY-3005 AC-1: delivery is recorded only by the merge writer's record. The unit:merge-ledger
@@ -44,14 +45,7 @@ before(async () => {
 after(async () => { if (store) await store.close(); });
 
 let sequence = 0;
-async function submitted() {
-  let item = await engine.execute(operator, 'create', null, { type: 'chore', title: `Ledger delivery ${++sequence}`, criteria: [{ id: 'AC-1', text: 'Behaves', proofs: ['unit:merge-ledger', 'e2e:fixture'] }] }, randomUUID());
-  item = await engine.execute(operator, 'ready', item.id, {}, randomUUID());
-  item = await engine.execute(worker, 'claim', item.id, {}, randomUUID());
-  item = await engine.execute(worker, 'workspace', item.id, { epoch: item.epoch, host: 'machine-a', path: `/tmp/merge-ledger/${item.id}`, branch: `graphyard/${item.key.toLowerCase()}-${item.epoch}` }, randomUUID());
-  item = await engine.execute(worker, 'submit', item.id, { epoch: item.epoch, pr: Number(item.key.slice(3)) }, randomUUID());
-  return item;
-}
+const submitted = () => lifecycle(engine, operator, { type: 'chore', title: `Ledger delivery ${++sequence}`, criteria: [{ id: 'AC-1', text: 'Behaves', proofs: ['unit:merge-ledger', 'e2e:fixture'] }] }, { claim: worker, submit: {} });
 function observation(item: Work): Observation {
   return {
     source: 'control-plane', clockOffset: { min: 0, max: 0 },

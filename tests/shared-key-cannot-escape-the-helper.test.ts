@@ -98,5 +98,5 @@ test(`${proof} — unshare by the owner's key removes only the shared line it na
   assert.ok(!left.includes(keyB.split(' ')[1]!), 'the shared line is gone');
   assert.ok(left.includes(keyA), "the owner's line stays");
   // GY-3804: the trial verbs keep every revision a coordinator speaks.
-  for (const verb of ['probe:1', 'receive-pack:1', 'receive-image:3', 'prepare-run:2', 'run-shard:2', 'fetch-records:1', 'clean:1', 'run-session:1', 'share:1']) assert.ok(hostShimVerbs.includes(verb), verb);
+  for (const verb of ['probe:1', 'receive-pack:1', 'receive-image:3', 'prepare-run:2', 'run-shard:3', 'fetch-records:1', 'clean:1', 'run-session:1', 'share:1']) assert.ok(hostShimVerbs.includes(verb), verb);
 });

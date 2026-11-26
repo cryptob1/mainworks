@@ -1,66 +1,92 @@
 # Mainworks
 
-**Open source, self-hosted software that lets AI coding agents like Claude Code, Codex and Gemini take your goals all the way to production, with independent review and proof.**
+**Give AI coding agents a goal. Get tested, reviewed, deployed code — on your own server.**
+
+Mainworks is an open-source assembly line for software. You say what you want; agents like Claude Code, Codex and Gemini build it, a different agent reviews it, every change is tested against the latest code before it merges, and a bad release rolls itself back. You stay out of the loop except for the decisions that are really yours.
 
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE) [![Node 24+](https://img.shields.io/badge/node-%3E%3D24-green)](package.json)
 
-[![Mainworks walkthrough: goal, build, independent review, merge trial, deploy, automatic revert](docs/diagrams/how-mainworks-works.gif)](docs/diagrams/how-mainworks-works.mp4)
+*One goal, start to live. No one touched the code in between.*
 
-## What Mainworks does
+## Why this exists
 
-- You state a goal in plain words; a lead agent turns it into checkable criteria.
-- Autonomous agents write the code in their own sandboxes, on your own server.
-- A different agent does the code review, and checks the proof each criterion names.
-- A merge queue tests each change on the latest main before it lands.
-- Main deploys itself, and a failed release is reverted automatically.
-- You keep three decisions: goals, money, and credentials for people.
+Coding agents are good at writing code and bad at being trusted with it. Left alone they mark their own work as done, merge things that break each other, and leave you reviewing a pile of pull requests at midnight.
 
-## Quick start
+Mainworks is the part around the agent:
 
-```sh
-git clone https://github.com/cryptob1/mainworks.git && cd mainworks
-npm ci
-npm run build
-node bin/mainworks.mjs up --repo OWNER/NAME
-```
+- **A second opinion on everything.** The agent that writes a change never approves it. A different one reads the diff and runs the proof.
+- **Nothing merges untested.** Each change is tried on top of the latest main, on real test machines, before it lands.
+- **Production protects itself.** Main deploys itself. If the release check fails, the change is reverted and reopened — automatically.
+- **You decide what matters.** Goals, money, and who gets access. Everything else, the agents settle among themselves.
 
-Once published to npm:
+## What it looks like
 
-```sh
-npx @cryptob1/graphyard up --repo OWNER/NAME
-```
+**Work** shows every change and exactly where it is.
 
-Open the Setup link it prints and connect a worker and reviewer account. Click **New work item**, give it a title and optional description, and the master writes the criteria (**Advanced** shows the detail). Check on it with `mainworks master status`; update with `mainworks upgrade --plan`, then `mainworks upgrade`; diagnose with `mainworks doctor`.
+**Each change carries its own proof** — the requirement, the test that shows it, and who checked.
 
-Settings are `MAINWORKS_*` (`MAINWORKS_URL`). The `graphyard` command and `GRAPHYARD_*` settings still work.
+**Lead** tells you, in plain words, what happened and the few things that need you.
 
 ## How it works
 
-1. **Goal:** you write what you want and why.
-2. **Build:** an agent writes the change and its tests.
-3. **Independent review:** a second agent reads the diff and runs the proof.
-4. **Merge trial:** the change is tested on top of the latest main.
-5. **Deploy:** main ships itself to your server.
-6. **Automatic revert:** a release that fails its check is rolled back.
+1. **Goal** — you write what you want and why, in a sentence or two. A lead agent turns it into requirements that can be checked.
+2. **Build** — a coding agent writes the change and its tests in a sandbox of its own.
+3. **Review** — a different agent reads the diff and runs the proof for each requirement. It can send the work back.
+4. **Merge trial** — the change is tested on top of the latest main. If main moved underneath it, it is tested again.
+5. **Deploy** — main ships itself to your server.
+6. **Watch** — a release that fails its check is rolled back and the change reopened.
 
-![Where every Mainworks part runs](docs/diagrams/where-things-run.svg)
+## Try it
 
-`mainworks guide infra` lists every part.
+You need a Linux server with Docker, Git and Node 24, and an account with at least one coding agent (Claude Code, Codex or Gemini).
 
-## What you need
+```sh
+git clone https://github.com/cryptob1/mainworks.git && cd mainworks
+npm ci && npm run build
+node bin/mainworks.mjs up --repo OWNER/NAME
+```
 
-Use a dedicated server rather than a shared virtual one.
-Shared CPUs get throttled: on one of our own shared servers, 70% CPU steal made the system kill the Mainworks loop twice mid-cycle.
-A good fit is a [Hetzner dedicated server](https://www.hetzner.com/dedicated-rootserver/) from the AX line with 64 GB RAM.
-It costs roughly 50 to 110 US dollars a month, check the current price.
-Mainworks has no affiliation with Hetzner.
-You can add more machines for tests later with one command: `mainworks host add`.
+`up` prints a link. Open it, connect an agent account, and type your first goal.
 
-Prerequisites: Linux 7.0+ with Landlock ABI 9+ (`uname -r`; Ubuntu 26.04: `linux-image-oem-7.3`); Node 24+/npm (`node --version`, `npm --version`; Ubuntu/Debian: `curl -fsSL https://deb.nodesource.com/setup_24.x | sudo bash - && sudo apt install nodejs`, Arch: `sudo pacman -S nodejs npm`, macOS: `brew install node@24`); Git (`git --version`, `git remote -v`); Docker with Compose (`docker version`, `docker compose version`); GitHub CLI (`gh auth status`); bubblewrap (`bwrap --version`); Python (`python3 --version`); Herdr (`herdr --version`; install: `curl -fsSL https://herdr.dev/install.sh | sh`); systemd (`systemctl --user status`). An account for at least one agent: Claude Code, Codex or Gemini.
+Something missing on your machine? `mainworks doctor` names it and the command that fixes it. The full list is in the [setup guide](docs/setup.md).
 
-## Where to go next
+## How fast is it?
 
-- [Setup guide](docs/setup.md) and `mainworks guide setup` for every check and fix.
-- [Shared server](docs/shared-server.md) to run several installs on one machine.
-- `mainworks guide publishing`, `mainworks guide TOPIC` and `mainworks master guide` for the rest.
-- [Re-render the walkthrough](docs/walkthrough.md), [Contributing](AGENTS.md), [Apache 2.0 license](LICENSE).
+Numbers from Mainworks building itself, in the week this was written:
+
+| | |
+|---|---|
+| Changes merged per day | about 60 |
+| Start to merged, typical | about 25 minutes |
+| Merged on the first attempt | about 7 in 10 |
+| Machines | one 24-core coordinator and two test machines |
+
+These are our own measurements on our own repository, not a benchmark. Your project's tests decide your speed.
+
+## What to run it on
+
+**Use a dedicated server, not a shared virtual one.** Shared CPUs get throttled when neighbours are busy; one of our installs on a shared 8-core server regularly lost 60 to 75 percent of its CPU and was the bottleneck for days.
+
+A good fit is a [Hetzner dedicated server](https://www.hetzner.com/dedicated-rootserver/) from the AX line with 64 GB RAM — roughly 50 to 110 US dollars a month; check the current price. (We have no affiliation with Hetzner.)
+
+When tests become the limit, add another machine with one command:
+
+```sh
+mainworks host add you@other-machine
+```
+
+## Is it safe to let agents do this?
+
+- Agents work in sandboxes and cannot push to main. Only the merge step can, and only after review and a passing trial.
+- The agent that wrote a change cannot approve it or produce its proof.
+- Your code and secrets stay on your server. The only outside parties are your Git host and the agent providers you connect.
+- Every decision is recorded: who claimed, who reviewed, what was tested, what was reverted.
+
+## Learn more
+
+- [Setup guide](docs/setup.md) — requirements, first run, troubleshooting
+- [How the parts fit together](docs/architecture.md) — for the curious: services, containers, where things run
+- [Running several projects on one server](docs/shared-server.md)
+- [Contributing](AGENTS.md) · [Apache 2.0](LICENSE)
+
+Mainworks was previously called Graphyard; the `graphyard` command and settings still work.

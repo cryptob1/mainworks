@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
-import type { Principal, Work } from '../src/model.js';
+import type { Principal } from '../src/model.js';
 import { createContext } from '../src/cli/context.js';
 import { inviteCommand } from '../src/cli/invite.js';
 import { HumanSignIn, teammateSessionTtlMs } from '../src/server/auth.js';
@@ -11,6 +11,7 @@ import { canTypeIntoMasterPane } from '../src/server/principals.js';
 import { signInDatabase } from './helpers/sign-in-database.js';
 import { localRequest } from './helpers/local-request.js';
 import { listen } from './helpers/http-server.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 
 // GY-3215: the operator invites teammates as their own human principals. A viewer reads; a maintainer
 // also files work under their own name; neither answers a human-only decision; revoking ends a session at once.
@@ -63,9 +64,7 @@ test('e2e:teammate-invite-roles — invited viewer and maintainer sign in as the
     assert.equal((await call('POST', 'work', viewer.token, item)).status, 403);
 
     // Both are refused a human-only decision.
-    let work: Work = await engine.execute(operator, 'create', null, { type: 'chore', title: 'Needs an account', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }] }, randomUUID());
-    work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
-    work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
+    let work = await lifecycle(engine, operator, { type: 'chore', title: 'Needs an account', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }] }, { claim: worker });
     const parked = await call('POST', `work/${work.id}/park`, token(worker), { epoch: work.epoch, kind: 'money-or-accounts', needed: 'A provider account', reason: 'The proof needs a paid account', recommendation: 'Approve', why: 'Nothing else unblocks the item.' });
     assert.equal(parked.status, 200, JSON.stringify(parked.body));
     for (const session of [viewer, maintainer]) {

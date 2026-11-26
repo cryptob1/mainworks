@@ -10,7 +10,7 @@ import { basename, dirname, join } from 'node:path';
 import { availableParallelism, homedir, hostname, tmpdir } from 'node:os';
 import type { ChildRun } from '../child-runner.js';
 import { shellQuote } from '../shell-quote.js';
-import { probeShimVerbs, supportsCheckImages, supportsWarmImageV2 } from '../host-shim.js';
+import { probeShimVerbs, supportsCheckImages, supportsRunShardNonce, supportsWarmImageV2 } from '../host-shim.js';
 import { hostAddCommand, hostKnownHostsFile, hostLoginTarget, probeHost, readHosts, sshTarget, type HostReading as HostProbe } from '../hosts.js';
 import { generateTrialVerdictNonce, harnessModules, parseTrialVerdict, trialImage, trialVerdictMissingNonce } from './trial-container.js';
 import { fileURLToPath } from 'node:url';
@@ -96,7 +96,7 @@ export async function readShardHosts(targets: readonly string[], run: ChildRun, 
     // This machine always takes shards: an unreadable reading here means only that its Docker or sensors did not answer.
     if (!probe.ok) return { name, cores: target ? 0 : cores, busy: 0, steal: 0, celsius: null, limit: trialHotCelsius, away: target !== null, ...(target ? { reason: probe.reason } : {}) };
     const verbs = target ? probeShimVerbs(probe) : undefined;
-    return { name, cores: probe.cores ?? cores, busy: probe.load ?? 0, steal: probe.stat?.total ? probe.stat.steal / probe.stat.total : 0, celsius: probe.celsius, limit: trialHotCelsius, away: false, ...(target && probe.compose ? { compose: true } : {}), ...(verbs && (!supportsWarmImageV2(verbs) || !supportsCheckImages(verbs)) ? { verbs } : {}) };
+    return { name, cores: probe.cores ?? cores, busy: probe.load ?? 0, steal: probe.stat?.total ? probe.stat.steal / probe.stat.total : 0, celsius: probe.celsius, limit: trialHotCelsius, away: false, ...(target && probe.compose ? { compose: true } : {}), ...(verbs && (!supportsWarmImageV2(verbs) || !supportsCheckImages(verbs) || !supportsRunShardNonce(verbs)) ? { verbs } : {}) };
   })); } finally { if (!transport) await ssh.close(); }
 }
 
@@ -276,9 +276,21 @@ async function pruneWarmImageFamily(tag: string, local: (command: string, args: 
 const buildingWarmImages = new Map<string, Promise<{ tag: string; built: boolean }>>();
 const buildingWarmImagesV1 = new Map<string, Promise<string>>();
 
+/**
+ * GY-3932: `npm ci --ignore-scripts` (GY-3914) skips embedded-postgres's postinstall, which links its
+ * versioned native libraries (libicui18n.so.60 to libicui18n.so.60.2); without them Postgres cannot start
+ * in a shard on a test machine. This fixed step, run in the install's directory, makes those links.
+ */
+export const linkNativeLibraries = `node -e 'const fs = require("fs"), path = require("path"), root = "node_modules/@embedded-postgres";
+for (const name of fs.existsSync(root) ? fs.readdirSync(root) : []) {
+  const dir = path.join(root, name), list = path.join(dir, "native", "pg-symlinks.json");
+  for (const link of fs.existsSync(list) ? JSON.parse(fs.readFileSync(list, "utf8")) : []) try { fs.symlinkSync(path.basename(link.source), path.join(dir, link.target)); } catch {}
+}'`;
+/** A warm image's lockfile hash; the salt retires images built before linkNativeLibraries, whose Postgres cannot start. */
+export const warmLockHash = (lock: string) => createHash('sha256').update(lock).update('\nnative-links').digest('hex');
 const lockfileHash = async (local: (command: string, args: string[]) => Promise<string>, root: string, commit: string) => {
   const lock = await local('git', ['-C', root, 'show', `${commit}:package-lock.json`]).catch(() => null);
-  return { lock, hash: lock === null ? 'none' : createHash('sha256').update(lock).digest('hex') };
+  return { lock, hash: lock === null ? 'none' : warmLockHash(lock) };
 };
 
 /**
@@ -296,7 +308,7 @@ async function ensureWarmImageV1(input: { root: string; sha: string; image: stri
   if (active) return active;
   const build = (async (): Promise<string> => {
     if (lock === null) { await local('docker', ['tag', input.image, tag]); return tag; }
-    const name = `graphyard-warm-${randomUUID().slice(0, 8)}`, install = 'mkdir -p /deps && cd /deps && tar -xf - && HOME=/tmp npm ci --ignore-scripts --no-audit --no-fund >/dev/null';
+    const name = `graphyard-warm-${randomUUID().slice(0, 8)}`, install = 'mkdir -p /deps && cd /deps && tar -xf - && HOME=/tmp npm ci --ignore-scripts --no-audit --no-fund >/dev/null && ' + linkNativeLibraries;
     try {
       await local('sh', ['-c', `set -o pipefail 2>/dev/null; git -C ${shellQuote(input.root)} archive ${shellQuote(input.sha)} package.json package-lock.json | docker run -i --name ${name} ${warmBuildDockerFlags} --entrypoint /bin/sh ${shellQuote(input.image)} -c ${shellQuote(install)}`]);
       await local('docker', ['commit', name, tag]);
@@ -330,7 +342,7 @@ export async function ensureWarmImage(input: { root: string; commit: string; ima
       'export HOME=/tmp',
       'mkdir -p /deps /warm/build /warm/dist /warm/compile-cache',
       'cd /warm/build && tar -xf -',
-      'if [ -f package-lock.json ]; then cp package.json package-lock.json /deps/ && (cd /deps && npm ci --ignore-scripts --no-audit --no-fund >/dev/null) && ln -s /deps/node_modules /warm/build/node_modules && ln -s /deps/node_modules /warm/node_modules; fi',
+      `if [ -f package-lock.json ]; then cp package.json package-lock.json /deps/ && (cd /deps && npm ci --ignore-scripts --no-audit --no-fund >/dev/null && ${linkNativeLibraries}) && ln -s /deps/node_modules /warm/build/node_modules && ln -s /deps/node_modules /warm/node_modules; fi`,
       `if [ -f bin/built-entry.mjs ] && [ -d node_modules ]; then node bin/built-entry.mjs && mv dist/cli.mjs /warm/dist/cli.mjs && mv dist/server.mjs /warm/dist/server.mjs && ln -s /warm/dist/cli.mjs dist/cli.mjs && ln -s /warm/dist/server.mjs dist/server.mjs && printf '%s\\n' ${shellQuote(input.commit)} > /warm/commit && chmod -R a+rX /warm && chmod 777 /warm/compile-cache && NODE_COMPILE_CACHE=/warm/compile-cache node bin/graphyard.mjs --help >/dev/null; fi`,
       'rm -rf /warm/build',
     ].join(' && ');
@@ -486,8 +498,11 @@ export function remoteShardSession(input: { root: string; sha: string; baseTip?:
     async run(target: string, index: number, files: readonly string[], argv: (list: string, records: string) => string[], cpus: number): Promise<RemoteShardEnd> {
       if (!ready.has(target)) ready.set(target, prepare(target));
       const run = await ready.get(target)!, shard = index + 1;
-      const nonce = generateTrialVerdictNonce();
-      const request = JSON.stringify({ files, argv: argv('{list}', '{records}'), cpus, deadline: input.deadline, nonce });
+      // GY-3928: only helpers advertising run-shard:3 accept a per-run nonce and emit a nonce-authenticated verdict; older helpers (run-shard:2) use the previous form with fetch-records.
+      const nonce = supportsRunShardNonce(verbsByHost.get(target)) ? generateTrialVerdictNonce() : null;
+      const request = JSON.stringify(nonce
+        ? { files, argv: argv('{list}', '{records}'), cpus, deadline: input.deadline, nonce }
+        : { files, argv: argv('{list}', '{records}'), cpus, deadline: input.deadline });
       let end: Omit<RemoteShardEnd, 'records'>;
       try { end = { ok: true, out: String(await transport.session(target, words => input.run('sh', ['-c', `printf '%s' ${shellQuote(request)} | ${['ssh', ...words, `run-shard ${run} ${shard}`].map(shellQuote).join(' ')}`], { timeoutMs: remaining(), ...(input.signal ? { signal: input.signal } : {}) }))), status: 0 }; }
       catch (error) {
@@ -502,6 +517,11 @@ export function remoteShardSession(input: { root: string; sha: string; baseTip?:
       // A session over a shared connection that lost its host prints nothing of its own, so name that loss.
       // GY-3907: a module it could not resolve is named from Node's first error line, which the tail's stack pushes out.
       const said = /Cannot find (?:package|module) '[^'\n]+'[^\n]*/.exec(end.out)?.[0] ?? end.out.replace(/^(?:graphyard|mainworks) trial container: (waiting|starting).*\n/gm, '').slice(-500).trim();
+      if (nonce === null) {
+        const records = end.ok || end.status !== 255 ? await shim(target, `fetch-records ${run} ${shard}`) : '';
+        if (!end.ok && (end.status === 255 || end.status === null || fault || !records.trim())) throw new HostDroppedError(target, fault ?? (said || `the SSH connection to ${target} closed mid-shard (exit ${end.status ?? 'signal'})`));
+        return { ...end, records };
+      }
       if (!end.ok && (end.status === 255 || end.status === null || fault)) throw new HostDroppedError(target, fault ?? (said || `the SSH connection to ${target} closed mid-shard (exit ${end.status ?? 'signal'})`));
       // GY-3914: take the remote shard's verdict and records from the shim's own nonce-authenticated output stream; a verdict without the right nonce fails the trial with one line saying so.
       const parsed = parseTrialVerdict<{ status?: unknown; records?: unknown }>(end.out, nonce);
@@ -649,6 +669,36 @@ export const outdatedShimAttention = (probes: readonly Pick<HostProbe, 'host' | 
 /** GY-3534: one attention line for each host the latest trial left away because its SSH server reset the connection. */
 export const connectionResetAttention = (runs: readonly RemoteShardRun[]) => (runs.at(-1)?.hosts ?? []).filter(host => host.away && /connection reset|kex_exchange_identification/i.test(host.reason ?? '')).map(host =>
   ({ subject: `host ${host.name}`, text: `${host.name} takes no trial shards: it reset the SSH connection`, next: `Check that sshd is running on ${host.name}; the next trial tries it again` }));
+
+/** GY-3928: one attention line when two consecutive merge trials with >10 shards placed none on any ready host, naming the reason the placement gave. */
+export function zeroRemoteShareAttention(
+  runs: readonly RemoteShardRun[],
+  probes?: readonly Pick<HostProbe, 'host' | 'local' | 'away'>[],
+) {
+  const large = runs.filter(run => !run.label && run.shards > 10);
+  if (large.length < 2) return [];
+  const [previous, latest] = large.slice(-2) as [RemoteShardRun, RemoteShardRun];
+  if (previous.remote > 0 || latest.remote > 0) return [];
+  const readyNames = probes
+    ? new Set(probes.filter(probe => !probe.local && !probe.away).map(probe => probe.host))
+    : new Set(latest.hosts.filter(host => host.name !== latest.host && (!host.away || host.freeCores > 0)).map(host => host.name));
+  if (!readyNames.size) return [];
+  const reasons = [...new Set(
+    [...latest.hosts, ...previous.hosts]
+      .filter(host => readyNames.has(host.name) && host.reason)
+      .map(host => `${host.name}: ${host.reason}`),
+  )];
+  const detail = reasons.length
+    ? reasons.join('; ')
+    : latest.hosts.some(host => readyNames.has(host.name) && host.celsius !== null && host.celsius >= trialHotCelsius)
+      ? 'every ready host was at or above its heat limit'
+      : 'no shard was placed remotely';
+  return [{
+    subject: 'remote shards',
+    text: `The last two merge trials (${previous.shards} and ${latest.shards} shards) placed 0 shards on ready hosts: ${detail}`,
+    next: 'Inspect the host helper and placement reason above; this clears on the next merge trial that runs a shard remotely',
+  }];
+}
 
 /** GY-3907: where a catalog image holds Mainworks' own E2E runner, its sources and modules, as a local catalog run mounts them at /mainworks-harness. */
 const catalogHarness = '${GRAPHYARD_WARM_DIR:-/warm}/harness';

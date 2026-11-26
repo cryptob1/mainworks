@@ -10,6 +10,7 @@ import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import type { Principal } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 
 // Real CLI, control plane, Postgres and dashboard; no mocked answer or browser routes.
 test('e2e:owner-relayed-answer — owner direction relayed by the master is recorded and reversible', async () => {
@@ -28,9 +29,7 @@ test('e2e:owner-relayed-answer — owner direction relayed by the master is reco
   const cli = (...args: string[]) => promisify(execFile)(process.execPath, [resolve('bin/graphyard.mjs'), ...args], { env: { ...process.env, GRAPHYARD_URL: url, GRAPHYARD_TOKEN: token(master), GRAPHYARD_TOKEN_FILE: undefined } });
   let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
   try {
-    let work = await engine.execute(owner, 'create', null, { type: 'chore', title: 'Owner decides timing', criteria: [{ id: 'AC-1', text: 'The printer prints a receipt', proofs: ['human:receipt', 'e2e:fixture'] }] }, randomUUID());
-    work = await engine.execute(owner, 'ready', work.id, {}, randomUUID());
-    work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
+    let work = await lifecycle(engine, owner, { type: 'chore', title: 'Owner decides timing', criteria: [{ id: 'AC-1', text: 'The printer prints a receipt', proofs: ['human:receipt', 'e2e:fixture'] }] }, { claim: worker });
     await post(worker, `work/${work.id}/park`, { epoch: work.epoch, kind: 'goals-and-priorities', needed: 'Should this goal start now?', reason: 'The owner chooses timing', recommendation: 'Approve this plan', why: 'The implementation is ready.' });
     await assert.rejects(cli('answer', work.key, '--decline', 'Wait'), /--owner-said/);
     await cli('answer', work.key, '--owner-said', 'Not yet', '--decline', 'Wait');

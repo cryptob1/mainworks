@@ -28,6 +28,7 @@ import WorkDetails from '../web/pages/work-details.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // Time-bomb allowance (GY-1694): the 2026-09-01 boundAt is reviewer config and the 2026-09-20 `at`/clock is the fixed now handed to reconcileActions and evaluate; Date.now() serves only the live engine tests.
@@ -71,12 +72,7 @@ async function created(overrides: Record<string, unknown> = {}) {
   return item;
 }
 const release = async (item: Work) => engine.execute(operator, 'ready', item.id, {}, randomUUID());
-async function submitted(actor: Principal = worker) {
-  let item = await release(await created());
-  item = await engine.execute(actor, 'claim', item.id, {}, randomUUID());
-  item = await engine.execute(actor, 'workspace', item.id, { epoch: item.epoch, host: 'machine-a', path: `/tmp/inverted/${item.id}`, branch: `graphyard/${item.key.toLowerCase()}-${item.epoch}` }, randomUUID());
-  return engine.execute(actor, 'submit', item.id, { epoch: item.epoch, pr: Number(item.key.slice(3)) }, randomUUID());
-}
+const submitted = (actor: Principal = worker) => lifecycle(engine, operator, { type: 'chore',  title: `Inverted loop ${++sequence}`, criteria: [{ id: 'AC-1', text: 'Proven', proofs: [PROOF, 'e2e:fixture'] }] }, { claim: actor, submit: {} });
 /** The provider's view of a candidate: approved, both checks green, mergeable and protected. */
 function observation(item: Work, overrides: Partial<Observation> = {}): Observation {
   return {
