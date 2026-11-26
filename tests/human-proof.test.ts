@@ -14,6 +14,7 @@ import { actionAccount, nextAction } from '../src/model-boundary/next-action.js'
 import { lockedWork } from '../src/store/locked-read.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 
 // Every filed fixture owes an E2E proof and the serve declaration its trial needs.
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
@@ -46,8 +47,8 @@ const stored = async (id: string) => {
   return work;
 };
 const head = (sha: string) => ({ sha, baseSha: B, pr: 0, branch: 'graphyard/gy-1-1', author: 'worker-1' });
-const observation = (sha: string) => ({ source: 'control-plane', at: new Date().toISOString(), candidate: head(sha), checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false,
-  files: ['docs/notes.md'], scopeFiles: [{ path: 'docs/notes.md', status: 'modified', sha: 'e'.repeat(40), additions: 1, deletions: 0, binary: false }], baseTip: B, baseTipContained: true, mergeBase: B });
+const observation = (sha: string) => observationFixture(head(sha), { source: 'control-plane', protected: false, mergeBase: B,
+  files: ['docs/notes.md'], scopeFiles: [{ path: 'docs/notes.md', status: 'modified', sha: 'e'.repeat(40), additions: 1, deletions: 0, binary: false }] });
 /** A submitted, observed head whose only owed thing is the person's check. */
 async function submitted(key: string): Promise<Work> {
   const now = new Date().toISOString();

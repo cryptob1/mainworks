@@ -5,9 +5,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { plainStatus } from '../src/model/plain-status.js';
 import { CandidatePr } from '../web/candidate.js';
 import WorkPage from '../web/pages/work.js';
-import type { Observation, Work } from '../src/model/work.js';
+import type { Work } from '../src/model/work.js';
 import { workFixture } from './helpers/work-fixture.js';
 import type { Dashboard } from '../web/pages/dashboard.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 
 // GY-3173: the control plane is the merge writer and opens no pull request. The number a
 // control-plane candidate carries is its own change number, which on GitHub is somebody else's
@@ -26,11 +27,8 @@ const repository = 'owner/mainworks';
 const commit = (sha: string) => `https://github.com/${repository}/commit/${sha}`;
 
 /** The item's observation as the control plane records it, or as GitHub did before it became the merge writer. */
-const observation = (controlPlane: boolean, merged: boolean): Observation => ({
-  ...(controlPlane ? { source: 'control-plane' as const } : {}),
-  candidate, checks: [], reviews: [], merged, mergeSha: merged ? mergeSha : null,
-  mergeable: true, protected: !controlPlane, files: ['src/app.ts'], at: iso(-30 * minute),
-}) as Observation;
+const observation = (controlPlane: boolean, merged: boolean) => observationFixture(candidate, { ...(controlPlane ? { source: 'control-plane' as const } : {}),
+  merged, mergeSha: merged ? mergeSha : null, protected: !controlPlane, files: ['src/app.ts'], at: iso(-30 * minute) });
 
 const passed = () => ['ready', 'build', 'review', 'test', 'acceptance', 'merge'].map(name => ({ name, passed: true, reasons: [] as string[] }));
 const refusing = (gate: string, reasons: string[]) => passed().map(entry => entry.name === gate ? { ...entry, passed: false, reasons } : entry);

@@ -17,6 +17,7 @@ import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-115: mechanical verification precedes review. Each test is named for the proof it produces:
@@ -46,10 +47,9 @@ async function submitted(title: string, criteria: Work['criteria']) {
   item = await engine.execute(implementer, 'workspace', item.id, { epoch: 1, host: 'machine-a', path: `/tmp/verify/${item.id}`, branch: `graphyard/${item.key.toLowerCase()}-1` }, randomUUID());
   return engine.execute(implementer, 'submit', item.id, { epoch: 1, pr: ++pr }, randomUUID());
 }
-const observed = (item: Work, sha: string, extra: Partial<Observation> = {}): Observation => ({
-  candidate: { sha, baseSha: B, pr: item.submission!.pr, branch: item.workspaces[0].branch, author: 'implementer' }, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true,
-  // GY-883: a public API path keeps the item in the high lane, which still demands the proofs review must wait for.
-  files: ['src/server/routes/a.ts'], scopeFiles: [{ path: 'src/server/routes/a.ts', status: 'added' as const, sha: 'f'.repeat(40), baseSha: null, additions: 1, deletions: 0, binary: false }], at: new Date().toISOString(), prState: 'open', draft: false, baseTip: B, baseTree: sha40('7b'), baseTipContained: true, ...extra });
+// GY-883: a public API path keeps the item in the high lane, which still demands the proofs review must wait for.
+const observed = (item: Work, sha: string, extra: Partial<Observation> = {}) => observationFixture({ sha, baseSha: B, pr: item.submission!.pr, branch: item.workspaces[0].branch },
+  { files: ['src/server/routes/a.ts'], scopeFiles: [{ path: 'src/server/routes/a.ts', status: 'added', sha: 'f'.repeat(40), baseSha: null, additions: 1, deletions: 0, binary: false }], ...extra });
 const prove = (item: Work, proof: string, sha: string, result: 'pass' | 'fail') =>
   engine.execute(producer, 'evidence', item.id, { proof, sha, baseSha: B, policyRevision: item.policyRevision, result, executed: 3, skipped: 0, ...(result === 'pass' ? { exercise: { behaviour: 'the change under test', result: 'fail', executed: 1 } } : {}) }, randomUUID());
 const gate = (item: Work, name: string) => item.gates.find(entry => entry.name === name)!;
