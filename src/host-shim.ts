@@ -54,7 +54,7 @@ const sessionHours = 8;
  * changes what it does in a way a trial relies on, and add a new verb here; any other change to the
  * shim (its launcher, limits, wording) leaves this list alone, so hosts on the older shim keep taking shards.
  */
-export const hostShimVerbs = ['probe:1', 'receive-pack:1', 'receive-image:3', 'prepare-run:2', 'run-shard:2', 'fetch-records:1', 'clean:1', 'run-session:1', 'update-shim:2', 'share:1'];
+export const hostShimVerbs = ['probe:1', 'receive-pack:1', 'receive-image:3', 'prepare-run:2', 'run-shard:3', 'fetch-records:1', 'clean:1', 'run-session:1', 'update-shim:2', 'share:1'];
 /** GY-3645: `run-check` is no trial verb: a host takes a whole check once its probe names a Compose plugin, which only a shim with the verb prints. */
 /** The verbs a merge trial uses: a host whose shim lacks any of them (and every older form the coordinator still speaks) takes no shards until prepare runs again there. */
 export const trialVerbs = hostShimVerbs.filter(verb => !/^(?:run-session|update-shim|share):/.test(verb));
@@ -67,6 +67,7 @@ export const trialVerbs = hostShimVerbs.filter(verb => !/^(?:run-session|update-
 const olderTrialVerbs: Readonly<Record<string, readonly string[]>> = {
   'receive-image:3': ['receive-image:2', 'receive-image:1'],
   'prepare-run:2': ['prepare-run:1'],
+  'run-shard:3': ['run-shard:2'],
 };
 /** Shims released before the probe listed its verbs, by digest: the verbs each speaks (GY-3549's shim). */
 export const legacyShimVerbs: Record<string, readonly string[]> = {
@@ -81,6 +82,9 @@ export const supportsWarmImageV2 = (verbs?: readonly string[] | null) =>
 /** GY-3825: whether a host's probed verbs accept check service images over receive-image:3 (absent verbs default to current). */
 export const supportsCheckImages = (verbs?: readonly string[] | null) =>
   !verbs || verbs.includes('receive-image:3');
+/** GY-3928: whether a host's probed verbs accept the GY-3914 per-run nonce on run-shard and return its nonce-authenticated verdict (absent verbs default to current). */
+export const supportsRunShardNonce = (verbs?: readonly string[] | null) =>
+  !verbs || verbs.includes('run-shard:3');
 /** The trial verbs a shim lacks, by what its probe printed: its verbs line, else what its digest is known to speak. */
 export const missingTrialVerbs = (probe: { shim: string | null; verbs: string[] | null }, required: readonly string[] = trialVerbs) => {
   const speaks = probeShimVerbs(probe);
