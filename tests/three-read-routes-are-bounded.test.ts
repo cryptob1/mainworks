@@ -136,11 +136,11 @@ before(async () => {
             1000, 500, 0, 0, now() - interval '40 days' - (n::double precision / ${OLD_USAGE_ROWS}) * interval '325 days'
      FROM generate_series(1, ${OLD_USAGE_ROWS}) n`,
   );
-  // 10 rows today (within last hour, safely after UTC midnight or 1 minute ago)
+  // 10 rows today (anchored at UTC midnight + n ms so this never crosses a UTC day boundary)
   await store.pool.query(
     `INSERT INTO session_usage(id, work, role, account, runtime, model, reported, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, at)
      SELECT 'today-' || n, 'GY-1', 'worker', 'acct-recent', 'claude', 'claude-opus-5-5', true,
-            2000, 1000, 0, 0, now() - interval '1 minute' - n * interval '1 second'
+            2000, 1000, 0, 0, (date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') + n * interval '1 millisecond'
      FROM generate_series(1, 10) n`,
   );
   // 10 rows 3 days ago (in 7-day window, outside today)
