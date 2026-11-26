@@ -15,6 +15,7 @@ import { livenessCarry, livenessOf } from '../src/model-boundary/liveness.js';
 import { livenessRetryLimit, livenessWaitBoundMs, type ViolationClass } from '../src/model/liveness.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { itemObservation } from './helpers/observation-fixture.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // Time-bomb allowance (GY-1694): t0 (2026-09-20) drives a virtual clock (now = () => new Date(clock)) handed to settleDelivered and the retry rows; the Postgres half stamps and judges everything with the real clock.
@@ -47,9 +48,6 @@ const strand = (work: Work) => setDocument(work, 'actionQueue', { actions: [], h
 const judge = async (work: Work) => { const all = await store.list(); return livenessOf(all.find(item => item.id === work.id)!, all, new Date()); };
 const rows = (work: Work) => work.actionQueue?.actions ?? [];
 const head = (work: Work) => work.candidate?.sha ?? sha(work.key);
-const observation = (work: Work, extra: Partial<Observation> = {}): Observation => ({ clockOffset: { min: 0, max: 0 }, candidate: { sha: head(work), baseSha: base, pr: work.submission!.pr, branch: work.workspaces[0].branch, author: 'implementer' },
-  checks: [{ name: 'test', result: 'success', appId: 15368 }, { name: 'typecheck', result: 'success', appId: 15368 }], reviews: [{ reviewer: 'reviewer', sha: head(work), state: 'APPROVED' }],
-  protected: true, mergeable: true, merged: false, mergeSha: null, baseTip: base, baseTree: '7e'.repeat(20), files: [], scopeFiles: [], at: new Date().toISOString(), ...extra });
 
 const released = async () => {
   const n = ++serial;
@@ -62,11 +60,11 @@ async function candidate(evidence: 'pass' | 'fail' | null, extra: Partial<Observ
   let w = await claimed();
   w = await engine.execute(worker, 'workspace', w.id, { epoch: 1, host: 'test', path: `/tmp/liveness-${w.key}`, branch: `graphyard/${w.key.toLowerCase()}-1` }, id());
   w = await engine.execute(worker, 'submit', w.id, { epoch: 1, pr: 900 + serial }, id());
-  w = await engine.observe(w.id, w.revision, observation(w, extra));
+  w = await engine.observe(w.id, w.revision, itemObservation(w, head(w), base, { reviews: [{ reviewer: 'reviewer', sha: head(w), state: 'APPROVED' }], files: [], ...extra }));
   if (evidence) w = await engine.execute(producer, 'evidence', w.id, { proof: PROOF, sha: head(w), baseSha: base, policyRevision: w.policyRevision, result: evidence, executed: 3, skipped: 0,
     ...(evidence === 'pass' ? { exercise: { behaviour: 'the change under test', result: 'fail', executed: 1 } } : {}) }, id());
   if (evidence === 'pass') w = await proveFixtureCase(engine, w);
-  return engine.observe(w.id, (await reload(w)).revision, observation(w, extra));
+  return engine.observe(w.id, (await reload(w)).revision, itemObservation(w, head(w), base, { reviews: [{ reviewer: 'reviewer', sha: head(w), state: 'APPROVED' }], files: [], ...extra }));
 }
 async function staleWait() {
   // A draft pull request: no producer request may stand for its head, so the item waits on an
