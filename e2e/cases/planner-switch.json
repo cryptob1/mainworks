@@ -1,0 +1,16 @@
+{
+  "id": "planner-switch",
+  "title": "On a running test install with planner=off and an empty board for an hour, no planner draft is filed",
+  "description": "Starts a real temporary Postgres control plane with an empty board and empty-board alarm held for an hour after setting master config planner=off with the operator-agent identity; running coordination cycles across the hour launches no planner session and files no draft, and master status shows the planner as off with who set it.",
+  "tags": ["master", "api"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "running test install with planner=off and an empty board for an hour files no planner draft",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/planner-switch-e2e.test.ts",
+      "timeoutSeconds": 180
+    }
+  ]
+}

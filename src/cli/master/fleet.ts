@@ -26,6 +26,11 @@ export async function fleetCommand(session: MasterSession): Promise<unknown> {
   if (id === 'config') {
     // GY-3446: hostHeavyJobs is the host-wide strict cap every Mainworks install here shares, kept beside the heavy-job slots, not in master.json.
     const { hostHeavyJobs, ...settings } = masterSettingsFromArgs(args);
+    if (settings.planner !== undefined) {
+      // GY-3890: only the master's operator-agent identity turns the planner off or back on; the setting records who set it.
+      await agentToken(root, master, 'operatorAgent');
+      if (settings.planner === 'off') settings.planner = { enabled: false, by: master.operatorAgent!.id, at: new Date().toISOString() };
+    }
     const saved = Object.keys(settings).length || hostHeavyJobs === undefined ? await saveMasterSettings(root, settings) : {};
     if (hostHeavyJobs === 'auto') {
       // GY-3701: only the master's operator-agent identity lifts the fixed limit; the record names it.

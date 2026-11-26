@@ -309,16 +309,18 @@ export async function saveProducerProfile(root: string, profileInput: unknown, v
  * identity paths, the environment inventory — is onboarding's or the operator's: no CLI path
  * writes it, and the master's harness grants no direct edit of master.json, so re-pointing a credential can never be a routine master action.
  */
-export const masterOwnedRunFields = ['intervalSeconds', 'dispatchIntervalSeconds', 'proofWorkflow', 'smokeWorkflow', 'deploymentUrl', 'deploymentShaField', 'productionEnvironment', 'reviewerProfile', 'producerTimeoutMinutes', 'acknowledgementSeconds', 'inactivityMinutes', 'quotaCeilingPercent', 'masterSessionMinutes', 'masterHeartbeatMinutes', 'promoteEveryMinutes', 'deploymentReuseMinutes', 'trialCap', 'launchHotCelsius'] as const;
-const masterClearableRunFields = ['proofWorkflow', 'smokeWorkflow', 'deploymentUrl', 'productionEnvironment', 'reviewerProfile', 'quotaCeilingPercent', 'masterSessionMinutes', 'masterHeartbeatMinutes', 'promoteEveryMinutes', 'deploymentReuseMinutes', 'trialCap', 'launchHotCelsius'] as const;
+export const masterOwnedRunFields = ['intervalSeconds', 'dispatchIntervalSeconds', 'proofWorkflow', 'smokeWorkflow', 'deploymentUrl', 'deploymentShaField', 'productionEnvironment', 'reviewerProfile', 'producerTimeoutMinutes', 'acknowledgementSeconds', 'inactivityMinutes', 'quotaCeilingPercent', 'masterSessionMinutes', 'masterHeartbeatMinutes', 'promoteEveryMinutes', 'deploymentReuseMinutes', 'trialCap', 'launchHotCelsius', 'planner'] as const;
+const masterClearableRunFields = ['proofWorkflow', 'smokeWorkflow', 'deploymentUrl', 'productionEnvironment', 'reviewerProfile', 'quotaCeilingPercent', 'masterSessionMinutes', 'masterHeartbeatMinutes', 'promoteEveryMinutes', 'deploymentReuseMinutes', 'trialCap', 'launchHotCelsius', 'planner'] as const;
 /** GY-3446: the temporary limits, each set with `until=TIME`; `hostHeavyJobs` is the host-wide strict cap every install here shares. */
 const temporaryFields = ['trialCap', 'launchHotCelsius', 'hostHeavyJobs'] as const;
 type TemporaryLimit = { value: number; until: string } | null;
+type PlannerSetting = { enabled: false; by: string; at: string } | 'off' | null;
 export interface MasterOwnedSettings {
   intervalSeconds?: number | null; dispatchIntervalSeconds?: number | null; proofWorkflow?: string | null; smokeWorkflow?: string | null;
   deploymentUrl?: string | null; deploymentShaField?: string | null; productionEnvironment?: string | null; reviewerProfile?: string | null; producerTimeoutMinutes?: number | null; acknowledgementSeconds?: number | null; inactivityMinutes?: number | null; quotaCeilingPercent?: number | null;
   masterSessionMinutes?: number | null; masterHeartbeatMinutes?: number | null; promoteEveryMinutes?: number | null; deploymentReuseMinutes?: number | null;
   trialCap?: TemporaryLimit; launchHotCelsius?: TemporaryLimit; hostHeavyJobs?: TemporaryLimit | 'auto';
+  planner?: PlannerSetting;
   accounts?: { profile: string; accounts: string[] }[];
 }
 
@@ -334,6 +336,12 @@ export function masterSettingsFromArgs(args: string[], now = Date.now()): Master
     if (field.startsWith('accounts:')) { accounts.push({ profile: field.slice('accounts:'.length), accounts: value ? value.split(',').map(name => name.trim()).filter(Boolean) : [] }); continue; }
     // GY-3701: hostHeavyJobs=auto lifts the host's fixed `limit` file, so the budget scales with the ready machines.
     if (field === 'hostHeavyJobs' && value === 'auto') { settings.hostHeavyJobs = 'auto'; continue; }
+    // GY-3890: planner=off stops the planner on this install; planner=on or planner= restores it.
+    if (field === 'planner') {
+      if (value === 'off') { settings.planner = 'off'; continue; }
+      if (value === 'on' || value === '' || value === 'null') { settings.planner = null; continue; }
+      throw new Error('planner takes on or off (empty clears it back to on)');
+    }
     if ((temporaryFields as readonly string[]).includes(field)) {
       if (value !== '' && value !== 'null' && !/^[0-9]+$/.test(value)) throw new Error(`${field} takes a whole number`);
       if (value !== '' && value !== 'null' && !(Date.parse(until ?? '') > now)) throw new Error(`${field} is temporary: add until=TIME, a future ISO time such as 2026-11-18T16:00:00Z, when it reverts to its default`);
@@ -358,6 +366,7 @@ export async function saveMasterSettings(root: string, changes: MasterOwnedSetti
   const config = await loadStoredMasterConfig(root);
   const unknown = Object.keys(changes).filter(field => field !== 'accounts' && !(masterOwnedRunFields as readonly string[]).includes(field));
   if (unknown.length) throw new Error(`saveMasterSettings changes only what the master owns (${masterOwnedRunFields.join(', ')} and accounts), never ${unknown.join(', ')}`);
+  if (changes.planner === 'off') throw new Error('planner=off requires the master operator-agent identity');
   const run: Record<string, unknown> = { ...config.run }, changed: string[] = [];
   for (const field of masterOwnedRunFields) {
     const value = changes[field];

@@ -191,7 +191,7 @@ export function plannerStep(
 ) {
   const { config, state, effects, snapshot, clock, launcher, log } = cycle;
   const start = effects.planner;
-  if (!start || config.forPerson || launcher.busy(plannerKey)) return;
+  if (!start || config.forPerson || config.run.planner?.enabled === false || launcher.busy(plannerKey)) return;
   const alarmSince = emptyBoardAlarmSince(state);
   const emptyBoardDue = alarmSince !== null && clock - alarmSince >= plannerHoldMs;
   const running = snapshot.work.flatMap(item => item.sessions ?? []).filter(session => session.kind === 'implementation' && session.state === 'running').length;

@@ -351,6 +351,8 @@ export const masterRunSchema = z.object({
   // ignored once `until` passes.
   trialCap: temporaryLimit(z.number().int().min(1).max(maxMergeWriterParallel)).optional(),
   launchHotCelsius: temporaryLimit(z.number().int().min(40).max(trialHotCelsius)).optional(),
+  // GY-3890: on by default (absent); `master config planner=off` turns the planner off with the operator-agent identity, and `planner=on` (or `planner=`) clears it.
+  planner: z.object({ enabled: z.literal(false), by: z.string().trim().min(1).max(200), at: z.string().datetime() }).strict().optional(),
   runtimes: narrowRoleRuntimeSchema.optional(),
   pi: piRuntimeSchema.optional(),
   mergeWriter: mergeWriterSettingsSchema.optional(),
