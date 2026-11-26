@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ChildRun } from '../src/child-runner.js';
-import { remoteShardSession, warmCommitOnHosts, warmImageTag, type ShardSshSession } from '../src/merge-writer/remote-shards.js';
+import { remoteShardSession, warmCommitOnHosts, warmImageTag, warmLockHash, type ShardSshSession } from '../src/merge-writer/remote-shards.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3936 AC-1: a new warm image whose test database fails `postgres --version` is never tagged
@@ -29,7 +29,7 @@ test('unit:failed-warm-image-self-check-keeps-previous-image — a warm image fa
   const next = git(root, 'rev-parse', 'HEAD');
 
   const image = 'mainworks-trial:self-check', digest = `sha256:${'3936'.repeat(16)}`;
-  const lockHash = (await import('node:crypto')).createHash('sha256').update(git(root, 'show', `${previous}:package-lock.json`)).digest('hex');
+  const lockHash = warmLockHash(git(root, 'show', `${previous}:package-lock.json`));
   const previousTag = warmImageTag(digest, lockHash, previous), nextTag = warmImageTag(digest, lockHash, next);
   const images = new Set([image, previousTag]), tagged: string[] = [], sent: string[] = [], prepared: string[] = [];
   const run: ChildRun = async (command, args) => {

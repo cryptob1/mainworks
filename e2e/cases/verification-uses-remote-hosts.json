@@ -74,6 +74,12 @@
       "name": "Discard a warm image whose test database fails to start, naming the failing command, and run the trial on the previous image",
       "run": "node --import tsx tests/helpers/run-tests.ts tests/failed-warm-image-self-check-keeps-previous-image.test.ts",
       "timeoutSeconds": 300
+    },
+    {
+      "kind": "command",
+      "name": "Run trial shards on a run-shard:2 helper and a run-shard:3 helper, mark a refusing helper away with its refusal, and link Postgres's libraries in the warm image",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/run-shard-version-negotiated.test.ts",
+      "timeoutSeconds": 300
     }
   ]
 }

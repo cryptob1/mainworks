@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ChildRun } from '../src/child-runner.js';
@@ -14,6 +13,7 @@ import {
   shardSshSession,
   warmCommitOnHosts,
   type PlacedHost,
+  warmLockHash,
 } from '../src/merge-writer/remote-shards.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
@@ -89,7 +89,7 @@ test(`${proof} — placement uses both a v1 host and a v2 host, sending v1 calls
   const image = 'mainworks-trial:unit';
   const imageDigest = `sha256:${'c'.repeat(64)}`;
   const lockfile = '{"lockfileVersion":3}';
-  const lockHash = createHash('sha256').update(lockfile).digest('hex');
+  const lockHash = warmLockHash(lockfile);
   const expectedV1Tag = `graphyard-warm:${'c'.repeat(12)}-${lockHash.slice(0, 12)}`;
   const expectedV2Tag = `graphyard-warm:${'c'.repeat(12)}-${lockHash.slice(0, 12)}-${baseTip.slice(0, 12)}`;
 
