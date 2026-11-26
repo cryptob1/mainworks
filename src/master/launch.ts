@@ -48,7 +48,7 @@ export async function preservePartialWork(path: string, label: string, run: Chil
   try {
     await git('add', '-A');
     // GY-3850: authored by the owner's 'NAME (Mainworks)'; the committer stays Mainworks.
-    await run('git', ['-C', path, '-c', 'user.name=Mainworks', '-c', 'user.email=graphyard@localhost', 'commit', '--no-verify', '-m', `WIP: ${label}`], { env: { ...process.env, ...loopAuthorEnvironment() } });
+    await run('git', ['-C', path, '-c', 'user.name=Mainworks', '-c', 'user.email=mainworks@localhost', 'commit', '--no-verify', '-m', `WIP: ${label}`], { env: { ...process.env, ...loopAuthorEnvironment() } });
     return { state: 'committed', commit: await git('rev-parse', 'HEAD'), ...described, detail: 'uncommitted changes were committed on the attempt branch, unpushed' };
   } catch (error) {
     await git('reset', '--hard'); await git('clean', '-fd');

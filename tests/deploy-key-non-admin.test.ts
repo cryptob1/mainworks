@@ -53,7 +53,7 @@ test('unit:tests/deploy-key-non-admin.test.ts — a refused probe stops the inst
     const publicKeyFile = join(installDirectory('owner-project', fixture.configHome), 'deploy-key.pub');
     await assert.rejects(
       apply(fixture, ['--provider', 'compose', '--repo', 'owner/project', '--apply']),
-      (error: Error) => error.message.includes(`gh api -X POST repos/owner/project/keys -f title=graphyard-merge-writer-install-test-host -f key="$(cat ${publicKeyFile})" -F read_only=false`),
+      (error: Error) => error.message.includes(`gh api -X POST repos/owner/project/keys -f title=mainworks-merge-writer-install-test-host -f key="$(cat ${publicKeyFile})" -F read_only=false`),
       'the one message names the exact command an admin must run',
     );
     assert.deepEqual(fixture.commandLines().filter(line => line.startsWith('gh repo deploy-key add ')), []);
@@ -68,7 +68,7 @@ test('unit:tests/deploy-key-non-admin.test.ts — a login that can list keys kee
     const lines = fixture.commandLines();
     // The key's push probe; GY-3269's SAML preflight may still ask the fetch direction (git-upload-pack) without the key.
     assert.ok(!lines.some(line => line.startsWith('ssh ') && line.includes(PROBE)), 'a successful list probes nothing over ssh');
-    assert.deepEqual(lines.filter(line => line.startsWith('gh repo deploy-key add ')), [`gh repo deploy-key add ${join(installDirectory('owner-project', fixture.configHome), 'deploy-key.pub')} -R owner/project --allow-write --title graphyard-merge-writer-install-test-host`]);
+    assert.deepEqual(lines.filter(line => line.startsWith('gh repo deploy-key add ')), [`gh repo deploy-key add ${join(installDirectory('owner-project', fixture.configHome), 'deploy-key.pub')} -R owner/project --allow-write --title mainworks-merge-writer-install-test-host`]);
     assert.deepEqual(fixture.state.deployKeys.map(entry => entry.key), [DEPLOY_PUBLIC_KEY]);
   } finally { await fixture.cleanup(); }
 });
