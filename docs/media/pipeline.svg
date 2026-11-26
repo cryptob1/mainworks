@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 132" role="img" aria-label="Mainworks pipeline: Goal, Build, Review, Merge trial, Deploy, Watch">
+  <title>How Mainworks works</title>
+  <desc>Six stages in a row: Goal, Build, Review, Merge trial, Deploy, Watch.</desc>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --box-bg: #f8fafc;
+      --box-stroke: #cbd5e1;
+      --accent: #0f766e;
+      --accent-bg: #f0fdfa;
+      --accent-stroke: #5eead4;
+      --title: #0f172a;
+      --sub: #475569;
+      --arrow: #64748b;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117;
+        --box-bg: #161b22;
+        --box-stroke: #30363d;
+        --accent: #5eead4;
+        --accent-bg: #112627;
+        --accent-stroke: #2dd4bf;
+        --title: #f0f6fc;
+        --sub: #8b949e;
+        --arrow: #8b949e;
+      }
+    }
+    .canvas { fill: var(--bg); }
+    .box { fill: var(--box-bg); stroke: var(--box-stroke); stroke-width: 1.5; }
+    .box-end { fill: var(--accent-bg); stroke: var(--accent-stroke); stroke-width: 1.5; }
+    .title { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 16px; font-weight: 700; fill: var(--title); text-anchor: middle; }
+    .sub { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 12px; fill: var(--sub); text-anchor: middle; }
+    .arrow { stroke: var(--arrow); stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    .head { fill: var(--arrow); }
+  </style>
+
+  <rect class="canvas" x="0" y="0" width="960" height="132" rx="12"/>
+
+  <!-- 1. Goal -->
+  <rect class="box" x="18" y="22" width="134" height="88" rx="12"/>
+  <text class="title" x="85" y="58">Goal</text>
+  <text class="sub" x="85" y="82">State what you want</text>
+
+  <line class="arrow" x1="152" y1="66" x2="170" y2="66"/>
+  <polygon class="head" points="168,61 176,66 168,71"/>
+
+  <!-- 2. Build -->
+  <rect class="box" x="176" y="22" width="134" height="88" rx="12"/>
+  <text class="title" x="243" y="58">Build</text>
+  <text class="sub" x="243" y="82">Agent writes code</text>
+
+  <line class="arrow" x1="310" y1="66" x2="328" y2="66"/>
+  <polygon class="head" points="326,61 334,66 326,71"/>
+
+  <!-- 3. Review -->
+  <rect class="box" x="334" y="22" width="134" height="88" rx="12"/>
+  <text class="title" x="401" y="58">Review</text>
+  <text class="sub" x="401" y="82">Second agent checks</text>
+
+  <line class="arrow" x1="468" y1="66" x2="486" y2="66"/>
+  <polygon class="head" points="484,61 492,66 484,71"/>
+
+  <!-- 4. Merge trial -->
+  <rect class="box" x="492" y="22" width="134" height="88" rx="12"/>
+  <text class="title" x="559" y="58">Merge trial</text>
+  <text class="sub" x="559" y="82">Test on latest main</text>
+
+  <line class="arrow" x1="626" y1="66" x2="644" y2="66"/>
+  <polygon class="head" points="642,61 650,66 642,71"/>
+
+  <!-- 5. Deploy -->
+  <rect class="box" x="650" y="22" width="134" height="88" rx="12"/>
+  <text class="title" x="717" y="58">Deploy</text>
+  <text class="sub" x="717" y="82">Ship main live</text>
+
+  <line class="arrow" x1="784" y1="66" x2="802" y2="66"/>
+  <polygon class="head" points="800,61 808,66 800,71"/>
+
+  <!-- 6. Watch -->
+  <rect class="box-end" x="808" y="22" width="134" height="88" rx="12"/>
+  <text class="title" x="875" y="58">Watch</text>
+  <text class="sub" x="875" y="82">Roll back failures</text>
+</svg>

@@ -18,9 +18,9 @@ function mp4Seconds(bytes: Buffer) {
   return duration / scale;
 }
 
-test('unit:readme-and-walkthrough-only — docs/ holds only the walkthrough media, its re-render steps and the where-things-run diagram, README is one short page embedding them with setup steps, and the video shows the current roles and delivery flow', () => {
+test('unit:readme-and-walkthrough-only — docs/ holds only the walkthrough media, its re-render steps, the where-things-run diagram and the README media (GY-3926), README is one short page embedding them with setup steps, and the video shows the current roles and delivery flow', () => {
   const tracked = execFileSync('git', ['ls-files', '--', 'docs'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean).sort();
-  assert.deepEqual(tracked, ['docs/architecture.md', gif, video, 'docs/diagrams/where-things-run.svg', 'docs/setup.md', 'docs/shared-server.md', 'docs/walkthrough.md']);
+  assert.deepEqual(tracked, ['docs/architecture.md', gif, video, 'docs/diagrams/where-things-run.svg', 'docs/media/change.png', 'docs/media/hero.gif', 'docs/media/hero.mp4', 'docs/media/lead.png', 'docs/media/pipeline.svg', 'docs/media/work.png', 'docs/setup.md', 'docs/shared-server.md', 'docs/walkthrough.md']);
 
   const readme = read('README.md');
   assert.ok(readme.split(/\s+/).length <= 850, `README is short: ${readme.split(/\s+/).length} words`);
