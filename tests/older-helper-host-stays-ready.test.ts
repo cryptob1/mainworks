@@ -73,7 +73,7 @@ test(`${proof} — a host with receive-image:1 and prepare-run:1 stays ready wit
   assert.equal(v2.older, undefined);
   assert.equal(tooOld.away, true, 'a host lacking a verb with no older form is still refused');
   assert.equal(tooOld.update, true);
-  assert.match(tooOld.reason ?? '', /lacks run-shard:2/);
+  assert.match(tooOld.reason ?? '', /lacks run-shard:3/);
 
   const attention = outdatedShimAttention([v1, v2]);
   assert.equal(attention.length, 1);
@@ -117,6 +117,10 @@ test(`${proof} — placement uses both a v1 host and a v2 host, sending v1 calls
       return '';
     }
     if (verb.startsWith('run-shard ')) {
+      if (target === v1Host) {
+        if (/"nonce"\s*:/.test(pipeline ?? '')) throw Object.assign(new Error(`graphyard-host-shim refuses: ${verb}`), { stderr: `graphyard-host-shim refuses: ${verb}\n`, status: 1 });
+        return 'ok\n';
+      }
       const nonce = /"nonce":"([0-9a-f]+)"/.exec(pipeline ?? '')?.[1] ?? '';
       return `ok\nmainworks-verdict:${nonce} ${JSON.stringify({ status: 0, records: '{"file":"tests/a.test.ts","passed":true,"durationMs":1}\n' })}\n`;
     }

@@ -805,6 +805,11 @@ export interface RunTrialInput {
   key?: string;
   /** GY-3750: a rerun of failing files or of proofs on the base tip, which neither narrows its selection nor counts as a trial's. */
   rerun?: boolean;
+  /**
+   * GY-3921: the reproduce-on-base rerun starts only the `check:` proofs' checks and those that run its
+   * bound test files; `'tests'` says the item has unit proofs, whose files a check with no selection may run.
+   */
+  boundOnly?: boolean | 'tests';
   run?: ChildRun;
   /** GY-3787: the files a rerun runs, in place of a selection of its own. */
   files?: readonly string[];
@@ -1644,13 +1649,19 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     let slowest: { file: string; durationMs: number } | undefined;
     const checkResults: Record<string, 'pass' | 'fail'> = {};
     const requestedChecks = new Set((input.checkProofs ?? []).map(proof => proof.slice('check:'.length)));
+    const boundFiles = input.files ?? input.changedFiles;
     const withMeta = (verdict: TrialRun): TrialRun => ({
       ...verdict,
       ...(slowest ? { slowest } : {}),
       ...(Object.keys(checkResults).length ? { checks: checkResults } : {}),
     });
+    const covers = (check: RepositoryTrialCheck) => !!check.selection && boundFiles.some(file => new RegExp(check.selection!.pattern).test(file));
+    // GY-3921: with no selected check covering the bound test files, a test runner with no selection is what runs them.
+    const viaRunner = (boundFiles.length > 0 || input.boundOnly === 'tests') && !checks.some(covers);
     for (const check of checks) {
       if (check.paths && !touchesPaths(input.changedFiles, check.paths) && !requestedChecks.has(check.check)) continue;
+      // GY-3921: a bound-only run starts a check for a check: proof or to run its bound test files, never one nobody reads.
+      if (input.boundOnly && !requestedChecks.has(check.check) && !covers(check) && !(viaRunner && !check.selection && (check.check === 'test' || check.argv.includes('test')))) continue;
       if (check.selection) {
         const selected = await withServices(check, () => runSelected(check));
         if ('services' in selected) { checkResults[check.check] = 'fail'; failed.push(check.check); detail = { failingCase: selected.services }; runnerExit = null; break; }

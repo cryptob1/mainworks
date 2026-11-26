@@ -28,7 +28,7 @@ import { servingReport, controlPlaneRecordPath, controlPlaneSummary, controlPlan
 import { codeSizeSummary, diagnosticsAttention, gateRecordPath, gateHoldAttention, gateSummary, readGateRecord } from '../batch-gate.js';
 import { thisWeekReport } from '../project-memory.js';
 import { trialTestGateStatus } from '../merge-writer/trial.js';
-import { connectionResetAttention, outdatedShimAttention, readRemoteShardRuns, remoteShardSummary } from '../merge-writer/remote-shards.js';
+import { connectionResetAttention, outdatedShimAttention, readRemoteShardRuns, remoteShardSummary, zeroRemoteShareAttention } from '../merge-writer/remote-shards.js';
 import { attemptLabel, readAttemptLaunch, type AttemptLaunch } from '../master/session-resume.js';
 import { plainStage, waitingReason } from '../model/plain-stage.js';
 import { signoffAttention, stalledDelivery, stalledDeliveryAction } from '../daemon/master-stalled-delivery.js';
@@ -269,6 +269,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   const slowest = slowRead.slowest ?? null;
   // GY-3634: the latest trial benchmark beside the median of the previous ten on the same file list, with one attention line on >25% wall regression.
   const bench = benchStatus(readBenchResults(benchResultsPath(root)));
+  const remoteRuns = readRemoteShardRuns(root);
   return {
     // GY-3432: the stall alarm the loop raised, first, until a launch starts or the item is acted on.
     stallAlarm: state?.actions[stallAlarmKey]?.detail ?? null,
@@ -280,7 +281,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
       : { on: true },
     // GY-3095: the pipeline has stopped where a role cannot launch; each line names the role, the refusal, how long it has lasted and the next command.
     // GY-3204: and each application whose versionUrl lags main or fails to answer.
-    attention: [...signoffAttention(open, now), ...plannerDraftAttention(open), ...humanAttention, ...reworkCaps, ...leaseLosses, ...blockerAttention, ...drained, ...fixedLimitAttention, ...imbalanceAttention, ...growth, ...trialImageFault, ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now, reviews) : []), ...backedOff, ...unlaunchableWorkerAttention(fleet), ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...wrongModelAttention(fleet), ...checkFaultAttention(fleet), ...allowanceAttention(fleet, now), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(readRemoteShardRuns(root)), ...gateStalled, ...deployReleaseAttention(state, now), ...controlPlaneUpdateAttention(controlRecord), ...overloadAttention, ...flowAttention, ...slowQueryAttention(slowest, now), ...lockHoldAttention(slowRead.lockHold ?? null, now), ...linkAttention, ...ownerAttention, ...(bench?.attention ? [bench.attention] : []), ...slowPullAttention(readImagePulls()), ...repeatedFailureAttention(snapshot.work, now), ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
+    attention: [...signoffAttention(open, now), ...plannerDraftAttention(open), ...humanAttention, ...reworkCaps, ...leaseLosses, ...blockerAttention, ...drained, ...fixedLimitAttention, ...imbalanceAttention, ...growth, ...trialImageFault, ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now, reviews) : []), ...backedOff, ...unlaunchableWorkerAttention(fleet), ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...wrongModelAttention(fleet), ...checkFaultAttention(fleet), ...allowanceAttention(fleet, now), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(remoteRuns), ...zeroRemoteShareAttention(remoteRuns, state?.hosts), ...gateStalled, ...deployReleaseAttention(state, now), ...controlPlaneUpdateAttention(controlRecord), ...overloadAttention, ...flowAttention, ...slowQueryAttention(slowest, now), ...lockHoldAttention(slowRead.lockHold ?? null, now), ...linkAttention, ...ownerAttention, ...(bench?.attention ? [bench.attention] : []), ...slowPullAttention(readImagePulls()), ...repeatedFailureAttention(snapshot.work, now), ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
     // GY-3199: the control plane's own update record — the Mainworks commit this install runs, its
     // last check and last update, the step of a failed upgrade, and the staleness the daily
     // diagnostics reports (a check over a day old, or a verified commit first seen over a day ago
@@ -343,7 +344,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     trialTests,
     // GY-3412: test shards run on other hosts over the last 20 trials — the share run remotely, trial
     // wall time, waits while a host idled, this machine's peak CPU temperature and each host's latest probe (GY-3517).
-    remoteShards: remoteShardSummary(readRemoteShardRuns(root), state?.hosts),
+    remoteShards: remoteShardSummary(remoteRuns, state?.hosts),
     // GY-3750: over the last 20 item trials, the median shares of reachable and of all test files the trial selected.
     // GY-3840: with how many failing test files the last 20 release checks caught that no item trial of their batch selected.
     testSelection: ((runs) => { const summary = testSelectionSummary(runs); return { ...summary || {}, missedByNarrowing: missedByNarrowing(gateRecord?.sweeps ?? [], runs) }; })(readTestSelections(root)),

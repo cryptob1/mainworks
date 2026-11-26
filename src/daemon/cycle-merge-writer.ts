@@ -722,6 +722,8 @@ function mergeFlightTrials(reads: MergeWriterReads, state: DaemonState, persist:
   const launch = reads.launchTrialRun;
   return { ...reads, adoptedTrial: key => adopted?.has(key) ?? false, trial: (mergeSha, files, item, baseTip, onStep, onTiming, heads, share, signal, timeoutMs) => heavyTrial(item.key, onStep, signal, async () => {
     share = Math.max(1, flightSlots(state) + batchGateBusySlots(state));
+    // GY-3921: the deadline follows the configured trials at once, never what else happens to run at launch.
+    timeoutMs ??= trialShareAllowance(reads.parallel).timeoutMs;
     const handle = adopted?.get(item.key);
     if (handle) {
       if (handle.mergeSha === mergeSha) return awaitRun(state, handle, onStep, onTiming, signal);
