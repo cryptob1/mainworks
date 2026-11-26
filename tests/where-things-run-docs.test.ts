@@ -35,10 +35,10 @@ const diagramFacts = [
   '~/.config/mainworks/<install>/',
 ];
 
-test('unit:tests/where-things-run-docs.test.ts — the README\'s How it works section embeds the diagram, whose every unit, container, port and log command shows there, and points to guide infra', () => {
+test('unit:tests/where-things-run-docs.test.ts — the README\'s Where things run section embeds the diagram, whose every unit, container, port and log command shows there, and points to guide infra', () => {
   const readme = read('README.md');
-  const section = readme.split('\n## How it works\n')[1]?.split('\n## ')[0] ?? '';
-  assert.ok(section, 'README carries a How it works section');
+  const section = readme.split('\n## Where things run\n')[1]?.split('\n## ')[0] ?? '';
+  assert.ok(section, 'README carries a Where things run section');
   assert.ok(section.includes('](docs/diagrams/where-things-run.svg)'), 'the section embeds the diagram');
   assert.ok(section.includes('`mainworks guide infra`'), 'the section points to guide infra rather than copying its table');
   const shown = read('docs/diagrams/where-things-run.svg').replace(/<[^>]+>/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ');

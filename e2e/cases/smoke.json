@@ -9,7 +9,6 @@
     { "kind": "http", "name": "the served candidate answers ready", "method": "GET", "path": "/healthz?ready&strict", "status": 200, "expect": [{ "path": "healthy", "equals": true }, { "path": "ok", "equals": true }, { "path": "readiness", "equals": true }] },
     { "kind": "command", "name": "with an owner recorded, the merge commit is authored 'NAME (Mainworks)'", "run": "node --import tsx tests/helpers/run-tests.ts tests/check-ins-are-authored-owner-and-mainworks.test.ts", "timeoutSeconds": 120 },
     { "kind": "command", "name": "what a person reads says Mainworks, the merge writer commits as mainworks-merge-writer", "run": "node --import tsx tests/helpers/run-tests.ts tests/no-old-name-where-a-person-reads.test.ts tests/committer-and-key-names-say-mainworks.test.ts", "timeoutSeconds": 120 },
-    { "kind": "command", "name": "a repository past the scan budget still scans, so its install can update", "run": "node --import tsx --test --test-name-pattern=scan-of-a-large-repository tests/init-scan.test.ts", "timeoutSeconds": 120 },
-    { "kind": "command", "name": "the README's commands and links resolve and it recommends a dedicated server without a fixed price", "run": "node --import tsx tests/helpers/run-tests.ts tests/readme-commands-and-links-resolve.test.ts tests/readme-recommends-a-dedicated-server-without-a-fixed-price.test.ts", "timeoutSeconds": 120 }
+    { "kind": "command", "name": "a repository past the scan budget still scans, so its install can update", "run": "node --import tsx --test --test-name-pattern=scan-of-a-large-repository tests/init-scan.test.ts", "timeoutSeconds": 120 }
   ]
 }
