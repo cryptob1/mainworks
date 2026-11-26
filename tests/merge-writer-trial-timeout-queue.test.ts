@@ -11,6 +11,7 @@ import { trialFailurePrefix } from '../src/model/rework-ground.js';
 import { mergeRecordKinds, type MergePorts, type MergeRecordEvent } from '../src/merge-writer/executor.js';
 import type { Cycle } from '../src/daemon/cycle.js';
 import type { Observation, Work } from '../src/model/work.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-2079: a trial timeout measures the host, not the merge, but GY-2053's head timed out twice and
 // was retried first each time, so the serial merge writer delivered nothing for hours while eight
@@ -30,17 +31,13 @@ const timeoutTail = '$ node --import tsx tests/helpers/run-tests.ts --files-from
 
 const item = (key: string, ageMinutes: number): Work => {
   const head = sha(`head:${key}`);
-  return {
-    id: `w-${key}`, key, title: key, type: 'feature', description: '', priority: 1, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
-    policy: { checks: ['test'], review: true }, stage: 'build', revision: 1, policyRevision: 1, ready: true, epoch: 1, lease: null,
-    workspaces: [], submission: { epoch: 1, pr: 7 },
-    candidate: { sha: head, baseSha: base, pr: 7, branch: `graphyard/${key.toLowerCase()}-1`, author: 'worker' }, reworkRequested: false, scenarioRequirements: [], evidence: [],
+  return workFixture({
+    id: `w-${key}`, key, priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }], stage: 'build', epoch: 1, submission: { epoch: 1, pr: 7 },
+    candidate: { sha: head, baseSha: base, pr: 7, branch: `graphyard/${key.toLowerCase()}-1`, author: 'worker' },
     observation: { source: 'control-plane', candidate: { sha: head, baseSha: base, pr: 7, branch: `graphyard/${key.toLowerCase()}-1`, author: 'worker' }, checks: [], reviews: [], merged: false, mergeSha: null,
       mergeable: true, protected: true, files: ['src/app.ts'], at: iso(start), baseTip: base } as unknown as Observation,
-    blocker: null, gates: ['build', 'review'].map(name => ({ name, passed: true, reasons: [] })), violations: [],
-    createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start - ageMinutes * 60_000),
-  } as unknown as Work;
+    gates: ['build', 'review'].map(name => ({ name, passed: true, reasons: [] })), createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start - ageMinutes * 60_000),
+  });
 };
 
 interface Harness {

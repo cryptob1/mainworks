@@ -17,6 +17,7 @@ import { livenessRetryLimit, livenessWaitBoundMs, type ViolationClass } from '..
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { itemObservation } from './helpers/observation-fixture.js';
+import { workFixture } from './helpers/work-fixture.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // Time-bomb allowance (GY-1694): t0 (2026-09-20) drives a virtual clock (now = () => new Date(clock)) handed to settleDelivered and the retry rows; the Postgres half stamps and judges everything with the real clock.
@@ -119,10 +120,8 @@ test('unit:liveness-violations-detected — every open item holds exactly one ob
 
   // Two states no rule answers at all are violations too, never silence: a gate refusing with no
   // reason, and a wait on an item that does not exist.
-  const at = new Date().toISOString();
-  const shell = (key: string, overrides: Partial<Work>) => ({ id: `id-${key}`, key, title: key, type: 'feature', priority: 1, epoch: 1, revision: 1, policyRevision: 1, stage: 'review', ready: true,
-    createdAt: at, updatedAt: at, stageEnteredAt: at, criteria: [{ id: 'AC-1', text: 'Specified work', proofs: ['e2e:fixture'] }], dependencies: [], evidence: [], workspaces: [], violations: [], blocker: null, lease: null,
-    submission: { epoch: 1, pr: 1 }, candidate: null, observation: null, policy: { checks: [], review: true }, gates: [], ...overrides } as unknown as Work);
+  const shell = (key: string, overrides: Partial<Work>) => workFixture({ key, priority: 1, epoch: 1, stage: 'review', criteria: [{ id: 'AC-1', text: 'Specified work', proofs: ['e2e:fixture'] }],
+    submission: { epoch: 1, pr: 1 }, policy: { checks: [], review: true }, gates: [], ...overrides });
   const mute = shell('GY-MUTE', { gates: [{ name: 'review', passed: false, reasons: [] }] });
   const orphan = shell('GY-ORPHAN', { stage: 'build', gates: [{ name: 'ready', passed: false, reasons: ['Dependency GY-GONE is unfinished'] }] });
   assert.equal(livenessOf(mute, [mute], now()).violation?.class, 'unaccounted');
@@ -198,9 +197,8 @@ test('unit:violations-get-successor-actions — resync and request-review rows r
     let clock = t0;
     const now = () => new Date(clock);
     const at = new Date(t0).toISOString();
-    const work = { id: `id-${kind}`, key: `GY-${kind.toUpperCase()}`, title: kind, type: 'feature', priority: 1, epoch: 1, revision: 1, policyRevision: 1, stage: 'review', ready: true,
-      createdAt: at, updatedAt: at, stageEnteredAt: at, criteria: [{ id: 'AC-1', text: 'Specified work', proofs: ['e2e:fixture'] }], dependencies: [], evidence: [], workspaces: [], violations: [], blocker: null, lease: null,
-      submission: { epoch: 1, pr: 1 }, candidate: null, observation: null, policy: { checks: [], review: true }, gates: [] } as unknown as Work;
+    const work = workFixture({ id: `id-${kind}`, key: `GY-${kind.toUpperCase()}`, title: kind, priority: 1, epoch: 1, stage: 'review', createdAt: at, updatedAt: at, stageEnteredAt: at,
+      criteria: [{ id: 'AC-1', text: 'Specified work', proofs: ['e2e:fixture'] }], submission: { epoch: 1, pr: 1 }, policy: { checks: [], review: true }, gates: [] });
     const inputs = kind === 'resync' ? { kind, pr: 1, sha: null, baseSha: null, baseTip: null, observedAt: null }
       : { kind, provider: 'reviewer', requestId: 'request-1', pr: 1, sha: 'a'.repeat(40), baseSha: base, policyRevision: 1 };
     const base_: NextAction = { kind, work: work.id, key: work.key, gate: 'review', refusal: 'refused', reason: `${kind} is owed`, inputs: inputs as NextAction['inputs'], llmRole: null, binding: `${kind}:1` };

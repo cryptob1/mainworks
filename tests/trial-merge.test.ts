@@ -22,6 +22,7 @@ import { trialFailedGround, trialFailurePrefix } from '../src/model/rework-groun
 import { trialFailureRework } from '../src/daemon/cycle-merge-writer.js';
 import { trialFailureReason } from '../src/merge-writer/executor.js';
 import { observationFixture } from './helpers/observation-fixture.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3715: the cases share no state, so they run at once under one suite, each titled as before; one at
 // a time, the file spent minutes starting trial children one after another.
@@ -873,21 +874,17 @@ test('unit:trial-merge — a failed trial grounds a rework for the candidate and
   const now = new Date('2026-10-31T12:00:00.000Z');
   const head = 'c'.repeat(40), base = 'a'.repeat(40);
   const reason = `${trialFailurePrefix}: tests tests/policy.test.ts`;
-  const item = {
-    id: 'gy-3008', key: 'GY-3008', title: 'Delete the base-break refresh', description: '', type: 'chore', priority: 3, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Proven', proofs: ['unit:trial-merge'] }], policy: { checks: ['test'], review: true },
-    stage: 'test', revision: 1, policyRevision: 1, createdAt: now.toISOString(), updatedAt: now.toISOString(),
-    stageEnteredAt: now.toISOString(), ready: true, epoch: 1, lease: null,
+  const item = workFixture({
+    id: 'gy-3008', key: 'GY-3008', title: 'Delete the base-break refresh', type: 'chore', priority: 3, criteria: [{ id: 'AC-1', text: 'Proven', proofs: ['unit:trial-merge'] }],
+    stage: 'test', createdAt: now.toISOString(), updatedAt: now.toISOString(), stageEnteredAt: now.toISOString(), epoch: 1,
     workspaces: [{ host: 'machine', path: '/tmp/gy-3008', branch: 'graphyard/gy-3008-1', epoch: 1, owner: 'agent' }],
-    candidate: { sha: head, baseSha: base, pr: 1, branch: 'graphyard/gy-3008-1', author: 'agent' },
-    submission: { epoch: 1, pr: 1 }, reworkRequested: false, scenarioRequirements: [],
+    candidate: { sha: head, baseSha: base, pr: 1, branch: 'graphyard/gy-3008-1', author: 'agent' }, submission: { epoch: 1, pr: 1 },
     evidence: [{ id: 'e', proof: 'unit:trial-merge', sha: head, baseSha: base, policyRevision: 1, producer: 'ci', trusted: true, result: 'pass', executed: 1, skipped: 0, at: now.toISOString() }],
     observation: observationFixture({ sha: head, baseSha: base, pr: 1, branch: 'graphyard/gy-3008-1', author: 'agent' }, { checks: [{ name: 'test', result: 'success', appId: 15368 }],
       reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }], baseTree: 'b'.repeat(40), files: ['src/model/next-action.ts'], at: now.toISOString() }),
-    blocker: null, gates: [], violations: [],
-    mergeLedger: { key: 'GY-3008', state: 'refused', head, baseTip: base, mergeSha: null, risk: null, intentAt: now.toISOString(),
+    gates: [], mergeLedger: { key: 'GY-3008', state: 'refused', head, baseTip: base, mergeSha: null, risk: null, intentAt: now.toISOString(),
       pushedAt: null, observedTip: null, refusal: { kind: 'merge', reason }, events: 2 },
-  } as unknown as Work;
+  } as never);
   const evaluated = evaluate(item, [item], now);
   const work = { ...item, stage: evaluated.stage, gates: evaluated.gates, violations: evaluated.violations };
   assert.equal(trialFailedGround(work), `the merge writer's trial of candidate ${head.slice(0, 12)} failed (${reason})`);

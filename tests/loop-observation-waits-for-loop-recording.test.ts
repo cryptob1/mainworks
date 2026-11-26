@@ -8,6 +8,7 @@ import { closeSchema } from '../src/model-boundary/closure.js';
 import { closureRefRefusal } from '../src/model/closure.js';
 import * as model from '../src/model.js';
 import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-1779: a loop-owned observation item whose reading is due waits on the loop's own recording — kind
 // window, on the loop — and never produces an escalate action with trigger operator-proof; an unsubmitted
@@ -20,15 +21,12 @@ const sha = (seed: string) => seed.repeat(40).slice(0, 40);
 const filed = sha('a'), serving = sha('b'), mergeSha = sha('c');
 const proof = 'manual:post-deploy/github-budget-attention-row-clears', own = 'manual:github-budget-attention-row-clears-on-serving-release';
 const parent = { id: '11111111-1111-4111-8111-111111111111', key: 'GY-1700', stage: 'done', policy: { checks: [], review: true }, delivery: { mergeSha, mergedAt: iso(now - 50 * hour), deployment: { sha: filed, mergeSha, source: 'endpoint', observedAt: iso(now - 40 * hour), covers: 'descendant', at: iso(now - 40 * hour), observer: 'graphyard-master' } }, criteria: [{ id: 'AC-3', text: 'The github-budget row clears for 24h', proofs: [proof] }] } as unknown as Work;
-const item = (n: number, extra: Partial<Work> = {}): Work => ({
-  id: `00000000-0000-4000-8000-0000000000${String(n).padStart(2, '0')}`, key: `GY-${n}`, title: `Observation ${n}`, description: `Post-deploy follow-up: post-deploy:${parent.id}:AC-3:${proof}:${filed}\n\nowed`, type: 'chore', priority: 1, stage: 'ready', ready: true, epoch: 0, revision: 5, policyRevision: 1,
-  createdAt: iso(now - 40 * hour), updatedAt: iso(now - 30 * hour), stageEnteredAt: iso(now - 30 * hour), lease: null, lastAssignment: null, systemDriven: true,
-  workspaces: [], sessions: [], candidate: null, submission: null, reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null, violations: [], 
-  criteria: [{ id: 'AC-1', text: 'The row clears and does not re-fire during 24h', proofs: [own] }], policy: { checks: ['test', 'typecheck'], review: true }, dependencies: [],
+const item = (n: number, extra: Partial<Work> = {}): Work => workFixture({
+  id: `00000000-0000-4000-8000-0000000000${String(n).padStart(2, '0')}`, key: `GY-${n}`, title: `Observation ${n}`, description: `Post-deploy follow-up: post-deploy:${parent.id}:AC-3:${proof}:${filed}\n\nowed`, type: 'chore', priority: 1, revision: 5,
+  createdAt: iso(now - 40 * hour), updatedAt: iso(now - 30 * hour), stageEnteredAt: iso(now - 30 * hour), lastAssignment: null, sessions: [],
+  criteria: [{ id: 'AC-1', text: 'The row clears and does not re-fire during 24h', proofs: [own] }], policy: { checks: ['test', 'typecheck'], review: true },
   observationWindow: { notBefore: iso(now - hour), basis: 'criterion-window', detail: 'the 24-hour live window ran' },
-  gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: false, reasons: ['Worker has not submitted implementation for this attempt'] }],
-  ...extra,
-}) as unknown as Work;
+  gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: false, reasons: ['Worker has not submitted implementation for this attempt'] }], ...extra });
 const reading = (extra: object = {}) => ({ id: 'r1', proof: own, trusted: true, result: 'pass', policyRevision: 1, sha: serving, baseSha: mergeSha, executed: 1, skipped: 0, at: iso(now - 600_000), producer: 'graphyard-master', reading: { detail: 'no github-budget row in 24h' }, ...extra });
 
 test('unit:loop-observation-waits-for-loop-recording — a due reading is a window wait on the loop, never an operator-proof escalation, for a ready item and for one left in build with an unsubmitted worker candidate', () => {

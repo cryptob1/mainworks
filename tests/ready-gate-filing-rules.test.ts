@@ -8,6 +8,7 @@ import { defaultRepositoryPolicy } from '../src/model/repository-policy.js';
 import { setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { setProjectDelivery } from '../src/model-boundary/project-applications.js';
 import { e2eProofRefusal, type Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-2981: open items catch up to the filing rules an upgrade adds. An item written straight to
 // the store before GY-3037 enforced them keeps its filed criteria forever, so the ready gate
@@ -23,13 +24,10 @@ setRepositoryPolicy({ ...defaultRepositoryPolicy, e2e: { pendingOutcomes: 'non-b
 setProjectDelivery(null);
 
 /** An item of the shape the store held before the e2e rule was enforced: filed, released, unclaimed. */
-const item = (fields: Record<string, unknown> = {}): Work => ({
-  id: randomUUID(), key: 'GY-9901', title: 'Filed before the e2e rule', description: '', type: 'feature', priority: 1, dependencies: [],
-  criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }], policy: { checks: ['test'], review: true },
-  stage: 'ready', revision: 1, policyRevision: 1, createdAt: '2026-10-23T00:00:00.000Z', updatedAt: '2026-10-23T00:00:00.000Z', stageEnteredAt: '2026-10-23T00:00:00.000Z',
-  ready: true, epoch: 0, lease: null, workspaces: [], candidate: null, submission: null, reworkRequested: false,
-  scenarioRequirements: [], evidence: [], blocker: null, gates: [], violations: [], ...fields,
-} as unknown as Work);
+const item = (fields: Record<string, unknown> = {}): Work => workFixture({
+  id: randomUUID(), key: 'GY-9901', title: 'Filed before the e2e rule', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }],
+  createdAt: '2026-10-23T00:00:00.000Z', updatedAt: '2026-10-23T00:00:00.000Z', stageEnteredAt: '2026-10-23T00:00:00.000Z', gates: [], ...fields,
+});
 
 const graded = (work: Work): Work => ({ ...work, ...evaluate(work, [work], now) });
 const readyGate = (work: Work) => evaluate(work, [work], now).gates.find(gate => gate.name === 'ready')!;

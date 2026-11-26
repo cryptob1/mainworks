@@ -22,6 +22,7 @@ import type { Principal, Work } from '../src/model.js';
 import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { listen } from './helpers/http-server.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3730: the registry's worker role decides who builds. master.json holds no worker profile at
 // all; a stub-runtime account placed first in the worker role takes the first ready item through
@@ -97,11 +98,7 @@ async function cycle(state: ReturnType<typeof emptyDaemonState>) {
 
 test('e2e:role-account-builds — master.json names no worker profile; the stub account first in the worker role claims and builds the first released item', async () => {
   assert.deepEqual((await loadMasterConfig(root)).workers, [], 'master.json holds no worker profile');
-  const at = new Date().toISOString();
-  const work = { id: randomUUID(), key: 'GY-9900', title: 'Item', description: 'Write change.txt.', type: 'bug', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'change.txt exists', proofs: ['unit:works'] }],
-    policy: { checks: ['test'], review: true }, stage: 'ready', revision: 1, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at,
-    ready: true, epoch: 0, lease: null, workspaces: [], candidate: null, submission: null, reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null,
-    gates: [{ name: 'ready', passed: true, reasons: [] }], violations: [] };
+  const work = workFixture({ id: randomUUID(), key: 'GY-9900', title: 'Item', description: 'Write change.txt.', type: 'bug', priority: 1, criteria: [{ id: 'AC-1', text: 'change.txt exists', proofs: ['unit:works'] }] });
   await store.pool.query('INSERT INTO work_items(id, document) VALUES ($1,$2)', [work.id, JSON.stringify(work)]);
 
   const state = emptyDaemonState(await loadMasterConfig(root));

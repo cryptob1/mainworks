@@ -13,7 +13,7 @@ import { masterCauses } from '../src/daemon/master-stalled-delivery.js';
 import { processPidNamespace, processStartTicks } from '../src/tmp-reclaim.js';
 import type { MergePorts } from '../src/merge-writer/executor.js';
 import { masterConfigSchema, type WorkerProfile } from '../src/master.js';
-import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3122: below the free-space floor the loop reclaims only its own leftovers, and while still below starts no trial or worker.
 
@@ -28,13 +28,8 @@ const diskHeadroomKey = 'disk-headroom';
 const makeConfig = () => masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',
   repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [worker], run: { diskFloorGb: 30, mergeWriter: { deployKeyFile: '/keys/deploy', retrials: 3 } } });
 const gates = (passed: string[]) => ['ready', 'build', 'review', 'test', 'merge'].map(name => ({ name, passed: passed.includes(name), reasons: passed.includes(name) ? [] : [`${name} refused`] }));
-const item = (fields: Record<string, unknown>) => ({
-  description: '', type: 'feature', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
-  policy: { checks: ['test'], review: true }, revision: 1, policyRevision: 1, createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start - 60_000),
-  ready: true, epoch: 0, lease: null, workspaces: [], submission: null, candidate: null, reworkRequested: false, scenarioRequirements: [], evidence: [],
-
-  observation: null, blocker: null, violations: [], sessions: [], gates: gates(['ready']), stage: 'ready', ...fields,
-}) as unknown as Work;
+const item = (fields: Record<string, unknown>) => workFixture({ priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
+  createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start - 60_000), sessions: [], gates: gates(['ready']), ...fields });
 
 /** A claimable item and a submitted head: a cycle with room dispatches the one and trials the other. */
 function fixture(free: number[], reclaimed: string[] = []) {

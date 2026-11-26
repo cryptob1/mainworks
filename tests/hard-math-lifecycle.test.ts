@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 import { stopRun, watchBudget } from '../benchmarks/hard-math/lifecycle.js';
 import { command } from '../benchmarks/hard-math/process.js';
 import { registerRun, writeRunOwner, runsDirectory, endRun } from '../src/runner/registry.js';
@@ -272,10 +273,8 @@ test('hard math real cycle cannot merge a final candidate arriving after the cer
   const {nextToMerge}=await import('../src/merge-writer/executor.js');
   const now=()=>Date.parse('2026-01-01T00:00:00Z'),at=new Date(now()).toISOString(),head='c'.repeat(40),base='b'.repeat(40);
   const config=masterConfigSchema.parse({version:1,url:'http://unused',credentialFile:'/fixture/coordinator.token',cliPath:'/bin/graphyard',repository:'scratch/hard-math',baseBranch:'main',githubAppId:0,hostId:'fixture',masterAgentName:'fixture-master',workers:[]});
-  const submitted={id:'final',key:'GY-1',type:'chore',title:'Final workbench',description:'',createdAt:at,updatedAt:at,stageEnteredAt:at,stage:'build',ready:true,epoch:1,lease:null,dependencies:[],workspaces:[],sessions:[],criteria:[{id:'AC-1',text:'Works',proofs:['unit:workbench-contract']}],policy:{checks:['test'],review:true},policyRevision:1,evidence:[],violations:[],candidate:{sha:head,baseSha:base,pr:1,branch:'graphyard/gy-1-1',author:'worker'},submission:{epoch:1,pr:1},reworkRequested:false,
-    gates:['ready','build','review'].map(name=>({name,passed:true,reasons:[]})),
-    observation:{source:'control-plane',candidate:{sha:head,baseSha:base},files:['src/solver.mjs'],checks:[],reviews:[],merged:false,mergeSha:null,mergeable:true,baseTip:base,baseTipContained:true,at},
-  } as any;
+  const submitted=workFixture({id:'final',type:'chore',title:'Final workbench',stage:'build',epoch:1,sessions:[],criteria:[{id:'AC-1',text:'Works',proofs:['unit:workbench-contract']}],candidate:{sha:head,baseSha:base,pr:1,branch:'graphyard/gy-1-1',author:'worker'},submission:{epoch:1,pr:1},
+    gates:['ready','build','review'].map(name=>({name,passed:true,reasons:[]})),observation:{source:'control-plane',candidate:{sha:head,baseSha:base},files:['src/solver.mjs'],checks:[],reviews:[],merged:false,mergeSha:null,mergeable:true,baseTip:base,baseTipContained:true,at}}) as any;
   assert.equal(nextToMerge([submitted],{},now())?.id,'final','normal candidate is otherwise eligible before its benchmark certificate');
   const events:string[]=[];let freshReads=0;
   const effects={snapshot:async()=>{freshReads++;return {work:[submitted],now:at};},agents:()=>[],herdr:()=>({agents:[],available:true}),credentials:async()=>({}),closeSession:()=>{},dispatch:async()=>{},persist:async()=>{},

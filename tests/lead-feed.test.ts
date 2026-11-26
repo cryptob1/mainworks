@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Work } from '../src/model';
+import { workFixture } from './helpers/work-fixture.js';
 import { decisionFrom, goalOrder, leadFeed, pausesFrom, steerers, type LedgerRow, type RegistryRow } from '../web/lead-feed';
 
 // GY-3602: the Lead's conversation is one time-ordered feed of what people typed and the cards the
@@ -9,9 +10,7 @@ import { decisionFrom, goalOrder, leadFeed, pausesFrom, steerers, type LedgerRow
 const minute = 60_000;
 const start = Date.parse('2026-11-22T09:00:00Z');
 const iso = (at: number) => new Date(at).toISOString();
-const item = (id: string, key: string, priority: number, createdAt = start): Work => ({ id, key, title: `Title of ${key}`, priority, stage: 'ready', ready: true, createdAt: iso(createdAt),
-  dependencies: [], criteria: [], evidence: [], observation: null, violations: [], sessions: [], gates: [], epoch: 1, revision: 4, policyRevision: 1,
-  updatedAt: iso(createdAt), stageEnteredAt: iso(createdAt), lease: null, workspaces: [], candidate: null, submission: null, reworkRequested: false, scenarioRequirements: [] } as unknown as Work);
+const item = (id: string, key: string, priority: number, createdAt = start): Work => workFixture({ id, key, title: `Title of ${key}`, priority, createdAt: iso(createdAt), updatedAt: iso(createdAt), stageEnteredAt: iso(createdAt), criteria: [], sessions: [], gates: [], epoch: 1, revision: 4 });
 const row = (kind: string, work: string | null, at: number, details: Record<string, unknown> = {}): LedgerRow => ({ seq: String(at), work_id: work, actor: 'graphyard-master', kind, created_at: iso(at), details });
 
 test('unit:lead-feed — one time-ordered feed, newest last, across messages, filings, decisions, approvals and incidents', () => {

@@ -5,6 +5,7 @@ import pg from 'pg';
 import { withDatabase } from './helpers/postgres.js';
 import { Engine } from '../src/engine.js';
 import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 import { observationClaim } from '../src/observation-priority.js';
 import { processControlPlaneJob } from '../src/server/control-plane-observation.js';
 import { observationWorkers } from '../src/server/main.js';
@@ -20,15 +21,11 @@ test('integration:observation-idle-no-fleet-scan — idle workers read only jobs
     } as typeof originalQuery;
     await store.init();
     const now = new Date().toISOString();
-    const work = (overrides: Partial<Work> = {}) => ({
-      id: randomUUID(), key: 'GY-1', title: 'Observation fixture', type: 'chore', description: '',
-      stage: 'build', ready: true, priority: 1, revision: 1, epoch: 1, policyRevision: 1,
-      dependencies: [], criteria: [], policy: { checks: [], review: false },
-      gates: [], violations: [], evidence: [], workspaces: [], sessions: [], lease: null,
-      submission: { sha: 'a'.repeat(40) }, candidate: { sha: 'a'.repeat(40) }, observation: null,
-      actionQueue: { actions: [], history: [] }, createdAt: now, updatedAt: now, stageEnteredAt: now,
-      ...overrides,
-    } as Work);
+    const work = (overrides: Partial<Work> = {}) => workFixture({
+      id: randomUUID(), title: 'Observation fixture', type: 'chore', stage: 'build', priority: 1, epoch: 1, criteria: [], policy: { checks: [], review: false },
+      gates: [], sessions: [], systemDriven: undefined, submission: { sha: 'a'.repeat(40) }, candidate: { sha: 'a'.repeat(40) }, actionQueue: { actions: [], history: [] },
+      createdAt: now, updatedAt: now, stageEnteredAt: now, ...overrides,
+    } as never);
     const settled = work({ stage: 'done', submission: null, candidate: null });
     await store.pool.query(`INSERT INTO work_items(id, document)
       SELECT id, $1::jsonb || jsonb_build_object('id', id, 'key', 'GY-' || n)

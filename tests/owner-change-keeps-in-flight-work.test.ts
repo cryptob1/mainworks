@@ -11,6 +11,7 @@ import { recordLoopOwner } from '../src/check-in-author.js';
 import { mergeSubject, trialMerge } from '../src/merge-writer/trial.js';
 import { completePreflight } from '../src/cli/complete.js';
 import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 import { withDatabase } from './helpers/postgres.js';
 import { recordedRuns } from './helpers/headless-runs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
@@ -100,9 +101,7 @@ test('integration:running-session-picks-up-the-new-owner — a session launched 
     await setupMaster(root, { url: 'https://graphyard.example', token: 'coordinator-token-'.padEnd(40, 'x'), cliPath: launcher, credentialDirectory }, (async () => new Response(JSON.stringify({ actor: { id: 'master', role: 'coordinator' }, repository: 'owner/project', baseBranch: 'main' }))) as typeof fetch);
     const profile: WorkerProfile = { name: 'launch', principal: 'worker-a', agentName: 'eng-a', mode: 'launch', kind: 'codex', credentialFile: credential, agentArgs: [], approvals: 'auto', environment: {} };
     const at = new Date().toISOString();
-    const item = { id: 'id-GY-91', key: 'GY-91', title: 'Pick up the owner', description: '', type: 'feature', priority: 2, dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['integration:x'] }],
-      policy: { checks: ['test'], review: true }, stage: 'ready', revision: 1, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 0, lease: null, workspaces: [], candidate: null,
-      submission: null, reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null, gates: [{ name: 'ready', passed: true, reasons: [] }], violations: [] } as unknown as Work;
+    const item = workFixture({ key: 'GY-91', title: 'Pick up the owner', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['integration:x'] }], createdAt: at, updatedAt: at, stageEnteredAt: at, systemDriven: undefined });
     const worker = recordedRuns();
     await dispatchWork(root, item, profile, { allWork: [item], prepare: async () => ({ epoch: 1, path: root, base: 'c'.repeat(40) }), release: async () => {}, observedAt: at, headless: worker.exec, probe: registryFixture(hostname(), ['codex']).probe });
     const session = worker.runs[0]!.env;

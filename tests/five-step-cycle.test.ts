@@ -9,6 +9,7 @@ import { mergeWriterIdle, type MergeWriterReads } from '../src/daemon/cycle-merg
 import type { MergePorts, MergeRecordEvent } from '../src/merge-writer/executor.js';
 import { masterConfigSchema, type WorkerProfile } from '../src/master.js';
 import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-2877: the loop's cycle is snapshot, close, dispatch, merge writer, persist and nothing else.
 
@@ -20,13 +21,8 @@ const worker = { name: 'w1', principal: 'w1-principal', agentName: 'agent-w1', m
 const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',
   repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [worker], run: { mergeWriter: { deployKeyFile: '/keys/deploy' } } });
 const gates = (passed: string[]) => ['ready', 'build', 'review', 'test', 'merge'].map(name => ({ name, passed: passed.includes(name), reasons: passed.includes(name) ? [] : [`${name} refused`] }));
-const item = (fields: Record<string, unknown>) => ({
-  description: '', type: 'feature', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
-  policy: { checks: ['test'], review: true }, revision: 1, policyRevision: 1, createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start - 60_000),
-  ready: true, epoch: 0, lease: null, workspaces: [], submission: null, candidate: null, reworkRequested: false, scenarioRequirements: [], evidence: [],
-
-  observation: null, blocker: null, violations: [], sessions: [], gates: gates(['ready']), stage: 'ready', ...fields,
-}) as unknown as Work;
+const item = (fields: Record<string, unknown>) => workFixture({ priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
+  createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start - 60_000), sessions: [], gates: gates(['ready']), ...fields });
 
 /** A store holding a claimable item, a submitted head and a running session whose item is Done. */
 function store() {

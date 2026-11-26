@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import WorkPage from '../web/pages/work.js';
-import type { Work } from '../src/model/work.js';
+import { workFixture } from './helpers/work-fixture.js';
 import type { Dashboard } from '../web/pages/dashboard.js';
 
 // GY-3377: a bare text locator's first match was a header line naming the item, so the click opened
@@ -15,13 +15,11 @@ const NOW = Date.parse('2030-06-01T12:30:00Z'); // half past, so the minute-old 
 const run = 'r1-1';
 const title = `E2E case done-item-gates-clean run ${run}`;
 const gates = ['ready', 'build', 'review', 'test', 'acceptance', 'merge'].map(name => ({ name, passed: true, reasons: [] as string[] }));
-const item = {
-  id: 'w-1', key: 'GY-9', title, type: 'chore', description: '', priority: 1, dependencies: [], criteria: [], policy: { checks: [], review: true },
-  stage: 'done', revision: 1, policyRevision: 1, ready: true, epoch: 1, lease: null, workspaces: [], submission: null, candidate: null,
-  reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null, gates, violations: [],
+const item = workFixture({
+  id: 'w-1', key: 'GY-9', title, type: 'chore', priority: 1, criteria: [], policy: { checks: [], review: true }, stage: 'done', epoch: 1, gates,
   delivery: { mergedAt: new Date(NOW - 60_000).toISOString(), mergeSha: 'a'.repeat(40), authorizationRevision: 1 },
   createdAt: new Date(NOW - 3_600_000).toISOString(), updatedAt: new Date(NOW).toISOString(), stageEnteredAt: new Date(NOW).toISOString(),
-} as unknown as Work;
+});
 
 test('unit:e2e-done-item-gates-clean-pinned — the case opens the delivered item from its Shipped today row\'s title link', () => {
   const html = renderToStaticMarkup(createElement(WorkPage, { work: [item], board: null, status: {}, observedAt: NOW, query: '', filter: 'shipped-today', setFilter: () => {}, setQuery: () => {}, setSelected: () => {}, setCreating: () => {}, setView: () => {} } as unknown as Dashboard));

@@ -10,6 +10,7 @@ import type { ChildRun } from '../src/child-runner.js';
 import type { Cycle } from '../src/daemon/cycle.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import type { Observation, Work } from '../src/model/work.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-2940: the merge writer's deploy-key push failed on every cycle of a fresh install whose
 // origin was still https, and the loop logged only `Command failed: git … push …` with no stderr,
@@ -26,17 +27,11 @@ const STDERR = "fatal: could not read Username for 'https://github.com': Termina
 const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',
   repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [], run: { mergeWriter: { deployKeyFile: '/keys/deploy' } } });
 
-const item = (): Work => ({
-  id: 'w1', key: 'GY-1', title: 'GY-1', type: 'feature', description: '', priority: 1, dependencies: [],
-  criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
-  policy: { checks: ['test'], review: true }, stage: 'build', revision: 1, policyRevision: 1, ready: true, epoch: 1, lease: null,
-  workspaces: [], submission: { epoch: 1, pr: 7 },
-  candidate: { sha: head, baseSha: base, pr: 7, branch: 'graphyard/gy-1-1', author: 'worker' }, reworkRequested: false, scenarioRequirements: [], evidence: [],
+const item = (): Work => workFixture({ id: 'w1', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }], stage: 'build', epoch: 1, submission: { epoch: 1, pr: 7 },
+  candidate: { sha: head, baseSha: base, pr: 7, branch: 'graphyard/gy-1-1', author: 'worker' },
   observation: { source: 'control-plane', candidate: { sha: head, baseSha: base, pr: 7, branch: 'graphyard/gy-1-1', author: 'worker' }, checks: [], reviews: [], merged: false, mergeSha: null,
-    mergeable: true, protected: true, files: ['src/app.ts'], at: iso(start), baseTip: base } as unknown as Observation,
-  blocker: null, gates: ['build', 'review'].map(name => ({ name, passed: true, reasons: [] })), violations: [],
-  createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start - 60_000),
-} as unknown as Work);
+    mergeable: true, protected: true, files: ['src/app.ts'], at: iso(start), baseTip: base } as unknown as Observation, gates: ['build', 'review'].map(name => ({ name, passed: true, reasons: [] })),
+  createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start - 60_000) });
 
 /** The substituted git host: every read answers from its kind, and the deploy-key push fails exactly as an https origin does. */
 function substitutedGit(): ChildRun {

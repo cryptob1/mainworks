@@ -12,6 +12,7 @@ import { Engine } from '../src/engine.js';
 import { Store } from '../src/store.js';
 import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
@@ -220,14 +221,12 @@ test('integration:api-work-bounded-read — GET /api/work serves the fleet (open
   // one of them whole: 134 MB, past the CI plan's abort on every acceptance run.
   const heavy = 'h'.repeat(16 * 1024), settledCount = 1000, now = Date.now();
   const stamp = (offsetMs = 0) => new Date(now - offsetMs).toISOString();
-  const document = (index: number, overrides: Record<string, unknown>) => ({
-    id: randomUUID(), key: `GY-${5000 + index}`, title: `Fleet item ${index}`, dependencies: [], criteria: [{ id: 'AC-1', text: 'test', proofs: ['unit:test'] }],
-    gates: [], violations: [], workspaces: [], evidence: [], policy: { checks: [], review: false }, revision: 3, policyRevision: 1, epoch: 1, lease: null,
-    actionQueue: { actions: [], history: [] }, reworkRequested: false, scenarioRequirements: [], observation: null, ready: true, blocker: null, priority: 1,
-    createdAt: stamp(3 * 86_400_000), updatedAt: stamp(86_400_000), stageEnteredAt: stamp(86_400_000),
+  const document = (index: number, overrides: Record<string, unknown>) => workFixture({
+    id: randomUUID(), key: `GY-${5000 + index}`, title: `Fleet item ${index}`, criteria: [{ id: 'AC-1', text: 'test', proofs: ['unit:test'] }], gates: [], policy: { checks: [], review: false },
+    revision: 3, epoch: 1, actionQueue: { actions: [], history: [] }, priority: 1, createdAt: stamp(3 * 86_400_000), updatedAt: stamp(86_400_000), stageEnteredAt: stamp(86_400_000),
     sessions: [{ id: `worker:${index}`, kind: 'implementation', state: 'finished', principal: 'worker', startedAt: stamp(2 * 86_400_000), endedAt: stamp(2 * 86_400_000), updatedAt: stamp(2 * 86_400_000), outcome: heavy }],
     ...overrides,
-  });
+  } as never);
   // Every tenth delivery was settled without a candidate, its submission alone naming its pull
   // request: the shape tests/master-verification.test.ts delivers, which the index's `pr` column
   // (the candidate's) never carries. GY-1824: each delivery carries the deployment record the

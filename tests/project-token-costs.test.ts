@@ -17,7 +17,8 @@ import { loadMasterConfig, setupMaster } from '../src/master/config.js';
 import { spawnHeadless, startHeadlessSession, startHeadlessWorker, workerRunsDirectory } from '../src/headless-session.js';
 import { collectUsage } from '../src/usage-capture.js';
 import type { CostSummary } from '../src/model/token-costs.js';
-import type { Principal, Work } from '../src/model.js';
+import type { Principal } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { CostsView, ItemCostsView } from '../web/pages/costs.js';
@@ -65,9 +66,7 @@ const costs = async (query = ''): Promise<CostSummary> => (await fetch(`${url}/a
 test('e2e:project-token-costs — the Costs section, the item page and master usage show what a worker, a reviewer and the master session spent, priced from the registry\'s price sheet', async () => {
   // A delivered item the worker and the reviewer ran for.
   const at = new Date().toISOString(), key = 'GY-9801', checkout = await temporaryDirectory('worktree', scratch);
-  const work = { id: randomUUID(), key, title: 'Priced item', description: 'd', type: 'bug', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'done', proofs: ['unit:works'] }],
-    policy: { checks: ['test'], review: true }, stage: 'done', revision: 1, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 1, lease: null, workspaces: [], candidate: null,
-    submission: null, reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null, gates: [], violations: [] } as unknown as Work;
+  const work = workFixture({ id: randomUUID(), key, title: 'Priced item', description: 'd', type: 'bug', priority: 1, criteria: [{ id: 'AC-1', text: 'done', proofs: ['unit:works'] }], stage: 'done', createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1, gates: [], systemDriven: undefined });
   await store.pool.query('INSERT INTO work_items(id, document) VALUES ($1,$2)', [work.id, JSON.stringify(work)]);
 
   // The stub runtimes: each prints what the real one prints of its own usage.

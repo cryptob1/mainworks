@@ -14,6 +14,7 @@ import { applyRegistryMutation } from '../src/model-boundary/registry.js';
 import { chooseSession, emptyRegistry, proposedRuntimes, type AgentRegistry, type FleetSession } from '../src/model/registry.js';
 import type { FleetClient, FleetProbe } from '../src/fleet.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 // Time-bomb allowance (GY-1694): the 2026-09-25 `clock` is the ScreenPane's virtual start clock, advanced only by wait() and handed via bounds(); Date.now()/new Date() stamp the credential expiry and the dispatch observedAt.
 
 // GY-417: a runtime's start is judged from the runtime's own screen, and a launch whose preferred
@@ -105,10 +106,8 @@ function fallbackRuns(healthy: Set<string>) {
 
 const coordinatorStatus = async () => new Response(JSON.stringify({ actor: { id: 'master', role: 'coordinator' }, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234 }));
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
-const item = { id: 'work-499', key: 'GY-499', title: 'OpenCode sessions never count as started', description: '', type: 'bug', priority: 0, dependencies: [], 
-  criteria: [{ id: 'AC-1', text: 'Start check', proofs: ['unit:opencode-start-recognized'] }], policy: { checks: ['test'], review: true },
-  stage: 'ready', revision: 1, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 0, lease: null, workspaces: [], candidate: null, submission: null,
-  reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null, gates: [{ name: 'ready', passed: true, reasons: [] }], violations: [] } as any;
+const item = workFixture({ id: 'work-499', key: 'GY-499', title: 'OpenCode sessions never count as started', type: 'bug', priority: 0,
+  criteria: [{ id: 'AC-1', text: 'Start check', proofs: ['unit:opencode-start-recognized'] }], createdAt: at, updatedAt: at, stageEnteredAt: at }) as any;
 
 /** A master with one OpenCode account and one Claude account, both logged in, and one launch profile naming them in that order. */
 async function installed() {

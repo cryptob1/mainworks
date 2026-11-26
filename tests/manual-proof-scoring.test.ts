@@ -9,6 +9,7 @@ import { proofOutcome } from '../src/producer.js';
 import { actionAccount, nextAction } from '../src/model-boundary/next-action.js';
 import { neededRework, proofRework } from '../src/daemon/rework.js';
 import { observationFixture } from './helpers/observation-fixture.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-895. The producer prompts already state the manual-proof rule — a manual: proof is judged,
 // not counted from titles — but the scorer still applied the unit title rule to it, so a trusted
@@ -33,21 +34,19 @@ function evidence(proof: string, entry: Partial<Evidence>): Evidence {
 /** A submitted, approved item whose criteria name the manual proof and a unit proof, graded by the real evaluator. */
 function item(evidenceEntries: Partial<Evidence>[] = [], extra: Partial<Work> = {}): Work {
   const candidate = { sha: head, baseSha: base, pr: 895, branch: 'graphyard/gy-895-1', author: 'implementer' };
-  const work = {
-    id: '11111111-2222-4333-8444-555555555555', key: 'GY-895', title: 'Manual proof scoring', description: '', type: 'bug', priority: 2, dependencies: [],
+  const work = workFixture({
+    id: '11111111-2222-4333-8444-555555555555', key: 'GY-895', title: 'Manual proof scoring', type: 'bug',
     criteria: [{ id: 'AC-1', text: 'Review follow-ups are triaged', proofs: [MANUAL] }, { id: 'AC-2', text: 'The suite passes', proofs: [UNIT] }],
-    policy: { checks: ['test', 'typecheck'], review: true }, producerProofs: [MANUAL],
-    stage: 'acceptance', revision: 5, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true,
-    epoch: 1, lease: null, workspaces: [{ host: 'machine-a', path: '/tmp/gy-895', branch: 'graphyard/gy-895-1', epoch: 1, owner: 'agent-a' }],
+    policy: { checks: ['test', 'typecheck'], review: true }, producerProofs: [MANUAL], stage: 'acceptance', revision: 5, createdAt: at, updatedAt: at, stageEnteredAt: at,
+    epoch: 1, workspaces: [{ host: 'machine-a', path: '/tmp/gy-895', branch: 'graphyard/gy-895-1', epoch: 1, owner: 'agent-a' }],
     implementers: ['agent-a'], lastAssignment: { owner: 'agent-a', epoch: 1 }, candidate, submission: { epoch: 1, pr: 895 },
     evidence: evidenceEntries.map(entry => evidence((entry.proof as string) ?? MANUAL, entry)),
     // GY-883: a public API path keeps the item in the high lane, which still demands the manual proof this test scores.
     observation: observationFixture(candidate, { checks: [{ name: 'test', result: 'success', appId: CI_APP }, { name: 'typecheck', result: 'success', appId: CI_APP }],
       reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }], files: ['src/server/routes/followups.ts'], at,
       scopeFiles: [{ path: 'src/server/routes/followups.ts', status: 'modified', sha: 'f'.repeat(40), additions: 1, deletions: 1, binary: false }] }),
-    gates: [], violations: [], blocker: null, queue: null, queueSequence: 0, queueHistory: [],
-    ...extra,
-  } as unknown as Work;
+    gates: [], queue: null, queueSequence: 0, queueHistory: [], ...extra,
+  } as never);
   const graded = evaluate(work, [work], now);
   return { ...work, stage: graded.stage, gates: graded.gates, violations: graded.violations } as Work;
 }

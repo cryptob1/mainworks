@@ -14,6 +14,7 @@ import { operationsCommand } from '../src/cli/master/operations.js';
 import { unhandled, type MasterSession } from '../src/cli/master/session.js';
 import { Engine } from '../src/engine.js';
 import { Store } from '../src/store.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
@@ -35,15 +36,12 @@ const legacyRow = (work: Work) => ({ id: 'legacy-row', kind: 'verify-deployment'
   inputs: { kind: 'verify-deployment', mergeSha, mergedAt: work.delivery!.mergedAt, state: 'awaiting-deployment' }, state: 'pending', claim: null, attempts: 0, requestedAt: iso(nowMs - day), requestedBy: 'graphyard', history: [] });
 
 /** A done, unclosed delivery merged a day ago. */
-const delivered = (key: string, itemPolicy: Work['policy'], overrides: Partial<Work> = {}): Work => ({
-  id: `id-${key}`, key, title: key, description: '', type: 'bug', priority: 1,
-  dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:done-at-merge-settles'] }],
-  policy: itemPolicy,
-  stage: 'done', revision: 40, policyRevision: 1, createdAt: iso(nowMs - 2 * day), updatedAt: iso(nowMs - day), stageEnteredAt: iso(nowMs - day),
-  ready: true, epoch: 1, lease: null, workspaces: [], candidate: null, submission: { epoch: 1, pr: 1110 }, reworkRequested: false,
-  scenarioRequirements: [], evidence: [], observation: null, blocker: null, gates: [], violations: [],
+const delivered = (key: string, itemPolicy: Work['policy'], overrides: Partial<Work> = {}): Work => workFixture({
+  key, type: 'bug', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:done-at-merge-settles'] }], policy: itemPolicy,
+  stage: 'done', revision: 40, createdAt: iso(nowMs - 2 * day), updatedAt: iso(nowMs - day), stageEnteredAt: iso(nowMs - day),
+  epoch: 1, submission: { epoch: 1, pr: 1110 }, gates: [], systemDriven: undefined,
   delivery: { mergeSha, mergedAt: iso(nowMs - day), authorizationRevision: 33 }, ...overrides,
-} as Work);
+});
 /** Every policy and deployment-record combination a merged item can carry. */
 const variants = () => [
   delivered('GY-1', policy), delivered('GY-2', smokePolicy),

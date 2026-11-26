@@ -16,6 +16,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { acquireVerificationSlot, heldVariable, slotsDirectoryVariable } from '../src/master/verification-slots.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 /**
  * GY-1524: the control-plane merge executor over a simulated day of the real loop's cycles, in the
@@ -86,15 +87,13 @@ class World {
       const delivered = ledger?.state === 'reconciled' && ledger.head === entry.head;
       const files = sensitive(n) ? ['src/store/schema.ts'] : ['src/app.ts'];
       const reviewed = !sensitive(n) || now >= entry.submittedAt + 20 * minute;
-      return {
-        id: `w${n}`, key: `GY-${n}`, description: '', type: 'feature', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
-        policy: { checks: ['test'], review: true }, revision: 1, policyRevision: 1, createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(entry.submittedAt),
-        ready: true, epoch: 1, lease: null, workspaces: [], submission: { epoch: 1, pr: n }, candidate: { sha: entry.head, baseSha: sha('base'), pr: n, branch: `graphyard/gy-${n}-1`, author: 'worker' },
-        reworkRequested: !!reworked && entry.head === sha(`head${n}-1`), scenarioRequirements: [], evidence: [], blocker: null, violations: [], mergeLedger: ledger,
-        observation: { source: 'control-plane', candidate: { sha: entry.head, baseSha: sha('base'), pr: n, branch: `graphyard/gy-${n}-1`, author: 'worker' }, files, checks: [], reviews: [], merged: delivered, mergeSha: delivered ? ledger!.mergeSha : null, mergeable: true, protected: false, baseTip: this.tip(), baseTipContained: true, at: iso(now) },
+      return workFixture({
+        id: `w${n}`, key: `GY-${n}`, priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }], createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(entry.submittedAt),
+        epoch: 1, submission: { epoch: 1, pr: n }, candidate: { sha: entry.head, baseSha: sha('base'), pr: n, branch: `graphyard/gy-${n}-1`, author: 'worker' }, mergeLedger: ledger,
+        reworkRequested: !!reworked && entry.head === sha(`head${n}-1`), observation: { source: 'control-plane', candidate: { sha: entry.head, baseSha: sha('base'), pr: n, branch: `graphyard/gy-${n}-1`, author: 'worker' }, files, checks: [], reviews: [], merged: delivered, mergeSha: delivered ? ledger!.mergeSha : null, mergeable: true, protected: false, baseTip: this.tip(), baseTipContained: true, at: iso(now) },
         gates: ['ready', 'build', 'review', 'test', 'merge'].map(name => ({ name, passed: name === 'review' ? reviewed : name === 'build' || name === 'ready', reasons: [] })),
         ...(delivered ? { stage: 'done', delivery: { mergedAt: ledger!.pushedAt ?? iso(now), mergeSha: ledger!.mergeSha!, authorizationRevision: 1 } } : { stage: 'build' }),
-      } as unknown as Work;
+      } as never);
     });
   }
   ports(parallel?: number): MergeWriterReads {

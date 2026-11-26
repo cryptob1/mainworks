@@ -14,6 +14,7 @@ import { defaultChildRun } from '../src/child-runner.js';
 import { masterConfigSchema } from '../src/master.js';
 import type { DaemonState } from '../src/daemon/state.js';
 import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3159, end to end: the real merge writer's flight launches its trial as a real detached `node`
 // child (its own session, its verdict in its own directory under the coordinator checkout). The
@@ -36,12 +37,10 @@ test('e2e:pipeline-trial-survives-restart — a merge trial in progress when the
     githubAppId: 1, hostId: 'fixture', masterAgentName: 'fixture', workers: [], run: { mergeWriter: { deployKeyFile: join(directory, 'unused-key') } } });
   const candidate = { sha: head, baseSha: baseTip, pr: 1, branch: 'graphyard/gy-1-1', author: 'worker' };
   const ledgerEvents: { kind: string; payload: unknown; work: string }[] = [], recorded: MergeRecordEvent[] = [];
-  const work = { id: 'w1', key: 'GY-1', title: 'The item', type: 'feature', description: '', priority: 1, dependencies: [],
+  const work = workFixture({ id: 'w1', title: 'The item', priority: 1, epoch: 1, stage: 'build', submission: { epoch: 1, pr: 1 }, candidate,
     criteria: [{ id: 'AC-1', text: 'The pipeline survives a loop restart under a merge trial', proofs: ['manual:pipeline-trial-survives-restart'] }],
-    policy: { checks: ['test'], review: true }, revision: 1, policyRevision: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), stageEnteredAt: new Date().toISOString(),
-    ready: true, epoch: 1, lease: null, workspaces: [], submission: { epoch: 1, pr: 1 }, candidate, reworkRequested: false, scenarioRequirements: [], evidence: [], blocker: null, violations: [],
-    observation: { source: 'control-plane', candidate, files: ['item.txt'], checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false, baseTip, baseTipContained: true, at: new Date().toISOString() },
-    gates: ['ready', 'build', 'review'].map(name => ({ name, passed: true, reasons: [] })), stage: 'build' } as unknown as Work;
+    observation: { source: 'control-plane', candidate, files: ['item.txt'], checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false, baseTip, baseTipContained: true, at: new Date().toISOString() } as never,
+    gates: ['ready', 'build', 'review'].map(name => ({ name, passed: true, reasons: [] })) });
   const snapshot = () => {
     const ledger = foldMergeLedger(ledgerEvents as never)['GY-1'] ?? null, delivered = ledger?.state === 'reconciled';
     const item = { ...work, mergeLedger: ledger, ...(delivered ? { stage: 'done', delivery: { mergedAt: ledger!.pushedAt!, mergeSha: ledger!.mergeSha!, authorizationRevision: 1 },

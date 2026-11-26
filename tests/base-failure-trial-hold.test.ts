@@ -10,6 +10,7 @@ import type { ChildRun } from '../src/child-runner.js';
 import type { Cycle } from '../src/daemon/cycle.js';
 import type { MergeLedgerState } from '../src/model/merge-ledger.js';
 import type { Observation, Work } from '../src/model/work.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3140: main failed unit:model-purity and the merge writer kept trialling unrelated heads for
 // 20-30 minutes each, only to refuse every one with the base failure. While a base failure is
@@ -29,16 +30,13 @@ const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.ex
 const reason = baseFailureReason({ tip: broken, files: [failingTest], tests: ['unit:failing'] });
 const refusedOn = (key: string, head: string, why: string): MergeLedgerState => ({ key, state: 'refused', head, baseTip: null, mergeSha: null, risk: null, intentAt: null, pushedAt: null, observedTip: null, refusal: { kind: 'merge', reason: why }, events: 1 });
 
-const item = (id: string, key: string, head: string, created: number, extra: Partial<Work> = {}): Work => ({
-  id, key, title: key, type: 'feature', description: '', priority: 1, dependencies: [],
-  criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
-  policy: { checks: ['test'], review: true }, stage: 'build', revision: 1, policyRevision: 1, ready: true, epoch: 1, lease: null,
-  workspaces: [], submission: { epoch: 1, pr: 7 },
-  candidate: { sha: head, baseSha: broken, pr: 7, branch: `graphyard/${key.toLowerCase()}-1`, author: 'worker' }, reworkRequested: false, scenarioRequirements: [], evidence: [],
+const item = (id: string, key: string, head: string, created: number, extra: Partial<Work> = {}): Work => workFixture({
+  id, key, priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }], stage: 'build', epoch: 1, submission: { epoch: 1, pr: 7 },
+  candidate: { sha: head, baseSha: broken, pr: 7, branch: `graphyard/${key.toLowerCase()}-1`, author: 'worker' },
   observation: { source: 'control-plane', candidate: { sha: head, baseSha: broken }, checks: [], reviews: [], merged: false, mergeSha: null, at: iso(start), baseTip: broken } as unknown as Observation,
-  blocker: null, gates: ['build', 'review'].map(name => ({ name, passed: true, reasons: [] })), violations: [],
+  gates: ['build', 'review'].map(name => ({ name, passed: true, reasons: [] })),
   createdAt: iso(created), updatedAt: iso(start), stageEnteredAt: iso(start - 60_000), ...extra,
-} as unknown as Work);
+} as Partial<Work>);
 
 /** A git host whose main tip is `tip.at`; the failing test imports src/lib.ts, which the repair head changes and the unrelated head does not. */
 function substitutedGit(tip: { at: string }): ChildRun {

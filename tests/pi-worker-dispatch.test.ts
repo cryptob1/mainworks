@@ -13,6 +13,7 @@ import { runtimeSandboxes, verifyWorkerSandbox, WorkerSandboxError } from '../sr
 import { applyRegistryMutation } from '../src/model-boundary/registry.js';
 import { chooseSession, emptyRegistry, proposedRuntimes, type AgentRegistry, type FleetSession } from '../src/model/registry.js';
 import { foldObservations } from '../src/model/registry-sessions.js';
+import { workFixture } from './helpers/work-fixture.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 /**
@@ -129,10 +130,8 @@ test('unit:pi-launch-failure-falls-back — a Pi run that stops at once on its l
   await writeFile(credentialFile, 'worker-token-'.padEnd(40, 'x'), { mode: 0o600 });
   await mkdir(join(root, 'assigned'), { recursive: true });
   const profile: WorkerProfile = { name: 'registry-worker', principal: 'graphyard-worker-1', agentName: 'eng-pi', mode: 'launch', kind: 'pi', credentialFile, agentArgs: [], approvals: 'auto', environment: {} };
-  const item = { id: 'work-1746', key: 'GY-1746', title: 'Pi first', description: '', type: 'feature', priority: 1, dependencies: [], lane: 'low', pipeline: { reworkRounds: 0, attempts: [] },
-    criteria: [{ id: 'AC-3', text: 'Fallback in src/master/dispatch.ts', proofs: ['unit:pi-launch-failure-falls-back'] }], policy: { checks: ['test'], review: true }, stage: 'ready', revision: 1, policyRevision: 1, createdAt: '', updatedAt: '', stageEnteredAt: '', ready: true, epoch: 0, lease: null, workspaces: [], candidate: null, submission: null,
-    reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null, gates: [{ name: 'ready', passed: true, reasons: [] }], violations: [],
-     } as any;
+  const item = workFixture({ id: 'work-1746', key: 'GY-1746', title: 'Pi first', priority: 1, lane: 'low', pipeline: { reworkRounds: 0, attempts: [] },
+    criteria: [{ id: 'AC-3', text: 'Fallback in src/master/dispatch.ts', proofs: ['unit:pi-launch-failure-falls-back'] }], createdAt: '', updatedAt: '', stageEnteredAt: '' }) as any;
 
   const dispatch = async (piAccounts = ['pi-a', 'pi-b']) => {
     const at = new Date().toISOString();

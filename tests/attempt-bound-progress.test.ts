@@ -12,6 +12,7 @@ import { masterStatusReport } from '../src/cli/master-status.js';
 import { defaultAttemptBoundMinutes, defaultAttemptCeilingMinutes } from '../src/master/attempt-bound.js';
 import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 
 // Every filed fixture owes an E2E proof and the serve declaration its trial needs.
@@ -158,17 +159,15 @@ test('unit:brief-and-status-name-attempt-bound — the launch brief names the se
 
   // Master status names the remaining time of a live attempt.
   const root = await temporaryDirectory('attempt-bound-status');
-  const item = {
-    id: 'work-73', key: 'GY-73', title: 'Names the bound', description: '', type: 'bug', priority: 1, dependencies: [],
+  const item = workFixture({
+    id: 'work-73', key: 'GY-73', title: 'Names the bound', type: 'bug', priority: 1, gates: undefined, violations: undefined, systemDriven: undefined,
     criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:brief-and-status-name-attempt-bound'] }],
-    policy: { checks: ['test'], review: true }, stage: 'build', revision: 3, policyRevision: 1,
-    createdAt: claimedAt, updatedAt: claimedAt, stageEnteredAt: claimedAt, ready: true, epoch: 1,
+    stage: 'build', revision: 3, createdAt: claimedAt, updatedAt: claimedAt, stageEnteredAt: claimedAt, epoch: 1,
     lease: { owner: 'worker-a', epoch: 1, expiresAt: new Date(now + 60 * 60_000).toISOString() },
     lastAssignment: { owner: 'worker-a', epoch: 1, claimedAt },
     workspaces: [{ host: 'loop-host', path: '/srv/worktrees/GY-73-1', epoch: 1, owner: 'worker-a', branch: 'graphyard/gy-73-1' }],
     sessions: [{ id: 'worker-a:1', kind: 'implementation', principal: 'worker-a', epoch: 1, runtime: 'claude', host: 'loop-host', pane: 'pane-73', subject: 'GY-73: Names the bound', state: 'running', startedAt: claimedAt, updatedAt: claimedAt, endedAt: null, outcome: null, agentName: null, role: null, head: null, workspace: null, tab: null, attach: null, transcript: null }],
-    candidate: null, submission: null, reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null,
-  } as unknown as Work;
+  });
   const master = masterConfigSchema.parse({
     version: 1, url: 'https://graphyard.example', credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',
     repository, baseBranch: 'main', githubAppId: 1234, hostId: 'loop-host', masterAgentName: 'graphyard-master-bound', workers: [],

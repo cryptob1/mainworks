@@ -5,6 +5,7 @@ import { actionIdleMs, idleActionable, queueSnapshot } from '../src/model/action
 import { reconcileActions } from '../src/model-boundary/actions.js';
 import { actionJudgment, executorRunnableKinds, humanNeeded, humanNeededActions } from '../src/model/next-action.js';
 import { nextAction } from '../src/model-boundary/next-action.js';
+import { workFixture } from './helpers/work-fixture.js';
 // Time-bomb allowance (GY-1694): 2026-09-21 `at` is the fixed now handed to nextAction.
 
 /**
@@ -17,15 +18,10 @@ const rows = (work: Work) => work.actionQueue?.actions ?? [];
 // ---- AC-4: an action no executor may run is owed by somebody, and counted apart -----------------
 
 const at = '2026-09-21T12:00:00.000Z';
-const probe = (overrides: Partial<Work> = {}): Work => ({
-  id: `id-${overrides.key ?? 'GY-1'}`, key: 'GY-1', title: 'Owed', type: 'feature', description: '',
-  priority: 2, dependencies: [], criteria: [{ id: 'AC-1', text: 'Specified work', proofs: ['e2e:fixture'] }], policy: { checks: ['test'], review: true },
-  ready: true, stage: 'merge', epoch: 1, revision: 1, policyRevision: 1,
-  gates: [], violations: [], evidence: [], workspaces: [], agentRequests: [], sessions: [],
-  lease: null, submission: null, candidate: null, observation: null, blocker: null,
-  createdAt: at, updatedAt: at, stageEnteredAt: at,
-  ...overrides,
-} as unknown as Work);
+const probe = (overrides: Partial<Work> = {}): Work => workFixture({
+  title: 'Owed', criteria: [{ id: 'AC-1', text: 'Specified work', proofs: ['e2e:fixture'] }], stage: 'merge', epoch: 1,
+  gates: [], agentRequests: [], sessions: [], createdAt: at, updatedAt: at, stageEnteredAt: at, ...overrides,
+});
 
 test('unit:human-needed-actions-visible — an item whose only action is escalate is recorded as needing a person, listed on the human-facing page from the moment it is computed, and counted apart from the rows executors are taking', () => {
   const now = new Date(Date.parse(at) + 30_000);

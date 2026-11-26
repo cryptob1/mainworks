@@ -4,6 +4,7 @@ import { buildBoard } from '../src/model/board.js';
 import { stalledCards } from '../src/model/actionless.js';
 import { trialRefusal } from '../src/model/gates.js';
 import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // 2026-11-04: the Work board showed 13 Blocked, most "Nothing is happening … stuck at Automated
 // checks" and overdue, while only two had a recorded blocker: the rest were healthy submitted heads
@@ -13,16 +14,14 @@ const minute = 60_000, now = Date.parse('2026-11-04T20:09:00.000Z');
 const iso = (at: number) => new Date(at).toISOString();
 const sha = (n: number) => n.toString(16).padStart(40, 'a'), base = 'b'.repeat(40);
 /** A submitted control-plane head, built and reviewed, waiting 62 minutes for the merge writer's trial. */
-const head = (n: number, extra: Partial<Work> = {}): Work => ({
-  id: `00000000-0000-4000-8000-0000000000${n}`, key: `GY-${n}`, title: `Item ${n}`, description: '', type: 'task', priority: 2, stage: 'test', ready: true, epoch: 1, revision: 5, policyRevision: 1,
-  createdAt: iso(now - (200 - n) * minute), updatedAt: iso(now - 62 * minute), stageEnteredAt: iso(now - 62 * minute), lease: null, lastAssignment: { owner: 'implementer', epoch: 1 },
-  workspaces: [], candidate: { sha: sha(n), baseSha: base, createdAt: iso(now - 62 * minute) }, submission: { epoch: 1, sha: sha(n), at: iso(now - 62 * minute) },
-  reworkRequested: false, scenarioRequirements: [], evidence: [], observation: { source: 'control-plane', candidate: { sha: sha(n) } }, blocker: null, violations: [], criteria: [{ id: 'AC-1', text: 'Specified work', proofs: ['e2e:fixture'] }],
-  policy: { checks: ['test'], review: true }, dependencies: [], nextAction: null,
+const head = (n: number, extra: Partial<Work> = {}): Work => workFixture({
+  id: `00000000-0000-4000-8000-0000000000${n}`, key: `GY-${n}`, title: `Item ${n}`, type: 'task', stage: 'test', epoch: 1, revision: 5,
+  createdAt: iso(now - (200 - n) * minute), updatedAt: iso(now - 62 * minute), stageEnteredAt: iso(now - 62 * minute), lastAssignment: { owner: 'implementer', epoch: 1 },
+  candidate: { sha: sha(n), baseSha: base, createdAt: iso(now - 62 * minute) }, submission: { epoch: 1, sha: sha(n), at: iso(now - 62 * minute) },
+  observation: { source: 'control-plane', candidate: { sha: sha(n) } }, criteria: [{ id: 'AC-1', text: 'Specified work', proofs: ['e2e:fixture'] }], nextAction: null,
   gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: true, reasons: [] },
-    { name: 'test', passed: false, reasons: [trialRefusal(sha(n), base)] }],
-  ...extra,
-}) as unknown as Work;
+    { name: 'test', passed: false, reasons: [trialRefusal(sha(n), base)] }], ...extra,
+} as Partial<Work>);
 
 test('integration:board-queue-not-blocked — a head queued behind the merge in flight is moving with its queue position and the item ahead, never Blocked or overdue; a recorded blocker still is Blocked', () => {
   const flight = head(10, { mergeLedger: { key: 'GY-10', state: 'intent', head: sha(10), baseTip: base, mergeSha: 'c'.repeat(40), risk: 'normal', intentAt: iso(now - 20 * minute),
