@@ -187,7 +187,7 @@ test('unit:stale-worktree-releases-branch — the preserved state is registered 
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test('unit:workspace-failure-spares-profile — the engine keeps the preserved-attempt record on the item and undoes a workspace-failed claim, so the epoch returns', async () => {
+test('unit:workspace-failure-spares-profile — the engine keeps the preserved-attempt record on the item and ends a workspace-failed claim without reusing its epoch', async () => {
   const operator: Principal = { id: 'human-operator', role: 'admin', sessionKind: 'human' };
   const worker: Principal = { id: 'engineer-a', role: 'worker', sessionKind: 'ai' };
   const id = () => randomUUID();
@@ -209,24 +209,22 @@ test('unit:workspace-failure-spares-profile — the engine keeps the preserved-a
   assert.deepEqual((await events(held, 'workspace.preserved'))[0].payload.details.diff.includes('source.ts'), true);
   assert.equal(held.workspaces[0] && 'preserved' in held.workspaces[0], false, 'the workspace reservation itself stays clean of the payload');
 
-  // AC-2: a claim whose worktree the host could not create is undone by its release — the epoch
-  // returns, the untouched reservation and timeline entry go, the lease is released, the message
-  // is kept on the item.
+  // AC-2: a claim whose worktree the host could not create is ended by its release, the lease is
+  // released and the message is kept on the item. GY-3905: the epoch is never handed back, so the
+  // next claim takes a new number and a late command under the released one is refused.
   let item = await claimed();
   const firstEpoch = item.epoch;
   item = await engine.execute(worker, 'workspace', item.id, { epoch: firstEpoch, host: 'lock-host', path: `/tmp/lock/${item.id}`, branch: `graphyard/${item.key.toLowerCase()}-${firstEpoch}` }, id());
   const message = 'Git worktree creation failed: fatal: \'graphyard/x\' is already used by worktree at .graphyard/worktrees/x. The workspace reservation remains for safety';
   item = await engine.execute(worker, 'release', item.id, { epoch: firstEpoch, failure: { message } }, id());
-  assert.equal(item.epoch, firstEpoch - 1, 'the attempt epoch returns');
+  assert.equal(item.epoch, firstEpoch, 'the released epoch stays');
   assert.equal(item.lease, null, 'the claim is released');
-  assert.deepEqual(item.workspaces, [], 'the untouched reservation goes with it');
-  assert.deepEqual(pipelineTimeline(item).attempts, [], 'no attempt is recorded for a workspace that never existed');
+  assert.equal(pipelineTimeline(item).attempts.at(-1)?.end, 'released', 'the attempt is ended');
   const failures = await events(item, 'workspace.failed');
   assert.equal(failures.length, 1);
   assert.equal(failures[0].payload.details.message, message, 'the git message is on the item');
-  // The next dispatch claims the same epoch afresh, and the branch is free to allocate again.
   const again = await engine.execute(worker, 'claim', item.id, {}, id());
-  assert.equal(again.epoch, firstEpoch, 'the same epoch is claimed again, not the next one');
+  assert.equal(again.epoch, firstEpoch + 1, 'the next claim takes a new number');
 
   // An attempt whose lease was renewed is no longer the untouched claim: a workspace failure it
   // reports is recorded, but its epoch is only ended, never handed back for reuse.

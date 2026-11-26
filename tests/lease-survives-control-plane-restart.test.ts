@@ -245,3 +245,92 @@ test('unit:lease-survives-control-plane-restart — renewal is still refused whe
     await close(stub);
   }
 });
+
+// GY-3905 AC-2: a rework attempt's lease is restored after a restart longer than the lease; an item
+// on hold, not ready, claimed under another epoch or submitted under this epoch is refused as before.
+async function restartFixture(label: string) {
+  const store = await withDatabase(label);
+  await store.init();
+  const engine = new Engine(store, 1, 'owner/project');
+  engine.principals = [operator, workerA, workerB];
+  const head = 'c'.repeat(40);
+  engine.gitRunner = async args => ({ status: 0, stdout: args[0] === 'diff' ? '' : head, stderr: '' });
+  const ready = async (title: string) => {
+    const work = await engine.execute(operator, 'create', null, { title, type: 'bug', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }] }, randomUUID());
+    return engine.execute(operator, 'ready', work.id, {}, randomUUID());
+  };
+  const claim = async (id: string, actor: Principal = workerA) => {
+    const work = await engine.execute(actor, 'claim', id, {}, randomUUID());
+    // A rework attempt builds on the pull request branch its earlier attempt submitted.
+    const branch = work.submission ? work.workspaces[0].branch : `graphyard/${work.key.toLowerCase()}-${work.epoch}`;
+    return engine.execute(actor, 'workspace', work.id, { epoch: work.epoch, host: 'restart-host', path: `/tmp/restart/${work.id}-${work.epoch}`, branch }, randomUUID());
+  };
+  const submit = (work: Work, actor: Principal = workerA) => engine.execute(actor, 'submit', work.id, { epoch: work.epoch, head }, randomUUID());
+  const heartbeat = (work: Work, actor: Principal = workerA) => engine.execute(actor, 'heartbeat', work.id, { epoch: work.epoch }, randomUUID());
+  return { store, engine, ready, claim, submit, heartbeat };
+}
+
+test('integration:rework-lease-restores-after-restart — a rework builder keeps its attempt across a restart longer than the lease; hold, not ready, another epoch and a submitted epoch are refused', { timeout: 60_000 }, async () => {
+  const { store, engine, ready, claim, submit, heartbeat } = await restartFixture('rework-lease-restores');
+  try {
+    // The plane's last tick before the outage.
+    await engine.recordPlaneLiveness(new Date(Date.now() - 120_000));
+    // A rework attempt: the first attempt submitted, the master asked for rework, a builder claimed again.
+    let rework = await claim((await ready('Rework survives restart')).id);
+    await submit(rework);
+    await engine.execute(operator, 'rework', rework.id, { reason: 'Fix the review finding', previousWorkerStopped: true }, randomUUID());
+    rework = await claim(rework.id);
+    assert.equal(rework.epoch, 2);
+    assert.equal(rework.submission?.epoch, 1, 'the rework attempt still carries the earlier submission');
+    const held = await claim((await ready('Held during restart')).id);
+    const unready = await claim((await ready('Not ready after restart')).id);
+    const taken = await claim((await ready('Claimed under another epoch')).id);
+    const submitted = await claim((await ready('Submitted under this epoch')).id);
+    await submit(submitted);
+
+    // Every lease lapses while the plane is down; the plane came back 31 s ago, so the stall's
+    // 30 s renewal grace has passed and only the downtime restore can keep a lease.
+    await delay(2_500);
+    await engine.recordPlaneLiveness(new Date(Date.now() - 31_000));
+
+    const restored = await heartbeat(rework);
+    assert.equal(restored.lease?.owner, workerA.id, 'the rework lease is restored');
+    assert.equal(restored.lease?.epoch, 2);
+    const done = await submit(rework);
+    assert.equal(done.submission?.epoch, 2, 'the rework builder submits on the same epoch');
+
+    await engine.execute(operator, 'hold', held.id, { reason: 'Owner paused it' }, randomUUID());
+    await assert.rejects(heartbeat(held), /Lease missing, expired, or superseded/, 'a held item is not restored');
+
+    await store.pool.query(`UPDATE work_items SET document = jsonb_set(document, '{ready}', 'false') WHERE id=$1`, [unready.id]);
+    await assert.rejects(heartbeat(unready), /Lease missing, expired, or superseded/, 'an item that is not ready is not restored');
+
+    const rival = await claim(taken.id, workerB);
+    assert.equal(rival.epoch, taken.epoch + 1);
+    await assert.rejects(heartbeat(taken), /Lease missing, expired, or superseded/, 'an item claimed under another epoch is not restored');
+
+    await assert.rejects(heartbeat(submitted), /ended when .* was submitted/, 'an epoch already submitted is not restored');
+  } finally {
+    await store.close();
+  }
+});
+
+test('integration:released-epoch-is-never-reused — a release, with or without a workspace failure, ends the attempt; the next claim takes a new number and the released epoch is refused', async () => {
+  const { store, engine, ready, claim, heartbeat } = await restartFixture('released-epoch-never-reused');
+  try {
+    for (const failure of [{ message: 'Git worktree creation failed: fatal: branch is already used by worktree' }, undefined]) {
+      const first = await claim((await ready(`Released ${failure ? 'after a workspace failure' : 'plainly'}`)).id);
+      const released = await engine.execute(workerA, 'release', first.id, { epoch: first.epoch, ...(failure ? { failure } : {}) }, randomUUID());
+      assert.equal(released.epoch, first.epoch, 'the release never lowers the epoch');
+      assert.equal(released.lease, null);
+      assert.equal(released.pipeline?.attempts.at(-1)?.end, 'released', 'the release ends the attempt');
+      const next = await claim(first.id);
+      assert.equal(next.epoch, first.epoch + 1, 'the next claim takes a new number');
+      await assert.rejects(heartbeat(first), /Lease missing, expired, or superseded/, 'a heartbeat under the released epoch is refused');
+      await assert.rejects(engine.execute(workerA, 'release', first.id, { epoch: first.epoch }, randomUUID()), /Lease missing, expired, or superseded/, 'a release under the released epoch is refused');
+      assert.equal((await heartbeat(next)).lease?.epoch, next.epoch, 'the new attempt holds its own lease');
+    }
+  } finally {
+    await store.close();
+  }
+});
