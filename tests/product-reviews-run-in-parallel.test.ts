@@ -20,6 +20,7 @@ import { liveRun } from '../src/runner/registry.js';
 import type { HeadlessExec } from '../src/headless-session.js';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { until } from './helpers/until.js';
 
 // GY-3608 AC-1: two product reviews of different heads of a repository whose serve command honours
 // the port variable (GY-3751: PORT) run at the same time, each serving on its own free port, and each reviewer is
@@ -94,15 +95,11 @@ const run = async (command: string, args: string[], options?: { cwd?: string }) 
   if (command === 'git' || command === 'node') return execFileSync(command, args, { encoding: 'utf8', cwd: options?.cwd });
   throw new Error(`no ${command} here`);
 };
-const until = async (what: string, check: () => Promise<boolean> | boolean) => {
-  for (let tries = 0; tries < 2400; tries++) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 25)); }
-  assert.fail(`timed out waiting for ${what}`);
-};
 // GY-3647: the settled budget until() polls on is also the wait for the other reviewer. A fixed
 // five seconds decided this check on the loaded batch-gate host, where a reviewer's launch can lag
 // the other's by more than that; and a reviewer whose timed-out run was retried then counted as
 // the second reviewer, so the both-alive assertion could never be set again.
-const settledMs = 2400 * 25;
+const settledMs = 60_000;
 const answers = (address: string) => fetch(address).then(() => true, () => false);
 
 test('integration:product-reviews-run-in-parallel — two product reviews of different heads serve at once on different free ports and record both verdicts', async () => {
@@ -143,11 +140,11 @@ test('integration:product-reviews-run-in-parallel — two product reviews of dif
     launchReview(root, two, 'product-claude', [], now(), { run, headless: exec('second'), product: true }),
   ]);
 
-  await until('both review runs to end and record verdicts', async () => {
+  await until(async () => {
     const ledger = await readReviewLedger(root);
     return launched.every(entry => ledger.reviews.some(record => record.id === entry.review && !liveRun(record.agentName) && !!record.verdict));
-  });
-  await until('both served heads to stop', async () => !(await answers(addresses.first!)) && !(await answers(addresses.second!)));
+  }, 'both review runs to end and record verdicts', settledMs, 25);
+  await until(async () => !(await answers(addresses.first!)) && !(await answers(addresses.second!)), 'both served heads to stop', settledMs, 25);
 
   assert.ok(bothAliveAtOnce, 'both serve processes were alive at once');
   const firstPort = new URL(addresses.first!).port;

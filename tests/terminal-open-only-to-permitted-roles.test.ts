@@ -4,6 +4,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { request } from 'node:http';
 import { connect } from 'node:net';
 import { servedInstall } from './helpers/served-install.js';
+import { until } from './helpers/until.js';
 
 // GY-3880: the Lead's terminal shows credentials and takes commands, so only the admin, the loop's
 // coordinator and invited teammates open it; only those who may type resize it; the typed-input list
@@ -44,10 +45,6 @@ const closes = (raw: import('node:net').Socket) => new Promise<void>((resolve, r
   const timer = setTimeout(() => reject(new Error('the oversized socket stayed open')), 10_000);
   raw.on('close', () => { clearTimeout(timer); resolve(); }); raw.on('error', () => {});
 });
-const until = async (check: () => boolean, what: string) => {
-  for (let i = 0; i < 100 && !check(); i++) await new Promise(resolve => setTimeout(resolve, 50));
-  assert.ok(check(), what);
-};
 
 test('integration:terminal-open-only-to-permitted-roles — worker, reviewer launch and role-less principals are refused 403 before the socket is accepted, only typers resize, typed-input follows the same rule, and a message over 32 MB closes the socket', async () => {
   const install = await servedInstall('terminal_permitted_roles');
@@ -104,11 +101,11 @@ test('integration:terminal-open-only-to-permitted-roles — worker, reviewer lau
     const before = owners.size;
     const typing = socket(install.base, '/api/terminal?cols=80&rows=24', maintainer), watching = socket(install.base, '/api/terminal?cols=80&rows=24', viewer);
     await Promise.all([typing.opened, watching.opened]);
-    await until(() => owners.size === before + 2, 'both streams open');
+    await until(() => owners.size === before + 2, 'both streams open', 5_000, 50);
     await new Promise(resolve => setTimeout(resolve, 200));
     watching.ws.send(JSON.stringify({ type: 'resize', cols: 200, rows: 60 }));
     typing.ws.send(JSON.stringify({ type: 'resize', cols: 100, rows: 30 }));
-    await until(() => resizes.length > 0, 'the typer resized');
+    await until(() => resizes.length > 0, 'the typer resized', 5_000, 50);
     await new Promise(resolve => setTimeout(resolve, 200));
     assert.deepEqual(resizes, ['typer'], 'a viewer\'s resize never reaches the pane');
     typing.ws.close(); watching.ws.close();

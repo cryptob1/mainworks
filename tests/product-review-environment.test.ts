@@ -30,6 +30,7 @@ import { reconcileAutoDispatch } from '../src/model-boundary/dispatch.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { until } from './helpers/until.js';
 
 // GY-3331: a product reviewer that cannot reach the app records could not run — never changes
 // requested. The launch hands the session the connection a worker's gets plus a browser tool; a
@@ -133,12 +134,8 @@ function runtime(answer: string | ((run: { args: string[]; env: Record<string, s
 }
 const approve = (head: string) => `Judged it.\n{"verdict": "APPROVE", "body": "Product reviewed head ${head} against base ${base}. AC-1 met.", "findings": []}`;
 const couldNotRun = 'I could not walk a served app: the app at its recorded address did not answer, so no browser session could reach it.';
-const until = async (what: string, check: () => Promise<boolean> | boolean) => {
-  for (let tries = 0; tries < 400; tries++) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 25)); }
-  assert.fail(`timed out waiting for ${what}`);
-};
 const settledRecord = async (id: string) => {
-  await until('the review run to end', async () => (await readReviewLedger(root)).reviews.some(record => record.id === id && !liveRun(record.agentName) && (record.verdict || record.state !== 'pending')));
+  await until(async () => (await readReviewLedger(root)).reviews.some(record => record.id === id && !liveRun(record.agentName) && (record.verdict || record.state !== 'pending')), 'the review run to end', 10_000, 25);
   return (await readReviewLedger(root)).reviews.find(record => record.id === id)!;
 };
 
@@ -147,7 +144,7 @@ test('e2e:product-review-environment — the product-review session receives GRA
     const work = await insert(productItem(`GY-${kind === 'claude' ? 9501 : 9502}`, headA));
     const fake = runtime(approve(headA));
     const launched = await launchReview(root, work, profile, [], now(), { run, headless: fake.exec, product: true, probe: { exclude: [kind === 'claude' ? 'product-codex-account' : 'product-claude-account'] } });
-    await until('the run to start', () => fake.runs.length === 1);
+    await until(() => fake.runs.length === 1, 'the run to start', 10_000, 25);
     const [child] = fake.runs;
     assert.equal(child!.command, command, `${kind} launches its own runtime program`);
     assert.equal(child!.env.GRAPHYARD_URL, url, `${kind} session reaches the control plane its prompt names`);
@@ -222,7 +219,7 @@ test('e2e:product-review-environment — an unconfigured install with e2e.serve 
     return approve(headB);
   });
   const launched = await launchReview(root, work, 'product-claude', [], now(), { run, headless: fake.exec, product: true });
-  await until('the run to start', () => fake.runs.length === 1);
+  await until(() => fake.runs.length === 1, 'the run to start', 10_000, 25);
   const prompt = fake.runs[0]!.args.at(-1)!;
   const served = /http:\/\/127\.0\.0\.1:\d+/.exec(prompt)![0];
   assert.equal(served, `http://127.0.0.1:${servePort}`, 'the prompt hands the URL of the head the serve command runs');
@@ -231,14 +228,14 @@ test('e2e:product-review-environment — an unconfigured install with e2e.serve 
   release();
   const record = await settledRecord(launched.review);
   assert.equal(record.verdict?.state, 'APPROVED');
-  await until('the served head to stop', async () => !(await fetch(`http://127.0.0.1:${servePort}/healthz`).then(() => true, () => false)));
+  await until(async () => !(await fetch(`http://127.0.0.1:${servePort}/healthz`).then(() => true, () => false)), 'the served head to stop', 10_000, 25);
 });
 
 test('e2e:product-review-environment — an install with neither serving nor a serve command owes no walkthrough, and the review completes', async () => {
   const work = await insert(productItem('GY-9506', headA));
   const fake = runtime(approve(headA));
   const launched = await launchReview(root, work, 'product-claude', [], now(), { run, headless: fake.exec, product: true });
-  await until('the run to start', () => fake.runs.length === 1);
+  await until(() => fake.runs.length === 1, 'the run to start', 10_000, 25);
   const prompt = fake.runs[0]!.args.at(-1)!;
   assert.match(prompt, /no walkthrough is required and none is owed/);
   assert.match(prompt, /no app was there to walk/);
@@ -257,7 +254,7 @@ test('e2e:product-review-environment — a reviewer that walked the served head 
   const item = await stored(work.id);
   assert.equal(item.productReview?.verdict, 'changes-requested', 'a fault found while walking the app still requests changes');
   assert.match(standingVerdict(item)!.reason, /product review requested changes/, 'and the head returns to its worker for it');
-  await until('the served head to stop', async () => !(await fetch(`http://127.0.0.1:${servePort}/healthz`).then(() => true, () => false)));
+  await until(async () => !(await fetch(`http://127.0.0.1:${servePort}/healthz`).then(() => true, () => false)), 'the served head to stop', 10_000, 25);
 });
 
 test('e2e:product-review-environment — master status shows one attention line for a product review that could not run', async () => {

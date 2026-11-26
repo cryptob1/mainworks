@@ -12,6 +12,7 @@ import { trialFileTimeoutMs } from '../src/merge-writer/trial-load.js';
 import { declarationSlot, heldSlots, slotsDirectoryVariable } from '../src/master/verification-slots.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { until } from './helpers/until.js';
 
 // GY-3800: at 18:34Z and 19:58Z on 2026-11-24 a gate rerun was stopped for the per-file timeout,
 // and the gate sat "probing" while merge trials held every ordinary host slot: the probe on the
@@ -21,10 +22,6 @@ import { git, gitRepo } from './helpers/git-repo.js';
 const repository = 'owner/project';
 const start = Date.parse('2030-05-01T00:00:00Z');
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-async function until(condition: () => boolean, what: string, timeoutMs = 60_000) {
-  for (const deadline = Date.now() + timeoutMs; !condition();) { assert.ok(Date.now() < deadline, `timed out waiting until ${what}`); await sleep(20); }
-}
 const passing = { build: 'pass', tests: { passed: 1, failed: [], files: 1 }, durationMs: 1, logTail: '', files: [], e2e: [] } as unknown as MergeTrialRun;
 const failingTest = { ...passing, tests: { passed: 0, failed: ['f1.ts'], files: 1 } } as unknown as MergeTrialRun;
 
@@ -84,10 +81,10 @@ async function gateWithHangingFile() {
   // A merge trial holds the host's one ordinary slot for the whole gate.
   let endMerge!: () => void;
   const merge = heavyTrial('GY-1', undefined, undefined, () => new Promise<void>(resolve => { endMerge = resolve; }));
-  await until(() => holders(slots).includes('test merge GY-1'), 'a merge trial holds the ordinary slot');
+  await until(() => holders(slots).includes('test merge GY-1'), 'a merge trial holds the ordinary slot', 60_000);
   const flight = (await batchGateStep(cycle))!.gate!;
-  await until(() => checks.length === 2, 'the gate reruns its failed test file');
-  await until(() => readGateRecord(gateRecordPath(coordinator))?.inFlight?.progress === 'tests', 'the rerun reaches its test runner');
+  await until(() => checks.length === 2, 'the gate reruns its failed test file', 60_000);
+  await until(() => readGateRecord(gateRecordPath(coordinator))?.inFlight?.progress === 'tests', 'the rerun reaches its test runner', 60_000);
   assert.deepEqual(holders(slots).sort(), ['test merge GY-1', 'test merge batch-gate'], 'the rerun holds the gate\'s slot');
   clock += trialFileTimeoutMs + 1;
   const stoppedAt = Date.now();

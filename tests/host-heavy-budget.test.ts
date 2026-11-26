@@ -8,6 +8,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git } from './helpers/git-repo.js';
 import { sessionSlotsGrant } from '../src/master/harness.js';
 import { gateSlot, heavyCommand, heavyJobLimit, heldSlots, hostHeavyJobsDirectory, requestHeavyDrain, resumeHeavyDrain, slotsDirectoryVariable, verificationBin, verificationEnvironment, waitStep, withHeavyJob } from '../src/master/verification-slots.js';
+import { until } from './helpers/until.js';
 
 // GY-3290: every Mainworks project of one user on one host shares one heavy-job budget. On
 // 13 November 2026 a 24-core host shared by several projects sat at load 50–86 and local
@@ -15,9 +16,6 @@ import { gateSlot, heavyCommand, heavyJobLimit, heldSlots, hostHeavyJobsDirector
 
 const launcher = join(import.meta.dirname, 'helpers', 'heavy-job-launcher.ts');
 const sleep = (ms: number) => new Promise(done => setTimeout(done, ms));
-const until = async (condition: () => boolean, what: string, timeoutMs = 60_000) => {
-  for (const deadline = Date.now() + timeoutMs; !condition();) { assert.ok(Date.now() < deadline, `timed out waiting until ${what}`); await sleep(25); }
-};
 
 /** One host: a data directory two fixture installs share, each install its own repository, managed root and project. */
 async function host() {
@@ -94,7 +92,7 @@ test('e2e:host-heavy-budget — two installs on one host launch eight heavy jobs
   ];
   // Every process reaches the budget before any job ends: three run, and the other five say what they wait for.
   const waiting = /waits for a host heavy-job slot|waiting for a host heavy-job slot/;
-  await until(() => fixture.events().length + jobs.filter(job => waiting.test(job.stderr())).length >= jobs.length, 'all eight run or wait');
+  await until(() => fixture.events().length + jobs.filter(job => waiting.test(job.stderr())).length >= jobs.length, 'all eight run or wait', 60_000, 25);
   assert.equal(fixture.events().length, 3, `three run while five wait: ${JSON.stringify(fixture.events())}`);
   fixture.go();
   const codes = await Promise.all(jobs.map(job => job.closed));
@@ -144,7 +142,7 @@ test('e2e:host-heavy-budget — a lowered limit keeps running jobs and admits no
   const holders = () => heldSlots(fixture.directory).map(entry => entry.owner?.label).sort();
   limit(3);
   const [one, two, three] = [fixture.launch(app, 'hold', 'one'), fixture.launch(site, 'hold', 'two'), fixture.launch(site, 'hold', 'three')];
-  await until(() => fixture.events().length === 3, 'three jobs run under a limit of three');
+  await until(() => fixture.events().length === 3, 'three jobs run under a limit of three', 60_000, 25);
 
   // The host lowers its limit to two: the three running jobs are untouched, and a new one waits, saying why and behind whom.
   limit(2);
@@ -154,7 +152,7 @@ test('e2e:host-heavy-budget — a lowered limit keeps running jobs and admits no
     const lines: string[] = [];
     let ran = false;
     const queued = withHeavyJob('merge trial GY-9', async () => { ran = true; return holders(); }, { onWait: line => lines.push(line) });
-    await until(() => lines.length === 1, 'the new job reports its wait');
+    await until(() => lines.length === 1, 'the new job reports its wait', 60_000, 25);
     assert.match(lines[0], /merge trial GY-9 waits for a host heavy-job slot: every Mainworks project on this host shares 2 at once, held by held job /);
     for (const holder of ['held job one (acme/app) [pid ', 'held job two (acme/site) [pid ', 'held job three (acme/site) [pid ']) assert.ok(lines[0].includes(holder), `${holder}: ${lines[0]}`);
     // A merge trial's step says the same within the control plane's 100 characters.
@@ -205,16 +203,16 @@ test('integration:gate-slot-across-installs — every install gate and deploy us
   const started = (id: string) => fixture.events().some(([event, name]) => event === 'start' && name === id);
   const trial = fixture.launch(core, 'trial', 'core-trial', true);
   const secondTrial = fixture.launch(core, 'trial', 'core-trial-2', true);
-  await until(() => started('core-trial') && started('core-trial-2'), 'Core fills both ordinary slots');
+  await until(() => started('core-trial') && started('core-trial-2'), 'Core fills both ordinary slots', 60_000, 25);
   const queued = fixture.launch(core, 'trial', 'core-queued', true);
-  await until(() => /host heavy-job slot/.test(queued.stderr()), 'another Core trial waits');
+  await until(() => /host heavy-job slot/.test(queued.stderr()), 'another Core trial waits', 60_000, 25);
   assert.equal(started('core-queued'), false);
   assert.ok(!heldSlots(fixture.directory).some(entry => entry.slot === gateSlot), 'item work leaves the reservation free');
   requestHeavyDrain(fixture.directory, 'quiet window', 'master');
   for (const install of [lumina, core]) for (const mode of ['gate', 'deploy']) {
     const id = `${install.project.replace('/', '-')}-${mode}`;
     const job = fixture.launch(install, mode, id, true);
-    await until(() => started(id), `${id} starts despite item load and drain`, 15_000);
+    await until(() => started(id), `${id} starts despite item load and drain`, 15_000, 25);
     const reserved = heldSlots(fixture.directory).find(entry => entry.slot === gateSlot);
     assert.equal(reserved?.owner?.project, install.project, 'both installs use the same host reservation');
     assert.equal(heldSlots(fixture.directory).filter(entry => entry.slot < gateSlot).length, 2);

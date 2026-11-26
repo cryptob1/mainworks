@@ -22,6 +22,7 @@ import { EventEmitter } from 'node:events';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';
 import { observationFixture } from './helpers/observation-fixture.js';
+import { until } from './helpers/until.js';
 
 // GY-3662: a product review's served head survives a loop restart, so a deploy does not void
 // reviews in flight. The serve command runs detached in its own unit/session, is recorded with
@@ -119,15 +120,6 @@ async function productItem(key: string): Promise<Work> {
   return work;
 }
 
-const until = async (what: string, check: () => Promise<boolean> | boolean, timeoutMs = 30_000) => {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await check()) return;
-    await new Promise(resolve => setTimeout(resolve, 50));
-  }
-  assert.fail(`timed out waiting for ${what}`);
-};
-
 const answers = (address: string) => fetch(address, { signal: AbortSignal.timeout(2_000) }).then(response => response.ok, () => false);
 
 test('integration:review-serve-survives-loop-restart — a product review served head survives a loop restart, posts a verdict through the restarted loop, and stops when the session ends', { timeout: 90_000 }, async () => {
@@ -217,7 +209,7 @@ if (mode === 'launch') {
     });
     loop1.stderr!.on('data', chunk => { loop1Err += chunk; });
 
-    await until('Loop 1 to launch review and reviewer session to start', () => existsSync(loop1ReadyFile) && existsSync(startedFile) || loop1!.exitCode !== null);
+    await until(() => existsSync(loop1ReadyFile) && existsSync(startedFile) || loop1!.exitCode !== null, 'Loop 1 to launch review and reviewer session to start', 30_000, 50);
     assert.equal(loop1.exitCode, null, `Loop 1 exited unexpectedly: ${loop1Err}`);
     const started = JSON.parse(await readFile(startedFile, 'utf8')) as { url: string | null; pid: number };
     assert.ok(started.url, 'reviewer prompt must include the served head URL');
@@ -241,7 +233,7 @@ if (mode === 'launch') {
 
     // 5. Release the reviewer session so it walks the served head after the restart and posts its verdict.
     await writeFile(releaseFile, 'go');
-    await until('Loop 2 to adopt and settle the review', () => loop2!.exitCode !== null);
+    await until(() => loop2!.exitCode !== null, 'Loop 2 to adopt and settle the review', 30_000, 50);
     assert.equal(loop2.exitCode, 0, `Loop 2 failed: ${loop2Err}`);
     const adopted = JSON.parse(await readFile(loop2DoneFile, 'utf8')) as { adopted: number };
     assert.equal(adopted.adopted, 1, 'Loop 2 adopted the in-flight product review session');
@@ -253,7 +245,7 @@ if (mode === 'launch') {
     assert.ok(ledger.reviews.some(record => record.key === work.key && record.verdict?.state === 'APPROVED'), 'review ledger recorded APPROVED verdict');
 
     // 7. Once the review session ends, the served head must stop answering.
-    await until('the served head to stop after review session ended', async () => !(await answers(servedUrl)), 10_000);
+    await until(async () => !(await answers(servedUrl)), 'the served head to stop after review session ended', 10_000, 50);
   } finally {
     await killChild(loop1);
     await killChild(loop2);

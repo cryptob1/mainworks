@@ -28,6 +28,7 @@ import { dispatchEffects } from '../src/dispatch/effects.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { until } from './helpers/until.js';
 
 // GY-3370: a host without the browser tool is set up for product reviews. When a feature item
 // reaches product review and agent-browser is absent, the loop installs it once into the install's
@@ -131,10 +132,6 @@ async function cycle(items: Work[], exec: HeadlessExec) {
   effects.inventory = async () => headlessInventory();
   return runDispatchTick(config, emptyDispatchCursor(config), effects);
 }
-const until = async (what: string, check: () => Promise<boolean> | boolean) => {
-  for (let tries = 0; tries < 400; tries++) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 25)); }
-  assert.fail(`timed out waiting for ${what}`);
-};
 const doctor = async () => {
   const env: NodeJS.ProcessEnv = { ...process.env };
   for (const key of Object.keys(env)) if (key.startsWith('GRAPHYARD_')) delete env[key];
@@ -153,7 +150,7 @@ test('e2e:product-review-browser-provisioned — on a host without the browser t
   const [first, second] = [await insert('GY-9601'), await insert('GY-9602')];
   const fake = runtime();
   await cycle([first, second], fake.exec);
-  await until('both product reviews to settle', async () => (await stored(first.id)).productReview?.verdict === 'approved' && (await stored(second.id)).productReview?.verdict === 'approved');
+  await until(async () => (await stored(first.id)).productReview?.verdict === 'approved' && (await stored(second.id)).productReview?.verdict === 'approved', 'both product reviews to settle', 10_000, 25);
   assert.equal(await installRuns(), 1, 'two items reaching review together trigger one install');
   assert.equal(fake.runs.length, 2, 'both reviewers ran in the same cycle as the install');
   const toolBin = join(process.env.HOME!, '.local/share/graphyard/tools/node_modules/.bin');
@@ -164,7 +161,7 @@ test('e2e:product-review-browser-provisioned — on a host without the browser t
   // Later reviews reuse it: nothing reinstalls.
   const third = await insert('GY-9603');
   await cycle([third], fake.exec);
-  await until('the next review to settle', async () => (await stored(third.id)).productReview?.verdict === 'approved');
+  await until(async () => (await stored(third.id)).productReview?.verdict === 'approved', 'the next review to settle', 10_000, 25);
   assert.equal(await installRuns(), 1, 'the tool is installed once');
 });
 
@@ -176,7 +173,7 @@ test('e2e:product-review-browser-provisioned — a failing installer keeps the i
     const item = await insert('GY-9604');
     const fake = runtime();
     await cycle([item], fake.exec);
-    await until('the could-not-run record', async () => (await stored(item.id)).productReview?.verdict === 'could-not-run');
+    await until(async () => (await stored(item.id)).productReview?.verdict === 'could-not-run', 'the could-not-run record', 10_000, 25);
     // The next cycle does not rerun the failed install.
     await cycle([item], fake.exec);
     assert.equal(await installRuns() - runsBefore, 1, 'the failed install ran once');

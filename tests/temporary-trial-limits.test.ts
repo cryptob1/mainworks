@@ -22,6 +22,7 @@ import { acquireVerificationSlot, heavyJobLimit, heldSlots, hostHeavyJobsDirecto
 import type { Cycle } from '../src/daemon/cycle.js';
 import type { Work } from '../src/model.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { until } from './helpers/until.js';
 
 // GY-3446: when another project on the host asks Mainworks to back off overnight (Huck: at most 2
 // trials, throttle at 80C), the master sets a temporary trial cap and heat limit for its install,
@@ -32,9 +33,6 @@ const start = Date.parse('2030-09-01T00:00:00Z');
 const iso = (at: number) => new Date(at).toISOString();
 const sha = (seed: string) => createHash('sha1').update(seed).digest('hex');
 const sleep = (ms: number) => new Promise(done => setTimeout(done, ms));
-const until = async (condition: () => boolean, what: string, timeoutMs = 60_000) => {
-  for (const deadline = Date.now() + timeoutMs; !condition();) { assert.ok(Date.now() < deadline, `timed out waiting until ${what}`); await sleep(25); }
-};
 const base = sha('base');
 const masterInput = { version: 1, url: 'https://graphyard.example', cliPath: process.execPath, repository: 'acme/app', baseBranch: 'main', githubAppId: 1234, hostId: 'loop-host',
   masterAgentName: 'graphyard-master-app', workers: [], run: { mergeWriter: { parallel: 4 } } };
@@ -103,7 +101,7 @@ test('integration:temporary-trial-limits — trialCap=2 and launchHotCelsius=80 
   const yard = world(), state = emptyDaemonState(master);
   await reading(master, state, start, 60);
   await yard.cycle(master, state, start);
-  await until(() => yard.launches.length >= 2, 'two trials start');
+  await until(() => yard.launches.length >= 2, 'two trials start', 60_000, 25);
   await sleep(50);
   assert.deepEqual(yard.launches, ['GY-1', 'GY-2'], 'no more than two merge trials at once');
   assert.deepEqual(state.cpuPressure?.trialCap, { now: 2, full: 2 });
@@ -122,7 +120,7 @@ test('integration:temporary-trial-limits — trialCap=2 and launchHotCelsius=80 
   assert.equal(trialCapNow(state, 4), 4, 'the default heat limit halves nothing at 77C');
   await reading(master, cool, later, 60);
   await yard.cycle(master, cool, later);
-  await until(() => yard.launches.length >= 4, 'the default cap starts the other two');
+  await until(() => yard.launches.length >= 4, 'the default cap starts the other two', 60_000, 25);
   assert.deepEqual(cool.cpuPressure?.trialCap?.full, 4);
   const reverted = await status(root, master, later);
   assert.deepEqual(reverted.temporaryLimits, { trialCap: null, launchHotCelsius: null, hostHeavyJobs: null });
@@ -171,7 +169,7 @@ test('integration:temporary-trial-limits — a host-wide strict cap of 1 seriali
   const yard = await host();
   // Two installs' merge trials run under the ordinary limit of two.
   const running = [yard.launch('trial', 'GY-1', 'acme/app'), yard.launch('trial', 'HK-1', 'huck/app')];
-  await until(() => yard.ran('GY-1') && yard.ran('HK-1'), 'both trials run');
+  await until(() => yard.ran('GY-1') && yard.ran('HK-1'), 'both trials run', 60_000, 25);
 
   // The strict cap of 1 lands: nothing running is stopped, and no new job starts until fewer than one run.
   const cap = setStrictCap(yard.directory, { value: 1, until: iso(Date.now() + 3600_000) }, 'graphyard-master-app')!;
@@ -181,7 +179,7 @@ test('integration:temporary-trial-limits — a host-wide strict cap of 1 seriali
   // The batch gate loses its reservation beside the limit; a worker check, a selected test run and an affected run take a slot (GY-3447 exempts them otherwise).
   const queued = [yard.launch('gate', 'gate-huck', 'huck/app'), yard.launch('check', 'GY-3', 'acme/app'),
     yard.session('selected', ['test', '--', 'tests/a.test.ts']), yard.session('affected', ['run', 'test:affected'], 'huck/app')];
-  await until(() => queued.every(job => waiting.test(job.stderr())), 'every new job waits for the strict cap');
+  await until(() => queued.every(job => waiting.test(job.stderr())), 'every new job waits for the strict cap', 60_000, 25);
   for (const job of queued) assert.ok(!yard.ran(job.id), `${job.id} has not started`);
   assert.equal(heavyRunLabel('test', ['tests/a.test.ts'], true), 'npm test tests/a.test.ts', "this repository's runner takes a slot for selected files too");
 
@@ -207,7 +205,7 @@ test('integration:temporary-trial-limits — a host-wide strict cap of 1 seriali
   const lines: string[] = [];
   let taken = false;
   const hot = acquireVerificationSlot({ directory: yard.directory, label: 'npm test', hwmon: yard.sensors, pollMs: 20, onWait: line => lines.push(line) }).then(held => { taken = true; return held; });
-  await until(() => lines.length > 0, 'the hot start waits');
+  await until(() => lines.length > 0, 'the hot start waits', 60_000, 25);
   assert.match(lines[0]!, /90C, 85C or more/);
   await sleep(100);
   assert.ok(!taken, 'nothing starts at 90C');
@@ -220,7 +218,7 @@ test('integration:temporary-trial-limits — a host-wide strict cap of 1 seriali
   await sleep(400);
   assert.equal(heavyJobLimit(yard.directory), 2);
   const holders = [yard.launch('hold', 'GY-5', 'acme/app'), yard.launch('hold', 'HK-5', 'huck/app')];
-  await until(() => yard.ran('GY-5') && yard.ran('HK-5'), 'two jobs hold both ordinary slots again');
+  await until(() => yard.ran('GY-5') && yard.ran('HK-5'), 'two jobs hold both ordinary slots again', 60_000, 25);
   const free = yard.session('after', ['test', '--', 'tests/a.test.ts']);
   assert.equal(await free.closed, 0, free.stderr());
   assert.doesNotMatch(free.stderr(), waiting, 'a selected test run starts at once again');

@@ -9,6 +9,7 @@ import { git } from './helpers/git-repo.js';
 import { acquireVerificationSlot, gateSlot, heldSlots, hostHeavyJobsDirectory, slotsDirectoryVariable, type HeldSlot } from '../src/master/verification-slots.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { until } from './helpers/until.js';
 
 // GY-3487: several installs share one host's heavy-job slots. One install held every slot, release
 // after release, because its own older waiters were always at the head of the queue, and another
@@ -16,9 +17,6 @@ import { masterConfigSchema, type MasterConfig } from '../src/master.js';
 // holding none waits.
 
 const sleep = (ms: number) => new Promise(done => setTimeout(done, ms));
-async function until(condition: () => boolean, what: string, timeoutMs = 60_000) {
-  for (const deadline = Date.now() + timeoutMs; !condition();) { assert.ok(Date.now() < deadline, `timed out waiting until ${what}`); await sleep(10); }
-}
 const stop = new AbortController();
 after(() => stop.abort());
 
@@ -40,12 +38,12 @@ test('integration:heavy-slot-fairness — at limit 3 project A fills every slot 
   assert.equal(heldSlots(directory).filter(entry => entry.slot < gateSlot).length, 3);
   // A queues a fourth job first, then B queues its only one.
   const aNext = waiter(directory, 'merge trial A-4', 'acme/a');
-  await until(() => aNext.lines.length > 0, 'A\'s fourth job waits');
+  await until(() => aNext.lines.length > 0, 'A\'s fourth job waits', 60_000, 10);
   const b = waiter(directory, 'merge trial B-1', 'acme/b');
-  await until(() => b.lines.length > 0, 'B\'s job waits');
-  await until(() => aNext.lines.some(line => line.includes('waiting: acme/b holds none and is next')), `A's waiter names why it waits`);
+  await until(() => b.lines.length > 0, 'B\'s job waits', 60_000, 10);
+  await until(() => aNext.lines.some(line => line.includes('waiting: acme/b holds none and is next')), `A's waiter names why it waits`, 60_000, 10);
   a[0].release();
-  await until(() => !!b.held() || !!aNext.held(), 'the freed slot is taken');
+  await until(() => !!b.held() || !!aNext.held(), 'the freed slot is taken', 60_000, 10);
   await sleep(200);
   assert.ok(b.held(), 'the project holding none takes the freed slot');
   assert.equal(aNext.held(), null, 'the project holding three does not take a fourth');
@@ -90,10 +88,10 @@ test('e2e:heavy-slot-fairness — two installs\' loops on one host submit merge 
   for (const [install, id] of [[app, 'GY-1'], [app, 'GY-2'], [app, 'GY-3'], [site, 'GY-11'], [site, 'GY-12']] as const) {
     const job = trial(install, id);
     jobs.push(job);
-    await until(() => waiting.test(job.stderr()), `${id} waits`);
+    await until(() => waiting.test(job.stderr()), `${id} waits`, 60_000, 10);
   }
   for (const held of holding) held.release();
-  await until(() => events().length >= 2, 'two trials start');
+  await until(() => events().length >= 2, 'two trials start', 60_000, 10);
   await sleep(500);
   const projectOf = (id: string) => jobs.find(job => job.id === id)!.project;
   assert.deepEqual(events().map(([, id]) => projectOf(id)).sort(), ['acme/app', 'acme/site'], `one trial from each install runs: ${JSON.stringify(events())}`);

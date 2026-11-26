@@ -9,6 +9,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { trialContainerBoundary, trialContainerLaunch } from '../src/merge-writer/trial-container.js';
 import { trialContainerCap, trialLoad, trialStartOrder } from '../src/merge-writer/trial-load.js';
 import { serveHead } from '../src/merge-writer/serve-head.js';
+import { until } from './helpers/until.js';
 
 const proof = 'unit:tests/trial-load-cap.test.ts';
 
@@ -57,15 +58,9 @@ async function machine(label: string) {
     children.push(child);
     return { child, said: () => said };
   };
-  const until = async (condition: () => boolean | Promise<boolean>, what: string) => {
-    for (let waited = 0; !(await condition()); waited += 20) {
-      assert.ok(waited < 15_000, what);
-      await new Promise(resolve => setTimeout(resolve, 20));
-    }
-  };
   const end = async (child: ChildProcess) => { const gone = new Promise(resolve => child.once('close', resolve)); child.kill('SIGTERM'); await gone; };
   const close = async () => { for (const child of children) if (child.exitCode === null && child.signalCode === null) await end(child); };
-  return { base, avail, started, sensor, launch, until, end, close };
+  return { base, avail, started, sensor, launch, end, close };
 }
 
 test(`${proof} — with the cap reached a further start waits until one ends`, async () => {
@@ -73,12 +68,12 @@ test(`${proof} — with the cap reached a further start waits until one ends`, a
   try {
     const first = host.launch({ cap: 2 });
     host.launch({ cap: 2 });
-    await host.until(async () => await host.started() === 2, 'two starts fit the cap of two');
+    await until(async () => await host.started() === 2, 'two starts fit the cap of two', 15_000);
     const third = host.launch({ cap: 2 });
-    await host.until(() => third.said().includes('waiting: the machine-wide cap of 2 trial containers is reached'), 'the third start says what it waits for');
+    await until(() => third.said().includes('waiting: the machine-wide cap of 2 trial containers is reached'), 'the third start says what it waits for', 15_000);
     assert.equal(await host.started(), 2, 'the start over the cap never reaches Docker');
     await host.end(first.child);
-    await host.until(async () => await host.started() === 3, 'the waiting start takes the freed slot');
+    await until(async () => await host.started() === 3, 'the waiting start takes the freed slot', 15_000);
     assert.match(third.said(), /starting/);
   } finally { await host.close(); }
 });
@@ -89,10 +84,10 @@ test(`${proof} — a CPU sensor at 95C holds a start until it cools; a hot non-C
     await host.sensor('nvme', 99_000);
     await host.sensor('coretemp', 95_000);
     const held = host.launch();
-    await host.until(() => held.said().includes('waiting: a CPU sensor reads 95C, at or over its 95C limit'), 'the start says the CPU is hot');
+    await until(() => held.said().includes('waiting: a CPU sensor reads 95C, at or over its 95C limit'), 'the start says the CPU is hot', 15_000);
     assert.equal(await host.started(), 0, 'nothing starts while the CPU is at 95C');
     await host.sensor('coretemp', 94_000);
-    await host.until(async () => await host.started() === 1, 'the start goes once the sensor clears');
+    await until(async () => await host.started() === 1, 'the start goes once the sensor clears', 15_000);
   } finally { await host.close(); }
 });
 
@@ -101,10 +96,10 @@ test(`${proof} — a start waits while its volume is under the disk floor and go
   try {
     await writeFile(host.avail, '29000000000\n');
     const held = host.launch();
-    await host.until(() => held.said().includes('is under the disk floor'), 'the start names the short volume');
+    await until(() => held.said().includes('is under the disk floor'), 'the start names the short volume', 15_000);
     assert.equal(await host.started(), 0);
     await writeFile(host.avail, '31000000000\n');
-    await host.until(async () => await host.started() === 1, 'the start goes once the disk clears');
+    await until(async () => await host.started() === 1, 'the start goes once the disk clears', 15_000);
   } finally { await host.close(); }
 });
 
@@ -113,7 +108,7 @@ test(`${proof} — at normal readings a start proceeds at once, without waiting`
   try {
     await host.sensor('coretemp', 70_000);
     const at = Date.now(), { said } = host.launch({ pollSeconds: 1 });
-    await host.until(async () => await host.started() === 1, 'the start goes');
+    await until(async () => await host.started() === 1, 'the start goes', 15_000);
     assert.ok(Date.now() - at < 900, 'no wait of even one retry');
     assert.equal(said(), '');
   } finally { await host.close(); }
@@ -123,22 +118,22 @@ test(`${proof} — a freed slot goes to the gate before the merge trial, and the
   const host = await machine('load-order');
   try {
     const occupant = host.launch({ cap: 1 });
-    await host.until(async () => await host.started() === 1, 'the slot is taken');
+    await until(async () => await host.started() === 1, 'the slot is taken', 15_000);
     const verification = host.launch({ cap: 1, order: trialStartOrder.verification });
-    await host.until(() => verification.said().includes('waiting'), 'verification waits');
+    await until(() => verification.said().includes('waiting'), 'verification waits', 15_000);
     const merge = host.launch({ cap: 1, order: trialStartOrder.merge });
-    await host.until(() => merge.said().includes('waiting'), 'the merge trial waits');
+    await until(() => merge.said().includes('waiting'), 'the merge trial waits', 15_000);
     const gate = host.launch({ cap: 1, order: trialStartOrder.gate });
-    await host.until(() => gate.said().includes('waiting'), 'the gate waits');
+    await until(() => gate.said().includes('waiting'), 'the gate waits', 15_000);
     await host.end(occupant.child);
-    await host.until(() => gate.said().includes('starting'), 'the gate goes first');
+    await until(() => gate.said().includes('starting'), 'the gate goes first', 15_000);
     await new Promise(resolve => setTimeout(resolve, 250));
     assert.equal(merge.said().includes('starting') || verification.said().includes('starting'), false);
     await host.end(gate.child);
-    await host.until(() => merge.said().includes('starting'), 'the merge trial goes second');
+    await until(() => merge.said().includes('starting'), 'the merge trial goes second', 15_000);
     assert.equal(verification.said().includes('starting'), false);
     await host.end(merge.child);
-    await host.until(() => verification.said().includes('starting'), 'worker verification goes last');
+    await until(() => verification.said().includes('starting'), 'worker verification goes last', 15_000);
   } finally { await host.close(); }
 });
 
@@ -146,14 +141,14 @@ test(`${proof} — a start that waited holds no place in the queue once it runs,
   const host = await machine('load-queue');
   try {
     const occupant = host.launch({ cap: 2 }), other = host.launch({ cap: 2 });
-    await host.until(async () => await host.started() === 2, 'both slots are taken');
+    await until(async () => await host.started() === 2, 'both slots are taken', 15_000);
     const merge = host.launch({ cap: 2 });
-    await host.until(() => merge.said().includes('waiting'), 'the merge trial waits');
+    await until(() => merge.said().includes('waiting'), 'the merge trial waits', 15_000);
     await host.end(occupant.child);
-    await host.until(() => merge.said().includes('starting'), 'the merge trial runs');
+    await until(() => merge.said().includes('starting'), 'the merge trial runs', 15_000);
     await host.end(other.child);
     const verification = host.launch({ cap: 2, order: trialStartOrder.verification });
-    await host.until(async () => await host.started() === 4, 'the free slot goes to a later-order start beside the running merge trial');
+    await until(async () => await host.started() === 4, 'the free slot goes to a later-order start beside the running merge trial', 15_000);
     assert.equal(verification.said(), '');
   } finally { await host.close(); }
 });
@@ -202,18 +197,18 @@ test('e2e:trial-overload-timeout-retrial — a reduced cap counts running contai
   const host = await machine('load-cap-reduced');
   try {
     const first = host.launch({ cap: 4 });
-    await host.until(async () => await host.started() === 1, 'first started');
+    await until(async () => await host.started() === 1, 'first started', 15_000);
     const second = host.launch({ cap: 4 });
-    await host.until(async () => await host.started() === 2, 'second started');
+    await until(async () => await host.started() === 2, 'second started', 15_000);
     const third = host.launch({ cap: 4 });
-    await host.until(async () => await host.started() === 3, 'third started');
+    await until(async () => await host.started() === 3, 'third started', 15_000);
     host.launch({ cap: 4 });
-    await host.until(async () => await host.started() === 4, 'fourth started');
+    await until(async () => await host.started() === 4, 'fourth started', 15_000);
     await host.end(first.child); await host.end(second.child);
     const waiting = host.launch({ cap: 2 });
-    await host.until(() => waiting.said().includes('cap of 2 trial containers'), 'the lower cap counts the two still running');
+    await until(() => waiting.said().includes('cap of 2 trial containers'), 'the lower cap counts the two still running', 15_000);
     assert.equal(await host.started(), 4, 'free low slots do not grant extra capacity');
     await host.end(third.child);
-    await host.until(async () => await host.started() === 5, 'a start fits once the running count falls below two');
+    await until(async () => await host.started() === 5, 'a start fits once the running count falls below two', 15_000);
   } finally { await host.close(); }
 });

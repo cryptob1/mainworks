@@ -23,6 +23,7 @@ import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { CostsView, ItemCostsView } from '../web/pages/costs.js';
 import { listen } from './helpers/http-server.js';
+import { until } from './helpers/until.js';
 
 // GY-3289: a fixture install whose stub runtimes report usage the way the real ones do — a Codex
 // worker's `turn.completed` event, a Claude Code reviewer's `result` object, the master session's
@@ -60,7 +61,6 @@ before(async () => {
 after(async () => { await close?.(); if (store) await store.close(); });
 
 const stub = (name: string, lines: unknown[]) => writeFile(join(bin, name), `#!${process.execPath}\nfor (const line of ${JSON.stringify(lines.map(line => typeof line === 'string' ? line : JSON.stringify(line)))}) console.log(line);\n`, { mode: 0o755 });
-const until = async (what: string, done: () => boolean | Promise<boolean>) => { for (let tries = 0; tries < 400; tries++) { if (await done()) return; await new Promise(resolve => setTimeout(resolve, 50)); } assert.fail(`timed out waiting for ${what}`); };
 const costs = async (query = ''): Promise<CostSummary> => (await fetch(`${url}/api/costs${query}`, { headers: { Authorization: `Bearer ${coordinatorToken}` } })).json() as Promise<CostSummary>;
 
 test('e2e:project-token-costs — the Costs section, the item page and master usage show what a worker, a reviewer and the master session spent, priced from the registry\'s price sheet', async () => {
@@ -83,7 +83,7 @@ test('e2e:project-token-costs — the Costs section, the item page and master us
   const worker = (kind: string, account: string, args: string[]) => startHeadlessWorker({ name: `eng-${kind}`, work: key, subject: `${key}: Priced item`, epoch: 1, principal: 'worker-a', account, kind, args, environment,
     directory: checkout, supervisor: [process.execPath, '--import', 'tsx', supervisor, '--'], prompt: 'Implement it.', root, exec: spawnHeadless, timeoutMs: 60_000, startupMs: 100 });
   const runs = [await worker('codex', 'codex-api', ['--ask-for-approval', 'never', '--sandbox', 'workspace-write']), await worker('muse', 'muse-sub', ['--approval-mode', 'never', '--trust-workspace'])];
-  await until('the worker runs to end', () => runs.every(run => existsSync(join(workerRunsDirectory(root), run.id, 'exit'))));
+  await until(() => runs.every(run => existsSync(join(workerRunsDirectory(root), run.id, 'exit'))), 'the worker runs to end', 20_000, 50);
 
   // The reviewer: one headless session whose JSON report wraps its verdict; the answer posted is the verdict itself.
   const review = await startHeadlessSession({ name: 'review-claude-1', work: key, subject: 'review-1', kind: 'claude', account: 'claude-max', args: ['--permission-mode', 'bypassPermissions'], environment,

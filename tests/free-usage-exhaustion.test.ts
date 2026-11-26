@@ -23,6 +23,7 @@ import type { Principal, Work } from '../src/model.js';
 import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { listen } from './helpers/http-server.js';
+import { until } from './helpers/until.js';
 
 // GY-3302: hwd-backend retried accounts across six items after `429 FreeUsageLimitError`. A
 // free-usage notice is the account's exhaustion like any limit notice: held at once, before any
@@ -129,16 +130,8 @@ async function dispatch(work: Work) {
     capacity: async event => { const result = await api('POST', `work/${work.id}/capacity`, event); assert.equal(result.status, 200, JSON.stringify(result.body)); },
     onRun: async run => { runs.set(work.id, run); const result = await api('POST', `work/${work.id}/session`, workerRunHandle(work, config.workers[0]!, hostId, run)); assert.equal(result.status, 200, JSON.stringify(result.body)); } });
 }
-async function until<T>(what: string, read: () => Promise<T | null | undefined | false>): Promise<T> {
-  for (let tries = 0; tries < 600; tries++) {
-    const value = await read();
-    if (value) return value;
-    await new Promise(resolve => setTimeout(resolve, 50));
-  }
-  assert.fail(`never: ${what}`);
-}
 async function submitted(id: string, epoch: number) {
-  const item = await until(`${id} epoch ${epoch} submitted`, async () => { const item = await stored(id); return item.submission?.epoch === epoch && !liveRun('eng-a') && item; });
+  const item = await until(async () => { const item = await stored(id); return item.submission?.epoch === epoch && !liveRun('eng-a') && item; }, `${id} epoch ${epoch} submitted`, 30_000, 50);
   // The loop marks the ended run finished (daemon/cycle.ts), which frees its registry session for the next item.
   const result = await api('POST', `work/${id}/session`, workerRunHandle(item, (await loadMasterConfig(root)).workers[0]!, hostId, { ...runs.get(id)!, outcome: 'submitted' }));
   assert.equal(result.status, 200, JSON.stringify(result.body));
@@ -196,7 +189,7 @@ test('e2e:free-usage-exhaustion — a quota notice mid-run keeps the work, holds
   const work = await readyItem('GY-9790');
   const launched = await dispatch(work);
   assert.equal(launched.runtime, 'muse', 'the run outlived its startup observation');
-  const exhaustion = await until('the mid-run notice is recorded', async () => (await stored(work.id)).capacity?.exhaustions?.find(entry => entry.epoch === 1 && entry.account === 'midrun'));
+  const exhaustion = await until(async () => (await stored(work.id)).capacity?.exhaustions?.find(entry => entry.epoch === 1 && entry.account === 'midrun'), 'the mid-run notice is recorded', 30_000, 50);
   assert.equal(exhaustion.partialWork?.state, 'committed', 'the work done before the notice is kept');
   const resetsAt = Date.parse(exhaustion.resetsAt!);
   assert.ok(Math.abs(resetsAt - (Date.now() + 3 * 3_600_000)) < 60_000, `the named reset is respected: ${exhaustion.resetsAt}`);
@@ -204,7 +197,7 @@ test('e2e:free-usage-exhaustion — a quota notice mid-run keeps the work, holds
   assert.equal(held.eligible, false);
   assert.equal(held.resetsAt, exhaustion.resetsAt);
   assert.equal(held.resetUnknown, false);
-  await until('the run ended', async () => !liveRun('eng-a'));
+  await until(async () => !liveRun('eng-a'), 'the run ended', 30_000, 50);
   const next = await dispatch(await stored(work.id));
   assert.equal(next.runtime, 'opencode');
   assert.equal(next.epoch, 2);

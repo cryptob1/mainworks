@@ -19,6 +19,7 @@ import { runCases } from '../src/e2e/runner.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { until } from './helpers/until.js';
 
 // GY-1902: a change's preview is checked out, served by `serveHead` and its declared cases run
 // against it. GY-3032: no merge is previewed on its own: its trial runs the bound cases against the
@@ -169,14 +170,13 @@ test('unit:preview-capped-and-cleaned-up — at most two previews run at once; e
   const runs = [0, 1, 2].map(() => runPreview({ root: fixture.repo, base: fixture.base, mergeSha: fixture.mergeSha, timeoutMs: 30_000, stepTimeoutMs: 5_000, shell: blockingShell, slots }));
   // A run that rejects fails the test where it is awaited, never as an unhandled rejection.
   for (const run of runs) run.catch(() => {});
-  const until = async (done: () => boolean) => { for (let index = 0; index < 400 && !done(); index++) await new Promise(accept => setTimeout(accept, 25)); assert.ok(done()); };
-  await until(() => gates.length === 2);
+  await until(() => gates.length === 2, 'two previews take the slots', 10_000, 25);
   await new Promise(accept => setTimeout(accept, 200));
   assert.equal(gates.length, 2, 'the third preview waits for a slot');
   gates.shift()!();
-  await until(() => gates.length === 2);
+  await until(() => gates.length === 2, 'the third preview takes the freed slot', 10_000, 25);
   while (gates.length) gates.shift()!();
-  await until(() => !gates.length && active === 0);
+  await until(() => !gates.length && active === 0, 'every preview finishes', 10_000, 25);
   for (const verdict of await Promise.all(runs)) assert.equal(verdict.result, 'pass', verdict.detail);
   assert.equal(most, 2, 'never more than two previews at once');
   assert.equal(slots.running, 0, 'every slot freed');

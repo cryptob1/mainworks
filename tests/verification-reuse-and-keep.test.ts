@@ -18,16 +18,12 @@ import type { CliContext } from '../src/cli/context.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
+import { until } from './helpers/until.js';
 
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-3543: a passed verification of a head is not run again for that head, and a result that
 // outlives its lease is kept unless a newer request for the item replaced it.
-
-async function until(condition: () => Promise<boolean>, message: string) {
-  for (let i = 0; i < 500; i++) { if (await condition()) return; await delay(10); }
-  assert.fail(message);
-}
 
 async function fixture(t: TestContext) {
   const root = await temporaryDirectory('verification-reuse', process.cwd());
@@ -80,7 +76,7 @@ test('integration:verification-reuse-and-keep — verify then complete on the sa
   const verify = async (head = f.head) => {
     const request = requestWorkerVerification(context, f.work, { mode: 'verify', head, epoch: 1 });
     const settled = request.then(() => true, () => true);
-    await until(async () => await Promise.race([settled, delay(5).then(() => false)]) || (await f.pending()).length === 1, 'verify answered or queued');
+    await until(async () => await Promise.race([settled, delay(5).then(() => false)]) || (await f.pending()).length === 1, 'verify answered or queued', 5_000, 10);
     await pump();
     return request;
   };
@@ -120,11 +116,11 @@ test('integration:verification-reuse-and-keep — a result that outlives its lea
     ran: [{ proof: 'integration:reuse-required', criteria: ['AC-1'], result: 'pass', executed: 1, failed: 0, skipped: 0, files: ['tests/required.test.ts'] }], outstanding: [] },
   rerun: { flaked: [], baseFailures: [] } };
   const older = start();
-  await until(async () => (await f.pending()).length === 1, 'first request queued');
+  await until(async () => (await f.pending()).length === 1, 'first request queued', 5_000, 10);
   const [first] = await f.api('worker-verifications/take', { host: 'test' });
   // An identical repeat would join the first request; a newer request differs in its inputs.
   const newer = start({ preserves: ['kept'] });
-  await until(async () => (await f.pending()).length === 2, 'newer request queued');
+  await until(async () => (await f.pending()).length === 2, 'newer request queued', 5_000, 10);
   const [second] = await f.api('worker-verifications/take', { host: 'test' });
   await lapse();
   // The older request's result is replaced by the newer one: not recorded.

@@ -7,6 +7,7 @@ import { bootstrapGate, gateLimitMs, runGate, type GatePorts, type GateRecord } 
 import { trialContainerLaunch } from '../src/merge-writer/trial-container.js';
 import { gateCpuShares, trialLoad, trialStartOrder, trialStartWaiting } from '../src/merge-writer/trial-load.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { until } from './helpers/until.js';
 
 // GY-3444 AC-5: the gate's bound measures its own work, not its waits for a trial slot or CPU; its
 // containers run under a higher CPU weight than merge trials and worker verification; and a gate
@@ -84,25 +85,22 @@ exit 0
     children.push(child);
     return { child, said: () => said };
   };
-  const until = async (condition: () => boolean | Promise<boolean>, what: string) => {
-    for (let waited = 0; !(await condition()); waited += 50) { assert.ok(waited < 15_000, what); await new Promise(resolve => setTimeout(resolve, 50)); }
-  };
   const creates = async () => (await readFile(log, 'utf8').catch(() => '')).split('\n').filter(line => line.includes(' create '));
   const end = async (child: ChildProcess) => { const gone = new Promise(resolve => child.once('close', resolve)); child.kill('SIGTERM'); await gone; };
   try {
     assert.ok(trialStartOrder.gate < trialStartOrder.merge);
     const merge = await launch('merge');
-    await until(async () => (await creates()).length === 1, 'the merge trial takes the one slot');
+    await until(async () => (await creates()).length === 1, 'the merge trial takes the one slot', 15_000, 50);
     assert.doesNotMatch((await creates())[0]!, /--cpu-shares/, 'a merge trial keeps Docker\'s default CPU weight');
     assert.equal(trialStartWaiting('gate', slots), false, 'no gate start waits yet');
     const gate = await launch('gate');
-    await until(() => gate.said().includes('waiting'), 'the gate start waits for the slot');
+    await until(() => gate.said().includes('waiting'), 'the gate start waits for the slot', 15_000, 50);
     assert.equal(trialStartWaiting('gate', slots), true, 'the gate sees its start waiting, time its bound does not count');
     assert.equal(trialStartWaiting('merge', slots), false);
     await end(merge.child);
-    await until(() => gate.said().includes('starting'), 'the gate starts once the slot frees');
-    await until(() => !trialStartWaiting('gate', slots), 'its wait ends with the start');
-    await until(async () => (await creates()).length === 2, 'the gate creates its container');
+    await until(() => gate.said().includes('starting'), 'the gate starts once the slot frees', 15_000, 50);
+    await until(() => !trialStartWaiting('gate', slots), 'its wait ends with the start', 15_000, 50);
+    await until(async () => (await creates()).length === 2, 'the gate creates its container', 15_000, 50);
     const gateCreate = (await creates())[1]!;
     assert.match(gateCreate, new RegExp(`--cpu-shares=${gateCpuShares}`), 'the gate container runs under the higher CPU weight');
     assert.ok(gateCpuShares > 1024, 'higher than the default weight merge trials and worker verification run under');

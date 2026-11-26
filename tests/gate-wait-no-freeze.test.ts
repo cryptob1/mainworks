@@ -17,6 +17,7 @@ import { masterConfigSchema, type WorkerProfile } from '../src/master.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git } from './helpers/git-repo.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { until } from './helpers/until.js';
 
 // GY-3518: one batch gate waiting for a host heavy-job slot paused every new implementation launch,
 // so the items that would have cleared the jam could not start either. A gate that only waits for
@@ -27,10 +28,6 @@ const repository = 'owner/project';
 const start = Date.parse('2030-06-01T00:00:00Z');
 const iso = (at: number) => new Date(at).toISOString();
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-async function until(condition: () => boolean, what: string, timeoutMs = 15_000) {
-  for (const deadline = Date.now() + timeoutMs; !condition();) { assert.ok(Date.now() < deadline, `timed out waiting until ${what}`); await sleep(20); }
-}
 const passing = { build: 'pass', tests: { passed: 1, failed: [], files: 1 }, durationMs: 1, logTail: '', files: [], proofs: {}, e2e: [] } as unknown as MergeTrialRun;
 const previous = process.env[slotsDirectoryVariable];
 after(() => { if (previous === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = previous; });
@@ -99,7 +96,7 @@ async function world(label: string) {
 test('integration:gate-wait-no-freeze — with every heavy-job slot held and the gate waiting for one, a free worker launches the ready item; the gate takes the next slot that frees', { timeout: 120_000 }, async () => {
   const yard = await world('gate-wait-no-freeze');
   const flight = (await batchGateStep(yard.loop))!.gate!;
-  await until(() => /waiting for a host heavy-job slot/.test(yard.summary()?.progress ?? ''), 'the gate waits for a slot');
+  await until(() => /waiting for a host heavy-job slot/.test(yard.summary()?.progress ?? ''), 'the gate waits for a slot', 15_000);
 
   await runCycle(yard.config, yard.state, yard.effects, () => start);
   await mergeWriterIdle(yard.state);
@@ -108,7 +105,7 @@ test('integration:gate-wait-no-freeze — with every heavy-job slot held and the
 
   // A slot frees: the gate takes it and its check starts.
   for (const slot of yard.held) slot.release();
-  await until(() => yard.checks.length === 1, 'the gate\'s check starts on the freed slot');
+  await until(() => yard.checks.length === 1, 'the gate\'s check starts on the freed slot', 15_000);
   yard.checks[0]!.resolve(passing);
   await flight;
   assert.equal(readGateRecord(gateRecordPath(yard.coordinator))!.verified, yard.tip, 'the gate verified main');
@@ -117,7 +114,7 @@ test('integration:gate-wait-no-freeze — with every heavy-job slot held and the
 test('e2e:gate-wait-no-freeze — with the gate waiting for a slot a ready item is claimed, and master status shows both the waiting gate and the claimed item', { timeout: 120_000 }, async () => {
   const yard = await world('gate-wait-no-freeze-status');
   const flight = (await batchGateStep(yard.loop))!.gate!;
-  await until(() => /waiting for a host heavy-job slot/.test(yard.summary()?.progress ?? ''), 'the gate waits for a slot');
+  await until(() => /waiting for a host heavy-job slot/.test(yard.summary()?.progress ?? ''), 'the gate waits for a slot', 15_000);
   await runCycle(yard.config, yard.state, yard.effects, () => start);
   await mergeWriterIdle(yard.state);
   assert.deepEqual(yard.dispatched, ['GY-1']);
@@ -133,7 +130,7 @@ test('e2e:gate-wait-no-freeze — with the gate waiting for a slot a ready item 
   assert.equal(item.owner, 'w1-principal', 'status shows the ready item claimed by the worker');
 
   for (const slot of yard.held) slot.release();
-  await until(() => yard.checks.length === 1, 'the gate\'s check starts on the freed slot');
+  await until(() => yard.checks.length === 1, 'the gate\'s check starts on the freed slot', 15_000);
   yard.checks[0]!.resolve(passing);
   await flight;
 });

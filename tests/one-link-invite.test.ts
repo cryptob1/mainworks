@@ -11,6 +11,7 @@ import { inviteRefused, teammateSessionTtlMs } from '../src/server/auth.js';
 import { funnelCommand } from '../src/team-access.js';
 import { servedInstall, servedNode } from './helpers/served-install.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { until } from './helpers/until.js';
 
 // GY-3514: Invite gives one link on the install's Funnel address; it opens once, on any device, within
 // the days the owner picked; a teammate's session is short and renews with use; revoking ends it at
@@ -46,10 +47,6 @@ function socket(base: string, path: string, token: string) {
   const closed = new Promise<void>(resolve => ws.addEventListener('close', () => resolve()));
   return { ws, messages, opened, closed };
 }
-const until = async (check: () => boolean, what: string) => {
-  for (let i = 0; i < 100 && !check(); i++) await new Promise(resolve => setTimeout(resolve, 50));
-  assert.ok(check(), what);
-};
 
 test('integration:one-link-invite — one-use links valid for the owner\'s days, short renewing sessions, revoke ends typing and reading at once, and typed lines listed with who and when', async () => {
   const install = await funnelInstall('one_link_invite');
@@ -102,13 +99,13 @@ test('integration:one-link-invite — one-use links valid for the owner\'s days,
     });
     const typing = socket(install.base, '/api/terminal?cols=80&rows=24', maintainer), watching = socket(install.base, '/api/terminal?cols=80&rows=24', viewer);
     await Promise.all([typing.opened, watching.opened]);
-    await until(() => streams.size === 2 && typing.messages.some(m => m.type === 'session') && watching.messages.some(m => m.type === 'session'), 'both pages see the master pane');
+    await until(() => streams.size === 2 && typing.messages.some(m => m.type === 'session') && watching.messages.some(m => m.type === 'session'), 'both pages see the master pane', 5_000, 50);
     assert.deepEqual([...streams.values()].sort(), ['control', 'view']);
     typing.ws.send(JSON.stringify({ type: 'input', data: 'list what is blocked\r' }));
     watching.ws.send(JSON.stringify({ type: 'input', data: 'a viewer types\r' }));
     const typed = async () => (await install.as(install.operator, '/api/typed-input')).body.typed as { who: string; at: string; text: string }[];
     let list: Awaited<ReturnType<typeof typed>> = [];
-    await until(() => { void typed().then(value => { list = value; }); return list.length > 0; }, 'the typed line is recorded');
+    await until(() => { void typed().then(value => { list = value; }); return list.length > 0; }, 'the typed line is recorded', 5_000, 50);
 
     // AC-4: one plain list of who typed what, and when; a viewer's keys reach nothing.
     assert.deepEqual(list.map(entry => [entry.who, entry.text]), [['mo', 'list what is blocked']]);

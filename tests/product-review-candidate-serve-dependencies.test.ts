@@ -21,6 +21,7 @@ import { liveRun } from '../src/runner/registry.js';
 import { freePort } from '../src/serve-app.js';
 import type { HeadlessExec } from '../src/headless-session.js';
 import { listen } from './helpers/http-server.js';
+import { until } from './helpers/until.js';
 
 // GY-3575: a product review serves the exact candidate with its declared e2e.serve command from a
 // checkout outside the repository. That checkout must resolve the repository's declared
@@ -99,10 +100,6 @@ const run = (command: string, args: string[], options?: { cwd?: string }) => {
   if (command === 'git' || command === 'node') return execFileSync(command, args, { encoding: 'utf8', cwd: options?.cwd });
   throw new Error(`no ${command} here`);
 };
-const until = async (what: string, check: () => Promise<boolean> | boolean) => {
-  for (let tries = 0; tries < 400; tries++) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 25)); }
-  assert.fail(`timed out waiting for ${what}`);
-};
 
 test('integration:product-review-candidate-serve-dependencies — the candidate checkout resolves the declared dependencies, its serve command answers from the candidate, and the review runs', async () => {
   const work = productItem('GY-9575');
@@ -115,11 +112,11 @@ test('integration:product-review-candidate-serve-dependencies — the candidate 
     return `Walked it.\n{"verdict": "APPROVE", "body": "Product reviewed head ${head} against base ${base}.", "findings": []}`;
   };
   const launched = await launchReview(root, work, 'product-claude', [], now(), { run, headless: exec, product: true });
-  await until('the review run to end', async () => (await readReviewLedger(root)).reviews.some(record => record.id === launched.review && !liveRun(record.agentName) && !!record.verdict));
+  await until(async () => (await readReviewLedger(root)).reviews.some(record => record.id === launched.review && !liveRun(record.agentName) && !!record.verdict), 'the review run to end', 10_000, 25);
   assert.equal(runs.length, 1, 'the reviewer session started');
   assert.match(runs[0]!.at(-1)!, /e2e\.serve command running this exact head/);
   assert.match(page, /candidate-marker: hello from the dependency/, 'the served candidate resolved its declared dependency');
   const record = (await readReviewLedger(root)).reviews.find(entry => entry.id === launched.review)!;
   assert.equal(record.verdict?.state, 'APPROVED');
-  await until('the served head to stop', async () => !(await fetch(`http://127.0.0.1:${servePort}/healthz`).then(() => true, () => false)));
+  await until(async () => !(await fetch(`http://127.0.0.1:${servePort}/healthz`).then(() => true, () => false)), 'the served head to stop', 10_000, 25);
 });

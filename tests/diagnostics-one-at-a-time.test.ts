@@ -17,6 +17,7 @@ import { gateTrialKey } from '../src/merge-writer/trial-load.js';
 import { trialRunFiles, trialRunsDirectory, type TrialRunHandle, type TrialRunRequest, type TrialRunSpec } from '../src/merge-writer/trial-run.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { until } from './helpers/until.js';
 
 const repository = 'owner/project';
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
@@ -110,13 +111,6 @@ function world(checkout: string) {
   const suiteRuns = () => [...runs.values()].filter(entry => entry.request.changedFiles.includes('package.json')).length;
 
   return { runs, launched, adopted, loop, finish, registerExternal, suiteRuns };
-}
-
-async function until(condition: () => boolean, what: string) {
-  for (const deadline = Date.now() + 10_000; !condition();) {
-    if (Date.now() > deadline) assert.fail(`timed out waiting: ${what}`);
-    await new Promise(resolve => setTimeout(resolve, 20));
-  }
 }
 
 test('integration:diagnostics-one-at-a-time — three loop restarts while one detached diagnostics run is unfinished start no further run, and its result is recorded when it ends', async () => {

@@ -20,6 +20,7 @@ import { launchReview, readReviewLedger, saveReviewerProfile } from '../src/revi
 import { liveRun } from '../src/runner/registry.js';
 import type { HeadlessExec } from '../src/headless-session.js';
 import { listen } from './helpers/http-server.js';
+import { until } from './helpers/until.js';
 
 // GY-3580: product reviews whose heads declare the same serve URL take turns on it; an address
 // another application holds still fails the launch with the existing message.
@@ -92,10 +93,6 @@ const run = async (command: string, args: string[], options?: { cwd?: string }) 
   if (command === 'git' || command === 'node') return execFileSync(command, args, { encoding: 'utf8', cwd: options?.cwd });
   throw new Error(`no ${command} here`);
 };
-const until = async (what: string, check: () => Promise<boolean> | boolean) => {
-  for (let tries = 0; tries < 4800; tries++) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 25)); }
-  assert.fail(`timed out waiting for ${what}`);
-};
 const answers = () => fetch(serveUrl).then(() => true, () => false);
 
 test('integration:product-reviews-share-serve-address — two product reviews on one serve URL serve and start their sessions one after the other', async () => {
@@ -113,8 +110,8 @@ test('integration:product-reviews-share-serve-address — two product reviews on
     launchReview(root, one, 'product-claude', [], now(), { run, headless: exec('first'), product: true }),
     launchReview(root, two, 'product-claude', [], now(), { run, headless: exec('second'), product: true }),
   ]);
-  await until('both review runs to end', async () => { const ledger = await readReviewLedger(root); return launched.every(entry => ledger.reviews.some(record => record.id === entry.review && !liveRun(record.agentName) && !!record.verdict)); });
-  await until('the served head to stop', async () => !(await answers()));
+  await until(async () => { const ledger = await readReviewLedger(root); return launched.every(entry => ledger.reviews.some(record => record.id === entry.review && !liveRun(record.agentName) && !!record.verdict)); }, 'both review runs to end', 120_000, 25);
+  await until(async () => !(await answers()), 'the served head to stop', 120_000, 25);
   // Either review may reach the address first; the other starts only once that one has ended.
   const [earlier, later] = events[0] === 'first started' ? ['first', 'second'] : ['second', 'first'];
   assert.deepEqual(events, [`${earlier} started`, `${earlier} ended`, `${later} started`, `${later} ended`], 'the sessions ran one after the other');

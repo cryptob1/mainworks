@@ -15,6 +15,7 @@ import { acquireVerificationSlot, declarationSlot, heldSlots, slotsDirectoryVari
 import { masterConfigSchema } from '../src/master.js';
 import { workFixture } from './helpers/work-fixture.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { until } from './helpers/until.js';
 
 // GY-3449: a batch gate on e27e5826 timed out while a step of its check that cannot be cancelled —
 // the trial image's build — was still settling, and its host heavy-job slot stayed taken; with two
@@ -27,10 +28,6 @@ const iso = (at: number) => new Date(at).toISOString();
 const sha = (seed: string) => createHash('sha1').update(seed).digest('hex');
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-async function until(condition: () => boolean, what: string, timeoutMs = 10_000) {
-  for (const deadline = Date.now() + timeoutMs; !condition();) { assert.ok(Date.now() < deadline, `timed out waiting until ${what}`); await sleep(20); }
-}
 const passing = { build: 'pass', tests: { passed: 1, failed: [], files: 1 }, durationMs: 1, logTail: '', files: [], proofs: { 'unit:item-works': { executed: 1, failed: 0 } }, e2e: [] } as unknown as MergeTrialRun;
 const failing = { ...passing, build: 'fail' } as unknown as MergeTrialRun;
 

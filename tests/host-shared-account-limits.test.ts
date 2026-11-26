@@ -20,6 +20,7 @@ import type { Principal } from '../src/model.js';
 import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { gitRepo } from './helpers/git-repo.js';
+import { until } from './helpers/until.js';
 
 // GY-3333: one machine runs several Mainworks installs that share the same login homes, and each
 // counted an account's live sessions and quota holds only for itself — the core and hwd-backend
@@ -82,14 +83,6 @@ const select = async (install: number) => selectAccount(installs[install]!.confi
 const sessionOf = (selected: Awaited<ReturnType<typeof select>>) => selected.account && 'fleet' in selected.account ? selected.account.fleet.session : null;
 /** The install a registry's account views and refusals are read back through. */
 const fleet = async (install: number) => installs[install]!.registry.snapshot(hostId);
-async function until<T>(what: string, read: () => Promise<T | null | undefined | false>): Promise<T> {
-  for (let tries = 0; tries < 600; tries++) {
-    const value = await read();
-    if (value) return value;
-    await delay(100);
-  }
-  assert.fail(`never: ${what}`);
-}
 
 /** Install one holds a worker session on the shared account from a process of its own, ready to be killed. */
 async function holdFromChild(): Promise<{ account: string; session: string }> {
@@ -99,12 +92,12 @@ async function holdFromChild(): Promise<{ account: string; session: string }> {
     JSON.stringify({ root: installs[0]!.root, ready })], { stdio: ['ignore', 'ignore', 'pipe'] });
   const errors: string[] = [];
   holder.stderr!.on('data', (chunk: Buffer) => errors.push(chunk.toString()));
-  return until('the holder process selected its session', async () => {
+  return until(async () => {
     const text = (await readFile(ready, 'utf8')).trim();
     if (text) return JSON.parse(text.split('\n').at(-1)!) as { account: string; session: string };
     if (holder!.exitCode !== null || holder!.signalCode !== null) throw new Error(`the holder process exited: ${errors.join('')}`);
     return null;
-  });
+  }, 'the holder process selected its session', 60_000, 100);
 }
 
 test('e2e:host-shared-account-limits — an install alone on the host is unaffected', async () => {

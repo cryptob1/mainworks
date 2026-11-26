@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { heavyTrial } from '../src/daemon/cycle-merge-writer.js';
 import { acquireVerificationSlot, gateSlot, heldSlots, projectVariable, slotsDirectoryVariable, type HeldSlot } from '../src/master/verification-slots.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { until } from './helpers/until.js';
 
 // GY-3460: overnight on 18 November the host's one heavy-job slot went, release after release, to
 // newer core trials, while another install's reviewed candidate (Lumina GY-30) and a worker's
@@ -14,9 +15,6 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // queue across installs, and a freed slot goes to the oldest.
 
 const sleep = (ms: number) => new Promise(done => setTimeout(done, ms));
-async function until(condition: () => boolean, what: string, timeoutMs = 20_000) {
-  for (const deadline = Date.now() + timeoutMs; !condition();) { assert.ok(Date.now() < deadline, `timed out waiting until ${what}`); await sleep(10); }
-}
 const ordinary = (directory: string) => heldSlots(directory).filter(entry => entry.slot < gateSlot);
 const previous = { ...process.env }, stop = new AbortController();
 after(() => { stop.abort(); process.env[slotsDirectoryVariable] = previous[slotsDirectoryVariable]; process.env[projectVariable] = previous[projectVariable]; });
@@ -63,14 +61,14 @@ test('integration:shared-heavy-job-fairness — with one shared slot, a second i
   const fixture = await host('heavy-fairness');
   const first = await acquireVerificationSlot({ directory: fixture.directory, label: 'merge trial GY-3450', project: 'acme/core' });
   const verification = secondInstall(fixture, 'verification', 'GY-30');
-  await until(verification.waiting, 'the second install\'s worker verification waits');
+  await until(verification.waiting, 'the second install\'s worker verification waits', 20_000, 10);
   // The first install keeps submitting while the slot is held.
   const next = arrival(fixture, 'merge trial GY-3465');
   await sleep(50);
   const later = arrival(fixture, 'merge trial GY-3466');
   await sleep(50);
   first.release();
-  await until(() => verification.started() || !!next.held() || !!later.held(), 'the freed slot is taken');
+  await until(() => verification.started() || !!next.held() || !!later.held(), 'the freed slot is taken', 20_000, 10);
   await sleep(200);
   assert.equal(verification.started(), true, 'the older waiter from the other install takes the freed slot');
   assert.equal(next.held() ?? later.held(), null, 'no newer arrival overtakes it');
@@ -86,7 +84,7 @@ test('e2e:shared-heavy-job-fairness — a reviewed candidate from a second insta
   const fixture = await host('heavy-fairness-e2e');
   const holder = await acquireVerificationSlot({ directory: fixture.directory, label: 'merge trial GY-3450', project: 'acme/core' });
   const candidate = secondInstall(fixture, 'trial', 'GY-31');
-  await until(candidate.waiting, 'the candidate\'s trial waits for the shared slot');
+  await until(candidate.waiting, 'the candidate\'s trial waits for the shared slot', 20_000, 10);
   // The first install submits a new trial every 20 ms, before and after the slot frees.
   const submitted: ReturnType<typeof arrival>[] = [], cancel = new AbortController();
   let submitting = true;
@@ -98,7 +96,7 @@ test('e2e:shared-heavy-job-fairness — a reviewed candidate from a second insta
     await heavyTrial('batch-gate', undefined, undefined, async () => { gateRan = true; }, undefined, true);
     assert.equal(gateRan, true, 'the batch gate ran at once in the reserved slot');
     holder.release();
-    await until(() => candidate.started() || submitted.some(job => job.held()), 'the freed slot is taken');
+    await until(() => candidate.started() || submitted.some(job => job.held()), 'the freed slot is taken', 20_000, 10);
     await sleep(200);
     assert.equal(candidate.started(), true, 'the second install\'s candidate trial runs');
     assert.equal(submitted.some(job => job.held()), false, 'none of the first install\'s newer trials overtook it');

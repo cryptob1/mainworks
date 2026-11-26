@@ -7,6 +7,7 @@ import { bootstrapGate, gateLimitMs, runGate, type GatePorts } from '../src/batc
 import { trialContainerLaunch } from '../src/merge-writer/trial-container.js';
 import { trialLoad } from '../src/merge-writer/trial-load.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { until } from './helpers/until.js';
 
 // GY-3444 AC-7: the heat launch wait never stops a batch gate check from starting — gate checks run
 // at the halved trial cap while hot, other starts still wait — and each check's budget is the
@@ -40,18 +41,15 @@ exit 0
     children.push(child);
     return { child, said: () => said };
   };
-  const until = async (condition: () => boolean | Promise<boolean>, what: string) => {
-    for (let waited = 0; !(await condition()); waited += 50) { assert.ok(waited < 15_000, what); await new Promise(resolve => setTimeout(resolve, 50)); }
-  };
   const started = async () => (await readFile(log, 'utf8').catch(() => '')).split('\n').filter(line => line.includes(' start ')).length;
   try {
     const merge = await launch('merge');
-    await until(() => merge.said().includes('waiting: a CPU sensor reads 99C'), 'the merge trial waits on heat');
+    await until(() => merge.said().includes('waiting: a CPU sensor reads 99C'), 'the merge trial waits on heat', 15_000, 50);
     const gate = await launch('gate');
-    await until(async () => await started() === 1, 'the gate check starts despite the heat');
+    await until(async () => await started() === 1, 'the gate check starts despite the heat', 15_000, 50);
     assert.doesNotMatch(gate.said(), /CPU sensor/, 'the gate never waited on heat');
     const second = await launch('gate');
-    await until(() => second.said().includes('waiting: the machine-wide cap of 1 trial containers is reached'), 'a second gate check waits for the halved cap');
+    await until(() => second.said().includes('waiting: the machine-wide cap of 1 trial containers is reached'), 'a second gate check waits for the halved cap', 15_000, 50);
     await new Promise(resolve => setTimeout(resolve, 1200));
     assert.equal(await started(), 1, 'the merge trial still waits on heat, and the halved cap holds');
   } finally { for (const child of children) if (child.exitCode === null && child.signalCode === null) { const gone = new Promise(resolve => child.once('close', resolve)); child.kill('SIGTERM'); await gone; } }

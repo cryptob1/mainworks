@@ -21,12 +21,10 @@ test('unit:product-reviews-run-in-parallel-pinned — the spec waits its settled
   const wait = /setTimeout\(\(\) => reject\(new Error\('product reviews did not run in parallel'\)\), ([\w]+)\)/.exec(source)?.[1];
   assert.ok(wait, 'the spec bounds its wait for the other reviewer');
   assert.equal(wait, 'settledMs', `the wait for the other reviewer is the settled budget, not a fixed wall-clock bound (found ${wait})`);
-  const settled = /const settledMs = (\d+) \* (\d+);/.exec(source);
-  assert.ok(settled, 'the spec names its settled budget beside until()');
-  const tries = /for \(let tries = 0; tries < (\d+); tries\+\+\)/.exec(source)?.[1];
-  const delay = /setTimeout\(resolve, (\d+)\)/.exec(source)?.[1];
-  assert.ok(tries && delay, "the spec's until() names its tries and delay");
-  assert.equal(`${settled![1]} * ${settled![2]}`, `${tries} * ${delay}`, 'the parallel wait is exactly until()\'s settled budget');
+  assert.match(source, /const settledMs = [\d_]+;/, 'the spec names its settled budget beside until()');
+  const budgets = [...source.matchAll(/'[^']+', (\w+), \d+\);/g)].map(match => match[1]);
+  assert.ok(budgets.length >= 2, "the spec's until() calls name their timeout");
+  assert.deepEqual([...new Set(budgets)], ['settledMs'], 'the parallel wait is exactly until()\'s settled budget');
   // A reviewer's retried run must not release the other reviewer or stand in for it: arrivals are names.
   assert.doesNotMatch(source, /arrived\+\+/, 'arrivals are never counted per run');
   assert.match(source, /arrived\.add\(name\)/, 'a reviewer is counted when its own run arrives');

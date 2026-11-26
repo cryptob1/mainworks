@@ -19,6 +19,7 @@ import { masterConfigSchema } from '../src/master.js';
 import { workFixture } from './helpers/work-fixture.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { until } from './helpers/until.js';
 
 // GY-3474: a batch gate on a hot shared host stayed "running" for hours, its whole lifetime counted
 // as waiting: the loop's CPU hold on other launches and any install's waiting gate start both
@@ -33,9 +34,6 @@ const iso = (at: number) => new Date(at).toISOString();
 const sha = (seed: string) => createHash('sha1').update(seed).digest('hex');
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-async function until(condition: () => boolean, what: string, timeoutMs = 15_000) {
-  for (const deadline = Date.now() + timeoutMs; !condition();) { assert.ok(Date.now() < deadline, `timed out waiting until ${what}`); await sleep(20); }
-}
 const passing = { build: 'pass', tests: { passed: 1, failed: [], files: 1 }, durationMs: 1, logTail: '', files: [], proofs: { 'unit:item-works': { executed: 1, failed: 0 } }, e2e: [] } as unknown as MergeTrialRun;
 
 const previous = process.env[slotsDirectoryVariable];
@@ -101,8 +99,8 @@ async function world(label: string) {
   };
   const record = () => readGateRecord(gateRecordPath(coordinator))!;
   /** The `count`-th loop watch of the `index`-th run, once that loop watches it. */
-  const watching = async (index: number, count = 1) => { await until(() => (runs[index]?.watches.length ?? 0) >= count, `run ${index + 1} is watched`); return runs[index]!.watches[count - 1]!; };
-  const waited = (ms: number) => until(() => (record().inFlight?.waitedMs ?? 0) >= ms, `the record counts ${ms / minute} minutes waited`);
+  const watching = async (index: number, count = 1) => { await until(() => (runs[index]?.watches.length ?? 0) >= count, `run ${index + 1} is watched`, 15_000); return runs[index]!.watches[count - 1]!; };
+  const waited = (ms: number) => until(() => (record().inFlight?.waitedMs ?? 0) >= ms, `the record counts ${ms / minute} minutes waited`, 15_000);
   return { slots, trialSlots, coordinator, tip, reads, runs, adopted, merges, loop, record, watching, waited, summary: () => gateSummary(record())!.inFlight, advance: (ms: number) => { clock += ms; }, now: () => clock };
 }
 
@@ -111,7 +109,7 @@ test('integration:batch-gate-own-wait-liveness — a stalled check on a hot host
   const flight = (await batchGateStep(yard.loop()))!.gate!;
   const stalled = await yard.watching(0);
   stalled.onStep?.('install');
-  await until(() => yard.summary()?.progress === 'install', 'the record carries the run\'s own step');
+  await until(() => yard.summary()?.progress === 'install', 'the record carries the run\'s own step', 15_000);
   assert.equal(yard.record().inFlight!.run!.directory, yard.runs[0]!.directory, 'the record names the check\'s detached run');
   assert.equal(yard.summary()!.run, basename(yard.runs[0]!.directory));
   assert.equal(trialStartWaiting('gate', yard.trialSlots), true, 'a gate start waits on this machine');
@@ -169,7 +167,7 @@ test('integration:batch-gate-own-wait-liveness — the gate\'s own waits, for it
   const suite = await acquireVerificationSlot({ directory: yard.slots, label: 'npm test (other project)' });
   let settled = false;
   const flight = (await batchGateStep(yard.loop()))!.gate!.then(() => { settled = true; });
-  await until(() => /waiting for a host heavy-job slot/.test(yard.summary()?.progress ?? ''), 'status says the check waits for a slot');
+  await until(() => /waiting for a host heavy-job slot/.test(yard.summary()?.progress ?? ''), 'status says the check waits for a slot', 15_000);
   assert.equal(yard.summary()!.run, null, 'a waiting check has no run yet');
   yard.advance(2 * gateLimitMs);
   await yard.waited(2 * gateLimitMs);
@@ -231,10 +229,10 @@ exit 0
   const mine = trialStartOwner('/install/mine', 'b'.repeat(40)), theirs = trialStartOwner('/install/theirs', 'c'.repeat(40));
   try {
     await launch(theirs);
-    await until(() => existsSync(log) && readFileSync(log, 'utf8').includes(' create '), 'the other install\'s gate start takes the one slot');
+    await until(() => existsSync(log) && readFileSync(log, 'utf8').includes(' create '), 'the other install\'s gate start takes the one slot', 15_000);
     const second = await launch(mine);
-    await until(() => second().includes('waiting'), 'this gate\'s start waits for the slot');
-    await until(() => trialStartWaiting('gate', slots, mine), 'the gate reads its own start\'s wait');
+    await until(() => second().includes('waiting'), 'this gate\'s start waits for the slot', 15_000);
+    await until(() => trialStartWaiting('gate', slots, mine), 'the gate reads its own start\'s wait', 15_000);
     assert.equal(trialStartWaiting('gate', slots, theirs), false, 'the other install\'s gate, which is running, reads none');
     assert.equal(trialStartWaiting('gate', slots), true);
   } finally { for (const child of children) if (child.exitCode === null && child.signalCode === null) { const gone = new Promise(resolve => child.once('close', resolve)); child.kill('SIGTERM'); await gone; } }
@@ -248,7 +246,7 @@ test('e2e:batch-gate-own-wait-liveness — a gate on a hot host reports its wait
   // Waiting: status names the wait and no run, and the wait is not the gate's time.
   const first = yard.loop();
   const flight = (await batchGateStep(first))!.gate!;
-  await until(() => /waiting for a host heavy-job slot/.test(yard.summary()?.progress ?? ''), 'status says the gate\'s check waits for a slot');
+  await until(() => /waiting for a host heavy-job slot/.test(yard.summary()?.progress ?? ''), 'status says the gate\'s check waits for a slot', 15_000);
   assert.equal(yard.summary()!.run, null);
   yard.advance(10 * minute);
   await yard.waited(10 * minute);
@@ -257,11 +255,11 @@ test('e2e:batch-gate-own-wait-liveness — a gate on a hot host reports its wait
   // Running: status names the run and its step, and the earlier wait.
   const watched = await yard.watching(0), run = yard.runs[0]!;
   watched.onStep?.('build');
-  await until(() => yard.summary()?.progress === 'build', 'status names the run\'s step');
+  await until(() => yard.summary()?.progress === 'build', 'status names the run\'s step', 15_000);
   assert.equal(yard.summary()!.run, basename(run.directory), 'status names the exact run');
   assert.ok(yard.summary()!.waitedMs >= 10 * minute, 'status counts the slot wait as waited');
   assert.deepEqual(yard.record().inFlight!.checks, ['build', 'e2e:graphyard-feature-map', 'affected'], 'the batch\'s checks: the build, the real-app feature check and the affected tests');
-  await until(() => !!yard.record().inFlight?.seenAt, 'the loop\'s sight of the run is on the record');
+  await until(() => !!yard.record().inFlight?.seenAt, 'the loop\'s sight of the run is on the record', 15_000);
 
   // The loop restarts under the run: it stops watching, the run goes on, and an hour passes before the next loop.
   noteBatchGateStopping(first.state);
@@ -275,7 +273,7 @@ test('e2e:batch-gate-own-wait-liveness — a gate on a hot host reports its wait
   const adoptedFlight = (await batchGateStep(second))!.gate!;
   const adoptedWatch = await yard.watching(0, 2);
   adoptedWatch.onStep?.('tests');
-  await until(() => yard.summary()?.progress === 'tests', 'status follows the adopted run');
+  await until(() => yard.summary()?.progress === 'tests', 'status follows the adopted run', 15_000);
   assert.equal(yard.summary()!.run, basename(run.directory));
   assert.equal(yard.runs.length, 1, 'no duplicate attempt beside the live run');
   adoptedWatch.resolve(passing);
@@ -300,6 +298,6 @@ test('e2e:batch-gate-own-wait-liveness — a gate on a hot host reports its wait
   const effects = { agents: () => [], herdr: () => ({ agents: [], available: true }), credentials: async () => ({}), snapshot: async () => ({ work, now: iso(yard.now()) }),
     closeSession: () => {}, dispatch: async () => {}, dispatchTick: async () => {}, persist: async () => {}, mergeWriter: yard.reads } as unknown as DaemonEffects;
   await runCycle(config, state, effects, yard.now);
-  await until(() => yard.merges.includes('GY-2'), 'the queued merge trial starts within one cycle');
+  await until(() => yard.merges.includes('GY-2'), 'the queued merge trial starts within one cycle', 15_000);
   await mergeWriterIdle(state);
 });

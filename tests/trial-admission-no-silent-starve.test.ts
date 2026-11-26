@@ -17,6 +17,7 @@ import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { withDatabase } from './helpers/postgres.js';
 import { listen } from './helpers/http-server.js';
+import { until } from './helpers/until.js';
 
 // GY-3332: on rexera-remote /tmp is a 15.7 GB tmpfs, under the 30 GB disk floor. Every merge and gate
 // trial made its scratch there, waited forever on the floor while holding its place in the queue,
@@ -65,28 +66,22 @@ async function machine(label: string) {
   };
   const docker = async () => (await readFile(log, 'utf8').catch(() => '')).split('\n');
   const started = async () => (await docker()).filter(line => line.includes(' start ')).length;
-  const until = async (condition: () => boolean | Promise<boolean>, what: string, ms = 15_000) => {
-    for (let waited = 0; !(await condition()); waited += 50) {
-      assert.ok(waited < ms, what);
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-  };
   const close = async () => {
     for (const child of children) if (child.exitCode === null && child.signalCode === null) {
       const gone = new Promise(resolve => child.once('close', resolve)); child.kill('SIGTERM'); await gone;
     }
   };
-  return { base, env, slots, load, volume, words, launch, docker, started, until, close };
+  return { base, env, slots, load, volume, words, launch, docker, started, close };
 }
 
 test(`${proof} — with a gate start waiting on the load check and every slot free, a verification start is admitted and runs`, async () => {
   const host = await machine('starve-order');
   try {
     const gate = host.launch([await host.volume('gate-tmp', small)], host.load(trialStartOrder.gate));
-    await host.until(() => gate.said().includes('waiting: '), 'the gate start waits on the disk floor');
+    await until(() => gate.said().includes('waiting: '), 'the gate start waits on the disk floor', 15_000, 50);
     assert.match(gate.said(), /is under the disk floor: 15\.7 GB free of the 30\.0 GB kept free/, 'the wait names the reading');
     host.launch([await host.volume('verify')], host.load(trialStartOrder.verification));
-    await host.until(async () => await host.started() === 1, 'the verification start runs beside the waiting gate start');
+    await until(async () => await host.started() === 1, 'the verification start runs beside the waiting gate start', 15_000, 50);
     assert.ok(!gate.said().includes('starting'), 'the gate start still waits');
   } finally { await host.close(); }
 });
@@ -141,7 +136,7 @@ test(`${proof} — a verification start that must wait prints the reason through
   const mutate = async (path: string, body: unknown) => (await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${coordinator.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
   // One slot on this machine, held by a running merge trial: the verification start must wait for it.
   const occupant = host.launch([await host.volume('merge')], host.load(trialStartOrder.merge, { cap: 1 }));
-  await host.until(async () => await host.started() === 1, 'the merge trial holds the only slot');
+  await until(async () => await host.started() === 1, 'the merge trial holds the only slot', 15_000, 50);
   const allocation = await host.volume('verify');
   let taken = false;
   const pump = workerVerificationPump(root, () => 'test', mutate, () => 'main', undefined, async (_root, _work, _input, _base, _parent, progress) => {
@@ -159,7 +154,7 @@ test(`${proof} — a verification start that must wait prints the reason through
     const at = Date.now();
     const answer = requestWorkerVerification(context, work, { mode: 'verify', epoch: 1 }).then(() => null, (error: unknown) => error);
     for (let tries = 0; tries < 100 && !taken; tries++) { await pump(); if (!taken) await new Promise(resolve => setTimeout(resolve, 50)); }
-    await host.until(() => shown.some(entry => entry.line.includes('waiting: the machine-wide cap of 1 trial containers is reached')), 'verify prints why the start waits', 10_000);
+    await until(() => shown.some(entry => entry.line.includes('waiting: the machine-wide cap of 1 trial containers is reached')), 'verify prints why the start waits', 10_000, 50);
     const waiting = shown.find(entry => entry.line.includes('waiting: '))!;
     assert.ok(waiting.at - at < 6_000, `within seconds, not at the bound: ${waiting.at - at} ms`);
     const failed = await answer;
@@ -190,7 +185,7 @@ test(`${proof} — with /tmp a tmpfs under the disk floor, merge and gate trials
       const temporary = await mkdtemp(join(root, 'gy-t')), home = await mkdtemp(join(root, 'gy-h'));
       host.launch([temporary, home], host.load(trialStartOrder[who]));
     }
-    await host.until(async () => await host.started() === 2, 'the merge and gate trials start without waiting');
+    await until(async () => await host.started() === 2, 'the merge and gate trials start without waiting', 15_000, 50);
     const mounts = (await host.docker()).filter(line => line.includes(' create ')).flatMap(line => [...line.matchAll(/src=([^,]+),dst=([^, ]+)(,readonly)?/g)].filter(match => !match[3]).map(match => match[1]!));
     assert.ok(mounts.length >= 4 && mounts.every(path => path.startsWith(durable + '/')), `every writable mount is on the durable root: ${mounts.join(' ')}`);
     assert.ok(!mounts.some(path => path.startsWith(tmpfs)), 'nothing is on the tmpfs');
@@ -210,7 +205,7 @@ test(`${proof} — a start that does wait on the disk floor shows one attention 
     assert.deepEqual(trialFloorAttention(host.slots), []);
     const first = host.launch([await host.volume('a', small)], host.load(trialStartOrder.merge));
     const second = host.launch([await host.volume('b', small)], host.load(trialStartOrder.gate));
-    await host.until(() => first.said().includes('waiting: ') && second.said().includes('waiting: '), 'both starts wait on the floor');
+    await until(() => first.said().includes('waiting: ') && second.said().includes('waiting: '), 'both starts wait on the floor', 15_000, 50);
     const lines = trialFloorAttention(host.slots);
     assert.equal(lines.length, 1, 'one line, however many starts wait');
     assert.match(lines[0]!.text, /^2 trial start\(s\) wait on the disk floor: .* is under the disk floor: 15\.7 GB free/);

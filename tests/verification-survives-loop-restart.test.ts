@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { gitRepo } from './helpers/git-repo.js';
 import { withDatabase } from './helpers/postgres.js';
@@ -18,14 +17,10 @@ import type { CliContext } from '../src/cli/context.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
+import { until } from './helpers/until.js';
 
 // Require pre-merge review for the fixture's changed source, just as this sensitive fix does.
 setRepositoryPolicy({ ...repositoryPolicy(), risk: { sensitive: [{ glob: 'app.js', rule: 'fixture requires independent review' }], declared: true }, e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
-
-async function until(condition: () => Promise<boolean>, message: string) {
-  for (let i = 0; i < 200; i++) { if (await condition()) return; await delay(10); }
-  assert.fail(message);
-}
 
 async function fixture(t: TestContext) {
   const root = await temporaryDirectory('verification-restart', process.cwd());
@@ -72,7 +67,7 @@ test('integration:verification-survives-loop-restart — a restarted pump reject
   const old = workerVerificationPump(f.root, () => 'test', f.api, () => f.root);
   await old(); // Initialize the old loop before a request is assigned.
   const abandoned = f.start();
-  await until(async () => (await f.pending()).length === 1, 'request queued');
+  await until(async () => (await f.pending()).length === 1, 'request queued', 2_000, 10);
   const [job] = await f.api('worker-verifications/take', { host: 'test' });
   assert.deepEqual(await f.api('worker-verifications/take', { host: 'test' }), [], 'active work is never taken twice');
   assert.deepEqual(await f.api('worker-verifications/restart', { host: 'test' }, f.peer.token), { interrupted: 0 });
@@ -85,7 +80,7 @@ test('integration:verification-survives-loop-restart — a restarted pump reject
   assert.match(String(interrupted.error), new RegExp(f.head));
   assert.equal((await f.store.events(f.work.id)).filter(event => event.kind === 'work.self-verified').length, 0);
   const retry = f.start();
-  await until(async () => (await f.pending()).length === 1, 'same worker retries');
+  await until(async () => (await f.pending()).length === 1, 'same worker retries', 2_000, 10);
   const [next] = await f.api('worker-verifications/take', { host: 'test' });
   assert.notEqual(next.id, job.id);
   await assert.rejects(f.api('worker-verifications/finish', { id: job.id, result: f.result }), /409/);
@@ -100,7 +95,7 @@ test('integration:verification-survives-loop-restart — a restarted pump reject
 test('integration:verification-coordinator-status — master and coordinator see queued/running age and progress without worker credentials', async t => {
   const f = await fixture(t);
   const request = f.start();
-  await until(async () => (await f.pending()).length === 1, 'request queued');
+  await until(async () => (await f.pending()).length === 1, 'request queued', 2_000, 10);
   const [queued] = await f.pending(f.master.token);
   assert.equal(queued.key, f.work.key); assert.equal(queued.head, f.head);
   assert.equal(queued.state, 'queued'); assert.equal(queued.executor, null);
@@ -129,7 +124,7 @@ test('e2e:verification-survives-loop-restart — optional verify retries its pre
     api: (path: string, body?: unknown) => f.api(path, body, f.worker.token), print: (value: any) => printed.push(value) } as unknown as CliContext;
   const startComplete = () => requestWorkerVerification(context, f.work, { mode: 'verify', head: f.head, epoch: 1 }).then(() => null, error => error);
   const abandoned = startComplete();
-  await until(async () => (await f.pending()).length === 1, 'verify queued');
+  await until(async () => (await f.pending()).length === 1, 'verify queued', 2_000, 10);
   const [old] = await f.api('worker-verifications/take', { host: 'test' });
   let executions = 0;
   const restarted = workerVerificationPump(f.root, () => 'test', f.api, () => f.root, undefined, async (...args) => {
@@ -140,7 +135,7 @@ test('e2e:verification-survives-loop-restart — optional verify retries its pre
   assert.match(String(await abandoned), /restart.*retry verify/);
   assert.equal(f.git('rev-parse', 'HEAD'), f.head);
   const completed = startComplete();
-  await until(async () => (await f.pending()).length === 1, 'retry queued');
+  await until(async () => (await f.pending()).length === 1, 'retry queued', 2_000, 10);
   await restarted();
   await assert.rejects(f.api('worker-verifications/finish', { id: old.id, result: f.result }), /409/);
   const completionError = await completed;

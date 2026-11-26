@@ -15,6 +15,7 @@ import { emptyDaemonState } from '../src/daemon/state.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import type { TrialRunHandle, TrialRunRequest } from '../src/merge-writer/trial-run.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { until } from './helpers/until.js';
 
 const repository = 'owner/project';
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
@@ -68,13 +69,6 @@ function world(checkout: string) {
   } as MergeWriterReads);
   const loop = () => ({ state: emptyDaemonState({ url: 'http://127.0.0.1:1', repository } as never), effects: { mergeWriter: reads(loops++ > 0) } as never, snapshot: { work: [], now: new Date().toISOString() } as never, performed: [], now: Date.now, log: () => {} });
   return { runs, inProcess, launched, loop };
-}
-
-async function until(condition: () => boolean, what: string) {
-  for (const deadline = Date.now() + 10_000; !condition();) {
-    if (Date.now() > deadline) assert.fail(`timed out waiting: ${what}`);
-    await new Promise(resolve => setTimeout(resolve, 20));
-  }
 }
 
 async function restartMidRun(label: string) {

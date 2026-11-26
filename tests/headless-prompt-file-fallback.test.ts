@@ -20,6 +20,7 @@ import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { until } from './helpers/until.js';
 
 // GY-3717: headless runtimes without a stdin form (pi, cursor, muse) receive a prompt past
 // inlinePromptLimitBytes as a 0600 file in the run directory and a short pointer prompt on argv,
@@ -119,10 +120,6 @@ after(async () => { await close?.(); if (store) await store.close(); if (scratch
 
 const stored = async (id: string) => (await store.pool.query('SELECT document FROM work_items WHERE id=$1', [id])).rows[0].document as Work;
 const insert = async (work: Work) => { await store.pool.query('INSERT INTO work_items(id, document) VALUES ($1,$2)', [work.id, JSON.stringify(work)]); return work; };
-const until = async (what: string, check: () => Promise<boolean> | boolean) => {
-  for (let tries = 0; tries < 400; tries++) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 25)); }
-  assert.fail(`timed out waiting for ${what}`);
-};
 type Seen = { args: string[]; argvMaxBytes: number; source: string; filePath: string | null; mode: number | null; length: number; tail: string; hasDiff: boolean };
 
 test('integration:headless-prompt-file-fallback — pi, cursor and muse receive a large prompt via a 0600 file pointer; stdin runtimes and small prompts behave as today', async () => {
@@ -187,7 +184,7 @@ test('e2e:headless-prompt-file-fallback — a review of a change with a very lar
     throw new Error(`no ${command} here: a headless launch opens no pane`);
   };
   const launched = await launchReview(root, work, 'reviewer-pi', [], now(), { run, headless: spawnHeadless, requestId: 'pi-large-diff-review' });
-  await until('the pi review to settle', async () => (await readReviewLedger(root)).reviews.some(entry => entry.id === launched.review && !liveRun(entry.agentName) && (entry.verdict || entry.state !== 'pending')));
+  await until(async () => (await readReviewLedger(root)).reviews.some(entry => entry.id === launched.review && !liveRun(entry.agentName) && (entry.verdict || entry.state !== 'pending')), 'the pi review to settle', 10_000, 25);
   const entry = (await readReviewLedger(root)).reviews.find(review => review.id === launched.review)!;
   assert.equal(entry.verdict?.state, 'APPROVED', entry.resolution);
   assert.equal(entry.verdict?.reviewer, reviewer);

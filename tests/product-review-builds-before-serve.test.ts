@@ -22,6 +22,7 @@ import { freePort } from '../src/serve-app.js';
 import type { HeadlessExec } from '../src/headless-session.js';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { until } from './helpers/until.js';
 
 // GY-3581: a head whose dashboard is built by the repository's build step (dist/ is untracked) runs
 // that build in its review checkout before the serve command, so GET / answers 200, never 500.
@@ -108,10 +109,6 @@ const run = async (command: string, args: string[], options?: { cwd?: string }) 
   if (command === 'npm' && args[0] === 'run') return await promisify(execFile)('npm', args, { cwd: options!.cwd, encoding: 'utf8' }).then(result => result.stdout);
   throw new Error(`no ${command} ${args.join(' ')} here`);
 };
-const until = async (what: string, check: () => Promise<boolean> | boolean) => {
-  for (let tries = 0; tries < 400; tries++) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 25)); }
-  assert.fail(`timed out waiting for ${what}`);
-};
 
 test('integration:product-review-builds-before-serve — a head whose dashboard the build step makes is built before it is served, and GET / answers 200', async () => {
   const work = productItem('GY-9590', built);
@@ -123,8 +120,8 @@ test('integration:product-review-builds-before-serve — a head whose dashboard 
     return `Walked it.\n{"verdict": "APPROVE", "body": "Product reviewed head ${built} against base ${base}.", "findings": []}`;
   };
   const launched = await launchReview(root, work, 'product-claude', [], now(), { run, headless: exec, product: true });
-  await until('the review run to end', async () => (await readReviewLedger(root)).reviews.some(record => record.id === launched.review && !liveRun(record.agentName) && !!record.verdict));
-  await until('the served head to stop', async () => !(await fetch(`http://127.0.0.1:${servePort}/healthz`).then(() => true, () => false)));
+  await until(async () => (await readReviewLedger(root)).reviews.some(record => record.id === launched.review && !liveRun(record.agentName) && !!record.verdict), 'the review run to end', 10_000, 25);
+  await until(async () => !(await fetch(`http://127.0.0.1:${servePort}/healthz`).then(() => true, () => false)), 'the served head to stop', 10_000, 25);
   assert.equal(sessions, 1, 'the reviewer session started');
   assert.equal(status, 200, `GET / answered ${status}: ${page}`);
   assert.match(page, /dashboard-marker: built by the head/, 'the served dashboard is the head\'s own build');

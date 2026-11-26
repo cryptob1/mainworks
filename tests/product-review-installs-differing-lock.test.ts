@@ -21,6 +21,7 @@ import { liveRun } from '../src/runner/registry.js';
 import { npmCiEnvironment } from '../src/cli/test-isolation.js';
 import type { HeadlessExec } from '../src/headless-session.js';
 import { listen } from './helpers/http-server.js';
+import { until } from './helpers/until.js';
 
 // GY-3579: a head whose package-lock.json differs from the repository checkout's cannot share that
 // install, so the review installs the head's own dependencies in its checkout before serving it.
@@ -117,10 +118,6 @@ const run = async (command: string, args: string[], options?: { cwd?: string }) 
   installs.push(options!.cwd!);
   return await promisify(execFile)('npm', args.slice(npm + 1), { cwd: options!.cwd, env: npmCiEnvironment(), encoding: 'utf8' }).then(result => result.stdout);
 };
-const until = async (what: string, check: () => Promise<boolean> | boolean) => {
-  for (let tries = 0; tries < 400; tries++) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 25)); }
-  assert.fail(`timed out waiting for ${what}`);
-};
 /** One product review of `head`: the page its served command answered the reviewer session with, and how many installs ran. */
 async function review(key: string, head: string) {
   const work = productItem(key, head);
@@ -133,8 +130,8 @@ async function review(key: string, head: string) {
     return `Walked it.\n{"verdict": "APPROVE", "body": "Product reviewed head ${head} against base ${base}.", "findings": []}`;
   };
   const launched = await launchReview(root, work, 'product-claude', [], now(), { run, headless: exec, product: true });
-  await until('the review run to end', async () => (await readReviewLedger(root)).reviews.some(record => record.id === launched.review && !liveRun(record.agentName) && !!record.verdict));
-  await until('the served head to stop', async () => !(await fetch(`http://127.0.0.1:${servePort}/healthz`).then(() => true, () => false)));
+  await until(async () => (await readReviewLedger(root)).reviews.some(record => record.id === launched.review && !liveRun(record.agentName) && !!record.verdict), 'the review run to end', 10_000, 25);
+  await until(async () => !(await fetch(`http://127.0.0.1:${servePort}/healthz`).then(() => true, () => false)), 'the served head to stop', 10_000, 25);
   return { page, sessions, installed: installs.length - before };
 }
 

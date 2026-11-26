@@ -18,13 +18,9 @@ import type { CliContext } from '../src/cli/context.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
+import { until } from './helpers/until.js';
 
 setRepositoryPolicy({ ...repositoryPolicy(), risk: { sensitive: [{ glob: 'app.js', rule: 'fixture requires independent review' }], declared: true }, e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
-
-async function until(condition: () => Promise<boolean>, message: string) {
-  for (let i = 0; i < 300; i++) { if (await condition()) return; await delay(10); }
-  assert.fail(message);
-}
 
 async function fixture(t: TestContext) {
   const root = await temporaryDirectory('verification-reuse', process.cwd());
@@ -69,12 +65,12 @@ test('integration:worker-verification-request-reuse — identical repeats share 
   const f = await fixture(t);
   const waitMs = verificationQueue.waitMs; verificationQueue.waitMs = 5_000; t.after(() => { verificationQueue.waitMs = waitMs; });
   const first = f.start(), repeat = f.start();
-  await until(async () => (await f.pending()).length >= 1, 'request queued');
+  await until(async () => (await f.pending()).length >= 1, 'request queued', 3_000, 10);
   await delay(100); // Let the repeat reach the server.
   assert.equal((await f.pending()).length, 1, 'a repeat of the same work, epoch, head and inputs joins the pending verification');
   // Changed verification inputs run their own job.
   const changed = f.start({ preserves: ['kept'] });
-  await until(async () => (await f.pending()).length === 2, 'changed inputs queue their own verification');
+  await until(async () => (await f.pending()).length === 2, 'changed inputs queue their own verification', 3_000, 10);
   // A stale lease epoch is refused, never joined.
   const stale = await f.start({ epoch: 2 });
   assert.match(String(stale.error), /40[39]/);
@@ -91,7 +87,7 @@ test('integration:worker-verification-request-reuse — identical repeats share 
   assert.deepEqual(await f.pending(), []);
   // Once settled, the same identity runs a fresh verification.
   const again = f.start();
-  await until(async () => (await f.pending()).length === 1, 'a later request queues anew');
+  await until(async () => (await f.pending()).length === 1, 'a later request queues anew', 3_000, 10);
   const [next] = await f.api('worker-verifications/take', { host: 'test' });
   assert.ok(![same.id, other.id].includes(next.id));
   await f.api('worker-verifications/finish', { id: next.id, result: f.result });
@@ -99,7 +95,7 @@ test('integration:worker-verification-request-reuse — identical repeats share 
   // A caller whose time runs out while the host runs its verification leaves it running; the repeat joins it.
   verificationQueue.waitMs = 300;
   const timedOut = f.start();
-  await until(async () => (await f.pending()).length === 1, 'the verification queues');
+  await until(async () => (await f.pending()).length === 1, 'the verification queues', 3_000, 10);
   const [running] = await f.api('worker-verifications/take', { host: 'test' });
   assert.match(String((await timedOut).error), /504.*timed out/);
   verificationQueue.waitMs = 5_000;
@@ -116,7 +112,7 @@ test('e2e:worker-verification-request-reuse — an interrupted verify and its re
   // The caller gives up while host admission is still waiting; the request itself stays queued.
   const abort = new AbortController();
   const interrupted = f.start({ preserves: [] }, abort.signal);
-  await until(async () => (await f.pending()).length === 1, 'first request queued');
+  await until(async () => (await f.pending()).length === 1, 'first request queued', 3_000, 10);
   abort.abort();
   assert.ok((await interrupted).error);
   const printed: any[] = [];

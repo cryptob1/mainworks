@@ -13,6 +13,7 @@ import { runningVerificationChildren } from '../src/merge-writer/worker-verifica
 import { encodeLoopHosts, loopHosts } from '../src/model/loop-presence.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { masterConfigSchema } from '../src/master.js';
+import { until } from './helpers/until.js';
 
 // GY-3528: a hard-coded two heavy jobs turned three machines into one queue. The budget is now each
 // ready machine's floor(cores / 6): jobs here take this machine's share, a trial's shard placed on a
@@ -20,9 +21,6 @@ import { masterConfigSchema } from '../src/master.js';
 // nothing still runs for it.
 
 const sleep = (ms: number) => new Promise(done => setTimeout(done, ms));
-async function until(condition: () => boolean, what: string, timeoutMs = 30_000) {
-  for (const deadline = Date.now() + timeoutMs; !condition();) { assert.ok(Date.now() < deadline, `timed out waiting until ${what}`); await sleep(10); }
-}
 const stop = new AbortController();
 after(() => stop.abort());
 
@@ -41,7 +39,7 @@ async function fillLocal(directory: string, label: string) {
     const taking = acquireVerificationSlot({ directory, label: `${label}-${held.length + 1}`, project: 'acme/app', pollMs: 5, signal: stop.signal, onWait: () => { waited = true; } });
     taking.catch(() => {}).finally(() => { settled = true; });
     // The wait poll stops once the job is admitted, so no orphaned poll keeps the file running after its tests.
-    const slot = await Promise.race([taking, until(() => waited || settled, 'the job waits').then(() => null)]);
+    const slot = await Promise.race([taking, until(() => waited || settled, 'the job waits', 30_000, 10).then(() => null)]);
     if (!slot) return { held, waiting: taking };
     held.push(slot);
   }
@@ -170,7 +168,7 @@ test('integration:scale-limits-with-hosts — a worker verification slot is free
     const verify = (async () => { const held = await take('GY-1'); try { await gy1Done; return { ok: true }; } finally { held.release(); } }) as never;
     const pump = workerVerificationPump(root, () => 'h', mutate, () => root, undefined, verify);
     await pump([]);
-    await until(() => holding().includes(workerVerificationLabel('GY-1')), 'GY-1 holds its slot');
+    await until(() => holding().includes(workerVerificationLabel('GY-1')), 'GY-1 holds its slot', 30_000, 10);
     // GY-2 finished but its slot was left; GY-3 has a child running.
     await take('GY-2');
     await take('GY-3');
@@ -200,7 +198,7 @@ test('integration:scale-limits-with-hosts — a worker verification slot is free
     runningVerificationChildren.delete('GY-3');
     await pump([]);
     finishGy1();
-    await until(() => finished.length === 1, 'GY-1 reports its result');
+    await until(() => finished.length === 1, 'GY-1 reports its result', 30_000, 10);
     assert.deepEqual(holding(), ['merge trial GY-10'], 'late release from a reclaimed verification slot leaves the new holder intact');
     reused.release();
     assert.deepEqual(holding(), []);

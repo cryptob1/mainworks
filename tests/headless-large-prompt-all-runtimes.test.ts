@@ -20,6 +20,7 @@ import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { until } from './helpers/until.js';
 
 // GY-3713: every built-in headless runtime, not only agy (GY-3696), takes a prompt past Linux's
 // 128 KiB MAX_ARG_STRLEN on stdin, so spawn never fails with E2BIG.
@@ -90,10 +91,6 @@ after(async () => { await close?.(); if (store) await store.close(); if (scratch
 
 const stored = async (id: string) => (await store.pool.query('SELECT document FROM work_items WHERE id=$1', [id])).rows[0].document as Work;
 const insert = async (work: Work) => { await store.pool.query('INSERT INTO work_items(id, document) VALUES ($1,$2)', [work.id, JSON.stringify(work)]); return work; };
-const until = async (what: string, check: () => Promise<boolean> | boolean) => {
-  for (let tries = 0; tries < 400; tries++) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 25)); }
-  assert.fail(`timed out waiting for ${what}`);
-};
 type Seen = { args: string[]; source: string; length: number; tail: string };
 
 test('integration:headless-large-prompt-all-runtimes — opencode, claude and codex take a prompt over the inline limit on stdin; small prompts stay on argv', async () => {
@@ -151,7 +148,7 @@ test('e2e:headless-large-prompt-all-runtimes — a review of a change with a ver
     throw new Error(`no ${command} here: a headless launch opens no pane`);
   };
   const launched = await launchReview(root, work, 'reviewer-opencode', [], now(), { run, headless: spawnHeadless, requestId: 'opencode-large-diff-review' });
-  await until('the opencode review to settle', async () => (await readReviewLedger(root)).reviews.some(entry => entry.id === launched.review && !liveRun(entry.agentName) && (entry.verdict || entry.state !== 'pending')));
+  await until(async () => (await readReviewLedger(root)).reviews.some(entry => entry.id === launched.review && !liveRun(entry.agentName) && (entry.verdict || entry.state !== 'pending')), 'the opencode review to settle', 10_000, 25);
   const entry = (await readReviewLedger(root)).reviews.find(review => review.id === launched.review)!;
   assert.equal(entry.verdict?.state, 'APPROVED', entry.resolution);
   assert.equal(entry.verdict?.reviewer, reviewer);

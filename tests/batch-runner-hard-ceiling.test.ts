@@ -15,6 +15,7 @@ import { slotsDirectoryVariable } from '../src/master/verification-slots.js';
 import { masterConfigSchema } from '../src/master.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { until } from './helpers/until.js';
 
 // GY-3509: after GY-3507 bounded a gate run at 90 minutes, a new batch run's trial still received
 // hours: the gate handed its runner the time left plus two more bounds, and a host with busy trial
@@ -94,8 +95,7 @@ test('e2e:batch-runner-hard-ceiling — a new batch run through the loop\'s gate
   };
   yard.reads.adoptTrialRun = async () => null;
   const flight = (await batchGateStep(yard.loop()))!.gate!;
-  const until = async (condition: () => boolean, what: string) => { for (const deadline = Date.now() + 15_000; !condition();) { assert.ok(Date.now() < deadline, what); await new Promise(resolve => setTimeout(resolve, 20)); } };
-  await until(() => !!yard.record().inFlight?.run, 'the gate launched its run and saved it on the record');
+  await until(() => !!yard.record().inFlight?.run, 'the gate launched its run and saved it on the record', 15_000);
   const directory = directories[0]!;
   try {
     const spec = (await readTrialRunSpec(directory))!;

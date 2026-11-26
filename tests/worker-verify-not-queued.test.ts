@@ -10,6 +10,7 @@ import { heavyRunLabel } from './helpers/run-tests.js';
 import { heldSlots, heldVariable, hostHeavyJobsDirectory, projectVariable, slotsDirectoryVariable, verificationEnvironment } from '../src/master/verification-slots.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { until } from './helpers/until.js';
 
 // GY-3447: since GY-3290 a worker's own `npm run build` and selected tests waited for one of the
 // host's two heavy-job slots while a batch gate and a merge trial held both for 45+ minutes. Only
@@ -17,10 +18,6 @@ import { masterConfigSchema, type MasterConfig } from '../src/master.js';
 // type check, selected tests and host-run check start at once, under the session's fair share.
 
 const launcher = join(import.meta.dirname, 'helpers', 'heavy-job-launcher.ts'), checkout = join(import.meta.dirname, '..');
-const sleep = (ms: number) => new Promise(done => setTimeout(done, ms));
-const until = async (condition: () => boolean, what: string, timeoutMs = 60_000) => {
-  for (const deadline = Date.now() + timeoutMs; !condition();) { assert.ok(Date.now() < deadline, `timed out waiting until ${what}`); await sleep(25); }
-};
 const waiting = /waits for a host heavy-job slot|waiting for a host heavy-job slot/;
 
 /** Two item trials fill the ordinary host slots and a batch gate holds the reservation until `go`. */
@@ -51,7 +48,7 @@ async function fullHost() {
       { stdio: ['ignore', 'ignore', 'pipe'], env: { ...base, FIXTURE_PROJECT: project } })),
   };
   const holders = [fixture.launch('trial', 'GY-1'), fixture.launch('trial', 'GY-2'), fixture.launch('gate', 'gate-site', 'acme/site')];
-  await until(() => fixture.ran('GY-1') && fixture.ran('GY-2') && fixture.ran('gate-site'), 'two merge trials and a batch gate fill the host budget');
+  await until(() => fixture.ran('GY-1') && fixture.ran('GY-2') && fixture.ran('gate-site'), 'two merge trials and a batch gate fill the host budget', 60_000, 25);
   assert.equal(heldSlots(fixture.directory).length, 3);
   return { ...fixture, holders, scratch };
 }
@@ -63,7 +60,7 @@ test('integration:worker-verify-not-queued — with both ordinary slots held by 
   for (const job of worker) assert.equal(await job.closed, 0, job.stderr());
   for (const job of worker) { assert.ok(host.ran(job.id), `${job.id} ran`); assert.doesNotMatch(job.stderr(), waiting); }
   const check = host.launch('check', 'GY-3');
-  await until(() => host.ran('GY-3'), 'the worker check starts beside the holders');
+  await until(() => host.ran('GY-3'), 'the worker check starts beside the holders', 60_000, 25);
   assert.doesNotMatch(check.stderr(), waiting);
 
   // This repository's own runner: a selected run (`npm run test:affected`) and a type check (`npm run build`) take no slot.
@@ -88,7 +85,7 @@ test('integration:worker-verify-not-queued — with both ordinary slots held by 
 
   // A merge trial and a worker's whole suite still wait for a slot, naming the holders.
   const trial = host.launch('trial', 'GY-4'), suite = host.session('suite', ['test']);
-  await until(() => waiting.test(trial.stderr()) && waiting.test(suite.stderr()), 'the merge trial and the whole suite wait');
+  await until(() => waiting.test(trial.stderr()) && waiting.test(suite.stderr()), 'the merge trial and the whole suite wait', 60_000, 25);
   assert.ok(!host.ran('GY-4') && !host.ran('suite'), 'neither starts while both slots are held');
   for (const holder of ['test merge GY-1 (acme/app)', 'test merge GY-2 (acme/app)', 'test merge batch-gate (acme/site)']) {
     assert.ok(suite.stderr().includes(holder), `the waiting suite names ${holder}: ${suite.stderr()}`);

@@ -29,6 +29,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { workFixture } from './helpers/work-fixture.js';
 import { listen } from './helpers/http-server.js';
+import { until } from './helpers/until.js';
 
 // Headless reviews: one child run of the reviewer's runtime, no Herdr pane, its
 // JSON answer posted through review post's own route under the launch's token and reviewer identity.
@@ -103,12 +104,8 @@ function runtime(answers: string[], gate?: Promise<void>) {
   };
   return { exec, runs };
 }
-const until = async (what: string, check: () => Promise<boolean> | boolean) => {
-  for (let tries = 0; tries < 200; tries++) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 25)); }
-  assert.fail(`timed out waiting for ${what}`);
-};
 const settled = async (id: string) => {
-  await until('the review run to end', async () => (await readReviewLedger(root)).reviews.some(record => record.id === id && !liveRun(record.agentName) && (record.verdict || record.state !== 'pending')));
+  await until(async () => (await readReviewLedger(root)).reviews.some(record => record.id === id && !liveRun(record.agentName) && (record.verdict || record.state !== 'pending')), 'the review run to end', 5_000, 25);
   return (await readReviewLedger(root)).reviews.find(record => record.id === id)!;
 };
 
@@ -121,7 +118,7 @@ test('integration:headless-review — a review request is one headless run whose
   assert.equal(launched.delivery, 'request');
   assert.deepEqual(commands.filter(([command]) => command !== 'git'), [], 'no Herdr command ran');
   // While it runs, the run is a working session under its name, so slots and supervision see it.
-  await until('the run to start', () => fake.runs.length === 1);
+  await until(() => fake.runs.length === 1, 'the run to start', 5_000, 25);
   assert.deepEqual(headlessInventory().sessions.find(session => session.name === launched.agentName), { name: launched.agentName, runtime: 'claude', state: 'working', pane: null, workspace: null });
   const [running] = (await readReviewLedger(root)).reviews;
   const token = JSON.parse(await readFile(join(running!.sessionDirectory, reviewBindingFile), 'utf8')).verdictToken as string;
@@ -212,7 +209,7 @@ test('integration:headless-run-survives-loop-restart — a headless review in fl
   const exec: HeadlessExec = (_command, _args, options) => spawnHeadless(process.execPath, [script], options);
   const launched = await launchReview(root, work, 'reviewer-claude', [], now(), { run, headless: exec, requestId: 'headless-request-restart' });
   const runs = headlessRunsDirectory(root);
-  await until('the detached child to start', () => existsSync(runs) && readdirSync(runs).some(name => readRunMeta(join(runs, name)) !== null));
+  await until(() => existsSync(runs) && readdirSync(runs).some(name => readRunMeta(join(runs, name)) !== null), 'the detached child to start', 5_000, 25);
   const [directory] = readdirSync(runs).map(name => join(runs, name));
   const meta = readRunMeta(directory!)!;
   assert.ok(runAlive(meta), 'the child is live');

@@ -16,6 +16,7 @@ import { bootstrapGate, gateRecordPath, writeGateRecord } from '../src/batch-gat
 import { controlPlaneRecordPath, deployRecordPath, readControlPlaneRecord, readDeployRecord } from '../src/deploy-watch.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { listen } from './helpers/http-server.js';
+import { until } from './helpers/until.js';
 
 const source = fileURLToPath(new URL('../', import.meta.url));
 const modules = resolve(createRequire(import.meta.url).resolve('tsx'), '../../..');
@@ -161,20 +162,13 @@ exit 0\n`, { mode: 0o755 });
   const checkedAt = () => readControlPlaneRecord(controlRecord)?.checkedAt ?? null;
   /** The watch fetched `sha` as main's tip, and at least one more pass ran after that. */
   const passesBeyond = async (sha: string) => {
-    await until(`main moved to ${sha.slice(0, 12)} in the deploy checkout`, () => { try { return git(deploySrc, 'rev-parse', 'refs/remotes/origin/main') === sha; } catch { return false; } });
+    await until(() => { try { return git(deploySrc, 'rev-parse', 'refs/remotes/origin/main') === sha; } catch { return false; } }, `main moved to ${sha.slice(0, 12)} in the deploy checkout`, 150_000, 50);
     const seen = checkedAt();
-    await until(`a pass completed after main moved to ${sha.slice(0, 12)}`, () => {
+    await until(() => {
       const next = checkedAt();
       return next !== null && next !== seen;
-    });
+    }, `a pass completed after main moved to ${sha.slice(0, 12)}`, 150_000, 50);
   };
-  async function until(what: string, check: () => boolean, deadlineMs = 150_000) {
-    for (const start = Date.now(); ; ) {
-      if (check()) return;
-      if (Date.now() - start > deadlineMs) throw new Error(`${what} did not happen within ${deadlineMs}ms\n--- watch stderr ---\n${watch.err.slice(-4000)}`);
-      await new Promise(done => setTimeout(done, 50));
-    }
-  }
   /** The release tree the watch's build step would create, prepared in advance so no install runs. */
   const seedRelease = async (sha: string, reuseBundle?: Uint8Array): Promise<Uint8Array> => {
     const release = join(launcherRoot, '.graphyard', 'cli-releases', sha);
@@ -194,7 +188,7 @@ exit 0\n`, { mode: 0o755 });
   };
 
   try {
-    await until('the watch created its deploy checkout', () => existsSync(join(deploySrc, '.git')));
+    await until(() => existsSync(join(deploySrc, '.git')), 'the watch created its deploy checkout', 150_000, 50);
     // A commit that changes the deploy-watch code: every pass of the new code says so.
     const watchSource = await readFile(join(checkout, 'src', 'deploy-watch.ts'), 'utf8');
     const marked = watchSource.replace('  for (;;) {\n    let served', `  for (;;) {\n    log('[mainworks-deploy] running the deployed watch code');\n    let served`);
@@ -214,10 +208,10 @@ exit 0\n`, { mode: 0o755 });
 
     // The gate verifies B: the watch deploys it and hands itself over to its code.
     await writeGateRecord(gateRecordPath(checkout), bootstrapGate(repository, b));
-    await until('B is served', () => servedTip() === b);
-    await until('the watch hands itself over to the new code', () => markers() > 0);
+    await until(() => servedTip() === b, 'B is served', 150_000, 50);
+    await until(() => markers() > 0, 'the watch hands itself over to the new code', 150_000, 50);
     assert.ok(watch.err.includes('the watch hands itself over to'), 'the handover names what it does');
-    await until('a second pass runs on the new code', () => markers() > 1);
+    await until(() => markers() > 1, 'a second pass runs on the new code', 150_000, 50);
     // The deploy the handover followed is neither lost nor redone: the record stands, one build.
     assert.equal(readDeployRecord(record)?.failed ?? null, null, 'nothing failed or rolled back');
     assert.equal(readDeployRecord(record)?.reason ?? null, null, 'the served tip is clean');
@@ -235,8 +229,8 @@ exit 0\n`, { mode: 0o755 });
     assert.equal(servedTip(), b, 'the handed-over watch still serves the verified commit only');
     assert.equal(await buildsOf(c), 0, 'the newer unverified tip is never built');
     await writeGateRecord(gateRecordPath(checkout), bootstrapGate(repository, c));
-    await until('C is served', () => servedTip() === c);
-    await until('the watch follows the code it serves again', () => handovers() >= 2);
+    await until(() => servedTip() === c, 'C is served', 150_000, 50);
+    await until(() => handovers() >= 2, 'the watch follows the code it serves again', 150_000, 50);
     assert.equal(await buildsOf(c), 1, 'C is deployed exactly once');
   } finally {
     await close();

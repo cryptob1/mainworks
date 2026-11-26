@@ -11,6 +11,7 @@ import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import { declarationSlot, heldSlots, slotsDirectoryVariable } from '../src/master/verification-slots.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { until } from './helpers/until.js';
 
 // GY-3606: a gate timed out while its failed check was being rerun, and the rerun's heavy-job slot
 // was still held an hour later. A gate run that records timeout leaves no holder and no running test.
@@ -19,9 +20,6 @@ const repository = 'owner/project';
 const start = Date.parse('2030-05-01T00:00:00Z');
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-async function until(condition: () => boolean, what: string, timeoutMs = 15_000) {
-  for (const deadline = Date.now() + timeoutMs; !condition();) { assert.ok(Date.now() < deadline, `timed out waiting until ${what}`); await sleep(20); }
-}
 const passing = { build: 'pass', tests: { passed: 1, failed: [], files: 1 }, durationMs: 1, logTail: '', files: [], e2e: [] } as unknown as MergeTrialRun;
 const failing = { ...passing, build: 'fail' } as unknown as MergeTrialRun;
 
@@ -97,10 +95,10 @@ test('integration:gate-rerun-releases-slot — a gate that times out while rerun
   {
     const yard = await world('gate-rerun-slot', { verdict: entry => entry.call === 1 ? Promise.resolve(failing) : entry.call === 2 ? null : Promise.resolve(passing) });
     const flight = (await batchGateStep(yard.cycle))!.gate!;
-    await until(() => yard.checks.length === 2, 'the gate reruns its failed build');
+    await until(() => yard.checks.length === 2, 'the gate reruns its failed build', 15_000);
     assert.deepEqual(holders(yard.slots), ['test merge batch-gate'], 'the rerun holds the slot');
     yard.advance(gateLimitMs + 1);
-    await until(() => yard.checks.length === 3, 'the next gate run starts its check without waiting on the timed-out rerun');
+    await until(() => yard.checks.length === 3, 'the next gate run starts its check without waiting on the timed-out rerun', 15_000);
     await flight;
     assert.equal(yard.record().verified, yard.tip, 'the retry verified main');
     assert.deepEqual(running(yard.checks), [], 'the timed-out rerun\'s tests were stopped');
@@ -111,10 +109,10 @@ test('integration:gate-rerun-releases-slot — a gate that times out while rerun
   {
     const yard = await world('gate-probe-slot', { verdict: entry => entry.commit === yard.verified ? null : Promise.resolve(entry.call <= 2 ? failingTest : passing) });
     const flight = (await batchGateStep(yard.cycle))!.gate!;
-    await until(() => yard.checks.some(entry => entry.commit === yard.verified), 'the gate probes the failed test on the verified commit');
+    await until(() => yard.checks.some(entry => entry.commit === yard.verified), 'the gate probes the failed test on the verified commit', 15_000);
     assert.deepEqual(holders(yard.slots), ['test merge batch-gate'], 'the probe holds a slot');
     yard.advance(gateLimitMs + 1);
-    await until(() => yard.checks.length === 4, 'the next gate run starts its check without waiting on the timed-out probe');
+    await until(() => yard.checks.length === 4, 'the next gate run starts its check without waiting on the timed-out probe', 15_000);
     await flight;
     assert.equal(yard.record().verified, yard.tip, 'the retry verified main');
     assert.deepEqual(running(yard.checks), [], 'the timed-out probe\'s tests were stopped');
@@ -128,10 +126,10 @@ test('integration:gate-rerun-releases-slot — a gate that times out while rerun
     const hung = new Promise<void>(resolve => { finishImage = resolve; });
     const yard = await world('gate-rerun-image', { image: call => call === 2 ? hung : Promise.resolve(), verdict: entry => Promise.resolve(entry.call === 1 ? failing : passing) });
     const flight = (await batchGateStep(yard.cycle))!.gate!;
-    await until(() => yard.images() === 2, 'the gate\'s rerun builds the trial image');
+    await until(() => yard.images() === 2, 'the gate\'s rerun builds the trial image', 15_000);
     assert.deepEqual(holders(yard.slots), ['test merge batch-gate'], 'the rerun holds the slot');
     yard.advance(gateLimitMs + 1);
-    await until(() => yard.checks.length === 2, 'the next gate run starts its check without waiting on the timed-out rerun');
+    await until(() => yard.checks.length === 2, 'the next gate run starts its check without waiting on the timed-out rerun', 15_000);
     await flight;
     assert.equal(yard.record().verified, yard.tip, 'the retry verified main');
     finishImage();

@@ -14,6 +14,7 @@ import { serializeTrialError } from '../src/merge-writer/trial-run.js';
 import { acquireVerificationSlot, projectVariable, slotsDirectoryVariable } from '../src/master/verification-slots.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git } from './helpers/git-repo.js';
+import { until } from './helpers/until.js';
 
 // GY-3803: the batch gate takes the next freed heavy-job slot ahead of merge trials, and a batch
 // gate whose run fails as slowed by heat reruns only its failed files on the next cycle.
@@ -24,9 +25,6 @@ const iso = (at: number) => new Date(at).toISOString();
 const sha = (seed: string) => createHash('sha1').update(seed).digest('hex');
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } as NodeJS.ProcessEnv;
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-async function until(condition: () => boolean, what: string, timeoutMs = 15_000) {
-  for (const deadline = Date.now() + timeoutMs; !condition();) { assert.ok(Date.now() < deadline, `timed out waiting until ${what}`); await sleep(20); }
-}
 const passing = { build: 'pass', tests: { passed: 2, failed: [], files: 2 }, durationMs: 1, logTail: '', files: [], proofs: {}, e2e: [] } as unknown as MergeTrialRun;
 
 const previousSlots = process.env[slotsDirectoryVariable];
@@ -109,15 +107,15 @@ test('e2e:batch-gate-slot-priority — with every heavy-job slot held by merge t
     const sameTrial = acquireVerificationSlot({ directory: yard.slots, label: 'test merge GY-3', project: repository, pollMs: 20, signal: stop.signal, onWait: () => { sameWaiting = true; } })
       .then(slot => { order.push('GY-3'); return slot; });
     otherTrial.catch(() => {}); sameTrial.catch(() => {});
-    await until(() => otherWaiting && sameWaiting, 'queued merge trials wait');
+    await until(() => otherWaiting && sameWaiting, 'queued merge trials wait', 15_000);
 
     const gateFlight = (await batchGateStep(yard.cycle))!.gate!;
-    await until(() => (readGateRecord(yard.file)?.inFlight?.progress ?? '').includes('waiting for a host heavy-job slot'), 'batch gate waits for a host heavy-job slot');
+    await until(() => (readGateRecord(yard.file)?.inFlight?.progress ?? '').includes('waiting for a host heavy-job slot'), 'batch gate waits for a host heavy-job slot', 15_000);
 
     // Free one slot: the batch gate must take it ahead of both queued merge trials.
     try {
       held1.release();
-      await until(() => order.length > 0, 'first freed slot is taken');
+      await until(() => order.length > 0, 'first freed slot is taken', 15_000);
       assert.equal(order[0], 'batch-gate', `the batch gate takes the first freed slot ahead of merge trials (got ${JSON.stringify(order)})`);
       await gateFlight;
       assert.equal(readGateRecord(yard.file)?.verified, yard.tip, 'the batch gate verified main');
@@ -187,10 +185,10 @@ test('unit:batch-gate-slot-priority-pinned — the slot world never waits on hos
     .then(slot => { order.push('gate'); return slot; });
   gate.catch(() => {});
   try {
-    await until(() => lines.length > 0, 'the gate waits');
+    await until(() => lines.length > 0, 'the gate waits', 15_000);
     assert.match(lines[0]!, /waits for a host heavy-job slot/, 'the gate waits for a slot, not for host heat');
     held1.release();
-    await until(() => order.length > 0, 'first freed slot is taken');
+    await until(() => order.length > 0, 'first freed slot is taken', 15_000);
     assert.deepEqual(order, ['gate']);
   } finally {
     release();

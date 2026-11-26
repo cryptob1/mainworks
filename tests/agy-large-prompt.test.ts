@@ -20,6 +20,7 @@ import type { Principal, Work } from '../src/model.js';
 import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { listen } from './helpers/http-server.js';
+import { until } from './helpers/until.js';
 
 // GY-3696: Headless agy sessions take a large prompt without spawn E2BIG.
 // Linux MAX_ARG_STRLEN is 128 KiB (131,072 bytes) per argv element; a prompt larger than that
@@ -111,10 +112,6 @@ after(async () => { await close?.(); if (store) await store.close(); if (scratch
 
 const stored = async (id: string) => (await store.pool.query('SELECT document FROM work_items WHERE id=$1', [id])).rows[0].document as Work;
 const insert = async (work: Work) => { await store.pool.query('INSERT INTO work_items(id, document) VALUES ($1,$2)', [work.id, JSON.stringify(work)]); return work; };
-const until = async (what: string, check: () => Promise<boolean> | boolean) => {
-  for (let tries = 0; tries < 400; tries++) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 25)); }
-  assert.fail(`timed out waiting for ${what}`);
-};
 
 test('integration:agy-large-prompt — a headless agy session with a prompt over the platform argument limit starts and receives the whole prompt while small prompts behave as today', async () => {
   const largeRecord = join(scratch, 'large-record.json');
@@ -198,7 +195,7 @@ test('e2e:agy-large-prompt — a review of a change with a very large diff run o
     throw new Error(`no ${command} here: a headless launch opens no pane`);
   };
   const launched = await launchReview(root, work, 'reviewer-agy', [], now(), { run, headless: spawnHeadless, requestId: 'agy-large-diff-review' });
-  await until('the agy review to settle', async () => (await readReviewLedger(root)).reviews.some(record => record.id === launched.review && !liveRun(record.agentName) && (record.verdict || record.state !== 'pending')));
+  await until(async () => (await readReviewLedger(root)).reviews.some(record => record.id === launched.review && !liveRun(record.agentName) && (record.verdict || record.state !== 'pending')), 'the agy review to settle', 10_000, 25);
   const record = (await readReviewLedger(root)).reviews.find(entry => entry.id === launched.review)!;
   assert.equal(record.verdict?.state, 'APPROVED', record.resolution);
   assert.equal(record.verdict?.reviewer, reviewer);
