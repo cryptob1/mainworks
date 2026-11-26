@@ -145,10 +145,8 @@ test(`${proof} — planner prompt lists items delivered in the last 7 days under
       }),
   };
 
-  // Raise empty-board alarm at +15 min, trigger planner at +45 min (30 min held).
+  // Low-water / empty-board trigger launches the planner on the first cycle with free slots.
   clock += 15 * 60_000;
-  await runCycle(config, state, effects, () => clock);
-  clock += 30 * 60_000;
   await runCycle(config, state, effects, () => clock);
 
   assert.equal(prompts.length, 1, 'planner ran once');

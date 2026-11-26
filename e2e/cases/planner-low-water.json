@@ -1,0 +1,16 @@
+{
+  "id": "planner-low-water",
+  "title": "On a running test install with two ready items and free slots, a planner session launches once",
+  "description": "Starts a real temporary Postgres control plane with two ready items and free builder slots (no empty-board alarm); running coordination cycles launches one headless planner session under the two-hour cooldown and files at most three unreleased drafts.",
+  "tags": ["master", "api"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "running test install with two ready items and free slots launches one planner session",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/planner-low-water-e2e.test.ts",
+      "timeoutSeconds": 180
+    }
+  ]
+}
