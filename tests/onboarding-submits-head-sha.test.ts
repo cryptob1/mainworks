@@ -12,6 +12,7 @@ import { publishOnboarding } from '../src/up.js';
 import { fileOnboardingWork } from '../src/onboarding.js';
 import { onboardingBranch } from '../src/model/onboarding-work.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { listen } from './helpers/http-server.js';
 
 /**
  * GY-2938: `mainworks up`'s onboarding apply publishes the files `init --scan --apply` wrote as one
@@ -26,7 +27,7 @@ const token = 'o'.repeat(40);
 const git = (args: readonly string[], cwd?: string) => execFileSync('git', cwd ? ['-C', cwd, ...args] : [...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
 let fixtureRoot: string, checkout: string, baseTip: string;
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
+let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string;
 
 before(async () => {
   // The operator's checkout and its origin, laid out as a fresh repository is: main pushed, and the
@@ -52,15 +53,9 @@ before(async () => {
   engine = new Engine(store, 120, repository);
   engine.gitRunner = gitRunnerFor(checkout); engine.baseBranch = 'main';
   engine.principals = [operator];
-  http = server(engine, [{ ...operator, token }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
+  ({ url, close } = await listen(server(engine, [{ ...operator, token }])));
 });
-after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  if (store) await store.close();
-  if (fixtureRoot) await rm(fixtureRoot, { recursive: true, force: true });
-});
+after(async () => { await close?.(); if (store) await store.close(); if (fixtureRoot) await rm(fixtureRoot, { recursive: true, force: true }); });
 
 /** The substituted host: real git, gh recorded — `repo view` answers, anything else is a failure. */
 let ghCalls: string[][] = [];

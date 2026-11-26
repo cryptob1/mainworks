@@ -22,6 +22,7 @@ import {
 
 import { defaultRepositoryPolicy } from '../src/model/repository-policy.js';
 import { setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { listen } from './helpers/http-server.js';
 // GY-2965: the fixtures create items carrying e2e: proofs, so this process declares the serve the trial would use.
 setRepositoryPolicy({ ...defaultRepositoryPolicy, e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -32,7 +33,7 @@ const operator: Principal = { id: 'operator', role: 'admin' };
 const tokens = new Map([[operator.id, `operator-${'t'.repeat(32)}`]]);
 const root = new URL('..', import.meta.url).pathname;
 
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
+let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string;
 
 before(async () => {
   store = await withDatabase('scenario-capacity-limit-redispatch-registered');
@@ -40,14 +41,9 @@ before(async () => {
   // The shipped scenarios are Mainworks's own repository's cases (GY-2964): this install manages
   // that repository, which is the one whose fresh install materializes them.
   engine = new Engine(store, 120, 'cryptob1/graphyard');
-  http = server(engine, [{ ...operator, token: tokens.get(operator.id)! }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ ...operator, token: tokens.get(operator.id)! }])));
 });
-after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  if (store) await store.close();
-});
+after(async () => { await close?.(); if (store) await store.close(); });
 
 const api = async (path: string, data?: unknown, key: string = randomUUID()) => {
   const response = await fetch(`${url}/api/${path}`, {
@@ -189,10 +185,7 @@ test('unit:scenario-capacity-limit-redispatch-registered — recordCaseRun mater
       "SELECT count(*)::int AS n FROM events WHERE kind='scenario.defined' AND payload->'scenario'->>'id'=$1",
       [id],
     )).rows[0].n, 1, 'materializing appends scenario.defined');
-  } finally {
-    await store.close();
-  }
-});
+  } finally { await store.close(); } });
 
 test('unit:scenario-capacity-limit-redispatch-registered — listing materializes through one transaction: a failed scenario.defined rolls the revision back', async () => {
   const id = capacityLimitRedispatchScenario;
@@ -228,7 +221,4 @@ test('unit:scenario-capacity-limit-redispatch-registered — listing materialize
       "SELECT count(*)::int AS n FROM events WHERE kind='scenario.defined' AND payload->'scenario'->>'id'=$1",
       [id],
     )).rows[0].n, 1);
-  } finally {
-    await store.close();
-  }
-});
+  } finally { await store.close(); } });

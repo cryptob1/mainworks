@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer, type Server } from 'node:http';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { applyInstall, buildPlan, materializeInstall, prepareInstall } from '../src/install/index.js';
 import { readToken } from '../src/install/secrets.js';
 import { harness, REPOSITORY } from './install-harness.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { listen } from './helpers/http-server.js';
 
 /**
  * GY-3270: a Herdr command a repository setup step runs that fails is reported with Herdr's own
@@ -25,7 +25,7 @@ test('e2e:herdr-setup-error-detail — a stub herdr that exits 1 printing "plugi
   // for exactly the credentials the apply materialized.
   const fixture = await harness({ provider: 'compose' });
   const credentials: Record<string, { id: string; role: string }> = {};
-  const plane: Server = createServer((request, response) => {
+  const { port, close } = await listen((request, response) => {
     const bearer = String(request.headers.authorization ?? '').replace(/^Bearer /, '');
     const actor = credentials[bearer];
     const answer = actor ? { actor: { id: actor.id, role: actor.role }, repository: REPOSITORY, ...(actor.role === 'coordinator' ? { baseBranch: 'main' } : {}) } : null;
@@ -33,8 +33,6 @@ test('e2e:herdr-setup-error-detail — a stub herdr that exits 1 printing "plugi
     response.setHeader('Content-Type', 'application/json');
     response.end(JSON.stringify(answer ?? { error: 'A valid Mainworks bearer token is required' }));
   });
-  await new Promise<void>(accept => plane.listen(0, '127.0.0.1', accept));
-  const port = (plane.address() as { port: number }).port;
   try {
     // install --apply's own profile registration runs the Herdr setup step; no stubbed step.
     const deps = { ...fixture.deps };
@@ -51,9 +49,4 @@ test('e2e:herdr-setup-error-detail — a stub herdr that exits 1 printing "plugi
     assert.equal(summary.profiles.repository.connected, false, 'the repository step failed');
     assert.match(line, /herdr plugin --help exited 1\b/, `the step line names the Herdr command and its exit code: ${line}`);
     assert.ok(line.includes('plugin mainworks is disabled'), `the step line carries Herdr's own error: ${line}`);
-  } finally {
-    process.env.PATH = wasPath;
-    await new Promise<void>(accept => plane.close(() => accept()));
-    await fixture.cleanup();
-  }
-});
+  } finally { process.env.PATH = wasPath; await close(); await fixture.cleanup(); } });

@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { runWorkerVerification } from '../src/merge-writer/worker-verification.js';
 import type { Work } from '../src/model.js';
+import { listen } from './helpers/http-server.js';
 
 // This is deliberately a real trial: a host without Docker cannot satisfy placement.
 test('integration:worker-verification-placement — exact committed head executes in the private trial and a failing proof stays failed', { timeout: 120_000 }, async () => {
@@ -88,10 +89,9 @@ test('integration:placed-http', () => {
   work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
   work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
   work = await engine.execute(worker, 'workspace', work.id, { epoch: 1, host: 'test', path: repository, branch: 'graphyard/verification' }, randomUUID());
-  const http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  t.after(() => new Promise<void>(resolve => http.close(() => resolve())));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url: serverUrl, close } = await listen(server(engine, credentials));
+  t.after(close);
+  const url = serverUrl;
   const api = async (path: string, data: unknown, token = 'host-test-token') => {
     const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
     const result = await response.json();

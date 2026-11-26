@@ -19,6 +19,7 @@ import { reserveTestPorts } from '../src/cli/test-isolation.js';
 import { moveInstall } from '../src/install/move.js';
 import { proposedRuntimes } from '../src/model/registry.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { listen } from './helpers/http-server.js';
 
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const tokens = { operator: `operator-${'o'.repeat(40)}`, master: `master-${'m'.repeat(40)}`, worker: `worker-${'w'.repeat(40)}` };
@@ -27,18 +28,16 @@ const tokens = { operator: `operator-${'o'.repeat(40)}`, master: `master-${'m'.r
 async function controlPlane(data: string, port: number) {
   const cluster = await startCluster({ data } as LocalPaths, port, await postgresBinaries());
   const store = new Store(`postgres://graphyard:testing-only@127.0.0.1:${port}/postgres`); await store.init();
-  const http = server(new Engine(store, 120, 'owner/project'), [
+  const { url, close } = await listen(server(new Engine(store, 120, 'owner/project'), [
     { id: 'operator', role: 'admin', sessionKind: 'human', token: tokens.operator },
     { id: 'master', role: 'coordinator', token: tokens.master },
     { id: 'worker', role: 'worker', token: tokens.worker },
-  ]);
-  await new Promise<void>(accept => http.listen(0, '127.0.0.1', accept));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ]));
   const ok = async (path: string, body?: unknown, token = tokens.operator) => {
     const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     const result = await response.json() as any; assert.equal(response.status, 200, `${path}: ${JSON.stringify(result)}`); return result;
   };
-  const stop = async () => { http.closeAllConnections(); await new Promise<void>(accept => http.close(() => accept())); await store.close(); await cluster.stop(); };
+  const stop = async () => { await close(); await store.close(); await cluster.stop(); };
   return { url, ok, stop };
 }
 

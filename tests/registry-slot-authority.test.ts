@@ -10,6 +10,7 @@ import { AgentRegistry } from '../src/agent-registry.js';
 import { proposedRuntimes } from '../src/model/registry.js';
 import { recordObservedExhaustion, selectAccount, masterConfigSchema, readEnvironmentLog } from '../src/master.js';
 import type { FleetClient } from '../src/fleet.js';
+import { listen } from './helpers/http-server.js';
 
 const actor = { id: 'executor', role: 'coordinator' as const }, hostId = 'registry-test-host';
 let store: Store, registry: AgentRegistry, root: string;
@@ -93,16 +94,15 @@ test('integration:registry-slot-authority-core — core E2E cases pass against t
   const token = randomUUID().replaceAll('-', '').repeat(2);
   const engine = new Engine(store, 120, 'owner/project');
   engine.gitRunner = null;
-  const http = server(engine, [{ id: 'test-operator', role: 'admin', sessionKind: 'human', token }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
+  const { url, close } = await listen(server(engine, [{ id: 'test-operator', role: 'admin', sessionKind: 'human', token }]));
   try {
     const cases = await Promise.all(['create-work-item', 'board', 'work-item-detail'].map(async id => {
       const file = `e2e/cases/${id}.json`;
       return { file, definition: parseCase(file, await readFile(file, 'utf8')) };
     }));
-    const report = await runCases(cases, { url: `http://127.0.0.1:${(http.address() as { port: number }).port}`, token,
+    const report = await runCases(cases, { url: url, token,
       environment: 'uat', root: process.cwd(), retries: 0, withholdSecrets: true,
       artifactsDirectory: await temporaryDirectory('registry-core-artifacts', root), signal: AbortSignal.timeout(90_000) });
     assert.deepEqual(report.cases.map(result => [result.id, result.verdict]), cases.map(entry => [entry.definition.id, 'passed']), JSON.stringify(report.cases));
-  } finally { await new Promise<void>(resolve => http.close(() => resolve())); }
+  } finally { await close(); }
 });

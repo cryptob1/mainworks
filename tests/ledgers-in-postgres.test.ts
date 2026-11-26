@@ -22,14 +22,13 @@ import { storedLoopState } from '../src/server/loop-state.js';
 import { advisoryLocks } from '../src/store/locks.js';
 import type { DispatchEffects } from '../src/dispatch/effects.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
+import { listen } from './helpers/http-server.js';
 
 test('ledgers-in-postgres: first cycle migrates legacy files, resumes attempts and dispatch, and launches past 200 records', async t => {
   const store = await withDatabase('ledgers_in_postgres'); await store.init();
   const token = 'fixture-coordinator-token'.padEnd(40, 'x');
-  const http = server(new Engine(store, 120, 'owner/project'), [{ id: 'fixture-loop', role: 'coordinator', token }, { id: 'worker', role: 'worker', token: 'worker-token'.padEnd(40, 'x') }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-  t.after(async () => { http.closeAllConnections(); await new Promise<void>(resolve => http.close(() => resolve())); await store.close(); });
+  const { url, close } = await listen(server(new Engine(store, 120, 'owner/project'), [{ id: 'fixture-loop', role: 'coordinator', token }, { id: 'worker', role: 'worker', token: 'worker-token'.padEnd(40, 'x') }]));
+  t.after(async () => { await close(); await store.close(); });
   const host = await fleet({ name: 'claude-reviewer', agentName: 'reviewer', kind: 'claude', concurrency: 20 }, 'claude-reviewer');
   try {
     const configFile = join(host.root, '.graphyard/master.json');

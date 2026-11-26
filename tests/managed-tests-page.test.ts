@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { withDatabase } from './helpers/postgres.js';
+import { listen } from './helpers/http-server.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
@@ -25,27 +26,20 @@ const game = 'owner/openworld';
 const operator: Principal = { id: 'operator', role: 'admin' };
 const tokens = new Map([[operator.id, `operator-${'t'.repeat(32)}`]]);
 
-let gameStore: Store, gameEngine: Engine, gameHttp: ReturnType<typeof server>, gameUrl: string,
-  gyStore: Store, gyEngine: Engine, gyHttp: ReturnType<typeof server>, gyUrl: string;
+let gameStore: Store, gameEngine: Engine, gameClose: (() => Promise<void>) | undefined, gameUrl: string,
+  gyStore: Store, gyEngine: Engine, gyClose: (() => Promise<void>) | undefined, gyUrl: string;
 
 before(async () => {
   // The managed install: a fixture repository that is not Mainworks's own.
   gameStore = await withDatabase('managed-tests-page'); await gameStore.init();
   gameEngine = new Engine(gameStore, 120, game);
-  gameHttp = server(gameEngine, [{ ...operator, token: tokens.get(operator.id)! }]);
-  await new Promise<void>(resolve => gameHttp.listen(0, '127.0.0.1', resolve));
-  gameUrl = `http://127.0.0.1:${(gameHttp.address() as any).port}`;
+  ({ url: gameUrl, close: gameClose } = await listen(server(gameEngine, [{ ...operator, token: tokens.get(operator.id)! }])));
   // The control plane for Mainworks's own repository.
   gyStore = await withDatabase('managed-tests-page'); await gyStore.init();
   gyEngine = new Engine(gyStore, 120, 'cryptob1/graphyard');
-  gyHttp = server(gyEngine, [{ ...operator, token: tokens.get(operator.id)! }]);
-  await new Promise<void>(resolve => gyHttp.listen(0, '127.0.0.1', resolve));
-  gyUrl = `http://127.0.0.1:${(gyHttp.address() as any).port}`;
+  ({ url: gyUrl, close: gyClose } = await listen(server(gyEngine, [{ ...operator, token: tokens.get(operator.id)! }])));
 });
-after(async () => {
-  for (const http of [gameHttp, gyHttp]) if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  for (const store of [gameStore, gyStore]) if (store) await store.close();
-});
+after(async () => { await gameClose?.(); await gyClose?.(); for (const store of [gameStore, gyStore]) if (store) await store.close(); });
 
 /** The CLI's authenticated request helper, against one control plane. */
 const apiFor = (url: string) => async (path: string, data?: unknown, key: string = randomUUID()) => {

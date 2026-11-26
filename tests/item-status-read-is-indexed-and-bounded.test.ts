@@ -11,13 +11,14 @@ import { workDocumentSql } from '../src/store/bounded-snapshot.js';
 import { eventHistorySql, parseEventHistoryQuery, routineEventKinds } from '../src/events-history.js';
 import { boundedHistoryRead, historyReadSlots } from '../src/server/history-reads.js';
 import { coordinationViewHeader } from '../src/server/work-view.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3757: on an install with history, watching one item — `status GY-N`, the item page — took the
 // line's database away. The per-item reads answer from indexes, at most four history reads run at
 // once, and the loop's own snapshot read still answers while thirty readers watch one item.
 const adminToken = `operator-${'a'.repeat(32)}`, coordinatorToken = `coordinator-${'c'.repeat(32)}`;
 const ITEMS = 2000, EVENTS = 50_000, ITEM_ROWS = 3000;
-let store: Store, http: ReturnType<typeof server>, url: string, id: string, key: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string, id: string, key: string;
 
 const coordinationLiveSql = `SELECT d.number, x.document, ${coordinationTrimSql('x.document', coordinationTail)} AS trimmed
   FROM (SELECT w.number, ${detoasted('w.document')} AS document FROM work_items w WHERE NOT EXISTS (SELECT 1 FROM work_index i WHERE i.id = w.id AND i.settled) OFFSET 0) d
@@ -34,9 +35,7 @@ const get = async (token: string, path: string, headers: Record<string, string> 
 before(async () => {
   store = await withDatabase('item-status-read-is-indexed-and-bounded'); await store.init();
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
-  http = server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: adminToken }, { id: 'master', role: 'coordinator', token: coordinatorToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: adminToken }, { id: 'master', role: 'coordinator', token: coordinatorToken }])));
   const created = await fetch(`${url}/api/work`, { method: 'POST', headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
     body: JSON.stringify({ title: 'Watched item', why: 'Many readers watch it.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] }) });
   ({ id, key } = await created.json() as { id: string; key: string });
@@ -61,10 +60,7 @@ before(async () => {
   await planAsRows(store.pool, 'events', 2_000_000);
 });
 
-after(async () => {
-  http?.closeAllConnections(); if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  await store?.close();
-});
+after(async () => { await close?.(); await store?.close(); });
 
 test('integration:item-status-read-is-indexed-and-bounded — status GY-N and the item page answer from indexes with bounded rows and buffers planned as on two million events, with the rows of the plain query; four history reads at once, later ones get the last answer with its age, and the loop snapshot still answers', { timeout: 600_000 }, async () => {
   assert.ok(Number((await store.pool.query('SELECT count(*) FROM events')).rows[0].count) >= EVENTS);

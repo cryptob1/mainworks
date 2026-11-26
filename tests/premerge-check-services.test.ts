@@ -1,9 +1,10 @@
 import { test } from 'node:test';
+import { freePort } from './helpers/http-server.js';
+import { createServer } from 'node:net';
 import assert from 'node:assert/strict';
 import { execFileSync, execFile } from 'node:child_process';
 import { existsSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { createServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
@@ -121,9 +122,8 @@ test('unit:tests/premerge-check-services.test.ts — the TCP readiness wait conn
     const [command, ...args] = tcpAcceptProbe(targets, timeoutMs);
     execFile(command === 'node' ? process.execPath : command!, args, (error, stdout, stderr) => done({ code: error ? Number(error.code) : 0, out: stdout + stderr }));
   });
-  const reserve = () => new Promise<number>(done => { const server = createServer().listen(0, '127.0.0.1', () => { const { port } = server.address() as { port: number }; server.close(() => done(port)); }); });
-  // A service that listens only after a while is waited for.
-  const late = await reserve();
+    // A service that listens only after a while is waited for.
+  const late = await freePort();
   const server = createServer(socket => socket.end());
   setTimeout(() => server.listen(late, '127.0.0.1'), 700);
   try {
@@ -131,7 +131,7 @@ test('unit:tests/premerge-check-services.test.ts — the TCP readiness wait conn
     assert.equal(ready.code, 0, ready.out);
     assert.match(ready.out, new RegExp(`127\\.0\\.0\\.1:${late} accepts TCP connections`));
   } finally { server.close(); }
-  const closed = await reserve();
+  const closed = await freePort();
   const never = await probe([{ host: '127.0.0.1', port: closed }], 600);
   assert.equal(never.code, 1);
   assert.match(never.out, new RegExp(`127\\.0\\.0\\.1:${closed} accepted no TCP connection in time`));

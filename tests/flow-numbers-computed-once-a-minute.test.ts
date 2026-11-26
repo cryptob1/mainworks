@@ -6,6 +6,7 @@ import type { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { flowAttemptsSql, flowLedgerSql, readFlow } from '../src/server/flow.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3763: the flow numbers were one of the heaviest reads on the install they measure. They are now
 // computed by one job at most once a minute over the last 7 days' rows, read by a range on insertion
@@ -13,14 +14,12 @@ import { flowAttemptsSql, flowLedgerSql, readFlow } from '../src/server/flow.js'
 const adminToken = `operator-${'f'.repeat(32)}`;
 const ITEMS = 2000, EVENTS = 50_000, WINDOW = 2000;
 const flowKinds = ['rework', 'merge.intent', 'merge.trial', 'merge.refused', 'merge.serve-revert'];
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string;
 
 before(async () => {
   store = await withDatabase('flow-numbers-computed-once-a-minute'); await store.init();
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
-  http = server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: adminToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: adminToken }])));
   const created = await fetch(`${url}/api/work`, { method: 'POST', headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
     body: JSON.stringify({ title: 'Template', why: 'Flow is measured.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] }) });
   const { id } = await created.json() as { id: string };
@@ -43,10 +42,7 @@ before(async () => {
   await planAsRows(store.pool, 'events', 2_000_000);
 });
 
-after(async () => {
-  http?.closeAllConnections(); if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  await store?.close();
-});
+after(async () => { await close?.(); await store?.close(); });
 
 const get = async (path: string) => {
   const response = await fetch(`${url}/api/${path}`, { headers: { Authorization: `Bearer ${adminToken}` }, signal: AbortSignal.timeout(60_000) });

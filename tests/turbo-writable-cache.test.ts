@@ -18,6 +18,7 @@ import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import type { Principal, Work } from '../src/model.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3229: in a linked worktree turbo writes its cache under the MAIN checkout's .turbo/cache,
 // which the trial and worker verification mount read-only (Huck's onboarding failed so). Turbo's
@@ -172,15 +173,13 @@ test('integration:turbo-writable-cache — a build step failing with \'Read-only
   const root = await temporaryDirectory('turbo-read-only', tmpdir());
   // The failing step names a path in its own checkout, as turbo naming `<checkout>/.turbo/cache` does.
   const { base, head } = await repository(root, { 'apps/one/build.mjs': `console.error("Error: EROFS: read-only file system, mkdir '" + process.cwd() + "/.turbo/cache'");\nprocess.exit(1);\n` });
-  let store: Store | undefined, http: ReturnType<typeof server> | undefined;
+  let store: Store | undefined, close: (() => Promise<void>) | undefined;
   try {
     store = await withDatabase('turbo-writable-cache'); await store.init();
     const engine = new Engine(store, 120, 'owner/proofs');
     engine.gitRunner = gitRunnerFor(root); engine.baseBranch = 'main';
     const token = 'fixture-coordinator-' + 'x'.repeat(32);
-    http = server(engine, [{ ...coordinator, token }]);
-    await new Promise<void>(resolve => http!.listen(0, '127.0.0.1', resolve));
-    const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+    const { url, close: stop } = await listen(server(engine, [{ ...coordinator, token }])); close = stop;
     let work = await engine.execute(operator, 'create', null, { type: 'chore', title: 'turbo app', criteria: [{ id: 'AC-1', text: 'Builds', proofs: ['unit:builds', 'e2e:fixture'] }] }, randomUUID());
     work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
     work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
@@ -218,8 +217,4 @@ test('integration:turbo-writable-cache — a build step failing with \'Read-only
     current = (await store.workDocument(work.id))!;
     assert.equal(current.blocker, blocker);
     assert.equal(current.reworkRequested, false);
-  } finally {
-    if (http) await new Promise<void>(resolve => http!.close(() => resolve()));
-    if (store) await store.close();
-  }
-});
+  } finally { await close?.(); if (store) await store.close(); } });

@@ -10,6 +10,7 @@ import { helperSigningKeyFile, readHostReadings } from '../src/hosts.js';
 import { encodeLoopHosts, loopHosts } from '../src/model/loop-presence.js';
 import { shardHosts } from './helpers/shard-hosts.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { listen } from './helpers/http-server.js';
 
 const proof = 'integration:helper-update-without-env e2e:helper-update-without-env';
 
@@ -63,10 +64,9 @@ exec /usr/bin/env -i HOME="$HOME" PATH="$PATH" SSH_ORIGINAL_COMMAND="$SSH_ORIGIN
     const engine = new Engine(store, 120, 'fixture/helpers');
     engine.gitRunner = null;
     const token = 'helper-update-loop-token-xxxxxxxxxxxxxxxx';
-    const http = server(engine, [{ id: 'loop', role: 'coordinator', sessionKind: 'ai', token }]);
-    await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-    t.after(() => new Promise<void>(resolve => http.close(() => resolve())));
-    const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+    const { url: serverUrl, close } = await listen(server(engine, [{ id: 'loop', role: 'coordinator', sessionKind: 'ai', token }]));
+    t.after(close);
+    const url = serverUrl;
     const readings = await readHostReadings([], { file, run, local: 'here', update: true });
     const reading = loopHosts(encodeLoopHosts(readings))!.find(entry => entry.host === target)!;
     assert.equal(reading.away, false, readings.find(entry => entry.host === target)?.reason);

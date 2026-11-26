@@ -9,13 +9,14 @@ import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { eventHistorySql, parseEventHistoryQuery, readEventHistory, routineSummarySql } from '../src/events-history.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3761: the history page resolved every candidate row's payload (graphyard_event_work) before
 // it applied its limit, so on a real ledger it ran for minutes and loaded the database while
 // failing. It now selects the page's seq values first and resolves payloads for those rows only.
 const adminToken = `operator-${'a'.repeat(32)}`;
 const ITEMS = 2000, EVENTS = 50_000, KEPT = 1200, OTHERS = 8000, ITEM_ROUTINE = 1600, SCAN = 1000;
-let store: Store, counted: pg.Pool, http: ReturnType<typeof server>, url: string, id: string;
+let store: Store, counted: pg.Pool, close: (() => Promise<void>) | undefined, url: string, id: string;
 
 const get = async (path: string) => {
   const response = await fetch(`${url}/api/${path}`, { headers: { Authorization: `Bearer ${adminToken}` }, signal: AbortSignal.timeout(120_000) });
@@ -29,9 +30,7 @@ before(async () => {
   // One connection that counts plpgsql calls, so a read's graphyard_event_work calls can be read back.
   counted = new pg.Pool({ connectionString: connection, max: 1, options: '-c track_functions=pl' }); counted.on('error', () => {});
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
-  http = server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: adminToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: adminToken }])));
   const created = await fetch(`${url}/api/work`, { method: 'POST', headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
     body: JSON.stringify({ title: 'Watched item', why: 'Its history is long.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] }) });
   ({ id } = await created.json() as { id: string });
@@ -55,10 +54,7 @@ before(async () => {
   await planAsRows(store.pool, 'events', 2_000_000);
 });
 
-after(async () => {
-  http?.closeAllConnections(); if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  await counted?.end(); await store?.close();
-});
+after(async () => { await close?.(); await counted?.end(); await store?.close(); });
 
 /** graphyard_event_work calls one read makes, from the counting connection's own function statistics. */
 async function calls(params: Record<string, string>) {

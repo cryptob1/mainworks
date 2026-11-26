@@ -14,6 +14,7 @@ import { unblockAttempts } from '../src/master/unblock.js';
 import { Store } from '../src/store.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { listen } from './helpers/http-server.js';
 
 // Every filed fixture owes an E2E proof and the serve declaration its trial needs.
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
@@ -32,7 +33,7 @@ const credentials = roster.map(principal => ({ ...principal, token: `unblock-${p
 const token = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
 const master = { id: 'master-operator', token: `master-operator-${'m'.repeat(32)}`, capabilities: [] };
 const root = fileURLToPath(new URL('..', import.meta.url));
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
+let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string;
 let masterRoot: string, credentialDirectory: string, config: MasterConfig;
 
 const api = async (credential: string, path: string, body?: unknown) => {
@@ -71,9 +72,7 @@ function racing(race: (read: number) => Promise<void>) {
 before(async () => {
   store = await withDatabase('unblock-stale-revision'); await store.init();
   engine = new Engine(store, 120, repository);
-  http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, credentials)));
   await api(token(operator), 'operator-agents', { id: master.id, displayName: master.id, capabilities: master.capabilities, scope: { repositories: [repository], workItems: ['*'] }, token: master.token, reason: 'Onboarding provisions agent identities' });
   masterRoot = await temporaryDirectory('unblock-root');
   execFileSync('git', ['init', '-q', masterRoot]);
@@ -84,7 +83,7 @@ before(async () => {
   config = masterConfigSchema.parse({ version: 1, url, credentialFile: join(credentialDirectory, 'master.token'), cliPath: join(root, 'bin/graphyard.mjs'), repository, baseBranch: 'main', githubAppId: 1234, hostId: 'unblock-host', masterAgentName: 'graphyard-master-unblock',
     operatorAgent: { id: master.id, credentialFile: join(credentialDirectory, 'master-operator.token') } });
 });
-after(async () => { http?.close(); await store?.close();  await rm(masterRoot, { recursive: true, force: true }); await rm(credentialDirectory, { recursive: true, force: true }); });
+after(async () => { await close?.(); await store?.close();  await rm(masterRoot, { recursive: true, force: true }); await rm(credentialDirectory, { recursive: true, force: true }); });
 
 test('unit:unblock-retries-stale-revision a heartbeat between the read and the write is retried on the reloaded revision and the blocker clears', async () => {
   const work = await blocked('heartbeat-race', undefined, true);

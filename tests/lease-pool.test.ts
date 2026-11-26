@@ -2,7 +2,6 @@ import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
-import type { Server } from 'node:http';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import pg from 'pg';
@@ -18,6 +17,7 @@ import type { Principal, Work } from '../src/model.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { listen } from './helpers/http-server.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-558: lease renewals timed out waiting for a connection behind slow report and observation
@@ -48,9 +48,7 @@ async function claimed(engine: Engine, title: string, actor = engineer) {
   return engine.execute(actor, 'workspace', work.id, { epoch: work.epoch, host: 'lease-pool-host', path: `/tmp/lease-pool/${work.id}`, branch: `graphyard/${work.key.toLowerCase()}-${work.epoch}` }, randomUUID());
 }
 async function listening(engine: Engine) {
-  const http: Server = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url, close: closeHttp } = await listen(server(engine, credentials));
   const post = async (actor: Principal, path: string, body: unknown) => {
     const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${tokens[actor.id]}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) });
     return { status: response.status, body: await response.json() };
@@ -59,7 +57,7 @@ async function listening(engine: Engine) {
     const response = await fetch(`${url}/api/${path}`, { headers: { Authorization: `Bearer ${tokens[actor.id]}` }, signal: AbortSignal.timeout(15_000) });
     return { status: response.status, body: await response.json() };
   };
-  const close = async () => { http.closeAllConnections(); await new Promise<void>(resolve => http.close(() => resolve())); };
+  const close = async () => { await closeHttp(); };
   return { post, get, close };
 }
 /** Hold every connection a pool may open, so nothing else can get one from it. */
@@ -126,9 +124,7 @@ test('integration:minted-worker-heartbeat-uses-the-lease-pool — with the gener
   const store = new Store(connection, { max: 2 });
   const engine = engineOn(store);
   const loop = { id: 'lease-pool-loop', role: 'coordinator' as const, sessionKind: 'ai' as const, token: `loop-token-${'l'.repeat(32)}` };
-  const http: Server = server(engine, [...credentials, loop]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url, close } = await listen(server(engine, [...credentials, loop]));
   const post = async (token: string, path: string, body: unknown) => {
     const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) });
     return { status: response.status, body: await response.json() };
@@ -148,7 +144,7 @@ test('integration:minted-worker-heartbeat-uses-the-lease-pool — with the gener
       assert.equal(renewal.value.body.lease.owner, 'minted-lease-worker');
       assert.ok(Date.parse(renewal.value.body.lease.expiresAt) > Date.parse(claim.body.lease.expiresAt), 'the lease was renewed');
     } finally { for (const client of held) client.release(); }
-  } finally { http.closeAllConnections(); await new Promise<void>(resolve => http.close(() => resolve())); await store.close(); }
+  } finally { await close(); await store.close(); }
 });
 
 test('unit:server-fault-keeps-lease — a renewal that failed server-side keeps its lease for one more period; a lease nobody renews still expires', async () => {

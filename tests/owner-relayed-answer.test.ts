@@ -9,6 +9,7 @@ import { withDatabase } from './helpers/postgres.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import type { Principal } from '../src/model.js';
+import { listen } from './helpers/http-server.js';
 
 // Real CLI, control plane, Postgres and dashboard; no mocked answer or browser routes.
 test('e2e:owner-relayed-answer — owner direction relayed by the master is recorded and reversible', async () => {
@@ -18,9 +19,7 @@ test('e2e:owner-relayed-answer — owner direction relayed by the master is reco
   const worker: Principal = { id: 'worker', role: 'worker', sessionKind: 'ai' };
   const token = (actor: Principal) => `${actor.id}-${'x'.repeat(32)}`;
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
-  const http = server(engine, [owner, master, worker].map(actor => ({ ...actor, token: token(actor) })));
-  await new Promise<void>(done => http.listen(0, '127.0.0.1', done));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url, close } = await listen(server(engine, [owner, master, worker].map(actor => ({ ...actor, token: token(actor) }))));
   const post = async (actor: Principal, path: string, body: unknown) => {
     const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token(actor)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });
     const data = await response.json(); assert.equal(response.status, 200, JSON.stringify(data)); return data;
@@ -81,5 +80,5 @@ test('e2e:owner-relayed-answer — owner direction relayed by the master is reco
     await expect(history).toContainText('relayed by master from the owner: "Not yet"');
     await expect(history).toContainText('relayed by master from the owner: "It printed cleanly"');
     await expect(history).toContainText('Owner reversed the relayed answer');
-  } finally { await browser?.close(); await new Promise<void>(done => http.close(() => done())); await store.close(); }
+  } finally { await browser?.close(); await close(); await store.close(); }
 });

@@ -23,6 +23,7 @@ import { readReviewBinding } from '../src/review-post.js';
 import { startedAtOnce } from './helpers/launch-shell.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
+import { listen } from './helpers/http-server.js';
 // Every instant this file holds is derived from the run's own clock (GY-1694): a base reading taken
 // at load and offsets from it. No calendar literal is constructed, so no wall-clock reading here is
 // judged against a fixed date.
@@ -60,15 +61,13 @@ const coordinator: Principal = { id: 'graphyard-master', role: 'coordinator' };
 const principals = [admin, coordinator];
 const credentials = principals.map(principal => ({ ...principal, token: `${principal.id}-token-${'x'.repeat(32)}` }));
 const tokenOf = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string;
 let root: string, credentialDirectory: string, config: Awaited<ReturnType<typeof loadMasterConfig>>, fleet: ReturnType<typeof registryFixture>['probe'];
 const herdrCalls: string[][] = [];
 before(async () => {
   store = await withDatabase('post-merge-review-launch'); await store.init();
   const engine = new Engine(store, 120, repository);
-  http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, credentials)));
   // The loop's own checkout, with one reviewer profile.
   root = await temporaryDirectory('post-merge-launch-master');
   credentialDirectory = await temporaryDirectory('post-merge-launch-credentials');
@@ -81,7 +80,7 @@ before(async () => {
   // GY-3030: the registry is the only authority for a reviewer's slot; each item reviewed here takes one.
   fleet = registryFixture(config.hostId, ['claude'], ['reviewer'], 8).probe;
 });
-after(async () => { if (http) await new Promise<void>(resolve => http.close(() => resolve())); if (store) await store.close(); });
+after(async () => { await close?.(); if (store) await store.close(); });
 
 const stored = async (id: string) => (await store.pool.query('SELECT document FROM work_items WHERE id=$1', [id])).rows[0].document as Work;
 const insert = async (work: Work) => { await store.pool.query('INSERT INTO work_items(id, document) VALUES ($1,$2)', [work.id, JSON.stringify(work)]); return work; };

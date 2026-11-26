@@ -19,6 +19,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { listen } from './helpers/http-server.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-128: the recovery the control plane authorizes for an ejected or contaminated tip — reset
@@ -86,22 +87,16 @@ test('unit:worker-may-force-with-lease-its-own-branch — the worker restores it
 const operator: Principal = { id: 'push-rights-operator', role: 'admin', sessionKind: 'human' };
 const worker: Principal = { id: 'push-rights-worker', role: 'worker', sessionKind: 'ai' };
 const credentials = [operator, worker].map(principal => ({ ...principal, token: `push-rights-${principal.id}-${'x'.repeat(32)}` }));
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string, scratch: string;
+let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string, scratch: string;
 before(async () => {
   scratch = await temporaryDirectory('push-rights');
 
   store = await withDatabase('worker-push-rights'); await store.init();
   engine = new Engine(store, 120, 'owner/push-rights');
   engine.principals = [operator, worker];
-  http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
+  ({ url, close } = await listen(server(engine, credentials)));
 });
-after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  if (store) await store.close();
-  if (scratch) await rm(scratch, { recursive: true, force: true });
-});
+after(async () => { await close?.(); if (store) await store.close(); if (scratch) await rm(scratch, { recursive: true, force: true }); });
 
 const identity = { GIT_AUTHOR_NAME: 'Push Rights', GIT_AUTHOR_EMAIL: 'push-rights@example.invalid', GIT_COMMITTER_NAME: 'Push Rights', GIT_COMMITTER_EMAIL: 'push-rights@example.invalid' };
 const gitEnv = { ...process.env, ...identity };

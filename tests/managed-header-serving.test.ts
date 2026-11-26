@@ -13,6 +13,7 @@ import { server } from '../src/server.js';
 import { deployRecordPath } from '../src/deploy-watch.js';
 import type { Principal } from '../src/model.js';
 import { ReleaseLine } from '../web/components/top-bar.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-2964: the dashboard header of a managed install names the managed repository's own serving —
 // what a deploy record naming it serves — never the control plane's own commit, and "not live yet"
@@ -23,7 +24,7 @@ const game = 'owner/openworld', plane = 'f'.repeat(40);
 const operator: Principal = { id: 'operator', role: 'admin' };
 const tokens = new Map([[operator.id, `operator-${'t'.repeat(32)}`]]);
 
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string, root: string;
+let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string, root: string;
 let tipB = '', main = '';
 
 const git = (args: string[], cwd = root) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
@@ -51,15 +52,9 @@ before(async () => {
   store = await withDatabase('managed-header-serving'); await store.init();
   engine = new Engine(store, 120, game);
   // The control plane's own build identity, which is never the managed repository's serving commit.
-  http = server(engine, [{ ...operator, token: tokens.get(operator.id)! }], { env: { GRAPHYARD_BUILD_SHA: plane } });
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
+  ({ url, close } = await listen(server(engine, [{ ...operator, token: tokens.get(operator.id)! }], { env: { GRAPHYARD_BUILD_SHA: plane } })));
 });
-after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  if (store) await store.close();
-  delete process.env.GRAPHYARD_REPOSITORY_ROOT;
-});
+after(async () => { await close?.(); if (store) await store.close(); delete process.env.GRAPHYARD_REPOSITORY_ROOT; });
 
 const api = async (path: string) => {
   const response = await fetch(`${url}/api/${path}`, { headers: { Authorization: `Bearer ${tokens.get(operator.id)}` } });

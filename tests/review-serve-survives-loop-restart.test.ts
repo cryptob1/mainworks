@@ -19,6 +19,7 @@ import type { Principal, Work } from '../src/model.js';
 import { readReviewLedger, saveReviewerProfile } from '../src/reviewer.js';
 import { startReviewServe } from '../src/review-serve.js';
 import { EventEmitter } from 'node:events';
+import { listen } from './helpers/http-server.js';
 
 // GY-3662: a product review's served head survives a loop restart, so a deploy does not void
 // reviews in flight. The serve command runs detached in its own unit/session, is recorded with
@@ -31,7 +32,7 @@ const now = () => new Date().toISOString();
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const declaredPort = 4419, declaredUrl = `http://127.0.0.1:${declaredPort}/healthz`;
 
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string;
 let root: string, credentials: string, browserBin: string, helperDir: string;
 let base: string, head: string;
 
@@ -40,9 +41,7 @@ before(async () => {
   await store.init();
   const engine = new Engine(store, 120, 'owner/project');
   engine.gitRunner = null;
-  http = server(engine, [{ ...coordinator, token: coordinatorToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ ...coordinator, token: coordinatorToken }])));
 
   root = await temporaryDirectory('review-serve-restart-root');
   credentials = await temporaryDirectory('review-serve-restart-credentials');
@@ -97,7 +96,7 @@ srv.listen(port, '127.0.0.1', () => {
 });
 
 after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
+  await close?.();
   if (store) await store.close();
   for (const dir of [root, credentials, browserBin, helperDir]) {
     if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {});

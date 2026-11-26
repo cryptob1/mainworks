@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { AddressInfo } from 'node:net';
 import { withDatabase } from './helpers/postgres.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
@@ -17,6 +16,7 @@ import { type DaemonEffects } from '../src/daemon/effects.js';
 import { coordinationViewHeader } from '../src/server/work-view.js';
 import { loopPresenceHeader } from '../src/model/loop-presence.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3341: a slow host must not make the loop's own supervisor kill it while it still progresses,
 // and a cycle's cost must not grow with every item ever created.
@@ -29,7 +29,7 @@ const iso = (at: number) => new Date(at).toISOString();
 const started = Date.now();
 const sha = (seed: string, pad = 'a') => `${seed}`.padEnd(40, pad);
 
-let store: Store; let http: ReturnType<typeof server>; let origin: string; let directory: string;
+let store: Store; let close: (() => Promise<void>) | undefined; let origin: string; let directory: string;
 let config: MasterConfig;
 
 /** A settled done item: delivered long ago, its histories carrying the marker only its whole document holds. */
@@ -81,19 +81,13 @@ before(async () => {
     if (item.stage !== 'done') await store.pool.query('INSERT INTO jobs(work_id) VALUES($1)', [item.id]);
   };
   for (const item of [...done, ...open]) await insert(item);
-  http = server(new Engine(store, 120, 'owner/project'), [{ id: 'coordinator', role: 'coordinator', token: coordinatorToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  origin = `http://127.0.0.1:${(http.address() as AddressInfo).port}`;
+  ({ url: origin, close } = await listen(server(new Engine(store, 120, 'owner/project'), [{ id: 'coordinator', role: 'coordinator', token: coordinatorToken }])));
   directory = await temporaryDirectory('loop-cycle-cost');
   const credentialFile = join(directory, 'coordinator.token'); await writeFile(credentialFile, coordinatorToken, { mode: 0o600 });
   config = masterConfigSchema.parse({ version: 1, url: origin, credentialFile, cliPath: process.execPath, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [] });
 });
 
-after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  if (store) await store.close();
-  if (directory) await rm(directory, { recursive: true, force: true });
-});
+after(async () => { await close?.(); if (store) await store.close(); if (directory) await rm(directory, { recursive: true, force: true }); });
 
 /** The loop's own read: the coordination view, named to the control plane as the live loop's poll. */
 async function loopSnapshot() {

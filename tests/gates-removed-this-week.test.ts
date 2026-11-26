@@ -13,6 +13,7 @@ import { lessonCommand } from '../src/master/lessons.js';
 import { masterLessons, readProjectMemory, writeProjectMemory } from '../src/project-memory.js';
 import type { Principal, Work } from '../src/model.js';
 import TopBar from '../web/components/top-bar';
+import { listen } from './helpers/http-server.js';
 
 // GY-3399: after a lesson-to-code item is delivered and its lesson removed, the dashboard header
 // shows gates removed this week beside reverts this week, each count linking to its items — read
@@ -20,21 +21,15 @@ import TopBar from '../web/components/top-bar';
 
 const operator: Principal = { id: 'operator', role: 'admin' };
 const token = `operator-${'t'.repeat(32)}`;
-let store: Store, http: ReturnType<typeof server>, url: string, root: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string, root: string;
 
 before(async () => {
   root = await temporaryDirectory('gates-removed-root');
   process.env.GRAPHYARD_REPOSITORY_ROOT = root;
   store = await withDatabase('gates-removed-this-week'); await store.init();
-  http = server(new Engine(store, 120, 'owner/game'), [{ ...operator, token }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
+  ({ url, close } = await listen(server(new Engine(store, 120, 'owner/game'), [{ ...operator, token }])));
 });
-after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  if (store) await store.close();
-  delete process.env.GRAPHYARD_REPOSITORY_ROOT;
-});
+after(async () => { await close?.(); if (store) await store.close(); delete process.env.GRAPHYARD_REPOSITORY_ROOT; });
 
 const api = async (path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': `${path}-${Math.random()}` }, body: body ? JSON.stringify(body) : undefined });

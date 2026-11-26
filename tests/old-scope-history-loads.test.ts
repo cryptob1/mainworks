@@ -11,6 +11,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { listen } from './helpers/http-server.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-1992 AC-2: an item stored while the scope-request machinery ran still reads. Its document
@@ -23,18 +24,16 @@ const worker: Principal = { id: 'implementer', role: 'worker' };
 const coordinator: Principal = { id: 'master', role: 'coordinator' };
 const principals = [operator, worker, coordinator];
 const tokens = new Map(principals.map(p => [p.id, `${p.id}-${'t'.repeat(40)}`]));
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string, scratch: string;
+let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string, scratch: string;
 
 before(async () => {
   scratch = await temporaryDirectory('old-scope-history');
 
   store = await withDatabase('old-scope-history-loads'); await store.init();
   engine = new Engine(store, 120, 'owner/project');
-  http = server(engine, principals.map(p => ({ ...p, token: tokens.get(p.id)! })));
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
+  ({ url, close } = await listen(server(engine, principals.map(p => ({ ...p, token: tokens.get(p.id)! })))));
 });
-after(async () => { if (http) await new Promise<void>(resolve => http.close(() => resolve())); if (store) await store.close(); if (scratch) await rm(scratch, { recursive: true, force: true }); });
+after(async () => { await close?.(); if (store) await store.close(); if (scratch) await rm(scratch, { recursive: true, force: true }); });
 
 const get = async (path: string, actor: Principal = coordinator) => {
   const response = await fetch(`${url}/api/${path}`, { headers: { Authorization: `Bearer ${tokens.get(actor.id)}` } });

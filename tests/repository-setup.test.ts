@@ -5,10 +5,10 @@ import { promisify } from 'node:util';
 import { mkdir, readFile, rm, stat, writeFile, symlink, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createServer } from 'node:http';
 import { handoff, loadConnection, managedInstructions, setupRepository } from '../src/repository-setup.js';
 import { guideText } from '../src/guide.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { listen } from './helpers/http-server.js';
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const secret = 'fixture-worker-token-'.padEnd(40, 'x');
 const connection = { url: 'https://example.com', token: secret, cliPath: launcher, hostId: 'machine-a' };
@@ -98,9 +98,7 @@ test('handoff fences stale ownership and hosts and returns safely quoted workspa
 
 test('init accepts a token over stdin, and a server override never forwards a saved token elsewhere', async () => {
   const root = await repo(); let received = '';
-  const http = createServer((req, res) => { received = String(req.headers.authorization ?? ''); res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ actor: { role: 'worker', id: 'worker-a' } })); });
-  await new Promise<void>(r => http.listen(0, '127.0.0.1', r));
-  const url = `http://127.0.0.1:${(http.address() as any).port}`;
+  const { url, close } = await listen((req, res) => { received = String(req.headers.authorization ?? ''); res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ actor: { role: 'worker', id: 'worker-a' } })); });
   const env = { ...process.env }; delete env.GRAPHYARD_TOKEN; delete env.GRAPHYARD_URL; delete env.GRAPHYARD_TOKEN_FILE;
   try {
     const child = execFile(process.execPath, [launcher, 'init', '--url', url, '--token-stdin'], { cwd: root, env });
@@ -110,7 +108,7 @@ test('init accepts a token over stdin, and a server override never forwards a sa
     received = '';
     await promisify(execFile)(process.execPath, [launcher, 'doctor'], { cwd: root, env: { ...env, GRAPHYARD_URL: url.replace('127.0.0.1', 'localhost') } });
     assert.equal(received, '');
-  } finally { await new Promise<void>(r => http.close(() => r())); await rm(root, { recursive: true, force: true }); }
+  } finally { await close(); await rm(root, { recursive: true, force: true }); }
 });
 
  test('padded host IDs normalize before saving and match registered workspace handoffs', async () => {
@@ -168,9 +166,7 @@ function runCli(cwd: string, args: string[], input: string, env: NodeJS.ProcessE
 test('CLI init from a linked worktree shares credentials with siblings and replaces legacy defaults', async () => {
   const root=await repo();let authorization='';
   // Doctor also reads the agent registry (GY-3351); this server holds none, so that read is a 404, not a second whoami.
-  const http=createServer((req,res)=>{authorization=String(req.headers.authorization??'');res.setHeader('Content-Type','application/json');if(req.url?.includes('agent-registry')){res.statusCode=404;res.end(JSON.stringify({error:'not found'}));return;}res.end(JSON.stringify({actor:{id:'worker-a',role:'worker'}}));});
-  await new Promise<void>(r=>http.listen(0,'127.0.0.1',r));
-  const url=`http://127.0.0.1:${(http.address() as any).port}`;
+  const { url, close } = await listen((req,res)=>{authorization=String(req.headers.authorization??'');res.setHeader('Content-Type','application/json');if(req.url?.includes('agent-registry')){res.statusCode=404;res.end(JSON.stringify({error:'not found'}));return;}res.end(JSON.stringify({actor:{id:'worker-a',role:'worker'}}));});
   const env={...process.env};delete env.GRAPHYARD_TOKEN;delete env.GRAPHYARD_URL;delete env.GRAPHYARD_TOKEN_FILE;delete env.GRAPHYARD_HOST_ID;
   try {
     execFileSync('git',['-c','user.name=Test','-c','user.email=test@localhost','commit','--allow-empty','-m','Initial'],{cwd:root,stdio:'ignore'});
@@ -188,7 +184,7 @@ test('CLI init from a linked worktree shares credentials with siblings and repla
     assert.match(await readFile(join(first,'AGENTS.md'),'utf8'),/Mainworks coordination/);
     assert.equal(JSON.parse(await runCli(sibling,['doctor'],'',env)).connected,true);
     assert.equal(authorization,`Bearer ${secret}`);
-  } finally {await new Promise<void>(r=>http.close(()=>r()));await rm(root,{recursive:true,force:true});}
+  } finally {await close();await rm(root,{recursive:true,force:true});}
 });
 
 test('empty explicit stdin and environment credentials refuse without replacing saved configuration', async () => {

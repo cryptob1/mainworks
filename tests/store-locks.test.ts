@@ -3,7 +3,6 @@ import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import type { AddressInfo } from 'node:net';
 import pg from 'pg';
 import { databaseUrl } from './helpers/postgres.js';
 import { advisoryLocks, Store } from '../src/store.js';
@@ -19,6 +18,7 @@ import { mergeDelivered, mergeIntent } from './helpers/merge-ledger.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { listen } from './helpers/http-server.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 /**
@@ -37,9 +37,7 @@ const open = async (database: string) => { const store = new Store(url(database)
 before(async () => {
   for (const name of ['locks', 'restored', 'contended', 'deadlocked', 'redeadlocked', 'lifecycle', 'board']) urls.set(name, await databaseUrl('store-locks' + '-' + name));
 });
-after(async () => {
-  for (const store of stores) await store.close().catch(() => {});
-});
+after(async () => { for (const store of stores) await store.close().catch(() => {}); });
 
 /** A second connection standing in for the live replica, holding its locks until released. */
 async function session(database: string, hold: (db: pg.Client) => Promise<void>) {
@@ -315,11 +313,10 @@ test('integration:index-matches-documents — the index equals the documents aft
   await assertIndexMatches(board, 'board');
   assert.equal(Number((await board.pool.query('SELECT count(*) AS n FROM work_index WHERE settled')).rows[0].n), BOARD_ITEMS - LIVE_ITEMS);
   const token = 'c'.repeat(40);
-  const http = server(new Engine(board, 120, 'owner/project'), [{ id: 'coordinator', role: 'coordinator', token }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
+  const { url: serverUrl, close } = await listen(server(new Engine(board, 120, 'owner/project'), [{ id: 'coordinator', role: 'coordinator', token }]));
   try {
     const read = async (headers: Record<string, string> = {}) => {
-      const response = await fetch(`http://127.0.0.1:${(http.address() as AddressInfo).port}/api/work-snapshot${Object.keys(headers).length ? '' : '?view=full'}`, { headers: { ...headers, Authorization: `Bearer ${token}` } });
+      const response = await fetch(`${serverUrl}/api/work-snapshot${Object.keys(headers).length ? '' : '?view=full'}`, { headers: { ...headers, Authorization: `Bearer ${token}` } });
       const text = await response.text(); assert.equal(response.status, 200, text.slice(0, 300));
       return { body: JSON.parse(text), bytes: Buffer.byteLength(text) };
     };
@@ -353,7 +350,7 @@ test('integration:index-matches-documents — the index equals the documents aft
       const whole = full.body.work[index] as Work;
       for (const field of ['id', 'stage', 'gates', 'violations', 'lease', 'candidate', 'submission', 'criteria', 'epoch', 'delivery', 'nextAction'] as const) assert.deepEqual(item[field], whole[field], `${item.key} ${field}`);
     }
-  } finally { await new Promise<void>(resolve => http.close(() => resolve())); }
+  } finally { await close(); }
 });
 
 const BOARD_ITEMS = 200, LIVE_ITEMS = 20, ACTIVE_ITEMS = 5, HEADS = 12;

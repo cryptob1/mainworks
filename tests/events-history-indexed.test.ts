@@ -6,13 +6,14 @@ import type { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { eventHistorySql, parseEventHistoryQuery } from '../src/events-history.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3760: the events history page left the routine kinds out by scanning backward through every
 // newer row, so on a ledger of millions of heartbeats it took 17 s. Two partial indexes on the
 // rows that are not routine answer the default page and one item's page by index.
 const adminToken = `operator-${'a'.repeat(32)}`;
 const ITEMS = 2000, EVENTS = 50_000, KEPT = 700, OTHERS = 8000, ITEM_ROUTINE = 20_000;
-let store: Store, http: ReturnType<typeof server>, url: string, id: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string, id: string;
 let kept: string[] = [];
 
 const get = async (path: string) => {
@@ -26,9 +27,7 @@ const get = async (path: string) => {
 before(async () => {
   store = await withDatabase('events-history-indexed'); await store.init();
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
-  http = server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: adminToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: adminToken }])));
   const created = await fetch(`${url}/api/work`, { method: 'POST', headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
     body: JSON.stringify({ title: 'Watched item', why: 'Its history is mostly heartbeats.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] }) });
   ({ id } = await created.json() as { id: string });
@@ -51,10 +50,7 @@ before(async () => {
   await planAsRows(store.pool, 'events', 2_000_000);
 });
 
-after(async () => {
-  http?.closeAllConnections(); if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  await store?.close();
-});
+after(async () => { await close?.(); await store?.close(); });
 
 const plan = async (text: string, values: unknown[]) => (await store.pool.query(`EXPLAIN ${text}`, values)).rows.map(row => row['QUERY PLAN']).join('\n');
 

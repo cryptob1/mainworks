@@ -24,6 +24,7 @@ import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import type { Principal, Work } from '../src/model.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3316: trials leaked their preview Docker networks until Docker refused new ones ("all predefined
 // address pools have been fully subnetted") and every later trial failed — returned for rework
@@ -169,15 +170,13 @@ test('e2e:trial-network-cleanup — a trial whose network Docker refuses for spe
   const head = git(root, 'rev-parse', 'HEAD');
   git(root, 'checkout', '-q', '--detach', base);
   const trials: Parameters<MergePorts['record']>[1][] = [];
-  let store: Store | undefined, http: ReturnType<typeof server> | undefined;
+  let store: Store | undefined, close: (() => Promise<void>) | undefined;
   try {
     store = await withDatabase('trial-network-cleanup'); await store.init();
     const engine = new Engine(store, 120, 'owner/proofs');
     engine.gitRunner = gitRunnerFor(root); engine.baseBranch = 'main';
     const token = 'fixture-coordinator-' + 'x'.repeat(32);
-    http = server(engine, [{ ...coordinator, token }]);
-    await new Promise<void>(resolve => http!.listen(0, '127.0.0.1', resolve));
-    const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+    const { url, close: stop } = await listen(server(engine, [{ ...coordinator, token }])); close = stop;
     let work = await engine.execute(operator, 'create', null, { type: 'chore', title: 'query', criteria: [{ id: 'AC-1', text: 'Queries', proofs: ['unit:queries', 'e2e:fixture'] }] }, randomUUID());
     work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
     work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
@@ -213,10 +212,7 @@ test('e2e:trial-network-cleanup — a trial whose network Docker refuses for spe
     assert.equal(trialRefusalHeld(current.candidate, current.mergeLedger), null, 'the head is not refused as a failed trial');
     assert.notEqual(current.mergeLedger?.state, 'refused');
     assert.equal(current.blocker, null, 'nothing parks the item');
-  } finally {
-    if (http) await new Promise<void>(resolve => http!.close(() => resolve()));
-    if (store) await store.close();
-  }
+  } finally { await close?.(); if (store) await store.close(); }
 
   const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',
     repository: 'owner/hwd-backend', baseBranch: 'main', hostId: 'machine-a', masterAgentName: 'graphyard-master-hwd', workers: [] });
