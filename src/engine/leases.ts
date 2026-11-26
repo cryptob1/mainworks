@@ -4,7 +4,6 @@ import type { PoolClient } from 'pg';
 import { activeLease, submittedEpoch, stallCovering, demand } from '../model.js';
 import type { PlaneStall, Lease, Principal, Work } from '../model.js';
 import { Refusal } from '../model/refusal.js';
-import { buildIdentity } from '../protocol-version.js';
 import { noSubmissionRenewalRefused, workerNoSubmissionRefusalMs } from '../model/attempt-bound.js';
 import { recordAssignmentStart } from '../pipeline-speed.js';
 import type { Engine } from '../engine.js';
@@ -274,7 +273,6 @@ export async function recordPlaneLiveness(engine: Engine, at?: Date, options: { 
     at ??= new Date();
     await db.query('INSERT INTO plane_liveness(id,tick_at) VALUES(true,$1) ON CONFLICT (id) DO NOTHING', [at]);
     const previous = (await db.query('SELECT tick_at FROM plane_liveness WHERE id = true FOR UPDATE')).rows[0].tick_at as Date;
-    let served: string | null | undefined;
     let firstGap: PlaneStall | null | undefined;
     if (options.startup && engine.restartGap === undefined) {
       firstGap = at.getTime() > previous.getTime() ? { from: previous.toISOString(), to: at.toISOString() } : null;
@@ -282,27 +280,12 @@ export async function recordPlaneLiveness(engine: Engine, at?: Date, options: { 
     if (at.getTime() > previous.getTime()) {
       if (at.getTime() - previous.getTime() > planeStallMs)
         await record(db, null, 'graphyard', 'plane.stall', { details: { from: previous.toISOString(), to: at.toISOString() } });
-      // GY-2177: the first tick that moves also records what this process serves, against what the
-      // tick named before it: a change is a deploy, recorded once with the window it names — from
-      // the replaced release's last tick, when its renewals started landing nowhere, to this
-      // process's first answer, from which the release before it refuses every renewal client-side
-      // with the version skew until the loop realigns. That row is what lets the plane explain the
-      // lapses its own deploy causes (leaseLapseCause), the way a stall row explains its outage.
-      // The read is one indexed query per process, and the commit comparison makes a retried tick
-      // (a failed transaction leaves the field unset) idempotent.
-      if (engine.servedCommit === undefined) {
-        served = buildIdentity().commit;
-        const last = await db.query(`SELECT payload->>'commit' AS commit FROM events WHERE kind = 'plane.deploy' ORDER BY created_at DESC LIMIT 1`);
-        if (served && last.rows[0]?.commit !== served)
-          await record(db, null, 'graphyard', 'plane.deploy', { details: { commit: served, from: previous.toISOString(), to: at.toISOString() } });
-      }
       await db.query('UPDATE plane_liveness SET tick_at = $1 WHERE id = true', [at]);
     }
     await db.query('COMMIT');
     // The field moves once the row is on the ledger: a failed transaction left it unset, and the
     // next tick's commit comparison retries the whole check without recording anything twice.
     if (firstGap !== undefined) engine.restartGap = firstGap;
-    if (served !== undefined) engine.servedCommit = served;
   } catch {
     await db?.query('ROLLBACK').catch(() => {}); // the next beat records it
   } finally { db?.release(); }

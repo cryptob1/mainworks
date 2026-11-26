@@ -33,8 +33,6 @@ export class Engine {
   /** The base branch a submitted head is observed against (GY-1523): the deployment's GITHUB_BASE_BRANCH, else `main`. */
   baseBranch = process.env.GITHUB_BASE_BRANCH ?? 'main';
   constructor(public store: Store, public leaseSeconds = 120, public repository = process.env.GITHUB_REPOSITORY ?? '') {}
-  /** The commit this process first recorded itself serving (recordPlaneLiveness); undefined until its first tick named one (GY-2177). */
-  servedCommit: string | null | undefined;
   /** The downtime gap this process observed on its first liveness tick (GY-3785); null when there was no prior tick gap. */
   restartGap: PlaneStall | null | undefined;
 
