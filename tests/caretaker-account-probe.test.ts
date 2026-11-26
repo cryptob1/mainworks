@@ -6,6 +6,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { Engine } from '../src/engine.js';
@@ -23,6 +24,15 @@ import type { Principal } from '../src/model.js';
 
 const exec = promisify(execFile);
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
+// With NODE_COMPILE_CACHE set the launcher loads the built CLI in its own process instead of starting a second node.
+const compileCache = { NODE_COMPILE_CACHE: process.env.NODE_COMPILE_CACHE ?? join(tmpdir(), 'node-compile-cache') };
+// The held account's last host check: selection reads it instead of launching the real runtime binary.
+const heldCheck = (home: string) => recordHostAccountCheck(home, {
+  key: null,
+  at: new Date().toISOString(),
+  nextCheck: new Date(Date.now() + 30 * 60_000).toISOString(),
+  quota: { loggedIn: true, state: 'exhausted', usage: [], resetsAt: new Date(Date.now() + 86_400_000).toISOString(), reason: 'held', since: new Date().toISOString() },
+});
 
 const stores: Store[] = [];
 const servers: ReturnType<typeof server>[] = [];
@@ -131,6 +141,7 @@ test('integration:caretaker-account-probe — caretaker probes a held account ou
     quota: { state: 'exhausted', resetsAt: new Date(Date.now() + 86_400_000).toISOString() },
     reason: 'Reading additional input from stdin...',
   });
+  heldCheck(heldHome);
 
   const workDir = await temporaryDirectory('caretaker-probe-repo');
   const probedHomes: (string | null)[] = [];
@@ -155,7 +166,7 @@ test('integration:caretaker-account-probe — caretaker probes a held account ou
       unauthStatus = unauth.status;
       const { stdout } = await exec(process.execPath, [launcher, 'caretaker', 'registry', 'account', 'probe', 'codex-held'], {
         cwd: workDir,
-        env: { ...process.env, ...options.env, GRAPHYARD_TOKEN: undefined, GRAPHYARD_REQUEST_ID: undefined },
+        env: { ...process.env, ...compileCache, ...options.env, GRAPHYARD_TOKEN: undefined, GRAPHYARD_REQUEST_ID: undefined },
       });
       probeResult = JSON.parse(stdout);
       return 'done';
@@ -213,6 +224,7 @@ test('e2e:caretaker-account-probe — caretaker probes a held fixture account, r
     quota: { state: 'exhausted', resetsAt: new Date(Date.now() + 86_400_000).toISOString() },
     reason: 'Stale hold',
   });
+  heldCheck(heldHome);
 
   const providerSentence = "You've hit your weekly limit · resets Nov 28, 10pm (UTC)";
   const workDir = await temporaryDirectory('caretaker-probe-e2e-repo');
@@ -224,7 +236,7 @@ test('e2e:caretaker-account-probe — caretaker probes a held fixture account, r
     headless: async (_command, _args, options) => {
       const cli = async (...args: string[]) => JSON.parse((await exec(process.execPath, [launcher, ...args], {
         cwd: workDir,
-        env: { ...process.env, ...options.env, GRAPHYARD_TOKEN: undefined, GRAPHYARD_REQUEST_ID: undefined },
+        env: { ...process.env, ...compileCache, ...options.env, GRAPHYARD_TOKEN: undefined, GRAPHYARD_REQUEST_ID: undefined },
       })).stdout);
       probed = await cli('caretaker', 'registry', 'account', 'probe', 'claude-held');
       await cli('caretaker', 'registry', 'account', 'quota', 'claude-held', probed.state, '--reason', probed.reason);
