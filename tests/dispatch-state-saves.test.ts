@@ -18,6 +18,7 @@ import { emptyDaemonState } from '../src/daemon/state.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 /**
@@ -54,13 +55,7 @@ before(async () => {
 after(async () => { await close?.(); if (store) await store.close(); });
 
 const reload = async (item: Work) => (await store.list()).find(entry => entry.id === item.id)!;
-async function submitted(title: string) {
-  let item = await engine.execute(operator, 'create', null, { type: 'chore', title, criteria: [{ id: 'AC-1', text: 'Read it', proofs: ['manual:by-hand', 'e2e:fixture'] }] }, randomUUID());
-  item = await engine.execute(operator, 'ready', item.id, {}, randomUUID());
-  item = await engine.execute(worker, 'claim', item.id, {}, randomUUID());
-  item = await engine.execute(worker, 'workspace', item.id, { epoch: item.epoch, host: 'machine-a', path: `/tmp/state-saves/${item.id}`, branch: `graphyard/${item.key.toLowerCase()}-${item.epoch}` }, randomUUID());
-  return engine.execute(worker, 'submit', item.id, { epoch: item.epoch, pr: Number(item.key.slice(3)) }, randomUUID());
-}
+const submitted = (title: string) => lifecycle(engine, operator, { type: 'chore', title, criteria: [{ id: 'AC-1', text: 'Read it', proofs: ['manual:by-hand', 'e2e:fixture'] }] }, { claim: worker, submit: {} });
 const observation = (item: Work): Observation => ({
   clockOffset: { min: 0, max: 0 },
   candidate: { sha: head, baseSha: base, pr: item.submission!.pr, branch: item.workspaces.at(-1)!.branch, author: 'implementer' },

@@ -23,6 +23,7 @@ import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import type { Principal, Work } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 
 const proof = 'e2e:trial-overload-timeout-retrial';
 const write = async (root: string, files: Record<string, string>) => {
@@ -89,11 +90,7 @@ for (const mode of ['serve', 'test', 'file', 'web-server', 'deadline'] as const)
     const token = 'fixture-coordinator-' + 'x'.repeat(32);
     const { url, close } = await listen(server(engine, [{ ...coordinator, token }]));
     try {
-      let work = await engine.execute(operator, 'create', null, { type: 'chore', title: 'overload', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }] }, randomUUID());
-      work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
-      work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
-      await engine.execute(worker, 'workspace', work.id, { epoch: work.epoch, host: 'fixture', path: root, branch: 'graphyard/gy-1-1' }, randomUUID());
-      work = await engine.execute(worker, 'submit', work.id, { epoch: work.epoch, head: candidate }, randomUUID());
+      let work = await lifecycle(engine, operator, { type: 'chore', title: 'overload', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }] }, { claim: worker, workspace: { host: 'fixture', path: root, branch: 'graphyard/gy-1-1' }, submit: { head: candidate } });
       let attempts = 0;
       const ports: MergePorts = {
         baseBranch: 'main', now: Date.now, fetch: async () => base,

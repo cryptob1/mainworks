@@ -11,6 +11,7 @@ import { server } from '../src/server.js';
 import type { Principal, Work, Observation } from '../src/model.js';
 import { localRequest } from './helpers/local-request.js';
 import { deliverThroughLedger } from './helpers/ledger-delivery.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
@@ -59,10 +60,7 @@ async function events(kind: string, workId?: string) { return (await store.event
 
 /** Delivered work the way production reaches it: an authorized, verified, independently observed merge. */
 async function delivered(mergeSha = 'e'.repeat(40)) {
-  let w = await engine.execute(operator, 'create', null, { type: 'chore',  title: `Delivered change ${++serial}`, criteria: [{ id: 'AC-1', text: 'Behaves', proofs: ['integration:claim-safety', 'e2e:fixture'] }] }, id());
-  w = await engine.execute(operator, 'ready', w.id, {}, id()); w = await engine.execute(worker, 'claim', w.id, {}, id());
-  w = await engine.execute(worker, 'workspace', w.id, { epoch: 1, host: 'test', path: `/tmp/delivery-${serial}`, branch: `graphyard/delivery-${serial}` }, id());
-  w = await engine.execute(worker, 'submit', w.id, { epoch: 1, pr: serial }, id());
+  let w = await lifecycle(engine, operator, { type: 'chore',  title: `Delivered change ${++serial}`, criteria: [{ id: 'AC-1', text: 'Behaves', proofs: ['integration:claim-safety', 'e2e:fixture'] }] }, { claim: worker, workspace: { host: 'test', path: `/tmp/delivery-${serial}`, branch: `graphyard/delivery-${serial}` }, submit: { pr: serial } });
   const observation = (): Observation => ({ clockOffset: { min: 0, max: 0 }, candidate: { sha: head, baseSha: base, pr: serial, branch: `graphyard/delivery-${serial}`, author: 'implementer' },
     checks: [{ name: 'test', result: 'success', appId: 15368 }, { name: 'typecheck', result: 'success', appId: 15368 }], reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }],
     protected: true, mergeable: true, merged: false, mergeSha: null, files: [], scopeFiles: [], at: new Date().toISOString() });

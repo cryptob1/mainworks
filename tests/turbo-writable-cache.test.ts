@@ -19,6 +19,7 @@ import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import type { Principal, Work } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 
 // GY-3229: in a linked worktree turbo writes its cache under the MAIN checkout's .turbo/cache,
 // which the trial and worker verification mount read-only (Huck's onboarding failed so). Turbo's
@@ -180,11 +181,7 @@ test('integration:turbo-writable-cache — a build step failing with \'Read-only
     engine.gitRunner = gitRunnerFor(root); engine.baseBranch = 'main';
     const token = 'fixture-coordinator-' + 'x'.repeat(32);
     const { url, close: stop } = await listen(server(engine, [{ ...coordinator, token }])); close = stop;
-    let work = await engine.execute(operator, 'create', null, { type: 'chore', title: 'turbo app', criteria: [{ id: 'AC-1', text: 'Builds', proofs: ['unit:builds', 'e2e:fixture'] }] }, randomUUID());
-    work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
-    work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
-    await engine.execute(worker, 'workspace', work.id, { epoch: work.epoch, host: 'fixture', path: root, branch: 'graphyard/gy-1-1' }, randomUUID());
-    work = await engine.execute(worker, 'submit', work.id, { epoch: work.epoch, head }, randomUUID());
+    let work = await lifecycle(engine, operator, { type: 'chore', title: 'turbo app', criteria: [{ id: 'AC-1', text: 'Builds', proofs: ['unit:builds', 'e2e:fixture'] }] }, { claim: worker, workspace: { host: 'fixture', path: root, branch: 'graphyard/gy-1-1' }, submit: { head } });
     let trials = 0;
     const ports: MergePorts = {
       baseBranch: 'main', now: Date.now,
