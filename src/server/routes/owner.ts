@@ -1,22 +1,9 @@
 import { z } from 'zod';
 import { demand } from '../../model.js';
-import { defineRoutes, parseJson, type RouteContext } from '../routes.js';
-import { unownedFamilySql } from '../../store/tables/work.js';
+import { defineRoutes, parseJson } from '../routes.js';
+import { checkInOwner, ownerHistory, ownerSetKind as kind } from '../../store/check-in-owner.js';
 
-/**
- * GY-3850: the install's owner, whose name and email author every commit as 'NAME (Mainworks)'.
- * Each change is one `owner.set` event, so the history is the events; the newest one applies.
- */
-type Pool = RouteContext['services']['engine']['store']['pool'];
-export interface OwnerSetting { name: string; email: string; by: string; at: string }
-const kind = 'owner.set';
-
-async function ownerHistory(pool: Pool, limit = 20): Promise<OwnerSetting[]> {
-  const rows = (await pool.query(`SELECT actor, created_at, payload FROM events WHERE ${unownedFamilySql('owner.')} AND kind = $1 ORDER BY seq DESC LIMIT $2`, [kind, limit])).rows;
-  return rows.map(row => ({ name: String(row.payload.name), email: String(row.payload.email), by: String(row.actor), at: new Date(row.created_at).toISOString() }));
-}
-export const checkInOwner = async (pool: Pool): Promise<OwnerSetting | null> => (await ownerHistory(pool, 1))[0] ?? null;
-
+// GY-3850: the install's owner; each change is one `owner.set` event and the newest one applies.
 const ownerSchema = z.object({ name: z.string().trim().min(1).max(100).regex(/^[^<>\n\r]+$/, 'A name holds no <, > or line break'), email: z.string().trim().email().max(200) }).strict();
 
 export const ownerRoutes = defineRoutes('owner', [

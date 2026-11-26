@@ -9,6 +9,7 @@ import { beginAttempt, endLapsedAttempt } from '../../pipeline-speed.js';
 import type { Ctx, Prepare } from './types.js';
 import { adoptFollowUpWindow } from './shared.js';
 import { recordDispatch } from '../evaluate.js';
+import { checkInOwner } from '../../store/check-in-owner.js';
 
 export async function run(c: Ctx) {
   const { engine, db, actor, all, now, work } = c;
@@ -36,7 +37,9 @@ export async function run(c: Ctx) {
   work.epoch++;
   expireAgentRequests(work, now, `epoch ${work.epoch} claimed the item; a request from an attempt that ended is asked afresh`);
   work.implementers = [...new Set([...implementerIdentities(work), actor.id])];
-  work.lastAssignment = { owner: actor.id, epoch: work.epoch, claimedAt: now.toISOString(), ...(actor.displayName ? { displayName: actor.displayName } : {}), ...(actor.runtime ? { runtime: actor.runtime } : {}) };
+  // GY-3912: the owner in force at the claim is recorded on the attempt, so commits authored with it stay completable after the owner changes.
+  const owner = await checkInOwner(db);
+  work.lastAssignment = { owner: actor.id, epoch: work.epoch, claimedAt: now.toISOString(), checkInOwner: owner ? { name: owner.name, email: owner.email } : null, ...(actor.displayName ? { displayName: actor.displayName } : {}), ...(actor.runtime ? { runtime: actor.runtime } : {}) };
   work.lease = { owner: actor.id, epoch: work.epoch, expiresAt: new Date(now.getTime() + engine.leaseSeconds * 1000).toISOString() };
   beginAttempt(work, work.lease, now);
   // GY-3266: a fresh claim starts under the current criteria, so a revision a previous attempt

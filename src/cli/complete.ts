@@ -390,6 +390,8 @@ export interface CompletePreflightOptions {
   run?: ChildRun;
   /** GY-3850: the install's recorded owner; when given, every commit the head adds over the base must be authored by them. */
   owner?: CheckInOwner;
+  /** GY-3912: the owner in force when the attempt was claimed; commits authored with it are accepted too. */
+  claimOwner?: CheckInOwner | null;
 }
 
 const fullSha = /^[0-9a-f]{40}$/i;
@@ -478,9 +480,9 @@ export async function completePreflight(
     }
   }
 
-  // GY-3850: every commit the head adds is authored by the owner's 'NAME (Mainworks)'.
+  // GY-3850: every commit the head adds is authored by the owner's 'NAME (Mainworks)'; GY-3912: or the claim-time owner's, or the install default.
   if (baseTip && options.owner) {
-    const foreign = foreignAuthor(await git(['log', '--format=%H%x09%an', `${baseTip}..${head}`]), options.owner, options.baseBranch ? `origin/${options.baseBranch}` : baseTip.slice(0, 12));
+    const foreign = foreignAuthor(await git(['log', '--format=%H%x09%an%x09%ae', `${baseTip}..${head}`]), options.owner, options.baseBranch ? `origin/${options.baseBranch}` : baseTip.slice(0, 12), options.claimOwner);
     if (foreign) throw new Error(foreign);
   }
 
@@ -579,7 +581,8 @@ export const completeCommand: CliCommand = {
     const body = completionBody(context.args, () => worktreeHead(root)), requestId = setting('REQUEST_ID') ?? `complete:${work.id}:${body.epoch}:${body.head}`;
     // GY-3850: with an owner recorded, every commit must be authored by them; with none, or a control plane that cannot name one, authors are unchecked.
     const owner = await Promise.resolve(context.api('owner')).then((answer: any) => answer?.owner ? { name: String(answer.owner.name), email: String(answer.owner.email) } : undefined, () => undefined);
-    await completePreflight(root, work, body.head, { owner });
+    const claimOwner = work.lastAssignment?.epoch === body.epoch ? work.lastAssignment.checkInOwner : null;
+    await completePreflight(root, work, body.head, { owner, claimOwner });
     let verification: Awaited<ReturnType<typeof selfVerification>> | { state: 'unavailable'; reason: string };
     try { verification = await selfVerification(root, work.key); } catch (error: any) { verification = { state: 'unavailable', reason: `the worktree could not be read: ${error.message}` }; }
     const submitted = await submitUntilAnswered(() => submitThroughPause(() => context.api(`work/${work.id}/submit`, body, requestId)));
