@@ -58,8 +58,9 @@ export async function startPlane(directory:string,root:string,credentials:Creden
     const http=createServer(engine,credentials as any,{knownPrincipals:credentials.map(c=>c.id)});
     await new Promise<void>(accept=>http.listen(0,'127.0.0.1',accept));
     const port=(http.address() as {port:number}).port,url=`http://127.0.0.1:${port}`;
+    // The served plane's own cadence (src/server/main.ts); a 50 ms tick competed with the run itself for the CPU a trial lane has (GY-3910).
     let reconciling=false;
-    const reconcileTimer=setInterval(()=>{if(reconciling)return;reconciling=true;void engine.reconcile().catch(()=>{}).finally(()=>{reconciling=false;});},50);
+    const reconcileTimer=setInterval(()=>{if(reconciling)return;reconciling=true;void engine.reconcile().catch(()=>{}).finally(()=>{reconciling=false;});},2000);
     reconcileTimer.unref();
     const call=async(path:string,token:string,body?:unknown):Promise<any>=>{
       const response=await fetch(`${url}/api/${path}`,{method:body===undefined?'GET':'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json','Idempotency-Key':randomUUID()},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(30_000)});
