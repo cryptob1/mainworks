@@ -82,8 +82,10 @@ CREATE OR REPLACE FUNCTION graphyard_work_index_sync() RETURNS trigger LANGUAGE 
 BEGIN PERFORM graphyard_index_work(NEW.id, NEW.number, NEW.document); RETURN NULL; END $work_index$;`;
 /** GY-3757: \`status GY-N\` and the item page find the item by display key in one probe. */
 const keyIndex = 'CREATE INDEX IF NOT EXISTS work_index_key ON work_index(key);';
+/** GY-3945: open-work reads (\`observationWork\`, \`/api/human-requests\`) read only non-done items in number order. */
+const openIndex = "CREATE INDEX IF NOT EXISTS work_index_open ON work_index(number) WHERE stage <> 'done';";
 /** Changes whenever the projection or its indexes do, so the migration knows to rebuild every row. */
-const workIndexDigest = `work-index sha256:${createHash('sha256').update(projection + keyIndex).digest('hex')}`;
+const workIndexDigest = `work-index sha256:${createHash('sha256').update(projection + keyIndex + openIndex).digest('hex')}`;
 
 const workIndex = defineTable({
   name: 'work_index', orderBy: 'id', cache: true,
@@ -115,6 +117,7 @@ DO $work_index$ BEGIN
     CREATE INDEX IF NOT EXISTS work_index_due ON work_index(due_at) WHERE due_at IS NOT NULL;
     CREATE INDEX IF NOT EXISTS work_index_number ON work_index(number);
     ${keyIndex}
+    ${openIndex}
     DROP TRIGGER IF EXISTS work_index_sync ON work_items;
     CREATE TRIGGER work_index_sync AFTER INSERT OR UPDATE ON work_items FOR EACH ROW EXECUTE FUNCTION graphyard_work_index_sync();
     PERFORM graphyard_index_work(id, number, document) FROM work_items;

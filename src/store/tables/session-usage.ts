@@ -13,5 +13,6 @@ export const sessionUsage = defineTable({
   reported boolean NOT NULL, input_tokens bigint NOT NULL, output_tokens bigint NOT NULL,
   cache_read_tokens bigint NOT NULL, cache_write_tokens bigint NOT NULL, at timestamptz NOT NULL
 );
-CREATE INDEX IF NOT EXISTS session_usage_work ON session_usage(work);`,
+CREATE INDEX IF NOT EXISTS session_usage_work ON session_usage(work);
+CREATE INDEX IF NOT EXISTS session_usage_at ON session_usage(at);`,
 });
