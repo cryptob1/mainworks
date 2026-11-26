@@ -38,7 +38,7 @@ export async function authenticate(services: Services, authorization: string | u
   const hash = createHash('sha256').update(token).digest();
   const configured = configuredCredential(services, hash);
   if (configured) await services.operatorAgents.assertConfiguredPrincipalSafe({ id: configured.actor.id, tokenHash: hash.toString('hex') }, { lease });
-  const actor = configured?.actor ?? await humanSignIn(services).authenticate(token) ?? await mintedWorker(services, token) ?? await mintedReporter(services, token) ?? await mintedCaretaker(services, token) ?? await services.operatorAgents.authenticate(token) ?? await launchTokenActor(services, hash.toString('hex'));
+  const actor = configured?.actor ?? await humanSignIn(services).authenticate(token) ?? await mintedWorker(services, token, lease) ?? await mintedReporter(services, token) ?? await mintedCaretaker(services, token) ?? await services.operatorAgents.authenticate(token) ?? await launchTokenActor(services, hash.toString('hex'));
   demand(actor, 'A valid Mainworks bearer token is required', 401);
   if (actor.role === 'operator-agent') demand(actor.scope?.repositories.includes(repository), 'Repository is outside operator-agent scope', 403);
   return actor;
@@ -58,9 +58,9 @@ export async function mintWorkerIdentity(services: Services, actor: Principal, i
     ON CONFLICT (id) DO UPDATE SET token_hash=EXCLUDED.token_hash, minted_by=EXCLUDED.minted_by, minted_at=EXCLUDED.minted_at`, [id, digest(token), actor.id]);
   return { id, token };
 }
-async function mintedWorker(services: Services, token: string): Promise<Principal | null> {
+async function mintedWorker(services: Services, token: string, lease: boolean): Promise<Principal | null> {
   if (!token.startsWith('gyw_')) return null;
-  const { rows } = await services.engine.store.pool.query('SELECT id FROM worker_identities WHERE token_hash=$1', [digest(token)]);
+  const { rows } = await (lease ? services.engine.store.leasePool : services.engine.store.pool).query('SELECT id FROM worker_identities WHERE token_hash=$1', [digest(token)]);
   return rows[0] ? { id: rows[0].id, role: 'worker' } : null;
 }
 
