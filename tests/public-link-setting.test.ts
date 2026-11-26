@@ -29,7 +29,7 @@ test('unit:public-link-is-the-owners-explicit-choice — off by default, the loo
     // A non-owner is refused the change.
     const refused = await as(install.loop, '/api/team-access/public-link', { on: true });
     assert.equal(refused.status, 403);
-    assert.equal(refused.body.error, 'Only the owner, signed in to the dashboard, turns the public link on or off');
+    assert.equal(refused.body.error, 'Only the owner, signed in to the dashboard, turns the public link on');
     assert.equal((await as(install.loop, '/api/team-access/public-link')).body.on, false);
 
     // The owner turns it on: recorded with who and when; the next pass turns Funnel on.

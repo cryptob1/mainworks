@@ -99,12 +99,14 @@ const inviteDays = [1, 7, 30] as const;
 
 export const teamAccessRoutes = defineRoutes('team-access', [
   { method: 'GET', path: '/api/team-access', handle: view },
-  // GY-3690: the public link setting: anyone signed in reads it (`team-access status`); only the owner's human session changes it.
+  // GY-3690: the public link setting: anyone signed in reads it (`team-access status`); only the owner's human session turns it on; the operator and the Lead also turn it off (GY-3917).
   { method: 'GET', path: '/api/team-access/public-link', handle: context => publicLinkSetting(context.services.engine.store.pool) },
   { method: 'POST', path: '/api/team-access/public-link', handle: async context => {
     const { actor } = context;
-    demand(actor.role === 'admin' && actor.sessionKind === 'human' && configuredIds(context).includes(actor.id), 'Only the owner, signed in to the dashboard, turns the public link on or off', 403);
     const { on } = z.object({ on: z.boolean() }).strict().parse(await parseJson(context));
+    // GY-3917: tightening access never waits on a person: the operator and the Lead turn it off too.
+    if (on) demand(actor.role === 'admin' && actor.sessionKind === 'human' && configuredIds(context).includes(actor.id), 'Only the owner, signed in to the dashboard, turns the public link on', 403);
+    else demand(['admin', 'coordinator', 'operator-agent'].includes(actor.role) && (actor.role !== 'admin' || configuredIds(context).includes(actor.id)), 'Only the owner, the operator or the Lead turns the public link off', 403);
     await record(context, 'public-link', { on });
     return publicLinkSetting(context.services.engine.store.pool);
   } },

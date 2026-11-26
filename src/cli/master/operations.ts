@@ -1,4 +1,5 @@
 // Concern: `mainworks master` operations subcommands — status, the confined master's restart request, dispatch, recover.
+import { renderPublicLink } from '../team-access.js';
 import { parseArgs } from 'node:util';
 import { resourceConflicts } from '../../coordination.js';
 import { dispatchWork, readWorkerCredential } from '../../master.js';
@@ -48,6 +49,11 @@ export async function operationsCommand(session: MasterSession, effects: Recover
   if (id === 'resume') {
     const lifted = resumeHeavyDrain(heavyJobsDirectory());
     return print({ resumed: !!lifted, lifted, detail: lifted ? 'New heavy jobs start again from the next loop cycle, each with all its gates' : 'Heavy work was not drained' });
+  }
+  // GY-3917: the Lead turns the public link off; only the owner turns it on, from the dashboard.
+  if (id === 'public-link') {
+    if (args[0] !== 'off') throw new Error('Use master public-link off (only the owner turns it on, in Settings)');
+    return console.log(renderPublicLink(await masterMutation('team-access/public-link', { on: false })));
   }
   // GY-3746: the deploy watch takes the waiting newer build on its next pass instead of waiting for a quiet moment.
   if (id === 'update') {

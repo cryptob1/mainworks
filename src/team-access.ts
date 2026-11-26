@@ -99,6 +99,13 @@ export async function servedUrl(port: string, now = Date.now(), allowFunnel = tr
   const status = await read();
   if (!status) return { url: null, public: false, doing: null };
   const found = mapped(status, port), command = funnelCommand(port, status);
+  // GY-3917: off, the loop turns Funnel off for every public port that serves this install.
+  if (found.public && !allowFunnel) {
+    const open = Object.keys(status.AllowFunnel ?? {}).filter(address => status.AllowFunnel![address] && Object.values(status.Web?.[address]?.Handlers ?? {}).some(handler => servesInstall(address, handler?.Proxy, port)));
+    for (const address of open) await promisify(execFile)('tailscale', ['funnel', `--https=${address.slice(address.lastIndexOf(':') + 1)}`, 'off'], { timeout: 10_000 }).catch(() => null);
+    funnelTried.delete(port);
+    return { ...mapped(await read() ?? status, port), doing: null };
+  }
   if (found.public || !allowFunnel) { funnelTried.delete(port); return { ...found, doing: null }; }
   if (!command) return { ...found, doing: `Every public port (${funnelPorts.join(', ')}) serves something else, so the loop cannot turn Funnel on. Free one with tailscale funnel.` };
   const last = funnelTried.get(port);

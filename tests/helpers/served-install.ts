@@ -15,7 +15,7 @@ export const servedNode = { ID: 'nVISHROG1CNTRL', DNSName: 'vishrog.tail3739e3.t
 export const servedUrl = 'https://vishrog.tail3739e3.ts.net:8447';
 
 /** One control plane, its loop credential and a host whose `tailscale` serves it on :8447 over HTTPS; Funnel is refused unless FUNNEL (GY-3514). */
-export async function servedInstall(label: string, options: { funnel?: boolean; clock?: () => number } = {}) {
+export async function servedInstall(label: string, options: { funnel?: boolean; clock?: () => number; principals?: Parameters<typeof server>[1] } = {}) {
   const host = await temporaryDirectory(label), machineDir = join(host, 'machine');
   await mkdir(machineDir);
   if (!options.funnel) await writeFile(join(host, 'funnel-refused'), '');
@@ -26,7 +26,7 @@ export async function servedInstall(label: string, options: { funnel?: boolean; 
   engine.gitRunner = null;
   const operator = `test-operator-${label}`, loop = `test-loop-coordinator-${label}-credential-0123456789`, credentialFile = join(host, 'loop.token');
   await writeFile(credentialFile, loop, { mode: 0o600 });
-  const { server: http, port, url: base, close } = await listen(server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: operator }, { id: 'loop', role: 'coordinator', token: loop }], options.clock ? { clock: options.clock } : {}));
+  const { server: http, port, url: base, close } = await listen(server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: operator }, { id: 'loop', role: 'coordinator', token: loop }, ...options.principals ?? []], options.clock ? { clock: options.clock } : {}));
   const restorePath = onPath(await fakeTailscale(host, servedNode));
   const serve = (mapping: Record<string, string>) => writeFile(join(host, 'served-https.json'), JSON.stringify(mapping));
   await serve({ 8447: base });

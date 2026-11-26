@@ -33,7 +33,7 @@ if (args[0] === 'serve' && args[1] === 'status') {
 if (args[0] === 'funnel') {
   if (fs.existsSync(path.join(__dirname, '..', 'funnel-refused'))) process.exit(1);
   const port = /--https=(\\d+)/.exec(args.join(' '))[1], mappings = read(https), open = read(funnel);
-  mappings[port] = args[args.length - 1]; open[port] = true;
+  if (args[args.length - 1] === 'off') { delete mappings[port]; delete open[port]; } else { mappings[port] = args[args.length - 1]; open[port] = true; }
   fs.writeFileSync(https, JSON.stringify(mappings)); fs.writeFileSync(funnel, JSON.stringify(open)); process.exit(0);
 }
 if (args[0] === 'serve' && args[1] === 'reset') { fs.writeFileSync(file, '{}'); process.exit(0); }
