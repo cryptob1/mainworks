@@ -12,6 +12,7 @@ import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3473: the stall alarm names the reason dispatch holds launches now — a disk-floor hold,
 // CPU pressure, a launch refusal still backing off — never an expired launch failure an
@@ -24,8 +25,8 @@ const at = (ms: number) => new Date(ms).toISOString();
 const oldError = 'git worktree add .graphyard/worktrees/GY-3446-1 50ddae: fatal: could not create work tree';
 
 function item(key: string, extra: Partial<Work> = {}): Work {
-  return { id: `id-${key}`, key, title: key, stage: 'ready', ready: true, epoch: 0, revision: 1, policyRevision: 1, priority: 1, type: 'bug',
-    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['e2e:fixture'] }], dependencies: [], evidence: [], gates: [], workspaces: [], sessions: [], createdAt: at(start), updatedAt: at(start), ...extra } as unknown as Work;
+  return workFixture({ key, priority: 1, type: 'bug', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['e2e:fixture'] }], gates: [], sessions: [],
+    createdAt: at(start), updatedAt: at(start), ...extra });
 }
 
 /** GY-3446 failed to launch at 23:30 (backoff expired 23:45), then launched and finished; GY-1 is ready with a free slot. */
