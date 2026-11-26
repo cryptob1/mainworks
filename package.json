@@ -6,7 +6,18 @@
   "engines": {
     "node": ">=24"
   },
-  "description": "Evidence-backed coordination for distributed software agents",
+  "description": "Open source, self-hosted software that lets AI coding agents like Claude Code, Codex and Gemini take your goals all the way to production, with independent review and proof.",
+  "keywords": [
+    "ai coding agents",
+    "open source",
+    "claude code",
+    "codex",
+    "gemini",
+    "self-hosted",
+    "code review",
+    "merge queue",
+    "autonomous"
+  ],
   "license": "Apache-2.0",
   "bin": {
     "mainworks": "./bin/mainworks.mjs",
