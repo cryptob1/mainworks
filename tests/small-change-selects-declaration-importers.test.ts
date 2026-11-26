@@ -96,8 +96,8 @@ test('unit:small-change-selects-declaration-importers — a body-only edit in a 
 
     // A body edit beside a file outside src/ selects the direct importers and the fixture's readers.
     const mixed = await trial({ 'src/common.ts': common.replace('clamp(options.size) + 1', 'clamp(options.size) + 2'), 'fixtures/case.json': '{"b":1}\n' });
-    assert.ok(mixed.selection.files.includes('tests/proof.test.ts') && mixed.selection.files.includes('tests/widen.test.ts'));
-    assert.ok(!mixed.selection.files.includes('tests/user.test.ts'));
+    assert.deepEqual(mixed.selection.files, ['tests/hub.test.ts', 'tests/proof.test.ts', 'tests/widen.test.ts']);
+    assert.ok(mixed.today.includes('tests/user.test.ts'), 'the release check still runs the transitive importer');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
