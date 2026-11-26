@@ -14,7 +14,7 @@ const goImports = /^\s*import\s*\(([\s\S]*?)\)|^\s*import\s+(?:[\w.]+\s+)?"([^"]
  * `.ts` source as tsc emits it), and for a Go file every `.go` file of its own package (its directory)
  * and of each package of this module it imports.
  */
-export async function importsOf(git: StaleTrialGit, sha: string, files: readonly string[], tree?: Set<string>): Promise<string[]> {
+async function importsOf(git: StaleTrialGit, sha: string, files: readonly string[], tree?: Set<string>): Promise<string[]> {
   const all = tree ?? new Set((await git(['ls-tree', '-r', '--name-only', sha])).split('\n').filter(Boolean));
   const show = (file: string) => git(['show', `${sha}:${file}`]).catch(() => '');
   const goPackage = (directory: string) => [...all].filter(file => file.endsWith('.go') && posix.dirname(file) === directory);

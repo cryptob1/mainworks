@@ -176,7 +176,7 @@ test('unit:executor-moved-tip-lands-without-retrial — a push the tip moved und
   const moved = fakePorts({ pushes: ['rejected', 'rejected', 'pushed'], tips: [tip, newerTip, sha('tip3'), sha('tip3')] });
   const outcome = await mergeOne(moved.ports, work);
   const landed = sha(`merge:${sha('head1')}:${sha('tip3')}`);
-  assert.deepEqual(outcome, { outcome: 'merged', mergeSha: landed, baseTip: sha('tip3'), observedTip: sha('tip3'), pushes: 3 });
+  assert.deepEqual(outcome, { outcome: 'merged', mergeSha: landed, baseTip: sha('tip3'), observedTip: sha('tip3'), pushes: 3, untrialled: true });
   assert.deepEqual(moved.counts(), { trials: 1, pushes: 3 }, 'one trial, however often main moves');
   assert.deepEqual(moved.calls.filter(call => call.startsWith('merge:')).map(call => call.split(':')[2]), [tip, newerTip, sha('tip3')].map(entry => entry.slice(0, 6)), 'the same head is re-merged onto each tip it read');
   assert.deepEqual(moved.events.map(event => event.kind), ['intent', 'trial', 'intent', 'intent', 'pushed', 'reconciled'], 'each re-merge records its intent before its push');
