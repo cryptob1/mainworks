@@ -2,6 +2,19 @@
 
 The details the [README](../README.md) leaves out. `mainworks guide setup` prints every prerequisite check and fix; `mainworks doctor` verifies a host. The `mainworks` command and `GRAPHYARD_*` settings still work.
 
+## Prerequisites
+
+- Linux 7.0+ with Landlock ABI 9+ (`uname -r`; Ubuntu 26.04: `sudo apt install linux-image-oem-7.3`)
+- Node 24+ and npm (`node --version`, `npm --version`; Ubuntu/Debian: `curl -fsSL https://deb.nodesource.com/setup_24.x | sudo bash - && sudo apt install nodejs`, Arch: `sudo pacman -S nodejs npm`, macOS: `brew install node@24`)
+- Git (`git --version`, `git remote -v`)
+- Docker with Compose (`docker version`, `docker compose version`)
+- GitHub CLI (`gh auth status`)
+- bubblewrap (`bwrap --version`)
+- Python 3 (`python3 --version`)
+- Herdr (`herdr --version`; install: `curl -fsSL https://herdr.dev/install.sh | sh`)
+- systemd user manager (`systemctl --user status`)
+- An account for at least one agent: Claude Code, Codex or Gemini
+
 ## First run
 
 1. **Connect.** Run `node bin/graphyard.mjs up --repo OWNER/NAME` and open the Setup link it prints.
@@ -54,9 +67,3 @@ Or declare multiple external apps under `delivery.applications` (`id`, `director
 
 - Work's **Taste** feed shows recent deliveries with evidence: **Looks good** records your call; **Send back** opens a follow-up item and proposed lesson.
 - Verified deploys publish `@cryptob1/graphyard` with npm OIDC provenance plus both GHCR images via Actions — no host publish token. `mainworks guide publishing` covers owner setup.
-
-## Prerequisite details
-
-- Ubuntu 26.04 kernel: `sudo apt install linux-image-oem-7.3`.
-- Check each tool: `git --version`, `git remote -v`, `docker version`, `docker compose version`, `gh auth status`, `bwrap --version`, `python3 --version`, `herdr --version`, `systemctl --user status`.
-- Install Herdr: `curl -fsSL https://herdr.dev/install.sh | sh`.

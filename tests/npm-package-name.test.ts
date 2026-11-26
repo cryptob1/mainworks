@@ -31,9 +31,9 @@ test('unit:tests/npm-package-name.test.ts — package.json names mainworks with 
   assert.equal(publishedPackage(manifest, 'abc', '2026.1.1').name, '@cryptob1/graphyard');
 });
 
-test('unit:tests/npm-package-name.test.ts — the README Quick start runs npx @cryptob1/graphyard up', () => {
-  const start = read('README.md').split('## Quick start\n')[1]!.split('\n## ')[0]!;
-  assert.match(start, /npx @cryptob1\/graphyard up --repo OWNER\/NAME/);
+test('unit:tests/npm-package-name.test.ts — the README omits the unpublished npx line while guide setup uses @cryptob1/graphyard', () => {
+  assert.doesNotMatch(read('README.md'), /\bnpx\b/i, 'README has no unpublished npx line');
+  assert.match(guideText('setup'), /npx @cryptob1\/graphyard/);
 });
 
 test('unit:tests/npm-package-name.test.ts — repository files, guide text and printed help never say unscoped npx mainworks', () => {
