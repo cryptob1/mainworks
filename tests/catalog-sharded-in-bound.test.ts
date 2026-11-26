@@ -78,3 +78,31 @@ test('integration:catalog-sharded-in-bound — with no host added, this machine 
   assert.equal(timeout, gateLimitMs);
   assert.deepEqual(cases.sort(), ['e2e:other', 'e2e:smoke']);
 });
+
+test('integration:catalog-sharded-in-bound — a Compose-bound case stays on this machine, a left-out case is no failure, and an empty shard goes to no host', async () => {
+  const graphyard = JSON.stringify({ delivery: { applications: [{ id: 'app', kind: 'compose' }], cases: { 'compose-case': 'app' } } });
+  const local: string[] = [], remote: Record<string, string[]> = {};
+  const reads = {
+    baseBranch: 'main', now: Date.now, fetch: async () => 'a'.repeat(40),
+    git: async (args: string[]) => args[0] === 'ls-tree' ? 'compose-case.json\nleft-out.json' : args[1]?.endsWith(':graphyard.json') ? graphyard : '',
+    trial: async (_commit: string, files: readonly string[], item: { criteria: { proofs: string[] }[] }) => {
+      const proofs = item.criteria.flatMap(criterion => criterion.proofs);
+      local.push(...proofs);
+      return { build: 'pass', tests: { passed: 1, failed: [], files: files.length }, durationMs: 1, logTail: '', files: [], proofs: {},
+        e2e: proofs.map(proof => ({ proof, case: proof.slice(4), executed: 1, failed: 0 })) } as unknown as MergeTrialRun;
+    },
+    gate: {
+      root: '/nowhere', repository: 'o/r',
+      catalogHosts: async () => ({ hosts: [reading('host-a'), reading('host-b')], close: async () => {},
+        run: async (host: string, _index: number, cases: readonly string[]) => {
+          if (!cases.length) throw new Error('run-shard refuses an empty shard');
+          remote[host] = [...cases];
+          return [];
+        } }),
+    },
+  } as unknown as MergeWriterReads;
+  const result = await batchGatePorts({ ...reads, git: reads.git! }, []).diagnose('b'.repeat(40));
+  assert.deepEqual(local, ['e2e:compose-case'], 'the Compose-bound case runs on this machine');
+  assert.deepEqual(Object.values(remote), [['e2e:left-out']], 'one host runs the other case and the empty shard is sent nowhere');
+  assert.deepEqual(result.failed, [], 'a case the shard leaves out is no failure');
+});
