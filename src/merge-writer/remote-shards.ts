@@ -649,7 +649,8 @@ async function catalogImage(input: { root: string; commit: string; image: string
   const local = async (command: string, args: string[]) => String(await input.run(command, args, { timeoutMs: remaining() })).trim();
   const warm = (await ensureWarmImage(input)).tag, source = fileURLToPath(new URL('../..', import.meta.url));
   const release = await local('git', ['-C', source, 'rev-parse', 'HEAD']).catch(() => randomUUID());
-  const key = createHash('sha256').update(`${await local('docker', ['image', 'inspect', '--format', '{{.Id}}', warm])}\n${release}`).digest('hex');
+  // Keyed by trial image and release, so the commit is the tag's last part and each release keeps its two newest.
+  const key = createHash('sha256').update(`${await local('docker', ['image', 'inspect', '--format', '{{.Id}}', input.image])}\n${release}`).digest('hex');
   const { hash } = await lockfileHash(local, input.root, input.commit), tag = warmImageTag(key, hash, input.commit);
   if (await local('docker', ['image', 'inspect', '--format', '{{.Id}}', tag]).then(() => true, () => false)) return tag;
   const name = `graphyard-catalog-${randomUUID().slice(0, 8)}`, files = ['src', 'bin', 'scripts/e2e-shard.mjs', 'package.json'];
